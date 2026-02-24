@@ -2,6 +2,12 @@ import mongoose from "mongoose";
 
 const requestorOrganizationSchema = new mongoose.Schema(
   {
+    organizationType: {
+      type: String,
+      enum: ["requestor", "salesman", "manufacturer"],
+      default: "requestor",
+      index: true,
+    },
     name: {
       type: String,
       required: true,
@@ -90,20 +96,21 @@ const requestorOrganizationSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 requestorOrganizationSchema.index({ owner: 1, name: 1 });
+requestorOrganizationSchema.index({ organizationType: 1, name: 1 });
 requestorOrganizationSchema.index(
   { "extracted.businessNumber": 1 },
-  { unique: true, sparse: true }
+  { unique: true, sparse: true },
 );
 requestorOrganizationSchema.index(
   { depositCode: 1 },
   {
     unique: true,
     partialFilterExpression: { depositCode: { $type: "string", $gt: "" } },
-  }
+  },
 );
 requestorOrganizationSchema.index({
   "joinRequests.user": 1,
@@ -112,7 +119,7 @@ requestorOrganizationSchema.index({
 
 const RequestorOrganization = mongoose.model(
   "RequestorOrganization",
-  requestorOrganizationSchema
+  requestorOrganizationSchema,
 );
 
 export default RequestorOrganization;

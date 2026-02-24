@@ -4,7 +4,7 @@ const verificationCodes = new Map();
 const CODE_EXPIRY_MS = 5 * 60 * 1000;
 
 function generateVerificationCode() {
-  return String(Math.floor(10 + Math.random() * 90));
+  return String(Math.floor(1000 + Math.random() * 9000));
 }
 
 function cleanPhoneNumber(phone) {

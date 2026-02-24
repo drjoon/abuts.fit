@@ -2,11 +2,17 @@ import popbill from "popbill";
 
 const LinkID = process.env.POPBILL_LINK_ID;
 const SecretKey = process.env.POPBILL_SECRET_KEY;
-const IsTest = process.env.POPBILL_IS_TEST === "true";
+const isTestEnvDefined = Object.prototype.hasOwnProperty.call(
+  process.env,
+  "POPBILL_IS_TEST",
+);
+const IsTest = isTestEnvDefined
+  ? process.env.POPBILL_IS_TEST === "true"
+  : process.env.NODE_ENV !== "production";
 
 if (!LinkID || !SecretKey) {
   console.warn(
-    "⚠️  팝빌 API 인증 정보가 설정되지 않았습니다. POPBILL_LINK_ID, POPBILL_SECRET_KEY 환경변수를 확인하세요."
+    "⚠️  팝빌 API 인증 정보가 설정되지 않았습니다. POPBILL_LINK_ID, POPBILL_SECRET_KEY 환경변수를 확인하세요.",
   );
 }
 

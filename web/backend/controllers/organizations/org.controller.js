@@ -5,6 +5,10 @@ import File from "../../models/file.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import BonusGrant from "../../models/bonusGrant.model.js";
 import { verifyBusinessNumber } from "../../services/hometax.service.js";
+import {
+  assertOrganizationRole,
+  buildOrganizationTypeFilter,
+} from "./organizationRole.util.js";
 
 const WELCOME_BONUS_AMOUNT = 30000;
 const SALESMAN_REFERRAL_BONUS_AMOUNT = 50000;
@@ -152,23 +156,28 @@ async function grantSalesmanReferralBonusIfEligible({
 export async function getMyOrganization(req, res) {
   try {
     res.set("x-abuts-handler", "requestorOrganization.getMyOrganization");
-    if (!req.user || req.user.role !== "requestor") {
-      return res.status(403).json({
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
+    const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
     let org = null;
     let orgName = "";
     if (req.user.organizationId) {
-      org = await RequestorOrganization.findById(req.user.organizationId);
+      org = await RequestorOrganization.findOne({
+        _id: req.user.organizationId,
+        ...orgTypeFilter,
+      });
     } else {
       orgName = String(req.user.organization || "").trim();
       if (orgName) {
         if (String(req.user.referralCode || "").startsWith("mock_")) {
-          org = await RequestorOrganization.findOne({ name: orgName });
+          org = await RequestorOrganization.findOne({
+            name: orgName,
+            ...orgTypeFilter,
+          });
           if (!org) {
             org = await RequestorOrganization.create({
+              organizationType,
               name: orgName,
               owner: req.user._id,
               owners: [],
@@ -180,13 +189,17 @@ export async function getMyOrganization(req, res) {
             });
           }
         } else {
-          const matches = await RequestorOrganization.find({ name: orgName })
+          const matches = await RequestorOrganization.find({
+            name: orgName,
+            ...orgTypeFilter,
+          })
             .select({ _id: 1 })
             .limit(2)
             .lean();
           if (Array.isArray(matches) && matches.length === 0) {
             try {
               org = await RequestorOrganization.create({
+                organizationType,
                 name: orgName,
                 owner: req.user._id,
                 owners: [],
@@ -215,6 +228,7 @@ export async function getMyOrganization(req, res) {
               if (ownerId !== meId && !isOwner && !isMember) {
                 try {
                   org = await RequestorOrganization.create({
+                    organizationType,
                     name: orgName,
                     owner: req.user._id,
                     owners: [],
@@ -232,6 +246,7 @@ export async function getMyOrganization(req, res) {
           } else {
             const owned = await RequestorOrganization.findOne({
               name: orgName,
+              ...orgTypeFilter,
               $or: [{ owner: req.user._id }, { owners: req.user._id }],
             })
               .select({ _id: 1 })
@@ -242,6 +257,7 @@ export async function getMyOrganization(req, res) {
             } else {
               const memberOrg = await RequestorOrganization.findOne({
                 name: orgName,
+                ...orgTypeFilter,
                 members: req.user._id,
               })
                 .select({ _id: 1 })
@@ -252,6 +268,7 @@ export async function getMyOrganization(req, res) {
               } else {
                 try {
                   org = await RequestorOrganization.create({
+                    organizationType,
                     name: orgName,
                     owner: req.user._id,
                     owners: [],
@@ -291,6 +308,7 @@ export async function getMyOrganization(req, res) {
     if (!org && orgName) {
       try {
         org = await RequestorOrganization.create({
+          organizationType,
           name: orgName,
           owner: req.user._id,
           owners: [],
@@ -408,12 +426,10 @@ export async function getMyOrganization(req, res) {
 
 export async function searchOrganizations(req, res) {
   try {
-    if (!req.user || req.user.role !== "requestor") {
-      return res.status(403).json({
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
+    const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
 
     const q = String(req.query?.q || "").trim();
     if (!q) {
@@ -422,6 +438,7 @@ export async function searchOrganizations(req, res) {
 
     const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
     const orgs = await RequestorOrganization.find({
+      ...orgTypeFilter,
       $or: [{ name: regex }, { "extracted.representativeName": regex }],
     })
       .select({ name: 1, extracted: 1 })
@@ -448,12 +465,10 @@ export async function searchOrganizations(req, res) {
 
 export async function updateMyOrganization(req, res) {
   try {
-    if (!req.user || req.user.role !== "requestor") {
-      return res.status(403).json({
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
+    const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
 
     const hasOwn = (obj, key) =>
       !!obj && Object.prototype.hasOwnProperty.call(obj, key);
@@ -512,7 +527,10 @@ export async function updateMyOrganization(req, res) {
     const hasOrganization = !!req.user.organizationId;
     let org = null;
     if (hasOrganization) {
-      org = await RequestorOrganization.findById(req.user.organizationId);
+      org = await RequestorOrganization.findOne({
+        _id: req.user.organizationId,
+        ...orgTypeFilter,
+      });
       const meId = String(req.user._id);
       const canEdit =
         org &&
@@ -632,7 +650,10 @@ export async function updateMyOrganization(req, res) {
     }
 
     if (businessNumber) {
-      const query = { "extracted.businessNumber": businessNumber };
+      const query = {
+        "extracted.businessNumber": businessNumber,
+        ...orgTypeFilter,
+      };
       if (org?._id) {
         query._id = { $ne: org._id };
       }
@@ -688,6 +709,7 @@ export async function updateMyOrganization(req, res) {
 
       try {
         const created = await RequestorOrganization.create({
+          organizationType,
           name: nextName,
           owner: req.user._id,
           owners: [],
@@ -844,12 +866,9 @@ export async function updateMyOrganization(req, res) {
 
 export async function clearMyBusinessLicense(req, res) {
   try {
-    if (!req.user || req.user.role !== "requestor") {
-      return res.status(403).json({
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
 
     if (!req.user.organizationId) {
       return res.status(200).json({
@@ -858,7 +877,10 @@ export async function clearMyBusinessLicense(req, res) {
       });
     }
 
-    const org = await RequestorOrganization.findById(req.user.organizationId);
+    const org = await RequestorOrganization.findOne({
+      _id: req.user.organizationId,
+      ...orgTypeFilter,
+    });
     const meId = String(req.user._id);
     const isOwner =
       org &&

@@ -7,8 +7,6 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { Building2, RotateCcw } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
-import { GuideFocus } from "@/features/guidetour/GuideFocus";
-import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
 import {
   AlertDialog,
@@ -156,19 +154,10 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const { token, user, loginWithToken } = useAuthStore();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
   const navigate = useNavigate();
-  const {
-    active: guideActive,
-    activeTourId,
-    isStepActive,
-    goToStep,
-    completeStep,
-    startTour,
-    stopTour,
-    setStepCompleted,
-  } = useGuideTour();
   const [searchParams] = useSearchParams();
   const nextPath = (searchParams.get("next") || "").trim();
   const reason = (searchParams.get("reason") || "").trim();
+  const allowLocalDraft = !String(searchParams.get("wizard") || "").trim();
 
   const authUserId = user?.id ? String(user.id) : null;
   const [membership, setMembership] = useState<MembershipStatus>("none");
@@ -215,6 +204,11 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     };
   }, [token, user?.email, user?.name, user?.role, userData]);
 
+  const organizationType = useMemo(() => {
+    const role = String(user?.role || userData?.role || "requestor").trim();
+    return role || "requestor";
+  }, [user?.role, userData?.role]);
+
   const [licenseFileName, setLicenseFileName] = useState<string>("");
   const [licenseFileId, setLicenseFileId] = useState<string>("");
   const [licenseS3Key, setLicenseS3Key] = useState<string>("");
@@ -257,6 +251,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
 
   useEffect(() => {
     if (!authUserId) return;
+    if (!allowLocalDraft) return;
     const draft = readStoredBusinessDraft(authUserId);
     if (!draft) return;
 
@@ -271,6 +266,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     applyStoredDraft(draft);
   }, [
     applyStoredDraft,
+    allowLocalDraft,
     authUserId,
     licenseFileId,
     licenseFileName,
@@ -299,7 +295,9 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       try {
         if (!token) return;
         const res = await request<any>({
-          path: "/api/requestor-organizations/me",
+          path: `/api/requestor-organizations/me?organizationType=${encodeURIComponent(
+            organizationType,
+          )}`,
           method: "GET",
           token,
           headers: mockHeaders,
@@ -379,14 +377,15 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     };
 
     load();
-  }, [authUserId, mockHeaders, token]);
+  }, [authUserId, mockHeaders, organizationType, token]);
 
   useEffect(() => {
     if (!authUserId) return;
+    if (!allowLocalDraft) return;
     if (membership !== "none") {
       writeStoredBusinessDraft(authUserId, null);
     }
-  }, [authUserId, membership]);
+  }, [allowLocalDraft, authUserId, membership]);
 
   const hasAnyLicense =
     Boolean(String(licenseFileId || "").trim()) ||
@@ -419,6 +418,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
 
   useEffect(() => {
     if (!authUserId) return;
+    if (!allowLocalDraft) return;
     const { hasAnyLicense: latestHasAnyLicense, hasAnyData: latestHasAnyData } =
       latestDraftRef.current;
     if (!latestHasAnyLicense && !latestHasAnyData) {
@@ -427,6 +427,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     }
     writeStoredBusinessDraft(authUserId, latestDraftRef.current.payload);
   }, [
+    allowLocalDraft,
     authUserId,
     businessData,
     extracted,
@@ -440,49 +441,28 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const updateSetupMode = useCallback(
     (mode: "license" | "search" | null) => {
       setSetupMode(mode);
-      writeStoredSetupMode(authUserId, mode);
+      if (allowLocalDraft) {
+        writeStoredSetupMode(authUserId, mode);
+      }
     },
-    [authUserId],
+    [allowLocalDraft, authUserId],
   );
 
   useEffect(() => {
     if (!authUserId) return;
+    if (!allowLocalDraft) return;
     if (membership !== "none") return;
     if (setupMode !== null) return;
     const stored = readStoredSetupMode(authUserId);
     if (!stored) return;
     updateSetupMode(stored);
-  }, [authUserId, membership, setupMode, updateSetupMode]);
+  }, [allowLocalDraft, authUserId, membership, setupMode, updateSetupMode]);
 
   useEffect(() => {
     if (membership !== "none" && setupMode !== null) {
       updateSetupMode(null);
     }
   }, [membership, setupMode, updateSetupMode]);
-
-  useEffect(() => {
-    if (!guideActive || membership !== "none") {
-      setSetupModeLocked(false);
-    }
-  }, [guideActive, membership]);
-
-  useEffect(() => {
-    if (!guideActive) return;
-    if (activeTourId !== "requestor-onboarding") return;
-    if (!isStepActive("requestor.business.licenseUpload")) return;
-    if (licenseStatus === "missing") return;
-    if (!licenseFileId && !licenseFileName && !licenseS3Key) return;
-    completeStep("requestor.business.licenseUpload");
-  }, [
-    activeTourId,
-    completeStep,
-    guideActive,
-    isStepActive,
-    licenseFileId,
-    licenseFileName,
-    licenseS3Key,
-    licenseStatus,
-  ]);
 
   useEffect(() => {
     const q = orgSearch.trim();
@@ -499,7 +479,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         const res = await request<any>({
           path: `/api/requestor-organizations/search?q=${encodeURIComponent(
             q,
-          )}`,
+          )}&organizationType=${encodeURIComponent(organizationType)}`,
           method: "GET",
           token,
           headers: mockHeaders,
@@ -517,7 +497,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     }, 250);
 
     return () => clearTimeout(t);
-  }, [membership, mockHeaders, orgSearch, token]);
+  }, [membership, mockHeaders, orgSearch, organizationType, token]);
 
   useEffect(() => {
     const load = async () => {
@@ -534,7 +514,9 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         }
         setJoinRequestsLoaded(false);
         const res = await request<any>({
-          path: "/api/requestor-organizations/join-requests/me",
+          path: `/api/requestor-organizations/join-requests/me?organizationType=${encodeURIComponent(
+            organizationType,
+          )}`,
           method: "GET",
           token,
           headers: mockHeaders,
@@ -551,12 +533,14 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     };
 
     load();
-  }, [membership, mockHeaders, token]);
+  }, [membership, mockHeaders, organizationType, token]);
 
   const refreshMembership = async () => {
     if (!token) return;
     const res = await request<any>({
-      path: "/api/requestor-organizations/me",
+      path: `/api/requestor-organizations/me?organizationType=${encodeURIComponent(
+        organizationType,
+      )}`,
       method: "GET",
       token,
       headers: mockHeaders,
@@ -572,7 +556,9 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     if (!token) return;
     setJoinRequestsLoaded(false);
     const res = await request<any>({
-      path: "/api/requestor-organizations/join-requests/me",
+      path: `/api/requestor-organizations/join-requests/me?organizationType=${encodeURIComponent(
+        organizationType,
+      )}`,
       method: "GET",
       token,
       headers: mockHeaders,
@@ -589,6 +575,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       token,
       organizationId,
       action: "cancel",
+      organizationType,
       mockHeaders,
       toast,
       setCancelLoadingOrgId,
@@ -652,6 +639,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       licenseFileName,
       licenseS3Key,
       licenseFileId,
+      organizationType,
       mockHeaders,
       toast,
       setLicenseDeleteLoading,
@@ -685,6 +673,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       token,
       organizationId,
       action: "leave",
+      organizationType,
       mockHeaders,
       toast,
       setCancelLoadingOrgId,
@@ -697,6 +686,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     await handleJoinRequestImpl({
       token,
       selectedOrgId: selectedOrg?._id,
+      organizationType,
       mockHeaders,
       toast,
       setJoinLoading,
@@ -705,8 +695,6 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       setSelectedOrg,
       refreshMembership,
       refreshMyJoinRequests,
-      stopTour,
-      setStepCompleted,
     });
   };
 
@@ -735,10 +723,10 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       phone: "",
     });
     setCompanyNameTouched(false);
-    if (authUserId) {
+    if (authUserId && allowLocalDraft) {
       writeStoredBusinessDraft(authUserId, null);
     }
-  }, [authUserId]);
+  }, [allowLocalDraft, authUserId]);
 
   const currentOrgName = useMemo(() => {
     const fromUser = String((user as any)?.organization || "").trim();
@@ -765,6 +753,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       businessData,
       extracted,
       membership,
+      organizationType,
       businessLicense: {
         fileId: licenseFileId,
         s3Key: licenseS3Key,
@@ -788,10 +777,6 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
 
       if (verification && typeof verification === "object") {
         setIsVerified(!!verification.verified);
-      }
-
-      if (isStepActive("requestor.business.businessNumber")) {
-        completeStep("requestor.business.businessNumber");
       }
     }
   };
@@ -867,26 +852,6 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       setLicenseFileId(first._id);
       setLicenseS3Key(first.key || "");
       setLicenseStatus("uploaded");
-      completeStep("requestor.business.licenseUpload");
-
-      if (String(businessData.phone || "").trim()) {
-        goToStep("requestor.business.email");
-      } else {
-        goToStep("requestor.business.phoneNumber");
-      }
-
-      setTimeout(() => {
-        if (isStepActive("requestor.business.phoneNumber")) {
-          const phoneInput =
-            document.querySelector<HTMLInputElement>("#orgPhone");
-          if (phoneInput) phoneInput.focus();
-        }
-        if (isStepActive("requestor.business.email")) {
-          const emailInput =
-            document.querySelector<HTMLInputElement>("#taxEmail");
-          if (emailInput) emailInput.focus();
-        }
-      }, 50);
 
       setLicenseStatus("processing");
       const processingStartedAt = Date.now();
@@ -1077,52 +1042,38 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                 아래 두 가지 방법 중 하나를 선택해 기공소 소속을 설정해주세요.
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <GuideFocus
-                  stepId="requestor.business.licenseUpload"
-                  hint="사업자등록증 업로드"
+                <button
+                  type="button"
+                  className="app-surface app-surface--panel w-full text-left p-4 transition-colors hover:bg-white"
+                  onClick={() => {
+                    setSetupModeLocked(true);
+                    resetLocalBusinessState();
+                    updateSetupMode("license");
+                    requestAnimationFrame(() => {
+                      licenseUploadRef.current?.focusUpload();
+                    });
+                  }}
                 >
-                  <button
-                    type="button"
-                    className="app-surface app-surface--panel w-full text-left p-4 transition-colors hover:bg-white"
-                    onClick={() => {
-                      setSetupModeLocked(true);
-                      resetLocalBusinessState();
-                      updateSetupMode("license");
-                      startTour(
-                        "requestor-onboarding",
-                        "requestor.business.licenseUpload",
-                      );
-                      requestAnimationFrame(() => {
-                        licenseUploadRef.current?.focusUpload();
-                      });
-                    }}
-                  >
-                    <div className="text-sm font-medium">신규 기공소 등록</div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      사업자등록증을 업로드해서 기공소를 새로 등록합니다.
-                    </div>
-                  </button>
-                </GuideFocus>
-                <GuideFocus
-                  stepId="requestor.business.licenseUpload"
-                  hint="기공소 선택"
+                  <div className="text-sm font-medium">신규 기공소 등록</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    사업자등록증을 업로드해서 기공소를 새로 등록합니다.
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className="app-surface app-surface--panel w-full text-left p-4 transition-colors hover:bg-white"
+                  onClick={() => {
+                    setSetupModeLocked(true);
+                    updateSetupMode("search");
+                  }}
                 >
-                  <button
-                    type="button"
-                    className="app-surface app-surface--panel w-full text-left p-4 transition-colors hover:bg-white"
-                    onClick={() => {
-                      setSetupModeLocked(true);
-                      updateSetupMode("search");
-                    }}
-                  >
-                    <div className="text-sm font-medium">
-                      기존 기공소 소속 신청
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      이미 등록된 기공소를 검색해 소속을 신청합니다.
-                    </div>
-                  </button>
-                </GuideFocus>
+                  <div className="text-sm font-medium">
+                    기존 기공소 소속 신청
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    이미 등록된 기공소를 검색해 소속을 신청합니다.
+                  </div>
+                </button>
               </div>
 
               <JoinRequestsSection
@@ -1194,6 +1145,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                       onSave={handleSave}
                       onAutoSave={() => {
                         if (!authUserId) return;
+                        if (!allowLocalDraft) return;
                         writeStoredBusinessDraft(authUserId, {
                           businessData,
                           extracted,
@@ -1225,22 +1177,17 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                 : membership !== "owner") && (
                 <div className="space-y-4">
                   {membership === "none" && (
-                    <GuideFocus
-                      stepId="requestor.business.licenseUpload"
-                      hint="기공소 선택"
-                    >
-                      <OrganizationSearchSection
-                        orgSearch={orgSearch}
-                        setOrgSearch={setOrgSearch}
-                        orgSearchResults={orgSearchResults}
-                        selectedOrg={selectedOrg}
-                        setSelectedOrg={setSelectedOrg}
-                        orgOpen={orgOpen}
-                        setOrgOpen={setOrgOpen}
-                        joinLoading={joinLoading}
-                        onJoinRequest={handleJoinRequest}
-                      />
-                    </GuideFocus>
+                    <OrganizationSearchSection
+                      orgSearch={orgSearch}
+                      setOrgSearch={setOrgSearch}
+                      orgSearchResults={orgSearchResults}
+                      selectedOrg={selectedOrg}
+                      setSelectedOrg={setSelectedOrg}
+                      orgOpen={orgOpen}
+                      setOrgOpen={setOrgOpen}
+                      joinLoading={joinLoading}
+                      onJoinRequest={handleJoinRequest}
+                    />
                   )}
 
                   {Array.isArray(myJoinRequests) &&

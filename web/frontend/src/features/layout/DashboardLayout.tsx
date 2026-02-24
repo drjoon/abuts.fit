@@ -4,6 +4,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { apiFetch } from "@/shared/api/apiClient";
+import { onAppEvent } from "@/shared/realtime/socket";
 import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
@@ -47,11 +48,6 @@ import {
   Sparkles,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
-import {
-  getRequestorOnboardingSteps,
-  getRequestorNewRequestSteps,
-  useGuideTour,
-} from "@/features/guidetour/GuideTourProvider";
 
 const sidebarItems = {
   requestor: [
@@ -138,14 +134,6 @@ export const DashboardLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  const {
-    active: guideActive,
-    activeTourId,
-    startTour,
-    stopTour,
-    pendingRedirectTo,
-    clearPendingRedirectTo,
-  } = useGuideTour();
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [loadingCreditBalance, setLoadingCreditBalance] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -156,25 +144,83 @@ export const DashboardLayout = () => {
   const [bootstrappedOnce, setBootstrappedOnce] = useState(false);
   const [sidebarProfileImage, setSidebarProfileImage] = useState<string>("");
   const lastAutoRedirectKeyRef = useRef<string>("");
-  const [onboardingStatus, setOnboardingStatus] = useState<{
-    loading: boolean;
-    checked: boolean;
-    firstIncomplete: string | null;
-  }>({
-    loading: false,
-    checked: false,
-    firstIncomplete: null,
-  });
 
-  const [newRequestTourStatus, setNewRequestTourStatus] = useState<{
-    loading: boolean;
-    checked: boolean;
-    firstIncomplete: string | null;
-  }>({
-    loading: false,
-    checked: false,
-    firstIncomplete: null,
-  });
+  const isWizardRoute = location.pathname.startsWith("/dashboard/wizard");
+  const shouldForceOnboarding =
+    user?.role !== undefined &&
+    ["requestor", "salesman", "manufacturer", "admin"].includes(user.role);
+
+  useEffect(() => {
+    if (!token) return;
+    if (!user) return;
+    if (!shouldForceOnboarding) return;
+    if (isWizardRoute) return;
+
+    const redirectKey = `${String(user.id)}:${location.pathname}:${location.search}`;
+    if (lastAutoRedirectKeyRef.current === redirectKey) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await apiFetch<any>({
+          path: "/api/guide-progress/requestor-onboarding",
+          method: "GET",
+          token,
+        });
+        if (cancelled) return;
+        if (!res.ok) return;
+        const body: any = res.data || {};
+        const data = body.data || body;
+        const finishedAt = data?.finishedAt;
+        if (finishedAt) return;
+
+        lastAutoRedirectKeyRef.current = redirectKey;
+        navigate("/dashboard/wizard?mode=account", { replace: true });
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isWizardRoute,
+    location.pathname,
+    location.search,
+    navigate,
+    shouldForceOnboarding,
+    token,
+    user,
+  ]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (!user) return;
+    if (!shouldForceOnboarding) return;
+
+    const unsubscribe = onAppEvent((evt) => {
+      if (evt.type !== "guide-progress:updated") return;
+      const payload = evt.data || {};
+      if (payload?.tourId !== "requestor-onboarding") return;
+      const finishedAt = payload?.finishedAt;
+
+      if (!finishedAt) {
+        if (!location.pathname.startsWith("/dashboard/wizard")) {
+          navigate("/dashboard/wizard?mode=account", { replace: true });
+        }
+        return;
+      }
+
+      if (location.pathname.startsWith("/dashboard/wizard")) {
+        navigate("/dashboard", { replace: true });
+      }
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [location.pathname, navigate, shouldForceOnboarding, token, user]);
 
   useEffect(() => {
     if (bootstrappedOnce) return;
@@ -216,194 +262,6 @@ export const DashboardLayout = () => {
   if (!token || !user || !user.id) {
     return null;
   }
-
-  useEffect(() => {
-    if (!pendingRedirectTo) return;
-    clearPendingRedirectTo();
-  }, [clearPendingRedirectTo, navigate, pendingRedirectTo]);
-
-  useEffect(() => {
-    if (!token) return;
-    if (!user) return;
-    if (user.role !== "requestor") return;
-    if (guideActive) return;
-
-    let cancelled = false;
-    setOnboardingStatus({
-      loading: true,
-      checked: false,
-      firstIncomplete: null,
-    });
-
-    void (async () => {
-      try {
-        const steps = getRequestorOnboardingSteps();
-        const res = await apiFetch<any>({
-          path: "/api/guide-progress/requestor-onboarding",
-          method: "GET",
-          token,
-        });
-
-        if (cancelled) return;
-        if (!res.ok) {
-          setOnboardingStatus({
-            loading: false,
-            checked: true,
-            firstIncomplete: null,
-          });
-          return;
-        }
-
-        const body: any = res.data || {};
-        const data = body.data || body;
-        const rows = Array.isArray(data?.steps) ? data.steps : [];
-        const doneIds = new Set(
-          rows
-            .filter((s: any) => String(s?.status || "") === "done")
-            .map((s: any) => String(s?.stepId || "").trim())
-            .filter(Boolean),
-        );
-
-        const firstIncomplete =
-          steps.find((s) => !doneIds.has(s.id))?.id || null;
-        setOnboardingStatus({
-          loading: false,
-          checked: true,
-          firstIncomplete,
-        });
-      } catch {
-        if (cancelled) return;
-        setOnboardingStatus({
-          loading: false,
-          checked: true,
-          firstIncomplete: null,
-        });
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [guideActive, token, user]);
-
-  useEffect(() => {
-    if (!token) return;
-    if (!user) return;
-    if (user.role !== "requestor") return;
-    if (guideActive) return;
-
-    let cancelled = false;
-    setNewRequestTourStatus({
-      loading: true,
-      checked: false,
-      firstIncomplete: null,
-    });
-
-    void (async () => {
-      try {
-        const steps = getRequestorNewRequestSteps();
-        const res = await apiFetch<any>({
-          path: "/api/guide-progress/requestor-new-request",
-          method: "GET",
-          token,
-        });
-
-        if (cancelled) return;
-
-        if (!res.ok) {
-          const first = steps?.[0]?.id ? String(steps[0].id) : null;
-          setNewRequestTourStatus({
-            loading: false,
-            checked: true,
-            firstIncomplete: first,
-          });
-          return;
-        }
-
-        const body: any = res.data || {};
-        const data = body.data || body;
-        const rows = Array.isArray(data?.steps) ? data.steps : [];
-        const doneIds = new Set(
-          rows
-            .filter((s: any) => String(s?.status || "") === "done")
-            .map((s: any) => String(s?.stepId || "").trim())
-            .filter(Boolean),
-        );
-
-        const firstIncomplete =
-          steps.find((s) => !doneIds.has(s.id))?.id || null;
-        setNewRequestTourStatus({
-          loading: false,
-          checked: true,
-          firstIncomplete,
-        });
-      } catch {
-        if (cancelled) return;
-        const steps = getRequestorNewRequestSteps();
-        const first = steps?.[0]?.id ? String(steps[0].id) : null;
-        setNewRequestTourStatus({
-          loading: false,
-          checked: true,
-          firstIncomplete: first,
-        });
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [guideActive, token, user]);
-
-  useEffect(() => {
-    return;
-  }, [
-    activeTourId,
-    guideActive,
-    location.pathname,
-    location.search,
-    navigate,
-    onboardingStatus.checked,
-    onboardingStatus.firstIncomplete,
-    newRequestTourStatus.checked,
-    newRequestTourStatus.firstIncomplete,
-    startTour,
-    token,
-    user,
-  ]);
-
-  // 요청자 온보딩 투어 자동 시작 (설정 페이지 진입 시)
-  useEffect(() => {
-    if (!user || user.role !== "requestor") return;
-    if (!onboardingStatus.checked) return;
-    if (!onboardingStatus.firstIncomplete) return;
-    if (guideActive) return;
-    if (!location.pathname.startsWith("/dashboard/settings")) return;
-    startTour("requestor-onboarding", onboardingStatus.firstIncomplete);
-  }, [
-    guideActive,
-    location.pathname,
-    onboardingStatus.checked,
-    onboardingStatus.firstIncomplete,
-    startTour,
-    user,
-  ]);
-
-  // 신규 의뢰 투어 자동 시작 (신규 의뢰 페이지 진입 시)
-  useEffect(() => {
-    if (!user || user.role !== "requestor") return;
-    if (!newRequestTourStatus.checked) return;
-    if (!newRequestTourStatus.firstIncomplete) return;
-    if (guideActive) return;
-    if (!location.pathname.startsWith("/dashboard/new-request")) return;
-    startTour("requestor-new-request", newRequestTourStatus.firstIncomplete);
-  }, [
-    guideActive,
-    location.pathname,
-    newRequestTourStatus.checked,
-    newRequestTourStatus.firstIncomplete,
-    startTour,
-    user,
-  ]);
 
   const refreshSidebarProfile = useCallback(async () => {
     if (!token) return;
@@ -657,6 +515,14 @@ export const DashboardLayout = () => {
       .join("")
       .toUpperCase();
   };
+
+  if (isWizardRoute) {
+    return (
+      <div className="min-h-screen">
+        <Outlet />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">

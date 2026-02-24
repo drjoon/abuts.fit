@@ -13,77 +13,77 @@ router.get("/search", requestorOrganizationController.searchOrganizations);
 // 조직 정보 수정
 router.put(
   "/me",
-  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
-  requestorOrganizationController.updateMyOrganization
+  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  requestorOrganizationController.updateMyOrganization,
 );
 
 router.delete(
   "/me/business-license",
-  requestorOrganizationController.clearMyBusinessLicense
+  requestorOrganizationController.clearMyBusinessLicense,
 );
 
 // 대표(owners) 관리
 router.get(
   "/owners",
-  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
-  requestorOrganizationController.getRepresentatives
+  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  requestorOrganizationController.getRepresentatives,
 );
 router.post(
   "/owners",
-  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
-  requestorOrganizationController.addOwner
+  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  requestorOrganizationController.addOwner,
 );
 router.delete(
   "/owners/:userId",
-  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
-  requestorOrganizationController.removeOwner
+  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  requestorOrganizationController.removeOwner,
 );
 
 // 가입 요청/탈퇴: 일반 기능 (직원도 가입 요청 취소/탈퇴는 가능해야 함)
 router.post(
   "/join-requests",
-  requestorOrganizationController.requestJoinOrganization
+  requestorOrganizationController.requestJoinOrganization,
 );
 router.post(
   "/join-requests/:organizationId/cancel",
-  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
-  requestorOrganizationController.cancelJoinRequest
+  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  requestorOrganizationController.cancelJoinRequest,
 );
 router.post(
   "/join-requests/:organizationId/leave",
-  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
-  requestorOrganizationController.leaveOrganization
+  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  requestorOrganizationController.leaveOrganization,
 );
 router.get(
   "/join-requests/me",
-  requestorOrganizationController.getMyJoinRequests
+  requestorOrganizationController.getMyJoinRequests,
 );
 
 // 직원 관리 (가입 승인/거절/목록/삭제)
 router.get(
   "/join-requests/pending",
-  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
-  requestorOrganizationController.getPendingJoinRequestsForOwner
+  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  requestorOrganizationController.getPendingJoinRequestsForOwner,
 );
 router.get(
   "/staff",
-  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
-  requestorOrganizationController.getMyStaffMembers
+  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  requestorOrganizationController.getMyStaffMembers,
 );
 router.delete(
   "/staff/:userId",
-  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
-  requestorOrganizationController.removeStaffMember
+  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  requestorOrganizationController.removeStaffMember,
 );
 router.post(
   "/join-requests/:userId/approve",
-  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
-  requestorOrganizationController.approveJoinRequest
+  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  requestorOrganizationController.approveJoinRequest,
 );
 router.post(
   "/join-requests/:userId/reject",
-  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
-  requestorOrganizationController.rejectJoinRequest
+  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  requestorOrganizationController.rejectJoinRequest,
 );
 
 export default router;

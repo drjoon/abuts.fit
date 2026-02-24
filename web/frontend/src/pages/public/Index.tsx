@@ -67,12 +67,12 @@ const Index = () => {
   ];
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#02030b] text-white">
+    <div className="relative min-h-screen overflow-hidden bg-[#030711] text-white">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-48 -left-16 h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-cyan-500/40 via-emerald-400/25 to-blue-500/30 blur-[220px]" />
-        <div className="absolute top-1/3 right-[-180px] h-[32rem] w-[32rem] rounded-full bg-gradient-to-br from-purple-600/40 via-pink-500/25 to-orange-400/30 blur-[240px]" />
+        <div className="absolute -top-48 -right-32 h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-blue-500/35 via-cyan-400/22 to-emerald-300/22 blur-[200px]" />
+        <div className="absolute bottom-0 left-[-120px] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br from-purple-500/35 via-pink-500/22 to-orange-400/16 blur-[200px]" />
         <div
-          className="absolute inset-0 opacity-[0.08]"
+          className="absolute inset-0 opacity-[0.07]"
           style={{
             backgroundImage:
               "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.45) 1px, transparent 0)",
@@ -118,7 +118,7 @@ const Index = () => {
                 className="flex-1 basis-[calc(50%-0.75rem)] h-14 rounded-full border-white/40 bg-transparent text-white hover:bg-white/10 sm:basis-auto"
                 onClick={() => navigate("/login")}
               >
-                Demo 로그인
+                로그인
               </Button>
             </div>
           </div>

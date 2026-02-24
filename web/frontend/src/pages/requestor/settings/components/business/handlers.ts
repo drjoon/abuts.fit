@@ -14,6 +14,7 @@ interface HandleSaveParams {
   businessData: BusinessData;
   extracted: LicenseExtracted;
   membership?: MembershipStatus;
+  organizationType?: string;
   businessLicense?: {
     fileId?: string;
     s3Key?: string;
@@ -26,7 +27,7 @@ interface HandleSaveParams {
   setErrors: (
     errors:
       | Record<string, boolean>
-      | ((prev: Record<string, boolean>) => Record<string, boolean>)
+      | ((prev: Record<string, boolean>) => Record<string, boolean>),
   ) => void;
   setBusinessData: (fn: (prev: BusinessData) => BusinessData) => void;
   navigate: (path: string) => void;
@@ -46,13 +47,14 @@ interface HandleSaveResult {
 }
 
 export const handleSave = async (
-  params: HandleSaveParams
+  params: HandleSaveParams,
 ): Promise<HandleSaveResult> => {
   const {
     token,
     businessData,
     extracted,
     membership,
+    organizationType,
     businessLicense,
     mockHeaders,
     toast,
@@ -193,6 +195,7 @@ export const handleSave = async (
       token,
       headers: mockHeaders,
       jsonBody: {
+        organizationType,
         name: companyName,
         representativeName: repName,
         phoneNumber: normalizedPhoneNumber,
@@ -211,7 +214,7 @@ export const handleSave = async (
                 fileId: String(businessLicense?.fileId || "").trim() || null,
                 s3Key: String(businessLicense?.s3Key || "").trim(),
                 originalName: String(
-                  businessLicense?.originalName || ""
+                  businessLicense?.originalName || "",
                 ).trim(),
               },
             }
@@ -279,7 +282,7 @@ export const handleSave = async (
 
     if (welcomeBonusGranted && welcomeBonusAmount > 0) {
       const formatted = new Intl.NumberFormat("ko-KR").format(
-        Math.max(0, welcomeBonusAmount)
+        Math.max(0, welcomeBonusAmount),
       );
       toast({
         title: "신규 기공소 등록 완료",
@@ -314,13 +317,14 @@ interface HandleDeleteLicenseParams {
   licenseFileName: string;
   licenseS3Key: string;
   licenseFileId: string;
+  organizationType?: string;
   mockHeaders: Record<string, string>;
   toast: (options: any) => void;
   setLicenseDeleteLoading: (loading: boolean) => void;
 }
 
 export const handleDeleteLicense = async (
-  params: HandleDeleteLicenseParams
+  params: HandleDeleteLicenseParams,
 ): Promise<boolean> => {
   const {
     token,
@@ -328,6 +332,7 @@ export const handleDeleteLicense = async (
     licenseFileName,
     licenseS3Key,
     licenseFileId,
+    organizationType,
     mockHeaders,
     toast,
     setLicenseDeleteLoading,
@@ -362,6 +367,7 @@ export const handleDeleteLicense = async (
       method: "DELETE",
       token,
       headers: mockHeaders,
+      jsonBody: { organizationType },
     });
 
     if (!res.ok) {
@@ -389,6 +395,7 @@ interface HandleJoinOrLeaveParams {
   token: string;
   organizationId: string;
   action: "cancel" | "leave";
+  organizationType?: string;
   mockHeaders: Record<string, string>;
   toast: (options: any) => void;
   setCancelLoadingOrgId: (id: string) => void;
@@ -401,6 +408,7 @@ export const handleJoinOrLeave = async (params: HandleJoinOrLeaveParams) => {
     token,
     organizationId,
     action,
+    organizationType,
     mockHeaders,
     toast,
     setCancelLoadingOrgId,
@@ -426,6 +434,7 @@ export const handleJoinOrLeave = async (params: HandleJoinOrLeaveParams) => {
       method: "POST",
       token,
       headers: mockHeaders,
+      jsonBody: { organizationType },
     });
 
     if (!res.ok) {
@@ -453,6 +462,7 @@ export const handleJoinOrLeave = async (params: HandleJoinOrLeaveParams) => {
 interface HandleJoinRequestParams {
   token: string;
   selectedOrgId: string | undefined;
+  organizationType?: string;
   mockHeaders: Record<string, string>;
   toast: (options: any) => void;
   setJoinLoading: (loading: boolean) => void;
@@ -461,14 +471,13 @@ interface HandleJoinRequestParams {
   setSelectedOrg: (org: any) => void;
   refreshMembership: () => Promise<void>;
   refreshMyJoinRequests: () => Promise<void>;
-  stopTour: () => void;
-  setStepCompleted: (stepId: string, completed?: boolean) => void;
 }
 
 export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
   const {
     token,
     selectedOrgId,
+    organizationType,
     mockHeaders,
     toast,
     setJoinLoading,
@@ -477,8 +486,6 @@ export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
     setSelectedOrg,
     refreshMembership,
     refreshMyJoinRequests,
-    stopTour,
-    setStepCompleted,
   } = params;
 
   try {
@@ -505,7 +512,7 @@ export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
       method: "POST",
       token,
       headers: mockHeaders,
-      jsonBody: { organizationId: selectedOrgId },
+      jsonBody: { organizationId: selectedOrgId, organizationType },
     });
 
     if (!res.ok) {
@@ -520,19 +527,6 @@ export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
     }
 
     toast({ title: "소속 신청이 접수되었습니다" });
-    stopTour();
-    setStepCompleted("requestor.account.profileImage", true);
-    setStepCompleted("requestor.phone.number", true);
-    setStepCompleted("requestor.phone.code", true);
-    setStepCompleted("requestor.business.licenseUpload", true);
-    setStepCompleted("requestor.business.companyName", true);
-    setStepCompleted("requestor.business.representativeName", true);
-    setStepCompleted("requestor.business.phoneNumber", true);
-    setStepCompleted("requestor.business.businessNumber", true);
-    setStepCompleted("requestor.business.businessType", true);
-    setStepCompleted("requestor.business.businessItem", true);
-    setStepCompleted("requestor.business.email", true);
-    setStepCompleted("requestor.business.address", true);
     setOrgSearch("");
     setOrgSearchResults([]);
     setSelectedOrg(null);

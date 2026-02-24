@@ -27,7 +27,11 @@ export const Footer = () => {
   ];
 
   return (
-    <footer className="relative mt-8 border-t border-white/10 bg-[#02030b]/80 text-white backdrop-blur-2xl">
+    <footer className="relative mt-8 border-t border-white/10 bg-[#030711]/70 text-white backdrop-blur-2xl">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-40 right-[-120px] h-[22rem] w-[22rem] rounded-full bg-gradient-to-br from-blue-500/22 via-cyan-400/14 to-emerald-300/12 blur-[200px]" />
+        <div className="absolute bottom-[-120px] left-[-120px] h-[20rem] w-[20rem] rounded-full bg-gradient-to-br from-purple-500/22 via-pink-500/14 to-orange-400/10 blur-[200px]" />
+      </div>
       <div className="container mx-auto px-6 py-16 sm:px-10 lg:px-16">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
           <div className="lg:col-span-2">

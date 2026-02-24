@@ -2,15 +2,13 @@ import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import User from "../../models/user.model.js";
 import { Types } from "mongoose";
 import { resolveOwnedOrg, resolvePrimaryOwnedOrg } from "./utils.js";
+import { assertOrganizationRole } from "./organizationRole.util.js";
 
 export async function getPendingJoinRequestsForOwner(req, res) {
   try {
-    if (!req.user || req.user.role !== "requestor") {
-      return res.status(403).json({
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
 
     if (!req.user.organizationId) {
       return res.status(403).json({
@@ -21,6 +19,7 @@ export async function getPendingJoinRequestsForOwner(req, res) {
 
     const org = await RequestorOrganization.findOne({
       _id: req.user.organizationId,
+      organizationType,
       $or: [{ owner: req.user._id }, { owners: req.user._id }],
     })
       .populate({
@@ -38,7 +37,7 @@ export async function getPendingJoinRequestsForOwner(req, res) {
     }
 
     const pending = (org.joinRequests || []).filter(
-      (r) => r?.status === "pending" && r?.user
+      (r) => r?.status === "pending" && r?.user,
     );
 
     return res.json({
@@ -60,14 +59,11 @@ export async function getPendingJoinRequestsForOwner(req, res) {
 
 export async function getRepresentatives(req, res) {
   try {
-    if (!req.user || req.user.role !== "requestor") {
-      return res.status(403).json({
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
 
-    const org = await resolveOwnedOrg(req);
+    const org = await resolveOwnedOrg(req, organizationType);
     if (!org) {
       return res.status(403).json({
         success: false,
@@ -127,14 +123,11 @@ export async function getRepresentatives(req, res) {
 
 export async function addOwner(req, res) {
   try {
-    if (!req.user || req.user.role !== "requestor") {
-      return res.status(403).json({
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
 
-    const org = await resolvePrimaryOwnedOrg(req);
+    const org = await resolvePrimaryOwnedOrg(req, organizationType);
     if (!org) {
       return res.status(403).json({
         success: false,
@@ -164,10 +157,10 @@ export async function addOwner(req, res) {
       });
     }
 
-    if (String(targetUser.role) !== "requestor") {
+    if (String(targetUser.role) !== organizationType) {
       return res.status(400).json({
         success: false,
-        message: "의뢰자 계정만 공동대표로 추가할 수 있습니다.",
+        message: "같은 역할의 계정만 공동대표로 추가할 수 있습니다.",
       });
     }
 
@@ -207,7 +200,7 @@ export async function addOwner(req, res) {
 
     if (Array.isArray(org.joinRequests)) {
       org.joinRequests = org.joinRequests.filter(
-        (r) => String(r?.user) !== targetId
+        (r) => String(r?.user) !== targetId,
       );
     }
 
@@ -232,14 +225,11 @@ export async function addOwner(req, res) {
 
 export async function removeOwner(req, res) {
   try {
-    if (!req.user || req.user.role !== "requestor") {
-      return res.status(403).json({
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
 
-    const org = await resolvePrimaryOwnedOrg(req);
+    const org = await resolvePrimaryOwnedOrg(req, organizationType);
     if (!org) {
       return res.status(403).json({
         success: false,
@@ -282,12 +272,9 @@ export async function removeOwner(req, res) {
 
 export async function getMyStaffMembers(req, res) {
   try {
-    if (!req.user || req.user.role !== "requestor") {
-      return res.status(403).json({
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
 
     if (!req.user.organizationId) {
       return res.status(403).json({
@@ -298,6 +285,7 @@ export async function getMyStaffMembers(req, res) {
 
     const org = await RequestorOrganization.findOne({
       _id: req.user.organizationId,
+      organizationType,
       $or: [{ owner: req.user._id }, { owners: req.user._id }],
     })
       .populate({
@@ -363,12 +351,9 @@ export async function getMyStaffMembers(req, res) {
 
 export async function removeStaffMember(req, res) {
   try {
-    if (!req.user || req.user.role !== "requestor") {
-      return res.status(403).json({
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
 
     const userId = String(req.params.userId || "").trim();
     if (!Types.ObjectId.isValid(userId)) {
@@ -378,7 +363,7 @@ export async function removeStaffMember(req, res) {
       });
     }
 
-    const org = await resolveOwnedOrg(req);
+    const org = await resolveOwnedOrg(req, organizationType);
     if (!org) {
       return res.status(403).json({
         success: false,
@@ -410,7 +395,7 @@ export async function removeStaffMember(req, res) {
 
     if (Array.isArray(org.joinRequests)) {
       org.joinRequests = org.joinRequests.filter(
-        (r) => String(r?.user) !== String(userId)
+        (r) => String(r?.user) !== String(userId),
       );
     }
 
@@ -440,12 +425,9 @@ export async function removeStaffMember(req, res) {
 
 export async function approveJoinRequest(req, res) {
   try {
-    if (!req.user || req.user.role !== "requestor") {
-      return res.status(403).json({
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
 
     const userId = String(req.params.userId || "").trim();
     if (!Types.ObjectId.isValid(userId)) {
@@ -455,7 +437,7 @@ export async function approveJoinRequest(req, res) {
       });
     }
 
-    const org = await resolveOwnedOrg(req);
+    const org = await resolveOwnedOrg(req, organizationType);
     if (!org) {
       return res.status(403).json({
         success: false,
@@ -474,7 +456,7 @@ export async function approveJoinRequest(req, res) {
     }
 
     const jr = (org.joinRequests || []).find(
-      (r) => String(r?.user) === String(userId)
+      (r) => String(r?.user) === String(userId),
     );
     if (!jr) {
       return res.status(404).json({
@@ -525,12 +507,9 @@ export async function approveJoinRequest(req, res) {
 
 export async function rejectJoinRequest(req, res) {
   try {
-    if (!req.user || req.user.role !== "requestor") {
-      return res.status(403).json({
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
 
     const userId = String(req.params.userId || "").trim();
     if (!Types.ObjectId.isValid(userId)) {
@@ -540,7 +519,7 @@ export async function rejectJoinRequest(req, res) {
       });
     }
 
-    const org = await resolveOwnedOrg(req);
+    const org = await resolveOwnedOrg(req, organizationType);
     if (!org) {
       return res.status(403).json({
         success: false,
@@ -549,7 +528,7 @@ export async function rejectJoinRequest(req, res) {
     }
 
     const jr = (org.joinRequests || []).find(
-      (r) => String(r?.user) === String(userId)
+      (r) => String(r?.user) === String(userId),
     );
     if (!jr) {
       return res.status(404).json({

@@ -63,6 +63,11 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
     };
   }, [token, user?.email, user?.name, user?.role, userData]);
 
+  const organizationType = useMemo(() => {
+    const role = String(user?.role || userData?.role || "requestor").trim();
+    return role || "requestor";
+  }, [user?.role, userData?.role]);
+
   const [computedWeeklyDay, setComputedWeeklyDay] = useState<string>("");
 
   useEffect(() => {
@@ -70,7 +75,9 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
       if (!token) return;
       try {
         const res = await request<any>({
-          path: "/api/requestor-organizations/me",
+          path: `/api/requestor-organizations/me?organizationType=${encodeURIComponent(
+            organizationType,
+          )}`,
           method: "GET",
           token,
           headers: mockHeaders,
@@ -102,7 +109,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
     };
 
     void load();
-  }, [mockHeaders, token]);
+  }, [mockHeaders, organizationType, token]);
 
   useEffect(() => {
     try {

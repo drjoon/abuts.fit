@@ -69,10 +69,17 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     };
   }, [token, user?.email, user?.name, user?.role, userData]);
 
+  const organizationType = useMemo(() => {
+    const role = String(user?.role || userData?.role || "requestor").trim();
+    return role || "requestor";
+  }, [user?.role, userData?.role]);
+
   const refreshMembership = useCallback(async () => {
     if (!token) return;
     const res = await request<any>({
-      path: "/api/requestor-organizations/me",
+      path: `/api/requestor-organizations/me?organizationType=${encodeURIComponent(
+        organizationType,
+      )}`,
       method: "GET",
       token,
       headers: mockHeaders,
@@ -86,12 +93,14 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       | "member"
       | "pending";
     setMembership(next);
-  }, [mockHeaders, token]);
+  }, [mockHeaders, organizationType, token]);
 
   const refreshRepresentatives = useCallback(async () => {
     if (!token) return;
     const res = await request<any>({
-      path: "/api/requestor-organizations/owners",
+      path: `/api/requestor-organizations/owners?organizationType=${encodeURIComponent(
+        organizationType,
+      )}`,
       method: "GET",
       token,
       headers: mockHeaders,
@@ -116,12 +125,14 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       return;
     }
     setRepresentatives([]);
-  }, [mockHeaders, token]);
+  }, [mockHeaders, organizationType, token]);
 
   const refreshStaff = useCallback(async () => {
     if (!token) return;
     const res = await request<any>({
-      path: "/api/requestor-organizations/staff",
+      path: `/api/requestor-organizations/staff?organizationType=${encodeURIComponent(
+        organizationType,
+      )}`,
       method: "GET",
       token,
       headers: mockHeaders,
@@ -133,12 +144,14 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     const body: any = res.data || {};
     const data = body.data || body;
     setStaff(Array.isArray(data?.staff) ? data.staff : []);
-  }, [mockHeaders, token]);
+  }, [mockHeaders, organizationType, token]);
 
   const refreshPending = useCallback(async () => {
     if (!token) return;
     const res = await request<any>({
-      path: "/api/requestor-organizations/join-requests/pending",
+      path: `/api/requestor-organizations/join-requests/pending?organizationType=${encodeURIComponent(
+        organizationType,
+      )}`,
       method: "GET",
       token,
       headers: mockHeaders,
@@ -150,7 +163,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     const body: any = res.data || {};
     const data = body.data || body;
     setPending(Array.isArray(data?.joinRequests) ? data.joinRequests : []);
-  }, [mockHeaders, token]);
+  }, [mockHeaders, organizationType, token]);
 
   useEffect(() => {
     const load = async () => {
@@ -191,7 +204,9 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
 
       setActionUserId(id);
       const res = await request<any>({
-        path: `/api/requestor-organizations/staff/${id}`,
+        path: `/api/requestor-organizations/staff/${id}?organizationType=${encodeURIComponent(
+          organizationType,
+        )}`,
         method: "DELETE",
         token,
         headers: mockHeaders,
@@ -230,7 +245,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
         method: "POST",
         token,
         headers: mockHeaders,
-        jsonBody: { role },
+        jsonBody: { role, organizationType },
       });
 
       if (!res.ok) {
@@ -273,6 +288,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
         method: "POST",
         token,
         headers: mockHeaders,
+        jsonBody: { organizationType },
       });
 
       if (!res.ok) {

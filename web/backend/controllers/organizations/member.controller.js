@@ -1,15 +1,17 @@
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import User from "../../models/user.model.js";
 import { Types } from "mongoose";
+import {
+  assertOrganizationRole,
+  buildOrganizationTypeFilter,
+} from "./organizationRole.util.js";
 
 export async function requestJoinOrganization(req, res) {
   try {
-    if (!req.user || req.user.role !== "requestor") {
-      return res.status(403).json({
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
+    const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
 
     const organizationId = String(req.body?.organizationId || "").trim();
     if (!organizationId) {
@@ -26,7 +28,10 @@ export async function requestJoinOrganization(req, res) {
       });
     }
 
-    const org = await RequestorOrganization.findById(organizationId);
+    const org = await RequestorOrganization.findOne({
+      _id: organizationId,
+      ...orgTypeFilter,
+    });
     if (!org) {
       return res.status(404).json({
         success: false,
@@ -88,12 +93,10 @@ export async function requestJoinOrganization(req, res) {
 
 export async function cancelJoinRequest(req, res) {
   try {
-    if (!req.user || req.user.role !== "requestor") {
-      return res.status(403).json({
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
+    const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
 
     const organizationId = String(req.params.organizationId || "").trim();
     if (!Types.ObjectId.isValid(organizationId)) {
@@ -103,7 +106,10 @@ export async function cancelJoinRequest(req, res) {
       });
     }
 
-    const org = await RequestorOrganization.findById(organizationId);
+    const org = await RequestorOrganization.findOne({
+      _id: organizationId,
+      ...orgTypeFilter,
+    });
     if (!org) {
       return res.status(404).json({
         success: false,
@@ -134,7 +140,7 @@ export async function cancelJoinRequest(req, res) {
       : 0;
     org.joinRequests = Array.isArray(org.joinRequests)
       ? org.joinRequests.filter(
-          (r) => !(String(r?.user) === meId && String(r?.status) === "pending")
+          (r) => !(String(r?.user) === meId && String(r?.status) === "pending"),
         )
       : [];
 
@@ -167,12 +173,10 @@ export async function cancelJoinRequest(req, res) {
 
 export async function leaveOrganization(req, res) {
   try {
-    if (!req.user || req.user.role !== "requestor") {
-      return res.status(403).json({
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
+    const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
 
     const organizationId = String(req.params.organizationId || "").trim();
     if (!Types.ObjectId.isValid(organizationId)) {
@@ -182,7 +186,10 @@ export async function leaveOrganization(req, res) {
       });
     }
 
-    const org = await RequestorOrganization.findById(organizationId);
+    const org = await RequestorOrganization.findOne({
+      _id: organizationId,
+      ...orgTypeFilter,
+    });
     if (!org) {
       return res.status(404).json({
         success: false,
@@ -244,14 +251,13 @@ export async function leaveOrganization(req, res) {
 
 export async function getMyJoinRequests(req, res) {
   try {
-    if (!req.user || req.user.role !== "requestor") {
-      return res.status(403).json({
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
+    const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
 
     const orgs = await RequestorOrganization.find({
+      ...orgTypeFilter,
       "joinRequests.user": req.user._id,
     })
       .select({ name: 1, joinRequests: 1 })
@@ -261,7 +267,7 @@ export async function getMyJoinRequests(req, res) {
     const data = orgs
       .map((org) => {
         const jr = (org.joinRequests || []).find(
-          (r) => String(r?.user) === meId
+          (r) => String(r?.user) === meId,
         );
         if (!jr) return null;
         return {

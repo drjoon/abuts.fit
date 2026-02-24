@@ -152,12 +152,9 @@ export const LoginPage = () => {
           <div className="space-y-4">
             <h1 className="text-3xl font-semibold leading-tight text-white md:text-4xl">
               하나의 로그인으로 제조 · 배송까지
-              <br />
-              전체 제작 프로세스 동기화
             </h1>
             <p className="text-base text-white/80">
               제작 현황, 스케줄, 실시간 트래킹을 모두 한 화면에서 제어하세요.
-              2단계 인증 수준의 로그인 경험을 제공합니다.
             </p>
           </div>
           <div className="rounded-2xl border border-white/15 bg-white/5 p-6 backdrop-blur">

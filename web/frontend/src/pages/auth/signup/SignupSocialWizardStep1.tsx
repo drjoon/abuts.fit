@@ -1,4 +1,5 @@
 import type React from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +17,6 @@ interface SignupSocialWizardStep1Props {
   onFormChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onPrevious: () => void;
   onNext: () => void;
-  toast: (options: any) => void;
 }
 
 export const SignupSocialWizardStep1 = ({
@@ -26,31 +26,34 @@ export const SignupSocialWizardStep1 = ({
   onFormChange,
   onPrevious,
   onNext,
-  toast,
 }: SignupSocialWizardStep1Props) => {
+  const [nameError, setNameError] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const nameRef = useRef<HTMLInputElement | null>(null);
+  const emailRef = useRef<HTMLInputElement | null>(null);
+
   const handleNext = () => {
     const name = String(formData.name || "").trim();
     const email = String(formData.email || "")
       .trim()
       .toLowerCase();
+    let hasError = false;
 
     if (!name) {
-      toast({
-        title: "오류",
-        description: "이름을 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
+      setNameError("이름을 입력해주세요");
+      nameRef.current?.focus();
+      hasError = true;
     }
 
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      toast({
-        title: "오류",
-        description: "이메일 형식을 확인해주세요.",
-        variant: "destructive",
-      });
-      return;
+      setEmailError("이메일 형식을 확인해주세요");
+      if (!hasError) {
+        emailRef.current?.focus();
+      }
+      hasError = true;
     }
+
+    if (hasError) return;
 
     onNext();
   };
@@ -73,6 +76,11 @@ export const SignupSocialWizardStep1 = ({
       <div className="space-y-2">
         <Label htmlFor="name" className="text-sm font-medium text-white/80">
           이름
+          {nameError && (
+            <span className="ml-2 text-xs font-medium text-rose-200">
+              {nameError}
+            </span>
+          )}
         </Label>
         <Input
           id="name"
@@ -80,17 +88,26 @@ export const SignupSocialWizardStep1 = ({
           type="text"
           placeholder="예: 홍길동"
           value={formData.name}
-          onChange={onFormChange}
+          onChange={(e) => {
+            onFormChange(e);
+            if (nameError) setNameError("");
+          }}
+          ref={nameRef}
           onKeyDown={handleKeyDown}
           disabled={isLoading}
           autoComplete="name"
-          className="h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40"
+          className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${nameError ? "border-rose-300" : ""}`}
         />
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="email" className="text-sm font-medium text-white/80">
           이메일
+          {emailError && (
+            <span className="ml-2 text-xs font-medium text-rose-200">
+              {emailError}
+            </span>
+          )}
         </Label>
         <Input
           id="email"
@@ -98,11 +115,15 @@ export const SignupSocialWizardStep1 = ({
           type="email"
           placeholder="example@email.com"
           value={formData.email}
-          onChange={onFormChange}
+          onChange={(e) => {
+            onFormChange(e);
+            if (emailError) setEmailError("");
+          }}
+          ref={emailRef}
           onKeyDown={handleKeyDown}
           disabled={isLoading}
           autoComplete="email"
-          className="h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40"
+          className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${emailError ? "border-rose-300" : ""}`}
         />
       </div>
 

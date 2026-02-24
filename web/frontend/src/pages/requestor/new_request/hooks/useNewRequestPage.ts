@@ -54,6 +54,11 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     return `${NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX}${userId}`;
   }, [user?.id]);
 
+  const organizationType = useMemo(() => {
+    const role = String(user?.role || "requestor").trim();
+    return role || "requestor";
+  }, [user?.role]);
+
   // Draft 메타 관리 (caseInfosMap)
   const {
     draftId,
@@ -476,7 +481,9 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       }
 
       const orgRes = await request<any>({
-        path: "/api/requestor-organizations/me",
+        path: `/api/requestor-organizations/me?organizationType=${encodeURIComponent(
+          organizationType,
+        )}`,
         method: "GET",
         token,
         headers: mockHeaders,

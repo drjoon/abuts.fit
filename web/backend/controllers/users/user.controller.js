@@ -2,7 +2,7 @@ import User from "../../models/user.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import crypto from "crypto";
-import { SolapiMessageService } from "solapi";
+import { messageService } from "../../utils/popbill.util.js";
 import { Types } from "mongoose";
 import { toKstYmd } from "../../utils/krBusinessDays.js";
 
@@ -43,6 +43,10 @@ async function sendPhoneVerification(req, res) {
     const userId = req.user?._id;
     const phoneNumber = String(req.body?.phoneNumber || "").trim();
 
+    const isProd = process.env.NODE_ENV === "production";
+    const forceAutoVerify =
+      !isProd && process.env.SMS_DEV_FORCE_AUTO_VERIFY !== "false";
+
     if (!userId) {
       return res
         .status(401)
@@ -80,7 +84,7 @@ async function sendPhoneVerification(req, res) {
         ? prevDailyCountRaw
         : 0;
     const nextDailyCount = prevDailyKey === todayKey ? prevDailyCount : 0;
-    if (nextDailyCount >= 3) {
+    if (!forceAutoVerify && nextDailyCount >= 3) {
       return res.status(429).json({
         success: false,
         message:
@@ -90,19 +94,17 @@ async function sendPhoneVerification(req, res) {
     const lastSentAt = user?.phoneVerification?.sentAt
       ? new Date(user.phoneVerification.sentAt).getTime()
       : 0;
-    if (lastSentAt && now - lastSentAt < 30_000) {
+    if (!forceAutoVerify && lastSentAt && now - lastSentAt < 30_000) {
       return res.status(429).json({
         success: false,
         message: "잠시 후 다시 시도해주세요.",
       });
     }
 
-    const code = String(crypto.randomInt(100000, 1000000));
+    const code = String(crypto.randomInt(1000, 10000));
     const codeHash = crypto.createHash("sha256").update(code).digest("hex");
     const expiresAt = new Date(now + 5 * 60_000);
     const sentAt = new Date(now);
-
-    const isProd = process.env.NODE_ENV === "production";
     const devLogCode = !isProd && process.env.SMS_DEV_LOG_CODE !== "false";
     const devExposeCode =
       !isProd && process.env.SMS_DEV_EXPOSE_CODE !== "false";
@@ -125,27 +127,38 @@ async function sendPhoneVerification(req, res) {
       { new: false },
     );
 
-    if (isProd) {
-      const apiKey = String(process.env.SOLAPI_API_KEY || "").trim();
-      const apiSecret = String(process.env.SOLAPI_API_SECRET || "").trim();
-      const from = String(process.env.SOLAPI_FROM || "").trim();
+    const corpNum = String(process.env.POPBILL_CORP_NUM || "")
+      .replace(/\D/g, "")
+      .trim();
+    const sender = String(process.env.POPBILL_SENDER_NUM || "")
+      .replace(/\D/g, "")
+      .trim();
+    const popbillUserId = String(process.env.POPBILL_USER_ID || "").trim();
+    const popbillLinkId = String(process.env.POPBILL_LINK_ID || "").trim();
+    const popbillSecret = String(process.env.POPBILL_SECRET_KEY || "").trim();
+    const popbillEnabled =
+      popbillLinkId && popbillSecret && corpNum && sender && popbillUserId;
 
-      if (!apiKey || !apiSecret || !from) {
-        return res.status(500).json({
-          success: false,
-          message: "문자 발송 설정이 누락되었습니다.",
-        });
-      }
-
+    if (popbillEnabled) {
       const to = `0${phoneNumber.slice(3)}`;
       const text = `[abuts.fit] 인증번호: ${code}`;
 
       try {
-        const messageService = new SolapiMessageService(apiKey, apiSecret);
-        await messageService.send({
-          to,
-          from,
-          text,
+        await new Promise((resolve, reject) => {
+          messageService.sendSMS(
+            corpNum,
+            sender,
+            to,
+            "",
+            text,
+            "",
+            false,
+            "",
+            "",
+            popbillUserId,
+            (result) => resolve(result),
+            (error) => reject(error),
+          );
         });
       } catch (sendError) {
         console.error("[sms] phone verification send failed", {
@@ -203,6 +216,9 @@ async function verifyPhoneVerification(req, res) {
   try {
     const userId = req.user?._id;
     const code = String(req.body?.code || "").trim();
+    const isProd = process.env.NODE_ENV === "production";
+    const forceAutoVerify =
+      !isProd && process.env.SMS_DEV_FORCE_AUTO_VERIFY !== "false";
 
     if (!userId) {
       return res
@@ -210,7 +226,7 @@ async function verifyPhoneVerification(req, res) {
         .json({ success: false, message: "인증이 필요합니다." });
     }
 
-    if (!/^\d{4,8}$/.test(code)) {
+    if (!/^\d{4}$/.test(code)) {
       return res.status(400).json({
         success: false,
         message: "인증번호를 확인해주세요.",
@@ -242,15 +258,22 @@ async function verifyPhoneVerification(req, res) {
       });
     }
     const attempts = typeof pv.attempts === "number" ? pv.attempts : 0;
-    if (attempts >= 5) {
+    if (!forceAutoVerify && attempts >= 5) {
       return res.status(429).json({
         success: false,
         message: "시도 횟수를 초과했습니다. 잠시 후 다시 시도해주세요.",
       });
     }
 
-    const codeHash = crypto.createHash("sha256").update(code).digest("hex");
-    if (codeHash !== pv.codeHash) {
+    let codeMatches = false;
+    if (forceAutoVerify) {
+      codeMatches = true;
+    } else {
+      const codeHash = crypto.createHash("sha256").update(code).digest("hex");
+      codeMatches = codeHash === pv.codeHash;
+    }
+
+    if (!codeMatches) {
       await User.findByIdAndUpdate(
         userId,
         { $set: { "phoneVerification.attempts": attempts + 1 } },

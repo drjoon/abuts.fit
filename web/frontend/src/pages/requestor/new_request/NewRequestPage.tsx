@@ -15,8 +15,6 @@ import { useFileVerification } from "./hooks/useFileVerification";
 import { apiFetch } from "@/shared/api/apiClient";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
-import { GuideFocus } from "@/features/guidetour/GuideFocus";
-import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
 import { NewRequestDetailsSection } from "./components/NewRequestDetailsSection";
 import { NewRequestUploadSection } from "./components/NewRequestUploadSection";
 import { NewRequestShippingSection } from "./components/NewRequestShippingSection";
@@ -99,76 +97,6 @@ export const NewRequestPage = () => {
     unverifiedCount,
     highlightStep,
   } = useFileVerification({ files });
-
-  const {
-    active: guideActive,
-    activeTourId,
-    goToStep,
-    stopTour,
-    isStepActive,
-    setStepCompleted,
-  } = useGuideTour();
-
-  const guideStepNavTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!guideActive) return;
-    if (activeTourId !== "requestor-new-request") return;
-
-    const hasFiles = files.length > 0;
-    setStepCompleted("requestor.new_request.upload", hasFiles);
-  }, [activeTourId, files.length, guideActive, setStepCompleted]);
-
-  useEffect(() => {
-    if (!guideActive) return;
-    if (activeTourId !== "requestor-new-request") return;
-
-    const doneDetails = files.length > 0 && unverifiedCount === 0;
-    setStepCompleted("requestor.new_request.details", doneDetails);
-  }, [
-    activeTourId,
-    files.length,
-    guideActive,
-    setStepCompleted,
-    unverifiedCount,
-  ]);
-
-  useEffect(() => {
-    if (!guideActive) return;
-    if (activeTourId !== "requestor-new-request") return;
-
-    const desiredStepId =
-      highlightStep === "upload"
-        ? files.length > 0
-          ? "requestor.new_request.details"
-          : "requestor.new_request.upload"
-        : highlightStep === "details"
-          ? "requestor.new_request.details"
-          : "requestor.new_request.shipping";
-
-    if (isStepActive(desiredStepId)) return;
-
-    if (guideStepNavTimerRef.current) {
-      window.clearTimeout(guideStepNavTimerRef.current);
-    }
-    guideStepNavTimerRef.current = window.setTimeout(() => {
-      goToStep(desiredStepId);
-    }, 0);
-
-    return () => {
-      if (guideStepNavTimerRef.current) {
-        window.clearTimeout(guideStepNavTimerRef.current);
-        guideStepNavTimerRef.current = null;
-      }
-    };
-  }, [
-    activeTourId,
-    files.length,
-    goToStep,
-    guideActive,
-    highlightStep,
-    isStepActive,
-  ]);
 
   const hasVerifiedFile = useMemo(() => {
     if (!files.length) return false;
@@ -610,124 +538,115 @@ export const NewRequestPage = () => {
           actions={[]}
         />
 
-        <GuideFocus stepId="requestor.new_request.details">
-          <NewRequestDetailsSection
-            files={files}
-            selectedPreviewIndex={selectedPreviewIndex}
-            setSelectedPreviewIndex={setSelectedPreviewIndex}
-            caseInfos={caseInfos}
-            setCaseInfos={setCaseInfos}
-            caseInfosMap={caseInfosMap}
-            updateCaseInfos={updateCaseInfos}
-            connections={connections}
-            typeOptions={typeOptions}
-            implantManufacturer={implantManufacturer}
-            setImplantManufacturer={setImplantManufacturer}
-            implantSystem={implantSystem}
-            setImplantSystem={setImplantSystem}
-            implantType={implantType}
-            setImplantType={setImplantType}
-            syncSelectedConnection={syncSelectedConnection}
-            fileVerificationStatus={fileVerificationStatus}
-            setFileVerificationStatus={setFileVerificationStatus}
-            highlightUnverifiedArrows={highlightUnverifiedArrows}
-            setHighlightUnverifiedArrows={setHighlightUnverifiedArrows}
-            handleRemoveFile={handleRemoveFile}
-            clinicNameOptions={clinicPresets}
-            patientNameOptions={patientPresets}
-            teethOptions={teethPresets}
-            addClinicPreset={addClinicPreset}
-            clearAllClinicPresets={clearAllClinicPresets}
-            addPatientPreset={addPatientPreset}
-            clearAllPatientPresets={clearAllPatientPresets}
-            addTeethPreset={addTeethPreset}
-            clearAllTeethPresets={clearAllTeethPresets}
-            handleAddOrSelectClinic={handleAddOrSelectClinic}
-            toast={toast}
-            highlight={isStepActive("requestor.new_request.details")}
-            sectionHighlightClass={sectionHighlightClass}
-          />
-        </GuideFocus>
+        <NewRequestDetailsSection
+          files={files}
+          selectedPreviewIndex={selectedPreviewIndex}
+          setSelectedPreviewIndex={setSelectedPreviewIndex}
+          caseInfos={caseInfos}
+          setCaseInfos={setCaseInfos}
+          caseInfosMap={caseInfosMap}
+          updateCaseInfos={updateCaseInfos}
+          connections={connections}
+          typeOptions={typeOptions}
+          implantManufacturer={implantManufacturer}
+          setImplantManufacturer={setImplantManufacturer}
+          implantSystem={implantSystem}
+          setImplantSystem={setImplantSystem}
+          implantType={implantType}
+          setImplantType={setImplantType}
+          syncSelectedConnection={syncSelectedConnection}
+          fileVerificationStatus={fileVerificationStatus}
+          setFileVerificationStatus={setFileVerificationStatus}
+          highlightUnverifiedArrows={highlightUnverifiedArrows}
+          setHighlightUnverifiedArrows={setHighlightUnverifiedArrows}
+          handleRemoveFile={handleRemoveFile}
+          clinicNameOptions={clinicPresets}
+          patientNameOptions={patientPresets}
+          teethOptions={teethPresets}
+          addClinicPreset={addClinicPreset}
+          clearAllClinicPresets={clearAllClinicPresets}
+          addPatientPreset={addPatientPreset}
+          clearAllPatientPresets={clearAllPatientPresets}
+          addTeethPreset={addTeethPreset}
+          clearAllTeethPresets={clearAllTeethPresets}
+          handleAddOrSelectClinic={handleAddOrSelectClinic}
+          toast={toast}
+          highlight={false}
+          sectionHighlightClass={sectionHighlightClass}
+        />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-2">
-          <GuideFocus stepId="requestor.new_request.upload">
-            <NewRequestUploadSection
-              isDragOver={isDragOver}
-              highlight={highlightStep === "upload"}
-              sectionHighlightClass={sectionHighlightClass}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => {
-                e.preventDefault();
-                handleDragLeave(e);
-                handleIncomingFiles(Array.from(e.dataTransfer.files));
-              }}
-              onFilesSelected={handleIncomingFiles}
-            />
-          </GuideFocus>
+          <NewRequestUploadSection
+            isDragOver={isDragOver}
+            highlight={highlightStep === "upload"}
+            sectionHighlightClass={sectionHighlightClass}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => {
+              e.preventDefault();
+              handleDragLeave(e);
+              handleIncomingFiles(Array.from(e.dataTransfer.files));
+            }}
+            onFilesSelected={handleIncomingFiles}
+          />
 
-          <GuideFocus stepId="requestor.new_request.shipping">
-            <NewRequestShippingSection
-              caseInfos={caseInfos}
-              setCaseInfos={setCaseInfos}
-              highlight={highlightStep === "shipping"}
-              sectionHighlightClass={sectionHighlightClass}
-              bulkShippingSummary={bulkShippingSummary}
-              normalEstimatedShipYmd={normalEstimatedShipYmd}
-              expressEstimatedShipYmd={expressEstimatedShipYmd}
-              onOpenShippingSettings={() =>
-                navigate("/dashboard/settings?tab=shipping")
-              }
-              onSelectExpress={async () => {
-                const guessShipDate = calculateExpressDate();
-                try {
-                  const res = await apiFetch<any>({
-                    path: `/api/requests/shipping-estimate?mode=express&maxDiameter=${encodeURIComponent(
-                      String(caseInfos?.maxDiameter ?? ""),
-                    )}`,
-                    method: "GET",
-                  });
-
-                  const shipDateYmd =
-                    res.ok && res.data?.success
-                      ? res.data?.data?.estimatedShipYmd
-                      : guessShipDate;
-
-                  setCaseInfos({
-                    shippingMode: "express",
-                    requestedShipDate: shipDateYmd,
-                  });
-                } catch {
-                  setCaseInfos({
-                    shippingMode: "express",
-                    requestedShipDate: guessShipDate,
-                  });
-                }
-              }}
-              onSubmit={() => {
-                if (unverifiedCount > 0) {
-                  setHighlightUnverifiedArrows(true);
-                  toast({
-                    title: "확인 필요",
-                    description: `모든 파일을 확인해서 [확인후]로 변경해주세요.`,
-                    duration: 5000,
-                  });
-                  setTimeout(() => setHighlightUnverifiedArrows(false), 10000);
-                  return;
-                }
-                toast({
-                  title: "의뢰 접수중",
-                  description: "제출을 처리하고 있어요. 잠시만 기다려주세요.",
-                  duration: 3000,
+          <NewRequestShippingSection
+            caseInfos={caseInfos}
+            setCaseInfos={setCaseInfos}
+            highlight={highlightStep === "shipping"}
+            sectionHighlightClass={sectionHighlightClass}
+            bulkShippingSummary={bulkShippingSummary}
+            normalEstimatedShipYmd={normalEstimatedShipYmd}
+            expressEstimatedShipYmd={expressEstimatedShipYmd}
+            onOpenShippingSettings={() =>
+              navigate("/dashboard/settings?tab=shipping")
+            }
+            onSelectExpress={async () => {
+              const guessShipDate = calculateExpressDate();
+              try {
+                const res = await apiFetch<any>({
+                  path: `/api/requests/shipping-estimate?mode=express&maxDiameter=${encodeURIComponent(
+                    String(caseInfos?.maxDiameter ?? ""),
+                  )}`,
+                  method: "GET",
                 });
-                if (guideActive && activeTourId === "requestor-new-request") {
-                  stopTour();
-                }
-                handleSubmit();
-              }}
-              onCancelAll={handleCancelAll}
-            />
-          </GuideFocus>
+
+                const shipDateYmd =
+                  res.ok && res.data?.success
+                    ? res.data?.data?.estimatedShipYmd
+                    : guessShipDate;
+
+                setCaseInfos({
+                  shippingMode: "express",
+                  requestedShipDate: shipDateYmd,
+                });
+              } catch {
+                setCaseInfos({
+                  shippingMode: "express",
+                  requestedShipDate: guessShipDate,
+                });
+              }
+            }}
+            onSubmit={() => {
+              if (unverifiedCount > 0) {
+                setHighlightUnverifiedArrows(true);
+                toast({
+                  title: "확인 필요",
+                  description: `모든 파일을 확인해서 [확인후]로 변경해주세요.`,
+                  duration: 5000,
+                });
+                setTimeout(() => setHighlightUnverifiedArrows(false), 10000);
+                return;
+              }
+              toast({
+                title: "의뢰 접수중",
+                description: "제출을 처리하고 있어요. 잠시만 기다려주세요.",
+                duration: 3000,
+              });
+              handleSubmit();
+            }}
+            onCancelAll={handleCancelAll}
+          />
         </div>
       </div>
     </PageFileDropZone>

@@ -296,6 +296,7 @@ async function register(req, res) {
       role,
       requestorType,
       referredByUserId,
+      referredByEmail,
       referredByReferralCode,
       socialProvider,
       socialProviderUserId,
@@ -340,7 +341,7 @@ async function register(req, res) {
       }
 
       const refUser = await User.findById(referredByUserId)
-        .select({ _id: 1, role: 1, active: 1 })
+        .select({ _id: 1, role: 1, active: 1, organizationId: 1 })
         .lean();
 
       if (!refUser || refUser.active === false) {
@@ -357,7 +358,57 @@ async function register(req, res) {
         });
       }
 
-      referredByObjectId = new Types.ObjectId(referredByUserId);
+      if (refUser.role === "requestor" && refUser.organizationId) {
+        const org = await RequestorOrganization.findById(refUser.organizationId)
+          .select({ owner: 1, name: 1 })
+          .lean();
+        if (!org) {
+          return res.status(400).json({
+            success: false,
+            message: "추천인의 조직을 찾을 수 없습니다.",
+          });
+        }
+        referredByObjectId = new Types.ObjectId(org.owner);
+      } else {
+        referredByObjectId = new Types.ObjectId(referredByUserId);
+      }
+    } else if (referredByEmail) {
+      const refEmail = String(referredByEmail || "")
+        .trim()
+        .toLowerCase();
+      if (!refEmail) {
+        return res.status(400).json({
+          success: false,
+          message: "유효하지 않은 추천인 이메일입니다.",
+        });
+      }
+
+      const refUser = await User.findOne({ email: refEmail })
+        .select({ _id: 1, role: 1, active: 1, organizationId: 1 })
+        .lean();
+
+      if (!refUser || refUser.active === false) {
+        return res.status(400).json({
+          success: false,
+          message: "추천인을 찾을 수 없습니다.",
+        });
+      }
+
+      if (refUser.role !== "requestor" && refUser.role !== "salesman") {
+        return res.status(400).json({
+          success: false,
+          message: "추천인은 의뢰자 또는 영업자 계정만 가능합니다.",
+        });
+      }
+
+      if (refUser.role === "requestor" && refUser.organizationId) {
+        const org = await RequestorOrganization.findById(refUser.organizationId)
+          .select({ owner: 1 })
+          .lean();
+        referredByObjectId = new Types.ObjectId(org?.owner || refUser._id);
+      } else {
+        referredByObjectId = new Types.ObjectId(refUser._id);
+      }
     } else if (referredByReferralCode) {
       const code = String(referredByReferralCode).trim().toUpperCase();
       if (!code) {
@@ -368,7 +419,7 @@ async function register(req, res) {
       }
 
       const refUser = await User.findOne({ referralCode: code })
-        .select({ _id: 1, role: 1, active: 1 })
+        .select({ _id: 1, role: 1, active: 1, organizationId: 1 })
         .lean();
 
       if (!refUser || refUser.active === false) {
@@ -385,7 +436,14 @@ async function register(req, res) {
         });
       }
 
-      referredByObjectId = new Types.ObjectId(refUser._id);
+      if (refUser.role === "requestor" && refUser.organizationId) {
+        const org = await RequestorOrganization.findById(refUser.organizationId)
+          .select({ owner: 1 })
+          .lean();
+        referredByObjectId = new Types.ObjectId(org?.owner || refUser._id);
+      } else {
+        referredByObjectId = new Types.ObjectId(refUser._id);
+      }
     }
 
     const normalizedRole = role || "requestor";
@@ -533,6 +591,91 @@ async function register(req, res) {
       success: false,
       message: "회원가입 중 오류가 발생했습니다.",
       error: error.message,
+    });
+  }
+}
+
+/**
+ * 추천인 검증
+ * @route POST /api/auth/referral/validate
+ */
+async function validateReferral(req, res) {
+  try {
+    const raw = String(req.body?.value || "").trim();
+    if (!raw) {
+      return res.status(400).json({
+        success: false,
+        message: "추천인 이메일 또는 코드를 입력해주세요.",
+      });
+    }
+
+    let refUser = null;
+    let orgName = "";
+    const isEmail = /@/.test(raw);
+    if (isEmail) {
+      const refEmail = raw.toLowerCase();
+      refUser = await User.findOne({ email: refEmail })
+        .select({ _id: 1, role: 1, active: 1, name: 1, organizationId: 1 })
+        .lean();
+    } else if (/^[0-9a-fA-F]{24}$/.test(raw)) {
+      if (!Types.ObjectId.isValid(raw)) {
+        return res.status(400).json({
+          success: false,
+          message: "유효하지 않은 추천인 ID입니다.",
+        });
+      }
+      refUser = await User.findById(raw)
+        .select({ _id: 1, role: 1, active: 1, name: 1, organizationId: 1 })
+        .lean();
+    } else {
+      const code = raw.toUpperCase();
+      refUser = await User.findOne({ referralCode: code })
+        .select({ _id: 1, role: 1, active: 1, name: 1, organizationId: 1 })
+        .lean();
+    }
+
+    if (!refUser || refUser.active === false) {
+      return res.status(400).json({
+        success: false,
+        message: "추천인을 찾을 수 없습니다.",
+      });
+    }
+
+    if (refUser.role !== "requestor" && refUser.role !== "salesman") {
+      return res.status(400).json({
+        success: false,
+        message: "추천인은 의뢰자 또는 영업자 계정만 가능합니다.",
+      });
+    }
+
+    if (refUser.role === "requestor" && refUser.organizationId) {
+      const org = await RequestorOrganization.findById(refUser.organizationId)
+        .select({ owner: 1, name: 1 })
+        .lean();
+      if (org?.owner) {
+        const owner = await User.findById(org.owner)
+          .select({ _id: 1, role: 1, active: 1, name: 1 })
+          .lean();
+        if (owner && owner.active !== false) {
+          refUser = owner;
+        }
+      }
+      orgName = org?.name || "";
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        id: refUser._id,
+        name: refUser.name || "",
+        role: refUser.role,
+        organizationName: orgName,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "추천인 확인 중 오류가 발생했습니다.",
     });
   }
 }
@@ -1071,6 +1214,7 @@ async function withdraw(req, res) {
 
 export default {
   register,
+  validateReferral,
   login,
   refreshToken,
   getCurrentUser,

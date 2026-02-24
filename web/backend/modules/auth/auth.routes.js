@@ -12,6 +12,7 @@ import {
 
 // 회원가입
 router.post("/register", authController.register);
+router.post("/referral/validate", authController.validateReferral);
 
 // 로그인
 router.post("/login", authController.login);

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +16,7 @@ interface SignupWizardStep2Props {
   lastEmailVerificationSentAt: Date | null;
   onFormChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onPrevious: () => void;
+  onNext: () => void | Promise<void>;
   onSendEmailVerification: () => void;
   onVerifyCode: (code: string) => Promise<void>;
   onEditEmail: () => void;
@@ -31,12 +32,17 @@ export const SignupWizardStep2 = ({
   lastEmailVerificationSentAt,
   onFormChange,
   onPrevious,
+  onNext,
   onSendEmailVerification,
   onVerifyCode,
   onEditEmail,
 }: SignupWizardStep2Props) => {
   const [verificationCode, setVerificationCode] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
+  const [emailError, setEmailError] = useState("");
+  const [codeError, setCodeError] = useState("");
+  const emailInputRef = useRef<HTMLInputElement | null>(null);
+  const codeInputRef = useRef<HTMLInputElement | null>(null);
   const emailDomain = useMemo(() => {
     return formData.email.split("@")[1]?.toLowerCase() || "";
   }, [formData.email]);
@@ -56,10 +62,17 @@ export const SignupWizardStep2 = ({
   const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.replace(/\D/g, "").slice(0, 4);
     setVerificationCode(value);
+    if (codeError) setCodeError("");
   };
 
   const handleVerifyCode = async () => {
-    if (verificationCode.length !== 4 || isVerifying) return;
+    if (verificationCode.length !== 4 || isVerifying) {
+      if (!isVerifying) {
+        setCodeError("4자리를 입력해주세요");
+        codeInputRef.current?.focus();
+      }
+      return;
+    }
     setIsVerifying(true);
     try {
       await onVerifyCode(verificationCode);
@@ -70,10 +83,18 @@ export const SignupWizardStep2 = ({
   };
 
   const handleCodeKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && verificationCode.length === 4) {
-      e.preventDefault();
-      handleVerifyCode();
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    handleVerifyCode();
+  };
+
+  const handleSendVerification = () => {
+    if (!formData.email.trim() || !isEmailValid) {
+      setEmailError("이메일 형식을 확인해주세요");
+      emailInputRef.current?.focus();
+      return;
     }
+    onSendEmailVerification();
   };
 
   const emailHelperBlock = () => {
@@ -121,8 +142,9 @@ export const SignupWizardStep2 = ({
               value={verificationCode}
               onChange={handleCodeChange}
               onKeyDown={handleCodeKeyDown}
+              ref={codeInputRef}
               disabled={isVerifying}
-              className="h-12 flex-1 border-white/10 bg-white/5 text-center text-2xl font-semibold tracking-[0.5em] text-white placeholder:text-white/30"
+              className={`h-12 flex-1 border-white/10 bg-white/5 text-center text-2xl font-semibold tracking-[0.5em] text-white placeholder:text-white/30 ${codeError ? "border-rose-300" : ""}`}
               maxLength={4}
             />
             <Button
@@ -179,6 +201,11 @@ export const SignupWizardStep2 = ({
               className="text-sm font-medium text-white/80"
             >
               이메일
+              {emailError && (
+                <span className="ml-2 text-xs font-medium text-rose-200">
+                  {emailError}
+                </span>
+              )}
             </Label>
             {emailVerifiedAt && (
               <div className="flex items-center gap-1 text-xs text-green-400">
@@ -194,17 +221,21 @@ export const SignupWizardStep2 = ({
               type="email"
               placeholder="example@email.com"
               value={formData.email}
-              onChange={onFormChange}
+              onChange={(e) => {
+                onFormChange(e);
+                if (emailError) setEmailError("");
+              }}
+              ref={emailInputRef}
               onKeyDown={handleEmailFieldKeyDown}
               disabled={isLoading || !!emailVerifiedAt}
-              className="h-11 flex-1 border-white/10 bg-white/5 text-white placeholder:text-white/40"
+              className={`h-11 flex-1 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${emailError ? "border-rose-300" : ""}`}
             />
             {!emailVerifiedAt && (
               <Button
                 type="button"
                 variant="outline"
-                disabled={isLoading || !isEmailValid}
-                onClick={onSendEmailVerification}
+                disabled={isLoading || !isEmailValid || emailVerificationSent}
+                onClick={handleSendVerification}
                 className="h-11 px-4 flex-shrink-0 border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
               >
                 발송
@@ -236,6 +267,30 @@ export const SignupWizardStep2 = ({
         </div>
 
         {emailVerificationSent && !emailVerifiedAt && emailHelperBlock()}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 pt-2">
+        <Button
+          type="button"
+          variant="outline"
+          disabled={isLoading}
+          onClick={onPrevious}
+          className="h-11 border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
+        >
+          이전
+        </Button>
+        <Button
+          type="button"
+          variant="hero"
+          disabled={isLoading || !emailVerifiedAt}
+          onClick={() => {
+            if (!emailVerifiedAt) return;
+            void onNext();
+          }}
+          className="h-11"
+        >
+          다음
+        </Button>
       </div>
     </form>
   );

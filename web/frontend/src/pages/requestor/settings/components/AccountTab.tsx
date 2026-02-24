@@ -46,8 +46,6 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { GuideFocus } from "@/features/guidetour/GuideFocus";
-import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
 import { SettingsCardSkeleton } from "@/features/components/SettingsSkeletons";
 
 interface AccountTabProps {
@@ -63,13 +61,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   const { toast } = useToast();
   const { token, user, logout, loginWithToken } = useAuthStore();
   const navigate = useNavigate();
-  const {
-    active: guideActive,
-    activeTourId,
-    isStepActive,
-    completeStep,
-    setStepCompleted,
-  } = useGuideTour();
   const [searchParams] = useSearchParams();
   const nextPath = (searchParams.get("next") || "").trim();
   const reason = (searchParams.get("reason") || "").trim();
@@ -166,65 +157,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   const [countryOpen, setCountryOpen] = useState(false);
   const phoneInputRef = useRef<HTMLInputElement | null>(null);
   const phoneCodeInputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    if (!guideActive) return;
-    if (activeTourId !== "requestor-onboarding") return;
-
-    if (isStepActive("requestor.phone.number") && !phoneVerifiedAt) {
-      requestAnimationFrame(() => {
-        phoneInputRef.current?.focus();
-      });
-      return;
-    }
-
-    if (
-      isStepActive("requestor.phone.code") &&
-      verificationSent &&
-      !phoneVerifiedAt
-    ) {
-      requestAnimationFrame(() => {
-        phoneCodeInputRef.current?.focus();
-      });
-    }
-  }, [
-    activeTourId,
-    guideActive,
-    isStepActive,
-    phoneVerifiedAt,
-    verificationSent,
-  ]);
-
-  useEffect(() => {
-    if (!guideActive) return;
-    if (activeTourId !== "requestor-onboarding") return;
-
-    const markStep = (stepId: string, completed: boolean) => {
-      setStepCompleted(stepId, completed);
-    };
-
-    const hasProfileImage = Boolean(
-      String(accountData.profileImage || "").trim(),
-    );
-    markStep("requestor.account.profileImage", hasProfileImage);
-
-    if (phoneVerifiedAt) {
-      markStep("requestor.phone.number", true);
-      markStep("requestor.phone.code", true);
-      return;
-    }
-
-    markStep("requestor.phone.number", Boolean(verificationSent));
-    markStep("requestor.phone.code", false);
-  }, [
-    accountData.profileImage,
-    activeTourId,
-    guideActive,
-    isStepActive,
-    phoneVerifiedAt,
-    setStepCompleted,
-    verificationSent,
-  ]);
 
   useEffect(() => {
     const nextProfileImage = String((user as any)?.profileImage || "").trim();
@@ -558,10 +490,10 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     }
 
     const code = phoneVerificationCode.trim();
-    if (!/^\d{4,8}$/.test(code)) {
+    if (!/^\d{4}$/.test(code)) {
       toast({
         title: "인증번호를 확인해주세요",
-        description: "4~8자리 숫자를 입력해주세요.",
+        description: "4자리 숫자를 입력해주세요.",
         variant: "destructive",
         duration: 3000,
       });
@@ -615,10 +547,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
 
       if (token) {
         void loginWithToken(token);
-      }
-
-      if (isStepActive("requestor.phone.code")) {
-        completeStep("requestor.phone.code");
       }
 
       // nextPath 기반 자동 포워딩 제거
@@ -870,53 +798,46 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                   </AvatarFallback>
                 </Avatar>
                 <div>
-                  <GuideFocus stepId="requestor.account.profileImage">
-                    <div className="grid grid-cols-5 gap-2">
-                      {avatarOptions.map((url) => (
-                        <button
-                          key={url}
-                          type="button"
-                          className={cn(
-                            "rounded-full border bg-white/80 p-0.5 transition-colors",
-                            accountData.profileImage === url
-                              ? "border-primary"
-                              : "border-border hover:border-muted-foreground/40",
-                          )}
-                          onClick={() => {
-                            setAccountData((prev) => ({
-                              ...prev,
-                              profileImage: url,
-                            }));
-                            scheduleSave();
-                            if (
-                              isStepActive("requestor.account.profileImage")
-                            ) {
-                              completeStep("requestor.account.profileImage");
-                            }
-                          }}
-                        >
-                          <img
-                            src={url}
-                            alt=""
-                            className="h-10 w-10 rounded-full bg-slate-100"
-                          />
-                        </button>
-                      ))}
-
+                  <div className="grid grid-cols-5 gap-2">
+                    {avatarOptions.map((url) => (
                       <button
+                        key={url}
                         type="button"
                         className={cn(
                           "rounded-full border bg-white/80 p-0.5 transition-colors",
-                          "border-border hover:border-muted-foreground/40",
+                          accountData.profileImage === url
+                            ? "border-primary"
+                            : "border-border hover:border-muted-foreground/40",
                         )}
-                        onClick={() => setAvatarNonce((v) => v + 1)}
+                        onClick={() => {
+                          setAccountData((prev) => ({
+                            ...prev,
+                            profileImage: url,
+                          }));
+                          scheduleSave();
+                        }}
                       >
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80">
-                          <RefreshCcw className="h-4 w-4 text-muted-foreground" />
-                        </div>
+                        <img
+                          src={url}
+                          alt=""
+                          className="h-10 w-10 rounded-full bg-slate-100"
+                        />
                       </button>
-                    </div>
-                  </GuideFocus>
+                    ))}
+
+                    <button
+                      type="button"
+                      className={cn(
+                        "rounded-full border bg-white/80 p-0.5 transition-colors",
+                        "border-border hover:border-muted-foreground/40",
+                      )}
+                      onClick={() => setAvatarNonce((v) => v + 1)}
+                    >
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80">
+                        <RefreshCcw className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1027,55 +948,41 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
 
               <div className="space-y-2">
                 <Label htmlFor="phone">휴대폰번호</Label>
-                <GuideFocus stepId="requestor.phone.number">
-                  <Input
-                    ref={phoneInputRef}
-                    id="phone"
-                    type="tel"
-                    inputMode="tel"
-                    placeholder="01012345678"
-                    value={accountData.phoneNationalNumber}
-                    className={cn(
-                      "h-10",
-                      fieldErrors.phone || !phoneValidation.ok
-                        ? "border-destructive focus-visible:ring-destructive"
-                        : "",
-                    )}
-                    onChange={(e) => {
-                      setFieldErrors((prev) => ({ ...prev, phone: undefined }));
-                      setAccountData((prev) => ({
-                        ...prev,
-                        phoneNationalNumber: e.target.value,
-                      }));
-                      setPhoneVerifiedAt(null);
-                      setVerificationSent(false);
-                      setTimeLeft(0);
-                      setPhoneVerificationCode("");
-                    }}
-                    onBlur={() => {
-                      const savedKey = JSON.stringify({
-                        name: accountData.name,
-                        phoneNumber: phoneValidation.normalized,
-                        profileImage: accountData.profileImage,
-                      });
-                      if (savedKey !== lastSavedKeyRef.current) {
-                        scheduleSave();
-                      }
-                    }}
-                    onKeyDown={async (e) => {
-                      if (!isStepActive("requestor.phone.number")) return;
-                      if (e.key !== "Enter") return;
-                      e.preventDefault();
-                      if (!canSendPhoneVerification) return;
-                      const ok = await handleSendPhoneVerification();
-                      if (!ok) return;
-                      completeStep("requestor.phone.number");
-                      setTimeout(() => {
-                        phoneCodeInputRef.current?.focus();
-                      }, 0);
-                    }}
-                  />
-                </GuideFocus>
+                <Input
+                  ref={phoneInputRef}
+                  id="phone"
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="01012345678"
+                  value={accountData.phoneNationalNumber}
+                  className={cn(
+                    "h-10",
+                    fieldErrors.phone || !phoneValidation.ok
+                      ? "border-destructive focus-visible:ring-destructive"
+                      : "",
+                  )}
+                  onChange={(e) => {
+                    setFieldErrors((prev) => ({ ...prev, phone: undefined }));
+                    setAccountData((prev) => ({
+                      ...prev,
+                      phoneNationalNumber: e.target.value,
+                    }));
+                    setPhoneVerifiedAt(null);
+                    setVerificationSent(false);
+                    setTimeLeft(0);
+                    setPhoneVerificationCode("");
+                  }}
+                  onBlur={() => {
+                    const savedKey = JSON.stringify({
+                      name: accountData.name,
+                      phoneNumber: phoneValidation.normalized,
+                      profileImage: accountData.profileImage,
+                    });
+                    if (savedKey !== lastSavedKeyRef.current) {
+                      scheduleSave();
+                    }
+                  }}
+                />
               </div>
 
               <div className="space-y-2">
@@ -1093,24 +1000,24 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                     </Button>
                   ) : verificationSent ? (
                     <div className="flex gap-2 h-10">
-                      <GuideFocus stepId="requestor.phone.code">
-                        <Input
-                          ref={phoneCodeInputRef}
-                          value={phoneVerificationCode}
-                          onChange={(e) =>
-                            setPhoneVerificationCode(e.target.value)
-                          }
-                          onKeyDown={(e) => {
-                            if (!isStepActive("requestor.phone.code")) return;
-                            if (e.key !== "Enter") return;
-                            e.preventDefault();
-                            handleVerifyPhoneVerification();
-                          }}
-                          inputMode="numeric"
-                          placeholder="인증번호"
-                          className="flex-1 h-10"
-                        />
-                      </GuideFocus>
+                      <Input
+                        ref={phoneCodeInputRef}
+                        value={phoneVerificationCode}
+                        onChange={(e) =>
+                          setPhoneVerificationCode(
+                            e.target.value.replace(/\D/g, "").slice(0, 4),
+                          )
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key !== "Enter") return;
+                          e.preventDefault();
+                          handleVerifyPhoneVerification();
+                        }}
+                        inputMode="numeric"
+                        placeholder="0000"
+                        className="flex-1 h-10"
+                        maxLength={4}
+                      />
                       <div className="flex items-center gap-2">
                         <Button
                           type="button"

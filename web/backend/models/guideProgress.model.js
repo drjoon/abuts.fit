@@ -11,7 +11,7 @@ const guideStepSchema = new mongoose.Schema(
     },
     doneAt: { type: Date, default: null },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const guideProgressSchema = new mongoose.Schema(
@@ -34,7 +34,7 @@ const guideProgressSchema = new mongoose.Schema(
     },
     finishedAt: { type: Date, default: null },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 guideProgressSchema.index({ user: 1, tourId: 1 }, { unique: true });
@@ -59,6 +59,15 @@ guideProgressSchema.statics.getDefaultSteps = (tourIdRaw) => {
     ].map((stepId) => ({ stepId, status: "pending", doneAt: null }));
   }
 
+  if (tourId === "requestor-wizard") {
+    return [
+      "wizard.profile",
+      "wizard.phone",
+      "wizard.role",
+      "wizard.organization",
+    ].map((stepId) => ({ stepId, status: "pending", doneAt: null }));
+  }
+
   if (tourId === "requestor-new-request") {
     return [
       "requestor.new_request.upload",
@@ -72,7 +81,7 @@ guideProgressSchema.statics.getDefaultSteps = (tourIdRaw) => {
 
 guideProgressSchema.statics.ensureForUser = async function ensureForUser(
   userId,
-  tourId
+  tourId,
 ) {
   const normalizedTourId = String(tourId || "").trim();
 

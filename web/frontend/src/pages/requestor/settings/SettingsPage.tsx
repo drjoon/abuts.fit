@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
 import {
   SettingsScaffold,
   type SettingsTabDef,
@@ -17,6 +16,7 @@ import { User, Building2, CreditCard, Bell, Truck, Users } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { RequestorSecurity } from "./Security";
 import { Shield } from "lucide-react";
+import { useToast } from "@/shared/hooks/use-toast";
 
 type TabKey =
   | "account"
@@ -30,27 +30,7 @@ type TabKey =
 export const RequestorSettingsPage = () => {
   const { user, token } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
-  const {
-    active: guideActive,
-    activeTourId,
-    steps: guideSteps,
-    currentStepIndex,
-  } = useGuideTour();
-
-  const guideHighlightTab = useMemo((): TabKey | undefined => {
-    if (!guideActive) return undefined;
-    if (activeTourId !== "requestor-onboarding") return undefined;
-    const stepId = guideSteps[currentStepIndex]?.id;
-    if (!stepId) return undefined;
-    if (stepId.startsWith("requestor.business")) return "business";
-    if (
-      stepId.startsWith("requestor.account") ||
-      stepId.startsWith("requestor.phone")
-    ) {
-      return "account";
-    }
-    return undefined;
-  }, [activeTourId, currentStepIndex, guideActive, guideSteps]);
+  const { toast } = useToast();
 
   const [membership, setMembership] = useState<
     "owner" | "member" | "pending" | "none" | "unknown"
@@ -70,6 +50,11 @@ export const RequestorSettingsPage = () => {
     };
   }, [token, user?.companyName, user?.email, user?.name, user?.role, user]);
 
+  const organizationType = useMemo(() => {
+    const role = String(user?.role || "requestor").trim();
+    return role || "requestor";
+  }, [user?.role]);
+
   useEffect(() => {
     const load = async () => {
       if (!token) {
@@ -82,7 +67,9 @@ export const RequestorSettingsPage = () => {
       setLoadingMembership(true);
       try {
         const res = await request<any>({
-          path: "/api/requestor-organizations/me",
+          path: `/api/requestor-organizations/me?organizationType=${encodeURIComponent(
+            organizationType,
+          )}`,
           method: "GET",
           token,
           headers: mockHeaders,
@@ -110,18 +97,7 @@ export const RequestorSettingsPage = () => {
     };
 
     void load();
-  }, [mockHeaders, token]);
-
-  useEffect(() => {
-    return;
-  }, [
-    activeTourId,
-    currentStepIndex,
-    guideActive,
-    guideSteps,
-    searchParams,
-    setSearchParams,
-  ]);
+  }, [mockHeaders, organizationType, token]);
 
   const tabs: SettingsTabDef[] = useMemo(() => {
     const base: SettingsTabDef[] = [
@@ -189,17 +165,11 @@ export const RequestorSettingsPage = () => {
     return <SettingsTabsSkeleton />;
   }
 
-  const highlightTabKey =
-    guideHighlightTab && guideHighlightTab === activeTab
-      ? guideHighlightTab
-      : undefined;
-
   return (
     <>
       <SettingsScaffold
         tabs={tabs}
         activeTab={activeTab}
-        highlightTabKey={highlightTabKey}
         onTabChange={(next) => {
           const nextParams = new URLSearchParams(searchParams);
           nextParams.set("tab", next);

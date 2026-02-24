@@ -9,7 +9,6 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { NewChatWidget } from "@/features/chat/components/NewChatWidget";
 import { Suspense, lazy, useEffect } from "react";
 import { loadRulesFromBackend } from "@/shared/filename/filenameRules";
-import { GuideTourProvider } from "@/features/guidetour/GuideTourProvider";
 import { useSocket } from "@/shared/hooks/useSocket";
 
 const Index = lazy(() => import("./pages/public/Index"));
@@ -58,6 +57,13 @@ const SettingsPage = lazy(() =>
   import("./pages/dashboard/SettingsPage").then((m) => ({
     default: m.SettingsPage,
   })),
+);
+const RequestorOnboardingWizardPage = lazy(() =>
+  import("./pages/requestor/wizard/RequestorOnboardingWizardPage").then(
+    (m) => ({
+      default: m.RequestorOnboardingWizardPage,
+    }),
+  ),
 );
 import { AdminUserManagement } from "@/pages/admin/users/AdminUserManagement";
 import { AdminRequestMonitoring } from "@/pages/admin/requests/AdminRequestMonitoring";
@@ -196,147 +202,148 @@ const App = () => {
         <BrowserRouter>
           <Toaster />
           <Sonner />
-          <GuideTourProvider>
-            <AppLayout>
-              <Suspense fallback={<LoadingScreen />}>
-                <Routes>
-                  <Route path="/" element={<Index />} />
-                  <Route path="/login" element={<LoginPage />} />
-                  <Route path="/signup" element={<SignupPage />} />
-                  <Route path="/signup/staff" element={<SignupStaffPage />} />
+          <AppLayout>
+            <Suspense fallback={<LoadingScreen />}>
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/signup" element={<SignupPage />} />
+                <Route path="/signup/staff" element={<SignupStaffPage />} />
+                <Route
+                  path="/forgot-password"
+                  element={<ForgotPasswordPage />}
+                />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
+                <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
+                <Route path="/help" element={<HelpPage />} />
+                <Route path="/contact" element={<ContactPage />} />
+                <Route path="/terms" element={<TermsPage />} />
+                <Route path="/privacy" element={<PrivacyPage />} />
+                <Route path="/security" element={<SecurityPage />} />
+                <Route path="/cookies" element={<CookiesPage />} />
+                <Route path="/service" element={<ServicePage />} />
+                <Route path="/business" element={<BusinessPage />} />
+                <Route path="/credits" element={<CreditsPage />} />
+                <Route path="/refund-policy" element={<RefundPolicyPage />} />
+                <Route
+                  path="/dashboard"
+                  element={
+                    <ProtectedRoute>
+                      <DashboardLayout />
+                    </ProtectedRoute>
+                  }
+                >
+                  <Route index element={<DashboardHome />} />
+                  <Route path="new-request" element={<NewRequestPage />} />
+                  <Route path="new-request/:id" element={<NewRequestPage />} />
                   <Route
-                    path="/forgot-password"
-                    element={<ForgotPasswordPage />}
-                  />
-                  <Route
-                    path="/reset-password"
-                    element={<ResetPasswordPage />}
-                  />
-                  <Route
-                    path="/oauth/callback"
-                    element={<OAuthCallbackPage />}
-                  />
-                  <Route path="/help" element={<HelpPage />} />
-                  <Route path="/contact" element={<ContactPage />} />
-                  <Route path="/terms" element={<TermsPage />} />
-                  <Route path="/privacy" element={<PrivacyPage />} />
-                  <Route path="/security" element={<SecurityPage />} />
-                  <Route path="/cookies" element={<CookiesPage />} />
-                  <Route path="/service" element={<ServicePage />} />
-                  <Route path="/business" element={<BusinessPage />} />
-                  <Route path="/credits" element={<CreditsPage />} />
-                  <Route path="/refund-policy" element={<RefundPolicyPage />} />
-                  <Route
-                    path="/dashboard"
+                    path="worksheet"
                     element={
-                      <ProtectedRoute>
-                        <DashboardLayout />
-                      </ProtectedRoute>
+                      <RoleProtectedRoute roles={["manufacturer"]}>
+                        <ManufacturerWorksheetPage />
+                      </RoleProtectedRoute>
                     }
-                  >
-                    <Route index element={<DashboardHome />} />
-                    <Route path="new-request" element={<NewRequestPage />} />
-                    <Route
-                      path="new-request/:id"
-                      element={<NewRequestPage />}
-                    />
-                    <Route
-                      path="worksheet"
-                      element={
-                        <RoleProtectedRoute roles={["manufacturer"]}>
-                          <ManufacturerWorksheetPage />
-                        </RoleProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="cnc"
-                      element={
-                        <RoleProtectedRoute roles={["manufacturer"]}>
-                          <CncDashboardPage />
-                        </RoleProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="printer"
-                      element={
-                        <RoleProtectedRoute roles={["manufacturer"]}>
-                          <CncDashboardPage />
-                        </RoleProtectedRoute>
-                      }
-                    />
-                    <Route path="users" element={<AdminUserManagement />} />
-                    {/* 호환용: 기존 경로 유지 */}
-                    <Route
-                      path="user-management"
-                      element={<AdminUserManagement />}
-                    />
-                    <Route
-                      path="monitoring"
-                      element={<AdminRequestMonitoring />}
-                    />
-                    {/* 호환용: 기존 경로 유지 */}
-                    <Route
-                      path="request-monitoring"
-                      element={<AdminRequestMonitoring />}
-                    />
-                    <Route path="mail" element={<AdminMailPage />} />
-                    <Route path="sms" element={<AdminSmsPage />} />
-                    <Route
-                      path="chat-management"
-                      element={<AdminChatManagement />}
-                    />
-                    <Route
-                      path="tax-invoices"
-                      element={
-                        <RoleProtectedRoute roles={["admin"]}>
-                          <AdminTaxInvoices />
-                        </RoleProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="security-settings"
-                      element={<AdminSecurity />}
-                    />
-                    <Route
-                      path="organization-verification"
-                      element={
-                        <RoleProtectedRoute roles={["admin"]}>
-                          <AdminOrganizationVerification />
-                        </RoleProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="credits"
-                      element={
-                        <RoleProtectedRoute roles={["admin"]}>
-                          <AdminCreditPage />
-                        </RoleProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="payments"
-                      element={
-                        <RoleProtectedRoute roles={["manufacturer"]}>
-                          <ManufacturerPaymentPage />
-                        </RoleProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="referral-groups"
-                      element={
-                        <RoleProtectedRoute roles={["admin", "requestor"]}>
-                          <ReferralGroupsRoute />
-                        </RoleProtectedRoute>
-                      }
-                    />
-                    <Route path="settings" element={<SettingsPage />} />
-                  </Route>
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </Suspense>
-              <NewChatWidget />
-            </AppLayout>
-          </GuideTourProvider>
+                  />
+                  <Route
+                    path="cnc"
+                    element={
+                      <RoleProtectedRoute roles={["manufacturer"]}>
+                        <CncDashboardPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="printer"
+                    element={
+                      <RoleProtectedRoute roles={["manufacturer"]}>
+                        <CncDashboardPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route path="users" element={<AdminUserManagement />} />
+                  {/* 호환용: 기존 경로 유지 */}
+                  <Route
+                    path="user-management"
+                    element={<AdminUserManagement />}
+                  />
+                  <Route
+                    path="monitoring"
+                    element={<AdminRequestMonitoring />}
+                  />
+                  {/* 호환용: 기존 경로 유지 */}
+                  <Route
+                    path="request-monitoring"
+                    element={<AdminRequestMonitoring />}
+                  />
+                  <Route path="mail" element={<AdminMailPage />} />
+                  <Route path="sms" element={<AdminSmsPage />} />
+                  <Route
+                    path="chat-management"
+                    element={<AdminChatManagement />}
+                  />
+                  <Route
+                    path="tax-invoices"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminTaxInvoices />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route path="security-settings" element={<AdminSecurity />} />
+                  <Route
+                    path="organization-verification"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminOrganizationVerification />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="credits"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminCreditPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="payments"
+                    element={
+                      <RoleProtectedRoute roles={["manufacturer"]}>
+                        <ManufacturerPaymentPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="referral-groups"
+                    element={
+                      <RoleProtectedRoute roles={["admin", "requestor"]}>
+                        <ReferralGroupsRoute />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="wizard"
+                    element={
+                      <RoleProtectedRoute
+                        roles={[
+                          "requestor",
+                          "salesman",
+                          "manufacturer",
+                          "admin",
+                        ]}
+                      >
+                        <RequestorOnboardingWizardPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route path="settings" element={<SettingsPage />} />
+                </Route>
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
+            <NewChatWidget />
+          </AppLayout>
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>

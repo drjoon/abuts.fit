@@ -1,11 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/shared/ui/cn";
-import { GuideFocus } from "@/features/guidetour/GuideFocus";
-import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
+import { GuideFocus } from "@/shared/ui/GuideFocus";
 import {
   BusinessData,
   LicenseExtracted,
@@ -54,7 +53,6 @@ export const BusinessForm = ({
   onAutoSave,
   renderActions,
 }: BusinessFormProps) => {
-  const { isStepActive, completeStep, setStepCompleted } = useGuideTour();
   const repNameRef = useRef<HTMLInputElement | null>(null);
   const startDateRef = useRef<HTMLInputElement | null>(null);
   const companyNameRef = useRef<HTMLInputElement | null>(null);
@@ -127,7 +125,7 @@ export const BusinessForm = ({
 
   const handleNav = (
     e: React.KeyboardEvent<HTMLInputElement>,
-    current: FieldKey
+    current: FieldKey,
   ) => {
     if ((e.nativeEvent as any)?.isComposing) return false;
     const isNav = e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
@@ -143,113 +141,11 @@ export const BusinessForm = ({
     next.current?.focus();
   };
 
-  useEffect(() => {
-    if (!isStepActive("requestor.business.phoneNumber")) return;
-    if (String(businessData.phone || "").trim()) return;
-    requestAnimationFrame(() => {
-      phoneRef.current?.focus();
-    });
-  }, [businessData.phone, isStepActive]);
-
-  useEffect(() => {
-    if (!isStepActive("requestor.business.email")) return;
-    if (String(extracted.email || "").trim()) return;
-    requestAnimationFrame(() => {
-      emailRef.current?.focus();
-    });
-  }, [extracted.email, isStepActive]);
-
-  // 초기값이 이미 있으면 가이드 포커스를 완료 상태로 설정
-  useEffect(() => {
-    const name = String(businessData.companyName || "").trim();
-    if (name.length >= 2) {
-      setStepCompleted("requestor.business.companyName", true);
-    }
-  }, [businessData.companyName, setStepCompleted]);
-
-  // 채워진 칸은 가이드 포커스 완료 처리하여 이동하지 않도록
-  useEffect(() => {
-    const fields: { step: string; value: string; valid: boolean }[] = [
-      {
-        step: "requestor.business.representativeName",
-        value: String(extracted.representativeName || "").trim(),
-        valid: String(extracted.representativeName || "").trim().length >= 2,
-      },
-      {
-        step: "requestor.business.startDate",
-        value: String(extracted.startDate || "").trim(),
-        valid: Boolean(
-          extracted.startDate && isValidStartDate(extracted.startDate)
-        ),
-      },
-      {
-        step: "requestor.business.companyName",
-        value: String(businessData.companyName || "").trim(),
-        valid: String(businessData.companyName || "").trim().length >= 2,
-      },
-      {
-        step: "requestor.business.phoneNumber",
-        value: String(businessData.phone || "").trim(),
-        valid: Boolean(
-          businessData.phone && isValidPhoneNumber(businessData.phone)
-        ),
-      },
-      {
-        step: "requestor.business.businessNumber",
-        value: String(businessData.businessNumber || "").trim(),
-        valid: Boolean(
-          businessData.businessNumber &&
-            isValidBusinessNumber(businessData.businessNumber)
-        ),
-      },
-      {
-        step: "requestor.business.businessType",
-        value: String(extracted.businessType || "").trim(),
-        valid: String(extracted.businessType || "").trim().length >= 2,
-      },
-      {
-        step: "requestor.business.businessItem",
-        value: String(extracted.businessItem || "").trim(),
-        valid: String(extracted.businessItem || "").trim().length >= 2,
-      },
-      {
-        step: "requestor.business.email",
-        value: String(extracted.email || "").trim(),
-        valid: Boolean(extracted.email && isValidEmail(extracted.email)),
-      },
-      {
-        step: "requestor.business.address",
-        value: String(businessData.address || "").trim(),
-        valid: String(businessData.address || "").trim().length >= 5,
-      },
-    ];
-
-    fields.forEach(({ step, valid, value }) => {
-      if (value && valid) {
-        setStepCompleted(step, true);
-      }
-    });
-  }, [
-    businessData.address,
-    businessData.businessNumber,
-    businessData.companyName,
-    businessData.phone,
-    extracted.businessItem,
-    extracted.businessType,
-    extracted.email,
-    extracted.representativeName,
-    extracted.startDate,
-    setStepCompleted,
-  ]);
-
   const disabled =
     licenseDeleteLoading ||
     licenseStatus === "uploading" ||
     licenseStatus === "processing" ||
     (membership !== "owner" && membership !== "none");
-
-  const guideMuted =
-    licenseStatus === "uploading" || licenseStatus === "processing";
 
   return (
     <div className="space-y-6">
@@ -263,17 +159,13 @@ export const BusinessForm = ({
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="space-y-2">
             <Label htmlFor="repName">대표자명</Label>
-            <GuideFocus
-              stepId="requestor.business.representativeName"
-              className="rounded-xl p-1"
-              muted={guideMuted}
-            >
+            <GuideFocus className="rounded-xl p-1">
               <Input
                 id="repName"
                 ref={repNameRef}
                 className={cn(
                   errors.representativeName &&
-                    "border-destructive focus-visible:ring-destructive"
+                    "border-destructive focus-visible:ring-destructive",
                 )}
                 value={extracted.representativeName || ""}
                 onChange={(e) => {
@@ -296,10 +188,6 @@ export const BusinessForm = ({
                   }
                   if (e.key !== "Enter") return;
                   e.preventDefault();
-                  if (isStepActive("requestor.business.representativeName")) {
-                    if (v.length < 2) return;
-                    completeStep("requestor.business.representativeName");
-                  }
                   focusNext(startDateRef);
                 }}
                 onBlur={() => {
@@ -317,7 +205,7 @@ export const BusinessForm = ({
               inputMode="numeric"
               className={cn(
                 errors.startDate &&
-                  "border-destructive focus-visible:ring-destructive"
+                  "border-destructive focus-visible:ring-destructive",
               )}
               value={extracted.startDate || ""}
               onChange={(e) => {
@@ -347,31 +235,19 @@ export const BusinessForm = ({
               }}
               onBlur={() => {
                 if (disabled) return;
-                if (isStepActive("requestor.business.representativeName")) {
-                  const v = String(extracted.startDate || "").trim();
-                  if (v && !isValidStartDate(v)) {
-                    setErrors((prev) => ({ ...prev, startDate: true }));
-                    startDateRef.current?.focus();
-                    return;
-                  }
-                }
                 onAutoSave?.();
               }}
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="orgName">기공소명</Label>
-            <GuideFocus
-              stepId="requestor.business.companyName"
-              className="rounded-xl p-1"
-              muted={guideMuted}
-            >
+            <GuideFocus className="rounded-xl p-1">
               <Input
                 id="orgName"
                 ref={companyNameRef}
                 className={cn(
                   errors.companyName &&
-                    "border-destructive focus-visible:ring-destructive"
+                    "border-destructive focus-visible:ring-destructive",
                 )}
                 value={businessData.companyName}
                 onChange={(e) => {
@@ -392,10 +268,6 @@ export const BusinessForm = ({
                   }
                   if (e.key !== "Enter") return;
                   e.preventDefault();
-                  if (isStepActive("requestor.business.companyName")) {
-                    if (v.length < 2) return;
-                    completeStep("requestor.business.companyName");
-                  }
                   focusNext(phoneRef);
                 }}
                 onBlur={() => {
@@ -407,17 +279,13 @@ export const BusinessForm = ({
           </div>
           <div className="space-y-2">
             <Label htmlFor="orgPhone">전화번호</Label>
-            <GuideFocus
-              stepId="requestor.business.phoneNumber"
-              className="rounded-xl p-1"
-              muted={guideMuted}
-            >
+            <GuideFocus className="rounded-xl p-1">
               <Input
                 id="orgPhone"
                 ref={phoneRef}
                 className={cn(
                   errors.phone &&
-                    "border-destructive focus-visible:ring-destructive"
+                    "border-destructive focus-visible:ring-destructive",
                 )}
                 value={businessData.phone}
                 onChange={(e) => {
@@ -432,10 +300,6 @@ export const BusinessForm = ({
                     ...prev,
                     phone: invalid,
                   }));
-                  setStepCompleted(
-                    "requestor.business.phoneNumber",
-                    hasValue && !invalid
-                  );
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
@@ -447,31 +311,10 @@ export const BusinessForm = ({
                   }
                   if (e.key !== "Enter") return;
                   e.preventDefault();
-                  if (isStepActive("requestor.business.phoneNumber")) {
-                    if (!isValidPhoneNumber(v)) return;
-                    completeStep("requestor.business.phoneNumber");
-                  }
                   focusNextEmpty("phone");
                 }}
                 onBlur={() => {
                   if (disabled) return;
-
-                  if (isStepActive("requestor.business.phoneNumber")) {
-                    const v = String(businessData.phone || "").trim();
-                    if (!v) {
-                      phoneRef.current?.focus();
-                      return;
-                    }
-                    if (!isValidPhoneNumber(v)) {
-                      phoneRef.current?.focus();
-                      return;
-                    }
-                    completeStep("requestor.business.phoneNumber");
-                    setTimeout(() => {
-                      focusNextEmpty("phone");
-                    }, 0);
-                  }
-
                   onAutoSave?.();
                 }}
               />
@@ -480,17 +323,13 @@ export const BusinessForm = ({
 
           <div className="space-y-2">
             <Label htmlFor="bizNo">사업자등록번호</Label>
-            <GuideFocus
-              stepId="requestor.business.businessNumber"
-              className="rounded-xl p-1"
-              muted={guideMuted}
-            >
+            <GuideFocus className="rounded-xl p-1">
               <Input
                 ref={bizNoRef}
                 id="bizNo"
                 className={cn(
                   errors.businessNumber &&
-                    "border-destructive focus-visible:ring-destructive"
+                    "border-destructive focus-visible:ring-destructive",
                 )}
                 value={businessData.businessNumber}
                 onChange={(e) => {
@@ -505,10 +344,6 @@ export const BusinessForm = ({
                       ? !isValidBusinessNumber(nextValue)
                       : false,
                   }));
-                  setStepCompleted(
-                    "requestor.business.businessNumber",
-                    !!nextValue && isValidBusinessNumber(nextValue)
-                  );
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
@@ -520,10 +355,6 @@ export const BusinessForm = ({
                   }
                   if (e.key !== "Enter") return;
                   e.preventDefault();
-                  if (isStepActive("requestor.business.businessNumber")) {
-                    if (!isValidBusinessNumber(v)) return;
-                    completeStep("requestor.business.businessNumber");
-                  }
                   focusNext(bizTypeRef);
                 }}
                 onBlur={() => {
@@ -535,17 +366,13 @@ export const BusinessForm = ({
           </div>
           <div className="space-y-2">
             <Label htmlFor="bizType">업태</Label>
-            <GuideFocus
-              stepId="requestor.business.businessType"
-              className="rounded-xl p-1"
-              muted={guideMuted}
-            >
+            <GuideFocus className="rounded-xl p-1">
               <Input
                 id="bizType"
                 ref={bizTypeRef}
                 className={cn(
                   errors.businessType &&
-                    "border-destructive focus-visible:ring-destructive"
+                    "border-destructive focus-visible:ring-destructive",
                 )}
                 value={extracted.businessType || ""}
                 onChange={(e) => {
@@ -568,10 +395,6 @@ export const BusinessForm = ({
                   }
                   if (e.key !== "Enter") return;
                   e.preventDefault();
-                  if (isStepActive("requestor.business.businessType")) {
-                    if (v.length < 2) return;
-                    completeStep("requestor.business.businessType");
-                  }
                   focusNext(bizItemRef);
                 }}
                 onBlur={() => {
@@ -583,17 +406,13 @@ export const BusinessForm = ({
           </div>
           <div className="space-y-2">
             <Label htmlFor="bizItem">종목</Label>
-            <GuideFocus
-              stepId="requestor.business.businessItem"
-              className="rounded-xl p-1"
-              muted={guideMuted}
-            >
+            <GuideFocus className="rounded-xl p-1">
               <Input
                 id="bizItem"
                 ref={bizItemRef}
                 className={cn(
                   errors.businessItem &&
-                    "border-destructive focus-visible:ring-destructive"
+                    "border-destructive focus-visible:ring-destructive",
                 )}
                 value={extracted.businessItem || ""}
                 onChange={(e) => {
@@ -616,10 +435,6 @@ export const BusinessForm = ({
                   }
                   if (e.key !== "Enter") return;
                   e.preventDefault();
-                  if (isStepActive("requestor.business.businessItem")) {
-                    if (v.length < 2) return;
-                    completeStep("requestor.business.businessItem");
-                  }
                   focusNext(emailRef);
                 }}
                 onBlur={() => {
@@ -631,18 +446,14 @@ export const BusinessForm = ({
           </div>
           <div className="space-y-2">
             <Label htmlFor="taxEmail">세금계산서 이메일</Label>
-            <GuideFocus
-              stepId="requestor.business.email"
-              className="rounded-xl p-1"
-              muted={guideMuted}
-            >
+            <GuideFocus className="rounded-xl p-1">
               <Input
                 id="taxEmail"
                 type="email"
                 ref={emailRef}
                 className={cn(
                   errors.email &&
-                    "border-destructive focus-visible:ring-destructive"
+                    "border-destructive focus-visible:ring-destructive",
                 )}
                 value={extracted.email || ""}
                 onChange={(e) => {
@@ -653,7 +464,6 @@ export const BusinessForm = ({
                   }));
                   const invalid = !isValidEmail(e.target.value);
                   setErrors((prev) => ({ ...prev, email: invalid }));
-                  setStepCompleted("requestor.business.email", !invalid);
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
@@ -672,30 +482,12 @@ export const BusinessForm = ({
                   }
                   if (e.key !== "Enter") return;
                   e.preventDefault();
-                  if (isStepActive("requestor.business.email")) {
-                    if (!isValidEmail(v)) return;
-                    completeStep("requestor.business.email");
-                  }
                   // 이메일이 마지막 빈 칸이면 submit 실행, 아니면 다음으로 이동
                   if (focusNextEmptyAndMaybeSubmit("email")) return;
                   focusNext(addressRef);
                 }}
                 onBlur={() => {
                   if (disabled) return;
-
-                  if (isStepActive("requestor.business.email")) {
-                    const v = String(extracted.email || "").trim();
-                    if (!v || !isValidEmail(v)) {
-                      setStepCompleted("requestor.business.email", false);
-                      emailRef.current?.focus();
-                      return;
-                    }
-                    completeStep("requestor.business.email");
-                    setTimeout(() => {
-                      focusNext(addressRef);
-                    }, 0);
-                  }
-
                   onAutoSave?.();
                 }}
               />
@@ -706,11 +498,7 @@ export const BusinessForm = ({
 
       <div className="space-y-2">
         <Label htmlFor="address">주소</Label>
-        <GuideFocus
-          stepId="requestor.business.address"
-          className="rounded-xl p-1"
-          muted={guideMuted}
-        >
+        <GuideFocus className="rounded-xl p-1">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div className="md:col-span-3">
               <Input
@@ -718,7 +506,7 @@ export const BusinessForm = ({
                 ref={addressRef}
                 className={cn(
                   errors.address &&
-                    "border-destructive focus-visible:ring-destructive"
+                    "border-destructive focus-visible:ring-destructive",
                 )}
                 value={businessData.address}
                 onChange={(e) => {
@@ -737,10 +525,6 @@ export const BusinessForm = ({
                     // 주소는 Enter 시 바로 제출
                     if (e.key === "Enter") {
                       e.preventDefault();
-                      if (isStepActive("requestor.business.address")) {
-                        if (v.length < 5) return;
-                        completeStep("requestor.business.address");
-                      }
                       onSave();
                       return;
                     }

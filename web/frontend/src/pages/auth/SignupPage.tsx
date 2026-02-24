@@ -1,23 +1,38 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { SignupWizardStep1 } from "./signup/SignupWizardStep1";
 import { SignupWizardStep2 } from "./signup/SignupWizardStep2";
 import { SignupSocialWizardStep1 } from "./signup/SignupSocialWizardStep1";
 import { SignupWizardAccountStep } from "./signup/SignupWizardAccountStep";
 
 export const SignupPage = () => {
-  const { token, user, loginWithToken } = useAuthStore();
+  const { token, user, loginWithToken, logout } = useAuthStore();
   const [formData, setFormData] = useState({
     name: "",
     email: "",
     password: "",
     confirmPassword: "",
   });
+  const [accountErrors, setAccountErrors] = useState<
+    Partial<Record<"name" | "password" | "confirmPassword", string>>
+  >({});
+  const [accountFocusField, setAccountFocusField] = useState<
+    "name" | "password" | "confirmPassword" | null
+  >(null);
   const [signupRole, setSignupRole] = useState<"requestor" | "salesman">(
     "requestor",
   );
@@ -33,9 +48,19 @@ export const SignupPage = () => {
   const [isEmailStatusChecking, setIsEmailStatusChecking] = useState(false);
   const [lastEmailVerificationSentAt, setLastEmailVerificationSentAt] =
     useState<Date | null>(null);
+  const [showSetupConfirm, setShowSetupConfirm] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
+  const [signupSessionId] = useState(() => {
+    const existing = sessionStorage.getItem("signupSessionId");
+    if (existing) return existing;
+    const next = `signup-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    sessionStorage.setItem("signupSessionId", next);
+    return next;
+  });
   const mode = (searchParams.get("mode") || "").trim();
   const isSocialCompleteMode = mode === "social_complete";
   const isSocialNewMode = mode === "social_new";
@@ -47,6 +72,21 @@ export const SignupPage = () => {
     provider: string;
     providerUserId: string;
   } | null>(null);
+
+  const markSetupWizardRequired = useCallback(
+    (role?: string | null) => {
+      if (role !== "requestor" && role !== "salesman") return false;
+      setShowSetupConfirm(true);
+      navigate("/dashboard/wizard?mode=account", { replace: true });
+      return true;
+    },
+    [navigate],
+  );
+
+  const handleConfirmSetup = useCallback(() => {
+    setShowSetupConfirm(false);
+    navigate("/dashboard/wizard?mode=account", { replace: true });
+  }, [navigate]);
 
   const referredByReferralCode = useMemo(() => {
     const ref = searchParams.get("ref");
@@ -163,11 +203,20 @@ export const SignupPage = () => {
     return isObjectId ? v : undefined;
   }, [refInput]);
 
+  const referredByEmail = useMemo(() => {
+    const v = String(refInput || "").trim();
+    if (!v) return undefined;
+    if (/^[0-9a-fA-F]{24}$/.test(v)) return undefined;
+    return /@/.test(v) ? v.toLowerCase() : undefined;
+  }, [refInput]);
+
   const referredByCode = useMemo(() => {
     const v = String(refInput || "").trim();
     if (!v) return undefined;
     const isObjectId = /^[0-9a-fA-F]{24}$/.test(v);
-    return isObjectId ? undefined : v;
+    if (isObjectId) return undefined;
+    if (/@/.test(v)) return undefined;
+    return v;
   }, [refInput]);
 
   // LocalStorage에서 폼 데이터 및 이메일 인증 정보 복구
@@ -199,6 +248,10 @@ export const SignupPage = () => {
     if (emailVerified) {
       try {
         const parsed = JSON.parse(emailVerified);
+        if (parsed.sessionId !== signupSessionId) {
+          localStorage.removeItem("signupEmailVerified");
+          return;
+        }
         if (parsed.email && parsed.verifiedAt) {
           setFormData((prev) => ({ ...prev, email: parsed.email }));
           setEmailVerifiedAt(new Date(parsed.verifiedAt));
@@ -207,7 +260,7 @@ export const SignupPage = () => {
         console.error("이메일 인증 정보 복구 실패:", e);
       }
     }
-  }, [isSocialCompleteMode, isSocialNewMode]);
+  }, [isSocialCompleteMode, isSocialNewMode, signupSessionId]);
 
   // 폼 데이터를 LocalStorage에 저장
   useEffect(() => {
@@ -252,12 +305,23 @@ export const SignupPage = () => {
   }, [isSocialNewMode]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const field = e.target.name as
+      | "name"
+      | "email"
+      | "password"
+      | "confirmPassword";
     if (e.target.name === "email") {
       setEmailVerifiedAt(null);
       setEmailVerificationSent(false);
       setLastEmailVerificationSentAt(null);
       setIsEmailStatusChecking(false);
       localStorage.removeItem("signupEmailVerified");
+    }
+    if (field && accountErrors[field]) {
+      setAccountErrors((prev) => ({ ...prev, [field]: undefined }));
+      if (accountFocusField === field) {
+        setAccountFocusField(null);
+      }
     }
     setFormData({
       ...formData,
@@ -290,7 +354,7 @@ export const SignupPage = () => {
     [isValidEmail, normalizedEmail],
   );
 
-  const sendEmailVerification = useCallback(async () => {
+  const sendEmailVerification = useCallback(async (): Promise<boolean> => {
     const email = normalizedEmail;
     if (!isValidEmail(email)) {
       toast({
@@ -298,7 +362,7 @@ export const SignupPage = () => {
         description: "이메일 형식을 확인해주세요.",
         variant: "destructive",
       });
-      return;
+      return false;
     }
 
     setIsLoading(true);
@@ -319,6 +383,7 @@ export const SignupPage = () => {
         title: "가입 확인 메일 발송",
         description: "메일 받은 편지함에서 '가입 확인' 버튼을 눌러주세요.",
       });
+      return true;
     } catch (err) {
       toast({
         title: "오류",
@@ -326,23 +391,127 @@ export const SignupPage = () => {
           (err as any)?.message || "메일 발송 중 오류가 발생했습니다.",
         variant: "destructive",
       });
+      return false;
     } finally {
       setIsLoading(false);
     }
   }, [isValidEmail, normalizedEmail, toast]);
 
-  const submitSignup = useCallback(async () => {
-    if (
-      !isSocialCompleteMode &&
-      !isSocialNewMode &&
-      formData.password !== formData.confirmPassword
-    ) {
+  const validateAccountInfo = useCallback(() => {
+    const name = String(formData.name || "").trim();
+    const password = String(formData.password || "");
+    const confirm = String(formData.confirmPassword || "");
+    const nextErrors: Partial<
+      Record<"name" | "password" | "confirmPassword", string>
+    > = {};
+
+    if (!name) {
+      nextErrors.name = "이름을 입력해주세요";
+    }
+
+    if (!password) {
+      nextErrors.password = "비밀번호를 입력해주세요";
+    } else if (!isStrongPassword(password)) {
+      nextErrors.password = "10자 이상, 특수문자 포함";
+    }
+
+    if (!confirm) {
+      nextErrors.confirmPassword = "비밀번호를 다시 입력해주세요";
+    } else if (password !== confirm) {
+      nextErrors.confirmPassword = "비밀번호가 일치하지 않습니다";
+    }
+
+    const orderedFields: Array<"name" | "password" | "confirmPassword"> = [
+      "name",
+      "password",
+      "confirmPassword",
+    ];
+    const firstInvalid = orderedFields.find((key) => nextErrors[key]);
+
+    setAccountErrors(nextErrors);
+    setAccountFocusField(firstInvalid || null);
+
+    return !firstInvalid;
+  }, [
+    formData.confirmPassword,
+    formData.name,
+    formData.password,
+    isStrongPassword,
+  ]);
+
+  const handleGoEmailStep = useCallback(() => {
+    if (!validateAccountInfo()) return;
+    setWizardStep(4);
+  }, [validateAccountInfo]);
+
+  const handleReferralNext = useCallback(async () => {
+    const value = String(refInput || "").trim();
+    if (!value) {
+      setWizardStep(3);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await request<any>({
+        path: "/api/auth/referral/validate",
+        method: "POST",
+        jsonBody: { value },
+      });
+      const payload = res.data || {};
+      if (!res.ok || !payload?.success) {
+        throw new Error(payload?.message || "추천인을 찾을 수 없습니다.");
+      }
+      setWizardStep(3);
+    } catch (err) {
       toast({
         title: "오류",
-        description: "비밀번호가 일치하지 않습니다.",
+        description: (err as any)?.message || "추천인을 확인할 수 없습니다.",
         variant: "destructive",
       });
-      return;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [refInput, request, toast]);
+
+  const handleReferralInputKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      void handleReferralNext();
+    },
+    [handleReferralNext],
+  );
+
+  useEffect(() => {
+    if (!isWizardMode) return;
+    if (wizardStep !== 2) return;
+    if (pendingSocialProvider) return;
+    if (refInput.trim().length > 0) return;
+
+    const handler = (event: KeyboardEvent) => {
+      if (event.key !== "Enter") return;
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "BUTTON"].includes(target.tagName)) {
+        return;
+      }
+      event.preventDefault();
+      void handleReferralNext();
+    };
+
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [
+    handleReferralNext,
+    isWizardMode,
+    pendingSocialProvider,
+    refInput,
+    wizardStep,
+  ]);
+
+  const submitSignup = useCallback(async () => {
+    if (!isSocialCompleteMode && !isSocialNewMode) {
+      if (!validateAccountInfo()) return;
     }
 
     if (isLoading) return;
@@ -372,6 +541,7 @@ export const SignupPage = () => {
             socialProvider: socialInfo.provider,
             socialProviderUserId: socialInfo.providerUserId,
             ...(referredByUserId ? { referredByUserId } : {}),
+            ...(referredByEmail ? { referredByEmail } : {}),
             ...(referredByCode
               ? { referredByReferralCode: referredByCode }
               : {}),
@@ -392,6 +562,10 @@ export const SignupPage = () => {
 
         if (authToken) {
           await loginWithToken(authToken, authRefreshToken);
+          const resolvedRole = signupRole || useAuthStore.getState().user?.role;
+          if (markSetupWizardRequired(resolvedRole)) {
+            return;
+          }
           navigate("/dashboard", { replace: true });
         } else {
           toast({
@@ -429,6 +603,10 @@ export const SignupPage = () => {
         await loginWithToken(token);
         localStorage.removeItem("signupFormData");
         localStorage.removeItem("signupEmailVerified");
+        const resolvedRole = useAuthStore.getState().user?.role;
+        if (markSetupWizardRequired(resolvedRole)) {
+          return;
+        }
         navigate("/dashboard", { replace: true });
         return;
       }
@@ -442,6 +620,8 @@ export const SignupPage = () => {
 
       if (referredByUserId) {
         payload.referredByUserId = referredByUserId;
+      } else if (referredByEmail) {
+        payload.referredByEmail = referredByEmail;
       } else if (referredByCode) {
         payload.referredByReferralCode = referredByCode;
       }
@@ -464,6 +644,10 @@ export const SignupPage = () => {
         await loginWithToken(authToken, authRefreshToken);
         localStorage.removeItem("signupFormData");
         localStorage.removeItem("signupEmailVerified");
+        const resolvedRole = signupRole || useAuthStore.getState().user?.role;
+        if (markSetupWizardRequired(resolvedRole)) {
+          return;
+        }
         navigate("/dashboard", { replace: true });
       } else {
         toast({
@@ -492,12 +676,43 @@ export const SignupPage = () => {
     loginWithToken,
     navigate,
     referredByCode,
+    referredByEmail,
     referredByUserId,
     signupRole,
     socialInfo,
     token,
     toast,
     user,
+  ]);
+
+  useEffect(() => {
+    if (!isWizardMode) return;
+    if (wizardStep !== 3 && wizardStep !== 4) return;
+
+    const handler = (event: KeyboardEvent) => {
+      if (event.key !== "Enter") return;
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "BUTTON"].includes(target.tagName)) {
+        return;
+      }
+      event.preventDefault();
+      if (wizardStep === 3) {
+        handleGoEmailStep();
+        return;
+      }
+      if (emailVerifiedAt) {
+        void submitSignup();
+      }
+    };
+
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [
+    emailVerifiedAt,
+    handleGoEmailStep,
+    isWizardMode,
+    submitSignup,
+    wizardStep,
   ]);
 
   const verifyEmailCode = useCallback(
@@ -526,7 +741,11 @@ export const SignupPage = () => {
           setEmailVerifiedAt(new Date());
           localStorage.setItem(
             "signupEmailVerified",
-            JSON.stringify({ email: normalizedEmail, verifiedAt: new Date() }),
+            JSON.stringify({
+              email: normalizedEmail,
+              verifiedAt: new Date(),
+              sessionId: signupSessionId,
+            }),
           );
           toast({
             title: "인증 완료",
@@ -581,7 +800,11 @@ export const SignupPage = () => {
         setEmailVerifiedAt(verifiedAt);
         localStorage.setItem(
           "signupEmailVerified",
-          JSON.stringify({ email, verifiedAt }),
+          JSON.stringify({
+            email,
+            verifiedAt,
+            sessionId: signupSessionId,
+          }),
         );
         toast({
           title: "이메일 인증 완료",
@@ -613,12 +836,31 @@ export const SignupPage = () => {
     localStorage.removeItem("signupEmailVerified");
   }, []);
 
+  const prevEmailRef = useRef<string>("");
+
+  useEffect(() => {
+    const current = normalizedEmail;
+    if (!prevEmailRef.current) {
+      prevEmailRef.current = current;
+      return;
+    }
+    if (prevEmailRef.current !== current) {
+      handleEditEmail();
+      prevEmailRef.current = current;
+    }
+  }, [handleEditEmail, normalizedEmail]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await submitSignup();
   };
 
   const showHeroSection = isWizardMode && wizardStep === 1;
+
+  const handleLogout = useCallback(() => {
+    logout();
+    navigate("/");
+  }, [logout, navigate]);
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#030711] text-white">
@@ -648,12 +890,9 @@ export const SignupPage = () => {
             <div className="space-y-4">
               <h1 className="text-3xl font-semibold leading-tight text-white md:text-4xl">
                 하나의 로그인으로 제조 · 배송까지
-                <br />
-                전체 제작 프로세스 동기화
               </h1>
               <p className="text-base text-white/80">
                 제작 현황, 스케줄, 실시간 트래킹을 모두 한 화면에서 제어하세요.
-                2단계 인증 수준의 로그인 경험을 제공합니다.
               </p>
             </div>
             <div className="rounded-2xl border border-white/15 bg-white/5 p-6 backdrop-blur">
@@ -752,56 +991,61 @@ export const SignupPage = () => {
                   )}
 
                   {wizardStep === 2 && (
-                    <div className="space-y-4">
+                    <div className="space-y-8">
                       <input
                         value={refInput}
                         onChange={(e) => setRefInput(e.target.value)}
-                        placeholder="추천인 코드 또는 사용자 계정"
+                        onKeyDown={handleReferralInputKeyDown}
+                        placeholder="추천인 이메일 또는 코드"
                         className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-md text-white placeholder:text-white/40"
                       />
 
                       {!pendingSocialProvider && (
-                        <div className="flex flex-col gap-2 sm:flex-row">
-                          <button
+                        <div className="grid grid-cols-2 gap-3">
+                          <Button
                             type="button"
-                            className="h-10 w-full rounded-md border border-white/10 bg-white/5 text-sm font-medium text-white/80 hover:bg-white/10"
+                            variant="outline"
+                            className="h-11 w-full border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
                             onClick={() => setWizardStep(1)}
                           >
-                            뒤로가기
-                          </button>
-                          <button
+                            이전
+                          </Button>
+                          <Button
                             type="button"
-                            className="h-10 w-full rounded-md border border-white/10 bg-white/5 text-sm font-medium text-white/80 hover:bg-white/10"
-                            onClick={() => setWizardStep(3)}
+                            variant="hero"
+                            className="h-11 w-full"
+                            onClick={handleReferralNext}
                           >
-                            건너뛰기
-                          </button>
+                            {refInput.trim().length > 0
+                              ? "입력하기"
+                              : "건너뛰기"}
+                          </Button>
                         </div>
                       )}
 
                       {pendingSocialProvider && (
-                        <div className="flex flex-col gap-2 sm:flex-row">
-                          <button
+                        <div className="grid grid-cols-2 gap-3">
+                          <Button
                             type="button"
-                            className="h-10 w-full rounded-md border border-white/10 bg-white/5 text-sm font-medium text-white/80 hover:bg-white/10"
+                            variant="outline"
+                            className="h-11 w-full border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
                             onClick={() => {
                               setPendingSocialProvider(null);
                               setWizardStep(1);
                             }}
                           >
-                            뒤로가기
-                          </button>
-                          <button
+                            이전
+                          </Button>
+                          <Button
                             type="button"
-                            className="h-10 w-full rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+                            variant="hero"
+                            className="h-11 w-full"
                             onClick={() =>
                               goSocialSignup(pendingSocialProvider)
                             }
                           >
-                            {pendingSocialProvider === "google"
-                              ? "Google로 계속"
-                              : "카카오로 계속"}
-                          </button>
+                            다음
+                          </Button>
                         </div>
                       )}
                     </div>
@@ -810,14 +1054,14 @@ export const SignupPage = () => {
                   {wizardStep === 3 && (
                     <SignupWizardAccountStep
                       formData={formData}
+                      errors={accountErrors}
+                      focusField={accountFocusField}
                       isLoading={isLoading}
                       onFormChange={handleChange}
                       onPrevious={() =>
                         setWizardStep(shouldAskReferralInput ? 2 : 1)
                       }
-                      onNext={() => setWizardStep(4)}
-                      isStrongPassword={isStrongPassword}
-                      toast={toast}
+                      onNext={handleGoEmailStep}
                     />
                   )}
 
@@ -832,6 +1076,7 @@ export const SignupPage = () => {
                       lastEmailVerificationSentAt={lastEmailVerificationSentAt}
                       onFormChange={handleChange}
                       onPrevious={() => setWizardStep(3)}
+                      onNext={submitSignup}
                       onSendEmailVerification={sendEmailVerification}
                       onVerifyCode={verifyEmailCode}
                       onEditEmail={handleEditEmail}
@@ -854,7 +1099,6 @@ export const SignupPage = () => {
                         }
                       }}
                       onNext={submitSignup}
-                      toast={toast}
                     />
                   )}
 
@@ -862,27 +1106,53 @@ export const SignupPage = () => {
                 </>
               )}
 
-              <div className="mt-8 flex flex-wrap items-center justify-center gap-3 text-white/70">
-                <Button
-                  variant="ghost"
-                  className="text-white/70 hover:text-white"
-                  onClick={() => navigate("/")}
-                >
-                  홈으로 돌아가기
-                </Button>
-
-                <Button
-                  variant="ghost"
-                  asChild
-                  className="text-white/70 hover:text-white"
-                >
-                  <Link to="/login">로그인</Link>
-                </Button>
-              </div>
+              {wizardStep === 1 && (
+                <div className="mt-8 flex flex-wrap items-center justify-center gap-3 text-white/70">
+                  <Button
+                    variant="ghost"
+                    className="text-white/70 hover:text-white"
+                    onClick={() => navigate("/")}
+                  >
+                    홈으로 돌아가기
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="text-white/70 hover:text-white"
+                    onClick={handleLogout}
+                  >
+                    로그아웃
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </section>
       </main>
+
+      <AlertDialog
+        open={showSetupConfirm}
+        onOpenChange={(open) => !open && setShowSetupConfirm(false)}
+      >
+        <AlertDialogContent className="border-white/15 bg-[#060b18]/95 text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle>계정 · 조직 정보를 등록해주세요</AlertDialogTitle>
+            <AlertDialogDescription className="text-white/70">
+              가입이 완료되었습니다. <br />
+              서비스를 사용하려면 계정 정보와 사업자 정보를 입력해야 합니다.
+              <br />
+              지금 바로 설정 화면으로 이동할게요.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              className="bg-white/90 text-slate-900 hover:bg-white"
+              onClick={handleConfirmSetup}
+            >
+              설정으로 이동
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

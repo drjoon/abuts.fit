@@ -1,6 +1,21 @@
 import GuideProgress from "../../models/guideProgress.model.js";
 import User from "../../models/user.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import { emitAppEventToUser } from "../../socket.js";
+
+const GUIDE_PROGRESS_EVENT = "guide-progress:updated";
+
+const emitGuideProgressUpdated = (userId, doc) => {
+  const uid = String(userId || "").trim();
+  if (!uid || !doc) return;
+
+  emitAppEventToUser(uid, GUIDE_PROGRESS_EVENT, {
+    tourId: doc.tourId,
+    steps: doc.steps || [],
+    finishedAt: doc.finishedAt || null,
+    updatedAt: doc.updatedAt,
+  });
+};
 
 const normalizeTourId = (tourId) => String(tourId || "").trim();
 const normalizeStepId = (stepId) => String(stepId || "").trim();
@@ -50,7 +65,7 @@ const computeRequestorOnboardingDoneMap = ({ user, organization }) => {
   const done = {};
 
   done["requestor.account.profileImage"] = Boolean(
-    String(user?.profileImage || "").trim()
+    String(user?.profileImage || "").trim(),
   );
 
   const phoneVerifiedAt = user?.phoneVerifiedAt
@@ -65,8 +80,8 @@ const computeRequestorOnboardingDoneMap = ({ user, organization }) => {
 
   done["requestor.business.licenseUpload"] = Boolean(
     String(organization?.businessLicense?.s3Key || "").trim() ||
-      String(organization?.businessLicense?.originalName || "").trim() ||
-      String(organization?.businessLicense?.fileId || "").trim()
+    String(organization?.businessLicense?.originalName || "").trim() ||
+    String(organization?.businessLicense?.fileId || "").trim(),
   );
 
   done["requestor.business.companyName"] =
@@ -76,20 +91,20 @@ const computeRequestorOnboardingDoneMap = ({ user, organization }) => {
   done["requestor.business.representativeName"] =
     String(ex?.representativeName || "").trim().length >= 2;
   done["requestor.business.phoneNumber"] = Boolean(
-    normalizePhoneNumber(String(ex?.phoneNumber || "").trim())
+    normalizePhoneNumber(String(ex?.phoneNumber || "").trim()),
   );
   done["requestor.business.businessNumber"] = Boolean(
-    normalizeBusinessNumber(String(ex?.businessNumber || "").trim())
+    normalizeBusinessNumber(String(ex?.businessNumber || "").trim()),
   );
   done["requestor.business.businessType"] =
     String(ex?.businessType || "").trim().length >= 2;
   done["requestor.business.businessItem"] =
     String(ex?.businessItem || "").trim().length >= 2;
   done["requestor.business.email"] = isValidEmail(
-    String(ex?.email || "").trim()
+    String(ex?.email || "").trim(),
   );
   done["requestor.business.address"] = isValidAddress(
-    String(ex?.address || "").trim()
+    String(ex?.address || "").trim(),
   );
 
   return done;
@@ -132,7 +147,7 @@ export async function getGuideProgress(req, res) {
       const nextSteps = defaultSteps.map((s) => {
         const stepId = String(s?.stepId || "").trim();
         const prev = prevSteps.find(
-          (p) => String(p?.stepId || "").trim() === stepId
+          (p) => String(p?.stepId || "").trim() === stepId,
         );
         const isDone = Boolean(doneMap[stepId]);
         return {
@@ -146,6 +161,7 @@ export async function getGuideProgress(req, res) {
       doc.steps = nextSteps;
       doc.finishedAt = nextFinishedAt ? doc.finishedAt || nextFinishedAt : null;
       await doc.save();
+      emitGuideProgressUpdated(req.user?._id, doc);
     }
 
     return res.status(200).json({
@@ -188,7 +204,7 @@ export async function patchGuideStep(req, res) {
 
     const defaultSteps = GuideProgress.getDefaultSteps(tourId);
     const allowed = new Set(
-      defaultSteps.map((s) => String(s?.stepId || "").trim()).filter(Boolean)
+      defaultSteps.map((s) => String(s?.stepId || "").trim()).filter(Boolean),
     );
 
     if (allowed.size > 0 && !allowed.has(stepId)) {
@@ -220,7 +236,7 @@ export async function patchGuideStep(req, res) {
         ? defaultSteps.map((s) => {
             const id = String(s?.stepId || "").trim();
             const found = steps.find(
-              (p) => String(p?.stepId || "").trim() === id
+              (p) => String(p?.stepId || "").trim() === id,
             );
             return {
               stepId: id,
@@ -234,6 +250,7 @@ export async function patchGuideStep(req, res) {
     doc.steps = normalizedSteps;
     doc.finishedAt = recalcFinishedAt(normalizedSteps);
     await doc.save();
+    emitGuideProgressUpdated(req.user?._id, doc);
 
     return res.status(200).json({
       success: true,
@@ -267,6 +284,7 @@ export async function resetGuideProgress(req, res) {
     doc.steps = GuideProgress.getDefaultSteps(tourId);
     doc.finishedAt = null;
     await doc.save();
+    emitGuideProgressUpdated(req.user?._id, doc);
 
     return res.status(200).json({
       success: true,
