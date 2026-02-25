@@ -86,17 +86,31 @@ async function seedDev() {
     active: true,
   });
 
-  const org = await RequestorOrganization.create({
+  const requestorOrg = await RequestorOrganization.create({
+    organizationType: "requestor",
     name: "데모기공소",
     owner: requestorOwner._id,
     owners: [],
     members: [requestorOwner._id],
     joinRequests: [],
+    extracted: {
+      companyName: "데모기공소",
+      representativeName: "데모 의뢰자 대표",
+      businessNumber: "111-11-11111",
+      phoneNumber: "02-0000-0001",
+      email: requestorOwnerEmail,
+      address: "서울특별시 중구 세종대로 1",
+    },
   });
 
   await User.updateOne(
     { _id: requestorOwner._id },
-    { $set: { organizationId: org._id, organization: org.name } },
+    {
+      $set: {
+        organizationId: requestorOrg._id,
+        organization: requestorOrg.name,
+      },
+    },
   );
 
   const requestorStaff = await User.create({
@@ -106,17 +120,17 @@ async function seedDev() {
     role: "requestor",
     requestorRole: "staff",
     phoneNumber: "01000000002",
-    organization: "",
+    organization: requestorOrg.name,
     referralCode: "seed_requestor_staff",
     approvedAt: NOW,
     active: true,
-    organizationId: org._id,
+    organizationId: requestorOrg._id,
     referredByUserId: requestorOwner._id,
     referralGroupLeaderId: requestorOwner._id,
   });
 
   await RequestorOrganization.updateOne(
-    { _id: org._id },
+    { _id: requestorOrg._id },
     {
       $addToSet: {
         members: { $each: [requestorOwner._id, requestorStaff._id] },
@@ -137,6 +151,33 @@ async function seedDev() {
     active: true,
   });
 
+  const manufacturerOrg = await RequestorOrganization.create({
+    organizationType: "manufacturer",
+    name: "애크로덴트",
+    owner: manufacturerOwner._id,
+    owners: [],
+    members: [manufacturerOwner._id],
+    joinRequests: [],
+    extracted: {
+      companyName: "애크로덴트",
+      representativeName: "데모 제조사 대표",
+      businessNumber: "222-22-22222",
+      phoneNumber: "031-000-0003",
+      email: "manufacturer.owner@demo.abuts.fit",
+      address: "경기도 성남시 분당구 판교역로 1",
+    },
+  });
+
+  await User.updateOne(
+    { _id: manufacturerOwner._id },
+    {
+      $set: {
+        organizationId: manufacturerOrg._id,
+        organization: manufacturerOrg.name,
+      },
+    },
+  );
+
   const manufacturerStaff = await User.create({
     name: "데모 제조사 직원",
     email: "manufacturer.staff@demo.abuts.fit",
@@ -144,11 +185,17 @@ async function seedDev() {
     role: "manufacturer",
     manufacturerRole: "staff",
     phoneNumber: "01000000005",
-    organization: "애크로덴트",
+    organization: manufacturerOrg.name,
     referralCode: "seed_manufacturer_staff",
     approvedAt: NOW,
     active: true,
+    organizationId: manufacturerOrg._id,
   });
+
+  await RequestorOrganization.updateOne(
+    { _id: manufacturerOrg._id },
+    { $addToSet: { members: manufacturerStaff._id } },
+  );
 
   const adminOwner = await User.create({
     name: "데모 관리자 대표",
@@ -163,6 +210,30 @@ async function seedDev() {
     active: true,
   });
 
+  const adminOrg = await RequestorOrganization.create({
+    organizationType: "requestor",
+    name: "어벗츠핏",
+    owner: adminOwner._id,
+    owners: [],
+    members: [adminOwner._id],
+    joinRequests: [],
+    extracted: {
+      companyName: "어벗츠핏",
+      representativeName: "데모 관리자 대표",
+      businessNumber: "333-33-33333",
+      phoneNumber: "02-0000-0004",
+      email: "admin.owner@demo.abuts.fit",
+      address: "서울특별시 강남구 테헤란로 1",
+    },
+  });
+
+  await User.updateOne(
+    { _id: adminOwner._id },
+    {
+      $set: { organizationId: adminOrg._id, organization: adminOrg.name },
+    },
+  );
+
   const adminStaff = await User.create({
     name: "데모 관리자 직원",
     email: "admin.staff@demo.abuts.fit",
@@ -170,14 +241,20 @@ async function seedDev() {
     role: "admin",
     adminRole: "staff",
     phoneNumber: "01000000006",
-    organization: "어벗츠핏",
+    organization: adminOrg.name,
     referralCode: "seed_admin_staff",
     approvedAt: NOW,
     active: true,
+    organizationId: adminOrg._id,
   });
 
+  await RequestorOrganization.updateOne(
+    { _id: adminOrg._id },
+    { $addToSet: { members: adminStaff._id } },
+  );
+
   await CreditLedger.create({
-    organizationId: org._id,
+    organizationId: requestorOrg._id,
     userId: requestorOwner._id,
     type: "CHARGE",
     amount: 500000,
@@ -231,7 +308,7 @@ async function seedDev() {
   );
 
   return {
-    org,
+    org: requestorOrg,
     requestorOwner,
     requestorStaff,
     manufacturerOwner,
