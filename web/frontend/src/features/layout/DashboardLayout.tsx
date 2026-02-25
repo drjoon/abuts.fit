@@ -46,7 +46,7 @@ import {
   Search,
   Sparkles,
 } from "lucide-react";
-import logo from "@/assets/logo.png";
+import { AbutsLogo } from "@/components/branding/AbutsLogo";
 
 const sidebarItems = {
   requestor: [
@@ -495,18 +495,13 @@ export const DashboardLayout = () => {
         `}
         >
           <div className="p-4 lg:p-6 border-b border-border">
-            <div className="flex items-center space-x-1 flex-1 min-w-0">
-              <img
-                src={logo}
-                alt="Abuts.fit"
-                className="h-9 w-9 lg:h-12 lg:w-12 flex-shrink-0"
-              />
-              {!isCollapsed && (
-                <span className="text-lg lg:text-xl font-bold bg-gradient-hero bg-clip-text text-transparent whitespace-nowrap">
-                  abuts.fit
-                </span>
-              )}
-            </div>
+            <AbutsLogo
+              showWordmark={!isCollapsed}
+              className="flex-1 min-w-0"
+              iconClassName="h-9 w-9 lg:h-12 lg:w-12 flex-shrink-0"
+              wordmarkClassName="text-lg lg:text-xl whitespace-nowrap"
+              variant="light"
+            />
           </div>
 
           <button
@@ -636,12 +631,11 @@ export const DashboardLayout = () => {
                 <div className="w-4 h-0.5 bg-current"></div>
               </div>
             </Button>
-            <div className="flex items-center space-x-2">
-              <img src={logo} alt="Abuts.fit" className="h-9 w-9" />
-              <span className="font-bold bg-gradient-hero bg-clip-text text-transparent">
-                abuts.fit
-              </span>
-            </div>
+            <AbutsLogo
+              iconClassName="h-9 w-9"
+              wordmarkClassName="text-base font-bold"
+              variant="light"
+            />
             <div className="w-9" />
           </div>
 
