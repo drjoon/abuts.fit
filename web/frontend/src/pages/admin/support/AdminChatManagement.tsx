@@ -336,16 +336,16 @@ export const AdminChatManagement = () => {
     }
   };
 
-  const leftHeightClass = "h-[calc(100vh-12rem)]";
+  
 
   return (
-    <div className="min-h-screen bg-gradient-subtle p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="flex flex-col h-full min-h-0 bg-gradient-subtle p-6">
+      <div className="max-w-7xl w-full mx-auto space-y-6 flex flex-col flex-1 min-h-0">
         {/* Header */}
 
-        <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-4">
-          <Card className={cn("overflow-hidden", leftHeightClass)}>
-            <CardHeader className="space-y-3">
+        <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-4 flex-1 min-h-0">
+          <Card className="flex flex-col overflow-hidden min-h-0 h-full">
+            <CardHeader className="space-y-3 shrink-0">
               {/* Search and Filter */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -394,7 +394,7 @@ export const AdminChatManagement = () => {
                 <div className="text-sm text-destructive">{roomsError}</div>
               )}
             </CardHeader>
-            <CardContent className="p-0 h-[calc(100%-132px)]">
+            <CardContent className="p-0 flex-1 min-h-0">
               <ScrollArea className="h-full">
                 <div className="p-2 space-y-2">
                   {roomsLoading && (
@@ -460,9 +460,7 @@ export const AdminChatManagement = () => {
             </CardContent>
           </Card>
 
-          <Card
-            className={cn("overflow-hidden flex flex-col", leftHeightClass)}
-          >
+          <Card className="overflow-hidden flex flex-col">
             <CardHeader className="space-y-2">
               <CardTitle className="text-base">
                 {activeChat

@@ -732,11 +732,13 @@ export const TrackingInquiryPage = () => {
             </div>
           </div>
 
-          <TabsContent value="process" className="space-y-3 mt-4">
+          <TabsContent
+            value="process"
+            className="space-y-3 mt-4 flex-1 min-h-0 flex flex-col"
+          >
             <div
               ref={setScrollContainer}
-              className="rounded-md border bg-background overflow-auto"
-              style={{ maxHeight: "calc(100vh - 320px)" }}
+              className="rounded-md border bg-background overflow-auto flex-1 min-h-0"
             >
               <Table>
                 <TableHeader>
@@ -813,11 +815,13 @@ export const TrackingInquiryPage = () => {
             </div>
           </TabsContent>
 
-          <TabsContent value="udi" className="space-y-3 mt-4">
+          <TabsContent
+            value="udi"
+            className="space-y-3 mt-4 flex-1 min-h-0 flex flex-col"
+          >
             <div
               ref={setScrollContainer}
-              className="rounded-md border bg-background overflow-auto"
-              style={{ maxHeight: "calc(100vh - 320px)" }}
+              className="rounded-md border bg-background overflow-auto flex-1 min-h-0"
             >
               <Table>
                 <TableHeader>
@@ -870,11 +874,13 @@ export const TrackingInquiryPage = () => {
             </div>
           </TabsContent>
 
-          <TabsContent value="shipping" className="space-y-3 mt-4">
+          <TabsContent
+            value="shipping"
+            className="space-y-3 mt-4 flex-1 min-h-0 flex flex-col"
+          >
             <div
               ref={setScrollContainer}
-              className="rounded-md border bg-background overflow-auto"
-              style={{ maxHeight: "calc(100vh - 320px)" }}
+              className="rounded-md border bg-background overflow-auto flex-1 min-h-0"
             >
               <Table>
                 <TableHeader>

@@ -31,7 +31,7 @@ export const CncToolStatusModal = ({
       onClick={onRequestClose}
     >
       <div
-        className="bg-white/95 p-6 sm:p-8 rounded-2xl shadow-[0_20px_60px_rgba(15,23,42,0.35)] w-full max-w-xl max-h-[calc(100vh-4rem)] transform transition-all border border-gray-100 flex flex-col"
+        className="bg-white/95 p-6 sm:p-8 rounded-2xl shadow-[0_20px_60px_rgba(15,23,42,0.35)] w-full max-w-xl max-h-full transform transition-all border border-gray-100 flex flex-col min-h-0"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between mb-6 gap-4">
