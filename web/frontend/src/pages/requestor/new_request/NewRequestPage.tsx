@@ -432,9 +432,9 @@ export const NewRequestPage = () => {
     <PageFileDropZone
       onFiles={handleIncomingFiles}
       activeClassName="ring-2 ring-primary/30"
-      className="bg-gradient-subtle p-4 flex flex-col h-full min-h-0"
+      className="bg-gradient-subtle p-4 flex flex-col h-full min-h-0 overflow-hidden"
     >
-      <div className="max-w-6xl mx-auto w-full space-y-4 flex flex-col flex-1 min-h-0">
+      <div className="max-w-6xl mx-auto w-full space-y-4 flex flex-col flex-1 min-h-0 h-full">
         <MultiActionDialog
           open={!!duplicatePrompt}
           preventCloseOnOverlayClick={true}
@@ -504,7 +504,7 @@ export const NewRequestPage = () => {
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch flex-1 min-h-0 h-full">
-          <div className="flex flex-col gap-2.5 min-h-0 h-full">
+          <div className="flex flex-col gap-2.5 flex-1 min-h-0 h-full">
             <NewRequestUploadSection
               isDragOver={isDragOver}
               onDragOver={handleDragOver}

@@ -180,7 +180,40 @@ export function NewRequestDetailsSection({
     setIsDetailOpen(true);
   };
 
-  const handleVerifyFile = async (index: number) => {
+  const findNextIndex = (
+    currentIndex: number,
+    options: { onlyUnverified?: boolean } = {},
+  ) => {
+    if (!files.length) return currentIndex;
+    for (let offset = 1; offset <= files.length; offset++) {
+      const candidate = (currentIndex + offset) % files.length;
+      if (!options.onlyUnverified) {
+        return candidate;
+      }
+      const candidateKey = toNormalizedFileKey(files[candidate]);
+      if (!fileVerificationStatus[candidateKey]) {
+        return candidate;
+      }
+    }
+    return currentIndex;
+  };
+
+  const moveToNextDetail = (options: { onlyUnverified?: boolean } = {}) => {
+    if (!files.length) return false;
+    const currentIndex = detailIndex ?? selectedPreviewIndex ?? 0;
+    const nextIndex = findNextIndex(currentIndex, options);
+    if (nextIndex === currentIndex && options.onlyUnverified) {
+      return false;
+    }
+    setSelectedPreviewIndex(nextIndex);
+    setDetailIndex(nextIndex);
+    return true;
+  };
+
+  const handleVerifyFile = async (
+    index: number,
+    options: { stayInModal?: boolean } = {},
+  ) => {
     const file = files[index];
     if (!file) return;
     const fileKey = toNormalizedFileKey(file);
@@ -267,7 +300,18 @@ export function NewRequestDetailsSection({
     setFileVerificationStatus(nextStatus);
     setSelectedPreviewIndex(nextIndex);
     setHighlightUnverifiedArrows(false);
-    setIsDetailOpen(false);
+
+    const hasRemainingUnverified = files.some((candidate) => {
+      const key = toNormalizedFileKey(candidate);
+      return !nextStatus[key];
+    });
+
+    if (options.stayInModal && hasRemainingUnverified) {
+      setDetailIndex(nextIndex);
+      setIsDetailOpen(true);
+    } else {
+      setIsDetailOpen(false);
+    }
   };
 
   const showImplantSelect = useMemo(() => {
@@ -360,13 +404,13 @@ export function NewRequestDetailsSection({
 
   return (
     <div
-      className={`app-glass-card app-glass-card--lg relative flex flex-col border-2 border-gray-300 p-2.5 md:p-3.5 flex-1 min-h-0 h-full`}
+      className={`app-glass-card app-glass-card--lg relative flex flex-col border-2 border-gray-300 p-2.5 md:p-3.5 flex-1 min-h-0 h-full max-h-[500px]`}
     >
-      <div className="app-glass-card-content flex-1 min-h-0">
-        <div className="flex flex-col h-full min-h-0">
+      <div className="app-glass-card-content flex flex-col flex-1 min-h-0 h-full">
+        <div className="flex flex-col flex-1 min-h-0 h-full">
           <div
             ref={listContainerRef}
-            className="flex flex-col gap-1.5 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 pr-1 flex-1 min-h-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"
+            className="flex flex-col gap-2.5 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 px-2 py-2 flex-1 min-h-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 -mx-1"
             tabIndex={0}
             role="listbox"
             aria-label="첨부된 STL 파일 목록"
@@ -392,20 +436,15 @@ export function NewRequestDetailsSection({
                     : "border border-red-300 bg-red-50 text-red-800";
                   const stateClasses = isSelected
                     ? isVerified
-                      ? "border-primary bg-primary/10 text-primary shadow-[0_12px_28px_rgba(37,99,235,0.35)]"
-                      : "border-red-300 bg-red-50 shadow-[0_12px_28px_rgba(248,113,113,0.35)]"
+                      ? "border-primary bg-primary/10 text-primary shadow-[0_4px_12px_rgba(37,99,235,0.2)]"
+                      : "border-red-400 bg-red-50 shadow-[0_4px_12px_rgba(248,113,113,0.2)]"
                     : "";
                   const ringClasses = (() => {
-                    if (isSelected && isVerified) {
-                      return "ring-2 ring-primary/20";
-                    }
-                    if (isSelected && !isVerified) {
-                      return "ring-2 ring-primary/30 ring-offset-2 ring-offset-red-50";
+                    if (isSelected) {
+                      return "ring-2 ring-primary ring-offset-2 ring-offset-white";
                     }
                     if (isUnverifiedHighlight) {
-                      return isVerified
-                        ? "ring-2 ring-primary/30"
-                        : "ring-2 ring-red-200";
+                      return "ring-2 ring-red-400 ring-offset-2 ring-offset-white";
                     }
                     return "";
                   })();
@@ -417,12 +456,10 @@ export function NewRequestDetailsSection({
                         openDetailModal(index);
                       }}
                       data-file-index={index}
-                      className={`mb-2 app-glass-card app-glass-card--lg w-full px-3 py-2.5 rounded-lg cursor-pointer text-xs transition-colors ${baseClasses} ${stateClasses} ${ringClasses} hover:border-gray-300`}
+                      className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all flex items-center ${baseClasses} ${stateClasses} ${ringClasses} hover:border-gray-400`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-sm truncate flex-1">
-                          {filename}
-                        </div>
+                      <div className="relative z-10 flex items-center justify-between gap-3">
+                        <div className="truncate flex-1">{filename}</div>
                         <div className="flex items-center gap-1">
                           {isVerified && (
                             <Check
@@ -454,10 +491,10 @@ export function NewRequestDetailsSection({
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">
-              확인 전 상세
+              STL 확인 및 정보 입력
             </DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-4 items-stretch">
+          <div className="grid grid-cols-1 lg:grid-cols-[45%_55%] gap-4 items-stretch mr-4">
             <div className="app-glass-card app-glass-card--lg">
               <div className="app-glass-card-content">
                 {detailFile ? (
@@ -488,7 +525,7 @@ export function NewRequestDetailsSection({
               </div>
             </div>
             <div className="flex flex-col gap-3 h-full">
-              <div className="app-glass-card app-glass-card--lg flex-1">
+              <div className="app-glass-card app-glass-card--lg">
                 <div className="app-glass-card-content space-y-2.5 text-sm">
                   <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
                     임플란트/환자 정보
@@ -520,41 +557,61 @@ export function NewRequestDetailsSection({
                   />
                 </div>
               </div>
-              <DialogFooter className="gap-2 sm:gap-2 mt-auto">
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={() => {
-                    if (detailIndex !== null) {
-                      handleRemoveFile(detailIndex);
+              <DialogFooter className="mt-auto flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => {
+                      if (detailIndex !== null) {
+                        handleRemoveFile(detailIndex);
+                      }
+                      setIsDetailOpen(false);
+                    }}
+                  >
+                    삭제
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsDetailOpen(false)}
+                  >
+                    취소
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    className={
+                      highlightUnverifiedArrows
+                        ? "animate-bounce bg-primary text-white"
+                        : undefined
                     }
-                    setIsDetailOpen(false);
-                  }}
-                >
-                  삭제
-                </Button>
-                <Button
-                  type="button"
-                  className={
-                    highlightUnverifiedArrows
-                      ? "animate-bounce bg-primary text-white"
-                      : undefined
-                  }
-                  onClick={() => {
-                    if (detailIndex !== null) {
-                      void handleVerifyFile(detailIndex);
-                    }
-                  }}
-                >
-                  확인
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsDetailOpen(false)}
-                >
-                  취소
-                </Button>
+                    onClick={() => {
+                      if (detailIndex !== null) {
+                        void handleVerifyFile(detailIndex, {
+                          stayInModal: true,
+                        });
+                      }
+                    }}
+                  >
+                    확인 & 다음
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="text-slate-500"
+                    onClick={() => {
+                      const moved = moveToNextDetail({ onlyUnverified: true });
+                      if (!moved) {
+                        setIsDetailOpen(false);
+                      }
+                    }}
+                    disabled={!files.length}
+                  >
+                    건너뛰기
+                  </Button>
+                </div>
               </DialogFooter>
             </div>
           </div>
