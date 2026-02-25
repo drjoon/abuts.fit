@@ -6,9 +6,9 @@ import {
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
 import { SettingsTabsSkeleton } from "@/features/components/SettingsSkeletons";
-import { AccountTab } from "./components/AccountTab";
+import { AccountTab } from "@/features/settings/tabs/AccountTab";
 import { BusinessTab } from "./components/BusinessTab";
-import { StaffTab } from "./components/StaffTab";
+import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { PaymentTab } from "@/features/settings/tabs/CreditPaymentTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { ShippingTab } from "./components/ShippingTab";

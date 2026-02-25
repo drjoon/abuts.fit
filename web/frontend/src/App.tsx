@@ -64,7 +64,7 @@ const SharedOnboardingWizardPage = lazy(() =>
   })),
 );
 const InquiriesPage = lazy(() =>
-  import("./pages/dashboard/InquiriesPage").then((m) => ({
+  import("./features/support/InquiriesPage").then((m) => ({
     default: m.InquiriesPage,
   })),
 );

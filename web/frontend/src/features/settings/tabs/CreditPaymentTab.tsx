@@ -462,6 +462,24 @@ export const CreditPaymentTab = ({ userData }: Props) => {
       return;
     }
 
+    if (!user?.organizationId) {
+      toast({
+        title: "사업자 정보가 없습니다",
+        description: "사업자 탭에서 사업자 정보를 먼저 등록해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!user?.name) {
+      toast({
+        title: "사용자 이름이 필요합니다",
+        description: "계정 탭에서 이름을 등록한 뒤 다시 시도해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const validationError = validateSupplyAmount(supplyAmount);
     if (validationError) {
       toast({

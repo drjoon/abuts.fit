@@ -3,8 +3,6 @@ import { Upload } from "lucide-react";
 
 type Props = {
   isDragOver: boolean;
-  highlight: boolean;
-  sectionHighlightClass: string;
   onDragOver: (e: React.DragEvent) => void;
   onDragLeave: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
@@ -13,8 +11,6 @@ type Props = {
 
 export function NewRequestUploadSection({
   isDragOver,
-  highlight,
-  sectionHighlightClass,
   onDragOver,
   onDragLeave,
   onDrop,
@@ -23,35 +19,28 @@ export function NewRequestUploadSection({
   return (
     <div className="mb-4 lg:mb-0 w-full">
       <div
-        className={`app-surface app-surface--panel relative flex flex-col border-2 border-gray-300 p-1 md:p-1 ${
-          highlight ? sectionHighlightClass : ""
-        }`}
+        className={`app-surface app-surface--panel relative flex flex-col border-2 border-gray-300 p-2 md:p-2`}
       >
         <div
           className={`border-2 border-dashed rounded-2xl p-4 md:p-6 text-center transition-colors ${
             isDragOver
               ? "border-primary bg-primary/5"
-              : highlight
-                ? "border-gray-300 hover:border-primary/50 bg-primary/5"
-                : "border-gray-300 hover:border-primary/50 bg-white"
+              : "border-gray-300 hover:border-primary/50 bg-white"
           }`}
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}
         >
-          커스텀 어벗 STL 파일 드롭
-          <p className="text-base md:text-lg font-medium mb-2"></p>
           <Button
             variant="outline"
             className="text-xs md:text-sm"
             onClick={() => document.getElementById("file-input")?.click()}
           >
             <Upload className="h-6 md:h-8 w-6 md:w-8 mx-auto text-muted-foreground" />{" "}
-            파일 선택
+            커스텀 어벗 STL 파일 드롭
           </Button>
           <p className="text-xs md:text-sm text-muted-foreground mt-2">
-            치과이름, 환자이름, 치아번호가 순서대로 포함된 파일명으로
-            업로드하시면 환자 정보가 자동으로 채워집니다.
+            파일명에서 치과이름, 환자이름, 치아번호를 자동 인식합니다.
           </p>
           <input
             id="file-input"

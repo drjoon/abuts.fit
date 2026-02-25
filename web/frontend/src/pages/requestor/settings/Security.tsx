@@ -87,28 +87,34 @@ export const RequestorSecurity = () => {
           {loading && (
             <div className="text-sm text-muted-foreground">불러오는 중...</div>
           )}
-          {logs.map((log) => (
-            <div
-              key={log._id || log.id}
-              className="flex items-center justify-between p-3 border rounded-lg"
-            >
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{log.action || "이벤트"}</span>
-                  {log.status ? getStatusBadge(log.status) : null}
+          {logs.length > 0 && (
+            <div className="grid gap-3 md:grid-cols-2">
+              {logs.map((log) => (
+                <div
+                  key={log._id || log.id}
+                  className="flex items-center justify-between p-3 border rounded-lg"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">
+                        {log.action || "이벤트"}
+                      </span>
+                      {log.status ? getStatusBadge(log.status) : null}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {log.details?.message || log.details?.reason || "-"}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {log.createdAt
+                        ? new Date(log.createdAt).toLocaleString()
+                        : ""}
+                    </div>
+                  </div>
                 </div>
-                <div className="text-sm text-muted-foreground">
-                  {log.details?.message || log.details?.reason || "-"}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {log.createdAt
-                    ? new Date(log.createdAt).toLocaleString()
-                    : ""}
-                </div>
-              </div>
+              ))}
             </div>
-          ))}
-          {!logs.length && (
+          )}
+          {!loading && logs.length === 0 && (
             <div className="text-sm text-muted-foreground">
               로그가 없습니다.
             </div>

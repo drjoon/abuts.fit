@@ -262,7 +262,9 @@ export default function ReferralGroupsPage() {
       <Card className="border-gray-200">
         <CardHeader>
           <CardTitle className="text-base">직계 멤버</CardTitle>
-          <CardDescription>내 추천으로 가입한 계정입니다.</CardDescription>
+          <CardDescription>
+            내가 속한 사업자와 내가 소개한 사업자만 표시합니다.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {!isRequestor ? (

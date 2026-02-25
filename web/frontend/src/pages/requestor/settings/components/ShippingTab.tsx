@@ -4,6 +4,7 @@ import { Label } from "@/components/ui/label";
 import { Truck } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useToast } from "@/shared/hooks/use-toast";
 
 interface ShippingTabProps {
   userData: {
@@ -20,6 +21,7 @@ const getRandomWeekday = () =>
   WEEKDAY_OPTIONS[Math.floor(Math.random() * WEEKDAY_OPTIONS.length)];
 
 export const ShippingTab = ({ userData }: ShippingTabProps) => {
+  const { toast } = useToast();
   const storageKey = `${STORAGE_KEY_PREFIX}${userData?.email || "guest"}`;
   const lastSavedRef = useRef<string>("");
 
@@ -28,18 +30,6 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
   const [weeklyBatchDays, setWeeklyBatchDays] = useState<string[]>([
     getRandomWeekday(),
   ]);
-
-  const mockHeaders = useMemo(() => {
-    if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
-    return {
-      "x-mock-role": (user?.role || userData?.role || "requestor") as string,
-      "x-mock-position": (user as any)?.position || "staff",
-      "x-mock-email": user?.email || userData?.email || "mock@abuts.fit",
-      "x-mock-name": user?.name || userData?.name || "사용자",
-      "x-mock-organization": (user as any)?.organization || "",
-      "x-mock-phone": (user as any)?.phoneNumber || "",
-    };
-  }, [token, user?.email, user?.name, user?.role, userData]);
 
   const organizationType = useMemo(() => {
     const role = String(user?.role || userData?.role || "requestor").trim();
@@ -70,7 +60,6 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
           )}`,
           method: "GET",
           token,
-          headers: mockHeaders,
         });
         if (!res.ok) {
           setPolicyLoaded(true);
@@ -116,7 +105,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
     };
 
     void load();
-  }, [mockHeaders, organizationType, token]);
+  }, [organizationType, token]);
 
   useEffect(() => {
     if (token) return;
@@ -160,20 +149,30 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
     const payloadKey = JSON.stringify(normalized);
     if (payloadKey === lastSavedRef.current) return;
     lastSavedRef.current = payloadKey;
-    void request({
-      path: `/api/organizations/me?organizationType=${encodeURIComponent(
-        organizationType,
-      )}`,
-      method: "PUT",
-      token,
-      headers: mockHeaders,
-      jsonBody: {
-        shippingPolicy: {
-          weeklyBatchDays: normalized,
+    void (async () => {
+      const res = await request({
+        path: `/api/organizations/me?organizationType=${encodeURIComponent(
+          organizationType,
+        )}`,
+        method: "PUT",
+        token,
+        jsonBody: {
+          organizationType,
+          shippingPolicy: {
+            weeklyBatchDays: normalized,
+          },
         },
-      },
-    });
-  }, [mockHeaders, organizationType, policyLoaded, token, weeklyBatchDays]);
+      });
+      if (!res.ok) {
+        lastSavedRef.current = "";
+        toast({
+          title: "배송 설정 저장 실패",
+          description: res.data?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+      }
+    })();
+  }, [organizationType, policyLoaded, toast, token, weeklyBatchDays]);
 
   const dayLabels: Record<string, string> = {
     mon: "월",

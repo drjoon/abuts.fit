@@ -467,9 +467,9 @@ export const NewRequestPage = () => {
     <PageFileDropZone
       onFiles={handleIncomingFiles}
       activeClassName="ring-2 ring-primary/30"
-      className="min-h-screen bg-gradient-subtle p-4 md:p-6"
+      className="min-h-screen bg-gradient-subtle p-4"
     >
-      <div className="max-w-6xl mx-auto space-y-4">
+      <div className="max-w-6xl mx-auto space-y-4 ">
         <MultiActionDialog
           open={!!duplicatePrompt}
           preventCloseOnOverlayClick={true}
@@ -538,6 +538,18 @@ export const NewRequestPage = () => {
           actions={[]}
         />
 
+        <NewRequestUploadSection
+          isDragOver={isDragOver}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => {
+            e.preventDefault();
+            handleDragLeave(e);
+            handleIncomingFiles(Array.from(e.dataTransfer.files));
+          }}
+          onFilesSelected={handleIncomingFiles}
+        />
+
         <NewRequestDetailsSection
           files={files}
           selectedPreviewIndex={selectedPreviewIndex}
@@ -576,20 +588,6 @@ export const NewRequestPage = () => {
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-2">
-          <NewRequestUploadSection
-            isDragOver={isDragOver}
-            highlight={highlightStep === "upload"}
-            sectionHighlightClass={sectionHighlightClass}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => {
-              e.preventDefault();
-              handleDragLeave(e);
-              handleIncomingFiles(Array.from(e.dataTransfer.files));
-            }}
-            onFilesSelected={handleIncomingFiles}
-          />
-
           <NewRequestShippingSection
             caseInfos={caseInfos}
             setCaseInfos={setCaseInfos}

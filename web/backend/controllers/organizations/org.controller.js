@@ -544,6 +544,18 @@ export async function updateMyOrganization(req, res) {
       return digits;
     };
 
+    const nextName = String(req.body?.name || "").trim();
+
+    const representativeNameProvided = hasOwn(req.body, "representativeName");
+    const businessItemProvided = hasOwn(req.body, "businessItem");
+    const phoneNumberProvided = hasOwn(req.body, "phoneNumber");
+    const businessNumberProvided = hasOwn(req.body, "businessNumber");
+    const businessTypeProvided = hasOwn(req.body, "businessType");
+    const emailProvided = hasOwn(req.body, "email");
+    const addressProvided = hasOwn(req.body, "address");
+    const startDateProvided = hasOwn(req.body, "startDate");
+    const shippingPolicyProvided = hasOwn(req.body, "shippingPolicy");
+
     const hasOrganization = !!req.user.organizationId;
     let org = null;
     if (hasOrganization) {
@@ -557,25 +569,24 @@ export async function updateMyOrganization(req, res) {
         (String(org.owner) === meId ||
           (Array.isArray(org.owners) &&
             org.owners.some((c) => String(c) === meId)));
-      if (!canEdit) {
+      const nonShippingProvided =
+        hasOwn(req.body, "name") ||
+        representativeNameProvided ||
+        businessItemProvided ||
+        phoneNumberProvided ||
+        businessNumberProvided ||
+        businessTypeProvided ||
+        emailProvided ||
+        addressProvided ||
+        startDateProvided ||
+        hasOwn(req.body, "businessLicense");
+      if (!canEdit && (nonShippingProvided || !shippingPolicyProvided)) {
         return res.status(403).json({
           success: false,
           message: "대표자 계정만 수정할 수 있습니다.",
         });
       }
     }
-
-    const nextName = String(req.body?.name || "").trim();
-
-    const representativeNameProvided = hasOwn(req.body, "representativeName");
-    const businessItemProvided = hasOwn(req.body, "businessItem");
-    const phoneNumberProvided = hasOwn(req.body, "phoneNumber");
-    const businessNumberProvided = hasOwn(req.body, "businessNumber");
-    const businessTypeProvided = hasOwn(req.body, "businessType");
-    const emailProvided = hasOwn(req.body, "email");
-    const addressProvided = hasOwn(req.body, "address");
-    const startDateProvided = hasOwn(req.body, "startDate");
-    const shippingPolicyProvided = hasOwn(req.body, "shippingPolicy");
 
     const representativeName = String(
       req.body?.representativeName || "",

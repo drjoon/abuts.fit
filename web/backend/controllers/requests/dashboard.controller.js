@@ -256,77 +256,208 @@ export async function getMyReferralDirectMembers(req, res) {
     const groupLeaderId = await getReferralGroupLeaderId(requestorId);
 
     const leader = await User.findById(groupLeaderId)
-      .select({ organizationId: 1 })
-      .lean();
-
-    const orgMemberIds = [];
-    if (leader?.organizationId) {
-      const org = await RequestorOrganization.findById(leader.organizationId)
-        .select({ owner: 1, owners: 1, members: 1 })
-        .lean();
-
-      const ownerId = String(org?.owner || "");
-      const ownerIds = Array.isArray(org?.owners) ? org.owners.map(String) : [];
-      const memberIds = Array.isArray(org?.members)
-        ? org.members.map(String)
-        : [];
-      orgMemberIds.push(ownerId, ...ownerIds, ...memberIds);
-    }
-
-    const orgMemberObjectIds = Array.from(new Set(orgMemberIds))
-      .filter((id) => Types.ObjectId.isValid(id))
-      .map((id) => new Types.ObjectId(id));
-
-    const members = await User.find({
-      referredByUserId:
-        orgMemberObjectIds.length > 0
-          ? { $in: orgMemberObjectIds }
-          : requestorId,
-      active: true,
-      role: { $in: ["requestor", "salesman"] },
-    })
       .select({
-        _id: 1,
+        organizationId: 1,
+        role: 1,
         name: 1,
         email: 1,
         organization: 1,
-        active: 1,
         createdAt: 1,
         approvedAt: 1,
       })
-      .sort({ createdAt: -1 })
       .lean();
 
-    const memberIds = (members || []).map((m) => m._id).filter(Boolean);
-    const orderRows = memberIds.length
-      ? await Request.aggregate([
-          {
-            $match: {
-              requestor: { $in: memberIds },
-              "caseInfos.reviewByStage.shipping.status": "APPROVED",
-              createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
+    const orgById = new Map();
+    const ordersByOrgId = new Map();
+    const ordersByUserId = new Map();
+    let members = [];
+
+    const role = String(leader?.role || req.user?.role || "requestor");
+
+    if (role === "salesman") {
+      const [directRequestors, directSalesmen] = await Promise.all([
+        User.find({
+          referredByUserId: requestorId,
+          active: true,
+          role: "requestor",
+        })
+          .select({
+            _id: 1,
+            name: 1,
+            email: 1,
+            organization: 1,
+            organizationId: 1,
+            createdAt: 1,
+            approvedAt: 1,
+          })
+          .sort({ createdAt: -1 })
+          .lean(),
+        User.find({
+          referredByUserId: requestorId,
+          active: true,
+          role: "salesman",
+        })
+          .select({ _id: 1, name: 1, email: 1, organization: 1, createdAt: 1 })
+          .sort({ createdAt: -1 })
+          .lean(),
+      ]);
+
+      const orgIds = Array.from(
+        new Set(
+          (directRequestors || [])
+            .map((u) => String(u.organizationId || ""))
+            .filter(Boolean),
+        ),
+      );
+
+      const orgObjectIds = orgIds
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
+      const orgs = orgObjectIds.length
+        ? await RequestorOrganization.find({ _id: { $in: orgObjectIds } })
+            .select({ name: 1, extracted: 1, createdAt: 1 })
+            .lean()
+        : [];
+      orgs.forEach((o) => orgById.set(String(o._id), o));
+
+      const orderRows = orgObjectIds.length
+        ? await Request.aggregate([
+            {
+              $match: {
+                requestorOrganizationId: { $in: orgObjectIds },
+                "caseInfos.reviewByStage.shipping.status": "APPROVED",
+                createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
+              },
             },
-          },
-          {
-            $group: {
-              _id: "$requestor",
-              count: { $sum: 1 },
+            { $group: { _id: "$requestorOrganizationId", count: { $sum: 1 } } },
+          ])
+        : [];
+      orderRows.forEach((r) =>
+        ordersByOrgId.set(String(r._id), Number(r.count || 0)),
+      );
+
+      const orgMembers = orgIds.map((orgId) => {
+        const org = orgById.get(orgId) || {};
+        return {
+          _id: orgId,
+          organization: org?.name || "",
+          email: org?.extracted?.email || "",
+          createdAt: org?.createdAt || null,
+          last30DaysOrders: ordersByOrgId.get(orgId) || 0,
+          lastMonthOrders: ordersByOrgId.get(orgId) || 0,
+        };
+      });
+
+      const salesmanMembers = (directSalesmen || []).map((u) => ({
+        _id: u._id,
+        name: u.name || "",
+        email: u.email || "",
+        organization: u.organization || "",
+        createdAt: u.createdAt || null,
+        last30DaysOrders: 0,
+        lastMonthOrders: 0,
+      }));
+
+      members = [...orgMembers, ...salesmanMembers];
+    } else {
+      const orgMemberIds = [];
+      if (leader?.organizationId) {
+        const org = await RequestorOrganization.findById(leader.organizationId)
+          .select({ owner: 1, owners: 1, members: 1 })
+          .lean();
+
+        const ownerId = String(org?.owner || "");
+        const ownerIds = Array.isArray(org?.owners)
+          ? org.owners.map(String)
+          : [];
+        const memberIds = Array.isArray(org?.members)
+          ? org.members.map(String)
+          : [];
+        orgMemberIds.push(ownerId, ...ownerIds, ...memberIds);
+      }
+
+      const orgMemberObjectIds = Array.from(new Set(orgMemberIds))
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
+
+      const referredRequestors = await User.find({
+        referredByUserId:
+          orgMemberObjectIds.length > 0
+            ? { $in: orgMemberObjectIds }
+            : requestorId,
+        active: true,
+        role: "requestor",
+        organizationId: { $exists: true, $ne: null },
+      })
+        .select({
+          _id: 1,
+          name: 1,
+          email: 1,
+          organization: 1,
+          organizationId: 1,
+          createdAt: 1,
+          approvedAt: 1,
+        })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      const leaderOrgId = String(leader?.organizationId || "");
+      const orgIds = Array.from(
+        new Set(
+          [
+            leaderOrgId,
+            ...(referredRequestors || []).map((u) =>
+              String(u.organizationId || ""),
+            ),
+          ].filter(Boolean),
+        ),
+      );
+
+      const orgObjectIds = orgIds
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
+      const orgs = orgObjectIds.length
+        ? await RequestorOrganization.find({ _id: { $in: orgObjectIds } })
+            .select({ name: 1, extracted: 1, createdAt: 1 })
+            .lean()
+        : [];
+      orgs.forEach((o) => orgById.set(String(o._id), o));
+
+      const orderRows = orgObjectIds.length
+        ? await Request.aggregate([
+            {
+              $match: {
+                requestorOrganizationId: { $in: orgObjectIds },
+                "caseInfos.reviewByStage.shipping.status": "APPROVED",
+                createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
+              },
             },
-          },
-        ])
-      : [];
-    const ordersByUserId = new Map(
-      (orderRows || []).map((r) => [String(r._id), Number(r.count || 0)]),
-    );
+            { $group: { _id: "$requestorOrganizationId", count: { $sum: 1 } } },
+          ])
+        : [];
+      orderRows.forEach((r) =>
+        ordersByOrgId.set(String(r._id), Number(r.count || 0)),
+      );
+
+      const orgMembers = orgIds.map((orgId) => {
+        const org = orgById.get(orgId) || {};
+        return {
+          _id: orgId,
+          organization: org?.name || "",
+          email: org?.extracted?.email || "",
+          createdAt: org?.createdAt || null,
+          last30DaysOrders: ordersByOrgId.get(orgId) || 0,
+          lastMonthOrders: ordersByOrgId.get(orgId) || 0,
+        };
+      });
+
+      members = [...orgMembers];
+    }
 
     return res.status(200).json({
       success: true,
       data: {
-        members: (members || []).map((m) => ({
-          ...m,
-          last30DaysOrders: ordersByUserId.get(String(m._id)) || 0,
-          lastMonthOrders: ordersByUserId.get(String(m._id)) || 0,
-        })),
+        members,
       },
     });
   } catch (error) {
@@ -962,65 +1093,118 @@ export async function getMyPricingReferralStats(req, res) {
     const cachedGroupMemberCount = cachedSnapshot?.groupMemberCount;
     const cachedGroupTotalOrders = cachedSnapshot?.groupTotalOrders;
 
-    // 조직 단위: 조직 구성원(대표/직원) + 조직 구성원이 추천한 1단계만 합산
     const leader = await User.findById(groupLeaderId)
-      .select({ organizationId: 1 })
+      .select({ organizationId: 1, role: 1 })
       .lean();
 
-    let orgMemberObjectIds = [];
-    if (leader?.organizationId) {
-      const org = await RequestorOrganization.findById(leader.organizationId)
-        .select({ owner: 1, owners: 1, members: 1 })
+    const role = String(leader?.role || req.user?.role || "requestor");
+    let groupMemberCount = 0;
+    let freshGroupTotalOrders = 0;
+    let myLastMonthOrders = 0;
+    let groupMemberIds = [];
+
+    if (role === "requestor") {
+      let orgMemberObjectIds = [];
+      const leaderOrgId = String(leader?.organizationId || "");
+      if (leader?.organizationId) {
+        const org = await RequestorOrganization.findById(leader.organizationId)
+          .select({ owner: 1, owners: 1, members: 1 })
+          .lean();
+
+        const ownerId = String(org?.owner || "");
+        const ownerIds = Array.isArray(org?.owners)
+          ? org.owners.map(String)
+          : [];
+        const memberIds = Array.isArray(org?.members)
+          ? org.members.map(String)
+          : [];
+        const allIds = [ownerId, ...ownerIds, ...memberIds]
+          .map(String)
+          .filter((id) => Types.ObjectId.isValid(id));
+        orgMemberObjectIds = allIds.map((id) => new Types.ObjectId(id));
+      }
+
+      const referredRequestors = await User.find({
+        referredByUserId:
+          orgMemberObjectIds.length > 0
+            ? { $in: orgMemberObjectIds }
+            : requestorId,
+        active: true,
+        role: "requestor",
+        organizationId: { $exists: true, $ne: null },
+      })
+        .select({ organizationId: 1 })
         .lean();
 
-      const ownerId = String(org?.owner || "");
-      const ownerIds = Array.isArray(org?.owners) ? org.owners.map(String) : [];
-      const memberIds = Array.isArray(org?.members)
-        ? org.members.map(String)
-        : [];
-      const allIds = [ownerId, ...ownerIds, ...memberIds]
-        .map(String)
-        .filter((id) => Types.ObjectId.isValid(id));
-      orgMemberObjectIds = allIds.map((id) => new Types.ObjectId(id));
+      const orgIds = Array.from(
+        new Set(
+          [
+            leaderOrgId,
+            ...(referredRequestors || []).map((u) =>
+              String(u.organizationId || ""),
+            ),
+          ].filter(Boolean),
+        ),
+      );
+      const orgObjectIds = orgIds
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
+
+      groupMemberCount = orgIds.length;
+      groupMemberIds = orgObjectIds.map((id) => id.toString());
+
+      [freshGroupTotalOrders, myLastMonthOrders] = await Promise.all([
+        orgObjectIds.length
+          ? Request.countDocuments({
+              requestorOrganizationId: { $in: orgObjectIds },
+              "caseInfos.reviewByStage.shipping.status": "APPROVED",
+              createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
+            })
+          : Promise.resolve(0),
+        leaderOrgId && Types.ObjectId.isValid(leaderOrgId)
+          ? Request.countDocuments({
+              requestorOrganizationId: new Types.ObjectId(leaderOrgId),
+              "caseInfos.reviewByStage.shipping.status": "APPROVED",
+              createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
+            })
+          : Promise.resolve(0),
+      ]);
+    } else {
+      const directChildren = await User.find({
+        referredByUserId: requestorId,
+        active: true,
+        role: { $in: ["requestor", "salesman"] },
+      })
+        .select({ _id: 1 })
+        .lean();
+
+      const baseMemberIds = [requestorId];
+      const rawMemberIds = [
+        ...baseMemberIds,
+        ...(directChildren || []).map((c) => c._id).filter(Boolean),
+      ];
+      groupMemberIds = rawMemberIds.map((id) => String(id));
+      groupMemberCount = groupMemberIds.length;
+
+      [freshGroupTotalOrders, myLastMonthOrders] = await Promise.all([
+        groupMemberIds.length
+          ? Request.countDocuments({
+              requestor: { $in: rawMemberIds },
+              "caseInfos.reviewByStage.shipping.status": "APPROVED",
+              createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
+            })
+          : Promise.resolve(0),
+        Request.countDocuments({
+          requestor: requestorId,
+          "caseInfos.reviewByStage.shipping.status": "APPROVED",
+          createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
+        }),
+      ]);
     }
 
-    const directChildren = await User.find({
-      referredByUserId:
-        orgMemberObjectIds.length > 0
-          ? { $in: orgMemberObjectIds }
-          : requestorId,
-      active: true,
-    })
-      .select({ _id: 1 })
+    const user = await User.findById(requestorId)
+      .select({ createdAt: 1, updatedAt: 1, active: 1, approvedAt: 1 })
       .lean();
-
-    const baseMemberIds =
-      orgMemberObjectIds.length > 0 ? orgMemberObjectIds : [requestorId];
-    const groupMemberIds = [
-      ...baseMemberIds,
-      ...(directChildren || []).map((c) => c._id).filter(Boolean),
-    ];
-
-    const groupMemberCount = groupMemberIds.length;
-
-    // 그룹 내 모든 멤버의 최근 30일 주문량 합산 (항상 실시간 계산)
-    const [freshGroupTotalOrders, myLastMonthOrders, user] = await Promise.all([
-      groupMemberIds.length
-        ? Request.countDocuments({
-            requestor: { $in: groupMemberIds },
-            "caseInfos.reviewByStage.shipping.status": "APPROVED",
-            createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
-          })
-        : Promise.resolve(0),
-      Request.countDocuments({
-        requestor: requestorId,
-        "caseInfos.reviewByStage.shipping.status": "APPROVED",
-        createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
-      }),
-      User.findById(requestorId)
-        .select({ createdAt: 1, updatedAt: 1, active: 1, approvedAt: 1 })
-        .lean(),
-    ]);
 
     const totalLastMonthOrders = freshGroupTotalOrders;
 
