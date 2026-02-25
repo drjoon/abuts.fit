@@ -15,6 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { cn } from "@/shared/ui/cn";
+import { useAvatarCarousel } from "@/shared/hooks/useAvatarCarousel";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
 import {
   User,
@@ -69,8 +70,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   const lastSavedKeyRef = useRef<string>("");
   const handleSaveRef = useRef<(() => Promise<void>) | null>(null);
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
-
-  const [avatarNonce, setAvatarNonce] = useState(0);
 
   const [authMethods, setAuthMethods] = useState({
     email: false,
@@ -304,22 +303,16 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     }
   };
 
-  const avatarOptions = useMemo(() => {
-    const seedBase = (accountData.email || accountData.name || "user")
-      .trim()
-      .slice(0, 30);
-    const seeds = [
-      `${seedBase}-${avatarNonce}-1`,
-      `${seedBase}-${avatarNonce}-2`,
-      `${seedBase}-${avatarNonce}-3`,
-      `${seedBase}-${avatarNonce}-4`,
-    ];
-    // RoboHash set4 (cats)
-    return seeds.map(
-      (seed) =>
-        `https://robohash.org/${encodeURIComponent(seed)}?set=set4&bgset=bg1`,
-    );
-  }, [accountData.email, accountData.name, avatarNonce]);
+  const avatarSeedBase = useMemo(
+    () => (accountData.email || accountData.name || "user").trim().slice(0, 50),
+    [accountData.email, accountData.name],
+  );
+
+  const {
+    avatars: carouselAvatars,
+    refreshAvatars,
+    isPrefetchReady: isAvatarPrefetchReady,
+  } = useAvatarCarousel(avatarSeedBase);
 
   const [accountLoading, setAccountLoading] = useState(Boolean(token));
 
@@ -790,16 +783,18 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
               <div className="flex items-center gap-4">
                 <Avatar className="h-20 w-20">
                   <AvatarImage
+                    seed={accountData.email || accountData.name}
+                    fallbackInitial={accountData.name}
                     src={accountData.profileImage || undefined}
                     alt={accountData.name}
                   />
-                  <AvatarFallback className="bg-primary/10">
-                    <Camera className="h-8 w-8 text-primary" />
+                  <AvatarFallback>
+                    {accountData.name?.slice(0, 1) || "?"}
                   </AvatarFallback>
                 </Avatar>
-                <div>
-                  <div className="grid grid-cols-5 gap-2">
-                    {avatarOptions.map((url) => (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    {carouselAvatars.map((url) => (
                       <button
                         key={url}
                         type="button"
@@ -824,235 +819,22 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                         />
                       </button>
                     ))}
-
+                  </p>
+                  <div className="flex justify-center">
                     <button
                       type="button"
                       className={cn(
-                        "rounded-full border bg-white/80 p-0.5 transition-colors",
-                        "border-border hover:border-muted-foreground/40",
+                        "inline-flex h-10 w-10 items-center justify-center rounded-full border text-slate-500 transition",
+                        isAvatarPrefetchReady
+                          ? "border-slate-300 hover:border-slate-400 hover:text-slate-700"
+                          : "border-dashed border-slate-200 opacity-70",
                       )}
-                      onClick={() => setAvatarNonce((v) => v + 1)}
+                      onClick={refreshAvatars}
+                      aria-label="새 이미지 그룹 불러오기"
                     >
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80">
-                        <RefreshCcw className="h-4 w-4 text-muted-foreground" />
-                      </div>
+                      <RefreshCcw className="h-4 w-4" />
                     </button>
                   </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">이름</Label>
-                <Input
-                  id="name"
-                  value={accountData.name}
-                  className={cn(
-                    fieldErrors.name
-                      ? "border-destructive focus-visible:ring-destructive"
-                      : "",
-                  )}
-                  onChange={(e) =>
-                    setAccountData((prev) => ({
-                      ...prev,
-                      name: e.target.value,
-                    }))
-                  }
-                  onChangeCapture={() =>
-                    setFieldErrors((prev) => ({ ...prev, name: undefined }))
-                  }
-                  onBlur={() => {
-                    const savedKey = JSON.stringify({
-                      name: accountData.name,
-                      phoneNumber: phoneValidation.normalized,
-                      profileImage: accountData.profileImage,
-                    });
-                    if (savedKey !== lastSavedKeyRef.current) {
-                      scheduleSave();
-                    }
-                  }}
-                />
-                {!!fieldErrors.name && (
-                  <p className="text-xs text-destructive">{fieldErrors.name}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="email">이메일</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={accountData.email}
-                  readOnly
-                />
-              </div>
-              <div className="hidden md:block" />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>국가</Label>
-                <Popover open={countryOpen} onOpenChange={setCountryOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      role="combobox"
-                      aria-expanded={countryOpen}
-                      className="w-full justify-between"
-                    >
-                      <span className="truncate">
-                        {selectedCountry.country} (+{selectedCountry.dialCode})
-                      </span>
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[200px] p-0">
-                    <Command>
-                      <CommandInput placeholder="국가 검색..." />
-                      <CommandList>
-                        <CommandEmpty>검색 결과가 없습니다.</CommandEmpty>
-                        <CommandGroup>
-                          {COUNTRY_DIAL_CODES.map((c) => (
-                            <CommandItem
-                              key={`${c.country}-${c.dialCode}`}
-                              value={`${c.country} ${c.dialCode}`}
-                              onSelect={() => {
-                                setAccountData((prev) => ({
-                                  ...prev,
-                                  phoneDialCode: c.dialCode,
-                                }));
-                                setCountryOpen(false);
-                                setPhoneVerifiedAt(null);
-                                setVerificationSent(false);
-                                setTimeLeft(0);
-                                setPhoneVerificationCode("");
-                              }}
-                            >
-                              <Check
-                                className={cn(
-                                  "mr-2 h-4 w-4",
-                                  accountData.phoneDialCode === c.dialCode
-                                    ? "opacity-100"
-                                    : "opacity-0",
-                                )}
-                              />
-                              {c.country} (+{c.dialCode})
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="phone">휴대폰번호</Label>
-                <Input
-                  ref={phoneInputRef}
-                  id="phone"
-                  type="tel"
-                  inputMode="tel"
-                  placeholder="01012345678"
-                  value={accountData.phoneNationalNumber}
-                  className={cn(
-                    "h-10",
-                    fieldErrors.phone || !phoneValidation.ok
-                      ? "border-destructive focus-visible:ring-destructive"
-                      : "",
-                  )}
-                  onChange={(e) => {
-                    setFieldErrors((prev) => ({ ...prev, phone: undefined }));
-                    setAccountData((prev) => ({
-                      ...prev,
-                      phoneNationalNumber: e.target.value,
-                    }));
-                    setPhoneVerifiedAt(null);
-                    setVerificationSent(false);
-                    setTimeLeft(0);
-                    setPhoneVerificationCode("");
-                  }}
-                  onBlur={() => {
-                    const savedKey = JSON.stringify({
-                      name: accountData.name,
-                      phoneNumber: phoneValidation.normalized,
-                      profileImage: accountData.profileImage,
-                    });
-                    if (savedKey !== lastSavedKeyRef.current) {
-                      scheduleSave();
-                    }
-                  }}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>확인</Label>
-
-                <div className="h-10">
-                  {phoneVerifiedAt ? (
-                    <Button
-                      variant="outline"
-                      className="w-full h-10 cursor-default border-green-200 bg-white text-green-600 hover:bg-white hover:text-green-600 disabled:opacity-100"
-                      disabled
-                    >
-                      <Check className="mr-2 h-4 w-4" />
-                      <span>인증 완료</span>
-                    </Button>
-                  ) : verificationSent ? (
-                    <div className="flex gap-2 h-10">
-                      <Input
-                        ref={phoneCodeInputRef}
-                        value={phoneVerificationCode}
-                        onChange={(e) =>
-                          setPhoneVerificationCode(
-                            e.target.value.replace(/\D/g, "").slice(0, 4),
-                          )
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key !== "Enter") return;
-                          e.preventDefault();
-                          handleVerifyPhoneVerification();
-                        }}
-                        inputMode="numeric"
-                        placeholder="0000"
-                        className="flex-1 h-10"
-                        maxLength={4}
-                      />
-                      <div className="flex items-center gap-2">
-                        <Button
-                          type="button"
-                          variant="default"
-                          onClick={handleVerifyPhoneVerification}
-                          className="h-10"
-                          disabled={
-                            phoneVerificationLoading !== "idle" ||
-                            !phoneVerificationCode.trim()
-                          }
-                        >
-                          {phoneVerificationLoading === "verifying"
-                            ? "..."
-                            : "확인"}
-                        </Button>
-                        {timeLeft > 0 && (
-                          <span className="text-xs text-destructive font-mono">
-                            {formatTime(timeLeft)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full h-10"
-                      onClick={handleSendPhoneVerification}
-                      disabled={!canSendPhoneVerification}
-                    >
-                      {phoneVerificationLoading === "sending"
-                        ? "발송 중..."
-                        : "인증번호 발송"}
-                    </Button>
-                  )}
                 </div>
               </div>
             </div>

@@ -15,6 +15,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { cn } from "@/shared/ui/cn";
+import { useAvatarCarousel } from "@/shared/hooks/useAvatarCarousel";
 
 interface ProfileStepProps {
   defaultCompleted?: boolean;
@@ -73,7 +74,6 @@ export const ProfileStep = ({
   const [profileImage, setProfileImage] = useState(
     initialDraft?.profileImage ?? "",
   );
-  const [avatarNonce, setAvatarNonce] = useState(0);
   const [completed, setCompleted] = useState(Boolean(defaultCompleted));
   const nameInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -117,16 +117,16 @@ export const ProfileStep = ({
     };
   }, [token]);
 
-  const avatarOptions = useMemo(() => {
-    const seedBase = (email || name || "user").trim().slice(0, 30);
-    const seeds = [1, 2, 3, 4].map(
-      (idx) => `${seedBase}-${avatarNonce}-${idx}`,
-    );
-    return seeds.map(
-      (seed) =>
-        `https://robohash.org/${encodeURIComponent(seed)}?set=set4&bgset=bg1`,
-    );
-  }, [email, name, avatarNonce]);
+  const seedBase = useMemo(
+    () => (email || name || "user").trim().slice(0, 50),
+    [email, name],
+  );
+
+  const {
+    avatars: carouselAvatars,
+    refreshAvatars,
+    isPrefetchReady,
+  } = useAvatarCarousel(seedBase);
 
   const handleSave = useCallback(async () => {
     if (!token) {
@@ -228,7 +228,7 @@ export const ProfileStep = ({
       </div>
 
       <div className="grid grid-cols-4 gap-3 justify-items-center">
-        {avatarOptions.slice(0, 4).map((url) => (
+        {carouselAvatars.map((url) => (
           <button
             key={url}
             type="button"
@@ -248,11 +248,16 @@ export const ProfileStep = ({
       <div className="flex justify-center">
         <button
           type="button"
-          className="inline-flex items-center gap-2 rounded-full border border-dashed border-slate-300 px-4 py-2 text-xs text-slate-500"
-          onClick={() => setAvatarNonce((v) => v + 1)}
-          aria-label="다른 이미지 불러오기"
+          className={cn(
+            "inline-flex h-10 w-10 items-center justify-center rounded-full border text-slate-500 transition",
+            isPrefetchReady
+              ? "border-slate-300 hover:border-slate-400 hover:text-slate-700"
+              : "border-dashed border-slate-200 opacity-70",
+          )}
+          onClick={refreshAvatars}
+          aria-label="새 이미지 그룹 불러오기"
         >
-          <RefreshCcw className="h-4 w-4" /> 다른 이미지
+          <RefreshCcw className="h-4 w-4" />
         </button>
       </div>
     </form>

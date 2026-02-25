@@ -574,6 +574,8 @@ export const DashboardLayout = () => {
                     }`}
                   >
                     <AvatarImage
+                      seed={user.email || user.id}
+                      fallbackInitial={user.name}
                       src={
                         sidebarProfileImage ||
                         String((user as any)?.profileImage || "") ||
