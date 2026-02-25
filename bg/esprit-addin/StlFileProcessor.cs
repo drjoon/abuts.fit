@@ -1493,8 +1493,18 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 ApplyTurningParameters(mainModuleType);
                 EnsureMoveModuleDefaults(mainModuleType, document);
                 ApplyLimitPoints(mainModuleType, frontLimitX, backLimitX);
+                
+                AppLogger.Log("DentalAddin: MoveSurface 실행 시작 - NeedMoveY/Z 계산");
+                InvokeMoveSurface(mainModuleType);
+                AppLogger.Log("DentalAddin: MoveSurface 실행 완료");
+                
                 AppLogger.Log($"DentalAddin: MoveSTL 실행 시작 (FrontLimit:{frontLimitX}, BackLimit:{backLimitX})");
                 InvokeMoveSTL(mainModuleType);
+                
+                AppLogger.Log("DentalAddin: Emerge 실행 시작 - IGS 서피스 Merge 및 Translate");
+                InvokeEmerge(mainModuleType, document);
+                AppLogger.Log("DentalAddin: Emerge 실행 완료");
+                
                 TryApplyCompositeSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ);
                 // ApplyAdditionalStlShift(document, mainModuleType, AppConfig.DefaultStlShift);
                 AppLogger.Log("DentalAddin: MoveSTL 실행 완료");
@@ -2256,6 +2266,209 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             SetStaticField(moveModuleType, "BackPointX", backLimitX);
             AppLogger.Log($"DentalAddin: 한계점 설정 완료 - FrontPointX:{frontLimitX}, BackPointX:{backLimitX}");
         }
+        private void InvokeMoveSurface(Type mainModuleType)
+        {
+            Type moveModuleType = ResolveMoveModuleType(mainModuleType);
+            if (moveModuleType == null)
+            {
+                AppLogger.Log("DentalAddin: MoveSTL_Module 타입을 찾을 수 없어 MoveSurface 호출 생략");
+                return;
+            }
+            bool invoked = TryInvokeModuleMethod(moveModuleType, "MoveSurface");
+            if (!invoked)
+            {
+                AppLogger.Log("DentalAddin: MoveSurface 메서드 호출 실패");
+                return;
+            }
+            
+            // MoveSurface 실행 후 계산된 값 로깅
+            try
+            {
+                FieldInfo needMoveField = moveModuleType.GetField("NeedMove", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                FieldInfo needMoveYField = moveModuleType.GetField("NeedMoveY", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                FieldInfo needMoveZField = moveModuleType.GetField("NeedMoveZ", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                
+                bool needMove = needMoveField != null && Convert.ToBoolean(needMoveField.GetValue(null));
+                double needMoveY = needMoveYField != null ? Convert.ToDouble(needMoveYField.GetValue(null)) : 0;
+                double needMoveZ = needMoveZField != null ? Convert.ToDouble(needMoveZField.GetValue(null)) : 0;
+                
+                AppLogger.Log($"DentalAddin: MoveSurface 계산 결과 - NeedMove:{needMove}, NeedMoveY:{needMoveY:F4}, NeedMoveZ:{needMoveZ:F4}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"DentalAddin: MoveSurface 결과 로깅 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+        
+        private void InvokeEmerge(Type mainModuleType, Document document)
+        {
+            if (mainModuleType == null)
+            {
+                AppLogger.Log("DentalAddin: MainModule 타입이 null이어서 Emerge 호출 생략");
+                return;
+            }
+
+            if (document == null)
+            {
+                AppLogger.Log("DentalAddin: Document가 null이어서 Emerge 호출 생략");
+                return;
+            }
+
+            if (TryInvokeCustomSurfaceMerge(mainModuleType, document))
+            {
+                return;
+            }
+
+            bool invoked = TryInvokeMainModuleMethod(mainModuleType, "Emerge", false);
+            if (!invoked)
+            {
+                AppLogger.Log("DentalAddin: Emerge 메서드 호출 실패");
+                return;
+            }
+
+            // Emerge 실행 후 SurfaceNumber 로깅
+            try
+            {
+                FieldInfo surfaceNumberField = mainModuleType.GetField("SurfaceNumber", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                if (surfaceNumberField != null)
+                {
+                    int surfaceNumber = Convert.ToInt32(surfaceNumberField.GetValue(null));
+                    AppLogger.Log($"DentalAddin: Emerge 완료 - SurfaceNumber:{surfaceNumber}");
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"DentalAddin: Emerge 결과 로깅 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private bool TryInvokeCustomSurfaceMerge(Type mainModuleType, Document document)
+        {
+            string surfaceRoot = AppConfig.SurfaceRootDirectory;
+            if (string.IsNullOrWhiteSpace(surfaceRoot) || !Directory.Exists(surfaceRoot))
+            {
+                AppLogger.Log($"DentalAddin: SurfaceRoot 없음 - {surfaceRoot}");
+                return false;
+            }
+
+            double rl = 1.0;
+            try
+            {
+                FieldInfo rlField = mainModuleType.GetField("RL", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                if (rlField != null)
+                {
+                    rl = Convert.ToDouble(rlField.GetValue(null), CultureInfo.InvariantCulture);
+                }
+            }
+            catch
+            {
+                rl = 1.0;
+            }
+
+            string projectFile = rl == 2.0 ? "Project2.igs" : "Project1.igs";
+            string extrudeFile = rl == 2.0 ? "ExtrudeL.igs" : "ExtrudeR.igs";
+            string projectPath = Path.Combine(surfaceRoot, projectFile);
+            string extrudePath = Path.Combine(surfaceRoot, extrudeFile);
+
+            if (!File.Exists(projectPath))
+            {
+                AppLogger.Log($"DentalAddin: Surface 파일 없음 - {projectPath}");
+                return false;
+            }
+
+            try
+            {
+                int beforeCount = document.GraphicsCollection.Count;
+                AppLogger.Log($"DentalAddin: Surface Merge(1) - {projectPath}");
+                document.MergeFile(projectPath, Missing.Value);
+
+                GraphicObject surface = FindMergedSurface(document, beforeCount);
+                if (surface == null)
+                {
+                    AppLogger.Log("DentalAddin: Merge된 Surface를 찾지 못했습니다.");
+                    return true;
+                }
+
+                surface.Layer.Visible = false;
+                FieldInfo surfaceNumberField = mainModuleType.GetField("SurfaceNumber", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                surfaceNumberField?.SetValue(null, Convert.ToInt32(surface.Key, CultureInfo.InvariantCulture));
+
+                SelectionSet selectionSet = GetOrCreateSelectionSet(document, "Smove");
+                selectionSet.RemoveAll();
+
+                Type moveModuleType = ResolveMoveModuleType(mainModuleType);
+                bool needMove = moveModuleType != null && Convert.ToBoolean(moveModuleType.GetField("NeedMove", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(null) ?? false);
+                double needMoveY = moveModuleType != null ? Convert.ToDouble(moveModuleType.GetField("NeedMoveY", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(null) ?? 0.0) : 0.0;
+                double needMoveZ = moveModuleType != null ? Convert.ToDouble(moveModuleType.GetField("NeedMoveZ", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(null) ?? 0.0) : 0.0;
+
+                if (needMove)
+                {
+                    selectionSet.Add(surface, Missing.Value);
+                    selectionSet.Translate(0.0, needMoveY, needMoveZ, Missing.Value);
+                    selectionSet.RemoveAll();
+                }
+
+                int[] numCombobox = GetMainModuleField<int[]>(mainModuleType, "NumCombobox");
+                int finishingMethod = (numCombobox != null && numCombobox.Length > 1) ? numCombobox[1] : 0;
+                if (finishingMethod == 1)
+                {
+                    AppLogger.Log("DentalAddin: FinishingMethod==1, Extrude Merge 생략");
+                    return true;
+                }
+
+                if (!File.Exists(extrudePath))
+                {
+                    AppLogger.Log($"DentalAddin: Extrude 파일 없음 - {extrudePath}");
+                    return true;
+                }
+
+                beforeCount = document.GraphicsCollection.Count;
+                AppLogger.Log($"DentalAddin: Surface Merge(2) - {extrudePath}");
+                document.MergeFile(extrudePath, Missing.Value);
+                GraphicObject extrudeSurface = FindMergedSurface(document, beforeCount, surface.Key);
+                if (extrudeSurface != null)
+                {
+                    extrudeSurface.Layer.Visible = false;
+                    FieldInfo surfaceNumber2Field = mainModuleType.GetField("SurfaceNumber2", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                    surfaceNumber2Field?.SetValue(null, Convert.ToDouble(extrudeSurface.Key, CultureInfo.InvariantCulture));
+                    FieldInfo gasField = mainModuleType.GetField("Gas", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                    gasField?.SetValue(null, extrudeSurface);
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"DentalAddin: 커스텀 Surface Merge 실패 - {ex.GetType().Name}:{ex.Message}");
+                return false;
+            }
+        }
+
+        private static GraphicObject FindMergedSurface(Document document, int beforeCount, object excludedKey = null)
+        {
+            if (document?.GraphicsCollection == null)
+            {
+                return null;
+            }
+
+            int count = document.GraphicsCollection.Count;
+            for (int i = beforeCount + 1; i <= count; i++)
+            {
+                GraphicObject graphicObject = document.GraphicsCollection[i] as GraphicObject;
+                if (graphicObject?.GraphicObjectType != espGraphicObjectType.espSurface)
+                {
+                    continue;
+                }
+                if (excludedKey != null && Equals(graphicObject.Key, excludedKey))
+                {
+                    continue;
+                }
+                return graphicObject;
+            }
+
+            return null;
+        }
+        
         private void InvokeMoveSTL(Type mainModuleType)
         {
             Type moveModuleType = ResolveMoveModuleType(mainModuleType);

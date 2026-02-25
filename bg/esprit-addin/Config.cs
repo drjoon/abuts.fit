@@ -17,6 +17,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public const string StorageNcEnv = "ABUTS_STORAGE_NC";
         public const string AddInRootEnv = "ABUTS_ADDIN_ROOT";
         public const string PrcRootEnv = "ABUTS_PRC_ROOT";
+        public const string SurfaceRootEnv = "ABUTS_SURFACE_ROOT";
         public const string FaceHolePrcEnv = "ABUTS_FACE_HOLE_PRC";
         public const string ConnectionPrcEnv = "ABUTS_CONNECTION_PRC";
         public const string TurningDepthEnv = "ABUTS_TURNING_DEPTH";
@@ -39,6 +40,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private static readonly string DefaultStorageNcDirectory = Path.Combine(DefaultBaseDirectory, "storage", "3-nc");
         private static readonly string DefaultAddInRootDirectory = Path.Combine(DefaultBaseDirectory, "esprit-addin");
         private static readonly string DefaultPrcRootDirectory = @"C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent";
+        private static readonly string DefaultSurfaceRootDirectory = Path.Combine(DefaultAddInRootDirectory, "Surface");
         public const string DefaultBackendUrl = "https://abuts.fit/api";
         public const string DefaultBridgeSharedSecret = "t1ZYB4ELMWBKHDuyyUgnx4HdyRg";
         public const double DefaultTurningDepth = 1.0;
@@ -69,6 +71,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public static string StorageNcDirectory => GetEnvOrDefault(StorageNcEnv, DefaultStorageNcDirectory);
         public static string AddInRootDirectory => GetEnvOrDefault(AddInRootEnv, DefaultAddInRootDirectory);
         public static string PrcRootDirectory => GetEnvOrDefault(PrcRootEnv, DefaultPrcRootDirectory);
+        public static string SurfaceRootDirectory => GetEnvOrDefault(SurfaceRootEnv, DefaultSurfaceRootDirectory);
 
         public static string FaceHoleProcessPath => GetEnvOrDefault(
             FaceHolePrcEnv,
