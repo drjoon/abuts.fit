@@ -476,7 +476,7 @@ export const SignupStaffPage = () => {
 
   const renderRoleStep = (
     <div className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 ">
         {roleCards.map((card) => (
           <button
             type="button"
@@ -493,27 +493,9 @@ export const SignupStaffPage = () => {
           </button>
         ))}
       </div>
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-left text-xs text-white/70">
-        선택한 역할은 검증 후 변경됩니다. 초대 링크가 외부로 공유되지 않도록
-        주의해주세요.
-      </div>
       <div className="space-y-3 text-left">
-        <p className="text-sm font-medium text-white/80">가입 방법</p>
         <div className="grid gap-2 sm:grid-cols-3">
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedMethod("email");
-              setWizardStep(2);
-            }}
-            className={`h-11 rounded-md border text-sm font-semibold transition ${
-              selectedMethod === "email"
-                ? "border-white/20 bg-white/15 text-white"
-                : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
-            }`}
-          >
-            이메일로 계속
-          </button>
+          
           <button
             type="button"
             onClick={() => goSocialSignup("google")}
@@ -537,6 +519,20 @@ export const SignupStaffPage = () => {
             disabled={isLoading}
           >
             Kakao
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedMethod("email");
+              setWizardStep(2);
+            }}
+            className={`h-11 rounded-md border text-sm font-semibold transition ${
+              selectedMethod === "email"
+                ? "border-white/20 bg-white/15 text-white"
+                : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+            }`}
+          >
+            E-mail
           </button>
         </div>
       </div>
@@ -616,7 +612,7 @@ export const SignupStaffPage = () => {
           </p>
         ) : null}
       </div>
-      <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-xs text-white/70">
+      <div className="rounded-lg p-3 text-xs text-white/70 text-center">
         입력한 이메일로 인증 메일이 발송됩니다. 법인 메일을 사용하는 경우
         스팸함도 함께 확인해주세요.
       </div>
