@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Truck } from "lucide-react";
@@ -21,6 +21,7 @@ const getRandomWeekday = () =>
 
 export const ShippingTab = ({ userData }: ShippingTabProps) => {
   const storageKey = `${STORAGE_KEY_PREFIX}${userData?.email || "guest"}`;
+  const lastSavedRef = useRef<string>("");
 
   const { token, user } = useAuthStore();
 
@@ -45,11 +46,23 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
     return role || "requestor";
   }, [user?.role, userData?.role]);
 
-  const [computedWeeklyDay, setComputedWeeklyDay] = useState<string>("");
+  const [policyLoaded, setPolicyLoaded] = useState(false);
+
+  const normalizeWeeklyBatchDays = (raw: string[]) =>
+    Array.from(
+      new Set(
+        raw
+          .map((day) => String(day).trim())
+          .filter((day) => WEEKDAY_OPTIONS.includes(day as any)),
+      ),
+    );
 
   useEffect(() => {
     const load = async () => {
-      if (!token) return;
+      if (!token) {
+        setPolicyLoaded(true);
+        return;
+      }
       try {
         const res = await request<any>({
           path: `/api/organizations/me?organizationType=${encodeURIComponent(
@@ -59,9 +72,20 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
           token,
           headers: mockHeaders,
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          setPolicyLoaded(true);
+          return;
+        }
         const body: any = res.data || {};
         const data = body.data || body;
+        const serverDays = normalizeWeeklyBatchDays(
+          data?.shippingPolicy?.weeklyBatchDays || [],
+        );
+        if (serverDays.length > 0) {
+          setWeeklyBatchDays(serverDays);
+          setPolicyLoaded(true);
+          return;
+        }
         const businessNumberRaw = String(
           data?.extracted?.businessNumber ||
             data?.organization?.businessNumber ||
@@ -69,7 +93,10 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
             "",
         ).trim();
         const digits = businessNumberRaw.replace(/\D/g, "");
-        if (!digits) return;
+        if (!digits) {
+          setPolicyLoaded(true);
+          return;
+        }
         let idx = 0;
         try {
           idx = Number(((BigInt(digits) % 5n) + 5n) % 5n);
@@ -79,9 +106,12 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
           idx = ((n % 5) + 5) % 5;
         }
         const map = ["mon", "tue", "wed", "thu", "fri"] as const;
-        setComputedWeeklyDay(map[idx]);
+        setWeeklyBatchDays((prev) => (prev.length > 0 ? prev : [map[idx]]));
+        setPolicyLoaded(true);
       } catch {
         // ignore
+      } finally {
+        setPolicyLoaded(true);
       }
     };
 
@@ -89,6 +119,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
   }, [mockHeaders, organizationType, token]);
 
   useEffect(() => {
+    if (token) return;
     try {
       const raw = localStorage.getItem(storageKey);
       if (!raw) return;
@@ -101,15 +132,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
     } catch {
       // ignore
     }
-  }, [storageKey]);
-
-  useEffect(() => {
-    if (!computedWeeklyDay) return;
-    setWeeklyBatchDays((prev) => {
-      if (prev.includes(computedWeeklyDay)) return prev;
-      return [...prev, computedWeeklyDay];
-    });
-  }, [computedWeeklyDay, storageKey]);
+  }, [storageKey, token]);
 
   const toggleDay = (day: string) => {
     setWeeklyBatchDays((prev) => {
@@ -123,12 +146,34 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
   };
 
   useEffect(() => {
+    if (token) return;
     try {
       localStorage.setItem(storageKey, JSON.stringify({ weeklyBatchDays }));
     } catch {
       // ignore
     }
-  }, [storageKey, weeklyBatchDays]);
+  }, [storageKey, token, weeklyBatchDays]);
+
+  useEffect(() => {
+    if (!token || !policyLoaded) return;
+    const normalized = normalizeWeeklyBatchDays(weeklyBatchDays);
+    const payloadKey = JSON.stringify(normalized);
+    if (payloadKey === lastSavedRef.current) return;
+    lastSavedRef.current = payloadKey;
+    void request({
+      path: `/api/organizations/me?organizationType=${encodeURIComponent(
+        organizationType,
+      )}`,
+      method: "PUT",
+      token,
+      headers: mockHeaders,
+      jsonBody: {
+        shippingPolicy: {
+          weeklyBatchDays: normalized,
+        },
+      },
+    });
+  }, [mockHeaders, organizationType, policyLoaded, token, weeklyBatchDays]);
 
   const dayLabels: Record<string, string> = {
     mon: "월",
@@ -147,16 +192,16 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6 text-lg">
-        <div className="space-y-3 p-4 rounded-lg bg-green-50 border border-green-200">
-          <Label className="text-lg font-semibold text-green-900">
-            주간 묶음 요일
+        <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_20px_45px_rgba(15,23,42,0.08)]">
+          <Label className="text-xl uppercase tracking-[0.3em] text-slate-500">
+            묶음 요일
           </Label>
-          <p className="text-base text-green-800 leading-relaxed">
-            선택한(녹색) 요일에 도착할 수 있도록 직전 영업일 오후 3시(운송장
-            입력) 마감까지 발송 대기 중인 제품을 한 박스에 담아 발송하며, 오후
-            4시에 택배사가 수거합니다.
+          <p className="text-base leading-relaxed text-slate-600 pt-2">
+            선택한 요일 오후 2시까지 모인 제품을 한 박스로 묶어 발송합니다.
+            <br />
+            묶음 요일은 여러 개를 선택할 수 있습니다.
           </p>
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-4 flex flex-wrap gap-2 pt-2">
             {(["mon", "tue", "wed", "thu", "fri"] as const).map((day) => {
               const active = weeklyBatchDays.includes(day);
               return (
@@ -164,10 +209,10 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
                   key={day}
                   type="button"
                   onClick={() => toggleDay(day)}
-                  className={`px-4 py-2 rounded-lg text-base font-medium border-2 transition-all ${
+                  className={`px-4 py-2 rounded-xl text-base font-medium border transition-all ${
                     active
-                      ? "bg-green-600 text-white border-green-600 shadow-lg"
-                      : "bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200"
+                      ? "bg-sky-500 text-white border-sky-500"
+                      : "bg-slate-50 text-slate-500 border-slate-200 hover:text-slate-800"
                   }`}
                 >
                   {dayLabels[day]}

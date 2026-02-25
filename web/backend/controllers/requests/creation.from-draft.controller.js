@@ -629,16 +629,26 @@ export async function createRequestsFromDraft(req, res) {
           newRequest.productionSchedule = productionSchedule;
 
           const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
-          const maxD = item.caseInfosWithFile?.maxDiameter;
-          const isSmall =
-            typeof maxD === "number" && !Number.isNaN(maxD) ? maxD <= 8 : true;
-          const days = shippingMode === "express" ? (isSmall ? 1 : 4) : 0;
-          const estimatedShipYmd =
-            shippingMode === "express"
-              ? await addKoreanBusinessDays({ startYmd: createdYmd, days })
-              : await normalizeKoreanBusinessDay({ ymd: createdYmd });
-          newRequest.timeline = newRequest.timeline || {};
-          newRequest.timeline.estimatedShipYmd = estimatedShipYmd;
+          const pickupYmd = productionSchedule?.scheduledShipPickup
+            ? toKstYmd(productionSchedule.scheduledShipPickup)
+            : null;
+          if (pickupYmd) {
+            newRequest.timeline = newRequest.timeline || {};
+            newRequest.timeline.estimatedShipYmd = pickupYmd;
+          } else {
+            const maxD = item.caseInfosWithFile?.maxDiameter;
+            const isSmall =
+              typeof maxD === "number" && !Number.isNaN(maxD)
+                ? maxD <= 8
+                : true;
+            const days = shippingMode === "express" ? (isSmall ? 1 : 4) : 0;
+            const estimatedShipYmd =
+              shippingMode === "express"
+                ? await addKoreanBusinessDays({ startYmd: createdYmd, days })
+                : await normalizeKoreanBusinessDay({ ymd: createdYmd });
+            newRequest.timeline = newRequest.timeline || {};
+            newRequest.timeline.estimatedShipYmd = estimatedShipYmd;
+          }
 
           if (duplicateResolutions) {
             const r = resolutionsByCaseId.get(String(item.caseId));

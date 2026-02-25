@@ -135,10 +135,15 @@ export async function createRequest(req, res) {
 
     // 발송 예정일 (YYYY-MM-DD, KST)
     const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
-    const estimatedShipYmd = await addKoreanBusinessDays({
-      startYmd: createdYmd,
-      days: 1,
-    });
+    const pickupYmd = productionSchedule?.scheduledShipPickup
+      ? toKstYmd(productionSchedule.scheduledShipPickup)
+      : null;
+    const estimatedShipYmd = pickupYmd
+      ? pickupYmd
+      : await addKoreanBusinessDays({
+          startYmd: createdYmd,
+          days: 1,
+        });
     newRequest.timeline = newRequest.timeline || {};
     newRequest.timeline.estimatedShipYmd = estimatedShipYmd;
 

@@ -13,8 +13,8 @@ import {
  * 2. CAM 시작 → CAM 완료 (5분)
  * 3. CAM 완료 → 가공 시작 → 가공 완료 (15분)
  * 4. 가공 완료 → 세척/검사/포장 대기 (50~100개 모아서 처리, 1일 소요)
- * 5. 배치 처리 완료 → 택배 수거 (다음날 16:00)
- * 6. 택배 수거 → 도착 (1영업일)
+ * 5. 배치 처리 완료 → 택배 수거 신청 (15:00)
+ * 6. 택배 수거 (16:00) → 도착 (1영업일)
  *
  * CNC 장비별 소재 세팅:
  * - M3: 6mm 전용
@@ -29,6 +29,8 @@ import {
 const CAM_DURATION_MINUTES = 5; // CAM 시작 → 완료
 const MACHINING_DURATION_MINUTES = 15; // 가공 시작 → 완료
 const BATCH_PROCESSING_DAYS = 1; // 세척/검사/포장 (50~100개 모아서)
+const PACKING_CUTOFF_HOUR = 14; // 포장 마감 시각 (14:00)
+const PICKUP_REQUEST_HOUR = 15; // 택배 수거 신청 시각 (15:00)
 const DAILY_PICKUP_HOUR = 16; // 택배 수거 시각 (16:00)
 
 /**
@@ -65,11 +67,11 @@ function createKstDateTime(ymd, hour = 0, minute = 0) {
 /**
  * 다음 택배 수거 시각 계산 (매일 16:00)
  */
-function getNextPickupTime(fromDateTime) {
+function getNextPickupTime(fromDateTime, hour) {
   const pickupTime = new Date(fromDateTime);
-  pickupTime.setHours(DAILY_PICKUP_HOUR, 0, 0, 0);
+  pickupTime.setHours(hour, 0, 0, 0);
 
-  // 이미 16:00 지났으면 다음날 16:00
+  // 이미 해당 시각이 지났으면 다음날 같은 시각
   if (fromDateTime >= pickupTime) {
     pickupTime.setDate(pickupTime.getDate() + 1);
   }
@@ -160,10 +162,23 @@ export async function calculateInitialProductionSchedule({
     startYmd: machiningCompleteYmd,
     days: BATCH_PROCESSING_DAYS,
   });
-  const scheduledBatchProcessing = createKstDateTime(batchProcessingYmd, 12, 0);
+  const scheduledBatchProcessing = createKstDateTime(
+    batchProcessingYmd,
+    PACKING_CUTOFF_HOUR,
+    0,
+  );
 
-  // 배치 처리 완료 → 택배 수거 (다음날 16:00)
-  const scheduledShipPickup = getNextPickupTime(scheduledBatchProcessing);
+  // 배치 처리 완료 → 택배 수거 신청 (15:00)
+  const scheduledPickupRequest = getNextPickupTime(
+    scheduledBatchProcessing,
+    PICKUP_REQUEST_HOUR,
+  );
+
+  // 택배 수거 시각 (16:00)
+  const scheduledShipPickup = getNextPickupTime(
+    scheduledBatchProcessing,
+    DAILY_PICKUP_HOUR,
+  );
 
   return {
     scheduledCamStart,
@@ -171,6 +186,7 @@ export async function calculateInitialProductionSchedule({
     scheduledMachiningStart,
     scheduledMachiningComplete,
     scheduledBatchProcessing,
+    scheduledPickupRequest,
     scheduledShipPickup,
     assignedMachine: preferredMachine, // M3, M4, 또는 null
     diameter,

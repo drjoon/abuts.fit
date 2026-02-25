@@ -96,15 +96,17 @@ export async function updateMyShippingMode(req, res) {
 
           // 발송 예정일(YYYY-MM-DD, KST)
           req.timeline = req.timeline || {};
-          if (shippingMode === "express") {
+          const pickup = newSchedule?.scheduledShipPickup;
+          const pickupYmd = pickup ? toKstYmd(pickup) : null;
+          if (pickupYmd) {
+            req.timeline.estimatedShipYmd = pickupYmd;
+          } else if (shippingMode === "express") {
             const createdYmd = toKstYmd(req.createdAt) || getTodayYmdInKst();
             req.timeline.estimatedShipYmd = await addKoreanBusinessDays({
               startYmd: createdYmd,
               days: 1,
             });
           } else {
-            const pickup = newSchedule?.scheduledShipPickup;
-            const pickupYmd = pickup ? toKstYmd(pickup) : null;
             req.timeline.estimatedShipYmd = await addKoreanBusinessDays({
               startYmd: toKstYmd(req.createdAt) || getTodayYmdInKst(),
               days: 1,
@@ -268,11 +270,22 @@ export async function getShippingEstimate(req, res) {
     }
 
     const todayYmd = getTodayYmdInKst();
-    const baseYmd = todayYmd;
-    const estimatedShipYmd = await addKoreanBusinessDays({
-      startYmd: baseYmd,
-      days: 1,
+    const { calculateInitialProductionSchedule } =
+      await import("./production.utils.js");
+    const schedule = await calculateInitialProductionSchedule({
+      shippingMode: mode,
+      maxDiameter,
+      requestedAt: new Date(),
     });
+    const pickupYmd = schedule?.scheduledShipPickup
+      ? toKstYmd(schedule.scheduledShipPickup)
+      : null;
+    const estimatedShipYmd = pickupYmd
+      ? pickupYmd
+      : await addKoreanBusinessDays({
+          startYmd: todayYmd,
+          days: 1,
+        });
 
     return res.status(200).json({
       success: true,
@@ -356,6 +369,10 @@ export async function getMyBulkShipping(req, res) {
         });
       }
 
+      const pickup = r.productionSchedule?.scheduledShipPickup;
+      const pickupYmd = pickup ? toKstYmd(pickup) : null;
+      if (pickupYmd) return pickupYmd;
+
       const requestedShipYmd = toKstYmd(r.requestedShipDate);
       const createdYmd = toKstYmd(r.createdAt) || todayYmd;
       const raw = requestedShipYmd || createdYmd;
@@ -373,7 +390,7 @@ export async function getMyBulkShipping(req, res) {
       },
     })
       .select(
-        "requestId title manufacturerStage caseInfos shippingMode requestedShipDate createdAt timeline.estimatedShipYmd requestor",
+        "requestId title manufacturerStage caseInfos shippingMode requestedShipDate createdAt timeline.estimatedShipYmd requestor productionSchedule",
       )
       .populate("requestor", "name organization")
       .lean();
@@ -487,6 +504,14 @@ export async function registerShipment(req, res) {
     const updatedIds = [];
 
     for (const r of requests) {
+      const scheduledPickup = r.productionSchedule?.scheduledShipPickup
+        ? new Date(r.productionSchedule.scheduledShipPickup)
+        : null;
+      const now = new Date();
+      const actualShipPickup =
+        scheduledPickup && !Number.isNaN(scheduledPickup.getTime())
+          ? scheduledPickup
+          : now;
       // 1. Create or update DeliveryInfo
       let deliveryInfo = null;
       if (r.deliveryInfoRef) {
@@ -498,13 +523,15 @@ export async function registerShipment(req, res) {
           request: r._id,
           trackingNumber,
           carrier,
-          shippedAt: new Date(),
+          shippedAt: actualShipPickup,
         });
         r.deliveryInfoRef = deliveryInfo._id;
       } else {
         deliveryInfo.trackingNumber = trackingNumber;
         deliveryInfo.carrier = carrier;
-        if (!deliveryInfo.shippedAt) deliveryInfo.shippedAt = new Date();
+        if (!deliveryInfo.shippedAt) {
+          deliveryInfo.shippedAt = actualShipPickup;
+        }
         await deliveryInfo.save();
       }
 
@@ -521,7 +548,9 @@ export async function registerShipment(req, res) {
       // 3. Move to Tracking Stage
       applyStatusMapping(r, "추적관리");
 
-      // 4. Clear mailbox address
+      // 4. Mark actual pickup + clear mailbox address
+      r.productionSchedule = r.productionSchedule || {};
+      r.productionSchedule.actualShipPickup = actualShipPickup;
       r.mailboxAddress = null;
 
       await r.save();

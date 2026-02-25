@@ -339,6 +339,7 @@ export async function getMyOrganization(req, res) {
           businessVerified: false,
           extracted: {},
           businessLicense: {},
+          shippingPolicy: {},
         },
       });
     }
@@ -382,6 +383,7 @@ export async function getMyOrganization(req, res) {
           businessVerified: false,
           extracted: {},
           businessLicense: {},
+          shippingPolicy: org?.shippingPolicy || {},
         },
       });
     }
@@ -414,6 +416,7 @@ export async function getMyOrganization(req, res) {
         businessVerified,
         extracted: org?.extracted || {},
         businessLicense: org?.businessLicense || {},
+        shippingPolicy: org?.shippingPolicy || {},
       },
     });
   } catch (error) {
@@ -572,6 +575,7 @@ export async function updateMyOrganization(req, res) {
     const emailProvided = hasOwn(req.body, "email");
     const addressProvided = hasOwn(req.body, "address");
     const startDateProvided = hasOwn(req.body, "startDate");
+    const shippingPolicyProvided = hasOwn(req.body, "shippingPolicy");
 
     const representativeName = String(
       req.body?.representativeName || "",
@@ -664,6 +668,19 @@ export async function updateMyOrganization(req, res) {
       } else {
         extractedPatch.businessNumber = businessNumber;
       }
+    }
+
+    if (shippingPolicyProvided) {
+      const rawDays = req.body?.shippingPolicy?.weeklyBatchDays;
+      const normalizedDays = Array.isArray(rawDays)
+        ? rawDays
+            .map((day) => String(day).trim())
+            .filter((day) => ["mon", "tue", "wed", "thu", "fri"].includes(day))
+        : [];
+      patch["shippingPolicy.weeklyBatchDays"] = Array.from(
+        new Set(normalizedDays),
+      );
+      patch["shippingPolicy.updatedAt"] = new Date();
     }
 
     if (businessNumber) {

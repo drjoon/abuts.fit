@@ -5,7 +5,7 @@ import {
 } from "./utils.js";
 import { isKoreanBusinessDay } from "../../utils/krBusinessDays.js";
 
-const WAYBILL_INPUT_CUTOFF_HOUR_KST = 15;
+const WAYBILL_INPUT_CUTOFF_HOUR_KST = 14;
 
 function toKstYmd(d) {
   if (!d) return null;

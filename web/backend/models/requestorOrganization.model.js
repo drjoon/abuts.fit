@@ -93,6 +93,13 @@ const requestorOrganizationSchema = new mongoose.Schema(
       message: { type: String, default: "" },
       checkedAt: { type: Date, default: null },
     },
+    shippingPolicy: {
+      weeklyBatchDays: {
+        type: [String],
+        default: [],
+      },
+      updatedAt: { type: Date, default: null },
+    },
   },
   {
     timestamps: true,

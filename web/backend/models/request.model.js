@@ -358,6 +358,7 @@ const requestSchema = new mongoose.Schema(
       scheduledMachiningStart: Date, // 가공 시작 예정 시각 (CAM 완료 직후)
       scheduledMachiningComplete: Date, // 가공 완료 예정 시각 (가공 시작 + 15분)
       scheduledBatchProcessing: Date, // 세척/검사/포장 예정 시각 (50~100개 모아서 처리)
+      scheduledPickupRequest: Date, // 택배 수거 신청 시각 (15:00)
       scheduledShipPickup: Date, // 택배 수거 시각 (매일 16:00)
 
       // 실제 시각
