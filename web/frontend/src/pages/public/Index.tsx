@@ -71,10 +71,12 @@ const Index = () => {
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#030711] text-white">
       <div className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-0 bg-gradient-to-br from-[#030711] via-[#040916] to-[#060d23] opacity-95" />
+        <div className="absolute -top-40 -left-24 h-[26rem] w-[26rem] rounded-full bg-gradient-to-br from-indigo-500/40 via-sky-400/28 to-emerald-300/20 blur-[190px]" />
         <div className="absolute -top-48 -right-32 h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-blue-500/35 via-cyan-400/22 to-emerald-300/22 blur-[200px]" />
         <div className="absolute bottom-0 left-[-120px] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br from-purple-500/35 via-pink-500/22 to-orange-400/16 blur-[200px]" />
         <div
-          className="absolute inset-0 opacity-[0.07]"
+          className="absolute inset-0 opacity-[0.09]"
           style={{
             backgroundImage:
               "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.45) 1px, transparent 0)",
