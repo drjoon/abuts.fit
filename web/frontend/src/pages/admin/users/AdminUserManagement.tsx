@@ -153,10 +153,10 @@ const formatDate = (input?: string) => {
 const toUiUser = (u: ApiUser): UiUserRow => {
   const active = Boolean(u.active);
   const approved = Boolean(u.approvedAt);
-  const status: UiUserStatus = !active
-    ? "inactive"
-    : !approved
-      ? "pending"
+  const status: UiUserStatus = !approved
+    ? "pending"
+    : !active
+      ? "inactive"
       : "active";
   const email = String(u.email || "");
   const originalEmail = String(u.originalEmail || "");

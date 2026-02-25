@@ -58,7 +58,10 @@ interface AuthState {
   isAuthenticated: boolean;
   token: string | null;
   refreshToken: string | null;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (
+    email: string,
+    password: string,
+  ) => Promise<{ success: boolean; message?: string }>;
   loginWithToken: (
     token: string,
     refreshToken?: string | null,
@@ -103,8 +106,11 @@ export const useAuthStore = create<AuthState>((set, get) => {
 
         const json: any = await res.json().catch(() => null);
         if (!res.ok || !json?.success) {
-          console.error("[login] API error:", json?.message || "Unknown error");
-          return false;
+          const message = String(
+            json?.message || "로그인에 실패했습니다. 다시 시도해주세요.",
+          );
+          console.error("[login] API error:", message);
+          return { success: false, message };
         }
 
         const data = json?.data || {};
@@ -118,7 +124,10 @@ export const useAuthStore = create<AuthState>((set, get) => {
             token: !!token,
             user: !!normalizedUser,
           });
-          return false;
+          return {
+            success: false,
+            message: "로그인 처리에 필요한 정보가 누락되었습니다.",
+          };
         }
 
         try {
@@ -129,7 +138,11 @@ export const useAuthStore = create<AuthState>((set, get) => {
           console.log("[login] Tokens saved to localStorage");
         } catch (err) {
           console.error("[login] localStorage save failed:", err);
-          return false;
+          return {
+            success: false,
+            message:
+              "로그인 정보를 저장하지 못했습니다. 브라우저 설정을 확인해주세요.",
+          };
         }
 
         set({
@@ -139,10 +152,13 @@ export const useAuthStore = create<AuthState>((set, get) => {
           refreshToken,
         });
 
-        return true;
+        return { success: true };
       } catch (err) {
         console.error("[login] Unexpected error:", err);
-        return false;
+        return {
+          success: false,
+          message: "로그인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        };
       }
     },
     loginWithToken: async (token: string, refreshToken?: string | null) => {

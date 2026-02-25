@@ -79,13 +79,13 @@ export const LoginPage = () => {
     setIsLoading(true);
 
     try {
-      const success = await login(email, password);
-      if (success) {
+      const result = await login(email, password);
+      if (result.success) {
         navigate("/dashboard", { replace: true });
       } else {
         toast({
           title: "로그인 실패",
-          description: "이메일 또는 비밀번호를 확인하세요.",
+          description: result.message || "이메일 또는 비밀번호를 확인하세요.",
           variant: "destructive",
         });
       }
@@ -106,13 +106,14 @@ export const LoginPage = () => {
     setStep("password");
     setIsLoading(true);
     try {
-      const success = await login(account.email, account.password);
-      if (success) {
+      const result = await login(account.email, account.password);
+      if (result.success) {
         navigate("/dashboard", { replace: true });
       } else {
         toast({
           title: "로그인 실패",
-          description: `${account.label} 계정 로그인에 실패했습니다.`,
+          description:
+            result.message || `${account.label} 계정 로그인에 실패했습니다.`,
           variant: "destructive",
         });
       }
