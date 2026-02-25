@@ -191,17 +191,8 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   };
 
   const mockHeaders = useMemo(() => {
-    if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
-    return {
-      "x-mock-role": (user?.role || userData?.role || "requestor") as string,
-      "x-mock-position": (user as any)?.position || "staff",
-      "x-mock-email": user?.email || userData?.email || "mock@abuts.fit",
-      "x-mock-name": user?.name || userData?.name || "사용자",
-      "x-mock-organization":
-        (user as any)?.organization || userData?.companyName || "",
-      "x-mock-phone": (user as any)?.phoneNumber || "",
-    };
-  }, [token, user?.email, user?.name, user?.role, userData]);
+    return {} as Record<string, string>;
+  }, []);
 
   const fetchPaidBalance = useCallback(async () => {
     if (!token) return 0;
@@ -211,7 +202,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         path: "/api/credits/balance",
         method: "GET",
         token,
-        headers: mockHeaders,
       });
 
       if (!res.ok) {
@@ -230,7 +220,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     } finally {
       setLoadingPaidBalance(false);
     }
-  }, [mockHeaders, token]);
+  }, [token]);
 
   useEffect(() => {
     void fetchPaidBalance();
@@ -263,7 +253,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         path: "/api/auth/withdraw",
         method: "POST",
         token,
-        headers: mockHeaders,
         jsonBody:
           currentPaidBalance > 0
             ? {
@@ -329,7 +318,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
           path: "/api/users/profile",
           method: "GET",
           token,
-          headers: mockHeaders,
         });
         if (!res.ok || !mounted) return;
         const body: any = res.data || {};
@@ -370,7 +358,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     return () => {
       mounted = false;
     };
-  }, [mockHeaders, token, userData?.email]);
+  }, [token, userData?.email]);
 
   const phoneValidation = useMemo(() => {
     const normalized = normalizeE164FromParts(
@@ -418,7 +406,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         path: "/api/users/phone-verification/send",
         method: "POST",
         token,
-        headers: mockHeaders,
         jsonBody: { phoneNumber: phoneValidation.normalized },
       });
 
@@ -499,7 +486,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         path: "/api/users/phone-verification/verify",
         method: "POST",
         token,
-        headers: mockHeaders,
         jsonBody: { code },
       });
 
@@ -615,7 +601,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         path: "/api/users/profile",
         method: "PUT",
         token,
-        headers: mockHeaders,
         jsonBody: {
           name: accountData.name,
           phoneNumber: phoneValidation.normalized,
@@ -698,7 +683,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         path: "/api/auth/change-password",
         method: "PUT",
         token,
-        headers: mockHeaders,
         jsonBody: {
           currentPassword: passwordData.currentPassword,
           newPassword: passwordData.newPassword,

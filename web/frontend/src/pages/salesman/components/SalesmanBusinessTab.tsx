@@ -12,15 +12,8 @@ export const SalesmanBusinessTab = () => {
   const { token, user, loginWithToken } = useAuthStore();
 
   const mockHeaders = useMemo(() => {
-    if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
-    return {
-      "x-mock-role": (user?.role || "salesman") as string,
-      "x-mock-email": user?.email || "mock@abuts.fit",
-      "x-mock-name": user?.name || "사용자",
-      "x-mock-organization": (user as any)?.organization || user?.companyName || "",
-      "x-mock-phone": (user as any)?.phoneNumber || "",
-    };
-  }, [token, user]);
+    return {} as Record<string, string>;
+  }, []);
 
   const [loading, setLoading] = useState(Boolean(token));
   const [saving, setSaving] = useState(false);
@@ -39,7 +32,6 @@ export const SalesmanBusinessTab = () => {
           path: "/api/users/profile",
           method: "GET",
           token,
-          headers: mockHeaders,
         });
         if (!res.ok || !mounted) return;
         const body: any = res.data || {};
@@ -55,7 +47,7 @@ export const SalesmanBusinessTab = () => {
     return () => {
       mounted = false;
     };
-  }, [mockHeaders, token]);
+  }, [token]);
 
   const save = async () => {
     if (!token) {
@@ -90,7 +82,9 @@ export const SalesmanBusinessTab = () => {
         },
       });
       if (!res.ok) {
-        const msg = String((res.data as any)?.message || "저장에 실패했습니다.");
+        const msg = String(
+          (res.data as any)?.message || "저장에 실패했습니다.",
+        );
         toast({
           title: "저장 실패",
           description: msg,
@@ -144,7 +138,10 @@ export const SalesmanBusinessTab = () => {
             value={organization}
             onChange={(e) => setOrganization(e.target.value)}
             onBlur={() => {
-              if (organization.trim() && organization.trim() !== lastSavedRef.current) {
+              if (
+                organization.trim() &&
+                organization.trim() !== lastSavedRef.current
+              ) {
                 void save();
               }
             }}

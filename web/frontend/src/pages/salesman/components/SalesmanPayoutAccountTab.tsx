@@ -20,15 +20,8 @@ export const SalesmanPayoutAccountTab = () => {
   const { token, user, loginWithToken } = useAuthStore();
 
   const mockHeaders = useMemo(() => {
-    if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
-    return {
-      "x-mock-role": (user?.role || "salesman") as string,
-      "x-mock-email": user?.email || "mock@abuts.fit",
-      "x-mock-name": user?.name || "사용자",
-      "x-mock-organization": (user as any)?.organization || user?.companyName || "",
-      "x-mock-phone": (user as any)?.phoneNumber || "",
-    };
-  }, [token, user]);
+    return {} as Record<string, string>;
+  }, []);
 
   const [loading, setLoading] = useState(Boolean(token));
   const [saving, setSaving] = useState(false);
@@ -51,7 +44,6 @@ export const SalesmanPayoutAccountTab = () => {
           path: "/api/users/profile",
           method: "GET",
           token,
-          headers: mockHeaders,
         });
         if (!res.ok || !mounted) return;
         const body: any = res.data || {};
@@ -72,7 +64,7 @@ export const SalesmanPayoutAccountTab = () => {
     return () => {
       mounted = false;
     };
-  }, [mockHeaders, token]);
+  }, [token]);
 
   const validate = (v: PayoutAccount) => {
     const bankName = v.bankName.trim();
@@ -81,11 +73,17 @@ export const SalesmanPayoutAccountTab = () => {
 
     const allEmpty = !bankName && !holderName && !accountNumber;
     if (allEmpty) {
-      return { ok: true, normalized: { bankName: "", holderName: "", accountNumber: "" } };
+      return {
+        ok: true,
+        normalized: { bankName: "", holderName: "", accountNumber: "" },
+      };
     }
 
     if (!bankName || !holderName || !accountNumber) {
-      return { ok: false, message: "은행/계좌번호/예금주를 모두 입력해주세요." };
+      return {
+        ok: false,
+        message: "은행/계좌번호/예금주를 모두 입력해주세요.",
+      };
     }
 
     return { ok: true, normalized: { bankName, holderName, accountNumber } };
@@ -130,7 +128,9 @@ export const SalesmanPayoutAccountTab = () => {
       });
 
       if (!res.ok) {
-        const msg = String((res.data as any)?.message || "저장에 실패했습니다.");
+        const msg = String(
+          (res.data as any)?.message || "저장에 실패했습니다.",
+        );
         toast({
           title: "저장 실패",
           description: msg,
@@ -189,7 +189,9 @@ export const SalesmanPayoutAccountTab = () => {
             <Input
               id="salesman-bank"
               value={data.bankName}
-              onChange={(e) => setData((p) => ({ ...p, bankName: e.target.value }))}
+              onChange={(e) =>
+                setData((p) => ({ ...p, bankName: e.target.value }))
+              }
             />
           </div>
           <div className="space-y-2">
@@ -207,7 +209,9 @@ export const SalesmanPayoutAccountTab = () => {
             <Input
               id="salesman-holder"
               value={data.holderName}
-              onChange={(e) => setData((p) => ({ ...p, holderName: e.target.value }))}
+              onChange={(e) =>
+                setData((p) => ({ ...p, holderName: e.target.value }))
+              }
             />
           </div>
         </div>

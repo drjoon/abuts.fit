@@ -57,17 +57,8 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
   const [actionUserId, setActionUserId] = useState<string>("");
 
   const mockHeaders = useMemo(() => {
-    if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
-    return {
-      "x-mock-role": (user?.role || userData?.role || "requestor") as string,
-      "x-mock-position": (user as any)?.position || "staff",
-      "x-mock-email": user?.email || userData?.email || "mock@abuts.fit",
-      "x-mock-name": user?.name || userData?.name || "사용자",
-      "x-mock-organization":
-        (user as any)?.organization || userData?.companyName || "",
-      "x-mock-phone": (user as any)?.phoneNumber || "",
-    };
-  }, [token, user?.email, user?.name, user?.role, userData]);
+    return {} as Record<string, string>;
+  }, []);
 
   const organizationType = useMemo(() => {
     const role = String(user?.role || userData?.role || "requestor").trim();
@@ -209,7 +200,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
         )}`,
         method: "DELETE",
         token,
-        headers: mockHeaders,
       });
 
       if (!res.ok) {

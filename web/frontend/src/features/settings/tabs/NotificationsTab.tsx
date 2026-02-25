@@ -44,9 +44,8 @@ export const NotificationsTab = () => {
   const [isLoading, setIsLoading] = useState(false);
 
   const mockHeaders = useMemo(() => {
-    if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
     return {} as Record<string, string>;
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -57,7 +56,6 @@ export const NotificationsTab = () => {
           path: "/api/users/notification-settings",
           method: "GET",
           token,
-          headers: mockHeaders,
         });
         if (!res.ok) {
           return;

@@ -57,17 +57,8 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
   const [actionUserId, setActionUserId] = useState<string>("");
 
   const mockHeaders = useMemo(() => {
-    if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
-    return {
-      "x-mock-role": (user?.role || userData?.role || "requestor") as string,
-      "x-mock-position": (user as any)?.position || "staff",
-      "x-mock-email": user?.email || userData?.email || "mock@abuts.fit",
-      "x-mock-name": user?.name || userData?.name || "사용자",
-      "x-mock-organization":
-        (user as any)?.organization || userData?.companyName || "",
-      "x-mock-phone": (user as any)?.phoneNumber || "",
-    };
-  }, [token, user?.email, user?.name, user?.role, userData]);
+    return {} as Record<string, string>;
+  }, []);
 
   const organizationType = useMemo(() => {
     const role = String(user?.role || userData?.role || "requestor").trim();
@@ -82,7 +73,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       )}`,
       method: "GET",
       token,
-      headers: mockHeaders,
     });
     if (!res.ok) return;
     const body: any = res.data || {};
@@ -93,7 +83,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       | "member"
       | "pending";
     setMembership(next);
-  }, [mockHeaders, organizationType, token]);
+  }, [organizationType, token]);
 
   const refreshRepresentatives = useCallback(async () => {
     if (!token) return;
@@ -103,7 +93,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       )}`,
       method: "GET",
       token,
-      headers: mockHeaders,
     });
     if (!res.ok) {
       setRepresentatives([]);
@@ -125,7 +114,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       return;
     }
     setRepresentatives([]);
-  }, [mockHeaders, organizationType, token]);
+  }, [organizationType, token]);
 
   const refreshStaff = useCallback(async () => {
     if (!token) return;
@@ -135,7 +124,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       )}`,
       method: "GET",
       token,
-      headers: mockHeaders,
     });
     if (!res.ok) {
       setStaff([]);
@@ -144,7 +132,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     const body: any = res.data || {};
     const data = body.data || body;
     setStaff(Array.isArray(data?.staff) ? data.staff : []);
-  }, [mockHeaders, organizationType, token]);
+  }, [organizationType, token]);
 
   const refreshPending = useCallback(async () => {
     if (!token) return;
@@ -154,7 +142,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       )}`,
       method: "GET",
       token,
-      headers: mockHeaders,
     });
     if (!res.ok) {
       setPending([]);
@@ -163,7 +150,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     const body: any = res.data || {};
     const data = body.data || body;
     setPending(Array.isArray(data?.joinRequests) ? data.joinRequests : []);
-  }, [mockHeaders, organizationType, token]);
+  }, [organizationType, token]);
 
   useEffect(() => {
     const load = async () => {
@@ -209,7 +196,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
         )}`,
         method: "DELETE",
         token,
-        headers: mockHeaders,
       });
 
       if (!res.ok) {
@@ -244,7 +230,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
         path: `/api/organizations/join-requests/${id}/approve`,
         method: "POST",
         token,
-        headers: mockHeaders,
         jsonBody: { role, organizationType },
       });
 
@@ -287,7 +272,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
         path: `/api/organizations/join-requests/${id}/reject`,
         method: "POST",
         token,
-        headers: mockHeaders,
         jsonBody: { organizationType },
       });
 
