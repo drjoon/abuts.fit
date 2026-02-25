@@ -365,46 +365,11 @@ export const NewRequestPage = () => {
     );
   };
 
-  const { summary: bulkShippingSummary } = useBulkShippingPolicy(user?.email);
+  const { weeklyBatchLabel } = useBulkShippingPolicy(user?.email);
   const { calculateExpressDate, expressEstimatedShipYmd } =
     useExpressShipping(caseInfos);
 
-  const [normalEstimatedShipYmd, setNormalEstimatedShipYmd] = useState<
-    string | undefined
-  >(undefined);
-
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      const maxDiameter = caseInfos?.maxDiameter;
-      if (maxDiameter == null) {
-        if (!cancelled) setNormalEstimatedShipYmd(undefined);
-        return;
-      }
-
-      try {
-        const res = await apiFetch<any>({
-          path: `/api/requests/shipping-estimate?mode=normal&maxDiameter=${encodeURIComponent(
-            String(maxDiameter),
-          )}`,
-          method: "GET",
-        });
-
-        const next =
-          res.ok && res.data?.success
-            ? res.data?.data?.estimatedShipYmd
-            : undefined;
-        if (!cancelled) setNormalEstimatedShipYmd(next);
-      } catch {
-        if (!cancelled) setNormalEstimatedShipYmd(undefined);
-      }
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [caseInfos?.maxDiameter]);
+  const [focusUnverifiedTick, setFocusUnverifiedTick] = useState(0);
 
   const validateFileForUpload = (
     file: File,
@@ -467,9 +432,9 @@ export const NewRequestPage = () => {
     <PageFileDropZone
       onFiles={handleIncomingFiles}
       activeClassName="ring-2 ring-primary/30"
-      className="min-h-screen bg-gradient-subtle p-4"
+      className="bg-gradient-subtle p-4 flex flex-col h-full min-h-0"
     >
-      <div className="max-w-6xl mx-auto space-y-4 ">
+      <div className="max-w-6xl mx-auto w-full space-y-4 flex flex-col flex-1 min-h-0">
         <MultiActionDialog
           open={!!duplicatePrompt}
           preventCloseOnOverlayClick={true}
@@ -538,113 +503,130 @@ export const NewRequestPage = () => {
           actions={[]}
         />
 
-        <NewRequestUploadSection
-          isDragOver={isDragOver}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={(e) => {
-            e.preventDefault();
-            handleDragLeave(e);
-            handleIncomingFiles(Array.from(e.dataTransfer.files));
-          }}
-          onFilesSelected={handleIncomingFiles}
-        />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch flex-1 min-h-0 h-full">
+          <div className="flex flex-col gap-2.5 min-h-0 h-full">
+            <NewRequestUploadSection
+              isDragOver={isDragOver}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => {
+                e.preventDefault();
+                handleDragLeave(e);
+                handleIncomingFiles(Array.from(e.dataTransfer.files));
+              }}
+              onFilesSelected={handleIncomingFiles}
+            />
 
-        <NewRequestDetailsSection
-          files={files}
-          selectedPreviewIndex={selectedPreviewIndex}
-          setSelectedPreviewIndex={setSelectedPreviewIndex}
-          caseInfos={caseInfos}
-          setCaseInfos={setCaseInfos}
-          caseInfosMap={caseInfosMap}
-          updateCaseInfos={updateCaseInfos}
-          connections={connections}
-          typeOptions={typeOptions}
-          implantManufacturer={implantManufacturer}
-          setImplantManufacturer={setImplantManufacturer}
-          implantSystem={implantSystem}
-          setImplantSystem={setImplantSystem}
-          implantType={implantType}
-          setImplantType={setImplantType}
-          syncSelectedConnection={syncSelectedConnection}
-          fileVerificationStatus={fileVerificationStatus}
-          setFileVerificationStatus={setFileVerificationStatus}
-          highlightUnverifiedArrows={highlightUnverifiedArrows}
-          setHighlightUnverifiedArrows={setHighlightUnverifiedArrows}
-          handleRemoveFile={handleRemoveFile}
-          clinicNameOptions={clinicPresets}
-          patientNameOptions={patientPresets}
-          teethOptions={teethPresets}
-          addClinicPreset={addClinicPreset}
-          clearAllClinicPresets={clearAllClinicPresets}
-          addPatientPreset={addPatientPreset}
-          clearAllPatientPresets={clearAllPatientPresets}
-          addTeethPreset={addTeethPreset}
-          clearAllTeethPresets={clearAllTeethPresets}
-          handleAddOrSelectClinic={handleAddOrSelectClinic}
-          toast={toast}
-          highlight={false}
-          sectionHighlightClass={sectionHighlightClass}
-        />
+            <NewRequestDetailsSection
+              files={files}
+              selectedPreviewIndex={selectedPreviewIndex}
+              setSelectedPreviewIndex={setSelectedPreviewIndex}
+              caseInfos={caseInfos}
+              setCaseInfos={setCaseInfos}
+              caseInfosMap={caseInfosMap}
+              updateCaseInfos={updateCaseInfos}
+              connections={connections}
+              typeOptions={typeOptions}
+              implantManufacturer={implantManufacturer}
+              setImplantManufacturer={setImplantManufacturer}
+              implantSystem={implantSystem}
+              setImplantSystem={setImplantSystem}
+              implantType={implantType}
+              setImplantType={setImplantType}
+              syncSelectedConnection={syncSelectedConnection}
+              fileVerificationStatus={fileVerificationStatus}
+              setFileVerificationStatus={setFileVerificationStatus}
+              highlightUnverifiedArrows={highlightUnverifiedArrows}
+              setHighlightUnverifiedArrows={setHighlightUnverifiedArrows}
+              handleRemoveFile={handleRemoveFile}
+              clinicNameOptions={clinicPresets}
+              patientNameOptions={patientPresets}
+              teethOptions={teethPresets}
+              addClinicPreset={addClinicPreset}
+              clearAllClinicPresets={clearAllClinicPresets}
+              addPatientPreset={addPatientPreset}
+              clearAllPatientPresets={clearAllPatientPresets}
+              addTeethPreset={addTeethPreset}
+              clearAllTeethPresets={clearAllTeethPresets}
+              handleAddOrSelectClinic={handleAddOrSelectClinic}
+              toast={toast}
+              highlight={false}
+              sectionHighlightClass={sectionHighlightClass}
+              focusUnverifiedTick={focusUnverifiedTick}
+            />
+          </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-2">
-          <NewRequestShippingSection
-            caseInfos={caseInfos}
-            setCaseInfos={setCaseInfos}
-            highlight={highlightStep === "shipping"}
-            sectionHighlightClass={sectionHighlightClass}
-            bulkShippingSummary={bulkShippingSummary}
-            normalEstimatedShipYmd={normalEstimatedShipYmd}
-            expressEstimatedShipYmd={expressEstimatedShipYmd}
-            onOpenShippingSettings={() =>
-              navigate("/dashboard/settings?tab=shipping")
-            }
-            onSelectExpress={async () => {
-              const guessShipDate = calculateExpressDate();
-              try {
-                const res = await apiFetch<any>({
-                  path: `/api/requests/shipping-estimate?mode=express&maxDiameter=${encodeURIComponent(
-                    String(caseInfos?.maxDiameter ?? ""),
-                  )}`,
-                  method: "GET",
-                });
-
-                const shipDateYmd =
-                  res.ok && res.data?.success
-                    ? res.data?.data?.estimatedShipYmd
-                    : guessShipDate;
-
-                setCaseInfos({
-                  shippingMode: "express",
-                  requestedShipDate: shipDateYmd,
-                });
-              } catch {
+          <div className="flex flex-col justify-center min-h-0">
+            <NewRequestShippingSection
+              caseInfos={caseInfos}
+              setCaseInfos={setCaseInfos}
+              highlight={highlightStep === "shipping"}
+              sectionHighlightClass={sectionHighlightClass}
+              weeklyBatchLabel={weeklyBatchLabel}
+              expressEstimatedShipYmd={expressEstimatedShipYmd}
+              expressDisplayYmd={calculateExpressDate()}
+              onOpenShippingSettings={() =>
+                navigate("/dashboard/settings?tab=shipping")
+              }
+              onSelectExpress={async () => {
+                const guessShipDate = calculateExpressDate();
                 setCaseInfos({
                   shippingMode: "express",
                   requestedShipDate: guessShipDate,
                 });
-              }
-            }}
-            onSubmit={() => {
-              if (unverifiedCount > 0) {
-                setHighlightUnverifiedArrows(true);
+                try {
+                  const res = await apiFetch<any>({
+                    path: `/api/requests/shipping-estimate?mode=express&maxDiameter=${encodeURIComponent(
+                      String(caseInfos?.maxDiameter ?? ""),
+                    )}`,
+                    method: "GET",
+                  });
+
+                  const shipDateYmd =
+                    res.ok && res.data?.success
+                      ? res.data?.data?.estimatedShipYmd
+                      : guessShipDate;
+
+                  setCaseInfos({
+                    shippingMode: "express",
+                    requestedShipDate: shipDateYmd,
+                  });
+                } catch {
+                  setCaseInfos({
+                    shippingMode: "express",
+                    requestedShipDate: guessShipDate,
+                  });
+                }
+              }}
+              onSubmit={() => {
+                if (unverifiedCount > 0) {
+                  const firstUnverifiedIndex = files.findIndex((file) => {
+                    const key = `${String(file.name || "").normalize("NFC")}:${file.size}`;
+                    return !fileVerificationStatus[key];
+                  });
+                  if (firstUnverifiedIndex >= 0) {
+                    setSelectedPreviewIndex(firstUnverifiedIndex);
+                  }
+                  setFocusUnverifiedTick((prev) => prev + 1);
+                  setHighlightUnverifiedArrows(true);
+                  toast({
+                    title: "확인 필요",
+                    description: `모든 파일 카드가 확인되어야 합니다.`,
+                    duration: 5000,
+                  });
+                  setTimeout(() => setHighlightUnverifiedArrows(false), 10000);
+                  return;
+                }
                 toast({
-                  title: "확인 필요",
-                  description: `모든 파일을 확인해서 [확인후]로 변경해주세요.`,
-                  duration: 5000,
+                  title: "의뢰 접수중",
+                  description: "제출을 처리하고 있어요. 잠시만 기다려주세요.",
+                  duration: 3000,
                 });
-                setTimeout(() => setHighlightUnverifiedArrows(false), 10000);
-                return;
-              }
-              toast({
-                title: "의뢰 접수중",
-                description: "제출을 처리하고 있어요. 잠시만 기다려주세요.",
-                duration: 3000,
-              });
-              handleSubmit();
-            }}
-            onCancelAll={handleCancelAll}
-          />
+                handleSubmit();
+              }}
+              onCancelAll={handleCancelAll}
+            />
+          </div>
         </div>
       </div>
     </PageFileDropZone>

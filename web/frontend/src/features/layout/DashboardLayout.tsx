@@ -624,7 +624,7 @@ export const DashboardLayout = () => {
           </div>
         </aside>
 
-        <main className="flex-1 flex flex-col lg:ml-0 min-w-0">
+        <main className="flex-1 flex flex-col lg:ml-0 min-w-0 min-h-0">
           <div className="lg:hidden flex items-center justify-between p-4 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <Button variant="ghost" size="sm" onClick={() => setIsOpen(true)}>
               <div className="flex flex-col space-y-1">
@@ -648,208 +648,218 @@ export const DashboardLayout = () => {
               </div>
             )}
           <div
-            className="flex-1 overflow-auto bg-gradient-to-br from-gray-50 to-blue-100"
+            className="flex-1 min-h-0 bg-gradient-to-br from-gray-50 to-blue-100"
             data-dashboard-scroll="1"
           >
-            {(isManufacturer && isEquipmentRoute) || isWorksheetRoute ? (
-              <div className="border-b border-border bg-background/80 sticky top-0 z-10">
-                <div className="px-4 py-2 flex flex-col gap-2">
-                  {isManufacturer && isEquipmentRoute && (
-                    <div className="flex gap-2">
-                      <Button
-                        variant={
-                          location.pathname.startsWith("/dashboard/cnc")
-                            ? "default"
-                            : "ghost"
-                        }
-                        size="sm"
-                        onClick={() => navigate("/dashboard/cnc")}
-                      >
-                        자동선반
-                      </Button>
-                      <Button
-                        variant={
-                          location.pathname.startsWith("/dashboard/printer")
-                            ? "default"
-                            : "ghost"
-                        }
-                        size="sm"
-                        onClick={() => navigate("/dashboard/printer")}
-                      >
-                        프린터
-                      </Button>
-                    </div>
-                  )}
-
-                  {isWorksheetRoute && (
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 sm:flex-nowrap sm:justify-between">
-                      <div className="flex gap-2 flex-shrink-0">
+            <div className="flex flex-col h-full">
+              {(isManufacturer && isEquipmentRoute) || isWorksheetRoute ? (
+                <div className="border-b border-border bg-background/80 sticky top-0 z-10">
+                  <div className="px-4 py-2 flex flex-col gap-2">
+                    {isManufacturer && isEquipmentRoute && (
+                      <div className="flex gap-2">
                         <Button
                           variant={
-                            worksheetType === "cnc" ? "default" : "ghost"
+                            location.pathname.startsWith("/dashboard/cnc")
+                              ? "default"
+                              : "ghost"
                           }
                           size="sm"
-                          onClick={() =>
-                            navigate(
-                              "/dashboard/worksheet?type=cnc&stage=request",
-                            )
-                          }
+                          onClick={() => navigate("/dashboard/cnc")}
                         >
-                          커스텀어벗
+                          자동선반
                         </Button>
                         <Button
                           variant={
-                            worksheetType === "printer" ? "default" : "ghost"
+                            location.pathname.startsWith("/dashboard/printer")
+                              ? "default"
+                              : "ghost"
                           }
                           size="sm"
-                          onClick={() =>
-                            navigate("/dashboard/worksheet?type=printer")
-                          }
+                          onClick={() => navigate("/dashboard/printer")}
                         >
-                          크라운
+                          프린터
                         </Button>
                       </div>
+                    )}
 
-                      {worksheetType === "cnc" && (
-                        <>
-                          <div className="hidden sm:block h-8 w-px bg-muted-foreground/60 flex-shrink-0" />
-                          <div className="flex flex-wrap gap-1 text-xs flex-shrink-0">
-                            <Button
-                              variant={
-                                worksheetStage === "request"
-                                  ? "default"
-                                  : "ghost"
+                    {isWorksheetRoute && (
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 sm:flex-nowrap sm:justify-between">
+                        <div className="flex gap-2 flex-shrink-0">
+                          <Button
+                            variant={
+                              worksheetType === "cnc" ? "default" : "ghost"
+                            }
+                            size="sm"
+                            onClick={() =>
+                              navigate(
+                                "/dashboard/worksheet?type=cnc&stage=request",
+                              )
+                            }
+                          >
+                            커스텀어벗
+                          </Button>
+                          <Button
+                            variant={
+                              worksheetType === "printer" ? "default" : "ghost"
+                            }
+                            size="sm"
+                            onClick={() =>
+                              navigate("/dashboard/worksheet?type=printer")
+                            }
+                          >
+                            크라운
+                          </Button>
+                        </div>
+
+                        {worksheetType === "cnc" && (
+                          <>
+                            <div className="hidden sm:block h-8 w-px bg-muted-foreground/60 flex-shrink-0" />
+                            <div className="flex flex-wrap gap-1 text-xs flex-shrink-0">
+                              <Button
+                                variant={
+                                  worksheetStage === "request"
+                                    ? "default"
+                                    : "ghost"
+                                }
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                onClick={() =>
+                                  navigate(
+                                    "/dashboard/worksheet?type=cnc&stage=request",
+                                  )
+                                }
+                              >
+                                의뢰
+                              </Button>
+                              <Button
+                                variant={
+                                  worksheetStage === "cam" ? "default" : "ghost"
+                                }
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                onClick={() =>
+                                  navigate(
+                                    "/dashboard/worksheet?type=cnc&stage=cam",
+                                  )
+                                }
+                              >
+                                CAM
+                              </Button>
+                              <Button
+                                variant={
+                                  worksheetStage === "machining"
+                                    ? "default"
+                                    : "ghost"
+                                }
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                onClick={() =>
+                                  navigate(
+                                    "/dashboard/worksheet?type=cnc&stage=machining",
+                                  )
+                                }
+                              >
+                                가공
+                              </Button>
+                              <Button
+                                variant={
+                                  worksheetStage === "packing"
+                                    ? "default"
+                                    : "ghost"
+                                }
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                onClick={() =>
+                                  navigate(
+                                    "/dashboard/worksheet?type=cnc&stage=packing",
+                                  )
+                                }
+                              >
+                                세척.패킹
+                              </Button>
+                              <Button
+                                variant={
+                                  worksheetStage === "shipping"
+                                    ? "default"
+                                    : "ghost"
+                                }
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                onClick={() =>
+                                  navigate(
+                                    "/dashboard/worksheet?type=cnc&stage=shipping",
+                                  )
+                                }
+                              >
+                                포장.발송
+                              </Button>
+                              <Button
+                                variant={
+                                  worksheetStage === "tracking"
+                                    ? "default"
+                                    : "ghost"
+                                }
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                onClick={() =>
+                                  navigate(
+                                    "/dashboard/worksheet?type=cnc&stage=tracking",
+                                  )
+                                }
+                              >
+                                추적관리
+                              </Button>
+                            </div>
+                          </>
+                        )}
+
+                        <div className="w-full sm:w-auto sm:ml-auto flex items-center justify-end gap-2 min-w-0 sm:flex-nowrap">
+                          <label className="flex items-center gap-2 text-xs text-muted-foreground select-none ">
+                            <input
+                              type="checkbox"
+                              className="h-3.5 w-3.5 rounded border-muted-foreground/40 text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                              checked={showCompleted}
+                              onChange={(e) =>
+                                setShowCompleted(e.target.checked)
                               }
-                              size="sm"
-                              className="h-7 px-2 text-xs"
-                              onClick={() =>
-                                navigate(
-                                  "/dashboard/worksheet?type=cnc&stage=request",
-                                )
+                            />
+                            <span>완료포함</span>
+                          </label>
+                          <div className="relative w-full max-w-[110px] lg:max-w-[200px]">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              placeholder="검색..."
+                              value={worksheetSearch}
+                              onChange={(e) =>
+                                setWorksheetSearch(e.target.value)
                               }
-                            >
-                              의뢰
-                            </Button>
-                            <Button
-                              variant={
-                                worksheetStage === "cam" ? "default" : "ghost"
-                              }
-                              size="sm"
-                              className="h-7 px-2 text-xs"
-                              onClick={() =>
-                                navigate(
-                                  "/dashboard/worksheet?type=cnc&stage=cam",
-                                )
-                              }
-                            >
-                              CAM
-                            </Button>
-                            <Button
-                              variant={
-                                worksheetStage === "machining"
-                                  ? "default"
-                                  : "ghost"
-                              }
-                              size="sm"
-                              className="h-7 px-2 text-xs"
-                              onClick={() =>
-                                navigate(
-                                  "/dashboard/worksheet?type=cnc&stage=machining",
-                                )
-                              }
-                            >
-                              가공
-                            </Button>
-                            <Button
-                              variant={
-                                worksheetStage === "packing"
-                                  ? "default"
-                                  : "ghost"
-                              }
-                              size="sm"
-                              className="h-7 px-2 text-xs"
-                              onClick={() =>
-                                navigate(
-                                  "/dashboard/worksheet?type=cnc&stage=packing",
-                                )
-                              }
-                            >
-                              세척.패킹
-                            </Button>
-                            <Button
-                              variant={
-                                worksheetStage === "shipping"
-                                  ? "default"
-                                  : "ghost"
-                              }
-                              size="sm"
-                              className="h-7 px-2 text-xs"
-                              onClick={() =>
-                                navigate(
-                                  "/dashboard/worksheet?type=cnc&stage=shipping",
-                                )
-                              }
-                            >
-                              포장.발송
-                            </Button>
-                            <Button
-                              variant={
-                                worksheetStage === "tracking"
-                                  ? "default"
-                                  : "ghost"
-                              }
-                              size="sm"
-                              className="h-7 px-2 text-xs"
-                              onClick={() =>
-                                navigate(
-                                  "/dashboard/worksheet?type=cnc&stage=tracking",
-                                )
-                              }
-                            >
-                              추적관리
-                            </Button>
+                              className="pl-10 h-8 text-xs"
+                            />
                           </div>
-                        </>
-                      )}
-
-                      <div className="w-full sm:w-auto sm:ml-auto flex items-center justify-end gap-2 min-w-0 sm:flex-nowrap">
-                        <label className="flex items-center gap-2 text-xs text-muted-foreground select-none ">
-                          <input
-                            type="checkbox"
-                            className="h-3.5 w-3.5 rounded border-muted-foreground/40 text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-                            checked={showCompleted}
-                            onChange={(e) => setShowCompleted(e.target.checked)}
-                          />
-                          <span>완료포함</span>
-                        </label>
-                        <div className="relative w-full max-w-[110px] lg:max-w-[200px]">
-                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                          <Input
-                            placeholder="검색..."
-                            value={worksheetSearch}
-                            onChange={(e) => setWorksheetSearch(e.target.value)}
-                            className="pl-10 h-8 text-xs"
-                          />
                         </div>
                       </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+              <div className="flex-1 min-h-0 overflow-auto">
+                <div className="p-2 sm:p-4 lg:p-6 flex flex-col flex-1 min-h-0 items-stretch">
+                  <main className="flex flex-col flex-1 min-h-0 bg-white/80 backdrop-blur-xl p-4 sm:p-6 rounded-2xl shadow-lg">
+                    <div className="flex-1 min-h-0 overflow-auto">
+                      <Outlet
+                        context={{
+                          worksheetSearch,
+                          setWorksheetSearch,
+                          showCompleted,
+                          setShowCompleted,
+                          creditBalance,
+                          loadingCreditBalance,
+                        }}
+                      />
                     </div>
-                  )}
+                  </main>
                 </div>
               </div>
-            ) : null}
-            <div className="p-2 sm:p-4 lg:p-6 flex flex-col items-stretch min-h-max">
-              <main className="flex-1 bg-white/80 backdrop-blur-xl p-4 sm:p-6 rounded-2xl shadow-lg min-h-[calc(100vh-140px)] overflow-x-hidden">
-                <Outlet
-                  context={{
-                    worksheetSearch,
-                    setWorksheetSearch,
-                    showCompleted,
-                    setShowCompleted,
-                    creditBalance,
-                    loadingCreditBalance,
-                  }}
-                />
-              </main>
             </div>
           </div>
         </main>

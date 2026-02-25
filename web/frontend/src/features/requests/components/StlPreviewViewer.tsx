@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { cn } from "@/shared/ui/cn";
 
 type Props = {
   file: File;
@@ -13,6 +14,7 @@ type Props = {
   ) => void;
   showOverlay?: boolean;
   finishLinePoints?: number[][] | null;
+  className?: string;
 };
 
 export function StlPreviewViewer({
@@ -20,6 +22,7 @@ export function StlPreviewViewer({
   onDiameterComputed,
   showOverlay = true,
   finishLinePoints,
+  className,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const onDiameterComputedRef = useRef(onDiameterComputed);
@@ -300,7 +303,12 @@ export function StlPreviewViewer({
   }, [file, showOverlay, finishLinePoints]);
 
   return (
-    <div className="relative w-full max-w-full h-full min-h-[300px]">
+    <div
+      className={cn(
+        "relative w-full max-w-full h-full min-h-[300px]",
+        className,
+      )}
+    >
       <div ref={containerRef} className="w-full h-full" />
       {error && (
         <div className="absolute inset-0 flex items-center justify-center rounded-md bg-white/70 text-sm text-destructive">

@@ -9,9 +9,9 @@ type Props = {
   disabled?: boolean;
   highlight: boolean;
   sectionHighlightClass: string;
-  bulkShippingSummary: string;
-  normalEstimatedShipYmd?: string;
+  weeklyBatchLabel: string;
   expressEstimatedShipYmd?: string;
+  expressDisplayYmd?: string;
   onOpenShippingSettings: () => void;
   onSelectExpress: () => void;
   onSubmit: () => void;
@@ -24,27 +24,44 @@ export function NewRequestShippingSection({
   disabled,
   highlight,
   sectionHighlightClass,
-  bulkShippingSummary,
-  normalEstimatedShipYmd,
+  weeklyBatchLabel,
   expressEstimatedShipYmd,
+  expressDisplayYmd,
   onOpenShippingSettings,
   onSelectExpress,
   onSubmit,
   onCancelAll,
 }: Props) {
   const isDisabled = !!disabled;
+  const formatYmdWithDay = (ymd?: string) => {
+    if (!ymd) return "";
+    const safeYmd = String(ymd).trim();
+    const date = new Date(`${safeYmd}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return safeYmd;
+    const labels = ["일", "월", "화", "수", "목", "금", "토"];
+    const label = labels[date.getDay()] || "";
+    return label ? `${safeYmd} (${label})` : safeYmd;
+  };
+  const bulkLabelText = weeklyBatchLabel || "미설정";
+  const expressDisplayText = formatYmdWithDay(
+    expressEstimatedShipYmd || expressDisplayYmd,
+  );
   return (
     <div
-      className={`app-surface app-surface--panel relative flex flex-col justify-center gap-2 border-2 border-gray-300 p-4 md:p-6 ${
+      className={`app-glass-card app-glass-card--lg relative flex flex-col justify-center gap-2 border-2 border-gray-300 p-2 md:p-3 ${
         highlight ? sectionHighlightClass : ""
       }`}
     >
-      <div className="space-y-2">
+      <div className="app-glass-card-content space-y-2">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <FunctionalItemCard
             onUpdate={isDisabled ? undefined : onOpenShippingSettings}
             disabled={isDisabled}
-            className="col-span-1"
+            className={`col-span-1 app-glass-card app-glass-card--lg overflow-hidden border-2 ${
+              (caseInfos?.shippingMode || "normal") === "normal"
+                ? "border-primary bg-primary/5"
+                : "border-transparent bg-white"
+            }`}
           >
             <button
               type="button"
@@ -55,10 +72,10 @@ export function NewRequestShippingSection({
                   requestedShipDate: undefined,
                 })
               }
-              className={`w-full flex items-center justify-center gap-2 p-3 rounded-lg border text-sm transition-all ${
+              className={`w-full h-full flex items-center justify-center gap-2 p-3 rounded-lg border-0 text-sm transition-all ${
                 (caseInfos?.shippingMode || "normal") === "normal"
-                  ? "border-primary bg-primary/5 text-primary font-medium"
-                  : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                  ? "text-primary font-medium"
+                  : "text-gray-600 hover:bg-gray-50"
               } ${
                 isDisabled
                   ? "opacity-50 cursor-not-allowed hover:bg-transparent"
@@ -68,61 +85,58 @@ export function NewRequestShippingSection({
               <Truck className="w-4 h-4" />
               <span className="flex flex-col items-start leading-tight">
                 <span>묶음 배송</span>
-                <span className="text-[11px] md:text-xs opacity-80 font-normal">
-                  {bulkShippingSummary}
+                <span className="text-[11px] md:text-xs text-slate-500">
+                  {bulkLabelText} 발송
                 </span>
-                {normalEstimatedShipYmd && (
-                  <span
-                    className={`text-[11px] md:text-xs ${
-                      (caseInfos?.shippingMode || "normal") === "normal"
-                        ? "text-primary"
-                        : "text-gray-500"
-                    }`}
-                  >
-                    발송 예정: {normalEstimatedShipYmd}
-                  </span>
-                )}
               </span>
             </button>
           </FunctionalItemCard>
 
-          <button
-            type="button"
-            disabled={isDisabled}
-            onClick={() => {
-              if (isDisabled) return;
-              onSelectExpress();
-            }}
-            className={`flex items-center justify-center gap-2 p-3 rounded-lg border text-sm transition-all ${
+          <div
+            className={`app-glass-card app-glass-card--lg overflow-hidden border-2 ${
               caseInfos?.shippingMode === "express"
-                ? "border-orange-500 bg-orange-50 text-orange-600 font-medium"
-                : "border-gray-200 text-gray-600 hover:bg-gray-50"
-            } ${
-              isDisabled
-                ? "opacity-50 cursor-not-allowed hover:bg-transparent"
-                : ""
+                ? "border-orange-500 bg-orange-50"
+                : "border-transparent bg-white"
             }`}
           >
-            <Zap className="w-4 h-4" />
-            <span className="flex flex-col items-start leading-tight">
-              <span>신속 배송</span>
-              {expressEstimatedShipYmd && (
-                <span
-                  className={`text-[11px] md:text-xs ${
-                    caseInfos?.shippingMode === "express"
-                      ? "text-orange-700"
-                      : "text-gray-500"
-                  }`}
-                >
-                  발송 예정: {expressEstimatedShipYmd}
-                </span>
-              )}
-            </span>
-          </button>
+            <button
+              type="button"
+              disabled={isDisabled}
+              onClick={() => {
+                if (isDisabled) return;
+                onSelectExpress();
+              }}
+              className={`w-full h-full flex items-center justify-center gap-2 p-3 rounded-lg border-0 text-sm transition-all ${
+                caseInfos?.shippingMode === "express"
+                  ? "text-orange-600 font-medium"
+                  : "text-gray-600 hover:bg-gray-50"
+              } ${
+                isDisabled
+                  ? "opacity-50 cursor-not-allowed hover:bg-transparent"
+                  : ""
+              }`}
+            >
+              <Zap className="w-4 h-4" />
+              <span className="flex flex-col items-start leading-tight">
+                <span>신속 배송</span>
+                {expressDisplayText && (
+                  <span
+                    className={`text-[11px] md:text-xs ${
+                      caseInfos?.shippingMode === "express"
+                        ? "text-orange-600"
+                        : "text-gray-500"
+                    }`}
+                  >
+                    {expressDisplayText} 발송예정
+                  </span>
+                )}
+              </span>
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="space-y-3 pt-4 border-gray-200">
+      <div className="app-glass-card-content space-y-3 pt-2 border-gray-200">
         <div className="flex gap-2 flex-col sm:flex-row">
           <Button
             onClick={onSubmit}

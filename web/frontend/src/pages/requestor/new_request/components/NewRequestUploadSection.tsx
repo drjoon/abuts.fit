@@ -17,9 +17,9 @@ export function NewRequestUploadSection({
   onFilesSelected,
 }: Props) {
   return (
-    <div className="mb-4 lg:mb-0 w-full">
+    <div className="w-full">
       <div
-        className={`app-surface app-surface--panel relative flex flex-col border-2 border-gray-300 p-2 md:p-2`}
+        className={`app-glass-card app-glass-card--lg relative flex flex-col border-2 border-gray-300 p-2 md:p-2`}
       >
         <div
           className={`border-2 border-dashed rounded-2xl p-4 md:p-6 text-center transition-colors ${
