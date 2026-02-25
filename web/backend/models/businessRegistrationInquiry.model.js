@@ -25,7 +25,7 @@ const businessRegistrationInquirySchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["general", "business_registration", "user_registration"],
+      enum: ["general", "business_registration", "user_registration", "other"],
       default: "general",
       index: true,
     },

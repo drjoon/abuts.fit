@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
   CardContent,
@@ -11,22 +11,17 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
+import { SUPPORT_EMAIL, COMPANY_PHONE } from "@/shared/lib/contactInfo";
+import { useAuthStore } from "@/store/useAuthStore";
+import { HelpCircle, Phone } from "lucide-react";
 
 const statusLabelMap: Record<string, string> = {
   open: "접수",
@@ -35,13 +30,14 @@ const statusLabelMap: Record<string, string> = {
 
 const typeLabelMap: Record<string, string> = {
   general: "일반 문의",
-  business_registration: "사업자등록 문의",
-  user_registration: "사용자등록 문의",
+  business_registration: "배송 문의",
+  user_registration: "결제 문의",
+  other: "기타",
 };
 
 type InquiryItem = {
   _id: string;
-  type?: "general" | "business_registration" | "user_registration";
+  type?: "general" | "business_registration" | "user_registration" | "other";
   subject?: string;
   message?: string;
   status?: "open" | "resolved";
@@ -51,14 +47,18 @@ type InquiryItem = {
 
 export const InquiriesPage = () => {
   const { toast } = useToast();
+  const { user } = useAuthStore();
   const [items, setItems] = useState<InquiryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [type, setType] = useState<
-    "general" | "business_registration" | "user_registration"
+    "general" | "business_registration" | "user_registration" | "other"
   >("general");
+  const [detailItem, setDetailItem] = useState<InquiryItem | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const formRef = useRef<HTMLDivElement | null>(null);
 
   const sortedItems = useMemo(
     () =>
@@ -67,6 +67,44 @@ export const InquiriesPage = () => {
       ),
     [items],
   );
+
+  const stats = useMemo(() => {
+    const open = items.filter((item) => item.status !== "resolved").length;
+    const resolved = items.filter((item) => item.status === "resolved").length;
+    return { open, resolved, total: items.length };
+  }, [items]);
+
+  const rolePreset = useMemo(() => {
+    if (user?.role === "salesman") {
+      return {
+        title: "영업 활동 중 생긴 이슈를 바로 알려주세요",
+        description:
+          "제휴 요청, 추천코드, 수당 관련 문의를 빠르게 정리해서 전달드릴게요.",
+        helper: "영업 지원 전용 라인",
+        helperValue: "sales@abuts.fit",
+        typeChips: [
+          { value: "general", label: "영업 일반" },
+          { value: "business_registration", label: "배송" },
+          { value: "user_registration", label: "결제" },
+          { value: "other", label: "기타" },
+        ],
+      } as const;
+    }
+
+    return {
+      title: "의뢰/배송 중 궁금한 점을 남겨주세요",
+      description:
+        "제작, 배송, 청구 관련 문의를 한 화면에서 접수하고 진행 상황을 확인할 수 있습니다.",
+      helper: "고객지원",
+      helperValue: "support@abuts.fit",
+      typeChips: [
+        { value: "general", label: "제작/운영" },
+        { value: "business_registration", label: "배송" },
+        { value: "user_registration", label: "결제" },
+        { value: "other", label: "기타" },
+      ],
+    } as const;
+  }, [user?.role]);
 
   const load = async () => {
     setLoading(true);
@@ -90,6 +128,33 @@ export const InquiriesPage = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const openDetail = (item: InquiryItem) => {
+    setDetailItem(item);
+    setDetailOpen(true);
+  };
+
+  const closeDetail = () => {
+    setDetailOpen(false);
+  };
+
+  const handleReopen = () => {
+    if (!detailItem) return;
+    const newSubject = detailItem.subject
+      ? `[재문의] ${detailItem.subject}`
+      : `[재문의] ${typeLabelMap[detailItem.type || "general"]}`;
+    setSubject(newSubject);
+    setMessage((prev) =>
+      prev?.trim()
+        ? prev
+        : `안녕하세요, 이전 문의(${detailItem._id})에 대해 추가 문의드립니다.\n\n`,
+    );
+    setType((detailItem.type || "general") as typeof type);
+    setDetailOpen(false);
+    requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   };
 
   useEffect(() => {
@@ -136,93 +201,124 @@ export const InquiriesPage = () => {
 
   return (
     <div className="p-4 space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>문의</CardTitle>
-          <CardDescription>
-            문의를 남기면 담당자가 확인 후 연락드립니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-[160px_1fr]">
-            <div>
-              <label className="text-sm font-medium">문의 유형</label>
-              <Select
-                value={type}
-                onValueChange={(value) => setType(value as any)}
-              >
-                <SelectTrigger className="mt-2">
-                  <SelectValue placeholder="문의 유형" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="general">일반 문의</SelectItem>
-                  <SelectItem value="business_registration">
-                    사업자등록 문의
-                  </SelectItem>
-                  <SelectItem value="user_registration">
-                    사용자등록 문의
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-medium">제목</label>
-              <Input
-                className="mt-2"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                placeholder="문의 제목을 입력하세요"
-              />
-            </div>
+      <Card className="border-primary/20 bg-primary/5">
+        <CardContent className="flex flex-col gap-2 py-6 text-sm text-primary">
+          <div className="flex items-center gap-2 font-medium">
+            <HelpCircle className="h-4 w-4" />
+            {rolePreset.title}
           </div>
-          <div>
-            <label className="text-sm font-medium">문의 내용</label>
-            <Textarea
-              className="mt-2"
-              rows={5}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="문의 내용을 입력해주세요"
-            />
-          </div>
-          <div className="flex justify-end">
-            <Button type="button" onClick={handleSubmit} disabled={submitting}>
-              {submitting ? "접수 중..." : "문의 접수"}
-            </Button>
+          <p className="text-primary/80">{rolePreset.description}</p>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-primary/80">
+            <Phone className="h-4 w-4" />
+            <span className="font-semibold">{rolePreset.helper}</span>
+            <a
+              href={`tel:${COMPANY_PHONE.replace(/[^0-9+]/g, "")}`}
+              className="underline"
+            >
+              {COMPANY_PHONE}
+            </a>
+            <span>·</span>
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="underline">
+              {rolePreset.helperValue}
+            </a>
           </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>내 문의</CardTitle>
-          <CardDescription>
-            {loading ? "불러오는 중..." : `${sortedItems.length}건`}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>접수일</TableHead>
-                <TableHead>유형</TableHead>
-                <TableHead>제목</TableHead>
-                <TableHead>상태</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <Card className="order-2 lg:order-1" ref={formRef}>
+          <CardHeader>
+            <CardTitle>문의 접수</CardTitle>
+            <CardDescription>
+              필요한 내용만 적고 30초만에 접수하세요.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">문의 유형</p>
+              <div className="grid gap-2 grid-cols-2 sm:grid-cols-4">
+                {rolePreset.typeChips.map((chip) => (
+                  <button
+                    key={chip.value}
+                    type="button"
+                    onClick={() => setType(chip.value as typeof type)}
+                    className={`rounded-xl border px-3 py-2 text-sm font-medium transition ${
+                      type === chip.value
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">제목</p>
+              <Input
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                placeholder="예) 배송상태 확인 요청"
+              />
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">문의 내용</p>
+              <Textarea
+                rows={5}
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="상황과 요청 사항을 간단히 남겨주세요."
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                onClick={handleSubmit}
+                disabled={submitting}
+              >
+                {submitting ? "접수 중..." : "문의 접수"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="order-1 lg:order-2">
+          <CardHeader>
+            <CardTitle>처리 현황</CardTitle>
+            <CardDescription>
+              {loading ? "불러오는 중..." : `${stats.total}건 등록됨`}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <div className="grid grid-cols-2 gap-3 text-center md:col-span-2">
+              <div className="rounded-2xl border bg-muted/30 p-4">
+                <p className="text-xs text-muted-foreground">진행중</p>
+                <p className="text-2xl font-semibold">{stats.open}</p>
+              </div>
+              <div className="rounded-2xl border bg-muted/30 p-4">
+                <p className="text-xs text-muted-foreground">완료</p>
+                <p className="text-2xl font-semibold">{stats.resolved}</p>
+              </div>
+            </div>
+            <div className="space-y-3 md:col-span-2">
               {sortedItems.map((item) => (
-                <TableRow key={item._id}>
-                  <TableCell>
-                    {item.createdAt
-                      ? new Date(item.createdAt).toLocaleString("ko-KR")
-                      : "-"}
-                  </TableCell>
-                  <TableCell>
-                    {typeLabelMap[item.type || "general"] || "일반 문의"}
-                  </TableCell>
-                  <TableCell>{item.subject || "-"}</TableCell>
-                  <TableCell>
+                <button
+                  key={item._id}
+                  type="button"
+                  onClick={() => openDetail(item)}
+                  className="w-full rounded-2xl border p-4 text-left text-sm transition hover:border-primary"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        {item.createdAt
+                          ? new Date(item.createdAt).toLocaleString("ko-KR")
+                          : "-"}
+                      </p>
+                      <p className="mt-1 font-medium">
+                        {item.subject || typeLabelMap[item.type || "general"]}
+                      </p>
+                    </div>
                     <Badge
                       variant={
                         item.status === "resolved" ? "outline" : "default"
@@ -230,23 +326,77 @@ export const InquiriesPage = () => {
                     >
                       {statusLabelMap[item.status || "open"] || "접수"}
                     </Badge>
-                  </TableCell>
-                </TableRow>
+                  </div>
+                </button>
               ))}
               {!sortedItems.length && !loading && (
-                <TableRow>
-                  <TableCell
-                    colSpan={4}
-                    className="text-center text-sm text-slate-400"
-                  >
-                    문의 내역이 없습니다.
-                  </TableCell>
-                </TableRow>
+                <div className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  아직 접수된 문의가 없습니다.
+                </div>
               )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {detailItem?.subject ||
+                typeLabelMap[detailItem?.type || "general"]}
+            </DialogTitle>
+            <DialogDescription>
+              {detailItem?.createdAt
+                ? new Date(detailItem.createdAt).toLocaleString("ko-KR")
+                : "시간 정보 없음"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 text-sm">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground mb-1">문의 유형</p>
+                <p className="font-medium">
+                  {typeLabelMap[detailItem?.type || "general"]}
+                </p>
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground mb-1">처리 상태</p>
+                <Badge
+                  variant={
+                    detailItem?.status === "resolved" ? "outline" : "default"
+                  }
+                >
+                  {statusLabelMap[detailItem?.status || "open"]}
+                </Badge>
+              </div>
+            </div>
+            <div className="rounded-xl bg-muted/20 p-3 min-h-[160px] max-h-[150px] flex flex-col overflow-y-auto">
+              <p className="text-xs text-muted-foreground mb-1">문의 내용</p>
+              <p className="whitespace-pre-line">
+                {detailItem?.message || "내용이 입력되지 않았습니다."}
+              </p>
+            </div>
+            <div className="rounded-xl bg-muted/40 p-3 min-h-[160px] max-h-[150px] flex flex-col overflow-y-auto">
+              <p className="text-xs text-muted-foreground mb-1">관리자 답변</p>
+              <p className="whitespace-pre-line">
+                {detailItem?.adminNote?.trim()
+                  ? detailItem.adminNote
+                  : "답변이 등록되면 여기에서 확인할 수 있습니다."}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
+            <Button variant="outline" onClick={handleReopen}>
+              재문의 하기
+            </Button>
+            <div className="flex justify-end">
+              <Button variant="secondary" onClick={closeDetail}>
+                닫기
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

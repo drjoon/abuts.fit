@@ -280,7 +280,14 @@ const App = () => {
                     element={<AdminRequestMonitoring />}
                   />
                   <Route path="mail" element={<AdminMailPage />} />
-                  <Route path="inquiries" element={<AdminInquiriesPage />} />
+                  <Route
+                    path="admin/inquiries"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminInquiriesPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
                   <Route path="sms" element={<AdminSmsPage />} />
                   <Route
                     path="chat-management"

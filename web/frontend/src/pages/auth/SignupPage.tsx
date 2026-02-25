@@ -1115,13 +1115,23 @@ export const SignupPage = () => {
                   >
                     홈으로 돌아가기
                   </Button>
-                  <Button
-                    variant="ghost"
-                    className="text-white/70 hover:text-white"
-                    onClick={handleLogout}
-                  >
-                    로그아웃
-                  </Button>
+                  {user?.id ? (
+                    <Button
+                      variant="ghost"
+                      className="text-white/70 hover:text-white"
+                      onClick={handleLogout}
+                    >
+                      로그아웃
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      className="text-white/70 hover:text-white"
+                      onClick={() => navigate("/login")}
+                    >
+                      로그인
+                    </Button>
+                  )}
                 </div>
               )}
             </CardContent>

@@ -74,10 +74,13 @@ export async function createGuestInquiry(req, res) {
 export async function createInquiry(req, res) {
   try {
     const { type, subject, message } = req.body || {};
-    const normalizedType =
-      type === "business_registration" || type === "user_registration"
-        ? type
-        : "general";
+    const allowedTypes = [
+      "general",
+      "business_registration",
+      "user_registration",
+      "other",
+    ];
+    const normalizedType = allowedTypes.includes(type) ? type : "general";
     const trimmedSubject = String(subject || "").trim();
     const trimmedMessage = String(message || "").trim();
 
