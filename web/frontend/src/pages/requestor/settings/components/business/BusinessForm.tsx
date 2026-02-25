@@ -240,7 +240,7 @@ export const BusinessForm = ({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="orgName">기공소명</Label>
+            <Label htmlFor="orgName">사업자명</Label>
             <GuideFocus className="rounded-xl p-1">
               <Input
                 id="orgName"

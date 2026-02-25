@@ -25,8 +25,7 @@ export const BusinessMemberView = ({
       </div>
 
       <div className="app-surface app-surface--panel text-xs text-muted-foreground">
-        기공소 사업자 정보는 대표자만 수정할 수 있어요. 여기서는 확인만
-        가능합니다.
+        사업자 정보는 대표자만 수정할 수 있어요. 여기서는 확인만 가능합니다.
       </div>
 
       <div className="app-surface app-surface--panel space-y-4">
@@ -48,7 +47,7 @@ export const BusinessMemberView = ({
             <Input value={extracted.representativeName || ""} readOnly />
           </div>
           <div className="space-y-2">
-            <Label>기공소명</Label>
+            <Label>사업자명</Label>
             <Input value={businessData.companyName || ""} readOnly />
           </div>
           <div className="space-y-2">

@@ -14,19 +14,27 @@ interface ChatFriendsListProps {
 
 const getRoleBadgeColor = (role: string) => {
   switch (role) {
-    case 'requestor': return 'bg-blue-100 text-blue-800 border-blue-200';
-    case 'manufacturer': return 'bg-green-100 text-green-800 border-green-200';
-    case 'admin': return 'bg-purple-100 text-purple-800 border-purple-200';
-    default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    case "requestor":
+      return "bg-blue-100 text-blue-800 border-blue-200";
+    case "manufacturer":
+      return "bg-green-100 text-green-800 border-green-200";
+    case "admin":
+      return "bg-purple-100 text-purple-800 border-purple-200";
+    default:
+      return "bg-gray-100 text-gray-800 border-gray-200";
   }
 };
 
 const getRoleLabel = (role: string) => {
   switch (role) {
-    case 'requestor': return '기공소';
-    case 'manufacturer': return '제작사'; 
-    case 'admin': return '어벗츠.핏';
-    default: return '사용자';
+    case "requestor":
+      return "사업자";
+    case "manufacturer":
+      return "제작사";
+    case "admin":
+      return "어벗츠.핏";
+    default:
+      return "사용자";
   }
 };
 
@@ -34,17 +42,17 @@ export const ChatFriendsList = ({ onSelectFriend }: ChatFriendsListProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddFriend, setShowAddFriend] = useState(false);
 
-  const filteredFriends = mockFriends.filter(friend =>
-    friend.name.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredFriends = mockFriends.filter((friend) =>
+    friend.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  const favoriteFriends = filteredFriends.filter(friend => friend.isFavorite);
-  const regularFriends = filteredFriends.filter(friend => !friend.isFavorite);
+  const favoriteFriends = filteredFriends.filter((friend) => friend.isFavorite);
+  const regularFriends = filteredFriends.filter((friend) => !friend.isFavorite);
 
   return (
     <div className="flex flex-col h-full bg-background">
       {/* 헤더 */}
-      <div className="p-3 sm:p-4 border-b bg-muted/30">        
+      <div className="p-3 sm:p-4 border-b bg-muted/30">
         {/* 검색 */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
@@ -72,41 +80,52 @@ export const ChatFriendsList = ({ onSelectFriend }: ChatFriendsListProps) => {
           <div className="p-3 sm:p-4">
             <div className="flex items-center gap-2 mb-2 sm:mb-3">
               <Star className="h-3 w-3 sm:h-4 sm:w-4 text-yellow-500" />
-              <span className="text-xs sm:text-sm font-medium text-muted-foreground">즐겨찾기</span>
-              <span className="text-xs sm:text-sm text-muted-foreground">{favoriteFriends.length}</span>
+              <span className="text-xs sm:text-sm font-medium text-muted-foreground">
+                즐겨찾기
+              </span>
+              <span className="text-xs sm:text-sm text-muted-foreground">
+                {favoriteFriends.length}
+              </span>
             </div>
             <div className="space-y-1 sm:space-y-2">
               {favoriteFriends.map((friend) => (
-                  <div
-                    key={friend.id}
-                    className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
-                    onClick={() => onSelectFriend(friend)}
-                  >
-                    <div className="relative">
-                      <Avatar className="h-8 w-8 sm:h-10 sm:w-10">
-                        <AvatarFallback className="text-xs sm:text-sm">
-                          {friend.name[0]}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-background ${
-                        friend.isOnline ? 'bg-green-500' : 'bg-gray-400'
-                      }`} />
-                    </div>
-                    
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1 sm:gap-2">
-                        <span className="font-medium text-xs sm:text-sm truncate">{friend.name}</span>
-                        <Badge variant="outline" className={`text-xs ${getRoleBadgeColor(friend.role)}`}>
-                          {getRoleLabel(friend.role)}
-                        </Badge>
-                      </div>
-                      {friend.statusMessage && (
-                        <p className="text-xs text-muted-foreground truncate mt-0.5 sm:mt-1">
-                          {friend.statusMessage}
-                        </p>
-                      )}
-                    </div>
+                <div
+                  key={friend.id}
+                  className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                  onClick={() => onSelectFriend(friend)}
+                >
+                  <div className="relative">
+                    <Avatar className="h-8 w-8 sm:h-10 sm:w-10">
+                      <AvatarFallback className="text-xs sm:text-sm">
+                        {friend.name[0]}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div
+                      className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-background ${
+                        friend.isOnline ? "bg-green-500" : "bg-gray-400"
+                      }`}
+                    />
                   </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1 sm:gap-2">
+                      <span className="font-medium text-xs sm:text-sm truncate">
+                        {friend.name}
+                      </span>
+                      <Badge
+                        variant="outline"
+                        className={`text-xs ${getRoleBadgeColor(friend.role)}`}
+                      >
+                        {getRoleLabel(friend.role)}
+                      </Badge>
+                    </div>
+                    {friend.statusMessage && (
+                      <p className="text-xs text-muted-foreground truncate mt-0.5 sm:mt-1">
+                        {friend.statusMessage}
+                      </p>
+                    )}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
@@ -115,8 +134,12 @@ export const ChatFriendsList = ({ onSelectFriend }: ChatFriendsListProps) => {
         {/* 일반 친구 */}
         <div className="p-3 sm:p-4">
           <div className="flex items-center gap-2 mb-2 sm:mb-3">
-            <span className="text-xs sm:text-sm font-medium text-muted-foreground">친구</span>
-            <span className="text-xs sm:text-sm text-muted-foreground">{regularFriends.length}</span>
+            <span className="text-xs sm:text-sm font-medium text-muted-foreground">
+              친구
+            </span>
+            <span className="text-xs sm:text-sm text-muted-foreground">
+              {regularFriends.length}
+            </span>
           </div>
           <div className="space-y-1 sm:space-y-2">
             {regularFriends.map((friend) => (
@@ -131,15 +154,22 @@ export const ChatFriendsList = ({ onSelectFriend }: ChatFriendsListProps) => {
                       {friend.name[0]}
                     </AvatarFallback>
                   </Avatar>
-                  <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-background ${
-                    friend.isOnline ? 'bg-green-500' : 'bg-gray-400'
-                  }`} />
+                  <div
+                    className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-background ${
+                      friend.isOnline ? "bg-green-500" : "bg-gray-400"
+                    }`}
+                  />
                 </div>
-                
+
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1 sm:gap-2">
-                    <span className="font-medium text-xs sm:text-sm truncate">{friend.name}</span>
-                    <Badge variant="outline" className={`text-xs ${getRoleBadgeColor(friend.role)}`}>
+                    <span className="font-medium text-xs sm:text-sm truncate">
+                      {friend.name}
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className={`text-xs ${getRoleBadgeColor(friend.role)}`}
+                    >
                       {getRoleLabel(friend.role)}
                     </Badge>
                   </div>
@@ -155,10 +185,7 @@ export const ChatFriendsList = ({ onSelectFriend }: ChatFriendsListProps) => {
         </div>
       </div>
 
-      <AddFriendModal 
-        open={showAddFriend} 
-        onOpenChange={setShowAddFriend} 
-      />
+      <AddFriendModal open={showAddFriend} onOpenChange={setShowAddFriend} />
     </div>
   );
 };

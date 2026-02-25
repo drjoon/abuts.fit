@@ -4,6 +4,7 @@ import {
   getDeliveryEtaLeadDays,
   toKstYmd,
 } from "./utils.js";
+import { isKoreanBusinessDay } from "../../utils/krBusinessDays.js";
 
 /**
  * 생산 스케줄 계산 유틸리티 (시각 단위 관리)
@@ -79,6 +80,42 @@ function getNextPickupTime(fromDateTime, hour) {
   return pickupTime;
 }
 
+const WEEKDAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+const getWeekdayKey = (ymd) => {
+  const date = new Date(`${ymd}T00:00:00+09:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  return WEEKDAY_KEYS[date.getDay()] || null;
+};
+
+const resolveNextWeeklyBatchYmd = async ({ baseYmd, weeklyBatchDays }) => {
+  if (!baseYmd) return baseYmd;
+  if (!Array.isArray(weeklyBatchDays) || weeklyBatchDays.length === 0)
+    return baseYmd;
+
+  const allowed = new Set(
+    weeklyBatchDays
+      .map((day) => String(day).trim())
+      .filter((day) => ["mon", "tue", "wed", "thu", "fri"].includes(day)),
+  );
+  if (allowed.size === 0) return baseYmd;
+
+  let cursor = new Date(`${baseYmd}T00:00:00+09:00`);
+  if (Number.isNaN(cursor.getTime())) return baseYmd;
+
+  for (let i = 0; i < 20; i += 1) {
+    const candidateYmd = toKstYmd(cursor);
+    const weekdayKey = candidateYmd ? getWeekdayKey(candidateYmd) : null;
+    if (candidateYmd && weekdayKey && allowed.has(weekdayKey)) {
+      const ok = await isKoreanBusinessDay(candidateYmd);
+      if (ok) return candidateYmd;
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return baseYmd;
+};
+
 /**
  * 직경 그룹 분류 및 장비 할당
  */
@@ -120,6 +157,7 @@ export async function calculateInitialProductionSchedule({
   shippingMode,
   maxDiameter,
   requestedAt,
+  weeklyBatchDays,
 }) {
   const now = requestedAt || new Date();
   const { diameter, diameterGroup, preferredMachine } =
@@ -158,10 +196,17 @@ export async function calculateInitialProductionSchedule({
 
   // 가공 완료 → 배치 처리 (세척/검사/포장, 1일 소요)
   const machiningCompleteYmd = toKstYmd(scheduledMachiningComplete);
-  const batchProcessingYmd = await addKoreanBusinessDays({
+  const baseBatchYmd = await addKoreanBusinessDays({
     startYmd: machiningCompleteYmd,
     days: BATCH_PROCESSING_DAYS,
   });
+  const batchProcessingYmd =
+    shippingMode === "normal"
+      ? await resolveNextWeeklyBatchYmd({
+          baseYmd: baseBatchYmd,
+          weeklyBatchDays,
+        })
+      : baseBatchYmd;
   const scheduledBatchProcessing = createKstDateTime(
     batchProcessingYmd,
     PACKING_CUTOFF_HOUR,
@@ -279,6 +324,7 @@ export function recalculateProductionSchedule({
   newShippingMode,
   maxDiameter,
   requestedAt,
+  weeklyBatchDays,
 }) {
   // 의뢰 단계가 아니면 스케줄 변경 불가
   if (currentStage !== "의뢰") {
@@ -290,6 +336,7 @@ export function recalculateProductionSchedule({
     shippingMode: newShippingMode,
     maxDiameter,
     requestedAt,
+    weeklyBatchDays,
   });
 }
 

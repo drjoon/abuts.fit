@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Search, UserPlus } from "lucide-react";
@@ -14,19 +19,27 @@ interface AddFriendModalProps {
 
 const getRoleBadgeColor = (role: string) => {
   switch (role) {
-    case 'requestor': return 'bg-blue-100 text-blue-800 border-blue-200';
-    case 'manufacturer': return 'bg-green-100 text-green-800 border-green-200';
-    case 'admin': return 'bg-purple-100 text-purple-800 border-purple-200';
-    default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    case "requestor":
+      return "bg-blue-100 text-blue-800 border-blue-200";
+    case "manufacturer":
+      return "bg-green-100 text-green-800 border-green-200";
+    case "admin":
+      return "bg-purple-100 text-purple-800 border-purple-200";
+    default:
+      return "bg-gray-100 text-gray-800 border-gray-200";
   }
 };
 
 const getRoleLabel = (role: string) => {
   switch (role) {
-    case 'requestor': return '기공소';
-    case 'manufacturer': return '제작사'; 
-    case 'admin': return '어벗츠.핏';
-    default: return '사용자';
+    case "requestor":
+      return "사업자";
+    case "manufacturer":
+      return "제작사";
+    case "admin":
+      return "어벗츠.핏";
+    default:
+      return "사용자";
   }
 };
 
@@ -37,48 +50,49 @@ const mockSearchUsers: Friend[] = [
     name: "신동원",
     role: "manufacturer",
     isOnline: true,
-    statusMessage: "맞춤형 크라운 전문"
+    statusMessage: "맞춤형 크라운 전문",
   },
   {
     id: "7",
     name: "오지훈",
     role: "requestor",
     isOnline: false,
-    statusMessage: "임플란트 기공"
+    statusMessage: "임플란트 기공",
   },
   {
     id: "8",
     name: "윤서현",
     role: "admin",
     isOnline: true,
-    statusMessage: "어벗츠.핏 고객지원"
+    statusMessage: "어벗츠.핏 고객지원",
   },
   {
     id: "9",
     name: "조민재",
     role: "manufacturer",
     isOnline: true,
-    statusMessage: "프리미엄 덴처 제작"
+    statusMessage: "프리미엄 덴처 제작",
   },
   {
     id: "10",
     name: "한지원",
     role: "requestor",
     isOnline: false,
-    statusMessage: "정밀 교정장치 전문"
-  }
+    statusMessage: "정밀 교정장치 전문",
+  },
 ];
 
 export const AddFriendModal = ({ open, onOpenChange }: AddFriendModalProps) => {
   const [searchQuery, setSearchQuery] = useState("");
-  
-  const filteredUsers = mockSearchUsers.filter(user =>
-    user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.statusMessage?.toLowerCase().includes(searchQuery.toLowerCase())
+
+  const filteredUsers = mockSearchUsers.filter(
+    (user) =>
+      user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.statusMessage?.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   const handleAddFriend = (user: Friend) => {
-    console.log('친구 추가:', user);
+    console.log("친구 추가:", user);
     // 실제 구현에서는 여기서 친구 추가 API 호출
   };
 
@@ -88,7 +102,7 @@ export const AddFriendModal = ({ open, onOpenChange }: AddFriendModalProps) => {
         <DialogHeader>
           <DialogTitle>친구 추가</DialogTitle>
         </DialogHeader>
-        
+
         <div className="space-y-4">
           {/* 검색 */}
           <div className="relative">
@@ -115,15 +129,22 @@ export const AddFriendModal = ({ open, onOpenChange }: AddFriendModalProps) => {
                         {user.name[0]}
                       </AvatarFallback>
                     </Avatar>
-                    <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-background ${
-                      user.isOnline ? 'bg-green-500' : 'bg-gray-400'
-                    }`} />
+                    <div
+                      className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-background ${
+                        user.isOnline ? "bg-green-500" : "bg-gray-400"
+                      }`}
+                    />
                   </div>
-                  
+
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm truncate">{user.name}</span>
-                      <Badge variant="outline" className={`text-xs ${getRoleBadgeColor(user.role)}`}>
+                      <span className="font-medium text-sm truncate">
+                        {user.name}
+                      </span>
+                      <Badge
+                        variant="outline"
+                        className={`text-xs ${getRoleBadgeColor(user.role)}`}
+                      >
                         {getRoleLabel(user.role)}
                       </Badge>
                     </div>
@@ -148,7 +169,9 @@ export const AddFriendModal = ({ open, onOpenChange }: AddFriendModalProps) => {
 
             {filteredUsers.length === 0 && (
               <div className="text-center py-8">
-                <p className="text-muted-foreground text-sm">검색 결과가 없습니다</p>
+                <p className="text-muted-foreground text-sm">
+                  검색 결과가 없습니다
+                </p>
               </div>
             )}
           </div>

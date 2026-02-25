@@ -163,14 +163,14 @@ export const SignupSocialForm = ({
 
         {formData.requestorType === "owner" && (
           <div>
-            <Label htmlFor="company">기공소명</Label>
+            <Label htmlFor="company">사업자명</Label>
             <Input
               id="company"
               name="company"
               type="text"
               value={formData.company}
               onChange={onFormChange}
-              placeholder="예: 서울치과기공소"
+              placeholder="예: 서울치과기공"
               required
             />
           </div>

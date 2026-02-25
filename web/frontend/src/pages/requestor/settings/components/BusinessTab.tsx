@@ -1010,7 +1010,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
             <div className="flex items-center gap-2">
               <p className="flex items-center gap-2">
                 <Building2 className="h-5 w-5" />
-                기공소 정보
+                사업자 정보
               </p>
               <span className="ml-2 inline-flex items-center rounded-md border bg-white/60 px-2 py-0.5 text-xs text-foreground">
                 {roleBadge}
@@ -1039,7 +1039,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
           {membership === "none" && !setupMode && showSelectionChoices && (
             <div className="space-y-4">
               <div className="app-surface app-surface--panel text-sm">
-                아래 두 가지 방법 중 하나를 선택해 기공소 소속을 설정해주세요.
+                아래 두 가지 방법 중 하나를 선택해 사업자 소속을 설정해주세요.
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <button
@@ -1054,9 +1054,9 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                     });
                   }}
                 >
-                  <div className="text-sm font-medium">신규 기공소 등록</div>
+                  <div className="text-sm font-medium">신규 사업자 등록</div>
                   <div className="text-xs text-muted-foreground mt-1">
-                    사업자등록증을 업로드해서 기공소를 새로 등록합니다.
+                    사업자등록증을 업로드해서 사업자를 새로 등록합니다.
                   </div>
                 </button>
                 <button
@@ -1068,10 +1068,10 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                   }}
                 >
                   <div className="text-sm font-medium">
-                    기존 기공소 소속 신청
+                    기존 사업자 소속 신청
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">
-                    이미 등록된 기공소를 검색해 소속을 신청합니다.
+                    이미 등록된 사업자를 검색해 소속을 신청합니다.
                   </div>
                 </button>
               </div>
@@ -1100,8 +1100,8 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm font-medium">
                     {setupMode === "license"
-                      ? "신규 기공소 등록"
-                      : "기존 기공소 소속 신청"}
+                      ? "신규 사업자 등록"
+                      : "기존 사업자 소속 신청"}
                   </div>
                   <Button
                     type="button"

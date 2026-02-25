@@ -62,13 +62,13 @@ export const SignupWizardStep3 = ({
       {showCompanyField && (
         <div className="space-y-2">
           <Label htmlFor="company" className="text-sm font-medium">
-            기공소명
+            사업자명
           </Label>
           <Input
             id="company"
             name="company"
             type="text"
-            placeholder="예: 서울치과기공소"
+            placeholder="예: 서울치과기공"
             value={formData.company}
             onChange={onFormChange}
             onKeyDown={handleKeyDown}

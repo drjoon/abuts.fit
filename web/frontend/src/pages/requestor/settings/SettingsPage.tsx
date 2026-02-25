@@ -39,16 +39,8 @@ export const RequestorSettingsPage = () => {
   const [loadingMembership, setLoadingMembership] = useState(Boolean(token));
 
   const mockHeaders = useMemo(() => {
-    if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
-    return {
-      "x-mock-role": (user?.role || "requestor") as string,
-      "x-mock-email": user?.email || "mock@abuts.fit",
-      "x-mock-name": user?.name || "사용자",
-      "x-mock-organization":
-        (user as any)?.organization || user?.companyName || "",
-      "x-mock-phone": (user as any)?.phoneNumber || "",
-    };
-  }, [token, user?.companyName, user?.email, user?.name, user?.role, user]);
+    return {} as Record<string, string>;
+  }, []);
 
   const organizationType = useMemo(() => {
     const role = String(user?.role || "requestor").trim();
@@ -72,7 +64,6 @@ export const RequestorSettingsPage = () => {
           )}`,
           method: "GET",
           token,
-          headers: mockHeaders,
         });
         if (!res.ok) {
           setMembership("none");
@@ -97,7 +88,7 @@ export const RequestorSettingsPage = () => {
     };
 
     void load();
-  }, [mockHeaders, organizationType, token]);
+  }, [organizationType, token]);
 
   const tabs: SettingsTabDef[] = useMemo(() => {
     const base: SettingsTabDef[] = [
@@ -109,7 +100,7 @@ export const RequestorSettingsPage = () => {
       },
       {
         key: "business",
-        label: "기공소",
+        label: "사업자",
         icon: Building2,
         content: <BusinessTab userData={user} />,
       },

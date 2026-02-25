@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -16,36 +21,47 @@ interface CreateChatModalProps {
 
 const getRoleBadgeColor = (role: string) => {
   switch (role) {
-    case 'requestor': return 'bg-blue-100 text-blue-800 border-blue-200';
-    case 'manufacturer': return 'bg-green-100 text-green-800 border-green-200';
-    case 'admin': return 'bg-purple-100 text-purple-800 border-purple-200';
-    default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    case "requestor":
+      return "bg-blue-100 text-blue-800 border-blue-200";
+    case "manufacturer":
+      return "bg-green-100 text-green-800 border-green-200";
+    case "admin":
+      return "bg-purple-100 text-purple-800 border-purple-200";
+    default:
+      return "bg-gray-100 text-gray-800 border-gray-200";
   }
 };
 
 const getRoleLabel = (role: string) => {
   switch (role) {
-    case 'requestor': return '기공소';
-    case 'manufacturer': return '제작사'; 
-    case 'admin': return '어벗츠.핏';
-    default: return '사용자';
+    case "requestor":
+      return "사업자";
+    case "manufacturer":
+      return "제작사";
+    case "admin":
+      return "어벗츠.핏";
+    default:
+      return "사용자";
   }
 };
 
-export const CreateChatModal = ({ open, onOpenChange }: CreateChatModalProps) => {
+export const CreateChatModal = ({
+  open,
+  onOpenChange,
+}: CreateChatModalProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [groupName, setGroupName] = useState("");
-  
-  const filteredFriends = mockFriends.filter(friend =>
-    friend.name.toLowerCase().includes(searchQuery.toLowerCase())
+
+  const filteredFriends = mockFriends.filter((friend) =>
+    friend.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   const handleFriendSelect = (friendId: string, checked: boolean) => {
     if (checked) {
-      setSelectedFriends(prev => [...prev, friendId]);
+      setSelectedFriends((prev) => [...prev, friendId]);
     } else {
-      setSelectedFriends(prev => prev.filter(id => id !== friendId));
+      setSelectedFriends((prev) => prev.filter((id) => id !== friendId));
     }
   };
 
@@ -55,12 +71,12 @@ export const CreateChatModal = ({ open, onOpenChange }: CreateChatModalProps) =>
     const chatData = {
       participants: selectedFriends,
       groupName: selectedFriends.length > 1 ? groupName : undefined,
-      isGroup: selectedFriends.length > 1
+      isGroup: selectedFriends.length > 1,
     };
 
-    console.log('새 채팅방 생성:', chatData);
+    console.log("새 채팅방 생성:", chatData);
     // 실제 구현에서는 여기서 채팅방 생성 API 호출
-    
+
     // 모달 닫기 및 상태 초기화
     onOpenChange(false);
     setSelectedFriends([]);
@@ -76,7 +92,7 @@ export const CreateChatModal = ({ open, onOpenChange }: CreateChatModalProps) =>
         <DialogHeader>
           <DialogTitle>새 채팅</DialogTitle>
         </DialogHeader>
-        
+
         <div className="space-y-4">
           {/* 검색 */}
           <div className="relative">
@@ -101,8 +117,8 @@ export const CreateChatModal = ({ open, onOpenChange }: CreateChatModalProps) =>
           {/* 선택된 친구들 */}
           {selectedFriends.length > 0 && (
             <div className="flex flex-wrap gap-2 p-2 bg-muted/50 rounded-lg">
-              {selectedFriends.map(friendId => {
-                const friend = mockFriends.find(f => f.id === friendId);
+              {selectedFriends.map((friendId) => {
+                const friend = mockFriends.find((f) => f.id === friendId);
                 return friend ? (
                   <Badge key={friendId} variant="secondary" className="gap-1">
                     {friend.name}
@@ -121,24 +137,33 @@ export const CreateChatModal = ({ open, onOpenChange }: CreateChatModalProps) =>
               >
                 <Checkbox
                   checked={selectedFriends.includes(friend.id)}
-                  onCheckedChange={(checked) => handleFriendSelect(friend.id, checked as boolean)}
+                  onCheckedChange={(checked) =>
+                    handleFriendSelect(friend.id, checked as boolean)
+                  }
                 />
-                
+
                 <div className="relative">
                   <Avatar className="h-10 w-10">
                     <AvatarFallback className="text-sm">
                       {friend.name[0]}
                     </AvatarFallback>
                   </Avatar>
-                  <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-background ${
-                    friend.isOnline ? 'bg-green-500' : 'bg-gray-400'
-                  }`} />
+                  <div
+                    className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-background ${
+                      friend.isOnline ? "bg-green-500" : "bg-gray-400"
+                    }`}
+                  />
                 </div>
-                
+
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm truncate">{friend.name}</span>
-                    <Badge variant="outline" className={`text-xs ${getRoleBadgeColor(friend.role)}`}>
+                    <span className="font-medium text-sm truncate">
+                      {friend.name}
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className={`text-xs ${getRoleBadgeColor(friend.role)}`}
+                    >
                       {getRoleLabel(friend.role)}
                     </Badge>
                   </div>
@@ -159,13 +184,13 @@ export const CreateChatModal = ({ open, onOpenChange }: CreateChatModalProps) =>
           </div>
 
           {/* 생성 버튼 */}
-          <Button 
+          <Button
             onClick={handleCreateChat}
             disabled={selectedFriends.length === 0}
             className="w-full"
           >
             <MessageSquarePlus className="h-4 w-4 mr-2" />
-            {isGroup ? '그룹 채팅' : '1:1 채팅'} 시작
+            {isGroup ? "그룹 채팅" : "1:1 채팅"} 시작
           </Button>
         </div>
       </DialogContent>

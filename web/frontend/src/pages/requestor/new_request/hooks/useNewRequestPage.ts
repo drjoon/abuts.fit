@@ -511,7 +511,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       if (!hasBusinessNumber) {
         toast({
           title: "설정이 필요합니다",
-          description: "기공소 설정에서 사업자 정보를 등록해주세요.",
+          description: "사업자 설정에서 사업자 정보를 등록해주세요.",
           duration: 3000,
         });
         return false;

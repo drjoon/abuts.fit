@@ -411,3 +411,45 @@
 - 멀티 인스턴스 실행 가능성을 고려하여, 배치 실행은 `JobLock`(DB 기반 락)을 획득한 경우에만 진행합니다.
 - 기본 락 TTL은 15분이며, 환경변수 `TAX_INVOICE_BATCH_LOCK_TTL_MS`로 조절할 수 있습니다.
 - 배치 on/off는 환경변수 `TAX_INVOICE_BATCH_ENABLED`로 제어합니다.
+
+## 13. 2026-02 리팩터링 변경사항
+
+### 13.1 주간 배송 요일 기반 스케줄링
+
+- **기능**: 의뢰자가 설정한 주간 배송 요일(weeklyBatchDays)을 기반으로 배송 예정일 자동 계산
+- **저장 위치**: `RequestorOrganization.shippingPolicy.weeklyBatchDays` (배열: ["mon", "tue", "wed", "thu", "fri"])
+- **API 엔드포인트**:
+  - GET `/api/organizations/me`: shippingPolicy 포함 응답
+  - PUT `/api/organizations/me`: shippingPolicy.weeklyBatchDays 업데이트
+- **백엔드 로직**:
+  - `calculateInitialProductionSchedule()`: weeklyBatchDays 파라미터 추가
+  - `resolveNextWeeklyBatchYmd()`: 선택된 요일에만 배송 예정일 설정
+  - 일반 배송(normal)에만 적용, 신속 배송(express)은 기본 로직 사용
+- **프론트엔드**:
+  - ShippingTab에서 주간 요일 선택 UI 제공
+  - 로그인 시 백엔드에서 로드, 미로그인 시 localStorage 사용
+  - 변경 시 자동 저장 (백엔드 또는 localStorage)
+
+### 13.2 프론트엔드 용어 통일 및 레거시 제거
+
+- **용어 변경**: "기공소" → "사업자" (모든 UI 텍스트)
+  - 설정 페이지 탭 라벨
+  - 사업자 선택/검색 UI
+  - 회원가입 폼 라벨
+  - 채팅 역할 라벨
+  - 토스트 메시지
+
+- **레거시 MOCK 헤더 제거**:
+  - `MOCK_DEV_TOKEN` 조건부 로직 제거
+  - `x-mock-role`, `x-mock-email`, `x-mock-name`, `x-mock-organization`, `x-mock-phone` 헤더 제거
+  - SettingsPage, useNewRequestPage 등에서 mockHeaders 정리
+  - **예외**: bg/bridge-server는 MOCK 모드 유지 (별도 운영)
+
+### 13.3 대시보드 시각적 명확성 개선
+
+- **app-glass-card 스타일 업데이트**:
+  - 배경 투명도 증가 (0.92 → 0.98, 0.45 → 0.95)
+  - 블러 감소 (20px → 8px)
+  - 그림자 강화 (더 선명한 경계)
+  - 보안 페이지와 동일한 시각적 명확성 적용
+- **영향 범위**: RequestorDashboardPage의 모든 카드 컴포넌트

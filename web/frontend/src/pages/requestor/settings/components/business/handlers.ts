@@ -231,7 +231,7 @@ export const handleSave = async (
         toast({
           title: "이미 등록된 사업자등록번호입니다",
           description:
-            serverMessage || "기존 기공소에 가입 요청을 진행해주세요.",
+            serverMessage || "기존 사업자에 가입 요청을 진행해주세요.",
           variant: "destructive",
           duration: 4000,
         });
@@ -285,7 +285,7 @@ export const handleSave = async (
         Math.max(0, welcomeBonusAmount),
       );
       toast({
-        title: "신규 기공소 등록 완료",
+        title: "신규 사업자 등록 완료",
         description: `축하 크레딧 ${formatted}원이 자동 적립되었어요.`,
       });
     } else if (!silent && !auto) {
@@ -499,7 +499,7 @@ export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
     }
     if (!selectedOrgId) {
       toast({
-        title: "기공소를 선택해주세요",
+        title: "사업자를 선택해주세요",
         variant: "destructive",
         duration: 3000,
       });

@@ -60,7 +60,7 @@ export const OrganizationSearchSection = ({
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       <div className="md:col-span-2 space-y-2">
-        <Label>기공소 선택</Label>
+        <Label>사업자 선택</Label>
         <Popover open={orgOpen} onOpenChange={setOrgOpen}>
           <PopoverTrigger asChild>
             <Button
@@ -74,7 +74,7 @@ export const OrganizationSearchSection = ({
               <span className="truncate">
                 {selectedOrg
                   ? getOrgLabel(selectedOrg)
-                  : "기공소를 검색해서 선택하세요"}
+                  : "사업자를 검색해서 선택하세요"}
               </span>
               <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
             </Button>
@@ -82,7 +82,7 @@ export const OrganizationSearchSection = ({
           <PopoverContent className="w-[520px] p-0" align="start">
             <Command>
               <CommandInput
-                placeholder="기공소명/대표자명/사업자번호/주소 검색..."
+                placeholder="사업자명/대표자명/사업자번호/주소 검색..."
                 value={orgSearch}
                 onValueChange={(v) => {
                   setOrgSearch(v);
@@ -119,7 +119,7 @@ export const OrganizationSearchSection = ({
                         <Check
                           className={cn(
                             "mr-2 h-4 w-4",
-                            selected ? "opacity-100" : "opacity-0"
+                            selected ? "opacity-100" : "opacity-0",
                           )}
                         />
                         <div className="min-w-0">
