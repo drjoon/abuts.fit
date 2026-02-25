@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -55,6 +55,7 @@ export const LoginPage = () => {
   const [columnHeight, setColumnHeight] = useState(0);
   const [devModalOpen, setDevModalOpen] = useState(false);
   const columnRef = useRef<HTMLDivElement>(null);
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
   const { login } = useAuthStore();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -70,10 +71,22 @@ export const LoginPage = () => {
     return () => window.removeEventListener("resize", measure);
   }, [step, email, password]);
 
+  useEffect(() => {
+    if (step !== "password") return;
+    const timer = window.setTimeout(() => {
+      passwordInputRef.current?.focus();
+      passwordInputRef.current?.select();
+    }, 50);
+    return () => window.clearTimeout(timer);
+  }, [step]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (step === "email") {
       setStep("password");
+      window.setTimeout(() => {
+        passwordInputRef.current?.focus();
+      }, 0);
       return;
     }
     setIsLoading(true);
@@ -260,6 +273,8 @@ export const LoginPage = () => {
                               className="pl-10 pr-10 border-white/10 bg-white/5 text-white placeholder:text-white/40"
                               autoComplete="current-password"
                               required
+                              autoFocus={step === "password"}
+                              ref={passwordInputRef}
                             />
                             <button
                               type="button"
