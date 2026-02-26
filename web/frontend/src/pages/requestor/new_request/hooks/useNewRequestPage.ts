@@ -10,6 +10,7 @@ import { type DraftCaseInfo } from "./newRequestTypes";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { getNormalizedStageOrder } from "@/utils/stage";
+import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 
 const NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX =
   "abutsfit:new-request-clinics:v1:";
@@ -325,6 +326,36 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     [rawHandleUpload],
   );
 
+  const buildDuplicateCheckPayload = useCallback((file: File) => {
+    const parsed = parseFilenameWithRules(file.name);
+    const clinicName = String(parsed.clinicName || "").trim();
+    const patientName = String(parsed.patientName || "").trim();
+    const tooth = String(parsed.tooth || "").trim();
+    if (!clinicName || !patientName || !tooth) return null;
+
+    const normalizeFilePath = (raw: string) => {
+      if (!raw) return "";
+      try {
+        const base =
+          raw.replace(/\\/g, "/").split("/").filter(Boolean).pop() || raw;
+        return base
+          .normalize("NFC")
+          .replace(/\.[^/.]+$/, "")
+          .trim()
+          .toLowerCase();
+      } catch {
+        return raw;
+      }
+    };
+
+    return {
+      filePath: normalizeFilePath(file.name),
+      clinicName,
+      patientName,
+      tooth,
+    };
+  }, []);
+
   const handleUpload = useCallback(
     async (incomingFiles: File[]) => {
       if (!token || !incomingFiles || incomingFiles.length === 0) {
@@ -340,9 +371,12 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       const checkResults = await Promise.all(
         incomingFiles.map(async (f) => {
           try {
-            const query = new URLSearchParams({
-              fileName: f.name,
-            }).toString();
+            const payload = buildDuplicateCheckPayload(f);
+            if (!payload) {
+              return { file: f, skip: true };
+            }
+
+            const query = new URLSearchParams(payload).toString();
 
             const res = await request<any>({
               path: `/api/requests/my/has-duplicate?${query}`,
@@ -364,7 +398,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
       for (const result of checkResults) {
         const f = result.file;
-        if (result.error) {
+        if (result.error || (result as any).skip) {
           eligibleFiles.push(f);
           continue;
         }
@@ -433,7 +467,14 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         await rawHandleUpload(eligibleFiles);
       }
     },
-    [rawHandleUpload, setDuplicatePrompt, setPendingUploadFiles, toast, token],
+    [
+      rawHandleUpload,
+      setDuplicatePrompt,
+      setPendingUploadFiles,
+      toast,
+      token,
+      buildDuplicateCheckPayload,
+    ],
   );
 
   const setupNextPath = "/dashboard/new-request";

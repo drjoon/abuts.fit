@@ -545,14 +545,6 @@ export const RequestorDashboardPage = () => {
               </div>
 
               <div className="flex flex-col gap-6">
-                <RequestorBulkShippingBannerCard
-                  bulkData={bulkData}
-                  onRefresh={() => {
-                    refetchBulk();
-                  }}
-                  onOpenBulkModal={() => {}}
-                />
-
                 <RequestorRecentRequestsCard
                   items={recentRequests}
                   onRefresh={() => {
@@ -566,6 +558,14 @@ export const RequestorDashboardPage = () => {
 
               <div className="flex flex-col gap-6">
                 <RequestorShippingSummaryCard />
+
+                <RequestorBulkShippingBannerCard
+                  bulkData={bulkData}
+                  onRefresh={() => {
+                    refetchBulk();
+                  }}
+                  onOpenBulkModal={() => {}}
+                />
               </div>
             </div>
           </div>
