@@ -1,30 +1,75 @@
 import { useMemo, useState, useRef, useEffect } from "react";
 import type { ManufacturerRequest } from "../../utils/request";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/shared/hooks/use-toast";
+import { request } from "@/shared/api/apiClient";
 
 type MailboxGridProps = {
   requests: ManufacturerRequest[];
   onBoxClick?: (address: string, requests: ManufacturerRequest[]) => void;
 };
 
-// Mock API functions for shipping operations
-const mockPrintShippingLabels = async (mailboxAddresses: string[]) => {
-  console.log("📦 운송장 출력 API 호출 (Mock):", mailboxAddresses);
-  // TODO: 한진택배 API 연결
-  return new Promise((resolve) => setTimeout(resolve, 500));
+const HANJIN_DEV_TEST_PAYLOAD = {
+  mailboxes: ["DEVTESTA1"],
+  shipments: [
+    {
+      requestId: "DEV-REQ-0001",
+      mongoId: "000000000000000000000001",
+      mailboxAddress: "DEVTESTA1",
+      clinicName: "테스트치과",
+      patientName: "홍길동",
+      tooth: "#11",
+      receiverName: "테스트 담당자",
+      receiverPhone: "02-0000-0000",
+      receiverAddress: "서울특별시 강남구 테스트로 123",
+      receiverZipCode: "06236",
+      shippingMode: "normal",
+    },
+  ],
 };
 
-const mockRequestPickup = async (mailboxAddresses: string[]) => {
-  console.log("🚚 택배 수거 접수 API 호출 (Mock):", mailboxAddresses);
-  // TODO: 택배사 API 연결
-  return new Promise((resolve) => setTimeout(resolve, 500));
+const HANJIN_DEV_TEST_WEBHOOK = {
+  trackingNumber: "DEVTEST123456",
+  carrier: "hanjin",
+  shippedAt: new Date().toISOString(),
+  events: [
+    {
+      statusCode: "DLV",
+      statusText: "배송완료",
+      occurredAt: new Date().toISOString(),
+      location: "서울강남",
+      description: "테스트 배송 완료",
+    },
+  ],
 };
 
-const mockCancelPickup = async (mailboxAddresses: string[]) => {
-  console.log("↩️ 택배 수거 취소 API 호출 (Mock):", mailboxAddresses);
-  // TODO: 택배사 API 연결
-  return new Promise((resolve) => setTimeout(resolve, 500));
+const callHanjinApi = async ({
+  path,
+  mailboxAddresses,
+  payload,
+}: {
+  path: string;
+  mailboxAddresses?: string[];
+  payload?: Record<string, any>;
+}) => {
+  const body: Record<string, unknown> = {};
+  if (Array.isArray(mailboxAddresses)) {
+    body.mailboxAddresses = mailboxAddresses;
+  }
+  if (payload) {
+    body.payload = payload;
+  }
+  const response = await request<any>({
+    path,
+    method: "POST",
+    jsonBody: body,
+  });
+  const responseBody = response.data as any;
+  if (!response.ok || !responseBody?.success) {
+    const message =
+      responseBody?.message || `한진 API 호출 실패 (status=${response.status})`;
+    throw new Error(message);
+  }
+  return responseBody?.data;
 };
 
 export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
@@ -50,6 +95,11 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
   const [isPrinting, setIsPrinting] = useState(false);
   const [isRequestingPickup, setIsRequestingPickup] = useState(false);
   const [pickupRequested, setPickupRequested] = useState(false);
+  const [devTestLoading, setDevTestLoading] = useState({
+    label: false,
+    order: false,
+    webhook: false,
+  });
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const touchStartXRef = useRef<number>(0);
   const shelfRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -158,7 +208,10 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
 
     setIsPrinting(true);
     try {
-      await mockPrintShippingLabels(occupiedAddresses);
+      await callHanjinApi({
+        path: "/api/requests/shipping/hanjin/print-labels",
+        mailboxAddresses: occupiedAddresses,
+      });
       // Mark all occupied mailboxes as printed
       setPrintedMailboxes(new Set(occupiedAddresses));
       toast({
@@ -196,14 +249,20 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     setIsRequestingPickup(true);
     try {
       if (!pickupRequested) {
-        await mockRequestPickup(printedAddresses);
+        await callHanjinApi({
+          path: "/api/requests/shipping/hanjin/pickup",
+          mailboxAddresses: printedAddresses,
+        });
         setPickupRequested(true);
         toast({
           title: "택배 수거 접수 완료",
           description: `${printedAddresses.length}개 우편함의 택배 수거가 접수되었습니다.`,
         });
       } else {
-        await mockCancelPickup(Array.from(printedMailboxes));
+        await callHanjinApi({
+          path: "/api/requests/shipping/hanjin/pickup-cancel",
+          mailboxAddresses: Array.from(printedMailboxes),
+        });
         setPickupRequested(false);
         toast({
           title: "택배 수거 접수 취소",
@@ -235,10 +294,122 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
       ? "↩️ 접수 취소"
       : "🚚 택배 접수";
 
+  const runDevTest = async (
+    kind: "label" | "order" | "webhook",
+    task: () => Promise<void>,
+  ) => {
+    setDevTestLoading((prev) => ({ ...prev, [kind]: true }));
+    try {
+      await task();
+      toast({
+        title: "DEV 테스트 완료",
+        description:
+          kind === "webhook"
+            ? "배송정보 수신 모의가 완료되었습니다."
+            : kind === "order"
+              ? "주문정보(수거) 송신이 완료되었습니다."
+              : "운송장 출력 모의가 완료되었습니다.",
+      });
+    } catch (error) {
+      console.error(`DEV 테스트(${kind}) 실패:`, error);
+      toast({
+        title: "DEV 테스트 실패",
+        description: (error as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setDevTestLoading((prev) => ({ ...prev, [kind]: false }));
+    }
+  };
+
+  const handleDevLabelTest = () =>
+    runDevTest("label", async () => {
+      await callHanjinApi({
+        path: "/api/requests/shipping/hanjin/print-labels",
+        payload: HANJIN_DEV_TEST_PAYLOAD,
+      });
+    });
+
+  const handleDevOrderTest = () =>
+    runDevTest("order", async () => {
+      await callHanjinApi({
+        path: "/api/requests/shipping/hanjin/pickup",
+        payload: HANJIN_DEV_TEST_PAYLOAD,
+      });
+    });
+
+  const handleDevWebhookTest = () =>
+    runDevTest("webhook", async () => {
+      const response = await request<any>({
+        path: "/api/requests/shipping/hanjin/webhook-simulate",
+        method: "POST",
+        jsonBody: { payload: HANJIN_DEV_TEST_WEBHOOK },
+      });
+      const data = response.data as any;
+      if (!response.ok || !data?.success) {
+        throw new Error(
+          data?.message || `Webhook 테스트 실패 (status=${response.status})`,
+        );
+      }
+    });
+
   return (
     <div className="w-full flex flex-col h-full relative">
       {/* 고정 영역: 운송장 출력/택배 수거 접수 + 선반 그룹 버튼 */}
       <div className="flex-shrink-0 w-full sticky top-0 z-40 -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8">
+        {/* DEV 테스트 버튼 */}
+        <div className="flex flex-col gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 mt-3">
+          <div className="flex items-center gap-2 text-xs text-slate-600 uppercase tracking-wider">
+            <span className="font-semibold">DEV API 테스트</span>
+            <span className="text-[10px] text-slate-500">
+              (한진 개발환경 주문/배송/웹훅 확인)
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <button
+              onClick={handleDevOrderTest}
+              disabled={devTestLoading.order}
+              className={`px-3 py-2 text-xs font-medium rounded-lg border transition-colors text-left ${
+                devTestLoading.order
+                  ? "bg-slate-100 text-slate-400 border-slate-200"
+                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
+              }`}
+            >
+              {devTestLoading.order ? "송신 중..." : "① 주문정보 송신 테스트"}
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                DEV API로 수거(ORDER) payload 전송
+              </div>
+            </button>
+            <button
+              onClick={handleDevWebhookTest}
+              disabled={devTestLoading.webhook}
+              className={`px-3 py-2 text-xs font-medium rounded-lg border transition-colors text-left ${
+                devTestLoading.webhook
+                  ? "bg-slate-100 text-slate-400 border-slate-200"
+                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
+              }`}
+            >
+              {devTestLoading.webhook ? "검증 중..." : "② 배송정보 수신 테스트"}
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                webhook 시뮬레이터로 상태 업데이트 확인
+              </div>
+            </button>
+            <button
+              onClick={handleDevLabelTest}
+              disabled={devTestLoading.label}
+              className={`px-3 py-2 text-xs font-medium rounded-lg border transition-colors text-left ${
+                devTestLoading.label
+                  ? "bg-slate-100 text-slate-400 border-slate-200"
+                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
+              }`}
+            >
+              {devTestLoading.label ? "검수 중..." : "③ 운송장 인쇄 상태 검수"}
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                DEV 라벨 API 응답 상태 확인
+              </div>
+            </button>
+          </div>
+        </div>
         {/* 운송장 출력 및 택배 수거 접수 버튼 */}
         <div className="flex gap-2 justify-center pt-4 pb-1 px-2">
           <button

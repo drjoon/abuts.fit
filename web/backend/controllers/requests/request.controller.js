@@ -48,6 +48,10 @@ export const {
   createMyBulkShipping,
   getMyShippingPackagesSummary,
   registerShipment,
+  printHanjinLabels,
+  requestHanjinPickup,
+  cancelHanjinPickup,
+  simulateHanjinWebhook,
 } = shippingController;
 
 // Export default object for default imports

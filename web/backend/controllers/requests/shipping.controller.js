@@ -1,6 +1,8 @@
 import Request from "../../models/request.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
+import hanjinService from "../../services/hanjin.service.js";
+import { handleHanjinTrackingWebhook } from "../webhooks/hanjinWebhook.controller.js";
 import { Types } from "mongoose";
 import {
   buildRequestorOrgScopeFilter,
@@ -31,7 +33,261 @@ const memo = async ({ key, ttlMs, fn }) => {
   return value;
 };
 
+const resolveMailboxList = (mailboxAddresses) =>
+  Array.isArray(mailboxAddresses)
+    ? mailboxAddresses.map((v) => String(v || "").trim()).filter(Boolean)
+    : [];
+
+async function resolveHanjinPayload({ mailboxAddresses, payload }) {
+  if (payload && typeof payload === "object") {
+    return { payload, usedDbRequests: false };
+  }
+
+  const list = resolveMailboxList(mailboxAddresses);
+  if (!list.length) {
+    const error = new Error("mailboxAddresses가 필요합니다.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const requests = await Request.find({
+    mailboxAddress: { $in: list },
+    manufacturerStage: "포장.발송",
+  })
+    .populate("requestor", "name organization phoneNumber address")
+    .populate("requestorOrganizationId", "name extracted")
+    .lean();
+
+  if (!requests.length) {
+    const error = new Error("조건에 맞는 의뢰를 찾을 수 없습니다.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return {
+    payload: buildHanjinDraftPayload(requests, list),
+    usedDbRequests: true,
+  };
+}
+
 const resolveExpressShipLeadDays = () => 1;
+
+const resolveHanjinPath = (envKey, fallbackPath) => {
+  const raw = String(process.env[envKey] || "").trim();
+  if (raw) return raw;
+  return fallbackPath || "";
+};
+
+const buildHanjinDraftPayload = (requests, mailboxAddresses) => {
+  const normalized = requests.map((r) => {
+    const requestor = r.requestor || {};
+    const requestorOrg = r.requestorOrganizationId || {};
+    const extracted = requestorOrg.extracted || {};
+    const addr = requestor.address || {};
+    return {
+      requestId: r.requestId,
+      mongoId: String(r._id || ""),
+      mailboxAddress: r.mailboxAddress || "",
+      clinicName: r.caseInfos?.clinicName || "",
+      patientName: r.caseInfos?.patientName || "",
+      tooth: r.caseInfos?.tooth || "",
+      receiverName:
+        requestor.name || extracted.representativeName || extracted.companyName,
+      receiverPhone:
+        requestor.phoneNumber || extracted.phoneNumber || requestor.phone || "",
+      receiverAddress:
+        addr.street || extracted.address || requestor.addressText || "",
+      receiverZipCode: addr.zipCode || "",
+      shippingMode: r.shippingMode || "normal",
+    };
+  });
+
+  return {
+    mailboxes: mailboxAddresses,
+    shipments: normalized,
+  };
+};
+
+/**
+ * 한진 운송장 출력 (메일박스 기준)
+ * @route POST /api/requests/shipping/hanjin/print-labels
+ */
+export async function printHanjinLabels(req, res) {
+  try {
+    const { mailboxAddresses, payload } = req.body || {};
+
+    const path = resolveHanjinPath("HANJIN_PRINT_WBL_PATH");
+    if (!path) {
+      return res.status(400).json({
+        success: false,
+        message: "HANJIN_PRINT_WBL_PATH가 설정되지 않았습니다.",
+      });
+    }
+
+    let resolved;
+    try {
+      resolved = await resolveHanjinPayload({ mailboxAddresses, payload });
+    } catch (err) {
+      if (err.statusCode) {
+        return res.status(err.statusCode).json({
+          success: false,
+          message: err.message,
+        });
+      }
+      throw err;
+    }
+
+    const data = await hanjinService.requestPrintApi({
+      path,
+      method: "POST",
+      data: resolved.payload,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error("Error in printHanjinLabels:", error);
+    return res.status(500).json({
+      success: false,
+      message: "한진 운송장 출력 요청 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 한진 택배 수거 접수 (메일박스 기준)
+ * @route POST /api/requests/shipping/hanjin/pickup
+ */
+export async function requestHanjinPickup(req, res) {
+  try {
+    const { mailboxAddresses, payload } = req.body || {};
+
+    const path = resolveHanjinPath("HANJIN_PICKUP_REQUEST_PATH");
+    if (!path) {
+      return res.status(400).json({
+        success: false,
+        message: "HANJIN_PICKUP_REQUEST_PATH가 설정되지 않았습니다.",
+      });
+    }
+
+    let resolved;
+    try {
+      resolved = await resolveHanjinPayload({ mailboxAddresses, payload });
+    } catch (err) {
+      if (err.statusCode) {
+        return res.status(err.statusCode).json({
+          success: false,
+          message: err.message,
+        });
+      }
+      throw err;
+    }
+
+    const data = await hanjinService.requestOrderApi({
+      path,
+      method: "POST",
+      data: resolved.payload,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error("Error in requestHanjinPickup:", error);
+    return res.status(500).json({
+      success: false,
+      message: "한진 택배 수거 접수 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 한진 택배 수거 접수 취소 (메일박스 기준)
+ * @route POST /api/requests/shipping/hanjin/pickup-cancel
+ */
+export async function cancelHanjinPickup(req, res) {
+  try {
+    const { mailboxAddresses, payload } = req.body || {};
+
+    const path = resolveHanjinPath("HANJIN_PICKUP_CANCEL_PATH");
+    if (!path) {
+      return res.status(400).json({
+        success: false,
+        message: "HANJIN_PICKUP_CANCEL_PATH가 설정되지 않았습니다.",
+      });
+    }
+
+    let resolved;
+    try {
+      resolved = await resolveHanjinPayload({ mailboxAddresses, payload });
+    } catch (err) {
+      if (err.statusCode) {
+        return res.status(err.statusCode).json({
+          success: false,
+          message: err.message,
+        });
+      }
+      throw err;
+    }
+
+    const data = await hanjinService.requestOrderApi({
+      path,
+      method: "POST",
+      data: resolved.payload,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error("Error in cancelHanjinPickup:", error);
+    return res.status(500).json({
+      success: false,
+      message: "한진 택배 수거 취소 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function simulateHanjinWebhook(req, res) {
+  try {
+    const payload = req.body?.payload;
+    if (!payload || typeof payload !== "object") {
+      return res.status(400).json({
+        success: false,
+        message: "payload(JSON)가 필요합니다.",
+      });
+    }
+
+    const injectedSecret = String(
+      process.env.HANJIN_WEBHOOK_SECRET || "",
+    ).trim();
+
+    const mockReq = {
+      ...req,
+      body: payload,
+      headers: {
+        ...req.headers,
+        "x-webhook-secret": req.headers["x-webhook-secret"] || injectedSecret,
+      },
+    };
+
+    return handleHanjinTrackingWebhook(mockReq, res);
+  } catch (error) {
+    console.error("Error in simulateHanjinWebhook:", error);
+    return res.status(500).json({
+      success: false,
+      message: "한진 배송정보 수신 시뮬레이션 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
 
 /**
  * 배송 방식 변경 (의뢰자용)

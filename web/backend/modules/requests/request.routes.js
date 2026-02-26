@@ -137,6 +137,34 @@ router.post(
   requestController.registerShipment,
 );
 
+// 한진 운송장 출력 (메일박스 기준)
+router.post(
+  "/shipping/hanjin/print-labels",
+  authorize(["manufacturer", "admin"]),
+  requestController.printHanjinLabels,
+);
+
+// 한진 택배 수거 접수
+router.post(
+  "/shipping/hanjin/pickup",
+  authorize(["manufacturer", "admin"]),
+  requestController.requestHanjinPickup,
+);
+
+// 한진 택배 수거 접수 취소
+router.post(
+  "/shipping/hanjin/pickup-cancel",
+  authorize(["manufacturer", "admin"]),
+  requestController.cancelHanjinPickup,
+);
+
+// 한진 배송정보 수신 시뮬레이션 (개발용)
+router.post(
+  "/shipping/hanjin/webhook-simulate",
+  authorize(["manufacturer", "admin"]),
+  requestController.simulateHanjinWebhook,
+);
+
 // 의뢰 상세 조회 (권한 검증은 컨트롤러에서 처리)
 router.get("/:id", requestController.getRequestById);
 
