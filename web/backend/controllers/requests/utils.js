@@ -300,6 +300,12 @@ export async function normalizeRequestForResponse(requestDoc) {
       : requestDoc;
   const ci = obj.caseInfos || {};
   obj.caseInfos = await normalizeCaseInfosImplantFields(ci);
+  if (obj?.lotNumber && typeof obj.lotNumber === "object") {
+    const finalRaw = obj.lotNumber.final;
+    if (typeof finalRaw === "string") {
+      obj.lotNumber.final = stripCustomAbutmentLotPrefix(finalRaw);
+    }
+  }
   return obj;
 }
 
@@ -346,6 +352,14 @@ async function nextLotLetters() {
   return toLetters(Math.max(seq, 0));
 }
 
+function stripCustomAbutmentLotPrefix(value) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (/^CAP/i.test(trimmed)) return trimmed;
+  return trimmed.replace(/^CA(?!P)/i, "");
+}
+
 function getWorkTypePrefix(requestDoc, { defaultPrefix }) {
   const raw = String(requestDoc?.caseInfos?.workType || "")
     .trim()
@@ -378,7 +392,10 @@ export async function ensureFinishedLotNumberForPacking(requestDoc) {
   const todayYmd = getTodayYmdInKst();
   const yyMMdd = todayYmd.replace(/-/g, "").slice(2);
   const partLot = String(requestDoc.lotNumber?.part || "");
-  const prefix = getWorkTypePrefix(requestDoc, { defaultPrefix: "CA" });
+  const prefixRaw = getWorkTypePrefix(requestDoc, { defaultPrefix: "CA" });
+  const shouldStripPrefix =
+    typeof prefixRaw === "string" && prefixRaw.trim().toUpperCase() === "CA";
+  const prefix = shouldStripPrefix ? "" : prefixRaw;
   const reuseSequence = (() => {
     // lotNumber.part 예: CAP241120-ABC → "CAP" 이후 모든 문자열("241120-ABC")을 재사용
     if (!partLot.startsWith("CAP")) return null;
@@ -386,12 +403,18 @@ export async function ensureFinishedLotNumberForPacking(requestDoc) {
   })();
 
   if (reuseSequence) {
-    requestDoc.lotNumber.final = `${prefix}${reuseSequence}`;
+    const finalRaw = `${prefix}${reuseSequence}`;
+    requestDoc.lotNumber.final = shouldStripPrefix
+      ? stripCustomAbutmentLotPrefix(finalRaw)
+      : finalRaw;
     return;
   }
 
   const letters = await nextLotLetters();
-  requestDoc.lotNumber.final = `${prefix}${yyMMdd}-${letters}`;
+  const finalRaw = `${prefix}${yyMMdd}-${letters}`;
+  requestDoc.lotNumber.final = shouldStripPrefix
+    ? stripCustomAbutmentLotPrefix(finalRaw)
+    : finalRaw;
 }
 
 export async function computePriceForRequest({
