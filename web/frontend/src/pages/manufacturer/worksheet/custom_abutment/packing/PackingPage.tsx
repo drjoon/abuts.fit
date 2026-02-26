@@ -26,6 +26,7 @@ import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_ab
 import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
+import { onAppEvent } from "@/shared/realtime/socket";
 
 // TODO: 개발 완료 후 false로 변경 (LOT 인식 API 호출 대신 "AAD" 하드코딩)
 const IS_SIMULATION_MODE = true;
@@ -504,6 +505,35 @@ export const PackingPage = ({
   useEffect(() => {
     fetchRequests();
   }, [fetchRequests]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const unsubscribe = onAppEvent((evt) => {
+      if (evt?.type !== "packing:capture-processed") return;
+      const payload = evt?.data || {};
+
+      void fetchRequests();
+
+      const requestId = String(payload?.requestId || "").trim();
+      const suffix = String(payload?.recognizedSuffix || "").trim();
+      const printSuccess = !!payload?.print?.success;
+      const printMessage = String(payload?.print?.message || "").trim();
+
+      toast({
+        title: printSuccess
+          ? "자동 패킹 완료 + 라벨 출력"
+          : "자동 패킹 완료 (라벨 출력 확인 필요)",
+        description: requestId
+          ? `${requestId}${suffix ? ` / LOT ${suffix}` : ""}${printSuccess ? "" : printMessage ? ` / ${printMessage}` : ""}`
+          : "LOT 캡쳐 자동 처리 결과가 반영되었습니다.",
+      });
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [fetchRequests, toast, token]);
 
   const searchLower = worksheetSearch.toLowerCase();
   const currentStageForTab = "세척.패킹";

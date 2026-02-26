@@ -6,6 +6,7 @@ const apiKey = String(process.env.HANJIN_API_KEY || "").trim();
 const secretKey = String(process.env.HANJIN_SECRET_KEY || "").trim();
 
 const DEFAULT_TIMEOUT_MS = Number(process.env.HANJIN_TIMEOUT_MS || 15000);
+const SIGNED_HEADERS = ["content-type", "x-api-key", "x-amz-date"];
 
 const baseUrls = {
   // 운송장 출력(라벨) API – Swagger: swagger-print-wbl.html
@@ -67,9 +68,17 @@ function buildSignature({ method, path, timestamp, body }) {
     .digest("base64");
 }
 
-function buildAuthorizationHeader({ method, path, timestamp, body }) {
+function buildAuthorizationHeader({
+  method,
+  path,
+  timestamp,
+  body,
+  signedHeaders = SIGNED_HEADERS,
+}) {
   const signature = buildSignature({ method, path, timestamp, body });
-  return `client_id=${clientId} timestamp=${timestamp} signature=${signature}`;
+  return `HMAC-SHA256 Credential=${clientId}, SignedHeaders=${signedHeaders.join(
+    ";",
+  )}, Signature=${signature}`;
 }
 
 function resolveUrl(baseUrl, path = "/") {
@@ -79,6 +88,12 @@ function resolveUrl(baseUrl, path = "/") {
     url: url.toString(),
     canonicalPath: url.pathname + (url.search || ""),
   };
+}
+
+function formatAwsDate(date = new Date()) {
+  return (
+    date.toISOString().replace(/[-:]/g, "").replace(".", "").slice(0, 15) + "Z"
+  );
 }
 
 async function requestHanjin({
@@ -92,12 +107,15 @@ async function requestHanjin({
 }) {
   ensureConfigured();
   const { url, canonicalPath } = resolveUrl(baseUrl, path);
-  const timestamp = formatKstTimestamp();
+  const now = new Date();
+  const timestamp = formatKstTimestamp(now);
+  const amzDate = formatAwsDate(now);
   const authorization = buildAuthorizationHeader({
     method,
     path: canonicalPath,
     timestamp,
     body: data,
+    signedHeaders: SIGNED_HEADERS,
   });
 
   try {
@@ -110,6 +128,8 @@ async function requestHanjin({
       headers: {
         "Content-Type": "application/json",
         "x-api-key": apiKey,
+        "X-Amz-Date": amzDate,
+        Date: new Date().toUTCString(),
         Authorization: authorization,
         ...headers,
       },

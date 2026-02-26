@@ -8,6 +8,7 @@ import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { emitAppEventGlobal } from "../../socket.js";
 import {
   applyStatusMapping,
   ensureFinishedLotNumberForPacking,
@@ -31,6 +32,76 @@ function getGenAI() {
     }
   }
   return _genAI;
+}
+
+const PACK_PRINT_SERVER_BASE = String(
+  process.env.PACK_PRINT_SERVER_BASE || "http://localhost:5788",
+).replace(/\/+$/, "");
+const PACK_PRINT_SERVER_SECRET = String(
+  process.env.PACK_PRINT_SERVER_SHARED_SECRET || "",
+).trim();
+const PACK_PRINT_TIMEOUT_MS = Number(process.env.PACK_PRINT_TIMEOUT_MS || 5000);
+
+async function triggerPackingLabelPrint(request, recognizedSuffix) {
+  const requestId = String(request?.requestId || request?._id || "").trim();
+  if (!requestId) {
+    return { success: false, skipped: true, reason: "missing_request_id" };
+  }
+
+  const ci = request?.caseInfos || {};
+  const payload = {
+    requestId,
+    lotNumber:
+      String(request?.lotNumber?.part || "").trim() ||
+      String(recognizedSuffix || "").trim(),
+    patientName: String(ci.patientName || "").trim(),
+    toothNumber: String(ci.tooth || "").trim(),
+    material: String(ci.material || ci.implantSystem || "").trim(),
+    caseType: "Custom Abutment",
+    printedAt: new Date().toISOString(),
+  };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PACK_PRINT_TIMEOUT_MS);
+
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if (PACK_PRINT_SERVER_SECRET) {
+      headers["x-pack-secret"] = PACK_PRINT_SERVER_SECRET;
+    }
+
+    const res = await fetch(`${PACK_PRINT_SERVER_BASE}/print-packing-label`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    const text = await res.text().catch(() => "");
+    let body = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = null;
+    }
+
+    if (!res.ok) {
+      return {
+        success: false,
+        status: res.status,
+        message: body?.message || text || "print request failed",
+      };
+    }
+
+    return { success: true, status: res.status, data: body || null };
+  } catch (error) {
+    return {
+      success: false,
+      message: error?.message || "print request failed",
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function extractLotSuffix3(value) {
@@ -320,6 +391,28 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
 
   await request.save();
 
+  const printResult = await triggerPackingLabelPrint(request, recognizedSuffix);
+  if (!printResult?.success) {
+    console.warn("[lot-capture] pack label print failed", {
+      requestId: request.requestId,
+      reason: printResult?.reason || printResult?.message || "unknown",
+      status: printResult?.status,
+    });
+  }
+
+  emitAppEventGlobal("packing:capture-processed", {
+    source: "bg-lot-capture",
+    requestId: request.requestId,
+    requestMongoId: String(request._id || ""),
+    recognizedSuffix,
+    recognized: recognized || null,
+    movedToStage: "포장.발송",
+    print: {
+      success: !!printResult?.success,
+      message: printResult?.message || null,
+    },
+  });
+
   return res.status(200).json(
     new ApiResponse(
       200,
@@ -329,6 +422,10 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
         requestId: request.requestId,
         suffix: recognizedSuffix,
         recognized: recognized || null,
+        print: {
+          success: !!printResult?.success,
+          message: printResult?.message || null,
+        },
       },
       "포장 캡쳐 처리 완료",
     ),

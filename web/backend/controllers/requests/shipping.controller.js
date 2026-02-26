@@ -79,33 +79,189 @@ const resolveHanjinPath = (envKey, fallbackPath) => {
   return fallbackPath || "";
 };
 
-const buildHanjinDraftPayload = (requests, mailboxAddresses) => {
-  const normalized = requests.map((r) => {
+const HANJIN_CLIENT_ID = String(process.env.HANJIN_CLIENT_ID || "").trim();
+const HANJIN_CSR_NUM = String(process.env.HANJIN_CSR_NUM || "").trim();
+const HANJIN_SHIPPER_ZIP = String(process.env.HANJIN_SHIPPER_ZIP || "").trim();
+const WBL_PRINT_SERVER_BASE = String(
+  process.env.WBL_PRINT_SERVER_BASE || "",
+).trim();
+const WBL_PRINT_SHARED_SECRET = String(
+  process.env.WBL_PRINT_SHARED_SECRET || "",
+).trim();
+const WBL_DOWNLOAD_TIMEOUT_MS = Number(
+  process.env.WBL_DOWNLOAD_TIMEOUT_MS || 15000,
+);
+const WBL_PRINTER_DEFAULT = String(
+  process.env.WBL_PRINTER_DEFAULT || "",
+).trim();
+
+const HANJIN_PATH_FALLBACKS = {
+  HANJIN_PRINT_WBL_PATH: "/v1/wbl/{client_id}/print-wbls",
+  HANJIN_PICKUP_REQUEST_PATH: "/api/pd/order/booking",
+  HANJIN_PICKUP_CANCEL_PATH: "/api/pd/order/cancel",
+};
+
+const resolveWblPrintPayload = (payload) => {
+  if (!payload) return null;
+  if (typeof payload === "string" && payload.startsWith("http")) {
+    return { url: payload };
+  }
+
+  const candidate = [
+    payload.url,
+    payload.pdfUrl,
+    payload.labelUrl,
+    payload.printUrl,
+    payload.downloadUrl,
+    payload.fileUrl,
+    payload?.data?.url,
+    payload?.data?.pdfUrl,
+    payload?.data?.labelUrl,
+    payload?.data?.printUrl,
+    payload?.data?.downloadUrl,
+  ].find((value) => typeof value === "string" && value.startsWith("http"));
+
+  if (candidate) return { url: candidate };
+
+  const base64 =
+    payload.pdfBase64 ||
+    payload.labelBase64 ||
+    payload?.data?.pdfBase64 ||
+    payload?.data?.labelBase64;
+  if (typeof base64 === "string" && base64.length > 0) {
+    return { base64 };
+  }
+
+  return null;
+};
+
+async function triggerWblServerPrint(payload) {
+  if (!WBL_PRINT_SERVER_BASE) {
+    return {
+      success: false,
+      skipped: true,
+      reason: "wbl_print_server_not_configured",
+    };
+  }
+
+  const printPayload = resolveWblPrintPayload(payload);
+  if (!printPayload) {
+    return { success: false, skipped: true, reason: "print_payload_not_found" };
+  }
+
+  const headers = { "Content-Type": "application/json" };
+  if (WBL_PRINT_SHARED_SECRET) {
+    headers["x-wbl-secret"] = WBL_PRINT_SHARED_SECRET;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WBL_DOWNLOAD_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(
+      `${WBL_PRINT_SERVER_BASE.replace(/\/+$/, "")}/print`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          ...printPayload,
+          title: "Hanjin Label",
+          ...(WBL_PRINTER_DEFAULT ? { printer: WBL_PRINTER_DEFAULT } : {}),
+        }),
+        signal: controller.signal,
+      },
+    );
+
+    const text = await res.text().catch(() => "");
+    let body = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = null;
+    }
+
+    if (!res.ok || !body?.success) {
+      return {
+        success: false,
+        status: res.status,
+        message: body?.message || text || "wbl print failed",
+      };
+    }
+
+    return { success: true, status: res.status };
+  } catch (error) {
+    return {
+      success: false,
+      message: error?.message || "wbl print failed",
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const ensureHanjinEnv = () => {
+  if (!HANJIN_CLIENT_ID) {
+    throw Object.assign(new Error("HANJIN_CLIENT_ID가 설정되지 않았습니다."), {
+      statusCode: 500,
+    });
+  }
+  if (!HANJIN_CSR_NUM) {
+    throw Object.assign(new Error("HANJIN_CSR_NUM 환경 변수가 필요합니다."), {
+      statusCode: 500,
+    });
+  }
+  if (!HANJIN_SHIPPER_ZIP) {
+    throw Object.assign(
+      new Error("HANJIN_SHIPPER_ZIP 환경 변수가 필요합니다."),
+      {
+        statusCode: 500,
+      },
+    );
+  }
+};
+
+const buildHanjinDraftPayload = (requests) => {
+  ensureHanjinEnv();
+  const addressList = requests.map((r) => {
     const requestor = r.requestor || {};
     const requestorOrg = r.requestorOrganizationId || {};
     const extracted = requestorOrg.extracted || {};
     const addr = requestor.address || {};
+
+    const clinicName = r.caseInfos?.clinicName || extracted.companyName || "";
+    const addressText =
+      addr.street ||
+      addr.address1 ||
+      addr.address2 ||
+      requestor.addressText ||
+      extracted.address ||
+      "";
+
+    const receiverZip = String(addr.zipCode || extracted.zipCode || "").slice(
+      0,
+      6,
+    );
     return {
-      requestId: r.requestId,
-      mongoId: String(r._id || ""),
-      mailboxAddress: r.mailboxAddress || "",
-      clinicName: r.caseInfos?.clinicName || "",
-      patientName: r.caseInfos?.patientName || "",
-      tooth: r.caseInfos?.tooth || "",
-      receiverName:
-        requestor.name || extracted.representativeName || extracted.companyName,
-      receiverPhone:
+      csr_num: HANJIN_CSR_NUM,
+      snd_zip: HANJIN_SHIPPER_ZIP,
+      rcv_zip: receiverZip,
+      address: addressText,
+      msg_key: r.requestId || String(r._id || ""),
+      receiver_name:
+        clinicName ||
+        requestor.name ||
+        extracted.representativeName ||
+        extracted.companyName ||
+        "",
+      receiver_phone:
         requestor.phoneNumber || extracted.phoneNumber || requestor.phone || "",
-      receiverAddress:
-        addr.street || extracted.address || requestor.addressText || "",
-      receiverZipCode: addr.zipCode || "",
-      shippingMode: r.shippingMode || "normal",
     };
   });
 
   return {
-    mailboxes: mailboxAddresses,
-    shipments: normalized,
+    client_id: HANJIN_CLIENT_ID,
+    csr_num: HANJIN_CSR_NUM,
+    address_list: addressList,
   };
 };
 
@@ -117,7 +273,10 @@ export async function printHanjinLabels(req, res) {
   try {
     const { mailboxAddresses, payload } = req.body || {};
 
-    const path = resolveHanjinPath("HANJIN_PRINT_WBL_PATH");
+    const path = resolveHanjinPath(
+      "HANJIN_PRINT_WBL_PATH",
+      HANJIN_PATH_FALLBACKS.HANJIN_PRINT_WBL_PATH,
+    );
     if (!path) {
       return res.status(400).json({
         success: false,
@@ -139,14 +298,23 @@ export async function printHanjinLabels(req, res) {
     }
 
     const data = await hanjinService.requestPrintApi({
-      path,
+      path: path.replace("{client_id}", HANJIN_CLIENT_ID),
       method: "POST",
       data: resolved.payload,
     });
 
+    const wblPrint = await triggerWblServerPrint(data);
+    if (!wblPrint?.success) {
+      console.warn("[shipping] wbl print fallback needed", {
+        reason: wblPrint?.reason || wblPrint?.message || "unknown",
+        status: wblPrint?.status,
+      });
+    }
+
     return res.status(200).json({
       success: true,
       data,
+      wblPrint,
     });
   } catch (error) {
     console.error("Error in printHanjinLabels:", error);
@@ -237,11 +405,25 @@ export async function requestHanjinPickup(req, res) {
   try {
     const { mailboxAddresses, payload } = req.body || {};
 
-    const path = resolveHanjinPath("HANJIN_PICKUP_REQUEST_PATH");
+    const path = resolveHanjinPath(
+      "HANJIN_PICKUP_REQUEST_PATH",
+      HANJIN_PATH_FALLBACKS.HANJIN_PICKUP_REQUEST_PATH,
+    );
     if (!path) {
       return res.status(400).json({
         success: false,
         message: "HANJIN_PICKUP_REQUEST_PATH가 설정되지 않았습니다.",
+      });
+    }
+
+    if (payload && !Array.isArray(mailboxAddresses)) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          mocked: true,
+          path,
+          payload,
+        },
       });
     }
 
@@ -286,11 +468,25 @@ export async function cancelHanjinPickup(req, res) {
   try {
     const { mailboxAddresses, payload } = req.body || {};
 
-    const path = resolveHanjinPath("HANJIN_PICKUP_CANCEL_PATH");
+    const path = resolveHanjinPath(
+      "HANJIN_PICKUP_CANCEL_PATH",
+      HANJIN_PATH_FALLBACKS.HANJIN_PICKUP_CANCEL_PATH,
+    );
     if (!path) {
       return res.status(400).json({
         success: false,
         message: "HANJIN_PICKUP_CANCEL_PATH가 설정되지 않았습니다.",
+      });
+    }
+
+    if (payload && !Array.isArray(mailboxAddresses)) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          mocked: true,
+          path,
+          payload,
+        },
       });
     }
 
@@ -334,6 +530,16 @@ export async function simulateHanjinWebhook(req, res) {
       return res.status(400).json({
         success: false,
         message: "payload(JSON)가 필요합니다.",
+      });
+    }
+
+    if (payload.mock) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          mocked: true,
+          payload,
+        },
       });
     }
 

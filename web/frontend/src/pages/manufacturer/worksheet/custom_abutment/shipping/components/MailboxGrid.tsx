@@ -2,6 +2,13 @@ import { useMemo, useState, useRef, useEffect } from "react";
 import type { ManufacturerRequest } from "../../utils/request";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Settings } from "lucide-react";
 
 type MailboxGridProps = {
   requests: ManufacturerRequest[];
@@ -28,6 +35,7 @@ const HANJIN_DEV_TEST_PAYLOAD = {
 };
 
 const HANJIN_DEV_TEST_WEBHOOK = {
+  mock: true,
   trackingNumber: "DEVTEST123456",
   carrier: "hanjin",
   shippedAt: new Date().toISOString(),
@@ -100,9 +108,23 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     order: false,
     webhook: false,
   });
+  const [printerProfile, setPrinterProfile] = useState("");
+  const [printerOptions, setPrinterOptions] = useState<string[]>([]);
+  const [printerLoading, setPrinterLoading] = useState(false);
+  const [printerError, setPrinterError] = useState<string | null>(null);
+  const [printerModalOpen, setPrinterModalOpen] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const touchStartXRef = useRef<number>(0);
   const shelfRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    const storedProfile = localStorage.getItem("worksheet:printer:profile");
+    if (storedProfile) setPrinterProfile(storedProfile);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("worksheet:printer:profile", printerProfile);
+  }, [printerProfile]);
 
   const shelfRows = ["1", "2", "3", "4"];
   const binCols = ["A", "B", "C", "D"];
@@ -195,6 +217,102 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     return Array.from(addressMap.keys());
   }, [addressMap]);
 
+  const resolvePrintPayload = (payload: any) => {
+    if (!payload) return null;
+    if (typeof payload === "string" && payload.startsWith("http")) {
+      return { url: payload };
+    }
+
+    const candidate = [
+      payload.url,
+      payload.pdfUrl,
+      payload.labelUrl,
+      payload.printUrl,
+      payload.downloadUrl,
+      payload.fileUrl,
+      payload?.data?.url,
+      payload?.data?.pdfUrl,
+      payload?.data?.labelUrl,
+      payload?.data?.printUrl,
+      payload?.data?.downloadUrl,
+    ].find((value) => typeof value === "string" && value.startsWith("http"));
+
+    if (candidate) return { url: candidate };
+
+    const base64 =
+      payload.pdfBase64 ||
+      payload.labelBase64 ||
+      payload?.data?.pdfBase64 ||
+      payload?.data?.labelBase64;
+    if (typeof base64 === "string" && base64.length > 0) {
+      return { base64 };
+    }
+
+    return null;
+  };
+
+  const fetchPrinters = async () => {
+    setPrinterLoading(true);
+    setPrinterError(null);
+    try {
+      const response = await fetch("http://localhost:5777/printers");
+      const data = await response.json();
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || "프린터 목록을 불러올 수 없습니다.");
+      }
+      const printers = Array.isArray(data.printers) ? data.printers : [];
+      setPrinterOptions(printers);
+      if (!printerProfile && printers.length) {
+        setPrinterProfile(printers[0]);
+      }
+    } catch (error) {
+      setPrinterError((error as Error).message);
+    } finally {
+      setPrinterLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!printerModalOpen) return;
+    if (!printerOptions.length) {
+      void fetchPrinters();
+    }
+  }, [printerModalOpen, printerOptions.length]);
+
+  const triggerLocalPrint = async (payload: any) => {
+    const printPayload = resolvePrintPayload(payload);
+    if (!printPayload) {
+      toast({
+        title: "출력 준비 실패",
+        description: "운송장 응답에서 프린트 데이터를 찾지 못했습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch("http://localhost:5777/print", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...printPayload,
+          printer: printerProfile || undefined,
+          title: "Hanjin Label",
+        }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || "로컬 프린터 출력에 실패했습니다.");
+      }
+    } catch (error) {
+      toast({
+        title: "로컬 출력 실패",
+        description: (error as Error).message,
+        variant: "destructive",
+      });
+    }
+  };
+
   // Handle printing shipping labels
   const handlePrintLabels = async () => {
     if (occupiedAddresses.length === 0) {
@@ -208,10 +326,11 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
 
     setIsPrinting(true);
     try {
-      await callHanjinApi({
+      const data = await callHanjinApi({
         path: "/api/requests/shipping/hanjin/print-labels",
         mailboxAddresses: occupiedAddresses,
       });
+      await triggerLocalPrint(data);
       // Mark all occupied mailboxes as printed
       setPrintedMailboxes(new Set(occupiedAddresses));
       toast({
@@ -411,34 +530,81 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
           </div>
         </div>
         {/* 운송장 출력 및 택배 수거 접수 버튼 */}
-        <div className="flex gap-2 justify-center pt-4 pb-1 px-2">
-          <button
-            onClick={handlePrintLabels}
-            disabled={isPrinting || occupiedAddresses.length === 0}
-            className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
-              isPrinting || occupiedAddresses.length === 0
-                ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm"
-            }`}
-          >
-            {isPrinting ? "출력 중..." : "📦 운송장 출력"}
-          </button>
-          <button
-            onClick={handlePickupAction}
-            disabled={
-              isRequestingPickup || (!pickupRequested && !canRequestPickup)
-            }
-            className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
-              isRequestingPickup || (!pickupRequested && !canRequestPickup)
-                ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                : pickupRequested
-                  ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 shadow-sm"
+        <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4 pb-1 px-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPrinterModalOpen(true)}
+              className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+              aria-label="프린터 설정"
+            >
+              <Settings className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="flex gap-2 justify-center">
+            <button
+              onClick={handlePrintLabels}
+              disabled={isPrinting || occupiedAddresses.length === 0}
+              className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
+                isPrinting || occupiedAddresses.length === 0
+                  ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
                   : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm"
-            }`}
-          >
-            {pickupButtonLabel}
-          </button>
+              }`}
+            >
+              {isPrinting ? "출력 중..." : "📦 운송장 출력"}
+            </button>
+            <button
+              onClick={handlePickupAction}
+              disabled={
+                isRequestingPickup || (!pickupRequested && !canRequestPickup)
+              }
+              className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
+                isRequestingPickup || (!pickupRequested && !canRequestPickup)
+                  ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                  : pickupRequested
+                    ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 shadow-sm"
+                    : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm"
+              }`}
+            >
+              {pickupButtonLabel}
+            </button>
+          </div>
         </div>
+
+        <Dialog open={printerModalOpen} onOpenChange={setPrinterModalOpen}>
+          <DialogContent className="w-[95vw] sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>프린터 설정</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <span className="text-xs uppercase text-slate-500">프로필</span>
+                <select
+                  value={printerProfile}
+                  onChange={(e) => setPrinterProfile(e.target.value)}
+                  className="text-sm border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  disabled={printerLoading}
+                >
+                  {printerLoading ? (
+                    <option value="">프린터 목록 불러오는 중...</option>
+                  ) : printerOptions.length ? (
+                    printerOptions.map((printer) => (
+                      <option key={printer} value={printer}>
+                        {printer}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">사용 가능한 프린터가 없습니다.</option>
+                  )}
+                </select>
+                {printerError ? (
+                  <span className="text-xs text-rose-600">{printerError}</span>
+                ) : null}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* 선반 그룹 선택 라디오/버튼 그룹 */}
         <div className="flex flex-wrap gap-1.5 justify-center pt-1 pb-4 px-2">
