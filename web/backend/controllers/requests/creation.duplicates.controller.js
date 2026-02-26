@@ -104,7 +104,7 @@ export async function checkDuplicateCaseInfo(req, res) {
 
 export async function hasDuplicateCase(req, res) {
   try {
-    const { fileName } = req.query;
+    const { filePath, clinicName, patientName, tooth } = req.query;
 
     let requestFilter = {};
     if (req?.user?.role === "requestor") {
@@ -137,17 +137,17 @@ export async function hasDuplicateCase(req, res) {
       }
     }
 
-    if (!fileName) {
+    if (!filePath || !clinicName || !patientName || !tooth) {
       return res.status(400).json({
         success: false,
-        message: "fileName은 필수입니다.",
+        message: "filePath, clinicName, patientName, tooth는 필수입니다.",
       });
     }
 
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 90);
 
-    const normalizeFileName = (v) => {
+    const normalizeFilePath = (v) => {
       if (!v) return "";
       const s = String(v);
       let candidate = s;
@@ -176,7 +176,10 @@ export async function hasDuplicateCase(req, res) {
         .toLowerCase();
     };
 
-    const normalizedFileName = normalizeFileName(fileName);
+    const normalizedFilePath = normalizeFilePath(filePath);
+    const normalizedClinicName = String(clinicName || "").trim();
+    const normalizedPatientName = String(patientName || "").trim();
+    const normalizedTooth = String(tooth || "").trim();
 
     const allRequests = await Request.find({
       ...requestFilter,
@@ -210,9 +213,17 @@ export async function hasDuplicateCase(req, res) {
 
       const matched = caseInfosList.some((ci) => {
         const storedName = ci?.file?.filePath || ci?.file?.originalName;
-        const normalizedStoredName = normalizeFileName(storedName);
+        const normalizedStoredName = normalizeFilePath(storedName);
+        const ciClinic = String(ci?.clinicName || "").trim();
+        const ciPatient = String(ci?.patientName || "").trim();
+        const ciTooth = String(ci?.tooth || "").trim();
         if (!normalizedStoredName) return false;
-        return normalizedStoredName === normalizedFileName;
+        return (
+          normalizedStoredName === normalizedFilePath &&
+          ciClinic === normalizedClinicName &&
+          ciPatient === normalizedPatientName &&
+          ciTooth === normalizedTooth
+        );
       });
 
       if (!matched) continue;
