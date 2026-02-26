@@ -95,14 +95,6 @@ router.get(
   requestController.getMyReferralDirectMembers,
 );
 
-// 동일 환자/치아 커스텀 어벗 의뢰 존재 여부 확인 (재의뢰 판단용)
-router.get(
-  "/my/has-duplicate",
-  authenticate,
-  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
-  requestController.hasDuplicateCase,
-);
-
 // 동일 치과/환자/치아 조합 중복 여부 확인 (의뢰 작성 중 검증용)
 router.get(
   "/my/check-duplicate",

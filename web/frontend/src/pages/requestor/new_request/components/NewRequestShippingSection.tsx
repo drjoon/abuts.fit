@@ -84,13 +84,10 @@ export function NewRequestShippingSection({
               }`}
             >
               <Truck className="w-4 h-4" />
-              <span className="flex flex-col items-start leading-tight">
+              <span className="flex flex-col items-start leading-tight text-lg">
                 <span>묶음 배송</span>
-                <span className="text-[12px] md:text-xs text-slate-500">
+                <span className="text-sm text-slate-500">
                   {bulkLabelText} 발송
-                </span>
-                <span className="text-[11px] text-slate-400">
-                  {holidayRolloverNote}
                 </span>
               </span>
             </button>
@@ -121,11 +118,11 @@ export function NewRequestShippingSection({
               }`}
             >
               <Zap className="w-4 h-4" />
-              <span className="flex flex-col items-start leading-tight">
+              <span className="flex flex-col items-start leading-tight text-lg">
                 <span>신속 배송</span>
                 {expressDisplayText && (
                   <span
-                    className={`text-[11px] md:text-xs ${
+                    className={`text-sm ${
                       caseInfos?.shippingMode === "express"
                         ? "text-orange-600"
                         : "text-gray-500"
@@ -140,12 +137,16 @@ export function NewRequestShippingSection({
         </div>
       </div>
 
-      <div className="app-glass-card-content space-y-3 pt-2 border-gray-200">
+      <div className="mt-2 text-center text-sm text-slate-600">
+        {holidayRolloverNote}
+      </div>
+
+      <div className="app-glass-card-content space-y-3 pt-4 border-gray-200">
         <div className="flex gap-2 flex-col sm:flex-row">
           <Button
             onClick={onSubmit}
             size="lg"
-            className="w-full sm:flex-[2]"
+            className="w-full sm:flex-[2] text-lg"
             disabled={isDisabled}
           >
             의뢰하기
@@ -154,7 +155,7 @@ export function NewRequestShippingSection({
             type="button"
             variant="outline"
             size="lg"
-            className="w-full sm:flex-[1]"
+            className="w-full sm:flex-[1] text-lg"
             onClick={onCancelAll}
             disabled={isDisabled}
           >

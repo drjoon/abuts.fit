@@ -614,6 +614,7 @@ export async function getMyDashboardSummary(req, res) {
             finalShipping: 1,
             originalShipping: 1,
             deliveryInfoRef: 1,
+            price: 1,
           })
           .sort({ createdAt: -1 })
           .limit(10)
@@ -745,6 +746,7 @@ export async function getMyDashboardSummary(req, res) {
         caseInfos: ci,
         requestor: r.requestor || null,
         deliveryInfoRef: r.deliveryInfoRef || null,
+        price: r.price || null,
         createdAt: r.createdAt,
       };
     });

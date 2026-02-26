@@ -39,6 +39,11 @@ export type RequestDetailDialogRequest = {
   daysUntilDue?: number;
   message?: string;
   riskLevel?: string;
+  price?: {
+    amount?: number;
+    rule?: string;
+    currency?: string;
+  };
 };
 
 type RequestDetailDialogProps = {
@@ -144,6 +149,9 @@ export const RequestDetailDialog = ({
     request?.timeline?.estimatedShipYmd ||
     request?.estimatedShipYmd ||
     request?.dueDate;
+  const priceAmount = request?.price?.amount;
+  const priceRule = request?.price?.rule;
+  const isRemakeFixed = priceRule === "remake_fixed_10000";
 
   return (
     <Dialog
@@ -191,6 +199,19 @@ export const RequestDetailDialog = ({
               <div className="grid grid-cols-[90px_1fr] gap-3 items-center text-blue-700 font-medium">
                 <span>발송 예정일</span>
                 <span>{formatDate(estimatedShipYmd)}</span>
+              </div>
+            )}
+            {priceAmount != null && (
+              <div className="grid grid-cols-[90px_1fr] gap-3 items-center">
+                <span className="text-slate-600">금액(공급가)</span>
+                <span className="font-medium flex items-center justify-between gap-2">
+                  <span>{Number(priceAmount).toLocaleString()}원</span>
+                  {isRemakeFixed && (
+                    <Badge variant="secondary" className="text-[11px]">
+                      재의뢰 1만원
+                    </Badge>
+                  )}
+                </span>
               </div>
             )}
             {typeof request?.daysOverdue === "number" && (

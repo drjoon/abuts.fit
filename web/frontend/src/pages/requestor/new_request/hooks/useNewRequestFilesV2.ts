@@ -3,8 +3,16 @@ import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { useToast } from "@/shared/hooks/use-toast";
 import { type DraftCaseInfo, type CaseInfos } from "./newRequestTypes";
-import { getCachedUrl, setCachedUrl, removeCachedUrl } from "@/shared/files/fileCache";
-import { getStlBlob, setStlBlob, setFileBlob } from "@/shared/files/fileBlobCache";
+import {
+  getCachedUrl,
+  setCachedUrl,
+  removeCachedUrl,
+} from "@/shared/files/fileCache";
+import {
+  getStlBlob,
+  setStlBlob,
+  setFileBlob,
+} from "@/shared/files/fileBlobCache";
 import { parseFilenames } from "@/shared/filename/parseFilename";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { request } from "@/shared/api/apiClient";
@@ -43,7 +51,7 @@ const normalize = (s: string) => {
 
     // mojibake로 추정되는 문자열은 각 코드포인트를 1바이트로 보고 다시 UTF-8로 디코딩해본다.
     const bytes = new Uint8Array(
-      Array.from(s).map((ch) => ch.charCodeAt(0) & 0xff)
+      Array.from(s).map((ch) => ch.charCodeAt(0) & 0xff),
     );
     const decoded = new TextDecoder("utf-8").decode(bytes);
     const decodedHasHangul = /[가-힣]/.test(decoded);
@@ -130,14 +138,14 @@ export const useNewRequestFilesV2 = ({
           "[restoreFileUrls] draftFiles empty, fetching draft from server",
           {
             draftId: currentDraftId,
-          }
+          },
         );
         const res = await fetch(
           `${API_BASE_URL}/requests/drafts/${currentDraftId}`,
           {
             method: "GET",
             headers: getHeaders(),
-          }
+          },
         );
 
         if (res.ok) {
@@ -211,7 +219,7 @@ export const useNewRequestFilesV2 = ({
             if (!res.ok) {
               console.warn(
                 `Failed to get download URL for ${fileMeta.originalName}: ${res.status} ${res.statusText}`,
-                { endpoint, s3Key: fileMeta.s3Key, fileId: fileMeta.fileId }
+                { endpoint, s3Key: fileMeta.s3Key, fileId: fileMeta.fileId },
               );
               continue;
             }
@@ -351,7 +359,11 @@ export const useNewRequestFilesV2 = ({
         const filesToProcess = filesToUpload.filter((f) => {
           const key = `${f.name}:${f.size}`;
           const keyNfc = toFileKey(f.name, f.size);
-          return !existingKeys.has(key) && !existingKeys.has(keyNfc);
+          const isDuplicate = existingKeys.has(key) || existingKeys.has(keyNfc);
+          if (isDuplicate) {
+            console.log(`[Upload] Filtering out duplicate file: ${key}`);
+          }
+          return !isDuplicate;
         });
 
         if (filesToProcess.length === 0) {
@@ -362,6 +374,10 @@ export const useNewRequestFilesV2 = ({
           });
           return;
         }
+
+        console.log(
+          `[Upload] Processing ${filesToProcess.length} of ${filesToUpload.length} files`,
+        );
 
         // 1. S3 임시 업로드
         const tempFiles = await uploadFilesWithToast(filesToProcess);
@@ -384,6 +400,7 @@ export const useNewRequestFilesV2 = ({
           const draftKey = `${tempFile.originalName}:${tempFile.size}`;
           // 같은 Draft 안에서 이미 연결된 파일이면 Draft.caseInfos에 다시 추가하지 않는다.
           if (existingDraftKeys.has(draftKey)) {
+            console.log(`[Upload] Skipping duplicate draft file: ${draftKey}`);
             continue;
           }
 
@@ -400,7 +417,7 @@ export const useNewRequestFilesV2 = ({
                   s3Key: tempFile.key,
                   fileId: tempFile._id,
                 }),
-              }
+              },
             );
 
             if (!res.ok) {
@@ -409,7 +426,7 @@ export const useNewRequestFilesV2 = ({
                 try {
                   if (typeof window !== "undefined") {
                     window.localStorage.removeItem(
-                      "abutsfit:new-request-draft-id:v1"
+                      "abutsfit:new-request-draft-id:v1",
                     );
                   }
                 } catch {}
@@ -426,13 +443,25 @@ export const useNewRequestFilesV2 = ({
                 return;
               }
 
+              console.error(
+                `[Upload] Failed to add file to draft: ${tempFile.originalName}, status: ${res.status}`,
+              );
+              const errorText = await res.text().catch(() => "Unknown error");
+              console.error(`[Upload] Error response: ${errorText}`);
               continue;
             }
 
             const data = await res.json();
             const addedCaseInfo: DraftCaseInfo = data.data || data;
             newDraftFiles.push(addedCaseInfo);
+            console.log(
+              `[Upload] Successfully added file to draft: ${tempFile.originalName}`,
+            );
           } catch (err) {
+            console.error(
+              `[Upload] Exception while adding file to draft: ${tempFile.originalName}`,
+              err,
+            );
             continue;
           }
         }
@@ -464,7 +493,7 @@ export const useNewRequestFilesV2 = ({
               const originalFile = filesToProcess[idx];
               const fileMeta = draftCase.file;
               const fileName = normalize(
-                fileMeta?.originalName ?? originalFile.name
+                fileMeta?.originalName ?? originalFile.name,
               );
               const mimeType = fileMeta?.mimetype || originalFile.type;
 
@@ -477,13 +506,13 @@ export const useNewRequestFilesV2 = ({
               file._sourceFileKey = sourceKey;
               try {
                 file._sourceFileKeyNfc = `${String(
-                  originalFile.name || ""
+                  originalFile.name || "",
                 ).normalize("NFC")}:${originalFile.size}`;
               } catch {
                 file._sourceFileKeyNfc = sourceKey;
               }
               return file;
-            }
+            },
           );
 
           // 기존 files와 합칠 때도 파일명+사이즈 기준으로 한 번 더 중복 제거
@@ -596,7 +625,7 @@ export const useNewRequestFilesV2 = ({
                     if (idx === -1) return;
                     const fileKey = fileKeysForAi[idx];
                     const originalIdx = newFiles.findIndex(
-                      (f) => `${f.name}:${f.size}` === fileKey
+                      (f) => `${f.name}:${f.size}` === fileKey,
                     );
                     const draftCase =
                       originalIdx !== -1 ? newDraftFiles[originalIdx] : null;
@@ -632,7 +661,7 @@ export const useNewRequestFilesV2 = ({
       setDraftFiles,
       setFiles,
       toast,
-    ]
+    ],
   );
 
   // 파일 삭제
@@ -655,7 +684,7 @@ export const useNewRequestFilesV2 = ({
           {
             method: "DELETE",
             headers: getHeaders(),
-          }
+          },
         );
 
         let localOnlyMessage: string | null = null;
@@ -670,7 +699,7 @@ export const useNewRequestFilesV2 = ({
 
         // 상태 동기화 (서버 성공/실패와 무관하게 로컬은 제거)
         setDraftFiles((prev) =>
-          prev.filter((ci) => ci._id !== draftCaseInfoId)
+          prev.filter((ci) => ci._id !== draftCaseInfoId),
         );
         setFiles((prev) => prev.filter((_, i) => i !== index));
 
@@ -715,7 +744,7 @@ export const useNewRequestFilesV2 = ({
       setFiles,
       setSelectedPreviewIndex,
       toast,
-    ]
+    ],
   );
 
   // 드래그 앤 드롭
@@ -736,7 +765,7 @@ export const useNewRequestFilesV2 = ({
       const droppedFiles = Array.from(e.dataTransfer.files);
       handleUpload(droppedFiles);
     },
-    [handleUpload]
+    [handleUpload],
   );
 
   return {

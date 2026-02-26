@@ -238,9 +238,7 @@ export const useNewRequestSubmitV2 = ({
       }
 
       // 2. 제출 전 디바운스 대기 중인 변경사항을 즉시 Draft에 저장 (서버 데이터 동기화)
-      // 단, 중복 해결 정보(duplicateResolutions)가 있는 경우는 이미 서버와 ID가 맞춰진 상태이므로
-      // 재차 패치하여 ID를 변경하지 않도록 스킵한다.
-      if (patchDraftImmediately && caseInfosMap && !duplicateResolutions) {
+      if (patchDraftImmediately && caseInfosMap) {
         console.log("[NewRequestSubmit] patch draft start", {
           t: Date.now() - submitStart,
         });
@@ -392,6 +390,8 @@ export const useNewRequestSubmitV2 = ({
         description,
         variant: "destructive",
       });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 

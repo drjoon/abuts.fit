@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { Check, X } from "lucide-react";
 import {
@@ -66,6 +66,8 @@ type Props = {
   highlight: boolean;
   sectionHighlightClass: string;
   focusUnverifiedTick: number;
+  onDuplicateDetected?: (payload: { file: File; duplicate: any }) => void;
+  duplicatePromptOpen: boolean;
 };
 
 export function NewRequestDetailsSection({
@@ -104,6 +106,8 @@ export function NewRequestDetailsSection({
   highlight,
   sectionHighlightClass,
   focusUnverifiedTick,
+  onDuplicateDetected,
+  duplicatePromptOpen,
 }: Props) {
   const normalizeKeyPart = (s: string) => {
     try {
@@ -113,14 +117,35 @@ export function NewRequestDetailsSection({
     }
   };
 
-  const toNormalizedFileKey = (f: File) => {
-    return `${normalizeKeyPart(f.name)}:${f.size}`;
+  const toNormalizedFileKey = (file: File) => {
+    return `${normalizeKeyPart(file.name)}:${file.size}`;
   };
 
   const hasActiveSession = files.length > 0;
   const [detailIndex, setDetailIndex] = useState<number | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [
+    shouldRestoreDetailAfterDuplicate,
+    setShouldRestoreDetailAfterDuplicate,
+  ] = useState(false);
   const listContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const handleDialogOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (duplicatePromptOpen && !nextOpen) {
+        return;
+      }
+      setIsDetailOpen(nextOpen);
+    },
+    [duplicatePromptOpen],
+  );
+
+  useEffect(() => {
+    if (!duplicatePromptOpen && shouldRestoreDetailAfterDuplicate) {
+      setIsDetailOpen(true);
+      setShouldRestoreDetailAfterDuplicate(false);
+    }
+  }, [duplicatePromptOpen, shouldRestoreDetailAfterDuplicate]);
 
   const getFileWorkType = (_file: File): "abutment" | "crown" => {
     return "abutment";
@@ -165,6 +190,16 @@ export function NewRequestDetailsSection({
   const detailCaseInfos = detailFileKey
     ? caseInfosMap?.[detailFileKey] || caseInfos
     : caseInfos;
+  const setDetailCaseInfos = useCallback(
+    (updates: Partial<CaseInfos>) => {
+      if (detailFileKey) {
+        updateCaseInfos(detailFileKey, updates);
+        return;
+      }
+      setCaseInfos(updates);
+    },
+    [detailFileKey, setCaseInfos, updateCaseInfos],
+  );
   const detailImplantInfo = {
     clinicName: detailCaseInfos?.clinicName || "",
     patientName: detailCaseInfos?.patientName || "",
@@ -246,27 +281,33 @@ export function NewRequestDetailsSection({
       [fileKey]: true,
     };
 
-    let nextIndex = -1;
-    for (let i = index + 1; i < files.length; i++) {
-      const key = `${normalizeKeyPart(files[i].name)}:${files[i].size}`;
-      if (!nextStatus[key]) {
-        nextIndex = i;
-        break;
-      }
-    }
+    // Check if there are remaining unverified files
+    const hasRemainingUnverified = files.some((candidate) => {
+      const key = toNormalizedFileKey(candidate);
+      return !nextStatus[key];
+    });
 
-    if (nextIndex === -1) {
-      for (let i = 0; i < index; i++) {
+    let nextIndex = -1;
+
+    // Only search for next unverified file if there are any remaining
+    if (hasRemainingUnverified) {
+      for (let i = index + 1; i < files.length; i++) {
         const key = `${normalizeKeyPart(files[i].name)}:${files[i].size}`;
         if (!nextStatus[key]) {
           nextIndex = i;
           break;
         }
       }
-    }
 
-    if (nextIndex === -1) {
-      nextIndex = index;
+      if (nextIndex === -1) {
+        for (let i = 0; i < index; i++) {
+          const key = `${normalizeKeyPart(files[i].name)}:${files[i].size}`;
+          if (!nextStatus[key]) {
+            nextIndex = i;
+            break;
+          }
+        }
+      }
     }
 
     try {
@@ -284,29 +325,28 @@ export function NewRequestDetailsSection({
       const body: any = res.data || {};
       const data = body?.data || body;
 
-      if (res.ok && data?.exists && Number(data?.stageOrder) >= 2) {
-        toast({
-          title: "중복 의뢰가 감지되었습니다",
-          description:
-            "생산/발송/완료 단계의 기존 의뢰가 있습니다. 기존 의뢰를 확인해주세요.",
-          variant: "destructive",
+      if (res.ok && data?.exists) {
+        onDuplicateDetected?.({
+          file,
+          duplicate: data,
         });
-        return;
+
+        // Only restore detail modal if there are more unverified files
+        if (hasRemainingUnverified) {
+          setShouldRestoreDetailAfterDuplicate(true);
+        }
       }
     } catch (err) {
       console.error("Duplicate check error:", err);
     }
 
     setFileVerificationStatus(nextStatus);
-    setSelectedPreviewIndex(nextIndex);
+    if (nextIndex !== -1) {
+      setSelectedPreviewIndex(nextIndex);
+    }
     setHighlightUnverifiedArrows(false);
 
-    const hasRemainingUnverified = files.some((candidate) => {
-      const key = toNormalizedFileKey(candidate);
-      return !nextStatus[key];
-    });
-
-    if (options.stayInModal && hasRemainingUnverified) {
+    if (options.stayInModal && hasRemainingUnverified && nextIndex !== -1) {
       setDetailIndex(nextIndex);
       setIsDetailOpen(true);
     } else {
@@ -487,7 +527,7 @@ export function NewRequestDetailsSection({
         </div>
       </div>
 
-      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+      <Dialog open={isDetailOpen} onOpenChange={handleDialogOpenChange}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">
@@ -511,7 +551,7 @@ export function NewRequestDetailsSection({
                         Math.round((maxDiameter ?? 0) * 10) / 10;
                       const roundedConn =
                         Math.round((connectionDiameter ?? 0) * 10) / 10;
-                      setCaseInfos({
+                      setDetailCaseInfos({
                         maxDiameter: roundedMax,
                         connectionDiameter: roundedConn,
                       });
@@ -531,8 +571,8 @@ export function NewRequestDetailsSection({
                     임플란트/환자 정보
                   </div>
                   <NewRequestPatientImplantFields
-                    caseInfos={caseInfos}
-                    setCaseInfos={setCaseInfos}
+                    caseInfos={detailCaseInfos}
+                    setCaseInfos={setDetailCaseInfos}
                     showImplantSelect={showImplantSelect}
                     readOnly={!detailFile}
                     connections={connections}

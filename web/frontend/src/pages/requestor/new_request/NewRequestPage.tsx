@@ -13,6 +13,7 @@ import { useBulkShippingPolicy } from "./hooks/useBulkShippingPolicy";
 import { useExpressShipping } from "./hooks/useExpressShipping";
 import { useFileVerification } from "./hooks/useFileVerification";
 import { apiFetch } from "@/shared/api/apiClient";
+import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
 import { NewRequestDetailsSection } from "./components/NewRequestDetailsSection";
@@ -163,9 +164,8 @@ export const NewRequestPage = () => {
   >([]);
 
   useEffect(() => {
-    if (!duplicatePrompt) {
+    if (duplicatePrompt) {
       setDuplicateResolutions([]);
-      return;
     }
   }, [duplicatePrompt]);
 
@@ -194,11 +194,12 @@ export const NewRequestPage = () => {
         ? (files || []).find((f) => `${f.name}:${f.size}` === fileKey)
         : null;
       const info = fileKey ? caseInfosMap?.[fileKey] : undefined;
+      const parsed = file ? parseFilenameWithRules(file.name) : null;
       return {
         fileName: file?.name || "",
-        patientName: String(info?.patientName || ""),
-        tooth: String(info?.tooth || ""),
-        clinicName: String(info?.clinicName || ""),
+        patientName: String(info?.patientName || parsed?.patientName || ""),
+        tooth: String(info?.tooth || parsed?.tooth || ""),
+        clinicName: String(info?.clinicName || parsed?.clinicName || ""),
       };
     },
     [caseInfosMap, files],
@@ -289,6 +290,19 @@ export const NewRequestPage = () => {
     }
 
     // --- 의뢰 제출 시 감지된 중복 케이스 처리 ---
+    if (choice.strategy === "skip") {
+      const fileKey = getFileKeyByDraftCaseId(String(choice.caseId || ""));
+      const fileIndex = fileKey
+        ? (files || []).findIndex((f) => `${f.name}:${f.size}` === fileKey)
+        : -1;
+      if (fileIndex >= 0) {
+        console.log("[DuplicateModal] Removing skipped file:", {
+          fileIndex,
+          fileKey,
+        });
+        await handleRemoveFile(fileIndex);
+      }
+    }
     const nextResolutions = (() => {
       const next = (duplicateResolutions || []).filter(
         (r) => r.caseId !== choice.caseId,
@@ -319,44 +333,57 @@ export const NewRequestPage = () => {
       existingRequestId: r.existingRequestId,
     }));
 
-    // 중요: 상태를 즉시 초기화하고 프롬프트를 닫음
+    // 중요: 선택 정보를 보존한 채 프롬프트만 닫고 사용자가 다시 제출하도록 유도
+    setDuplicateResolutions(finalResolutions as any);
     setDuplicatePrompt(null);
-    setDuplicateResolutions([]);
     setPendingUploadDecisions({});
-
-    // setTimeout을 사용하여 React 상태 업데이트와 렌더링 사이클이 완료된 후 제출 진행
-    setTimeout(() => {
-      handleSubmitWithDuplicateResolutions(finalResolutions as any);
-    }, 150);
   };
 
   const renderDuplicateActions = (dup: any) => {
     const isLocked = dup?.lockedReason === "production";
+    const isTracking =
+      duplicatePrompt?.mode === "tracking" ||
+      String(dup?.existingRequest?.manufacturerStage || "").trim() ===
+        "추적관리";
+    const primaryStrategy = isTracking ? "remake" : "replace";
+    const primaryLabel = isTracking ? "재의뢰로 접수" : "새의뢰로 변경";
+
     return (
-      <div className="flex gap-2">
+      <div className="flex gap-2 pointer-events-auto">
         <button
           type="button"
-          onClick={() =>
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log("[DuplicateModal] Primary button clicked", {
+              strategy: primaryStrategy,
+              caseId: dup.caseId,
+            });
             applyDuplicateChoice({
-              strategy: "replace",
+              strategy: primaryStrategy,
               caseId: dup.caseId,
               existingRequestId: dup.existingRequest?._id,
-            })
-          }
-          disabled={isLocked}
-          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-700 disabled:bg-gray-300"
+            });
+          }}
+          disabled={isLocked && !isTracking}
+          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
         >
-          새의뢰로 변경
+          {primaryLabel}
         </button>
         <button
           type="button"
-          onClick={() =>
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log("[DuplicateModal] Skip button clicked", {
+              caseId: dup.caseId,
+            });
             applyDuplicateChoice({
               strategy: "skip",
               caseId: dup.caseId,
               existingRequestId: dup.existingRequest?._id,
-            })
-          }
+            });
+          }}
           className="flex-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-700 hover:bg-gray-50"
         >
           기존의뢰 유지
@@ -437,7 +464,12 @@ export const NewRequestPage = () => {
       <div className="max-w-6xl mx-auto w-full space-y-4 flex flex-col flex-1 min-h-0 h-full">
         <MultiActionDialog
           open={!!duplicatePrompt}
-          preventCloseOnOverlayClick={true}
+          preventCloseOnOverlayClick={false}
+          onClose={() => {
+            setDuplicatePrompt(null);
+            setPendingUploadFiles(null);
+            setPendingUploadDecisions({});
+          }}
           title={
             duplicatePrompt?.mode === "tracking"
               ? "추적관리 의뢰가 이미 있습니다"
@@ -453,6 +485,19 @@ export const NewRequestPage = () => {
                 const info = getNewCaseInfoByCaseId(String(dup.caseId || ""));
                 const existing = dup?.existingRequest || {};
                 const isLocked = dup?.lockedReason === "production";
+                const existingCaseInfos = existing?.caseInfos || {};
+                const newClinic = String(info?.clinicName || "").trim();
+                const newPatient = String(info?.patientName || "").trim();
+                const newTooth = String(info?.tooth || "").trim();
+                const existingClinic = String(
+                  existingCaseInfos?.clinicName || "",
+                ).trim();
+                const existingPatient = String(
+                  existingCaseInfos?.patientName || "",
+                ).trim();
+                const existingTooth = String(
+                  existingCaseInfos?.tooth || "",
+                ).trim();
                 return (
                   <div
                     key={`${dup.caseId || ""}-${idx}`}
@@ -471,6 +516,14 @@ export const NewRequestPage = () => {
                     <div className="rounded border border-gray-200 bg-white p-2">
                       <div className="flex flex-col gap-0.5 text-[11px]">
                         <span className="truncate">
+                          신규 의뢰: {newClinic || "-"} / {newPatient || "-"} /
+                          {newTooth || "-"}
+                        </span>
+                        <span className="truncate">
+                          기존 의뢰: {existingClinic || "-"} /
+                          {existingPatient || "-"} / {existingTooth || "-"}
+                        </span>
+                        <span className="truncate">
                           상태: {String(existing?.manufacturerStage || "")}
                           {isLocked && (
                             <span className="text-red-500 ml-1">
@@ -478,6 +531,11 @@ export const NewRequestPage = () => {
                             </span>
                           )}
                         </span>
+                        {existing?.requestId && (
+                          <span className="truncate">
+                            의뢰번호: {String(existing.requestId || "")}
+                          </span>
+                        )}
                         {existing?.price?.amount != null && (
                           <span className="truncate">
                             금액(공급가):{" "}
@@ -553,6 +611,34 @@ export const NewRequestPage = () => {
               highlight={false}
               sectionHighlightClass={sectionHighlightClass}
               focusUnverifiedTick={focusUnverifiedTick}
+              duplicatePromptOpen={!!duplicatePrompt}
+              onDuplicateDetected={({ file, duplicate }) => {
+                const caseId = String(
+                  (file as any)?._draftCaseInfoId || "",
+                ).trim();
+                const fallbackCaseId = `${file.name}:${file.size}`;
+                const effectiveCaseId = caseId || fallbackCaseId;
+                const stageOrder = Number(duplicate?.stageOrder);
+                const mapped = {
+                  caseId: effectiveCaseId,
+                  fileName: file.name,
+                  existingRequest: duplicate?.existingRequest,
+                  lockedReason: stageOrder >= 2 ? "production" : undefined,
+                };
+
+                setDuplicatePrompt((prev) => {
+                  const existing = prev?.duplicates || [];
+                  const has = existing.some(
+                    (d: any) => d.caseId === mapped.caseId,
+                  );
+                  const duplicates = has ? existing : [...existing, mapped];
+                  return {
+                    mode: "active",
+                    ...(prev || {}),
+                    duplicates,
+                  } as any;
+                });
+              }}
             />
           </div>
 

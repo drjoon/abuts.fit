@@ -411,6 +411,8 @@ export const RequestorRecentRequestsCard = ({
             const stableKey = item._id || item.id || rawRequestId || "";
             const displayId = rawRequestId || String(item.id || item._id || "");
             const canCancel = isCancelableRequest(item);
+            const priceAmount = item.price?.amount;
+            const isRemakeFixed = item.price?.rule === "remake_fixed_10000";
 
             return (
               <FunctionalItemCard
@@ -482,6 +484,11 @@ export const RequestorRecentRequestsCard = ({
                       {item.title || displayId}
                     </div>
                     {getStatusBadge(item.status, item.manufacturerStage)}
+                    {isRemakeFixed && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        재의뢰 1만원
+                      </Badge>
+                    )}
                   </div>
                   <div className="text-[11px] text-slate-600 truncate">
                     {item.caseInfos?.clinicName && (
@@ -509,6 +516,11 @@ export const RequestorRecentRequestsCard = ({
                       {item.createdAt &&
                         new Date(item.createdAt).toLocaleDateString()}
                     </span>
+                    {priceAmount != null && (
+                      <span>
+                        금액: {Number(priceAmount).toLocaleString()}원
+                      </span>
+                    )}
                     {(() => {
                       const eta =
                         item.timeline?.estimatedShipYmd ||

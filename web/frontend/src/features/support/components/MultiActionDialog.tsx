@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 interface DialogAction {
@@ -41,13 +42,15 @@ export const MultiActionDialog = ({
 }: MultiActionDialogProps) => {
   if (!open) return null;
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 bg-black/30 flex items-center justify-center z-[70] p-4 backdrop-blur-sm"
+      className="fixed inset-0 bg-black/30 flex items-center justify-center z-[9999] p-4 backdrop-blur-sm"
       onClick={() => !preventCloseOnOverlayClick && onClose?.()}
     >
       <div
-        className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md transform transition-all relative max-h-[90vh] flex flex-col"
+        className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md transform transition-all relative max-h-[90vh] flex flex-col min-h-0"
         onClick={(e) => e.stopPropagation()}
       >
         {onClose && (
@@ -64,7 +67,7 @@ export const MultiActionDialog = ({
           {title}
         </h2>
         {description && (
-          <div className="text-gray-700 mb-6 text-sm sm:text-base overflow-y-auto flex-1 pr-1 custom-scrollbar">
+          <div className="text-gray-700 mb-6 text-sm sm:text-base overflow-y-auto flex-1 min-h-0 max-h-[65vh] pr-1 custom-scrollbar">
             {description}
           </div>
         )}
@@ -76,7 +79,7 @@ export const MultiActionDialog = ({
               disabled={action.disabled}
               onClick={() => void action.onClick()}
               className={`px-4 py-2 rounded-lg font-semibold text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${getButtonClass(
-                action.variant
+                action.variant,
               )}`}
             >
               {action.label}
@@ -84,6 +87,7 @@ export const MultiActionDialog = ({
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };

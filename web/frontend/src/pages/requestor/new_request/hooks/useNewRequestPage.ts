@@ -121,8 +121,12 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   const currentCaseInfos = useMemo(() => {
     const key =
       currentFileKey === "__default__" ? "__default__" : currentFileKey;
-    const info = caseInfosMap[key] ||
-      caseInfosMap.__default__ || { workType: "abutment" };
+    const info = (() => {
+      if (key === "__default__") {
+        return caseInfosMap.__default__ || { workType: "abutment" };
+      }
+      return caseInfosMap[key] || { workType: "abutment" };
+    })();
 
     console.log("[useNewRequestPage] currentCaseInfos compute:", {
       selectedPreviewIndex,
@@ -333,23 +337,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     const tooth = String(parsed.tooth || "").trim();
     if (!clinicName || !patientName || !tooth) return null;
 
-    const normalizeFilePath = (raw: string) => {
-      if (!raw) return "";
-      try {
-        const base =
-          raw.replace(/\\/g, "/").split("/").filter(Boolean).pop() || raw;
-        return base
-          .normalize("NFC")
-          .replace(/\.[^/.]+$/, "")
-          .trim()
-          .toLowerCase();
-      } catch {
-        return raw;
-      }
-    };
-
     return {
-      filePath: normalizeFilePath(file.name),
       clinicName,
       patientName,
       tooth,
@@ -379,7 +367,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
             const query = new URLSearchParams(payload).toString();
 
             const res = await request<any>({
-              path: `/api/requests/my/has-duplicate?${query}`,
+              path: `/api/requests/my/check-duplicate?${query}`,
               method: "GET",
               token,
             });

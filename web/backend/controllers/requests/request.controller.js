@@ -8,7 +8,6 @@ export const {
   createRequest,
   cloneRequestToDraft,
   createRequestsFromDraft,
-  hasDuplicateCase,
   checkDuplicateCaseInfo,
 } = creationController;
 
