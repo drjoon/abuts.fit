@@ -405,7 +405,7 @@ export const RequestorRecentRequestsCard = ({
         <CardTitle className="text-base font-semibold">최근 의뢰</CardTitle>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col justify-between pt-2">
-        <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+        <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
           {items.map((item: any) => {
             const rawRequestId = String(item.requestId || "").trim();
             const stableKey = item._id || item.id || rawRequestId || "";
