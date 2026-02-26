@@ -1,0 +1,226 @@
+BEGIN_PROCESS; 공정 이름; 4;
+BEGIN_OPERATION; 316; FACE DRILL; 0;
+   4437; 4437; 0;  SOURCE; 0; TECHCODETYPE; 2;
+   4420; 4420; 2017;  SOURCE; 0; TECHCODETYPE; 2;
+   CustomSettingStr3; 1802; ;  CAPTION; 사용자 정의 문자열 3; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 1802;;
+		:
+	END_STRING
+   CustomSetting33; 663; 0;  CAPTION; 사용자 정의 설정 33; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting16; 646; 0;  CAPTION; 사용자 정의 설정 16; SOURCE; 1; TECHCODETYPE; 2;
+   4910; 4910; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4910;;
+		:2.2.9
+	END_STRING
+   CustomSetting30; 660; 0;  CAPTION; 사용자 정의 설정 30; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting13; 643; 0;  CAPTION; 사용자 정의 설정 13; SOURCE; 1; TECHCODETYPE; 2;
+   4907; 4907; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4907;;
+		:
+	END_STRING
+   SpindleID; 793; 1;  CAPTION; 스핀들 이름; SOURCE; 1; TECHCODETYPE; 1;
+   CustomSetting27; 657; 0;  CAPTION; 사용자 정의 설정 27; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting10; 640; 0;  CAPTION; 사용자 정의 설정 10; SOURCE; 1; TECHCODETYPE; 2;
+   4411; 4411; 29813;  SOURCE; 0; TECHCODETYPE; 2;
+   4904; 4904; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4904;;
+		:
+	END_STRING
+   4003; 4003; 1;  SOURCE; 0; TECHCODETYPE; 1;
+   CustomSetting24; 654; 0;  CAPTION; 사용자 정의 설정 24; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting7; 637; 0;  CAPTION; 사용자 정의 설정 7; SOURCE; 1; TECHCODETYPE; 2;
+   4425; 4425; 42;  SOURCE; 0; TECHCODETYPE; 2;
+   CustomSettingStr8; 1807; ;  CAPTION; 사용자 정의 문자열 8; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 1807;;
+		:
+	END_STRING
+   CustomSetting38; 668; 0;  CAPTION; 사용자 정의 설정 38; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting21; 651; 0;  CAPTION; 사용자 정의 설정 21; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting4; 634; 0;  CAPTION; 사용자 정의 설정 4; SOURCE; 1; TECHCODETYPE; 2;
+   4422; 4422; 14;  SOURCE; 0; TECHCODETYPE; 2;
+   CustomSettingStr5; 1804; ;  CAPTION; 사용자 정의 문자열 5; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 1804;;
+		:
+	END_STRING
+   CustomSetting35; 665; 0;  CAPTION; 사용자 정의 설정 35; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting18; 648; 0;  CAPTION; 사용자 정의 설정 18; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting1; 631; 0;  CAPTION; 사용자 정의 설정 1; SOURCE; 1; TECHCODETYPE; 2;
+   4436; 4436; 9;  SOURCE; 0; TECHCODETYPE; 1;
+   CustomSettingStr2; 1801; ;  CAPTION; 사용자 정의 문자열 2; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 1801;;
+		:
+	END_STRING
+   CustomSetting32; 662; 0;  CAPTION; 사용자 정의 설정 32; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting15; 645; 0;  CAPTION; 사용자 정의 설정 15; SOURCE; 1; TECHCODETYPE; 2;
+   4909; 4909; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4909;;
+		:
+	END_STRING
+   CustomSetting29; 659; 0;  CAPTION; 사용자 정의 설정 29; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting12; 642; 0;  CAPTION; 사용자 정의 설정 12; SOURCE; 1; TECHCODETYPE; 2;
+   4413; 4413; 4;  SOURCE; 0; TECHCODETYPE; 2;
+   4906; 4906; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4906;;
+		:Evan
+	END_STRING
+   TurretID; 792; 1;  CAPTION; 터렛 이름; SOURCE; 1; TECHCODETYPE; 1;
+   CustomSetting26; 656; 0;  CAPTION; 사용자 정의 설정 26; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting9; 639; 0;  CAPTION; 사용자 정의 설정 9; SOURCE; 1; TECHCODETYPE; 2;
+   4410; 4410; 3366;  SOURCE; 0; TECHCODETYPE; 2;
+   4903; 4903; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4903;;
+		:
+	END_STRING
+   CustomSettingStr10; 1809; ;  CAPTION; 사용자 정의 문자열 10; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 1809;;
+		:
+	END_STRING
+   CustomSetting40; 670; 0;  CAPTION; 사용자 정의 설정 40; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting23; 653; 0;  CAPTION; 사용자 정의 설정 23; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting6; 636; 0;  CAPTION; 사용자 정의 설정 6; SOURCE; 1; TECHCODETYPE; 2;
+   Comment; 7; ;  CAPTION; 주석; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 7;;
+		:
+	END_STRING
+   4424; 4424; 57;  SOURCE; 0; TECHCODETYPE; 2;
+   CustomSettingStr7; 1806; ;  CAPTION; 사용자 정의 문자열 7; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 1806;;
+		:
+	END_STRING
+   CustomSetting37; 667; 0;  CAPTION; 사용자 정의 설정 37; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting20; 650; 0;  CAPTION; 사용자 정의 설정 20; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting3; 633; 0;  CAPTION; 사용자 정의 설정 3; SOURCE; 1; TECHCODETYPE; 2;
+   4438; 4438; 0;  SOURCE; 0; TECHCODETYPE; 2;
+   4421; 4421; 3;  SOURCE; 0; TECHCODETYPE; 2;
+   OperationName; 613; ;  CAPTION; 작업 이름; SOURCE; 2; TECHCODETYPE; 3;
+	BEGIN_STRING; 613;;
+		:MEGAGEN_AnyOne_FACE DRILL
+	END_STRING
+   CustomSettingStr4; 1803; ;  CAPTION; 사용자 정의 문자열 4; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 1803;;
+		:
+	END_STRING
+   CustomSetting34; 664; 0;  CAPTION; 사용자 정의 설정 34; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting17; 647; 0;  CAPTION; 사용자 정의 설정 17; SOURCE; 1; TECHCODETYPE; 2;
+   HeadID; 797; 1;  CAPTION; 헤드 ID; SOURCE; 1; TECHCODETYPE; 1;
+   CustomSettingStr1; 1800; ;  CAPTION; 사용자 정의 문자열 1; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 1800;;
+		:
+	END_STRING
+   CustomSetting31; 661; 0;  CAPTION; 사용자 정의 설정 31; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting14; 644; 0;  CAPTION; 사용자 정의 설정 14; SOURCE; 1; TECHCODETYPE; 2;
+   4908; 4908; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4908;;
+		:
+	END_STRING
+   CustomSetting28; 658; 0;  CAPTION; 사용자 정의 설정 28; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting11; 641; 0;  CAPTION; 사용자 정의 설정 11; SOURCE; 1; TECHCODETYPE; 2;
+   4412; 4412; 2;  SOURCE; 0; TECHCODETYPE; 2;
+   4905; 4905; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4905;;
+		:
+	END_STRING
+   CustomSetting25; 655; 0;  CAPTION; 사용자 정의 설정 25; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting8; 638; 0;  CAPTION; 사용자 정의 설정 8; SOURCE; 1; TECHCODETYPE; 2;
+   4902; 4902; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4902;;
+		:
+	END_STRING
+   CustomSettingStr9; 1808; ;  CAPTION; 사용자 정의 문자열 9; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 1808;;
+		:
+	END_STRING
+   CustomSetting39; 669; 0;  CAPTION; 사용자 정의 설정 39; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting22; 652; 0;  CAPTION; 사용자 정의 설정 22; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting5; 635; 0;  CAPTION; 사용자 정의 설정 5; SOURCE; 1; TECHCODETYPE; 2;
+   4423; 4423; 16;  SOURCE; 0; TECHCODETYPE; 2;
+   Text; 513; ;  CAPTION; 문자; SOURCE; 2; TECHCODETYPE; 3;
+	BEGIN_STRING; 513;;
+    :
+		:(FOR MEGAGEN AnyOne Regular)
+    :M93001
+    :
+    :(Tool/Offset)
+    :(T01:CUT[UT-L/T1.5]WZ-0.4/GZ12.0)
+    :(T02:Turn[KY-R/NR0.4])
+    :(T03:B-Turn[KY-R/NR0.05]WZ-0.4/GZ3.7)
+    :(T06:HEX[EM*D1.5]WX-0.3/WZ-0.4/GZ10.9)
+    :(T07:Finish[Ball D1.2*L3.0]WX-0.3/WZ-0.4/GZ10.9)
+    :(T08:Rough[Ball D4.0]WX-0.3/WZ-0.4/GX5.0/GZ10.9)
+    :(T09:Engraving[D2.0*A90]WX-0.3/WZ-0.4/GZ15.86)
+    :(T41:C-drill[D5.0*A90]WZ-0.4)
+    :(T45:S-drill[D2.015*L4.8/D2.35]WZ-0.4)
+    :(T48:Finish[Ball D2.0]WZ-0.4/GZ4.0)
+    :(T21:Shuter[D6.0])
+    :
+    :M8
+    :M500
+    :G00G99G40G18G80T0
+    :M18
+    :M7
+    :M8
+    :M11
+    :G4U0.3
+    :G300X-2.0Z40.0T0131
+		:G150Z9.6
+		:M8
+		:M10
+		:G4U0.3
+		:G0X30.0Z-1.5T0
+
+    :(Face turn & Chip remove)
+		:T0202 (KY-R/NR0.4)
+		:M3 S3500
+		:G99 G0 Z20.4
+		:G0 X16.0
+		:G1 X[#521+1.8] F0.1 
+		:G1 X[#521+1.0] F0.05 
+		:G1 Z-0.4 F0.2
+    :G4 U0.05
+    :G1 X-1.4 F0.02
+    :G4 U0.05
+		:G1 X[#521+6.8] W-0.5 F0.5
+		:G0 X30.0 Z-1.5
+		:G0 T0
+		:M1
+		:
+		:(Center Drill)
+		:M88
+		:T4141 (D6.0*A90)
+		:M3 S3000
+		:G99 G0 X0.0 Z-1.5
+    :G1 Z[#523-0.5] F0.1
+		:G1 Z[#523+1.288] F0.015
+		:G4 U0.5
+		:G0 Z-1.5
+		:G0 T0
+		:M89
+		:M1
+		:
+		:(Step drill)
+		:M88
+		:T4545 (D2.015*L4.8/D2.35)
+		:M3 S3000
+		:G99 G0 X0.0 Z-1.5
+		:G1 Z-0.5 F0.1
+		:G83 Z[#520+#523+3.7] Q500 P5 F0.025
+    :G80
+		:G0 Z-1.5
+    :G0 T0
+    :M89
+		:M1
+		:
+		:
+	END_STRING
+   CustomSettingStr6; 1805; ;  CAPTION; 사용자 정의 문자열 6; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 1805;;
+		:
+	END_STRING
+   CustomSetting36; 666; 0;  CAPTION; 사용자 정의 설정 36; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting19; 649; 0;  CAPTION; 사용자 정의 설정 19; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting2; 632; 0;  CAPTION; 사용자 정의 설정 2; SOURCE; 1; TECHCODETYPE; 2;
+   BEGIN_EXPRESSION
+   END_EXPRESSION
+	BEGIN_ATTRIBUTES
+	END_ATTRIBUTES
+END_OPERATION;

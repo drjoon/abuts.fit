@@ -433,7 +433,9 @@ export async function updateReviewStatusByStage(req, res) {
     let acceptedMessage = "";
 
     await session.withTransaction(async () => {
-      const request = await Request.findById(id).session(session);
+      const request = await Request.findById(id)
+        .populate("requestor", "organization organizationId")
+        .session(session);
       if (!request) {
         const err = new Error("의뢰를 찾을 수 없습니다.");
         err.statusCode = 404;
@@ -459,6 +461,25 @@ export async function updateReviewStatusByStage(req, res) {
 
       // 승인 시 다음 공정으로 전환, 미승인(PENDING) 시 현재 단계로 되돌림
       if (status === "APPROVED") {
+        const resolvedRequestorOrgId = (() => {
+          const direct = request.requestorOrganizationId;
+          if (direct) return direct;
+          const fallbackId =
+            request.requestor?.organizationId ||
+            request.requestor?.organization?._id ||
+            request.requestor?.organization;
+          if (!fallbackId) return null;
+          const fallbackStr = String(fallbackId);
+          if (!Types.ObjectId.isValid(fallbackStr)) return null;
+          return typeof fallbackId === "string"
+            ? new Types.ObjectId(fallbackStr)
+            : fallbackId;
+        })();
+
+        if (!request.requestorOrganizationId && resolvedRequestorOrgId) {
+          request.requestorOrganizationId = resolvedRequestorOrgId;
+        }
+
         if (effectiveStage === "request") {
           // 비동기 처리: 의뢰 승인 시점에 manufacturerStage/status 를 CAM으로 바꾸지 않는다.
           // Esprit(NC 생성) 완료 콜백(/api/bg/register-file, sourceStep=3-nc)에서 상태를 CAM으로 전환한다.
@@ -499,10 +520,7 @@ export async function updateReviewStatusByStage(req, res) {
           if (!request.mailboxAddress) {
             try {
               // 의뢰자 organization ID를 전달하여 같은 의뢰자의 요청들을 같은 우편함으로 그룹화
-              const requestorOrgId =
-                request.requestorOrganizationId ||
-                request.requestor?.organization?._id ||
-                request.requestor?.organization;
+              const requestorOrgId = resolvedRequestorOrgId;
               console.log(
                 `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 할당 시작 - 조직 ID: ${requestorOrgId}`,
               );

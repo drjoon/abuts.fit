@@ -728,7 +728,7 @@ export const PackingPage = ({
           onDownloadCamStl={() => Promise.resolve()}
           onDownloadNcFile={() => Promise.resolve()}
           onDownloadStageFile={handleDownloadStageFile}
-          onOpenNextRequest={(id) => {}}
+          onOpenNextRequest={handleOpenNextRequest}
           setSearchParams={setSearchParams}
           setConfirmTitle={setConfirmTitle}
           setConfirmDescription={setConfirmDescription}

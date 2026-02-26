@@ -14,6 +14,7 @@ import {
   DEFAULT_DELIVERY_ETA_LEAD_DAYS,
   getDeliveryEtaLeadDays,
   applyStatusMapping,
+  bumpRollbackCount,
   normalizeRequestStage,
   normalizeRequestStageLabel,
   REQUEST_STAGE_GROUPS,
@@ -152,6 +153,77 @@ export async function printHanjinLabels(req, res) {
     return res.status(500).json({
       success: false,
       message: "한진 운송장 출력 요청 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 우편함 전체 롤백 (포장.발송 → 세척.패킹)
+ * @route POST /api/requests/shipping/mailbox-rollback
+ */
+export async function rollbackMailboxShipping(req, res) {
+  try {
+    const { mailboxAddress, requestIds } = req.body || {};
+
+    const mailbox = String(mailboxAddress || "").trim();
+    if (!mailbox) {
+      return res.status(400).json({
+        success: false,
+        message: "mailboxAddress가 필요합니다.",
+      });
+    }
+
+    const ids = Array.isArray(requestIds)
+      ? requestIds
+          .map((v) => String(v || "").trim())
+          .filter((v) => Types.ObjectId.isValid(v))
+      : [];
+
+    const filter = {
+      mailboxAddress: mailbox,
+      manufacturerStage: "포장.발송",
+    };
+
+    if (ids.length) {
+      filter._id = { $in: ids };
+    }
+
+    const requests = await Request.find(filter);
+    if (!requests.length) {
+      return res.status(404).json({
+        success: false,
+        message: "조건에 맞는 의뢰를 찾을 수 없습니다.",
+      });
+    }
+
+    const updatedIds = [];
+    for (const r of requests) {
+      ensureReviewByStageDefaults(r);
+      r.caseInfos.reviewByStage.shipping = {
+        ...r.caseInfos.reviewByStage.shipping,
+        status: "PENDING",
+        updatedAt: new Date(),
+        updatedBy: req.user?._id,
+        reason: "",
+      };
+      bumpRollbackCount(r, "shipping");
+      applyStatusMapping(r, "세척.패킹");
+      r.mailboxAddress = null;
+      await r.save();
+      updatedIds.push(r.requestId);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `${updatedIds.length}건이 롤백되었습니다.`,
+      data: { updatedIds },
+    });
+  } catch (error) {
+    console.error("Error in rollbackMailboxShipping:", error);
+    return res.status(500).json({
+      success: false,
+      message: "우편함 롤백 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

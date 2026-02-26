@@ -123,6 +123,7 @@ export const RequestPage = ({
   const [mailboxModalRequests, setMailboxModalRequests] = useState<
     ManufacturerRequest[]
   >([]);
+  const [isRollingBackAll, setIsRollingBackAll] = useState(false);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -413,100 +414,90 @@ export const RequestPage = ({
       if (!req?._id) return;
       void handleUploadByStage(req, [file]);
     },
-    [handleUploadByStage],
+    [handleUploadByStage, tabStage],
   );
 
   const handleCardRollback = useCallback(
-    (req: ManufacturerRequest) => {
+    async (req: ManufacturerRequest) => {
       if (!req?._id) return;
 
       const stage = deriveStageForFilter(req);
 
       // 항상 "현재 카드 단계"에서 직전 단계로 롤백
       if (stage === "가공") {
-        void handleDeleteStageFile({
+        return handleDeleteStageFile({
           req,
           stage: "machining",
           rollbackOnly: true,
         });
-        return;
       }
 
       if (stage === "CAM") {
-        void handleDeleteNc(req, {
+        return handleDeleteNc(req, {
           nextStage: "request",
           rollbackOnly: true,
           navigate: false,
         });
-        return;
       }
 
       if (stage === "세척.포장" || stage === "세척.패킹") {
-        void handleDeleteStageFile({
+        return handleDeleteStageFile({
           req,
           stage: "packing",
           rollbackOnly: true,
         });
-        return;
       }
 
       if (stage === "발송" || stage === "포장.발송") {
         // 포장.발송 단계 롤백: 세척.패킹 단계로 되돌리기
-        void handleUpdateReviewStatus({
+        return handleUpdateReviewStatus({
           req,
           status: "PENDING",
           stageOverride: "shipping",
         });
-        return;
       }
 
       if (stage === "추적관리") {
-        void handleDeleteStageFile({
+        return handleDeleteStageFile({
           req,
           stage: "tracking",
           rollbackOnly: true,
         });
-        return;
       }
 
       if (tabStage === "machining") {
-        void handleDeleteStageFile({
+        return handleDeleteStageFile({
           req,
           stage: "machining",
           rollbackOnly: true,
         });
-        return;
       }
 
       if (tabStage === "cam") {
-        void handleDeleteNc(req, {
+        return handleDeleteNc(req, {
           nextStage: "request",
           rollbackOnly: true,
           navigate: false,
         });
-        return;
       }
 
       if (tabStage === "shipping") {
         // 포장.발송 탭에서 롤백: 세척.패킹 단계로 되돌리기
-        void handleUpdateReviewStatus({
+        return handleUpdateReviewStatus({
           req,
           status: "PENDING",
           stageOverride: "shipping",
         });
-        return;
       }
 
-      if (tabStage === "tracking") {
-        void handleDeleteStageFile({
-          req,
-          stage: "tracking",
-          rollbackOnly: true,
-        });
-        return;
-      }
+      // CAM/의뢰 탭에서의 기본 롤백: CAM 파일 삭제
+      return handleDeleteNc(req, {
+        nextStage: "request",
+        rollbackOnly: true,
+        navigate: false,
+      });
     },
-    [tabStage, handleDeleteStageFile, handleDeleteNc, handleUpdateReviewStatus],
+    [handleDeleteStageFile, handleDeleteNc, handleUpdateReviewStatus, tabStage],
   );
 
   const handleCardApprove = useCallback(
@@ -796,6 +787,7 @@ export const RequestPage = ({
       if (!reqs.length) return;
       setMailboxModalAddress(address);
       setMailboxModalRequests(reqs);
+      setIsRollingBackAll(false);
       setMailboxModalOpen(true);
     },
     [],
@@ -805,7 +797,75 @@ export const RequestPage = ({
     setMailboxModalOpen(false);
     setMailboxModalAddress("");
     setMailboxModalRequests([]);
+    setIsRollingBackAll(false);
   }, []);
+
+  useEffect(() => {
+    if (!mailboxModalOpen || !mailboxModalAddress) return;
+    const next = requests.filter(
+      (req) => req.mailboxAddress === mailboxModalAddress,
+    );
+    setMailboxModalRequests(next);
+  }, [requests, mailboxModalOpen, mailboxModalAddress]);
+
+  useEffect(() => {
+    if (!mailboxModalOpen) return;
+    if (mailboxModalRequests.length > 0) return;
+    handleShipmentModalClose();
+  }, [mailboxModalRequests.length, mailboxModalOpen, handleShipmentModalClose]);
+
+  const handleRollbackAllInMailbox = useCallback(async () => {
+    if (
+      !mailboxModalRequests.length ||
+      isRollingBackAll ||
+      !mailboxModalAddress ||
+      !token
+    )
+      return;
+    setIsRollingBackAll(true);
+    try {
+      const res = await fetch("/api/requests/shipping/mailbox-rollback", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          mailboxAddress: mailboxModalAddress,
+          requestIds: mailboxModalRequests
+            .map((req) => req._id)
+            .filter(Boolean),
+        }),
+      });
+
+      if (!res.ok) {
+        let message = "전체 롤백에 실패했습니다.";
+        try {
+          const body = await res.json().catch(() => null);
+          if (body?.message) message = body.message;
+        } catch {
+          // ignore
+        }
+        throw new Error(message);
+      }
+
+      await fetchRequests();
+      toast({
+        title: "박스 전체 롤백 완료",
+        description: "우편함 롤백을 완료했습니다.",
+        duration: 3000,
+      });
+    } finally {
+      setIsRollingBackAll(false);
+    }
+  }, [
+    fetchRequests,
+    isRollingBackAll,
+    mailboxModalAddress,
+    mailboxModalRequests,
+    toast,
+    token,
+  ]);
 
   const diameterQueueForReceive = useMemo(() => {
     const labels: DiameterBucketKey[] = ["6", "8", "10", "12"];
@@ -981,6 +1041,10 @@ export const RequestPage = ({
         address={mailboxModalAddress}
         requests={mailboxModalRequests}
         onRollback={handleCardRollback}
+        onRollbackAll={
+          mailboxModalRequests.length ? handleRollbackAllInMailbox : undefined
+        }
+        isRollingBackAll={isRollingBackAll}
       />
 
       <PreviewModal

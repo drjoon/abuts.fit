@@ -6,7 +6,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, RotateCcw } from "lucide-react";
 import type { ManufacturerRequest } from "../../utils/request";
 
 type MailboxContentsModalProps = {
@@ -15,6 +15,8 @@ type MailboxContentsModalProps = {
   address: string;
   requests: ManufacturerRequest[];
   onRollback?: (req: ManufacturerRequest) => void;
+  onRollbackAll?: (requests: ManufacturerRequest[]) => void;
+  isRollingBackAll?: boolean;
 };
 
 export const MailboxContentsModal = ({
@@ -23,6 +25,8 @@ export const MailboxContentsModal = ({
   address,
   requests,
   onRollback,
+  onRollbackAll,
+  isRollingBackAll = false,
 }: MailboxContentsModalProps) => {
   const getLotLabel = (req: ManufacturerRequest) => {
     const lot = req.lotNumber;
@@ -68,6 +72,18 @@ export const MailboxContentsModal = ({
               <Badge variant="outline" className="text-[11px]">
                 {requests.length}건
               </Badge>
+              {onRollbackAll ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="h-8 text-xs gap-1"
+                    disabled={isRollingBackAll}
+                    onClick={() => onRollbackAll(requests)}
+                  >
+                    <ArrowLeft className="h-3 w-3" />
+                  </Button>
+              ) : null}
             </span>
           </DialogTitle>
         </DialogHeader>
@@ -84,9 +100,9 @@ export const MailboxContentsModal = ({
                     variant="outline"
                     size="sm"
                     className="h-7 text-xs gap-1"
+                    disabled={isRollingBackAll}
                     onClick={() => {
-                      onRollback(req);
-                      onOpenChange(false);
+                      void onRollback(req);
                     }}
                   >
                     <ArrowLeft className="h-3 w-3" />

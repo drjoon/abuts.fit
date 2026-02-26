@@ -48,6 +48,7 @@ export const {
   createMyBulkShipping,
   getMyShippingPackagesSummary,
   registerShipment,
+  rollbackMailboxShipping,
   printHanjinLabels,
   requestHanjinPickup,
   cancelHanjinPickup,

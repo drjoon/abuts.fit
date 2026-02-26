@@ -137,6 +137,13 @@ router.post(
   requestController.registerShipment,
 );
 
+// 우편함 전체 롤백 (포장.발송 → 세척.패킹)
+router.post(
+  "/shipping/mailbox-rollback",
+  authorize(["manufacturer", "admin"]),
+  requestController.rollbackMailboxShipping,
+);
+
 // 한진 운송장 출력 (메일박스 기준)
 router.post(
   "/shipping/hanjin/print-labels",
