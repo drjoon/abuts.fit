@@ -47,11 +47,26 @@ const listPrinters = () =>
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean)
-        .map((line) => line.split(" ")[1])
+        .map((line) => {
+          const parts = line.split(/\s+/).filter(Boolean);
+          if (!parts.length) return "";
+          if (parts[0] === "printer" && parts[1]) return parts[1];
+          return parts[0];
+        })
         .filter(Boolean);
       resolve(printers);
     });
   });
+
+const resolvePrinter = async (requestedPrinter) => {
+  const printer = String(requestedPrinter || "").trim();
+  if (printer) return printer;
+  const printers = await listPrinters().catch(() => []);
+  if (Array.isArray(printers) && printers.length > 0) {
+    return printers[0];
+  }
+  return "";
+};
 
 const downloadToTemp = (url) =>
   new Promise((resolve, reject) => {
@@ -87,6 +102,15 @@ const writeBase64ToTemp = async (base64) => {
   );
   const data = Buffer.from(base64, "base64");
   await fs.promises.writeFile(tempPath, data);
+  return tempPath;
+};
+
+const writeTextToTemp = async (text, ext) => {
+  const tempPath = path.join(
+    os.tmpdir(),
+    `hanjin-label-${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`,
+  );
+  await fs.promises.writeFile(tempPath, text, "utf8");
   return tempPath;
 };
 
@@ -137,8 +161,16 @@ const server = http.createServer(async (req, res) => {
       const payload = raw ? JSON.parse(raw) : {};
       const url = payload.url;
       const base64 = payload.base64;
-      const printer = payload.printer;
+      const printer = await resolvePrinter(payload.printer);
       const title = payload.title || "Hanjin Label";
+
+      if (!printer) {
+        return jsonResponse(res, 400, {
+          success: false,
+          message:
+            "사용 가능한 프린터가 없습니다. 프린터를 OS(CUPS)에 등록하거나 printer 값을 지정해주세요.",
+        });
+      }
 
       if (!url && !base64) {
         return jsonResponse(res, 400, {
@@ -163,6 +195,60 @@ const server = http.createServer(async (req, res) => {
       return jsonResponse(res, 200, { success: true });
     } catch (error) {
       log("print:error", { message: error.message });
+      return jsonResponse(res, 500, {
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  if (req.url === "/print-zpl" && req.method === "POST") {
+    try {
+      const raw = await readBody(req);
+      const payload = raw ? JSON.parse(raw) : {};
+      const zpl = payload.zpl;
+      const printer = await resolvePrinter(payload.printer);
+      const title = payload.title || "Hanjin Label";
+
+      if (!printer) {
+        return jsonResponse(res, 400, {
+          success: false,
+          message:
+            "사용 가능한 프린터가 없습니다. 프린터를 OS(CUPS)에 등록하거나 printer 값을 지정해주세요.",
+        });
+      }
+
+      if (!zpl || typeof zpl !== "string") {
+        return jsonResponse(res, 400, {
+          success: false,
+          message: "zpl 문자열이 필요합니다.",
+        });
+      }
+
+      const tempPath = await writeTextToTemp(zpl, "zpl");
+
+      log("print-zpl:queued", { printer, title });
+
+      try {
+        const args = [];
+        if (printer) args.push("-d", printer);
+        if (title) args.push("-t", title);
+        args.push("-o", "raw");
+        args.push(tempPath);
+        await new Promise((resolve, reject) => {
+          execFile("lp", args, (err, stdout, stderr) => {
+            if (err) return reject(new Error(stderr || err.message));
+            resolve(stdout);
+          });
+        });
+        log("print-zpl:done", { printer, title });
+      } finally {
+        fs.unlink(tempPath, () => undefined);
+      }
+
+      return jsonResponse(res, 200, { success: true });
+    } catch (error) {
+      log("print-zpl:error", { message: error.message });
       return jsonResponse(res, 500, {
         success: false,
         message: error.message,

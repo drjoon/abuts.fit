@@ -80,6 +80,39 @@ const callHanjinApi = async ({
   return responseBody?.data;
 };
 
+const callHanjinApiWithMeta = async ({
+  path,
+  mailboxAddresses,
+  payload,
+}: {
+  path: string;
+  mailboxAddresses?: string[];
+  payload?: Record<string, any>;
+}) => {
+  const body: Record<string, unknown> = {};
+  if (Array.isArray(mailboxAddresses)) {
+    body.mailboxAddresses = mailboxAddresses;
+  }
+  if (payload) {
+    body.payload = payload;
+  }
+  const response = await request<any>({
+    path,
+    method: "POST",
+    jsonBody: body,
+  });
+  const responseBody = response.data as any;
+  if (!response.ok || !responseBody?.success) {
+    const message =
+      responseBody?.message || `한진 API 호출 실패 (status=${response.status})`;
+    throw new Error(message);
+  }
+  return {
+    data: responseBody?.data,
+    wblPrint: responseBody?.wblPrint,
+  };
+};
+
 export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
   const { toast } = useToast();
   // 선반: 가로 A~X (3개씩 묶음) / 세로 1~4
@@ -326,12 +359,56 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
 
     setIsPrinting(true);
     try {
-      const data = await callHanjinApi({
+      const { data, wblPrint } = await callHanjinApiWithMeta({
         path: "/api/requests/shipping/hanjin/print-labels",
         mailboxAddresses: occupiedAddresses,
       });
+
+      if (wblPrint?.success) {
+        setPrintedMailboxes(new Set(occupiedAddresses));
+        toast({
+          title: "운송장 출력 완료",
+          description: `${occupiedAddresses.length}개 우편함의 운송장이 출력되었습니다.`,
+        });
+        return;
+      }
+
+      if (
+        wblPrint?.skipped &&
+        wblPrint?.reason === "wbl_print_server_not_configured"
+      ) {
+        await triggerLocalPrint(data);
+        setPrintedMailboxes(new Set(occupiedAddresses));
+        toast({
+          title: "운송장 출력 완료",
+          description: `${occupiedAddresses.length}개 우편함의 운송장이 출력되었습니다.`,
+        });
+        return;
+      }
+
+      if (wblPrint?.skipped && wblPrint?.reason === "print_payload_not_found") {
+        toast({
+          title: "출력 데이터 없음",
+          description:
+            "한진 운송장 응답에 PDF(URL/Base64) 데이터가 포함되지 않아 자동 출력이 불가능합니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (wblPrint && wblPrint?.success === false) {
+        toast({
+          title: "운송장 출력 실패",
+          description:
+            wblPrint?.message ||
+            wblPrint?.reason ||
+            "운송장 출력에 실패했습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       await triggerLocalPrint(data);
-      // Mark all occupied mailboxes as printed
       setPrintedMailboxes(new Set(occupiedAddresses));
       toast({
         title: "운송장 출력 완료",

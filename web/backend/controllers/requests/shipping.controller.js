@@ -135,6 +135,50 @@ const resolveWblPrintPayload = (payload) => {
   return null;
 };
 
+const escapeZplText = (value) =>
+  String(value || "")
+    .replace(/\^/g, "")
+    .replace(/~/g, "")
+    .replace(/[\r\n]+/g, " ")
+    .trim();
+
+const buildHanjinWblZpl = ({ addressList }) => {
+  const list = Array.isArray(addressList) ? addressList : [];
+  if (!list.length) return null;
+
+  // 4x6 inch label baseline (Zebra): width ~812 dots @203dpi, height ~1218
+  // Keep it simple: print tracking + condensed address highlight.
+  const labels = list
+    .filter((row) => row && row.result_code === "OK" && row.wbl_num)
+    .map((row) => {
+      const wbl = escapeZplText(row.wbl_num);
+      const prtAdd = escapeZplText(row.prt_add);
+      const tml = escapeZplText(row.tml_nam);
+      const cen = escapeZplText(row.cen_nam);
+      const msgKey = escapeZplText(row.msg_key);
+
+      return [
+        "^XA",
+        "^CI28",
+        "^PW812",
+        "^LL1218",
+        "^LH0,0",
+        "^FO40,40^A0N,48,48^FDHANJIN WBL^FS",
+        `^FO40,120^A0N,42,42^FD${wbl}^FS`,
+        `^FO40,180^BCN,120,Y,N,N^FD${wbl}^FS`,
+        `^FO40,330^A0N,28,28^FDTML: ${tml} / ${cen}^FS`,
+        prtAdd ? `^FO40,380^A0N,32,32^FD${prtAdd}^FS` : "",
+        msgKey ? `^FO40,440^A0N,24,24^FDKEY: ${msgKey}^FS` : "",
+        "^XZ",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    });
+
+  if (!labels.length) return null;
+  return labels.join("\n");
+};
+
 async function triggerWblServerPrint(payload) {
   if (!WBL_PRINT_SERVER_BASE) {
     return {
@@ -145,7 +189,11 @@ async function triggerWblServerPrint(payload) {
   }
 
   const printPayload = resolveWblPrintPayload(payload);
-  if (!printPayload) {
+  const zplPayload =
+    !printPayload && payload && typeof payload === "object"
+      ? buildHanjinWblZpl({ addressList: payload.address_list })
+      : null;
+  if (!printPayload && !zplPayload) {
     return { success: false, skipped: true, reason: "print_payload_not_found" };
   }
 
@@ -158,6 +206,40 @@ async function triggerWblServerPrint(payload) {
   const timer = setTimeout(() => controller.abort(), WBL_DOWNLOAD_TIMEOUT_MS);
 
   try {
+    if (zplPayload) {
+      const res = await fetch(
+        `${WBL_PRINT_SERVER_BASE.replace(/\/+$/, "")}/print-zpl`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            zpl: zplPayload,
+            title: "Hanjin Label",
+            ...(WBL_PRINTER_DEFAULT ? { printer: WBL_PRINTER_DEFAULT } : {}),
+          }),
+          signal: controller.signal,
+        },
+      );
+
+      const text = await res.text().catch(() => "");
+      let body = null;
+      try {
+        body = text ? JSON.parse(text) : null;
+      } catch {
+        body = null;
+      }
+
+      if (!res.ok || !body?.success) {
+        return {
+          success: false,
+          status: res.status,
+          message: body?.message || text || "wbl zpl print failed",
+        };
+      }
+
+      return { success: true, status: res.status, mode: "zpl" };
+    }
+
     const res = await fetch(
       `${WBL_PRINT_SERVER_BASE.replace(/\/+$/, "")}/print`,
       {
@@ -188,7 +270,7 @@ async function triggerWblServerPrint(payload) {
       };
     }
 
-    return { success: true, status: res.status };
+    return { success: true, status: res.status, mode: "pdf" };
   } catch (error) {
     return {
       success: false,
