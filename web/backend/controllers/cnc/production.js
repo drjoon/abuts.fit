@@ -152,6 +152,8 @@ export async function reassignProductionQueues(req, res) {
       queueCounts.set(uid, 0);
     }
 
+    const roundRobinIndexByKey = new Map();
+
     const assignmentsByMachine = new Map();
     const ops = [];
     const sortedRequests = [...requests].sort((a, b) => {
@@ -161,16 +163,44 @@ export async function reassignProductionQueues(req, res) {
     });
     for (const reqItem of sortedRequests) {
       const group = inferDiameterGroup(reqItem);
-      const candidates = machinesByGroup.get(group) || [];
+      const rawCandidates = machinesByGroup.get(group) || [];
+      const candidates = Array.from(
+        new Set(
+          rawCandidates
+            .map((uid) => String(uid || "").trim())
+            .filter((uid) => uid && queueCounts.has(uid)),
+        ),
+      ).sort((a, b) => String(a).localeCompare(String(b)));
       if (!candidates.length) continue;
 
-      const sorted = [...candidates].sort((a, b) => {
-        const ac = queueCounts.get(a) || 0;
-        const bc = queueCounts.get(b) || 0;
-        if (ac !== bc) return ac - bc;
-        return String(a).localeCompare(String(b));
-      });
-      const selected = sorted[0];
+      let selected = null;
+      let minCount = Infinity;
+      const tied = [];
+
+      for (const uid of candidates) {
+        const count = queueCounts.get(uid) || 0;
+        if (count < minCount) {
+          minCount = count;
+          tied.length = 0;
+          tied.push(uid);
+        } else if (count === minCount) {
+          tied.push(uid);
+        }
+      }
+
+      if (tied.length === 1) {
+        selected = tied[0];
+      } else {
+        const key = tied
+          .slice()
+          .sort((a, b) => a.localeCompare(b))
+          .join("|");
+        const idx = roundRobinIndexByKey.get(key) || 0;
+        selected = tied[idx % tied.length];
+        roundRobinIndexByKey.set(key, (idx + 1) % tied.length);
+      }
+
+      if (!selected) continue;
       queueCounts.set(selected, (queueCounts.get(selected) || 0) + 1);
 
       if (!assignmentsByMachine.has(selected)) {
