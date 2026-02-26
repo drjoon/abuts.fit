@@ -138,12 +138,15 @@ export async function createRequest(req, res) {
     const pickupYmd = productionSchedule?.scheduledShipPickup
       ? toKstYmd(productionSchedule.scheduledShipPickup)
       : null;
-    const estimatedShipYmd = pickupYmd
+    const estimatedShipYmdRaw = pickupYmd
       ? pickupYmd
       : await addKoreanBusinessDays({
           startYmd: createdYmd,
           days: 1,
         });
+    const estimatedShipYmd = await normalizeKoreanBusinessDay({
+      ymd: estimatedShipYmdRaw,
+    });
     newRequest.timeline = newRequest.timeline || {};
     newRequest.timeline.estimatedShipYmd = estimatedShipYmd;
 

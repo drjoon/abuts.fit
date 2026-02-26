@@ -747,10 +747,13 @@ export async function createRequestsFromDraft(req, res) {
           newRequest.productionSchedule = productionSchedule;
 
           const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
-          const pickupYmd = productionSchedule?.scheduledShipPickup
+          const pickupYmdRaw = productionSchedule?.scheduledShipPickup
             ? toKstYmd(productionSchedule.scheduledShipPickup)
             : null;
-          if (pickupYmd) {
+          if (pickupYmdRaw) {
+            const pickupYmd = await normalizeKoreanBusinessDay({
+              ymd: pickupYmdRaw,
+            });
             newRequest.timeline = newRequest.timeline || {};
             newRequest.timeline.estimatedShipYmd = pickupYmd;
           } else {
@@ -760,10 +763,13 @@ export async function createRequestsFromDraft(req, res) {
                 ? maxD <= 8
                 : true;
             const days = shippingMode === "express" ? (isSmall ? 1 : 4) : 0;
-            const estimatedShipYmd =
+            const estimatedShipYmdRaw =
               shippingMode === "express"
                 ? await addKoreanBusinessDays({ startYmd: createdYmd, days })
                 : await normalizeKoreanBusinessDay({ ymd: createdYmd });
+            const estimatedShipYmd = await normalizeKoreanBusinessDay({
+              ymd: estimatedShipYmdRaw,
+            });
             newRequest.timeline = newRequest.timeline || {};
             newRequest.timeline.estimatedShipYmd = estimatedShipYmd;
           }

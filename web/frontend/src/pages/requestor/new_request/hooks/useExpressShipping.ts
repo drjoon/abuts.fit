@@ -2,25 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { CaseInfos } from "./newRequestTypes";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { toKstYmd } from "@/shared/date/kst";
-
-const addWeekdays = (startDate: Date, days: number) => {
-  let count = 0;
-  const current = new Date(startDate);
-  while (count < days) {
-    current.setDate(current.getDate() + 1);
-    const dow = current.getDay();
-    if (dow !== 0 && dow !== 6) {
-      count += 1;
-    }
-  }
-  return current;
-};
-
 const calculateExpressDate = () => {
-  const base = new Date();
-  const shipDate = addWeekdays(base, 1);
-  return toKstYmd(shipDate) || "";
+  return "";
 };
 
 export function useExpressShipping(caseInfos?: CaseInfos) {

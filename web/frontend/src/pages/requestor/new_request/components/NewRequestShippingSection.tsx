@@ -46,6 +46,7 @@ export function NewRequestShippingSection({
   const expressDisplayText = formatYmdWithDay(
     expressEstimatedShipYmd || expressDisplayYmd,
   );
+  const holidayRolloverNote = "법정 공휴일/주말이면 다음 영업일에 발송";
   return (
     <div
       className={`app-glass-card app-glass-card--lg relative flex flex-col justify-center gap-2 border-2 border-gray-300 p-2 md:p-3 ${
@@ -85,8 +86,11 @@ export function NewRequestShippingSection({
               <Truck className="w-4 h-4" />
               <span className="flex flex-col items-start leading-tight">
                 <span>묶음 배송</span>
-                <span className="text-[11px] md:text-xs text-slate-500">
+                <span className="text-[12px] md:text-xs text-slate-500">
                   {bulkLabelText} 발송
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  {holidayRolloverNote}
                 </span>
               </span>
             </button>

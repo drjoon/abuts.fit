@@ -811,15 +811,18 @@ export async function getShippingEstimate(req, res) {
       maxDiameter,
       requestedAt: new Date(),
     });
-    const pickupYmd = schedule?.scheduledShipPickup
+    const pickupYmdRaw = schedule?.scheduledShipPickup
       ? toKstYmd(schedule.scheduledShipPickup)
       : null;
-    const estimatedShipYmd = pickupYmd
-      ? pickupYmd
+    const estimatedShipYmdRaw = pickupYmdRaw
+      ? pickupYmdRaw
       : await addKoreanBusinessDays({
           startYmd: todayYmd,
           days: 1,
         });
+    const estimatedShipYmd = await normalizeKoreanBusinessDay({
+      ymd: estimatedShipYmdRaw,
+    });
 
     return res.status(200).json({
       success: true,
@@ -896,16 +899,27 @@ export async function getMyBulkShipping(req, res) {
       if (mode === "express") {
         const createdYmd = toKstYmd(r.createdAt) || todayYmd;
         const days = resolveExpressShipLeadDays(maxDiameter);
-        return memo({
+        const raw = await memo({
           key: `krbiz:add:${createdYmd}:${days}`,
           ttlMs: 6 * 60 * 60 * 1000,
           fn: () => addKoreanBusinessDays({ startYmd: createdYmd, days }),
+        });
+        return memo({
+          key: `krbiz:normalize:${raw}`,
+          ttlMs: 6 * 60 * 60 * 1000,
+          fn: () => normalizeKoreanBusinessDay({ ymd: raw }),
         });
       }
 
       const pickup = r.productionSchedule?.scheduledShipPickup;
       const pickupYmd = pickup ? toKstYmd(pickup) : null;
-      if (pickupYmd) return pickupYmd;
+      if (pickupYmd) {
+        return memo({
+          key: `krbiz:normalize:${pickupYmd}`,
+          ttlMs: 6 * 60 * 60 * 1000,
+          fn: () => normalizeKoreanBusinessDay({ ymd: pickupYmd }),
+        });
+      }
 
       const requestedShipYmd = toKstYmd(r.requestedShipDate);
       if (requestedShipYmd) {
@@ -919,10 +933,15 @@ export async function getMyBulkShipping(req, res) {
       const createdYmd = toKstYmd(r.createdAt) || todayYmd;
       const baseYmd = createdYmd < todayYmd ? todayYmd : createdYmd;
       const leadDays = resolveNormalLeadDays(maxDiameter);
-      return memo({
+      const raw = await memo({
         key: `krbiz:add:${baseYmd}:${leadDays}`,
         ttlMs: 6 * 60 * 60 * 1000,
         fn: () => addKoreanBusinessDays({ startYmd: baseYmd, days: leadDays }),
+      });
+      return memo({
+        key: `krbiz:normalize:${raw}`,
+        ttlMs: 6 * 60 * 60 * 1000,
+        fn: () => normalizeKoreanBusinessDay({ ymd: raw }),
       });
     };
 

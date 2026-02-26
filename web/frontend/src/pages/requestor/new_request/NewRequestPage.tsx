@@ -569,10 +569,9 @@ export const NewRequestPage = () => {
                 navigate("/dashboard/settings?tab=shipping")
               }
               onSelectExpress={async () => {
-                const guessShipDate = calculateExpressDate();
                 setCaseInfos({
                   shippingMode: "express",
-                  requestedShipDate: guessShipDate,
+                  requestedShipDate: undefined,
                 });
                 try {
                   const res = await apiFetch<any>({
@@ -585,16 +584,16 @@ export const NewRequestPage = () => {
                   const shipDateYmd =
                     res.ok && res.data?.success
                       ? res.data?.data?.estimatedShipYmd
-                      : guessShipDate;
+                      : "";
 
                   setCaseInfos({
                     shippingMode: "express",
-                    requestedShipDate: shipDateYmd,
+                    requestedShipDate: shipDateYmd || undefined,
                   });
                 } catch {
                   setCaseInfos({
                     shippingMode: "express",
-                    requestedShipDate: guessShipDate,
+                    requestedShipDate: undefined,
                   });
                 }
               }}

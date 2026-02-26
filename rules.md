@@ -148,6 +148,13 @@
   - 반제품 로트번호: CNC 가공 시작 시점에 생성되는 **`CAP` + YYMMDD + `-` + `AAA~`** (예: `CAP251120-AAA`)
   - 완제품 로트번호: 포장 승인 시점에 생성되는 **`CA` + YYMMDD + `-` + `AAA~`** (예: `CA251120-AAA`)
 
+### 6.4.1 발송 예정일(Shipping ETA) 공휴일 이월 규칙
+
+- **SSOT**: 발송 예정일(`timeline.estimatedShipYmd`, `shipping-estimate`, `bulk-shipping`의 `estimatedShipYmd`) 계산은 백엔드에서 일원화한다.
+- **공휴일/주말 이월**: 발송 예정일이 **법정 공휴일 또는 주말**이면, 백엔드에서 **다음 영업일로 자동 이월**한다.
+- **구현**: 백엔드 `normalizeKoreanBusinessDay({ ymd })`를 통해 최종 발송 예정일을 정규화한다.
+- **프론트 규칙**: 프론트는 임의로 발송 예정일을 계산/보정하지 않고, 백엔드가 반환한 `estimatedShipYmd`만 표기/저장에 사용한다.
+
 ### 6.5 다국어(i18n)
 
 - 4개 언어(en/ko/ja/zh) 지원.

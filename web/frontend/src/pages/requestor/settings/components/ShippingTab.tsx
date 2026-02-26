@@ -182,6 +182,24 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
     fri: "금",
   };
 
+  const shippingDaysSummary = useMemo(() => {
+    const order: Record<string, number> = {
+      mon: 1,
+      tue: 2,
+      wed: 3,
+      thu: 4,
+      fri: 5,
+    };
+    const days = (weeklyBatchDays || [])
+      .map((d) => String(d).trim())
+      .filter(Boolean)
+      .sort((a, b) => (order[a] ?? 99) - (order[b] ?? 99))
+      .map((d) => dayLabels[d] || d);
+    const unique = Array.from(new Set(days));
+    if (!unique.length) return "";
+    return `매주 ${unique.join(", ")}요일 발송합니다.`;
+  }, [dayLabels, weeklyBatchDays]);
+
   return (
     <Card className="app-glass-card app-glass-card--lg">
       <CardHeader>
@@ -199,6 +217,16 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
             선택한 요일 오후 2시까지 모인 제품을 한 박스로 묶어 발송합니다.
             <br />
             묶음 요일은 여러 개를 선택할 수 있습니다.
+            {shippingDaysSummary ? (
+              <>
+                <br />
+                <span className="font-medium text-slate-700">
+                  {shippingDaysSummary}
+                </span>
+              </>
+            ) : null}
+            <br />
+            법정 공휴일은 다음 날에 발송합니다.
           </p>
           <div className="mt-4 flex flex-wrap gap-2 pt-2">
             {(["mon", "tue", "wed", "thu", "fri"] as const).map((day) => {
