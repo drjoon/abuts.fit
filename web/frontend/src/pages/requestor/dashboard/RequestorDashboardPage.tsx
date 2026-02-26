@@ -87,14 +87,13 @@ export const RequestorDashboardPage = () => {
   const [statsModalLabel, setStatsModalLabel] = useState<string>("");
 
   const stageGroupByLabel: Record<string, string[] | null> = {
-    // 6단계 공통 공정: 의뢰 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리
-    의뢰: ["request"],
+    // 6단계 공통 공정: 의뢰(취소 포함) → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리
+    "의뢰/취소": ["request", "cancel"],
     CAM: ["cam"],
     가공: ["machining"],
     "세척.패킹": ["packing"],
     "포장.발송": ["shipping"],
     추적관리: ["tracking"],
-    취소: ["cancel"],
   };
 
   const filterAbutmentRequest = (r: any) => {
@@ -375,21 +374,25 @@ export const RequestorDashboardPage = () => {
   const stats: RequestorDashboardStat[] = (() => {
     if (!summaryResponse?.success) {
       return [
-        { label: "의뢰", value: "0", icon: FileText },
+        { label: "의뢰/취소", value: "0 / 0", icon: FileText },
         { label: "CAM", value: "0", icon: Clock },
         { label: "가공", value: "0", icon: Clock },
         { label: "세척.패킹", value: "0", icon: Clock },
         { label: "포장.발송", value: "0", icon: TrendingUp },
-        { label: "취소", value: "0", icon: CheckCircle },
+        { label: "추적관리", value: "0", icon: TrendingUp },
       ];
     }
 
     const s = summaryResponse.data.stats ?? {};
     return [
       {
-        label: "의뢰",
-        value: String(s.totalRequests ?? 0),
-        change: s.totalRequestsChange ?? "+0%",
+        label: "의뢰/취소",
+        value: `${s.totalRequests ?? 0} / ${
+          (s.canceled ?? s.canceledCount ?? 0) as number
+        }`,
+        change: `${s.totalRequestsChange ?? "+0%"} / ${
+          s.canceledChange ?? "+0%"
+        }`,
         icon: FileText,
       },
       {
@@ -421,12 +424,6 @@ export const RequestorDashboardPage = () => {
         value: String(s.inTracking ?? 0),
         change: s.inTrackingChange ?? "+0%",
         icon: TrendingUp,
-      },
-      {
-        label: "취소",
-        value: String((s.canceled ?? s.canceledCount ?? 0) as any),
-        change: s.canceledChange ?? "+0%",
-        icon: CheckCircle,
       },
     ];
   })();

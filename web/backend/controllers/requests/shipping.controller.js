@@ -374,12 +374,21 @@ export async function getMyBulkShipping(req, res) {
       if (pickupYmd) return pickupYmd;
 
       const requestedShipYmd = toKstYmd(r.requestedShipDate);
+      if (requestedShipYmd) {
+        return memo({
+          key: `krbiz:normalize:${requestedShipYmd}`,
+          ttlMs: 6 * 60 * 60 * 1000,
+          fn: () => normalizeKoreanBusinessDay({ ymd: requestedShipYmd }),
+        });
+      }
+
       const createdYmd = toKstYmd(r.createdAt) || todayYmd;
-      const raw = requestedShipYmd || createdYmd;
+      const baseYmd = createdYmd < todayYmd ? todayYmd : createdYmd;
+      const leadDays = resolveNormalLeadDays(maxDiameter);
       return memo({
-        key: `krbiz:normalize:${raw}`,
+        key: `krbiz:add:${baseYmd}:${leadDays}`,
         ttlMs: 6 * 60 * 60 * 1000,
-        fn: () => normalizeKoreanBusinessDay({ ymd: raw }),
+        fn: () => addKoreanBusinessDays({ startYmd: baseYmd, days: leadDays }),
       });
     };
 

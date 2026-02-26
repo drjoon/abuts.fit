@@ -125,15 +125,8 @@ export function normalizeRequestStageLabel(requestLike) {
 export const REQUEST_STAGE_GROUPS = {
   pre: ["의뢰", "CAM"],
   post: ["가공", "세척.패킹"],
-  waiting: ["포장.발송", "추적관리"],
-  bulkCandidateAll: [
-    "의뢰",
-    "CAM",
-    "가공",
-    "세척.패킹",
-    "포장.발송",
-    "추적관리",
-  ],
+  waiting: ["포장.발송"],
+  bulkCandidateAll: ["의뢰", "CAM", "가공", "세척.패킹", "포장.발송"],
   bulkCreateEligible: ["CAM", "가공", "세척.패킹", "포장.발송"],
 };
 

@@ -274,6 +274,19 @@ export default function AdminReferralGroupsPage() {
 
   const groups = groupList?.groups || [];
   const overview = groupList?.overview || null;
+  const requestorGroupCount = Number(overview?.requestor?.groupCount || 0);
+  const avgPaidRevenuePerGroup = requestorGroupCount
+    ? Math.round(
+        Number(overview?.requestor?.totalRevenueAmount || 0) /
+          requestorGroupCount,
+      )
+    : 0;
+  const avgBonusRevenuePerGroup = requestorGroupCount
+    ? Math.round(
+        Number(overview?.requestor?.totalBonusAmount || 0) /
+          requestorGroupCount,
+      )
+    : 0;
 
   const salesmanCommissionRatio = useMemo(() => {
     const revenue = Number(overview?.salesman?.totalReferredRevenueAmount || 0);
@@ -542,25 +555,17 @@ export default function AdminReferralGroupsPage() {
               <div className="text-xs text-muted-foreground">
                 그룹당 평균 매출
               </div>
-              <div className="text-2xl font-semibold tracking-tight">
+              <div className="text-3xl font-semibold tracking-tight">
                 {formatMoney(
                   Number(overview?.requestor?.avgRevenuePerGroup || 0),
                 )}
                 원
               </div>
               <div className="text-xs text-muted-foreground">
-                (무료 매출액{" "}
-                {formatMoney(
-                  Number(
-                    overview?.requestor?.groupCount
-                      ? Math.round(
-                          (overview?.requestor?.totalBonusAmount || 0) /
-                            overview?.requestor?.groupCount,
-                        )
-                      : 0,
-                  ),
-                )}
-                원)
+                유료 {formatMoney(avgPaidRevenuePerGroup)}원
+              </div>
+              <div className="text-xs text-muted-foreground">
+                무료 {formatMoney(avgBonusRevenuePerGroup)}원
               </div>
             </div>
             <div className="rounded-xl border p-3">
