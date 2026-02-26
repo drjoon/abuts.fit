@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { type ClinicPreset, type CaseInfos } from "./newRequestTypes";
 import { clearFileCache } from "@/shared/files/fileCache";
@@ -46,6 +47,7 @@ export const useNewRequestSubmitV2 = ({
   onDuplicateDetected,
 }: UseNewRequestSubmitV2Params) => {
   const { toast } = useToast();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const redirectToProfileIfNeeded = async () => false;
 
@@ -111,6 +113,7 @@ export const useNewRequestSubmitV2 = ({
   const submitFromDraft = async (
     duplicateResolutions?: DuplicateResolutionCase[],
   ) => {
+    if (isSubmitting) return;
     if (!token) {
       toast({
         title: "로그인이 필요합니다",
@@ -189,9 +192,20 @@ export const useNewRequestSubmitV2 = ({
       return;
     }
 
+    const submitStart = Date.now();
+    console.log("[NewRequestSubmit] submit start", {
+      draftId,
+      filesCount: files.length,
+      hasDuplicateResolutions: Boolean(duplicateResolutions?.length),
+    });
+
     try {
+      setIsSubmitting(true);
       // 1. 중복 데이터 체크 (제출 전 클라이언트 사이드 검증 - 동일 페이로드 내 중복)
       if (files.length > 1 && caseInfosMap) {
+        console.log("[NewRequestSubmit] duplicate check start", {
+          t: Date.now() - submitStart,
+        });
         const uniqueCombinations = new Set();
         const duplicates = [];
 
@@ -208,6 +222,9 @@ export const useNewRequestSubmitV2 = ({
         }
 
         if (duplicates.length > 0) {
+          console.log("[NewRequestSubmit] duplicate check blocked", {
+            t: Date.now() - submitStart,
+          });
           toast({
             title: "의뢰 제출 중 오류",
             description: `제출한 의뢰 목록에 동일한 치과/환자/치아 조합이 중복되었습니다: ${duplicates.join(
@@ -224,6 +241,9 @@ export const useNewRequestSubmitV2 = ({
       // 단, 중복 해결 정보(duplicateResolutions)가 있는 경우는 이미 서버와 ID가 맞춰진 상태이므로
       // 재차 패치하여 ID를 변경하지 않도록 스킵한다.
       if (patchDraftImmediately && caseInfosMap && !duplicateResolutions) {
+        console.log("[NewRequestSubmit] patch draft start", {
+          t: Date.now() - submitStart,
+        });
         const validFileKeys = new Set(files.map((f) => `${f.name}:${f.size}`));
         const filteredMap: Record<string, CaseInfos> = {};
         for (const [key, value] of Object.entries(caseInfosMap)) {
@@ -234,6 +254,9 @@ export const useNewRequestSubmitV2 = ({
 
         try {
           await patchDraftImmediately(filteredMap);
+          console.log("[NewRequestSubmit] patch draft done", {
+            t: Date.now() - submitStart,
+          });
         } catch (err) {
           console.warn("[useNewRequestSubmitV2] Pre-submit patch failed:", err);
         }
@@ -261,10 +284,18 @@ export const useNewRequestSubmitV2 = ({
       // NOTE: caseInfos 페이로드를 제거하여 백엔드가 Draft의 데이터를 신뢰하도록 함
       // (중복 체크 인덱스 불일치 방지)
 
+      console.log("[NewRequestSubmit] submit API start", {
+        t: Date.now() - submitStart,
+      });
       const res = await fetch(`${API_BASE_URL}/requests/from-draft`, {
         method: "POST",
         headers: getHeaders(),
         body: JSON.stringify(payload),
+      });
+      console.log("[NewRequestSubmit] submit API response", {
+        t: Date.now() - submitStart,
+        ok: res.ok,
+        status: res.status,
       });
 
       if (!res.ok) {
@@ -300,6 +331,9 @@ export const useNewRequestSubmitV2 = ({
       }
 
       const data = await res.json();
+      console.log("[NewRequestSubmit] submit API json parsed", {
+        t: Date.now() - submitStart,
+      });
 
       // 파싱 로그 저장 (비동기, 실패해도 무시)
       saveParseLogs().catch((err) => {
@@ -332,6 +366,9 @@ export const useNewRequestSubmitV2 = ({
       } catch {}
 
       toast({ title: "의뢰가 제출되었습니다" });
+      console.log("[NewRequestSubmit] navigate", {
+        t: Date.now() - submitStart,
+      });
       navigate(`/dashboard`);
     } catch (err: any) {
       const rawMessage = err?.message || "";
@@ -372,5 +409,6 @@ export const useNewRequestSubmitV2 = ({
     handleSubmit,
     handleSubmitWithDuplicateResolutions,
     handleCancel,
+    isSubmitting,
   };
 };

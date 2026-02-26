@@ -747,27 +747,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     const hasDuplicateDecisions = decisionKeys.length > 0;
 
     if (hasDuplicateDecisions) {
-      // 1. skip 결정된 파일들을 제외한 실제 업로드할 파일들 선별
-      const filesToActuallyUpload = (pendingUploadFiles || []).filter((f) => {
-        const fileKey = `${f.name}:${f.size}`;
-        const fileKeyNfc = (() => {
-          try {
-            return `${String(f.name || "").normalize("NFC")}:${f.size}`;
-          } catch {
-            return fileKey;
-          }
-        })();
-        const decision =
-          pendingUploadDecisions[fileKey] ?? pendingUploadDecisions[fileKeyNfc];
-
-        return decision?.strategy !== "skip";
-      });
-
-      // 2. skip이 아닌 파일들은 업로드 진행
-      if (filesToActuallyUpload.length > 0) {
-        await handleUploadUnchecked(filesToActuallyUpload);
-      }
-
       // 3. 중복 해결 정보(resolutions) 생성
       const resolutions = files
         .map((f) => {

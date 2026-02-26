@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type HighlightStep = "upload" | "details" | "shipping";
 
@@ -42,8 +42,15 @@ export function useFileVerification({ files }: Params) {
   >(() => loadStoredStatus());
   const [highlightUnverifiedArrows, setHighlightUnverifiedArrows] =
     useState(false);
+  const hasLoadedFilesRef = useRef(false);
 
   useEffect(() => {
+    if (files.length > 0) {
+      hasLoadedFilesRef.current = true;
+    }
+    if (!files.length && !hasLoadedFilesRef.current) {
+      return;
+    }
     const allowedKeys = new Set(
       files.map((file) => `${file.name}:${file.size}`),
     );

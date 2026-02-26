@@ -187,7 +187,6 @@ export async function hasDuplicateCase(req, res) {
         _id: 1,
         requestId: 1,
         manufacturerStage: 1,
-        "caseInfos.reviewByStage.shipping.status": 1,
         caseInfos: 1,
         price: 1,
         createdAt: 1,

@@ -1,4 +1,5 @@
 import mongoose, { Types } from "mongoose";
+import crypto from "crypto";
 import Request from "../../models/request.model.js";
 import DraftRequest from "../../models/draftRequest.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
@@ -22,12 +23,73 @@ import {
   uploadS3ToRhinoServer,
 } from "./creation.helpers.controller.js";
 
+const REQUEST_ID_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+const REQUEST_ID_SUFFIX_LEN = 8;
+const REQUEST_ID_MAX_TRIES = 8;
+
+const buildRequestIdPrefix = () => {
+  const now = new Date();
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const year = kst.getUTCFullYear();
+  const month = String(kst.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(kst.getUTCDate()).padStart(2, "0");
+  return `${year}${month}${day}`;
+};
+
+const makeRequestSuffix = () => {
+  const bytes = crypto.randomBytes(REQUEST_ID_SUFFIX_LEN);
+  let out = "";
+  for (let i = 0; i < REQUEST_ID_SUFFIX_LEN; i += 1) {
+    out += REQUEST_ID_ALPHABET[bytes[i] % REQUEST_ID_ALPHABET.length];
+  }
+  return out;
+};
+
+const generateRequestIdBatch = async (count, session) => {
+  const prefix = buildRequestIdPrefix();
+  const requestIds = new Array(count).fill(null);
+  let pending = Array.from({ length: count }, (_, idx) => idx);
+
+  for (let attempt = 0; attempt < REQUEST_ID_MAX_TRIES; attempt += 1) {
+    if (!pending.length) break;
+    const candidates = pending.map(() => `${prefix}-${makeRequestSuffix()}`);
+    const existing = await Request.find({ requestId: { $in: candidates } })
+      .select({ requestId: 1 })
+      .session(session)
+      .lean();
+    const existingSet = new Set(existing.map((doc) => doc.requestId));
+    const nextPending = [];
+
+    pending.forEach((idx, candidateIndex) => {
+      const candidate = candidates[candidateIndex];
+      if (existingSet.has(candidate) || requestIds.includes(candidate)) {
+        nextPending.push(idx);
+        return;
+      }
+      requestIds[idx] = candidate;
+    });
+
+    pending = nextPending;
+  }
+
+  if (pending.length) {
+    throw new Error("requestId 생성에 실패했습니다.");
+  }
+
+  return requestIds;
+};
+
 /**
  * DraftRequest를 실제 Request들로 변환
  * @route POST /api/requests/from-draft
  */
 export async function createRequestsFromDraft(req, res) {
   try {
+    const startTime = Date.now();
+    console.log("[createRequestsFromDraft] start", {
+      t: 0,
+      draftId: req.body?.draftId,
+    });
     const { draftId, clinicId } = req.body || {};
     const duplicateResolutionsRaw = Array.isArray(
       req.body?.duplicateResolutions,
@@ -53,6 +115,10 @@ export async function createRequestsFromDraft(req, res) {
     }
 
     const draft = await DraftRequest.findById(draftId).lean();
+    console.log("[createRequestsFromDraft] draft loaded", {
+      t: Date.now() - startTime,
+      found: Boolean(draft),
+    });
 
     if (!draft) {
       return res.status(404).json({
@@ -129,71 +195,95 @@ export async function createRequestsFromDraft(req, res) {
     const missingFieldsByFile = [];
     const preparedCases = [];
 
-    for (let idx = 0; idx < abutmentCases.length; idx++) {
-      const ci = abutmentCases[idx] || {};
-      const normalizedCi = await normalizeCaseInfosImplantFields(ci);
+    console.log("[createRequestsFromDraft] normalize cases start", {
+      t: Date.now() - startTime,
+      abutmentCount: abutmentCases.length,
+    });
+    const preparedCandidates = await Promise.all(
+      abutmentCases.map(async (ci, idx) => {
+        const caseStart = Date.now();
+        const normalizedCi = await normalizeCaseInfosImplantFields(ci || {});
+        console.log("[createRequestsFromDraft] normalize case", {
+          t: Date.now() - startTime,
+          idx,
+          dt: Date.now() - caseStart,
+        });
 
-      const patientName = (ci.patientName || "").trim();
-      const tooth = (ci.tooth || "").trim();
-      const clinicName = (ci.clinicName || "").trim();
-      const workType = (ci.workType || "abutment").trim();
-      if (workType !== "abutment") continue;
+        const patientName = (ci?.patientName || "").trim();
+        const tooth = (ci?.tooth || "").trim();
+        const clinicName = (ci?.clinicName || "").trim();
+        const workType = (ci?.workType || "abutment").trim();
+        if (workType !== "abutment") return null;
 
-      const implantManufacturer = (
-        normalizedCi.implantManufacturer || ""
-      ).trim();
-      const implantSystem = (normalizedCi.implantSystem || "").trim();
-      const implantType = (normalizedCi.implantType || "").trim();
+        const shippingMode =
+          ci?.shippingMode === "express" ? "express" : "normal";
+        const requestedShipDate = ci?.requestedShipDate || undefined;
 
-      const shippingMode = ci.shippingMode === "express" ? "express" : "normal";
-      const requestedShipDate = ci.requestedShipDate || undefined;
+        const missing = [];
+        if (!clinicName) missing.push("치과이름");
+        if (!patientName) missing.push("환자이름");
 
-      const missing = [];
-      if (!clinicName) missing.push("치과이름");
-      if (!patientName) missing.push("환자이름");
+        if (missing.length > 0) {
+          const fileName = ci?.file?.originalName || `파일 ${idx + 1}`;
+          return {
+            skip: true,
+            fileName,
+            missingFields: missing,
+          };
+        }
 
-      if (missing.length > 0) {
-        const fileName = ci.file?.originalName || `파일 ${idx + 1}`;
+        const priceStart = Date.now();
+        const computedPrice = await computePriceForRequest({
+          requestorId: req.user._id,
+          requestorOrgId: req.user?.organizationId,
+          clinicName,
+          patientName,
+          tooth,
+        });
+        console.log("[createRequestsFromDraft] compute price", {
+          t: Date.now() - startTime,
+          idx,
+          dt: Date.now() - priceStart,
+        });
+
+        const caseInfosWithFile = ci?.file
+          ? {
+              ...normalizedCi,
+              file: {
+                originalName: ci.file.originalName,
+                fileType: ci.file.mimetype,
+                fileSize: ci.file.size,
+                filePath: undefined,
+                s3Key: ci.file.s3Key,
+                s3Url: undefined,
+              },
+            }
+          : normalizedCi;
+
+        return {
+          idx,
+          caseId: ci?._id ? String(ci._id) : String(idx),
+          caseInfosWithFile,
+          shippingMode,
+          requestedShipDate,
+          computedPrice,
+          clinicName,
+          patientName,
+          tooth,
+        };
+      }),
+    );
+
+    for (const candidate of preparedCandidates) {
+      if (!candidate) continue;
+      if (candidate.skip) {
         missingFieldsByFile.push({
-          fileName,
-          missingFields: missing,
+          fileName: candidate.fileName,
+          missingFields: candidate.missingFields,
         });
         continue;
       }
-
-      const computedPrice = await computePriceForRequest({
-        requestorId: req.user._id,
-        requestorOrgId: req.user?.organizationId,
-        clinicName,
-        patientName,
-        tooth,
-      });
-
-      const caseInfosWithFile = ci.file
-        ? {
-            ...normalizedCi,
-            file: {
-              originalName: ci.file.originalName,
-              fileType: ci.file.mimetype,
-              fileSize: ci.file.size,
-              filePath: undefined,
-              s3Key: ci.file.s3Key,
-              s3Url: undefined,
-            },
-          }
-        : normalizedCi;
-
-      preparedCases.push({
-        idx,
-        caseId: ci._id ? String(ci._id) : String(idx),
-        caseInfosWithFile,
-        shippingMode,
-        requestedShipDate,
-        computedPrice,
-        clinicName,
-        patientName,
-        tooth,
-      });
+      preparedCases.push(candidate);
     }
 
     if (preparedCases.length === 0) {
@@ -218,6 +308,11 @@ export async function createRequestsFromDraft(req, res) {
       });
     }
 
+    console.log("[createRequestsFromDraft] normalize cases done", {
+      t: Date.now() - startTime,
+      preparedCount: preparedCases.length,
+      missingCount: missingFieldsByFile.length,
+    });
     const requestFilter = await buildRequestorOrgScopeFilter(req);
     const duplicates = [];
 
@@ -262,6 +357,10 @@ export async function createRequestsFromDraft(req, res) {
     const keyTuples = Array.from(tupleByKey.values());
 
     if (keyTuples.length > 0) {
+      console.log("[createRequestsFromDraft] duplicate lookup start", {
+        t: Date.now() - startTime,
+        tuples: keyTuples.length,
+      });
       const orConditions = keyTuples.map((k) => ({
         "caseInfos.clinicName": k.clinicName,
         "caseInfos.patientName": k.patientName,
@@ -325,8 +424,11 @@ export async function createRequestsFromDraft(req, res) {
           },
         });
       }
+      console.log("[createRequestsFromDraft] duplicate lookup done", {
+        t: Date.now() - startTime,
+        duplicates: duplicates.length,
+      });
     }
-
     if (duplicates.length > 0 && !duplicateResolutions) {
       const first = duplicates[0];
       const st = String(first?.existingRequest?.manufacturerStage || "");
@@ -454,6 +556,10 @@ export async function createRequestsFromDraft(req, res) {
 
     const session = await mongoose.startSession();
     try {
+      console.log("[createRequestsFromDraft] transaction start", {
+        t: Date.now() - startTime,
+        createCount: preparedCasesForCreate.length,
+      });
       await session.withTransaction(async () => {
         if (duplicates.length > 0 && duplicateResolutions) {
           const dupsByCaseId = new Map(
@@ -575,6 +681,11 @@ export async function createRequestsFromDraft(req, res) {
           organizationId,
           session,
         });
+        console.log("[createRequestsFromDraft] credit check", {
+          t: Date.now() - startTime,
+          balance,
+          required: totalSpendSupply,
+        });
 
         if (balance < totalSpendSupply) {
           const err = new Error("크레딧이 부족합니다.");
@@ -590,12 +701,20 @@ export async function createRequestsFromDraft(req, res) {
         const { calculateInitialProductionSchedule } =
           await import("./production.utils.js");
 
-        for (const item of preparedCasesForCreate) {
+        const requestIds = await generateRequestIdBatch(
+          preparedCasesForCreate.length,
+          session,
+        );
+        const requestDocs = [];
+
+        for (const [index, item] of preparedCasesForCreate.entries()) {
           const shippingMode = item.shippingMode || "normal";
           const requestedAt = new Date();
           const requestedShipDate = item.requestedShipDate || undefined;
+          const requestId = requestIds[index];
 
-          const newRequest = new Request({
+          const newRequest = {
+            requestId,
             requestor: req.user._id,
             requestorOrganizationId:
               req.user?.role === "requestor" && req.user?.organizationId
@@ -605,7 +724,8 @@ export async function createRequestsFromDraft(req, res) {
             shippingMode,
             requestedShipDate,
             caseInfos: item.caseInfosWithFile,
-          });
+            manufacturerStage: "의뢰",
+          };
 
           await ensureLotNumberForMachining(newRequest);
 
@@ -613,8 +733,6 @@ export async function createRequestsFromDraft(req, res) {
             mode: shippingMode,
             requestedAt,
           };
-
-          newRequest.shippingMode = shippingMode;
 
           newRequest.finalShipping = {
             mode: shippingMode,
@@ -666,38 +784,38 @@ export async function createRequestsFromDraft(req, res) {
             }
           }
 
-          if (!newRequest.manufacturerStage) {
-            newRequest.manufacturerStage = "의뢰";
-          }
-          await newRequest.save({ session });
-
           if (item.caseInfosWithFile.file?.s3Key) {
-            (async () => {
-              try {
-                const s3Key = item.caseInfosWithFile.file.s3Key;
-                const bgFileName = buildStandardStlFileName({
-                  requestId: newRequest.requestId,
-                  clinicName: item.clinicName,
-                  patientName: item.patientName,
-                  tooth: item.tooth,
-                  originalFileName: item.caseInfosWithFile.file.originalName,
-                });
+            const s3Key = item.caseInfosWithFile.file.s3Key;
+            const bgFileName = buildStandardStlFileName({
+              requestId,
+              clinicName: item.clinicName,
+              patientName: item.patientName,
+              tooth: item.tooth,
+              originalFileName: item.caseInfosWithFile.file.originalName,
+            });
 
-                await uploadS3ToRhinoServer(s3Key, bgFileName);
+            if (newRequest.caseInfos?.file) {
+              newRequest.caseInfos.file.filePath = bgFileName;
+            }
 
-                await Request.findByIdAndUpdate(newRequest._id, {
-                  "caseInfos.file.filePath": bgFileName,
-                });
-              } catch (err) {
-                console.error(
-                  `[Rhino-Parallel-Upload] Failed for request ${newRequest.requestId}: ${err.message}`,
-                );
-              }
-            })();
+            uploadS3ToRhinoServer(s3Key, bgFileName).catch((err) => {
+              console.error(
+                `[Rhino-Parallel-Upload] Failed for request ${requestId}: ${err.message}`,
+              );
+            });
           }
 
-          createdRequests.push(newRequest);
+          requestDocs.push(newRequest);
         }
+
+        const insertedRequests = await Request.insertMany(requestDocs, {
+          session,
+        });
+        insertedRequests.forEach((doc) => createdRequests.push(doc));
+      });
+      console.log("[createRequestsFromDraft] transaction done", {
+        t: Date.now() - startTime,
+        created: createdRequests.length,
       });
     } catch (e) {
       const statusCode = Number(e?.statusCode || 0);
@@ -719,6 +837,10 @@ export async function createRequestsFromDraft(req, res) {
       session.endSession();
     }
 
+    console.log("[createRequestsFromDraft] response", {
+      t: Date.now() - startTime,
+      created: createdRequests.length,
+    });
     return res.status(201).json({
       success: true,
       message: `${createdRequests.length}건의 의뢰가 Draft에서 생성되었습니다.`,

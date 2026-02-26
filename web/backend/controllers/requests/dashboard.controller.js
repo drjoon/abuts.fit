@@ -508,6 +508,10 @@ export async function getMyDashboardSummary(req, res) {
                     $switch: {
                       branches: [
                         {
+                          case: { $eq: ["$$stage", "취소"] },
+                          then: "cancel",
+                        },
+                        {
                           case: {
                             $in: ["$$stage", ["tracking", "추적관리"]],
                           },
