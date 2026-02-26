@@ -11,6 +11,88 @@ export const authenticate = async (req, res, next) => {
     // 헤더에서 토큰 추출
     const authHeader = req.headers.authorization;
 
+    // 개발환경: /shipping-estimate 같은 공용 계산 API는 Authorization 없이도 x-mock-role로 접근 가능
+    const isShippingEstimate = req.originalUrl?.includes("/shipping-estimate");
+    const allowMockWithoutAuth =
+      process.env.NODE_ENV !== "production" &&
+      (req.__allowMockAuth === true || isShippingEstimate) &&
+      typeof req.headers["x-mock-role"] === "string" &&
+      String(req.headers["x-mock-role"]).trim();
+
+    if (
+      (!authHeader || !authHeader.startsWith("Bearer ")) &&
+      allowMockWithoutAuth
+    ) {
+      const decodeMockHeader = (value) => {
+        if (typeof value !== "string") return value;
+        try {
+          return decodeURIComponent(value);
+        } catch {
+          return value;
+        }
+      };
+
+      const mockRole =
+        decodeMockHeader(req.headers["x-mock-role"]) || "manufacturer";
+      const mockUserIdRaw = decodeMockHeader(req.headers["x-mock-user-id"]);
+      const mockEmail =
+        decodeMockHeader(req.headers["x-mock-email"]) ||
+        `mock-${mockRole}@abuts.fit`;
+      const mockName = decodeMockHeader(req.headers["x-mock-name"]) || "사용자";
+      const mockOrganization =
+        decodeMockHeader(req.headers["x-mock-organization"]) || "";
+      const mockPhone = decodeMockHeader(req.headers["x-mock-phone"]) || "";
+      const now = new Date();
+
+      const MOCK_USER_IDS = {
+        requestor: "000000000000000000000001",
+        manufacturer: "000000000000000000000002",
+        admin: "000000000000000000000003",
+        salesman: "000000000000000000000004",
+      };
+
+      const headerId = String(mockUserIdRaw || "").trim();
+      const mockId =
+        headerId && Types.ObjectId.isValid(headerId)
+          ? headerId
+          : MOCK_USER_IDS[mockRole] || MOCK_USER_IDS.manufacturer;
+
+      const isDefaultMockId = mockId === (MOCK_USER_IDS[mockRole] || "");
+      const mockReferralCode = isDefaultMockId
+        ? `mock_${mockRole}`
+        : `mock_${mockRole}_${mockId}`;
+
+      let dbUser = await User.findById(mockId).select("-password");
+
+      if (!dbUser) {
+        const created = new User({
+          _id: new Types.ObjectId(mockId),
+          name: String(mockName),
+          email: String(mockEmail).toLowerCase(),
+          password: "mock_password_1234",
+          role: String(mockRole),
+          phoneNumber: String(mockPhone),
+          organization: String(mockOrganization),
+          referralCode: mockReferralCode,
+          approvedAt: now,
+          active: true,
+        });
+        await created.save();
+        dbUser = await User.findById(mockId).select("-password");
+      }
+
+      req.user = dbUser || {
+        _id: new Types.ObjectId(mockId),
+        referralCode: `mock_${mockRole}`,
+        role: mockRole,
+        active: true,
+        approvedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      };
+      return next();
+    }
+
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       console.warn("[auth] Missing/invalid Authorization header", {
         path: req.originalUrl,
@@ -199,6 +281,10 @@ export const authenticate = async (req, res, next) => {
  */
 export const authorize = (roles = [], options = {}) => {
   return (req, res, next) => {
+    if (process.env.NODE_ENV !== "production" && options?.allowMock === true) {
+      req.__allowMockAuth = true;
+    }
+
     if (!req.user) {
       return res.status(401).json({
         success: false,

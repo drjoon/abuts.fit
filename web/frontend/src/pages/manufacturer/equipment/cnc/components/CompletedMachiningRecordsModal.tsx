@@ -235,7 +235,9 @@ export const CompletedMachiningRecordsModal = ({
 
     const lotRaw = String(
       (it as any)?.lotNumber?.final || (it as any)?.lotNumber?.part || "",
-    ).trim();
+    )
+      .trim()
+      .replace(/^CA(P)?/i, "");
     const clinic = String((it as any)?.clinicName || "").trim();
     const patient = String((it as any)?.patientName || "").trim();
     const tooth = String((it as any)?.tooth || "").trim();

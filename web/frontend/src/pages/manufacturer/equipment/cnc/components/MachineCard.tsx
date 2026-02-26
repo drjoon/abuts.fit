@@ -542,7 +542,9 @@ export const MachineCard = (props: MachineCardProps) => {
   const lotRaw = (requestInfo.lotNumberFinal ??
     requestInfo.lotNumberPart ??
     "") as string | number;
-  const lotBadge = String(lotRaw || "").slice(-3);
+  const lotBadge = String(lotRaw || "")
+    .replace(/^CA(P)?/i, "")
+    .slice(-3);
 
   return (
     <div

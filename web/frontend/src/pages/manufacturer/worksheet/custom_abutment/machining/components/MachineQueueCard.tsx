@@ -208,7 +208,9 @@ export const MachineQueueCard = ({
     (effectiveLastCompleted as any)?.lotNumber?.final ||
       (effectiveLastCompleted as any)?.lotNumber?.part ||
       "",
-  ).trim();
+  )
+    .trim()
+    .replace(/^CA(P)?/i, "");
   const lastCompletedRequestId = String(
     effectiveLastCompleted?.requestId || "",
   ).trim();

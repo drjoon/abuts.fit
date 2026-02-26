@@ -34,11 +34,9 @@ export function useExpressShipping(caseInfos?: CaseInfos) {
           )}`,
           method: "GET",
           token,
-          headers: token
-            ? {
-                "x-mock-role": user?.role,
-              }
-            : undefined,
+          headers: {
+            "x-mock-role": user?.role || "requestor",
+          },
         });
 
         const nextShip =
@@ -47,7 +45,8 @@ export function useExpressShipping(caseInfos?: CaseInfos) {
             : undefined;
 
         if (!cancelled) setExpressEstimatedShipYmd(nextShip);
-      } catch {
+      } catch (err) {
+        console.error("[useExpressShipping] API error:", err);
         if (!cancelled) setExpressEstimatedShipYmd(undefined);
       }
     };

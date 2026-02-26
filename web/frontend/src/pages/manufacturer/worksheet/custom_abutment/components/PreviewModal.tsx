@@ -623,7 +623,9 @@ export const PreviewModal = ({
               const lotRaw = (req.lotNumber?.final ??
                 req.lotNumber?.part ??
                 "") as string | number;
-              const lotBadge = String(lotRaw || "").slice(-3);
+              const lotBadge = String(lotRaw || "")
+                .replace(/^CA(P)?/i, "")
+                .slice(-3);
               const org =
                 req.requestor?.organization || req.requestor?.name || "";
               const clinic = req.caseInfos?.clinicName || "";

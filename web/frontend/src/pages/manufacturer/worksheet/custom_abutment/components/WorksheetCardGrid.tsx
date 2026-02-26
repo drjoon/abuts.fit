@@ -95,9 +95,7 @@ export const WorksheetCardGrid = ({
       const hasNcFile = !!caseInfos.ncFile?.s3Key;
       const isDeletingNc = !!deletingNc[request._id];
       const lotPart = String(request.lotNumber?.part || "").trim();
-      const lotPartDisplay = lotPart.startsWith("CAP")
-        ? lotPart.slice(3)
-        : lotPart;
+      const lotPartDisplay = lotPart.replace(/^CA(P)?/i, "").trim();
       const camMaterialDiameter = request.productionSchedule?.diameter;
       const camMaterialDiameterGroup =
         request.productionSchedule?.diameterGroup;

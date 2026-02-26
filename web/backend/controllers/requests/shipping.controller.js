@@ -787,6 +787,17 @@ export async function getMyShippingPackagesSummary(req, res) {
  */
 export async function getShippingEstimate(req, res) {
   try {
+    if (process.env.NODE_ENV === "development") {
+      const hasAuth = Boolean(req.headers?.authorization);
+      console.log("[getShippingEstimate] start", {
+        hasAuth,
+        userId: req.user?._id ? String(req.user._id) : null,
+        role: req.user?.role || null,
+        mode: req.query?.mode,
+        maxDiameter: req.query?.maxDiameter,
+      });
+    }
+
     const mode = req.query.mode;
     const maxDiameterRaw = req.query.maxDiameter;
     const maxDiameter =
@@ -824,13 +835,22 @@ export async function getShippingEstimate(req, res) {
       ymd: estimatedShipYmdRaw,
     });
 
-    return res.status(200).json({
+    const payload = {
       success: true,
       data: {
         estimatedShipYmd,
       },
-    });
+    };
+
+    if (process.env.NODE_ENV === "development") {
+      console.log("[getShippingEstimate] ok", {
+        estimatedShipYmd,
+      });
+    }
+
+    return res.status(200).json(payload);
   } catch (error) {
+    console.error("[getShippingEstimate] error", error);
     return res.status(500).json({
       success: false,
       message: "발송 예정일 계산 중 오류가 발생했습니다.",

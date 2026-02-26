@@ -131,7 +131,7 @@ export function NewRequestShippingSection({
                         : "text-gray-500"
                     }`}
                   >
-                    {expressDisplayText} 발송예정
+                    {expressDisplayText} 발송
                   </span>
                 )}
               </span>

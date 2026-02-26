@@ -564,7 +564,7 @@ export const NewRequestPage = () => {
               sectionHighlightClass={sectionHighlightClass}
               weeklyBatchLabel={weeklyBatchLabel}
               expressEstimatedShipYmd={expressEstimatedShipYmd}
-              expressDisplayYmd={calculateExpressDate()}
+              expressDisplayYmd={undefined}
               onOpenShippingSettings={() =>
                 navigate("/dashboard/settings?tab=shipping")
               }

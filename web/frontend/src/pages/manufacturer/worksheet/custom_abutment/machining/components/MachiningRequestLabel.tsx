@@ -29,6 +29,7 @@ export const MachiningRequestLabel = ({
 
   const lotBadge = String(lotNumber || "")
     .trim()
+    .replace(/^CA(P)?/i, "")
     .slice(-3);
 
   const badgeClass =
