@@ -18,20 +18,15 @@ export function useExpressShipping(caseInfos?: CaseInfos) {
     let cancelled = false;
 
     const run = async () => {
-      if (maxDiameter == null) {
-        if (!cancelled) setExpressEstimatedShipYmd(undefined);
-        return;
-      }
-
       try {
+        const maxDiameterParam =
+          maxDiameter == null ? "" : encodeURIComponent(String(maxDiameter));
         const res = await apiFetch<{
           success: boolean;
           data?: any;
           message?: string;
         }>({
-          path: `/api/requests/shipping-estimate?mode=express&maxDiameter=${encodeURIComponent(
-            String(maxDiameter),
-          )}`,
+          path: `/api/requests/shipping-estimate?mode=express&maxDiameter=${maxDiameterParam}`,
           method: "GET",
           token,
           headers: {

@@ -46,7 +46,7 @@ export function NewRequestShippingSection({
   const expressDisplayText = formatYmdWithDay(
     expressEstimatedShipYmd || expressDisplayYmd,
   );
-  const holidayRolloverNote = "법정 공휴일/주말이면 다음 영업일에 발송";
+  const holidayRolloverNote = "공휴일이면 다음날 발송";
   return (
     <div
       className={`app-glass-card app-glass-card--lg relative flex flex-col justify-center gap-2 border-2 border-gray-300 p-2 md:p-3 ${

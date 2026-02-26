@@ -196,9 +196,14 @@ export async function calculateInitialProductionSchedule({
 
   // 가공 완료 → 배치 처리 (세척/검사/포장, 1일 소요)
   const machiningCompleteYmd = toKstYmd(scheduledMachiningComplete);
+  const baseBatchStartYmd =
+    shippingMode === "express"
+      ? getTodayYmdInKst(now) || machiningCompleteYmd
+      : machiningCompleteYmd;
+  const baseBatchDays = shippingMode === "express" ? 1 : BATCH_PROCESSING_DAYS;
   const baseBatchYmd = await addKoreanBusinessDays({
-    startYmd: machiningCompleteYmd,
-    days: BATCH_PROCESSING_DAYS,
+    startYmd: baseBatchStartYmd,
+    days: baseBatchDays,
   });
   const batchProcessingYmd =
     shippingMode === "normal"
