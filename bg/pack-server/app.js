@@ -27,7 +27,9 @@ loadLocalEnv();
 const PORT = Number(process.env.PACK_PRINT_SERVER_PORT || 5788);
 const ALLOW_ORIGIN = process.env.PACK_PRINT_SERVER_ORIGIN || "*";
 const DEFAULT_PRINTER = process.env.PACK_PRINT_SERVER_DEFAULT_PRINTER || "";
-const SHARED_SECRET = String(process.env.PACK_PRINT_SERVER_SHARED_SECRET || "").trim();
+const SHARED_SECRET = String(
+  process.env.PACK_PRINT_SERVER_SHARED_SECRET || "",
+).trim();
 
 const log = (message, meta) => {
   const stamp = new Date().toISOString();
@@ -68,11 +70,31 @@ const listPrinters = () =>
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean)
-        .map((line) => line.split(" ")[1])
+        .map((line) => {
+          const parts = line.split(/\s+/).filter(Boolean);
+          if (!parts.length) return "";
+          if (parts[0] === "printer" && parts[1]) return parts[1];
+          return parts[0];
+        })
         .filter(Boolean);
       resolve(printers);
     });
   });
+
+const resolvePrinter = async ({ requestedPrinter }) => {
+  const direct = String(requestedPrinter || "").trim();
+  if (direct) return direct;
+
+  const fallback = String(DEFAULT_PRINTER || "").trim();
+  if (fallback) return fallback;
+
+  const printers = await listPrinters().catch(() => []);
+  if (Array.isArray(printers) && printers.length > 0) {
+    return printers[0];
+  }
+
+  return "";
+};
 
 const safeText = (value, maxLen = 36) => {
   const s = String(value || "")
@@ -200,15 +222,26 @@ const server = http.createServer(async (req, res) => {
       const raw = await readBody(req);
       const payload = raw ? JSON.parse(raw) : {};
       const zpl = String(payload.zpl || "").trim();
-      const printer = String(payload.printer || DEFAULT_PRINTER || "").trim();
+      const printer = await resolvePrinter({
+        requestedPrinter: payload.printer,
+      });
       const title = String(payload.title || "Packing Label").trim();
       const copiesRaw = Number(payload.copies);
-      const copies = Number.isFinite(copiesRaw) && copiesRaw > 0 ? copiesRaw : 1;
+      const copies =
+        Number.isFinite(copiesRaw) && copiesRaw > 0 ? copiesRaw : 1;
 
       if (!zpl) {
         return jsonResponse(res, 400, {
           success: false,
           message: "zpl 필드가 필요합니다.",
+        });
+      }
+
+      if (!printer) {
+        return jsonResponse(res, 400, {
+          success: false,
+          message:
+            "사용 가능한 프린터가 없습니다. 프린터를 OS(CUPS)에 등록하거나 printer 값을 지정해주세요.",
         });
       }
 
@@ -234,11 +267,22 @@ const server = http.createServer(async (req, res) => {
       const raw = await readBody(req);
       const payload = raw ? JSON.parse(raw) : {};
 
-      const printer = String(payload.printer || DEFAULT_PRINTER || "").trim();
+      const printer = await resolvePrinter({
+        requestedPrinter: payload.printer,
+      });
       const title = String(payload.title || "Custom Abutment Packing").trim();
       const copiesRaw = Number(payload.copies);
-      const copies = Number.isFinite(copiesRaw) && copiesRaw > 0 ? copiesRaw : 1;
+      const copies =
+        Number.isFinite(copiesRaw) && copiesRaw > 0 ? copiesRaw : 1;
       const zpl = buildPackingLabelZpl(payload);
+
+      if (!printer) {
+        return jsonResponse(res, 400, {
+          success: false,
+          message:
+            "사용 가능한 프린터가 없습니다. 프린터를 OS(CUPS)에 등록하거나 printer 값을 지정해주세요.",
+        });
+      }
 
       const tempPath = await writeZplToTemp(zpl);
       try {

@@ -27,6 +27,13 @@ import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
 import { onAppEvent } from "@/shared/realtime/socket";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Settings } from "lucide-react";
 
 // TODO: 개발 완료 후 false로 변경 (LOT 인식 API 호출 대신 "AAD" 하드코딩)
 const IS_SIMULATION_MODE = true;
@@ -88,6 +95,13 @@ export const PackingPage = ({
     "idle",
   );
 
+  const [printerProfile, setPrinterProfile] = useState("");
+  const [printerOptions, setPrinterOptions] = useState<string[]>([]);
+  const [printerLoading, setPrinterLoading] = useState(false);
+  const [printerError, setPrinterError] = useState<string | null>(null);
+  const [printerModalOpen, setPrinterModalOpen] = useState(false);
+  const [isPrintingPackingLabels, setIsPrintingPackingLabels] = useState(false);
+
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
     const utf8Text = utf8Decoder.decode(buffer);
@@ -103,6 +117,50 @@ export const PackingPage = ({
   const { toast } = useToast();
 
   const { uploadFiles: uploadToS3 } = useS3TempUpload({ token });
+
+  useEffect(() => {
+    const storedProfile = localStorage.getItem(
+      "worksheet:pack:printer:profile",
+    );
+    if (storedProfile) setPrinterProfile(storedProfile);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("worksheet:pack:printer:profile", printerProfile);
+  }, [printerProfile, token]);
+
+  const fetchPrinters = useCallback(async () => {
+    setPrinterLoading(true);
+    setPrinterError(null);
+    try {
+      const response = await fetch("/api/requests/packing/printers", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || "프린터 목록을 불러올 수 없습니다.");
+      }
+      const printers = Array.isArray(data.printers) ? data.printers : [];
+      setPrinterOptions(printers);
+      if (!printerProfile && printers.length) {
+        setPrinterProfile(printers[0]);
+      }
+    } catch (error) {
+      setPrinterError((error as Error).message);
+    } finally {
+      setPrinterLoading(false);
+    }
+  }, [printerProfile]);
+
+  useEffect(() => {
+    if (!printerModalOpen) return;
+    if (!printerOptions.length) {
+      void fetchPrinters();
+    }
+  }, [fetchPrinters, printerModalOpen, printerOptions.length]);
 
   const fetchRequests = useCallback(async () => {
     if (!token) return;
@@ -600,6 +658,99 @@ export const PackingPage = ({
 
   const paginatedRequests = filteredAndSorted.slice(0, visibleCount);
 
+  const getLotLabel = useCallback((req: ManufacturerRequest) => {
+    const lot = req.lotNumber as any;
+    if (!lot) return "";
+    return (
+      (typeof lot.final === "string" && lot.final.trim()) ||
+      (typeof lot.part === "string" && lot.part.trim()) ||
+      (typeof lot.material === "string" && lot.material.trim()) ||
+      ""
+    );
+  }, []);
+
+  const handlePrintPackingLabels = useCallback(async () => {
+    if (paginatedRequests.length === 0) {
+      toast({
+        title: "출력할 의뢰 없음",
+        description: "현재 화면에 출력할 의뢰가 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsPrintingPackingLabels(true);
+    let successCount = 0;
+    let failCount = 0;
+    try {
+      for (const req of paginatedRequests) {
+        try {
+          const caseInfos = req.caseInfos || {};
+          const lot = getLotLabel(req);
+          const material =
+            (typeof (caseInfos as any)?.material === "string" &&
+              (caseInfos as any).material) ||
+            (typeof (req as any)?.material === "string" &&
+              (req as any).material) ||
+            (typeof (req.lotNumber as any)?.material === "string" &&
+              (req.lotNumber as any).material) ||
+            "";
+
+          const payload = {
+            printer: printerProfile || undefined,
+            copies: 1,
+            requestId: req.requestId,
+            lotNumber: lot,
+            patientName: caseInfos.patientName || "",
+            toothNumber: caseInfos.tooth || "",
+            material,
+            caseType: "Custom Abutment",
+            printedAt: new Date().toISOString(),
+          };
+
+          const response = await fetch(
+            "/api/requests/packing/print-packing-label",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(payload),
+            },
+          );
+          const data = await response.json().catch(() => null);
+          if (!response.ok || !data?.success) {
+            throw new Error(data?.message || "패킹 라벨 출력에 실패했습니다.");
+          }
+
+          successCount += 1;
+        } catch (error) {
+          failCount += 1;
+          console.error("Packing label print failed:", error);
+        }
+      }
+
+      if (successCount > 0) {
+        toast({
+          title: "패킹 라벨 출력 완료",
+          description:
+            failCount > 0
+              ? `${successCount}건 출력 성공 / ${failCount}건 실패`
+              : `${successCount}건의 패킹 라벨이 출력되었습니다.`,
+        });
+      } else {
+        toast({
+          title: "패킹 라벨 출력 실패",
+          description: "출력에 실패했습니다. 프린터 설정을 확인해주세요.",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setIsPrintingPackingLabels(false);
+    }
+  }, [getLotLabel, paginatedRequests, printerProfile, toast, token]);
+
   const diameterQueueForPacking = useMemo(() => {
     const labels: DiameterBucketKey[] = ["6", "8", "10", "12"];
     const counts = labels.map(() => 0);
@@ -697,6 +848,108 @@ export const PackingPage = ({
         )}
 
         {isLoading && <WorksheetLoading />}
+
+        {/* 프린팅 */}
+        <div className="flex-shrink-0 w-full sticky top-0 z-40 -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 my-4">
+          <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4 pb-3 px-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPrinterModalOpen(true)}
+                className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                aria-label="프린터 설정"
+              >
+                <Settings className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex gap-2 justify-center">
+              <button
+                onClick={handlePrintPackingLabels}
+                disabled={
+                  isPrintingPackingLabels || paginatedRequests.length === 0
+                }
+                className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
+                  isPrintingPackingLabels || paginatedRequests.length === 0
+                    ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                    : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm"
+                }`}
+              >
+                {isPrintingPackingLabels ? "출력 중..." : "🏷️ 패킹 라벨 출력"}
+              </button>
+            </div>
+          </div>
+
+          <Dialog open={printerModalOpen} onOpenChange={setPrinterModalOpen}>
+            <DialogContent className="w-[95vw] sm:max-w-2xl rounded-2xl border border-slate-200 bg-white/85 backdrop-blur-md shadow-xl">
+              <DialogHeader>
+                <DialogTitle className="text-base font-semibold text-slate-900">
+                  프린터 설정
+                </DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-col gap-4">
+                <div className="text-sm text-slate-600 leading-relaxed">
+                  패킹 라벨 출력은 로컬 프린터 서버(5788)의 CUPS 프린터 목록을
+                  사용합니다.
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                      프린터
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void fetchPrinters()}
+                      disabled={printerLoading}
+                      className={`text-xs font-medium rounded-md px-2.5 py-1 border transition-colors ${
+                        printerLoading
+                          ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                          : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                      }`}
+                    >
+                      새로고침
+                    </button>
+                  </div>
+
+                  <select
+                    value={printerProfile}
+                    onChange={(e) => setPrinterProfile(e.target.value)}
+                    title={printerProfile}
+                    className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    disabled={printerLoading}
+                  >
+                    {printerLoading ? (
+                      <option value="">프린터 목록 불러오는 중...</option>
+                    ) : printerOptions.length ? (
+                      printerOptions.map((printer) => (
+                        <option key={printer} value={printer} title={printer}>
+                          {printer}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">사용 가능한 프린터가 없습니다.</option>
+                    )}
+                  </select>
+
+                  {printerError ? (
+                    <div className="text-xs text-rose-600">{printerError}</div>
+                  ) : null}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setPrinterModalOpen(false)}
+                    className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  >
+                    닫기
+                  </button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
 
         {!isLoading && paginatedRequests.length === 0 && (
           <div className="flex justify-center py-8">

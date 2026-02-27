@@ -2,6 +2,7 @@ import * as creationController from "./creation.controller.js";
 import * as commonController from "./common.controller.js";
 import * as dashboardController from "./dashboard.controller.js";
 import * as shippingController from "./shipping.controller.js";
+import * as packingPrintController from "./packingPrint.controller.js";
 
 // Re-export individual functions for named imports
 export const {
@@ -54,10 +55,14 @@ export const {
   simulateHanjinWebhook,
 } = shippingController;
 
+export const { getPackPrinters, printPackPackingLabel } =
+  packingPrintController;
+
 // Export default object for default imports
 export default {
   ...creationController,
   ...commonController,
   ...dashboardController,
   ...shippingController,
+  ...packingPrintController,
 };

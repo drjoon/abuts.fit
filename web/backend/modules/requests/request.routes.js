@@ -183,6 +183,22 @@ router.post(
   requestController.simulateHanjinWebhook,
 );
 
+// 패킹 라벨 프린터 목록 조회 (pack-server 프록시)
+router.get(
+  "/packing/printers",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.getPackPrinters,
+);
+
+// 패킹 라벨 출력 (pack-server 프록시)
+router.post(
+  "/packing/print-packing-label",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.printPackPackingLabel,
+);
+
 // 의뢰 상세 조회 (권한 검증은 컨트롤러에서 처리)
 router.get("/:id", authenticate, requestController.getRequestById);
 

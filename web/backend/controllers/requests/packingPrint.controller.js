@@ -1,0 +1,128 @@
+const PACK_PRINT_SERVER_BASE = String(
+  process.env.PACK_PRINT_SERVER_BASE || "http://localhost:5788",
+).trim();
+const PACK_PRINT_SERVER_SHARED_SECRET = String(
+  process.env.PACK_PRINT_SERVER_SHARED_SECRET || "",
+).trim();
+const PACK_PRINT_SERVER_TIMEOUT_MS = Number(
+  process.env.PACK_PRINT_SERVER_TIMEOUT_MS || 15000,
+);
+
+const withTimeout = async (promise, ms) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const value = await promise(controller.signal);
+    return value;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const callPackServer = async ({ path, method, body }) => {
+  if (!PACK_PRINT_SERVER_BASE) {
+    const error = new Error("pack_print_server_not_configured");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const url = `${PACK_PRINT_SERVER_BASE.replace(/\/+$/, "")}${path}`;
+  const headers = { "Content-Type": "application/json" };
+  if (PACK_PRINT_SERVER_SHARED_SECRET) {
+    headers["x-pack-secret"] = PACK_PRINT_SERVER_SHARED_SECRET;
+  }
+
+  const res = await withTimeout(
+    (signal) =>
+      fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        signal,
+      }),
+    PACK_PRINT_SERVER_TIMEOUT_MS,
+  );
+
+  const text = await res.text().catch(() => "");
+  let parsed = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    parsed = null;
+  }
+
+  return { res, text, body: parsed };
+};
+
+/**
+ * @route GET /api/requests/packing/printers
+ */
+export async function getPackPrinters(req, res) {
+  try {
+    const { res: upstream, body } = await callPackServer({
+      path: "/printers",
+      method: "GET",
+    });
+
+    if (!upstream.ok || !body?.success) {
+      return res.status(upstream.status || 502).json({
+        success: false,
+        message: body?.message || "프린터 목록을 불러올 수 없습니다.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      printers: Array.isArray(body.printers) ? body.printers : [],
+      defaultPrinter: body.defaultPrinter || null,
+    });
+  } catch (error) {
+    const status = error?.statusCode || 500;
+    return res.status(status).json({
+      success: false,
+      message:
+        error?.message === "pack_print_server_not_configured"
+          ? "PACK_PRINT_SERVER_BASE가 설정되지 않았습니다."
+          : error?.message || "프린터 목록 조회 중 오류가 발생했습니다.",
+    });
+  }
+}
+
+/**
+ * @route POST /api/requests/packing/print-packing-label
+ */
+export async function printPackPackingLabel(req, res) {
+  try {
+    const payload = req.body || {};
+
+    const {
+      res: upstream,
+      body,
+      text,
+    } = await callPackServer({
+      path: "/print-packing-label",
+      method: "POST",
+      body: payload,
+    });
+
+    if (!upstream.ok || !body?.success) {
+      return res.status(upstream.status || 502).json({
+        success: false,
+        message: body?.message || text || "패킹 라벨 출력에 실패했습니다.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+    });
+  } catch (error) {
+    const status = error?.statusCode || 500;
+    return res.status(status).json({
+      success: false,
+      message:
+        error?.message === "pack_print_server_not_configured"
+          ? "PACK_PRINT_SERVER_BASE가 설정되지 않았습니다."
+          : error?.message || "패킹 라벨 출력 중 오류가 발생했습니다.",
+    });
+  }
+}

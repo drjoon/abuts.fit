@@ -553,59 +553,6 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     <div className="w-full flex flex-col h-full relative">
       {/* 고정 영역: 운송장 출력/택배 수거 접수 + 선반 그룹 버튼 */}
       <div className="flex-shrink-0 w-full sticky top-0 z-40 -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8">
-        {/* DEV 테스트 버튼 */}
-        <div className="flex flex-col gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 mt-3">
-          <div className="flex items-center gap-2 text-xs text-slate-600 uppercase tracking-wider">
-            <span className="font-semibold">DEV API 테스트</span>
-            <span className="text-[10px] text-slate-500">
-              (한진 개발환경 주문/배송/웹훅 확인)
-            </span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <button
-              onClick={handleDevOrderTest}
-              disabled={devTestLoading.order}
-              className={`px-3 py-2 text-xs font-medium rounded-lg border transition-colors text-left ${
-                devTestLoading.order
-                  ? "bg-slate-100 text-slate-400 border-slate-200"
-                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
-              }`}
-            >
-              {devTestLoading.order ? "송신 중..." : "① 주문정보 송신 테스트"}
-              <div className="text-[11px] text-slate-500 mt-0.5">
-                DEV API로 수거(ORDER) payload 전송
-              </div>
-            </button>
-            <button
-              onClick={handleDevWebhookTest}
-              disabled={devTestLoading.webhook}
-              className={`px-3 py-2 text-xs font-medium rounded-lg border transition-colors text-left ${
-                devTestLoading.webhook
-                  ? "bg-slate-100 text-slate-400 border-slate-200"
-                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
-              }`}
-            >
-              {devTestLoading.webhook ? "검증 중..." : "② 배송정보 수신 테스트"}
-              <div className="text-[11px] text-slate-500 mt-0.5">
-                webhook 시뮬레이터로 상태 업데이트 확인
-              </div>
-            </button>
-            <button
-              onClick={handleDevLabelTest}
-              disabled={devTestLoading.label}
-              className={`px-3 py-2 text-xs font-medium rounded-lg border transition-colors text-left ${
-                devTestLoading.label
-                  ? "bg-slate-100 text-slate-400 border-slate-200"
-                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
-              }`}
-            >
-              {devTestLoading.label ? "검수 중..." : "③ 운송장 인쇄 상태 검수"}
-              <div className="text-[11px] text-slate-500 mt-0.5">
-                DEV 라벨 API 응답 상태 확인
-              </div>
-            </button>
-          </div>
-        </div>
         {/* 운송장 출력 및 택배 수거 접수 버튼 */}
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4 pb-1 px-2">
           <div className="flex items-center gap-2">
@@ -650,24 +597,49 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
         </div>
 
         <Dialog open={printerModalOpen} onOpenChange={setPrinterModalOpen}>
-          <DialogContent className="w-[95vw] sm:max-w-md">
+          <DialogContent className="w-[95vw] sm:max-w-2xl rounded-2xl border border-slate-200 bg-white/85 backdrop-blur-md shadow-xl">
             <DialogHeader>
-              <DialogTitle>프린터 설정</DialogTitle>
+              <DialogTitle className="text-base font-semibold text-slate-900">
+                프린터 설정
+              </DialogTitle>
             </DialogHeader>
             <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1">
-                <span className="text-xs uppercase text-slate-500">프로필</span>
+              <div className="text-sm text-slate-600 leading-relaxed">
+                운송장 출력은 로컬 프린터 서버(5777)의 CUPS 프린터 목록을
+                사용합니다.
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                    프린터
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void fetchPrinters()}
+                    disabled={printerLoading}
+                    className={`text-xs font-medium rounded-md px-2.5 py-1 border transition-colors ${
+                      printerLoading
+                        ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    새로고침
+                  </button>
+                </div>
+
                 <select
                   value={printerProfile}
                   onChange={(e) => setPrinterProfile(e.target.value)}
-                  className="text-sm border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  title={printerProfile}
+                  className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-blue-300"
                   disabled={printerLoading}
                 >
                   {printerLoading ? (
                     <option value="">프린터 목록 불러오는 중...</option>
                   ) : printerOptions.length ? (
                     printerOptions.map((printer) => (
-                      <option key={printer} value={printer}>
+                      <option key={printer} value={printer} title={printer}>
                         {printer}
                       </option>
                     ))
@@ -675,9 +647,20 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                     <option value="">사용 가능한 프린터가 없습니다.</option>
                   )}
                 </select>
+
                 {printerError ? (
-                  <span className="text-xs text-rose-600">{printerError}</span>
+                  <div className="text-xs text-rose-600">{printerError}</div>
                 ) : null}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setPrinterModalOpen(false)}
+                  className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                >
+                  닫기
+                </button>
               </div>
             </div>
           </DialogContent>
