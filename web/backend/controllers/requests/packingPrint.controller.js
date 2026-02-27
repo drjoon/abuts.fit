@@ -20,6 +20,17 @@ const PACK_PAPER_OPTIONS = String(
   .map((v) => String(v || "").trim())
   .filter(Boolean);
 
+const PACK_LABEL_DPI = Number(process.env.PACK_LABEL_DPI || 203);
+
+const mmToDots = (mm, dpi) => {
+  const mmNum = Number(mm);
+  const dpiNum = Number(dpi);
+  if (!Number.isFinite(mmNum) || !Number.isFinite(dpiNum) || dpiNum <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.round((mmNum / 25.4) * dpiNum));
+};
+
 const withTimeout = async (promise, ms) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
@@ -39,6 +50,10 @@ export async function getPackPrintSettings(req, res) {
         default: PACK_PAPER_DEFAULT || null,
         options: PACK_PAPER_OPTIONS,
       },
+      dpi:
+        Number.isFinite(PACK_LABEL_DPI) && PACK_LABEL_DPI > 0
+          ? PACK_LABEL_DPI
+          : 203,
     },
   });
 }
@@ -127,6 +142,17 @@ export async function printPackPackingLabel(req, res) {
         ? requestedPaper
         : String(PACK_PAPER_DEFAULT || "").trim();
     payload.paperProfile = resolvedPaper || undefined;
+
+    const dpi =
+      Number.isFinite(PACK_LABEL_DPI) && PACK_LABEL_DPI > 0
+        ? PACK_LABEL_DPI
+        : 203;
+    payload.dpi = dpi;
+
+    if (payload.paperProfile === "PACK_80x65") {
+      payload.zplPW = mmToDots(80, dpi);
+      payload.zplLL = mmToDots(65, dpi);
+    }
 
     const {
       res: upstream,

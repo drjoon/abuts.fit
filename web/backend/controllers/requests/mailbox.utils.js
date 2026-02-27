@@ -27,9 +27,9 @@ export async function allocateVirtualMailboxAddress(requestorOrgId) {
     `[MAILBOX_ALLOCATION] 요청된 의뢰자 조직 ID: ${requestorOrgId || "N/A"}`,
   );
 
-  // 현재 '포장.발송' (shipping) 단계에 있는 의뢰들의 할당된 우편함 조회
+  // 현재 '세척.패킹' 및 '포장.발송' 단계에 있는 의뢰들의 할당된 우편함 조회
   const activeRequests = await Request.find({
-    manufacturerStage: "포장.발송",
+    manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
     mailboxAddress: { $ne: null },
   })
     .select("mailboxAddress requestor requestorOrganizationId")

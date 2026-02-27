@@ -184,54 +184,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.url === "/print" && req.method === "POST") {
-    try {
-      const raw = await readBody(req);
-      const payload = raw ? JSON.parse(raw) : {};
-      const url = payload.url;
-      const base64 = payload.base64;
-      const printer = await resolvePrinter(payload.printer);
-      const title = payload.title || "Hanjin Label";
-      const paperProfile =
-        typeof payload.paperProfile === "string"
-          ? payload.paperProfile.trim()
-          : "";
-
-      if (!printer) {
-        return jsonResponse(res, 400, {
-          success: false,
-          message:
-            "사용 가능한 프린터가 없습니다. 프린터를 OS(CUPS)에 등록하거나 printer 값을 지정해주세요.",
-        });
-      }
-
-      if (!url && !base64) {
-        return jsonResponse(res, 400, {
-          success: false,
-          message: "url 또는 base64가 필요합니다.",
-        });
-      }
-
-      const tempPath = url
-        ? await downloadToTemp(url)
-        : await writeBase64ToTemp(base64);
-
-      log("print:queued", { printer, title, source: url ? "url" : "base64" });
-
-      try {
-        await printFile({ filePath: tempPath, printer, title, paperProfile });
-        log("print:done", { printer, title });
-      } finally {
-        fs.unlink(tempPath, () => undefined);
-      }
-
-      return jsonResponse(res, 200, { success: true });
-    } catch (error) {
-      log("print:error", { message: error.message });
-      return jsonResponse(res, 500, {
-        success: false,
-        message: error.message,
-      });
-    }
+    return jsonResponse(res, 410, {
+      success: false,
+      message: "Legacy PDF printing is disabled. Use /print-zpl.",
+    });
   }
 
   if (req.url === "/print-zpl" && req.method === "POST") {

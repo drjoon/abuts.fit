@@ -158,6 +158,9 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
   const [printerLoading, setPrinterLoading] = useState(false);
   const [printerError, setPrinterError] = useState<string | null>(null);
   const [printerModalOpen, setPrinterModalOpen] = useState(false);
+  const [shippingOutputMode, setShippingOutputMode] = useState<
+    "image" | "label"
+  >("image");
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const touchStartXRef = useRef<number>(0);
   const shelfRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -167,6 +170,11 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     if (storedProfile) setPrinterProfile(storedProfile);
     const storedPaper = localStorage.getItem("worksheet:wbl:paper:profile");
     if (storedPaper) setPaperProfile(storedPaper);
+
+    const storedOutputMode = localStorage.getItem("worksheet:wbl:output:mode");
+    if (storedOutputMode === "label" || storedOutputMode === "image") {
+      setShippingOutputMode(storedOutputMode);
+    }
   }, []);
 
   useEffect(() => {
@@ -176,6 +184,47 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
   useEffect(() => {
     localStorage.setItem("worksheet:wbl:paper:profile", paperProfile);
   }, [paperProfile]);
+
+  useEffect(() => {
+    localStorage.setItem("worksheet:wbl:output:mode", shippingOutputMode);
+  }, [shippingOutputMode]);
+
+  const downloadPdfFromBase64 = async (base64: string, fileName: string) => {
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    try {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  const downloadPdfFromUrl = (url: string) => {
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleDownloadWaybillPdf = async (payload: any) => {
+    const printPayload = resolvePrintPayload(payload);
+    if (!printPayload) {
+      throw new Error("운송장 응답에서 PDF 데이터를 찾지 못했습니다.");
+    }
+    const fileName = `hanjin-waybill-${new Date().toISOString().slice(0, 10)}.pdf`;
+    if (printPayload.url) {
+      downloadPdfFromUrl(printPayload.url);
+      return;
+    }
+    if (printPayload.base64) {
+      await downloadPdfFromBase64(printPayload.base64, fileName);
+      return;
+    }
+    throw new Error("운송장 PDF 출력 데이터가 없습니다.");
+  };
 
   const fetchWblPrintSettings = async () => {
     setPaperLoading(true);
@@ -367,22 +416,66 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
   }, [printerModalOpen, printerOptions.length]);
 
   const triggerLocalPrint = async (payload: any) => {
-    const printPayload = resolvePrintPayload(payload);
-    if (!printPayload) {
+    const addressList = payload?.address_list;
+    if (!Array.isArray(addressList) || addressList.length === 0) {
       toast({
         title: "출력 준비 실패",
-        description: "운송장 응답에서 프린트 데이터를 찾지 못했습니다.",
+        description:
+          "운송장 응답에서 ZPL 생성에 필요한 address_list를 찾지 못했습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const escapeZplText = (value: any) =>
+      String(value || "")
+        .replace(/\^/g, "")
+        .replace(/~/g, "")
+        .replace(/[\r\n]+/g, " ")
+        .trim();
+
+    const zpl = addressList
+      .filter((row: any) => row && row.result_code === "OK" && row.wbl_num)
+      .map((row: any) => {
+        const wbl = escapeZplText(row.wbl_num);
+        const prtAdd = escapeZplText(row.prt_add);
+        const tml = escapeZplText(row.tml_nam);
+        const cen = escapeZplText(row.cen_nam);
+        const msgKey = escapeZplText(row.msg_key);
+        return [
+          "^XA",
+          "^CI28",
+          "^PW812",
+          "^LL1218",
+          "^LH0,0",
+          "^FO40,40^A0N,48,48^FDHANJIN WBL^FS",
+          `^FO40,120^A0N,42,42^FD${wbl}^FS`,
+          `^FO40,180^BCN,120,Y,N,N^FD${wbl}^FS`,
+          `^FO40,330^A0N,28,28^FDTML: ${tml} / ${cen}^FS`,
+          prtAdd ? `^FO40,380^A0N,32,32^FD${prtAdd}^FS` : "",
+          msgKey ? `^FO40,440^A0N,24,24^FDKEY: ${msgKey}^FS` : "",
+          "^XZ",
+        ]
+          .filter(Boolean)
+          .join("\n");
+      })
+      .join("\n");
+
+    if (!zpl) {
+      toast({
+        title: "출력 준비 실패",
+        description: "address_list에서 유효한 운송장 정보를 찾지 못했습니다.",
         variant: "destructive",
       });
       return;
     }
 
     try {
-      const response = await fetch("http://localhost:5777/print", {
+      const response = await fetch("http://localhost:5777/print-zpl", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...printPayload,
+          zpl,
           printer: printerProfile || undefined,
           title: "Hanjin Label",
           paperProfile,
@@ -414,6 +507,20 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
 
     setIsPrinting(true);
     try {
+      if (shippingOutputMode === "image") {
+        const data = await callHanjinApi({
+          path: "/api/requests/shipping/hanjin/print-labels",
+          mailboxAddresses: occupiedAddresses,
+        });
+        await handleDownloadWaybillPdf(data);
+        setPrintedMailboxes(new Set(occupiedAddresses));
+        toast({
+          title: "운송장 저장 완료",
+          description: `${occupiedAddresses.length}개 우편함의 운송장을 다운로드했습니다.`,
+        });
+        return;
+      }
+
       const { data, wblPrint } = await callHanjinApiWithMeta({
         path: "/api/requests/shipping/hanjin/print-labels",
         mailboxAddresses: occupiedAddresses,
@@ -740,6 +847,27 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                 {paperError ? (
                   <div className="text-xs text-rose-600">{paperError}</div>
                 ) : null}
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                    출력 방식
+                  </span>
+                </div>
+
+                <select
+                  value={shippingOutputMode}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "image" || v === "label")
+                      setShippingOutputMode(v);
+                  }}
+                  className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                >
+                  <option value="image">PDF 저장</option>
+                  <option value="label">실제 라벨 출력</option>
+                </select>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-1">

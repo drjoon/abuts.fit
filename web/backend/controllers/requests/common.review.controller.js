@@ -508,6 +508,15 @@ export async function updateReviewStatusByStage(req, res) {
             applyStatusMapping(request, "가공");
           } else if (effectiveStage === "machining") {
             applyStatusMapping(request, "세척.패킹");
+            if (!request.mailboxAddress) {
+              try {
+                const requestorOrgId = resolvedRequestorOrgId;
+                request.mailboxAddress =
+                  await allocateVirtualMailboxAddress(requestorOrgId);
+              } catch (err) {
+                console.error("[MAILBOX_ALLOCATION_ERROR]", err);
+              }
+            }
           } else if (effectiveStage === "packing") {
             applyStatusMapping(request, "포장.발송");
           } else if (effectiveStage === "shipping") {

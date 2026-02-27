@@ -105,6 +105,9 @@ export const PackingPage = ({
   const [printerError, setPrinterError] = useState<string | null>(null);
   const [printerModalOpen, setPrinterModalOpen] = useState(false);
   const [isPrintingPackingLabels, setIsPrintingPackingLabels] = useState(false);
+  const [packOutputMode, setPackOutputMode] = useState<"image" | "label">(
+    "image",
+  );
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -131,6 +134,11 @@ export const PackingPage = ({
     if (storedPaper === "PACK_80x65") {
       setPaperProfile(storedPaper);
     }
+
+    const storedOutputMode = localStorage.getItem("worksheet:pack:output:mode");
+    if (storedOutputMode === "label" || storedOutputMode === "image") {
+      setPackOutputMode(storedOutputMode);
+    }
   }, []);
 
   useEffect(() => {
@@ -140,6 +148,85 @@ export const PackingPage = ({
   useEffect(() => {
     localStorage.setItem("worksheet:pack:paper:profile", paperProfile);
   }, [paperProfile]);
+
+  useEffect(() => {
+    localStorage.setItem("worksheet:pack:output:mode", packOutputMode);
+  }, [packOutputMode]);
+
+  const downloadPngFromCanvas = async (
+    canvas: HTMLCanvasElement,
+    name: string,
+  ) => {
+    const blob: Blob | null = await new Promise((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/png"),
+    );
+    if (!blob) throw new Error("PNG 생성에 실패했습니다.");
+    const url = URL.createObjectURL(blob);
+    try {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  const renderPackLabelToCanvas = (opts: {
+    mailboxCode: string;
+    businessName: string;
+    screwType: string;
+    lotNumber: string;
+    requestId: string;
+    patientName: string;
+    toothNumber: string;
+    material: string;
+    caseType: string;
+    printedAt: string;
+  }) => {
+    const width = 640;
+    const height = 520;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("canvas context를 생성할 수 없습니다.");
+
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = "black";
+    ctx.textBaseline = "top";
+
+    ctx.font = "bold 44px Arial";
+    ctx.fillText(opts.mailboxCode || "-", 20, 18);
+
+    ctx.font = "bold 72px Arial";
+    ctx.fillText(opts.screwType || "-", 500, 10);
+
+    ctx.font = "bold 28px Arial";
+    ctx.fillText("BIZ:", 20, 70);
+    ctx.font = "bold 32px Arial";
+    ctx.fillText(opts.businessName || "-", 95, 70);
+
+    ctx.fillRect(20, 110, 600, 2);
+
+    ctx.font = "bold 26px Arial";
+    ctx.fillText(`LOT: ${opts.lotNumber || "-"}`, 20, 124);
+
+    ctx.font = "24px Arial";
+    ctx.fillText(`Req: ${opts.requestId || "-"}`, 20, 156);
+    ctx.fillText(`Patient: ${opts.patientName || "-"}`, 20, 186);
+    ctx.fillText(`Tooth: ${opts.toothNumber || "-"}`, 20, 216);
+    ctx.fillText(`Material: ${opts.material || "-"}`, 20, 246);
+    ctx.fillText(`Type: ${opts.caseType || "-"}`, 20, 276);
+
+    ctx.font = "22px Arial";
+    ctx.fillText(`Printed: ${opts.printedAt || "-"}`, 20, 306);
+
+    return canvas;
+  };
 
   const fetchPaperSettings = useCallback(async () => {
     setPaperLoading(true);
@@ -739,6 +826,19 @@ export const PackingPage = ({
         try {
           const caseInfos = req.caseInfos || {};
           const lot = getLotLabel(req);
+          const mailboxCode = String(req.mailboxAddress || "").trim() || "-";
+          const businessName =
+            String((req as any)?.requestorOrganizationId?.name || "").trim() ||
+            String((req as any)?.requestor?.organization || "").trim() ||
+            String((req as any)?.requestor?.name || "").trim() ||
+            "-";
+          const implantManufacturer = String(
+            (caseInfos as any)?.implantManufacturer || "",
+          ).trim();
+          const isDentium = /\bDENTIUM\b/i.test(implantManufacturer)
+            ? true
+            : implantManufacturer.includes("덴티움");
+          const screwType = isDentium ? "8B" : "0A";
           const material =
             (typeof (caseInfos as any)?.material === "string" &&
               (caseInfos as any).material) ||
@@ -754,12 +854,37 @@ export const PackingPage = ({
             copies: 1,
             requestId: req.requestId,
             lotNumber: lot,
+            mailboxCode,
+            businessName,
+            screwType,
             patientName: caseInfos.patientName || "",
             toothNumber: caseInfos.tooth || "",
             material,
             caseType: "Custom Abutment",
             printedAt: new Date().toISOString(),
           };
+
+          if (packOutputMode === "image") {
+            const canvas = renderPackLabelToCanvas({
+              mailboxCode,
+              businessName,
+              screwType,
+              lotNumber: lot,
+              requestId: req.requestId,
+              patientName: caseInfos.patientName || "",
+              toothNumber: caseInfos.tooth || "",
+              material,
+              caseType: "Custom Abutment",
+              printedAt: payload.printedAt,
+            });
+            const base = String(req.requestId || lot || "pack").replace(
+              /[^a-zA-Z0-9._-]+/g,
+              "_",
+            );
+            await downloadPngFromCanvas(canvas, `${base}-pack.png`);
+            successCount += 1;
+            continue;
+          }
 
           const response = await fetch(
             "/api/requests/packing/print-packing-label",
@@ -1018,6 +1143,26 @@ export const PackingPage = ({
                   {paperError ? (
                     <div className="text-xs text-rose-600">{paperError}</div>
                   ) : null}
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                      출력 방식
+                    </span>
+                  </div>
+
+                  <select
+                    value={packOutputMode}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === "image" || v === "label") setPackOutputMode(v);
+                    }}
+                    className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  >
+                    <option value="image">이미지(PNG) 저장</option>
+                    <option value="label">실제 라벨 출력</option>
+                  </select>
                 </div>
 
                 <div className="flex items-center justify-end gap-2 pt-1">

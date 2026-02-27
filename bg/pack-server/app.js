@@ -104,14 +104,49 @@ const safeText = (value, maxLen = 36) => {
   return s.length > maxLen ? s.slice(0, maxLen) : s;
 };
 
+const mmToDots = (mm, dpi) => {
+  const mmNum = Number(mm);
+  const dpiNum = Number(dpi);
+  if (!Number.isFinite(mmNum) || !Number.isFinite(dpiNum) || dpiNum <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.round((mmNum / 25.4) * dpiNum));
+};
+
+const resolvePackZplSize = (payload) => {
+  const zplPW = Number(payload?.zplPW);
+  const zplLL = Number(payload?.zplLL);
+  if (
+    Number.isFinite(zplPW) &&
+    zplPW > 0 &&
+    Number.isFinite(zplLL) &&
+    zplLL > 0
+  ) {
+    return { pw: Math.floor(zplPW), ll: Math.floor(zplLL) };
+  }
+
+  const paperProfile = String(payload?.paperProfile || "").trim();
+  const dpi = Number(payload?.dpi) || 203;
+  if (paperProfile === "PACK_80x65") {
+    return { pw: mmToDots(80, dpi), ll: mmToDots(65, dpi) };
+  }
+
+  return { pw: 812, ll: 520 };
+};
+
 const buildPackingLabelZpl = (payload) => {
   const requestId = safeText(payload.requestId, 40);
   const lotNumber = safeText(payload.lotNumber, 20).toUpperCase();
+  const mailboxCode = safeText(payload.mailboxCode || "-", 12).toUpperCase();
+  const businessName = safeText(payload.businessName || "-", 28);
+  const screwType = safeText(payload.screwType || "-", 4).toUpperCase();
   const patientName = safeText(payload.patientName, 32);
   const toothNumber = safeText(payload.toothNumber, 18);
   const material = safeText(payload.material, 20);
   const caseType = safeText(payload.caseType || "Custom Abutment", 28);
   const printedAt = safeText(payload.printedAt || new Date().toISOString(), 26);
+
+  const { pw, ll } = resolvePackZplSize(payload);
 
   const qrData = safeText(
     JSON.stringify({ requestId, lotNumber, toothNumber, printedAt }),
@@ -120,20 +155,23 @@ const buildPackingLabelZpl = (payload) => {
 
   return [
     "^XA",
-    "^PW812",
-    "^LL406",
+    `^PW${pw || 812}`,
+    `^LL${ll || 520}`,
     "^LH0,0",
     "^CI28",
-    "^FO24,20^A0N,36,36^FDABUTS PACKING LABEL^FS",
-    "^FO24,64^GB764,2,2^FS",
-    `^FO24,82^A0N,30,30^FDReq: ${requestId || "-"}^FS`,
-    `^FO24,122^A0N,42,42^FDLOT: ${lotNumber || "-"}^FS`,
-    `^FO24,172^A0N,30,30^FDPatient: ${patientName || "-"}^FS`,
-    `^FO24,210^A0N,30,30^FDTooth: ${toothNumber || "-"}^FS`,
-    `^FO24,248^A0N,30,30^FDMaterial: ${material || "-"}^FS`,
-    `^FO24,286^A0N,30,30^FDType: ${caseType || "-"}^FS`,
-    `^FO24,324^A0N,24,24^FDPrinted: ${printedAt || "-"}^FS`,
-    "^FO620,110^BQN,2,6",
+    `^FO20,18^A0N,44,44^FD${mailboxCode}^FS`,
+    `^FO620,10^A0N,72,72^FD${screwType}^FS`,
+    "^FO20,70^A0N,28,28^FDBIZ:^FS",
+    `^FO95,70^A0N,32,32^FD${businessName}^FS`,
+    "^FO20,110^GB772,2,2^FS",
+    `^FO20,124^A0N,26,26^FDLOT: ${lotNumber || "-"}^FS`,
+    `^FO20,156^A0N,24,24^FDReq: ${requestId || "-"}^FS`,
+    `^FO20,186^A0N,24,24^FDPatient: ${patientName || "-"}^FS`,
+    `^FO20,216^A0N,24,24^FDTooth: ${toothNumber || "-"}^FS`,
+    `^FO20,246^A0N,24,24^FDMaterial: ${material || "-"}^FS`,
+    `^FO20,276^A0N,24,24^FDType: ${caseType || "-"}^FS`,
+    `^FO20,306^A0N,22,22^FDPrinted: ${printedAt || "-"}^FS`,
+    "^FO600,240^BQN,2,4",
     `^FDLA,${qrData || "-"}^FS`,
     "^XZ",
   ].join("\n");

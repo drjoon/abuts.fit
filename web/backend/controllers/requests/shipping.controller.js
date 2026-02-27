@@ -225,12 +225,11 @@ async function triggerWblServerPrint(payload, options = null) {
       ? requestedMedia
       : WBL_MEDIA_DEFAULT || "";
 
-  const printPayload = resolveWblPrintPayload(payload);
   const zplPayload =
-    !printPayload && payload && typeof payload === "object"
+    payload && typeof payload === "object"
       ? buildHanjinWblZpl({ addressList: payload.address_list })
       : null;
-  if (!printPayload && !zplPayload) {
+  if (!zplPayload) {
     return { success: false, skipped: true, reason: "print_payload_not_found" };
   }
 
@@ -243,52 +242,13 @@ async function triggerWblServerPrint(payload, options = null) {
   const timer = setTimeout(() => controller.abort(), WBL_DOWNLOAD_TIMEOUT_MS);
 
   try {
-    if (zplPayload) {
-      const res = await fetch(
-        `${WBL_PRINT_SERVER_BASE.replace(/\/+$/, "")}/print-zpl`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            zpl: zplPayload,
-            title: "Hanjin Label",
-            ...(requestedPrinter
-              ? { printer: requestedPrinter }
-              : WBL_PRINTER_DEFAULT
-                ? { printer: WBL_PRINTER_DEFAULT }
-                : {}),
-            ...(paperProfile ? { paperProfile } : {}),
-          }),
-          signal: controller.signal,
-        },
-      );
-
-      const text = await res.text().catch(() => "");
-      let body = null;
-      try {
-        body = text ? JSON.parse(text) : null;
-      } catch {
-        body = null;
-      }
-
-      if (!res.ok || !body?.success) {
-        return {
-          success: false,
-          status: res.status,
-          message: body?.message || text || "wbl zpl print failed",
-        };
-      }
-
-      return { success: true, status: res.status, mode: "zpl" };
-    }
-
     const res = await fetch(
-      `${WBL_PRINT_SERVER_BASE.replace(/\/+$/, "")}/print`,
+      `${WBL_PRINT_SERVER_BASE.replace(/\/+$/, "")}/print-zpl`,
       {
         method: "POST",
         headers,
         body: JSON.stringify({
-          ...printPayload,
+          zpl: zplPayload,
           title: "Hanjin Label",
           ...(requestedPrinter
             ? { printer: requestedPrinter }
@@ -317,7 +277,7 @@ async function triggerWblServerPrint(payload, options = null) {
       };
     }
 
-    return { success: true, status: res.status, mode: "pdf" };
+    return { success: true, status: res.status, mode: "zpl" };
   } catch (error) {
     return {
       success: false,
