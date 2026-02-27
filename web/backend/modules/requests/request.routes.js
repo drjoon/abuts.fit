@@ -191,12 +191,26 @@ router.get(
   requestController.getPackPrinters,
 );
 
+router.get(
+  "/packing/print-settings",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.getPackPrintSettings,
+);
+
 // 패킹 라벨 출력 (pack-server 프록시)
 router.post(
   "/packing/print-packing-label",
   authenticate,
   authorize(["manufacturer", "admin"]),
   requestController.printPackPackingLabel,
+);
+
+router.get(
+  "/shipping/wbl/print-settings",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.getWblPrintSettings,
 );
 
 // 의뢰 상세 조회 (권한 검증은 컨트롤러에서 처리)

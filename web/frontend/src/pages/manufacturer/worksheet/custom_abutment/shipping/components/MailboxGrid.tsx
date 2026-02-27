@@ -84,10 +84,15 @@ const callHanjinApiWithMeta = async ({
   path,
   mailboxAddresses,
   payload,
+  wblPrintOptions,
 }: {
   path: string;
   mailboxAddresses?: string[];
   payload?: Record<string, any>;
+  wblPrintOptions?: {
+    printer?: string;
+    paperProfile?: string;
+  };
 }) => {
   const body: Record<string, unknown> = {};
   if (Array.isArray(mailboxAddresses)) {
@@ -95,6 +100,9 @@ const callHanjinApiWithMeta = async ({
   }
   if (payload) {
     body.payload = payload;
+  }
+  if (wblPrintOptions) {
+    body.wblPrintOptions = wblPrintOptions;
   }
   const response = await request<any>({
     path,
@@ -142,6 +150,10 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     webhook: false,
   });
   const [printerProfile, setPrinterProfile] = useState("");
+  const [paperProfile, setPaperProfile] = useState("FS");
+  const [paperOptions, setPaperOptions] = useState<string[]>(["FS"]);
+  const [paperLoading, setPaperLoading] = useState(false);
+  const [paperError, setPaperError] = useState<string | null>(null);
   const [printerOptions, setPrinterOptions] = useState<string[]>([]);
   const [printerLoading, setPrinterLoading] = useState(false);
   const [printerError, setPrinterError] = useState<string | null>(null);
@@ -153,11 +165,52 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
   useEffect(() => {
     const storedProfile = localStorage.getItem("worksheet:printer:profile");
     if (storedProfile) setPrinterProfile(storedProfile);
+    const storedPaper = localStorage.getItem("worksheet:wbl:paper:profile");
+    if (storedPaper) setPaperProfile(storedPaper);
   }, []);
 
   useEffect(() => {
     localStorage.setItem("worksheet:printer:profile", printerProfile);
   }, [printerProfile]);
+
+  useEffect(() => {
+    localStorage.setItem("worksheet:wbl:paper:profile", paperProfile);
+  }, [paperProfile]);
+
+  const fetchWblPrintSettings = async () => {
+    setPaperLoading(true);
+    setPaperError(null);
+    try {
+      const response = await request<any>({
+        path: "/api/requests/shipping/wbl/print-settings",
+        method: "GET",
+      });
+      const body = response.data as any;
+      if (!response.ok || !body?.success) {
+        throw new Error(body?.message || "용지 설정을 불러올 수 없습니다.");
+      }
+
+      const optionsRaw = body?.data?.media?.options;
+      const options = Array.isArray(optionsRaw)
+        ? optionsRaw.map((v: any) => String(v || "").trim()).filter(Boolean)
+        : [];
+      const fallback = options.length ? options : ["FS"];
+      setPaperOptions(fallback);
+
+      const defaultMedia = String(body?.data?.media?.default || "").trim();
+      const stored = localStorage.getItem("worksheet:wbl:paper:profile") || "";
+      const next = stored && fallback.includes(stored) ? stored : defaultMedia;
+      if (next && fallback.includes(next)) {
+        setPaperProfile(next);
+      } else if (fallback[0]) {
+        setPaperProfile(fallback[0]);
+      }
+    } catch (error) {
+      setPaperError((error as Error).message);
+    } finally {
+      setPaperLoading(false);
+    }
+  };
 
   const shelfRows = ["1", "2", "3", "4"];
   const binCols = ["A", "B", "C", "D"];
@@ -310,6 +363,7 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     if (!printerOptions.length) {
       void fetchPrinters();
     }
+    void fetchWblPrintSettings();
   }, [printerModalOpen, printerOptions.length]);
 
   const triggerLocalPrint = async (payload: any) => {
@@ -331,6 +385,7 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
           ...printPayload,
           printer: printerProfile || undefined,
           title: "Hanjin Label",
+          paperProfile,
         }),
       });
       const data = await response.json().catch(() => null);
@@ -362,6 +417,10 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
       const { data, wblPrint } = await callHanjinApiWithMeta({
         path: "/api/requests/shipping/hanjin/print-labels",
         mailboxAddresses: occupiedAddresses,
+        wblPrintOptions: {
+          printer: printerProfile || undefined,
+          paperProfile,
+        },
       });
 
       if (wblPrint?.success) {
@@ -650,6 +709,36 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
 
                 {printerError ? (
                   <div className="text-xs text-rose-600">{printerError}</div>
+                ) : null}
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                    용지
+                  </span>
+                </div>
+
+                <select
+                  value={paperProfile}
+                  onChange={(e) => setPaperProfile(e.target.value)}
+                  className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  disabled={paperLoading}
+                >
+                  {paperLoading ? (
+                    <option value={paperProfile}>
+                      용지 설정 불러오는 중...
+                    </option>
+                  ) : (
+                    paperOptions.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))
+                  )}
+                </select>
+                {paperError ? (
+                  <div className="text-xs text-rose-600">{paperError}</div>
                 ) : null}
               </div>
 

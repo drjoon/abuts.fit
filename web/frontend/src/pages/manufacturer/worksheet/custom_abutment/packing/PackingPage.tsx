@@ -96,6 +96,10 @@ export const PackingPage = ({
   );
 
   const [printerProfile, setPrinterProfile] = useState("");
+  const [paperProfile, setPaperProfile] = useState("PACK_80x65");
+  const [paperOptions, setPaperOptions] = useState<string[]>(["PACK_80x65"]);
+  const [paperLoading, setPaperLoading] = useState(false);
+  const [paperError, setPaperError] = useState<string | null>(null);
   const [printerOptions, setPrinterOptions] = useState<string[]>([]);
   const [printerLoading, setPrinterLoading] = useState(false);
   const [printerError, setPrinterError] = useState<string | null>(null);
@@ -123,11 +127,59 @@ export const PackingPage = ({
       "worksheet:pack:printer:profile",
     );
     if (storedProfile) setPrinterProfile(storedProfile);
+    const storedPaper = localStorage.getItem("worksheet:pack:paper:profile");
+    if (storedPaper === "PACK_80x65") {
+      setPaperProfile(storedPaper);
+    }
   }, []);
 
   useEffect(() => {
     localStorage.setItem("worksheet:pack:printer:profile", printerProfile);
   }, [printerProfile, token]);
+
+  useEffect(() => {
+    localStorage.setItem("worksheet:pack:paper:profile", paperProfile);
+  }, [paperProfile]);
+
+  const fetchPaperSettings = useCallback(async () => {
+    setPaperLoading(true);
+    setPaperError(null);
+    try {
+      const response = await fetch("/api/requests/packing/print-settings", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || "용지 설정을 불러올 수 없습니다.");
+      }
+      const options = Array.isArray(data?.data?.paper?.options)
+        ? data.data.paper.options
+        : [];
+      const normalized = options
+        .map((v: any) => String(v || "").trim())
+        .filter(Boolean);
+      const fallback = normalized.length ? normalized : ["PACK_80x65"];
+      setPaperOptions(fallback);
+
+      const defaultPaper = String(data?.data?.paper?.default || "").trim();
+      const stored = localStorage.getItem("worksheet:pack:paper:profile") || "";
+      const next = stored && fallback.includes(stored) ? stored : defaultPaper;
+      if (next && fallback.includes(next)) setPaperProfile(next);
+      else if (fallback[0]) setPaperProfile(fallback[0]);
+    } catch (error) {
+      setPaperError((error as Error).message);
+    } finally {
+      setPaperLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (!printerModalOpen) return;
+    void fetchPaperSettings();
+  }, [printerModalOpen, fetchPaperSettings]);
 
   const fetchPrinters = useCallback(async () => {
     setPrinterLoading(true);
@@ -698,6 +750,7 @@ export const PackingPage = ({
 
           const payload = {
             printer: printerProfile || undefined,
+            paperProfile: paperProfile || undefined,
             copies: 1,
             requestId: req.requestId,
             lotNumber: lot,
@@ -934,6 +987,36 @@ export const PackingPage = ({
 
                   {printerError ? (
                     <div className="text-xs text-rose-600">{printerError}</div>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                      용지
+                    </span>
+                  </div>
+
+                  <select
+                    value={paperProfile}
+                    onChange={(e) => setPaperProfile(e.target.value)}
+                    className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    disabled={paperLoading}
+                  >
+                    {paperLoading ? (
+                      <option value={paperProfile}>
+                        용지 설정 불러오는 중...
+                      </option>
+                    ) : (
+                      paperOptions.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  {paperError ? (
+                    <div className="text-xs text-rose-600">{paperError}</div>
                   ) : null}
                 </div>
 

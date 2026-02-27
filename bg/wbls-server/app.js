@@ -7,6 +7,9 @@ const { execFile } = require("child_process");
 
 const PORT = Number(process.env.PRINT_SERVER_PORT || 5777);
 const ALLOW_ORIGIN = process.env.PRINT_SERVER_ORIGIN || "*";
+const DEFAULT_MEDIA_PROFILE = String(
+  process.env.WBL_MEDIA_DEFAULT || "FS",
+).trim();
 
 const log = (message, meta) => {
   const stamp = new Date().toISOString();
@@ -114,12 +117,37 @@ const writeTextToTemp = async (text, ext) => {
   return tempPath;
 };
 
-const printFile = (filePath, printer, title) =>
+const MEDIA_PROFILE_MAP = {
+  NS: "NS",
+  NL: "NL",
+  FS: "FS",
+};
+
+const resolveMediaProfile = (paperProfile) => {
+  const key = typeof paperProfile === "string" ? paperProfile.trim() : "";
+  if (key && MEDIA_PROFILE_MAP[key]) return MEDIA_PROFILE_MAP[key];
+  if (key) return key;
+  return DEFAULT_MEDIA_PROFILE || "";
+};
+
+const buildLpArgs = ({ filePath, printer, title, paperProfile, raw }) => {
+  const args = [];
+  if (printer) args.push("-d", printer);
+  if (title) args.push("-t", title);
+  const media = resolveMediaProfile(paperProfile);
+  if (media) {
+    args.push("-o", `media=${media}`);
+  }
+  if (raw) {
+    args.push("-o", "raw");
+  }
+  args.push(filePath);
+  return args;
+};
+
+const printFile = ({ filePath, printer, title, paperProfile, raw = false }) =>
   new Promise((resolve, reject) => {
-    const args = [];
-    if (printer) args.push("-d", printer);
-    if (title) args.push("-t", title);
-    args.push(filePath);
+    const args = buildLpArgs({ filePath, printer, title, paperProfile, raw });
     execFile("lp", args, (err, stdout, stderr) => {
       if (err) return reject(new Error(stderr || err.message));
       resolve(stdout);
@@ -163,6 +191,10 @@ const server = http.createServer(async (req, res) => {
       const base64 = payload.base64;
       const printer = await resolvePrinter(payload.printer);
       const title = payload.title || "Hanjin Label";
+      const paperProfile =
+        typeof payload.paperProfile === "string"
+          ? payload.paperProfile.trim()
+          : "";
 
       if (!printer) {
         return jsonResponse(res, 400, {
@@ -186,7 +218,7 @@ const server = http.createServer(async (req, res) => {
       log("print:queued", { printer, title, source: url ? "url" : "base64" });
 
       try {
-        await printFile(tempPath, printer, title);
+        await printFile({ filePath: tempPath, printer, title, paperProfile });
         log("print:done", { printer, title });
       } finally {
         fs.unlink(tempPath, () => undefined);
@@ -209,6 +241,10 @@ const server = http.createServer(async (req, res) => {
       const zpl = payload.zpl;
       const printer = await resolvePrinter(payload.printer);
       const title = payload.title || "Hanjin Label";
+      const paperProfile =
+        typeof payload.paperProfile === "string"
+          ? payload.paperProfile.trim()
+          : "";
 
       if (!printer) {
         return jsonResponse(res, 400, {
@@ -230,16 +266,12 @@ const server = http.createServer(async (req, res) => {
       log("print-zpl:queued", { printer, title });
 
       try {
-        const args = [];
-        if (printer) args.push("-d", printer);
-        if (title) args.push("-t", title);
-        args.push("-o", "raw");
-        args.push(tempPath);
-        await new Promise((resolve, reject) => {
-          execFile("lp", args, (err, stdout, stderr) => {
-            if (err) return reject(new Error(stderr || err.message));
-            resolve(stdout);
-          });
+        await printFile({
+          filePath: tempPath,
+          printer,
+          title,
+          paperProfile,
+          raw: true,
         });
         log("print-zpl:done", { printer, title });
       } finally {

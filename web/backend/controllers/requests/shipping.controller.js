@@ -94,6 +94,26 @@ const WBL_DOWNLOAD_TIMEOUT_MS = Number(
 const WBL_PRINTER_DEFAULT = String(
   process.env.WBL_PRINTER_DEFAULT || "",
 ).trim();
+const WBL_MEDIA_DEFAULT = String(process.env.WBL_MEDIA_DEFAULT || "FS").trim();
+const WBL_MEDIA_OPTIONS = String(process.env.WBL_MEDIA_OPTIONS || "FS")
+  .split(",")
+  .map((v) => String(v || "").trim())
+  .filter(Boolean);
+
+export async function getWblPrintSettings(req, res) {
+  return res.status(200).json({
+    success: true,
+    data: {
+      printer: {
+        default: WBL_PRINTER_DEFAULT || null,
+      },
+      media: {
+        default: WBL_MEDIA_DEFAULT || null,
+        options: WBL_MEDIA_OPTIONS,
+      },
+    },
+  });
+}
 
 const HANJIN_PATH_FALLBACKS = {
   HANJIN_PRINT_WBL_PATH: "/v1/wbl/{client_id}/print-wbls",
@@ -179,7 +199,7 @@ const buildHanjinWblZpl = ({ addressList }) => {
   return labels.join("\n");
 };
 
-async function triggerWblServerPrint(payload) {
+async function triggerWblServerPrint(payload, options = null) {
   if (!WBL_PRINT_SERVER_BASE) {
     return {
       success: false,
@@ -187,6 +207,23 @@ async function triggerWblServerPrint(payload) {
       reason: "wbl_print_server_not_configured",
     };
   }
+
+  const opts = options && typeof options === "object" ? options : {};
+  const requestedPrinter =
+    typeof opts.printer === "string" && opts.printer.trim()
+      ? opts.printer.trim()
+      : "";
+  const requestedMedia =
+    typeof opts.paperProfile === "string" && opts.paperProfile.trim()
+      ? opts.paperProfile.trim()
+      : "";
+  const mediaOptions = Array.isArray(WBL_MEDIA_OPTIONS)
+    ? WBL_MEDIA_OPTIONS
+    : [];
+  const paperProfile =
+    requestedMedia && mediaOptions.includes(requestedMedia)
+      ? requestedMedia
+      : WBL_MEDIA_DEFAULT || "";
 
   const printPayload = resolveWblPrintPayload(payload);
   const zplPayload =
@@ -215,7 +252,12 @@ async function triggerWblServerPrint(payload) {
           body: JSON.stringify({
             zpl: zplPayload,
             title: "Hanjin Label",
-            ...(WBL_PRINTER_DEFAULT ? { printer: WBL_PRINTER_DEFAULT } : {}),
+            ...(requestedPrinter
+              ? { printer: requestedPrinter }
+              : WBL_PRINTER_DEFAULT
+                ? { printer: WBL_PRINTER_DEFAULT }
+                : {}),
+            ...(paperProfile ? { paperProfile } : {}),
           }),
           signal: controller.signal,
         },
@@ -248,7 +290,12 @@ async function triggerWblServerPrint(payload) {
         body: JSON.stringify({
           ...printPayload,
           title: "Hanjin Label",
-          ...(WBL_PRINTER_DEFAULT ? { printer: WBL_PRINTER_DEFAULT } : {}),
+          ...(requestedPrinter
+            ? { printer: requestedPrinter }
+            : WBL_PRINTER_DEFAULT
+              ? { printer: WBL_PRINTER_DEFAULT }
+              : {}),
+          ...(paperProfile ? { paperProfile } : {}),
         }),
         signal: controller.signal,
       },
@@ -353,7 +400,7 @@ const buildHanjinDraftPayload = (requests) => {
  */
 export async function printHanjinLabels(req, res) {
   try {
-    const { mailboxAddresses, payload } = req.body || {};
+    const { mailboxAddresses, payload, wblPrintOptions } = req.body || {};
 
     const path = resolveHanjinPath(
       "HANJIN_PRINT_WBL_PATH",
@@ -385,7 +432,7 @@ export async function printHanjinLabels(req, res) {
       data: resolved.payload,
     });
 
-    const wblPrint = await triggerWblServerPrint(data);
+    const wblPrint = await triggerWblServerPrint(data, wblPrintOptions);
     if (!wblPrint?.success) {
       console.warn("[shipping] wbl print fallback needed", {
         reason: wblPrint?.reason || wblPrint?.message || "unknown",

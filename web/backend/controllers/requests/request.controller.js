@@ -53,9 +53,10 @@ export const {
   requestHanjinPickup,
   cancelHanjinPickup,
   simulateHanjinWebhook,
+  getWblPrintSettings,
 } = shippingController;
 
-export const { getPackPrinters, printPackPackingLabel } =
+export const { getPackPrinters, printPackPackingLabel, getPackPrintSettings } =
   packingPrintController;
 
 // Export default object for default imports

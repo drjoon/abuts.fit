@@ -5,8 +5,20 @@ const PACK_PRINT_SERVER_SHARED_SECRET = String(
   process.env.PACK_PRINT_SERVER_SHARED_SECRET || "",
 ).trim();
 const PACK_PRINT_SERVER_TIMEOUT_MS = Number(
-  process.env.PACK_PRINT_SERVER_TIMEOUT_MS || 15000,
+  process.env.PACK_PRINT_SERVER_TIMEOUT_MS ||
+    process.env.PACK_PRINT_TIMEOUT_MS ||
+    15000,
 );
+
+const PACK_PAPER_DEFAULT = String(
+  process.env.PACK_PAPER_DEFAULT || "PACK_80x65",
+).trim();
+const PACK_PAPER_OPTIONS = String(
+  process.env.PACK_PAPER_OPTIONS || "PACK_80x65",
+)
+  .split(",")
+  .map((v) => String(v || "").trim())
+  .filter(Boolean);
 
 const withTimeout = async (promise, ms) => {
   const controller = new AbortController();
@@ -18,6 +30,18 @@ const withTimeout = async (promise, ms) => {
     clearTimeout(timer);
   }
 };
+
+export async function getPackPrintSettings(req, res) {
+  return res.status(200).json({
+    success: true,
+    data: {
+      paper: {
+        default: PACK_PAPER_DEFAULT || null,
+        options: PACK_PAPER_OPTIONS,
+      },
+    },
+  });
+}
 
 const callPackServer = async ({ path, method, body }) => {
   if (!PACK_PRINT_SERVER_BASE) {
@@ -93,7 +117,16 @@ export async function getPackPrinters(req, res) {
  */
 export async function printPackPackingLabel(req, res) {
   try {
-    const payload = req.body || {};
+    const payload =
+      req.body && typeof req.body === "object" ? { ...req.body } : {};
+
+    const requestedPaper = String(payload.paperProfile || "").trim();
+    const allowed = Array.isArray(PACK_PAPER_OPTIONS) ? PACK_PAPER_OPTIONS : [];
+    const resolvedPaper =
+      requestedPaper && allowed.includes(requestedPaper)
+        ? requestedPaper
+        : String(PACK_PAPER_DEFAULT || "").trim();
+    payload.paperProfile = resolvedPaper || undefined;
 
     const {
       res: upstream,

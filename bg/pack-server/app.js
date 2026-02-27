@@ -148,11 +148,13 @@ const writeZplToTemp = async (zpl) => {
   return tempPath;
 };
 
-const printRawZpl = ({ filePath, printer, title, copies }) =>
+const printRawZpl = ({ filePath, printer, title, copies, paperProfile }) =>
   new Promise((resolve, reject) => {
     const args = ["-o", "raw"];
     if (printer) args.push("-d", printer);
     if (title) args.push("-t", title);
+    const media = typeof paperProfile === "string" ? paperProfile.trim() : "";
+    if (media) args.push("-o", `media=${media}`);
     if (Number.isFinite(copies) && copies > 1) {
       args.push("-n", String(Math.floor(copies)));
     }
@@ -229,6 +231,10 @@ const server = http.createServer(async (req, res) => {
       const copiesRaw = Number(payload.copies);
       const copies =
         Number.isFinite(copiesRaw) && copiesRaw > 0 ? copiesRaw : 1;
+      const paperProfile =
+        typeof payload.paperProfile === "string"
+          ? payload.paperProfile.trim()
+          : "";
 
       if (!zpl) {
         return jsonResponse(res, 400, {
@@ -247,7 +253,13 @@ const server = http.createServer(async (req, res) => {
 
       const tempPath = await writeZplToTemp(zpl);
       try {
-        await printRawZpl({ filePath: tempPath, printer, title, copies });
+        await printRawZpl({
+          filePath: tempPath,
+          printer,
+          title,
+          copies,
+          paperProfile,
+        });
       } finally {
         fs.unlink(tempPath, () => undefined);
       }
@@ -274,6 +286,10 @@ const server = http.createServer(async (req, res) => {
       const copiesRaw = Number(payload.copies);
       const copies =
         Number.isFinite(copiesRaw) && copiesRaw > 0 ? copiesRaw : 1;
+      const paperProfile =
+        typeof payload.paperProfile === "string"
+          ? payload.paperProfile.trim()
+          : "";
       const zpl = buildPackingLabelZpl(payload);
 
       if (!printer) {
@@ -286,7 +302,13 @@ const server = http.createServer(async (req, res) => {
 
       const tempPath = await writeZplToTemp(zpl);
       try {
-        await printRawZpl({ filePath: tempPath, printer, title, copies });
+        await printRawZpl({
+          filePath: tempPath,
+          printer,
+          title,
+          copies,
+          paperProfile,
+        });
       } finally {
         fs.unlink(tempPath, () => undefined);
       }
