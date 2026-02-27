@@ -3,6 +3,7 @@ import {
   X,
   GripVertical,
   ArrowLeft,
+  ArrowRight,
   Trash,
   ArrowUp,
   ArrowDown,
@@ -19,6 +20,8 @@ export interface PlaylistJobItem {
   s3Key?: string;
   s3Bucket?: string;
   requestId?: string;
+  requestMongoId?: string | null;
+  rollbackCount?: number;
   programNo?: number | null;
   source?: string;
 }
@@ -34,6 +37,7 @@ interface CncPlaylistDrawerProps {
   onClose: () => void;
   onOpenCode: (jobId: string) => void;
   onDelete: (jobId: string) => void;
+  onApproveFromRollback?: (requestMongoId: string) => void;
   onReorder: (nextOrder: string[]) => void;
   onChangeQty: (jobId: string, qty: number) => void;
 }
@@ -49,6 +53,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
   onClose,
   onOpenCode,
   onDelete,
+  onApproveFromRollback,
   onReorder,
   onChangeQty,
 }) => {
@@ -133,10 +138,13 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                 const middle = parts
                   .slice(3, Math.max(3, parts.length - 2))
                   .join(" ");
+                const rollbackCount = Number(job.rollbackCount || 0);
+                const canApproveFromRollback =
+                  !readOnly && rollbackCount > 0 && !!job.requestMongoId;
                 return (
                   <div
                     key={job.id}
-                    className="app-surface app-surface--panel flex items-center gap-3 px-3 py-3"
+                    className="app-surface app-surface--panel flex items-start gap-3 px-3 py-3"
                     draggable={!readOnly}
                     onDragStart={() => {
                       if (readOnly) return;
@@ -164,73 +172,116 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                       <GripVertical className="h-4 w-4" />
                     </div>
 
-                    <button
-                      type="button"
-                      className="flex-1 min-w-0 text-left"
-                      onClick={() => onOpenCode(job.id)}
-                      title={job.name}
-                    >
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2 text-sm font-extrabold text-slate-900 min-w-0">
-                          {idx === 0 ? (
-                            <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-700 border border-slate-300">
-                              Next
-                            </span>
-                          ) : null}
-                          <div className="flex flex-wrap items-center gap-1 min-w-0 text-[13px]">
-                            {clinic && (
-                              <span className="truncate" title={clinic}>
-                                {clinic}
-                              </span>
-                            )}
-                            {patient && (
-                              <>
-                                <span className="text-slate-400">/</span>
-                                <span className="truncate" title={patient}>
-                                  {patient}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <button
+                          type="button"
+                          className="flex-1 min-w-0 text-left"
+                          onClick={() => onOpenCode(job.id)}
+                          title={job.name}
+                        >
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2 text-sm font-extrabold text-slate-900 min-w-0">
+                              {idx === 0 ? (
+                                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-700 border border-slate-300">
+                                  Next
                                 </span>
-                              </>
-                            )}
-                            {tooth && (
-                              <>
-                                <span className="text-slate-400">/</span>
-                                <span className="truncate" title={tooth}>
-                                  {tooth}
-                                </span>
-                              </>
-                            )}
-                            {middle && (
-                              <>
-                                <span className="text-slate-400">/</span>
-                                <span className="truncate" title={middle}>
-                                  {middle}
-                                </span>
-                              </>
-                            )}
-                            {badge && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-300">
-                                {badge}
+                              ) : null}
+                              <div className="flex flex-wrap items-center gap-1 min-w-0 text-[13px]">
+                                {clinic && (
+                                  <span className="truncate" title={clinic}>
+                                    {clinic}
+                                  </span>
+                                )}
+                                {patient && (
+                                  <>
+                                    <span className="text-slate-400">/</span>
+                                    <span className="truncate" title={patient}>
+                                      {patient}
+                                    </span>
+                                  </>
+                                )}
+                                {tooth && (
+                                  <>
+                                    <span className="text-slate-400">/</span>
+                                    <span className="truncate" title={tooth}>
+                                      {tooth}
+                                    </span>
+                                  </>
+                                )}
+                                {middle && (
+                                  <>
+                                    <span className="text-slate-400">/</span>
+                                    <span className="truncate" title={middle}>
+                                      {middle}
+                                    </span>
+                                  </>
+                                )}
+                                {badge && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-300">
+                                    {badge}
+                                  </span>
+                                )}
+                                {lastCode && (
+                                  <span
+                                    className="ml-1 text-[11px] text-slate-400"
+                                    title={lastCode}
+                                  >
+                                    {lastCode}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="inline-flex items-center gap-2 text-[11px] text-slate-500">
+                              <span className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-extrabold text-slate-700 border border-slate-200">
+                                {job.paused ? "일시정지" : "대기"}
                               </span>
-                            )}
-                            {lastCode && (
-                              <span
-                                className="ml-1 text-[11px] text-slate-400"
-                                title={lastCode}
-                              >
-                                {lastCode}
-                              </span>
-                            )}
+                            </div>
                           </div>
-                        </div>
-                        <div className="inline-flex items-center gap-2 text-[11px] text-slate-500">
-                          <span className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-extrabold text-slate-700 border border-slate-200">
-                            {job.paused ? "일시정지" : "대기"}
-                          </span>
+                        </button>
+
+                        <div className="flex items-center gap-1 shrink-0 pt-0.5">
+                          {canApproveFromRollback ? (
+                            <button
+                              type="button"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                              onClick={() => {
+                                if (!job.requestMongoId) return;
+                                onApproveFromRollback?.(job.requestMongoId);
+                              }}
+                              title="재가공 없이 승인"
+                            >
+                              <ArrowRight className="h-4 w-4" />
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                            onClick={() => {
+                              if (readOnly) return;
+                              setLocalJobs((prev) =>
+                                prev.filter((j) => j.id !== job.id),
+                              );
+                              onDelete(job.id);
+                            }}
+                            disabled={!!readOnly}
+                            title={
+                              deleteVariant === "cnc"
+                                ? "삭제"
+                                : "CAM으로 되돌리기"
+                            }
+                          >
+                            {deleteVariant === "cnc" ? (
+                              <Trash className="h-4 w-4" />
+                            ) : (
+                              <ArrowLeft className="h-4 w-4" />
+                            )}
+                          </button>
                         </div>
                       </div>
-                    </button>
+                    </div>
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 shrink-0">
                       <button
                         type="button"
                         className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
@@ -248,27 +299,6 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                         title="아래로"
                       >
                         <ArrowDown className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                        onClick={() => {
-                          if (readOnly) return;
-                          setLocalJobs((prev) =>
-                            prev.filter((j) => j.id !== job.id),
-                          );
-                          onDelete(job.id);
-                        }}
-                        disabled={!!readOnly}
-                        title={
-                          deleteVariant === "cnc" ? "삭제" : "CAM으로 되돌리기"
-                        }
-                      >
-                        {deleteVariant === "cnc" ? (
-                          <Trash className="h-4 w-4" />
-                        ) : (
-                          <ArrowLeft className="h-4 w-4" />
-                        )}
                       </button>
                     </div>
                   </div>

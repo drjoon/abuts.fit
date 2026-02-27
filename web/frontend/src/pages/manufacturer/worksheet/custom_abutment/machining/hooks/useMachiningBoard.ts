@@ -241,7 +241,7 @@ export const useMachiningBoard = ({
             ? Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000))
             : 0;
 
-      // 타이머 베이스를 밀리초 타임스탐프로 저장 (현재 시간 - 경과 시간)
+      // 타이머 베이스를 밀리초 타임스탬프로 저장 (현재 시간 - 경과 시간)
       nextBases[mid] = Date.now() - baseElapsed * 1000;
       nextSecondsFromQueues[mid] = baseElapsed;
 
@@ -457,22 +457,29 @@ export const useMachiningBoard = ({
     const jobs = (Array.isArray(raw) ? raw : [])
       .filter((q) => isMachiningStatus(q?.status))
       .map((q) => {
-        const rid = String(q.requestId || "").trim();
+        const rid = String(q?.requestId || "").trim();
         if (!rid) return null;
-        const qty = Math.max(1, Number(q?.machiningQty ?? 1) || 1);
+        const requestMongoId =
+          q && (q as any).requestMongoId != null
+            ? String((q as any).requestMongoId)
+            : null;
         const nc = q?.ncFile ?? null;
         const bridgePath = String(nc?.filePath || "").trim();
         const s3Key = String(nc?.s3Key || "").trim();
         const s3Bucket = String(nc?.s3Bucket || "").trim();
+        const rollbackCount = Number((q as any)?.rollbackCount || 0);
         return {
           id: rid,
           name: formatMachiningLabel(q),
-          qty,
+          qty: Number(q?.machiningQty || 1) || 1,
+          paused: q?.paused === true,
           bridgePath,
           s3Key,
           s3Bucket,
           requestId: rid,
+          requestMongoId,
           source: bridgePath ? "bridge_store" : s3Key ? "s3" : "db",
+          rollbackCount,
         } satisfies PlaylistJobItem;
       })
       .filter(Boolean) as PlaylistJobItem[];
@@ -887,6 +894,52 @@ export const useMachiningBoard = ({
     [refreshProductionQueues, toast, token],
   );
 
+  const approveMachiningFromRollback = useCallback(
+    async (requestMongoId: string) => {
+      if (!token) return;
+      const id = String(requestMongoId || "").trim();
+      if (!id) return;
+
+      try {
+        const res = await fetch(
+          `/api/requests/${encodeURIComponent(id)}/review-status`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              stage: "machining",
+              status: "APPROVED",
+              reason: "",
+            }),
+          },
+        );
+
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) {
+          throw new Error(body?.message || body?.error || "승인 처리 실패");
+        }
+
+        window.dispatchEvent(new Event("cnc-queues-updated"));
+        await refreshProductionQueues();
+        toast({
+          title: "승인 완료",
+          description: "재가공 없이 다음 단계로 전환했습니다.",
+          duration: 2500,
+        });
+      } catch (e: any) {
+        toast({
+          title: "승인 실패",
+          description: e?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+      }
+    },
+    [refreshProductionQueues, toast, token],
+  );
+
   return {
     machines,
     mergedMachines,
@@ -944,6 +997,7 @@ export const useMachiningBoard = ({
     handleAddMaterial,
     refreshCncMachineMeta,
     rollbackRequestInQueue,
+    approveMachiningFromRollback,
     token,
   };
 };

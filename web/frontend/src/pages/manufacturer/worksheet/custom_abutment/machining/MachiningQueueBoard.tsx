@@ -75,6 +75,7 @@ export const MachiningQueueBoard = ({
     handleReplaceMaterial,
     handleAddMaterial,
     rollbackRequestInQueue,
+    approveMachiningFromRollback,
   } = board;
 
   const requestToggleMachineAuto = useCallback(
@@ -241,6 +242,9 @@ export const MachiningQueueBoard = ({
               onRollbackCompleted={(requestId, mid) => {
                 void rollbackRequestInQueue(mid, requestId);
               }}
+              onApproveFromRollback={(requestMongoId) => {
+                void approveMachiningFromRollback(requestMongoId);
+              }}
               onOpenCompleted={(mid, name) => {
                 setCompletedModalMachineId(String(mid || "").trim());
                 setCompletedModalTitle(
@@ -284,6 +288,9 @@ export const MachiningQueueBoard = ({
         jobs={playlistJobs}
         readOnly={false}
         deleteVariant="worksheet"
+        onApproveFromRollback={(requestMongoId) => {
+          void approveMachiningFromRollback(requestMongoId);
+        }}
         onClose={() => {
           setPlaylistOpen(false);
         }}

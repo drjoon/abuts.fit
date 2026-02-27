@@ -224,6 +224,7 @@ export interface RequestBase {
     queuePosition?: number;
     diameter?: number;
     diameterGroup?: string;
+    actualMachiningComplete?: string | Date;
   };
 
   shippingPriority?: {

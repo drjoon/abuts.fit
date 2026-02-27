@@ -1,8 +1,10 @@
 export type QueueItem = {
+  requestMongoId?: string | null;
   requestId?: string;
   status?: string;
   queuePosition?: number;
   machiningQty?: number;
+  rollbackCount?: number;
   estimatedShipYmd?: string | null;
   scheduledShipPickup?: string | Date;
   diameter?: number;
@@ -95,4 +97,5 @@ export type MachineQueueCardProps = {
   onRollbackNowPlaying?: (requestId: string, machineId: string) => void;
   onRollbackNextUp?: (requestId: string, machineId: string) => void;
   onRollbackCompleted?: (requestId: string, machineId: string) => void;
+  onApproveFromRollback?: (requestId: string) => void;
 };

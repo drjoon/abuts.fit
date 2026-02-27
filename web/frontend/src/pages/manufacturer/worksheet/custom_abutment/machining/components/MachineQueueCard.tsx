@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { MaterialDiameterChip } from "@/features/manufacturer/cnc/components/MaterialDiameterChip";
@@ -92,6 +92,7 @@ export const MachineQueueCard = ({
   onRollbackNowPlaying,
   onRollbackNextUp,
   onRollbackCompleted,
+  onApproveFromRollback,
 }: MachineQueueCardProps) => {
   useToast();
 
@@ -129,6 +130,11 @@ export const MachineQueueCard = ({
   const headRequestId = currentSlot?.requestId
     ? String(currentSlot.requestId)
     : "";
+
+  const headRequestMongoId = currentSlot?.requestMongoId
+    ? String(currentSlot.requestMongoId)
+    : "";
+  const headRollbackCount = Number((currentSlot as any)?.rollbackCount || 0);
 
   // Next Up 대기 건수는 전체 가공 대기열에서 현재 Now Playing(실행중) 1건을 제외한 값이다.
   const totalMachiningCount = Math.max(
@@ -318,12 +324,80 @@ export const MachineQueueCard = ({
           >
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-semibold text-slate-500">
-                  {MACHINING_SECTION_LABELS.complete}
-                  <span className="ml-4 mr-4">
-                    종료 {lastCompletedSummary?.completedAtLabel || "-"}
-                  </span>
-                  <span>소요 {lastCompletedSummary?.durationLabel || "-"}</span>
+                <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
+                  <div className="min-w-0">
+                    {MACHINING_SECTION_LABELS.complete}
+                    <span className="ml-4 mr-4">
+                      종료 {lastCompletedSummary?.completedAtLabel || "-"}
+                    </span>
+                    <span>
+                      소요 {lastCompletedSummary?.durationLabel || "-"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
+                        lastCompletedRequestId && onRollbackCompleted
+                          ? ""
+                          : "opacity-30 cursor-not-allowed"
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!lastCompletedRequestId) return;
+                        if (!onRollbackCompleted) return;
+                        setCompletedRolledBack(true);
+                        onRollbackCompleted(lastCompletedRequestId, machineId);
+                      }}
+                      disabled={!lastCompletedRequestId || !onRollbackCompleted}
+                      title="CAM으로 되돌리기"
+                    >
+                      <ArrowLeft className="h-3 w-3" />
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
+                        Number(
+                          (effectiveLastCompleted as any)?.rollbackCount || 0,
+                        ) > 0 &&
+                        String(
+                          (effectiveLastCompleted as any)?.requestMongoId || "",
+                        ).trim() &&
+                        onApproveFromRollback
+                          ? ""
+                          : "opacity-30 cursor-not-allowed"
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const rollbackCount = Number(
+                          (effectiveLastCompleted as any)?.rollbackCount || 0,
+                        );
+                        const id = String(
+                          (effectiveLastCompleted as any)?.requestMongoId || "",
+                        ).trim();
+                        if (rollbackCount <= 0) return;
+                        if (!id) return;
+                        onApproveFromRollback?.(id);
+                      }}
+                      disabled={
+                        !(
+                          Number(
+                            (effectiveLastCompleted as any)?.rollbackCount || 0,
+                          ) > 0 &&
+                          String(
+                            (effectiveLastCompleted as any)?.requestMongoId ||
+                              "",
+                          ).trim() &&
+                          onApproveFromRollback
+                        )
+                      }
+                      title="재가공 없이 승인"
+                    >
+                      <ArrowRight className="h-3 w-3" />
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-0.5 text-[15px] font-extrabold text-slate-900 leading-tight">
                   {effectiveLastCompleted ? (
@@ -340,22 +414,6 @@ export const MachineQueueCard = ({
                     "없음"
                   )}
                 </div>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {lastCompletedRequestId ? (
-                  <button
-                    type="button"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!onRollbackCompleted) return;
-                      setCompletedRolledBack(true);
-                      onRollbackCompleted(lastCompletedRequestId, machineId);
-                    }}
-                  >
-                    <ArrowLeft className="h-3.5 w-3.5" />
-                  </button>
-                ) : null}
               </div>
             </div>
           </div>
@@ -386,13 +444,55 @@ export const MachineQueueCard = ({
           >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-semibold text-slate-500">
-                  {MACHINING_SECTION_LABELS.nowPlaying}
-                  {!!elapsedLabel ? (
-                    <span className="ml-2 text-blue-600 font-extrabold">
-                      {elapsedLabel}
-                    </span>
-                  ) : null}
+                <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
+                  <div className="min-w-0">
+                    {MACHINING_SECTION_LABELS.nowPlaying}
+                    {!!elapsedLabel ? (
+                      <span className="ml-2 text-blue-600 font-extrabold">
+                        {elapsedLabel}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
+                        headRequestId && onRollbackNowPlaying
+                          ? ""
+                          : "opacity-30 cursor-not-allowed"
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!headRequestId) return;
+                        if (!onRollbackNowPlaying) return;
+                        onRollbackNowPlaying(headRequestId, machineId);
+                      }}
+                      disabled={!headRequestId || !onRollbackNowPlaying}
+                      title="CAM으로 되돌리기"
+                    >
+                      <ArrowLeft className="h-3 w-3" />
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
+                        headRollbackCount > 0 && headRequestMongoId
+                          ? ""
+                          : "opacity-30 cursor-not-allowed"
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (headRollbackCount <= 0) return;
+                        if (!headRequestMongoId) return;
+                        onApproveFromRollback?.(headRequestMongoId);
+                      }}
+                      disabled={!(headRollbackCount > 0 && headRequestMongoId)}
+                      title="재가공 없이 승인"
+                    >
+                      <ArrowRight className="h-3 w-3" />
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
                   {currentSlot ? (
@@ -413,22 +513,6 @@ export const MachineQueueCard = ({
                     nowPlayingLabel
                   )}
                 </div>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {headRequestId ? (
-                  <button
-                    type="button"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!onRollbackNowPlaying) return;
-                      onRollbackNowPlaying(headRequestId, machineId);
-                    }}
-                    title="CAM으로 되돌리기"
-                  >
-                    <ArrowLeft className="h-3.5 w-3.5" />
-                  </button>
-                ) : null}
               </div>
             </div>
           </div>
@@ -460,11 +544,66 @@ export const MachineQueueCard = ({
           >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-500">
-                  <span>{MACHINING_SECTION_LABELS.nextUp}</span>
-                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.3 text-[10px] font-extrabold text-slate-700">
-                    대기 {totalMachiningCount}건
-                  </span>
+                <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
+                  <div className="min-w-0 flex items-center gap-2">
+                    <span>{MACHINING_SECTION_LABELS.nextUp}</span>
+                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.3 text-[10px] font-extrabold text-slate-700">
+                      대기 {totalMachiningCount}건
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
+                        nextSlot?.requestId && onRollbackNextUp
+                          ? ""
+                          : "opacity-30 cursor-not-allowed"
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!onRollbackNextUp) return;
+                        const rid = String(nextSlot?.requestId || "").trim();
+                        if (!rid) return;
+                        onRollbackNextUp(rid, machineId);
+                      }}
+                      disabled={!nextSlot?.requestId || !onRollbackNextUp}
+                      title="CAM으로 되돌리기"
+                    >
+                      <ArrowLeft className="h-3 w-3" />
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
+                        Number((nextSlot as any)?.rollbackCount || 0) > 0 &&
+                        String((nextSlot as any)?.requestMongoId || "").trim()
+                          ? ""
+                          : "opacity-30 cursor-not-allowed"
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const rollbackCount = Number(
+                          (nextSlot as any)?.rollbackCount || 0,
+                        );
+                        const id = String(
+                          (nextSlot as any)?.requestMongoId || "",
+                        ).trim();
+                        if (rollbackCount <= 0) return;
+                        if (!id) return;
+                        onApproveFromRollback?.(id);
+                      }}
+                      disabled={
+                        !(
+                          Number((nextSlot as any)?.rollbackCount || 0) > 0 &&
+                          String((nextSlot as any)?.requestMongoId || "").trim()
+                        )
+                      }
+                      title="재가공 없이 승인"
+                    >
+                      <ArrowRight className="h-3 w-3" />
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
                   {nextSlot ? (
@@ -485,25 +624,6 @@ export const MachineQueueCard = ({
                     nextUpLabel
                   )}
                 </div>
-              </div>
-
-              <div className="flex items-center gap-1 shrink-0">
-                {nextSlot?.requestId ? (
-                  <button
-                    type="button"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!onRollbackNextUp) return;
-                      const rid = String(nextSlot.requestId || "").trim();
-                      if (!rid) return;
-                      onRollbackNextUp(rid, machineId);
-                    }}
-                    title="CAM으로 되돌리기"
-                  >
-                    <ArrowLeft className="h-3.5 w-3.5" />
-                  </button>
-                ) : null}
               </div>
             </div>
           </div>

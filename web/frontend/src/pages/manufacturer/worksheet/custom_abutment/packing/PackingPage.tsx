@@ -27,6 +27,8 @@ import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
 import { onAppEvent } from "@/shared/realtime/socket";
+import { toKstYmd } from "@/shared/date/kst";
+import QRCode from "qrcode";
 import {
   Dialog,
   DialogContent,
@@ -108,6 +110,16 @@ export const PackingPage = ({
   const [packOutputMode, setPackOutputMode] = useState<"image" | "label">(
     "image",
   );
+  const [packLabelDpi, setPackLabelDpi] = useState(203);
+  const [packLabelDots, setPackLabelDots] = useState<{
+    pw: number;
+    ll: number;
+  }>({ pw: 520, ll: 640 });
+  const [packLabelDesignDots, setPackLabelDesignDots] = useState<{
+    pw: number;
+    ll: number;
+    dpi: number;
+  }>({ pw: 520, ll: 640, dpi: 203 });
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -174,56 +186,303 @@ export const PackingPage = ({
     }
   };
 
-  const renderPackLabelToCanvas = (opts: {
+  const renderPackLabelToCanvas = async (opts: {
     mailboxCode: string;
-    businessName: string;
+    labName: string;
     screwType: string;
     lotNumber: string;
     requestId: string;
+    clinicName: string;
+    requestDate: string;
     patientName: string;
     toothNumber: string;
     material: string;
+    implantManufacturer: string;
+    implantSystem: string;
+    implantType: string;
+    manufacturingDate: string;
     caseType: string;
     printedAt: string;
+    dpi?: number;
   }) => {
-    const width = 640;
-    const height = 520;
+    const dpi = Number(opts.dpi) || packLabelDpi || 203;
+    const baseDpi = Number(packLabelDesignDots?.dpi) || 203;
+    const baseWidth = Number(packLabelDesignDots?.pw) || 520;
+    const baseHeight = Number(packLabelDesignDots?.ll) || 640;
+    const targetWidth =
+      Number(packLabelDots?.pw) || Math.round((baseWidth * dpi) / baseDpi);
+    const targetHeight =
+      Number(packLabelDots?.ll) || Math.round((baseHeight * dpi) / baseDpi);
+    const scale = targetWidth / baseWidth;
+    const width = Math.round(targetWidth);
+    const height = Math.round(targetHeight);
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("canvas context를 생성할 수 없습니다.");
 
+    ctx.scale(scale, scale);
+
     ctx.fillStyle = "white";
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, baseWidth, baseHeight);
     ctx.fillStyle = "black";
     ctx.textBaseline = "top";
 
-    ctx.font = "bold 44px Arial";
-    ctx.fillText(opts.mailboxCode || "-", 20, 18);
+    const PRODUCT_NAME = "임플란트 상부구조물";
+    const MODEL_NAME = "CA6512";
+    const LICENSE_NO = "제3583호";
+    const COMPANY_NAME = "(주)애크로덴트";
+    const COMPANY_ADDR = "경남 김해시 전하로85번길 5(나동, 흥동)";
+    const COMPANY_TEL_FAX = "T 055-314-4607  F 055-901-0241";
+    const ABUTS_COMPANY_NAME = "어벗츠 주식회사";
+    const ABUTS_SALES_PERMIT = "판매업허가 제####호";
+    const ABUTS_ADDR = "경상남도 거제시 거제중앙로29길 6, 3층(고현동)";
+    const ABUTS_TEL = "T 1588-3948";
+    const ABUTS_WEB = "https://abuts.fit";
 
-    ctx.font = "bold 72px Arial";
-    ctx.fillText(opts.screwType || "-", 500, 10);
+    const dateOnly = (value: string) => {
+      const s = String(value || "").trim();
+      if (!s) return "-";
+      return s.includes("T") ? s.split("T")[0] : s;
+    };
 
-    ctx.font = "bold 28px Arial";
-    ctx.fillText("BIZ:", 20, 70);
-    ctx.font = "bold 32px Arial";
-    ctx.fillText(opts.businessName || "-", 95, 70);
+    const drawBox = (x: number, y: number, w: number, h: number) => {
+      ctx.strokeStyle = "black";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+    };
 
-    ctx.fillRect(20, 110, 600, 2);
+    const drawHLine = (x: number, y: number, w: number) => {
+      ctx.fillStyle = "black";
+      ctx.fillRect(x, y, w, 2);
+    };
 
-    ctx.font = "bold 26px Arial";
-    ctx.fillText(`LOT: ${opts.lotNumber || "-"}`, 20, 124);
+    const drawVLine = (x: number, y: number, h: number) => {
+      ctx.fillStyle = "black";
+      ctx.fillRect(x, y, 2, h);
+    };
 
-    ctx.font = "24px Arial";
-    ctx.fillText(`Req: ${opts.requestId || "-"}`, 20, 156);
-    ctx.fillText(`Patient: ${opts.patientName || "-"}`, 20, 186);
-    ctx.fillText(`Tooth: ${opts.toothNumber || "-"}`, 20, 216);
-    ctx.fillText(`Material: ${opts.material || "-"}`, 20, 246);
-    ctx.fillText(`Type: ${opts.caseType || "-"}`, 20, 276);
+    const fillTextCentered = (
+      text: string,
+      x: number,
+      y: number,
+      w: number,
+    ) => {
+      const t = String(text || "-");
+      const metrics = ctx.measureText(t);
+      const tx = x + Math.max(0, (w - metrics.width) / 2);
+      ctx.fillText(t, tx, y);
+    };
 
+    const fillTextCenteredInBox = (
+      text: string,
+      x: number,
+      y: number,
+      w: number,
+      h: number,
+    ) => {
+      const t = String(text || "-");
+      const metrics = ctx.measureText(t);
+      const tx = x + Math.max(0, (w - metrics.width) / 2);
+      const ascent = metrics.actualBoundingBoxAscent || 0;
+      const descent = metrics.actualBoundingBoxDescent || 0;
+      const ty = y + (h + ascent - descent) / 2;
+      ctx.fillText(t, tx, ty);
+    };
+
+    const qrProductPayload = {
+      lotNumber: opts.lotNumber || "-",
+      manufacturingDate: dateOnly(opts.manufacturingDate),
+    };
+
+    // QR1 (product/manual)
+    const qr1DataUrl = await QRCode.toDataURL(
+      JSON.stringify(qrProductPayload),
+      {
+        errorCorrectionLevel: "M",
+        margin: 0,
+        width: Math.max(1, Math.round(80 * scale)),
+      },
+    );
+    const qr1Img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      qr1Img.onload = () => resolve();
+      qr1Img.onerror = () => reject(new Error("QR 이미지 로드 실패"));
+      qr1Img.src = qr1DataUrl;
+    });
+
+    const qrLotPayload = {
+      lotNumber: opts.lotNumber || "-",
+      manufacturingDate: dateOnly(opts.manufacturingDate),
+    };
+    const qr2DataUrl = await QRCode.toDataURL(JSON.stringify(qrLotPayload), {
+      errorCorrectionLevel: "M",
+      margin: 0,
+      width: Math.max(1, Math.round(70 * scale)),
+    });
+    const qr2Img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      qr2Img.onload = () => resolve();
+      qr2Img.onerror = () => reject(new Error("QR 이미지 로드 실패"));
+      qr2Img.src = qr2DataUrl;
+    });
+
+    const qrAbutsPayload = {
+      company: ABUTS_COMPANY_NAME,
+      web: ABUTS_WEB,
+    };
+    const qr3DataUrl = await QRCode.toDataURL(JSON.stringify(qrAbutsPayload), {
+      errorCorrectionLevel: "M",
+      margin: 0,
+      width: Math.max(1, Math.round(70 * scale)),
+    });
+    const qr3Img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      qr3Img.onload = () => resolve();
+      qr3Img.onerror = () => reject(new Error("QR 이미지 로드 실패"));
+      qr3Img.src = qr3DataUrl;
+    });
+
+    // ===== PRIORITY 1: Top header (mailbox / screw / lot suffix) =====
+    // Header width now fills full content width (436)
+    drawBox(42, 52, 436, 58);
+    // 4:2:3 ratio distribution within 436
+    drawVLine(236, 52, 58);
+    drawVLine(333, 52, 58);
+    ctx.font = "bold 58px Arial";
+    fillTextCentered(opts.mailboxCode || "-", 42, 56, 194);
+    fillTextCentered(opts.screwType || "-", 236, 56, 97);
+    {
+      const lot = String(opts.lotNumber || "-");
+      const suffix = lot.length >= 3 ? lot.slice(-3) : lot;
+      fillTextCentered(suffix, 333, 56, 145);
+    }
+
+    // ===== PRIORITY 1.5: Lab name (bold, slightly smaller) =====
+    // Prevent overlap: box height matches header
+    drawBox(42, 114, 436, 58);
+    ctx.font = "bold 40px Arial";
+    fillTextCenteredInBox(opts.labName || "-", 42, 114, 436, 58);
+
+    // ===== PRIORITY 2: Middle section (clinic, dates, implant, lot) =====
+    // Row 1: Clinic / Patient / Tooth - 20% increase: 18px -> 22px
+    drawBox(42, 182, 436, 32);
     ctx.font = "22px Arial";
-    ctx.fillText(`Printed: ${opts.printedAt || "-"}`, 20, 306);
+    fillTextCentered(
+      `${opts.clinicName || "-"} / ${opts.patientName || "-"} / #${opts.toothNumber || "-"}`,
+      42,
+      191,
+      436,
+    );
+
+    // Row 2: Request date / Manufacturing date
+    drawBox(42, 218, 436, 32);
+    ctx.font = "22px Arial";
+    fillTextCentered(
+      `의뢰일: ${dateOnly(opts.requestDate)} / 제조일: ${dateOnly(opts.manufacturingDate)}`,
+      42,
+      227,
+      436,
+    );
+
+    // Row 3: Implant info
+    drawBox(42, 254, 436, 32);
+    ctx.font = "22px Arial";
+    fillTextCentered(
+      `${opts.implantManufacturer || "-"} / ${opts.implantSystem || "-"} / ${opts.implantType || "-"}`,
+      42,
+      263,
+      436,
+    );
+
+    // Row 4: Lot number
+    drawBox(42, 290, 436, 32);
+    ctx.font = "22px Arial";
+    fillTextCentered(`제조번호: ${opts.lotNumber || "-"}`, 42, 299, 436);
+
+    // ===== PRIORITY 3: Product details section =====
+    const detailsY = 326;
+    const detailsH = 88;
+    const leftW = 320;
+    const rightW = 116;
+    const leftX = 42;
+    const rightX = leftX + leftW;
+
+    drawBox(leftX, detailsY, leftW, detailsH);
+    drawBox(rightX, detailsY, rightW, detailsH);
+
+    const midX = leftX + 160;
+    drawVLine(midX, detailsY, detailsH);
+    // 4 equal rows (22px each)
+    drawHLine(leftX, detailsY + 22, leftW);
+    drawHLine(leftX, detailsY + 44, leftW);
+    drawHLine(leftX, detailsY + 66, leftW);
+
+    ctx.font = "13px Arial";
+    // Row 1
+    ctx.fillText(`\uD488\uBA85: ${PRODUCT_NAME}`, leftX + 8, detailsY + 6);
+    ctx.fillText(
+      "\uBE44\uBA78\uADE0 \uC758\uB8CC\uAE30\uAE30",
+      midX + 8,
+      detailsY + 6,
+    );
+    // Row 2
+    ctx.fillText(`\uBAA8\uB378\uBA85: ${MODEL_NAME}`, leftX + 8, detailsY + 28);
+    ctx.fillText(
+      `\uD488\uBAA9\uD5C8\uAC00: ${LICENSE_NO}`,
+      midX + 8,
+      detailsY + 28,
+    );
+    // Row 3
+    ctx.fillText(
+      "\uC0AC\uC6A9\uAE30\uD55C: \uD574\uB2F9\uC5C6\uC74C",
+      leftX + 8,
+      detailsY + 50,
+    );
+    ctx.fillText(
+      "\uC0AC\uC6A9\uBC29\uBC95: \uC0AC\uC6A9\uC790 \uB9E4\uB274\uC5BC",
+      midX + 8,
+      detailsY + 50,
+    );
+    // Row 4
+    ctx.fillText("\uD3EC\uC7A5\uB2E8\uC704: 1 SET", leftX + 8, detailsY + 72);
+    ctx.fillText(
+      "\uC8FC\uC758\uC0AC\uD56D: \uB9E4\uB274\uC5BC \uCC38\uC870",
+      midX + 8,
+      detailsY + 72,
+    );
+
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(qr1Img, rightX + 18, detailsY + 4, 80, 80);
+    ctx.imageSmoothingEnabled = true;
+
+    // ===== PRIORITY 3: Bottom manufacturer info + QR codes =====
+    // Acrodent box - 20% increase: 13px -> 16px, 10px -> 12px
+    drawBox(42, 424, 436, 76);
+    ctx.font = "16px Arial";
+    ctx.fillText(COMPANY_NAME, 50, 432);
+    // QR vertically centered within box (76h, 56 size => +10)
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(qr2Img, 370, 434, 56, 56);
+    ctx.imageSmoothingEnabled = true;
+    ctx.font = "12px Arial";
+    ctx.fillText(`제조업허가: ${LICENSE_NO}`, 50, 452);
+    ctx.fillText(COMPANY_ADDR, 50, 466);
+    ctx.fillText(COMPANY_TEL_FAX, 50, 480);
+
+    // Abuts box
+    drawBox(42, 504, 436, 76);
+    ctx.font = "16px Arial";
+    ctx.fillText(ABUTS_COMPANY_NAME, 50, 512);
+    // QR vertically centered within box
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(qr3Img, 370, 514, 56, 56);
+    ctx.imageSmoothingEnabled = true;
+    ctx.font = "12px Arial";
+    ctx.fillText(ABUTS_SALES_PERMIT, 50, 532);
+    ctx.fillText(ABUTS_ADDR, 50, 546);
+    ctx.fillText(`${ABUTS_TEL} / ${ABUTS_WEB}`, 50, 560);
 
     return canvas;
   };
@@ -241,6 +500,39 @@ export const PackingPage = ({
       const data = await response.json().catch(() => null);
       if (!response.ok || !data?.success) {
         throw new Error(data?.message || "용지 설정을 불러올 수 없습니다.");
+      }
+
+      const nextDpi = Number(data?.data?.dpi);
+      if (Number.isFinite(nextDpi) && nextDpi > 0) {
+        setPackLabelDpi(nextDpi);
+      } else {
+        setPackLabelDpi(203);
+      }
+
+      const nextDots = data?.data?.label?.dots;
+      if (
+        nextDots &&
+        Number.isFinite(Number(nextDots.pw)) &&
+        Number(nextDots.pw) > 0 &&
+        Number.isFinite(Number(nextDots.ll)) &&
+        Number(nextDots.ll) > 0
+      ) {
+        setPackLabelDots({ pw: Number(nextDots.pw), ll: Number(nextDots.ll) });
+      }
+
+      const nextDesignDots = data?.data?.label?.designDots;
+      if (
+        nextDesignDots &&
+        Number.isFinite(Number(nextDesignDots.pw)) &&
+        Number(nextDesignDots.pw) > 0 &&
+        Number.isFinite(Number(nextDesignDots.ll)) &&
+        Number(nextDesignDots.ll) > 0
+      ) {
+        setPackLabelDesignDots({
+          pw: Number(nextDesignDots.pw),
+          ll: Number(nextDesignDots.ll),
+          dpi: Number(nextDesignDots.dpi) || 203,
+        });
       }
       const options = Array.isArray(data?.data?.paper?.options)
         ? data.data.paper.options
@@ -827,7 +1119,7 @@ export const PackingPage = ({
           const caseInfos = req.caseInfos || {};
           const lot = getLotLabel(req);
           const mailboxCode = String(req.mailboxAddress || "").trim() || "-";
-          const businessName =
+          const labName =
             String((req as any)?.requestorOrganizationId?.name || "").trim() ||
             String((req as any)?.requestor?.organization || "").trim() ||
             String((req as any)?.requestor?.name || "").trim() ||
@@ -839,6 +1131,26 @@ export const PackingPage = ({
             ? true
             : implantManufacturer.includes("덴티움");
           const screwType = isDentium ? "8B" : "0A";
+          const clinicName = String(caseInfos.clinicName || "").trim() || "-";
+          const implantSystem = String(
+            (caseInfos as any)?.implantSystem || "",
+          ).trim();
+          const implantType = String(
+            (caseInfos as any)?.implantType || "",
+          ).trim();
+          const createdAtIso = req.createdAt ? String(req.createdAt) : "";
+          const manufacturingDate = toKstYmd(
+            req.productionSchedule?.actualMachiningComplete || null,
+          );
+          if (!manufacturingDate) {
+            failCount += 1;
+            toast({
+              title: "제조일자를 확인할 수 없습니다",
+              description: `${req.requestId || lot || "의뢰"}의 가공 완료 시각이 없어 라벨을 생성할 수 없습니다.`,
+              variant: "destructive",
+            });
+            continue;
+          }
           const material =
             (typeof (caseInfos as any)?.material === "string" &&
               (caseInfos as any).material) ||
@@ -855,8 +1167,14 @@ export const PackingPage = ({
             requestId: req.requestId,
             lotNumber: lot,
             mailboxCode,
-            businessName,
             screwType,
+            clinicName,
+            labName,
+            requestDate: createdAtIso,
+            manufacturingDate,
+            implantManufacturer,
+            implantSystem,
+            implantType,
             patientName: caseInfos.patientName || "",
             toothNumber: caseInfos.tooth || "",
             material,
@@ -865,17 +1183,24 @@ export const PackingPage = ({
           };
 
           if (packOutputMode === "image") {
-            const canvas = renderPackLabelToCanvas({
+            const canvas = await renderPackLabelToCanvas({
               mailboxCode,
-              businessName,
+              labName,
               screwType,
               lotNumber: lot,
               requestId: req.requestId,
+              clinicName,
+              requestDate: createdAtIso,
+              manufacturingDate,
               patientName: caseInfos.patientName || "",
               toothNumber: caseInfos.tooth || "",
               material,
+              implantManufacturer,
+              implantSystem,
+              implantType,
               caseType: "Custom Abutment",
               printedAt: payload.printedAt,
+              dpi: packLabelDpi,
             });
             const base = String(req.requestId || lot || "pack").replace(
               /[^a-zA-Z0-9._-]+/g,

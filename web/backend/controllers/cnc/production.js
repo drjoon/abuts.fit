@@ -24,9 +24,13 @@ export async function getProductionQueues(req, res) {
 
     for (const machineId in queues) {
       queues[machineId] = queues[machineId].map((reqItem, index) => ({
+        requestMongoId: reqItem?._id ? String(reqItem._id) : null,
         requestId: reqItem.requestId,
         status: reqItem.manufacturerStage || reqItem.status,
         lotNumber: reqItem.lotNumber || {},
+        rollbackCount: Number(
+          reqItem?.caseInfos?.rollbackCounts?.machining || 0,
+        ),
         queuePosition:
           reqItem.productionSchedule?.queuePosition != null
             ? reqItem.productionSchedule.queuePosition

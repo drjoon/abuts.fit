@@ -21,6 +21,7 @@ const PACK_PAPER_OPTIONS = String(
   .filter(Boolean);
 
 const PACK_LABEL_DPI = Number(process.env.PACK_LABEL_DPI || 203);
+const PACK_LABEL_DESIGN_DPI = 203;
 
 const mmToDots = (mm, dpi) => {
   const mmNum = Number(mm);
@@ -43,17 +44,42 @@ const withTimeout = async (promise, ms) => {
 };
 
 export async function getPackPrintSettings(req, res) {
+  const dpi =
+    Number.isFinite(PACK_LABEL_DPI) && PACK_LABEL_DPI > 0
+      ? PACK_LABEL_DPI
+      : 203;
+
+  const paperDefault = PACK_PAPER_DEFAULT || null;
+  const paperOptions = PACK_PAPER_OPTIONS;
+
+  // Current supported profile: PACK_80x65 (portrait 65 x 80mm)
+  const mm =
+    paperDefault === "PACK_80x65" || paperOptions.includes("PACK_80x65")
+      ? { w: 65, h: 80 }
+      : null;
+
+  const dots = mm ? { pw: mmToDots(mm.w, dpi), ll: mmToDots(mm.h, dpi) } : null;
+  const designDots = mm
+    ? {
+        pw: mmToDots(mm.w, PACK_LABEL_DESIGN_DPI),
+        ll: mmToDots(mm.h, PACK_LABEL_DESIGN_DPI),
+        dpi: PACK_LABEL_DESIGN_DPI,
+      }
+    : { pw: 520, ll: 640, dpi: PACK_LABEL_DESIGN_DPI };
+
   return res.status(200).json({
     success: true,
     data: {
       paper: {
-        default: PACK_PAPER_DEFAULT || null,
-        options: PACK_PAPER_OPTIONS,
+        default: paperDefault,
+        options: paperOptions,
       },
-      dpi:
-        Number.isFinite(PACK_LABEL_DPI) && PACK_LABEL_DPI > 0
-          ? PACK_LABEL_DPI
-          : 203,
+      dpi,
+      label: {
+        mm,
+        dots,
+        designDots,
+      },
     },
   });
 }
@@ -150,8 +176,8 @@ export async function printPackPackingLabel(req, res) {
     payload.dpi = dpi;
 
     if (payload.paperProfile === "PACK_80x65") {
-      payload.zplPW = mmToDots(80, dpi);
-      payload.zplLL = mmToDots(65, dpi);
+      payload.zplPW = mmToDots(65, dpi);
+      payload.zplLL = mmToDots(80, dpi);
     }
 
     const {
