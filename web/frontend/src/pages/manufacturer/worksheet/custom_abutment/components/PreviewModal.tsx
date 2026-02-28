@@ -281,7 +281,7 @@ export const PreviewModal = ({
       : req.caseInfos?.camFile;
   const hasRightFile = !!rightMeta?.s3Key;
 
-  const canRegenerateFilledStl = !isCamStage && !isStageFileStage;
+  const canRegenerateFilledStl = !isStageFileStage;
 
   const buildStandardStlFileName = (args: {
     requestId: string;
@@ -307,6 +307,60 @@ export const PreviewModal = ({
       return;
     }
     if (regenerating || isUploading) return;
+
+    if (isCamStage) {
+      setRegenerating(true);
+      try {
+        const requestId = String(req?.requestId || "").trim();
+        if (!requestId) {
+          toast({
+            title: "실패",
+            description: "requestId가 없어 재생성을 진행할 수 없습니다.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const res = await fetch(
+          `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          },
+        );
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) {
+          const msg =
+            body?.message ||
+            body?.error ||
+            body?.detail ||
+            "NC 재생성 요청에 실패했습니다.";
+          toast({
+            title: "재생성 실패",
+            description: msg,
+            variant: "destructive",
+          });
+          return;
+        }
+
+        toast({
+          title: "재생성 요청",
+          description: "NC 재생성을 시작했습니다.",
+        });
+      } catch (err: any) {
+        toast({
+          title: "재생성 실패",
+          description: err?.message || "재생성 요청에 실패했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setRegenerating(false);
+      }
+      return;
+    }
 
     const standardFilePath =
       req?.requestId &&

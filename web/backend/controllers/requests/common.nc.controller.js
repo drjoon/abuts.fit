@@ -10,6 +10,7 @@ import {
   ensureReviewByStageDefaults,
 } from "./utils.js";
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
+import { triggerEspritForNc } from "./common.review.controller.js";
 
 const BRIDGE_BASE = process.env.BRIDGE_BASE;
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
@@ -193,6 +194,43 @@ export async function ensureNcFileOnBridgeStoreByRequestId(req, res) {
       success: false,
       message: "NC 파일 동기화 중 오류가 발생했습니다.",
       error: error.message,
+    });
+  }
+}
+
+export async function regenerateNcByRequestId(req, res) {
+  try {
+    const requestId = String(req.params?.requestId || "").trim();
+    if (!requestId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "requestId is required" });
+    }
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const request = await Request.findOne({ requestId });
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    await triggerEspritForNc({ request, force: true });
+
+    return res.status(200).json({
+      success: true,
+      message: "NC 재생성 요청을 전송했습니다.",
+      data: { requestId },
+    });
+  } catch (error) {
+    const status = Number(error?.statusCode || 500);
+    return res.status(status).json({
+      success: false,
+      message: error?.message || "NC 재생성 요청 중 오류가 발생했습니다.",
     });
   }
 }

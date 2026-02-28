@@ -17,6 +17,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         [DataMember] public string RequestId { get; set; }
         [DataMember] public string StlPath { get; set; }
         [DataMember] public string NcOutputPath { get; set; }
+        [DataMember] public bool Force { get; set; }
         [DataMember] public string ClinicName { get; set; }
         [DataMember] public string PatientName { get; set; }
         [DataMember] public string Tooth { get; set; }
@@ -251,6 +252,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 // STL 파일 경로 정규화
                 string stlPath = NormalizeFilePath(req.StlPath);
                 AppLogger.Log($"[NC Processing] Resolved STL path: {stlPath}");
+
+                if (req.Force)
+                {
+                    TryDeleteExistingNcFiles(req, stlPath);
+                    TryDeleteExistingFilledFile(stlPath);
+                }
                 
                 if (!File.Exists(stlPath))
                 {
@@ -272,6 +279,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                             Directory.CreateDirectory(filledDir);
                         }
                         var targetPath = System.IO.Path.Combine(filledDir, safeName);
+                        if (req.Force)
+                        {
+                            TryDeleteExistingFilledFile(targetPath);
+                        }
                         var ok = Connect.DownloadSourceFileToFilledDir(req.RequestId, req.StlPath, targetPath);
                         if (!ok)
                         {
@@ -362,6 +373,85 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return fullPath;
             }
             return path;
+        }
+
+        private static void TryDeleteExistingFilledFile(string stlPath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(stlPath)) return;
+                if (File.Exists(stlPath))
+                {
+                    File.Delete(stlPath);
+                    AppLogger.Log($"[NC Processing] Force: deleted existing filled STL: {stlPath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"[NC Processing] Force: failed to delete filled STL: {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private static void TryDeleteExistingNcFiles(NcGenerationRequest req, string stlPath)
+        {
+            try
+            {
+                var outDir = AppConfig.StorageNcDirectory;
+                if (string.IsNullOrWhiteSpace(outDir)) return;
+                Directory.CreateDirectory(outDir);
+
+                string baseName = Path.GetFileNameWithoutExtension(stlPath ?? string.Empty) ?? string.Empty;
+                string sanitizedBase = RemoveFilledToken(baseName);
+                if (string.IsNullOrWhiteSpace(sanitizedBase))
+                {
+                    sanitizedBase = baseName;
+                }
+                if (string.IsNullOrWhiteSpace(sanitizedBase)) return;
+
+                var candidates = new List<string>
+                {
+                    Path.Combine(outDir, sanitizedBase + ".nc"),
+                    Path.Combine(outDir, baseName + ".nc"),
+                };
+
+                foreach (var p in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        if (File.Exists(p))
+                        {
+                            File.Delete(p);
+                            AppLogger.Log($"[NC Processing] Force: deleted existing NC: {p}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogger.Log($"[NC Processing] Force: failed to delete NC: {p} ({ex.GetType().Name}:{ex.Message})");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"[NC Processing] Force: failed to cleanup NC outputs ({ex.GetType().Name}:{ex.Message})");
+            }
+        }
+
+        private static string RemoveFilledToken(string baseName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(baseName))
+                {
+                    return string.Empty;
+                }
+                var sanitized = System.Text.RegularExpressions.Regex.Replace(baseName, @"(?i)\.filled", string.Empty)
+                    .Trim('-', '_', '.', ' ');
+                return string.IsNullOrWhiteSpace(sanitized) ? baseName : sanitized;
+            }
+            catch
+            {
+                return baseName;
+            }
         }
         public void Dispose()
         {

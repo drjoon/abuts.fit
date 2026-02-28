@@ -75,11 +75,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         public static string FaceHoleProcessPath => GetEnvOrDefault(
             FaceHolePrcEnv,
-            Path.Combine(PrcRootDirectory, "1_Face Hole", "네오_R_Connection_H.prc"));
+            Path.Combine(PrcRootDirectory, "1_Face Hole", "네오_IS_R_FaceHole.prc"));
 
         public static string ConnectionProcessPath => GetEnvOrDefault(
             ConnectionPrcEnv,
-            Path.Combine(PrcRootDirectory, "2_Connection", "네오_R_Connection.prc"));
+            Path.Combine(PrcRootDirectory, "2_Connection", "네오_IS_R_Connection.prc"));
 
         public static double TurningDepth => GetDoubleEnvOrDefault(TurningDepthEnv, DefaultTurningDepth);
         public static double ExitAngle => GetDoubleEnvOrDefault(ExitAngleEnv, DefaultExitAngle);

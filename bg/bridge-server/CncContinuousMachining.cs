@@ -1254,7 +1254,7 @@ CncJobQueue.ReplaceQueue(mid, jobs);
 }
 catch (Exception ex)
 {
-Console.WriteLine("[CncMachining] SyncQueueFromBackend error: {0}", ex.Message);
+Console.WriteLine("[CncMachining] SyncQueueFromBackend error: url={0} err={1}", Config.BackendBase, ex);
 }
 }
 private static async Task<bool> TryDownloadAndCacheFromS3(string machineId, CncJobItem job, string fullPath)
@@ -1578,7 +1578,7 @@ catch (Exception startEx)
 }
 catch (Exception ex)
 {
-Console.WriteLine("[CncMachining] NotifyMachiningStarted error: {0}", ex.Message);
+Console.WriteLine("[CncMachining] NotifyMachiningStarted error: backend={0} err={1}", GetBackendBase(), ex);
 }
 }
 
@@ -1633,7 +1633,7 @@ try
 }
 catch (Exception ex)
 {
-    Console.WriteLine("[CncMachining] NotifyMachiningTick error: {0}", ex.Message);
+    Console.WriteLine("[CncMachining] NotifyMachiningTick error: backend={0} err={1}", GetBackendBase(), ex);
 }
 }
 

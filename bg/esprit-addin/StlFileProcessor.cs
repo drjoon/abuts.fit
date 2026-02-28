@@ -1822,6 +1822,16 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         if (!string.IsNullOrWhiteSpace(udPaths[i]))
                         {
                             string resolved = ResolveProcessPath(prcDirectory, udPaths[i]);
+                            string legacyName = null;
+                            try { legacyName = Path.GetFileName(resolved); } catch { legacyName = null; }
+                            if (string.Equals(legacyName, "네오_R_Connection_H.prc", StringComparison.OrdinalIgnoreCase))
+                            {
+                                resolved = ResolveProcessPath(prcDirectory, AppConfig.FaceHoleProcessPath);
+                            }
+                            else if (string.Equals(legacyName, "네오_R_Connection.prc", StringComparison.OrdinalIgnoreCase))
+                            {
+                                resolved = ResolveProcessPath(prcDirectory, AppConfig.ConnectionProcessPath);
+                            }
                             if (!string.IsNullOrWhiteSpace(resolved) && Directory.Exists(resolved))
                             {
                                 string name = (udNames != null && i < udNames.Length) ? udNames[i] : null;
@@ -1848,7 +1858,18 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     {
                         if (!string.IsNullOrWhiteSpace(udNames[i]))
                         {
-                            current[i] = udNames[i];
+                            if (string.Equals(udNames[i], "네오_R_Connection_H.prc", StringComparison.OrdinalIgnoreCase))
+                            {
+                                current[i] = Path.GetFileName(AppConfig.FaceHoleProcessPath);
+                            }
+                            else if (string.Equals(udNames[i], "네오_R_Connection.prc", StringComparison.OrdinalIgnoreCase))
+                            {
+                                current[i] = Path.GetFileName(AppConfig.ConnectionProcessPath);
+                            }
+                            else
+                            {
+                                current[i] = udNames[i];
+                            }
                         }
                     }
                     SetStaticField(mainModuleType, "PrcFileName", current);
@@ -2002,16 +2023,30 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         }
         private static string ResolvePrcDirectory()
         {
-            if (Directory.Exists(AppConfig.PrcRootDirectory))
+            string prcRoot = AppConfig.PrcRootDirectory;
+            string faceHole = Path.Combine(prcRoot, "1_Face Hole", Path.GetFileName(AppConfig.FaceHoleProcessPath));
+            string connection = Path.Combine(prcRoot, "2_Connection", Path.GetFileName(AppConfig.ConnectionProcessPath));
+            if (Directory.Exists(prcRoot) && (File.Exists(faceHole) || File.Exists(connection)))
             {
-                return AppConfig.PrcRootDirectory;
+                return prcRoot;
             }
+
+            string addInPrc = Path.Combine(AppConfig.AddInRootDirectory, "AcroDent");
+            string addInFaceHole = Path.Combine(addInPrc, "1_Face Hole", Path.GetFileName(AppConfig.FaceHoleProcessPath));
+            string addInConnection = Path.Combine(addInPrc, "2_Connection", Path.GetFileName(AppConfig.ConnectionProcessPath));
+            if (Directory.Exists(addInPrc) && (File.Exists(addInFaceHole) || File.Exists(addInConnection)))
+            {
+                AppLogger.Log($"DentalAddin: PRC 경로를 AddIn 루트로 보정 - {addInPrc}");
+                return addInPrc;
+            }
+
             string programFilesPrc = @"C:\\Program Files (x86)\\D.P.Technology\\ESPRIT\\AddIns\\DentalAddin\\AcroDent";
             if (Directory.Exists(programFilesPrc))
             {
                 AppLogger.Log($"DentalAddin: PRC 경로를 Program Files에서 사용 - {programFilesPrc}");
                 return programFilesPrc;
             }
+
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             string direct = Path.Combine(baseDir, "AcroDent");
             if (Directory.Exists(direct))
@@ -2023,8 +2058,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 return relative;
             }
-            AppLogger.Log($"DentalAddin: PRC 디렉터리를 찾을 수 없어 기본 경로 사용 - {AppConfig.PrcRootDirectory}");
-            return AppConfig.PrcRootDirectory;
+            AppLogger.Log($"DentalAddin: PRC 디렉터리를 찾을 수 없어 기본 경로 사용 - {prcRoot}");
+            return prcRoot;
         }
         private static Type ResolveMainModuleType()
         {
@@ -2679,5 +2714,3 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         }
     }
 }
-
-1

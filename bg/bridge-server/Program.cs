@@ -77,6 +77,7 @@ namespace HiLinkBridgeWebApi48
                 };
                 using (var client = new HttpClient())
                 {
+                    client.Timeout = TimeSpan.FromSeconds(5);
                     if (!string.IsNullOrEmpty(secret))
                     {
                         client.DefaultRequestHeaders.Add("x-bridge-secret", secret);
@@ -97,7 +98,18 @@ namespace HiLinkBridgeWebApi48
             }
             catch (Exception ex)
             {
-                Console.WriteLine("[BridgeSettings] register exception: " + ex.Message);
+                try
+                {
+                    var raw = (Environment.GetEnvironmentVariable("BACKEND_BASE") ?? string.Empty).Trim();
+                    var trimmed = raw.TrimEnd('/');
+                    var normalized = trimmed.EndsWith("/api", StringComparison.OrdinalIgnoreCase)
+                        ? trimmed
+                        : (trimmed + "/api");
+                    var url = string.IsNullOrEmpty(normalized) ? "(empty)" : (normalized + "/bg/bridge-settings");
+                    Console.WriteLine("[BridgeSettings] register exception: backendBaseRaw=" + (string.IsNullOrEmpty(raw) ? "(empty)" : raw) + " url=" + url);
+                }
+                catch { }
+                Console.WriteLine("[BridgeSettings] register exception: " + ex);
             }
         }
         private delegate bool ConsoleCtrlHandler(int ctrlType);

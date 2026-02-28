@@ -84,6 +84,76 @@ function inferDiameterGroupFromRequest(request) {
   return inferDiameterGroupFromDiameter(diameter) || "8";
 }
 
+export async function triggerEspritForNc({ request, force = false }) {
+  if (!request) {
+    throw new Error("request is required to trigger Esprit");
+  }
+
+  const existingNc =
+    request?.caseInfos?.ncFile?.fileName || request?.caseInfos?.ncFile?.s3Key;
+  if (existingNc && !force) return;
+
+  const camFileName = request?.caseInfos?.camFile?.filePath;
+  if (!camFileName) {
+    const err = new Error("CAM 파일이 없어 NC 생성을 시작할 수 없습니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const ncFileName = String(camFileName).replace(/\.stl$/i, ".nc");
+  const controller = new AbortController();
+  const timeoutMs = Number(process.env.BG_TRIGGER_TIMEOUT_MS || 2500);
+  const timeoutRef = setTimeout(() => controller.abort(), timeoutMs);
+  const espritUrl = `${ESPRIT_BASE.replace(/\/+$/, "")}/`;
+
+  let resp;
+  try {
+    resp = await fetch(espritUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        RequestId: String(request.requestId || ""),
+        StlPath: camFileName,
+        NcOutputPath: ncFileName,
+        Force: Boolean(force),
+        ClinicName: request?.caseInfos?.clinicName || "",
+        PatientName: request?.caseInfos?.patientName || "",
+        Tooth: request?.caseInfos?.tooth || "",
+        ImplantManufacturer: request?.caseInfos?.implantManufacturer || "",
+        ImplantSystem: request?.caseInfos?.implantSystem || "",
+        ImplantType: request?.caseInfos?.implantType || "",
+        MaxDiameter: Number(request?.caseInfos?.maxDiameter || 0),
+        ConnectionDiameter: Number(request?.caseInfos?.connectionDiameter || 0),
+        MaterialDiameter: Number(request?.productionSchedule?.diameter || 0),
+        MaterialDiameterGroup: String(
+          request?.productionSchedule?.diameterGroup || "",
+        ),
+        WorkType: request?.caseInfos?.workType || "",
+        LotNumber: request?.lotNumber?.part || "",
+      }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    const err = new Error(
+      "Esprit 서버에 연결할 수 없습니다. Esprit 서버(8001)를 실행한 후 다시 시도해주세요.",
+    );
+    err.statusCode = 503;
+    err.cause = error;
+    throw err;
+  } finally {
+    clearTimeout(timeoutRef);
+  }
+
+  if (!resp?.ok) {
+    const text = await resp.text().catch(() => "");
+    const err = new Error(
+      `Esprit 트리거 실패 (${resp?.status ?? "unknown"}): ${text}`.trim(),
+    );
+    err.statusCode = 503;
+    throw err;
+  }
+}
+
 const revertManufacturerStageByReviewStage = (request, stage) => {
   const prevMap = {
     request: "의뢰",

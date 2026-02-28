@@ -79,6 +79,18 @@ const resolveHanjinPath = (envKey, fallbackPath) => {
   return fallbackPath || "";
 };
 
+const buildHanjinPathCandidates = (rawPath) => {
+  const path = String(rawPath || "").trim();
+  if (!path) return [];
+
+  const candidates = [path];
+  if (path.startsWith("/api/")) {
+    candidates.push(path.replace(/^\/api\//, "/"));
+  }
+
+  return [...new Set(candidates)];
+};
+
 const HANJIN_CLIENT_ID = String(process.env.HANJIN_CLIENT_ID || "").trim();
 const HANJIN_CSR_NUM = String(process.env.HANJIN_CSR_NUM || "").trim();
 const HANJIN_SHIPPER_ZIP = String(process.env.HANJIN_SHIPPER_ZIP || "").trim();
@@ -117,8 +129,127 @@ export async function getWblPrintSettings(req, res) {
 
 const HANJIN_PATH_FALLBACKS = {
   HANJIN_PRINT_WBL_PATH: "/v1/wbl/{client_id}/print-wbls",
-  HANJIN_PICKUP_REQUEST_PATH: "/api/pd/order/booking",
-  HANJIN_PICKUP_CANCEL_PATH: "/api/pd/order/cancel",
+  HANJIN_PICKUP_REQUEST_PATH: "/parcel-delivery/v1/order/insert-order",
+  HANJIN_PICKUP_CANCEL_PATH: "/parcel-delivery/v1/order/cancel-order",
+};
+
+const HANJIN_SENDER_ZIP = String(
+  process.env.HANJIN_SENDER_ZIP || process.env.HANJIN_SHIPPER_ZIP || "",
+).trim();
+const HANJIN_SENDER_BASE_ADDR = String(
+  process.env.HANJIN_SENDER_BASE_ADDR || "",
+).trim();
+const HANJIN_SENDER_DTL_ADDR = String(
+  process.env.HANJIN_SENDER_DTL_ADDR || "",
+).trim();
+const HANJIN_SENDER_NAME = String(process.env.HANJIN_SENDER_NAME || "").trim();
+const HANJIN_SENDER_TEL = String(process.env.HANJIN_SENDER_TEL || "").trim();
+const HANJIN_SENDER_MOBILE = String(
+  process.env.HANJIN_SENDER_MOBILE || "",
+).trim();
+
+const ensureHanjinSenderEnv = () => {
+  if (!HANJIN_SENDER_ZIP) {
+    throw Object.assign(
+      new Error("HANJIN_SENDER_ZIP 환경 변수가 필요합니다."),
+      {
+        statusCode: 500,
+      },
+    );
+  }
+  if (!HANJIN_SENDER_BASE_ADDR) {
+    throw Object.assign(
+      new Error("HANJIN_SENDER_BASE_ADDR 환경 변수가 필요합니다."),
+      {
+        statusCode: 500,
+      },
+    );
+  }
+  if (!HANJIN_SENDER_DTL_ADDR) {
+    throw Object.assign(
+      new Error("HANJIN_SENDER_DTL_ADDR 환경 변수가 필요합니다."),
+      {
+        statusCode: 500,
+      },
+    );
+  }
+  if (!HANJIN_SENDER_NAME) {
+    throw Object.assign(
+      new Error("HANJIN_SENDER_NAME 환경 변수가 필요합니다."),
+      {
+        statusCode: 500,
+      },
+    );
+  }
+  if (!HANJIN_SENDER_TEL) {
+    throw Object.assign(
+      new Error("HANJIN_SENDER_TEL 환경 변수가 필요합니다."),
+      {
+        statusCode: 500,
+      },
+    );
+  }
+};
+
+const buildHanjinInsertOrderBody = ({ mailbox, requests }) => {
+  ensureHanjinEnv();
+  ensureHanjinSenderEnv();
+
+  const list = Array.isArray(requests) ? requests : [];
+  const first = list[0] || {};
+  const requestor = first.requestor || {};
+  const requestorOrg = first.requestorOrganizationId || {};
+  const extracted = requestorOrg.extracted || {};
+  const addr = requestor.address || {};
+
+  const receiverZip = String(addr.zipCode || extracted.zipCode || "")
+    .trim()
+    .slice(0, 6);
+  const receiverBaseAddr =
+    String(addr.street || addr.address1 || extracted.address || "").trim() ||
+    String(requestor.addressText || "").trim();
+  const receiverDtlAddr = String(addr.address2 || "").trim();
+
+  const receiverName =
+    String(first.caseInfos?.clinicName || "").trim() ||
+    String(requestorOrg.name || extracted.companyName || "").trim() ||
+    String(requestor.organization || "").trim() ||
+    String(requestor.name || "").trim();
+
+  const receiverTel = String(
+    requestor.phoneNumber || extracted.phoneNumber || requestor.phone || "",
+  )
+    .trim()
+    .slice(0, 20);
+
+  const ymd = getTodayYmdInKst().replace(/-/g, "");
+  const custOrdNo = `ABUTS_${ymd}_${String(mailbox || "-")}`.slice(0, 30);
+
+  return {
+    custEdiCd: HANJIN_CLIENT_ID,
+    custOrdNo,
+    svcCatCd: "E",
+    cntractNo: HANJIN_CSR_NUM,
+    pickupAskDt: ymd,
+    sndrZip: HANJIN_SENDER_ZIP,
+    sndrBaseAddr: HANJIN_SENDER_BASE_ADDR,
+    sndrDtlAddr: HANJIN_SENDER_DTL_ADDR,
+    sndrNm: HANJIN_SENDER_NAME,
+    sndrTelNo: HANJIN_SENDER_TEL,
+    ...(HANJIN_SENDER_MOBILE ? { sndrMobileNo: HANJIN_SENDER_MOBILE } : {}),
+    sndrRefCntent: "abuts.fit",
+    rcvrZip: receiverZip,
+    rcvrBaseAddr: receiverBaseAddr,
+    rcvrDtlAddr: receiverDtlAddr,
+    rcvrNm: receiverName,
+    rcvrTelNo: receiverTel || HANJIN_SENDER_TEL,
+    ...(receiverTel ? { rcvrMobileNo: receiverTel } : {}),
+    rcvrAskCntent: "",
+    rcvrRefCntent: String(mailbox || "").trim(),
+    comodityNm: "Custom Abutment",
+    payTypCd: "CD",
+    boxTypCd: "A",
+  };
 };
 
 const resolveWblPrintPayload = (payload) => {
@@ -572,28 +703,91 @@ export async function requestHanjinPickup(req, res) {
       });
     }
 
-    let resolved;
-    try {
-      resolved = await resolveHanjinPayload({ mailboxAddresses, payload });
-    } catch (err) {
-      if (err.statusCode) {
-        return res.status(err.statusCode).json({
-          success: false,
-          message: err.message,
-        });
-      }
-      throw err;
+    const list = resolveMailboxList(mailboxAddresses);
+    if (!list.length && !(payload && typeof payload === "object")) {
+      return res.status(400).json({
+        success: false,
+        message: "mailboxAddresses가 필요합니다.",
+      });
     }
 
-    const data = await hanjinService.requestOrderApi({
-      path,
-      method: "POST",
-      data: resolved.payload,
-    });
+    const pathCandidates = buildHanjinPathCandidates(path);
+
+    const callHanjinWithFallback = async ({ data }) => {
+      let lastError = null;
+      for (const candidate of pathCandidates) {
+        try {
+          const out = await hanjinService.requestOrderApi({
+            path: candidate,
+            method: "POST",
+            data,
+          });
+          lastError = null;
+          return out;
+        } catch (err) {
+          lastError = err;
+          if (err?.status !== 404) {
+            throw err;
+          }
+        }
+      }
+      throw lastError;
+    };
+
+    // payload가 직접 들어오면(DEV/운영 수동 테스트) 그대로 전달
+    if (payload && typeof payload === "object") {
+      const data = await callHanjinWithFallback({ data: payload });
+      return res.status(200).json({ success: true, data });
+    }
+
+    const requests = await Request.find({
+      mailboxAddress: { $in: list },
+      manufacturerStage: "포장.발송",
+    })
+      .populate("requestor", "name organization phoneNumber address")
+      .populate("requestorOrganizationId", "name extracted")
+      .lean();
+
+    if (!requests.length) {
+      return res.status(404).json({
+        success: false,
+        message: "조건에 맞는 의뢰를 찾을 수 없습니다.",
+      });
+    }
+
+    const byMailbox = new Map();
+    for (const r of requests) {
+      const mailbox = String(r?.mailboxAddress || "").trim();
+      if (!mailbox) continue;
+      if (!byMailbox.has(mailbox)) byMailbox.set(mailbox, []);
+      byMailbox.get(mailbox).push(r);
+    }
+
+    const results = [];
+    for (const mailbox of list) {
+      const group = byMailbox.get(mailbox) || [];
+      if (!group.length) {
+        results.push({
+          mailbox,
+          success: false,
+          skipped: true,
+          reason: "no_requests",
+        });
+        continue;
+      }
+
+      const orderBody = buildHanjinInsertOrderBody({
+        mailbox,
+        requests: group,
+      });
+
+      const data = await callHanjinWithFallback({ data: orderBody });
+      results.push({ mailbox, success: true, data });
+    }
 
     return res.status(200).json({
       success: true,
-      data,
+      data: { results },
     });
   } catch (error) {
     console.error("Error in requestHanjinPickup:", error);
@@ -648,15 +842,58 @@ export async function cancelHanjinPickup(req, res) {
       throw err;
     }
 
-    const data = await hanjinService.requestOrderApi({
-      path,
-      method: "POST",
-      data: resolved.payload,
-    });
+    const list = resolveMailboxList(mailboxAddresses);
+    if (!list.length && !(payload && typeof payload === "object")) {
+      return res.status(400).json({
+        success: false,
+        message: "mailboxAddresses가 필요합니다.",
+      });
+    }
+
+    const pathCandidates = buildHanjinPathCandidates(path);
+
+    const callHanjinWithFallback = async ({ data }) => {
+      let lastError = null;
+      for (const candidate of pathCandidates) {
+        try {
+          const out = await hanjinService.requestOrderApi({
+            path: candidate,
+            method: "POST",
+            data,
+          });
+          lastError = null;
+          return out;
+        } catch (err) {
+          lastError = err;
+          if (err?.status !== 404) {
+            throw err;
+          }
+        }
+      }
+      throw lastError;
+    };
+
+    // payload가 직접 들어오면(DEV/운영 수동 테스트) 그대로 전달
+    if (payload && typeof payload === "object") {
+      const data = await callHanjinWithFallback({ data: payload });
+      return res.status(200).json({ success: true, data });
+    }
+
+    const ymd = getTodayYmdInKst().replace(/-/g, "");
+    const results = [];
+    for (const mailbox of list) {
+      const custOrdNo = `ABUTS_${ymd}_${String(mailbox || "-")}`.slice(0, 30);
+      const cancelBody = {
+        custEdiCd: HANJIN_CLIENT_ID,
+        custOrdNo,
+      };
+      const data = await callHanjinWithFallback({ data: cancelBody });
+      results.push({ mailbox, success: true, data });
+    }
 
     return res.status(200).json({
       success: true,
-      data,
+      data: { results },
     });
   } catch (error) {
     console.error("Error in cancelHanjinPickup:", error);

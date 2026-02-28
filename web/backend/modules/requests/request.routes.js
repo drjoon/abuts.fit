@@ -250,6 +250,14 @@ router.post(
   requestController.ensureNcFileOnBridgeStoreByRequestId,
 );
 
+// 제조사/관리자: NC 파일 재생성 트리거 (Esprit force 재처리)
+router.post(
+  "/by-request/:requestId/nc-file/regenerate",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.regenerateNcByRequestId,
+);
+
 // 제조사/관리자: requestId로 케이스 요약 조회 (치아번호/최대직경 등)
 router.get(
   "/by-request/:requestId/summary",
