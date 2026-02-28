@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
-import { Check, X } from "lucide-react";
+import { Check, Upload, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -68,6 +68,11 @@ type Props = {
   focusUnverifiedTick: number;
   onDuplicateDetected?: (payload: { file: File; duplicate: any }) => void;
   duplicatePromptOpen: boolean;
+  isDragOver: boolean;
+  onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
+  onDragLeave: (e: React.DragEvent<HTMLDivElement>) => void;
+  onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
+  onFilesSelected: (files: File[]) => void;
 };
 
 export function NewRequestDetailsSection({
@@ -108,6 +113,11 @@ export function NewRequestDetailsSection({
   focusUnverifiedTick,
   onDuplicateDetected,
   duplicatePromptOpen,
+  isDragOver,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onFilesSelected,
 }: Props) {
   const normalizeKeyPart = (s: string) => {
     try {
@@ -129,6 +139,7 @@ export function NewRequestDetailsSection({
     setShouldRestoreDetailAfterDuplicate,
   ] = useState(false);
   const listContainerRef = useRef<HTMLDivElement | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleDialogOpenChange = useCallback(
     (nextOpen: boolean) => {
@@ -457,8 +468,43 @@ export function NewRequestDetailsSection({
             onKeyDown={handleKeyboardNavigation}
           >
             {!hasActiveSession && (
-              <div className="app-glass-card app-glass-card--lg flex items-center justify-center w-full min-h-[120px] rounded-xl border border-dashed border-gray-200 bg-white/60 text-[11px] md:text-sm text-muted-foreground px-6">
-                첨부된 STL 파일
+              <div className="flex flex-1 items-center justify-center py-6">
+                <div
+                  className={`w-full max-w-[420px] border-2 border-dashed rounded-2xl p-4 md:p-6 text-center transition-colors flex flex-col items-center justify-center gap-2 ${
+                    isDragOver
+                      ? "border-primary bg-primary/5"
+                      : "border-gray-300 hover:border-primary/50 bg-white"
+                  }`}
+                  onDragOver={onDragOver}
+                  onDragLeave={onDragLeave}
+                  onDrop={onDrop}
+                >
+                  <Button
+                    variant="outline"
+                    className="text-xs md:text-sm"
+                    onClick={() => uploadInputRef.current?.click()}
+                  >
+                    <Upload className="h-6 md:h-8 w-6 md:w-8 mx-auto text-muted-foreground" />
+                    커스텀 어벗 STL 파일 드롭
+                  </Button>
+                  <p className="text-xs md:text-sm text-muted-foreground">
+                    파일명에서 치과이름, 환자이름, 치아번호를 자동 인식합니다.
+                  </p>
+                  <input
+                    ref={uploadInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      const fileList = e.currentTarget.files;
+                      if (fileList) {
+                        onFilesSelected(Array.from(fileList));
+                      }
+                      e.currentTarget.value = "";
+                    }}
+                    accept=".stl"
+                  />
+                </div>
               </div>
             )}
             {hasActiveSession &&

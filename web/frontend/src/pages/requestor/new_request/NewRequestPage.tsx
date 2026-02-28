@@ -17,7 +17,6 @@ import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
 import { NewRequestDetailsSection } from "./components/NewRequestDetailsSection";
-import { NewRequestUploadSection } from "./components/NewRequestUploadSection";
 import { NewRequestShippingSection } from "./components/NewRequestShippingSection";
 import { NewRequestPageSkeleton } from "@/shared/ui/skeletons/NewRequestPageSkeleton";
 
@@ -563,17 +562,6 @@ export const NewRequestPage = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch flex-1 min-h-0 h-full">
           <div className="flex flex-col gap-2.5 flex-1 min-h-0 h-full">
-            <NewRequestUploadSection
-              isDragOver={isDragOver}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => {
-                e.preventDefault();
-                handleDragLeave(e);
-                handleIncomingFiles(Array.from(e.dataTransfer.files));
-              }}
-              onFilesSelected={handleIncomingFiles}
-            />
 
             <NewRequestDetailsSection
               files={files}
@@ -612,6 +600,15 @@ export const NewRequestPage = () => {
               sectionHighlightClass={sectionHighlightClass}
               focusUnverifiedTick={focusUnverifiedTick}
               duplicatePromptOpen={!!duplicatePrompt}
+              isDragOver={isDragOver}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => {
+                e.preventDefault();
+                handleDragLeave(e);
+                handleIncomingFiles(Array.from(e.dataTransfer.files));
+              }}
+              onFilesSelected={handleIncomingFiles}
               onDuplicateDetected={({ file, duplicate }) => {
                 const caseId = String(
                   (file as any)?._draftCaseInfoId || "",
