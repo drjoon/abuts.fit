@@ -27,10 +27,10 @@ export function useDraftMeta() {
     __default__: { workType: "abutment" },
   });
   const [initialDraftFiles, setInitialDraftFiles] = useState<DraftCaseInfo[]>(
-    []
+    [],
   );
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
-    "loading"
+    "loading",
   );
   const [error, setError] = useState<string | null>(null);
 
@@ -79,7 +79,7 @@ export function useDraftMeta() {
       localStorage.setItem(metaKey, JSON.stringify(meta));
       localStorage.setItem(DRAFT_ID_STORAGE_KEY, id);
     },
-    [getDraftMetaKey]
+    [getDraftMetaKey],
   );
 
   // DraftMeta 로드 (caseInfosMap 포함)
@@ -129,7 +129,7 @@ export function useDraftMeta() {
         return null;
       }
     },
-    [getHeaders]
+    [getHeaders],
   );
 
   // Draft 생성
@@ -279,8 +279,8 @@ export function useDraftMeta() {
           fileBasedCaseInfos.length > 0
             ? fileBasedCaseInfos
             : map.__default__
-            ? [map.__default__]
-            : [];
+              ? [map.__default__]
+              : [];
 
         console.log("[patchDraftImmediately] Sending caseInfos:", {
           draftId,
@@ -311,7 +311,7 @@ export function useDraftMeta() {
         console.error("patchDraftImmediately error:", err);
       }
     },
-    [draftId, token, getHeaders, saveDraftMeta]
+    [draftId, token, getHeaders, saveDraftMeta],
   );
 
   // caseInfos 업데이트 (파일별 독립적 관리)
@@ -384,7 +384,7 @@ export function useDraftMeta() {
                   body: JSON.stringify({
                     caseInfos: caseInfosArray,
                   }),
-                }
+                },
               );
 
               if (!res.ok) {
@@ -401,7 +401,7 @@ export function useDraftMeta() {
         return newMap;
       });
     },
-    [draftId, token, getHeaders, saveDraftMeta]
+    [draftId, token, getHeaders, saveDraftMeta],
   );
 
   // 언마운트 시 디바운스 타이머 정리
@@ -510,11 +510,28 @@ export function useDraftMeta() {
     saveDraftMeta,
   ]);
 
+  const removeCaseInfos = useCallback(
+    (fileKey: string) => {
+      if (!fileKey) return;
+      setCaseInfosMap((prev) => {
+        if (!prev[fileKey]) return prev;
+        const next = { ...prev };
+        delete next[fileKey];
+        if (draftId) {
+          saveDraftMeta(draftId, next);
+        }
+        return next;
+      });
+    },
+    [draftId, saveDraftMeta],
+  );
+
   return {
     draftId,
     caseInfosMap,
     setCaseInfosMap,
     updateCaseInfos,
+    removeCaseInfos,
     patchDraftImmediately,
     status,
     error,

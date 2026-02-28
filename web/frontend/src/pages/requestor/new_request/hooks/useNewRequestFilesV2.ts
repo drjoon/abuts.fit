@@ -30,6 +30,7 @@ type UseNewRequestFilesV2Params = {
   setSelectedPreviewIndex: React.Dispatch<React.SetStateAction<number | null>>;
   caseInfosMap?: Record<string, any>;
   updateCaseInfos?: (fileKey: string, updates: any) => void;
+  removeCaseInfos?: (fileKey: string) => void;
 };
 
 const toFileKey = (name: string, size: number) => {
@@ -74,6 +75,7 @@ export const useNewRequestFilesV2 = ({
   setSelectedPreviewIndex,
   caseInfosMap,
   updateCaseInfos,
+  removeCaseInfos,
 }: UseNewRequestFilesV2Params) => {
   const { toast } = useToast();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
@@ -669,11 +671,17 @@ export const useNewRequestFilesV2 = ({
     async (index: number) => {
       const file = filesRef.current[index];
       if (!file) return;
+      const rawKey = `${file.name}:${file.size}`;
+      const normalizedKey = toFileKey(file.name, file.size);
 
       const draftCaseInfoId = (file as FileWithDraftId)._draftCaseInfoId;
       if (!draftCaseInfoId || !draftId || !token) {
         // Draft 파일 ID가 없으면 로컬에서만 제거
         setFiles((prev) => prev.filter((_, i) => i !== index));
+        removeCaseInfos?.(rawKey);
+        if (normalizedKey !== rawKey) {
+          removeCaseInfos?.(normalizedKey);
+        }
         return;
       }
 
@@ -702,6 +710,10 @@ export const useNewRequestFilesV2 = ({
           prev.filter((ci) => ci._id !== draftCaseInfoId),
         );
         setFiles((prev) => prev.filter((_, i) => i !== index));
+        removeCaseInfos?.(rawKey);
+        if (normalizedKey !== rawKey) {
+          removeCaseInfos?.(normalizedKey);
+        }
 
         // 미리보기 인덱스 조정
         if (selectedPreviewIndexRef.current === index) {

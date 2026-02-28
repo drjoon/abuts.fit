@@ -66,6 +66,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     caseInfosMap,
     setCaseInfosMap,
     updateCaseInfos,
+    removeCaseInfos,
     patchDraftImmediately,
     status: draftStatus,
     deleteDraft,
@@ -321,6 +322,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     setSelectedPreviewIndex,
     caseInfosMap,
     updateCaseInfos,
+    removeCaseInfos,
   });
 
   const handleUploadUnchecked = useCallback(
