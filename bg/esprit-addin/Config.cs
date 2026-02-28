@@ -111,12 +111,70 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             try
             {
                 var value = Environment.GetEnvironmentVariable(key);
-                return string.IsNullOrWhiteSpace(value) ? fallback : value;
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return fallback;
+                }
+
+                if (IsLikelyPathKey(key) && LooksLikeInvalidPathValue(value))
+                {
+                    return fallback;
+                }
+
+                return value;
             }
             catch
             {
                 return fallback;
             }
+        }
+
+        private static bool IsLikelyPathKey(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+            return key.EndsWith("_ROOT", StringComparison.OrdinalIgnoreCase) ||
+                   key.EndsWith("_DIRECTORY", StringComparison.OrdinalIgnoreCase) ||
+                   key.EndsWith("_DIR", StringComparison.OrdinalIgnoreCase) ||
+                   key.EndsWith("_PRC", StringComparison.OrdinalIgnoreCase) ||
+                   key.EndsWith("_PATH", StringComparison.OrdinalIgnoreCase) ||
+                   key.Contains("STORAGE", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool LooksLikeInvalidPathValue(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return true;
+            }
+
+            try
+            {
+                foreach (char c in Path.GetInvalidPathChars())
+                {
+                    if (value.IndexOf(c) >= 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            if (value.IndexOf('?') >= 0)
+            {
+                return true;
+            }
+
+            if (value.IndexOf('\uFFFD') >= 0)
+            {
+                return true;
+            }
+
+            return false;
         }
 
         private static double GetDoubleEnvOrDefault(string key, double fallback)

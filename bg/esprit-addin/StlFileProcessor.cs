@@ -191,6 +191,219 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 throw;
             }
         }
+
+        private void EnsureCustomCyclePrc(Type mainModuleType)
+        {
+            try
+            {
+                string[] prcPaths = EnsurePrcArray(GetMainModuleField<string[]>(mainModuleType, "PrcFilePath"));
+                string[] prcNames = EnsurePrcArray(GetMainModuleField<string[]>(mainModuleType, "PrcFileName"));
+                string prcDir = GetMainModuleField<string>(mainModuleType, "PrcDirectory") ?? ResolvePrcDirectory();
+
+                bool nonConnection = false;
+                try
+                {
+                    nonConnection = GetStaticFieldValue<bool>("DentalAddin.MoveSTL_Module", "NonConnection");
+                }
+                catch
+                {
+                    nonConnection = false;
+                }
+
+                string subDir = nonConnection ? "1_Face Hole" : "2_Connection";
+                string targetFileName = nonConnection ? "네오_IS_R_FaceHole.prc" : "네오_IS_R_Connection.prc";
+
+                string configured = nonConnection ? AppConfig.FaceHoleProcessPath : AppConfig.ConnectionProcessPath;
+                string original4 = (prcPaths.Length > 4) ? prcPaths[4] : null;
+                string original8 = (prcPaths.Length > 8) ? prcPaths[8] : null;
+                AppLogger.Log($"DentalAddin: PRC 설정값 - NonConnection={nonConnection}, Configured={configured}, PrcDir={prcDir}, Orig[4]={original4}, Orig[8]={original8}");
+
+                string resolved = null;
+
+                // 프로젝트 AcroDent 직접 시도
+                string projectAcroDent = Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", subDir);
+                if (Directory.Exists(projectAcroDent))
+                {
+                    string exact = FindFileByNormalizedName(projectAcroDent, targetFileName);
+                    if (!string.IsNullOrWhiteSpace(exact) && File.Exists(exact))
+                    {
+                        resolved = exact;
+                        AppLogger.Log($"DentalAddin: PRC 프로젝트 경로에서 정확히 발견 - {Path.GetFileName(resolved)}");
+                    }
+                    else
+                    {
+                        string[] candidates = Directory.GetFiles(projectAcroDent, "*.prc", SearchOption.TopDirectoryOnly);
+                        if (candidates.Length > 0)
+                        {
+                            resolved = candidates[0];
+                            AppLogger.Log($"DentalAddin: PRC 프로젝트 경로에서 첫 파일로 폴백 - {Path.GetFileName(resolved)}");
+                        }
+                    }
+                }
+
+                // 폴백: prcDir 기준 탐색
+                if (string.IsNullOrWhiteSpace(resolved) || !File.Exists(resolved))
+                {
+                    try
+                    {
+                        resolved = ResolveProcessPath(prcDir, configured);
+                    }
+                    catch (ArgumentException argEx)
+                    {
+                        AppLogger.Log($"DentalAddin: PRC 경로 해석 실패(ArgumentException) - {argEx.Message} (Configured={configured}, PrcDir={prcDir})");
+                        resolved = null;
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(resolved) || !File.Exists(resolved))
+                {
+                    string msg = $"PRC를 찾을 수 없습니다. NonConnection={nonConnection}, SubDir={subDir}, Configured={configured}, PrcDir={prcDir}, Orig[4]={original4}, Orig[8]={original8}";
+                    AppLogger.Log($"DentalAddin: {msg}");
+                    throw new InvalidOperationException(msg);
+                }
+
+                if (prcPaths.Length > 4 || prcPaths.Length > 8)
+                {
+                    if (prcPaths.Length > 4)
+                    {
+                        prcPaths[4] = resolved;
+                        if (prcNames.Length > 4)
+                        {
+                            prcNames[4] = Path.GetFileName(resolved);
+                        }
+                    }
+                    if (prcPaths.Length > 8)
+                    {
+                        prcPaths[8] = resolved;
+                        if (prcNames.Length > 8)
+                        {
+                            prcNames[8] = Path.GetFileName(resolved);
+                        }
+                    }
+                    SetStaticField(mainModuleType, "PrcFilePath", prcPaths);
+                    SetStaticField(mainModuleType, "PrcFileName", prcNames);
+                    AppLogger.Log($"DentalAddin: PRC 보정 완료 - NonConnection={nonConnection}, File={Path.GetFileName(resolved)} ([4],[8])");
+                }
+                else
+                {
+                    string msg = $"PRC 배열 길이 부족. Len={prcPaths.Length} (need index 4/8)";
+                    AppLogger.Log($"DentalAddin: {msg}");
+                    throw new InvalidOperationException(msg);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"DentalAddin: PRC[4] 보정 중 예외 - {ex.GetType().Name}:{ex.Message}\n{ex.StackTrace}");
+                throw;
+            }
+        }
+
+        private void EnsureCorePrcDefaults(Type mainModuleType)
+        {
+            try
+            {
+                string prcRoot = GetMainModuleField<string>(mainModuleType, "PrcDirectory") ?? ResolvePrcDirectory();
+                string[] prcPaths = EnsurePrcArray(GetMainModuleField<string[]>(mainModuleType, "PrcFilePath"));
+                string[] prcNames = EnsurePrcArray(GetMainModuleField<string[]>(mainModuleType, "PrcFileName"));
+
+                AssignPrcIfEmptyByFolder(prcRoot, prcPaths, prcNames, 1, Path.Combine("3_Turning prc", "Turning.prc"));
+                AssignPrcIfEmptyByFolder(prcRoot, prcPaths, prcNames, 2, Path.Combine("4_ReverseTurning prc", "Reverse Turning Process.prc"));
+                AssignPrcIfEmptyByFolder(prcRoot, prcPaths, prcNames, 3, Path.Combine("5_Rough prc", "MillRough_3D.prc"));
+
+                AssignPrcIfEmptyByFolder(prcRoot, prcPaths, prcNames, 5, Path.Combine("8_0-180 prc", "3D.prc"));
+                AssignPrcIfEmptyByFolder(prcRoot, prcPaths, prcNames, 6, Path.Combine("9_90-270 prc", "3D_2.prc"));
+
+                AssignPrcIfEmptyByFolder(prcRoot, prcPaths, prcNames, 9, Path.Combine("6_Semi_Rough prc", "SemiRough_2D.prc"));
+                AssignPrcIfEmptyByFolder(prcRoot, prcPaths, prcNames, 10, Path.Combine("11_Composite prc", "5axisComposite.prc"));
+                AssignPrcIfEmptyByFolder(prcRoot, prcPaths, prcNames, 12, Path.Combine("10_MarkText prc", "MarkText.prc"));
+
+                SetStaticField(mainModuleType, "PrcFilePath", prcPaths);
+                SetStaticField(mainModuleType, "PrcFileName", prcNames);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"DentalAddin: 기본 PRC 보정 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private static void AssignPrcIfEmptyByFolder(string prcRoot, string[] prcPaths, string[] prcNames, int index, string relativePath)
+        {
+            if (prcPaths == null || prcNames == null)
+            {
+                return;
+            }
+            if (index < 0 || index >= prcPaths.Length)
+            {
+                return;
+            }
+            if (!string.IsNullOrWhiteSpace(prcPaths[index]))
+            {
+                return;
+            }
+            try
+            {
+                string resolved = ResolveProcessPath(prcRoot, relativePath);
+                if (string.IsNullOrWhiteSpace(resolved) || !File.Exists(resolved))
+                {
+                    string dir = Path.GetDirectoryName(Path.Combine(prcRoot, relativePath)) ?? prcRoot;
+                    string file = Path.GetFileName(relativePath);
+                    string normalized = FindFileByNormalizedName(dir, file);
+                    if (!string.IsNullOrWhiteSpace(normalized) && File.Exists(normalized))
+                    {
+                        resolved = normalized;
+                    }
+                }
+                if (!string.IsNullOrWhiteSpace(resolved) && File.Exists(resolved))
+                {
+                    prcPaths[index] = resolved;
+                    if (index < prcNames.Length)
+                    {
+                        prcNames[index] = Path.GetFileName(resolved);
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static string FindFileByNormalizedName(string directory, string targetFileName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(directory) || string.IsNullOrWhiteSpace(targetFileName))
+                {
+                    return null;
+                }
+                if (!Directory.Exists(directory))
+                {
+                    return null;
+                }
+
+                string targetC = targetFileName.Normalize(NormalizationForm.FormC);
+                string targetD = targetFileName.Normalize(NormalizationForm.FormD);
+
+                foreach (string path in Directory.GetFiles(directory, "*", SearchOption.TopDirectoryOnly))
+                {
+                    string name = Path.GetFileName(path);
+                    if (string.Equals(name, targetFileName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return path;
+                    }
+                    string nameC = name.Normalize(NormalizationForm.FormC);
+                    string nameD = name.Normalize(NormalizationForm.FormD);
+                    if (string.Equals(nameC, targetC, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(nameD, targetD, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return path;
+                    }
+                }
+            }
+            catch
+            {
+            }
+            return null;
+        }
         private void CaptureNcMetadata(Document document)
         {
             try
@@ -1489,6 +1702,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     AppLogger.Log($"DentalAddin: MainModuleType Assembly 정보 로깅 실패 - {ex.GetType().Name}:{ex.Message}");
                 }
                 ConfigureDentalProcesses(mainModuleType);
+                EnsureCorePrcDefaults(mainModuleType);
                 EnsureMainModuleContext(mainModuleType, document);
                 ApplyTurningParameters(mainModuleType);
                 EnsureMoveModuleDefaults(mainModuleType, document);
@@ -1500,6 +1714,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 
                 AppLogger.Log($"DentalAddin: MoveSTL 실행 시작 (FrontLimit:{frontLimitX}, BackLimit:{backLimitX})");
                 InvokeMoveSTL(mainModuleType);
+                EnsureCustomCyclePrc(mainModuleType);
                 
                 AppLogger.Log("DentalAddin: Emerge 실행 시작 - IGS 서피스 Merge 및 Translate");
                 InvokeEmerge(mainModuleType, document);
@@ -1545,6 +1760,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             int[] numCombobox = GetMainModuleField<int[]>(mainModuleType, "NumCombobox");
             SetStaticField(mainModuleType, "PrcFilePath", prcPaths);
             SetStaticField(mainModuleType, "PrcFileName", prcNames);
+            EnsureCustomCyclePrc(mainModuleType);
             bool reverseEnabled = numCombobox != null && numCombobox.Length > 4 && numCombobox[4] == 1;
             SetStaticField(mainModuleType, "ReverseOn", reverseEnabled);
             AppLogger.Log(reverseEnabled
@@ -2414,13 +2630,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             try
             {
                 int beforeCount = document.GraphicsCollection.Count;
+                HashSet<string> beforeKeys = SnapshotGraphicKeys(document);
                 AppLogger.Log($"DentalAddin: Surface Merge(1) - {projectPath}");
                 document.MergeFile(projectPath, Missing.Value);
 
-                GraphicObject surface = FindMergedSurface(document, beforeCount);
+                GraphicObject surface = FindMergedSurface(document, beforeCount, beforeKeys);
                 if (surface == null)
                 {
-                    AppLogger.Log("DentalAddin: Merge된 Surface를 찾지 못했습니다.");
+                    int afterCount = document?.GraphicsCollection?.Count ?? 0;
+                    AppLogger.Log($"DentalAddin: Merge된 Surface를 찾지 못했습니다. (beforeCount={beforeCount}, afterCount={afterCount}, project={projectFile})");
                     return true;
                 }
 
@@ -2458,9 +2676,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 }
 
                 beforeCount = document.GraphicsCollection.Count;
+                beforeKeys = SnapshotGraphicKeys(document);
                 AppLogger.Log($"DentalAddin: Surface Merge(2) - {extrudePath}");
                 document.MergeFile(extrudePath, Missing.Value);
-                GraphicObject extrudeSurface = FindMergedSurface(document, beforeCount, surface.Key);
+                GraphicObject extrudeSurface = FindMergedSurface(document, beforeCount, beforeKeys, surface.Key);
                 if (extrudeSurface != null)
                 {
                     extrudeSurface.Layer.Visible = false;
@@ -2479,11 +2698,81 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
-        private static GraphicObject FindMergedSurface(Document document, int beforeCount, object excludedKey = null)
+        private static HashSet<string> SnapshotGraphicKeys(Document document)
+        {
+            HashSet<string> keys = new HashSet<string>(StringComparer.Ordinal);
+            if (document?.GraphicsCollection == null)
+            {
+                return keys;
+            }
+
+            try
+            {
+                foreach (GraphicObject graphic in document.GraphicsCollection)
+                {
+                    if (graphic == null)
+                    {
+                        continue;
+                    }
+                    keys.Add(FormatGraphicKey(graphic.Key));
+                }
+            }
+            catch
+            {
+            }
+
+            return keys;
+        }
+
+        private static string FormatGraphicKey(object key)
+        {
+            if (key == null)
+            {
+                return string.Empty;
+            }
+            try
+            {
+                return Convert.ToString(key, CultureInfo.InvariantCulture) ?? string.Empty;
+            }
+            catch
+            {
+                return key.ToString();
+            }
+        }
+
+        private static GraphicObject FindMergedSurface(Document document, int beforeCount, HashSet<string> beforeKeys, object excludedKey = null)
         {
             if (document?.GraphicsCollection == null)
             {
                 return null;
+            }
+
+            string excluded = excludedKey != null ? FormatGraphicKey(excludedKey) : null;
+
+            if (beforeKeys != null && beforeKeys.Count > 0)
+            {
+                try
+                {
+                    foreach (GraphicObject graphicObject in document.GraphicsCollection)
+                    {
+                        if (graphicObject?.GraphicObjectType != espGraphicObjectType.espSurface)
+                        {
+                            continue;
+                        }
+                        string key = FormatGraphicKey(graphicObject.Key);
+                        if (!string.IsNullOrEmpty(excluded) && string.Equals(key, excluded, StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+                        if (!beforeKeys.Contains(key))
+                        {
+                            return graphicObject;
+                        }
+                    }
+                }
+                catch
+                {
+                }
             }
 
             int count = document.GraphicsCollection.Count;
