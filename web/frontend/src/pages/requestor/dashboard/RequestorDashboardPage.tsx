@@ -96,6 +96,31 @@ export const RequestorDashboardPage = () => {
     추적관리: ["tracking"],
   };
 
+  const getNormalizedStageOrNull = (requestLike: any): string | null => {
+    if (!requestLike?.manufacturerStage) {
+      return null;
+    }
+    try {
+      return getNormalizedStage(requestLike);
+    } catch {
+      return null;
+    }
+  };
+
+  const isCanceledRequest = (requestLike: any): boolean => {
+    if (!requestLike) return false;
+    const normalizedStage = getNormalizedStageOrNull(requestLike);
+    if (normalizedStage === "cancel") {
+      return true;
+    }
+    const stageLabel = String(requestLike?.manufacturerStage || "").trim();
+    if (stageLabel === "취소") {
+      return true;
+    }
+    const statusLabel = String(requestLike?.status || "").trim();
+    return statusLabel === "취소";
+  };
+
   const filterAbutmentRequest = (r: any) => {
     if (!r) return false;
     const ci = r.caseInfos || {};
@@ -107,7 +132,10 @@ export const RequestorDashboardPage = () => {
     const group = stageGroupByLabel[label];
     const base = (all || []).filter(filterAbutmentRequest);
     if (!group) return base;
-    return base.filter((r) => group.includes(getNormalizedStage(r)));
+    return base.filter((r) => {
+      const normalized = getNormalizedStageOrNull(r);
+      return normalized ? group.includes(normalized) : false;
+    });
   };
 
   const {
@@ -252,6 +280,43 @@ export const RequestorDashboardPage = () => {
   }, [queryClient, refetchBulk, refetchSummary]);
 
   const bulkData = bulkResponse?.success ? bulkResponse.data : null;
+
+  const riskSummary = useMemo(() => {
+    if (!summaryResponse?.success) return null;
+    const baseSummary = summaryResponse.data.riskSummary ?? null;
+    if (!baseSummary) return null;
+
+    const originalItems = Array.isArray(baseSummary.items)
+      ? baseSummary.items
+      : [];
+    const filteredItems = originalItems.filter(
+      (item) => !isCanceledRequest(item),
+    );
+
+    if (filteredItems.length === originalItems.length) {
+      return baseSummary;
+    }
+
+    const delayedCount = filteredItems.filter(
+      (item) => item.riskLevel === "danger",
+    ).length;
+    const warningCount = filteredItems.length - delayedCount;
+
+    return {
+      ...baseSummary,
+      items: filteredItems,
+      delayedCount,
+      warningCount,
+    };
+  }, [summaryResponse]);
+
+  const recentRequests = useMemo(() => {
+    if (!summaryResponse?.success) return [];
+    const requests = Array.isArray(summaryResponse.data.recentRequests)
+      ? summaryResponse.data.recentRequests
+      : [];
+    return requests.filter((r: any) => !isCanceledRequest(r));
+  }, [summaryResponse]);
 
   const isInitialLoading =
     isLoading || isBulkLoading || loadingCreditBalance || !summaryResponse;
@@ -427,16 +492,6 @@ export const RequestorDashboardPage = () => {
       },
     ];
   })();
-
-  const riskSummary = summaryResponse?.success
-    ? (summaryResponse.data.riskSummary ?? null)
-    : null;
-
-  const recentRequests = summaryResponse?.success
-    ? (summaryResponse.data.recentRequests ?? []).filter(
-        (r: any) => r?.status !== "취소",
-      )
-    : [];
 
   const canOpenCreditLedger = user.role === "requestor";
 
