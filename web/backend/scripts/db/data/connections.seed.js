@@ -4,7 +4,7 @@ export const CONNECTIONS_SEED = [
     system: "Regular",
     type: "Hex",
     category: "hanhwa-connection",
-    fileName: "네오_R_Connection.prc",
+    fileName: "네오_IS_RH_Connection.prc",
     isActive: true,
   },
   {
@@ -12,7 +12,7 @@ export const CONNECTIONS_SEED = [
     system: "Regular",
     type: "Non-Hex",
     category: "hanhwa-connection",
-    fileName: "네오_R_Non_Connection.prc",
+    fileName: "네오_IS_RN_Connection.prc",
     isActive: true,
   },
   {
@@ -20,7 +20,7 @@ export const CONNECTIONS_SEED = [
     system: "Mini",
     type: "Hex",
     category: "hanhwa-connection",
-    fileName: "덴티스_M_Connection.prc",
+    fileName: "덴티스_SQ_MH_Connection.prc",
     isActive: true,
   },
   {
@@ -28,7 +28,7 @@ export const CONNECTIONS_SEED = [
     system: "Mini",
     type: "Non-Hex",
     category: "hanhwa-connection",
-    fileName: "덴티스_M_Non_Connection.prc",
+    fileName: "덴티스_SQ_MN_Connection.prc",
     isActive: true,
   },
   {
@@ -36,7 +36,7 @@ export const CONNECTIONS_SEED = [
     system: "Regular",
     type: "Hex",
     category: "hanhwa-connection",
-    fileName: "덴티스_R_Connection.prc",
+    fileName: "덴티스_SQ_RH_Connection.prc",
     isActive: true,
   },
   {
@@ -44,7 +44,7 @@ export const CONNECTIONS_SEED = [
     system: "Regular",
     type: "Non-Hex",
     category: "hanhwa-connection",
-    fileName: "덴티스_R_Non_Connection.prc",
+    fileName: "덴티스_SQ_RN_Connection.prc",
     isActive: true,
   },
   {
@@ -52,7 +52,7 @@ export const CONNECTIONS_SEED = [
     system: "Regular",
     type: "Hex",
     category: "hanhwa-connection",
-    fileName: "덴티움_R_Connection.prc",
+    fileName: "덴티움_SuperLine_RH_Connection.prc",
     isActive: true,
   },
   {
@@ -60,7 +60,7 @@ export const CONNECTIONS_SEED = [
     system: "Regular",
     type: "Non-Hex",
     category: "hanhwa-connection",
-    fileName: "덴티움_R_Non_Connection.prc",
+    fileName: "덴티움_SuperLine_RN_Connection.prc",
     isActive: true,
   },
   {
@@ -68,7 +68,7 @@ export const CONNECTIONS_SEED = [
     system: "Mini",
     type: "Hex",
     category: "hanhwa-connection",
-    fileName: "디오_M_Connection.prc",
+    fileName: "디오_UF_MH_Connection.prc",
     isActive: true,
   },
   {
@@ -76,7 +76,7 @@ export const CONNECTIONS_SEED = [
     system: "Mini",
     type: "Non-Hex",
     category: "hanhwa-connection",
-    fileName: "디오_M_Non_Connection.prc",
+    fileName: "디오_UF_MN_Connection.prc",
     isActive: true,
   },
   {
@@ -84,7 +84,7 @@ export const CONNECTIONS_SEED = [
     system: "Regular",
     type: "Hex",
     category: "hanhwa-connection",
-    fileName: "디오_R_Connection.prc",
+    fileName: "디오_UF_RH_Connection.prc",
     isActive: true,
   },
   {
@@ -92,7 +92,7 @@ export const CONNECTIONS_SEED = [
     system: "Regular",
     type: "Non-Hex",
     category: "hanhwa-connection",
-    fileName: "디오_R_Non_Connection.prc",
+    fileName: "디오_UF_RN_Connection.prc",
     isActive: true,
   },
   {
@@ -100,7 +100,7 @@ export const CONNECTIONS_SEED = [
     system: "AnyRidge",
     type: "Hex",
     category: "hanhwa-connection",
-    fileName: "애니릿지_Connection.prc",
+    fileName: "메가젠_AnyRidge_RH_Connection.prc",
     isActive: true,
   },
   {
@@ -108,7 +108,7 @@ export const CONNECTIONS_SEED = [
     system: "AnyRidge",
     type: "Non-Hex",
     category: "hanhwa-connection",
-    fileName: "애니릿지_Non_Connection.prc",
+    fileName: "메가젠_AnyRidge_RN_Connection.prc",
     isActive: true,
   },
   {
@@ -116,7 +116,7 @@ export const CONNECTIONS_SEED = [
     system: "AnyOne Regular",
     type: "Hex",
     category: "hanhwa-connection",
-    fileName: "애니원R_Connection.prc",
+    fileName: "메가젠_AnyOne_RH_Connection.prc",
     isActive: true,
   },
   {
@@ -124,7 +124,7 @@ export const CONNECTIONS_SEED = [
     system: "AnyOne Regular",
     type: "Non-Hex",
     category: "hanhwa-connection",
-    fileName: "애니원R_Non_Connection.prc",
+    fileName: "메가젠_AnyOne_RN_Connection.prc",
     isActive: true,
   },
   {
@@ -133,7 +133,7 @@ export const CONNECTIONS_SEED = [
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "오스템_KS_Connection.prc",
-    isActive: true,
+    isActive: false,
   },
   {
     manufacturer: "OSSTEM",
@@ -141,14 +141,14 @@ export const CONNECTIONS_SEED = [
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "오스템_KS_Non_Connection.prc",
-    isActive: true,
+    isActive: false,
   },
   {
     manufacturer: "OSSTEM",
     system: "Mini",
     type: "Hex",
     category: "hanhwa-connection",
-    fileName: "오스템_M_Connection.prc",
+    fileName: "오스템_TS_MH_Connection.prc",
     isActive: true,
   },
   {
@@ -156,7 +156,7 @@ export const CONNECTIONS_SEED = [
     system: "Mini",
     type: "Non-Hex",
     category: "hanhwa-connection",
-    fileName: "오스템_M_Non_Connection.prc",
+    fileName: "오스템_TS_MN_Connection.prc",
     isActive: true,
   },
   {
@@ -164,7 +164,7 @@ export const CONNECTIONS_SEED = [
     system: "Regular",
     type: "Hex",
     category: "hanhwa-connection",
-    fileName: "오스템_R_Connection.prc",
+    fileName: "오스템_TS_RH_Connection.prc",
     isActive: true,
   },
   {
@@ -172,7 +172,7 @@ export const CONNECTIONS_SEED = [
     system: "Regular",
     type: "Non-Hex",
     category: "hanhwa-connection",
-    fileName: "오스템_R_Non_Connection.prc",
+    fileName: "오스템_TS_RN_Connection.prc",
     isActive: true,
   },
   {
@@ -181,7 +181,7 @@ export const CONNECTIONS_SEED = [
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "오스템_SSR_Connection.prc",
-    isActive: true,
+    isActive: false,
   },
   {
     manufacturer: "OSSTEM",
@@ -189,7 +189,7 @@ export const CONNECTIONS_SEED = [
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "오스템_SSR_Non_Connection.prc",
-    isActive: true,
+    isActive: false,
   },
   {
     manufacturer: "TOPPLAN",
@@ -197,7 +197,7 @@ export const CONNECTIONS_SEED = [
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "탑플란_M_Connection.prc",
-    isActive: true,
+    isActive: false,
   },
   {
     manufacturer: "TOPPLAN",
@@ -205,7 +205,7 @@ export const CONNECTIONS_SEED = [
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "탑플란_M_Non_Connection.prc",
-    isActive: true,
+    isActive: false,
   },
   {
     manufacturer: "TOPPLAN",
@@ -213,7 +213,7 @@ export const CONNECTIONS_SEED = [
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "탑플란_R_Connection.prc",
-    isActive: true,
+    isActive: false,
   },
   {
     manufacturer: "TOPPLAN",
@@ -221,7 +221,7 @@ export const CONNECTIONS_SEED = [
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "탑플란_R_Non_Connection.prc",
-    isActive: true,
+    isActive: false,
   },
 
   {

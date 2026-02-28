@@ -1,6 +1,103 @@
 import Connection from "../../models/connection.model.js";
 import Request from "../../models/request.model.js";
 
+function normalizeTypeLabel(type) {
+  if (typeof type !== "string") return "";
+  const t = type.trim();
+  if (!t) return "";
+  if (t.toLowerCase().includes("non")) return "Non-Hex";
+  if (t.toLowerCase().includes("hex")) return "Hex";
+  return t;
+}
+
+function getPrcTypeCode(system, type) {
+  const sys = typeof system === "string" ? system.trim() : "";
+  const t = normalizeTypeLabel(type);
+  const isMini = sys.toLowerCase().includes("mini");
+  const isNonHex = t === "Non-Hex";
+  if (isMini) {
+    return isNonHex ? "MN" : "MH";
+  }
+  return isNonHex ? "RN" : "RH";
+}
+
+function getManufacturerKor(manufacturer) {
+  switch ((manufacturer || "").trim().toUpperCase()) {
+    case "OSSTEM":
+      return "오스템";
+    case "DENTIUM":
+      return "덴티움";
+    case "DENTIS":
+      return "덴티스";
+    case "DIO":
+      return "디오";
+    case "MEGAGEN":
+      return "메가젠";
+    case "NEOBIOTECH":
+      return "네오";
+    default:
+      return null;
+  }
+}
+
+function getSystemCode(manufacturer, system) {
+  const m = (manufacturer || "").trim().toUpperCase();
+  const s = (system || "").trim();
+
+  // 현재 CAM/ESPRIT 쪽 파일명 규칙(스프레드시트)과 UI 표기값을 연결
+  // 여기서 매핑되지 않는 경우엔 DB의 fileName을 그대로 쓰도록 fallback한다.
+  if (m === "OSSTEM") {
+    if (s === "Regular") return "TS";
+    if (s === "Mini") return "TS";
+  }
+  if (m === "DENTIUM") {
+    if (s === "Regular") return "SuperLine";
+    if (s === "Mini") return "SuperLine";
+  }
+  if (m === "DENTIS") {
+    if (s === "Regular") return "SQ";
+    if (s === "Mini") return "SQ";
+  }
+  if (m === "DIO") {
+    if (s === "Regular") return "UF";
+    if (s === "Mini") return "UF";
+  }
+  if (m === "MEGAGEN") {
+    if (s === "AnyOne Regular") return "AnyOne";
+    if (s === "AnyOne") return "AnyOne";
+    if (s === "AnyRidge") return "AnyRidge";
+  }
+  if (m === "NEOBIOTECH") {
+    if (s === "Regular") return "IS";
+    if (s === "Mini") return "IS";
+  }
+
+  return null;
+}
+
+function buildPrcFileNames({ manufacturer, system, type, legacyFileName }) {
+  const kor = getManufacturerKor(manufacturer);
+  const sysCode = getSystemCode(manufacturer, system);
+  const typeCode = getPrcTypeCode(system, type);
+
+  if (!kor || !sysCode || !typeCode) {
+    return {
+      connectionPrcFileName:
+        typeof legacyFileName === "string" ? legacyFileName : null,
+      faceHolePrcFileName: null,
+      prcTypeCode: typeCode || null,
+      prcSystemCode: sysCode || null,
+    };
+  }
+
+  return {
+    connectionPrcFileName: `${kor}_${sysCode}_${typeCode}_Connection.prc`,
+    faceHolePrcFileName: `${kor}_${sysCode}_${typeCode}_FaceHole.prc`,
+    prcTypeCode: typeCode,
+    prcSystemCode: sysCode,
+  };
+}
+
 // 활성화된(한화 등) 커넥션 목록 조회
 // GET /api/connections
 export async function getConnections(req, res) {
@@ -21,10 +118,24 @@ export async function getConnections(req, res) {
     const usageMap = new Map(usage.map((u) => [u._id.toString(), u.count]));
 
     const sorted = all
-      .map((c) => ({
-        ...c,
-        usageCount: usageMap.get(c._id.toString()) || 0,
-      }))
+      .map((c) => {
+        const computed = buildPrcFileNames({
+          manufacturer: c.manufacturer,
+          system: c.system,
+          type: c.type,
+          legacyFileName: c.fileName,
+        });
+        return {
+          ...c,
+          // UI / 저장은 manufacturer/system/type 그대로 사용
+          // CAM/ESPRIT용 파일명만 별도 필드로 제공
+          connectionPrcFileName: computed.connectionPrcFileName,
+          faceHolePrcFileName: computed.faceHolePrcFileName,
+          prcTypeCode: computed.prcTypeCode,
+          prcSystemCode: computed.prcSystemCode,
+          usageCount: usageMap.get(c._id.toString()) || 0,
+        };
+      })
       .sort((a, b) => {
         if (b.usageCount !== a.usageCount) return b.usageCount - a.usageCount;
         if (a.manufacturer !== b.manufacturer)

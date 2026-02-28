@@ -15,6 +15,10 @@ export type Connection = {
   manufacturer: string;
   system: string;
   type: string;
+  connectionPrcFileName?: string | null;
+  faceHolePrcFileName?: string | null;
+  prcTypeCode?: string | null;
+  prcSystemCode?: string | null;
 };
 
 export type CaseInfos = {

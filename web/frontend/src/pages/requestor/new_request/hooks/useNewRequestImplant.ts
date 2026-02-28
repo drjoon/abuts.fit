@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import type { Connection } from "./newRequestTypes";
 
-const CONNECTIONS_STORAGE_KEY = "abutsfit:connections:v1";
+const CONNECTIONS_STORAGE_KEY = "abutsfit:connections:v2";
 const CONNECTIONS_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1년
 
 export type UseNewRequestImplantParams = {
@@ -76,7 +76,7 @@ export const useNewRequestImplant = ({
             };
             window.localStorage.setItem(
               CONNECTIONS_STORAGE_KEY,
-              JSON.stringify(payload)
+              JSON.stringify(payload),
             );
           } catch {}
         }
@@ -108,7 +108,7 @@ export const useNewRequestImplant = ({
           (c) =>
             c.manufacturer === "OSSTEM" &&
             c.system === "Regular" &&
-            c.type === "Hex"
+            c.type === "Hex",
         ) as
           | { manufacturer?: string; system?: string; type?: string }
           | undefined;
@@ -136,7 +136,7 @@ export const useNewRequestImplant = ({
             (c) =>
               c.manufacturer === nextManufacturer &&
               c.system === nextSystem &&
-              c.type === nextType
+              c.type === nextType,
           );
           setSelectedConnectionId(found?._id ? String(found._id) : null);
         }
@@ -165,13 +165,13 @@ export const useNewRequestImplant = ({
   const syncSelectedConnection = (
     manufacturer: string,
     system: string,
-    type: string
+    type: string,
   ) => {
     const found = connections.find(
       (c) =>
         c.manufacturer === manufacturer &&
         c.system === system &&
-        c.type === type
+        c.type === type,
     );
     setSelectedConnectionId(found?._id ? String(found._id) : null);
   };
@@ -180,7 +180,7 @@ export const useNewRequestImplant = ({
     .filter(
       (c) =>
         (!implantManufacturer || c.manufacturer === implantManufacturer) &&
-        (!implantSystem || c.system === implantSystem)
+        (!implantSystem || c.system === implantSystem),
     )
     .map((c) => c.type as string)
     .filter((v, idx, arr) => arr.indexOf(v) === idx);
