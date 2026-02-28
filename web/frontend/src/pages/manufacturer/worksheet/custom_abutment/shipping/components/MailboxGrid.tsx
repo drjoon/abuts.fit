@@ -205,6 +205,140 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     }
   };
 
+  const saveGeneratedWaybillPngs = async ({
+    addressList,
+    zplLabels,
+  }: {
+    addressList: any[];
+    zplLabels?: string[];
+  }) => {
+    const normalized = Array.isArray(addressList) ? addressList : [];
+    const rows = normalized.filter(
+      (row) => row && row.result_code === "OK" && row.wbl_num,
+    );
+    if (!rows.length) {
+      throw new Error("운송장 정보를 찾지 못했습니다.");
+    }
+
+    const canvasW = 812;
+    const canvasH = 1218;
+
+    const isMeaningfulHanjinText = (value: unknown) => {
+      const raw = String(value || "").trim();
+      if (!raw) return false;
+      return raw.replace(/[\/()\s]+/g, "").length > 0;
+    };
+
+    const renderRowToPngBlob = async (row: any) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvasW;
+      canvas.height = canvasH;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("이미지 렌더링에 실패했습니다.");
+
+      const wbl = String(row.wbl_num || "").trim();
+      const prtAdd = String(row.prt_add || "").trim();
+      const tmlRaw = String(row.tml_nam || "").trim();
+      const cenRaw = String(row.cen_nam || "").trim();
+      const tml = isMeaningfulHanjinText(tmlRaw) ? tmlRaw : "";
+      const cen = isMeaningfulHanjinText(cenRaw) ? cenRaw : "";
+      const msgKey = String(row.msg_key || "").trim();
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvasW, canvasH);
+
+      ctx.fillStyle = "#0f172a";
+      ctx.font = '800 40px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
+      ctx.fillText("HANJIN WAYBILL", 48, 92);
+
+      ctx.fillStyle = "#000000";
+      ctx.font = '900 84px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
+      ctx.fillText(wbl, 48, 190);
+
+      const { default: JsBarcode } = await import("jsbarcode");
+      const barcodeCanvas = document.createElement("canvas");
+      try {
+        JsBarcode(barcodeCanvas, wbl || "-", {
+          format: "CODE128",
+          displayValue: true,
+          font: "Apple SD Gothic Neo",
+          fontSize: 28,
+          textMargin: 6,
+          margin: 0,
+          height: 120,
+          width: 2,
+          background: "#ffffff",
+          lineColor: "#000000",
+        });
+        ctx.drawImage(barcodeCanvas, 48, 220);
+      } catch {
+        // ignore barcode render failure
+      }
+
+      ctx.fillStyle = "#334155";
+      ctx.font = '600 34px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
+      const tmlLine = (() => {
+        if (tml && cen) return `TML: ${tml} / ${cen}`;
+        if (tml) return `TML: ${tml}`;
+        if (cen) return `TML: ${cen}`;
+        return "";
+      })();
+
+      let y = 420;
+      if (tmlLine) {
+        ctx.fillText(tmlLine, 48, y);
+        y += 50;
+      }
+      if (prtAdd) {
+        ctx.fillText(`ADDR: ${prtAdd}`, 48, y);
+        y += 50;
+      }
+      if (msgKey) ctx.fillText(`KEY: ${msgKey}`, 48, y);
+
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(
+          (value) => {
+            if (value) resolve(value);
+            else reject(new Error("PNG 생성에 실패했습니다."));
+          },
+          "image/png",
+          1,
+        );
+      });
+      return blob;
+    };
+
+    const pad2 = (v: number) => String(v).padStart(2, "0");
+    const now = new Date();
+    const folderName = `waybills-${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}-${pad2(now.getHours())}${pad2(now.getMinutes())}`;
+
+    const { default: JSZip } = await import("jszip");
+    const zip = new JSZip();
+    const dir = zip.folder(folderName);
+    if (!dir) throw new Error("zip 폴더 생성에 실패했습니다.");
+
+    void zplLabels;
+    for (const row of rows) {
+      const wblNum = String(row.wbl_num || "").trim() || "unknown";
+      const blob = await renderRowToPngBlob(row);
+      dir.file(`wbl_${wblNum}.png`, blob);
+    }
+
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(zipBlob);
+    const zipName = `${folderName}.zip`;
+    try {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = zipName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  };
+
   const downloadPdfFromUrl = (url: string) => {
     window.open(url, "_blank", "noopener,noreferrer");
   };
@@ -508,15 +642,52 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     setIsPrinting(true);
     try {
       if (shippingOutputMode === "image") {
-        const data = await callHanjinApi({
+        const { data, wblPrint } = await callHanjinApiWithMeta({
           path: "/api/requests/shipping/hanjin/print-labels",
           mailboxAddresses: occupiedAddresses,
         });
-        await handleDownloadWaybillPdf(data);
-        setPrintedMailboxes(new Set(occupiedAddresses));
+
+        const candidatePayload =
+          (wblPrint as any)?.data || wblPrint || (data as any);
+        const printPayload = resolvePrintPayload(candidatePayload);
+
+        if (printPayload) {
+          await handleDownloadWaybillPdf(candidatePayload);
+          setPrintedMailboxes(new Set(occupiedAddresses));
+          toast({
+            title: "운송장 저장 완료",
+            description: `${occupiedAddresses.length}개 우편함의 운송장을 다운로드했습니다.`,
+          });
+          return;
+        }
+
+        if (Array.isArray((data as any)?.address_list)) {
+          await saveGeneratedWaybillPngs({
+            addressList: (data as any).address_list,
+            zplLabels: (data as any).zplLabels,
+          });
+          setPrintedMailboxes(new Set(occupiedAddresses));
+          toast({
+            title: "운송장 저장 완료",
+            description: `${occupiedAddresses.length}개 우편함의 운송장을 다운로드했습니다.`,
+          });
+          return;
+        }
+
+        if (wblPrint?.success) {
+          setPrintedMailboxes(new Set(occupiedAddresses));
+          toast({
+            title: "운송장 출력 완료",
+            description: `${occupiedAddresses.length}개 우편함의 운송장이 출력되었습니다.`,
+          });
+          return;
+        }
+
         toast({
-          title: "운송장 저장 완료",
-          description: `${occupiedAddresses.length}개 우편함의 운송장을 다운로드했습니다.`,
+          title: "출력 데이터 없음",
+          description:
+            "운송장 응답에 PDF(URL/Base64) 데이터가 포함되지 않아 다운로드할 수 없습니다.",
+          variant: "destructive",
         });
         return;
       }

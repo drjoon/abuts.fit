@@ -162,20 +162,35 @@ const escapeZplText = (value) =>
     .replace(/[\r\n]+/g, " ")
     .trim();
 
-const buildHanjinWblZpl = ({ addressList }) => {
+const isMeaningfulHanjinText = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  return raw.replace(/[\/()\s]+/g, "").length > 0;
+};
+
+const buildHanjinWblZplLabels = ({ addressList }) => {
   const list = Array.isArray(addressList) ? addressList : [];
-  if (!list.length) return null;
+  if (!list.length) return [];
 
   // 4x6 inch label baseline (Zebra): width ~812 dots @203dpi, height ~1218
   // Keep it simple: print tracking + condensed address highlight.
-  const labels = list
+  return list
     .filter((row) => row && row.result_code === "OK" && row.wbl_num)
     .map((row) => {
       const wbl = escapeZplText(row.wbl_num);
       const prtAdd = escapeZplText(row.prt_add);
-      const tml = escapeZplText(row.tml_nam);
-      const cen = escapeZplText(row.cen_nam);
+      const tmlRaw = escapeZplText(row.tml_nam);
+      const cenRaw = escapeZplText(row.cen_nam);
+      const tml = isMeaningfulHanjinText(tmlRaw) ? tmlRaw : "";
+      const cen = isMeaningfulHanjinText(cenRaw) ? cenRaw : "";
       const msgKey = escapeZplText(row.msg_key);
+
+      const tmlLine = (() => {
+        if (tml && cen) return `TML: ${tml} / ${cen}`;
+        if (tml) return `TML: ${tml}`;
+        if (cen) return `TML: ${cen}`;
+        return "";
+      })();
 
       return [
         "^XA",
@@ -186,7 +201,7 @@ const buildHanjinWblZpl = ({ addressList }) => {
         "^FO40,40^A0N,48,48^FDHANJIN WBL^FS",
         `^FO40,120^A0N,42,42^FD${wbl}^FS`,
         `^FO40,180^BCN,120,Y,N,N^FD${wbl}^FS`,
-        `^FO40,330^A0N,28,28^FDTML: ${tml} / ${cen}^FS`,
+        tmlLine ? `^FO40,330^A0N,28,28^FD${escapeZplText(tmlLine)}^FS` : "",
         prtAdd ? `^FO40,380^A0N,32,32^FD${prtAdd}^FS` : "",
         msgKey ? `^FO40,440^A0N,24,24^FDKEY: ${msgKey}^FS` : "",
         "^XZ",
@@ -194,7 +209,10 @@ const buildHanjinWblZpl = ({ addressList }) => {
         .filter(Boolean)
         .join("\n");
     });
+};
 
+const buildHanjinWblZpl = ({ addressList }) => {
+  const labels = buildHanjinWblZplLabels({ addressList });
   if (!labels.length) return null;
   return labels.join("\n");
 };
@@ -311,6 +329,14 @@ const ensureHanjinEnv = () => {
 
 const buildHanjinDraftPayload = (requests) => {
   ensureHanjinEnv();
+
+  const mailboxToQuantity = new Map();
+  for (const r of requests) {
+    const mailbox = String(r?.mailboxAddress || "").trim();
+    if (!mailbox) continue;
+    mailboxToQuantity.set(mailbox, (mailboxToQuantity.get(mailbox) || 0) + 1);
+  }
+
   const addressList = requests.map((r) => {
     const requestor = r.requestor || {};
     const requestorOrg = r.requestorOrganizationId || {};
@@ -330,12 +356,30 @@ const buildHanjinDraftPayload = (requests) => {
       0,
       6,
     );
+
+    const mailbox = String(r?.mailboxAddress || "").trim();
+    const quantity =
+      mailbox && mailboxToQuantity.has(mailbox)
+        ? mailboxToQuantity.get(mailbox)
+        : 1;
+    const orgName =
+      String(requestorOrg.name || "").trim() ||
+      String(extracted.companyName || "").trim() ||
+      String(requestor.organization || "").trim() ||
+      String(clinicName || "").trim() ||
+      String(requestor.name || "").trim();
+
+    const msgKey = `${mailbox || "-"} / ${orgName || "-"} / ${quantity}`
+      .replace(/[\r\n]+/g, " ")
+      .trim()
+      .slice(0, 100);
+
     return {
       csr_num: HANJIN_CSR_NUM,
       snd_zip: HANJIN_SHIPPER_ZIP,
       rcv_zip: receiverZip,
       address: addressText,
-      msg_key: r.requestId || String(r._id || ""),
+      msg_key: msgKey,
       receiver_name:
         clinicName ||
         requestor.name ||
@@ -392,8 +436,17 @@ export async function printHanjinLabels(req, res) {
       data: resolved.payload,
     });
 
-    const wblPrint = await triggerWblServerPrint(data, wblPrintOptions);
-    if (!wblPrint?.success) {
+    const zplLabels =
+      data && typeof data === "object"
+        ? buildHanjinWblZplLabels({ addressList: data.address_list })
+        : [];
+
+    const shouldTriggerWblPrint =
+      wblPrintOptions && typeof wblPrintOptions === "object";
+    const wblPrint = shouldTriggerWblPrint
+      ? await triggerWblServerPrint(data, wblPrintOptions)
+      : { success: true, skipped: true, reason: "image_mode" };
+    if (shouldTriggerWblPrint && !wblPrint?.success) {
       console.warn("[shipping] wbl print fallback needed", {
         reason: wblPrint?.reason || wblPrint?.message || "unknown",
         status: wblPrint?.status,
@@ -402,7 +455,10 @@ export async function printHanjinLabels(req, res) {
 
     return res.status(200).json({
       success: true,
-      data,
+      data: {
+        ...(data || {}),
+        zplLabels,
+      },
       wblPrint,
     });
   } catch (error) {
