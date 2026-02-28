@@ -10,47 +10,67 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { useNewRequestImplant } from "@/pages/requestor/new_request/hooks/useNewRequestImplant";
 import { usePresetStorage } from "@/pages/requestor/new_request/hooks/usePresetStorage";
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
+import { getNormalizedStageLabel } from "@/utils/stage";
 
 const EDITABLE_STATUSES = new Set(["의뢰", "CAM", "의뢰접수", "가공전"]); // 의뢰, CAM 단계만 수정 가능
 
-const getStatusBadge = (status: string, manufacturerStage?: string) => {
-  if (manufacturerStage) {
-    switch (manufacturerStage) {
-      case "의뢰":
-        return <Badge variant="outline">의뢰</Badge>;
-      case "의뢰접수":
-        return <Badge variant="outline">의뢰접수</Badge>;
-      case "CAM":
-        return <Badge variant="default">CAM</Badge>;
-      case "생산":
-        return <Badge variant="default">생산</Badge>;
-      case "발송":
-        return <Badge variant="default">발송</Badge>;
-      case "추적관리":
-        return <Badge variant="secondary">추적관리</Badge>;
-      default:
-        break;
-    }
-  }
+const STAGE_BADGE_BASE =
+  "text-[10px] h-4 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
 
-  switch (status) {
-    case "의뢰":
-      return <Badge variant="outline">의뢰</Badge>;
-    case "의뢰접수":
-      return <Badge variant="outline">의뢰접수</Badge>;
-    case "가공전":
-      return <Badge variant="default">CAM</Badge>;
-    case "가공후":
-      return <Badge variant="default">생산</Badge>;
-    case "배송중":
-      return <Badge variant="default">발송</Badge>;
-    case "완료":
-      return <Badge variant="secondary">완료</Badge>;
-    case "취소":
-      return <Badge variant="destructive">취소</Badge>;
-    default:
-      return <Badge variant="outline">{status}</Badge>;
+const LEGACY_STATUS_TO_STAGE: Record<string, string> = {
+  의뢰접수: "의뢰",
+  가공전: "CAM",
+  가공후: "가공",
+  배송중: "포장.발송",
+  완료: "추적관리",
+};
+
+const STAGE_BADGE_STYLES: Record<
+  string,
+  {
+    variant: "outline" | "default" | "secondary" | "destructive";
+    extra?: string;
   }
+> = {
+  의뢰: { variant: "outline" },
+  CAM: { variant: "default" },
+  가공: { variant: "default" },
+  "세척.패킹": {
+    variant: "default",
+    extra: "bg-purple-50 text-purple-700 border border-purple-200",
+  },
+  "포장.발송": {
+    variant: "default",
+    extra: "bg-blue-50 text-blue-700 border border-blue-200",
+  },
+  추적관리: { variant: "secondary" },
+  취소: { variant: "destructive" },
+};
+
+const resolveStageLabel = (item: any): string | null => {
+  if (!item) return null;
+  try {
+    const label = getNormalizedStageLabel(item);
+    if (label) return label;
+  } catch {}
+
+  const rawStatus = String(item?.status || "").trim();
+  if (!rawStatus) return null;
+  return LEGACY_STATUS_TO_STAGE[rawStatus] || rawStatus;
+};
+
+const renderStageBadge = (item: any) => {
+  const label = resolveStageLabel(item);
+  if (!label) return null;
+  const style = STAGE_BADGE_STYLES[label] || { variant: "outline" };
+  return (
+    <Badge
+      variant={style.variant}
+      className={`${STAGE_BADGE_BASE} ${style.extra ? style.extra : ""}`.trim()}
+    >
+      {label}
+    </Badge>
+  );
 };
 
 type Props = {
@@ -436,7 +456,7 @@ export const RequestorRecentRequestsCard = ({
                   <div className="text-md">
                     <div className="font-medium mb-1 truncate">
                       <div className="flex items-center justify-between gap-4 mb-2">
-                        {getStatusBadge(item.status, item.manufacturerStage)}
+                        {renderStageBadge(item)}
                         <span className="text-xs text-muted-foreground">
                           {item.createdAt &&
                             new Date(item.createdAt).toLocaleDateString()}
@@ -483,7 +503,7 @@ export const RequestorRecentRequestsCard = ({
                     <div className="text-sm font-medium truncate text-foreground">
                       {item.title || displayId}
                     </div>
-                    {getStatusBadge(item.status, item.manufacturerStage)}
+                    {renderStageBadge(item)}
                     {isRemakeFixed && (
                       <Badge variant="secondary" className="text-[10px]">
                         재의뢰 1만원

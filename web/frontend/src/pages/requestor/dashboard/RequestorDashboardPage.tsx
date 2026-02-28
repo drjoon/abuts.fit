@@ -562,66 +562,61 @@ export const RequestorDashboardPage = () => {
         topSection={
           <div className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-              <div className="flex flex-col gap-6">
-                <RequestorPricingReferralPolicyCard />
-                <RequestorRiskSummaryCard
-                  riskSummary={riskSummary}
-                  onItemClick={(item) => {
-                    setSelectedRiskSummaryItem(item);
-                    setRiskSummaryDetailLoading(true);
-                    apiFetch<any>({
-                      path: `/api/requests/${item.id}`,
-                      method: "GET",
-                      token,
-                      headers: token
-                        ? {
-                            "x-mock-role": "requestor",
-                          }
-                        : undefined,
+              <RequestorPricingReferralPolicyCard />
+              <RequestorShippingSummaryCard />
+              <RequestorBulkShippingBannerCard
+                bulkData={bulkData}
+                onRefresh={() => {
+                  refetchBulk();
+                }}
+                onOpenBulkModal={() => {}}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+              <RequestorRecentRequestsCard
+                items={recentRequests}
+                onRefresh={() => {
+                  refetchSummary();
+                  refetchBulk();
+                }}
+                onEdit={openEditDialogFromRequest}
+                onCancel={cancelRequest}
+              />
+
+              <RequestorRiskSummaryCard
+                riskSummary={riskSummary}
+                onItemClick={(item) => {
+                  setSelectedRiskSummaryItem(item);
+                  setRiskSummaryDetailLoading(true);
+                  apiFetch<any>({
+                    path: `/api/requests/${item.id}`,
+                    method: "GET",
+                    token,
+                    headers: token
+                      ? {
+                          "x-mock-role": "requestor",
+                        }
+                      : undefined,
+                  })
+                    .then((res) => {
+                      if (!res.ok) {
+                        throw new Error("의뢰 상세 조회에 실패했습니다.");
+                      }
+                      if (!res.data?.success) {
+                        throw new Error("의뢰 상세 데이터가 없습니다.");
+                      }
+                      setRiskSummaryDetail(res.data.data || null);
                     })
-                      .then((res) => {
-                        if (!res.ok) {
-                          throw new Error("의뢰 상세 조회에 실패했습니다.");
-                        }
-                        if (!res.data?.success) {
-                          throw new Error("의뢰 상세 데이터가 없습니다.");
-                        }
-                        setRiskSummaryDetail(res.data.data || null);
-                      })
-                      .catch((error) => {
-                        console.error("의뢰 상세 조회 실패", error);
-                        setRiskSummaryDetail(null);
-                      })
-                      .finally(() => {
-                        setRiskSummaryDetailLoading(false);
-                      });
-                  }}
-                />
-              </div>
-
-              <div className="flex flex-col gap-6">
-                <RequestorRecentRequestsCard
-                  items={recentRequests}
-                  onRefresh={() => {
-                    refetchSummary();
-                    refetchBulk();
-                  }}
-                  onEdit={openEditDialogFromRequest}
-                  onCancel={cancelRequest}
-                />
-              </div>
-
-              <div className="flex flex-col gap-6">
-                <RequestorShippingSummaryCard />
-
-                <RequestorBulkShippingBannerCard
-                  bulkData={bulkData}
-                  onRefresh={() => {
-                    refetchBulk();
-                  }}
-                  onOpenBulkModal={() => {}}
-                />
-              </div>
+                    .catch((error) => {
+                      console.error("의뢰 상세 조회 실패", error);
+                      setRiskSummaryDetail(null);
+                    })
+                    .finally(() => {
+                      setRiskSummaryDetailLoading(false);
+                    });
+                }}
+              />
             </div>
           </div>
         }
