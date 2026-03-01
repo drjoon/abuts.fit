@@ -80,6 +80,12 @@ export const useNewRequestFilesV2 = ({
   const { toast } = useToast();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
 
+  const sleep = useCallback(async (ms: number) => {
+    await new Promise<void>((resolve) => {
+      window.setTimeout(() => resolve(), ms);
+    });
+  }, []);
+
   const [isDragOver, setIsDragOver] = useState(false);
   const filesRef = useRef<FileWithDraftId[]>([]);
   const draftFilesRef = useRef<DraftCaseInfo[]>(draftFiles);
@@ -339,43 +345,46 @@ export const useNewRequestFilesV2 = ({
       }
 
       try {
-        // 0. 이미 업로드된 파일(파일명+사이즈 기준)은 중복 업로드를 방지한다.
-        //    - 화면에 올라와 있는 filesRef (File 객체)
-        //    - Draft.caseInfos 에 이미 등록된 draftFilesRef (file.originalName + size)
-        const existingKeys = new Set<string>();
-
-        // 현재 화면에 보이는 파일들
-        filesRef.current.forEach((f) => {
-          existingKeys.add(`${f.name}:${f.size}`);
-          existingKeys.add(toFileKey(f.name, f.size));
-        });
-
-        // 현재 Draft에 이미 연결된 파일들
-        draftFilesRef.current.forEach((ci) => {
-          const fileMeta = ci.file;
-          if (!fileMeta) return;
-          existingKeys.add(`${fileMeta.originalName}:${fileMeta.size}`);
-          existingKeys.add(toFileKey(fileMeta.originalName, fileMeta.size));
-        });
-
-        const filesToProcess = filesToUpload.filter((f) => {
-          const key = `${f.name}:${f.size}`;
-          const keyNfc = toFileKey(f.name, f.size);
-          const isDuplicate = existingKeys.has(key) || existingKeys.has(keyNfc);
-          if (isDuplicate) {
-            console.log(`[Upload] Filtering out duplicate file: ${key}`);
-          }
-          return !isDuplicate;
-        });
-
-        if (filesToProcess.length === 0) {
-          toast({
-            title: "안내",
-            description: "이미 업로드된 파일입니다.",
-            duration: 2000,
-          });
-          return;
+        const uniqueIncomingFiles: File[] = [];
+        const seenIncoming = new Set<string>();
+        for (const file of filesToUpload) {
+          const key = `${file.name}:${file.size}`;
+          if (seenIncoming.has(key)) continue;
+          seenIncoming.add(key);
+          uniqueIncomingFiles.push(file);
         }
+
+        const filesToProcess = uniqueIncomingFiles;
+
+        // UI는 먼저 보여주고(optimistic), Draft 등록이 끝나면 _draftCaseInfoId를 붙인 파일로 교체한다.
+        setFiles((prev) => {
+          const seen = new Set<string>();
+          const out: FileWithDraftId[] = [];
+          const pushIfNew = (file: File) => {
+            const key = `${file.name}:${file.size}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            out.push(file as FileWithDraftId);
+          };
+          prev.forEach(pushIfNew);
+
+          filesToProcess.forEach((f) => {
+            const sourceKey = `${f.name}:${f.size}`;
+            const optimistic = f as FileWithDraftId;
+            optimistic._sourceFileKey = sourceKey;
+            try {
+              optimistic._sourceFileKeyNfc = `${String(f.name || "").normalize(
+                "NFC",
+              )}:${f.size}`;
+            } catch {
+              optimistic._sourceFileKeyNfc = sourceKey;
+            }
+            pushIfNew(optimistic);
+          });
+
+          return out;
+        });
+        setSelectedPreviewIndex((prev) => (prev === null ? 0 : prev));
 
         console.log(
           `[Upload] Processing ${filesToProcess.length} of ${filesToUpload.length} files`,
@@ -387,26 +396,19 @@ export const useNewRequestFilesV2 = ({
           return;
         }
 
+        // 업로드 응답과 원본 파일 매칭을 위해 맵 구성
+        const tempFileMap = new Map<string, File>();
+        filesToProcess.forEach((file) => {
+          const key = `${file.name}:${file.size}`;
+          tempFileMap.set(key, file);
+        });
+
         // 2. Draft API에 파일 메타 추가
         const newDraftFiles: DraftCaseInfo[] = [];
 
-        // Draft에 이미 존재하는 파일 키(파일명+사이즈)
-        const existingDraftKeys = new Set<string>();
-        draftFilesRef.current.forEach((ci) => {
-          const fileMeta = ci.file;
-          if (!fileMeta) return;
-          existingDraftKeys.add(`${fileMeta.originalName}:${fileMeta.size}`);
-        });
-
-        for (const tempFile of tempFiles) {
-          const draftKey = `${tempFile.originalName}:${tempFile.size}`;
-          // 같은 Draft 안에서 이미 연결된 파일이면 Draft.caseInfos에 다시 추가하지 않는다.
-          if (existingDraftKeys.has(draftKey)) {
-            console.log(`[Upload] Skipping duplicate draft file: ${draftKey}`);
-            continue;
-          }
-
-          try {
+        const postDraftFileWithRetry = async (tempFile: TempUploadedFile) => {
+          const maxAttempts = 6;
+          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             const res = await fetch(
               `${API_BASE_URL}/requests/drafts/${draftId}/files`,
               {
@@ -422,49 +424,116 @@ export const useNewRequestFilesV2 = ({
               },
             );
 
-            if (!res.ok) {
-              if (res.status === 404) {
-                // Draft가 삭제되었거나 만료된 경우
-                try {
-                  if (typeof window !== "undefined") {
-                    window.localStorage.removeItem(
-                      "abutsfit:new-request-draft-id:v1",
-                    );
-                  }
-                } catch {}
+            if (res.ok) {
+              return res;
+            }
 
-                toast({
-                  title: "임시 의뢰가 만료되었습니다",
-                  description:
-                    "임시 의뢰가 더 이상 유효하지 않아 새로 시작해야 합니다. 페이지를 새로고침한 뒤 다시 시도해주세요.",
-                  variant: "destructive",
-                  duration: 4000,
-                });
+            // Draft 만료/삭제
+            if (res.status === 404) {
+              return res;
+            }
 
-                // 한 번 404가 발생하면 이후 파일들도 모두 실패할 것이므로 조기 종료
-                return;
-              }
-
-              console.error(
-                `[Upload] Failed to add file to draft: ${tempFile.originalName}, status: ${res.status}`,
-              );
-              const errorText = await res.text().catch(() => "Unknown error");
-              console.error(`[Upload] Error response: ${errorText}`);
+            // Too Many Requests: backoff 후 재시도
+            if (res.status === 429 && attempt < maxAttempts) {
+              const delayMs = Math.min(4000, 250 * Math.pow(2, attempt - 1));
+              await sleep(delayMs);
               continue;
             }
 
-            const data = await res.json();
-            const addedCaseInfo: DraftCaseInfo = data.data || data;
-            newDraftFiles.push(addedCaseInfo);
-            console.log(
-              `[Upload] Successfully added file to draft: ${tempFile.originalName}`,
-            );
-          } catch (err) {
-            console.error(
-              `[Upload] Exception while adding file to draft: ${tempFile.originalName}`,
-              err,
-            );
-            continue;
+            return res;
+          }
+          return null;
+        };
+
+        // 2-1) bulk로 한 번에 추가 시도 (429 회피)
+        let bulkOk = false;
+        try {
+          const bulkRes = await fetch(
+            `${API_BASE_URL}/requests/drafts/${draftId}/files/bulk`,
+            {
+              method: "POST",
+              headers: getHeaders(),
+              body: JSON.stringify({
+                items: tempFiles.map((tempFile) => ({
+                  originalName: tempFile.originalName,
+                  size: tempFile.size,
+                  mimetype: tempFile.mimetype,
+                  s3Key: tempFile.key,
+                  fileId: tempFile._id,
+                })),
+              }),
+            },
+          );
+
+          if (bulkRes.ok) {
+            const body = await bulkRes.json();
+            const list = body?.data || body;
+            if (Array.isArray(list) && list.length) {
+              list.forEach((ci: any) => newDraftFiles.push(ci));
+              bulkOk = true;
+            }
+          }
+        } catch {
+          bulkOk = false;
+        }
+
+        // 2-2) bulk 실패 시 기존 단건+재시도 로직으로 fallback
+        if (!bulkOk) {
+          for (const tempFile of tempFiles) {
+            try {
+              // 서버 429 회피: 파일 추가 요청을 천천히 보내고, 429이면 재시도한다.
+              const res = await postDraftFileWithRetry(tempFile);
+              if (!res) {
+                continue;
+              }
+
+              if (!res.ok) {
+                if (res.status === 404) {
+                  // Draft가 삭제되었거나 만료된 경우
+                  try {
+                    if (typeof window !== "undefined") {
+                      window.localStorage.removeItem(
+                        "abutsfit:new-request-draft-id:v1",
+                      );
+                    }
+                  } catch {}
+
+                  toast({
+                    title: "임시 의뢰가 만료되었습니다",
+                    description:
+                      "임시 의뢰가 더 이상 유효하지 않아 새로 시작해야 합니다. 페이지를 새로고침한 뒤 다시 시도해주세요.",
+                    variant: "destructive",
+                    duration: 4000,
+                  });
+
+                  // 한 번 404가 발생하면 이후 파일들도 모두 실패할 것이므로 조기 종료
+                  return;
+                }
+
+                console.error(
+                  `[Upload] Failed to add file to draft: ${tempFile.originalName}, status: ${res.status}`,
+                );
+                const errorText = await res.text().catch(() => "Unknown error");
+                console.error(`[Upload] Error response: ${errorText}`);
+                continue;
+              }
+
+              const data = await res.json();
+              const addedCaseInfo: DraftCaseInfo = data.data || data;
+              newDraftFiles.push(addedCaseInfo);
+              console.log(
+                `[Upload] Successfully added file to draft: ${tempFile.originalName}`,
+              );
+
+              // 서버 레이트리밋 회피를 위한 최소 딜레이
+              await sleep(150);
+            } catch (err) {
+              console.error(
+                `[Upload] Exception while adding file to draft: ${tempFile.originalName}`,
+                err,
+              );
+              continue;
+            }
           }
         }
 
@@ -489,49 +558,60 @@ export const useNewRequestFilesV2 = ({
           draftFilesRef.current = updatedDraftFiles;
           setDraftFiles(updatedDraftFiles);
 
-          // 4. File 객체 생성: 실제 업로드한 원본 File을 그대로 사용해 STL 내용이 보이도록 한다.
-          const newFiles: FileWithDraftId[] = newDraftFiles.map(
-            (draftCase, idx) => {
-              const originalFile = filesToProcess[idx];
+          // 4. Draft 등록 결과(_draftCaseInfoId)를 반영한 File로 교체
+          setFiles((prev) => {
+            const replaced: FileWithDraftId[] = prev.map(
+              (p) => p as FileWithDraftId,
+            );
+            const indexBySource = new Map<string, number>();
+            replaced.forEach((f, idx) => {
+              const key = f._sourceFileKey || `${f.name}:${f.size}`;
+              indexBySource.set(key, idx);
+            });
+
+            newDraftFiles.forEach((draftCase) => {
               const fileMeta = draftCase.file;
+              const key = `${fileMeta?.originalName}:${fileMeta?.size}`;
+              const fallbackOriginal = filesToProcess.find(
+                (file) =>
+                  file.name === fileMeta?.originalName &&
+                  file.size === fileMeta?.size,
+              );
+              const originalFile =
+                tempFileMap.get(key) || fallbackOriginal || filesToProcess[0];
+              const sourceKey = `${originalFile.name}:${originalFile.size}`;
+              const idx = indexBySource.get(sourceKey);
+              if (idx === undefined) return;
+
               const fileName = normalize(
                 fileMeta?.originalName ?? originalFile.name,
               );
               const mimeType = fileMeta?.mimetype || originalFile.type;
-
-              const file = new File([originalFile], fileName, {
+              const next = new File([originalFile], fileName, {
                 type: mimeType,
               }) as FileWithDraftId;
-              file._draftCaseInfoId = draftCase._id;
-
-              const sourceKey = `${originalFile.name}:${originalFile.size}`;
-              file._sourceFileKey = sourceKey;
+              next._draftCaseInfoId = draftCase._id;
+              next._sourceFileKey = sourceKey;
               try {
-                file._sourceFileKeyNfc = `${String(
+                next._sourceFileKeyNfc = `${String(
                   originalFile.name || "",
                 ).normalize("NFC")}:${originalFile.size}`;
               } catch {
-                file._sourceFileKeyNfc = sourceKey;
+                next._sourceFileKeyNfc = sourceKey;
               }
-              return file;
-            },
-          );
 
-          // 기존 files와 합칠 때도 파일명+사이즈 기준으로 한 번 더 중복 제거
-          setFiles((prev) => {
+              replaced[idx] = next;
+            });
+
+            // 최종 중복 제거
             const seen = new Set<string>();
             const deduped: FileWithDraftId[] = [];
-
-            const pushIfNew = (file: File) => {
-              const key = `${file.name}:${file.size}`;
-              if (seen.has(key)) return;
-              seen.add(key);
-              deduped.push(file as FileWithDraftId);
-            };
-
-            prev.forEach(pushIfNew);
-            newFiles.forEach(pushIfNew);
-
+            replaced.forEach((file) => {
+              const k = `${file.name}:${file.size}`;
+              if (seen.has(k)) return;
+              seen.add(k);
+              deduped.push(file);
+            });
             return deduped;
           });
 
@@ -555,7 +635,7 @@ export const useNewRequestFilesV2 = ({
 
           toast({
             title: "성공",
-            description: `${newFiles.length}개 파일이 업로드되었습니다.`,
+            description: `${newDraftFiles.length}개 파일이 업로드되었습니다.`,
             duration: 2000,
           });
 
@@ -566,7 +646,9 @@ export const useNewRequestFilesV2 = ({
             const filenamesForAi: string[] = [];
             const fileKeysForAi: string[] = [];
 
-            newFiles.forEach((file, idx) => {
+            // 현재 화면의 files를 기준으로 파싱/AI 대상을 구성한다.
+            const currentFiles = filesRef.current;
+            currentFiles.forEach((file, idx) => {
               const fileKey = `${file.name}:${file.size}`;
               const draftCase = newDraftFiles[idx];
               // 룰 기반 파싱 (fallback으로 기존 parseFilename 포함)
@@ -626,7 +708,7 @@ export const useNewRequestFilesV2 = ({
                     const idx = filenamesForAi.indexOf(item.filename);
                     if (idx === -1) return;
                     const fileKey = fileKeysForAi[idx];
-                    const originalIdx = newFiles.findIndex(
+                    const originalIdx = currentFiles.findIndex(
                       (f) => `${f.name}:${f.size}` === fileKey,
                     );
                     const draftCase =

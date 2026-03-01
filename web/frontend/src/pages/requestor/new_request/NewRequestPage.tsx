@@ -29,7 +29,7 @@ import { NewRequestPageSkeleton } from "@/shared/ui/skeletons/NewRequestPageSkel
 export const NewRequestPage = () => {
   const { id: existingRequestId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
-  const FILE_SIZE_THRESHOLD_BYTES = 3 * 1024 * 1024; // 3MB
+  const FILE_SIZE_THRESHOLD_BYTES = 30 * 1024 * 1024; // 3MB
 
   const { toast } = useToast();
 
@@ -404,7 +404,7 @@ export const NewRequestPage = () => {
       return {
         valid: false,
         message:
-          "3MB 이상의 파일은 업로드할 수 없습니다. 커스텀 어벗 STL 파일만 업로드해주세요.",
+          "30MB 이상의 파일은 업로드할 수 없습니다. 커스텀 어벗 STL 파일만 업로드해주세요.",
       };
     }
     return { valid: true };
@@ -439,7 +439,7 @@ export const NewRequestPage = () => {
       toast({
         title: "파일 업로드 실패",
         description:
-          "3MB 이상의 파일은 업로드할 수 없습니다. 커스텀 어벗 STL 파일만 업로드해주세요.",
+          "30MB 이상의 파일은 업로드할 수 없습니다. 커스텀 어벗 STL 파일만 업로드해주세요.",
         variant: "destructive",
         duration: 3000,
       });
@@ -562,7 +562,6 @@ export const NewRequestPage = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch flex-1 min-h-0 h-full">
           <div className="flex flex-col gap-2.5 flex-1 min-h-0 h-full">
-
             <NewRequestDetailsSection
               files={files}
               selectedPreviewIndex={selectedPreviewIndex}

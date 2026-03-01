@@ -261,6 +261,102 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
     );
 });
 
+// 파일 + 케이스 정보를 한번에 여러 개 추가 (caseInfos 요소 생성)
+export const addFilesToDraftBulk = asyncHandler(async (req, res) => {
+  const { id } = req.params; // draftId
+  const { items } = req.body || {};
+
+  if (!Types.ObjectId.isValid(id)) {
+    throw new ApiError(400, "Invalid draft ID");
+  }
+
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {
+    throw new ApiError(400, "items is required");
+  }
+
+  const draft = await DraftRequest.findById(id);
+
+  if (!draft) {
+    throw new ApiError(404, "Draft not found");
+  }
+
+  if (draft.requestor.toString() !== req.user._id.toString()) {
+    throw new ApiError(403, "You are not allowed to update this draft");
+  }
+
+  const nextCases = await Promise.all(
+    list.map(async (raw) => {
+      const {
+        originalName,
+        size,
+        mimetype,
+        s3Key,
+        fileId,
+        clinicName,
+        patientName,
+        tooth,
+        implantManufacturer,
+        implantSystem,
+        implantType,
+        maxDiameter,
+        connectionDiameter,
+        workType,
+        shippingMode,
+        requestedShipDate,
+      } = raw || {};
+
+      if (!originalName || !size || !mimetype) {
+        throw new ApiError(400, "originalName, size, mimetype are required");
+      }
+
+      if (!fileId && !s3Key) {
+        throw new ApiError(400, "fileId or s3Key is required");
+      }
+
+      const fileSubdoc = {
+        fileId: fileId && Types.ObjectId.isValid(fileId) ? fileId : undefined,
+        originalName,
+        size,
+        mimetype,
+        s3Key,
+      };
+
+      const normalizedImplant = await normalizeCaseInfosImplantFields({
+        implantManufacturer,
+        implantSystem,
+        implantType,
+      });
+
+      return {
+        file: fileSubdoc,
+        clinicName,
+        patientName,
+        tooth,
+        ...normalizedImplant,
+        maxDiameter,
+        connectionDiameter,
+        workType,
+        shippingMode: shippingMode || "normal",
+        requestedShipDate,
+      };
+    }),
+  );
+
+  draft.caseInfos = Array.isArray(draft.caseInfos) ? draft.caseInfos : [];
+  const beforeLength = draft.caseInfos.length;
+  nextCases.forEach((ci) => {
+    draft.caseInfos.push(ci);
+  });
+  await draft.save();
+
+  const addedCaseInfos = draft.caseInfos.slice(beforeLength);
+
+  return res
+    .status(201)
+    .json(new ApiResponse(201, addedCaseInfos, "Cases added to draft"));
+});
+
 // 드래프트에서 케이스(파일+정보) 삭제
 export const removeFileFromDraft = asyncHandler(async (req, res) => {
   const { id, fileId } = req.params;

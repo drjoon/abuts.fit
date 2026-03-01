@@ -5,6 +5,7 @@ import {
   getDraft,
   updateDraft,
   addFileToDraft,
+  addFilesToDraftBulk,
   removeFileFromDraft,
   deleteDraft,
 } from "../../controllers/requests/draftRequest.controller.js";
@@ -25,6 +26,9 @@ router.patch("/:id", updateDraft);
 
 // 파일 메타데이터 추가
 router.post("/:id/files", addFileToDraft);
+
+// 파일 메타데이터 일괄 추가
+router.post("/:id/files/bulk", addFilesToDraftBulk);
 
 // 파일 메타데이터 삭제
 router.delete("/:id/files/:fileId", removeFileFromDraft);

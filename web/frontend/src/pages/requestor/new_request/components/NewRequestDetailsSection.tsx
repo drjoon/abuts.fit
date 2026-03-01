@@ -485,7 +485,7 @@ export function NewRequestDetailsSection({
                     onClick={() => uploadInputRef.current?.click()}
                   >
                     <Upload className="h-6 md:h-8 w-6 md:w-8 mx-auto text-muted-foreground" />
-                    커스텀 어벗 STL 파일 드롭
+                    커스텀 어벗 STL 파일들 드롭
                   </Button>
                   <p className="text-xs md:text-sm text-muted-foreground">
                     파일명에서 치과이름, 환자이름, 치아번호를 자동 인식합니다.

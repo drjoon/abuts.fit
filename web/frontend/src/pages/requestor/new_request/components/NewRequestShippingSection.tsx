@@ -87,7 +87,7 @@ export function NewRequestShippingSection({
               <span className="flex flex-col items-start leading-tight text-lg">
                 <span>묶음 배송</span>
                 <span className="text-sm text-slate-500">
-                  {bulkLabelText} 발송
+                  ({bulkLabelText}) 발송
                 </span>
               </span>
             </button>
