@@ -109,14 +109,29 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     prevDraftIdRef.current = draftId ?? null;
   }, [draftId]);
 
+  const normalizeKeyPart = useCallback((s: string) => {
+    try {
+      return String(s || "").normalize("NFC");
+    } catch {
+      return String(s || "");
+    }
+  }, []);
+
+  const toNormalizedFileKey = useCallback(
+    (file: File) => {
+      return `${normalizeKeyPart(file.name)}:${file.size}`;
+    },
+    [normalizeKeyPart],
+  );
+
   // 현재 선택된 파일의 key
   const currentFileKey = useMemo(() => {
     if (selectedPreviewIndex === null || !files[selectedPreviewIndex]) {
       return "__default__";
     }
     const file = files[selectedPreviewIndex];
-    return `${file.name}:${file.size}`;
-  }, [selectedPreviewIndex, files]);
+    return toNormalizedFileKey(file);
+  }, [selectedPreviewIndex, files, toNormalizedFileKey]);
 
   // 현재 파일의 caseInfos (파일별 독립적 관리)
   const currentCaseInfos = useMemo(() => {
@@ -145,7 +160,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     (updates: Partial<typeof currentCaseInfos>) => {
       const file =
         selectedPreviewIndex !== null ? files[selectedPreviewIndex] : null;
-      const fileKey = file ? `${file.name}:${file.size}` : "__default__";
+      const fileKey = file ? toNormalizedFileKey(file) : "__default__";
 
       console.log("[useNewRequestPage] setCaseInfos called:", {
         fileKey,
@@ -157,7 +172,13 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       // 1) 로컬 캐시(caseInfosMap) 업데이트
       updateCaseInfos(fileKey, updates);
     },
-    [selectedPreviewIndex, files, updateCaseInfos, currentCaseInfos],
+    [
+      selectedPreviewIndex,
+      files,
+      updateCaseInfos,
+      currentCaseInfos,
+      toNormalizedFileKey,
+    ],
   );
 
   // useNewRequestImplant 내부에서 clinicName이 바뀔 때마다

@@ -49,6 +49,18 @@ export const useNewRequestSubmitV2 = ({
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const normalizeKeyPart = (s: string) => {
+    try {
+      return String(s || "").normalize("NFC");
+    } catch {
+      return String(s || "");
+    }
+  };
+
+  const toNormalizedFileKey = (file: File) => {
+    return `${normalizeKeyPart(file.name)}:${file.size}`;
+  };
+
   const redirectToProfileIfNeeded = async () => false;
 
   /**
@@ -60,7 +72,7 @@ export const useNewRequestSubmitV2 = ({
 
     for (const file of files) {
       try {
-        const fileKey = `${file.name}:${file.size}`;
+        const fileKey = toNormalizedFileKey(file);
         const userInput = caseInfosMap[fileKey];
 
         if (!userInput) continue;
@@ -210,7 +222,7 @@ export const useNewRequestSubmitV2 = ({
         const duplicates = [];
 
         for (const file of files) {
-          const fileKey = `${file.name}:${file.size}`;
+          const fileKey = toNormalizedFileKey(file);
           const info = caseInfosMap[fileKey];
           if (info) {
             const combo = `${info.clinicName}|${info.patientName}|${info.tooth}`;
@@ -242,7 +254,7 @@ export const useNewRequestSubmitV2 = ({
         console.log("[NewRequestSubmit] patch draft start", {
           t: Date.now() - submitStart,
         });
-        const validFileKeys = new Set(files.map((f) => `${f.name}:${f.size}`));
+        const validFileKeys = new Set(files.map((f) => toNormalizedFileKey(f)));
         const filteredMap: Record<string, CaseInfos> = {};
         for (const [key, value] of Object.entries(caseInfosMap)) {
           if (key === "__default__" || validFileKeys.has(key)) {

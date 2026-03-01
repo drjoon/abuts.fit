@@ -183,14 +183,26 @@ export const NewRequestPage = () => {
       (f) => String((f as any)?._draftCaseInfoId || "") === String(draftCaseId),
     );
     if (!found) return null;
-    return `${found.name}:${found.size}`;
+    try {
+      return `${String(found.name || "").normalize("NFC")}:${found.size}`;
+    } catch {
+      return `${found.name}:${found.size}`;
+    }
   };
 
   const getNewCaseInfoByCaseId = useCallback(
     (caseId: string) => {
       const fileKey = getFileKeyByDraftCaseId(String(caseId));
       const file = fileKey
-        ? (files || []).find((f) => `${f.name}:${f.size}` === fileKey)
+        ? (files || []).find((f) => {
+            try {
+              return (
+                `${String(f.name || "").normalize("NFC")}:${f.size}` === fileKey
+              );
+            } catch {
+              return `${f.name}:${f.size}` === fileKey;
+            }
+          })
         : null;
       const info = fileKey ? caseInfosMap?.[fileKey] : undefined;
       const parsed = file ? parseFilenameWithRules(file.name) : null;

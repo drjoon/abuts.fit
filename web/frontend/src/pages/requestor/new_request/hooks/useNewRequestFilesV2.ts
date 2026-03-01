@@ -370,7 +370,14 @@ export const useNewRequestFilesV2 = ({
 
           filesToProcess.forEach((f) => {
             const sourceKey = `${f.name}:${f.size}`;
-            const optimistic = f as FileWithDraftId;
+            const normalizedName = normalize(f.name);
+            const baseFile =
+              normalizedName && normalizedName !== f.name
+                ? new File([f], normalizedName, {
+                    type: f.type || "application/octet-stream",
+                  })
+                : f;
+            const optimistic = baseFile as FileWithDraftId;
             optimistic._sourceFileKey = sourceKey;
             try {
               optimistic._sourceFileKeyNfc = `${String(f.name || "").normalize(
@@ -385,6 +392,36 @@ export const useNewRequestFilesV2 = ({
           return out;
         });
         setSelectedPreviewIndex((prev) => (prev === null ? 0 : prev));
+
+        // optimistic 단계에서도 파일명 기반 정보 추출을 선반영한다.
+        // (첫 파일이 선택된 상태에서 Draft 응답 반영이 늦어 누락되는 케이스 방지)
+        if (updateCaseInfos) {
+          filesToProcess.forEach((f) => {
+            const normalizedName = normalize(f.name);
+            const fileKey = `${normalizedName}:${f.size}`;
+            const parsed = parseFilenameWithRules(normalizedName);
+            if (!parsed.clinicName && !parsed.patientName && !parsed.tooth) {
+              return;
+            }
+
+            const existing =
+              (caseInfosMap && (caseInfosMap as any)[fileKey]) || null;
+            updateCaseInfos(fileKey, {
+              clinicName:
+                String(existing?.clinicName || "").trim() ||
+                String(parsed.clinicName || "").trim() ||
+                undefined,
+              patientName:
+                String(existing?.patientName || "").trim() ||
+                String(parsed.patientName || "").trim() ||
+                undefined,
+              tooth:
+                String(existing?.tooth || "").trim() ||
+                String(parsed.tooth || "").trim() ||
+                undefined,
+            });
+          });
+        }
 
         console.log(
           `[Upload] Processing ${filesToProcess.length} of ${filesToUpload.length} files`,
@@ -646,13 +683,16 @@ export const useNewRequestFilesV2 = ({
             const filenamesForAi: string[] = [];
             const fileKeysForAi: string[] = [];
 
-            // 현재 화면의 files를 기준으로 파싱/AI 대상을 구성한다.
-            const currentFiles = filesRef.current;
-            currentFiles.forEach((file, idx) => {
-              const fileKey = `${file.name}:${file.size}`;
-              const draftCase = newDraftFiles[idx];
-              // 룰 기반 파싱 (fallback으로 기존 parseFilename 포함)
-              const parsed = parseFilenameWithRules(file.name);
+            // Draft가 저장한 정규화된 originalName 기준으로 파싱/AI 대상을 구성한다.
+            // (optimistic 단계에서는 NFD 등으로 파싱이 실패할 수 있음)
+            newDraftFiles.forEach((draftCase) => {
+              const fileMeta = draftCase?.file;
+              const originalName = String(fileMeta?.originalName || "").trim();
+              const size = Number(fileMeta?.size || 0);
+              if (!originalName || !Number.isFinite(size) || size <= 0) return;
+
+              const fileKey = `${originalName}:${size}`;
+              const parsed = parseFilenameWithRules(originalName);
 
               if (parsed.clinicName || parsed.patientName || parsed.tooth) {
                 // 파일명에서 정보를 추출한 경우 바로 Draft.caseInfos에 반영
@@ -664,7 +704,7 @@ export const useNewRequestFilesV2 = ({
                 });
               } else {
                 // 파일명에서 아무 것도 못 찾은 파일은 AI 분석 대상으로 모은다
-                filenamesForAi.push(file.name);
+                filenamesForAi.push(originalName);
                 fileKeysForAi.push(fileKey);
               }
             });
@@ -708,11 +748,10 @@ export const useNewRequestFilesV2 = ({
                     const idx = filenamesForAi.indexOf(item.filename);
                     if (idx === -1) return;
                     const fileKey = fileKeysForAi[idx];
-                    const originalIdx = currentFiles.findIndex(
-                      (f) => `${f.name}:${f.size}` === fileKey,
-                    );
-                    const draftCase =
-                      originalIdx !== -1 ? newDraftFiles[originalIdx] : null;
+                    const draftCase = newDraftFiles.find((ci: any) => {
+                      const fm = ci?.file;
+                      return `${fm?.originalName}:${fm?.size}` === fileKey;
+                    });
 
                     updateCaseInfos(fileKey, {
                       _id: item._id || draftCase?._id, // 서버에서 생성된 ID 반영
