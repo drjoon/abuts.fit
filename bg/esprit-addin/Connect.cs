@@ -220,51 +220,17 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             try
             {
                 if (httpServer == null) return;
+                // 정책: 단일 승인만 처리. pending-nc 복구는 항상 스킵.
+                // 승인 시 백엔드가 직접 esprit-addin HTTP 엔드포인트로 단일 작업을 트리거하므로,
+                // 재기동 시 pending 전체를 복구하면 "승인하지 않은 백로그"까지 자동 처리될 수 있다.
+                AppLogger.Log("Connect: pending-nc recovery skipped (policy: single approval only)");
                 PurgeOldFiles(AppConfig.StorageFilledDirectory, 15);
                 PurgeOldFiles(AppConfig.StorageNcDirectory, 15);
-                var items = FetchPendingNcItems();
-                if (items == null || items.Length == 0) return;
-                foreach (var it in items)
-                {
-                    try
-                    {
-                        var rid = (it?.requestId ?? string.Empty).Trim();
-                        var fp = (it?.filePath ?? string.Empty).Trim();
-                        if (string.IsNullOrWhiteSpace(rid) || string.IsNullOrWhiteSpace(fp))
-                        {
-                            continue;
-                        }
-                        var safeName = SafeFileName(fp);
-                        if (string.IsNullOrWhiteSpace(safeName))
-                        {
-                            continue;
-                        }
-                        var filledDir = AppConfig.StorageFilledDirectory;
-                        if (!Directory.Exists(filledDir))
-                        {
-                            Directory.CreateDirectory(filledDir);
-                        }
-                        var localPath = Path.Combine(filledDir, safeName);
-                        if (!File.Exists(localPath))
-                        {
-                            var ok = DownloadSourceFileToFilledDir(rid, fp, localPath);
-                            if (!ok)
-                            {
-                                continue;
-                            }
-                        }
-                        httpServer.EnqueueNcRequest(new NcGenerationRequest
-                        {
-                            RequestId = rid,
-                            StlPath = localPath,
-                            NcOutputPath = AppConfig.StorageNcDirectory,
-                        });
-                    }
-                    catch { }
-                }
+                return;
             }
             catch { }
         }
+
         // Default Property Procedures should not need changes
         #region " Default Property Procedures "
         private DPTechnology.AnnexLibraries.IConnectionManager _ConnectionManager;

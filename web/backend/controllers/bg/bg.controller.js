@@ -755,6 +755,10 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           connectionDiameter: ci.connectionDiameter || 0,
           workType: ci.workType || "",
           lotNumber: lotPart,
+          // esprit-addin에서 공정 PRC를 선택하기 위한 의뢰별 설정
+          // 값이 없으면 addin에서 폴백(AppConfig) 경로를 쓰되, 가능한 한 백엔드에서 내려준다.
+          faceHolePrcFileName: ci.faceHolePrcFileName || "",
+          connectionPrcFileName: ci.connectionPrcFileName || "",
           finishLine:
             Array.isArray(finishLinePoints) && finishLinePoints.length >= 2
               ? { points: finishLinePoints }
@@ -772,6 +776,9 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
 export const listPendingStl = asyncHandler(async (req, res) => {
   const requests = await Request.find({
     manufacturerStage: { $ne: "취소" },
+    // "승인한 것만" BG가 처리하도록 제한
+    // (esprit/rhino 등 BG 프로그램 재기동 시 pending을 복구할 때 전체를 쓸어가지 않게 함)
+    "caseInfos.reviewByStage.request.status": "APPROVED",
     "caseInfos.file.filePath": { $exists: true, $ne: null },
     $or: [
       { "caseInfos.camFile": { $exists: false } },
@@ -813,6 +820,10 @@ export const listPendingStl = asyncHandler(async (req, res) => {
 export const listPendingNc = asyncHandler(async (_req, res) => {
   const requests = await Request.find({
     manufacturerStage: { $ne: "취소" },
+    // "승인한 것만" NC 생성 대상으로 포함
+    // esprit-addin은 재기동 시 pending-nc 목록을 복구(enqueue)하므로,
+    // 승인/명령되지 않은 건까지 자동 처리되는 것을 방지한다.
+    "caseInfos.reviewByStage.request.status": "APPROVED",
     "caseInfos.camFile.filePath": { $exists: true, $ne: null },
     $or: [
       { "caseInfos.ncFile": { $exists: false } },

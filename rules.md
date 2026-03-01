@@ -265,6 +265,43 @@
     5. **CNC (Bridge)**: Bridge-server가 `3-nc`/`3-direct` 기반으로 CNC 업로드를 수행하며, 가공 시작은 Now Playing에서 사용자 Start로 진행.
   - **스토리지 경로**: 모든 BG 프로그램은 `/bg/storage` 하위 폴더를 기준으로 파일을 공유하며, 각 단계 완료 시 다음 폴더로 결과물을 이동/복사합니다.
 
+### 7.1 Esprit CAM PRC 파일명 정책 (폴백 금지)
+
+**원칙**: 백엔드가 제공하는 PRC 파일명이 비어있거나 찾을 수 없으면 **임의로 폴백하지 않고 에러 처리하여 공정을 중단**한다. 잘못된 PRC로 가공하면 불량품이 생산되므로, 데이터 누락 시 안전하게 실패하는 것이 더 낫다.
+
+**구현**:
+
+1. `bg/esprit-addin/StlFileProcessor.cs` - `EnsureCustomCyclePrc()`:
+   - 백엔드 `faceHolePrcFileName`/`connectionPrcFileName`이 비어있으면 `AddRunError()` 후 `return`으로 공정 중단
+   - AppConfig 폴백 로직 제거 (임의 폴백 금지)
+   - 백엔드가 준 파일명으로 AcroDent 경로에서 찾지 못해도 에러 처리
+
+2. 백엔드 PRC 파일명 자동 결정:
+   - `web/backend/controllers/requests/prcMapping.utils.js`: 임플란트 정보(manufacturer/system/type) 기반 매핑 테이블
+   - Draft 생성/수정 시 `resolvePrcFileNames()` 호출하여 자동 세팅
+   - Request 생성 시에도 동일하게 적용
+
+3. 스프레드시트 명명 규칙 참조:
+   - Face Hole: `{제조사}_{시스템}_{타입}_FaceHole.prc` (예: `오스템_TS_RH_FaceHole.prc`)
+   - Connection: `{제조사}_{시스템}_{타입}_Connection.prc` (예: `오스템_TS_RH_Connection.prc`)
+
+### 7.2 Esprit pending-nc 복구 비활성화 정책 (단일 승인만 처리)
+
+**원칙**: Esprit Add-in은 재기동 시 `/api/bg/pending-nc`를 조회해서 백로그를 복구하지 **않는다**. 항상 단일 승인만 처리한다.
+
+**이유**:
+
+- CAM 승인 시 백엔드가 직접 esprit-addin HTTP 엔드포인트(`POST http://localhost:8001/`)로 단일 작업을 트리거
+- 재기동 시 pending 전체를 복구하면 "승인하지 않은 백로그"까지 자동 처리될 수 있음
+- 백엔드 `/api/bg/pending-nc`는 이미 `caseInfos.reviewByStage.request.status === "APPROVED"` 필터 적용
+
+**구현**:
+
+- `bg/esprit-addin/Connect.cs` - `RecoverPendingNcToQueue()`:
+  - 무조건 `return`으로 복구 스킵
+  - 환경변수 토글(`ABUTS_RECOVER_PENDING_NC`) 제거
+  - TTL purge만 실행 후 종료
+
 ### 11.2 팝빌 처리 아키텍처
 
 - **단일 백그라운드 워커 전담**: 팝빌 관련 작업(세금계산서 발행/취소, 계좌조회, 알림 발송)은 백그라운드 워커(`popbillWorker.js`)가 전담한다.

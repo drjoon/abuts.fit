@@ -68,6 +68,11 @@ const requestSchema = new mongoose.Schema(
       implantType: String, // e.g. Hex, Non-hex (type)
       maxDiameter: Number,
       connectionDiameter: Number,
+      // esprit-addin: 의뢰별 공정 PRC 파일명(또는 절대경로)
+      // - Face Hole 공정: AcroDent/1_Face Hole/
+      // - Connection 공정: AcroDent/2_Connection/
+      faceHolePrcFileName: String,
+      connectionPrcFileName: String,
       workType: String,
       reviewByStage: {
         request: {

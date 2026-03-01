@@ -18,8 +18,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public const string AddInRootEnv = "ABUTS_ADDIN_ROOT";
         public const string PrcRootEnv = "ABUTS_PRC_ROOT";
         public const string SurfaceRootEnv = "ABUTS_SURFACE_ROOT";
-        public const string FaceHolePrcEnv = "ABUTS_FACE_HOLE_PRC";
-        public const string ConnectionPrcEnv = "ABUTS_CONNECTION_PRC";
         public const string TurningDepthEnv = "ABUTS_TURNING_DEPTH";
         public const string ExitAngleEnv = "ABUTS_EXIT_ANGLE";
         public const string TurningExtendEnv = "ABUTS_TURNING_EXTEND";
@@ -73,13 +71,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public static string PrcRootDirectory => GetEnvOrDefault(PrcRootEnv, DefaultPrcRootDirectory);
         public static string SurfaceRootDirectory => GetEnvOrDefault(SurfaceRootEnv, DefaultSurfaceRootDirectory);
 
-        public static string FaceHoleProcessPath => GetEnvOrDefault(
-            FaceHolePrcEnv,
-            Path.Combine(PrcRootDirectory, "1_Face Hole", "네오_IS_R_FaceHole.prc"));
+        public static string FaceHoleProcessPath => Path.Combine(
+            AddInRootDirectory, "AcroDent", "1_Face Hole", "네오_IS_R_FaceHole.prc");
 
-        public static string ConnectionProcessPath => GetEnvOrDefault(
-            ConnectionPrcEnv,
-            Path.Combine(PrcRootDirectory, "2_Connection", "네오_IS_R_Connection.prc"));
+        public static string ConnectionProcessPath => Path.Combine(
+            AddInRootDirectory, "AcroDent", "2_Connection", "네오_IS_R_Connection.prc");
 
         public static double TurningDepth => GetDoubleEnvOrDefault(TurningDepthEnv, DefaultTurningDepth);
         public static double ExitAngle => GetDoubleEnvOrDefault(ExitAngleEnv, DefaultExitAngle);
@@ -111,70 +107,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             try
             {
                 var value = Environment.GetEnvironmentVariable(key);
-                if (string.IsNullOrWhiteSpace(value))
-                {
-                    return fallback;
-                }
-
-                if (IsLikelyPathKey(key) && LooksLikeInvalidPathValue(value))
-                {
-                    return fallback;
-                }
-
-                return value;
+                return string.IsNullOrWhiteSpace(value) ? fallback : value;
             }
             catch
             {
                 return fallback;
             }
-        }
-
-        private static bool IsLikelyPathKey(string key)
-        {
-            if (string.IsNullOrWhiteSpace(key))
-            {
-                return false;
-            }
-            return key.EndsWith("_ROOT", StringComparison.OrdinalIgnoreCase) ||
-                   key.EndsWith("_DIRECTORY", StringComparison.OrdinalIgnoreCase) ||
-                   key.EndsWith("_DIR", StringComparison.OrdinalIgnoreCase) ||
-                   key.EndsWith("_PRC", StringComparison.OrdinalIgnoreCase) ||
-                   key.EndsWith("_PATH", StringComparison.OrdinalIgnoreCase) ||
-                   key.Contains("STORAGE", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static bool LooksLikeInvalidPathValue(string value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return true;
-            }
-
-            try
-            {
-                foreach (char c in Path.GetInvalidPathChars())
-                {
-                    if (value.IndexOf(c) >= 0)
-                    {
-                        return true;
-                    }
-                }
-            }
-            catch
-            {
-            }
-
-            if (value.IndexOf('?') >= 0)
-            {
-                return true;
-            }
-
-            if (value.IndexOf('\uFFFD') >= 0)
-            {
-                return true;
-            }
-
-            return false;
         }
 
         private static double GetDoubleEnvOrDefault(string key, double fallback)

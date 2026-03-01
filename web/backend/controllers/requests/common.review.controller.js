@@ -34,6 +34,7 @@ import s3Utils, {
   deleteFileFromS3,
   getSignedUrl as getSignedUrlForS3Key,
 } from "../../utils/s3.utils.js";
+import { resolvePrcFileNames } from "./prcMapping.utils.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -558,6 +559,28 @@ export async function updateReviewStatusByStage(req, res) {
           request.caseInfos.reviewByStage.request.reason = "";
 
           await ensureLotNumberForMachining(request);
+
+          // PRC 파일명은 의뢰자가 아니라, 관리자(의뢰 승인) 시점에 확정한다.
+          // 누락 시 esprit-addin에서 OpenProcess("")로 크래시/불량 가공 위험이 있으므로 승인 자체를 막는다.
+          const prcFiles = resolvePrcFileNames(request.caseInfos || {});
+          request.caseInfos.faceHolePrcFileName = prcFiles.faceHolePrcFileName;
+          request.caseInfos.connectionPrcFileName =
+            prcFiles.connectionPrcFileName;
+          if (
+            !request.caseInfos.faceHolePrcFileName ||
+            !request.caseInfos.connectionPrcFileName
+          ) {
+            const impl = request.caseInfos || {};
+            const detail = `${String(impl.implantManufacturer || "").trim()}/${String(
+              impl.implantSystem || "",
+            ).trim()}/${String(impl.implantType || "").trim()}`;
+            const err = new Error(
+              `PRC 매핑을 찾을 수 없습니다. Implant=${detail}. PRC 파일명은 의뢰 승인 시점에 필수로 확정되어야 합니다.`,
+            );
+            err.statusCode = 400;
+            throw err;
+          }
+
           request.productionSchedule = request.productionSchedule || {};
           if (screening.ok) {
             request.productionSchedule.diameter = screening.diameter;
