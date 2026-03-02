@@ -1,184 +1,184 @@
-==== Trace started at 2026-03-02T12:25:58.1744354+09:00 ====
-[2026-03-02 12:25:58] StlFileProcessor: 초기화 전 - Ops:0, Chains:0, FreeForms:0, Graphics:159
-[2026-03-02 12:25:59] StlFileProcessor: 초기화 후 - Ops:0, Chains:0, FreeForms:0, Graphics:159
-[2026-03-02 12:25:59] StlFileProcessor: DentalAddin static 필드 초기화 완료
-[2026-03-02 12:25:59] StlFileProcessor: request-meta GET http://118.217.235.170:8080/api/bg/request-meta?requestId=20260301-AZYHHWDC (X-Bridge-Secret set=True)
-[2026-03-02 12:25:59] StlFileProcessor: request-meta response body={"statusCode":200,"data":{"ok":true,"requestId":"20260301-AZYHHWDC","lotNumber":{"part":"CAP260301-ABY"},"serialCode":"ABY","caseInfos":{"clinicName":"미소","patientName":"윤일광","tooth":"47","implantManufacturer":"OSSTEM","implantSystem":"Regular","implantType":"Hex","maxDiameter":8,"connectionDiameter":3.32,"workType":"abutment","lotNumber":"CAP260301-ABY","faceHolePrcFileName":"오스템_TS_RH_FaceHole.prc","connectionPrcFileName":"오스템_TS_RH_Connection.prc","finishLine":{"points":[[3.8021025406565143,1.2353780025564758,3.3116807868903364],[3.559621809091768,1.8137179023076548,3.2799518901701274],[3.223569877209529,2.342060607789742,3.2337338789153742],[2.810124469107027,2.810124469107027,3.179709171557818],[2.320469666134192,3.193852495468882,3.124635206597203],[1.7510837508258768,3.4366953653902286,3.0751977611648917],[1.1409677133513831,3.5115375478300446,3.034754946544054],[0.5527381319803337,3.489851218009485,3.0029264524998442],[2.0915033262870472e-16,3.4156841429598046,2.978946236702993],[-0.5234868871318198,3.3051661265410517,2.9624426920382665],[-1.0277871287986624,3.163203526024266,2.952504567387727],[-1.5182198036879262,2.979674136383892,2.9483481364476654],[-1.9907272506250784,2.7400009963496452,2.9482575372456425],[-2.4274718895488894,2.42747188954889,2.950465274307901],[-2.7914782399928377,2.028127657356352,2.9531245495827436],[-3.0433603444851687,1.5506695474973258,2.954521037293529],[-3.1919415791336054,1.0371246882852747,2.954747295776904],[-3.2710367162390632,0.5180813195825335,2.955592173402257],[-3.293483956024562,4.0333545847886426e-16,2.958972093547799],[-3.258601473180156,-0.516111770570348,2.966798487901177],[-3.15311646364568,-1.0245096435547296,2.980887767572265],[-2.966607070722427,-1.5115618011831948,3.0022284138236897],[-2.7188254638531815,-1.9753423257132379,3.029138549115631],[-2.418220907586393,-2.4182209075863925,3.0592693142498617],[-2.059721338754779,-2.8349632118707584,3.090394583524602],[-1.6316311609563647,-3.2022564576025254,3.12028460843068],[-1.124201679682491,-3.459937002023568,3.146763815212608],[-0.5693317849691628,-3.5946194197016936,3.169190201789532],[-6.666889320179101e-16,-3.629285507636896,3.1875364732185005],[0.5675971213816231,-3.583667184848422,3.2019780655881993],[1.1254871929448744,-3.4638934050280303,3.2126160633597216],[1.6693088223517094,-3.2762030316798976,3.2199673936041218],[2.2010152758989623,-3.0294376324282046,3.2259374556239893],[2.7149136490788948,-2.714913649078897,3.232743150272629],[3.1868868176152265,-2.3154088049371273,3.2425302958933324],[3.5544244589993315,-1.811069720165627,3.257925687564131],[3.7762876787636768,-1.2269902454719617,3.280188925317669],[3.8987648114039315,-0.6175036826112088,3.302268359922401],[3.9470354946671753,0,3.3186141348122855],[3.9227456075140887,0.621301867581652,3.3237109978128654],[3.8021025406565143,1.2353780025564758,3.3116807868903364]]}}},"message":"Request meta","success":true}
-[2026-03-02 12:25:59] StlFileProcessor: request-meta loaded requestId=20260301-AZYHHWDC, Clinic=미소, Patient=윤일광, Tooth=47, Implant=OSSTEM/Regular/Hex, MaxDia=8, ConnDia=3.32, WorkType=abutment, Lot=CAP260301-ABY, SerialCode=ABY
-[2026-03-02 12:25:59] StlFileProcessor: finishLine topZ=3.3237
-[2026-03-02 12:25:59] StlFileProcessor.ApplyBackendPrcNames: FaceHole=오스템_TS_RH_FaceHole.prc, Connection=오스템_TS_RH_Connection.prc
-[2026-03-02 12:25:59] StlFileProcessor: 기존 장비 BarDiameter=8.000
-[2026-03-02 12:26:02] StlFileProcessor: STL bounding topZ=7.7217
-[2026-03-02 12:26:02] StlFileProcessor: BarDiameter 설정 - 8.000 (STL:20260301-AZYHHWDC-미소-윤일광-47.filled.stl)
-[2026-03-02 12:26:03] DentalAddin: MainModuleType - DentalAddin.MainModule, Assembly:ESPRIT2025AddinProject, Version:1.0.0.0, Location:C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\ESPRIT2025AddinProject.dll
-[2026-03-02 12:26:03] DentalAddin.TryApplyDentalUserData: UserData.NumData 적용 (Len:8)
-[2026-03-02 12:26:03] DentalAddin.TryApplyDentalUserData: UserData.NumCombobox 적용 (Len:7)
-[2026-03-02 12:26:03] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=1, file=Turning.prc
-[2026-03-02 12:26:03] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=2, file=Reverse Turning Process.prc
-[2026-03-02 12:26:03] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=3, file=MillRough_3D.prc
-[2026-03-02 12:26:03] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=5, file=FACE.prc
-[2026-03-02 12:26:03] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=6, file=3D.prc
-[2026-03-02 12:26:03] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=7, file=3D_2.prc
-[2026-03-02 12:26:03] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=9, file=SemiRough_2D.prc
-[2026-03-02 12:26:03] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=12, file=MarkText.prc
-[2026-03-02 12:26:03] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=10, file=5axisComposite_A.prc
-[2026-03-02 12:26:03] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=11, file=5axisComposite_B.prc
-[2026-03-02 12:26:03] DentalAddin.ConfigureDentalProcesses: Reverse Turning 비활성 (NumCombobox[4]!=1)
-[2026-03-02 12:26:03] DentalAddin.ConfigureDentalProcesses: RoughType 자동 결정 - 2 (NumCombobox[6]=1 (BallEndMillRough2Position))
-[2026-03-02 12:26:03] DentalAddin: Finishing Method=4 axis 선택됨 (NumCombobox[1]=1)
-[2026-03-02 12:26:03] DentalAddin: Composite2 PRC 준비됨 - 5axisComposite_B.prc
-[2026-03-02 12:26:03] DentalAddin: FinishingMethod=1 - PRC[10] 사용 (5axisComposite_A.prc)
-[2026-03-02 12:26:03] DentalAddin: NumCombobox: 0:0, 1:1, 2:0, 3:0, 4:0, 5:3, 6:1 (Len:7)
-[2026-03-02 12:26:03] DentalAddin: NumData: 0:0, 1:45, 2:1, 3:1, 4:3, 5:2, 6:1.5, 7:5 (Len:8)
-[2026-03-02 12:26:03] DentalAddin: PrcFileName: 0:, 1:Turning.prc, 2:Reverse Turning Process.prc, 3:MillRough_3D.prc, 4:오스템_TS_RH_FaceHole.prc, 5:FACE.prc, 6:3D.prc, 7:3D_2.prc, 8:오스템_TS_RH_Connection.prc, 9:SemiRough_2D.prc, 10:5axisComposite_A.prc, 11:5axisComposite_B.prc, 12:MarkText.prc (Len:13)
-[2026-03-02 12:26:03] DentalAddin: PrcFilePath: 0:, 1:Turning.prc, 2:Reverse Turning Process.prc, 3:MillRough_3D.prc, 4:오스템_TS_RH_FaceHole.prc, 5:FACE.prc, 6:3D.prc, 7:3D_2.prc, 8:오스템_TS_RH_Connection.prc, 9:SemiRough_2D.prc, 10:5axisComposite_A.prc, 11:5axisComposite_B.prc, 12:MarkText.prc (Len:13)
-[2026-03-02 12:26:03] DentalAddin: Turning 파라미터 설정 - Depth:1, Extend:3.5, Angle:30
-[2026-03-02 12:26:03] DentalAddin: MoveSTL 초기화 - MTI:0(True), Front:-9.5(True), Back:0(True), BarDia:8
-[2026-03-02 12:26:03] DentalAddin: 한계점 설정 완료 - FrontPointX:-9.5, BackPointX:0
-[2026-03-02 12:26:03] DentalAddin: MoveSurface 실행 시작 - NeedMoveY/Z 계산
-[2026-03-02 12:26:10] DentalAddin: MoveSurface 계산 결과 - NeedMove:False, NeedMoveY:-1.6431, NeedMoveZ:-0.2417
-[2026-03-02 12:26:10] DentalAddin: MoveSurface 실행 완료
-[2026-03-02 12:26:10] DentalAddin: MoveSTL 실행 시작 (FrontLimit:-9.5, BackLimit:0)
-[2026-03-02 12:26:19] DentalAddin: MoveSTL - 초기 X이동 dX:7.722, FrontPointX:-1.778, BackPointX:7.722
-[2026-03-02 12:26:19] DentalAddin: Emerge 실행 시작 - IGS 서피스 Merge 및 Translate
-[2026-03-02 12:26:19] DentalAddin: Surface Merge(1) - C:\Users\user\abuts.fit\bg\esprit-addin\Surface\Project1.igs
-[2026-03-02 12:26:20] DentalAddin: FinishingMethod==1, Extrude Merge 생략
-[2026-03-02 12:26:20] DentalAddin: Emerge 실행 완료
-[2026-03-02 12:26:20] DentalAddin: finishLine split 적용 - bboxTopZ:7.7217, finishTopZ:3.3237, rawRatio:0.2199, ratio(clamped):0.2199, splitX:0.3108 (Front:-1.7783, Back:7.7217)
-[2026-03-02 12:26:20] DentalAddin: MoveSTL 실행 완료
-[2026-03-02 12:26:20] DentalAddin: Bind 실행 시도 (Document: {(document != null)}, EspritApp: {(_espApp != null)})
-[2026-03-02 12:26:20] DentalAddin: Main 실행 시작
-[2026-03-02 12:26:20] DentalAddin: SearchTool 실행 완료
-[2026-03-02 12:26:20] CompositeTool - 원본조건 공구 사용: BM_D1.2
-[2026-03-02 12:26:20] CompositeTool - ToolNs 설정: BM_D1.2 (FinishingMethod:1)
-[2026-03-02 12:26:20] DentalAddin: Main 시작 - Document:True, EspritApp:True, Jump:1, RL:0, SpindleSide:False
-[2026-03-02 12:26:20] DentalAddin: Main - Clean 완료
-[2026-03-02 12:26:20] DentalAddin: Main - Boundry 호출 준비 (RL:1)
-[2026-03-02 12:26:20] DentalAddin: Boundry 시작 - Document:True, RL:1, MTI:0, FrontPointX:-1.77829021516375, BackPointX:7.72170978483625
-[2026-03-02 12:26:20] DentalAddin: Boundry - LatheMachineSetup.BarDiameter:8
-[2026-03-02 12:26:20] DentalAddin: Boundry: RoughBoundry point1(X:0.000, Y:9.000), point2 원래(X:-5.000, Y:-9.000) -> 수정(X:7.722, Y:-9.000)
-[2026-03-02 12:26:20] DentalAddin: TurningFeature: Cleanup 완료 - removedFeatureChains=0
-[2026-03-02 12:26:24] DentalAddin: Roughworkplane 시작 - RoughType:2
-[2026-03-02 12:26:27] DentalAddin: PreOp:CustomCycle - FeatureChains.Count: 6
-[2026-03-02 12:26:27] DentalAddin: PreOp:CustomCycle - FeatureChain[1] TurningProfile1
-[2026-03-02 12:26:27] DentalAddin: PreOp:CustomCycle - FeatureChain[2] RoughBoundry1
-[2026-03-02 12:26:27] DentalAddin: PreOp:CustomCycle - FeatureChain[3] Boundry2
-[2026-03-02 12:26:27] DentalAddin: PreOp:CustomCycle - FeatureChain[4] Turning
-[2026-03-02 12:26:27] DentalAddin: PreOp:CustomCycle - FeatureChain[5] Boundry1
-[2026-03-02 12:26:27] DentalAddin: PreOp:CustomCycle - FeatureChain[6] TurningProfile2
-[2026-03-02 12:26:27] DentalAddin: PreOp:CustomCycle - FreeFormFeatures.Count: 7
-[2026-03-02 12:26:27] DentalAddin: PreOp:CustomCycle - Feature[1] 3DMilling_270Degree
-[2026-03-02 12:26:27] DentalAddin: PreOp:CustomCycle - Feature[2] 3DMilling_180Degree
-[2026-03-02 12:26:27] DentalAddin: PreOp:CustomCycle - Feature[3] 3DMilling_0Degree
-[2026-03-02 12:26:27] DentalAddin: PreOp:CustomCycle - Feature[4] 3DRoughMilling_0Degree
-[2026-03-02 12:26:27] DentalAddin: PreOp:CustomCycle - Feature[5] 3DRoughMilling_180Degree
-[2026-03-02 12:26:27] DentalAddin: PreOp:CustomCycle - Feature[6] 3DMilling_90Degree
-[2026-03-02 12:26:27] DentalAddin: PreOp:CustomCycle - Feature[7] 3DMilling_FrontFace
-[2026-03-02 12:26:27] DentalAddin: CustomCycle - OpenProcess: PRC[4]=C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\1_Face Hole\오스템_TS_RH_FaceHole.prc
-[2026-03-02 12:26:27] DentalAddin: PreOp:TurningOp - FeatureChains.Count: 6
-[2026-03-02 12:26:27] DentalAddin: PreOp:TurningOp - FeatureChain[1] TurningProfile1
-[2026-03-02 12:26:27] DentalAddin: PreOp:TurningOp - FeatureChain[2] RoughBoundry1
-[2026-03-02 12:26:27] DentalAddin: PreOp:TurningOp - FeatureChain[3] Boundry2
-[2026-03-02 12:26:27] DentalAddin: PreOp:TurningOp - FeatureChain[4] Turning
-[2026-03-02 12:26:27] DentalAddin: PreOp:TurningOp - FeatureChain[5] Boundry1
-[2026-03-02 12:26:27] DentalAddin: PreOp:TurningOp - FeatureChain[6] TurningProfile2
-[2026-03-02 12:26:27] DentalAddin: PreOp:TurningOp - FreeFormFeatures.Count: 7
-[2026-03-02 12:26:27] DentalAddin: PreOp:TurningOp - Feature[1] 3DMilling_270Degree
-[2026-03-02 12:26:27] DentalAddin: PreOp:TurningOp - Feature[2] 3DMilling_180Degree
-[2026-03-02 12:26:27] DentalAddin: PreOp:TurningOp - Feature[3] 3DMilling_0Degree
-[2026-03-02 12:26:27] DentalAddin: PreOp:TurningOp - Feature[4] 3DRoughMilling_0Degree
-[2026-03-02 12:26:27] DentalAddin: PreOp:TurningOp - Feature[5] 3DRoughMilling_180Degree
-[2026-03-02 12:26:27] DentalAddin: PreOp:TurningOp - Feature[6] 3DMilling_90Degree
-[2026-03-02 12:26:27] DentalAddin: PreOp:TurningOp - Feature[7] 3DMilling_FrontFace
-[2026-03-02 12:26:27] DentalAddin: TurningOp - OpenProcess: PRC[1]=C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\3_Turning prc\Turning.prc
-[2026-03-02 12:26:30] DentalAddin: PreOp:RoughFreeFromMill - FeatureChains.Count: 6
-[2026-03-02 12:26:30] DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[1] TurningProfile1
-[2026-03-02 12:26:30] DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[2] RoughBoundry1
-[2026-03-02 12:26:30] DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[3] Boundry2
-[2026-03-02 12:26:30] DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[4] Turning
-[2026-03-02 12:26:30] DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[5] Boundry1
-[2026-03-02 12:26:30] DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[6] TurningProfile2
-[2026-03-02 12:26:30] DentalAddin: PreOp:RoughFreeFromMill - FreeFormFeatures.Count: 7
-[2026-03-02 12:26:30] DentalAddin: PreOp:RoughFreeFromMill - Feature[1] 3DMilling_270Degree
-[2026-03-02 12:26:30] DentalAddin: PreOp:RoughFreeFromMill - Feature[2] 3DMilling_180Degree
-[2026-03-02 12:26:30] DentalAddin: PreOp:RoughFreeFromMill - Feature[3] 3DMilling_0Degree
-[2026-03-02 12:26:30] DentalAddin: PreOp:RoughFreeFromMill - Feature[4] 3DRoughMilling_0Degree
-[2026-03-02 12:26:30] DentalAddin: PreOp:RoughFreeFromMill - Feature[5] 3DRoughMilling_180Degree
-[2026-03-02 12:26:30] DentalAddin: PreOp:RoughFreeFromMill - Feature[6] 3DMilling_90Degree
-[2026-03-02 12:26:30] DentalAddin: PreOp:RoughFreeFromMill - Feature[7] 3DMilling_FrontFace
-[2026-03-02 12:26:30] DentalAddin: OpenProcess:RoughFreeFromMill:PRC[3] 0-180 - PRC 경로: C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\5_Rough prc\MillRough_3D.prc
-[2026-03-02 12:26:30] DentalAddin: OpenProcess:RoughFreeFromMill:PRC[3] 0-180 - PRC 파일 열기 성공 (Count:1)
-[2026-03-02 12:26:33] DentalAddin: OpenProcess:RoughFreeFromMill:PRC[3] 재호출 - PRC 경로: C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\5_Rough prc\MillRough_3D.prc
-[2026-03-02 12:26:33] DentalAddin: OpenProcess:RoughFreeFromMill:PRC[3] 재호출 - PRC 파일 열기 성공 (Count:1)
-[2026-03-02 12:26:36] DentalAddin: PreOp:FreeFormMill - FeatureChains.Count: 6
-[2026-03-02 12:26:36] DentalAddin: PreOp:FreeFormMill - FeatureChain[1] TurningProfile1
-[2026-03-02 12:26:36] DentalAddin: PreOp:FreeFormMill - FeatureChain[2] RoughBoundry1
-[2026-03-02 12:26:36] DentalAddin: PreOp:FreeFormMill - FeatureChain[3] Boundry2
-[2026-03-02 12:26:36] DentalAddin: PreOp:FreeFormMill - FeatureChain[4] Turning
-[2026-03-02 12:26:36] DentalAddin: PreOp:FreeFormMill - FeatureChain[5] Boundry1
-[2026-03-02 12:26:36] DentalAddin: PreOp:FreeFormMill - FeatureChain[6] TurningProfile2
-[2026-03-02 12:26:36] DentalAddin: PreOp:FreeFormMill - FreeFormFeatures.Count: 7
-[2026-03-02 12:26:36] DentalAddin: PreOp:FreeFormMill - Feature[1] 3DMilling_270Degree
-[2026-03-02 12:26:36] DentalAddin: PreOp:FreeFormMill - Feature[2] 3DMilling_180Degree
-[2026-03-02 12:26:36] DentalAddin: PreOp:FreeFormMill - Feature[3] 3DMilling_0Degree
-[2026-03-02 12:26:36] DentalAddin: PreOp:FreeFormMill - Feature[4] 3DRoughMilling_0Degree
-[2026-03-02 12:26:36] DentalAddin: PreOp:FreeFormMill - Feature[5] 3DRoughMilling_180Degree
-[2026-03-02 12:26:36] DentalAddin: PreOp:FreeFormMill - Feature[6] 3DMilling_90Degree
-[2026-03-02 12:26:36] DentalAddin: PreOp:FreeFormMill - Feature[7] 3DMilling_FrontFace
-[2026-03-02 12:26:36] DentalAddin: FreeFormMill - free() 호출
-[2026-03-02 12:26:36] DentalAddin: free() 시작
-[2026-03-02 12:26:36] DentalAddin: OpenProcess:free:PRC[5] ParallelPlanes - PRC 경로: C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\7_FrontFace prc\FACE.prc
-[2026-03-02 12:26:36] DentalAddin: OpenProcess:free:PRC[5] ParallelPlanes - PRC 파일 열기 성공 (Count:1)
-[2026-03-02 12:26:37] DentalAddin: FreeFormMill - free() 완료
-[2026-03-02 12:26:37] DentalAddin: FreeFormMill - FinishingMethod==1, Emerge/Composite2 실행
-[2026-03-02 12:26:37] DentalAddin: Emerge - MergeFile1: C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\Viles\Surface\Project1.igs
-[2026-03-02 12:26:38] DentalAddin: Emerge - FinishingMethod==1, Extrude 파일 로드 생략
-[2026-03-02 12:26:38] DentalAddin: FreeFormMill - Emerge 완료
-[2026-03-02 12:26:38] DentalAddin: Composite2SplitAB - enabled=1, splitX=0.310758907518631, prcA=C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\11_Composite prc\5axisComposite_A.prc, prcB=C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\11_Composite prc\5axisComposite_B.prc
-[2026-03-02 12:26:38] DentalAddin: OpenProcess:Composite2SplitAB:A - PRC 경로: C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\11_Composite prc\5axisComposite_A.prc
-[2026-03-02 12:26:38] DentalAddin: OpenProcess:Composite2SplitAB:A - PRC 파일 열기 성공 (Count:1)
-[2026-03-02 12:26:38] DentalAddin: OpenProcess:Composite2SplitAB:B - PRC 경로: C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\11_Composite prc\5axisComposite_B.prc
-[2026-03-02 12:26:38] DentalAddin: OpenProcess:Composite2SplitAB:B - PRC 파일 열기 성공 (Count:1)
-[2026-03-02 12:26:38] DentalAddin: Composite2SplitAB - PassPercent: A(0.00->21.99), B(21.99->37.11)
-[2026-03-02 12:26:45] DentalAddin: FreeFormMill - Composite2 완료
-[2026-03-02 12:26:45] DentalAddin: PreOp:CustomCycle2 - FeatureChains.Count: 6
-[2026-03-02 12:26:45] DentalAddin: PreOp:CustomCycle2 - FeatureChain[1] TurningProfile1
-[2026-03-02 12:26:45] DentalAddin: PreOp:CustomCycle2 - FeatureChain[2] RoughBoundry1
-[2026-03-02 12:26:45] DentalAddin: PreOp:CustomCycle2 - FeatureChain[3] Boundry2
-[2026-03-02 12:26:45] DentalAddin: PreOp:CustomCycle2 - FeatureChain[4] Turning
-[2026-03-02 12:26:45] DentalAddin: PreOp:CustomCycle2 - FeatureChain[5] Boundry1
-[2026-03-02 12:26:45] DentalAddin: PreOp:CustomCycle2 - FeatureChain[6] TurningProfile2
-[2026-03-02 12:26:45] DentalAddin: PreOp:CustomCycle2 - FreeFormFeatures.Count: 7
-[2026-03-02 12:26:45] DentalAddin: PreOp:CustomCycle2 - Feature[1] 3DMilling_270Degree
-[2026-03-02 12:26:45] DentalAddin: PreOp:CustomCycle2 - Feature[2] 3DMilling_180Degree
-[2026-03-02 12:26:45] DentalAddin: PreOp:CustomCycle2 - Feature[3] 3DMilling_0Degree
-[2026-03-02 12:26:45] DentalAddin: PreOp:CustomCycle2 - Feature[4] 3DRoughMilling_0Degree
-[2026-03-02 12:26:45] DentalAddin: PreOp:CustomCycle2 - Feature[5] 3DRoughMilling_180Degree
-[2026-03-02 12:26:45] DentalAddin: PreOp:CustomCycle2 - Feature[6] 3DMilling_90Degree
-[2026-03-02 12:26:45] DentalAddin: PreOp:CustomCycle2 - Feature[7] 3DMilling_FrontFace
-[2026-03-02 12:26:45] DentalAddin: CustomCycle2 - OpenProcess: PRC[8]=C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\2_Connection\오스템_TS_RH_Connection.prc
-[2026-03-02 12:26:47] DentalAddin: Main 종료 단계 - EspritApp 처리 상태 종료
-[2026-03-02 12:26:47] DentalAddin: Main 실행 완료
-[2026-03-02 12:26:47] DentalAddin: PostMain - Operations.Count:10
-[2026-03-02 12:26:47] DentalAddin: PostMain - Op[1] FACE DRILL Key:1
-[2026-03-02 12:26:47] DentalAddin: PostMain - Op[2] 솔리드턴-윤곽가공 Key:2
-[2026-03-02 12:26:47] DentalAddin: PostMain - Op[3] 솔리드턴-윤곽가공 Key:3
-[2026-03-02 12:26:47] DentalAddin: PostMain - Op[4] 솔리드턴-윤곽가공 Key:4
-[2026-03-02 12:26:47] DentalAddin: PostMain - Op[5] Rough Mill 3D Key:5
-[2026-03-02 12:26:47] DentalAddin: PostMain - Op[6] Rough Mill 3D Key:6
-[2026-03-02 12:26:47] DentalAddin: PostMain - Op[7] EM2.0BALL Key:7
-[2026-03-02 12:26:47] DentalAddin: PostMain - Op[8] 5Axis_Composite Key:8
-[2026-03-02 12:26:47] DentalAddin: PostMain - Op[9] 5Axis_Composite Key:9
-[2026-03-02 12:26:47] DentalAddin: PostMain - Op[10] CONNECTION Key:10
-[2026-03-02 12:26:47] StlFileProcessor: DentalPanel 호출 완료
-[2026-03-02 12:26:47] StlFileProcessor: NC 메타 캡처 - Front:-1.77829021516375, Back:7.72170978483625, StockDia:8
-[2026-03-02 12:27:05] StlFileProcessor: NC 저장 완료 - C:\Users\user\abuts.fit\bg\storage\3-nc\20260301-AZYHHWDC-미소-윤일광-47.nc
-[2026-03-02 12:27:05] StlFileProcessor: NC 헤더 수정 완료 - #520:7.72170978483625, #521:8, #522:1.161
-[2026-03-02 12:27:05] StlFileProcessor: Serial 각인 코드 적용 - Raw:'ABY' => Use:'ABY'
-[2026-03-02 12:27:05] StlFileProcessor: Serial 블록 갱신 - Serial:True, Deburr:True
-[2026-03-02 12:27:05] StlFileProcessor: NC file generated - C:\Users\user\abuts.fit\bg\storage\3-nc\20260301-AZYHHWDC-미소-윤일광-47.nc
-[2026-03-02 12:27:07] StlFileProcessor: register-file POST http://118.217.235.170:8080/api/bg/register-file with requestId=20260301-AZYHHWDC, fileName=20260301-AZYHHWDC-미소-윤일광-47.nc
-[2026-03-02 12:27:07] StlFileProcessor: register-file success file=20260301-AZYHHWDC-미소-윤일광-47.nc requestId=20260301-AZYHHWDC
-[2026-03-02 12:27:07] StlFileProcessor: 완료 - C:\Users\user\abuts.fit\bg\storage\2-filled\20260301-AZYHHWDC-미소-윤일광-47.filled.stl
-[2026-03-02 12:27:07] [NC Processing] CAM processing completed successfully: 20260301-AZYHHWDC
-[2026-03-02 12:27:07] [Queue Processor] Completed: 20260301-AZYHHWDC
+==== Trace started at 2026-03-02T18:20:16.8063810+09:00 ====
+[2026-03-02 18:20:16] StlFileProcessor: 초기화 전 - Ops:0, Chains:0, FreeForms:0, Graphics:159
+[2026-03-02 18:20:18] StlFileProcessor: 초기화 후 - Ops:0, Chains:0, FreeForms:0, Graphics:159
+[2026-03-02 18:20:18] StlFileProcessor: DentalAddin static 필드 초기화 완료
+[2026-03-02 18:20:18] StlFileProcessor: request-meta GET http://118.217.235.170:8080/api/bg/request-meta?requestId=20260301-AHBFADLG (X-Bridge-Secret set=True)
+[2026-03-02 18:20:18] StlFileProcessor: request-meta response body={"statusCode":200,"data":{"ok":true,"requestId":"20260301-AHBFADLG","lotNumber":{"part":"CAP260301-ABZ"},"serialCode":"ABZ","caseInfos":{"clinicName":"향기로운","patientName":"김혜영","tooth":"42","implantManufacturer":"OSSTEM","implantSystem":"Regular","implantType":"Hex","maxDiameter":5.68,"connectionDiameter":3.3,"workType":"abutment","lotNumber":"CAP260301-ABZ","faceHolePrcFileName":"오스템_TS_RH_FaceHole.prc","connectionPrcFileName":"오스템_TS_RH_Connection.prc","finishLine":{"points":[[2.5298017509146273,-1.2889983742665692,2.4373775019479926],[2.6709974274742048,-0.8678596727737936,2.4544593251985054],[2.716679080188098,-0.43027969565696855,2.4778233107123917],[2.6846668064548505,0,2.512000601419524],[2.5799132277869434,0.4086181126689029,2.5614457057776163],[2.3989177615861106,0.7794556303822826,2.6332941027497325],[2.167545635434901,1.1044196641946553,2.7148739072063286],[1.9140852345366834,1.3906643251180162,2.7854717099464112],[1.6453024879094853,1.6453024879094853,2.8260208385343653],[1.358462064315172,1.8697626249693509,2.818633355459424],[1.0457353786041628,2.0523712400269356,2.7440612841486627],[0.7070083671017833,2.175948012074316,2.5994159672640547],[0.3549011011416009,2.240757364892623,2.4084686098795087],[1.3767679757055987e-16,2.2484327345062396,2.1985903621010094],[-0.34797519810623073,2.1970289341125633,1.9969984734786093],[-0.6752945685522753,2.078342976377204,1.8308507839448596],[-0.966929568896151,1.8977061299991522,1.7130772781386874],[-1.2256430001912322,1.6869528664152593,1.6355053078512793],[-1.4537813142505231,1.4537813142505231,1.5969474614531212],[-1.6586656145764502,1.2050911087299399,1.584490341874396],[-1.8312505270417176,0.9330687479278411,1.5967527920250513],[-1.957933879602823,0.6361712814046654,1.6248336381292017],[-2.0326018714289495,0.32193250980887944,1.666971922020625],[-2.0586437728903815,2.5211115070548364e-16,1.7237835144361897],[-2.0443377958033837,-0.32379129762261477,1.7934194661210938],[-1.9805746549184697,-0.6435277152427019,1.8776362933025141],[-1.8654607427189065,-0.9504997234480616,1.9737658458195395],[-1.7032294534022867,-1.2374686328480862,2.075857396373357],[-1.499277119616427,-1.4992771196164267,2.175296112011219],[-1.2597994159210502,-1.7339651394938773,2.2631399908818883],[-0.98810507140534,-1.9392653936830364,2.3324967096547633],[-0.6874361464625003,-2.115710910826832,2.3745008172118496],[-0.36031728988349787,-2.2749538347655385,2.394695534382085],[-4.4316862181345915e-16,-2.41249761222044,2.4004041222316697],[0.39741903179613003,-2.5092050139635083,2.397953154322368],[0.8192932360590139,-2.521525304737868,2.3940284220020915],[1.2269245901788857,-2.4079750901476835,2.3944515040843264],[1.6065275099967016,-2.2111954194990346,2.4001393281179766],[1.959138657776486,-1.9591386577764869,2.4099248372595605],[2.2783228117036893,-1.6552984152274814,2.4226782463293044],[2.5298017509146273,-1.2889983742665692,2.4373775019479926]]}}},"message":"Request meta","success":true}
+[2026-03-02 18:20:18] StlFileProcessor: request-meta loaded requestId=20260301-AHBFADLG, Clinic=향기로운, Patient=김혜영, Tooth=42, Implant=OSSTEM/Regular/Hex, MaxDia=5.68, ConnDia=3.3, WorkType=abutment, Lot=CAP260301-ABZ, SerialCode=ABZ
+[2026-03-02 18:20:18] StlFileProcessor: finishLine topZ=2.8260
+[2026-03-02 18:20:18] StlFileProcessor.ApplyBackendPrcNames: FaceHole=오스템_TS_RH_FaceHole.prc, Connection=오스템_TS_RH_Connection.prc
+[2026-03-02 18:20:18] StlFileProcessor: 기존 장비 BarDiameter=8.000
+[2026-03-02 18:20:21] StlFileProcessor: STL bounding topZ=11.0205
+[2026-03-02 18:20:21] StlFileProcessor: BarDiameter 설정 - 8.000 (STL:20260301-AHBFADLG-향기로운-김혜영-42.filled.stl)
+[2026-03-02 18:20:22] DentalAddin: MainModuleType - DentalAddin.MainModule, Assembly:ESPRIT2025AddinProject, Version:1.0.0.0, Location:C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\ESPRIT2025AddinProject.dll
+[2026-03-02 18:20:22] DentalAddin.TryApplyDentalUserData: UserData.NumData 적용 (Len:8)
+[2026-03-02 18:20:22] DentalAddin.TryApplyDentalUserData: UserData.NumCombobox 적용 (Len:7)
+[2026-03-02 18:20:22] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=1, file=Turning.prc
+[2026-03-02 18:20:22] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=2, file=Reverse Turning Process.prc
+[2026-03-02 18:20:22] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=3, file=MillRough_3D.prc
+[2026-03-02 18:20:22] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=5, file=FACE.prc
+[2026-03-02 18:20:22] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=6, file=3D.prc
+[2026-03-02 18:20:22] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=7, file=3D_2.prc
+[2026-03-02 18:20:22] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=9, file=SemiRough_2D.prc
+[2026-03-02 18:20:22] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=12, file=MarkText.prc
+[2026-03-02 18:20:22] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=10, file=5axisComposite_A.prc
+[2026-03-02 18:20:22] DentalAddin.EnsurePrcSlot: 기본 PRC 채움 - idx=11, file=5axisComposite_B.prc
+[2026-03-02 18:20:22] DentalAddin.ConfigureDentalProcesses: Reverse Turning 비활성 (NumCombobox[4]!=1)
+[2026-03-02 18:20:22] DentalAddin.ConfigureDentalProcesses: RoughType 자동 결정 - 2 (NumCombobox[6]=1 (BallEndMillRough2Position))
+[2026-03-02 18:20:22] DentalAddin: Finishing Method=4 axis 선택됨 (NumCombobox[1]=1)
+[2026-03-02 18:20:22] DentalAddin: Composite2 PRC 준비됨 - 5axisComposite_B.prc
+[2026-03-02 18:20:22] DentalAddin: FinishingMethod=1 - PRC[10] 사용 (5axisComposite_A.prc)
+[2026-03-02 18:20:22] DentalAddin: NumCombobox: 0:0, 1:1, 2:0, 3:0, 4:0, 5:3, 6:1 (Len:7)
+[2026-03-02 18:20:22] DentalAddin: NumData: 0:0, 1:45, 2:1, 3:1, 4:3, 5:2, 6:1.5, 7:5 (Len:8)
+[2026-03-02 18:20:22] DentalAddin: PrcFileName: 0:, 1:Turning.prc, 2:Reverse Turning Process.prc, 3:MillRough_3D.prc, 4:오스템_TS_RH_FaceHole.prc, 5:FACE.prc, 6:3D.prc, 7:3D_2.prc, 8:오스템_TS_RH_Connection.prc, 9:SemiRough_2D.prc, 10:5axisComposite_A.prc, 11:5axisComposite_B.prc, 12:MarkText.prc (Len:13)
+[2026-03-02 18:20:22] DentalAddin: PrcFilePath: 0:, 1:Turning.prc, 2:Reverse Turning Process.prc, 3:MillRough_3D.prc, 4:오스템_TS_RH_FaceHole.prc, 5:FACE.prc, 6:3D.prc, 7:3D_2.prc, 8:오스템_TS_RH_Connection.prc, 9:SemiRough_2D.prc, 10:5axisComposite_A.prc, 11:5axisComposite_B.prc, 12:MarkText.prc (Len:13)
+[2026-03-02 18:20:22] DentalAddin: Turning 파라미터 설정 - Depth:1, Extend:3.5, Angle:30
+[2026-03-02 18:20:22] DentalAddin: MoveSTL 초기화 - MTI:0(True), Front:-9.5(True), Back:0(True), BarDia:8
+[2026-03-02 18:20:22] DentalAddin: 한계점 설정 완료 - FrontPointX:-9.5, BackPointX:0
+[2026-03-02 18:20:22] DentalAddin: MoveSurface 실행 시작 - NeedMoveY/Z 계산
+[2026-03-02 18:20:29] DentalAddin: MoveSurface 계산 결과 - NeedMove:False, NeedMoveY:-0.3832, NeedMoveZ:1.6137
+[2026-03-02 18:20:29] DentalAddin: MoveSurface 실행 완료
+[2026-03-02 18:20:29] DentalAddin: MoveSTL 실행 시작 (FrontLimit:-9.5, BackLimit:0)
+[2026-03-02 18:20:39] DentalAddin: MoveSTL - 초기 X이동 dX:11.026, FrontPointX:1.526, BackPointX:11.026
+[2026-03-02 18:20:39] DentalAddin: Emerge 실행 시작 - IGS 서피스 Merge 및 Translate
+[2026-03-02 18:20:39] DentalAddin: Surface Merge(1) - C:\Users\user\abuts.fit\bg\esprit-addin\Surface\Project1.igs
+[2026-03-02 18:20:40] DentalAddin: FinishingMethod==1, Extrude Merge 생략
+[2026-03-02 18:20:40] DentalAddin: Emerge 실행 완료
+[2026-03-02 18:20:40] DentalAddin: finishLine split 적용 - bboxTopZ:11.0205, finishTopZ:2.8260, rawRatio:0.4097, ratio(clamped):0.4097, splitX:5.4186 (Front:1.5262, Back:11.0262)
+[2026-03-02 18:20:40] DentalAddin: MoveSTL 실행 완료
+[2026-03-02 18:20:40] DentalAddin: Bind 실행 시도 (Document: {(document != null)}, EspritApp: {(_espApp != null)})
+[2026-03-02 18:20:40] DentalAddin: Main 실행 시작
+[2026-03-02 18:20:40] DentalAddin: SearchTool 실행 완료
+[2026-03-02 18:20:40] CompositeTool - 원본조건 공구 사용: BM_D1.2
+[2026-03-02 18:20:40] CompositeTool - ToolNs 설정: BM_D1.2 (FinishingMethod:1)
+[2026-03-02 18:20:40] DentalAddin: Main 시작 - Document:True, EspritApp:True, Jump:1, RL:0, SpindleSide:False
+[2026-03-02 18:20:40] DentalAddin: Main - Clean 완료
+[2026-03-02 18:20:40] DentalAddin: Main - Boundry 호출 준비 (RL:1)
+[2026-03-02 18:20:40] DentalAddin: Boundry 시작 - Document:True, RL:1, MTI:0, FrontPointX:1.52616977794639, BackPointX:11.0261697779464
+[2026-03-02 18:20:40] DentalAddin: Boundry - LatheMachineSetup.BarDiameter:8
+[2026-03-02 18:20:40] DentalAddin: Boundry: RoughBoundry point1(X:0.000, Y:9.000), point2 원래(X:-5.000, Y:-9.000) -> 수정(X:11.026, Y:-9.000)
+[2026-03-02 18:20:40] DentalAddin: TurningFeature: Cleanup 완료 - removedFeatureChains=0
+[2026-03-02 18:20:50] DentalAddin: Roughworkplane 시작 - RoughType:2
+[2026-03-02 18:20:53] DentalAddin: PreOp:CustomCycle - FeatureChains.Count: 6
+[2026-03-02 18:20:53] DentalAddin: PreOp:CustomCycle - FeatureChain[1] Boundry2
+[2026-03-02 18:20:53] DentalAddin: PreOp:CustomCycle - FeatureChain[2] Boundry1
+[2026-03-02 18:20:53] DentalAddin: PreOp:CustomCycle - FeatureChain[3] Turning
+[2026-03-02 18:20:53] DentalAddin: PreOp:CustomCycle - FeatureChain[4] RoughBoundry1
+[2026-03-02 18:20:53] DentalAddin: PreOp:CustomCycle - FeatureChain[5] TurningProfile1
+[2026-03-02 18:20:53] DentalAddin: PreOp:CustomCycle - FeatureChain[6] TurningProfile2
+[2026-03-02 18:20:53] DentalAddin: PreOp:CustomCycle - FreeFormFeatures.Count: 7
+[2026-03-02 18:20:53] DentalAddin: PreOp:CustomCycle - Feature[1] 3DMilling_0Degree
+[2026-03-02 18:20:53] DentalAddin: PreOp:CustomCycle - Feature[2] 3DMilling_270Degree
+[2026-03-02 18:20:53] DentalAddin: PreOp:CustomCycle - Feature[3] 3DMilling_180Degree
+[2026-03-02 18:20:53] DentalAddin: PreOp:CustomCycle - Feature[4] 3DMilling_90Degree
+[2026-03-02 18:20:53] DentalAddin: PreOp:CustomCycle - Feature[5] 3DRoughMilling_0Degree
+[2026-03-02 18:20:53] DentalAddin: PreOp:CustomCycle - Feature[6] 3DRoughMilling_180Degree
+[2026-03-02 18:20:53] DentalAddin: PreOp:CustomCycle - Feature[7] 3DMilling_FrontFace
+[2026-03-02 18:20:53] DentalAddin: CustomCycle - OpenProcess: PRC[4]=C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\1_Face Hole\오스템_TS_RH_FaceHole.prc
+[2026-03-02 18:20:53] DentalAddin: PreOp:TurningOp - FeatureChains.Count: 6
+[2026-03-02 18:20:53] DentalAddin: PreOp:TurningOp - FeatureChain[1] Boundry2
+[2026-03-02 18:20:53] DentalAddin: PreOp:TurningOp - FeatureChain[2] Boundry1
+[2026-03-02 18:20:53] DentalAddin: PreOp:TurningOp - FeatureChain[3] Turning
+[2026-03-02 18:20:53] DentalAddin: PreOp:TurningOp - FeatureChain[4] RoughBoundry1
+[2026-03-02 18:20:53] DentalAddin: PreOp:TurningOp - FeatureChain[5] TurningProfile1
+[2026-03-02 18:20:53] DentalAddin: PreOp:TurningOp - FeatureChain[6] TurningProfile2
+[2026-03-02 18:20:53] DentalAddin: PreOp:TurningOp - FreeFormFeatures.Count: 7
+[2026-03-02 18:20:53] DentalAddin: PreOp:TurningOp - Feature[1] 3DMilling_0Degree
+[2026-03-02 18:20:53] DentalAddin: PreOp:TurningOp - Feature[2] 3DMilling_270Degree
+[2026-03-02 18:20:53] DentalAddin: PreOp:TurningOp - Feature[3] 3DMilling_180Degree
+[2026-03-02 18:20:53] DentalAddin: PreOp:TurningOp - Feature[4] 3DMilling_90Degree
+[2026-03-02 18:20:53] DentalAddin: PreOp:TurningOp - Feature[5] 3DRoughMilling_0Degree
+[2026-03-02 18:20:53] DentalAddin: PreOp:TurningOp - Feature[6] 3DRoughMilling_180Degree
+[2026-03-02 18:20:53] DentalAddin: PreOp:TurningOp - Feature[7] 3DMilling_FrontFace
+[2026-03-02 18:20:53] DentalAddin: TurningOp - OpenProcess: PRC[1]=C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\3_Turning prc\Turning.prc
+[2026-03-02 18:20:56] DentalAddin: PreOp:RoughFreeFromMill - FeatureChains.Count: 6
+[2026-03-02 18:20:56] DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[1] Boundry2
+[2026-03-02 18:20:56] DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[2] Boundry1
+[2026-03-02 18:20:56] DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[3] Turning
+[2026-03-02 18:20:56] DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[4] RoughBoundry1
+[2026-03-02 18:20:56] DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[5] TurningProfile1
+[2026-03-02 18:20:56] DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[6] TurningProfile2
+[2026-03-02 18:20:56] DentalAddin: PreOp:RoughFreeFromMill - FreeFormFeatures.Count: 7
+[2026-03-02 18:20:56] DentalAddin: PreOp:RoughFreeFromMill - Feature[1] 3DMilling_0Degree
+[2026-03-02 18:20:56] DentalAddin: PreOp:RoughFreeFromMill - Feature[2] 3DMilling_270Degree
+[2026-03-02 18:20:56] DentalAddin: PreOp:RoughFreeFromMill - Feature[3] 3DMilling_180Degree
+[2026-03-02 18:20:56] DentalAddin: PreOp:RoughFreeFromMill - Feature[4] 3DMilling_90Degree
+[2026-03-02 18:20:56] DentalAddin: PreOp:RoughFreeFromMill - Feature[5] 3DRoughMilling_0Degree
+[2026-03-02 18:20:56] DentalAddin: PreOp:RoughFreeFromMill - Feature[6] 3DRoughMilling_180Degree
+[2026-03-02 18:20:56] DentalAddin: PreOp:RoughFreeFromMill - Feature[7] 3DMilling_FrontFace
+[2026-03-02 18:20:56] DentalAddin: OpenProcess:RoughFreeFromMill:PRC[3] 0-180 - PRC 경로: C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\5_Rough prc\MillRough_3D.prc
+[2026-03-02 18:20:56] DentalAddin: OpenProcess:RoughFreeFromMill:PRC[3] 0-180 - PRC 파일 열기 성공 (Count:1)
+[2026-03-02 18:20:59] DentalAddin: OpenProcess:RoughFreeFromMill:PRC[3] 재호출 - PRC 경로: C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\5_Rough prc\MillRough_3D.prc
+[2026-03-02 18:20:59] DentalAddin: OpenProcess:RoughFreeFromMill:PRC[3] 재호출 - PRC 파일 열기 성공 (Count:1)
+[2026-03-02 18:21:02] DentalAddin: PreOp:FreeFormMill - FeatureChains.Count: 6
+[2026-03-02 18:21:02] DentalAddin: PreOp:FreeFormMill - FeatureChain[1] Boundry2
+[2026-03-02 18:21:02] DentalAddin: PreOp:FreeFormMill - FeatureChain[2] Boundry1
+[2026-03-02 18:21:02] DentalAddin: PreOp:FreeFormMill - FeatureChain[3] Turning
+[2026-03-02 18:21:02] DentalAddin: PreOp:FreeFormMill - FeatureChain[4] RoughBoundry1
+[2026-03-02 18:21:02] DentalAddin: PreOp:FreeFormMill - FeatureChain[5] TurningProfile1
+[2026-03-02 18:21:02] DentalAddin: PreOp:FreeFormMill - FeatureChain[6] TurningProfile2
+[2026-03-02 18:21:02] DentalAddin: PreOp:FreeFormMill - FreeFormFeatures.Count: 7
+[2026-03-02 18:21:02] DentalAddin: PreOp:FreeFormMill - Feature[1] 3DMilling_0Degree
+[2026-03-02 18:21:02] DentalAddin: PreOp:FreeFormMill - Feature[2] 3DMilling_270Degree
+[2026-03-02 18:21:02] DentalAddin: PreOp:FreeFormMill - Feature[3] 3DMilling_180Degree
+[2026-03-02 18:21:02] DentalAddin: PreOp:FreeFormMill - Feature[4] 3DMilling_90Degree
+[2026-03-02 18:21:02] DentalAddin: PreOp:FreeFormMill - Feature[5] 3DRoughMilling_0Degree
+[2026-03-02 18:21:02] DentalAddin: PreOp:FreeFormMill - Feature[6] 3DRoughMilling_180Degree
+[2026-03-02 18:21:02] DentalAddin: PreOp:FreeFormMill - Feature[7] 3DMilling_FrontFace
+[2026-03-02 18:21:02] DentalAddin: FreeFormMill - free() 호출
+[2026-03-02 18:21:02] DentalAddin: free() 시작
+[2026-03-02 18:21:02] DentalAddin: OpenProcess:free:PRC[5] ParallelPlanes - PRC 경로: C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\7_FrontFace prc\FACE.prc
+[2026-03-02 18:21:02] DentalAddin: OpenProcess:free:PRC[5] ParallelPlanes - PRC 파일 열기 성공 (Count:1)
+[2026-03-02 18:21:04] DentalAddin: FreeFormMill - free() 완료
+[2026-03-02 18:21:04] DentalAddin: FreeFormMill - FinishingMethod==1, Emerge/Composite2 실행
+[2026-03-02 18:21:04] DentalAddin: Emerge - MergeFile1: C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\Viles\Surface\Project1.igs
+[2026-03-02 18:21:04] DentalAddin: Emerge - FinishingMethod==1, Extrude 파일 로드 생략
+[2026-03-02 18:21:04] DentalAddin: FreeFormMill - Emerge 완료
+[2026-03-02 18:21:04] DentalAddin: Composite2SplitAB - enabled=1, splitX=5.41855563073693, prcA=C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\11_Composite prc\5axisComposite_A.prc, prcB=C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\11_Composite prc\5axisComposite_B.prc
+[2026-03-02 18:21:04] DentalAddin: OpenProcess:Composite2SplitAB:A - PRC 경로: C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\11_Composite prc\5axisComposite_A.prc
+[2026-03-02 18:21:04] DentalAddin: OpenProcess:Composite2SplitAB:A - PRC 파일 열기 성공 (Count:1)
+[2026-03-02 18:21:04] DentalAddin: OpenProcess:Composite2SplitAB:B - PRC 경로: C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\11_Composite prc\5axisComposite_B.prc
+[2026-03-02 18:21:04] DentalAddin: OpenProcess:Composite2SplitAB:B - PRC 파일 열기 성공 (Count:1)
+[2026-03-02 18:21:04] DentalAddin: Composite2SplitAB - PassPercent: A(0.00->40.97), B(40.97->53.63)
+[2026-03-02 18:21:14] DentalAddin: FreeFormMill - Composite2 완료
+[2026-03-02 18:21:14] DentalAddin: PreOp:CustomCycle2 - FeatureChains.Count: 6
+[2026-03-02 18:21:14] DentalAddin: PreOp:CustomCycle2 - FeatureChain[1] Boundry2
+[2026-03-02 18:21:14] DentalAddin: PreOp:CustomCycle2 - FeatureChain[2] Boundry1
+[2026-03-02 18:21:14] DentalAddin: PreOp:CustomCycle2 - FeatureChain[3] Turning
+[2026-03-02 18:21:14] DentalAddin: PreOp:CustomCycle2 - FeatureChain[4] RoughBoundry1
+[2026-03-02 18:21:14] DentalAddin: PreOp:CustomCycle2 - FeatureChain[5] TurningProfile1
+[2026-03-02 18:21:14] DentalAddin: PreOp:CustomCycle2 - FeatureChain[6] TurningProfile2
+[2026-03-02 18:21:14] DentalAddin: PreOp:CustomCycle2 - FreeFormFeatures.Count: 7
+[2026-03-02 18:21:14] DentalAddin: PreOp:CustomCycle2 - Feature[1] 3DMilling_0Degree
+[2026-03-02 18:21:14] DentalAddin: PreOp:CustomCycle2 - Feature[2] 3DMilling_270Degree
+[2026-03-02 18:21:14] DentalAddin: PreOp:CustomCycle2 - Feature[3] 3DMilling_180Degree
+[2026-03-02 18:21:14] DentalAddin: PreOp:CustomCycle2 - Feature[4] 3DMilling_90Degree
+[2026-03-02 18:21:14] DentalAddin: PreOp:CustomCycle2 - Feature[5] 3DRoughMilling_0Degree
+[2026-03-02 18:21:14] DentalAddin: PreOp:CustomCycle2 - Feature[6] 3DRoughMilling_180Degree
+[2026-03-02 18:21:14] DentalAddin: PreOp:CustomCycle2 - Feature[7] 3DMilling_FrontFace
+[2026-03-02 18:21:14] DentalAddin: CustomCycle2 - OpenProcess: PRC[8]=C:\Users\user\abuts.fit\bg\esprit-addin\AcroDent\2_Connection\오스템_TS_RH_Connection.prc
+[2026-03-02 18:21:16] DentalAddin: Main 종료 단계 - EspritApp 처리 상태 종료
+[2026-03-02 18:21:16] DentalAddin: Main 실행 완료
+[2026-03-02 18:21:16] DentalAddin: PostMain - Operations.Count:10
+[2026-03-02 18:21:16] DentalAddin: PostMain - Op[1] FACE DRILL Key:1
+[2026-03-02 18:21:16] DentalAddin: PostMain - Op[2] 솔리드턴-윤곽가공 Key:2
+[2026-03-02 18:21:16] DentalAddin: PostMain - Op[3] 솔리드턴-윤곽가공 Key:3
+[2026-03-02 18:21:16] DentalAddin: PostMain - Op[4] 솔리드턴-윤곽가공 Key:4
+[2026-03-02 18:21:16] DentalAddin: PostMain - Op[5] Rough Mill 3D Key:5
+[2026-03-02 18:21:16] DentalAddin: PostMain - Op[6] Rough Mill 3D Key:6
+[2026-03-02 18:21:16] DentalAddin: PostMain - Op[7] EM2.0BALL Key:7
+[2026-03-02 18:21:16] DentalAddin: PostMain - Op[8] 5Axis_Composite Key:8
+[2026-03-02 18:21:16] DentalAddin: PostMain - Op[9] 5Axis_Composite Key:9
+[2026-03-02 18:21:16] DentalAddin: PostMain - Op[10] CONNECTION Key:10
+[2026-03-02 18:21:16] StlFileProcessor: DentalPanel 호출 완료
+[2026-03-02 18:21:16] StlFileProcessor: NC 메타 캡처 - Front:1.52616977794639, Back:11.0261697779464, StockDia:8
+[2026-03-02 18:21:41] StlFileProcessor: NC 저장 완료 - C:\Users\user\abuts.fit\bg\storage\3-nc\20260301-AHBFADLG-향기로운-김혜영-42.nc
+[2026-03-02 18:21:41] StlFileProcessor: NC 헤더 수정 완료 - #520:11.0261697779464, #521:8, #522:1.161
+[2026-03-02 18:21:41] StlFileProcessor: Serial 각인 코드 적용 - Raw:'ABZ' => Use:'ABZ'
+[2026-03-02 18:21:41] StlFileProcessor: Serial 블록 갱신 - Serial:True, Deburr:True
+[2026-03-02 18:21:41] StlFileProcessor: NC file generated - C:\Users\user\abuts.fit\bg\storage\3-nc\20260301-AHBFADLG-향기로운-김혜영-42.nc
+[2026-03-02 18:21:42] StlFileProcessor: register-file POST http://118.217.235.170:8080/api/bg/register-file with requestId=20260301-AHBFADLG, fileName=20260301-AHBFADLG-향기로운-김혜영-42.nc
+[2026-03-02 18:21:43] StlFileProcessor: register-file success file=20260301-AHBFADLG-향기로운-김혜영-42.nc requestId=20260301-AHBFADLG
+[2026-03-02 18:21:43] StlFileProcessor: 완료 - C:\Users\user\abuts.fit\bg\storage\2-filled\20260301-AHBFADLG-향기로운-김혜영-42.filled.stl
+[2026-03-02 18:21:43] [NC Processing] CAM processing completed successfully: 20260301-AHBFADLG
+[2026-03-02 18:21:43] [Queue Processor] Completed: 20260301-AHBFADLG

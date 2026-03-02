@@ -1021,8 +1021,13 @@ namespace DentalAddin
 
         public static void MoveSurface()
         {
-            //IL_0148: Unknown result type (might be due to invalid IL or missing references)
-            Plane plane = MainModule.Document.Planes.Add("CutPlane");
+            Plane plane = MainModule.GetOrCreatePlane("CutPlane");
+            if (plane == null)
+            {
+                DentalLogger.Log("MoveSurface: CutPlane 생성/조회 실패로 종료");
+                return;
+            }
+
             Plane plane2 = plane;
             plane2.Ux = 0.0;
             plane2.Uy = 1.0;

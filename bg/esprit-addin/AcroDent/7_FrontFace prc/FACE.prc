@@ -85,7 +85,7 @@ BEGIN_OPERATION; 552; EM2.0BALL; 0;
    CustomSetting1; 631; 0;  CAPTION; 사용자 정의 설정 1; SOURCE; 1; TECHCODETYPE; 2;
    Clearance; 172; 1;  CAPTION; 여유; SOURCE; 2; TECHCODETYPE; 2;
    PositionOnModelLimit; 1022; 2;  CAPTION; 모델리미트에 위치; SOURCE; 3; TECHCODETYPE; 452;
-   BottomZLimit; 1294; -1.432664031982422;  CAPTION; 바닥 Z 리미트; SOURCE; 2; TECHCODETYPE; 2;
+   BottomZLimit; 1294; -2;  CAPTION; 바닥 Z 리미트; SOURCE; 2; TECHCODETYPE; 2;
    StepPercentOfDiameter; 444; 2;  CAPTION; 스텝 직경의 % 값|스텝 오버, 직경의 %값; SOURCE; 3; TECHCODETYPE; 1;
    4436; 4436; 9;  SOURCE; 0; TECHCODETYPE; 1;
    BEGIN_SUB_TECHNOLOGY; 6833; 714; CAPTION; 5 축 나가기 이동; SOURCE; 2; TECHCODETYPE; 410;

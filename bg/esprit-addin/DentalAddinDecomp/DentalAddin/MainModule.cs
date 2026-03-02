@@ -265,7 +265,7 @@ namespace DentalAddin
             return true;
         }
 
-        private static Plane GetOrCreatePlane(string name, params string[] alternateNames)
+        public static Plane GetOrCreatePlane(string name, params string[] alternateNames)
         {
             if (string.IsNullOrWhiteSpace(name) || Document?.Planes == null)
             {
