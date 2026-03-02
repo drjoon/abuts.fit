@@ -13,7 +13,7 @@ const draftFileSchema = new mongoose.Schema(
     // File 문서를 사용하지 않는 경우를 대비한 S3 key 직접 저장
     s3Key: String,
   },
-  { _id: false }
+  { _id: false },
 );
 
 const draftCaseSchema = new mongoose.Schema(
@@ -40,6 +40,14 @@ const draftCaseSchema = new mongoose.Schema(
         implantType: String,
         maxDiameter: Number,
         connectionDiameter: Number,
+        newSystemRequest: {
+          requested: { type: Boolean, default: false },
+          manufacturer: String,
+          system: String,
+          message: String,
+          free: { type: Boolean, default: false },
+          tag: String,
+        },
         workType: {
           type: String,
           enum: ["abutment", "crown"],
@@ -56,7 +64,7 @@ const draftCaseSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 const DraftRequest = mongoose.model("DraftRequest", draftCaseSchema);

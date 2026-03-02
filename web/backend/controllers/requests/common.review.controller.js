@@ -547,6 +547,10 @@ export async function updateReviewStatusByStage(req, res) {
             : fallbackId;
         })();
 
+        const isNewSystemFree =
+          request?.caseInfos?.newSystemRequest?.requested &&
+          request?.caseInfos?.newSystemRequest?.free;
+
         if (!request.requestorOrganizationId && resolvedRequestorOrgId) {
           request.requestorOrganizationId = resolvedRequestorOrgId;
         }

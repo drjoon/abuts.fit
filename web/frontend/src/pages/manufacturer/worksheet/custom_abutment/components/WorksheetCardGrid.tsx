@@ -55,10 +55,7 @@ export const WorksheetCardGrid = ({
         {}) as typeof request.caseInfos & {
         newSystemRequest?: { requested?: boolean };
       };
-      const isNewSystemRequest =
-        !isCamStage &&
-        !isMachiningStage &&
-        !!caseInfos.newSystemRequest?.requested;
+      const isNewSystemRequest = !!caseInfos.newSystemRequest?.requested;
       const workType = (() => {
         const ciWorkType = caseInfos.workType as
           | "abutment"
@@ -344,7 +341,7 @@ export const WorksheetCardGrid = ({
             isCompletedForCurrentStage
               ? "border-emerald-500 border-2"
               : urgencyClass ||
-                (isNewSystemRequest ? "border-amber-300" : "border-slate-200")
+                (isNewSystemRequest ? "border-emerald-400" : "border-slate-200")
           }`}
           onClick={() => onOpenPreview(request)}
           onDrop={handleDrop}
@@ -406,7 +403,7 @@ export const WorksheetCardGrid = ({
           )}
           <CardContent
             className={`p-3 flex-1 flex flex-col gap-2 ${
-              isNewSystemRequest ? "bg-amber-50/70" : ""
+              isNewSystemRequest ? "bg-emerald-50/40" : ""
             }`}
           >
             <div className="space-y-2 text-[15px] text-slate-700 rounded-xl p-3 transition">
@@ -415,8 +412,8 @@ export const WorksheetCardGrid = ({
                   {stageBadge}
                   {isNewSystemRequest && (
                     <Badge
-                      variant="secondary"
-                      className="bg-amber-200 text-amber-900 border-amber-300"
+                      variant="outline"
+                      className="border-emerald-400 text-emerald-700 bg-emerald-50"
                     >
                       신규 시스템
                     </Badge>
