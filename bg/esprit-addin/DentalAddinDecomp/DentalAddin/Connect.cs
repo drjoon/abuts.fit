@@ -169,7 +169,9 @@ public class Connect : IDTExtensibility2
 			}
 			if (File.Exists(EspritApp.Path + "AddIns\\DentalAddin\\" + licnumber + ".Lic"))
 			{
-				StreamReader streamReader = new StreamReader(EspritApp.Path + "AddIns\\DentalAddin\\" + licnumber + ".Lic");
+				string licPath = EspritApp.Path + "AddIns\\DentalAddin\\" + licnumber + ".Lic";
+				DentalLogger.Log($"Connect: 라이선스 파일 읽기 - Path={licPath}");
+				StreamReader streamReader = new StreamReader(licPath);
 				string data = streamReader.ReadToEnd();
 				streamReader.Close();
 				string text = DecryptPublicKeyJava(publicKeyJava, data);

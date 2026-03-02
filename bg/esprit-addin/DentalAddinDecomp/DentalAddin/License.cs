@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.VisualBasic;
 using Microsoft.VisualBasic.CompilerServices;
+using Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging;
 
 namespace DentalAddin
 {
@@ -18,6 +19,7 @@ namespace DentalAddin
 
         public static void LoadLicenseFile(string dir)
         {
+            AppLogger.Log($"License: 라이선스 파일 읽기 - Path={dir}");
             LicenseKey = new StreamReader(dir).ReadToEnd();
         }
 

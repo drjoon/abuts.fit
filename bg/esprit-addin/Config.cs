@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
+using Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging;
 
 namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 {
@@ -171,6 +172,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
 
+                AppLogger.Log($"AppConfig: local.env 로드 시작 - Path={envPath}, BaseDir={baseDir}, AsmDir={asmDir}");
                 foreach (var lineRaw in File.ReadAllLines(envPath))
                 {
                     var line = (lineRaw ?? string.Empty).Trim();
