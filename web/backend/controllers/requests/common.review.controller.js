@@ -569,6 +569,38 @@ export async function updateReviewStatusByStage(req, res) {
 
           await ensureLotNumberForMachining(request);
 
+          request.productionSchedule = request.productionSchedule || {};
+
+          // 실제 소재가 적재된 장비 직경을 선호한다. (예: M4/M5 8mm 적재 시 8mm 설정)
+          let preselectedDia = null;
+          let preselectedGroup = null;
+          try {
+            const preselect = await chooseMachineForCamMachining({ request });
+            if (Number.isFinite(preselect?.diameter)) {
+              preselectedDia = preselect.diameter;
+              preselectedGroup = preselect.diameterGroup || preselect.reqGroup;
+            }
+          } catch (err) {
+            console.warn(
+              "[CAM_PRESELECT] chooseMachine failed (fallback to screening)",
+              err,
+            );
+          }
+
+          const resolvedDia =
+            preselectedDia ??
+            (Number.isFinite(screening?.diameter) ? screening.diameter : null);
+          const resolvedGroup =
+            preselectedGroup || screening?.diameterGroup || screening?.reqGroup;
+
+          if (Number.isFinite(resolvedDia)) {
+            request.productionSchedule.diameter = resolvedDia;
+          }
+          if (resolvedGroup) {
+            request.productionSchedule.diameterGroup =
+              resolvedGroup || request.productionSchedule.diameterGroup;
+          }
+
           // PRC 파일명은 의뢰자가 아니라, 관리자(의뢰 승인) 시점에 확정한다.
           // 누락 시 esprit-addin에서 OpenProcess("")로 크래시/불량 가공 위험이 있으므로 승인 자체를 막는다.
           const prcFiles = resolvePrcFileNames(request.caseInfos || {});
@@ -589,11 +621,6 @@ export async function updateReviewStatusByStage(req, res) {
             err.statusCode = 400;
             throw err;
           }
-
-          request.productionSchedule = request.productionSchedule || {};
-          // CAM 직경은 의뢰 단계에서는 설정/표시하지 않는다. (CAM 승인 시 재계산)
-          delete request.productionSchedule.diameter;
-          delete request.productionSchedule.diameterGroup;
 
           request.productionSchedule.actualCamStart = new Date();
           await triggerEspritForNc({ request, session });
