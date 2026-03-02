@@ -522,14 +522,16 @@ export const RequestPage = ({
     tabStage === "machining" ||
     tabStage === "packing" ||
     tabStage === "shipping" ||
-    tabStage === "tracking";
+    tabStage === "tracking" ||
+    tabStage === "request";
 
   const enableCardApprove =
     tabStage === "cam" ||
     tabStage === "machining" ||
     tabStage === "packing" ||
     tabStage === "shipping" ||
-    tabStage === "tracking";
+    tabStage === "tracking" ||
+    tabStage === "request";
 
   const handleDownloadOriginal = useCallback(
     async (req: ManufacturerRequest) => {

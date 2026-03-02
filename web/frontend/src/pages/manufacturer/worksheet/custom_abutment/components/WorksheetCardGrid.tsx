@@ -116,8 +116,19 @@ export const WorksheetCardGrid = ({
       const isCompletedForCurrentStage = requestStageOrder > currentStageOrder;
 
       const stageForRollback = deriveStageForFilter(request);
+      const rollbackCountFromRequest = Number(
+        caseInfos.rollbackCounts?.request || 0,
+      );
+      const rollbackCountFromCam = Number(caseInfos.rollbackCounts?.cam || 0);
+      const rollbackCountFromMachining = Number(
+        caseInfos.rollbackCounts?.machining || 0,
+      );
       const canRollback =
-        stageForRollback !== "의뢰" && stageForRollback !== "추적관리";
+        stageForRollback !== "추적관리" &&
+        (stageForRollback !== "의뢰" ||
+          rollbackCountFromRequest > 0 ||
+          rollbackCountFromCam > 0 ||
+          rollbackCountFromMachining > 0);
 
       const reviewStageKey = (() => {
         const stage = String(tabStage || "").trim();
