@@ -182,8 +182,8 @@ export const RequestorPricingReferralPolicyCard = () => {
                 size="sm"
                 className={
                   shouldHighlightReferral
-                    ? "text-xs px-2 py-1 h-7 shadow-sm ring-1 ring-primary/40"
-                    : "border-gray-300 text-xs text-foreground hover:bg-muted/60 hover:text-foreground px-2 py-1 h-7"
+                    ? "text-xs px-3 py-1.5 h-9 shadow-md bg-primary text-white"
+                    : "border border-slate-300 bg-white text-xs text-foreground hover:bg-slate-100 px-3 py-1.5 h-9"
                 }
                 onClick={handleCopyReferralLink}
                 disabled={!referralLink}
@@ -194,7 +194,7 @@ export const RequestorPricingReferralPolicyCard = () => {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="border-gray-300 text-xs text-foreground hover:bg-muted/60 hover:text-foreground px-2 py-1 h-7"
+                className="border border-slate-300 bg-white text-xs text-foreground hover:bg-slate-100 px-3 py-1.5 h-9"
                 onClick={() => setOpen(true)}
               >
                 정책

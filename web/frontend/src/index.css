@@ -151,31 +151,8 @@ All colors MUST be HSL.
 @layer components {
   .app-glass-card {
     @apply relative overflow-hidden border bg-white shadow-[0_4px_16px_rgba(15,23,42,0.12)] transition-all hover:shadow-[0_8px_24px_rgba(15,23,42,0.16)];
-    backdrop-filter: blur(8px);
-    background: linear-gradient(
-      135deg,
-      hsl(var(--background) / 0.98),
-      hsl(var(--background) / 0.95)
-    );
+    background-color: hsl(var(--background));
     border: 1px solid hsl(var(--foreground) / 0.08);
-  }
-
-  .app-glass-card::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background:
-      radial-gradient(
-        circle at top right,
-        rgba(255, 255, 255, 0.4),
-        transparent 60%
-      ),
-      radial-gradient(
-        circle at 20% 20%,
-        rgba(255, 255, 255, 0.2),
-        transparent 50%
-      );
-    pointer-events: none;
   }
 
   .app-glass-card--xl {

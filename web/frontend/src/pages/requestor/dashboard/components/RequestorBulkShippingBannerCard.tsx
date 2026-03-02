@@ -531,7 +531,7 @@ export const RequestorBulkShippingBannerCard = ({
         <CardContent className="text-right pt-2">
           <Button
             variant="default"
-            className="whitespace-nowrap"
+            className="whitespace-nowrap px-4 py-2 h-11 bg-primary text-white font-semibold shadow-lg"
             onClick={handleOpenModal}
           >
             배송 대기 내역
