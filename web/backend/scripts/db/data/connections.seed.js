@@ -1,7 +1,7 @@
 export const CONNECTIONS_SEED = [
   {
     manufacturer: "NEOBIOTECH",
-    system: "Regular",
+    system: "IS",
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "네오_IS_RH_Connection.prc",
@@ -9,7 +9,7 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "NEOBIOTECH",
-    system: "Regular",
+    system: "IS",
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "네오_IS_RN_Connection.prc",

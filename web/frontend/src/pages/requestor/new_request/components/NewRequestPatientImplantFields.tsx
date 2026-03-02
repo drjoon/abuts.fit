@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import {
   Select,
   SelectContent,
@@ -73,12 +73,15 @@ export function NewRequestPatientImplantFields({
     rawCaseInfos && rawCaseInfos.implantType !== enforcedImplantType
       ? { ...rawCaseInfos, implantType: enforcedImplantType }
       : rawCaseInfos;
-  const setCaseInfos = (updates: Partial<CaseInfos>) => {
-    setCaseInfosRaw({
-      ...updates,
-      implantType: enforcedImplantType,
-    });
-  };
+  const setCaseInfos = useCallback(
+    (updates: Partial<CaseInfos>) => {
+      setCaseInfosRaw({
+        ...updates,
+        implantType: enforcedImplantType,
+      });
+    },
+    [enforcedImplantType, setCaseInfosRaw],
+  );
   const hasClinicName = Boolean((caseInfos?.clinicName || "").trim());
   const implantDisabled = Boolean(readOnly || !hasClinicName);
 
@@ -95,6 +98,38 @@ export function NewRequestPatientImplantFields({
   const currentTypeOptions = useMemo(() => {
     return [enforcedImplantType];
   }, [enforcedImplantType]);
+
+  useEffect(() => {
+    const manufacturer = caseInfos?.implantManufacturer;
+    if (!manufacturer) return;
+
+    const manufacturerConnections = connections.filter(
+      (c) => c.manufacturer === manufacturer && c.type === enforcedImplantType,
+    );
+    if (!manufacturerConnections.length) return;
+
+    const systemFromCase = caseInfos?.implantSystem || "";
+    const isValidSystem = manufacturerConnections.some(
+      (c) => c.system === systemFromCase,
+    );
+    if (isValidSystem) return;
+
+    const fallbackSystem = manufacturerConnections[0].system || "";
+    if (!fallbackSystem) return;
+
+    setCaseInfos({ implantSystem: fallbackSystem });
+    if (implantSelectSource !== "caseInfos") {
+      setImplantSystem(fallbackSystem);
+    }
+  }, [
+    caseInfos?.implantManufacturer,
+    caseInfos?.implantSystem,
+    connections,
+    enforcedImplantType,
+    implantSelectSource,
+    setCaseInfos,
+    setImplantSystem,
+  ]);
 
   return (
     <>

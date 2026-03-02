@@ -54,6 +54,7 @@ const FACE_HOLE_PRC_MAP = {
   "DIO|UF|Hex": "디오_UF_RH_FaceHole.prc",
   "MEGAGEN|AnyOne|Hex": "메가젠_AnyOne_RH_FaceHole.prc",
   "NEO|IS|Hex": "네오_IS_RH_FaceHole.prc",
+  "NEO|Regular|Hex": "네오_IS_RH_FaceHole.prc",
   "DENTIS|SQ|Hex": "덴티스_SQ_RH_FaceHole.prc",
 };
 
@@ -63,6 +64,7 @@ const CONNECTION_PRC_MAP = {
   "DIO|UF|Hex": "디오_UF_RH_Connection.prc",
   "MEGAGEN|AnyOne|Hex": "메가젠_AnyOne_RH_Connection.prc",
   "NEO|IS|Hex": "네오_IS_RH_Connection.prc",
+  "NEO|Regular|Hex": "네오_IS_RH_Connection.prc",
   "DENTIS|SQ|Hex": "덴티스_SQ_RH_Connection.prc",
 };
 
