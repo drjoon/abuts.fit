@@ -31,6 +31,9 @@ function normalizeImplantManufacturer(raw) {
 function normalizeImplantSystem(raw) {
   const s = normalizeKeyToken(raw);
   if (!s) return "";
+  const upper = s.toUpperCase().replace(/\s+/g, " ").trim();
+  if (upper === "ANYONE REGULAR" || upper === "ANYONE") return "AnyOne";
+  if (upper === "ANYONE HEX" || upper === "ANYONE-R") return "AnyOne";
   // UI 입력값 그대로 SSOT로 사용 (스프레드시트 표기와 맞춰야 함)
   // 예: Regular, SuperLine, UF, AnyOne, IS, SQ
   return s;
