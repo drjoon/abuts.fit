@@ -147,9 +147,13 @@ interface BusinessTabProps {
     email?: string;
     name?: string;
   } | null;
+  organizationTypeOverride?: "requestor" | "manufacturer" | "salesman" | string;
 }
 
-export const BusinessTab = ({ userData }: BusinessTabProps) => {
+export const BusinessTab = ({
+  userData,
+  organizationTypeOverride,
+}: BusinessTabProps) => {
   const { toast } = useToast();
   const { token, user, loginWithToken } = useAuthStore();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
@@ -195,19 +199,30 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const mockHeaders = useMemo(() => {
     if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
     return {
-      "x-mock-role": (user?.role || userData?.role || "requestor") as string,
+      "x-mock-role": ((organizationTypeOverride as string) ||
+        (user?.role as string) ||
+        (userData?.role as string) ||
+        "requestor") as string,
       "x-mock-email": user?.email || userData?.email || "mock@abuts.fit",
       "x-mock-name": user?.name || userData?.name || "사용자",
       "x-mock-organization":
         (user as any)?.organization || userData?.companyName || "",
       "x-mock-phone": (user as any)?.phoneNumber || "",
     };
-  }, [token, user?.email, user?.name, user?.role, userData]);
+  }, [
+    organizationTypeOverride,
+    token,
+    user?.email,
+    user?.name,
+    user?.role,
+    userData,
+  ]);
 
   const organizationType = useMemo(() => {
+    if (organizationTypeOverride) return organizationTypeOverride;
     const role = String(user?.role || userData?.role || "requestor").trim();
     return role || "requestor";
-  }, [user?.role, userData?.role]);
+  }, [organizationTypeOverride, user?.role, userData?.role]);
 
   const [licenseFileName, setLicenseFileName] = useState<string>("");
   const [licenseFileId, setLicenseFileId] = useState<string>("");
