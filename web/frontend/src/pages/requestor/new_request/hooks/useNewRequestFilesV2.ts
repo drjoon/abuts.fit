@@ -436,8 +436,14 @@ export const useNewRequestFilesV2 = ({
         // 업로드 응답과 원본 파일 매칭을 위해 맵 구성
         const tempFileMap = new Map<string, File>();
         filesToProcess.forEach((file) => {
-          const key = `${file.name}:${file.size}`;
-          tempFileMap.set(key, file);
+          const rawKey = `${file.name}:${file.size}`;
+          tempFileMap.set(rawKey, file);
+          try {
+            const normalizedKey = `${normalize(file.name)}:${file.size}`;
+            tempFileMap.set(normalizedKey, file);
+          } catch {
+            /* noop */
+          }
         });
 
         // 2. Draft API에 파일 메타 추가
@@ -602,20 +608,43 @@ export const useNewRequestFilesV2 = ({
             );
             const indexBySource = new Map<string, number>();
             replaced.forEach((f, idx) => {
-              const key = f._sourceFileKey || `${f.name}:${f.size}`;
-              indexBySource.set(key, idx);
+              const rawKey = f._sourceFileKey || `${f.name}:${f.size}`;
+              indexBySource.set(rawKey, idx);
+              if (f._sourceFileKeyNfc) {
+                indexBySource.set(f._sourceFileKeyNfc, idx);
+              }
+              const normalizedRuntimeKey = `${normalize(f.name)}:${f.size}`;
+              indexBySource.set(normalizedRuntimeKey, idx);
             });
 
             newDraftFiles.forEach((draftCase) => {
               const fileMeta = draftCase.file;
-              const key = `${fileMeta?.originalName}:${fileMeta?.size}`;
-              const fallbackOriginal = filesToProcess.find(
-                (file) =>
-                  file.name === fileMeta?.originalName &&
-                  file.size === fileMeta?.size,
-              );
+              const originalSize = fileMeta?.size ?? 0;
+              const rawKey = `${fileMeta?.originalName}:${originalSize}`;
+              const normalizedKey = fileMeta?.originalName
+                ? `${normalize(fileMeta.originalName)}:${originalSize}`
+                : undefined;
+              const fallbackOriginal = filesToProcess.find((file) => {
+                if (!fileMeta?.originalName) return false;
+                if (
+                  file.name === fileMeta.originalName &&
+                  file.size === originalSize
+                )
+                  return true;
+                try {
+                  return (
+                    normalize(file.name) === normalize(fileMeta.originalName) &&
+                    file.size === originalSize
+                  );
+                } catch {
+                  return false;
+                }
+              });
               const originalFile =
-                tempFileMap.get(key) || fallbackOriginal || filesToProcess[0];
+                tempFileMap.get(rawKey) ||
+                (normalizedKey ? tempFileMap.get(normalizedKey) : undefined) ||
+                fallbackOriginal ||
+                filesToProcess[0];
               const sourceKey = `${originalFile.name}:${originalFile.size}`;
               const idx = indexBySource.get(sourceKey);
               if (idx === undefined) return;
