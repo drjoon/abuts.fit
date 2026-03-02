@@ -522,8 +522,7 @@ export const RequestPage = ({
     tabStage === "machining" ||
     tabStage === "packing" ||
     tabStage === "shipping" ||
-    tabStage === "tracking" ||
-    tabStage === "request";
+    tabStage === "tracking";
 
   const enableCardApprove =
     tabStage === "cam" ||

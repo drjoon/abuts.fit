@@ -152,6 +152,11 @@ export const WorksheetCardGrid = ({
             )
           : true;
 
+      const requestStageRollbackExists =
+        Number(caseInfos.rollbackCounts?.request || 0) > 0 ||
+        Number(caseInfos.rollbackCounts?.cam || 0) > 0 ||
+        Number(caseInfos.rollbackCounts?.machining || 0) > 0;
+
       const canApproveFromRollback =
         hasEngravingImage &&
         (rollbackCountForStage > 0 ||
@@ -160,8 +165,7 @@ export const WorksheetCardGrid = ({
             Number(caseInfos.rollbackCounts?.shipping || 0) > 0) ||
           (reviewStageKey === "cam" &&
             Number(caseInfos.rollbackCounts?.machining || 0) > 0) ||
-          (reviewStageKey === "request" &&
-            Number(caseInfos.rollbackCounts?.cam || 0) > 0));
+          (reviewStageKey === "request" && requestStageRollbackExists));
 
       const lotBadgeClass = (() => {
         const s = String(stageForRollback || "").trim();
