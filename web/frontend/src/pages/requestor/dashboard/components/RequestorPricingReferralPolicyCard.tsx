@@ -173,7 +173,7 @@ export const RequestorPricingReferralPolicyCard = () => {
         <CardHeader className="pt-4 pb-2">
           <div className="flex items-center justify-between gap-2">
             <CardTitle className="text-base font-semibold">
-              가격 & 리퍼럴 정책
+              가격 정책
             </CardTitle>
             <div className="flex items-center gap-2">
               <Button
@@ -183,7 +183,7 @@ export const RequestorPricingReferralPolicyCard = () => {
                 className={
                   shouldHighlightReferral
                     ? "text-xs px-3 py-1.5 h-9 shadow-md bg-primary text-white"
-                    : "border border-slate-300 bg-white text-xs text-foreground hover:bg-slate-100 px-3 py-1.5 h-9"
+                    : "border border-slate-300 bg-white text-xs text-foreground hover:bg-slate-100 hover:text-slate-700 px-3 py-1.5 h-9"
                 }
                 onClick={handleCopyReferralLink}
                 disabled={!referralLink}
@@ -194,19 +194,19 @@ export const RequestorPricingReferralPolicyCard = () => {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="border border-slate-300 bg-white text-xs text-foreground hover:bg-slate-100 px-3 py-1.5 h-9"
+                className="border border-slate-300 bg-white text-xs text-foreground hover:bg-slate-100 hover:text-slate-700 px-3 py-1.5 h-9"
                 onClick={() => setOpen(true)}
               >
                 정책
               </Button>
             </div>
           </div>
-          <CardDescription className="space-y-1 text-xs text-slate-600">
+          <CardDescription className="space-y-1 text-xs text-slate-600 pt-2">
             최근 30일 집계는 <b>완료</b> 주문 기준입니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-2 pb-4 gap-3 text-xs text-foreground">
-          <div className="space-y-2">
+          <div className="space-y-1">
             <div className="flex items-center justify-between gap-4">
               <div className="flex-1 space-y-1">
                 <div className="flex items-baseline justify-between gap-2">

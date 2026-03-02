@@ -32,8 +32,8 @@ export {
 export const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
   d6: 1,
   d8: 1,
-  d10: 1,
-  d12: 1,
+  d10: 4,
+  d12: 4,
 };
 
 export function getRequestorOrgId(req) {
@@ -214,6 +214,30 @@ export async function getDeliveryEtaLeadDays() {
       { $setOnInsert: { key: "global" } },
       { new: true, upsert: true, setDefaultsOnInsert: true },
     ).lean();
+
+    const legacy = doc?.deliveryEtaLeadDays;
+    const isLegacyAllOnes =
+      legacy &&
+      typeof legacy === "object" &&
+      ["d6", "d8", "d10", "d12"].every((k) => legacy?.[k] === 1);
+    if (isLegacyAllOnes) {
+      const updatedDoc = await SystemSettings.findOneAndUpdate(
+        {
+          _id: doc._id,
+          "deliveryEtaLeadDays.d6": 1,
+          "deliveryEtaLeadDays.d8": 1,
+          "deliveryEtaLeadDays.d10": 1,
+          "deliveryEtaLeadDays.d12": 1,
+        },
+        { $set: { deliveryEtaLeadDays: DEFAULT_DELIVERY_ETA_LEAD_DAYS } },
+        { new: true },
+      ).lean();
+
+      return {
+        ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
+        ...(updatedDoc?.deliveryEtaLeadDays || {}),
+      };
+    }
 
     return {
       ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
