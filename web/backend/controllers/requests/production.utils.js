@@ -198,16 +198,11 @@ export async function calculateInitialProductionSchedule({
     throw new Error("weeklyBatchDays is required for normal shipping");
   }
 
-  let scheduledCamStart;
-
-  if (shippingMode === "express") {
-    // 신속배송: 즉시 CAM 시작
-    scheduledCamStart = new Date(now);
-  } else {
-    // 묶음배송: 직경별 대기
-    const waitHours = getBulkWaitHours(diameterGroup);
-    scheduledCamStart = new Date(now.getTime() + waitHours * 60 * 60 * 1000);
-  }
+  // 묶음배송: 직경별 대기
+  const waitHours = getBulkWaitHours(diameterGroup);
+  const scheduledCamStart = new Date(
+    now.getTime() + waitHours * 60 * 60 * 1000,
+  );
 
   // 최소 리드타임 보정: 방금 생성된 의뢰가 즉시 '지연'으로 잡히는 것을 방지
   const MIN_LEAD_MINUTES = 30;

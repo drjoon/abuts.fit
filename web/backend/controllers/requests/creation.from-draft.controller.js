@@ -95,7 +95,7 @@ export async function createRequestsFromDraft(req, res) {
       draftId: req.body?.draftId,
     });
     const { draftId, clinicId } = req.body || {};
-    const enableDuplicateRequestCheck = false;
+    const enableDuplicateRequestCheck = true;
     const duplicateResolutionsRaw = Array.isArray(
       req.body?.duplicateResolutions,
     )
@@ -222,8 +222,7 @@ export async function createRequestsFromDraft(req, res) {
         const workType = (ci?.workType || "abutment").trim();
         if (workType !== "abutment") return null;
 
-        const shippingMode =
-          ci?.shippingMode === "express" ? "express" : "normal";
+        const shippingMode = "normal"; // Only bulk shipping supported
         const requestedShipDate = ci?.requestedShipDate || undefined;
 
         const missing = [];
@@ -812,7 +811,8 @@ export async function createRequestsFromDraft(req, res) {
             shippingMode,
             maxDiameter: item.caseInfosWithFile?.maxDiameter,
             requestedAt,
-            weeklyBatchDays: requestorWeeklyBatchDays,
+            weeklyBatchDays:
+              shippingMode === "normal" ? requestorWeeklyBatchDays : [],
           });
           newRequest.productionSchedule = productionSchedule;
 

@@ -144,6 +144,7 @@ export const RequestorBulkShippingBannerCard = ({
 
   useEffect(() => {
     // 묶음 배송(normal)인 아이템의 "원래 발송예정일"을 1회 저장 (신속→묶음 복귀 시 사용)
+    // originalEstimatedShipYmd가 있으면 그것을 우선 사용
     setOriginalBulkEtaById((prev) => {
       const next = { ...prev };
       for (const it of items) {
@@ -151,18 +152,40 @@ export const RequestorBulkShippingBannerCard = ({
         if (mode !== "normal") continue;
         if (!it.id) continue;
         if (next[it.id] !== undefined) continue;
-        next[it.id] = it.estimatedShipYmd ?? null;
+        // Use originalEstimatedShipYmd if available, otherwise use current estimatedShipYmd
+        next[it.id] =
+          it.originalEstimatedShipYmd ?? it.estimatedShipYmd ?? null;
       }
       return next;
     });
   }, [items]);
 
-  const bulkItems = items.filter(
-    (i) => (i.shippingMode || "normal") === "normal",
-  );
-  const expressItems = items.filter(
+  // Calculate earliest express ETA to determine which bulk items should be grouped with express
+  const rawExpressItems = items.filter(
     (i) => (i.shippingMode || "normal") === "express",
   );
+
+  const earliestExpressEta = useMemo(() => {
+    if (rawExpressItems.length === 0) return null;
+    const dates = rawExpressItems
+      .map((i) => i.estimatedShipYmd)
+      .filter(Boolean)
+      .map((d) => String(d))
+      .filter((v) => v.length >= 10)
+      .sort();
+    return dates.length > 0 ? dates[0] : null;
+  }, [rawExpressItems]);
+
+  // All items are bulk shipping now (express shipping removed)
+  const bulkItems = items.filter((i) => {
+    const mode = i.shippingMode || "normal";
+    return mode === "normal";
+  });
+
+  const expressItems = items.filter((i) => {
+    const mode = i.shippingMode || "normal";
+    return mode === "express";
+  });
 
   const earliestEta = (list: ShippingItemApi[]) => {
     const dates = list
@@ -180,116 +203,27 @@ export const RequestorBulkShippingBannerCard = ({
 
   const getNextSummary = () => {
     const bulkCount = bulkItems.length;
-    const expressCount = expressItems.length;
-    const totalCount = bulkCount + expressCount;
 
-    if (totalCount === 0) {
+    if (bulkCount === 0) {
       return {
-        modeLabel: "예정 없음",
-        countLabel: "대기 중인 제품이 없습니다.",
+        modeLabel: "배송 대기 없음",
+        countLabel: "현재 배송 대기 중인 제품이 없습니다.",
         dateLabel: "-",
       };
     }
 
-    const hasExpress = expressItems.length > 0;
-
-    // 신속 배송이 하나라도 있으면: 전체를 신속 기준으로 안내
-    if (hasExpress) {
-      const modeLabel = "신속 배송";
-      const nextText = earliestEta(expressItems);
-
-      return {
-        modeLabel,
-        countLabel: `총 ${totalCount}개 배송 예정`,
-        dateLabel: nextText,
-      };
-    }
-
-    // 묶음 배송만 있는 경우
-    const modeLabel = "묶음 배송";
-
-    if (policy?.shippingMode === "countBased") {
-      const threshold = policy.autoBatchThreshold || 20;
-      const remaining = Math.max(threshold - bulkCount, 0);
-
-      return {
-        modeLabel,
-        countLabel: `${bulkCount} / ${threshold}개 모임`,
-        dateLabel:
-          remaining === 0 ? "기준 수량 충족" : `기준까지 ${remaining}개 남음`,
-      };
-    }
-
-    if (
-      policy?.shippingMode === "weeklyBased" &&
-      policy.weeklyBatchDays?.length
-    ) {
-      const today = new Date();
-      const dayOfWeek = today.getDay();
-
-      const order: Record<string, number> = {
-        sun: 0,
-        mon: 1,
-        tue: 2,
-        wed: 3,
-        thu: 4,
-        fri: 5,
-        sat: 6,
-      };
-
-      const labels: Record<string, string> = {
-        sun: "일",
-        mon: "월",
-        tue: "화",
-        wed: "수",
-        thu: "목",
-        fri: "금",
-        sat: "토",
-      };
-
-      const sorted = [...policy.weeklyBatchDays].sort(
-        (a, b) => order[a] - order[b],
-      );
-
-      let minDiff = 7;
-      let targetDay: string | null = null;
-
-      for (const d of sorted) {
-        const diff = (order[d] - dayOfWeek + 7) % 7 || 7;
-        if (diff < minDiff) {
-          minDiff = diff;
-          targetDay = d;
-        }
-      }
-
-      if (targetDay) {
-        const dayLabel = labels[targetDay];
-        const diffLabel = minDiff === 0 ? "오늘" : `${minDiff}일 남음`;
-
-        return {
-          modeLabel,
-          countLabel: `총 ${bulkCount}개 묶음 대기`,
-          dateLabel: `${diffLabel} (다음 ${dayLabel})`,
-        };
-      }
-    }
+    const nextText = earliestEta(bulkItems);
 
     return {
-      modeLabel,
-      countLabel: `총 ${bulkCount}개 묶음 대기`,
-      dateLabel: earliestEta(bulkItems),
+      modeLabel: "묶음 배송",
+      countLabel: `${bulkCount}개 대기 중`,
+      dateLabel: `다음 발송: ${nextText}`,
     };
   };
 
   const getCardMessage = () => {
     if (!policy) {
-      return "배송 대기중인 묶음/신속 배송 제품을 확인해보세요.";
-    }
-
-    if (policy.shippingMode === "countBased") {
-      return `${
-        policy.autoBatchThreshold || 20
-      }개 이상 모이면 자동 묶음 배송됩니다. 배송비를 절감하고 발송 일정을 관리해 보세요.`;
+      return "제조사 리드타임 기준으로 발송일이 계산됩니다.";
     }
 
     const dayLabels: Record<string, string> = {
@@ -302,7 +236,12 @@ export const RequestorBulkShippingBannerCard = ({
     const days = (policy.weeklyBatchDays || [])
       .map((d) => dayLabels[d])
       .join(", ");
-    return `${days} 오후에 묶음 배송됩니다. 배송비를 절감하고 발송 일정을 관리해 보세요.`;
+
+    if (days) {
+      return `${days}요일에 묶음 발송됩니다. 제조사 리드타임 기준으로 발송일이 계산됩니다.`;
+    }
+
+    return "제조사 리드타임 기준으로 발송일이 계산됩니다.";
   };
 
   const handleOpenModal = () => {
@@ -419,13 +358,6 @@ export const RequestorBulkShippingBannerCard = ({
     return d.toLocaleDateString("ko-KR");
   };
 
-  const getExpressEtaText = () => {
-    if (!expressItems.length) return "-";
-
-    // '발송 예정일' 표시는 반드시 nextEstimatedShipYmd(또는 estimatedShipYmd)를 사용해야 한다.
-    return earliestEta(expressItems);
-  };
-
   const bulkGroups = (() => {
     const map = new Map<string, ShippingItemApi[]>();
     for (const it of bulkItems) {
@@ -442,6 +374,63 @@ export const RequestorBulkShippingBannerCard = ({
     return keys.map((k) => ({ etaKey: k, items: map.get(k) || [] }));
   })();
 
+  const toggleSingleItem = async (item: ShippingItemApi) => {
+    if (!canToggleMode(item.status)) {
+      toast({
+        title: "변경 불가",
+        description: "의뢰 단계에서만 배송 방식을 변경할 수 있습니다.",
+        duration: 3000,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const currentMode = item.shippingMode || "normal";
+    const nextMode: "normal" | "express" =
+      currentMode === "express" ? "normal" : "express";
+
+    if (nextMode === "express" && !originalBulkEtaById[item.id]) {
+      setOriginalBulkEtaById((prev) => ({
+        ...prev,
+        [item.id]:
+          item.originalEstimatedShipYmd ?? item.estimatedShipYmd ?? null,
+      }));
+    }
+
+    const result = await patchShippingMode([item.id], nextMode);
+    if (!result.ok) return;
+
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.id !== item.id) return it;
+        if (nextMode === "normal") {
+          const originalEta =
+            it.originalEstimatedShipYmd ?? originalBulkEtaById[it.id];
+          return {
+            ...it,
+            shippingMode: "normal",
+            shipDateYmd: null,
+            estimatedShipYmd:
+              originalEta !== undefined && originalEta !== null
+                ? originalEta
+                : it.estimatedShipYmd,
+            nextEstimatedShipYmd: null,
+          };
+        }
+        return {
+          ...it,
+          shippingMode: "express",
+          shipDateYmd: result.shipDateYmd ?? it.shipDateYmd ?? null,
+          nextEstimatedShipYmd: it.estimatedShipYmd,
+        };
+      }),
+    );
+
+    if (onRefresh) {
+      onRefresh();
+    }
+  };
+
   const toggleAllShippingMode = async () => {
     const hasNonEligible = items.some((it) => !canToggleMode(it.status));
     if (hasNonEligible) {
@@ -457,7 +446,7 @@ export const RequestorBulkShippingBannerCard = ({
     const requestIds = items.map((i) => i.id).filter(Boolean);
     if (!requestIds.length) return;
 
-    const hasExpress = expressItems.length > 0;
+    const hasExpress = rawExpressItems.length > 0;
     const nextMode: "normal" | "express" = hasExpress ? "normal" : "express";
 
     if (nextMode === "express") {
@@ -466,7 +455,9 @@ export const RequestorBulkShippingBannerCard = ({
         for (const it of bulkItems) {
           if (!it.id) continue;
           if (next[it.id] !== undefined) continue;
-          next[it.id] = it.estimatedShipYmd ?? null;
+          // Preserve the original bulk ETA before converting to express
+          next[it.id] =
+            it.originalEstimatedShipYmd ?? it.estimatedShipYmd ?? null;
         }
         return next;
       });
@@ -481,19 +472,25 @@ export const RequestorBulkShippingBannerCard = ({
       prev.map((it) => {
         if (!updatedSet.has(it.id)) return it;
         if (nextMode === "normal") {
-          const originalEta = originalBulkEtaById[it.id];
+          // Restore original bulk ETA from backend or local cache
+          const originalEta =
+            it.originalEstimatedShipYmd ?? originalBulkEtaById[it.id];
           return {
             ...it,
             shippingMode: "normal",
             shipDateYmd: null,
             estimatedShipYmd:
-              originalEta !== undefined ? originalEta : it.estimatedShipYmd,
+              originalEta !== undefined && originalEta !== null
+                ? originalEta
+                : it.estimatedShipYmd,
+            nextEstimatedShipYmd: null,
           };
         }
         return {
           ...it,
           shippingMode: "express",
           shipDateYmd: result.shipDateYmd ?? it.shipDateYmd ?? null,
+          nextEstimatedShipYmd: it.estimatedShipYmd,
         };
       }),
     );
@@ -507,7 +504,7 @@ export const RequestorBulkShippingBannerCard = ({
         <CardHeader className="pb-2 space-y-2">
           <div className="flex items-center justify-between gap-4">
             <CardTitle className="text-base font-semibold text-foreground">
-              다음 배송 안내
+              묶음 배송 안내
             </CardTitle>
             {(() => {
               const { modeLabel, countLabel, dateLabel } = getNextSummary();
@@ -540,14 +537,14 @@ export const RequestorBulkShippingBannerCard = ({
       </Card>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-w-6xl">
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold">
-              배송 대기 내역
+              배송 대기 현황
             </DialogTitle>
-            <p className="mt-1 text-mg text-slate-700">
-              신속 배송시 묶음 배송 제품도 동봉합니다.
-            </p>
+            <CardDescription className="text-xs text-muted-foreground">
+              제조사 리드타임 기준 발송일이 계산됩니다.
+            </CardDescription>
           </DialogHeader>
           {!isEtaReady ? (
             <div className="py-6 space-y-4">
@@ -574,128 +571,54 @@ export const RequestorBulkShippingBannerCard = ({
               </div>
             </div>
           ) : (
-            <div className="relative flex items-stretch gap-6 py-6">
-              {/* 왼쪽: 묶음 배송 */}
-              <div className="flex-1 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="h-1 w-1 rounded-full bg-blue-600"></div>
-                    <h3 className="font-bold text-lg text-foreground">
-                      묶음 배송
-                    </h3>
+            <div className="space-y-4">
+              <div className="app-glass-card app-glass-card--lg p-4 space-y-3 max-h-96 overflow-y-auto">
+                {bulkItems.length === 0 ? (
+                  <div className="text-sm text-slate-600 text-center py-8">
+                    배송 대기 중인 제품이 없습니다.
                   </div>
-                </div>
-                <div className="app-glass-card app-glass-card--lg p-6 space-y-3 max-h-96 overflow-y-auto">
-                  {bulkItems.length === 0 ? (
-                    <div className="text-sm text-slate-600 text-center py-8">
-                      묶음 배송 대기 중인 제품이 없습니다.
-                    </div>
-                  ) : (
-                    bulkGroups.map((group) => (
-                      <div
-                        key={group.etaKey}
-                        className="app-surface app-surface--panel"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-xs text-slate-700">
-                            <span className="font-medium">발송 예정일:</span>{" "}
-                            <span className="text-foreground font-medium">
-                              {group.etaKey === "-"
-                                ? "-"
-                                : formatEta(group.etaKey)}
-                            </span>
-                            <span className="ml-2 text-slate-600">
-                              ({group.items.length}개)
-                            </span>
+                ) : (
+                  bulkGroups.map((group) => (
+                    <div
+                      key={group.etaKey}
+                      className="app-surface app-surface--panel"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs text-slate-700">
+                          <span className="font-medium">발송 예정일:</span>{" "}
+                          <span className="text-foreground font-medium">
+                            {group.etaKey === "-"
+                              ? "-"
+                              : formatEta(group.etaKey)}
+                          </span>
+                          <span className="ml-2 text-slate-600">
+                            ({group.items.length}개)
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        {group.items.map((item) => (
+                          <div
+                            key={item.id}
+                            className="app-surface app-surface--item p-2"
+                          >
+                            <p className="text-sm font-medium text-foreground truncate">
+                              {item.title || item.id}
+                            </p>
+                            <p className="text-xs text-slate-600 truncate">
+                              {item.clinic || ""}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {item.patient || "-"} / {item.tooth || "-"} /{" "}
+                              {item.diameter || "-"}
+                            </p>
                           </div>
-                        </div>
-
-                        <div className="mt-2 space-y-2">
-                          {group.items.map((item) => (
-                            <div
-                              key={item.id}
-                              className="app-surface app-surface--item flex items-center justify-between p-2"
-                            >
-                              <div className="flex-1 text-left">
-                                <p className="text-sm font-medium text-foreground">
-                                  {item.title || item.id}
-                                </p>
-                                <p className="text-xs text-slate-600">
-                                  {item.clinic || ""}
-                                  {(item.patient ||
-                                    item.tooth ||
-                                    item.diameter) &&
-                                    ` • ${item.patient || "-"} / ${
-                                      item.tooth || "-"
-                                    } / ${item.diameter || "-"}`}
-                                </p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                        ))}
                       </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* 중앙: 화살표 */}
-              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 translate-y-1/2 z-10">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-12 w-12 rounded-full border-2 border-blue-500 bg-white shadow-md hover:bg-blue-50"
-                  onClick={toggleAllShippingMode}
-                >
-                  <ArrowRightLeft className="h-6 w-6 text-blue-600" />
-                </Button>
-              </div>
-
-              {/* 오른쪽: 신속 배송 */}
-              <div className="flex-1 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="h-1 w-1 rounded-full bg-red-600"></div>
-                    <h3 className="font-bold text-lg text-foreground">
-                      신속 배송
-                    </h3>
-                  </div>
-                  {expressItems.length > 0 && (
-                    <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">
-                      <span className="font-medium">발송 예정일:</span>{" "}
-                      <span className="text-red-900">
-                        {getExpressEtaText()}
-                      </span>
                     </div>
-                  )}
-                </div>
-                <div className="app-glass-card app-glass-card--lg p-6 space-y-2 max-h-96 overflow-y-auto">
-                  {expressItems.length === 0 ? (
-                    <div className="text-sm text-slate-600 text-center py-8">
-                      신속 배송 제품이 없습니다.
-                    </div>
-                  ) : (
-                    expressItems.map((item) => (
-                      <div
-                        key={item.id}
-                        className="app-surface app-surface--item flex items-center justify-between p-3"
-                      >
-                        <div className="flex-1 text-right">
-                          <p className="text-sm font-medium text-foreground">
-                            {item.title || item.id}
-                          </p>
-                          <p className="text-xs text-slate-600">
-                            {item.clinic || ""}
-                            {(item.patient || item.tooth || item.diameter) &&
-                              ` • ${item.patient || "-"} / ${
-                                item.tooth || "-"
-                              } / ${item.diameter || "-"}`}
-                          </p>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
+                  ))
+                )}
               </div>
             </div>
           )}

@@ -52,12 +52,7 @@ const draftCaseSchema = new mongoose.Schema(
           type: String,
           enum: ["abutment", "crown"],
         },
-        // 배송 요청 정보
-        shippingMode: {
-          type: String,
-          enum: ["normal", "express"],
-          default: "normal",
-        },
+        // 배송 요청 정보 (묶음 배송만 사용)
         requestedShipDate: Date,
       },
     ],

@@ -157,7 +157,8 @@ export async function createRequest(req, res) {
       shippingMode,
       maxDiameter: normalizedCaseInfos?.maxDiameter,
       requestedAt,
-      weeklyBatchDays: requestorWeeklyBatchDays,
+      weeklyBatchDays:
+        shippingMode === "normal" ? requestorWeeklyBatchDays : [],
     });
     newRequest.productionSchedule = productionSchedule;
 

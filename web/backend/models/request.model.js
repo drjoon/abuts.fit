@@ -325,12 +325,7 @@ const requestSchema = new mongoose.Schema(
       ],
       default: "의뢰",
     },
-    // 레거시: 배송 모드 (프론트/백엔드 일부 로직에서 사용)
-    shippingMode: {
-      type: String,
-      enum: ["normal", "express"],
-      default: "normal",
-    },
+    // 레거시: 배송 모드 제거됨 (묶음 배송만 사용)
     // 레거시: 출고일(또는 희망 출고일) (KST 기준)
     requestedShipDate: Date,
 
@@ -548,7 +543,6 @@ requestSchema.index({
 requestSchema.index({
   requestorOrganizationId: 1,
   manufacturerStage: 1,
-  shippingMode: 1,
 });
 
 // 의뢰 ID 자동 생성 (YYYYMMDD-XXXXXXXX)

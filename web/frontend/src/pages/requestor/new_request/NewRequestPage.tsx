@@ -10,7 +10,6 @@ import { useNewRequestPage } from "./hooks/useNewRequestPage";
 import { useToast } from "@/shared/hooks/use-toast";
 import { usePresetStorage } from "./hooks/usePresetStorage";
 import { useBulkShippingPolicy } from "./hooks/useBulkShippingPolicy";
-import { useExpressShipping } from "./hooks/useExpressShipping";
 import { useFileVerification } from "./hooks/useFileVerification";
 import { apiFetch } from "@/shared/api/apiClient";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
@@ -81,6 +80,8 @@ export const NewRequestPage = () => {
     handleAddOrSelectClinic,
     duplicatePrompt,
     setDuplicatePrompt,
+    duplicateResolutions,
+    setDuplicateResolutions,
     pendingUploadFiles,
     setPendingUploadFiles,
     pendingUploadDecisions,
@@ -153,20 +154,6 @@ export const NewRequestPage = () => {
       fileInput.value = "";
     }
   };
-
-  const [duplicateResolutions, setDuplicateResolutions] = useState<
-    {
-      caseId: string;
-      strategy: "skip" | "replace" | "remake";
-      existingRequestId: string;
-    }[]
-  >([]);
-
-  useEffect(() => {
-    if (duplicatePrompt) {
-      setDuplicateResolutions([]);
-    }
-  }, [duplicatePrompt]);
 
   const duplicateList = useMemo(
     () =>
@@ -404,14 +391,21 @@ export const NewRequestPage = () => {
   };
 
   const { weeklyBatchLabel } = useBulkShippingPolicy(user?.email);
-  const { calculateExpressDate, expressEstimatedShipYmd } =
-    useExpressShipping(caseInfos);
 
   const [focusUnverifiedTick, setFocusUnverifiedTick] = useState(0);
 
   const validateFileForUpload = (
     file: File,
   ): { valid: boolean; message?: string } => {
+    // Check file extension for STL
+    const fileName = file.name.toLowerCase();
+    if (!fileName.endsWith(".stl")) {
+      return {
+        valid: false,
+        message: "STL 파일만 업로드 가능합니다.",
+      };
+    }
+
     if (file.size >= FILE_SIZE_THRESHOLD_BYTES) {
       return {
         valid: false,
@@ -436,22 +430,25 @@ export const NewRequestPage = () => {
 
   const handleIncomingFiles = (selectedFiles: File[]) => {
     const filesToUpload: File[] = [];
-    const rejectedFiles: string[] = [];
+    const rejectedFiles: { name: string; reason: string }[] = [];
 
     selectedFiles.forEach((file) => {
       const validation = validateFileForUpload(file);
       if (validation.valid) {
         filesToUpload.push(file);
       } else {
-        rejectedFiles.push(file.name);
+        rejectedFiles.push({
+          name: file.name,
+          reason: validation.message || "알 수 없는 오류",
+        });
       }
     });
 
     if (rejectedFiles.length > 0) {
+      const firstReason = rejectedFiles[0].reason;
       toast({
         title: "파일 업로드 실패",
-        description:
-          "30MB 이상의 파일은 업로드할 수 없습니다. 커스텀 어벗 STL 파일만 업로드해주세요.",
+        description: firstReason,
         variant: "destructive",
         duration: 3000,
       });
@@ -657,40 +654,9 @@ export const NewRequestPage = () => {
               highlight={highlightStep === "shipping"}
               sectionHighlightClass={sectionHighlightClass}
               weeklyBatchLabel={weeklyBatchLabel}
-              expressEstimatedShipYmd={expressEstimatedShipYmd}
-              expressDisplayYmd={undefined}
               onOpenShippingSettings={() =>
                 navigate("/dashboard/settings?tab=shipping")
               }
-              onSelectExpress={async () => {
-                setCaseInfos({
-                  shippingMode: "express",
-                  requestedShipDate: undefined,
-                });
-                try {
-                  const res = await apiFetch<any>({
-                    path: `/api/requests/shipping-estimate?mode=express&maxDiameter=${encodeURIComponent(
-                      String(caseInfos?.maxDiameter ?? ""),
-                    )}`,
-                    method: "GET",
-                  });
-
-                  const shipDateYmd =
-                    res.ok && res.data?.success
-                      ? res.data?.data?.estimatedShipYmd
-                      : "";
-
-                  setCaseInfos({
-                    shippingMode: "express",
-                    requestedShipDate: shipDateYmd || undefined,
-                  });
-                } catch {
-                  setCaseInfos({
-                    shippingMode: "express",
-                    requestedShipDate: undefined,
-                  });
-                }
-              }}
               onSubmit={() => {
                 if (!files.length) {
                   toast({

@@ -11,8 +11,7 @@ import { BusinessTab } from "./components/BusinessTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { PaymentTab } from "@/features/settings/tabs/CreditPaymentTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
-import { ShippingTab } from "./components/ShippingTab";
-import { User, Building2, CreditCard, Bell, Truck, Users } from "lucide-react";
+import { User, Building2, CreditCard, Bell, Users } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { RequestorSecurity } from "./Security";
 import { Shield } from "lucide-react";
@@ -22,7 +21,6 @@ type TabKey =
   | "account"
   | "business"
   | "staff"
-  | "shipping"
   | "payment"
   | "notifications"
   | "security";
@@ -116,12 +114,6 @@ export const RequestorSettingsPage = () => {
     }
 
     base.push(
-      {
-        key: "shipping",
-        label: "배송",
-        icon: Truck,
-        content: <ShippingTab userData={user} />,
-      },
       {
         key: "payment",
         label: "결제",

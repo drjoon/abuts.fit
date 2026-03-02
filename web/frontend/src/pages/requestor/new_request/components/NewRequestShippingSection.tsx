@@ -1,7 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
-import { Truck, Zap } from "lucide-react";
+import { Truck } from "lucide-react";
 import type { CaseInfos } from "../hooks/newRequestTypes";
+import { useState, useEffect } from "react";
+import { apiFetch } from "@/shared/api/apiClient";
+import { useToast } from "@/shared/hooks/use-toast";
+import { useAuthStore } from "@/store/useAuthStore";
 
 type Props = {
   caseInfos?: CaseInfos;
@@ -10,13 +14,20 @@ type Props = {
   highlight: boolean;
   sectionHighlightClass: string;
   weeklyBatchLabel: string;
-  expressEstimatedShipYmd?: string;
-  expressDisplayYmd?: string;
-  onOpenShippingSettings: () => void;
-  onSelectExpress: () => void;
+  onOpenShippingSettings?: () => void;
   onSubmit: () => void;
   onCancelAll: () => void;
 };
+
+type WeekDay = "mon" | "tue" | "wed" | "thu" | "fri";
+
+const WEEKDAYS: { key: WeekDay; label: string }[] = [
+  { key: "mon", label: "월" },
+  { key: "tue", label: "화" },
+  { key: "wed", label: "수" },
+  { key: "thu", label: "목" },
+  { key: "fri", label: "금" },
+];
 
 export function NewRequestShippingSection({
   caseInfos,
@@ -25,114 +36,132 @@ export function NewRequestShippingSection({
   highlight,
   sectionHighlightClass,
   weeklyBatchLabel,
-  expressEstimatedShipYmd,
-  expressDisplayYmd,
   onOpenShippingSettings,
-  onSelectExpress,
   onSubmit,
   onCancelAll,
 }: Props) {
   const isDisabled = !!disabled;
-  const formatYmdWithDay = (ymd?: string) => {
-    if (!ymd) return "";
-    const safeYmd = String(ymd).trim();
-    const date = new Date(`${safeYmd}T00:00:00`);
-    if (Number.isNaN(date.getTime())) return safeYmd;
-    const labels = ["일", "월", "화", "수", "목", "금", "토"];
-    const label = labels[date.getDay()] || "";
-    return label ? `${safeYmd} (${label})` : safeYmd;
+  const { toast } = useToast();
+  const { token } = useAuthStore();
+  const [selectedDays, setSelectedDays] = useState<WeekDay[]>([]);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  useEffect(() => {
+    const loadWeeklyBatchDays = async () => {
+      if (!token) return;
+      try {
+        const res = await apiFetch<any>({
+          path: "/api/requestor-organizations/me",
+          method: "GET",
+          token,
+        });
+        if (res.ok && res.data?.data?.shippingPolicy?.weeklyBatchDays) {
+          setSelectedDays(res.data.data.shippingPolicy.weeklyBatchDays);
+        }
+      } catch (e) {
+        console.error("Failed to load weeklyBatchDays:", e);
+      }
+    };
+    void loadWeeklyBatchDays();
+  }, [token]);
+
+  const toggleDay = async (day: WeekDay) => {
+    if (isDisabled || isUpdating) return;
+
+    const newDays = selectedDays.includes(day)
+      ? selectedDays.filter((d) => d !== day)
+      : [...selectedDays, day];
+
+    if (newDays.length === 0) {
+      toast({
+        title: "최소 1개 선택 필요",
+        description: "최소 1개의 배송일을 선택해야 합니다.",
+        variant: "destructive",
+        duration: 3000,
+      });
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const res = await apiFetch<any>({
+        path: "/api/requestor-organizations/me",
+        method: "PATCH",
+        token,
+        jsonBody: {
+          shippingPolicy: {
+            weeklyBatchDays: newDays,
+          },
+        },
+      });
+
+      if (res.ok) {
+        setSelectedDays(newDays);
+        toast({
+          title: "배송일 설정 완료",
+          description: "배송일이 업데이트되었습니다.",
+          duration: 2000,
+        });
+      } else {
+        toast({
+          title: "업데이트 실패",
+          description: res.data?.message || "다시 시도해주세요.",
+          variant: "destructive",
+          duration: 3000,
+        });
+      }
+    } catch (e: any) {
+      toast({
+        title: "오류",
+        description: e.message || "배송일 업데이트 중 오류가 발생했습니다.",
+        variant: "destructive",
+        duration: 3000,
+      });
+    } finally {
+      setIsUpdating(false);
+    }
   };
+
   const bulkLabelText = weeklyBatchLabel || "미설정";
-  const expressDisplayText = formatYmdWithDay(
-    expressEstimatedShipYmd || expressDisplayYmd,
-  );
-  const holidayRolloverNote = "공휴일이면 다음날 발송";
+  const holidayRolloverNote = "공휴일은 다음날 발송합니다";
   return (
     <div
-      className={`app-glass-card app-glass-card--lg relative flex flex-col justify-center gap-2 border-2 border-gray-300 p-2 md:p-3 ${
-        highlight ? sectionHighlightClass : ""
-      }`}
+      className={`app-glass-card app-glass-card--lg relative flex flex-col justify-center gap-2 border-2 border-gray-300 p-4 md:p-6`}
     >
-      <div className="app-glass-card-content space-y-2">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <FunctionalItemCard
-            onUpdate={isDisabled ? undefined : onOpenShippingSettings}
-            disabled={isDisabled}
-            className={`col-span-1 app-glass-card app-glass-card--lg overflow-hidden border-2 ${
-              (caseInfos?.shippingMode || "normal") === "normal"
-                ? "border-primary bg-primary/5"
-                : "border-transparent bg-white"
-            }`}
-          >
-            <button
-              type="button"
-              disabled={isDisabled}
-              onClick={() =>
-                setCaseInfos({
-                  shippingMode: "normal",
-                  requestedShipDate: undefined,
-                })
-              }
-              className={`w-full h-full flex items-center justify-center gap-2 p-3 rounded-lg border-0 text-sm transition-all ${
-                (caseInfos?.shippingMode || "normal") === "normal"
-                  ? "text-primary font-medium"
-                  : "text-gray-600 hover:bg-gray-50"
-              } ${
-                isDisabled
-                  ? "opacity-50 cursor-not-allowed hover:bg-transparent"
-                  : ""
-              }`}
-            >
-              <Truck className="w-4 h-4" />
-              <span className="flex flex-col items-start leading-tight text-lg">
-                <span>묶음 배송</span>
-                <span className="text-sm text-slate-500">
-                  ({bulkLabelText}) 발송
-                </span>
+      <div className="app-glass-card-content space-y-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Truck className="w-5 h-5 text-primary" />
+            <div className="flex flex-col items-center">
+              <span className="text-lg font-medium text-foreground">
+                묶음 배송
               </span>
-            </button>
-          </FunctionalItemCard>
+            </div>
+          </div>
 
-          <div
-            className={`app-glass-card app-glass-card--lg overflow-hidden border-2 ${
-              caseInfos?.shippingMode === "express"
-                ? "border-orange-500 bg-orange-50"
-                : "border-transparent bg-white"
-            }`}
-          >
-            <button
-              type="button"
-              disabled={isDisabled}
-              onClick={() => {
-                if (isDisabled) return;
-                onSelectExpress();
-              }}
-              className={`w-full h-full flex items-center justify-center gap-2 p-3 rounded-lg border-0 text-sm transition-all ${
-                caseInfos?.shippingMode === "express"
-                  ? "text-orange-600 font-medium"
-                  : "text-gray-600 hover:bg-gray-50"
-              } ${
-                isDisabled
-                  ? "opacity-50 cursor-not-allowed hover:bg-transparent"
-                  : ""
-              }`}
-            >
-              <Zap className="w-4 h-4" />
-              <span className="flex flex-col items-start leading-tight text-lg">
-                <span>신속 배송</span>
-                {expressDisplayText && (
-                  <span
-                    className={`text-sm ${
-                      caseInfos?.shippingMode === "express"
-                        ? "text-orange-600"
-                        : "text-gray-500"
-                    }`}
-                  >
-                    {expressDisplayText} 발송
-                  </span>
-                )}
-              </span>
-            </button>
+          <div className="flex gap-2">
+            <div className="text-sm text-slate-500 font-medium mr-1 flex items-center gap-2">
+              발송일:
+            </div>
+            {WEEKDAYS.map((day) => (
+              <button
+                key={day.key}
+                type="button"
+                onClick={() => toggleDay(day.key)}
+                disabled={isDisabled || isUpdating}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  selectedDays.includes(day.key)
+                    ? "bg-primary text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                } ${
+                  isDisabled || isUpdating
+                    ? "opacity-50 cursor-not-allowed"
+                    : "cursor-pointer"
+                }`}
+              >
+                {day.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>

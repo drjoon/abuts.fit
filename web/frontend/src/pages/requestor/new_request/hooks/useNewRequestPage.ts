@@ -42,6 +42,14 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     null,
   );
 
+  const [duplicateResolutions, setDuplicateResolutions] = useState<
+    {
+      strategy: "skip" | "replace" | "remake";
+      caseId: string;
+      existingRequestId: string;
+    }[]
+  >([]);
+
   const [pendingUploadDecisions, setPendingUploadDecisions] = useState<
     Record<
       string,
@@ -755,6 +763,20 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   ]);
 
   // 제출/취소 처리
+  const handleServerDuplicateDetected = useCallback(
+    (payload: { mode: "active" | "tracking"; duplicates: any[] }) => {
+      if (!payload || !Array.isArray(payload.duplicates)) return;
+      setDuplicateResolutions([]);
+      setPendingUploadDecisions({});
+      setPendingUploadFiles(null);
+      setDuplicatePrompt({
+        mode: payload.mode,
+        duplicates: payload.duplicates,
+      });
+    },
+    [setDuplicatePrompt],
+  );
+
   const {
     handleSubmit: rawHandleSubmit,
     handleSubmitWithDuplicateResolutions:
@@ -772,6 +794,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     setSelectedPreviewIndex,
     caseInfosMap,
     patchDraftImmediately,
+    onDuplicateDetected: handleServerDuplicateDetected,
   });
 
   const handleSubmit = useCallback(async () => {
@@ -822,6 +845,15 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       return;
     }
 
+    // 2) 이미 결정된 duplicateResolutions가 있으면 함께 제출
+    if (duplicateResolutions.length > 0) {
+      await rawHandleSubmitWithDuplicateResolutions(
+        duplicateResolutions as any,
+      );
+      setDuplicateResolutions([]);
+      return;
+    }
+
     await rawHandleSubmit();
   }, [
     ensureSetupForUpload,
@@ -829,10 +861,12 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     pendingUploadDecisions,
     handleUploadUnchecked,
     files,
+    duplicateResolutions,
     rawHandleSubmit,
     rawHandleSubmitWithDuplicateResolutions,
     setPendingUploadDecisions,
     setPendingUploadFiles,
+    setDuplicateResolutions,
   ]);
 
   const handleSubmitWithDuplicateResolutions = useCallback(
@@ -916,7 +950,10 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     selectedRequest,
     duplicatePrompt,
     setDuplicatePrompt,
+    duplicateResolutions,
+    setDuplicateResolutions,
 
+    // 업로드/중복 상태
     pendingUploadFiles,
     setPendingUploadFiles,
     pendingUploadDecisions,

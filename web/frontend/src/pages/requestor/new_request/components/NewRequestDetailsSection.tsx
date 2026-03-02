@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
-import { Check, Upload, X } from "lucide-react";
+import { Check, Upload, X, Calendar } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
 import { NewRequestPatientImplantFields } from "./NewRequestPatientImplantFields";
 import { apiFetch } from "@/shared/api/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
 
 type ToastFn = (props: {
   title?: React.ReactNode;
@@ -130,6 +131,87 @@ export function NewRequestDetailsSection({
   onDrop,
   onFilesSelected,
 }: Props) {
+  const { token } = useAuthStore();
+  const [leadTimes, setLeadTimes] = useState<Record<string, any> | null>(null);
+
+  useEffect(() => {
+    const loadLeadTimes = async () => {
+      if (!token) return;
+      try {
+        const leadRes = await apiFetch<any>({
+          path: "/api/organizations/manufacturer-lead-times",
+          method: "GET",
+          token,
+        });
+        if (leadRes.ok && leadRes.data?.data) {
+          setLeadTimes(leadRes.data.data.leadTimes);
+        }
+      } catch (e) {
+        console.error("Failed to load lead times:", e);
+      }
+    };
+
+    void loadLeadTimes();
+  }, [token]);
+
+  const addBusinessDays = useCallback((start: Date, days: number) => {
+    if (!Number.isFinite(days) || days <= 0) return new Date(start);
+    const result = new Date(start);
+    let added = 0;
+    while (added < days) {
+      result.setDate(result.getDate() + 1);
+      const day = result.getDay();
+      if (day !== 0 && day !== 6) {
+        added += 1;
+      }
+    }
+    return result;
+  }, []);
+
+  const calculateEstimatedShipDate = useCallback(() => {
+    if (!leadTimes) return null;
+
+    const cache = new Map<string, string>();
+
+    return (diameter: number | null) => {
+      if (!Number.isFinite(diameter) || diameter == null) return null;
+
+      const d = Number(diameter);
+      let diameterKey: "d6" | "d8" | "d10" | "d12" = "d8";
+      if (d <= 6) diameterKey = "d6";
+      else if (d <= 8) diameterKey = "d8";
+      else if (d <= 10) diameterKey = "d10";
+      else diameterKey = "d12";
+
+      if (cache.has(diameterKey)) {
+        return cache.get(diameterKey) || null;
+      }
+
+      const rawLead = leadTimes?.[diameterKey]?.minBusinessDays;
+      const leadNumber = Number(rawLead);
+      const leadDays = Number.isFinite(leadNumber)
+        ? Math.max(1, leadNumber)
+        : 1;
+
+      const shipDate = addBusinessDays(new Date(), leadDays);
+
+      const formatted = shipDate.toLocaleDateString("ko-KR", {
+        month: "numeric",
+        day: "numeric",
+        weekday: "short",
+      });
+
+      const result = `${formatted} • ${leadDays}영업일 후`;
+      cache.set(diameterKey, result);
+      return result;
+    };
+  }, [addBusinessDays, leadTimes]);
+
+  const getEstimatedShipForDiameter = useMemo(
+    () => calculateEstimatedShipDate(),
+    [calculateEstimatedShipDate],
+  );
+
   const newSystemInfoCopy = useMemo(
     () =>
       '"신규 시스템 의뢰"로 무상처리되며, 개발을 위해 랩 아날로그 샘플을 보내주시길 요청드립니다.',
@@ -593,6 +675,20 @@ export function NewRequestDetailsSection({
                     return "";
                   })();
 
+                  const fileInfo = caseInfosMap?.[fileKey];
+                  const diameterValues = [
+                    fileInfo?.maxDiameter,
+                    fileInfo?.connectionDiameter,
+                  ]
+                    .map((v) => (v == null ? null : Number(v)))
+                    .filter((v) => Number.isFinite(v)) as number[];
+                  const diameter = diameterValues.length
+                    ? Math.max(...diameterValues)
+                    : null;
+                  const estimatedShip = getEstimatedShipForDiameter
+                    ? getEstimatedShipForDiameter(diameter)
+                    : null;
+
                   return (
                     <div
                       key={`${fileKey}-${index}`}
@@ -600,29 +696,37 @@ export function NewRequestDetailsSection({
                         openDetailModal(index);
                       }}
                       data-file-index={index}
-                      className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all flex items-center ${baseClasses} ${stateClasses} ${ringClasses} hover:border-gray-400`}
+                      className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} hover:border-gray-400`}
                     >
-                      <div className="relative z-10 flex items-center justify-between gap-3">
-                        <div className="truncate flex-1">{filename}</div>
-                        <div className="flex items-center gap-1">
-                          {isVerified && (
-                            <Check
-                              className="w-4 h-4 text-primary"
-                              aria-label="확인됨"
-                            />
-                          )}
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleRemoveFile(index);
-                            }}
-                            className="p-1 text-slate-400 hover:text-red-500"
-                            aria-label="파일 삭제"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
+                      <div className="relative z-10 flex flex-col gap-1.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="truncate flex-1">{filename}</div>
+                          <div className="flex items-center gap-1">
+                            {isVerified && (
+                              <Check
+                                className="w-4 h-4 text-primary"
+                                aria-label="확인됨"
+                              />
+                            )}
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleRemoveFile(index);
+                              }}
+                              className="p-1 text-slate-400 hover:text-red-500"
+                              aria-label="파일 삭제"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
+                        {estimatedShip && (
+                          <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                            <Calendar className="w-3 h-3" />
+                            <span>예상 발송: {estimatedShip}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

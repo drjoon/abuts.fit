@@ -22,6 +22,12 @@ router.put(
   requestorOrganizationController.updateMyOrganization,
 );
 
+router.patch(
+  "/me",
+  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  requestorOrganizationController.updateMyOrganization,
+);
+
 router.delete(
   "/me/business-license",
   requestorOrganizationController.clearMyBusinessLicense,

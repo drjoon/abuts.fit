@@ -966,10 +966,11 @@ export async function updateMyShippingMode(req, res) {
       });
     }
 
-    if (!["normal", "express"].includes(shippingMode)) {
+    // Only normal (bulk) shipping mode is supported now
+    if (shippingMode !== "normal") {
       return res.status(400).json({
         success: false,
-        message: "유효하지 않은 배송 방식입니다.",
+        message: "묶음 배송만 지원됩니다.",
       });
     }
 
@@ -989,12 +990,33 @@ export async function updateMyShippingMode(req, res) {
           const maxDiameter = req.caseInfos?.maxDiameter;
           const requestedAt = req.createdAt || new Date();
 
+          // Fetch requestor weeklyBatchDays for normal mode
+          let weeklyBatchDaysForSchedule = [];
+          if (shippingMode === "normal") {
+            try {
+              const orgId = getRequestorOrgId({ user: req.requestor });
+              if (orgId && Types.ObjectId.isValid(orgId)) {
+                const org = await RequestorOrganization.findById(orgId)
+                  .select({ "shippingPolicy.weeklyBatchDays": 1 })
+                  .lean();
+                weeklyBatchDaysForSchedule = Array.isArray(
+                  org?.shippingPolicy?.weeklyBatchDays,
+                )
+                  ? org.shippingPolicy.weeklyBatchDays
+                  : [];
+              }
+            } catch (e) {
+              // Continue without batch days
+            }
+          }
+
           // 생산 스케줄 재계산
           const newSchedule = recalculateProductionSchedule({
             currentStage: req.status,
             newShippingMode: shippingMode,
             maxDiameter,
             requestedAt,
+            weeklyBatchDays: weeklyBatchDaysForSchedule,
           });
 
           if (!newSchedule) continue;
@@ -1013,16 +1035,13 @@ export async function updateMyShippingMode(req, res) {
 
           // 발송 예정일(YYYY-MM-DD, KST)
           req.timeline = req.timeline || {};
-          const pickup = newSchedule?.scheduledShipPickup;
-          const pickupYmd = pickup ? toKstYmd(pickup) : null;
+
+          const pickupYmd = newSchedule?.scheduledShipPickup
+            ? toKstYmd(newSchedule.scheduledShipPickup)
+            : null;
+
           if (pickupYmd) {
             req.timeline.estimatedShipYmd = pickupYmd;
-          } else if (shippingMode === "express") {
-            const createdYmd = toKstYmd(req.createdAt) || getTodayYmdInKst();
-            req.timeline.estimatedShipYmd = await addKoreanBusinessDays({
-              startYmd: createdYmd,
-              days: 1,
-            });
           } else {
             req.timeline.estimatedShipYmd = await addKoreanBusinessDays({
               startYmd: toKstYmd(req.createdAt) || getTodayYmdInKst(),
@@ -1232,7 +1251,7 @@ export async function getShippingEstimate(req, res) {
       shippingMode: mode,
       maxDiameter,
       requestedAt: new Date(),
-      weeklyBatchDays: requestorWeeklyBatchDays,
+      weeklyBatchDays: mode === "normal" ? requestorWeeklyBatchDays : [],
     });
     const pickupYmdRaw = schedule?.scheduledShipPickup
       ? toKstYmd(schedule.scheduledShipPickup)
