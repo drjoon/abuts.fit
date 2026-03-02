@@ -28,7 +28,7 @@ type Props = {
   syncSelectedConnection: (
     manufacturer: string,
     system: string,
-    type: string
+    type: string,
   ) => void;
   clinicNameOptions: Option[];
   patientNameOptions: Option[];
@@ -43,8 +43,8 @@ type Props = {
 };
 
 export function NewRequestPatientImplantFields({
-  caseInfos,
-  setCaseInfos,
+  caseInfos: rawCaseInfos,
+  setCaseInfos: setCaseInfosRaw,
   showImplantSelect,
   readOnly,
   implantSelectSource = "hook",
@@ -68,6 +68,17 @@ export function NewRequestPatientImplantFields({
   clearAllTeethPresets,
   handleAddOrSelectClinic,
 }: Props) {
+  const enforcedImplantType = "Hex" as const;
+  const caseInfos =
+    rawCaseInfos && rawCaseInfos.implantType !== enforcedImplantType
+      ? { ...rawCaseInfos, implantType: enforcedImplantType }
+      : rawCaseInfos;
+  const setCaseInfos = (updates: Partial<CaseInfos>) => {
+    setCaseInfosRaw({
+      ...updates,
+      implantType: enforcedImplantType,
+    });
+  };
   const hasClinicName = Boolean((caseInfos?.clinicName || "").trim());
   const implantDisabled = Boolean(readOnly || !hasClinicName);
 
@@ -79,28 +90,11 @@ export function NewRequestPatientImplantFields({
     implantSelectSource === "caseInfos"
       ? caseInfos?.implantSystem || ""
       : implantSystem;
-  const currentType =
-    implantSelectSource === "caseInfos"
-      ? caseInfos?.implantType || ""
-      : implantType;
+  const currentType = enforcedImplantType;
 
   const currentTypeOptions = useMemo(() => {
-    if (implantSelectSource !== "caseInfos") return typeOptions;
-    return connections
-      .filter(
-        (c) =>
-          (!currentManufacturer || c.manufacturer === currentManufacturer) &&
-          (!currentSystem || c.system === currentSystem)
-      )
-      .map((c) => c.type)
-      .filter((v, idx, arr) => arr.indexOf(v) === idx);
-  }, [
-    implantSelectSource,
-    connections,
-    currentManufacturer,
-    currentSystem,
-    typeOptions,
-  ]);
+    return [enforcedImplantType];
+  }, [enforcedImplantType]);
 
   return (
     <>
@@ -238,24 +232,51 @@ export function NewRequestPatientImplantFields({
           <div className="space-y-1">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px] md:text-[11px]">
               <div className="min-w-0 space-y-1">
+                <Select value={currentType} disabled>
+                  <SelectTrigger disabled={implantDisabled || !currentSystem}>
+                    <SelectValue placeholder="유형" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(() => {
+                      const base = currentTypeOptions || [];
+                      const list =
+                        currentType && !base.includes(currentType)
+                          ? [currentType, ...base]
+                          : base;
+                      return list.map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {t}
+                        </SelectItem>
+                      ));
+                    })()}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="min-w-0 space-y-1">
                 <Select
                   value={currentManufacturer}
                   onValueChange={(value) => {
                     if (implantDisabled) return;
                     const firstForManufacturer = connections.find(
-                      (c) => c.manufacturer === value
+                      (c) =>
+                        c.manufacturer === value &&
+                        c.type === enforcedImplantType,
                     );
                     const nextSystem =
                       typeof firstForManufacturer?.system === "string"
                         ? firstForManufacturer.system
                         : "";
                     const firstForType = connections.find(
-                      (c) => c.manufacturer === value && c.system === nextSystem
+                      (c) =>
+                        c.manufacturer === value &&
+                        c.system === nextSystem &&
+                        c.type === enforcedImplantType,
                     );
                     const nextType =
                       typeof firstForType?.type === "string"
                         ? firstForType.type
-                        : "";
+                        : enforcedImplantType;
                     if (implantSelectSource === "caseInfos") {
                       setCaseInfos({
                         implantManufacturer: value,
@@ -268,7 +289,7 @@ export function NewRequestPatientImplantFields({
 
                     setImplantManufacturer(value);
                     setImplantSystem(nextSystem);
-                    setImplantType(nextType);
+                    setImplantType(enforcedImplantType);
                     syncSelectedConnection(value, nextSystem, nextType);
                     setCaseInfos({
                       implantManufacturer: value,
@@ -308,12 +329,13 @@ export function NewRequestPatientImplantFields({
                     const firstForType = connections.find(
                       (c) =>
                         c.manufacturer === currentManufacturer &&
-                        c.system === value
+                        c.system === value &&
+                        c.type === enforcedImplantType,
                     );
                     const nextType =
                       typeof firstForType?.type === "string"
                         ? firstForType.type
-                        : "";
+                        : enforcedImplantType;
                     if (implantSelectSource === "caseInfos") {
                       setCaseInfos({
                         implantSystem: value,
@@ -322,17 +344,17 @@ export function NewRequestPatientImplantFields({
                       syncSelectedConnection(
                         currentManufacturer,
                         value,
-                        nextType
+                        nextType,
                       );
                       return;
                     }
 
                     setImplantSystem(value);
-                    setImplantType(nextType);
+                    setImplantType(enforcedImplantType);
                     syncSelectedConnection(
                       implantManufacturer,
                       value,
-                      nextType
+                      nextType,
                     );
                     setCaseInfos({
                       implantSystem: value,
@@ -352,9 +374,9 @@ export function NewRequestPatientImplantFields({
                         ...new Set(
                           connections
                             .filter(
-                              (c) => c.manufacturer === currentManufacturer
+                              (c) => c.manufacturer === currentManufacturer,
                             )
-                            .map((c) => c.system)
+                            .map((c) => c.system),
                         ),
                       ];
                       const list =
@@ -364,55 +386,6 @@ export function NewRequestPatientImplantFields({
                       return list.map((s) => (
                         <SelectItem key={s} value={s}>
                           {s}
-                        </SelectItem>
-                      ));
-                    })()}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="min-w-0 space-y-1">
-                <Select
-                  value={currentType}
-                  onValueChange={(value) => {
-                    if (implantDisabled) return;
-                    if (implantSelectSource === "caseInfos") {
-                      setCaseInfos({
-                        implantType: value,
-                      });
-                      syncSelectedConnection(
-                        currentManufacturer,
-                        currentSystem,
-                        value
-                      );
-                      return;
-                    }
-
-                    setImplantType(value);
-                    syncSelectedConnection(
-                      implantManufacturer,
-                      implantSystem,
-                      value
-                    );
-                    setCaseInfos({
-                      implantType: value,
-                    });
-                  }}
-                  disabled={implantDisabled || !currentSystem}
-                >
-                  <SelectTrigger disabled={implantDisabled || !currentSystem}>
-                    <SelectValue placeholder="유형" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(() => {
-                      const base = currentTypeOptions || [];
-                      const list =
-                        currentType && !base.includes(currentType)
-                          ? [currentType, ...base]
-                          : base;
-                      return list.map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {t}
                         </SelectItem>
                       ));
                     })()}
