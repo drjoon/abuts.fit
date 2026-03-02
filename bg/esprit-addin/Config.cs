@@ -73,10 +73,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public static string SurfaceRootDirectory => GetEnvOrDefault(SurfaceRootEnv, DefaultSurfaceRootDirectory);
 
         public static string FaceHoleProcessPath => Path.Combine(
-            AddInRootDirectory, "AcroDent", "1_Face Hole", "네오_IS_R_FaceHole.prc");
+            AddInRootDirectory, "AcroDent", "1_Face Hole", "네오_IS_RH_FaceHole.prc");
 
         public static string ConnectionProcessPath => Path.Combine(
-            AddInRootDirectory, "AcroDent", "2_Connection", "네오_IS_R_Connection.prc");
+            AddInRootDirectory, "AcroDent", "2_Connection", "네오_IS_RH_Connection.prc");
 
         public static double TurningDepth => GetDoubleEnvOrDefault(TurningDepthEnv, DefaultTurningDepth);
         public static double ExitAngle => GetDoubleEnvOrDefault(ExitAngleEnv, DefaultExitAngle);

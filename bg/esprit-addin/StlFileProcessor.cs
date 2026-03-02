@@ -52,9 +52,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private double? _capturedStockDiameter;
         private string _backendLotNumber;
         private string _backendSerialCode;
-        private string _backendFaceHolePrcFileName;
-        private string _backendConnectionPrcFileName;
-        private readonly List<string> _runErrors = new();
         public string FaceHoleProcessFilePath { get; set; } = AppConfig.FaceHoleProcessPath;
         public string ConnectionMachiningProcessFilePath { get; set; } = AppConfig.ConnectionProcessPath;
         public double DefaultFrontLimitX { get; set; } = -9.5;
@@ -90,8 +87,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             double? stlBoundingTopZ = null;
             _backendLotNumber = null;
             _backendSerialCode = null;
-            _backendFaceHolePrcFileName = null;
-            _backendConnectionPrcFileName = null;
             try
             {
                 requestId = ExtractRequestIdFromStlPath(stlPath);
@@ -103,8 +98,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     _backendSerialCode = requestMetaResponse?.serialCode;
                     if (requestMeta != null)
                     {
-                        _backendFaceHolePrcFileName = string.IsNullOrWhiteSpace(requestMeta.faceHolePrcFileName) ? null : requestMeta.faceHolePrcFileName.Trim();
-                        _backendConnectionPrcFileName = string.IsNullOrWhiteSpace(requestMeta.connectionPrcFileName) ? null : requestMeta.connectionPrcFileName.Trim();
                         if (!string.IsNullOrWhiteSpace(requestMeta.lotNumber))
                         {
                             _backendLotNumber = requestMeta.lotNumber.Trim();
@@ -116,6 +109,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         }
                         AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantSystem}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}");
                         AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
+                        if (!ApplyBackendPrcNames(requestMeta))
+                        {
+                            AppLogger.Log("StlFileProcessor: 백엔드 PRC 설정 실패로 공정을 중단합니다.");
+                            return;
+                        }
                     }
                     else
                     {
@@ -198,246 +196,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 throw;
             }
         }
-        private static void TryRemovePlane(Document document, string planeName)
-        {
-            if (document?.Planes == null || string.IsNullOrWhiteSpace(planeName))
-            {
-                return;
-            }
-            try
-            {
-                Plane existing = null;
-                try { existing = document.Planes[planeName]; } catch { existing = null; }
-                if (existing != null)
-                {
-                    try
-                    {
-                        existing.GetType().InvokeMember("Delete", BindingFlags.InvokeMethod | BindingFlags.Public | BindingFlags.Instance, null, existing, null);
-                        AppLogger.Log($"DentalAddin: 기존 작업면 삭제 - {planeName}");
-                        return;
-                    }
-                    catch
-                    {
-                    }
-                }
-                object planes = document.Planes;
-                if (planes != null)
-                {
-                    try
-                    {
-                        planes.GetType().InvokeMember("Remove", BindingFlags.InvokeMethod | BindingFlags.Public | BindingFlags.Instance, null, planes, new object[] { planeName });
-                        AppLogger.Log($"DentalAddin: 기존 작업면 제거 - {planeName}");
-                    }
-                    catch
-                    {
-                    }
-                }
-            }
-            catch
-            {
-            }
-        }
-        private void EnsureCustomCyclePrc(Type mainModuleType)
-        {
-            try
-            {
-                string[] prcPaths = EnsurePrcArray(GetMainModuleField<string[]>(mainModuleType, "PrcFilePath"));
-                string[] prcNames = EnsurePrcArray(GetMainModuleField<string[]>(mainModuleType, "PrcFileName"));
-                string prcDir = GetMainModuleField<string>(mainModuleType, "PrcDirectory") ?? ResolvePrcDirectory();
-                bool nonConnection = false;
-                try
-                {
-                    nonConnection = GetStaticFieldValue<bool>("DentalAddin.MoveSTL_Module", "NonConnection");
-                }
-                catch
-                {
-                    nonConnection = false;
-                }
-                string subDir = nonConnection ? "1_Face Hole" : "2_Connection";
-                string targetFileName = nonConnection ? _backendFaceHolePrcFileName : _backendConnectionPrcFileName;
-                string appFallbackPath = nonConnection ? AppConfig.FaceHoleProcessPath : AppConfig.ConnectionProcessPath;
-                string original4 = (prcPaths.Length > 4) ? prcPaths[4] : null;
-                string original8 = (prcPaths.Length > 8) ? prcPaths[8] : null;
-                AppLogger.Log($"DentalAddin: [EnsureCustomCyclePrc] PRC 설정값 - NonConnection={nonConnection}, BackendFile={targetFileName}, PrcDir={prcDir}, Orig[4]={original4}, Orig[8]={original8}");
-                if (string.IsNullOrWhiteSpace(targetFileName))
-                {
-                    string expectedField = nonConnection ? "faceHolePrcFileName" : "connectionPrcFileName";
-                    string msg = $"백엔드 PRC 파일명이 비어있습니다. NonConnection={nonConnection}, SubDir={subDir}, ExpectedField={expectedField}, ExpectedPath=AcroDent\\{subDir}\\*.prc (백엔드 응답에 {expectedField} 채워주세요). 임의 폴백은 가공품 불량을 유발하므로 공정을 중단합니다.";
-                    AddRunError(msg);
-                    return;
-                }
-                string resolved = null;
-                if (!string.IsNullOrWhiteSpace(targetFileName))
-                {
-                    // 백엔드가 절대경로를 주는 경우(또는 로컬에 이미 존재하는 경로) 우선 사용
-                    try
-                    {
-                        if (Path.IsPathRooted(targetFileName))
-                        {
-                            string full = Path.GetFullPath(targetFileName);
-                            if (File.Exists(full))
-                            {
-                                resolved = full;
-                                AppLogger.Log($"DentalAddin: [EnsureCustomCyclePrc] PRC 절대경로 사용 - {Path.GetFileName(resolved)}");
-                            }
-                        }
-                    }
-                    catch
-                    {
-                    }
-                }
-                // 프로젝트 AcroDent 직접 시도
-                string projectAcroDent = Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", subDir);
-                if ((string.IsNullOrWhiteSpace(resolved) || !File.Exists(resolved)) && Directory.Exists(projectAcroDent) && !string.IsNullOrWhiteSpace(targetFileName))
-                {
-                    string exact = FindFileByNormalizedName(projectAcroDent, targetFileName);
-                    if (!string.IsNullOrWhiteSpace(exact) && File.Exists(exact))
-                    {
-                        resolved = exact;
-                        AppLogger.Log($"DentalAddin: [EnsureCustomCyclePrc] PRC 프로젝트 경로에서 정확히 발견 - {Path.GetFileName(resolved)}");
-                    }
-                }
-                // 백엔드가 준 파일명으로 찾지 못하면 에러 처리 (임의 폴백 금지)
-                if (string.IsNullOrWhiteSpace(resolved) || !File.Exists(resolved))
-                {
-                    string expectedField = nonConnection ? "faceHolePrcFileName" : "connectionPrcFileName";
-                    string msg = $"PRC를 찾을 수 없습니다. NonConnection={nonConnection}, SubDir={subDir}, BackendFile={targetFileName}, ExpectedField={expectedField}, ProjectDir={projectAcroDent}, PrcDir={prcDir}, Orig[4]={original4}, Orig[8]={original8}";
-                    AddRunError(msg);
-                    return;
-                }
-                if (prcPaths.Length > 4 || prcPaths.Length > 8)
-                {
-                    if (prcPaths.Length > 4)
-                    {
-                        prcPaths[4] = resolved;
-                        if (prcNames.Length > 4)
-                        {
-                            prcNames[4] = Path.GetFileName(resolved);
-                        }
-                    }
-                    if (prcPaths.Length > 8)
-                    {
-                        prcPaths[8] = resolved;
-                        if (prcNames.Length > 8)
-                        {
-                            prcNames[8] = Path.GetFileName(resolved);
-                        }
-                    }
-                    SetStaticField(mainModuleType, "PrcFilePath", prcPaths);
-                    SetStaticField(mainModuleType, "PrcFileName", prcNames);
-                    AppLogger.Log($"DentalAddin: [EnsureCustomCyclePrc] PRC 보정 완료 - NonConnection={nonConnection}, File={Path.GetFileName(resolved)} ([4],[8])");
-                }
-                else
-                {
-                    string msg = $"PRC 배열 길이 부족. Len={prcPaths.Length} (need index 4/8)";
-                    AddRunError(msg);
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Log($"DentalAddin: PRC[4]/[8] 보정 중 예외 - {ex.GetType().Name}:{ex.Message}\n{ex.StackTrace}");
-                AddRunError($"PRC 보정 실패: {ex.GetType().Name}:{ex.Message}");
-                return;
-            }
-        }
-        private void EnsureCorePrcDefaults(Type mainModuleType)
-        {
-            string prcRoot = GetMainModuleField<string>(mainModuleType, "PrcDirectory") ?? ResolvePrcDirectory();
-            string[] prcPaths = EnsurePrcArray(GetMainModuleField<string[]>(mainModuleType, "PrcFilePath"));
-            string[] prcNames = EnsurePrcArray(GetMainModuleField<string[]>(mainModuleType, "PrcFileName"));
-            AssignPrcIfEmptyByFolder(prcRoot, prcPaths, prcNames, 1, Path.Combine("3_Turning prc", "Turning.prc"));
-            AssignPrcIfEmptyByFolder(prcRoot, prcPaths, prcNames, 2, Path.Combine("4_ReverseTurning prc", "Reverse Turning Process.prc"));
-            AssignPrcIfEmptyByFolder(prcRoot, prcPaths, prcNames, 3, Path.Combine("5_Rough prc", "MillRough_3D.prc"));
-            AssignPrcIfEmptyByFolder(prcRoot, prcPaths, prcNames, 5, Path.Combine("8_0-180 prc", "3D.prc"));
-            AssignPrcIfEmptyByFolder(prcRoot, prcPaths, prcNames, 6, Path.Combine("9_90-270 prc", "3D_2.prc"));
-            AssignPrcIfEmptyByFolder(prcRoot, prcPaths, prcNames, 9, Path.Combine("6_Semi_Rough prc", "SemiRough_2D.prc"));
-            AssignPrcIfEmptyByFolder(prcRoot, prcPaths, prcNames, 10, Path.Combine("11_Composite prc", "5axisComposite_A.prc"));
-            AssignPrcIfEmptyByFolder(prcRoot, prcPaths, prcNames, 11, Path.Combine("11_Composite prc", "5axisComposite_B.prc"));
-            AssignPrcIfEmptyByFolder(prcRoot, prcPaths, prcNames, 12, Path.Combine("10_MarkText prc", "MarkText.prc"));
-            SetStaticField(mainModuleType, "PrcFilePath", prcPaths);
-            SetStaticField(mainModuleType, "PrcFileName", prcNames);
-        }
-        private static void AssignPrcIfEmptyByFolder(string prcRoot, string[] prcPaths, string[] prcNames, int index, string relativePath)
-        {
-            if (prcPaths == null || prcNames == null)
-            {
-                return;
-            }
-            if (index < 0 || index >= prcPaths.Length)
-            {
-                return;
-            }
-            if (!string.IsNullOrWhiteSpace(prcPaths[index]))
-            {
-                return;
-            }
-            try
-            {
-                string resolved = ResolveProcessPath(prcRoot, relativePath);
-                if (string.IsNullOrWhiteSpace(resolved) || !File.Exists(resolved))
-                {
-                    string dir = Path.GetDirectoryName(Path.Combine(prcRoot, relativePath)) ?? prcRoot;
-                    string file = Path.GetFileName(relativePath);
-                    string normalized = FindFileByNormalizedName(dir, file);
-                    if (!string.IsNullOrWhiteSpace(normalized) && File.Exists(normalized))
-                    {
-                        resolved = normalized;
-                    }
-                }
-                if (!string.IsNullOrWhiteSpace(resolved) && File.Exists(resolved))
-                {
-                    prcPaths[index] = resolved;
-                    if (index < prcNames.Length)
-                    {
-                        prcNames[index] = Path.GetFileName(resolved);
-                    }
-                    return;
-                }
-                string msg = $"필수 PRC를 찾을 수 없습니다. Index={index}, Relative={relativePath}, Root={prcRoot}";
-                AppLogger.Log($"DentalAddin: [AssignPrcIfEmptyByFolder] {msg}");
-                throw new FileNotFoundException(msg);
-            }
-            catch
-            {
-                throw;
-            }
-        }
-        private static string FindFileByNormalizedName(string directory, string targetFileName)
-        {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(directory) || string.IsNullOrWhiteSpace(targetFileName))
-                {
-                    return null;
-                }
-                if (!Directory.Exists(directory))
-                {
-                    return null;
-                }
-                string targetC = targetFileName.Normalize(NormalizationForm.FormC);
-                string targetD = targetFileName.Normalize(NormalizationForm.FormD);
-                foreach (string path in Directory.GetFiles(directory, "*", SearchOption.TopDirectoryOnly))
-                {
-                    string name = Path.GetFileName(path);
-                    if (string.Equals(name, targetFileName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return path;
-                    }
-                    string nameC = name.Normalize(NormalizationForm.FormC);
-                    string nameD = name.Normalize(NormalizationForm.FormD);
-                    if (string.Equals(nameC, targetC, StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(nameD, targetD, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return path;
-                    }
-                }
-            }
-            catch
-            {
-            }
-            return null;
-        }
         private void CaptureNcMetadata(Document document)
         {
             try
@@ -477,21 +235,64 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _capturedStockDiameter = null;
             _backendLotNumber = null;
             _backendSerialCode = null;
-            _backendFaceHolePrcFileName = null;
-            _backendConnectionPrcFileName = null;
-            _runErrors.Clear();
+            FaceHoleProcessFilePath = AppConfig.FaceHoleProcessPath;
+            ConnectionMachiningProcessFilePath = AppConfig.ConnectionProcessPath;
             lotNumber = "ACR";
             exTab = null;
             ResetDentalAddinMoveModuleState();
         }
-        private void AddRunError(string message)
+        private bool ApplyBackendPrcNames(RequestMetaCaseInfos requestMeta)
         {
-            if (string.IsNullOrWhiteSpace(message))
+            string faceName = requestMeta?.faceHolePrcFileName?.Trim();
+            string connectionName = requestMeta?.connectionPrcFileName?.Trim();
+            if (string.IsNullOrWhiteSpace(faceName) || string.IsNullOrWhiteSpace(connectionName))
             {
-                return;
+                AppLogger.Log($"StlFileProcessor.ApplyBackendPrcNames: 백엔드 PRC 파일명 누락 - faceHolePrcFileName={faceName}, connectionPrcFileName={connectionName}");
+                return false;
             }
-            _runErrors.Add(message);
-            AppLogger.Log($"ERROR: {message}");
+            if (!TryResolveBackendPrcPath("1_Face Hole", faceName, out string facePath))
+            {
+                return false;
+            }
+            if (!TryResolveBackendPrcPath("2_Connection", connectionName, out string connectionPath))
+            {
+                return false;
+            }
+            FaceHoleProcessFilePath = facePath;
+            ConnectionMachiningProcessFilePath = connectionPath;
+            AppLogger.Log($"StlFileProcessor.ApplyBackendPrcNames: FaceHole={Path.GetFileName(facePath)}, Connection={Path.GetFileName(connectionPath)}");
+            return true;
+        }
+        private static bool TryResolveBackendPrcPath(string subDir, string fileName, out string resolved)
+        {
+            resolved = null;
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                AppLogger.Log($"StlFileProcessor.TryResolveBackendPrcPath: PRC 파일명 누락 - subDir={subDir}");
+                return false;
+            }
+            try
+            {
+                if (Path.IsPathRooted(fileName))
+                {
+                    resolved = Path.GetFullPath(fileName);
+                }
+                else
+                {
+                    resolved = Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", subDir, fileName);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"StlFileProcessor.TryResolveBackendPrcPath: 경로 조합 실패 - {ex.GetType().Name}:{ex.Message}");
+                return false;
+            }
+            if (!File.Exists(resolved))
+            {
+                AppLogger.Log($"StlFileProcessor.TryResolveBackendPrcPath: PRC 파일 없음 - {resolved}");
+                return false;
+            }
+            return true;
         }
         private void ResetDentalAddinMoveModuleState()
         {
@@ -499,6 +300,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 SetMoveModuleDouble("FrontPointX", double.NaN);
                 SetMoveModuleDouble("BackPointX", double.NaN);
+
                 SetMoveModuleBool("NeedMove", false);
                 SetMoveModuleBool("NonConnection", false);
                 SetMoveModuleDouble("NeedMoveY", 0.0);
@@ -595,7 +397,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     AppLogger.Log($"StlFileProcessor: NC 헤더 수정 실패 - 파일 없음 ({ncFilePath})");
                     return;
                 }
-                AppLogger.Log($"StlFileProcessor: NC 헤더 읽기 시작 - Path={ncFilePath}");
                 var lines = new List<string>(File.ReadAllLines(ncFilePath));
                 if (lines.Count == 0)
                 {
@@ -682,7 +483,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
                 string normalizedSerial = NormalizeSerialCode(serialCode);
-                AppLogger.Log($"StlFileProcessor: Serial 블록 읽기 시작 - Path={ncFilePath}, Serial={normalizedSerial}");
                 var lines = new List<string>(File.ReadAllLines(ncFilePath));
                 bool serialUpdated = ReplaceSerialBlock(lines, "(Serial)", BuildSerialBlock(normalizedSerial, false));
                 bool serialDeburrUpdated = ReplaceSerialBlock(lines, "(Serial Deburr)", BuildSerialBlock(normalizedSerial, true));
@@ -1289,6 +1089,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     AppLogger.Log("StlFileProcessor: MainModule 타입을 찾을 수 없어 static 필드 초기화 생략");
                     return;
                 }
+
                 // MainModule의 주요 static 필드 초기화
                 ResetStaticField(mainModuleType, "Document", null);
                 ResetStaticField(mainModuleType, "Jump", 0);
@@ -1315,6 +1116,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 ResetStaticField(mainModuleType, "seg", null);
                 ResetStaticField(mainModuleType, "Pt12", null);
                 ResetStaticField(mainModuleType, "IntPt", null);
+
                 // 배열 필드 초기화
                 ResetStaticArrayField(mainModuleType, "Fcb2", 13);
                 ResetStaticArrayField(mainModuleType, "ptp", 7);
@@ -1327,6 +1129,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 ResetStaticArrayField(mainModuleType, "Percent", 5);
                 ResetStaticArrayField(mainModuleType, "PercentB", 5);
                 ResetStaticArrayField(mainModuleType, "NumberT", 9);
+
                 // MoveSTL_Module 초기화
                 Type moveModuleType = ResolveMoveModuleType(mainModuleType);
                 if (moveModuleType != null)
@@ -1344,6 +1147,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     ResetStaticField(moveModuleType, "RMTI", 0.0);
                     ResetStaticField(moveModuleType, "MTI", 0.0);
                 }
+
                 AppLogger.Log("StlFileProcessor: DentalAddin static 필드 초기화 완료");
             }
             catch (Exception ex)
@@ -1351,6 +1155,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log($"StlFileProcessor: DentalAddin static 필드 초기화 실패 - {ex.GetType().Name}:{ex.Message}");
             }
         }
+
         private void ResetStaticField(Type type, string fieldName, object value)
         {
             try
@@ -1366,6 +1171,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 // 필드가 없거나 설정 실패 시 무시
             }
         }
+
         private void ResetStaticArrayField(Type type, string fieldName, int length)
         {
             try
@@ -1383,7 +1189,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 // 필드가 없거나 설정 실패 시 무시
             }
         }
+
         private const string StlImportLayerName = "AbutsStlImport";
+
         private static void RemoveLayerIfExists(Document document, string layerName)
         {
             if (document?.Layers == null || string.IsNullOrWhiteSpace(layerName))
@@ -1413,6 +1221,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log($"StlFileProcessor: 레이어 제거 실패 - {layerName} ({ex.GetType().Name}:{ex.Message})");
             }
         }
+
         private static Layer GetOrCreateLayer(Document document, string layerName)
         {
             if (document?.Layers == null || string.IsNullOrWhiteSpace(layerName))
@@ -1440,11 +1249,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return null;
             }
         }
+
         private static void CleanupGraphics(Document document)
         {
             if (document == null || document.GraphicsCollection == null) return;
+
             int initialCount = document.GraphicsCollection.Count;
             if (initialCount == 0) return;
+
             // 역순으로 순회하며 조건에 맞는 객체 삭제
             int deletedCount = 0;
             for (int idx = initialCount; idx >= 1; idx--)
@@ -1453,7 +1265,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     dynamic obj = document.GraphicsCollection[idx];
                     if (obj == null) continue;
-                    espGraphicObjectType type = obj.GraphicObjectType;
+
+                    int rawType;
+                    try
+                    {
+                        rawType = Convert.ToInt32(obj.GraphicObjectType);
+                    }
+                    catch
+                    {
+                        // 타입 불명(예: COM 반환형 불일치)은 스킵
+                        continue;
+                    }
+
+                    espGraphicObjectType type = (espGraphicObjectType)rawType;
                     if (type == espGraphicObjectType.espOperation ||
                         type == espGraphicObjectType.espFeatureChain ||
                         type == espGraphicObjectType.espFreeFormFeature ||
@@ -1475,23 +1299,28 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 }
                 catch (Exception ex)
                 {
-                    AppLogger.Log($"StlFileProcessor: CleanupGraphics 삭제 실패 idx={idx} - {ex.GetType().Name}:{ex.Message}");
+                    AppLogger.Log($"StlFileProcessor: CleanupGraphics 단일 객체 삭제 실패 - {ex.GetType().Name}:{ex.Message}");
+                    // 개별 객체 삭제 실패는 로그만 남기고 계속 진행
                 }
             }
+
             if (deletedCount > 0)
             {
                 AppLogger.Log($"StlFileProcessor: CleanupGraphics - 초기:{initialCount}, 삭제됨:{deletedCount}, 남음:{document.GraphicsCollection.Count}");
             }
         }
+
         private static void EnsureCleanDocument(Document document)
         {
             if (document == null)
             {
                 return;
             }
+
             try
             {
                 AppLogger.Log($"StlFileProcessor: 초기화 전 - Ops:{SafeCount(document?.Operations)}, Chains:{SafeCount(document?.FeatureChains)}, FreeForms:{SafeCount(document?.FreeFormFeatures)}, Graphics:{SafeCount(document?.GraphicsCollection)}");
+
                 // SelectionSet은 누적되면 내부 상태가 꼬일 수 있어 최소한으로 정리
                 try
                 {
@@ -1509,6 +1338,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     AppLogger.Log($"StlFileProcessor: SelectionSets 초기화 실패 - {ex.GetType().Name}:{ex.Message}");
                 }
+
                 // 누적의 핵심: Operations 컬렉션을 먼저 제거 (toolpath 누적 방지)
                 try
                 {
@@ -1524,6 +1354,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     AppLogger.Log($"StlFileProcessor: Operations 초기화 실패 - {ex.GetType().Name}:{ex.Message}");
                 }
+
                 // FeatureChain / FreeFormFeature / FeatureSet 등은 그래픽으로도 남지만, 컬렉션에서도 제거
                 try
                 {
@@ -1539,6 +1370,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     AppLogger.Log($"StlFileProcessor: FeatureChains 초기화 실패 - {ex.GetType().Name}:{ex.Message}");
                 }
+
                 try
                 {
                     if (document.FreeFormFeatures != null)
@@ -1553,6 +1385,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     AppLogger.Log($"StlFileProcessor: FreeFormFeatures 초기화 실패 - {ex.GetType().Name}:{ex.Message}");
                 }
+
                 try
                 {
                     if (document.FeatureSets != null)
@@ -1567,6 +1400,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     AppLogger.Log($"StlFileProcessor: FeatureSets 초기화 실패 - {ex.GetType().Name}:{ex.Message}");
                 }
+
                 // 마지막으로 그래픽 컬렉션 정리 (STL/오퍼레이션/피처 잔존 방지)
                 try
                 {
@@ -1576,6 +1410,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     AppLogger.Log($"StlFileProcessor: GraphicsCollection 초기화 실패 - {ex.GetType().Name}:{ex.Message}");
                 }
+
                 document.Refresh();
                 AppLogger.Log($"StlFileProcessor: 초기화 후 - Ops:{SafeCount(document?.Operations)}, Chains:{SafeCount(document?.FeatureChains)}, FreeForms:{SafeCount(document?.FreeFormFeatures)}, Graphics:{SafeCount(document?.GraphicsCollection)}");
             }
@@ -1584,6 +1419,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log($"StlFileProcessor: 문서 초기화 실패 - {ex.GetType().Name}:{ex.Message}");
             }
         }
+
         private static int SafeCount(object comCollection)
         {
             try
@@ -1727,12 +1563,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     AppLogger.Log($"DentalAddin: MainModuleType Assembly 정보 로깅 실패 - {ex.GetType().Name}:{ex.Message}");
                 }
                 ConfigureDentalProcesses(mainModuleType);
-                if (_runErrors != null && _runErrors.Count > 0)
-                {
-                    AppLogger.Log("DentalAddin: 선행 검증 오류로 공정을 중단합니다 (ConfigureDentalProcesses)");
-                    return;
-                }
-                EnsureCorePrcDefaults(mainModuleType);
                 EnsureMainModuleContext(mainModuleType, document);
                 ApplyTurningParameters(mainModuleType);
                 EnsureMoveModuleDefaults(mainModuleType, document);
@@ -1742,14 +1572,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 InvokeMoveSurface(mainModuleType);
                 AppLogger.Log("DentalAddin: MoveSurface 실행 완료");
                 
-                AppLogger.Log($"DentalAddin: [InvokeMoveSTL] MoveSTL 실행 시작 (FrontLimit:{frontLimitX}, BackLimit:{backLimitX})");
+                AppLogger.Log($"DentalAddin: MoveSTL 실행 시작 (FrontLimit:{frontLimitX}, BackLimit:{backLimitX})");
                 InvokeMoveSTL(mainModuleType);
-                EnsureCustomCyclePrc(mainModuleType);
-                if (_runErrors != null && _runErrors.Count > 0)
-                {
-                    AppLogger.Log("DentalAddin: [EnsureCustomCyclePrc] PRC 검증 오류로 공정을 중단합니다 (EnsureCustomCyclePrc)");
-                    return;
-                }
                 
                 AppLogger.Log("DentalAddin: Emerge 실행 시작 - IGS 서피스 Merge 및 Translate");
                 InvokeEmerge(mainModuleType, document);
@@ -1770,11 +1594,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     ? "DentalAddin: SearchTool 실행 완료"
                     : "DentalAddin: SearchTool 미제공 - 기존 Tool 구성 사용");
                 EnsureCompositeTool(mainModuleType, document);
-                if (_runErrors != null && _runErrors.Count > 0)
-                {
-                    AppLogger.Log("DentalAddin: 누적 오류로 Main 실행을 중단합니다");
-                    return;
-                }
                 bool mainInvoked = TryInvokeMainModuleMethod(mainModuleType, "Main");
                 if (!mainInvoked)
                 {
@@ -1787,7 +1606,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             catch (Exception ex)
             {
                 Exception root = ex.GetBaseException();
-                AddRunError($"DentalAddin 실행 실패: {root.Message}");
                 AppLogger.Log($"StlFileProcessor: DentalAddin 실행 실패\n{root}");
             }
         }
@@ -1801,20 +1619,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             int[] numCombobox = GetMainModuleField<int[]>(mainModuleType, "NumCombobox");
             SetStaticField(mainModuleType, "PrcFilePath", prcPaths);
             SetStaticField(mainModuleType, "PrcFileName", prcNames);
-            EnsureCustomCyclePrc(mainModuleType);
-            if (_runErrors != null && _runErrors.Count > 0)
-            {
-                // PRC 필수값이 없으면 이후 공정에서 OpenProcess("")로 크래시가 날 수 있으므로 즉시 중단.
-                return;
-            }
             bool reverseEnabled = numCombobox != null && numCombobox.Length > 4 && numCombobox[4] == 1;
             SetStaticField(mainModuleType, "ReverseOn", reverseEnabled);
             AppLogger.Log(reverseEnabled
-                ? "DentalAddin: Reverse Turning 활성 (NumCombobox[4]=1)"
-                : "DentalAddin: Reverse Turning 비활성 (NumCombobox[4]!=1)");
+                ? "DentalAddin.ConfigureDentalProcesses: Reverse Turning 활성 (NumCombobox[4]=1)"
+                : "DentalAddin.ConfigureDentalProcesses: Reverse Turning 비활성 (NumCombobox[4]!=1)");
             double roughType = DetermineRoughType(numCombobox, prcPaths, out string roughReason);
             SetStaticField(mainModuleType, "RoughType", roughType);
-            AppLogger.Log($"DentalAddin: RoughType 자동 결정 - {roughType} ({roughReason})");
+            AppLogger.Log($"DentalAddin.ConfigureDentalProcesses: RoughType 자동 결정 - {roughType} ({roughReason})");
             EnsureCompositeEnabled(mainModuleType, prcPaths);
             EnsurePrcMappingsForFinishing(mainModuleType, prcPaths, prcNames);
             LogMainModuleArrays(mainModuleType);
@@ -1831,23 +1643,23 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 }
                 if (prcPaths == null || prcPaths.Length <= 10)
                 {
-                    AppLogger.Log("DentalAddin: [EnsurePrcMappingsForFinishing] FinishingMethod=1 이지만 PRC[10](5axisComposite) 배열 길이가 부족함");
+                    AppLogger.Log("DentalAddin 경고: FinishingMethod=1 이지만 PRC[10](5axisComposite) 배열 길이가 부족함");
                     return;
                 }
                 string compositePrc = prcPaths[10];
                 if (string.IsNullOrWhiteSpace(compositePrc))
                 {
                     string compositeName = (prcNames != null && prcNames.Length > 10) ? prcNames[10] : "(미지정)";
-                    AppLogger.Log($"DentalAddin 경고: [EnsurePrcMappingsForFinishing] FinishingMethod=1 이지만 PRC[10](5axisComposite:{compositeName}) 경로가 비어있음");
+                    AppLogger.Log($"DentalAddin 경고: FinishingMethod=1 이지만 PRC[10](5axisComposite:{compositeName}) 경로가 비어있음");
                 }
                 else
                 {
-                    AppLogger.Log($"DentalAddin: [EnsurePrcMappingsForFinishing] FinishingMethod=1 - PRC[10] 사용 ({Path.GetFileName(compositePrc)})");
+                    AppLogger.Log($"DentalAddin: FinishingMethod=1 - PRC[10] 사용 ({Path.GetFileName(compositePrc)})");
                 }
             }
             catch (Exception ex)
             {
-                AppLogger.Log($"DentalAddin: [EnsurePrcMappingsForFinishing] Finishing PRC 확인 실패 - {ex.GetType().Name}:{ex.Message}");
+                AppLogger.Log($"DentalAddin: Finishing PRC 확인 실패 - {ex.GetType().Name}:{ex.Message}");
             }
         }
         private static void EnsureCompositeEnabled(Type mainModuleType, string[] prcPaths)
@@ -1863,24 +1675,24 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 string compositePrc = (prcPaths != null && prcPaths.Length > 11) ? prcPaths[11] : null;
                 if (finishingMethod == 1)
                 {
-                    AppLogger.Log("DentalAddin: [EnsureCompositeEnabled] Finishing Method=4 axis 선택됨 (NumCombobox[1]=1)");
+                    AppLogger.Log("DentalAddin: Finishing Method=4 axis 선택됨 (NumCombobox[1]=1)");
                     if (string.IsNullOrWhiteSpace(compositePrc))
                     {
-                        AppLogger.Log("DentalAddin 경고: [EnsureCompositeEnabled] Finishing Method=4 axis지만 Composite2 PRC 경로가 비어있습니다.");
+                        AppLogger.Log("DentalAddin 경고: Finishing Method=4 axis지만 Composite2 PRC 경로가 비어있습니다.");
                     }
                     else
                     {
-                        AppLogger.Log($"DentalAddin: [EnsureCompositeEnabled] Composite2 PRC 준비됨 - {Path.GetFileName(compositePrc)}");
+                        AppLogger.Log($"DentalAddin: Composite2 PRC 준비됨 - {Path.GetFileName(compositePrc)}");
                     }
                 }
                 else
                 {
-                    AppLogger.Log($"DentalAddin: [EnsureCompositeEnabled] Finishing Method=3d Milling (NumCombobox[1]={finishingMethod})");
+                    AppLogger.Log($"DentalAddin: Finishing Method=3d Milling (NumCombobox[1]={finishingMethod})");
                 }
             }
             catch (Exception ex)
             {
-                AppLogger.Log($"DentalAddin: [EnsureCompositeEnabled] Finishing PRC 확인 실패 - {ex.GetType().Name}:{ex.Message}");
+                AppLogger.Log($"DentalAddin: NumCombobox[3] 보정 실패 - {ex.GetType().Name}:{ex.Message}");
             }
         }
         private static void LogMainModuleArrays(Type mainModuleType)
@@ -2032,7 +1844,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 string xmlPath = xmlField?.GetValue(null) as string;
                 if (string.IsNullOrWhiteSpace(xmlPath) || !File.Exists(xmlPath))
                 {
-                    AppLogger.Log($"DentalAddin: UserData xml 없음 - {xmlPath}");
+                    AppLogger.Log($"DentalAddin.TryApplyDentalUserData: UserData xml 없음 - {xmlPath}");
                     return;
                 }
                 Assembly asm = mainModuleType.Assembly;
@@ -2040,42 +1852,112 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 Type userDataType = asm.GetType("DentalAddin.UserData");
                 if (serializableType == null || userDataType == null)
                 {
-                    AppLogger.Log("DentalAddin: UserData 타입/SerializableData 타입을 찾지 못해 로드 생략");
+                    AppLogger.Log("DentalAddin.TryApplyDentalUserData: UserData 타입/SerializableData 타입을 찾지 못해 로드 생략");
                     return;
                 }
                 MethodInfo loadMethod = serializableType.GetMethod("Load", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(string), typeof(Type) }, null);
                 if (loadMethod == null)
                 {
-                    AppLogger.Log("DentalAddin: SerializableData.Load 메서드를 찾지 못해 로드 생략");
+                    AppLogger.Log("DentalAddin.TryApplyDentalUserData: SerializableData.Load 메서드를 찾지 못해 로드 생략");
                     return;
                 }
                 object ud = loadMethod.Invoke(null, new object[] { xmlPath, userDataType });
                 if (ud == null)
                 {
-                    AppLogger.Log("DentalAddin: UserData 로드 결과가 null");
+                    AppLogger.Log("DentalAddin.TryApplyDentalUserData: UserData 로드 결과가 null");
                     return;
                 }
+                string udDir = userDataType.GetField("PrcDirectory")?.GetValue(ud) as string;
+                if (!string.IsNullOrWhiteSpace(udDir) && Directory.Exists(udDir))
+                {
+                    prcDirectory = udDir;
+                    AppLogger.Log($"DentalAddin.TryApplyDentalUserData: UserData.PrctDirectory 적용 - {prcDirectory}");
+                }
+                string[] udPaths = userDataType.GetField("PrcFilePath")?.GetValue(ud) as string[];
+                string[] udNames = userDataType.GetField("PrcFileName")?.GetValue(ud) as string[];
                 double[] udNumData = userDataType.GetField("NumData")?.GetValue(ud) as double[];
                 int[] udNumCombobox = userDataType.GetField("NumCombobox")?.GetValue(ud) as int[];
                 if (udNumData != null)
                 {
                     SetStaticField(mainModuleType, "NumData", udNumData);
-                    AppLogger.Log($"DentalAddin: UserData.NumData 적용 (Len:{udNumData.Length})");
+                    AppLogger.Log($"DentalAddin.TryApplyDentalUserData: UserData.NumData 적용 (Len:{udNumData.Length})");
                 }
                 if (udNumCombobox != null)
                 {
                     SetStaticField(mainModuleType, "NumCombobox", udNumCombobox);
-                    AppLogger.Log($"DentalAddin: UserData.NumCombobox 적용 (Len:{udNumCombobox.Length})");
+                    AppLogger.Log($"DentalAddin.TryApplyDentalUserData: UserData.NumCombobox 적용 (Len:{udNumCombobox.Length})");
+                }
+                if (udPaths != null)
+                {
+                    string[] current = EnsurePrcArray(GetMainModuleField<string[]>(mainModuleType, "PrcFilePath"));
+                    int max = Math.Min(current.Length, udPaths.Length);
+                    for (int i = 0; i < max; i++)
+                    {
+                        if (!string.IsNullOrWhiteSpace(udPaths[i]))
+                        {
+                            string resolved = ResolveProcessPath(prcDirectory, udPaths[i]);
+                            string legacyName = null;
+                            try { legacyName = Path.GetFileName(resolved); } catch { legacyName = null; }
+                            if (string.Equals(legacyName, "네오_R_Connection_H.prc", StringComparison.OrdinalIgnoreCase))
+                            {
+                                resolved = ResolveProcessPath(prcDirectory, AppConfig.FaceHoleProcessPath);
+                            }
+                            else if (string.Equals(legacyName, "네오_R_Connection.prc", StringComparison.OrdinalIgnoreCase))
+                            {
+                                resolved = ResolveProcessPath(prcDirectory, AppConfig.ConnectionProcessPath);
+                            }
+                            if (!string.IsNullOrWhiteSpace(resolved) && Directory.Exists(resolved))
+                            {
+                                string name = (udNames != null && i < udNames.Length) ? udNames[i] : null;
+                                if (!string.IsNullOrWhiteSpace(name))
+                                {
+                                    string combined = Path.Combine(resolved, name);
+                                    if (File.Exists(combined))
+                                    {
+                                        resolved = combined;
+                                    }
+                                }
+                            }
+                            current[i] = resolved;
+                        }
+                    }
+                    SetStaticField(mainModuleType, "PrcFilePath", current);
+                    AppLogger.Log($"DentalAddin.TryApplyDentalUserData: UserData.PrcFilePath 적용 (Len:{udPaths.Length})");
+                }
+                if (udNames != null)
+                {
+                    string[] current = EnsurePrcArray(GetMainModuleField<string[]>(mainModuleType, "PrcFileName"));
+                    int max = Math.Min(current.Length, udNames.Length);
+                    for (int i = 0; i < max; i++)
+                    {
+                        if (!string.IsNullOrWhiteSpace(udNames[i]))
+                        {
+                            if (string.Equals(udNames[i], "네오_R_Connection_H.prc", StringComparison.OrdinalIgnoreCase))
+                            {
+                                current[i] = Path.GetFileName(AppConfig.FaceHoleProcessPath);
+                            }
+                            else if (string.Equals(udNames[i], "네오_R_Connection.prc", StringComparison.OrdinalIgnoreCase))
+                            {
+                                current[i] = Path.GetFileName(AppConfig.ConnectionProcessPath);
+                            }
+                            else
+                            {
+                                current[i] = udNames[i];
+                            }
+                        }
+                    }
+                    SetStaticField(mainModuleType, "PrcFileName", current);
+                    AppLogger.Log($"DentalAddin.TryApplyDentalUserData: UserData.PrcFileName 적용 (Len:{udNames.Length})");
                 }
             }
             catch (TargetInvocationException tie)
             {
                 Exception root = tie.GetBaseException();
-                AppLogger.Log($"DentalAddin: UserData 로드 중 예외\n{root}");
+                AppLogger.Log($"DentalAddin.TryApplyDentalUserData: UserData 로드 중 예외\n{root}");
             }
             catch (Exception ex)
             {
-                AppLogger.Log($"DentalAddin: UserData 적용 실패 - {ex.GetType().Name}:{ex.Message}");
+                AppLogger.Log($"DentalAddin.TryApplyDentalUserData: UserData 적용 실패 - {ex.GetType().Name}:{ex.Message}");
             }
         }
         private static double DetermineRoughType(int[] numCombobox, string[] prcPaths, out string reason)
@@ -2174,14 +2056,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         {
             if (string.IsNullOrWhiteSpace(configuredPath))
             {
-                AppLogger.Log("DentalAddin: PRC 경로 설정이 비어있어 스킵");
                 return string.Empty;
-            }
-            if (string.IsNullOrWhiteSpace(baseDirectory) || !Directory.Exists(baseDirectory))
-            {
-                string msg = $"PRC 루트 디렉터리가 유효하지 않습니다. BaseDirectory={baseDirectory}";
-                AppLogger.Log($"DentalAddin: {msg}");
-                throw new DirectoryNotFoundException(msg);
             }
             string candidate = configuredPath;
             if (!Path.IsPathRooted(candidate))
@@ -2191,7 +2066,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             string fullPath = Path.GetFullPath(candidate);
             if (File.Exists(fullPath))
             {
-                AppLogger.Log($"DentalAddin: PRC 파일 확인 - {fullPath}");
                 return fullPath;
             }
             string relative = configuredPath;
@@ -2201,26 +2075,57 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     relative = relative.Substring(baseDirectory.Length);
                 }
+                else if (relative.StartsWith(AppConfig.PrcRootDirectory, StringComparison.OrdinalIgnoreCase))
+                {
+                    relative = relative.Substring(AppConfig.PrcRootDirectory.Length);
+                }
                 else
                 {
                     relative = Path.GetFileName(relative);
                 }
             }
             relative = relative.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            AppLogger.Log($"DentalAddin: [ResolveProcessPath] PRC 파일을 찾을 수 없음 - {fullPath}");
+            string fallback = Path.Combine(AppConfig.PrcRootDirectory, relative);
+            string fallbackFull = Path.GetFullPath(fallback);
+            if (File.Exists(fallbackFull))
+            {
+                AppLogger.Log($"DentalAddin.ResolveProcessPath: PRC 기본 경로에서 찾지 못해 AcroDent 경로로 대체 - {fallbackFull}");
+                return fallbackFull;
+            }
+            AppLogger.Log($"DentalAddin.ResolveProcessPath: PRC 파일을 찾을 수 없음 - {fullPath}");
             return fullPath;
         }
         private static string ResolvePrcDirectory()
         {
-            string addInPrc = Path.Combine(AppConfig.AddInRootDirectory, "AcroDent");
-            if (Directory.Exists(addInPrc))
+            string prcRoot = AppConfig.PrcRootDirectory;
+            string faceHole = Path.Combine(prcRoot, "1_Face Hole", Path.GetFileName(AppConfig.FaceHoleProcessPath));
+            string connection = Path.Combine(prcRoot, "2_Connection", Path.GetFileName(AppConfig.ConnectionProcessPath));
+            if (Directory.Exists(prcRoot) && (File.Exists(faceHole) || File.Exists(connection)))
             {
-                AppLogger.Log($"DentalAddin: [ResolvePrcDirectory] PRC 경로를 AddIn 루트로 보정 - {addInPrc}");
+                return prcRoot;
+            }
+
+            string addInPrc = Path.Combine(AppConfig.AddInRootDirectory, "AcroDent");
+            string addInFaceHole = Path.Combine(addInPrc, "1_Face Hole", Path.GetFileName(AppConfig.FaceHoleProcessPath));
+            string addInConnection = Path.Combine(addInPrc, "2_Connection", Path.GetFileName(AppConfig.ConnectionProcessPath));
+            if (Directory.Exists(addInPrc) && (File.Exists(addInFaceHole) || File.Exists(addInConnection)))
+            {
+                AppLogger.Log($"DentalAddin.ResolvePrcDirectory: PRC 경로를 AddIn 루트로 보정 - {addInPrc}");
                 return addInPrc;
             }
-            string msg = $"PRC 디렉터리를 찾을 수 없습니다. Expected={addInPrc}";
-            AppLogger.Log($"DentalAddin: {msg}");
-            throw new DirectoryNotFoundException(msg);
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string direct = Path.Combine(baseDir, "AcroDent");
+            if (Directory.Exists(direct))
+            {
+                return direct;
+            }
+            string relative = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "AcroDent"));
+            if (Directory.Exists(relative))
+            {
+                return relative;
+            }
+            AppLogger.Log($"DentalAddin.ResolvePrcDirectory: PRC 디렉터리를 찾을 수 없어 기본 경로 사용 - {prcRoot}");
+            return prcRoot;
         }
         private static Type ResolveMainModuleType()
         {
@@ -2470,14 +2375,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log("DentalAddin: MoveSTL_Module 타입을 찾을 수 없어 MoveSurface 호출 생략");
                 return;
             }
-            try
-            {
-                Document doc = GetMainModuleField<Document>(mainModuleType, "Document");
-                TryRemovePlane(doc, "CutPlane");
-            }
-            catch
-            {
-            }
             bool invoked = TryInvokeModuleMethod(moveModuleType, "MoveSurface");
             if (!invoked)
             {
@@ -2511,21 +2408,25 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log("DentalAddin: MainModule 타입이 null이어서 Emerge 호출 생략");
                 return;
             }
+
             if (document == null)
             {
                 AppLogger.Log("DentalAddin: Document가 null이어서 Emerge 호출 생략");
                 return;
             }
+
             if (TryInvokeCustomSurfaceMerge(mainModuleType, document))
             {
                 return;
             }
+
             bool invoked = TryInvokeMainModuleMethod(mainModuleType, "Emerge", false);
             if (!invoked)
             {
                 AppLogger.Log("DentalAddin: Emerge 메서드 호출 실패");
                 return;
             }
+
             // Emerge 실행 후 SurfaceNumber 로깅
             try
             {
@@ -2541,6 +2442,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log($"DentalAddin: Emerge 결과 로깅 실패 - {ex.GetType().Name}:{ex.Message}");
             }
         }
+
         private bool TryInvokeCustomSurfaceMerge(Type mainModuleType, Document document)
         {
             string surfaceRoot = AppConfig.SurfaceRootDirectory;
@@ -2549,6 +2451,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log($"DentalAddin: SurfaceRoot 없음 - {surfaceRoot}");
                 return false;
             }
+
             double rl = 1.0;
             try
             {
@@ -2562,43 +2465,50 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 rl = 1.0;
             }
+
             string projectFile = rl == 2.0 ? "Project2.igs" : "Project1.igs";
             string extrudeFile = rl == 2.0 ? "ExtrudeL.igs" : "ExtrudeR.igs";
             string projectPath = Path.Combine(surfaceRoot, projectFile);
             string extrudePath = Path.Combine(surfaceRoot, extrudeFile);
+
             if (!File.Exists(projectPath))
             {
                 AppLogger.Log($"DentalAddin: Surface 파일 없음 - {projectPath}");
                 return false;
             }
+
             try
             {
                 int beforeCount = document.GraphicsCollection.Count;
-                HashSet<string> beforeKeys = SnapshotGraphicKeys(document);
                 AppLogger.Log($"DentalAddin: Surface Merge(1) - {projectPath}");
                 document.MergeFile(projectPath, Missing.Value);
-                GraphicObject surface = FindMergedSurface(document, beforeCount, beforeKeys);
+
+                GraphicObject surface = FindMergedSurface(document, beforeCount);
                 if (surface == null)
                 {
-                    int afterCount = document?.GraphicsCollection?.Count ?? 0;
-                    AppLogger.Log($"DentalAddin: Merge된 Surface를 찾지 못했습니다. (beforeCount={beforeCount}, afterCount={afterCount}, project={projectFile})");
+                    AppLogger.Log("DentalAddin: Merge된 Surface를 찾지 못했습니다.");
                     return true;
                 }
+
                 surface.Layer.Visible = false;
                 FieldInfo surfaceNumberField = mainModuleType.GetField("SurfaceNumber", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
                 surfaceNumberField?.SetValue(null, Convert.ToInt32(surface.Key, CultureInfo.InvariantCulture));
+
                 SelectionSet selectionSet = GetOrCreateSelectionSet(document, "Smove");
                 selectionSet.RemoveAll();
+
                 Type moveModuleType = ResolveMoveModuleType(mainModuleType);
                 bool needMove = moveModuleType != null && Convert.ToBoolean(moveModuleType.GetField("NeedMove", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(null) ?? false);
                 double needMoveY = moveModuleType != null ? Convert.ToDouble(moveModuleType.GetField("NeedMoveY", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(null) ?? 0.0) : 0.0;
                 double needMoveZ = moveModuleType != null ? Convert.ToDouble(moveModuleType.GetField("NeedMoveZ", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(null) ?? 0.0) : 0.0;
+
                 if (needMove)
                 {
                     selectionSet.Add(surface, Missing.Value);
                     selectionSet.Translate(0.0, needMoveY, needMoveZ, Missing.Value);
                     selectionSet.RemoveAll();
                 }
+
                 int[] numCombobox = GetMainModuleField<int[]>(mainModuleType, "NumCombobox");
                 int finishingMethod = (numCombobox != null && numCombobox.Length > 1) ? numCombobox[1] : 0;
                 if (finishingMethod == 1)
@@ -2606,16 +2516,17 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     AppLogger.Log("DentalAddin: FinishingMethod==1, Extrude Merge 생략");
                     return true;
                 }
+
                 if (!File.Exists(extrudePath))
                 {
                     AppLogger.Log($"DentalAddin: Extrude 파일 없음 - {extrudePath}");
                     return true;
                 }
+
                 beforeCount = document.GraphicsCollection.Count;
-                beforeKeys = SnapshotGraphicKeys(document);
                 AppLogger.Log($"DentalAddin: Surface Merge(2) - {extrudePath}");
                 document.MergeFile(extrudePath, Missing.Value);
-                GraphicObject extrudeSurface = FindMergedSurface(document, beforeCount, beforeKeys, surface.Key);
+                GraphicObject extrudeSurface = FindMergedSurface(document, beforeCount, surface.Key);
                 if (extrudeSurface != null)
                 {
                     extrudeSurface.Layer.Visible = false;
@@ -2624,6 +2535,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     FieldInfo gasField = mainModuleType.GetField("Gas", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
                     gasField?.SetValue(null, extrudeSurface);
                 }
+
                 return true;
             }
             catch (Exception ex)
@@ -2632,76 +2544,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return false;
             }
         }
-        private static HashSet<string> SnapshotGraphicKeys(Document document)
-        {
-            HashSet<string> keys = new HashSet<string>(StringComparer.Ordinal);
-            if (document?.GraphicsCollection == null)
-            {
-                return keys;
-            }
-            try
-            {
-                foreach (GraphicObject graphic in document.GraphicsCollection)
-                {
-                    if (graphic == null)
-                    {
-                        continue;
-                    }
-                    keys.Add(FormatGraphicKey(graphic.Key));
-                }
-            }
-            catch
-            {
-            }
-            return keys;
-        }
-        private static string FormatGraphicKey(object key)
-        {
-            if (key == null)
-            {
-                return string.Empty;
-            }
-            try
-            {
-                return Convert.ToString(key, CultureInfo.InvariantCulture) ?? string.Empty;
-            }
-            catch
-            {
-                return key.ToString();
-            }
-        }
-        private static GraphicObject FindMergedSurface(Document document, int beforeCount, HashSet<string> beforeKeys, object excludedKey = null)
+
+        private static GraphicObject FindMergedSurface(Document document, int beforeCount, object excludedKey = null)
         {
             if (document?.GraphicsCollection == null)
             {
                 return null;
             }
-            string excluded = excludedKey != null ? FormatGraphicKey(excludedKey) : null;
-            if (beforeKeys != null && beforeKeys.Count > 0)
-            {
-                try
-                {
-                    foreach (GraphicObject graphicObject in document.GraphicsCollection)
-                    {
-                        if (graphicObject?.GraphicObjectType != espGraphicObjectType.espSurface)
-                        {
-                            continue;
-                        }
-                        string key = FormatGraphicKey(graphicObject.Key);
-                        if (!string.IsNullOrEmpty(excluded) && string.Equals(key, excluded, StringComparison.Ordinal))
-                        {
-                            continue;
-                        }
-                        if (!beforeKeys.Contains(key))
-                        {
-                            return graphicObject;
-                        }
-                    }
-                }
-                catch
-                {
-                }
-            }
+
             int count = document.GraphicsCollection.Count;
             for (int i = beforeCount + 1; i <= count; i++)
             {
@@ -2716,6 +2566,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 }
                 return graphicObject;
             }
+
             return null;
         }
         
