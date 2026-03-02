@@ -40,9 +40,6 @@
     <StartProgram>C:\Program Files (x86)\D.P.Technology\ESPRIT\Prog\esprit.exe</StartProgram>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="DentalAddin">
-      <HintPath>.\DentalAddin.dll</HintPath>
-    </Reference>
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="Microsoft.VisualBasic" />
     <Reference Include="EspritAddInAssistant, Version=12.4.4.22230, Culture=neutral, processorArchitecture=MSIL">
@@ -147,6 +144,7 @@
     <Compile Include="DentalAddinDecomp\DentalAddin\Mark.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\Milling_Module.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\MoveSTL_Module.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\DentalPanel.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\RECT.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\SerializableData.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\TurningFeature_Module.cs" />

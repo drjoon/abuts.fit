@@ -31,7 +31,6 @@ C:\abuts.fit\bg\esprit-addin\bin\x86\Debug\DentalAddin.dll
 C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\ESPRIT2025AddinProject.dll.config
 C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\ESPRIT2025AddinProject.dll
 C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\ESPRIT2025AddinProject.pdb
-C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\DentalAddin.dll
 C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\EspritAddInAssistant.dll
 C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\Interop.EspritCommands.dll
 C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\EspritAddInAssistant.xml
