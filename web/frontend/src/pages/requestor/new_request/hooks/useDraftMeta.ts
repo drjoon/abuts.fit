@@ -338,6 +338,7 @@ export function useDraftMeta() {
           "workType",
           "shippingMode",
           "requestedShipDate",
+          "newSystemRequest",
         ]);
         keys.forEach((key) => {
           if (prev[key] !== updated[key]) {

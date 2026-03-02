@@ -53,9 +53,17 @@ export const WorksheetCardGrid = ({
     {requests.map((request) => {
       const caseInfos = (request.caseInfos ||
         {}) as typeof request.caseInfos & {
-        newSystemRequest?: { requested?: boolean };
+        newSystemRequest?: { requested?: boolean; free?: boolean };
       };
-      const isNewSystemRequest = !!caseInfos.newSystemRequest?.requested;
+      const newSystemData = caseInfos.newSystemRequest;
+      const isNewSystemRequest = !!newSystemData?.requested;
+      console.log("[WorksheetCardGrid] case", {
+        requestId: request.requestId,
+        patientName: caseInfos.patientName,
+        tooth: caseInfos.tooth,
+        newSystemRequest: newSystemData,
+        isNewSystemRequest,
+      });
       const workType = (() => {
         const ciWorkType = caseInfos.workType as
           | "abutment"
@@ -116,6 +124,7 @@ export const WorksheetCardGrid = ({
       const progress = uploadProgress[request._id];
       const isUploading = uploading[request._id];
       const requestStageLabel = stageLabel;
+      const showCamDiameter = isCamStage || isMachiningStage;
       const requestStageOrder = stageOrder[requestStageLabel] ?? 0;
       const isCompletedForCurrentStage = requestStageOrder > currentStageOrder;
 
@@ -485,13 +494,16 @@ export const WorksheetCardGrid = ({
                   </>
                 )}
               </div>
-              {(maxDiameter != null || camDiameter != null) && (
+              {(maxDiameter != null ||
+                (showCamDiameter && camDiameter != null)) && (
                 <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
                   {maxDiameter != null && (
                     <span>최대 직경 {maxDiameter.toFixed(3)}</span>
                   )}
-                  {maxDiameter != null && camDiameter != null && <span>•</span>}
-                  {camDiameter != null && (
+                  {maxDiameter != null &&
+                    showCamDiameter &&
+                    camDiameter != null && <span>•</span>}
+                  {showCamDiameter && camDiameter != null && (
                     <span>CAM 직경 {camDiameter.toFixed(3)}</span>
                   )}
                 </div>

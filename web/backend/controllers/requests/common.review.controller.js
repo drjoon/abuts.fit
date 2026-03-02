@@ -212,29 +212,21 @@ async function screenCamMachineForRequest({ request }) {
 async function chooseMachineForCamMachining({ request }) {
   if (!request) throw new Error("request is required");
   const schedule = request.productionSchedule || {};
+  const toDiameterGroup = (d) => {
+    if (!Number.isFinite(d) || d <= 0) return null;
+    if (d <= 6) return "6";
+    if (d <= 8) return "8";
+    if (d <= 10) return "10";
+    return "12";
+  };
 
-  const existingMachineId = String(
-    schedule.assignedMachine || request.assignedMachine || "",
-  ).trim();
-  const existingQueuePos = Number(schedule.queuePosition);
-  if (existingMachineId) {
-    return {
-      machineId: existingMachineId,
-      queuePosition: Number.isFinite(existingQueuePos)
-        ? existingQueuePos
-        : null,
-      diameterGroup:
-        schedule.diameterGroup || inferDiameterGroupFromRequest(request),
-      diameter:
-        schedule.diameter || Number(request?.caseInfos?.maxDiameter) || null,
-    };
-  }
-
-  const diameterGroup = inferDiameterGroupFromRequest(request);
-  let targetMachineId = null;
+  const targetDiameterRaw = Number(request?.caseInfos?.maxDiameter);
+  const targetDiameter = Number.isFinite(targetDiameterRaw)
+    ? targetDiameterRaw
+    : Number(schedule?.diameter) || 8;
 
   const cncMachines = await CncMachine.find({ status: "active" })
-    .select({ machineId: 1, maxModelDiameterGroups: 1 })
+    .select({ machineId: 1, maxModelDiameterGroups: 1, currentMaterial: 1 })
     .lean();
   const machineIds = cncMachines
     .map((m) => String(m?.machineId || "").trim())
@@ -250,57 +242,70 @@ async function chooseMachineForCamMachining({ request }) {
       .filter(Boolean),
   );
 
-  const candidates = cncMachines
-    .filter((m) => {
-      const uid = String(m?.machineId || "").trim();
-      if (!uid || !allowAssignSet.has(uid)) return false;
-      const groups = Array.isArray(m?.maxModelDiameterGroups)
-        ? m.maxModelDiameterGroups
-        : [];
-      return groups.includes(diameterGroup);
+  const candidatesWithDia = cncMachines
+    .map((m) => {
+      const machineId = String(m?.machineId || "").trim();
+      if (!machineId || !allowAssignSet.has(machineId)) return null;
+      const materialDia = Number(m?.currentMaterial?.diameter);
+      if (!Number.isFinite(materialDia) || materialDia <= 0) {
+        console.warn(
+          "[chooseMachineForCamMachining] skip machine without material",
+          {
+            machineId,
+          },
+        );
+        return null;
+      }
+      const availableDia = materialDia;
+      return {
+        machineId,
+        availableDia,
+      };
     })
-    .map((m) => String(m?.machineId || "").trim())
     .filter(Boolean);
 
-  if (candidates.length) {
-    const queueCounts = await Promise.all(
-      candidates.map(async (uid) => {
-        const count = await Request.countDocuments({
-          "productionSchedule.assignedMachine": uid,
-          manufacturerStage: { $in: ["CAM", "가공"] },
-        });
-        return { uid, count };
-      }),
+  if (!candidatesWithDia.length) {
+    throw new Error(
+      "배정 가능한 장비(allowRequestAssign) 또는 소재 직경 정보를 찾을 수 없습니다.",
     );
-    const sorted = queueCounts.filter(Boolean).sort((a, b) => {
-      if (a.count !== b.count) return a.count - b.count;
-      return String(a.uid).localeCompare(String(b.uid));
+  }
+
+  const queueCounts = await Promise.all(
+    candidatesWithDia.map(async (c) => {
+      const count = await Request.countDocuments({
+        "productionSchedule.assignedMachine": c.machineId,
+        manufacturerStage: { $in: ["CAM", "가공"] },
+      });
+      return { machineId: c.machineId, count };
+    }),
+  );
+  const queueCountMap = new Map(queueCounts.map((q) => [q.machineId, q.count]));
+
+  const ceilCandidates = candidatesWithDia.filter(
+    (c) => c.availableDia >= targetDiameter,
+  );
+  const pool = ceilCandidates.length ? ceilCandidates : candidatesWithDia;
+
+  const ranked = pool
+    .map((c) => {
+      const queue = queueCountMap.get(c.machineId) ?? 0;
+      return { ...c, queue };
+    })
+    .sort((a, b) => {
+      if (a.availableDia !== b.availableDia)
+        return a.availableDia - b.availableDia;
+      if (a.queue !== b.queue) return a.queue - b.queue;
+      return a.machineId.localeCompare(b.machineId);
     });
-    targetMachineId = sorted[0]?.uid || null;
-  }
 
-  if (!targetMachineId) {
-    const activeMachines = await Machine.find({ status: "active" })
-      .select({ uid: 1 })
-      .sort({ uid: 1 })
-      .lean();
-    if (!activeMachines?.length) {
-      throw new Error("활성화된 장비가 없습니다.");
-    }
-    targetMachineId = String(activeMachines[0].uid || "").trim();
-  }
-
-  const queueCount = await Request.countDocuments({
-    "productionSchedule.assignedMachine": targetMachineId,
-    manufacturerStage: { $in: ["CAM", "가공"] },
-  });
+  const chosen = ranked[0];
+  const queuePosition = (queueCountMap.get(chosen.machineId) || 0) + 1;
 
   return {
-    machineId: targetMachineId,
-    queuePosition: queueCount + 1,
-    diameterGroup,
-    diameter:
-      schedule.diameter || Number(request?.caseInfos?.maxDiameter) || null,
+    machineId: chosen.machineId,
+    queuePosition,
+    diameterGroup: toDiameterGroup(chosen.availableDia),
+    diameter: chosen.availableDia,
   };
 }
 
@@ -586,12 +591,9 @@ export async function updateReviewStatusByStage(req, res) {
           }
 
           request.productionSchedule = request.productionSchedule || {};
-          if (screening.ok) {
-            request.productionSchedule.diameter = screening.diameter;
-            request.productionSchedule.diameterGroup = screening.diameterGroup;
-          } else {
-            request.productionSchedule.diameterGroup = screening.reqGroup;
-          }
+          // CAM 직경은 의뢰 단계에서는 설정/표시하지 않는다. (CAM 승인 시 재계산)
+          delete request.productionSchedule.diameter;
+          delete request.productionSchedule.diameterGroup;
 
           request.productionSchedule.actualCamStart = new Date();
           await triggerEspritForNc({ request, session });

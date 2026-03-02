@@ -141,7 +141,7 @@ export const PricingPolicyDialog = ({ open, onOpenChange }: Props) => {
                   8. 발송 리드타임
                 </h3>
                 <p>
-                  발송 기준: <b>의뢰일 +1영업일</b> (불가피 시 +2영업일).
+                  발송 기준: <b>의뢰일 +1영업일</b> (최대 +2영업일).
                 </p>
               </section>
             </div>
