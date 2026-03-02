@@ -168,11 +168,11 @@ export const RequestorBulkShippingBannerCard = ({
       .filter(Boolean)
       .map((d) => String(d))
       .filter((v) => v.length >= 10);
-    if (!dates.length) return "-";
+    if (!dates.length) return "확인 중";
     const ts = dates.sort()[0];
     const mm = Number(ts.slice(5, 7));
     const dd = Number(ts.slice(8, 10));
-    if (!Number.isFinite(mm) || !Number.isFinite(dd)) return "-";
+    if (!Number.isFinite(mm) || !Number.isFinite(dd)) return "확인 중";
     return `${mm}/${dd}`;
   };
 
@@ -399,11 +399,11 @@ export const RequestorBulkShippingBannerCard = ({
   };
 
   const formatEta = (raw?: string | null) => {
-    if (!raw) return "-";
+    if (!raw) return "확인 중";
     const s = String(raw);
-    if (s.length < 10) return "-";
+    if (s.length < 10) return "확인 중";
     const d = new Date(`${s.slice(0, 10)}T00:00:00+09:00`);
-    if (Number.isNaN(d.getTime())) return "-";
+    if (Number.isNaN(d.getTime())) return "확인 중";
     return d.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
   };
 
