@@ -94,20 +94,23 @@ export async function createRequestsFromDraft(req, res) {
       draftId: req.body?.draftId,
     });
     const { draftId, clinicId } = req.body || {};
+    const enableDuplicateRequestCheck = false;
     const duplicateResolutionsRaw = Array.isArray(
       req.body?.duplicateResolutions,
     )
       ? req.body.duplicateResolutions
       : null;
-    const duplicateResolutions = Array.isArray(duplicateResolutionsRaw)
-      ? duplicateResolutionsRaw
-          .filter((r) => r && typeof r === "object")
-          .map((r) => ({
-            caseId: String(r.caseId || "").trim(),
-            strategy: String(r.strategy || "").trim(),
-            existingRequestId: String(r.existingRequestId || "").trim(),
-          }))
-          .filter((r) => r.caseId && r.strategy)
+    const duplicateResolutions = enableDuplicateRequestCheck
+      ? Array.isArray(duplicateResolutionsRaw)
+        ? duplicateResolutionsRaw
+            .filter((r) => r && typeof r === "object")
+            .map((r) => ({
+              caseId: String(r.caseId || "").trim(),
+              strategy: String(r.strategy || "").trim(),
+              existingRequestId: String(r.existingRequestId || "").trim(),
+            }))
+            .filter((r) => r.caseId && r.strategy)
+        : null
       : null;
 
     if (!draftId || !Types.ObjectId.isValid(draftId)) {
@@ -354,135 +357,135 @@ export async function createRequestsFromDraft(req, res) {
     const requestFilter = await buildRequestorOrgScopeFilter(req);
     const duplicates = [];
 
-    const keyTuplesRaw = preparedCases
-      .map((item) => ({
-        caseId: item.caseId,
-        fileName: item.caseInfosWithFile?.file?.originalName || undefined,
-        clinicName: String(item.clinicName || "").trim(),
-        patientName: String(item.patientName || "").trim(),
-        tooth: String(item.tooth || "").trim(),
-      }))
-      .filter((k) => k.clinicName && k.patientName && k.tooth);
+    if (enableDuplicateRequestCheck) {
+      const keyTuplesRaw = preparedCases
+        .map((item) => ({
+          caseId: item.caseId,
+          fileName: item.caseInfosWithFile?.file?.originalName || undefined,
+          clinicName: String(item.clinicName || "").trim(),
+          patientName: String(item.patientName || "").trim(),
+          tooth: String(item.tooth || "").trim(),
+        }))
+        .filter((k) => k.clinicName && k.patientName && k.tooth);
 
-    const tupleByKey = new Map();
-    const duplicateInPayload = [];
-    for (const item of keyTuplesRaw) {
-      const key = `${item.clinicName}|${item.patientName}|${item.tooth}`;
-      if (!tupleByKey.has(key)) {
-        tupleByKey.set(key, item);
-      } else {
-        duplicateInPayload.push(item);
-      }
-    }
-
-    if (duplicateInPayload.length > 0) {
-      return res.status(400).json({
-        success: false,
-        code: "DUPLICATE_IN_PAYLOAD",
-        message:
-          "제출한 의뢰 목록에 동일한 치과/환자/치아 조합이 중복되었습니다. 중복 항목을 제거하고 다시 제출해주세요.",
-        data: {
-          duplicates: duplicateInPayload.map((d) => ({
-            caseId: d.caseId,
-            clinicName: d.clinicName,
-            patientName: d.patientName,
-            tooth: d.tooth,
-          })),
-        },
-      });
-    }
-
-    const keyTuples = Array.from(tupleByKey.values());
-
-    if (keyTuples.length > 0) {
-      console.log("[createRequestsFromDraft] duplicate lookup start", {
-        t: Date.now() - startTime,
-        tuples: keyTuples.length,
-      });
-      const orConditions = keyTuples.map((k) => ({
-        "caseInfos.clinicName": k.clinicName,
-        "caseInfos.patientName": k.patientName,
-        "caseInfos.tooth": k.tooth,
-      }));
-
-      const query = {
-        $and: [
-          requestFilter,
-          { manufacturerStage: { $ne: "취소" } },
-          { $or: orConditions },
-        ],
-      };
-
-      const candidates = await Request.find(query)
-        .select({
-          _id: 1,
-          requestId: 1,
-          manufacturerStage: 1,
-          createdAt: 1,
-          price: 1,
-          "caseInfos.clinicName": 1,
-          "caseInfos.patientName": 1,
-          "caseInfos.tooth": 1,
-        })
-        .sort({ createdAt: -1 })
-        .lean();
-
-      const latestByKey = new Map();
-      for (const doc of candidates || []) {
-        const ci = doc?.caseInfos || {};
-        const key = `${String(ci.clinicName || "").trim()}|${String(
-          ci.patientName || "",
-        ).trim()}|${String(ci.tooth || "").trim()}`;
-        if (!latestByKey.has(key)) {
-          latestByKey.set(key, doc);
+      const tupleByKey = new Map();
+      const duplicateInPayload = [];
+      for (const item of keyTuplesRaw) {
+        const key = `${item.clinicName}|${item.patientName}|${item.tooth}`;
+        if (!tupleByKey.has(key)) {
+          tupleByKey.set(key, item);
+        } else {
+          duplicateInPayload.push(item);
         }
       }
 
-      for (const item of keyTuples) {
-        const key = `${item.clinicName}|${item.patientName}|${item.tooth}`;
-        const existing = latestByKey.get(key);
-        if (!existing) continue;
-
-        const existingCi = existing?.caseInfos || {};
-
-        duplicates.push({
-          caseId: item.caseId,
-          fileName: item.fileName,
-          existingRequest: {
-            _id: String(existing._id),
-            requestId: String(existing.requestId || ""),
-            manufacturerStage: String(existing.manufacturerStage || ""),
-            price: existing.price || null,
-            createdAt: existing.createdAt || null,
-            caseInfos: {
-              clinicName: String(existing?.caseInfos?.clinicName || ""),
-              patientName: String(existing?.caseInfos?.patientName || ""),
-              tooth: String(existing?.caseInfos?.tooth || ""),
-            },
+      if (duplicateInPayload.length > 0) {
+        return res.status(400).json({
+          success: false,
+          code: "DUPLICATE_IN_PAYLOAD",
+          message:
+            "제출한 의뢰 목록에 동일한 치과/환자/치아 조합이 중복되었습니다. 중복 항목을 제거하고 다시 제출해주세요.",
+          data: {
+            duplicates: duplicateInPayload.map((d) => ({
+              caseId: d.caseId,
+              clinicName: d.clinicName,
+              patientName: d.patientName,
+              tooth: d.tooth,
+            })),
           },
         });
       }
-      console.log("[createRequestsFromDraft] duplicate lookup done", {
-        t: Date.now() - startTime,
-        duplicates: duplicates.length,
-      });
-    }
-    if (duplicates.length > 0 && !duplicateResolutions) {
-      const first = duplicates[0];
-      const st = String(first?.existingRequest?.manufacturerStage || "");
-      const mode = st === "추적관리" ? "tracking" : "active";
-      return res.status(409).json({
-        success: false,
-        code: "DUPLICATE_REQUEST",
-        message:
-          st === "추적관리"
-            ? "동일한 정보의 의뢰가 이미 완료되어 있습니다. 재의뢰(리메이크)로 접수할까요?"
-            : "동일한 정보의 의뢰가 이미 진행 중입니다. 기존 의뢰를 취소하고 다시 의뢰할까요?",
-        data: {
-          mode,
-          duplicates,
-        },
-      });
+
+      const keyTuples = Array.from(tupleByKey.values());
+
+      if (keyTuples.length > 0) {
+        console.log("[createRequestsFromDraft] duplicate lookup start", {
+          t: Date.now() - startTime,
+          tuples: keyTuples.length,
+        });
+        const orConditions = keyTuples.map((k) => ({
+          "caseInfos.clinicName": k.clinicName,
+          "caseInfos.patientName": k.patientName,
+          "caseInfos.tooth": k.tooth,
+        }));
+
+        const query = {
+          $and: [
+            requestFilter,
+            { manufacturerStage: { $ne: "취소" } },
+            { $or: orConditions },
+          ],
+        };
+
+        const candidates = await Request.find(query)
+          .select({
+            _id: 1,
+            requestId: 1,
+            manufacturerStage: 1,
+            createdAt: 1,
+            price: 1,
+            "caseInfos.clinicName": 1,
+            "caseInfos.patientName": 1,
+            "caseInfos.tooth": 1,
+          })
+          .sort({ createdAt: -1 })
+          .lean();
+
+        const latestByKey = new Map();
+        for (const doc of candidates || []) {
+          const ci = doc?.caseInfos || {};
+          const key = `${String(ci.clinicName || "").trim()}|${String(
+            ci.patientName || "",
+          ).trim()}|${String(ci.tooth || "").trim()}`;
+          if (!latestByKey.has(key)) {
+            latestByKey.set(key, doc);
+          }
+        }
+
+        for (const item of keyTuples) {
+          const key = `${item.clinicName}|${item.patientName}|${item.tooth}`;
+          const existing = latestByKey.get(key);
+          if (!existing) continue;
+
+          duplicates.push({
+            caseId: item.caseId,
+            fileName: item.fileName,
+            existingRequest: {
+              _id: String(existing._id),
+              requestId: String(existing.requestId || ""),
+              manufacturerStage: String(existing.manufacturerStage || ""),
+              price: existing.price || null,
+              createdAt: existing.createdAt || null,
+              caseInfos: {
+                clinicName: String(existing?.caseInfos?.clinicName || ""),
+                patientName: String(existing?.caseInfos?.patientName || ""),
+                tooth: String(existing?.caseInfos?.tooth || ""),
+              },
+            },
+          });
+        }
+        console.log("[createRequestsFromDraft] duplicate lookup done", {
+          t: Date.now() - startTime,
+          duplicates: duplicates.length,
+        });
+      }
+      if (duplicates.length > 0 && !duplicateResolutions) {
+        const first = duplicates[0];
+        const st = String(first?.existingRequest?.manufacturerStage || "");
+        const mode = st === "추적관리" ? "tracking" : "active";
+        return res.status(409).json({
+          success: false,
+          code: "DUPLICATE_REQUEST",
+          message:
+            st === "추적관리"
+              ? "동일한 정보의 의뢰가 이미 완료되어 있습니다. 재의뢰(리메이크)로 접수할까요?"
+              : "동일한 정보의 의뢰가 이미 진행 중입니다. 기존 의뢰를 취소하고 다시 의뢰할까요?",
+          data: {
+            mode,
+            duplicates,
+          },
+        });
+      }
     }
 
     const resolutionsByCaseId = new Map();
