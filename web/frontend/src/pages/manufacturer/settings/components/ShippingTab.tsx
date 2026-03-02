@@ -6,6 +6,7 @@ import { Truck } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { Button } from "@/components/ui/button";
 
 interface ShippingTabProps {
   userData: {
@@ -44,7 +45,10 @@ export const ManufacturerShippingTab = ({ userData }: ShippingTabProps) => {
 
   const [leadTimes, setLeadTimes] =
     useState<Record<DiameterKey, LeadTimeRange>>(DEFAULT_LEAD_TIMES);
+  const [originalLeadTimes, setOriginalLeadTimes] =
+    useState<Record<DiameterKey, LeadTimeRange>>(DEFAULT_LEAD_TIMES);
   const [policyLoaded, setPolicyLoaded] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const organizationType = useMemo(() => {
     const role = String(user?.role || userData?.role || "manufacturer").trim();
@@ -113,6 +117,8 @@ export const ManufacturerShippingTab = ({ userData }: ShippingTabProps) => {
           data?.shippingPolicy?.leadTimes,
         );
         setLeadTimes(serverLeadTimes);
+        setOriginalLeadTimes(serverLeadTimes);
+        lastSavedRef.current = JSON.stringify(serverLeadTimes);
       } catch {
         // ignore
       } finally {
@@ -127,17 +133,18 @@ export const ManufacturerShippingTab = ({ userData }: ShippingTabProps) => {
     if (token) return;
     try {
       localStorage.setItem(storageKey, JSON.stringify(leadTimes));
+      setOriginalLeadTimes(leadTimes);
+      lastSavedRef.current = JSON.stringify(leadTimes);
     } catch {
       // ignore
     }
   }, [leadTimes, storageKey, token]);
 
-  useEffect(() => {
+  const handleSave = async () => {
     if (!token || !policyLoaded) return;
+    setIsSaving(true);
     const payloadKey = JSON.stringify(leadTimes);
-    if (payloadKey === lastSavedRef.current) return;
-    lastSavedRef.current = payloadKey;
-    void (async () => {
+    try {
       const res = await request({
         path: `/api/organizations/me?organizationType=${encodeURIComponent(
           organizationType,
@@ -152,15 +159,29 @@ export const ManufacturerShippingTab = ({ userData }: ShippingTabProps) => {
         },
       });
       if (!res.ok) {
-        lastSavedRef.current = "";
-        toast({
-          title: "배송 리드타임 저장 실패",
-          description: res.data?.message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-        });
+        throw new Error(res.data?.message || "저장에 실패했습니다.");
       }
-    })();
-  }, [leadTimes, organizationType, policyLoaded, toast, token]);
+      lastSavedRef.current = payloadKey;
+      setOriginalLeadTimes(leadTimes);
+      toast({ title: "배송 리드타임 저장 완료" });
+    } catch (err: any) {
+      lastSavedRef.current = "";
+      toast({
+        title: "배송 리드타임 저장 실패",
+        description: err?.message || "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setLeadTimes(originalLeadTimes);
+  };
+
+  const isDirty =
+    JSON.stringify(leadTimes) !== JSON.stringify(originalLeadTimes);
 
   const handleChange = (
     key: DiameterKey,
@@ -218,7 +239,6 @@ export const ManufacturerShippingTab = ({ userData }: ShippingTabProps) => {
                       {diameterLabels[key]}
                     </p>
                   </div>
-                  
                 </div>
                 <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="space-y-2">
@@ -251,6 +271,19 @@ export const ManufacturerShippingTab = ({ userData }: ShippingTabProps) => {
               </div>
             );
           })}
+        </div>
+
+        <div className="flex justify-end gap-3">
+          <Button
+            variant="outline"
+            onClick={handleCancel}
+            disabled={!isDirty || isSaving}
+          >
+            취소
+          </Button>
+          <Button onClick={handleSave} disabled={!isDirty || isSaving}>
+            {isSaving ? "저장 중..." : "저장"}
+          </Button>
         </div>
       </CardContent>
     </Card>

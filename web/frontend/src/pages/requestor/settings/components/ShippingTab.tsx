@@ -127,7 +127,14 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
     setWeeklyBatchDays((prev) => {
       const exists = prev.includes(day);
       if (exists) {
-        if (prev.length === 1) return prev;
+        if (prev.length === 1) {
+          toast({
+            title: "최소 1개 이상 선택 필요",
+            description: "묶음 배송 요일은 최소 1개 이상 선택해야 합니다.",
+            variant: "destructive",
+          });
+          return prev;
+        }
         return prev.filter((d) => d !== day);
       }
       return [...prev, day];

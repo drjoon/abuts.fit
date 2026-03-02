@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
+import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import {
   normalizeCaseInfosImplantFields,
   computePriceForRequest,
@@ -126,10 +127,37 @@ export async function createRequest(req, res) {
     // 생산 스케줄 계산 (시각 기반)
     const { calculateInitialProductionSchedule } =
       await import("./production.utils.js");
+    // Fetch requestor weeklyBatchDays
+    let requestorWeeklyBatchDays = [];
+    try {
+      const orgId = getRequestorOrgId(req);
+      if (orgId && Types.ObjectId.isValid(orgId)) {
+        const org = await RequestorOrganization.findById(orgId)
+          .select({ "shippingPolicy.weeklyBatchDays": 1 })
+          .lean();
+        requestorWeeklyBatchDays = Array.isArray(
+          org?.shippingPolicy?.weeklyBatchDays,
+        )
+          ? org.shippingPolicy.weeklyBatchDays
+          : [];
+      }
+    } catch (e) {
+      // handled by scheduler validation
+    }
+
+    if (shippingMode === "normal" && requestorWeeklyBatchDays.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
+      });
+    }
+
     const productionSchedule = await calculateInitialProductionSchedule({
       shippingMode,
       maxDiameter: normalizedCaseInfos?.maxDiameter,
       requestedAt,
+      weeklyBatchDays: requestorWeeklyBatchDays,
     });
     newRequest.productionSchedule = productionSchedule;
 
@@ -138,12 +166,38 @@ export async function createRequest(req, res) {
     const pickupYmd = productionSchedule?.scheduledShipPickup
       ? toKstYmd(productionSchedule.scheduledShipPickup)
       : null;
-    const estimatedShipYmdRaw = pickupYmd
-      ? pickupYmd
-      : await addKoreanBusinessDays({
-          startYmd: createdYmd,
-          days: 1,
-        });
+
+    let estimatedShipYmdRaw;
+    if (pickupYmd) {
+      estimatedShipYmdRaw = pickupYmd;
+    } else {
+      // Use manufacturer lead times based on diameter
+      const { getManufacturerLeadTimesUtil } =
+        await import("./production.utils.js").then(
+          () => import("../organizations/leadTime.controller.js"),
+        );
+      const manufacturerSettings = await getManufacturerLeadTimesUtil();
+      const leadTimes = manufacturerSettings?.leadTimes || {};
+
+      const maxDiameter = normalizedCaseInfos?.maxDiameter;
+      const d =
+        typeof maxDiameter === "number" && !isNaN(maxDiameter)
+          ? maxDiameter
+          : 8;
+      let diameterKey = "d8";
+      if (d <= 6) diameterKey = "d6";
+      else if (d <= 8) diameterKey = "d8";
+      else if (d <= 10) diameterKey = "d10";
+      else diameterKey = "d12";
+
+      const leadDays = leadTimes[diameterKey]?.minBusinessDays ?? 1;
+
+      estimatedShipYmdRaw = await addKoreanBusinessDays({
+        startYmd: createdYmd,
+        days: leadDays,
+      });
+    }
+
     const estimatedShipYmd = await normalizeKoreanBusinessDay({
       ymd: estimatedShipYmdRaw,
     });

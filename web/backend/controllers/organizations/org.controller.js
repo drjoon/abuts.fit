@@ -5,6 +5,7 @@ import File from "../../models/file.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import BonusGrant from "../../models/bonusGrant.model.js";
 import { verifyBusinessNumber } from "../../services/hometax.service.js";
+import { DEFAULT_DELIVERY_ETA_LEAD_DAYS } from "../requests/utils.js";
 import {
   ORGANIZATION_ALLOWED_ROLE_SET,
   resolveOrganizationType,
@@ -407,6 +408,9 @@ export async function getMyOrganization(req, res) {
     const hasBusinessNumber = !!businessNumber;
     const businessVerified = !!org?.verification?.verified;
 
+    const shippingPolicy = org?.shippingPolicy || {};
+    const safeShippingPolicy = { ...shippingPolicy };
+
     return res.json({
       success: true,
       data: {
@@ -416,7 +420,7 @@ export async function getMyOrganization(req, res) {
         businessVerified,
         extracted: org?.extracted || {},
         businessLicense: org?.businessLicense || {},
-        shippingPolicy: org?.shippingPolicy || {},
+        shippingPolicy: safeShippingPolicy,
       },
     });
   } catch (error) {
@@ -691,6 +695,24 @@ export async function updateMyOrganization(req, res) {
       patch["shippingPolicy.weeklyBatchDays"] = Array.from(
         new Set(normalizedDays),
       );
+
+      const clampLead = (v, fallback) => {
+        const n = Number(v);
+        if (!Number.isFinite(n) || n < 0) return fallback;
+        return Math.floor(n);
+      };
+      const rawLeadTimes = req.body?.shippingPolicy?.leadTimes || {};
+      const nextLeadTimes = {};
+      ["d6", "d8", "d10", "d12"].forEach((key) => {
+        const entry = rawLeadTimes?.[key] || {};
+        const min = clampLead(entry.minBusinessDays, 1);
+        const max = clampLead(entry.maxBusinessDays, Math.max(min, 1));
+        nextLeadTimes[key] = {
+          minBusinessDays: Math.min(min, max),
+          maxBusinessDays: Math.max(min, max),
+        };
+      });
+      patch["shippingPolicy.leadTimes"] = nextLeadTimes;
       patch["shippingPolicy.updatedAt"] = new Date();
     }
 

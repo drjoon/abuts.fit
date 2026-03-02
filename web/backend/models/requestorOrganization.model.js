@@ -94,6 +94,24 @@ const requestorOrganizationSchema = new mongoose.Schema(
       checkedAt: { type: Date, default: null },
     },
     shippingPolicy: {
+      leadTimes: {
+        d6: {
+          minBusinessDays: { type: Number, default: 1 },
+          maxBusinessDays: { type: Number, default: 2 },
+        },
+        d8: {
+          minBusinessDays: { type: Number, default: 1 },
+          maxBusinessDays: { type: Number, default: 2 },
+        },
+        d10: {
+          minBusinessDays: { type: Number, default: 4 },
+          maxBusinessDays: { type: Number, default: 7 },
+        },
+        d12: {
+          minBusinessDays: { type: Number, default: 4 },
+          maxBusinessDays: { type: Number, default: 7 },
+        },
+      },
       weeklyBatchDays: {
         type: [String],
         default: [],

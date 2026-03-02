@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import * as requestorOrganizationController from "../../controllers/organizations/requestorOrganization.controller.js";
+import * as leadTimeController from "../../controllers/organizations/leadTime.controller.js";
 
 const router = Router();
 
@@ -9,6 +10,10 @@ router.use(authenticate);
 // 조회는 모두 가능
 router.get("/me", requestorOrganizationController.getMyOrganization);
 router.get("/search", requestorOrganizationController.searchOrganizations);
+router.get(
+  "/manufacturer-lead-times",
+  leadTimeController.getManufacturerLeadTimes,
+);
 
 // 조직 정보 수정
 router.put(

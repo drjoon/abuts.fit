@@ -88,7 +88,10 @@ const getWeekdayKey = (ymd) => {
   return WEEKDAY_KEYS[date.getDay()] || null;
 };
 
-const resolveNextWeeklyBatchYmd = async ({ baseYmd, weeklyBatchDays }) => {
+export const resolveNextWeeklyBatchYmd = async ({
+  baseYmd,
+  weeklyBatchDays,
+}) => {
   if (!baseYmd) return baseYmd;
   if (!Array.isArray(weeklyBatchDays) || weeklyBatchDays.length === 0)
     return baseYmd;
@@ -163,6 +166,38 @@ export async function calculateInitialProductionSchedule({
   const { diameter, diameterGroup, preferredMachine } =
     getDiameterGroupAndMachine(maxDiameter);
 
+  // Fetch manufacturer settings for lead times; weeklyBatchDays must be provided by requestor
+  let effectiveWeeklyBatchDays = weeklyBatchDays;
+  let manufacturerLeadTimes = null;
+
+  try {
+    const { getManufacturerLeadTimesUtil } =
+      await import("../organizations/leadTime.controller.js");
+    const manufacturerSettings = await getManufacturerLeadTimesUtil();
+    manufacturerLeadTimes = manufacturerSettings?.leadTimes || null;
+
+    // weeklyBatchDays are provided by requestor; do not fallback to manufacturer
+    effectiveWeeklyBatchDays = Array.isArray(weeklyBatchDays)
+      ? weeklyBatchDays
+      : [];
+  } catch (error) {
+    console.error(
+      "[calculateInitialProductionSchedule] failed to fetch manufacturer settings:",
+      error,
+    );
+    effectiveWeeklyBatchDays = Array.isArray(weeklyBatchDays)
+      ? weeklyBatchDays
+      : [];
+  }
+
+  if (
+    shippingMode === "normal" &&
+    (!Array.isArray(effectiveWeeklyBatchDays) ||
+      effectiveWeeklyBatchDays.length === 0)
+  ) {
+    throw new Error("weeklyBatchDays is required for normal shipping");
+  }
+
   let scheduledCamStart;
 
   if (shippingMode === "express") {
@@ -194,22 +229,29 @@ export async function calculateInitialProductionSchedule({
     scheduledMachiningStart.getTime() + MACHINING_DURATION_MINUTES * 60 * 1000,
   );
 
-  // 가공 완료 → 배치 처리 (세척/검사/포장, 1일 소요)
+  // 가공 완료 → 배치 처리 (세척/검사/포장)
+  // Use manufacturer lead times based on diameter
+  const d =
+    typeof maxDiameter === "number" && !isNaN(maxDiameter) ? maxDiameter : 8;
+  let diameterKey = "d8";
+  if (d <= 6) diameterKey = "d6";
+  else if (d <= 8) diameterKey = "d8";
+  else if (d <= 10) diameterKey = "d10";
+  else diameterKey = "d12";
+
+  const leadDays = manufacturerLeadTimes?.[diameterKey]?.minBusinessDays ?? 1;
+
   const machiningCompleteYmd = toKstYmd(scheduledMachiningComplete);
-  const baseBatchStartYmd =
-    shippingMode === "express"
-      ? getTodayYmdInKst(now) || machiningCompleteYmd
-      : machiningCompleteYmd;
-  const baseBatchDays = shippingMode === "express" ? 1 : BATCH_PROCESSING_DAYS;
+  const baseBatchStartYmd = getTodayYmdInKst(now) || machiningCompleteYmd;
   const baseBatchYmd = await addKoreanBusinessDays({
     startYmd: baseBatchStartYmd,
-    days: baseBatchDays,
+    days: leadDays,
   });
   const batchProcessingYmd =
     shippingMode === "normal"
       ? await resolveNextWeeklyBatchYmd({
           baseYmd: baseBatchYmd,
-          weeklyBatchDays,
+          weeklyBatchDays: effectiveWeeklyBatchDays,
         })
       : baseBatchYmd;
   const scheduledBatchProcessing = createKstDateTime(

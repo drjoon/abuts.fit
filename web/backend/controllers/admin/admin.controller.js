@@ -1695,41 +1695,21 @@ async function formatEtaLabelFromNow(days) {
 
 async function getDeliveryEtaLeadDays() {
   try {
-    const doc = await SystemSettings.findOneAndUpdate(
-      { key: "global" },
-      { $setOnInsert: { key: "global" } },
-      { new: true, upsert: true, setDefaultsOnInsert: true },
-    ).lean();
+    const { getManufacturerLeadTimesUtil } =
+      await import("../organizations/leadTime.controller.js");
+    const manufacturerSettings = await getManufacturerLeadTimesUtil();
+    const leadTimes = manufacturerSettings?.leadTimes || {};
 
-    const legacy = doc?.deliveryEtaLeadDays;
-    const isLegacyAllOnes =
-      legacy &&
-      typeof legacy === "object" &&
-      ["d6", "d8", "d10", "d12"].every((k) => legacy?.[k] === 1);
-    if (isLegacyAllOnes) {
-      const updatedDoc = await SystemSettings.findOneAndUpdate(
-        {
-          _id: doc._id,
-          "deliveryEtaLeadDays.d6": 1,
-          "deliveryEtaLeadDays.d8": 1,
-          "deliveryEtaLeadDays.d10": 1,
-          "deliveryEtaLeadDays.d12": 1,
-        },
-        { $set: { deliveryEtaLeadDays: DEFAULT_DELIVERY_ETA_LEAD_DAYS } },
-        { new: true },
-      ).lean();
-
-      return {
-        ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
-        ...(updatedDoc?.deliveryEtaLeadDays || {}),
-      };
-    }
-
-    return {
-      ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
-      ...(doc?.deliveryEtaLeadDays || {}),
-    };
-  } catch {
+    // Convert {d6: {min, max}, ...} to {d6: max, d8: max, ...} for backward compatibility
+    const result = {};
+    ["d6", "d8", "d10", "d12"].forEach((key) => {
+      const entry = leadTimes?.[key];
+      result[key] =
+        entry?.maxBusinessDays ?? DEFAULT_DELIVERY_ETA_LEAD_DAYS[key];
+    });
+    return result;
+  } catch (error) {
+    console.error("[admin.getDeliveryEtaLeadDays] error:", error);
     return DEFAULT_DELIVERY_ETA_LEAD_DAYS;
   }
 }

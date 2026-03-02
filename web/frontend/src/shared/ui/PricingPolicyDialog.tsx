@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -5,13 +6,81 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { request } from "@/shared/api/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
 
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
 
+type LeadTimeRange = { minBusinessDays: number; maxBusinessDays: number };
+type DiameterKey = "d6" | "d8" | "d10" | "d12";
+
+const DEFAULT_LEAD_TIMES: Record<DiameterKey, LeadTimeRange> = {
+  d6: { minBusinessDays: 1, maxBusinessDays: 2 },
+  d8: { minBusinessDays: 1, maxBusinessDays: 2 },
+  d10: { minBusinessDays: 4, maxBusinessDays: 7 },
+  d12: { minBusinessDays: 4, maxBusinessDays: 7 },
+};
+
 export const PricingPolicyDialog = ({ open, onOpenChange }: Props) => {
+  const { token } = useAuthStore();
+  const [leadTimes, setLeadTimes] = useState(DEFAULT_LEAD_TIMES);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!token) {
+      setLeadTimes(DEFAULT_LEAD_TIMES);
+      return;
+    }
+    const load = async () => {
+      try {
+        const res = await request<any>({
+          path: `/api/requestor-organizations/manufacturer-lead-times`,
+          method: "GET",
+          token,
+        });
+        if (!res.ok) return;
+        const data = res.data?.data || res.data || {};
+        const serverLeadTimes = data?.leadTimes;
+        const normalized: Record<DiameterKey, LeadTimeRange> = {
+          ...DEFAULT_LEAD_TIMES,
+        };
+        (Object.keys(normalized) as DiameterKey[]).forEach((key) => {
+          const entry = serverLeadTimes?.[key];
+          if (!entry) return;
+          const min = Number.isFinite(entry.minBusinessDays)
+            ? Math.max(0, Math.floor(entry.minBusinessDays))
+            : normalized[key].minBusinessDays;
+          const max = Number.isFinite(entry.maxBusinessDays)
+            ? Math.max(0, Math.floor(entry.maxBusinessDays))
+            : normalized[key].maxBusinessDays;
+          normalized[key] = {
+            minBusinessDays: Math.min(min, max),
+            maxBusinessDays: Math.max(min, max),
+          };
+        });
+        setLeadTimes(normalized);
+      } catch (err) {
+        console.error("[PricingPolicyDialog] load leadTimes failed", err);
+      }
+    };
+    void load();
+  }, [open, token]);
+
+  const renderLeadTimeLine = (label: string, key: DiameterKey) => {
+    const min = leadTimes[key]?.minBusinessDays;
+    const max = leadTimes[key]?.maxBusinessDays;
+    const minText = Number.isFinite(min) ? min : "-";
+    const maxText = Number.isFinite(max) ? max : "-";
+    return (
+      <p>
+        {label}: <b>의뢰일 +{minText}영업일</b> (최대 +{maxText}영업일)
+      </p>
+    );
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
@@ -136,17 +205,14 @@ export const PricingPolicyDialog = ({ open, onOpenChange }: Props) => {
                 </p>
               </section>
 
-              <section className="space-y-1">
+              <section className="space-y-2">
                 <h3 className="font-semibold text-foreground text-md">
                   8. 발송 리드타임
                 </h3>
-                <p>
-                  최대 직경 <b>8mm 이하</b>: <b>의뢰일 +1영업일</b> (최대
-                  +2영업일)
-                  <br />
-                  최대 직경 <b>10mm 이상</b>: <b>의뢰일 +4영업일</b> (최대
-                  +7영업일)
-                </p>
+                {renderLeadTimeLine("6mm", "d6")}
+                {renderLeadTimeLine("8mm", "d8")}
+                {renderLeadTimeLine("10mm", "d10")}
+                {renderLeadTimeLine("12mm", "d12")}
               </section>
             </div>
           </DialogDescription>
