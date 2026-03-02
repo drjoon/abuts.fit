@@ -427,11 +427,15 @@ export function calculateRiskSummary(requests) {
 
   for (const req of requests) {
     const schedule = req.productionSchedule;
-    const ymd = req?.timeline?.estimatedShipYmd;
-    if (!schedule || typeof ymd !== "string" || !ymd.trim()) continue;
+    const originalYmd =
+      req?.timeline?.originalEstimatedShipYmd ||
+      req?.timeline?.estimatedShipYmd;
+    const nextYmd = req?.timeline?.nextEstimatedShipYmd || originalYmd;
+    if (!schedule || typeof originalYmd !== "string" || !originalYmd.trim())
+      continue;
 
     const status = String(req.status || "");
-    const baseYmd = ymd.trim();
+    const baseYmd = originalYmd.trim();
     const startOfDayShip = new Date(`${baseYmd}T00:00:00+09:00`);
     if (Number.isNaN(startOfDayShip.getTime())) continue;
 
@@ -458,6 +462,8 @@ export function calculateRiskSummary(requests) {
         status: status,
         manufacturerStage: req.manufacturerStage,
         dueDate: baseYmd,
+        nextEstimatedShipYmd: nextYmd || null,
+        originalEstimatedShipYmd: baseYmd,
         caseInfos: req.caseInfos || null,
         scheduledCamStart: schedule.scheduledCamStart,
         estimatedShipYmd: baseYmd,
@@ -479,6 +485,8 @@ export function calculateRiskSummary(requests) {
         status: status,
         manufacturerStage: req.manufacturerStage,
         dueDate: baseYmd,
+        nextEstimatedShipYmd: nextYmd || null,
+        originalEstimatedShipYmd: baseYmd,
         caseInfos: req.caseInfos || null,
         scheduledCamStart: schedule.scheduledCamStart,
         estimatedShipYmd: baseYmd,

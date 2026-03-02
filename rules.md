@@ -150,13 +150,14 @@
   - 반제품 로트번호: CNC 가공 시작 시점에 생성되는 **`CAP` + YYMMDD + `-` + `AAA~`** (예: `CAP251120-AAA`)
   - 완제품 로트번호: 포장 승인 시점에 생성되는 **`CA` + YYMMDD + `-` + `AAA~`** (예: `CA251120-AAA`)
 
-### 6.4.1 발송 예정일(Shipping ETA) 공휴일 이월 규칙
+### 6.4.1 발송 예정일(Shipping ETA) 공휴일 이월 및 재조정 규칙
 
-- **SSOT**: 발송 예정일(`timeline.estimatedShipYmd`, `shipping-estimate`, `bulk-shipping`의 `estimatedShipYmd`) 계산은 백엔드에서 일원화한다.
-- **공휴일/주말 이월**: 발송 예정일이 **법정 공휴일 또는 주말**이면, 백엔드에서 **다음 영업일로 자동 이월**한다.
-- **구현**: 백엔드 `normalizeKoreanBusinessDay({ ymd })`를 통해 최종 발송 예정일을 정규화한다.
-- **프론트 규칙**: 프론트는 임의로 발송 예정일을 계산/보정하지 않고, 백엔드가 반환한 `estimatedShipYmd`만 표기/저장에 사용한다.
-- **표시 규칙**: `estimatedShipYmd`가 아직 내려오지 않았거나 파싱할 수 없으면, 프론트는 "확인 중"으로 표기하고 임의의 날짜를 노출하지 않는다.
+- **SSOT**: 발송 예정일(`timeline.originalEstimatedShipYmd`, `timeline.nextEstimatedShipYmd`, `shipping-estimate`, `bulk-shipping`의 ETA) 계산은 백엔드에서 일원화한다.
+- **최초 ETA**: 의뢰 생성 시 계산된 `originalEstimatedShipYmd`를 저장하며, 지연 판단(지연 위험/지연 확정)은 이 값을 기준으로 한다.
+- **재조정 ETA**: `nextEstimatedShipYmd`는 오늘 이전으로 지난 ETA를 모두 오늘(또는 다음 영업일)로 클램프하여 재조정한 값이다. 이미 지난 건도 `nextEstimatedShipYmd`로 묶어 안내한다.
+- **공휴일/주말 이월**: 모든 ETA는 `normalizeKoreanBusinessDay({ ymd })`로 다음 영업일로 정규화한다.
+- **프론트 규칙**: 프론트는 임의 계산/보정 금지. 백엔드가 내려주는 `nextEstimatedShipYmd`(없으면 `estimatedShipYmd`/`originalEstimatedShipYmd`)만 표기/저장한다.
+- **표시 규칙**: ETA가 비어있거나 파싱 불가하면 "확인 중"으로 표기한다. "다음 배송 안내"는 항상 오늘 이후(재조정된) ETA만 보여준다.
 
 ### 6.5 다국어(i18n)
 

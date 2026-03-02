@@ -692,11 +692,25 @@ export async function getMyDashboardSummary(req, res) {
     const recentRequests = await Promise.all(
       (recentRequestsResult || []).map(async (r) => {
         const ci = r.caseInfos || {};
-        const existingShipYmd =
-          typeof r.timeline?.estimatedShipYmd === "string" &&
-          r.timeline.estimatedShipYmd.trim()
-            ? r.timeline.estimatedShipYmd.trim()
-            : null;
+        const existingShipYmd = (() => {
+          const timeline = r.timeline || {};
+          const next =
+            typeof timeline.nextEstimatedShipYmd === "string" &&
+            timeline.nextEstimatedShipYmd.trim()
+              ? timeline.nextEstimatedShipYmd.trim()
+              : null;
+          const est =
+            typeof timeline.estimatedShipYmd === "string" &&
+            timeline.estimatedShipYmd.trim()
+              ? timeline.estimatedShipYmd.trim()
+              : null;
+          const orig =
+            typeof timeline.originalEstimatedShipYmd === "string" &&
+            timeline.originalEstimatedShipYmd.trim()
+              ? timeline.originalEstimatedShipYmd.trim()
+              : null;
+          return next || est || orig;
+        })();
 
         if (existingShipYmd) {
           return {
@@ -741,6 +755,10 @@ export async function getMyDashboardSummary(req, res) {
         manufacturerStage: r.manufacturerStage,
         date: r.createdAt ? toKstYmd(r.createdAt) || "" : "",
         estimatedShipYmd: r.estimatedShipYmd || null,
+        originalEstimatedShipYmd:
+          r.timeline?.originalEstimatedShipYmd || r.estimatedShipYmd || null,
+        nextEstimatedShipYmd:
+          r.timeline?.nextEstimatedShipYmd || r.estimatedShipYmd || null,
         patientName: ci.patientName || "",
         tooth: ci.tooth || "",
         caseInfos: ci,

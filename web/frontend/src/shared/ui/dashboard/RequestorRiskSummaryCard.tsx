@@ -16,6 +16,8 @@ export type RiskSummary = {
     status?: string;
     manufacturerStage?: string;
     dueDate?: string | null;
+    nextEstimatedShipYmd?: string | null;
+    originalEstimatedShipYmd?: string | null;
     daysOverdue?: number;
     daysUntilDue?: number;
     caseInfos?: any;
@@ -52,6 +54,15 @@ export const RequestorRiskSummaryCard = ({
   }
 
   const summary = riskSummary || {};
+
+  const formatEta = (raw?: string | null) => {
+    if (!raw) return null;
+    const s = String(raw);
+    if (s.length < 10) return null;
+    const d = new Date(`${s.slice(0, 10)}T00:00:00+09:00`);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
+  };
 
   const STAGE_BADGE_BASE =
     "text-[10px] h-4 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
@@ -251,6 +262,12 @@ export const RequestorRiskSummaryCard = ({
                     {item.dueDate && (
                       <span className="text-blue-600 font-medium">
                         발송 예정: {item.dueDate}
+                      </span>
+                    )}
+                    {item.nextEstimatedShipYmd && (
+                      <span className="text-[11px] text-slate-500">
+                        다음 ETA:{" "}
+                        {formatEta(item.nextEstimatedShipYmd) ?? "확인 중"}
                       </span>
                     )}
                     <span className="truncate">{item.manufacturer || "-"}</span>

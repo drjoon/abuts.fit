@@ -57,7 +57,9 @@ type ShippingItemApi = {
   shippingMode?: "normal" | "express";
   requestedShipDate?: string;
   shipDateYmd?: string | null;
-  estimatedShipYmd?: string | null;
+  estimatedShipYmd?: string | null; // next ETA 우선(백엔드 매핑)
+  originalEstimatedShipYmd?: string | null;
+  nextEstimatedShipYmd?: string | null;
 };
 
 export const RequestorBulkShippingBannerCard = ({
@@ -392,7 +394,10 @@ export const RequestorBulkShippingBannerCard = ({
   };
 
   const getEtaKey = (it: ShippingItemApi) => {
-    const raw = it.estimatedShipYmd;
+    const raw =
+      it.nextEstimatedShipYmd ||
+      it.estimatedShipYmd ||
+      it.originalEstimatedShipYmd;
     if (!raw) return "-";
     const s = String(raw);
     return s.length >= 10 ? s.slice(0, 10) : "-";
@@ -417,7 +422,7 @@ export const RequestorBulkShippingBannerCard = ({
   const getExpressEtaText = () => {
     if (!expressItems.length) return "-";
 
-    // '발송 예정일' 표시는 반드시 estimatedShipYmd를 사용해야 한다.
+    // '발송 예정일' 표시는 반드시 nextEstimatedShipYmd(또는 estimatedShipYmd)를 사용해야 한다.
     return earliestEta(expressItems);
   };
 

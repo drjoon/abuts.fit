@@ -19,6 +19,21 @@ interface ShippingPackageSummaryItem {
   createdAt?: string;
 }
 
+interface ShippingPackageSummaryRequest {
+  id: string;
+  requestId: string;
+  title: string;
+  caseInfos: any;
+  manufacturerStage: string;
+  createdAt?: string;
+  timeline?: {
+    nextEstimatedShipYmd?: string | null;
+    estimatedShipYmd?: string | null;
+    originalEstimatedShipYmd?: string | null;
+  };
+  _id?: string | null;
+}
+
 interface ShippingPackagesSummaryResponse {
   success: boolean;
   data: {
@@ -35,6 +50,17 @@ interface ShippingPackagesSummaryResponse {
     items: ShippingPackageSummaryItem[];
   };
 }
+
+const formatEta = (eta: string | null) => {
+  if (!eta) return null;
+  const date = new Date(eta);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${year}.${month}.${day} ${hour}:${minute}`;
+};
 
 export const RequestorShippingSummaryCard = () => {
   const { token, user } = useAuthStore();
@@ -69,7 +95,7 @@ export const RequestorShippingSummaryCard = () => {
         last30Fee: 0,
         last30Count: 0,
         items: [] as ShippingPackageSummaryItem[],
-        todayRequests: [] as any[],
+        todayRequests: [] as ShippingPackageSummaryRequest[],
       };
     }
 
@@ -175,12 +201,17 @@ export const RequestorShippingSummaryCard = () => {
             </div>
           ) : (
             <div className="space-y-2 max-h-[60vh] overflow-auto pr-1">
-              {memo.todayRequests.map((req: any) => {
+              {memo.todayRequests.map((req: ShippingPackageSummaryRequest) => {
                 const ci = req?.caseInfos || {};
                 const title =
                   String(req?.title || "").trim() ||
                   [ci?.patientName, ci?.tooth].filter(Boolean).join(" ") ||
                   String(req?.requestId || "");
+                const nextEta =
+                  req?.timeline?.nextEstimatedShipYmd ||
+                  req?.timeline?.estimatedShipYmd ||
+                  req?.timeline?.originalEstimatedShipYmd ||
+                  null;
                 return (
                   <div
                     key={String(req?.id || req?._id || Math.random())}
@@ -192,6 +223,11 @@ export const RequestorShippingSummaryCard = () => {
                     <div className="text-xs text-muted-foreground truncate">
                       의뢰번호: {String(req?.requestId || "")}
                     </div>
+                    {nextEta && (
+                      <div className="text-[11px] text-blue-600 mt-1">
+                        다음 예정일: {formatEta(nextEta)}
+                      </div>
+                    )}
                   </div>
                 );
               })}

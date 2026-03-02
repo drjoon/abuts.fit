@@ -1135,6 +1135,7 @@ export async function getMyShippingPackagesSummary(req, res) {
             title: req?.title || "",
             caseInfos: req?.caseInfos || {},
             manufacturerStage: req?.manufacturerStage || "",
+            timeline: req?.timeline || {},
             createdAt: req?.createdAt,
           }))
         : [];
@@ -1293,58 +1294,71 @@ export async function getMyBulkShipping(req, res) {
       return diameterCache.get(key);
     };
 
-    const resolveEstimatedShipYmd = async (r) => {
+    const resolveEstimatedShipYmds = async (r) => {
       const ci = r.caseInfos || {};
       const maxDiameter = ci.maxDiameter;
       const mode = r.shippingMode || "normal";
+      const createdYmd = toKstYmd(r.createdAt) || todayYmd;
+
+      const normalize = (ymd) =>
+        memo({
+          key: `krbiz:normalize:${ymd}`,
+          ttlMs: 6 * 60 * 60 * 1000,
+          fn: () => normalizeKoreanBusinessDay({ ymd }),
+        });
+
+      const addBiz = ({ startYmd, days }) =>
+        memo({
+          key: `krbiz:add:${startYmd}:${days}`,
+          ttlMs: 6 * 60 * 60 * 1000,
+          fn: () => addKoreanBusinessDays({ startYmd, days }),
+        });
+
+      const clampStart = (ymd) => (ymd < todayYmd ? todayYmd : ymd);
 
       if (mode === "express") {
-        const createdYmd = toKstYmd(r.createdAt) || todayYmd;
         const days = resolveExpressShipLeadDays(maxDiameter);
-        const raw = await memo({
-          key: `krbiz:add:${createdYmd}:${days}`,
-          ttlMs: 6 * 60 * 60 * 1000,
-          fn: () => addKoreanBusinessDays({ startYmd: createdYmd, days }),
+        const originalRaw = await addBiz({ startYmd: createdYmd, days });
+        const nextRaw = await addBiz({
+          startYmd: clampStart(createdYmd),
+          days,
         });
-        return memo({
-          key: `krbiz:normalize:${raw}`,
-          ttlMs: 6 * 60 * 60 * 1000,
-          fn: () => normalizeKoreanBusinessDay({ ymd: raw }),
-        });
+        return {
+          original: await normalize(originalRaw),
+          next: await normalize(nextRaw),
+        };
       }
 
       const pickup = r.productionSchedule?.scheduledShipPickup;
       const pickupYmd = pickup ? toKstYmd(pickup) : null;
       if (pickupYmd) {
-        return memo({
-          key: `krbiz:normalize:${pickupYmd}`,
-          ttlMs: 6 * 60 * 60 * 1000,
-          fn: () => normalizeKoreanBusinessDay({ ymd: pickupYmd }),
-        });
+        const original = await normalize(pickupYmd);
+        const next =
+          pickupYmd < todayYmd ? await normalize(todayYmd) : original;
+        return { original, next };
       }
 
       const requestedShipYmd = toKstYmd(r.requestedShipDate);
       if (requestedShipYmd) {
-        return memo({
-          key: `krbiz:normalize:${requestedShipYmd}`,
-          ttlMs: 6 * 60 * 60 * 1000,
-          fn: () => normalizeKoreanBusinessDay({ ymd: requestedShipYmd }),
-        });
+        const original = await normalize(requestedShipYmd);
+        const next =
+          requestedShipYmd < todayYmd ? await normalize(todayYmd) : original;
+        return { original, next };
       }
 
-      const createdYmd = toKstYmd(r.createdAt) || todayYmd;
-      const baseYmd = createdYmd < todayYmd ? todayYmd : createdYmd;
       const leadDays = resolveNormalLeadDays(maxDiameter);
-      const raw = await memo({
-        key: `krbiz:add:${baseYmd}:${leadDays}`,
-        ttlMs: 6 * 60 * 60 * 1000,
-        fn: () => addKoreanBusinessDays({ startYmd: baseYmd, days: leadDays }),
+      const originalRaw = await addBiz({
+        startYmd: createdYmd,
+        days: leadDays,
       });
-      return memo({
-        key: `krbiz:normalize:${raw}`,
-        ttlMs: 6 * 60 * 60 * 1000,
-        fn: () => normalizeKoreanBusinessDay({ ymd: raw }),
+      const nextRaw = await addBiz({
+        startYmd: clampStart(createdYmd),
+        days: leadDays,
       });
+      return {
+        original: await normalize(originalRaw),
+        next: await normalize(nextRaw),
+      };
     };
 
     const requests = await Request.find({
@@ -1370,7 +1384,25 @@ export async function getMyBulkShipping(req, res) {
             ? `${Number(ci.maxDiameter)}mm`
             : "";
 
-      const estimatedShipYmd = await resolveEstimatedShipYmd(r);
+      const { original: originalEstimatedShipYmd, next: nextEstimatedShipYmd } =
+        await resolveEstimatedShipYmds(r);
+
+      const timeline = r.timeline || {};
+      const updates = {};
+      if (timeline.originalEstimatedShipYmd !== originalEstimatedShipYmd) {
+        updates["timeline.originalEstimatedShipYmd"] = originalEstimatedShipYmd;
+      }
+      if (timeline.nextEstimatedShipYmd !== nextEstimatedShipYmd) {
+        updates["timeline.nextEstimatedShipYmd"] = nextEstimatedShipYmd;
+      }
+      if (timeline.estimatedShipYmd == null) {
+        updates["timeline.estimatedShipYmd"] = originalEstimatedShipYmd;
+      }
+      if (Object.keys(updates).length > 0) {
+        await Request.updateOne({ _id: r._id }, { $set: updates }).exec();
+      }
+
+      const estimatedShipYmd = nextEstimatedShipYmd || originalEstimatedShipYmd;
 
       const stageKey = normalizeRequestStage(r);
       const stageLabel = normalizeRequestStageLabel(r);
@@ -1389,6 +1421,8 @@ export async function getMyBulkShipping(req, res) {
         shippingMode: r.shippingMode || "normal",
         requestedShipDate: r.requestedShipDate,
         estimatedShipYmd,
+        originalEstimatedShipYmd,
+        nextEstimatedShipYmd,
       };
     };
 
