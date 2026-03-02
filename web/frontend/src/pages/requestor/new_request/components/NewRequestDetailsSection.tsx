@@ -8,7 +8,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
 import { NewRequestPatientImplantFields } from "./NewRequestPatientImplantFields";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -119,6 +130,11 @@ export function NewRequestDetailsSection({
   onDrop,
   onFilesSelected,
 }: Props) {
+  const newSystemInfoCopy = useMemo(
+    () =>
+      '"신규 시스템 의뢰"로 무상처리되며, 개발을 위해 랩 아날로그 샘플을 보내주시길 요청드립니다.',
+    [],
+  );
   const normalizeKeyPart = (s: string) => {
     try {
       return String(s || "").normalize("NFC");
@@ -138,6 +154,14 @@ export function NewRequestDetailsSection({
     shouldRestoreDetailAfterDuplicate,
     setShouldRestoreDetailAfterDuplicate,
   ] = useState(false);
+  const [showNewSystemForm, setShowNewSystemForm] = useState(false);
+  const [newSystemManufacturer, setNewSystemManufacturer] = useState("");
+  const [newSystemSystem, setNewSystemSystem] = useState("");
+  const [confirmNewSystemOpen, setConfirmNewSystemOpen] = useState(false);
+  const [pendingNewSystem, setPendingNewSystem] = useState<{
+    manufacturer: string;
+    system: string;
+  } | null>(null);
   const listContainerRef = useRef<HTMLDivElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -211,6 +235,30 @@ export function NewRequestDetailsSection({
     },
     [detailFileKey, setCaseInfos, updateCaseInfos],
   );
+  const resetNewSystemForm = useCallback(() => {
+    setShowNewSystemForm(false);
+    setNewSystemManufacturer("");
+    setNewSystemSystem("");
+    setDetailCaseInfos({
+      newSystemRequest: undefined,
+    });
+  }, [setDetailCaseInfos]);
+
+  const handleNewSystemRequestClick = useCallback(() => {
+    const manufacturer = newSystemManufacturer.trim();
+    const system = newSystemSystem.trim();
+    if (!manufacturer || !system) {
+      toast({
+        title: "신규 시스템 입력 필요",
+        description: "제조사와 시스템을 모두 입력해주세요.",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+    setPendingNewSystem({ manufacturer, system });
+    setConfirmNewSystemOpen(true);
+  }, [newSystemManufacturer, newSystemSystem, toast]);
   const detailImplantInfo = {
     clinicName: detailCaseInfos?.clinicName || "",
     patientName: detailCaseInfos?.patientName || "",
@@ -219,6 +267,16 @@ export function NewRequestDetailsSection({
     implantSystem: detailCaseInfos?.implantSystem || "",
     implantType: detailCaseInfos?.implantType || "",
   };
+
+  useEffect(() => {
+    if (detailCaseInfos?.newSystemRequest?.requested) {
+      setShowNewSystemForm(true);
+      setNewSystemManufacturer(
+        detailCaseInfos.newSystemRequest.manufacturer || "",
+      );
+      setNewSystemSystem(detailCaseInfos.newSystemRequest.system || "");
+    }
+  }, [detailCaseInfos?.newSystemRequest?.requested]);
 
   const openDetailModal = (index: number) => {
     setSelectedPreviewIndex(index);
@@ -581,8 +639,8 @@ export function NewRequestDetailsSection({
             </DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-1 lg:grid-cols-[45%_55%] gap-4 items-stretch mr-4">
-            <div className="app-glass-card app-glass-card--lg">
-              <div className="app-glass-card-content">
+            <div className="app-glass-card app-glass-card--lg h-full flex flex-col">
+              <div className="app-glass-card-content flex-1">
                 {detailFile ? (
                   <StlPreviewViewer
                     file={detailFile}
@@ -611,10 +669,12 @@ export function NewRequestDetailsSection({
               </div>
             </div>
             <div className="flex flex-col gap-3 h-full">
-              <div className="app-glass-card app-glass-card--lg">
-                <div className="app-glass-card-content space-y-2.5 text-sm">
-                  <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                    임플란트/환자 정보
+              <div className="app-glass-card app-glass-card--lg h-full flex flex-col">
+                <div className="app-glass-card-content space-y-3 text-sm flex-1 flex flex-col">
+                  <div className="flex flex-col gap-2">
+                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                      임플란트/환자 정보
+                    </div>
                   </div>
                   <NewRequestPatientImplantFields
                     caseInfos={detailCaseInfos}
@@ -641,68 +701,184 @@ export function NewRequestDetailsSection({
                     clearAllTeethPresets={clearAllTeethPresets}
                     handleAddOrSelectClinic={handleAddOrSelectClinic}
                   />
+                  <div className="flex flex-col gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-sm font-semibold text-slate-700">
+                        찾으시는 임플란트가 없나요?
+                      </span>
+                      {!showNewSystemForm ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="bg-white text-blue-700 border-blue-200 hover:bg-blue-50"
+                          onClick={() => setShowNewSystemForm(true)}
+                        >
+                          신규 시스템 요청
+                        </Button>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={handleNewSystemRequestClick}
+                          >
+                            요청
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={resetNewSystemForm}
+                          >
+                            취소
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                    {showNewSystemForm && (
+                      <div className="flex flex-col gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <Input
+                            placeholder="제조사 입력"
+                            value={newSystemManufacturer}
+                            onChange={(e) =>
+                              setNewSystemManufacturer(e.target.value)
+                            }
+                          />
+                          <Input
+                            placeholder="시스템 입력"
+                            value={newSystemSystem}
+                            onChange={(e) => setNewSystemSystem(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <DialogFooter className="mt-auto flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    onClick={() => {
-                      if (detailIndex !== null) {
-                        handleRemoveFile(detailIndex);
-                      }
-                      setIsDetailOpen(false);
-                    }}
-                  >
-                    삭제
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIsDetailOpen(false)}
-                  >
-                    취소
-                  </Button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    className={
-                      highlightUnverifiedArrows
-                        ? "animate-bounce bg-primary text-white"
-                        : undefined
-                    }
-                    onClick={() => {
-                      if (detailIndex !== null) {
-                        void handleVerifyFile(detailIndex, {
-                          stayInModal: true,
-                        });
-                      }
-                    }}
-                  >
-                    확인 & 다음
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="text-slate-500"
-                    onClick={() => {
-                      const moved = moveToNextDetail({ onlyUnverified: true });
-                      if (!moved) {
+                <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pt-4">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={() => {
+                        if (detailIndex !== null) {
+                          handleRemoveFile(detailIndex);
+                        }
                         setIsDetailOpen(false);
+                      }}
+                    >
+                      삭제
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsDetailOpen(false)}
+                    >
+                      취소
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      className={
+                        highlightUnverifiedArrows
+                          ? "animate-bounce bg-primary text-white"
+                          : undefined
                       }
-                    }}
-                    disabled={!files.length}
-                  >
-                    건너뛰기
-                  </Button>
-                </div>
-              </DialogFooter>
+                      onClick={() => {
+                        if (detailIndex !== null) {
+                          void handleVerifyFile(detailIndex, {
+                            stayInModal: true,
+                          });
+                        }
+                      }}
+                    >
+                      확인 & 다음
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="text-slate-500"
+                      onClick={() => {
+                        const moved = moveToNextDetail({
+                          onlyUnverified: true,
+                        });
+                        if (!moved) {
+                          setIsDetailOpen(false);
+                        }
+                      }}
+                      disabled={!files.length}
+                    >
+                      건너뛰기
+                    </Button>
+                  </div>
+                </DialogFooter>
+              </div>
             </div>
           </div>
         </DialogContent>
       </Dialog>
+      <AlertDialog
+        open={confirmNewSystemOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirmNewSystemOpen(false);
+            setPendingNewSystem(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>신규 시스템 의뢰로 접수할까요?</AlertDialogTitle>
+            <AlertDialogDescription>{newSystemInfoCopy}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setConfirmNewSystemOpen(false);
+                setPendingNewSystem(null);
+              }}
+            >
+              취소
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!pendingNewSystem) return;
+                const { manufacturer, system } = pendingNewSystem;
+                const message = "랩 아날로그 샘플 한 개를 요청드립니다";
+                setDetailCaseInfos({
+                  implantManufacturer: manufacturer,
+                  implantSystem: system,
+                  newSystemRequest: {
+                    requested: true,
+                    manufacturer,
+                    system,
+                    message,
+                    free: true,
+                    tag: "신규 시스템 의뢰",
+                  },
+                });
+                toast({
+                  title: "신규 시스템으로 접수",
+                  description:
+                    "무상 처리 및 랩 아날로그 샘플 요청으로 전달됩니다.",
+                  duration: 3500,
+                });
+                setShowNewSystemForm(false);
+                setConfirmNewSystemOpen(false);
+                setPendingNewSystem(null);
+                const nextIndex = detailIndex ?? selectedPreviewIndex;
+                if (nextIndex !== null && nextIndex >= 0) {
+                  await handleVerifyFile(nextIndex, { stayInModal: true });
+                }
+              }}
+            >
+              확인
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

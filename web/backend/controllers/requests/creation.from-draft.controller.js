@@ -236,7 +236,7 @@ export async function createRequestsFromDraft(req, res) {
         }
 
         const priceStart = Date.now();
-        const computedPrice = await computePriceForRequest({
+        let computedPrice = await computePriceForRequest({
           requestorId: req.user._id,
           requestorOrgId: req.user?.organizationId,
           clinicName,
@@ -249,19 +249,54 @@ export async function createRequestsFromDraft(req, res) {
           dt: Date.now() - priceStart,
         });
 
+        const newSystemRequest = (() => {
+          const nsr = ci?.newSystemRequest;
+          if (nsr?.requested) {
+            const manufacturer = String(nsr.manufacturer || "").trim();
+            const system = String(nsr.system || "").trim();
+            const message = String(
+              nsr.message || "랩 아날로그 샘플 한 개를 요청드립니다",
+            ).trim();
+            return {
+              requested: true,
+              manufacturer,
+              system,
+              message,
+              free: true,
+              tag: nsr.tag || "신규 시스템 의뢰",
+            };
+          }
+          return undefined;
+        })();
+
+        if (newSystemRequest) {
+          computedPrice = {
+            ...(computedPrice || {}),
+            amount: 0,
+            supply: 0,
+            vat: 0,
+            free: true,
+            discountReason: "신규 시스템 의뢰(무상)",
+            discountType: "free",
+          };
+        }
+
         const caseInfosWithFile = ci?.file
           ? {
               ...normalizedCi,
+              newSystemRequest,
               file: {
                 originalName: ci.file.originalName,
                 fileType: ci.file.mimetype,
                 fileSize: ci.file.size,
                 filePath: undefined,
                 s3Key: ci.file.s3Key,
-                s3Url: undefined,
               },
             }
-          : normalizedCi;
+          : {
+              ...normalizedCi,
+              newSystemRequest,
+            };
 
         return {
           idx,

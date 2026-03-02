@@ -33,6 +33,14 @@ export type CaseInfos = {
   workType?: string; // "abutment" | "crown" | "prosthesis"
   shippingMode?: "normal" | "express";
   requestedShipDate?: string; // ISO date string or YYYY-MM-DD
+  newSystemRequest?: {
+    requested: boolean;
+    manufacturer?: string;
+    system?: string;
+    message?: string;
+    free?: boolean;
+    tag?: string;
+  };
 };
 
 export type DraftFileMeta = {

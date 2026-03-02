@@ -51,7 +51,14 @@ export const WorksheetCardGrid = ({
 }: WorksheetCardGridProps) => (
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
     {requests.map((request) => {
-      const caseInfos = request.caseInfos || {};
+      const caseInfos = (request.caseInfos ||
+        {}) as typeof request.caseInfos & {
+        newSystemRequest?: { requested?: boolean };
+      };
+      const isNewSystemRequest =
+        !isCamStage &&
+        !isMachiningStage &&
+        !!caseInfos.newSystemRequest?.requested;
       const workType = (() => {
         const ciWorkType = caseInfos.workType as
           | "abutment"
@@ -336,7 +343,8 @@ export const WorksheetCardGrid = ({
           className={`relative shadow-sm hover:shadow-lg transition-all duration-300 h-full flex flex-col border-solid group/card ${
             isCompletedForCurrentStage
               ? "border-emerald-500 border-2"
-              : urgencyClass || "border-slate-200"
+              : urgencyClass ||
+                (isNewSystemRequest ? "border-amber-300" : "border-slate-200")
           }`}
           onClick={() => onOpenPreview(request)}
           onDrop={handleDrop}
@@ -396,10 +404,24 @@ export const WorksheetCardGrid = ({
               </span>
             </div>
           )}
-          <CardContent className="p-3 flex-1 flex flex-col gap-2">
+          <CardContent
+            className={`p-3 flex-1 flex flex-col gap-2 ${
+              isNewSystemRequest ? "bg-amber-50/70" : ""
+            }`}
+          >
             <div className="space-y-2 text-[15px] text-slate-700 rounded-xl p-3 transition">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">{stageBadge}</div>
+                <div className="flex items-center gap-2">
+                  {stageBadge}
+                  {isNewSystemRequest && (
+                    <Badge
+                      variant="secondary"
+                      className="bg-amber-200 text-amber-900 border-amber-300"
+                    >
+                      신규 시스템
+                    </Badge>
+                  )}
+                </div>
               </div>
               {request.referenceIds && request.referenceIds.length > 0 && (
                 <div className="mb-1">
