@@ -9,7 +9,6 @@ import { useNewRequestImplant } from "./useNewRequestImplant";
 import { type DraftCaseInfo } from "./newRequestTypes";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
-import { getNormalizedStageOrder } from "@/utils/stage";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 
 const NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX =
@@ -773,22 +772,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     setSelectedPreviewIndex,
     caseInfosMap,
     patchDraftImmediately,
-    onDuplicateDetected: (payload) => {
-      const mappedDuplicates = Array.isArray(payload?.duplicates)
-        ? payload.duplicates.map((dup: any) => {
-            const so = getNormalizedStageOrder(dup?.existingRequest);
-            return {
-              ...dup,
-              lockedReason: so >= 2 ? "production" : undefined,
-            };
-          })
-        : [];
-
-      setDuplicatePrompt({
-        ...payload,
-        duplicates: mappedDuplicates,
-      });
-    },
   });
 
   const handleSubmit = useCallback(async () => {

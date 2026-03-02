@@ -692,6 +692,16 @@ export const NewRequestPage = () => {
                 }
               }}
               onSubmit={() => {
+                if (!files.length) {
+                  toast({
+                    title: "파일이 필요합니다",
+                    description:
+                      "최소 1개의 커스텀 어벗 STL 파일을 추가한 뒤 의뢰해주세요.",
+                    variant: "destructive",
+                    duration: 4000,
+                  });
+                  return;
+                }
                 if (unverifiedCount > 0) {
                   const firstUnverifiedIndex = files.findIndex((file) => {
                     const key = `${String(file.name || "").normalize("NFC")}:${file.size}`;
