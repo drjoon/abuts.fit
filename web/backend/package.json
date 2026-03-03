@@ -11,8 +11,9 @@
     "test:watch": "NODE_ENV=test jest --watch",
     "test:coverage": "NODE_ENV=test jest --coverage",
     "db:reset": "cross-env ENV_FILE=local.env node scripts/db/reset.js",
-    "db:seed:core": "cross-env ENV_FILE=local.env node scripts/db/seed.core.js",
-    "db:reset-and-seed": "cross-env ENV_FILE=local.env node scripts/db/reset-and-seed.js",
+    "db:reset-account": "cross-env ENV_FILE=local.env node scripts/db/reset-account.js",
+    "db:seed": "cross-env ENV_FILE=local.env node scripts/db/seed.js",
+    "db:reset-seed": "cross-env ENV_FILE=local.env node scripts/db/reset-seed.js",
     "worker:monthly-referral-snapshot": "cross-env ENV_FILE=local.env node jobs/dailyReferralSnapshotWorker.js",
     "worker:daily-admin-salesman-credits-overview-snapshot": "cross-env ENV_FILE=local.env node jobs/dailyAdminSalesmanCreditsOverviewSnapshotWorker.js"
   },
