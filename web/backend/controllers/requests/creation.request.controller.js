@@ -16,6 +16,8 @@ import {
   uploadToRhinoServer,
 } from "./creation.helpers.controller.js";
 import { getRequestorOrgId } from "./utils.js";
+import { calculateInitialProductionSchedule } from "./production.utils.js";
+import { getManufacturerLeadTimesUtil } from "../organizations/leadTime.controller.js";
 
 /**
  * 새 의뢰 생성
@@ -729,6 +731,8 @@ export async function createRequest(req, res) {
  */
 export async function createRequestsBulk(req, res) {
   try {
+    const tStart = Date.now();
+    console.debug("[BulkCreate] start", { at: new Date().toISOString() });
     // 권한 및 조직/크레딧 검사
     if (req.user?.role === "requestor") {
       const orgId = getRequestorOrgId(req);
@@ -772,152 +776,314 @@ export async function createRequestsBulk(req, res) {
       }
     } catch {}
 
-    // 제조사 리드타임 1회 로드
-    const { getManufacturerLeadTimesUtil } =
-      await import("./production.utils.js").then(
-        () => import("../organizations/leadTime.controller.js"),
-      );
+    const tLead0 = Date.now();
+    // 제조사 리드타임 1회 로드 (정적 import)
     const manufacturerSettings = await getManufacturerLeadTimesUtil();
     const leadTimes = manufacturerSettings?.leadTimes || {};
+    console.debug("[BulkCreate] leadTimes loaded", { ms: Date.now() - tLead0 });
 
     const created = [];
     const errors = [];
+    const perItemStats = [];
+    const LOG_PER_ITEM = String(process.env.BULK_LOG_PER_ITEM || "0") === "1";
 
-    // 개별 항목 처리 (부분 성공 수집)
-    for (let i = 0; i < items.length; i += 1) {
-      const raw = items[i] || {};
-      try {
-        const { caseInfos, ...rest } = raw;
-        if (!caseInfos || typeof caseInfos !== "object") {
-          throw new Error("caseInfos 객체가 필요합니다.");
-        }
+    // 공통 요청 시간과 캐시(스케줄/예상일) 준비
+    const requestedAtBatch = new Date();
+    const scheduleCache = new Map();
+    const estimateCache = new Map();
 
-        const patientName = String(caseInfos.patientName || "").trim();
-        const tooth = String(caseInfos.tooth || "").trim();
-        const clinicName = String(caseInfos.clinicName || "").trim();
-        const workType = String(caseInfos.workType || "abutment").trim();
-        if (workType !== "abutment") {
-          throw new Error("현재는 커스텀 어벗먼트 의뢰만 등록할 수 있습니다.");
-        }
+    // 제한 동시 처리로 전체 시간 단축 (운영은 기본 더 보수적으로)
+    const env = String(process.env.NODE_ENV || "").trim();
+    const DEFAULT_CONCURRENCY = env === "production" ? 2 : 4;
+    const CONCURRENCY = Math.min(
+      6,
+      Math.max(
+        1,
+        Number(process.env.BULK_CREATE_CONCURRENCY) || DEFAULT_CONCURRENCY,
+      ),
+    );
+    console.debug("[BulkCreate] processing", {
+      count: items.length,
+      concurrency: CONCURRENCY,
+    });
 
-        const normalizedCaseInfos =
-          await normalizeCaseInfosImplantFields(caseInfos);
-        const implantManufacturer = String(
-          normalizedCaseInfos.implantManufacturer || "",
-        ).trim();
-        const implantSystem = String(
-          normalizedCaseInfos.implantSystem || "",
-        ).trim();
-        const implantType = String(
-          normalizedCaseInfos.implantType || "",
-        ).trim();
+    let cursor = 0;
+    const worker = async () => {
+      while (true) {
+        const i = cursor++;
+        if (i >= items.length) return;
+        const raw = items[i] || {};
+        try {
+          const iStart = Date.now();
+          const { caseInfos, ...rest } = raw;
+          if (!caseInfos || typeof caseInfos !== "object") {
+            throw new Error("caseInfos 객체가 필요합니다.");
+          }
 
-        if (!patientName || !tooth || !clinicName) {
-          throw new Error("치과이름, 환자이름, 치아번호는 모두 필수입니다.");
-        }
-        if (!implantManufacturer || !implantSystem || !implantType) {
-          throw new Error(
-            "커스텀 어벗 의뢰의 경우 임플란트 제조사/시스템/유형은 모두 필수입니다.",
-          );
-        }
+          const patientName = String(caseInfos.patientName || "").trim();
+          const tooth = String(caseInfos.tooth || "").trim();
+          const clinicName = String(caseInfos.clinicName || "").trim();
+          const workType = String(caseInfos.workType || "abutment").trim();
+          if (workType !== "abutment") {
+            throw new Error(
+              "현재는 커스텀 어벗먼트 의뢰만 등록할 수 있습니다.",
+            );
+          }
 
-        const computedPrice = await computePriceForRequest({
-          requestorId: req.user._id,
-          requestorOrgId: req.user?.organizationId,
-          clinicName,
-          patientName,
-          tooth,
-        });
+          const tNorm0 = Date.now();
+          const normalizedCaseInfos =
+            await normalizeCaseInfosImplantFields(caseInfos);
+          const normMs = Date.now() - tNorm0;
+          const implantManufacturer = String(
+            normalizedCaseInfos.implantManufacturer || "",
+          ).trim();
+          const implantSystem = String(
+            normalizedCaseInfos.implantSystem || "",
+          ).trim();
+          const implantType = String(
+            normalizedCaseInfos.implantType || "",
+          ).trim();
 
-        const shippingMode = rest.shippingMode || "normal";
-        const requestedAt = new Date();
-        if (
-          shippingMode === "normal" &&
-          requestorWeeklyBatchDays.length === 0
-        ) {
-          throw new Error(
-            "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
-          );
-        }
+          if (!patientName || !tooth || !clinicName) {
+            throw new Error("치과이름, 환자이름, 치아번호는 모두 필수입니다.");
+          }
+          if (!implantManufacturer || !implantSystem || !implantType) {
+            throw new Error(
+              "커스텀 어벗 의뢰의 경우 임플란트 제조사/시스템/유형은 모두 필수입니다.",
+            );
+          }
 
-        const newRequest = new Request({
-          ...rest,
-          caseInfos: normalizedCaseInfos,
-          requestor: req.user._id,
-          requestorOrganizationId:
-            req.user?.role === "requestor" && req.user?.organizationId
-              ? req.user.organizationId
-              : null,
-          price: computedPrice,
-        });
+          const tPrice0 = Date.now();
+          const computedPrice = await computePriceForRequest({
+            requestorId: req.user._id,
+            requestorOrgId: req.user?.organizationId,
+            clinicName,
+            patientName,
+            tooth,
+          });
+          const priceMs = Date.now() - tPrice0;
 
-        await ensureLotNumberForMachining(newRequest);
-        newRequest.originalShipping = { mode: shippingMode, requestedAt };
-        newRequest.shippingMode = shippingMode; // legacy
-        newRequest.finalShipping = {
-          mode: shippingMode,
-          updatedAt: requestedAt,
-        };
+          const shippingMode = rest.shippingMode || "normal";
+          const requestedAt = requestedAtBatch;
+          if (
+            shippingMode === "normal" &&
+            requestorWeeklyBatchDays.length === 0
+          ) {
+            throw new Error(
+              "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
+            );
+          }
 
-        const { calculateInitialProductionSchedule } =
-          await import("./production.utils.js");
-        const productionSchedule = await calculateInitialProductionSchedule({
-          shippingMode,
-          maxDiameter: normalizedCaseInfos?.maxDiameter,
-          requestedAt,
-          weeklyBatchDays:
-            shippingMode === "normal" ? requestorWeeklyBatchDays : [],
-        });
-        newRequest.productionSchedule = productionSchedule;
+          const newRequest = new Request({
+            ...rest,
+            caseInfos: normalizedCaseInfos,
+            requestor: req.user._id,
+            requestorOrganizationId:
+              req.user?.role === "requestor" && req.user?.organizationId
+                ? req.user.organizationId
+                : null,
+            price: computedPrice,
+          });
 
-        const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
-        const pickupYmd = productionSchedule?.scheduledShipPickup
-          ? toKstYmd(productionSchedule.scheduledShipPickup)
-          : null;
-        let estimatedShipYmdRaw;
-        if (pickupYmd) {
-          estimatedShipYmdRaw = pickupYmd;
-        } else {
-          const maxDiameter = normalizedCaseInfos?.maxDiameter;
-          const d =
-            typeof maxDiameter === "number" && !isNaN(maxDiameter)
-              ? maxDiameter
-              : 8;
-          let diameterKey = "d8";
-          if (d <= 6) diameterKey = "d6";
-          else if (d <= 8) diameterKey = "d8";
-          else if (d <= 10) diameterKey = "d10";
-          else diameterKey = "d12";
-          const leadDays = leadTimes[diameterKey]?.minBusinessDays ?? 1;
-          estimatedShipYmdRaw = await addKoreanBusinessDays({
-            startYmd: createdYmd,
-            days: leadDays,
+          await ensureLotNumberForMachining(newRequest);
+          newRequest.originalShipping = { mode: shippingMode, requestedAt };
+          newRequest.shippingMode = shippingMode; // legacy
+          newRequest.finalShipping = {
+            mode: shippingMode,
+            updatedAt: requestedAt,
+          };
+
+          const tSched0 = Date.now();
+          const weekly =
+            shippingMode === "normal" ? requestorWeeklyBatchDays : [];
+          const schedKey = JSON.stringify({
+            shippingMode,
+            maxDiameter: normalizedCaseInfos?.maxDiameter,
+            requestedAt: toKstYmd(requestedAt),
+            weekly,
+          });
+          let productionSchedule = scheduleCache.get(schedKey);
+          if (!productionSchedule) {
+            productionSchedule = await calculateInitialProductionSchedule({
+              shippingMode,
+              maxDiameter: normalizedCaseInfos?.maxDiameter,
+              requestedAt,
+              weeklyBatchDays: weekly,
+            });
+            scheduleCache.set(schedKey, productionSchedule);
+          }
+          const scheduleMs = Date.now() - tSched0;
+          newRequest.productionSchedule = productionSchedule;
+
+          const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
+          const pickupYmd = productionSchedule?.scheduledShipPickup
+            ? toKstYmd(productionSchedule.scheduledShipPickup)
+            : null;
+          let estimatedShipYmdRaw;
+          let estimateMs = 0;
+          if (pickupYmd) {
+            estimatedShipYmdRaw = pickupYmd;
+          } else {
+            const tEst0 = Date.now();
+            const maxDiameter = normalizedCaseInfos?.maxDiameter;
+            const d =
+              typeof maxDiameter === "number" && !isNaN(maxDiameter)
+                ? maxDiameter
+                : 8;
+            let diameterKey = "d8";
+            if (d <= 6) diameterKey = "d6";
+            else if (d <= 8) diameterKey = "d8";
+            else if (d <= 10) diameterKey = "d10";
+            else diameterKey = "d12";
+            const leadDays = leadTimes[diameterKey]?.minBusinessDays ?? 1;
+            const estKey = `${diameterKey}|${createdYmd}`;
+            const cachedEst = estimateCache.get(estKey);
+            if (cachedEst) {
+              estimatedShipYmdRaw = cachedEst; // already normalized ymd
+            } else {
+              const added = await addKoreanBusinessDays({
+                startYmd: createdYmd,
+                days: leadDays,
+              });
+              estimatedShipYmdRaw = added;
+            }
+            estimateMs = Date.now() - tEst0;
+          }
+
+          const tNormBiz0 = Date.now();
+          let estimatedShipYmd = await normalizeKoreanBusinessDay({
+            ymd: estimatedShipYmdRaw,
+          });
+          // 캐시에 최종 정규화 결과 저장 (pickup 경로 포함)
+          if (!pickupYmd) {
+            const d =
+              typeof normalizedCaseInfos?.maxDiameter === "number" &&
+              !isNaN(normalizedCaseInfos?.maxDiameter)
+                ? normalizedCaseInfos.maxDiameter
+                : 8;
+            let diameterKey = "d8";
+            if (d <= 6) diameterKey = "d6";
+            else if (d <= 8) diameterKey = "d8";
+            else if (d <= 10) diameterKey = "d10";
+            else diameterKey = "d12";
+            const estKey = `${diameterKey}|${createdYmd}`;
+            estimateCache.set(estKey, estimatedShipYmd);
+          }
+          estimateMs += Date.now() - tNormBiz0;
+          newRequest.timeline = newRequest.timeline || {};
+          newRequest.timeline.estimatedShipYmd = estimatedShipYmd;
+
+          newRequest.caseInfos = newRequest.caseInfos || {};
+          if (newRequest.caseInfos?.file?.s3Key) {
+            newRequest.caseInfos.reviewByStage =
+              newRequest.caseInfos.reviewByStage || {};
+            newRequest.caseInfos.reviewByStage.request = {
+              status: "PENDING",
+              updatedAt: new Date(),
+              updatedBy: req.user?._id,
+              reason: "",
+            };
+          }
+
+          const tSave0 = Date.now();
+          await newRequest.save();
+          const saveMs = Date.now() - tSave0;
+
+          const totalMs = Date.now() - iStart;
+          perItemStats.push({
+            i,
+            normMs,
+            priceMs,
+            scheduleMs,
+            estimateMs,
+            saveMs,
+            totalMs,
+          });
+          if (LOG_PER_ITEM) {
+            console.debug("[BulkCreate:item]", {
+              i,
+              normMs,
+              priceMs,
+              scheduleMs,
+              estimateMs,
+              saveMs,
+              totalMs,
+            });
+          }
+          created.push(newRequest);
+        } catch (e) {
+          errors.push({
+            index: i,
+            item: raw,
+            message: e?.message || String(e),
           });
         }
-
-        const estimatedShipYmd = await normalizeKoreanBusinessDay({
-          ymd: estimatedShipYmdRaw,
-        });
-        newRequest.timeline = newRequest.timeline || {};
-        newRequest.timeline.estimatedShipYmd = estimatedShipYmd;
-
-        newRequest.caseInfos = newRequest.caseInfos || {};
-        if (newRequest.caseInfos?.file?.s3Key) {
-          newRequest.caseInfos.reviewByStage =
-            newRequest.caseInfos.reviewByStage || {};
-          newRequest.caseInfos.reviewByStage.request = {
-            status: "PENDING",
-            updatedAt: new Date(),
-            updatedBy: req.user?._id,
-            reason: "",
-          };
-        }
-
-        await newRequest.save();
-        created.push(newRequest);
-      } catch (e) {
-        errors.push({ index: i, item: raw, message: e?.message || String(e) });
       }
+    };
+
+    const workers = Array.from({ length: CONCURRENCY }, () => worker());
+    await Promise.all(workers);
+
+    console.debug("[BulkCreate] done", {
+      created: created.length,
+      errors: errors.length,
+      ms: Date.now() - tStart,
+    });
+
+    if (perItemStats.length > 0) {
+      const agg = perItemStats.reduce(
+        (a, s) => {
+          a.norm += s.normMs;
+          a.price += s.priceMs;
+          a.schedule += s.scheduleMs;
+          a.estimate += s.estimateMs;
+          a.save += s.saveMs;
+          a.total += s.totalMs;
+          a.maxNorm = Math.max(a.maxNorm, s.normMs);
+          a.maxPrice = Math.max(a.maxPrice, s.priceMs);
+          a.maxSchedule = Math.max(a.maxSchedule, s.scheduleMs);
+          a.maxEstimate = Math.max(a.maxEstimate, s.estimateMs);
+          a.maxSave = Math.max(a.maxSave, s.saveMs);
+          a.maxTotal = Math.max(a.maxTotal, s.totalMs);
+          a.count += 1;
+          return a;
+        },
+        {
+          norm: 0,
+          price: 0,
+          schedule: 0,
+          estimate: 0,
+          save: 0,
+          total: 0,
+          maxNorm: 0,
+          maxPrice: 0,
+          maxSchedule: 0,
+          maxEstimate: 0,
+          maxSave: 0,
+          maxTotal: 0,
+          count: 0,
+        },
+      );
+      const avg = (v) => Math.round((v / Math.max(1, agg.count)) * 100) / 100;
+      console.debug("[BulkCreate] stats", {
+        count: agg.count,
+        avgMs: {
+          norm: avg(agg.norm),
+          price: avg(agg.price),
+          schedule: avg(agg.schedule),
+          estimate: avg(agg.estimate),
+          save: avg(agg.save),
+          total: avg(agg.total),
+        },
+        maxMs: {
+          norm: agg.maxNorm,
+          price: agg.maxPrice,
+          schedule: agg.maxSchedule,
+          estimate: agg.maxEstimate,
+          save: agg.maxSave,
+          total: agg.maxTotal,
+        },
+      });
     }
 
     if (created.length > 0 && errors.length === 0) {

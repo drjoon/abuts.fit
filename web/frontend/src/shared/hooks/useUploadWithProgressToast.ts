@@ -25,14 +25,33 @@ export function useUploadWithProgressToast(
       const total = files.length;
       const progressMap: Record<string, number> = {};
 
-      const t = toast({
-        title: "파일 업로드",
+      const makeSalt = () => {
+        const base = ["\u200B", "\u200C", "\u200D", "\u2060"]; // zero-width set
+        const len = 5 + Math.floor(Math.random() * 11); // 5~15
+        let s = "";
+        for (let i = 0; i < len; i++)
+          s += base[Math.floor(Math.random() * base.length)];
+        return s;
+      };
+      let t = toast({
+        title: `파일 업로드${makeSalt()}`,
         description: React.createElement(UploadProgressToast, { progress: 0 }),
+        duration: 600000,
       });
+      if (!t.id) {
+        // fallback once if suppressed by duplicate filter
+        t = toast({
+          title: `파일 업로드${makeSalt()}`,
+          description: React.createElement(UploadProgressToast, {
+            progress: 0,
+          }),
+          duration: 600000,
+        });
+      }
 
       const update = () => {
         const sum = Object.values(progressMap).reduce((a, b) => a + b, 0);
-        overall = Math.floor(sum / Math.max(1, total));
+        overall = Math.min(100, Math.floor(sum / Math.max(1, total)));
         if (t.id) {
           t.update({
             id: t.id,
@@ -43,6 +62,13 @@ export function useUploadWithProgressToast(
           });
         }
       };
+
+      // 전체 파일에 대해 0%로 초기화하여 평균 진행률이 안정적으로 표시되도록 함
+      for (const f of files) {
+        const k = `${f.name}:${f.size}`;
+        progressMap[k] = 0;
+      }
+      update();
 
       try {
         const result = await uploadFiles(files, (perFile) => {
@@ -60,6 +86,7 @@ export function useUploadWithProgressToast(
             }),
             duration: 1500,
           });
+          setTimeout(() => t.dismiss(), 1500);
         }
 
         return result;

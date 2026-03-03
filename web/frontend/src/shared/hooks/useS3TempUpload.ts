@@ -79,7 +79,8 @@ export function useS3TempUpload(options: UseS3TempUploadOptions) {
                 const percentComplete = Math.round(
                   (event.loaded / event.total) * 100,
                 );
-                currentProgress[file.name] = percentComplete;
+                const k = `${file.name}:${file.size}`;
+                currentProgress[k] = percentComplete;
                 onProgress({ ...currentProgress });
               }
             };

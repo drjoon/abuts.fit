@@ -160,7 +160,6 @@ const cncMachineSchema = new mongoose.Schema(
   },
 );
 
-cncMachineSchema.index({ machineId: 1 });
 cncMachineSchema.index({ status: 1 });
 cncMachineSchema.index({ "currentMaterial.diameterGroup": 1 });
 

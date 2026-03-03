@@ -2,10 +2,10 @@ import mongoose from "mongoose";
 
 const lotCounterSchema = new mongoose.Schema(
   {
-    key: { type: String, required: true, default: "global", index: true },
+    key: { type: String, required: true, default: "global" },
     seq: { type: Number, required: true, default: -1 },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 lotCounterSchema.index({ key: 1 }, { unique: true });

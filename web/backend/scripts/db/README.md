@@ -16,12 +16,6 @@ npm run db:reset
 npm run db:seed:core
 ```
 
-- 개발용 데이터 시드(dev: 샘플 계정, 크레딧, 임플란트 프리셋)
-
-```bash
-npm run db:seed:dev
-```
-
 - 초기화 + core + dev 한번에
 
 ```bash
