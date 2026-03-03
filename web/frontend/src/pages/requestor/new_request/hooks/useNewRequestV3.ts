@@ -71,6 +71,18 @@ export function useNewRequestV3() {
             duration: 2000,
           });
         }
+
+        for (const f of droppedFiles) {
+          const fileKey = getFileKey(f);
+          const ci = getCaseInfos(fileKey);
+          if (ci?.clinicName && ci?.patientName && ci?.tooth) {
+            await checkDuplicate(fileKey, {
+              clinicName: String(ci.clinicName),
+              patientName: String(ci.patientName),
+              tooth: String(ci.tooth),
+            });
+          }
+        }
       } catch (error) {
         console.error("[handleDrop] Error:", error);
         toast({
@@ -107,6 +119,18 @@ export function useNewRequestV3() {
             description: `${result.addedCount}개 파일이 추가되었습니다.`,
             duration: 2000,
           });
+        }
+
+        for (const f of selectedFiles) {
+          const fileKey = getFileKey(f);
+          const ci = getCaseInfos(fileKey);
+          if (ci?.clinicName && ci?.patientName && ci?.tooth) {
+            await checkDuplicate(fileKey, {
+              clinicName: String(ci.clinicName),
+              patientName: String(ci.patientName),
+              tooth: String(ci.tooth),
+            });
+          }
         }
       } catch (error) {
         console.error("[handleFileSelect] Error:", error);
@@ -202,7 +226,6 @@ export function useNewRequestV3() {
       info: { clinicName: string; patientName: string; tooth: string },
     ) => {
       try {
-        // 이미 중복 처리 결정이 있으면 스킵
         const existingResolution = getDuplicateResolution(fileKey);
         if (existingResolution) {
           console.log("[checkDuplicate] Already resolved:", fileKey);
@@ -212,7 +235,13 @@ export function useNewRequestV3() {
         const token = localStorage.getItem("token");
         if (!token) return;
 
-        const response = await fetch("/api/requests/my/check-duplicate", {
+        const qs = new URLSearchParams({
+          clinicName: String(info.clinicName || "").trim(),
+          patientName: String(info.patientName || "").trim(),
+          tooth: String(info.tooth || "").trim(),
+        }).toString();
+
+        const response = await fetch(`/api/requests/my/check-duplicate?${qs}`, {
           method: "GET",
           headers: {
             Authorization: `Bearer ${token}`,
@@ -224,19 +253,22 @@ export function useNewRequestV3() {
           throw new Error("중복 체크 실패");
         }
 
-        const data = await response.json();
-        const duplicates = data.data || [];
-
-        // 중복 발견 시 모달 표시
-        if (duplicates.length > 0) {
+        const body = await response.json();
+        const data = body?.data || {};
+        if (data?.exists) {
+          const stageOrder = Number(data?.stageOrder ?? 0);
+          const st = String(data?.existingRequest?.manufacturerStage || "");
+          const mode = st === "추적관리" ? "tracking" : "active";
           setDuplicatePrompt({
-            duplicates: duplicates.map((dup: any) => ({
-              fileKey,
-              caseId: fileKey,
-              existingRequest: dup.existingRequest,
-              mode: dup.mode || "active",
-            })),
-            mode: duplicates[0]?.mode || "active",
+            duplicates: [
+              {
+                fileKey,
+                caseId: fileKey,
+                existingRequest: data.existingRequest,
+                mode,
+              },
+            ],
+            mode,
           });
         }
       } catch (error) {

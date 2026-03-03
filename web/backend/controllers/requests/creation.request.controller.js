@@ -9,6 +9,9 @@ import {
   getTodayYmdInKst,
   toKstYmd,
   normalizeKoreanBusinessDay,
+  buildRequestorOrgScopeFilter,
+  normalizeRequestStage,
+  REQUEST_STAGE_ORDER,
 } from "./utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import {
@@ -781,6 +784,141 @@ export async function createRequestsBulk(req, res) {
     const manufacturerSettings = await getManufacturerLeadTimesUtil();
     const leadTimes = manufacturerSettings?.leadTimes || {};
     console.debug("[BulkCreate] leadTimes loaded", { ms: Date.now() - tLead0 });
+    const enableDuplicateRequestCheck = Boolean(
+      req.body && req.body.enableDuplicateRequestCheck,
+    );
+
+    if (enableDuplicateRequestCheck) {
+      // 1) 사전 중복 검사: 동일 clinic/patient/tooth 이 기존 DB에 존재하면 409 반환
+      try {
+        const requestFilter = await buildRequestorOrgScopeFilter(req);
+        const keyTuplesRaw = items
+          .map((raw, idx) => {
+            const ci = raw?.caseInfos || {};
+            return {
+              caseId: String(idx),
+              fileName: ci?.originalName || ci?.file?.originalName,
+              clinicName: String(ci?.clinicName || "").trim(),
+              patientName: String(ci?.patientName || "").trim(),
+              tooth: String(ci?.tooth || "").trim(),
+            };
+          })
+          .filter((k) => k.clinicName && k.patientName && k.tooth);
+
+        // 제출 payload 내부 중복도 차단
+        const tupleByKey = new Map();
+        const duplicateInPayload = [];
+        for (const item of keyTuplesRaw) {
+          const key = `${item.clinicName}|${item.patientName}|${item.tooth}`;
+          if (!tupleByKey.has(key)) tupleByKey.set(key, item);
+          else duplicateInPayload.push(item);
+        }
+        if (duplicateInPayload.length > 0) {
+          return res.status(400).json({
+            success: false,
+            code: "DUPLICATE_IN_PAYLOAD",
+            message:
+              "제출한 의뢰 목록에 동일한 치과/환자/치아 조합이 중복되었습니다. 중복 항목을 제거하고 다시 제출해주세요.",
+            data: {
+              duplicates: duplicateInPayload.map((d) => ({
+                caseId: d.caseId,
+                clinicName: d.clinicName,
+                patientName: d.patientName,
+                tooth: d.tooth,
+              })),
+            },
+          });
+        }
+
+        const keyTuples = Array.from(tupleByKey.values());
+        if (keyTuples.length > 0) {
+          const orConditions = keyTuples.map((k) => ({
+            "caseInfos.clinicName": k.clinicName,
+            "caseInfos.patientName": k.patientName,
+            "caseInfos.tooth": k.tooth,
+          }));
+          const query = {
+            $and: [
+              requestFilter,
+              { manufacturerStage: { $ne: "취소" } },
+              { $or: orConditions },
+            ],
+          };
+          const candidates = await Request.find(query)
+            .select({
+              _id: 1,
+              requestId: 1,
+              manufacturerStage: 1,
+              createdAt: 1,
+              price: 1,
+              "caseInfos.clinicName": 1,
+              "caseInfos.patientName": 1,
+              "caseInfos.tooth": 1,
+            })
+            .sort({ createdAt: -1 })
+            .lean();
+
+          const latestByKey = new Map();
+          for (const doc of candidates || []) {
+            const ci = doc?.caseInfos || {};
+            const key = `${String(ci.clinicName || "").trim()}|${String(
+              ci.patientName || "",
+            ).trim()}|${String(ci.tooth || "").trim()}`;
+            if (!latestByKey.has(key)) latestByKey.set(key, doc);
+          }
+
+          const duplicates = [];
+          for (const item of keyTuples) {
+            const key = `${item.clinicName}|${item.patientName}|${item.tooth}`;
+            const existing = latestByKey.get(key);
+            if (!existing) continue;
+            const stage = normalizeRequestStage(existing);
+            const stageOrder = REQUEST_STAGE_ORDER[stage] ?? 0;
+            duplicates.push({
+              caseId: item.caseId,
+              fileName: item.fileName,
+              existingRequest: {
+                _id: String(existing._id),
+                requestId: String(existing.requestId || ""),
+                manufacturerStage: String(existing.manufacturerStage || ""),
+                price: existing.price || null,
+                createdAt: existing.createdAt || null,
+                caseInfos: {
+                  clinicName: String(existing?.caseInfos?.clinicName || ""),
+                  patientName: String(existing?.caseInfos?.patientName || ""),
+                  tooth: String(existing?.caseInfos?.tooth || ""),
+                },
+              },
+              stageOrder,
+            });
+          }
+
+          if (duplicates.length > 0) {
+            const st = String(
+              duplicates[0]?.existingRequest?.manufacturerStage || "",
+            );
+            const mode = st === "추적관리" ? "tracking" : "active";
+            return res.status(409).json({
+              success: false,
+              code: "DUPLICATE_REQUEST",
+              message:
+                st === "추적관리"
+                  ? "동일한 정보의 의뢰가 이미 완료되어 있습니다. 재의뢰(리메이크)로 접수할까요?"
+                  : "동일한 정보의 의뢰가 이미 진행 중입니다. 기존 의뢰를 취소하고 다시 의뢰할까요?",
+              data: { mode, duplicates },
+            });
+          }
+        }
+      } catch (e) {
+        console.error("[BulkCreate] duplicate precheck failed:", e);
+        // 안전상 실패 시 중복 체크를 건너뛰지 않고 일반 에러로 반환
+        return res.status(500).json({
+          success: false,
+          message: "중복 의뢰 사전 검사 중 오류가 발생했습니다.",
+          error: e?.message || String(e),
+        });
+      }
+    }
 
     const created = [];
     const errors = [];

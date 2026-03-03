@@ -76,6 +76,7 @@ export const useNewRequestSubmitV3Wrapper = ({
     }
 
     setIsSubmitting(true);
+    let alreadyNotifiedError = false;
 
     try {
       const createdRequests: any[] = [];
@@ -164,7 +165,7 @@ export const useNewRequestSubmitV3Wrapper = ({
           const res = await fetch(`${API_BASE_URL}/requests/bulk`, {
             method: "POST",
             headers: getHeaders(),
-            body: JSON.stringify({ items }),
+            body: JSON.stringify({ items, enableDuplicateRequestCheck: false }),
           });
           if (res.status === 429) {
             const ra = res.headers.get("retry-after");
@@ -217,8 +218,11 @@ export const useNewRequestSubmitV3Wrapper = ({
             description: bulkData?.message || "의뢰 생성에 실패했습니다.",
             variant: "destructive",
           });
+          alreadyNotifiedError = true;
         }
-        throw new Error(bulkData?.message || "의뢰 생성 실패(일괄)");
+        const err: any = new Error(bulkData?.message || "의뢰 생성 실패(일괄)");
+        if (bulkData?.code) err.code = bulkData.code;
+        throw err;
       }
 
       // 4. 결과 처리 (부분 성공 지원)
@@ -288,10 +292,12 @@ export const useNewRequestSubmitV3Wrapper = ({
     } catch (error: any) {
       console.error("[V3 Submit] Error:", error);
 
-      // 중복 감지 에러는 재throw하여 상위에서 처리
-      if (error?.code === "DUPLICATE_REQUEST") {
-        throw error;
+      // 서버에서 이미 에러 토스트를 표시한 경우 중복 토스트 방지
+      if (alreadyNotifiedError) {
+        return;
       }
+      // 중복 감지 에러는 상위에서 처리하려면 throw 유지
+      if (error?.code === "DUPLICATE_REQUEST") throw error;
 
       toast({
         title: "오류",
