@@ -11,7 +11,7 @@ interface UseUploadWithProgressToastOptions {
 }
 
 export function useUploadWithProgressToast(
-  options: UseUploadWithProgressToastOptions
+  options: UseUploadWithProgressToastOptions,
 ) {
   const { token } = options;
   const { toast } = useToast();
@@ -21,39 +21,44 @@ export function useUploadWithProgressToast(
     async (files: File[]): Promise<TempUploadedFile[]> => {
       if (!files.length) return [];
 
-      let progress = 0;
+      let overall = 0;
+      const total = files.length;
+      const progressMap: Record<string, number> = {};
 
       const t = toast({
         title: "파일 업로드",
         description: React.createElement(UploadProgressToast, { progress: 0 }),
       });
 
-      const interval = window.setInterval(() => {
-        progress = Math.min(progress + 5, 90);
-        if (!t.id) return;
-        t.update({
-          id: t.id,
-          title: "파일 업로드",
-          description: React.createElement(UploadProgressToast, {
-            progress,
-          }),
-        });
-      }, 200);
+      const update = () => {
+        const sum = Object.values(progressMap).reduce((a, b) => a + b, 0);
+        overall = Math.floor(sum / Math.max(1, total));
+        if (t.id) {
+          t.update({
+            id: t.id,
+            title: "파일 업로드",
+            description: React.createElement(UploadProgressToast, {
+              progress: overall,
+            }),
+          });
+        }
+      };
 
       try {
-        const result = await uploadFiles(files);
+        const result = await uploadFiles(files, (perFile) => {
+          Object.assign(progressMap, perFile);
+          update();
+        });
 
-        progress = 100;
         if (t.id) {
           t.update({
             id: t.id,
             title: "파일 업로드 완료",
             description: React.createElement(UploadProgressToast, {
-              progress,
+              progress: 100,
               label: "업로드 완료",
             }),
-            // 업로드 완료 토스트는 짧게 표시 후 자동으로 사라지도록 설정
-            duration: 2000,
+            duration: 1500,
           });
         }
 
@@ -68,11 +73,9 @@ export function useUploadWithProgressToast(
           });
         }
         throw err;
-      } finally {
-        window.clearInterval(interval);
       }
     },
-    [toast, uploadFiles]
+    [toast, uploadFiles],
   );
 
   return { uploadFilesWithToast };

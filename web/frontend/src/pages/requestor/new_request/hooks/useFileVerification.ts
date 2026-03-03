@@ -52,7 +52,13 @@ export function useFileVerification({ files }: Params) {
       return;
     }
     const allowedKeys = new Set(
-      files.map((file) => `${file.name}:${file.size}`),
+      files.map((file) => {
+        try {
+          return `${String(file.name || "").normalize("NFC")}:${file.size}`;
+        } catch {
+          return `${file.name}:${file.size}`;
+        }
+      }),
     );
     setFileVerificationStatus((prev) => {
       let changed = false;
@@ -78,9 +84,16 @@ export function useFileVerification({ files }: Params) {
 
   const unverifiedCount = useMemo(
     () =>
-      files.filter(
-        (file) => !fileVerificationStatus[`${file.name}:${file.size}`],
-      ).length,
+      files.filter((file) => {
+        const key = (() => {
+          try {
+            return `${String(file.name || "").normalize("NFC")}:${file.size}`;
+          } catch {
+            return `${file.name}:${file.size}`;
+          }
+        })();
+        return !fileVerificationStatus[key];
+      }).length,
     [files, fileVerificationStatus],
   );
 

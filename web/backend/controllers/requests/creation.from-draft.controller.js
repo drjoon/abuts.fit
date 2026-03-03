@@ -18,6 +18,8 @@ import {
   ensureLotNumberForMachining,
   toKstYmd,
   getRequestorOrgId,
+  normalizeRequestStage,
+  REQUEST_STAGE_ORDER,
 } from "./utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import {
@@ -447,6 +449,9 @@ export async function createRequestsFromDraft(req, res) {
           const existing = latestByKey.get(key);
           if (!existing) continue;
 
+          const normalizedStage = normalizeRequestStage(existing);
+          const stageOrder = REQUEST_STAGE_ORDER[normalizedStage] ?? 0;
+
           duplicates.push({
             caseId: item.caseId,
             fileName: item.fileName,
@@ -462,6 +467,7 @@ export async function createRequestsFromDraft(req, res) {
                 tooth: String(existing?.caseInfos?.tooth || ""),
               },
             },
+            stageOrder,
           });
         }
         console.log("[createRequestsFromDraft] duplicate lookup done", {
@@ -615,8 +621,9 @@ export async function createRequestsFromDraft(req, res) {
             const existingRequestId = String(r?.existingRequestId || "").trim();
             if (!dup || !existingRequestId) continue;
 
-            const existingDoc =
-              await Request.findById(existingRequestId).session(session);
+            const existingDoc = await Request.findById(existingRequestId)
+              .populate("requestor", "_id organizationId")
+              .session(session);
             if (!existingDoc) {
               const err = new Error("기존 의뢰를 찾을 수 없습니다.");
               err.statusCode = 404;
@@ -659,27 +666,8 @@ export async function createRequestsFromDraft(req, res) {
               await existingDoc.save({ session });
             }
 
-            const refundAmount = Number(existingDoc?.price?.amount || 0);
-            if (refundAmount > 0) {
-              const refundKey = `request:${String(
-                existingDoc._id,
-              )}:case:${String(caseId)}:replace_refund`;
-              await CreditLedger.updateOne(
-                { uniqueKey: refundKey },
-                {
-                  $setOnInsert: {
-                    organizationId,
-                    userId: req.user?._id || null,
-                    type: "REFUND",
-                    amount: refundAmount,
-                    refType: "REQUEST",
-                    refId: existingDoc._id,
-                    uniqueKey: refundKey,
-                  },
-                },
-                { upsert: true, session },
-              );
-            }
+            // 크레딧은 가공 단계에서 차감되므로 의뢰/CAM 단계에서는 환불할 것이 없음
+            // Replace는 stageOrder < 2 (의뢰, CAM)에서만 허용되므로 환불 처리 불필요
           }
 
           for (const [caseId, r] of resolutionsByCaseId.entries()) {
@@ -691,9 +679,12 @@ export async function createRequestsFromDraft(req, res) {
             const existingDoc = await Request.findById(existingRequestId)
               .select({
                 _id: 1,
+                requestor: 1,
+                requestorOrganizationId: 1,
                 manufacturerStage: 1,
                 "caseInfos.reviewByStage.shipping.status": 1,
               })
+              .populate("requestor", "_id organizationId")
               .session(session);
             if (!existingDoc) {
               const err = new Error("기존 의뢰를 찾을 수 없습니다.");
@@ -705,16 +696,7 @@ export async function createRequestsFromDraft(req, res) {
               err.statusCode = 403;
               throw err;
             }
-            const shippingReviewStatus = String(
-              existingDoc?.caseInfos?.reviewByStage?.shipping?.status || "",
-            ).trim();
-            if (shippingReviewStatus !== "APPROVED") {
-              const err = new Error(
-                "진행 중인 의뢰는 재의뢰(리메이크)로 처리할 수 없습니다. 기존 의뢰를 취소하고 재의뢰로 진행해주세요.",
-              );
-              err.statusCode = 400;
-              throw err;
-            }
+            // 진행 중인 의뢰도 재의뢰(리메이크)로 신규 접수 가능하도록 허용
           }
         }
 

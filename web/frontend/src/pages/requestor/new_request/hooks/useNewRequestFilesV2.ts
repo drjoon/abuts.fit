@@ -16,6 +16,8 @@ import {
 import { parseFilenames } from "@/shared/filename/parseFilename";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { request } from "@/shared/api/apiClient";
+import { removeUploadedFile } from "../utils/localFileStorage";
+import { getLocalDraft, getFileKey } from "../utils/localDraftStorage";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || "/api";
 
@@ -129,6 +131,11 @@ export const useNewRequestFilesV2 = ({
       currentDraftId,
       draftFilesLen: draftFilesRef.current.length,
     });
+
+    // V3 모드: Draft 서버 복원 비활성화 (로컬 스토리지만 사용)
+    // 로컬 Draft 복원은 useNewRequestPage의 useEffect에서 처리됨
+    console.log("[restoreFileUrls] V3 mode - skipping server draft restore");
+    return;
 
     // draftId가 변경되었으면 즉시 중단 (새 Draft로 전환됨)
     if (draftId !== currentDraftId) {
@@ -821,17 +828,67 @@ export const useNewRequestFilesV2 = ({
     async (index: number) => {
       const file = filesRef.current[index];
       if (!file) return;
-      const rawKey = `${file.name}:${file.size}`;
-      const normalizedKey = toFileKey(file.name, file.size);
+      // SSOT: NFC-normalized key via getFileKey
+      const ssotKey = getFileKey(file);
+
+      // V3: IndexedDB와 로컬 스토리지에서 파일 제거
+      try {
+        const { deleteFile } = await import("../utils/fileIndexedDB");
+        await deleteFile(ssotKey);
+        console.log("[handleRemoveFile] IDB delete done", { ssotKey });
+      } catch (err) {
+        console.warn(
+          "[handleRemoveFile] Failed to delete from IndexedDB:",
+          err,
+        );
+      }
+
+      try {
+        // Remove from local draft meta by SSOT key
+        removeUploadedFile(ssotKey);
+        console.log("[handleRemoveFile] localDraft remove done", { ssotKey });
+      } catch (err) {
+        console.warn(
+          "[handleRemoveFile] Failed to remove from localStorage:",
+          err,
+        );
+      }
 
       const draftCaseInfoId = (file as FileWithDraftId)._draftCaseInfoId;
       if (!draftCaseInfoId || !draftId || !token) {
         // Draft 파일 ID가 없으면 로컬에서만 제거
-        setFiles((prev) => prev.filter((_, i) => i !== index));
-        removeCaseInfos?.(rawKey);
-        if (normalizedKey !== rawKey) {
-          removeCaseInfos?.(normalizedKey);
+        const newFiles = filesRef.current.filter((_, i) => i !== index);
+        setFiles(newFiles);
+        // Remove SSOT key from caseInfosMap
+        removeCaseInfos?.(ssotKey);
+        console.log("[handleRemoveFile] caseInfosMap remove done", { ssotKey });
+
+        // 모든 파일이 삭제되면 Draft ID도 제거 (V3 모드에서 복원 방지)
+        if (newFiles.length === 0) {
+          try {
+            localStorage.removeItem("abutsfit:new-request-draft-id:v1");
+            console.log(
+              "[handleRemoveFile] All files removed, cleared draft ID",
+            );
+          } catch (err) {
+            console.warn("[handleRemoveFile] Failed to clear draft ID:", err);
+          }
         }
+
+        // Debug: log current local draft files and IDB keys after removal
+        try {
+          const d = getLocalDraft();
+          console.log("[handleRemoveFile] Local draft files after removal", {
+            fileKeys: d?.files?.map((f) => f.fileKey),
+          });
+        } catch {}
+        try {
+          const { getAllFiles } = await import("../utils/fileIndexedDB");
+          const idb = await getAllFiles();
+          console.log("[handleRemoveFile] IDB keys after removal", {
+            keys: Array.from(idb.keys()),
+          });
+        } catch {}
         return;
       }
 
@@ -860,10 +917,11 @@ export const useNewRequestFilesV2 = ({
           prev.filter((ci) => ci._id !== draftCaseInfoId),
         );
         setFiles((prev) => prev.filter((_, i) => i !== index));
-        removeCaseInfos?.(rawKey);
-        if (normalizedKey !== rawKey) {
-          removeCaseInfos?.(normalizedKey);
-        }
+        // Remove SSOT key from caseInfosMap
+        removeCaseInfos?.(ssotKey);
+        console.log("[handleRemoveFile] caseInfosMap remove done (server)", {
+          ssotKey,
+        });
 
         // 미리보기 인덱스 조정
         if (selectedPreviewIndexRef.current === index) {
@@ -888,6 +946,24 @@ export const useNewRequestFilesV2 = ({
             duration: 2000,
           });
         }
+
+        // Debug: log current local draft files and IDB keys after server-synced removal
+        try {
+          const d = getLocalDraft();
+          console.log(
+            "[handleRemoveFile] Local draft files after server removal",
+            {
+              fileKeys: d?.files?.map((f) => f.fileKey),
+            },
+          );
+        } catch {}
+        try {
+          const { getAllFiles } = await import("../utils/fileIndexedDB");
+          const idb = await getAllFiles();
+          console.log("[handleRemoveFile] IDB keys after server removal", {
+            keys: Array.from(idb.keys()),
+          });
+        } catch {}
       } catch (err) {
         console.error("Delete error:", err);
         toast({

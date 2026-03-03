@@ -200,9 +200,7 @@ export async function calculateInitialProductionSchedule({
 
   // 묶음배송: 직경별 대기
   const waitHours = getBulkWaitHours(diameterGroup);
-  const scheduledCamStart = new Date(
-    now.getTime() + waitHours * 60 * 60 * 1000,
-  );
+  let scheduledCamStart = new Date(now.getTime() + waitHours * 60 * 60 * 1000);
 
   // 최소 리드타임 보정: 방금 생성된 의뢰가 즉시 '지연'으로 잡히는 것을 방지
   const MIN_LEAD_MINUTES = 30;

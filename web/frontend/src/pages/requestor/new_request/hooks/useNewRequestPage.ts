@@ -6,10 +6,14 @@ import { useNewRequestSubmitV2 } from "./useNewRequestSubmitV2";
 import { useDraftMeta } from "./useDraftMeta";
 import { useNewRequestFilesV2 } from "./useNewRequestFilesV2";
 import { useNewRequestImplant } from "./useNewRequestImplant";
-import { type DraftCaseInfo } from "./newRequestTypes";
+import { useNewRequestFilesV3Wrapper } from "./useNewRequestFilesV3Wrapper";
+import { useNewRequestSubmitV3Wrapper } from "./useNewRequestSubmitV3Wrapper";
+import { type DraftCaseInfo, type CaseInfos } from "./newRequestTypes";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
+import { getLocalDraft, initLocalDraft } from "../utils/localDraftStorage";
+import { getFile } from "../utils/fileIndexedDB";
 
 const NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX =
   "abutsfit:new-request-clinics:v1:";
@@ -38,10 +42,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     number | null
   >(null);
 
-  const [pendingUploadFiles, setPendingUploadFiles] = useState<File[] | null>(
-    null,
-  );
-
   const [duplicateResolutions, setDuplicateResolutions] = useState<
     {
       strategy: "skip" | "replace" | "remake";
@@ -49,13 +49,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       existingRequestId: string;
     }[]
   >([]);
-
-  const [pendingUploadDecisions, setPendingUploadDecisions] = useState<
-    Record<
-      string,
-      { strategy: "replace" | "remake" | "skip"; existingRequestId: string }
-    >
-  >({});
 
   const clinicStorageKey = useMemo(() => {
     const userId = user?.id ? String(user.id) : "guest";
@@ -76,10 +69,71 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     removeCaseInfos,
     patchDraftImmediately,
     status: draftStatus,
+    error: draftError,
     deleteDraft,
     resetDraft,
     initialDraftFiles,
   } = useDraftMeta();
+
+  // --- 로컬 SSOT 복원 (페이지 새로고침 시 파일/정보 유지) ---
+  useEffect(() => {
+    // 이미 UI에 파일이 있으면 복원 스킵
+    if (files.length > 0) return;
+
+    const restoreLocal = async () => {
+      const draft = getLocalDraft() || initLocalDraft();
+      if (!draft.files || draft.files.length === 0) return;
+
+      const restored: File[] = [];
+      for (const meta of draft.files) {
+        try {
+          const fileFromIdb = await getFile(meta.fileKey);
+          if (fileFromIdb) {
+            restored.push(fileFromIdb);
+          }
+        } catch (err) {
+          console.warn("[restoreLocalDraft] IndexedDB load failed", err);
+        }
+      }
+
+      if (restored.length > 0) {
+        setFiles(restored);
+        setSelectedPreviewIndex(0);
+
+        // caseInfosMap 복원 (shippingMode 타입 정규화)
+        if (draft.caseInfosMap && Object.keys(draft.caseInfosMap).length > 0) {
+          setCaseInfosMap((prev) => {
+            const next: Record<string, CaseInfos> = { ...prev };
+            Object.entries(draft.caseInfosMap).forEach(([k, v]) => {
+              const shippingMode =
+                v.shippingMode === "express"
+                  ? "express"
+                  : v.shippingMode === "normal"
+                    ? "normal"
+                    : undefined;
+              next[k] = {
+                ...v,
+                shippingMode,
+              } as CaseInfos;
+            });
+            return next;
+          });
+        }
+
+        // V3 모드: Draft ID 제거하여 서버 Draft 복원 방지
+        try {
+          localStorage.removeItem("abutsfit:new-request-draft-id:v1");
+          console.log(
+            "[restoreLocalDraft] Removed draft ID to prevent server restore",
+          );
+        } catch (err) {
+          console.warn("[restoreLocalDraft] Failed to remove draft ID:", err);
+        }
+      }
+    };
+
+    void restoreLocal();
+  }, [files.length, setCaseInfosMap, setFiles, setSelectedPreviewIndex]);
 
   // Draft 최초 로딩 시 서버의 draft.caseInfos를 로컬 draftFiles 상태에 주입
   useEffect(() => {
@@ -178,6 +232,56 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
       // 1) 로컬 캐시(caseInfosMap) 업데이트
       updateCaseInfos(fileKey, updates);
+
+      // 2) 필수 정보가 모두 입력되면 백엔드 중복 체크 수행
+      const merged = { ...currentCaseInfos, ...updates };
+      const clinicName = String(merged.clinicName || "").trim();
+      const patientName = String(merged.patientName || "").trim();
+      const tooth = String(merged.tooth || "").trim();
+
+      if (clinicName && patientName && tooth && file && token) {
+        // 중복 체크 수행
+        (async () => {
+          try {
+            const query = new URLSearchParams({
+              clinicName,
+              patientName,
+              tooth,
+            }).toString();
+
+            const res = await request<any>({
+              path: `/api/requests/my/check-duplicate?${query}`,
+              method: "GET",
+              token,
+            });
+
+            if (!res.ok) return;
+
+            const body: any = res.data || {};
+            const data = body?.data || body;
+
+            if (data?.exists) {
+              const stageOrder = Number(data?.stageOrder || 0);
+              const existingRequest = data?.existingRequest;
+
+              // 중복 발견 시 모달 표시
+              setDuplicatePrompt({
+                mode: "active",
+                duplicates: [
+                  {
+                    caseId: (file as any)?._draftCaseInfoId || fileKey,
+                    fileName: file.name,
+                    existingRequest,
+                    stageOrder,
+                  },
+                ],
+              });
+            }
+          } catch (error) {
+            console.error("[setCaseInfos] 중복 체크 실패:", error);
+          }
+        })();
+      }
     },
     [
       selectedPreviewIndex,
@@ -185,6 +289,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       updateCaseInfos,
       currentCaseInfos,
       toNormalizedFileKey,
+      token,
+      setDuplicatePrompt,
     ],
   );
 
@@ -328,17 +434,25 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     ],
   );
 
+  // V3 래퍼: 로컬 저장만 수행 (S3 업로드 없음)
+  const { handleUpload: v3HandleUpload } = useNewRequestFilesV3Wrapper({
+    setFiles,
+    setSelectedPreviewIndex,
+    updateCaseInfos,
+    caseInfosMap,
+  });
+
   // 파일 관리 (업로드/삭제/복원)
   const {
     files: fileList,
     draftFiles: draftFileList,
-    isDragOver,
+    isDragOver: v2IsDragOver,
     selectedPreviewIndex: previewIndex,
     handleUpload: rawHandleUpload,
     handleRemoveFile,
-    handleDragOver,
-    handleDragLeave,
-    handleDrop,
+    handleDragOver: v2HandleDragOver,
+    handleDragLeave: v2HandleDragLeave,
+    handleDrop: v2HandleDrop,
   } = useNewRequestFilesV2({
     draftId,
     token,
@@ -353,11 +467,37 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     removeCaseInfos,
   });
 
+  // V3 드래그 앤 드롭 핸들러
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      const droppedFiles = Array.from(e.dataTransfer.files);
+      if (droppedFiles.length === 0) return;
+      // V3 방식: 로컬 저장만
+      await v3HandleUpload(droppedFiles);
+    },
+    [v3HandleUpload],
+  );
+
   const handleUploadUnchecked = useCallback(
     async (incomingFiles: File[]) => {
-      await rawHandleUpload(incomingFiles);
+      // V3 방식: 로컬 저장만
+      await v3HandleUpload(incomingFiles);
     },
-    [rawHandleUpload],
+    [v3HandleUpload],
   );
 
   const buildDuplicateCheckPayload = useCallback((file: File) => {
@@ -376,123 +516,11 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
   const handleUpload = useCallback(
     async (incomingFiles: File[]) => {
-      if (!token || !incomingFiles || incomingFiles.length === 0) {
-        await rawHandleUpload(incomingFiles);
-        return;
-      }
-
-      const modalDuplicates: any[] = [];
-      const blockedFiles: File[] = [];
-      const eligibleFiles: File[] = [];
-
-      // 병렬로 모든 파일의 중복 여부를 체크
-      const checkResults = await Promise.all(
-        incomingFiles.map(async (f) => {
-          try {
-            const payload = buildDuplicateCheckPayload(f);
-            if (!payload) {
-              return { file: f, skip: true };
-            }
-
-            const query = new URLSearchParams(payload).toString();
-
-            const res = await request<any>({
-              path: `/api/requests/my/check-duplicate?${query}`,
-              method: "GET",
-              token,
-            });
-
-            if (!res.ok) return { file: f, error: true };
-
-            const body: any = res.data || {};
-            const data = body?.data || body;
-
-            return { file: f, data };
-          } catch (err) {
-            return { file: f, error: true };
-          }
-        }),
-      );
-
-      for (const result of checkResults) {
-        const f = result.file;
-        if (result.error || (result as any).skip) {
-          eligibleFiles.push(f);
-          continue;
-        }
-
-        const data = result.data;
-        if (!data?.exists) {
-          eligibleFiles.push(f);
-          continue;
-        }
-
-        const stageOrder = Number(data?.stageOrder);
-        const existingRequest = data?.existingRequest;
-
-        // 0: 의뢰, 1: CAM, 2: 생산, 3: 발송, 4: 완료
-        if (stageOrder >= 2) {
-          blockedFiles.push(f);
-          modalDuplicates.push({
-            caseId: `${f.name}:${f.size}`,
-            fileName: f.name,
-            existingRequest,
-            lockedReason: "production",
-          });
-        } else if (stageOrder === 0 || stageOrder === 1) {
-          modalDuplicates.push({
-            caseId: `${f.name}:${f.size}`,
-            fileName: f.name,
-            existingRequest,
-          });
-        } else {
-          eligibleFiles.push(f);
-        }
-      }
-
-      console.log("[중복체크] 최종 결과", {
-        blockedCount: blockedFiles.length,
-        modalCount: modalDuplicates.length,
-        eligibleCount: eligibleFiles.length,
-      });
-
-      if (blockedFiles.length > 0) {
-        console.log("[중복체크] 차단 토스트 표시");
-        toast({
-          title: "중복 의뢰 불가",
-          description:
-            "CAM 이후(생산/발송) 단계의 기존 의뢰는 변경/취소할 수 없습니다. CAM 단계까지는 기존 의뢰를 취소하거나 교체할 수 있습니다. 기존 의뢰를 확인해주세요.",
-          variant: "destructive",
-          duration: 4500,
-        });
-      }
-
-      if (modalDuplicates.length > 0) {
-        setDuplicatePrompt({
-          mode: "active",
-          duplicates: modalDuplicates,
-        });
-
-        // 중복 파일들만 pending에 담아 모달 결정 후 처리
-        const dupFiles = modalDuplicates
-          .map((d) => incomingFiles.find((f) => f.name === d.fileName))
-          .filter(Boolean) as File[];
-        setPendingUploadFiles(dupFiles);
-      }
-
-      // 중복 없는 파일들은 즉시 업로드 진행
-      if (eligibleFiles.length > 0) {
-        await rawHandleUpload(eligibleFiles);
-      }
+      // V3 방식: 드롭/선택 시 로컬 저장만 수행하고,
+      // 실제 S3 업로드는 제출 시점에만 진행한다.
+      await v3HandleUpload(incomingFiles);
     },
-    [
-      rawHandleUpload,
-      setDuplicatePrompt,
-      setPendingUploadFiles,
-      toast,
-      token,
-      buildDuplicateCheckPayload,
-    ],
+    [v3HandleUpload],
   );
 
   const setupNextPath = "/dashboard/new-request";
@@ -764,18 +792,49 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
   // 제출/취소 처리
   const handleServerDuplicateDetected = useCallback(
-    (payload: { mode: "active" | "tracking"; duplicates: any[] }) => {
+    async (payload: { mode: "active" | "tracking"; duplicates: any[] }) => {
       if (!payload || !Array.isArray(payload.duplicates)) return;
-      setDuplicateResolutions([]);
-      setPendingUploadDecisions({});
-      setPendingUploadFiles(null);
-      setDuplicatePrompt({
+
+      console.log("[handleServerDuplicateDetected] Auto-resolving duplicates", {
         mode: payload.mode,
-        duplicates: payload.duplicates,
+        count: payload.duplicates.length,
       });
+
+      // 자동으로 적절한 전략 선택
+      const autoResolutions = payload.duplicates.map((dup: any) => {
+        const stageOrder = Number(dup?.stageOrder ?? 0);
+        // 0: 의뢰, 1: CAM -> replace
+        // 2: 가공, 3: 세척.패킹/포장.발송, 4: 추적관리 -> remake
+        const strategy = stageOrder >= 2 ? "remake" : "replace";
+
+        return {
+          caseId: String(dup.caseId || ""),
+          strategy,
+          existingRequestId: String(dup?.existingRequest?._id || ""),
+        };
+      });
+
+      console.log("[handleServerDuplicateDetected] Auto-resolutions", {
+        resolutions: autoResolutions,
+      });
+
+      // 자동 선택된 resolutions로 설정
+      setDuplicateResolutions(autoResolutions as any);
     },
-    [setDuplicatePrompt],
+    [setDuplicateResolutions],
   );
+
+  // V3 제출 래퍼: 로컬에서 파일 가져와 S3 업로드 후 제출
+  const { handleSubmit: v3HandleSubmit, isSubmitting: v3IsSubmitting } =
+    useNewRequestSubmitV3Wrapper({
+      token,
+      navigate,
+      files,
+      setFiles,
+      setSelectedPreviewIndex,
+      caseInfosMap,
+      duplicateResolutions,
+    });
 
   const {
     handleSubmit: rawHandleSubmit,
@@ -801,72 +860,36 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     const ok = await ensureSetupForUpload();
     if (!ok) return;
 
-    const decisionKeys = Object.keys(pendingUploadDecisions || {});
-    const hasDuplicateDecisions = decisionKeys.length > 0;
+    console.log("[handleSubmit] Starting V3 submission", {
+      duplicateResolutionsCount: duplicateResolutions.length,
+      filesCount: files.length,
+    });
 
-    if (hasDuplicateDecisions) {
-      // 3. 중복 해결 정보(resolutions) 생성
-      const resolutions = files
-        .map((f) => {
-          const fileKey = `${f.name}:${f.size}`;
-          const fileKeyNfc = (() => {
-            try {
-              return `${String(f.name || "").normalize("NFC")}:${f.size}`;
-            } catch {
-              return fileKey;
-            }
-          })();
-
-          const sourceKey = String((f as any)?._sourceFileKey || "");
-          const sourceKeyNfc = String((f as any)?._sourceFileKeyNfc || "");
-
-          const decision =
-            pendingUploadDecisions[sourceKey] ??
-            pendingUploadDecisions[sourceKeyNfc] ??
-            pendingUploadDecisions[fileKey] ??
-            pendingUploadDecisions[fileKeyNfc];
-
-          const caseId = String((f as any)?._draftCaseInfoId || "").trim();
-
-          if (!decision || !caseId) return null;
-          if (decision.strategy === "skip") return null;
-
-          return {
-            caseId,
-            strategy: decision.strategy,
-            existingRequestId: decision.existingRequestId,
-          };
-        })
-        .filter(Boolean) as any[];
-
-      await rawHandleSubmitWithDuplicateResolutions(resolutions as any);
-      setPendingUploadDecisions({});
-      setPendingUploadFiles(null);
-      return;
-    }
-
-    // 2) 이미 결정된 duplicateResolutions가 있으면 함께 제출
-    if (duplicateResolutions.length > 0) {
-      await rawHandleSubmitWithDuplicateResolutions(
-        duplicateResolutions as any,
-      );
+    // V3 방식: 로컬에서 파일 가져와 S3 업로드 후 제출
+    try {
+      await v3HandleSubmit();
       setDuplicateResolutions([]);
-      return;
+    } catch (error: any) {
+      // 중복 감지 에러 처리
+      if (error?.code === "DUPLICATE_REQUEST") {
+        const mode = error?.data?.mode;
+        const duplicates = error?.data?.duplicates;
+        if (
+          (mode === "active" || mode === "tracking") &&
+          Array.isArray(duplicates) &&
+          duplicates.length > 0
+        ) {
+          handleServerDuplicateDetected({ mode, duplicates });
+        }
+      }
     }
-
-    await rawHandleSubmit();
   }, [
     ensureSetupForUpload,
-    pendingUploadFiles,
-    pendingUploadDecisions,
-    handleUploadUnchecked,
-    files,
     duplicateResolutions,
-    rawHandleSubmit,
-    rawHandleSubmitWithDuplicateResolutions,
-    setPendingUploadDecisions,
-    setPendingUploadFiles,
+    files,
+    v3HandleSubmit,
     setDuplicateResolutions,
+    handleServerDuplicateDetected,
   ]);
 
   const handleSubmitWithDuplicateResolutions = useCallback(
@@ -952,11 +975,5 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     setDuplicatePrompt,
     duplicateResolutions,
     setDuplicateResolutions,
-
-    // 업로드/중복 상태
-    pendingUploadFiles,
-    setPendingUploadFiles,
-    pendingUploadDecisions,
-    setPendingUploadDecisions,
   };
 };

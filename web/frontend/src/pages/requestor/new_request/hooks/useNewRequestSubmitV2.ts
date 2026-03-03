@@ -117,6 +117,14 @@ export const useNewRequestSubmitV2 = ({
   };
 
   const handleCancel = async () => {
+    // V3: 로컬 스토리지와 IndexedDB 정리
+    try {
+      const { clearLocalDraft } = await import("../utils/localDraftStorage");
+      await clearLocalDraft();
+    } catch (err) {
+      console.warn("[handleCancel] Failed to clear local draft:", err);
+    }
+
     // NOTE: resetDraft() 후 useNewRequestPage의 draftId 변경 effect가
     // 자동으로 setFiles([])를 호출하므로, 여기서는 setSelectedPreviewIndex만 리셋
     setSelectedPreviewIndex(null);
@@ -296,6 +304,7 @@ export const useNewRequestSubmitV2 = ({
 
       console.log("[NewRequestSubmit] submit API start", {
         t: Date.now() - submitStart,
+        resolutions: duplicateResolutions?.length || 0,
       });
       const res = await fetch(`${API_BASE_URL}/requests/from-draft`, {
         method: "POST",
@@ -310,11 +319,14 @@ export const useNewRequestSubmitV2 = ({
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
+        const dupCount = Array.isArray(errData?.data?.duplicates)
+          ? errData.data.duplicates.length
+          : 0;
         console.error("[useNewRequestSubmitV2] Server error response:", {
           status: res.status,
           code: errData?.code,
           message: errData?.message,
-          data: errData?.data,
+          dupCount,
         });
 
         if (res.status === 409 && errData?.code === "DUPLICATE_REQUEST") {
@@ -325,12 +337,14 @@ export const useNewRequestSubmitV2 = ({
             Array.isArray(duplicates) &&
             duplicates.length > 0
           ) {
+            console.log(
+              "[useNewRequestSubmitV2] Duplicate detected, auto-resolving",
+              {
+                mode,
+                count: duplicates.length,
+              },
+            );
             onDuplicateDetected?.({ mode, duplicates });
-            toast({
-              title: "중복 의뢰가 감지되었습니다",
-              description: "처리 방법을 선택해주세요.",
-              duration: 4000,
-            });
             return;
           }
         }

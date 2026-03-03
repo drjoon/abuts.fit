@@ -130,7 +130,7 @@ export const REQUEST_STAGE_GROUPS = {
   bulkCreateEligible: ["CAM", "가공", "세척.패킹", "포장.발송"],
 };
 
-const REQUEST_STAGE_ORDER = {
+export const REQUEST_STAGE_ORDER = {
   request: 0,
   의뢰: 0,
   cam: 1,

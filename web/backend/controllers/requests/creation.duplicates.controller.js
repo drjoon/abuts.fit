@@ -1,9 +1,10 @@
-import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import {
   buildRequestorOrgScopeFilter,
   normalizeRequestStage,
+  REQUEST_STAGE_ORDER,
 } from "./utils.js";
+
 
 export async function checkDuplicateCaseInfo(req, res) {
   try {
@@ -61,14 +62,7 @@ export async function checkDuplicateCaseInfo(req, res) {
     }
 
     const stage = normalizeRequestStage(existing);
-    const stageOrderMap = {
-      request: 0,
-      cam: 1,
-      production: 2,
-      shipping: 3,
-      tracking: 4,
-    };
-    const stageOrder = stageOrderMap[stage] ?? 0;
+    const stageOrder = REQUEST_STAGE_ORDER[stage] ?? 0;
 
     return res.status(200).json({
       success: true,

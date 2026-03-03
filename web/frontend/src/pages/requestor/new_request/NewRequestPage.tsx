@@ -1,703 +1,338 @@
-import React, {
-  useEffect,
-  useMemo,
-  useState,
-  useRef,
-  useCallback,
-} from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { useNewRequestPage } from "./hooks/useNewRequestPage";
-import { useToast } from "@/shared/hooks/use-toast";
-import { usePresetStorage } from "./hooks/usePresetStorage";
-import { useBulkShippingPolicy } from "./hooks/useBulkShippingPolicy";
-import { useFileVerification } from "./hooks/useFileVerification";
-import { apiFetch } from "@/shared/api/apiClient";
-import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
-import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
-import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
-import { NewRequestDetailsSection } from "./components/NewRequestDetailsSection";
-import { NewRequestShippingSection } from "./components/NewRequestShippingSection";
-import { NewRequestPageSkeleton } from "@/shared/ui/skeletons/NewRequestPageSkeleton";
-
 /**
- * New Request 페이지 (리팩터링 버전)
- * - caseInfos를 단일 소스로 사용 (aiFileInfos 제거)
- * - 파일별 메타데이터는 Draft.files에서 관리
- * - 환자명/치아번호 옵션은 caseInfos에서 파생
+ * V2 UI + V3 동작 (로컬 스토리지 SSOT)
+ * 화면은 기존 카드형 리스트/배송 선택 UI를 유지하면서,
+ * 내부 로직은 useNewRequestV3 훅을 사용합니다.
  */
-export const NewRequestPage = () => {
-  const { id: existingRequestId } = useParams<{ id?: string }>();
-  const navigate = useNavigate();
-  const FILE_SIZE_THRESHOLD_BYTES = 30 * 1024 * 1024; // 3MB
 
-  const { toast } = useToast();
+import React from "react";
+import { useNewRequestV3 } from "./hooks/useNewRequestV3";
+import { getFileKey } from "./utils/localDraftStorage";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card } from "@/components/ui/card";
 
-  const [isFillHoleProcessing, setIsFillHoleProcessing] = useState(false);
-  const [filledStlFiles, setFilledStlFiles] = useState<Record<string, File>>(
-    {},
-  );
-
-  const normalizeKeyPart = (s: string) => {
-    try {
-      return String(s || "").normalize("NFC");
-    } catch {
-      return String(s || "");
-    }
-  };
-
-  const toNormalizedFileKey = (f: File) => {
-    return `${normalizeKeyPart(f.name)}:${f.size}`;
-  };
-
+export default function NewRequestPage() {
   const {
-    user,
     files,
-    selectedPreviewIndex,
-    setSelectedPreviewIndex,
+    loading,
+    selectedFileIndex,
+    duplicatePrompt,
     isDragOver,
+    isSubmitting,
+    handleDrop,
+    handleFileSelect,
+    handleRemoveFile,
+    setSelectedFileIndex,
+    handleUpdateInfo,
+    getCaseInfos,
+    handleDuplicateChoice,
+    setDuplicatePrompt,
+    handleSubmit,
     handleDragOver,
     handleDragLeave,
-    handleUpload,
-    handleUploadUnchecked,
-    handleRemoveFile,
-    typeOptions,
-    implantManufacturer,
-    setImplantManufacturer,
-    implantSystem,
-    setImplantSystem,
-    implantType,
-    setImplantType,
-    syncSelectedConnection,
-    handleSubmit,
-    handleCancel,
-    caseInfos,
-    setCaseInfos,
-    connections,
-    resetDraft,
-    caseInfosMap,
-    updateCaseInfos,
-    patchDraftImmediately,
-    handleAddOrSelectClinic,
-    duplicatePrompt,
-    setDuplicatePrompt,
-    duplicateResolutions,
-    setDuplicateResolutions,
-    pendingUploadFiles,
-    setPendingUploadFiles,
-    pendingUploadDecisions,
-    setPendingUploadDecisions,
-    handleSubmitWithDuplicateResolutions,
-    draftStatus,
-  } = useNewRequestPage(existingRequestId);
+  } = useNewRequestV3();
 
-  const {
-    fileVerificationStatus,
-    setFileVerificationStatus,
-    highlightUnverifiedArrows,
-    setHighlightUnverifiedArrows,
-    unverifiedCount,
-    highlightStep,
-  } = useFileVerification({ files });
-
-  const hasVerifiedFile = useMemo(() => {
-    if (!files.length) return false;
-    return files.some(
-      (file) => fileVerificationStatus[`${file.name}:${file.size}`],
-    );
-  }, [fileVerificationStatus, files]);
-
-  const sectionHighlightClass =
-    "ring-2 ring-primary/40 bg-primary/5 shadow-[0_0_0_4px_rgba(59,130,246,0.12)]";
-
-  // 프리셋 관리
-  const {
-    presets: patientPresets,
-    addPreset: addPatientPreset,
-    clearAllPresets: clearAllPatientPresets,
-  } = usePresetStorage("patient-names");
-  const {
-    presets: teethPresets,
-    addPreset: addTeethPreset,
-    clearAllPresets: clearAllTeethPresets,
-  } = usePresetStorage("teeth-numbers");
-  const {
-    presets: clinicPresets,
-    addPreset: addClinicPreset,
-    clearAllPresets: clearAllClinicPresets,
-  } = usePresetStorage("clinic-names");
-
-  const handleCancelAll = async () => {
-    await resetDraft();
-    handleCancel();
-    setFileVerificationStatus({});
-    setCaseInfos({
-      clinicName: "",
-      patientName: "",
-      tooth: "",
-      implantManufacturer: "",
-      implantSystem: "",
-      implantType: "",
-      maxDiameter: undefined,
-      connectionDiameter: undefined,
-      shippingMode: undefined,
-      requestedShipDate: undefined,
-      workType: "abutment",
-    });
-    setImplantManufacturer("");
-    setImplantSystem("");
-    setImplantType("");
-
-    const fileInput = document.getElementById(
-      "file-input",
-    ) as HTMLInputElement | null;
-    if (fileInput) {
-      fileInput.value = "";
-    }
-  };
-
-  const duplicateList = useMemo(
-    () =>
-      duplicatePrompt &&
-      Array.isArray(duplicatePrompt.duplicates) &&
-      duplicatePrompt.duplicates.length > 0
-        ? duplicatePrompt.duplicates
-        : [],
-    [duplicatePrompt],
-  );
-
-  const getFileKeyByDraftCaseId = (draftCaseId: string) => {
-    const found = (files || []).find(
-      (f) => String((f as any)?._draftCaseInfoId || "") === String(draftCaseId),
-    );
-    if (!found) return null;
-    try {
-      return `${String(found.name || "").normalize("NFC")}:${found.size}`;
-    } catch {
-      return `${found.name}:${found.size}`;
-    }
-  };
-
-  const getNewCaseInfoByCaseId = useCallback(
-    (caseId: string) => {
-      const fileKey = getFileKeyByDraftCaseId(String(caseId));
-      const file = fileKey
-        ? (files || []).find((f) => {
-            try {
-              return (
-                `${String(f.name || "").normalize("NFC")}:${f.size}` === fileKey
-              );
-            } catch {
-              return `${f.name}:${f.size}` === fileKey;
-            }
-          })
-        : null;
-      const info = fileKey ? caseInfosMap?.[fileKey] : undefined;
-      const parsed = file ? parseFilenameWithRules(file.name) : null;
-      return {
-        fileName: file?.name || "",
-        patientName: String(info?.patientName || parsed?.patientName || ""),
-        tooth: String(info?.tooth || parsed?.tooth || ""),
-        clinicName: String(info?.clinicName || parsed?.clinicName || ""),
-      };
-    },
-    [caseInfosMap, files],
-  );
-
-  const applyDuplicateChoice = async (choice: {
-    strategy: "skip" | "replace" | "remake";
-    caseId: string;
-    existingRequestId: string;
-  }) => {
-    const isPreUploadCase = String(choice.caseId || "").includes(":");
-    if (
-      isPreUploadCase &&
-      pendingUploadFiles &&
-      pendingUploadFiles.length > 0
-    ) {
-      const fileKey = String(choice.caseId || "");
-      const fileKeyNfc = (() => {
-        const k = String(choice.caseId || "");
-        const idx = k.lastIndexOf(":");
-        if (idx <= 0) return k;
-        const name = k.slice(0, idx);
-        const size = k.slice(idx + 1);
-        try {
-          return `${name.normalize("NFC")}:${size}`;
-        } catch {
-          return k;
-        }
-      })();
-
-      if (
-        choice.strategy === "replace" ||
-        choice.strategy === "remake" ||
-        choice.strategy === "skip"
-      ) {
-        const strategy: "replace" | "remake" | "skip" = choice.strategy;
-        setPendingUploadDecisions((prev) => ({
-          ...(prev || {}),
-          [fileKey]: {
-            strategy,
-            existingRequestId: choice.existingRequestId,
-          },
-          [fileKeyNfc]: {
-            strategy,
-            existingRequestId: choice.existingRequestId,
-          },
-        }));
-      }
-
-      const remaining =
-        (duplicatePrompt?.duplicates || []).filter(
-          (d) => d.caseId !== choice.caseId,
-        ) || [];
-
-      if (remaining.length > 0) {
-        setDuplicatePrompt({
-          ...duplicatePrompt,
-          duplicates: remaining,
-        });
-        return;
-      }
-
-      // 모두 처리 완료
-      const filesToActuallyProcess = (pendingUploadFiles || []).filter((f) => {
-        const key = `${f.name}:${f.size}`;
-        const keyNfc = (() => {
-          try {
-            return `${String(f.name || "").normalize("NFC")}:${f.size}`;
-          } catch {
-            return key;
-          }
-        })();
-        const decision =
-          pendingUploadDecisions[key] ??
-          pendingUploadDecisions[keyNfc] ??
-          (key === fileKey || keyNfc === fileKeyNfc ? choice : null);
-
-        return decision?.strategy !== "skip";
-      });
-
-      setPendingUploadFiles(null);
-      setDuplicatePrompt(null);
-
-      if (filesToActuallyProcess.length > 0) {
-        await handleUploadUnchecked(filesToActuallyProcess);
-      }
-      return;
-    }
-
-    // --- 의뢰 제출 시 감지된 중복 케이스 처리 ---
-    if (choice.strategy === "skip") {
-      const fileKey = getFileKeyByDraftCaseId(String(choice.caseId || ""));
-      const fileIndex = fileKey
-        ? (files || []).findIndex((f) => `${f.name}:${f.size}` === fileKey)
-        : -1;
-      if (fileIndex >= 0) {
-        console.log("[DuplicateModal] Removing skipped file:", {
-          fileIndex,
-          fileKey,
-        });
-        await handleRemoveFile(fileIndex);
-      }
-    }
-    const nextResolutions = (() => {
-      const next = (duplicateResolutions || []).filter(
-        (r) => r.caseId !== choice.caseId,
-      );
-      next.push(choice);
-      return next;
-    })();
-
-    setDuplicateResolutions(nextResolutions);
-
-    const remaining =
-      (duplicatePrompt?.duplicates || []).filter(
-        (d) => d.caseId !== choice.caseId,
-      ) || [];
-
-    if (remaining.length > 0) {
-      setDuplicatePrompt({
-        ...duplicatePrompt,
-        duplicates: remaining,
-      });
-      return;
-    }
-
-    // 모든 중복 건에 대한 결정이 완료됨
-    const finalResolutions = nextResolutions.map((r) => ({
-      caseId: r.caseId,
-      strategy: r.strategy,
-      existingRequestId: r.existingRequestId,
-    }));
-
-    // 중요: 선택 정보를 보존한 채 프롬프트만 닫고 사용자가 다시 제출하도록 유도
-    setDuplicateResolutions(finalResolutions as any);
-    setDuplicatePrompt(null);
-    setPendingUploadDecisions({});
-  };
-
-  const renderDuplicateActions = (dup: any) => {
-    const isLocked = dup?.lockedReason === "production";
-    const isTracking =
-      duplicatePrompt?.mode === "tracking" ||
-      String(dup?.existingRequest?.manufacturerStage || "").trim() ===
-        "추적관리";
-    const primaryStrategy = isTracking ? "remake" : "replace";
-    const primaryLabel = isTracking ? "재의뢰로 접수" : "새의뢰로 변경";
-
+  if (loading) {
     return (
-      <div className="flex gap-2 pointer-events-auto">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            console.log("[DuplicateModal] Primary button clicked", {
-              strategy: primaryStrategy,
-              caseId: dup.caseId,
-            });
-            applyDuplicateChoice({
-              strategy: primaryStrategy,
-              caseId: dup.caseId,
-              existingRequestId: dup.existingRequest?._id,
-            });
-          }}
-          disabled={isLocked && !isTracking}
-          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
-        >
-          {primaryLabel}
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            console.log("[DuplicateModal] Skip button clicked", {
-              caseId: dup.caseId,
-            });
-            applyDuplicateChoice({
-              strategy: "skip",
-              caseId: dup.caseId,
-              existingRequestId: dup.existingRequest?._id,
-            });
-          }}
-          className="flex-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-700 hover:bg-gray-50"
-        >
-          기존의뢰 유지
-        </button>
+      <div className="flex items-center justify-center h-full">
+        <div className="text-lg">로딩 중...</div>
       </div>
     );
-  };
-
-  const { weeklyBatchLabel } = useBulkShippingPolicy(user?.email);
-
-  const [focusUnverifiedTick, setFocusUnverifiedTick] = useState(0);
-
-  const validateFileForUpload = (
-    file: File,
-  ): { valid: boolean; message?: string } => {
-    // Check file extension for STL
-    const fileName = file.name.toLowerCase();
-    if (!fileName.endsWith(".stl")) {
-      return {
-        valid: false,
-        message: "STL 파일만 업로드 가능합니다.",
-      };
-    }
-
-    if (file.size >= FILE_SIZE_THRESHOLD_BYTES) {
-      return {
-        valid: false,
-        message:
-          "30MB 이상의 파일은 업로드할 수 없습니다. 커스텀 어벗 STL 파일만 업로드해주세요.",
-      };
-    }
-    return { valid: true };
-  };
-
-  const onUpload = async (filesToUpload: File[]) => {
-    try {
-      await handleUpload(filesToUpload);
-    } catch (e: any) {
-      toast({
-        title: "오류",
-        description: e.message || "파일 업로드 중 오류가 발생했습니다.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleIncomingFiles = (selectedFiles: File[]) => {
-    const filesToUpload: File[] = [];
-    const rejectedFiles: { name: string; reason: string }[] = [];
-
-    selectedFiles.forEach((file) => {
-      const validation = validateFileForUpload(file);
-      if (validation.valid) {
-        filesToUpload.push(file);
-      } else {
-        rejectedFiles.push({
-          name: file.name,
-          reason: validation.message || "알 수 없는 오류",
-        });
-      }
-    });
-
-    if (rejectedFiles.length > 0) {
-      const firstReason = rejectedFiles[0].reason;
-      toast({
-        title: "파일 업로드 실패",
-        description: firstReason,
-        variant: "destructive",
-        duration: 3000,
-      });
-    }
-
-    if (filesToUpload.length > 0) {
-      void onUpload(filesToUpload);
-    }
-  };
-
-  if (draftStatus === "loading") {
-    return <NewRequestPageSkeleton />;
   }
 
+  const selectedFile =
+    selectedFileIndex !== null ? files[selectedFileIndex] : null;
+  const selectedFileKey = selectedFile ? getFileKey(selectedFile) : null;
+  const selectedCaseInfos = selectedFileKey
+    ? getCaseInfos(selectedFileKey)
+    : null;
+
   return (
-    <PageFileDropZone
-      onFiles={handleIncomingFiles}
-      activeClassName="ring-2 ring-primary/30"
-      className="bg-gradient-subtle p-4 flex flex-col h-full min-h-0 overflow-hidden"
-    >
-      <div className="max-w-6xl mx-auto w-full space-y-4 flex flex-col flex-1 min-h-0 h-full">
-        <MultiActionDialog
-          open={!!duplicatePrompt}
-          preventCloseOnOverlayClick={false}
-          onClose={() => {
-            setDuplicatePrompt(null);
-            setPendingUploadFiles(null);
-            setPendingUploadDecisions({});
-          }}
-          title={
-            duplicatePrompt?.mode === "tracking"
-              ? "추적관리 의뢰가 이미 있습니다"
-              : "진행 중인 의뢰가 이미 있습니다"
-          }
-          description={
-            <div className="space-y-3">
-              <div className="text-sm text-gray-700">
-                동일한 치과/환자/치아 정보로 이미 의뢰가 존재합니다. 항목별로
-                선택해주세요.
+    <div className="flex flex-col h-full min-h-0 p-6">
+      <div className="max-w-6xl w-full mx-auto flex flex-col gap-4">
+        {/* 헤더 */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">새 의뢰</h1>
+        </div>
+
+        {/* 메인 카드 */}
+        <Card className="p-5 shadow-lg border border-slate-100 bg-white">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* 왼쪽: 파일 리스트 */}
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">파일 ({files.length})</h2>
+                <label>
+                  <input
+                    type="file"
+                    multiple
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    accept=".stl,.3dm,.obj"
+                  />
+                  <Button variant="outline" size="sm" asChild>
+                    <span>파일 선택</span>
+                  </Button>
+                </label>
               </div>
-              {duplicateList.map((dup, idx) => {
-                const info = getNewCaseInfoByCaseId(String(dup.caseId || ""));
-                const existing = dup?.existingRequest || {};
-                const isLocked = dup?.lockedReason === "production";
-                const existingCaseInfos = existing?.caseInfos || {};
-                const newClinic = String(info?.clinicName || "").trim();
-                const newPatient = String(info?.patientName || "").trim();
-                const newTooth = String(info?.tooth || "").trim();
-                const existingClinic = String(
-                  existingCaseInfos?.clinicName || "",
-                ).trim();
-                const existingPatient = String(
-                  existingCaseInfos?.patientName || "",
-                ).trim();
-                const existingTooth = String(
-                  existingCaseInfos?.tooth || "",
-                ).trim();
-                return (
-                  <div
-                    key={`${dup.caseId || ""}-${idx}`}
-                    className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 space-y-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="font-semibold">
-                        중복된 의뢰 {idx + 1} / {duplicateList.length}
-                      </div>
-                      {dup?.fileName && (
-                        <span className="text-[11px] text-gray-500 truncate">
-                          파일: {String(dup.fileName || "")}
-                        </span>
-                      )}
-                    </div>
-                    <div className="rounded border border-gray-200 bg-white p-2">
-                      <div className="flex flex-col gap-0.5 text-[11px]">
-                        <span className="truncate">
-                          신규 의뢰: {newClinic || "-"} / {newPatient || "-"} /
-                          {newTooth || "-"}
-                        </span>
-                        <span className="truncate">
-                          기존 의뢰: {existingClinic || "-"} /
-                          {existingPatient || "-"} / {existingTooth || "-"}
-                        </span>
-                        <span className="truncate">
-                          상태: {String(existing?.manufacturerStage || "")}
-                          {isLocked && (
-                            <span className="text-red-500 ml-1">
-                              (가공 단계 이후 의뢰는 변경/취소할 수 없습니다.)
-                            </span>
-                          )}
-                        </span>
-                        {existing?.requestId && (
-                          <span className="truncate">
-                            의뢰번호: {String(existing.requestId || "")}
-                          </span>
-                        )}
-                        {existing?.price?.amount != null && (
-                          <span className="truncate">
-                            금액(공급가):{" "}
-                            {Number(
-                              existing?.price?.amount || 0,
-                            ).toLocaleString()}
-                            원
-                          </span>
-                        )}
-                        {existing?.createdAt && (
-                          <span className="truncate">
-                            접수일: {String(existing.createdAt).slice(0, 10)}
-                          </span>
+
+              {/* 드롭존 */}
+              <div
+                className={`rounded-2xl border-2 border-dashed p-4 text-center text-sm text-slate-500 bg-slate-50/60 ${
+                  isDragOver
+                    ? "border-primary bg-primary/5"
+                    : "border-slate-200"
+                }`}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+              >
+                파일을 드래그하거나 파일 선택 버튼을 클릭하세요
+              </div>
+
+              {/* 파일 카드 목록 */}
+              <div className="space-y-3">
+                {files.map((file, index) => {
+                  const fileKey = getFileKey(file);
+                  const caseInfos = getCaseInfos(fileKey);
+                  const isSelected = selectedFileIndex === index;
+
+                  return (
+                    <div
+                      key={fileKey}
+                      className={`rounded-2xl border-2 bg-white shadow-sm p-3 flex items-center justify-between transition-all ${
+                        isSelected
+                          ? "border-primary ring-2 ring-primary/40"
+                          : "border-slate-200 hover:border-primary/40"
+                      }`}
+                      onClick={() => setSelectedFileIndex(index)}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold truncate text-slate-800">
+                          {file.name}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {(file.size / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                        {caseInfos && (
+                          <p className="text-xs text-slate-500 truncate">
+                            {caseInfos.clinicName} / {caseInfos.patientName} /{" "}
+                            {caseInfos.tooth}
+                          </p>
                         )}
                       </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveFile(index);
+                        }}
+                      >
+                        삭제
+                      </Button>
                     </div>
-                    {renderDuplicateActions(dup)}
+                  );
+                })}
+
+                {files.length === 0 && (
+                  <div className="text-center text-sm text-slate-500">
+                    파일을 추가하면 목록이 표시됩니다.
                   </div>
+                )}
+              </div>
+            </div>
+
+            {/* 오른쪽: 정보 입력 + 배송 */}
+            <div className="flex flex-col gap-3">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 shadow-inner">
+                <h3 className="text-base font-semibold mb-3">묶음 배송</h3>
+                <div className="flex items-center gap-2 text-sm text-slate-700 mb-2">
+                  <span>발송일:</span>
+                  <div className="flex gap-1">
+                    {["월", "화", "수", "목", "금"].map((day) => (
+                      <button
+                        key={day}
+                        className="px-3 py-1 rounded-md border border-slate-200 bg-white text-slate-700 text-xs hover:border-primary"
+                        type="button"
+                      >
+                        {day}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500">
+                  공휴일은 다음날 발송합니다.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    className="flex-1"
+                    onClick={handleSubmit}
+                    disabled={files.length === 0 || isSubmitting}
+                  >
+                    {isSubmitting ? "제출 중..." : "의뢰하기"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    disabled={isSubmitting}
+                    onClick={() => window.location.reload()}
+                  >
+                    취소하기
+                  </Button>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex-1 min-h-[280px]">
+                <h3 className="text-base font-semibold mb-3">정보 입력</h3>
+
+                {selectedFile && selectedFileKey ? (
+                  <div className="space-y-3">
+                    <Input
+                      value={selectedCaseInfos?.clinicName || ""}
+                      onChange={(e) =>
+                        handleUpdateInfo(selectedFileKey, {
+                          clinicName: e.target.value,
+                        })
+                      }
+                      placeholder="치과명을 입력하세요"
+                    />
+                    <Input
+                      value={selectedCaseInfos?.patientName || ""}
+                      onChange={(e) =>
+                        handleUpdateInfo(selectedFileKey, {
+                          patientName: e.target.value,
+                        })
+                      }
+                      placeholder="환자명을 입력하세요"
+                    />
+                    <Input
+                      value={selectedCaseInfos?.tooth || ""}
+                      onChange={(e) =>
+                        handleUpdateInfo(selectedFileKey, {
+                          tooth: e.target.value,
+                        })
+                      }
+                      placeholder="치아번호를 입력하세요"
+                    />
+                    <Input
+                      value={selectedCaseInfos?.implantManufacturer || ""}
+                      onChange={(e) =>
+                        handleUpdateInfo(selectedFileKey, {
+                          implantManufacturer: e.target.value,
+                        })
+                      }
+                      placeholder="임플란트 제조사"
+                    />
+                    <Input
+                      value={selectedCaseInfos?.implantSystem || ""}
+                      onChange={(e) =>
+                        handleUpdateInfo(selectedFileKey, {
+                          implantSystem: e.target.value,
+                        })
+                      }
+                      placeholder="임플란트 시스템"
+                    />
+                    <Input
+                      value={selectedCaseInfos?.implantType || ""}
+                      onChange={(e) =>
+                        handleUpdateInfo(selectedFileKey, {
+                          implantType: e.target.value,
+                        })
+                      }
+                      placeholder="임플란트 타입"
+                    />
+                  </div>
+                ) : (
+                  <div className="text-center text-sm text-slate-500 flex items-center justify-center h-full">
+                    파일을 선택하여 정보를 입력하세요
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* 중복 처리 모달 (V2 스타일과 유사하게 카드 형태 유지) */}
+      {duplicatePrompt && duplicatePrompt.duplicates.length > 0 && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-2xl max-h-[80vh] overflow-y-auto p-6 shadow-xl">
+            <h2 className="text-xl font-bold mb-4">
+              {duplicatePrompt.mode === "tracking"
+                ? "추적관리 의뢰가 이미 있습니다"
+                : "진행 중인 의뢰가 이미 있습니다"}
+            </h2>
+
+            <div className="space-y-4">
+              {duplicatePrompt.duplicates.map((dup) => {
+                const existing = dup.existingRequest;
+                return (
+                  <Card key={dup.fileKey} className="p-4">
+                    <div className="space-y-2">
+                      <p className="font-medium">
+                        {existing?.clinicName} / {existing?.patientName} /{" "}
+                        {existing?.tooth}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        의뢰번호: {existing?.requestId}
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            handleDuplicateChoice({
+                              fileKey: dup.fileKey,
+                              strategy: "skip",
+                              existingRequestId: existing?._id,
+                            })
+                          }
+                        >
+                          건너뛰기
+                        </Button>
+                        {duplicatePrompt.mode !== "tracking" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              handleDuplicateChoice({
+                                fileKey: dup.fileKey,
+                                strategy: "replace",
+                                existingRequestId: existing?._id,
+                              })
+                            }
+                          >
+                            교체하기
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          onClick={() =>
+                            handleDuplicateChoice({
+                              fileKey: dup.fileKey,
+                              strategy: "remake",
+                              existingRequestId: existing?._id,
+                            })
+                          }
+                        >
+                          하나 더 의뢰
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
                 );
               })}
             </div>
-          }
-          actions={[]}
-        />
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch flex-1 min-h-0 h-full">
-          <div className="flex flex-col gap-2.5 flex-1 min-h-0 h-full">
-            <NewRequestDetailsSection
-              files={files}
-              selectedPreviewIndex={selectedPreviewIndex}
-              setSelectedPreviewIndex={setSelectedPreviewIndex}
-              caseInfos={caseInfos}
-              setCaseInfos={setCaseInfos}
-              caseInfosMap={caseInfosMap}
-              updateCaseInfos={updateCaseInfos}
-              connections={connections}
-              typeOptions={typeOptions}
-              implantManufacturer={implantManufacturer}
-              setImplantManufacturer={setImplantManufacturer}
-              implantSystem={implantSystem}
-              setImplantSystem={setImplantSystem}
-              implantType={implantType}
-              setImplantType={setImplantType}
-              syncSelectedConnection={syncSelectedConnection}
-              fileVerificationStatus={fileVerificationStatus}
-              setFileVerificationStatus={setFileVerificationStatus}
-              highlightUnverifiedArrows={highlightUnverifiedArrows}
-              setHighlightUnverifiedArrows={setHighlightUnverifiedArrows}
-              handleRemoveFile={handleRemoveFile}
-              clinicNameOptions={clinicPresets}
-              patientNameOptions={patientPresets}
-              teethOptions={teethPresets}
-              addClinicPreset={addClinicPreset}
-              clearAllClinicPresets={clearAllClinicPresets}
-              addPatientPreset={addPatientPreset}
-              clearAllPatientPresets={clearAllPatientPresets}
-              addTeethPreset={addTeethPreset}
-              clearAllTeethPresets={clearAllTeethPresets}
-              handleAddOrSelectClinic={handleAddOrSelectClinic}
-              toast={toast}
-              highlight={false}
-              sectionHighlightClass={sectionHighlightClass}
-              focusUnverifiedTick={focusUnverifiedTick}
-              duplicatePromptOpen={!!duplicatePrompt}
-              isDragOver={isDragOver}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => {
-                e.preventDefault();
-                handleDragLeave(e);
-                handleIncomingFiles(Array.from(e.dataTransfer.files));
-              }}
-              onFilesSelected={handleIncomingFiles}
-              onDuplicateDetected={({ file, duplicate }) => {
-                const caseId = String(
-                  (file as any)?._draftCaseInfoId || "",
-                ).trim();
-                const fallbackCaseId = `${file.name}:${file.size}`;
-                const effectiveCaseId = caseId || fallbackCaseId;
-                const stageOrder = Number(duplicate?.stageOrder);
-                const mapped = {
-                  caseId: effectiveCaseId,
-                  fileName: file.name,
-                  existingRequest: duplicate?.existingRequest,
-                  lockedReason: stageOrder >= 2 ? "production" : undefined,
-                };
-
-                setDuplicatePrompt((prev) => {
-                  const existing = prev?.duplicates || [];
-                  const has = existing.some(
-                    (d: any) => d.caseId === mapped.caseId,
-                  );
-                  const duplicates = has ? existing : [...existing, mapped];
-                  return {
-                    mode: "active",
-                    ...(prev || {}),
-                    duplicates,
-                  } as any;
-                });
-              }}
-            />
-          </div>
-
-          <div className="flex flex-col justify-center min-h-0">
-            <NewRequestShippingSection
-              caseInfos={caseInfos}
-              setCaseInfos={setCaseInfos}
-              highlight={highlightStep === "shipping"}
-              sectionHighlightClass={sectionHighlightClass}
-              weeklyBatchLabel={weeklyBatchLabel}
-              onOpenShippingSettings={() =>
-                navigate("/dashboard/settings?tab=shipping")
-              }
-              onSubmit={() => {
-                if (!files.length) {
-                  toast({
-                    title: "파일이 필요합니다",
-                    description:
-                      "최소 1개의 커스텀 어벗 STL 파일을 추가한 뒤 의뢰해주세요.",
-                    variant: "destructive",
-                    duration: 4000,
-                  });
-                  return;
-                }
-                if (unverifiedCount > 0) {
-                  const firstUnverifiedIndex = files.findIndex((file) => {
-                    const key = `${String(file.name || "").normalize("NFC")}:${file.size}`;
-                    return !fileVerificationStatus[key];
-                  });
-                  if (firstUnverifiedIndex >= 0) {
-                    setSelectedPreviewIndex(firstUnverifiedIndex);
-                  }
-                  setFocusUnverifiedTick((prev) => prev + 1);
-                  setHighlightUnverifiedArrows(true);
-                  toast({
-                    title: "확인 필요",
-                    description: `모든 파일 카드가 확인되어야 합니다.`,
-                    duration: 5000,
-                  });
-                  setTimeout(() => setHighlightUnverifiedArrows(false), 10000);
-                  return;
-                }
-                toast({
-                  title: "의뢰 접수중",
-                  description: "제출을 처리하고 있어요. 잠시만 기다려주세요.",
-                  duration: 3000,
-                });
-                handleSubmit();
-              }}
-              onCancelAll={handleCancelAll}
-            />
-          </div>
+            <div className="mt-4 flex justify-end">
+              <Button variant="ghost" onClick={() => setDuplicatePrompt(null)}>
+                닫기
+              </Button>
+            </div>
+          </Card>
         </div>
-      </div>
-    </PageFileDropZone>
+      )}
+    </div>
   );
-};
+}

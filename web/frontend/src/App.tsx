@@ -44,7 +44,7 @@ const DashboardHome = lazy(() =>
   })),
 );
 const NewRequestPage = lazy(() =>
-  import("./pages/requestor/new_request/NewRequestPage").then((m) => ({
+  import("./pages/requestor/new_request/NewRequestPageV2").then((m) => ({
     default: m.NewRequestPage,
   })),
 );

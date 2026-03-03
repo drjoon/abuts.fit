@@ -85,6 +85,7 @@ type Props = {
   onDragLeave: (e: React.DragEvent<HTMLDivElement>) => void;
   onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
   onFilesSelected: (files: File[]) => void;
+  onCancelAll: () => void;
 };
 
 export function NewRequestDetailsSection({
@@ -130,6 +131,7 @@ export function NewRequestDetailsSection({
   onDragLeave,
   onDrop,
   onFilesSelected,
+  onCancelAll,
 }: Props) {
   const { token } = useAuthStore();
   const [leadTimes, setLeadTimes] = useState<Record<string, any> | null>(null);
@@ -276,6 +278,18 @@ export function NewRequestDetailsSection({
       setSelectedPreviewIndex(0);
     }
   }, [files, selectedPreviewIndex, setSelectedPreviewIndex]);
+
+  // 파일이 삭제되어 상세 모달이 비어 있으면 자동으로 닫는다
+  useEffect(() => {
+    if (isDetailOpen) {
+      const noFiles = files.length === 0;
+      const invalidIndex =
+        detailIndex === null || (detailIndex ?? 0) >= files.length;
+      if (noFiles || invalidIndex) {
+        setIsDetailOpen(false);
+      }
+    }
+  }, [isDetailOpen, files.length, detailIndex]);
 
   useEffect(() => {
     if (!files.length) return;
@@ -461,34 +475,10 @@ export function NewRequestDetailsSection({
       }
     }
 
-    try {
-      const query = new URLSearchParams({
-        clinicName: fileCaseInfos?.clinicName || "",
-        patientName: fileCaseInfos?.patientName || "",
-        tooth: fileCaseInfos?.tooth || "",
-      }).toString();
-
-      const res = await apiFetch<any>({
-        path: `/api/requests/my/check-duplicate?${query}`,
-        method: "GET",
-      });
-
-      const body: any = res.data || {};
-      const data = body?.data || body;
-
-      if (res.ok && data?.exists) {
-        onDuplicateDetected?.({
-          file,
-          duplicate: data,
-        });
-
-        // Only restore detail modal if there are more unverified files
-        if (hasRemainingUnverified) {
-          setShouldRestoreDetailAfterDuplicate(true);
-        }
-      }
-    } catch (err) {
-      console.error("Duplicate check error:", err);
+    // 중복 체크는 상위(setCaseInfos)에서 이미 수행하므로 여기서는 재호출하지 않는다
+    // (중복 모달이 두 번 뜨는 현상 방지)
+    if (hasRemainingUnverified) {
+      setShouldRestoreDetailAfterDuplicate(true);
     }
 
     setFileVerificationStatus(nextStatus);
@@ -599,6 +589,17 @@ export function NewRequestDetailsSection({
     >
       <div className="app-glass-card-content flex flex-col flex-1 min-h-0 h-full">
         <div className="flex flex-col flex-1 min-h-0 h-full">
+          <div className="flex justify-end px-2 pb-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onCancelAll}
+              disabled={!files.length}
+            >
+              전체 삭제
+            </Button>
+          </div>
           <div
             ref={listContainerRef}
             className="flex flex-col gap-2.5 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 px-2 py-2 flex-1 min-h-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 -mx-1"

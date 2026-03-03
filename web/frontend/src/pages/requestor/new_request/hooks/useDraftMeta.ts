@@ -9,8 +9,8 @@ import {
 
 const DRAFT_ID_STORAGE_KEY = "abutsfit:new-request-draft-id:v1";
 const DRAFT_META_KEY_PREFIX = "abutsfit:new-request-draft-meta:v1:";
-const DRAFT_META_TTL_MS = 30 * 60 * 1000; // 30분
-const PATCH_DEBOUNCE_MS = 2000; // 2초 디바운스 (동시성 문제 방지)
+// 로컬을 단일 출처로 사용: 캐시 TTL을 넉넉히 7일로 확장
+const DRAFT_META_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || "/api";
 
@@ -33,9 +33,6 @@ export function useDraftMeta() {
     "loading",
   );
   const [error, setError] = useState<string | null>(null);
-
-  // Draft PATCH 디바운스를 위한 타이머 Ref
-  const patchTimeoutRef = useRef<number | null>(null);
 
   // 현재 draftId를 추적하는 Ref (setTimeout 콜백에서 draftId 변경 감지용)
   const draftIdRef = useRef<string | null>(null);
@@ -106,32 +103,6 @@ export function useDraftMeta() {
     }
   }, [getDraftMetaKey]);
 
-  // Draft 조회
-  const fetchDraft = useCallback(
-    async (id: string): Promise<DraftRequest | null> => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/requests/drafts/${id}`, {
-          method: "GET",
-          headers: getHeaders(),
-        });
-
-        if (!res.ok) {
-          if (res.status === 404 || res.status === 403) {
-            return null;
-          }
-          throw new Error(`Failed to fetch draft: ${res.status}`);
-        }
-
-        const data = await res.json();
-        return data.data || data;
-      } catch (err) {
-        console.error("fetchDraft error:", err);
-        return null;
-      }
-    },
-    [getHeaders],
-  );
-
   // Draft 생성
   const createDraft = useCallback(async (): Promise<DraftRequest | null> => {
     try {
@@ -167,82 +138,47 @@ export function useDraftMeta() {
       setError(null);
 
       try {
-        // 1. DraftMeta 캐시 확인 (서버 존재 여부 + status 검증)
+        // 1. DraftMeta 캐시 확인: 유효하면 로컬을 단일 출처로 바로 사용
         const cachedMeta = loadDraftMeta();
         if (cachedMeta) {
-          const draftFromCache = await fetchDraft(cachedMeta.draftId);
-          if (draftFromCache && draftFromCache.status === "draft") {
-            const draftCaseInfos = Array.isArray(draftFromCache.caseInfos)
-              ? draftFromCache.caseInfos
-              : [];
-
-            // 캐시된 caseInfosMap 또는 새로 생성
-            const initialMap = cachedMeta.caseInfosMap || {};
-            if (Object.keys(initialMap).length === 0) {
-              initialMap.__default__ = { workType: "abutment" };
-            }
-
-            setDraftId(draftFromCache._id);
-            setCaseInfosMap(initialMap);
-            setInitialDraftFiles(draftCaseInfos);
-            saveDraftMeta(draftFromCache._id, initialMap);
-            setStatus("ready");
-            return;
-          } else {
-            // 캐시된 Draft가 서버에 없거나 더 이상 draft 상태가 아니면 로컬 캐시 정리 후 새 Draft 생성 플로우로 진행
-            const metaKey = getDraftMetaKey();
-            if (metaKey) {
-              try {
-                localStorage.removeItem(metaKey);
-              } catch {}
-            }
-            try {
-              localStorage.removeItem(DRAFT_ID_STORAGE_KEY);
-            } catch {}
+          const initialMap = cachedMeta.caseInfosMap || {};
+          if (Object.keys(initialMap).length === 0) {
+            initialMap.__default__ = { workType: "abutment" };
           }
+
+          setDraftId(cachedMeta.draftId);
+          setCaseInfosMap(initialMap);
+          setInitialDraftFiles([]); // 서버 재조회 없이 로컬만 사용
+          saveDraftMeta(cachedMeta.draftId, initialMap);
+          setStatus("ready");
+          return;
         }
 
         // 2. localStorage의 draftId 확인 (별도 Meta 없이 ID만 있는 경우)
         const storedDraftId = localStorage.getItem(DRAFT_ID_STORAGE_KEY);
         if (storedDraftId) {
-          const draft = await fetchDraft(storedDraftId);
-          if (draft && draft.status === "draft") {
-            const draftCaseInfos = Array.isArray(draft.caseInfos)
-              ? draft.caseInfos
-              : [];
+          const initialMap: Record<string, CaseInfos> = {
+            __default__: { workType: "abutment" },
+          };
 
-            const initialMap: Record<string, CaseInfos> = {
-              __default__: { workType: "abutment" },
-            };
-
-            setDraftId(draft._id);
-            setCaseInfosMap(initialMap);
-            setInitialDraftFiles(draftCaseInfos);
-            saveDraftMeta(draft._id, initialMap);
-            setStatus("ready");
-            return;
-          } else {
-            // draftId만 있고 서버에는 없거나 이미 submitted/cancelled 상태인 경우 로컬 ID 정리
-            try {
-              localStorage.removeItem(DRAFT_ID_STORAGE_KEY);
-            } catch {}
-          }
+          setDraftId(storedDraftId);
+          setCaseInfosMap(initialMap);
+          setInitialDraftFiles([]);
+          saveDraftMeta(storedDraftId, initialMap);
+          setStatus("ready");
+          return;
         }
 
-        // 3. 새 Draft 생성
+        // 3. 새 Draft 생성 (서버에 최소한의 ID만 생성)
         const newDraft = await createDraft();
         if (newDraft) {
-          const draftCaseInfos = Array.isArray(newDraft.caseInfos)
-            ? newDraft.caseInfos
-            : [];
-
           const initialMap: Record<string, CaseInfos> = {
             __default__: { workType: "abutment" },
           };
 
           setDraftId(newDraft._id);
           setCaseInfosMap(initialMap);
-          setInitialDraftFiles(draftCaseInfos);
+          setInitialDraftFiles([]);
           saveDraftMeta(newDraft._id, initialMap);
           setStatus("ready");
         } else {
@@ -255,18 +191,12 @@ export function useDraftMeta() {
         setStatus("error");
       }
     })();
-  }, [token, user?.id, loadDraftMeta, fetchDraft, createDraft, saveDraftMeta]);
+  }, [token, user?.id, loadDraftMeta, createDraft, saveDraftMeta]);
 
   // 즉시 PATCH 요청 (디바운스 없음)
   const patchDraftImmediately = useCallback(
     async (map: Record<string, CaseInfos>) => {
       if (!draftId || !token) return;
-
-      // 대기 중인 디바운스 타이머가 있다면 취소 (중복 패치 방지)
-      if (patchTimeoutRef.current !== null) {
-        window.clearTimeout(patchTimeoutRef.current);
-        patchTimeoutRef.current = null;
-      }
 
       try {
         // __default__를 제외한 파일별 caseInfos 추출
@@ -352,67 +282,16 @@ export function useDraftMeta() {
 
         const newMap = { ...prevMap, [fileKey]: updated };
 
-        // 1) 로컬 스토리지 즉시 업데이트 (PATCH 지연과 무관하게 로컬 데이터 보존)
+        // 로컬을 단일 출처로 저장 (서버 PATCH는 제출 시점에만 수행)
         if (draftId) {
           saveDraftMeta(draftId, newMap);
-        }
-
-        // 2) 비동기 PATCH 요청 (디바운스 적용)
-        if (draftId && token) {
-          if (patchTimeoutRef.current !== null) {
-            window.clearTimeout(patchTimeoutRef.current);
-          }
-
-          const currentDraftId = draftId;
-
-          patchTimeoutRef.current = window.setTimeout(async () => {
-            if (currentDraftId !== draftIdRef.current) {
-              return;
-            }
-
-            try {
-              // 전체 caseInfosMap을 배열로 변환해서 보냄
-              // (__default__ 제외, 실제 파일 정보만)
-              const caseInfosArray = Object.entries(newMap)
-                .filter(([key]) => key !== "__default__")
-                .map(([, caseInfo]) => caseInfo);
-
-              const res = await fetch(
-                `${API_BASE_URL}/requests/drafts/${currentDraftId}`,
-                {
-                  method: "PATCH",
-                  headers: getHeaders(),
-                  body: JSON.stringify({
-                    caseInfos: caseInfosArray,
-                  }),
-                },
-              );
-
-              if (!res.ok) {
-                throw new Error(`Failed to update draft: ${res.status}`);
-              }
-
-              saveDraftMeta(currentDraftId, newMap);
-            } catch (err) {
-              console.error("updateCaseInfos error:", err);
-            }
-          }, PATCH_DEBOUNCE_MS);
         }
 
         return newMap;
       });
     },
-    [draftId, token, getHeaders, saveDraftMeta],
+    [draftId, saveDraftMeta],
   );
-
-  // 언마운트 시 디바운스 타이머 정리
-  useEffect(() => {
-    return () => {
-      if (patchTimeoutRef.current !== null) {
-        window.clearTimeout(patchTimeoutRef.current);
-      }
-    };
-  }, []);
 
   // Draft 삭제 (현재 Draft만 정리)
   const deleteDraft = useCallback(async () => {
@@ -421,7 +300,6 @@ export function useDraftMeta() {
     try {
       const res = await fetch(`${API_BASE_URL}/requests/drafts/${draftId}`, {
         method: "DELETE",
-        headers: getHeaders(),
       });
 
       if (!res.ok) {
@@ -438,22 +316,15 @@ export function useDraftMeta() {
     } catch (err) {
       console.error("deleteDraft error:", err);
     }
-  }, [draftId, token, getHeaders, getDraftMetaKey]);
+  }, [draftId, token, getDraftMetaKey]);
 
   // Draft 완전 리셋: 기존 Draft 정리 후 새 Draft 생성
   const resetDraft = useCallback(async () => {
-    // 펀딩 중인 PATCH 요청 취소 (이전 draftId로의 업데이트 방지)
-    if (patchTimeoutRef.current !== null) {
-      window.clearTimeout(patchTimeoutRef.current);
-      patchTimeoutRef.current = null;
-    }
-
     // 기존 Draft 정리 (실패해도 무시하고 계속 진행)
     try {
       if (draftId && token) {
         await fetch(`${API_BASE_URL}/requests/drafts/${draftId}`, {
           method: "DELETE",
-          headers: getHeaders(),
         });
       }
     } catch (err) {
@@ -501,15 +372,7 @@ export function useDraftMeta() {
         setInitialDraftFiles([]);
       }
     }
-  }, [
-    draftId,
-    token,
-    user?.id,
-    getHeaders,
-    getDraftMetaKey,
-    createDraft,
-    saveDraftMeta,
-  ]);
+  }, [draftId, token, user?.id, getDraftMetaKey, createDraft, saveDraftMeta]);
 
   const removeCaseInfos = useCallback(
     (fileKey: string) => {
