@@ -63,8 +63,16 @@ export const RequestorDashboardStatsCards = ({
               </div>
               {stat.change && (
                 <p className="text-xs text-slate-600">
-                  <span className="text-green-700">{stat.change}</span> 지난 달
-                  대비
+                  <span
+                    className={
+                      String(stat.change).includes("-")
+                        ? "text-red-700"
+                        : "text-blue-700"
+                    }
+                  >
+                    {stat.change}
+                  </span>{" "}
+                  전 기간 대비
                 </p>
               )}
             </CardContent>

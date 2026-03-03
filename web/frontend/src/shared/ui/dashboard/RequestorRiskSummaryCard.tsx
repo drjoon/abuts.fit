@@ -197,7 +197,7 @@ export const RequestorRiskSummaryCard = ({
           <span>지연 확정 의뢰: {summary.delayedCount ?? 0}건</span>
           <span>정시 발송 비율: {summary.onTimeRate ?? 0}%</span>
         </div>
-        <div className="space-y-2 flex-1 max-h-[350px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+        <div className="space-y-2 flex-1 max-h-[550px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
           {summary.items && summary.items.length > 0 ? (
             summary.items.map((item) => (
               <FunctionalItemCard
@@ -261,12 +261,12 @@ export const RequestorRiskSummaryCard = ({
                   <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2">
                     {item.dueDate && (
                       <span className="text-blue-600 font-medium">
-                        발송 예정: {item.dueDate}
+                        발송 예정일: {item.dueDate}
                       </span>
                     )}
                     {item.nextEstimatedShipYmd && (
                       <span className="text-[11px] text-slate-500">
-                        다음 ETA:{" "}
+                        다음 예정일:{" "}
                         {formatEta(item.nextEstimatedShipYmd) ?? "확인 중"}
                       </span>
                     )}

@@ -207,7 +207,7 @@ export const RequestorBulkShippingBannerCard = ({
     if (bulkCount === 0) {
       return {
         modeLabel: "배송 대기 없음",
-        countLabel: "현재 배송 대기 중인 제품이 없습니다.",
+        countLabel: "현재 대기 중인 제품이 없습니다.",
         dateLabel: "-",
       };
     }
@@ -216,8 +216,8 @@ export const RequestorBulkShippingBannerCard = ({
 
     return {
       modeLabel: "묶음 배송",
-      countLabel: `${bulkCount}개 대기 중`,
-      dateLabel: `다음 발송: ${nextText}`,
+      countLabel: `대기 수량: ${bulkCount}개`,
+      dateLabel: `다음 발송 예정: ${nextText}`,
     };
   };
 

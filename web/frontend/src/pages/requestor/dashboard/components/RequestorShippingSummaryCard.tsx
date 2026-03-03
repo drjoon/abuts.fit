@@ -129,7 +129,7 @@ export const RequestorShippingSummaryCard = () => {
       <Card className="app-glass-card app-glass-card--lg">
         <CardHeader className="pb-2">
           <CardTitle className="text-base font-semibold text-foreground">
-            오늘 발송 박스 요약
+            오늘 발송 내역
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-2 pb-4 text-sm text-foreground space-y-2">
@@ -138,7 +138,7 @@ export const RequestorShippingSummaryCard = () => {
           ) : (
             <>
               <div className="flex items-baseline justify-between">
-                <span className="text-slate-600">박스 내용</span>
+                <span className="text-slate-600">박스 구성</span>
                 <Button
                   type="button"
                   variant="ghost"
@@ -153,7 +153,7 @@ export const RequestorShippingSummaryCard = () => {
                 </Button>
               </div>
               <div className="flex items-baseline justify-between">
-                <span className="text-slate-600">배송비 합계 (공급가)</span>
+                <span className="text-slate-600">배송비 합계(공급가)</span>
                 <span className="text-lg font-semibold text-foreground">
                   {memo.todayFee.toLocaleString()}원
                 </span>
@@ -193,7 +193,7 @@ export const RequestorShippingSummaryCard = () => {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>오늘 발송 박스 내용</DialogTitle>
+            <DialogTitle>오늘 발송 박스 내역</DialogTitle>
           </DialogHeader>
           {memo.todayRequests.length === 0 ? (
             <div className="text-sm text-muted-foreground">
