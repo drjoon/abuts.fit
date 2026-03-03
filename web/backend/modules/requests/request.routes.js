@@ -12,6 +12,14 @@ router.post(
   requestController.createRequest,
 );
 
+// 다건 의뢰 생성 (배치)
+router.post(
+  "/bulk",
+  authenticate,
+  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
+  requestController.createRequestsBulk,
+);
+
 // Draft에서 의뢰 생성 (의뢰자만 가능)
 router.post(
   "/from-draft",

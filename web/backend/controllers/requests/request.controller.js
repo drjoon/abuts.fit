@@ -7,6 +7,7 @@ import * as packingPrintController from "./packingPrint.controller.js";
 // Re-export individual functions for named imports
 export const {
   createRequest,
+  createRequestsBulk,
   cloneRequestToDraft,
   createRequestsFromDraft,
   checkDuplicateCaseInfo,
