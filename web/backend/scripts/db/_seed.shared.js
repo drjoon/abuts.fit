@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import User from "../../models/user.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
@@ -53,7 +54,12 @@ export async function seedAccountsDev() {
 
   await User.updateOne(
     { _id: requestorOwner._id },
-    { $set: { organizationId: requestorOrg._id, organization: requestorOrg.name } },
+    {
+      $set: {
+        organizationId: requestorOrg._id,
+        organization: requestorOrg.name,
+      },
+    },
   );
 
   const requestorStaff = await User.create({
@@ -74,7 +80,11 @@ export async function seedAccountsDev() {
 
   await RequestorOrganization.updateOne(
     { _id: requestorOrg._id },
-    { $addToSet: { members: { $each: [requestorOwner._id, requestorStaff._id] } } },
+    {
+      $addToSet: {
+        members: { $each: [requestorOwner._id, requestorStaff._id] },
+      },
+    },
   );
 
   const manufacturerOwner = await User.create({
@@ -109,7 +119,12 @@ export async function seedAccountsDev() {
 
   await User.updateOne(
     { _id: manufacturerOwner._id },
-    { $set: { organizationId: manufacturerOrg._id, organization: manufacturerOrg.name } },
+    {
+      $set: {
+        organizationId: manufacturerOrg._id,
+        organization: manufacturerOrg.name,
+      },
+    },
   );
 
   const manufacturerStaff = await User.create({
@@ -311,6 +326,12 @@ export async function seedBulkUsersAndData() {
   const salesmanRoots = [];
   const ROOT_COUNT = 3;
 
+  const creditLedgerDocs = [];
+  const requestDocs = [];
+  const shippingPackageDocs = [];
+  const salesmanLedgerDocs = [];
+  const salesmanEarnTotals = new Map();
+
   const SALESMAN_COUNT = 10;
   for (let i = 1; i <= SALESMAN_COUNT; i += 1) {
     const email = `s${String(i).padStart(3, "0")}@gmail.com`;
@@ -321,10 +342,13 @@ export async function seedBulkUsersAndData() {
     const isUnreferred = !isRoot && i !== 4 && Math.random() < 0.2;
     if (!isRoot && !isUnreferred) {
       const root = salesmanRoots.length ? pick(salesmanRoots) : null;
-      const candidates = salesmen.filter((s) => String(s.leaderId) === String(root?.id));
+      const candidates = salesmen.filter(
+        (s) => String(s.leaderId) === String(root?.id),
+      );
       const parent = candidates.length ? pick(candidates) : pick(salesmen);
       referredByUserId = parent?.id || null;
-      referralGroupLeaderId = root?.id || parent?.leaderId || parent?.id || null;
+      referralGroupLeaderId =
+        root?.id || parent?.leaderId || parent?.id || null;
     }
     const salesman = await User.create({
       name: `데모 영업자${i}`,
@@ -338,7 +362,12 @@ export async function seedBulkUsersAndData() {
       active: true,
     });
     const leaderId = referralGroupLeaderId || salesman._id;
-    salesmen.push({ id: salesman._id, email, leaderId, parentId: referredByUserId });
+    salesmen.push({
+      id: salesman._id,
+      email,
+      leaderId,
+      parentId: referredByUserId,
+    });
     if (isRoot) salesmanRoots.push({ id: salesman._id, email });
   }
 
@@ -356,8 +385,12 @@ export async function seedBulkUsersAndData() {
         parentId = parentSalesman.id;
         referralGroupLeaderId = parentSalesman.leaderId || parentSalesman.id;
       }
-    } else if (i <= SALES_INTRO_PARENTS.length + REQUESTOR_INTRO_PARENTS.length) {
-      const parentEmail = REQUESTOR_INTRO_PARENTS[i - SALES_INTRO_PARENTS.length - 1];
+    } else if (
+      i <=
+      SALES_INTRO_PARENTS.length + REQUESTOR_INTRO_PARENTS.length
+    ) {
+      const parentEmail =
+        REQUESTOR_INTRO_PARENTS[i - SALES_INTRO_PARENTS.length - 1];
       const parentRequestor = requestors.find((r) => r.email === parentEmail);
       if (parentRequestor) {
         parentId = parentRequestor.id;
@@ -394,15 +427,26 @@ export async function seedBulkUsersAndData() {
     const effectiveLeaderId = referralGroupLeaderId || parentId || owner._id;
     await User.updateOne(
       { _id: owner._id },
-      { $set: { organizationId: org._id, organization: org.name, referralGroupLeaderId: effectiveLeaderId } },
+      {
+        $set: {
+          organizationId: org._id,
+          organization: org.name,
+          referralGroupLeaderId: effectiveLeaderId,
+        },
+      },
     );
 
-    requestors.push({ id: owner._id, email, orgId: org._id, leaderId: effectiveLeaderId });
+    requestors.push({
+      id: owner._id,
+      email,
+      orgId: org._id,
+      leaderId: effectiveLeaderId,
+    });
 
     let remainingPaid = pick([500000, 1000000, 2000000, 3000000]);
     let remainingBonus = 30000;
 
-    await CreditLedger.create({
+    creditLedgerDocs.push({
       organizationId: org._id,
       userId: owner._id,
       type: "CHARGE",
@@ -412,7 +456,7 @@ export async function seedBulkUsersAndData() {
       uniqueKey: `seed:charge:${email}`,
     });
 
-    await CreditLedger.create({
+    creditLedgerDocs.push({
       organizationId: org._id,
       userId: owner._id,
       type: "BONUS",
@@ -422,20 +466,32 @@ export async function seedBulkUsersAndData() {
       uniqueKey: `seed:bonus:${email}`,
     });
 
-    const requestCount = randInt(20, 50);
-    const completedRequestIds = [];
+    const requestCount = randInt(
+      REQUEST_COUNT_RANGE.min,
+      REQUEST_COUNT_RANGE.max,
+    );
+    const completedRequests = [];
     let freeExpressAdded = false;
     for (let k = 0; k < requestCount; k += 1) {
       const daysAgo = randInt(0, LAST_N_DAYS);
       const createdAt = new Date(BULK_NOW);
       createdAt.setDate(createdAt.getDate() - daysAgo);
 
-      const isNewUser = approvedAt && createdAt < new Date(approvedAt.getTime() + 90 * 24 * 60 * 60 * 1000);
+      const isNewUser =
+        approvedAt &&
+        createdAt < new Date(approvedAt.getTime() + 90 * 24 * 60 * 60 * 1000);
       const price = isNewUser ? 10_000 : 15_000;
-      const computedPrice = { amount: price, baseAmount: isNewUser ? 10_000 : 15_000, discountAmount: 0, rule: isNewUser ? "new_user_90days_fixed_10000" : "base_price" };
+      const computedPrice = {
+        amount: price,
+        baseAmount: isNewUser ? 10_000 : 15_000,
+        discountAmount: 0,
+        rule: isNewUser ? "new_user_90days_fixed_10000" : "base_price",
+      };
       const isCompleted = Math.random() < 0.8;
 
-      const status = isCompleted ? "완료" : pick(["의뢰", "CAM", "가공", "세척.패킹", "포장.발송"]);
+      const status = isCompleted
+        ? "완료"
+        : pick(["의뢰", "CAM", "가공", "세척.패킹", "포장.발송"]);
 
       const manufacturerStage = (() => {
         if (isCompleted) return "추적관리";
@@ -447,20 +503,18 @@ export async function seedBulkUsersAndData() {
         return "의뢰";
       })();
 
-      const paidAmount = (() => {
-        const fromBonus = Math.min(Math.max(0, remainingBonus), price);
-        return price - fromBonus;
-      })();
-      const bonusAmount = (() => {
-        return Math.min(Math.max(0, remainingBonus), price);
-      })();
+      const fromBonus = Math.min(Math.max(0, remainingBonus), price);
+      const paidAmount = price - fromBonus;
+      const bonusAmount = fromBonus;
 
       const isFreeExpress = i === 1 && isCompleted && !freeExpressAdded;
       if (isFreeExpress) freeExpressAdded = true;
       const actualPaidAmount = isFreeExpress ? 0 : paidAmount;
       const actualBonusAmount = isFreeExpress ? price : bonusAmount;
 
-      const reqDoc = await Request.create({
+      const reqId = new mongoose.Types.ObjectId();
+      const reqDoc = {
+        _id: reqId,
         requestorOrganizationId: org._id,
         requestor: owner._id,
         manufacturer: null,
@@ -497,12 +551,14 @@ export async function seedBulkUsersAndData() {
           : {}),
         createdAt,
         updatedAt: createdAt,
-      });
+      };
+      requestDocs.push(reqDoc);
 
       if (isCompleted) {
+        completedRequests.push(reqDoc);
         if (isFreeExpress) {
           remainingBonus -= price;
-          await CreditLedger.create({
+          creditLedgerDocs.push({
             organizationId: org._id,
             userId: owner._id,
             type: "SPEND",
@@ -510,82 +566,98 @@ export async function seedBulkUsersAndData() {
             spentPaidAmount: 0,
             spentBonusAmount: price,
             refType: "SEED_REQUEST",
-            refId: reqDoc._id,
-            uniqueKey: `seed:spend:${email}:${String(reqDoc._id)}`,
+            refId: reqId,
+            uniqueKey: `seed:spend:${email}:${String(reqId)}`,
           });
-          completedRequestIds.push(reqDoc._id);
         } else if (remainingBonus + remainingPaid >= price) {
-          const fromBonus = Math.min(Math.max(0, remainingBonus), price);
-          const fromPaid = price - fromBonus;
-          remainingBonus -= fromBonus;
-          remainingPaid -= fromPaid;
-          await CreditLedger.create({
+          const spendBonus = Math.min(Math.max(0, remainingBonus), price);
+          const spendPaid = price - spendBonus;
+          remainingBonus -= spendBonus;
+          remainingPaid -= spendPaid;
+          creditLedgerDocs.push({
             organizationId: org._id,
             userId: owner._id,
             type: "SPEND",
             amount: -price,
-            spentPaidAmount: fromPaid,
-            spentBonusAmount: fromBonus,
+            spentPaidAmount: spendPaid,
+            spentBonusAmount: spendBonus,
             refType: "SEED_REQUEST",
-            refId: reqDoc._id,
-            uniqueKey: `seed:spend:${email}:${String(reqDoc._id)}`,
+            refId: reqId,
+            uniqueKey: `seed:spend:${email}:${String(reqId)}`,
           });
-          completedRequestIds.push(reqDoc._id);
         }
       }
 
       if (isCompleted && parentId && actualPaidAmount > 0) {
-        const parentUser = salesmen.find((s) => String(s.id) === String(parentId));
+        const parentUser = salesmen.find(
+          (s) => String(s.id) === String(parentId),
+        );
         if (parentUser) {
           const earnAmount = Math.round(actualPaidAmount * 0.05);
           if (earnAmount > 0) {
-            await SalesmanLedger.create({
+            salesmanLedgerDocs.push({
               salesmanId: parentId,
               type: "EARN",
               amount: earnAmount,
               refType: "SEED_REQUEST",
-              refId: reqDoc._id,
-              uniqueKey: `seed:salesman:earn:direct:${String(parentId)}:${String(reqDoc._id)}`,
+              refId: reqId,
+              uniqueKey: `seed:salesman:earn:direct:${String(parentId)}:${String(reqId)}`,
             });
+            const parentKey = String(parentId);
+            salesmanEarnTotals.set(
+              parentKey,
+              (salesmanEarnTotals.get(parentKey) || 0) + earnAmount,
+            );
           }
 
-          const grandparentUser = parentUser.parentId ? salesmen.find((s) => String(s.id) === String(parentUser.parentId)) : null;
+          const grandparentUser = parentUser.parentId
+            ? salesmen.find((s) => String(s.id) === String(parentUser.parentId))
+            : null;
           if (grandparentUser) {
             const level1EarnAmount = Math.round(actualPaidAmount * 0.025);
             if (level1EarnAmount > 0) {
-              await SalesmanLedger.create({
+              salesmanLedgerDocs.push({
                 salesmanId: grandparentUser.id,
                 type: "EARN",
                 amount: level1EarnAmount,
                 refType: "SEED_REQUEST_LEVEL1",
-                refId: reqDoc._id,
-                uniqueKey: `seed:salesman:earn:level1:${String(grandparentUser.id)}:${String(reqDoc._id)}`,
+                refId: reqId,
+                uniqueKey: `seed:salesman:earn:level1:${String(grandparentUser.id)}:${String(reqId)}`,
               });
+              const gpKey = String(grandparentUser.id);
+              salesmanEarnTotals.set(
+                gpKey,
+                (salesmanEarnTotals.get(gpKey) || 0) + level1EarnAmount,
+              );
             }
           }
         }
       }
     }
 
-    if (completedRequestIds.length > 0) {
-      const sortedIds = [...completedRequestIds];
+    if (completedRequests.length > 0) {
+      const sortedDocs = [...completedRequests];
       let cursor = 0;
       let pkgIdx = 0;
-      while (cursor < sortedIds.length) {
-        const chunkSize = Math.min(Math.floor(Math.random() * (20 - 3 + 1)) + 3, Math.max(1, sortedIds.length - cursor));
-        const chunk = sortedIds.slice(cursor, cursor + chunkSize);
+      while (cursor < sortedDocs.length) {
+        const remaining = sortedDocs.length - cursor;
+        const chunkSize = Math.min(randInt(3, 20), Math.max(1, remaining));
+        const chunk = sortedDocs.slice(cursor, cursor + chunkSize);
         cursor += chunkSize;
         pkgIdx += 1;
 
         const shipDate = new Date(BULK_NOW);
-        const shipOffset = Math.min(LAST_N_DAYS, pkgIdx + Math.floor(Math.random() * 4));
+        const shipOffset = Math.min(LAST_N_DAYS, pkgIdx + randInt(0, 3));
         shipDate.setDate(shipDate.getDate() - shipOffset);
         const shipDateYmd = `${toKstYmd(shipDate)}-p${pkgIdx}`;
+        const pkgId = new mongoose.Types.ObjectId();
+        const requestIds = chunk.map((doc) => doc._id);
 
-        const pkg = await ShippingPackage.create({
+        shippingPackageDocs.push({
+          _id: pkgId,
           organizationId: org._id,
           shipDateYmd,
-          requestIds: chunk,
+          requestIds,
           shippingFeeSupply: 3500,
           shippingFeeVat: 0,
           createdBy: owner._id,
@@ -593,40 +665,37 @@ export async function seedBulkUsersAndData() {
           updatedAt: shipDate,
         });
 
+        chunk.forEach((doc) => {
+          doc.shippingPackageId = pkgId;
+        });
+
         if (remainingPaid >= 3500) {
-          const fromBonus = 0;
           const fromPaid = 3500;
           remainingPaid -= fromPaid;
-          await CreditLedger.create({
+          creditLedgerDocs.push({
             organizationId: org._id,
             userId: owner._id,
             type: "SPEND",
             amount: -3500,
             spentPaidAmount: fromPaid,
-            spentBonusAmount: fromBonus,
+            spentBonusAmount: 0,
             refType: "SHIPPING_FEE",
-            refId: pkg._id,
-            uniqueKey: `seed:shipping-fee:${email}:${String(pkg._id)}`,
+            refId: pkgId,
+            uniqueKey: `seed:shipping-fee:${email}:${String(pkgId)}`,
           });
         }
-
-        await Request.updateMany({ _id: { $in: chunk } }, { $set: { shippingPackageId: pkg._id } });
       }
     }
   }
 
   for (const s of salesmen) {
     if (Math.random() < 0.35) {
-      const earned = await SalesmanLedger.aggregate([
-        { $match: { salesmanId: s.id, type: "EARN" } },
-        { $group: { _id: "$salesmanId", total: { $sum: "$amount" } } },
-      ]);
-      const totalEarned = Number(earned?.[0]?.total || 0);
+      const totalEarned = salesmanEarnTotals.get(String(s.id)) || 0;
       if (totalEarned > 0) {
         const payoutRaw = Math.round(totalEarned * (0.3 + Math.random() * 0.4));
         const payout = Math.floor(Math.max(0, payoutRaw) / 10000) * 10000;
         if (payout > 0) {
-          await SalesmanLedger.create({
+          salesmanLedgerDocs.push({
             salesmanId: s.id,
             type: "PAYOUT",
             amount: payout,
@@ -637,6 +706,19 @@ export async function seedBulkUsersAndData() {
         }
       }
     }
+  }
+
+  if (requestDocs.length) {
+    await Request.insertMany(requestDocs, { ordered: false });
+  }
+  if (shippingPackageDocs.length) {
+    await ShippingPackage.insertMany(shippingPackageDocs, { ordered: false });
+  }
+  if (creditLedgerDocs.length) {
+    await CreditLedger.insertMany(creditLedgerDocs, { ordered: false });
+  }
+  if (salesmanLedgerDocs.length) {
+    await SalesmanLedger.insertMany(salesmanLedgerDocs, { ordered: false });
   }
 
   return { requestors, salesmen };
