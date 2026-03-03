@@ -4,22 +4,28 @@
 
 ## 실행
 
-- DB 전체 초기화(컬렉션 deleteMany)
+- **DB 전체 초기화(컬렉션 deleteMany)**
 
 ```bash
 npm run db:reset
 ```
 
-- 필수 데이터 시드(core)
+- **초기화 + 계정 36개(데모 + 영업자 10명 + 의뢰자 20명)**
 
 ```bash
-npm run db:seed:core
+npm run db:reset-account
 ```
 
-- 초기화 + core + dev 한번에
+- **계정 + 더미 의뢰/배송/정산 시드 (리셋 없이)**
 
 ```bash
-npm run db:reset-and-seed
+npm run db:seed
+```
+
+- **초기화 + 계정 + 더미 의뢰/배송/정산 (풀 시드)**
+
+```bash
+npm run db:reset-seed
 ```
 
 ## 안전장치
@@ -38,4 +44,4 @@ ABUTS_DB_FORCE=true
 
 ## 강제 실행
 
-ABUTS_DB_FORCE=true npm run db:reset-and-seed
+ABUTS_DB_FORCE=true npm run db:reset-seed
