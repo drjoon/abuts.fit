@@ -545,15 +545,15 @@ async function seedBulkUsersAndData() {
 
       const status = isCompleted
         ? "완료"
-        : pick(["의뢰", "CAM", "가공", "세척.포장", "발송"]);
+        : pick(["의뢰", "CAM", "가공", "세척.패킹", "포장.발송"]);
 
       const manufacturerStage = (() => {
         if (isCompleted) return "추적관리";
         if (status === "의뢰") return "의뢰";
         if (status === "CAM") return "CAM";
         if (status === "가공") return "가공";
-        if (status === "세척.포장") return "세척.포장";
-        if (status === "발송") return "발송";
+        if (status === "세척.패킹") return "세척.패킹";
+        if (status === "포장.발송") return "포장.발송";
         return "의뢰";
       })();
 
@@ -776,6 +776,7 @@ async function run() {
     await clearAllCollections();
     await seedCore();
     const seeded = await seedDev();
+    await seedBulkUsersAndData();
 
     console.log("[db] reset + seed done", {
       requestorOwner: {
