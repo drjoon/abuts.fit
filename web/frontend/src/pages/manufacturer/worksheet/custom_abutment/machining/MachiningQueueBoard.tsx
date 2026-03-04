@@ -181,7 +181,7 @@ export const MachiningQueueBoard = ({
         </div>
       </div>
 
-      <div className="grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 p-4 pb-8 -mx-2">
+      <div className="grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 p-4 pb-8">
         {filteredMachines.map((m) => {
           const statusFromStore = statusByUid?.[m.uid];
           const local = machineStatusMap?.[m.uid] ?? null;
