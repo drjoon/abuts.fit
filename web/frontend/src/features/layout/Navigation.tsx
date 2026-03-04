@@ -41,8 +41,8 @@ export const Navigation = () => {
 
   return (
     <nav className="fixed top-0 w-full z-50">
-      <div className="absolute inset-0 bg-[#030711]/55 backdrop-blur-2xl border-b border-white/10" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_25%_0%,rgba(59,130,246,0.18),transparent_60%),radial-gradient(circle_at_85%_0%,rgba(168,85,247,0.14),transparent_62%)] opacity-60" />
+      <div className="absolute inset-0 bg-[#02040c]/85 backdrop-blur-3xl border-b border-white/10" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_-15%,rgba(59,130,246,0.25),transparent_58%),radial-gradient(circle_at_78%_-20%,rgba(147,51,234,0.22),transparent_60%),radial-gradient(circle_at_50%_25%,rgba(6,78,59,0.18),transparent_72%)] opacity-70" />
       <div className="container mx-auto px-4">
         <div className="relative flex items-center justify-between h-16">
           <button
