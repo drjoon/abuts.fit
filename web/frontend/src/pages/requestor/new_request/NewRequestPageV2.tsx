@@ -663,12 +663,46 @@ export const NewRequestPage = () => {
                   setTimeout(() => setHighlightUnverifiedArrows(false), 10000);
                   return;
                 }
-                toast({
-                  title: "의뢰 접수중",
-                  description: "제출을 처리하고 있어요. 잠시만 기다려주세요.",
-                  duration: 3000,
-                });
-                handleSubmit();
+                // Pre-validate weekly batch days before submitting (no upload/draft until valid)
+                (async () => {
+                  try {
+                    const res = await apiFetch<any>({
+                      path: "/api/requestor-organizations/me",
+                      method: "GET",
+                    });
+                    const days: string[] = Array.isArray(
+                      res?.data?.data?.shippingPolicy?.weeklyBatchDays,
+                    )
+                      ? res.data.data.shippingPolicy.weeklyBatchDays
+                      : [];
+                    if (!days.length) {
+                      try {
+                        if (typeof window !== "undefined") {
+                          window.dispatchEvent(
+                            new CustomEvent("abuts:shipping:needs-weekly-days"),
+                          );
+                        }
+                      } catch {}
+                      toast({
+                        title: "설정 필요",
+                        description:
+                          "이 화면의 ‘묶음 배송’ 섹션에서 요일을 선택한 후 다시 시도하세요.",
+                        variant: "destructive",
+                        duration: 4500,
+                      });
+                      return;
+                    }
+                  } catch {
+                    // ignore precheck error; backend will guard again
+                  }
+
+                  toast({
+                    title: "의뢰 접수중",
+                    description: "제출을 처리하고 있어요. 잠시만 기다려주세요.",
+                    duration: 3000,
+                  });
+                  handleSubmit();
+                })();
               }}
             />
           </div>

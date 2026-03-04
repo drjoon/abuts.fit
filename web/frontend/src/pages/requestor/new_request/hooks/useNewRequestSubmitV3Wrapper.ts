@@ -78,6 +78,44 @@ export const useNewRequestSubmitV3Wrapper = ({
     try {
       const createdRequests: any[] = [];
 
+      // 0) Pre-validate: weekly batch days (묶음 배송 요일) must be set
+      try {
+        const precheckRes = await fetch(
+          `${API_BASE_URL}/requestor-organizations/me`,
+          {
+            method: "GET",
+            headers: getHeaders(),
+          },
+        );
+        const preData = await precheckRes.json().catch(() => ({}) as any);
+        const weeklyDays: string[] = Array.isArray(
+          preData?.data?.shippingPolicy?.weeklyBatchDays,
+        )
+          ? preData.data.shippingPolicy.weeklyBatchDays
+          : [];
+        if (!weeklyDays.length) {
+          // Highlight shipping section and abort early
+          try {
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(
+                new CustomEvent("abuts:shipping:needs-weekly-days"),
+              );
+            }
+          } catch {}
+          toast({
+            title: "설정 필요",
+            description:
+              "이 화면의 ‘묶음 배송’ 섹션에서 요일을 선택한 후 다시 시도하세요.",
+            variant: "destructive",
+            duration: 4500,
+          });
+          setIsSubmitting(false);
+          return;
+        }
+      } catch {
+        // 사전 검증 실패 시에는 계속 진행(서버 측에서 한 번 더 방어)
+      }
+
       // 1) IndexedDB에서 모든 파일을 병렬로 읽고, 업로드 대상 배열 구성
       const resolvedFiles = await Promise.all(
         files.map(async (file) => {
@@ -217,6 +255,28 @@ export const useNewRequestSubmitV3Wrapper = ({
           });
           alreadyNotifiedError = true;
         }
+        // UX: 묶음 배송 요일 미설정 에러 시, 배송 섹션 하이라이트 신호를 보낸다.
+        try {
+          const needsWeeklyDays = (() => {
+            try {
+              if (Array.isArray((bulkData as any)?.errors)) {
+                return (bulkData as any).errors.some((e: any) =>
+                  String(e?.message || "").includes("묶음 배송 요일을 설정"),
+                );
+              }
+              return String((bulkData as any)?.message || "").includes(
+                "묶음 배송 요일을 설정",
+              );
+            } catch {
+              return false;
+            }
+          })();
+          if (needsWeeklyDays && typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("abuts:shipping:needs-weekly-days"),
+            );
+          }
+        } catch {}
         const err: any = new Error(bulkData?.message || "의뢰 생성 실패(일괄)");
         if (bulkData?.code) err.code = bulkData.code;
         throw err;
@@ -291,6 +351,18 @@ export const useNewRequestSubmitV3Wrapper = ({
 
       // 서버에서 이미 에러 토스트를 표시한 경우 중복 토스트 방지
       if (alreadyNotifiedError) {
+        // 별도로 주의 하이라이트는 보낸다.
+        try {
+          const msg = String(error?.message || "");
+          if (
+            msg.includes("묶음 배송 요일을 설정") &&
+            typeof window !== "undefined"
+          ) {
+            window.dispatchEvent(
+              new CustomEvent("abuts:shipping:needs-weekly-days"),
+            );
+          }
+        } catch {}
         return;
       }
       // 중복 감지 에러는 상위에서 처리하려면 throw 유지

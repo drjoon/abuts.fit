@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
 import { Truck } from "lucide-react";
 import type { CaseInfos } from "../hooks/newRequestTypes";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -43,6 +43,30 @@ export function NewRequestShippingSection({
   const { token } = useAuthStore();
   const [selectedDays, setSelectedDays] = useState<WeekDay[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const weekdaysRef = useRef<HTMLDivElement | null>(null);
+  const [pulse, setPulse] = useState(false);
+
+  // Listen custom event to highlight this section and scroll into view
+  useEffect(() => {
+    const handler = () => {
+      setPulse(true);
+      try {
+        (weekdaysRef.current || containerRef.current)?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      } catch {}
+      const t = setTimeout(() => setPulse(false), 4000);
+      return () => clearTimeout(t as any);
+    };
+    window.addEventListener("abuts:shipping:needs-weekly-days", handler as any);
+    return () =>
+      window.removeEventListener(
+        "abuts:shipping:needs-weekly-days",
+        handler as any,
+      );
+  }, []);
 
   useEffect(() => {
     const loadWeeklyBatchDays = async () => {
@@ -124,7 +148,8 @@ export function NewRequestShippingSection({
   const holidayRolloverNote = "공휴일은 다음날 발송합니다";
   return (
     <div
-      className={`app-glass-card app-glass-card--lg relative flex flex-col justify-center gap-2 border-2 border-gray-300 p-4 md:p-6`}
+      ref={containerRef}
+      className={`app-glass-card app-glass-card--lg relative flex flex-col justify-center gap-2 border-2 p-4 md:p-6 transition-all border-gray-300`}
     >
       <div className="app-glass-card-content space-y-4">
         <div className="flex flex-col items-center gap-3">
@@ -141,25 +166,34 @@ export function NewRequestShippingSection({
             <div className="text-sm text-slate-500 font-medium mr-1 flex items-center gap-2">
               발송일:
             </div>
-            {WEEKDAYS.map((day) => (
-              <button
-                key={day.key}
-                type="button"
-                onClick={() => toggleDay(day.key)}
-                disabled={isDisabled || isUpdating}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  selectedDays.includes(day.key)
-                    ? "bg-primary text-white"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                } ${
-                  isDisabled || isUpdating
-                    ? "opacity-50 cursor-not-allowed"
-                    : "cursor-pointer"
-                }`}
-              >
-                {day.label}
-              </button>
-            ))}
+            <div
+              ref={weekdaysRef}
+              className={`flex gap-1 rounded-md px-1 py-1 transition-all ${
+                pulse
+                  ? "bg-red-50 border border-red-300 ring-2 ring-red-200"
+                  : ""
+              }`}
+            >
+              {WEEKDAYS.map((day) => (
+                <button
+                  key={day.key}
+                  type="button"
+                  onClick={() => toggleDay(day.key)}
+                  disabled={isDisabled || isUpdating}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    selectedDays.includes(day.key)
+                      ? "bg-primary text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  } ${
+                    isDisabled || isUpdating
+                      ? "opacity-50 cursor-not-allowed"
+                      : "cursor-pointer"
+                  }`}
+                >
+                  {day.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
