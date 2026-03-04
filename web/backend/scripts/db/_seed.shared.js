@@ -11,6 +11,37 @@ import crypto from "crypto";
 
 const NOW = new Date();
 
+const REQUEST_ID_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+const REQUEST_ID_SUFFIX_LEN = 8;
+const REQUEST_ID_MAX_TRIES = 8;
+
+function generateRequestId(createdAt, reserved = new Set()) {
+  const baseDate = createdAt instanceof Date ? createdAt : new Date();
+  const kst = new Date(baseDate.getTime() + 9 * 60 * 60 * 1000);
+  const year = kst.getUTCFullYear();
+  const month = String(kst.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(kst.getUTCDate()).padStart(2, "0");
+  const prefix = `${year}${month}${day}`;
+
+  const makeSuffix = () => {
+    const bytes = crypto.randomBytes(REQUEST_ID_SUFFIX_LEN);
+    let out = "";
+    for (let i = 0; i < REQUEST_ID_SUFFIX_LEN; i += 1) {
+      out += REQUEST_ID_ALPHABET[bytes[i] % REQUEST_ID_ALPHABET.length];
+    }
+    return out;
+  };
+
+  for (let attempt = 0; attempt < REQUEST_ID_MAX_TRIES; attempt += 1) {
+    const candidate = `${prefix}-${makeSuffix()}`;
+    if (reserved.has(candidate)) continue;
+    reserved.add(candidate);
+    return candidate;
+  }
+
+  throw new Error("requestId 생성에 실패했습니다 (seed)");
+}
+
 export async function seedAccountsDev() {
   const passwords = {
     requestorOwner: "Rq!8zY#4fQ@7nC5$",
@@ -331,6 +362,7 @@ export async function seedBulkUsersAndData() {
   const shippingPackageDocs = [];
   const salesmanLedgerDocs = [];
   const salesmanEarnTotals = new Map();
+  const generatedRequestIds = new Set();
 
   const SALESMAN_COUNT = 10;
   for (let i = 1; i <= SALESMAN_COUNT; i += 1) {
@@ -513,8 +545,10 @@ export async function seedBulkUsersAndData() {
       const actualBonusAmount = isFreeExpress ? price : bonusAmount;
 
       const reqId = new mongoose.Types.ObjectId();
+      const requestId = generateRequestId(createdAt, generatedRequestIds);
       const reqDoc = {
         _id: reqId,
+        requestId,
         requestorOrganizationId: org._id,
         requestor: owner._id,
         manufacturer: null,
