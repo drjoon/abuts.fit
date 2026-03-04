@@ -38,11 +38,6 @@ export const RequestorPricingReferralPolicyCard = () => {
         path: "/api/requests/my/pricing-referral-stats",
         method: "GET",
         token,
-        headers: token
-          ? {
-              "x-mock-role": "requestor",
-            }
-          : undefined,
       });
       if (!res.ok || !res.data?.success) {
         const errorMsg =
@@ -172,9 +167,7 @@ export const RequestorPricingReferralPolicyCard = () => {
       <Card className="app-glass-card app-glass-card--lg">
         <CardHeader className="pt-4 pb-2">
           <div className="flex items-center justify-between gap-2">
-            <CardTitle className="text-base font-semibold">
-              가격 정책
-            </CardTitle>
+            <CardTitle className="text-base font-semibold">가격 정책</CardTitle>
             <div className="flex items-center gap-2">
               <Button
                 type="button"

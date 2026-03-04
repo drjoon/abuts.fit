@@ -47,14 +47,11 @@ export function useDraftMeta() {
     return `${DRAFT_META_KEY_PREFIX}${user.id}`;
   }, [user?.id]);
 
-  // 헤더 생성 (mock dev 토큰 지원)
+  // 헤더 생성 (표준 Authorization만 사용)
   const getHeaders = useCallback(() => {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-    if (token === "MOCK_DEV_TOKEN") {
-      headers["x-mock-role"] = "requestor";
-    }
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
     }

@@ -45,9 +45,6 @@ export const useNewRequestSubmitV3Wrapper = ({
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-    if (token === "MOCK_DEV_TOKEN") {
-      headers["x-mock-role"] = "requestor";
-    }
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
     }

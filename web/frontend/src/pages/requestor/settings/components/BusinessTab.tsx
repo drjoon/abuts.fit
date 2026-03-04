@@ -195,28 +195,9 @@ export const BusinessTab = ({
   const [orgOpen, setOrgOpen] = useState(false);
 
   const [licenseDeleteLoading, setLicenseDeleteLoading] = useState(false);
-
   const mockHeaders = useMemo(() => {
-    if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
-    return {
-      "x-mock-role": ((organizationTypeOverride as string) ||
-        (user?.role as string) ||
-        (userData?.role as string) ||
-        "requestor") as string,
-      "x-mock-email": user?.email || userData?.email || "mock@abuts.fit",
-      "x-mock-name": user?.name || userData?.name || "사용자",
-      "x-mock-organization":
-        (user as any)?.organization || userData?.companyName || "",
-      "x-mock-phone": (user as any)?.phoneNumber || "",
-    };
-  }, [
-    organizationTypeOverride,
-    token,
-    user?.email,
-    user?.name,
-    user?.role,
-    userData,
-  ]);
+    return {} as Record<string, string>;
+  }, []);
 
   const organizationType = useMemo(() => {
     if (organizationTypeOverride) return organizationTypeOverride;
@@ -392,7 +373,7 @@ export const BusinessTab = ({
     };
 
     load();
-  }, [authUserId, mockHeaders, organizationType, token]);
+  }, [authUserId, organizationType, token]);
 
   useEffect(() => {
     if (!authUserId) return;
@@ -512,7 +493,7 @@ export const BusinessTab = ({
     }, 250);
 
     return () => clearTimeout(t);
-  }, [membership, mockHeaders, orgSearch, organizationType, token]);
+  }, [membership, orgSearch, organizationType, token]);
 
   useEffect(() => {
     const load = async () => {
@@ -548,7 +529,7 @@ export const BusinessTab = ({
     };
 
     load();
-  }, [membership, mockHeaders, organizationType, token]);
+  }, [membership, organizationType, token]);
 
   const refreshMembership = async () => {
     if (!token) return;
@@ -558,7 +539,6 @@ export const BusinessTab = ({
       )}`,
       method: "GET",
       token,
-      headers: mockHeaders,
     });
     if (!res.ok) return;
     const body: any = res.data || {};
@@ -576,7 +556,6 @@ export const BusinessTab = ({
       )}`,
       method: "GET",
       token,
-      headers: mockHeaders,
     });
     if (!res.ok) return;
     const body: any = res.data || {};

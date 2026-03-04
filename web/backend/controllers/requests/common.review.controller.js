@@ -402,8 +402,8 @@ export async function deleteStageFile(req, res) {
       const prevStageMap = {
         machining: "CAM",
         packing: "가공",
-        shipping: "세척.포장",
-        tracking: "발송",
+        shipping: "세척.패킹",
+        tracking: "포장.발송",
       };
       const prevStage = prevStageMap[stage];
       if (prevStage) {

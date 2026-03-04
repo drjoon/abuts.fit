@@ -147,12 +147,6 @@ export const AdminRequestMonitoring = () => {
           path: "/api/admin/dashboard",
           method: "GET",
           token,
-          headers:
-            token === "MOCK_DEV_TOKEN"
-              ? {
-                  "x-mock-role": "admin",
-                }
-              : undefined,
         });
         if (res.ok && res.data?.success) {
           setRequestStats(res.data.data?.requestStats || {});

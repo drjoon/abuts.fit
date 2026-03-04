@@ -44,16 +44,7 @@ async function prevKoreanBusinessDayYmd({ fromYmd }) {
 }
 
 export function resolveEffectiveShippingMode(requestLike) {
-  const finalMode = String(requestLike?.finalShipping?.mode || "").trim();
-  if (finalMode === "express" || finalMode === "normal") return finalMode;
-
-  const originalMode = String(requestLike?.originalShipping?.mode || "").trim();
-  if (originalMode === "express" || originalMode === "normal")
-    return originalMode;
-
-  const legacy = String(requestLike?.shippingMode || "").trim();
-  if (legacy === "express" || legacy === "normal") return legacy;
-
+  // 신속배송(express) 모드 폐지: 항상 'normal' 로 처리
   return "normal";
 }
 
@@ -61,7 +52,7 @@ export async function computeShippingPriority({ request, now }) {
   const stage = String(
     request?.manufacturerStage || request?.status || "",
   ).trim();
-  const isPreShip = ["의뢰", "CAM", "생산"].includes(stage);
+  const isPreShip = ["의뢰", "CAM", "가공"].includes(stage);
 
   const mode = resolveEffectiveShippingMode(request);
 

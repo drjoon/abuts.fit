@@ -132,11 +132,6 @@ export function useBulkShippingPolicy(email?: string | null) {
           )}`,
           method: "GET",
           token,
-          headers: token
-            ? {
-                "x-mock-role": user?.role,
-              }
-            : undefined,
         });
 
         if (!res.ok) return;

@@ -1,4 +1,4 @@
-import { useAuthStore } from "@/store/useAuthStore";
+// NOTE: Legacy mock header injection removed. Standard Authorization handling only.
 
 const IN_FLIGHT = new Map<string, Promise<ApiResponse<any>>>();
 const SHORT_CACHE = new Map<string, { ts: number; value: ApiResponse<any> }>();
@@ -52,63 +52,6 @@ export async function apiFetch<T = any>(
     }
   }
 
-  if (effectiveToken === "MOCK_DEV_TOKEN") {
-    try {
-      const stateUser = useAuthStore.getState().user;
-
-      const role =
-        stateUser?.role ||
-        sessionStorage.getItem("abuts_mock_role") ||
-        localStorage.getItem("abuts_mock_role") ||
-        "";
-      const email =
-        stateUser?.email ||
-        sessionStorage.getItem("abuts_mock_email") ||
-        localStorage.getItem("abuts_mock_email") ||
-        "";
-      const name =
-        stateUser?.name ||
-        sessionStorage.getItem("abuts_mock_name") ||
-        localStorage.getItem("abuts_mock_name") ||
-        "";
-      const organization =
-        stateUser?.companyName ||
-        sessionStorage.getItem("abuts_mock_organization") ||
-        localStorage.getItem("abuts_mock_organization") ||
-        "";
-      const phone =
-        sessionStorage.getItem("abuts_mock_phone") ||
-        localStorage.getItem("abuts_mock_phone") ||
-        "";
-      const userId =
-        stateUser?.mockUserId ||
-        sessionStorage.getItem("abuts_mock_user_id") ||
-        localStorage.getItem("abuts_mock_user_id") ||
-        "";
-
-      if (!(finalHeaders as any)["x-mock-role"] && role)
-        (finalHeaders as any)["x-mock-role"] = role;
-      if (!(finalHeaders as any)["x-mock-email"] && email)
-        (finalHeaders as any)["x-mock-email"] = email;
-      if (!(finalHeaders as any)["x-mock-name"] && name)
-        (finalHeaders as any)["x-mock-name"] = name;
-      if (!(finalHeaders as any)["x-mock-organization"] && organization)
-        (finalHeaders as any)["x-mock-organization"] = organization;
-      if (!(finalHeaders as any)["x-mock-phone"] && phone)
-        (finalHeaders as any)["x-mock-phone"] = phone;
-      if (!(finalHeaders as any)["x-mock-user-id"] && userId)
-        (finalHeaders as any)["x-mock-user-id"] = userId;
-    } catch {
-      // ignore
-    }
-  }
-
-  for (const [k, v] of Object.entries(finalHeaders as any)) {
-    if (!k.toLowerCase().startsWith("x-mock-")) continue;
-    if (typeof v !== "string") continue;
-    (finalHeaders as any)[k] = encodeURIComponent(v);
-  }
-
   if (effectiveToken) {
     (finalHeaders as any)["Authorization"] = `Bearer ${effectiveToken}`;
   }
@@ -121,21 +64,9 @@ export async function apiFetch<T = any>(
     body = JSON.stringify(jsonBody);
   }
 
-  const mockHeadersKey = (() => {
-    const entries = Object.entries(finalHeaders as any)
-      .filter(
-        ([k, v]) =>
-          k.toLowerCase().startsWith("x-mock-") && typeof v === "string",
-      )
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => `${k}=${v}`);
-    return entries.join("&");
-  })();
-
   const bodyKey =
     typeof body === "string" ? body : body ? "__non_string_body__" : "";
-  const requestKey = `${method}:${url}:${String(effectiveToken || "")}:
-${mockHeadersKey}:${bodyKey}`;
+  const requestKey = `${method}:${url}:${String(effectiveToken || "")}:${bodyKey}`;
 
   const isDedupeEligible =
     method === "GET" || bodyKey !== "__non_string_body__";

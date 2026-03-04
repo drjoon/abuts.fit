@@ -1277,15 +1277,9 @@ export async function getMyPricingReferralStats(req, res) {
       }
     }
 
-    const authHeader = req.headers.authorization || "";
-    const isMockDevToken =
-      process.env.NODE_ENV !== "production" &&
-      authHeader === "Bearer MOCK_DEV_TOKEN";
-
     if (process.env.NODE_ENV !== "production") {
       console.log("[pricing-referral-stats]", {
         requestorId: String(requestorId),
-        isMockDevToken,
         now,
         baseDate,
         fixedUntil,
@@ -1325,7 +1319,6 @@ export async function getMyPricingReferralStats(req, res) {
               lastMonthStart,
               lastMonthEnd,
               requestorId,
-              isMockDevToken,
               now,
               baseDate,
               fixedUntil,

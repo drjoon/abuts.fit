@@ -29,9 +29,6 @@ export function useExpressShipping(caseInfos?: CaseInfos) {
           path: `/api/requests/shipping-estimate?mode=express&maxDiameter=${maxDiameterParam}`,
           method: "GET",
           token,
-          headers: {
-            "x-mock-role": user?.role || "requestor",
-          },
         });
 
         const nextShip =

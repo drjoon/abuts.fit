@@ -241,12 +241,6 @@ export default function AdminReferralGroupsPage() {
         path: `/api/admin/referral-groups?${qs.toString()}`,
         method: "GET",
         token,
-        headers:
-          token === "MOCK_DEV_TOKEN"
-            ? {
-                "x-mock-role": "admin",
-              }
-            : undefined,
       });
       if (!res.ok || !res.data?.success) {
         const msg =
@@ -386,12 +380,6 @@ export default function AdminReferralGroupsPage() {
         path: `/api/admin/referral-groups/${effectiveLeaderId}${isDev ? "?refresh=1" : ""}`,
         method: "GET",
         token,
-        headers:
-          token === "MOCK_DEV_TOKEN"
-            ? {
-                "x-mock-role": "admin",
-              }
-            : undefined,
       });
       if (!res.ok || !res.data?.success) {
         const msg =

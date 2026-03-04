@@ -50,9 +50,6 @@ export const AdminAnalytics = () => {
 
   const headers = useMemo(() => {
     const h: Record<string, string> = {};
-    if (token === "MOCK_DEV_TOKEN") {
-      h["x-mock-role"] = "admin";
-    }
     if (token) {
       h["Authorization"] = `Bearer ${token}`;
     }

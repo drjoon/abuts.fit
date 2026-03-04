@@ -285,7 +285,6 @@ export const RequestorBulkShippingBannerCard = ({
       token,
       headers: {
         "Content-Type": "application/json",
-        "x-mock-role": "requestor",
       },
       jsonBody: {
         requestIds,

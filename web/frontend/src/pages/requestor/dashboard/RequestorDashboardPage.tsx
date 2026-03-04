@@ -249,11 +249,6 @@ export const RequestorDashboardPage = () => {
         path: "/api/requests/my/bulk-shipping",
         method: "GET",
         token,
-        headers: token
-          ? {
-              "x-mock-role": "requestor",
-            }
-          : undefined,
       });
       if (!res.ok) {
         throw new Error("묶음 배송 후보 조회에 실패했습니다.");
@@ -391,7 +386,6 @@ export const RequestorDashboardPage = () => {
         token,
         headers: {
           "Content-Type": "application/json",
-          "x-mock-role": "requestor",
         },
         jsonBody: { status: "취소" },
       });
@@ -593,11 +587,6 @@ export const RequestorDashboardPage = () => {
                     path: `/api/requests/${item.id}`,
                     method: "GET",
                     token,
-                    headers: token
-                      ? {
-                          "x-mock-role": "requestor",
-                        }
-                      : undefined,
                   })
                     .then((res) => {
                       if (!res.ok) {
@@ -682,7 +671,6 @@ export const RequestorDashboardPage = () => {
               token,
               headers: {
                 "Content-Type": "application/json",
-                "x-mock-role": "requestor",
               },
               jsonBody: payload,
             });

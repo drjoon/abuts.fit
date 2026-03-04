@@ -20,7 +20,7 @@ interface HandleSaveParams {
     s3Key?: string;
     originalName?: string;
   };
-  mockHeaders: Record<string, string>;
+  mockHeaders?: Record<string, string>;
   toast: (options: any) => void;
   silent?: boolean;
   auto?: boolean;
@@ -193,7 +193,7 @@ export const handleSave = async (
       path: "/api/organizations/me",
       method: "PUT",
       token,
-      headers: mockHeaders,
+      headers: mockHeaders ?? undefined,
       jsonBody: {
         organizationType,
         name: companyName,
@@ -318,7 +318,7 @@ interface HandleDeleteLicenseParams {
   licenseS3Key: string;
   licenseFileId: string;
   organizationType?: string;
-  mockHeaders: Record<string, string>;
+  mockHeaders?: Record<string, string>;
   toast: (options: any) => void;
   setLicenseDeleteLoading: (loading: boolean) => void;
 }
@@ -366,7 +366,7 @@ export const handleDeleteLicense = async (
       path: "/api/organizations/me/business-license",
       method: "DELETE",
       token,
-      headers: mockHeaders,
+      headers: mockHeaders ?? undefined,
       jsonBody: { organizationType },
     });
 
@@ -396,7 +396,7 @@ interface HandleJoinOrLeaveParams {
   organizationId: string;
   action: "cancel" | "leave";
   organizationType?: string;
-  mockHeaders: Record<string, string>;
+  mockHeaders?: Record<string, string>;
   toast: (options: any) => void;
   setCancelLoadingOrgId: (id: string) => void;
   refreshMyJoinRequests: () => Promise<void>;
@@ -433,7 +433,7 @@ export const handleJoinOrLeave = async (params: HandleJoinOrLeaveParams) => {
       path: `/api/organizations/join-requests/${orgId}/${action}`,
       method: "POST",
       token,
-      headers: mockHeaders,
+      headers: mockHeaders ?? undefined,
       jsonBody: { organizationType },
     });
 
@@ -463,7 +463,7 @@ interface HandleJoinRequestParams {
   token: string;
   selectedOrgId: string | undefined;
   organizationType?: string;
-  mockHeaders: Record<string, string>;
+  mockHeaders?: Record<string, string>;
   toast: (options: any) => void;
   setJoinLoading: (loading: boolean) => void;
   setOrgSearch: (search: string) => void;
@@ -511,7 +511,7 @@ export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
       path: "/api/organizations/join-requests",
       method: "POST",
       token,
-      headers: mockHeaders,
+      headers: mockHeaders ?? undefined,
       jsonBody: { organizationId: selectedOrgId, organizationType },
     });
 

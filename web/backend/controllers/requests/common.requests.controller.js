@@ -162,18 +162,7 @@ export async function getAllRequests(req, res) {
       };
     }
 
-    // 개발 환경 + MOCK_DEV_TOKEN 인 경우, 기존 시드 데이터 확인을 위해
-    // requestor 필터를 제거하고 나머지 필터만 적용한다.
-    const authHeader = req.headers.authorization || "";
-    const isMockDevToken =
-      process.env.NODE_ENV !== "production" &&
-      authHeader === "Bearer MOCK_DEV_TOKEN";
-
-    if (isMockDevToken) {
-      // requestor 필터가 있다면 제거 (현재 코드에서는 위에서 requestor를 설정하지 않지만, 혹시 모를 로직에 대비)
-      const { requestor, ...rest } = filter;
-      filter = rest;
-    }
+    // 레거시 MOCK_DEV_TOKEN 분기 제거됨
 
     // 정렬 파라미터
     const sort = {};
@@ -413,10 +402,10 @@ export async function updateRequest(req, res) {
     if (!isAdmin) {
       const stageStatus = String(request.manufacturerStage || "");
 
-      // CAM 승인 이후(또는 가공/세척.포장/발송/추적 단계)는 caseInfos 수정 전면 차단
+      // CAM 승인 이후(또는 가공/세척.패킹/포장.발송/추적 단계)는 caseInfos 수정 전면 차단
       const afterCam =
         camApproved ||
-        ["가공", "세척.포장", "발송", "추적관리"].includes(stageStatus) ||
+        ["가공", "세척.패킹", "포장.발송", "추적관리"].includes(stageStatus) ||
         (stageStatus === "CAM" && camApproved);
 
       if (afterCam) {
@@ -496,13 +485,13 @@ export async function updateRequestStatus(req, res) {
     const requestId = req.params.id;
     const { status } = req.body;
 
-    // 상태 유효성 검사 (새 워크플로우)
+    // 상태 유효성 검사 (SSOT 라벨)
     const validStatuses = [
       "의뢰",
       "CAM",
       "가공",
-      "세척.포장",
-      "발송",
+      "세척.패킹",
+      "포장.발송",
       "추적관리",
       "취소",
     ];
@@ -571,29 +560,7 @@ export async function updateRequestStatus(req, res) {
     // 의뢰 상태 변경
     applyStatusMapping(request, status);
 
-    // 신속 배송이 출고(배송중)로 전환되면, 그동안 쌓인 묶음(일반) 배송대기 건도 함께 출고 처리
-    // 완료 판단은 reviewByStage.shipping 승인 여부로 처리한다.
-    if (status === "배송중" && request.shippingMode === "express") {
-      const groupFilter = request.requestorOrganizationId
-        ? { requestorOrganizationId: request.requestorOrganizationId }
-        : request.requestor?.organizationId
-          ? { requestorOrganizationId: request.requestor.organizationId }
-          : { requestor: request.requestor };
-      await Request.updateMany(
-        {
-          ...groupFilter,
-          manufacturerStage: { $nin: ["취소", "추적관리"] },
-          "caseInfos.reviewByStage.shipping.status": { $ne: "APPROVED" },
-          shippingMode: "normal",
-          _id: { $ne: request._id },
-        },
-        {
-          $set: {
-            manufacturerStage: "발송",
-          },
-        },
-      );
-    }
+    // 신속배송(express) 모드 제거됨
 
     await request.save();
 

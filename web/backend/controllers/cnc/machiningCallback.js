@@ -24,7 +24,7 @@ export async function machiningCompleted(req, res) {
       `[Machining Callback] machineId=${mid} jobId=${jobId} status=${status}`,
     );
 
-    // 가공 완료(COMPLETED) 시 의뢰 stage를 세척.포장으로 자동 진행
+    // 가공 완료(COMPLETED) 시 의뢰 stage를 세척.패킹으로 자동 진행
     try {
       const normalizedStatus = String(status || "")
         .trim()
@@ -42,7 +42,7 @@ export async function machiningCompleted(req, res) {
             : await Request.findOne({ requestId: jid });
 
         if (request) {
-          applyStatusMapping(request, "세척.포장");
+          applyStatusMapping(request, "세척.패킹");
           await request.save();
         }
       }

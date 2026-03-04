@@ -279,11 +279,6 @@ export const RequestorRecentRequestsCard = ({
         method: "PUT",
         token,
         jsonBody: payload,
-        headers: token
-          ? {
-              "x-mock-role": "requestor",
-            }
-          : undefined,
       });
 
       if (!res.ok || !res.data?.success) {
@@ -375,11 +370,6 @@ export const RequestorRecentRequestsCard = ({
           path: `/api/requests/${selectedRequestId}`,
           method: "GET",
           token,
-          headers: token
-            ? {
-                "x-mock-role": "requestor",
-              }
-            : undefined,
         });
 
         if (res.ok && res.data?.success) {

@@ -525,18 +525,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
   const setupNextPath = "/dashboard/new-request";
 
-  const mockHeaders = useMemo(() => {
-    if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
-    return {
-      "x-mock-role": (user?.role || "requestor") as string,
-      "x-mock-position": (user as any)?.position || "staff",
-      "x-mock-email": user?.email || "mock@abuts.fit",
-      "x-mock-name": user?.name || "사용자",
-      "x-mock-organization": (user as any)?.organization || "",
-      "x-mock-phone": (user as any)?.phoneNumber || "",
-    };
-  }, [token, user?.email, user?.name, user?.role]);
-
   const ensureSetupForUpload = useCallback(async () => {
     if (!token) {
       toast({
@@ -552,7 +540,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         path: "/api/users/profile",
         method: "GET",
         token,
-        headers: mockHeaders,
       });
       const profileBody: any = profileRes.data || {};
       const profile = profileBody?.data || profileBody;
@@ -576,7 +563,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
           )}`,
           method: "GET",
           token,
-          headers: mockHeaders,
         });
         if (orgRes.ok) {
           const orgBody: any = orgRes.data || {};
@@ -613,7 +599,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
             path: "/api/credits/balance",
             method: "GET",
             token,
-            headers: mockHeaders,
           });
           if (balanceRes.ok) {
             const balanceBody: any = balanceRes.data || {};
@@ -641,7 +626,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
                 path: "/api/credits/insights/spend",
                 method: "GET",
                 token,
-                headers: mockHeaders,
               });
               if (insightsRes.ok) {
                 const body: any = insightsRes.data || {};
@@ -693,15 +677,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     }
 
     return true;
-  }, [
-    mockHeaders,
-    navigate,
-    setupNextPath,
-    toast,
-    token,
-    user?.email,
-    user?.id,
-  ]);
+  }, [navigate, setupNextPath, toast, token, user?.email, user?.id]);
 
   // Draft에서 caseInfos 동기화 (임플란트 정보 -> Draft)
   // 주의: 이 동기화는 사용자가 명시적으로 임플란트 정보를 선택할 때만 호출되어야 함
@@ -716,7 +692,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         const res = await fetch(`/api/requests/${existingRequestId}`, {
           headers: {
             Authorization: `Bearer ${token}`,
-            "x-mock-role": "requestor",
           },
         });
 
