@@ -25,7 +25,9 @@ const IP_DISCOVERY_URL = String(
 const IP_DISCOVERY_TIMEOUT_MS = Number(
   process.env.LOT_IP_DISCOVERY_TIMEOUT_MS || 3000,
 );
-const ALLOW_IPS = String(process.env.LOT_ALLOW_IPS || "")
+const ALLOW_IPS = String(
+  process.env.ALLOW_IPS || process.env.LOT_ALLOW_IPS || "",
+)
   .split(",")
   .map((ip) => ip.trim())
   .filter(Boolean);

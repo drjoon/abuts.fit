@@ -5,11 +5,37 @@ const os = require("os");
 const path = require("path");
 const { execFile } = require("child_process");
 
+function loadLocalEnv() {
+  const envPath = path.resolve(process.cwd(), "local.env");
+  if (!fs.existsSync(envPath)) return;
+  const text = fs.readFileSync(envPath, "utf8");
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const idx = trimmed.indexOf("=");
+    if (idx <= 0) continue;
+    const key = trimmed.slice(0, idx).trim();
+    const value = trimmed.slice(idx + 1).trim();
+    if (!key) continue;
+    if (typeof process.env[key] === "undefined") {
+      process.env[key] = value;
+    }
+  }
+}
+
+loadLocalEnv();
+
 const PORT = Number(process.env.PRINT_SERVER_PORT || 5777);
 const ALLOW_ORIGIN = process.env.PRINT_SERVER_ORIGIN || "*";
 const DEFAULT_MEDIA_PROFILE = String(
   process.env.WBL_MEDIA_DEFAULT || "FS",
 ).trim();
+const ALLOW_IPS = String(
+  process.env.ALLOW_IPS || process.env.WBL_ALLOW_IPS || "",
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 const log = (message, meta) => {
   const stamp = new Date().toISOString();
@@ -26,6 +52,38 @@ const jsonResponse = (res, statusCode, body) => {
     "Access-Control-Allow-Headers": "Content-Type",
   });
   res.end(payload);
+};
+
+const normalizeIp = (ip) => {
+  let v = String(ip || "").trim();
+  if (!v) return "";
+  if (v.startsWith("::ffff:")) v = v.slice(7);
+  if (v === "::1") return "127.0.0.1";
+  return v;
+};
+
+const getClientIp = (req) => {
+  const xf = String(req.headers["x-forwarded-for"] || "")
+    .split(",")[0]
+    .trim();
+  const raw = xf || req.socket?.remoteAddress || "";
+  return normalizeIp(raw);
+};
+
+const isIpAllowed = (req) => {
+  if (!ALLOW_IPS.length || ALLOW_IPS.includes("*")) return true;
+  const ip = getClientIp(req);
+  return ALLOW_IPS.includes(ip);
+};
+
+const requireIpAllowed = (req, res) => {
+  if (isIpAllowed(req)) return true;
+  log("blocked:ip", { ip: getClientIp(req) });
+  jsonResponse(res, 403, {
+    success: false,
+    message: "Forbidden (IP not allowed)",
+  });
+  return false;
 };
 
 const readBody = (req) =>
@@ -164,6 +222,8 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     return jsonResponse(res, 204, { success: true });
   }
+
+  if (!requireIpAllowed(req, res)) return;
 
   if (req.url === "/health" && req.method === "GET") {
     return jsonResponse(res, 200, { success: true, status: "ok" });

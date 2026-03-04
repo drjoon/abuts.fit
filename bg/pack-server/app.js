@@ -30,6 +30,12 @@ const DEFAULT_PRINTER = process.env.PACK_PRINT_SERVER_DEFAULT_PRINTER || "";
 const SHARED_SECRET = String(
   process.env.PACK_PRINT_SERVER_SHARED_SECRET || "",
 ).trim();
+const ALLOW_IPS = String(
+  process.env.ALLOW_IPS || process.env.PACK_ALLOW_IPS || "",
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 const log = (message, meta) => {
   const stamp = new Date().toISOString();
@@ -46,6 +52,38 @@ const jsonResponse = (res, statusCode, body) => {
     "Access-Control-Allow-Headers": "Content-Type,x-pack-secret",
   });
   res.end(payload);
+};
+
+const normalizeIp = (ip) => {
+  let v = String(ip || "").trim();
+  if (!v) return "";
+  if (v.startsWith("::ffff:")) v = v.slice(7);
+  if (v === "::1") return "127.0.0.1";
+  return v;
+};
+
+const getClientIp = (req) => {
+  const xf = String(req.headers["x-forwarded-for"] || "")
+    .split(",")[0]
+    .trim();
+  const raw = xf || req.socket?.remoteAddress || "";
+  return normalizeIp(raw);
+};
+
+const isIpAllowed = (req) => {
+  if (!ALLOW_IPS.length || ALLOW_IPS.includes("*")) return true;
+  const ip = getClientIp(req);
+  return ALLOW_IPS.includes(ip);
+};
+
+const requireIpAllowed = (req, res) => {
+  if (isIpAllowed(req)) return true;
+  log("blocked:ip", { ip: getClientIp(req) });
+  jsonResponse(res, 403, {
+    success: false,
+    message: "Forbidden (IP not allowed)",
+  });
+  return false;
 };
 
 const readBody = (req) =>
@@ -334,6 +372,8 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     return jsonResponse(res, 204, { success: true });
   }
+
+  if (!requireIpAllowed(req, res)) return;
 
   if (!requireSecret(req, res)) return;
 
