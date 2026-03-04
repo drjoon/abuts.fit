@@ -87,7 +87,14 @@ export const PackingPage = ({
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
     {},
   );
-  const [visibleCount, setVisibleCount] = useState(9);
+  const [visibleCount, setVisibleCount] = useState(12);
+  // Network pagination page size for worksheet
+  const PAGE_LIMIT = 12;
+  const pageRef = useRef(1);
+  const hasMoreRef = useRef(true);
+  const isFetchingPageRef = useRef(false);
+  const lastFetchTimeRef = useRef(0);
+  const userScrolledRef = useRef(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const [selectedBucket, setSelectedBucket] =
     useState<DiameterBucketKey | null>(null);
@@ -593,57 +600,112 @@ export const PackingPage = ({
     }
   }, [fetchPrinters, printerModalOpen, printerOptions.length]);
 
-  const fetchRequests = useCallback(async () => {
-    if (!token) return;
+  const fetchRequests = useCallback(
+    async (silent = false, append = false) => {
+      if (!token) return;
 
-    try {
-      setIsLoading(true);
-      const path =
-        user?.role === "admin"
-          ? "/api/admin/requests"
-          : user?.role === "manufacturer"
-            ? "/api/requests/all"
-            : "/api/requests";
+      try {
+        if (!silent) setIsLoading(true);
+        const basePath =
+          user?.role === "admin"
+            ? "/api/admin/requests"
+            : user?.role === "manufacturer"
+              ? "/api/requests/all"
+              : "/api/requests";
 
-      const res = await fetch(path, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        cache: "no-store",
-      });
+        const path = (() => {
+          const url = new URL(basePath, window.location.origin);
+          if (user?.role === "manufacturer") {
+            url.searchParams.set("page", String(pageRef.current));
+            url.searchParams.set("limit", String(PAGE_LIMIT));
+            url.searchParams.set("view", "worksheet");
+            url.searchParams.set("includeTotal", "0");
+            url.searchParams.set("status", "세척.패킹");
+          }
+          return url.pathname + url.search;
+        })();
 
-      if (!res.ok) {
+        const res = await fetch(path, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          cache: "no-store",
+        });
+
+        if (!res.ok) {
+          toast({
+            title: "의뢰 불러오기 실패",
+            description: "잠시 후 다시 시도해주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const data = await res.json();
+        const raw = data?.data;
+        const list = Array.isArray(raw?.requests)
+          ? raw.requests
+          : Array.isArray(raw)
+            ? raw
+            : [];
+
+        if (data?.success && Array.isArray(list)) {
+          if (append) {
+            setRequests((prev) => {
+              const map = new Map<string, any>();
+              for (const r of prev)
+                map.set(
+                  String(
+                    (r as any)?._id || (r as any)?.requestId || Math.random(),
+                  ),
+                  r,
+                );
+              for (const r of list)
+                map.set(
+                  String(
+                    (r as any)?._id || (r as any)?.requestId || Math.random(),
+                  ),
+                  r,
+                );
+              return Array.from(map.values()) as any[];
+            });
+          } else {
+            setRequests(list);
+          }
+          if (user?.role === "manufacturer") {
+            hasMoreRef.current = list.length >= PAGE_LIMIT;
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching requests:", error);
         toast({
           title: "의뢰 불러오기 실패",
-          description: "잠시 후 다시 시도해주세요.",
+          description: "네트워크 오류가 발생했습니다.",
           variant: "destructive",
         });
-        return;
+      } finally {
+        if (!silent) setIsLoading(false);
       }
+    },
+    [token, user?.role, toast],
+  );
 
-      const data = await res.json();
-      const raw = data?.data;
-      const list = Array.isArray(raw?.requests)
-        ? raw.requests
-        : Array.isArray(raw)
-          ? raw
-          : [];
-
-      if (data?.success && Array.isArray(list)) {
-        setRequests(list);
-      }
-    } catch (error) {
-      console.error("Error fetching requests:", error);
-      toast({
-        title: "의뢰 불러오기 실패",
-        description: "네트워크 오류가 발생했습니다.",
-        variant: "destructive",
-      });
+  const fetchNextPage = useCallback(async () => {
+    if (isFetchingPageRef.current) return;
+    if (!hasMoreRef.current) return;
+    // throttle to avoid 429
+    const now = Date.now();
+    if (now - lastFetchTimeRef.current < 500) return;
+    lastFetchTimeRef.current = now;
+    isFetchingPageRef.current = true;
+    try {
+      pageRef.current += 1;
+      await fetchRequests(true, true);
     } finally {
-      setIsLoading(false);
+      isFetchingPageRef.current = false;
     }
-  }, [token, user?.role, toast]);
+  }, [fetchRequests]);
 
   const {
     handleDownloadOriginalStl,
@@ -1067,6 +1129,72 @@ export const PackingPage = ({
       return new Date(a.createdAt) < new Date(b.createdAt) ? 1 : -1;
     });
 
+  const DEBUG = (() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get("wsdebug") === "1") return true;
+      return (
+        localStorage.getItem("abutsfit:wsdebug") === "1" ||
+        (window as any).__worksheetDebug === true
+      );
+    } catch {
+      return (window as any).__worksheetDebug === true;
+    }
+  })();
+
+  useEffect(() => {
+    if (!DEBUG) return;
+    const stageOf = (r: any) => deriveStageForFilter(r as any);
+    const bucketOf = (r: any) => {
+      const d = Number((r as any)?.caseInfos?.maxDiameter);
+      if (!Number.isFinite(d)) return "unknown";
+      if (d <= 6) return "6";
+      if (d <= 8) return "8";
+      if (d <= 10) return "10";
+      return "12";
+    };
+    const dist = (arr: any[], fn: (x: any) => string) => {
+      const m: Record<string, number> = {};
+      for (const it of arr) {
+        const k = fn(it) || "unknown";
+        m[k] = (m[k] || 0) + 1;
+      }
+      return m;
+    };
+    console.group("[WorksheetDebug][PackingPage]");
+    console.log("tabStage", tabStage, "showCompleted", showCompleted);
+    console.log("search", worksheetSearch);
+    console.log("raw requests", requests.length);
+    console.log("stage distribution (raw)", dist(requests as any, stageOf));
+    console.log("diameter buckets (raw)", dist(requests as any, bucketOf));
+    console.log("after base stage filter", filteredBase.length);
+    console.log(
+      "stage distribution (base)",
+      dist(filteredBase as any, stageOf),
+    );
+    console.log("after search/sort", filteredAndSorted.length);
+    console.log(
+      "visibleCount",
+      visibleCount,
+      "loadedCount",
+      filteredAndSorted.length,
+      "hasMore",
+      hasMoreRef.current,
+      "page",
+      pageRef.current,
+    );
+    console.groupEnd();
+  }, [
+    DEBUG,
+    requests,
+    filteredBase,
+    filteredAndSorted,
+    showCompleted,
+    worksheetSearch,
+    tabStage,
+    visibleCount,
+  ]);
+
   const handleOpenNextRequest = useCallback(
     (currentReqId: string) => {
       const currentIndex = filteredAndSorted.findIndex(
@@ -1313,14 +1441,21 @@ export const PackingPage = ({
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
+        if (!entries[0].isIntersecting) return;
+        // Only when user actually scrolled
+        if (!userScrolledRef.current) return;
+        // Prefetch next page first if we are close to exhausting loaded items
         if (
-          entries[0].isIntersecting &&
-          visibleCount < filteredAndSorted.length
+          visibleCount >= filteredAndSorted.length - 3 &&
+          hasMoreRef.current
         ) {
+          void fetchNextPage();
+        }
+        if (visibleCount < filteredAndSorted.length) {
           setVisibleCount((prev) => prev + 9);
         }
       },
-      { threshold: 0.1 },
+      { threshold: 0.2 },
     );
 
     if (sentinelRef.current) {
@@ -1332,11 +1467,17 @@ export const PackingPage = ({
         observer.unobserve(sentinelRef.current);
       }
     };
-  }, [visibleCount, filteredAndSorted.length]);
+  }, [visibleCount, filteredAndSorted.length, fetchNextPage]);
 
   return (
     <div
       className="relative w-full text-gray-800 flex flex-col items-stretch"
+      onWheelCapture={() => {
+        userScrolledRef.current = true;
+      }}
+      onScrollCapture={() => {
+        userScrolledRef.current = true;
+      }}
       onDrop={handlePageDrop}
       onDragOver={handlePageDragOver}
       onDragLeave={handlePageDragLeave}

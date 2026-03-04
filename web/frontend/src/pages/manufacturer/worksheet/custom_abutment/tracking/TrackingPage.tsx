@@ -88,13 +88,20 @@ export const TrackingInquiryPage = () => {
   }>();
 
   const [tab, setTab] = useState<InquiryTab>("process");
-  const [visibleCount, setVisibleCount] = useState(50);
-  const visibleCountRef = useRef(50);
+  const [visibleCount, setVisibleCount] = useState(30);
+  const visibleCountRef = useRef(30);
   const totalCountRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const onScrollRef = useRef<(() => void) | null>(null);
   const [loading, setLoading] = useState(false);
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
+  // Network pagination per stage (tracking)
+  const PAGE_LIMIT = 30;
+  const pageRef = useRef(1);
+  const hasMoreRef = useRef(true);
+  const isFetchingPageRef = useRef(false);
+  const lastFetchTimeRef = useRef(0);
+  const userScrolledRef = useRef(false);
   const defaultDateRangeByTab: Record<InquiryTab, DateRange> = {
     process: "recent30",
     shipping: "recent30",
@@ -108,11 +115,19 @@ export const TrackingInquiryPage = () => {
   useEffect(() => {
     if (!token) return;
 
-    const run = async () => {
+    const run = async (silent = false, append = false) => {
       try {
-        setLoading(true);
-        const res = await fetch("/api/requests/all?limit=500", {
+        if (!silent) setLoading(true);
+        const url = new URL("/api/requests/all", window.location.origin);
+        url.searchParams.set("page", String(pageRef.current));
+        url.searchParams.set("limit", String(PAGE_LIMIT));
+        url.searchParams.set("view", "worksheet");
+        url.searchParams.set("includeTotal", "0");
+        url.searchParams.set("includeDelivery", "1");
+        url.searchParams.set("status", "추적관리");
+        const res = await fetch(url.pathname + url.search, {
           headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
         });
         const body: any = await res.json().catch(() => ({}));
         if (!res.ok || body?.success === false) {
@@ -121,7 +136,29 @@ export const TrackingInquiryPage = () => {
         const list = Array.isArray(body?.data?.requests)
           ? body.data.requests
           : [];
-        setRequests(list);
+        if (append) {
+          setRequests((prev) => {
+            const map = new Map<string, any>();
+            for (const r of prev)
+              map.set(
+                String(
+                  (r as any)?._id || (r as any)?.requestId || Math.random(),
+                ),
+                r,
+              );
+            for (const r of list)
+              map.set(
+                String(
+                  (r as any)?._id || (r as any)?.requestId || Math.random(),
+                ),
+                r,
+              );
+            return Array.from(map.values()) as any[];
+          });
+        } else {
+          setRequests(list);
+        }
+        hasMoreRef.current = list.length >= PAGE_LIMIT;
       } catch (e: any) {
         toast({
           title: "조회 실패",
@@ -129,7 +166,7 @@ export const TrackingInquiryPage = () => {
           variant: "destructive",
         });
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
     };
 
@@ -189,8 +226,89 @@ export const TrackingInquiryPage = () => {
       URL.revokeObjectURL(url);
     };
 
-    void run();
+    // initial load or token change → reset paging
+    pageRef.current = 1;
+    hasMoreRef.current = true;
+    void run(false, false);
+    // expose helpers on ref for pagination
+    (window as any).__trackingFetchNext = async () => {
+      if (isFetchingPageRef.current || !hasMoreRef.current) return;
+      // throttle: min 500ms between fetches
+      const now = Date.now();
+      if (now - lastFetchTimeRef.current < 500) return;
+      lastFetchTimeRef.current = now;
+      isFetchingPageRef.current = true;
+      try {
+        pageRef.current += 1;
+        await run(true, true);
+      } finally {
+        isFetchingPageRef.current = false;
+      }
+    };
   }, [token, toast]);
+
+  // Reset pagination on UI filter changes
+  useEffect(() => {
+    if (!token) return;
+    const run = async (silent = false, append = false) => {
+      try {
+        if (!silent) setLoading(true);
+        const url = new URL("/api/requests/all", window.location.origin);
+        url.searchParams.set("page", String(pageRef.current));
+        url.searchParams.set("limit", String(PAGE_LIMIT));
+        url.searchParams.set("view", "worksheet");
+        url.searchParams.set("includeTotal", "0");
+        url.searchParams.set("includeDelivery", "1");
+        url.searchParams.set("status", "추적관리");
+        const res = await fetch(url.pathname + url.search, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) {
+          throw new Error(body?.message || "의뢰 목록 조회에 실패했습니다.");
+        }
+        const list = Array.isArray(body?.data?.requests)
+          ? body.data.requests
+          : [];
+        if (append) {
+          setRequests((prev) => {
+            const map = new Map<string, any>();
+            for (const r of prev)
+              map.set(
+                String(
+                  (r as any)?._id || (r as any)?.requestId || Math.random(),
+                ),
+                r,
+              );
+            for (const r of list)
+              map.set(
+                String(
+                  (r as any)?._id || (r as any)?.requestId || Math.random(),
+                ),
+                r,
+              );
+            return Array.from(map.values()) as any[];
+          });
+        } else {
+          setRequests(list);
+        }
+        hasMoreRef.current = list.length >= PAGE_LIMIT;
+      } catch (e: any) {
+        toast({
+          title: "조회 실패",
+          description: e?.message || "네트워크 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    };
+
+    pageRef.current = 1;
+    hasMoreRef.current = true;
+    void run(false, false);
+  }, [tab, dateRange, worksheetSearch, showCompleted, token, toast]);
 
   const searchLower = String(worksheetSearch || "")
     .trim()
@@ -644,8 +762,8 @@ export const TrackingInquiryPage = () => {
   totalCountRef.current = currentRows.length;
 
   useEffect(() => {
-    visibleCountRef.current = 50;
-    setVisibleCount(50);
+    visibleCountRef.current = 30;
+    setVisibleCount(30);
   }, [tab, dateRange, worksheetSearch, showCompleted]);
 
   const setScrollContainer = useCallback((node: HTMLDivElement | null) => {
@@ -657,32 +775,40 @@ export const TrackingInquiryPage = () => {
     if (!node) return;
 
     const maybeLoadMore = () => {
-      if (visibleCountRef.current >= totalCountRef.current) return;
-
       const nearBottom =
         node.scrollTop + node.clientHeight >= node.scrollHeight - 200;
-      const notScrollable = node.scrollHeight <= node.clientHeight + 20;
+      // Only after explicit user scroll
+      if (
+        nearBottom &&
+        userScrolledRef.current &&
+        visibleCountRef.current >= totalCountRef.current - 3 &&
+        hasMoreRef.current
+      ) {
+        void (window as any).__trackingFetchNext?.();
+      }
 
-      if (!nearBottom && !notScrollable) return;
+      if (!nearBottom || !userScrolledRef.current) return;
 
-      visibleCountRef.current = Math.min(
-        visibleCountRef.current + 50,
-        totalCountRef.current,
-      );
-      setVisibleCount(visibleCountRef.current);
-      requestAnimationFrame(maybeLoadMore);
+      if (visibleCountRef.current < totalCountRef.current) {
+        visibleCountRef.current = Math.min(
+          visibleCountRef.current + 30,
+          totalCountRef.current,
+        );
+        setVisibleCount(visibleCountRef.current);
+      }
     };
 
     const onScroll = () => {
+      userScrolledRef.current = true;
       maybeLoadMore();
     };
     onScrollRef.current = onScroll;
     node.addEventListener("scroll", onScroll, { passive: true });
-    requestAnimationFrame(maybeLoadMore);
   }, []);
 
   useEffect(() => {
-    requestAnimationFrame(() => onScrollRef.current?.());
+    // when filter/tab changes, reset visible rows count
+    // Do not auto trigger load-more; wait for explicit user scroll
   }, [currentRows.length]);
 
   return (

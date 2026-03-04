@@ -114,10 +114,21 @@ export const RequestPage = ({
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
     {},
   );
-  const [visibleCount, setVisibleCount] = useState(9);
-  const visibleCountRef = useRef(9);
+  const [visibleCount, setVisibleCount] = useState(12);
+  const visibleCountRef = useRef(12);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const ioRef = useRef<IntersectionObserver | null>(null);
   const totalCountRef = useRef(0);
+  const userScrolledRef = useRef(false);
+  // Network pagination page size for worksheet
+  const PAGE_LIMIT = 12;
+  const pageRef = useRef(1);
+  const hasMoreRef = useRef(true);
+  const isFetchingPageRef = useRef(false);
+  const lastFetchTimeRef = useRef(0);
+  const bootstrapLoadsRef = useRef(0);
+  const maxBootstrapLoads = 5;
   const [mailboxModalOpen, setMailboxModalOpen] = useState(false);
   const [mailboxModalAddress, setMailboxModalAddress] = useState("");
   const [mailboxModalRequests, setMailboxModalRequests] = useState<
@@ -155,7 +166,7 @@ export const RequestPage = ({
   });
 
   const fetchRequestsCore = useCallback(
-    async (silent = false) => {
+    async (silent = false, append = false) => {
       if (!token) return null;
 
       try {
@@ -168,11 +179,25 @@ export const RequestPage = ({
               : "/api/requests";
 
         const path = (() => {
-          if (user?.role !== "manufacturer") return basePath;
           const url = new URL(basePath, window.location.origin);
-          // /api/requests/all 은 기본 limit=10 페이지네이션이므로, 워크시트 집계/큐바를 위해 넉넉히 가져온다.
-          url.searchParams.set("page", "1");
-          url.searchParams.set("limit", "5000");
+          // Always include page & limit to encourage backend pagination
+          url.searchParams.set("page", String(pageRef.current));
+          url.searchParams.set("limit", String(PAGE_LIMIT));
+          url.searchParams.set("view", "worksheet");
+          url.searchParams.set("includeTotal", "0");
+          // Stage-scoped paging: fetch only current tab's stage from backend
+          const serverStatusForTab = (() => {
+            if (isMachiningStage) return "가공";
+            if (isCamStage) return "CAM";
+            if (tabStage === "request") return "의뢰";
+            if (tabStage === "packing") return "세척.패킹";
+            if (tabStage === "shipping") return "포장.발송";
+            if (tabStage === "tracking") return "추적관리";
+            return "";
+          })();
+          if (serverStatusForTab) {
+            url.searchParams.set("status", serverStatusForTab);
+          }
           return url.pathname + url.search;
         })();
 
@@ -202,7 +227,31 @@ export const RequestPage = ({
             ? raw
             : [];
         if (data?.success && Array.isArray(list)) {
-          setRequests(list);
+          if (append) {
+            setRequests((prev) => {
+              // dedupe by _id
+              const map = new Map<string, any>();
+              for (const r of prev)
+                map.set(
+                  String(
+                    (r as any)?._id || (r as any)?.requestId || Math.random(),
+                  ),
+                  r,
+                );
+              for (const r of list)
+                map.set(
+                  String(
+                    (r as any)?._id || (r as any)?.requestId || Math.random(),
+                  ),
+                  r,
+                );
+              return Array.from(map.values()) as any[];
+            });
+          } else {
+            setRequests(list);
+          }
+          // if received less than limit, no more pages
+          hasMoreRef.current = list.length >= PAGE_LIMIT;
         }
 
         return list as ManufacturerRequest[];
@@ -220,15 +269,42 @@ export const RequestPage = ({
         if (!silent) setIsLoading(false);
       }
     },
-    [token, user?.role, toast],
+    [token, user?.role, toast, tabStage, isCamStage, isMachiningStage],
   );
 
   const fetchRequests = useCallback(
     async (silent = false) => {
-      await fetchRequestsCore(silent);
+      // reset paging
+      pageRef.current = 1;
+      hasMoreRef.current = true;
+      await fetchRequestsCore(silent, false);
     },
     [fetchRequestsCore],
   );
+
+  const fetchNextPage = useCallback(async () => {
+    if (isFetchingPageRef.current) return;
+    if (!hasMoreRef.current) return;
+
+    // Throttle: enforce minimum 500ms between fetches to avoid 429 rate limit
+    const now = Date.now();
+    const timeSinceLastFetch = now - lastFetchTimeRef.current;
+    if (timeSinceLastFetch < 500) {
+      console.log(
+        "[RequestPage] Throttling fetchNextPage, too soon since last fetch",
+      );
+      return;
+    }
+
+    isFetchingPageRef.current = true;
+    lastFetchTimeRef.current = now;
+    try {
+      pageRef.current += 1;
+      await fetchRequestsCore(true, true);
+    } finally {
+      isFetchingPageRef.current = false;
+    }
+  }, [fetchRequestsCore]);
 
   const {
     handleDownloadOriginalStl,
@@ -701,6 +777,73 @@ export const RequestPage = ({
       return new Date(a.createdAt) < new Date(b.createdAt) ? 1 : -1;
     });
 
+  const DEBUG = (() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get("wsdebug") === "1") return true;
+      return (
+        localStorage.getItem("abutsfit:wsdebug") === "1" ||
+        (window as any).__worksheetDebug === true
+      );
+    } catch {
+      return (window as any).__worksheetDebug === true;
+    }
+  })();
+
+  useEffect(() => {
+    if (!DEBUG) return;
+    const stageOf = (r: any) => deriveStageForFilter(r as any);
+    const bucketOf = (r: any) => {
+      const d = Number((r as any)?.caseInfos?.maxDiameter);
+      if (!Number.isFinite(d)) return "unknown";
+      if (d <= 6) return "6";
+      if (d <= 8) return "8";
+      if (d <= 10) return "10";
+      return "12";
+    };
+    const dist = (arr: any[], fn: (x: any) => string) => {
+      const m: Record<string, number> = {};
+      for (const it of arr) {
+        const k = fn(it) || "unknown";
+        m[k] = (m[k] || 0) + 1;
+      }
+      return m;
+    };
+
+    // summary logs
+    console.group("[WorksheetDebug][RequestPage]");
+    console.log("tabStage", tabStage, "showCompleted", showCompleted);
+    console.log("search", worksheetSearch);
+    console.log("raw requests", requests.length);
+    console.log("stage distribution (raw)", dist(requests, stageOf));
+    console.log("diameter buckets (raw)", dist(requests, bucketOf));
+    console.log("after base stage filter", filteredBase.length);
+    console.log(
+      "stage distribution (base)",
+      dist(filteredBase as any, stageOf),
+    );
+    console.log("after search/sort", filteredAndSorted.length);
+    console.log(
+      "visibleCount",
+      visibleCountRef.current,
+      "totalCount",
+      totalCountRef.current,
+      "hasMore",
+      hasMoreRef.current,
+      "page",
+      pageRef.current,
+    );
+    console.groupEnd();
+  }, [
+    DEBUG,
+    requests,
+    filteredBase,
+    filteredAndSorted,
+    showCompleted,
+    worksheetSearch,
+    tabStage,
+  ]);
+
   const handleOpenNextRequest = useCallback(
     (currentReqId: string) => {
       const currentIndex = filteredAndSorted.findIndex(
@@ -726,62 +869,56 @@ export const RequestPage = ({
   const paginatedRequests = filteredAndSorted.slice(0, visibleCount);
 
   useEffect(() => {
-    visibleCountRef.current = 9;
-    setVisibleCount(9);
+    visibleCountRef.current = 12;
+    setVisibleCount(12);
   }, [worksheetSearch, showCompleted, tabStage]);
 
   const onScrollRef = useRef<(() => void) | null>(null);
 
   const setScrollContainer = useCallback((node: HTMLDivElement | null) => {
+    const prev = scrollContainerRef.current;
+    if (prev && onScrollRef.current) {
+      prev.removeEventListener("scroll", onScrollRef.current as any);
+      onScrollRef.current = null;
+    }
     scrollContainerRef.current = node;
     if (!node) return;
-    const maybeLoadMore = () => {
-      if (visibleCountRef.current >= totalCountRef.current) return;
 
-      const nearBottom =
-        node.scrollTop + node.clientHeight >= node.scrollHeight - 300;
-      const notScrollable = node.scrollHeight <= node.clientHeight + 20;
-
-      if (!nearBottom && !notScrollable) return;
-
-      visibleCountRef.current = Math.min(
-        visibleCountRef.current + 9,
-        totalCountRef.current,
-      );
-      setVisibleCount(visibleCountRef.current);
-      requestAnimationFrame(maybeLoadMore);
+    const onScroll = () => {
+      userScrolledRef.current = true;
     };
-
-    onScrollRef.current = maybeLoadMore;
-    requestAnimationFrame(maybeLoadMore);
+    onScrollRef.current = onScroll;
+    node.addEventListener("scroll", onScroll, { passive: true });
   }, []);
 
   useEffect(() => {
-    const fn = onScrollRef.current;
-    if (!fn) return;
-    requestAnimationFrame(fn);
-  }, [filteredAndSorted.length]);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0].isIntersecting) return;
+        if (!userScrolledRef.current) return;
+        if (
+          visibleCount >= filteredAndSorted.length - 3 &&
+          hasMoreRef.current
+        ) {
+          void fetchNextPage();
+        }
+        if (visibleCount < filteredAndSorted.length) {
+          setVisibleCount((prev) => prev + 9);
+        }
+      },
+      { threshold: 0.2 },
+    );
 
-  useLayoutEffect(() => {
-    const node = scrollContainerRef.current;
-    if (!node) return;
-    if (visibleCountRef.current >= totalCountRef.current) return;
+    if (sentinelRef.current) {
+      observer.observe(sentinelRef.current);
+    }
 
-    const maybeFill = () => {
-      if (visibleCountRef.current >= totalCountRef.current) return;
-      const notScrollable = node.scrollHeight <= node.clientHeight + 20;
-      if (!notScrollable) return;
-
-      visibleCountRef.current = Math.min(
-        visibleCountRef.current + 9,
-        totalCountRef.current,
-      );
-      setVisibleCount(visibleCountRef.current);
-      requestAnimationFrame(maybeFill);
+    return () => {
+      if (sentinelRef.current) {
+        observer.unobserve(sentinelRef.current);
+      }
     };
-
-    requestAnimationFrame(maybeFill);
-  }, [visibleCount, filteredAndSorted.length]);
+  }, [visibleCount, filteredAndSorted.length, fetchNextPage]);
 
   const handleRegisterShipment = useCallback(
     async (address: string, reqs: ManufacturerRequest[]) => {
@@ -936,12 +1073,29 @@ export const RequestPage = ({
       onDragOver={handlePageDragOver}
       onDragLeave={handlePageDragLeave}
       className="relative w-full h-full text-gray-800 flex flex-col items-stretch"
+      onWheelCapture={() => {
+        userScrolledRef.current = true;
+        const node = scrollContainerRef.current;
+        if (
+          node &&
+          node.scrollHeight <= node.clientHeight + 20 &&
+          hasMoreRef.current
+        ) {
+          void fetchNextPage();
+        }
+      }}
+      onScrollCapture={() => {
+        userScrolledRef.current = true;
+      }}
     >
       <div
         className="flex-1 overflow-y-auto"
         ref={setScrollContainer}
         data-worksheet-scroll="1"
-        onScroll={() => onScrollRef.current?.()}
+        onScroll={() => {
+          userScrolledRef.current = true;
+          onScrollRef.current?.();
+        }}
       >
         {isCamStage && isDraggingOver && (
           <div className="fixed inset-0 z-50 bg-blue-500/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
@@ -983,46 +1137,39 @@ export const RequestPage = ({
                 표시할 의뢰가 없습니다.
               </div>
             ) : (
-              <WorksheetCardGrid
-                requests={paginatedRequests}
-                onDownload={handleDownloadOriginal}
-                onOpenPreview={handleOpenPreview}
-                onDeleteCam={handleDeleteCam}
-                onDeleteNc={handleDeleteNc}
-                onRollback={enableCardRollback ? handleCardRollback : undefined}
-                onApprove={enableCardApprove ? handleCardApprove : undefined}
-                onUploadNc={handleUploadNc}
-                uploadProgress={uploadProgress}
-                uploading={uploading}
-                deletingCam={deletingCam}
-                deletingNc={deletingNc}
-                isCamStage={isCamStage}
-                isMachiningStage={isMachiningStage}
-                downloading={downloading}
-                currentStageOrder={currentStageOrder}
-                tabStage={tabStage}
-              />
-            )}
-            {!isEmpty &&
-              tabStage !== "machining" &&
-              visibleCount < filteredAndSorted.length && (
-                <div className="flex justify-center py-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      visibleCountRef.current = Math.min(
-                        visibleCountRef.current + 9,
-                        totalCountRef.current,
-                      );
-                      setVisibleCount(visibleCountRef.current);
-                    }}
-                  >
-                    더 보기
-                  </Button>
+              <>
+                <WorksheetCardGrid
+                  requests={paginatedRequests}
+                  onDownload={handleDownloadOriginal}
+                  onOpenPreview={handleOpenPreview}
+                  onDeleteCam={handleDeleteCam}
+                  onDeleteNc={handleDeleteNc}
+                  onRollback={
+                    enableCardRollback ? handleCardRollback : undefined
+                  }
+                  onApprove={enableCardApprove ? handleCardApprove : undefined}
+                  onUploadNc={handleUploadNc}
+                  uploadProgress={uploadProgress}
+                  uploading={uploading}
+                  deletingCam={deletingCam}
+                  deletingNc={deletingNc}
+                  isCamStage={isCamStage}
+                  isMachiningStage={isMachiningStage}
+                  downloading={downloading}
+                  currentStageOrder={currentStageOrder}
+                  tabStage={tabStage}
+                />
+
+                <div
+                  ref={sentinelRef}
+                  className="py-4 text-center text-gray-500"
+                >
+                  {visibleCount >= filteredAndSorted.length
+                    ? "모든 의뢰를 표시했습니다."
+                    : "스크롤하여 더보기"}
                 </div>
-              )}
+              </>
+            )}
           </div>
         </div>
       </div>

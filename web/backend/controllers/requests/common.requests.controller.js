@@ -134,10 +134,17 @@ export async function getRequestSummaryByRequestId(req, res) {
 
 export async function getAllRequests(req, res) {
   try {
-    // 페이지네이션 파라미터
+    // 페이지네이션 파라미터 (과도한 응답 방지를 위한 상한 적용)
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const MAX_LIMIT = 200;
+    const limit = Math.min(parseInt(req.query.limit) || 10, MAX_LIMIT);
     const skip = (page - 1) * limit;
+
+    // 뷰 및 포함 항목 옵션
+    const view = String(req.query.view || "").trim(); // e.g. 'worksheet'
+    const includeDelivery =
+      String(req.query.includeDelivery || "").toLowerCase() === "1" ||
+      String(req.query.includeDelivery || "").toLowerCase() === "true";
 
     // 필터링 파라미터
     const role = req.user?.role;
@@ -151,6 +158,7 @@ export async function getAllRequests(req, res) {
         $and: [
           filter,
           { manufacturerStage: { $ne: "취소" } },
+          // assigned to me OR unassigned/null/missing
           {
             $or: [
               { manufacturer: req.user._id },
@@ -175,15 +183,48 @@ export async function getAllRequests(req, res) {
     }
 
     // 의뢰 조회
-    const rawRequests = await Request.find(filter)
-      .select("-messages")
-      .populate("requestor", "name email organization phoneNumber address")
-      .populate("deliveryInfoRef")
-      .populate("requestorOrganizationId", "name extracted")
-      .sort(sort)
-      .skip(skip)
-      .limit(limit)
-      .lean();
+    // worksheet 뷰에서는 목록 렌더링에 필요한 최소 필드만 선택해 페이로드를 줄인다.
+    const worksheetSelect = [
+      "requestId",
+      "manufacturerStage",
+      "createdAt",
+      "mailboxAddress",
+      "referenceIds",
+      "caseInfos.clinicName",
+      "caseInfos.patientName",
+      "caseInfos.tooth",
+      "caseInfos.implantManufacturer",
+      "caseInfos.implantSystem",
+      "caseInfos.implantType",
+      "caseInfos.maxDiameter",
+      "caseInfos.connectionDiameter",
+      "requestor",
+    ].join(" ");
+
+    let query = Request.find(filter).sort(sort).skip(skip).limit(limit);
+
+    // default to lightweight projection unless explicitly requesting full view
+    if (view !== "full") {
+      query = query
+        .select(worksheetSelect)
+        .populate("requestor", "name organization");
+      if (includeDelivery) {
+        // 배송 정보가 필요한 경우에만 최소 필드로 populate
+        query = query.populate(
+          "deliveryInfoRef",
+          "shippedAt deliveredAt carrier trackingNumber updatedAt",
+        );
+      }
+      // requestorOrganizationId는 카드 뷰에서 미사용이므로 populate 생략
+    } else {
+      query = query
+        .select("-messages")
+        .populate("requestor", "name email organization phoneNumber address")
+        .populate("deliveryInfoRef")
+        .populate("requestorOrganizationId", "name extracted");
+    }
+
+    const rawRequests = await query.lean();
 
     const now = new Date();
     const requests = await Promise.all(
@@ -192,17 +233,18 @@ export async function getAllRequests(req, res) {
           request: r,
           now,
         });
-        const reqOrg = r?.requestorOrganizationId || null;
         return {
           ...r,
-          requestorOrganization: reqOrg,
           shippingPriority,
         };
       }),
     );
 
-    // 전체 의뢰 수
-    const total = await Request.countDocuments(filter);
+    // 전체 의뢰 수 (요청 시에만 계산)
+    const includeTotal =
+      String(req.query.includeTotal || "").toLowerCase() === "1" ||
+      String(req.query.includeTotal || "").toLowerCase() === "true";
+    const total = includeTotal ? await Request.countDocuments(filter) : null;
 
     res.status(200).json({
       success: true,
@@ -212,7 +254,7 @@ export async function getAllRequests(req, res) {
           total,
           page,
           limit,
-          pages: Math.ceil(total / limit),
+          pages: total ? Math.ceil(total / limit) : null,
         },
       },
     });
