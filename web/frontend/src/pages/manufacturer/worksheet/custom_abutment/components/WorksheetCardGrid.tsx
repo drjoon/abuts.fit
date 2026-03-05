@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, ArrowRight } from "lucide-react";
@@ -52,6 +52,7 @@ export const WorksheetCardGrid = ({
   tabStage,
   debugLog = false,
 }: WorksheetCardGridProps) => {
+  const camDiaLogRef = useRef<Record<string, number | null>>({});
   useEffect(() => {
     if (!debugLog) return;
     requests.forEach((request) => {
@@ -126,11 +127,48 @@ export const WorksheetCardGrid = ({
         const lotPart = String(request.lotNumber?.part || "").trim();
         const lotPartDisplay = lotPart.replace(/^CA(P)?/i, "").trim();
         const camMaterialDiameter = (() => {
-          const raw = (request.productionSchedule || {}).diameter;
+          const sched = (request.productionSchedule || {}) as any;
+          const raw = sched.diameter;
           const n = Number(raw);
           if (Number.isFinite(n) && n > 0) return n;
+          const g = String(sched.diameterGroup || "").trim();
+          if (g === "6" || g === "8" || g === "10" || g === "12") {
+            return Number(g);
+          }
           return null;
         })();
+        if (debugLog) {
+          try {
+            const last = camDiaLogRef.current[request.requestId];
+            const changed = last !== camMaterialDiameter;
+            if (changed) {
+              camDiaLogRef.current[request.requestId] = camMaterialDiameter as
+                | number
+                | null;
+              const dbg = {
+                requestId: request.requestId,
+                stage: request.manufacturerStage,
+                schedule: request.productionSchedule,
+                caseInfos: {
+                  maxDiameter: request.caseInfos?.maxDiameter,
+                  camDiameter: (request.caseInfos as any)?.camDiameter,
+                },
+                camMaterialDiameter,
+              } as any;
+              if (camMaterialDiameter == null) {
+                console.warn(
+                  "[FRONT] CAM card: camMaterialDiameter is null",
+                  dbg,
+                );
+              } else {
+                console.debug(
+                  "[FRONT] CAM card: camMaterialDiameter resolved",
+                  dbg,
+                );
+              }
+            }
+          } catch {}
+        }
         const camMaterialDiameterGroup =
           request.productionSchedule?.diameterGroup;
         const camGroup = (() => {

@@ -92,7 +92,13 @@ export async function triggerEspritForNc({ request, force = false }) {
 
   const existingNc =
     request?.caseInfos?.ncFile?.fileName || request?.caseInfos?.ncFile?.s3Key;
-  if (existingNc && !force) return;
+  if (existingNc && !force) {
+    console.log("[ESPRIT] skip trigger (existing NC, not forced)", {
+      requestId: request?.requestId,
+      existingNc,
+    });
+    return;
+  }
 
   const camFileName = request?.caseInfos?.camFile?.filePath;
   if (!camFileName) {
@@ -106,32 +112,79 @@ export async function triggerEspritForNc({ request, force = false }) {
   const timeoutMs = Number(process.env.BG_TRIGGER_TIMEOUT_MS || 2500);
   const timeoutRef = setTimeout(() => controller.abort(), timeoutMs);
   const espritUrl = `${ESPRIT_BASE.replace(/\/+$/, "")}/`;
+  console.log("[ESPRIT] prepare trigger", {
+    requestId: request?.requestId,
+    camFileName,
+    ncFileName,
+    force,
+    stage: request?.manufacturerStage,
+    schedule: request?.productionSchedule,
+  });
+
+  // MaterialDiameter/Group 계산: schedule.diameter → 장비 사전선택 → maxDiameter 천장값
+  const schedule = request?.productionSchedule || {};
+  let matDia = Number(schedule?.diameter);
+  if (!Number.isFinite(matDia) || matDia <= 0) {
+    try {
+      const pre = await chooseMachineForCamMachining({
+        request,
+        ignoreAllowAssign: true,
+      });
+      if (Number.isFinite(pre?.diameter)) matDia = pre.diameter;
+    } catch {
+      // ignore
+    }
+  }
+  if (!Number.isFinite(matDia) || matDia <= 0) {
+    const maxD = Number(request?.caseInfos?.maxDiameter);
+    if (Number.isFinite(maxD) && maxD > 0) {
+      matDia = maxD <= 6 ? 6 : maxD <= 8 ? 8 : maxD <= 10 ? 10 : 12;
+    }
+  }
+  const matGroup =
+    String(schedule?.diameterGroup || "").trim() ||
+    (Number.isFinite(matDia) && matDia > 0
+      ? inferDiameterGroupFromDiameter(matDia) || ""
+      : "");
+  console.log("[ESPRIT] resolved material for trigger", {
+    requestId: request?.requestId,
+    maxDiameter: request?.caseInfos?.maxDiameter,
+    scheduleDiameter: schedule?.diameter,
+    scheduleGroup: schedule?.diameterGroup,
+    resolvedDiameter: matDia,
+    resolvedGroup: matGroup,
+  });
 
   let resp;
   try {
+    const payload = {
+      RequestId: String(request.requestId || ""),
+      StlPath: camFileName,
+      NcOutputPath: ncFileName,
+      Force: Boolean(force),
+      ClinicName: request?.caseInfos?.clinicName || "",
+      PatientName: request?.caseInfos?.patientName || "",
+      Tooth: request?.caseInfos?.tooth || "",
+      ImplantManufacturer: request?.caseInfos?.implantManufacturer || "",
+      ImplantSystem: request?.caseInfos?.implantSystem || "",
+      ImplantType: request?.caseInfos?.implantType || "",
+      MaxDiameter: Number(request?.caseInfos?.maxDiameter || 0),
+      ConnectionDiameter: Number(request?.caseInfos?.connectionDiameter || 0),
+      MaterialDiameter: Number(matDia || 0),
+      MaterialDiameterGroup: String(matGroup || ""),
+      WorkType: request?.caseInfos?.workType || "",
+      LotNumber: request?.lotNumber?.part || "",
+    };
+    console.log("[ESPRIT] POST / payload", {
+      RequestId: payload.RequestId,
+      MaxDiameter: payload.MaxDiameter,
+      MaterialDiameter: payload.MaterialDiameter,
+      MaterialDiameterGroup: payload.MaterialDiameterGroup,
+    });
     resp = await fetch(espritUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        RequestId: String(request.requestId || ""),
-        StlPath: camFileName,
-        NcOutputPath: ncFileName,
-        Force: Boolean(force),
-        ClinicName: request?.caseInfos?.clinicName || "",
-        PatientName: request?.caseInfos?.patientName || "",
-        Tooth: request?.caseInfos?.tooth || "",
-        ImplantManufacturer: request?.caseInfos?.implantManufacturer || "",
-        ImplantSystem: request?.caseInfos?.implantSystem || "",
-        ImplantType: request?.caseInfos?.implantType || "",
-        MaxDiameter: Number(request?.caseInfos?.maxDiameter || 0),
-        ConnectionDiameter: Number(request?.caseInfos?.connectionDiameter || 0),
-        MaterialDiameter: Number(request?.productionSchedule?.diameter || 0),
-        MaterialDiameterGroup: String(
-          request?.productionSchedule?.diameterGroup || "",
-        ),
-        WorkType: request?.caseInfos?.workType || "",
-        LotNumber: request?.lotNumber?.part || "",
-      }),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
   } catch (error) {
@@ -147,11 +200,21 @@ export async function triggerEspritForNc({ request, force = false }) {
 
   if (!resp?.ok) {
     const text = await resp.text().catch(() => "");
+    console.warn("[ESPRIT] trigger failed", {
+      requestId: request?.requestId,
+      status: resp?.status,
+      text,
+    });
     const err = new Error(
       `Esprit 트리거 실패 (${resp?.status ?? "unknown"}): ${text}`.trim(),
     );
     err.statusCode = 503;
     throw err;
+  } else {
+    console.log("[ESPRIT] trigger accepted", {
+      requestId: request?.requestId,
+      status: resp?.status,
+    });
   }
 }
 
@@ -209,7 +272,10 @@ async function screenCamMachineForRequest({ request }) {
   };
 }
 
-async function chooseMachineForCamMachining({ request }) {
+async function chooseMachineForCamMachining({
+  request,
+  ignoreAllowAssign = false,
+}) {
   if (!request) throw new Error("request is required");
   const schedule = request.productionSchedule || {};
   const toDiameterGroup = (d) => {
@@ -224,6 +290,13 @@ async function chooseMachineForCamMachining({ request }) {
   const targetDiameter = Number.isFinite(targetDiameterRaw)
     ? targetDiameterRaw
     : Number(schedule?.diameter) || 8;
+  console.log("[CAM-CHOOSE] input", {
+    requestId: request?.requestId,
+    maxDiameter: request?.caseInfos?.maxDiameter,
+    scheduleDiameter: schedule?.diameter,
+    targetDiameter,
+    ignoreAllowAssign,
+  });
 
   const cncMachines = await CncMachine.find({ status: "active" })
     .select({ machineId: 1, maxModelDiameterGroups: 1, currentMaterial: 1 })
@@ -245,7 +318,8 @@ async function chooseMachineForCamMachining({ request }) {
   const candidatesWithDia = cncMachines
     .map((m) => {
       const machineId = String(m?.machineId || "").trim();
-      if (!machineId || !allowAssignSet.has(machineId)) return null;
+      if (!machineId) return null;
+      if (!ignoreAllowAssign && !allowAssignSet.has(machineId)) return null;
       const materialDia = Number(m?.currentMaterial?.diameter);
       if (!Number.isFinite(materialDia) || materialDia <= 0) {
         console.warn(
@@ -263,6 +337,11 @@ async function chooseMachineForCamMachining({ request }) {
       };
     })
     .filter(Boolean);
+  console.log("[CAM-CHOOSE] candidates", {
+    requestId: request?.requestId,
+    count: candidatesWithDia.length,
+    list: candidatesWithDia.map((c) => ({ m: c.machineId, d: c.availableDia })),
+  });
 
   if (!candidatesWithDia.length) {
     throw new Error(
@@ -284,9 +363,20 @@ async function chooseMachineForCamMachining({ request }) {
   const ceilCandidates = candidatesWithDia.filter(
     (c) => c.availableDia >= targetDiameter,
   );
-  const pool = ceilCandidates.length ? ceilCandidates : candidatesWithDia;
+  console.log("[CAM-CHOOSE] ceilCandidates", {
+    requestId: request?.requestId,
+    count: ceilCandidates.length,
+    list: ceilCandidates.map((c) => ({ m: c.machineId, d: c.availableDia })),
+  });
+  // 의뢰 승인(pre-CAM) 시에는 목표 직경 이상 장비가 없으면 억지로 더 작은 직경을 선택하지 않는다.
+  // (ignoreAllowAssign=true인 호출에서는 호환 장비가 없으면 빈 풀을 그대로 둔다)
+  const pool = ceilCandidates.length
+    ? ceilCandidates
+    : ignoreAllowAssign
+      ? []
+      : candidatesWithDia;
 
-  const ranked = pool
+  const ranked = (pool || [])
     .map((c) => {
       const queue = queueCountMap.get(c.machineId) ?? 0;
       return { ...c, queue };
@@ -300,6 +390,11 @@ async function chooseMachineForCamMachining({ request }) {
 
   const chosen = ranked[0];
   const queuePosition = (queueCountMap.get(chosen.machineId) || 0) + 1;
+  console.log("[CAM-CHOOSE] chosen", {
+    requestId: request?.requestId,
+    chosen: chosen && { m: chosen.machineId, d: chosen.availableDia },
+    queuePosition,
+  });
 
   return {
     machineId: chosen.machineId,
@@ -575,7 +670,10 @@ export async function updateReviewStatusByStage(req, res) {
           let preselectedDia = null;
           let preselectedGroup = null;
           try {
-            const preselect = await chooseMachineForCamMachining({ request });
+            const preselect = await chooseMachineForCamMachining({
+              request,
+              ignoreAllowAssign: true,
+            });
             if (Number.isFinite(preselect?.diameter)) {
               preselectedDia = preselect.diameter;
               preselectedGroup = preselect.diameterGroup || preselect.reqGroup;
@@ -587,11 +685,38 @@ export async function updateReviewStatusByStage(req, res) {
             );
           }
 
-          const resolvedDia =
+          // 1차: 장비 실제 소재 직경(preselect), 2차: screening 결과
+          let resolvedDia =
             preselectedDia ??
             (Number.isFinite(screening?.diameter) ? screening.diameter : null);
-          const resolvedGroup =
+          let resolvedGroup =
             preselectedGroup || screening?.diameterGroup || screening?.reqGroup;
+          console.log("[CAM-PRESELECT] before adjust", {
+            requestId: request?.requestId,
+            preselectedDia,
+            preselectedGroup,
+            screening,
+            resolvedDia,
+            resolvedGroup,
+          });
+
+          // 3차: 여전히 미결정이거나 STL 최대직경보다 낮은 그룹으로 선택된 경우, 그룹 천장값으로 보정
+          try {
+            const maxD = Number(request?.caseInfos?.maxDiameter);
+            if (Number.isFinite(maxD) && maxD > 0) {
+              const ceilGroup = inferDiameterGroupFromDiameter(maxD) || "8";
+              const groupToNumber = (g) =>
+                g === "6" ? 6 : g === "8" ? 8 : g === "10" ? 10 : 12;
+              const ceilNumber = groupToNumber(ceilGroup);
+              const hasDia = Number.isFinite(resolvedDia) && resolvedDia > 0;
+              if (!hasDia || (hasDia && resolvedDia < ceilNumber)) {
+                resolvedDia = ceilNumber;
+                resolvedGroup = ceilGroup;
+              }
+            }
+          } catch {
+            // ignore
+          }
 
           if (Number.isFinite(resolvedDia)) {
             request.productionSchedule.diameter = resolvedDia;
@@ -600,6 +725,11 @@ export async function updateReviewStatusByStage(req, res) {
             request.productionSchedule.diameterGroup =
               resolvedGroup || request.productionSchedule.diameterGroup;
           }
+          console.log("[CAM-PRESELECT] after adjust", {
+            requestId: request?.requestId,
+            finalDiameter: request.productionSchedule.diameter,
+            finalGroup: request.productionSchedule.diameterGroup,
+          });
 
           // PRC 파일명은 의뢰자가 아니라, 관리자(의뢰 승인) 시점에 확정한다.
           // 누락 시 esprit-addin에서 OpenProcess("")로 크래시/불량 가공 위험이 있으므로 승인 자체를 막는다.

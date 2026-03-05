@@ -315,6 +315,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         }
         private void RunCamProcessing(NcGenerationRequest req, string stlPath)
         {
+            if (req.MaterialDiameter <= 5)
+            {
+                AppLogger.Log("[NC Processing] MaterialDiameter is missing or invalid. Aborting CAM process.");
+                return;
+            }
             AppLogger.Log($"[NC Processing] Starting CAM processing: RequestId={req.RequestId}, Clinic={req.ClinicName}, Patient={req.PatientName}, Tooth={req.Tooth}");
             AppLogger.Log($"[NC Processing] Implant: {req.ImplantManufacturer}/{req.ImplantSystem}/{req.ImplantType}, MaxDia={req.MaxDiameter}, ConnDia={req.ConnectionDiameter}");
             AppLogger.Log($"[NC Processing] WorkType={req.WorkType}, LotNumber={req.LotNumber}");
@@ -323,7 +328,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 lotNumber = req.LotNumber ?? "ACR"
             };
             AppLogger.Log("[NC Processing] Invoking StlFileProcessor.Process()...");
-            processor.Process(stlPath);
+            processor.Process(stlPath, null, null, req.MaterialDiameter);
             AppLogger.Log($"[NC Processing] CAM processing completed successfully: {req.RequestId}");
         }
         private async Task ProcessQueueLoop(CancellationToken token)

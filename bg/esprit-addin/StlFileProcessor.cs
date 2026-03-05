@@ -65,7 +65,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _postProcessorFile = postProcessorFile;
         }
         public Esprit.PMTab exTab;
-        public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null)
+        public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null)
         {
             AppLogger.BeginRun();
             ResetPerRunState();
@@ -133,6 +133,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     AppLogger.Log("StlFileProcessor: 기존 BarDiameter 정보를 찾을 수 없어 기본 절차를 사용합니다.");
                 }
+                if (materialDiameter.HasValue && materialDiameter.Value > 0)
+                {
+                    AppLogger.Log($"StlFileProcessor: 백엔드 MaterialDiameter 요청={materialDiameter.Value:F3}");
+                }
                 CleanupGraphics(document);
                 document.Refresh();
                 Layer prevLayer = null;
@@ -162,7 +166,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 stlBoundingTopZ = TryComputeStlBoundingTopZ(document);
                 AppLogger.Log($"StlFileProcessor: STL bounding topZ={(stlBoundingTopZ.HasValue ? stlBoundingTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
                 Connect.SetCurrentDocument(document);
-                UpdateLatheBarDiameter(document, stlPath, machineBarDiameter);
+                UpdateLatheBarDiameter(document, stlPath, machineBarDiameter, materialDiameter);
                 Rotate90Degrees(document);
                 FitActiveWindow(document);
                 InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ);
@@ -1296,50 +1300,55 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             int initialCount = document.GraphicsCollection.Count;
             if (initialCount == 0) return;
 
-            // 역순으로 순회하며 조건에 맞는 객체 삭제
+            // 역순 순회하되, 컬렉션 크기 변화를 고려하여 인덱스를 보정
             int deletedCount = 0;
-            for (int idx = initialCount; idx >= 1; idx--)
+            for (int i = initialCount; i >= 1; i--)
             {
                 try
                 {
+                    int curCount = document.GraphicsCollection.Count;
+                    if (curCount <= 0) break;
+                    int idx = i > curCount ? curCount : i;
+                    if (idx <= 0) continue;
+
                     dynamic obj = document.GraphicsCollection[idx];
                     if (obj == null) continue;
 
                     int rawType;
-                    try
-                    {
-                        rawType = Convert.ToInt32(obj.GraphicObjectType);
-                    }
-                    catch
-                    {
-                        // 타입 불명(예: COM 반환형 불일치)은 스킵
-                        continue;
-                    }
+                    try { rawType = Convert.ToInt32(obj.GraphicObjectType); }
+                    catch { continue; }
 
                     espGraphicObjectType type = (espGraphicObjectType)rawType;
-                    if (type == espGraphicObjectType.espOperation ||
+                    bool shouldDelete =
+                        type == espGraphicObjectType.espOperation ||
                         type == espGraphicObjectType.espFeatureChain ||
                         type == espGraphicObjectType.espFreeFormFeature ||
                         type == espGraphicObjectType.espFeatureSet ||
-                        type == espGraphicObjectType.espSTL_Model)
+                        type == espGraphicObjectType.espSTL_Model;
+                    if (!shouldDelete) continue;
+
+                    try
+                    {
+                        obj.Delete();
+                        deletedCount++;
+                    }
+                    catch
                     {
                         try
                         {
-                            obj.Delete();
-                            deletedCount++;
+                            var key = obj.Key;
+                            if (key != null)
+                            {
+                                document.GraphicsCollection.Remove(key);
+                                deletedCount++;
+                            }
                         }
-                        catch
-                        {
-                            // Delete() 실패 시 컬렉션에서 Remove 시도 (Key 기반)
-                            document.GraphicsCollection.Remove(obj.Key);
-                            deletedCount++;
-                        }
+                        catch { /* ignore */ }
                     }
                 }
                 catch (Exception ex)
                 {
                     AppLogger.Log($"StlFileProcessor: CleanupGraphics 단일 객체 삭제 실패 - {ex.GetType().Name}:{ex.Message}");
-                    // 개별 객체 삭제 실패는 로그만 남기고 계속 진행
                 }
             }
 
@@ -2843,11 +2852,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             SetStaticField(mainModuleType, "Document", document);
             SetStaticProperty(mainModuleType, "EspritApp", _espApp);
         }
-        private void UpdateLatheBarDiameter(Document document, string stlPath, double initialBarDiameter)
+        private void UpdateLatheBarDiameter(Document document, string stlPath, double initialBarDiameter, double? backendMaterialDiameter)
         {
             try
             {
-                double diameter = initialBarDiameter > 0 ? initialBarDiameter : ResolveBarDiameter(document, stlPath);
+                // 우선순위: 백엔드 전달값 > 기존 장비값 > 추정값
+                double diameter = (backendMaterialDiameter.HasValue && backendMaterialDiameter.Value > 0)
+                    ? backendMaterialDiameter.Value
+                    : (initialBarDiameter > 0 ? initialBarDiameter : ResolveBarDiameter(document, stlPath));
                 if (diameter <= 0)
                 {
                     diameter = 6.0;
@@ -2858,7 +2870,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
                 document.LatheMachineSetup.BarDiameter = diameter;
-                AppLogger.Log($"StlFileProcessor: BarDiameter 설정 - {diameter:F3} (STL:{Path.GetFileName(stlPath)})");
+                string src = (backendMaterialDiameter.HasValue && backendMaterialDiameter.Value > 0)
+                    ? "backend"
+                    : (initialBarDiameter > 0 ? "machine" : "fallback");
+                AppLogger.Log($"StlFileProcessor: BarDiameter 설정 - {diameter:F3} (src:{src}, STL:{Path.GetFileName(stlPath)})");
             }
             catch (Exception ex)
             {
