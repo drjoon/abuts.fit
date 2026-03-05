@@ -252,7 +252,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 // STL 파일 경로 정규화
                 string stlPath = NormalizeFilePath(req.StlPath);
                 AppLogger.Log($"[NC Processing] Resolved STL path: {stlPath}");
-
                 if (req.Force)
                 {
                     TryDeleteExistingNcFiles(req, stlPath);
@@ -298,22 +297,34 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         return;
                     }
                 }
-                AppLogger.Log($"[NC Processing] Starting CAM processing: RequestId={req.RequestId}, Clinic={req.ClinicName}, Patient={req.PatientName}, Tooth={req.Tooth}");
-                AppLogger.Log($"[NC Processing] Implant: {req.ImplantManufacturer}/{req.ImplantSystem}/{req.ImplantType}, MaxDia={req.MaxDiameter}, ConnDia={req.ConnectionDiameter}");
-                AppLogger.Log($"[NC Processing] WorkType={req.WorkType}, LotNumber={req.LotNumber}");
-                // StlFileProcessor를 사용하여 NC 생성 (자동 CAM 처리)
-                var processor = new StlFileProcessor(_espApp);
-                processor.lotNumber = req.LotNumber ?? "ACR";
-                
-                AppLogger.Log($"[NC Processing] Invoking StlFileProcessor.Process()...");
-                processor.Process(stlPath);
-                AppLogger.Log($"[NC Processing] CAM processing completed successfully: {req.RequestId}");
+                if (!EspritUiDispatcher.IsInitialized)
+                {
+                    AppLogger.Log("[NC Processing] Dispatcher not initialized. CAM step will run on current thread.");
+                    RunCamProcessing(req, stlPath);
+                }
+                else
+                {
+                    await EspritUiDispatcher.RunAsync(() => RunCamProcessing(req, stlPath));
+                }
             }
             catch (Exception ex)
             {
                 AppLogger.Log($"[NC Processing] CAM processing failed: {ex.Message}");
                 AppLogger.Log($"[NC Processing] Stack trace: {ex.StackTrace}");
             }
+        }
+        private void RunCamProcessing(NcGenerationRequest req, string stlPath)
+        {
+            AppLogger.Log($"[NC Processing] Starting CAM processing: RequestId={req.RequestId}, Clinic={req.ClinicName}, Patient={req.PatientName}, Tooth={req.Tooth}");
+            AppLogger.Log($"[NC Processing] Implant: {req.ImplantManufacturer}/{req.ImplantSystem}/{req.ImplantType}, MaxDia={req.MaxDiameter}, ConnDia={req.ConnectionDiameter}");
+            AppLogger.Log($"[NC Processing] WorkType={req.WorkType}, LotNumber={req.LotNumber}");
+            var processor = new StlFileProcessor(_espApp)
+            {
+                lotNumber = req.LotNumber ?? "ACR"
+            };
+            AppLogger.Log("[NC Processing] Invoking StlFileProcessor.Process()...");
+            processor.Process(stlPath);
+            AppLogger.Log($"[NC Processing] CAM processing completed successfully: {req.RequestId}");
         }
         private async Task ProcessQueueLoop(CancellationToken token)
         {
@@ -374,7 +385,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             return path;
         }
-
         private static void TryDeleteExistingFilledFile(string stlPath)
         {
             try
@@ -391,7 +401,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log($"[NC Processing] Force: failed to delete filled STL: {ex.GetType().Name}:{ex.Message}");
             }
         }
-
         private static void TryDeleteExistingNcFiles(NcGenerationRequest req, string stlPath)
         {
             try
@@ -399,7 +408,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 var outDir = AppConfig.StorageNcDirectory;
                 if (string.IsNullOrWhiteSpace(outDir)) return;
                 Directory.CreateDirectory(outDir);
-
                 string baseName = Path.GetFileNameWithoutExtension(stlPath ?? string.Empty) ?? string.Empty;
                 string sanitizedBase = RemoveFilledToken(baseName);
                 if (string.IsNullOrWhiteSpace(sanitizedBase))
@@ -407,13 +415,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     sanitizedBase = baseName;
                 }
                 if (string.IsNullOrWhiteSpace(sanitizedBase)) return;
-
                 var candidates = new List<string>
                 {
                     Path.Combine(outDir, sanitizedBase + ".nc"),
                     Path.Combine(outDir, baseName + ".nc"),
                 };
-
                 foreach (var p in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
                 {
                     try
@@ -435,7 +441,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log($"[NC Processing] Force: failed to cleanup NC outputs ({ex.GetType().Name}:{ex.Message})");
             }
         }
-
         private static string RemoveFilledToken(string baseName)
         {
             try
