@@ -52,8 +52,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private double? _capturedStockDiameter;
         private string _backendLotNumber;
         private string _backendSerialCode;
-        public string FaceHoleProcessFilePath { get; set; } = AppConfig.FaceHoleProcessPath;
-        public string ConnectionMachiningProcessFilePath { get; set; } = AppConfig.ConnectionProcessPath;
+        public string FaceHoleProcessFilePath { get; set; }
+        public string ConnectionMachiningProcessFilePath { get; set; }
         public double DefaultFrontLimitX { get; set; } = -9.5;
         public double DefaultBackLimitX { get; set; } = 0;
         public string lotNumber { get; set; } = "ACR";
@@ -235,9 +235,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _capturedStockDiameter = null;
             _backendLotNumber = null;
             _backendSerialCode = null;
-            FaceHoleProcessFilePath = AppConfig.FaceHoleProcessPath;
-            ConnectionMachiningProcessFilePath = AppConfig.ConnectionProcessPath;
-            lotNumber = "ACR";
+            FaceHoleProcessFilePath = null;
+            ConnectionMachiningProcessFilePath = null;
+            lotNumber = "";
             exTab = null;
             ResetDentalAddinMoveModuleState();
         }
