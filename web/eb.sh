@@ -143,6 +143,19 @@ else
   ENV_ARGS+=("NODE_ENV=test")
 fi
 
+# CloudFormation 4KB 제한 대비: 전체 문자열 길이 측정
+ENV_PAYLOAD_LEN=$(printf "%s," "${ENV_ARGS[@]}" | wc -c | tr -d ' ')
+MAX_CF_PARAM_LEN=4096
+SAFE_THRESHOLD=$((MAX_CF_PARAM_LEN - 200))
+
+if (( ENV_PAYLOAD_LEN > MAX_CF_PARAM_LEN )); then
+  error "환경변수 문자열 길이(${ENV_PAYLOAD_LEN}b)가 CloudFormation 제한(${MAX_CF_PARAM_LEN}b)를 초과합니다. .env 내용을 줄인 뒤 다시 실행하세요."
+elif (( ENV_PAYLOAD_LEN > SAFE_THRESHOLD )); then
+  warn "환경변수 문자열 길이(${ENV_PAYLOAD_LEN}b)가 한계(${MAX_CF_PARAM_LEN}b)에 근접했습니다. 필요 없는 키를 정리하는 것이 안전합니다."
+else
+  info "환경변수 문자열 길이: ${ENV_PAYLOAD_LEN}b (한계 ${MAX_CF_PARAM_LEN}b)"
+fi
+
 # 환경변수 변경이 있을 때만 setenv 실행 (config-deploy 최소화)
 ENV_HASH=""
 if command -v shasum >/dev/null 2>&1; then
