@@ -282,6 +282,12 @@ export async function getSalesmanDashboard(req, res) {
     }
 
     const period = parsePeriod(req.query?.period) || "30d";
+    const ymInput = parseYearMonth(req.query?.ym);
+    const now = new Date();
+    const effectiveYm = ymInput || {
+      year: now.getUTCFullYear(),
+      month: now.getUTCMonth() + 1,
+    };
 
     const commissionRate = 0.05;
     const indirectCommissionRate = commissionRate * 0.5;
@@ -351,7 +357,10 @@ export async function getSalesmanDashboard(req, res) {
       return res.status(200).json({
         success: true,
         data: {
-          ym: `${effectiveYm.year}-${String(effectiveYm.month).padStart(2, "0")}`,
+          ym:
+            period === "all"
+              ? `${effectiveYm.year}-${String(effectiveYm.month).padStart(2, "0")}`
+              : null,
           period: period || null,
           commissionRate,
           indirectCommissionRate,
@@ -475,7 +484,10 @@ export async function getSalesmanDashboard(req, res) {
     return res.status(200).json({
       success: true,
       data: {
-        ym: null,
+        ym:
+          period === "all"
+            ? `${effectiveYm.year}-${String(effectiveYm.month).padStart(2, "0")}`
+            : null,
         period,
         commissionRate,
         indirectCommissionRate,
