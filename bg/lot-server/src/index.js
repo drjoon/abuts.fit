@@ -5,6 +5,10 @@ import path from "path";
 import fs from "fs/promises";
 import os from "os";
 
+const LOG_FILE =
+  process.env.LOT_LOG_FILE || path.resolve(process.cwd(), "lot-server.log");
+const LOG_RETENTION_MS = 10 * 60 * 1000; // 10 minutes
+
 dotenv.config({ path: path.resolve(process.cwd(), "local.env") });
 
 const WATCH_DIR = process.env.LOT_WATCH_DIR || "C:/abuts.fit/images";
@@ -38,6 +42,31 @@ const TTL_DAYS = Number(process.env.LOT_LOCAL_TTL_DAYS || 15);
 
 async function ensureDir(p) {
   await fs.mkdir(p, { recursive: true });
+}
+
+function logLine(message) {
+  const line = `${new Date().toISOString()} ${message}`;
+  console.log(line);
+  fs
+    .appendFile(LOG_FILE, `${line}\n`)
+    .then(() => pruneLogFile().catch(() => {}))
+    .catch(() => {});
+}
+
+async function pruneLogFile() {
+  try {
+    const raw = await fs.readFile(LOG_FILE, "utf8").catch(() => "");
+    if (!raw) return;
+    const lines = raw.split(/\r?\n/).filter(Boolean);
+    const cutoff = Date.now() - LOG_RETENTION_MS;
+    const kept = lines.filter((ln) => {
+      const ts = ln.slice(0, 24); // "2026-03-05T01:39:53.910Z"
+      const t = Date.parse(ts);
+      return Number.isFinite(t) && t >= cutoff;
+    });
+    if (kept.length === lines.length) return;
+    await fs.writeFile(LOG_FILE, kept.join("\n") + (kept.length ? "\n" : ""));
+  } catch {}
 }
 
 function isImageFile(filePath) {
@@ -216,13 +245,13 @@ async function enforceIpAllowlist() {
   const allowedMatch = ALLOW_IPS.find((ip) => localIps.has(ip));
 
   if (!allowedMatch) {
-    console.error(
+    logLine(
       `[lot-server] IP allowlist blocked start. Allowed=${ALLOW_IPS.join(", ")} local/public=${localList.join(", ") || "(none)"}`,
     );
     process.exit(1);
   }
 
-  console.log(
+  logLine(
     `[lot-server] IP allowlist passed (match=${allowedMatch}). Local/Public IPs: ${localList.join(", ")}`,
   );
 }
@@ -230,9 +259,12 @@ async function enforceIpAllowlist() {
 async function handleNewImage(filePath) {
   if (!isImageFile(filePath)) return;
 
+  logLine(`[lot-server] detected new image: ${filePath}`);
+
   const stable = await waitForStableFile(filePath);
   if (!stable) {
     await moveFileSafely(filePath, FAILED_DIR);
+    logLine(`[lot-server] failed (unstable file) -> ${FAILED_DIR}: ${filePath}`);
     return;
   }
 
@@ -280,12 +312,17 @@ async function handleNewImage(filePath) {
     }
 
     await moveFileSafely(filePath, PROCESSED_DIR);
+    logLine(
+      `[lot-server] processed -> ${PROCESSED_DIR}: ${originalName} (${buffer.length} bytes)`,
+    );
   } catch (e) {
     await moveFileSafely(filePath, FAILED_DIR);
+    logLine(`[lot-server] failed -> ${FAILED_DIR}: ${filePath} (${e?.message || e})`);
   }
 }
 
 async function main() {
+  logLine(`[lot-server] service starting (watchDir=${WATCH_DIR})`);
   await enforceIpAllowlist();
   // Ensure base watch directory exists to avoid early exit on some environments
   try {
@@ -314,7 +351,9 @@ async function main() {
       if (!isImageFile(full)) continue;
       try {
         await handleNewImage(full);
-      } catch {}
+      } catch (err) {
+        logLine(`[lot-server] initial scan error for ${full}: ${err?.message || err}`);
+      }
     }
   } catch {}
 
@@ -332,11 +371,46 @@ async function main() {
   });
 
   watcher.on("add", (p) => {
-    handleNewImage(p).catch(() => {});
+    handleNewImage(p).catch((err) => {
+      logLine(`[lot-server] watcher add error for ${p}: ${err?.message || err}`);
+    });
   });
 
-  console.log(`[lot-server] watching: ${WATCH_DIR}`);
-  console.log(`[lot-server] backend: ${BACKEND_BASE}`);
+  watcher.on("change", (p) => {
+    handleNewImage(p).catch((err) => {
+      logLine(`[lot-server] watcher change error for ${p}: ${err?.message || err}`);
+    });
+  });
+
+  watcher.on("error", (err) => {
+    logLine(`[lot-server] watcher error: ${err?.message || err}`);
+  });
+
+  watcher.on("ready", () => {
+    logLine(`[lot-server] watcher ready (${WATCH_DIR})`);
+  });
+
+  setInterval(() => {
+    fs
+      .readdir(WATCH_DIR, { withFileTypes: true })
+      .then((entries) => {
+        for (const ent of entries) {
+          if (!ent.isFile()) continue;
+          const full = path.join(WATCH_DIR, ent.name);
+          handleNewImage(full).catch(() => {});
+        }
+      })
+      .catch((err) => {
+        logLine(`[lot-server] rescan failed: ${err?.message || err}`);
+      });
+  }, 3 * 1000);
+
+  setInterval(() => {
+    pruneLogFile().catch(() => {});
+  }, 60 * 1000);
+
+  logLine(`[lot-server] watching: ${WATCH_DIR}`);
+  logLine(`[lot-server] backend: ${BACKEND_BASE}`);
 }
 
 main().catch((e) => {
