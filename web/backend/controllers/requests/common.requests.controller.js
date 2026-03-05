@@ -198,6 +198,7 @@ export async function getAllRequests(req, res) {
       "caseInfos.ncFile",
       "caseInfos.stageFiles",
       "caseInfos.reviewByStage",
+      "caseInfos.finishLine",
       "caseInfos.implantManufacturer",
       "caseInfos.implantSystem",
       "caseInfos.implantType",
