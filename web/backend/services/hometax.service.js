@@ -6,6 +6,66 @@ function normalizeBusinessNumberDigits(input) {
 
 const DEFAULT_BASE_URL = "https://api.odcloud.kr/api/nts-businessman";
 
+const MAX_VALIDATE_ATTEMPTS = 5;
+
+function normalizeWhitespace(input) {
+  return String(input || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripParenthetical(input) {
+  return String(input || "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildCompanyNameCandidates(name) {
+  const candidates = [];
+  const push = (value) => {
+    const normalized = normalizeWhitespace(value);
+    if (normalized) {
+      candidates.push(normalized);
+    }
+  };
+
+  const base = normalizeWhitespace(name);
+  push(base);
+  if (base) {
+    const withoutParen = stripParenthetical(base);
+    push(withoutParen);
+    const collapsedPunct = base.replace(/[“”"']/g, "");
+    push(collapsedPunct);
+  }
+
+  return Array.from(new Set(candidates));
+}
+
+function buildRepresentativeNameCandidates(name) {
+  const candidates = [];
+  const push = (value) => {
+    const normalized = normalizeWhitespace(value);
+    if (normalized) {
+      candidates.push(normalized);
+    }
+  };
+
+  const base = normalizeWhitespace(name);
+  push(base);
+  if (base) {
+    push(stripParenthetical(base));
+    const splitTokens = base
+      .split(/[,/&]|(?:\s+및\s+)|(?:\s+and\s+)/i)
+      .map((token) => normalizeWhitespace(token))
+      .filter(Boolean);
+    splitTokens.forEach(push);
+  }
+
+  return Array.from(new Set(candidates));
+}
+
 async function callHometax(path, payload) {
   const serviceKey = String(process.env.HOMETAX_SERVICE_KEY || "").trim();
   if (!serviceKey) {
@@ -16,7 +76,7 @@ async function callHometax(path, payload) {
   }
 
   const baseUrl = String(
-    process.env.HOMETAX_BASE_URL || DEFAULT_BASE_URL
+    process.env.HOMETAX_BASE_URL || DEFAULT_BASE_URL,
   ).trim();
   const url = `${baseUrl}${path}?serviceKey=${encodeURIComponent(serviceKey)}`;
 
@@ -59,39 +119,59 @@ export async function verifyBusinessNumber({
   let vItem = null;
   let validMsg = "";
   if (representativeName && startDate) {
-    const validatePayload = {
-      businesses: [
-        {
-          b_no: digits,
-          b_nm: String(companyName || "").trim(),
-          p_nm: String(representativeName || "").trim(),
-          start_dt: String(startDate || "").trim(),
-        },
-      ],
-    };
+    const companyCandidates = buildCompanyNameCandidates(companyName);
+    const representativeCandidates =
+      buildRepresentativeNameCandidates(representativeName);
 
-    const validateResp = await callHometax("/v1/validate", validatePayload);
-    if (!validateResp.ok) {
-      return {
-        verified: false,
-        provider: "hometax",
-        message: validateResp.message,
-      };
+    let attempts = 0;
+    let lastValidationMessage = "";
+    outer: for (const companyCandidate of companyCandidates) {
+      for (const repCandidate of representativeCandidates) {
+        if (attempts >= MAX_VALIDATE_ATTEMPTS) {
+          break outer;
+        }
+        attempts += 1;
+
+        const validatePayload = {
+          businesses: [
+            {
+              b_no: digits,
+              b_nm: companyCandidate,
+              p_nm: repCandidate,
+              start_dt: String(startDate || "").trim(),
+            },
+          ],
+        };
+
+        const validateResp = await callHometax("/v1/validate", validatePayload);
+        if (!validateResp.ok) {
+          return {
+            verified: false,
+            provider: "hometax",
+            message: validateResp.message,
+          };
+        }
+
+        vItem = Array.isArray(validateResp.data?.data)
+          ? validateResp.data.data[0]
+          : null;
+
+        const validCode = String(vItem?.valid || "").trim();
+        validMsg = String(vItem?.valid_msg || "").trim();
+        lastValidationMessage = validMsg;
+
+        if (validCode === "01") {
+          break outer;
+        }
+      }
     }
 
-    vItem = Array.isArray(validateResp.data?.data)
-      ? validateResp.data.data[0]
-      : null;
-
-    const validCode = String(vItem?.valid || "").trim(); // "01" 정상, "02" 불일치
-    validMsg = String(vItem?.valid_msg || "").trim();
-
-    if (validCode && validCode !== "01") {
+    if (representativeCandidates.length && companyCandidates.length && !vItem) {
       return {
         verified: false,
         provider: "hometax",
         message:
-          validMsg ||
+          lastValidationMessage ||
           "홈택스 진위확인에 실패했습니다. 사업자등록번호/상호를 확인해주세요.",
       };
     }

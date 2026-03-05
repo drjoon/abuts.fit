@@ -58,13 +58,14 @@ const getSetupModeStorageKey = (userId?: string | null) => {
 
 const readStoredSetupMode = (
   userId?: string | null,
-): "license" | "search" | null => {
+): "license" | "search" | "manual" | null => {
   if (typeof window === "undefined") return null;
   try {
     const storageKey = getSetupModeStorageKey(userId);
     if (!storageKey) return null;
     const raw = window.localStorage.getItem(storageKey);
-    if (raw === "license" || raw === "search") return raw;
+    if (raw === "license" || raw === "search" || raw === "manual")
+      return raw as any;
     return null;
   } catch {
     return null;
@@ -73,7 +74,7 @@ const readStoredSetupMode = (
 
 const writeStoredSetupMode = (
   userId: string | null,
-  mode: "license" | "search" | null,
+  mode: "license" | "search" | "manual" | null,
 ) => {
   if (typeof window === "undefined") return;
   try {
@@ -165,7 +166,9 @@ export const BusinessTab = ({
 
   const authUserId = user?.id ? String(user.id) : null;
   const [membership, setMembership] = useState<MembershipStatus>("none");
-  const [setupMode, setSetupMode] = useState<"license" | "search" | null>(null);
+  const [setupMode, setSetupMode] = useState<
+    "license" | "search" | "manual" | null
+  >(null);
   const [setupModeLocked, setSetupModeLocked] = useState(false);
 
   const [orgSearch, setOrgSearch] = useState("");
@@ -195,6 +198,8 @@ export const BusinessTab = ({
   const [orgOpen, setOrgOpen] = useState(false);
 
   const [licenseDeleteLoading, setLicenseDeleteLoading] = useState(false);
+  const [inquirySubmitting, setInquirySubmitting] = useState(false);
+  const [showInquiryCta, setShowInquiryCta] = useState(false);
   const mockHeaders = useMemo(() => {
     return {} as Record<string, string>;
   }, []);
@@ -435,7 +440,7 @@ export const BusinessTab = ({
   ]);
 
   const updateSetupMode = useCallback(
-    (mode: "license" | "search" | null) => {
+    (mode: "license" | "search" | "manual" | null) => {
       setSetupMode(mode);
       if (allowLocalDraft) {
         writeStoredSetupMode(authUserId, mode);
@@ -764,6 +769,7 @@ export const BusinessTab = ({
     });
     savingToast?.dismiss?.();
     if (success) {
+      setShowInquiryCta(false);
       await refreshMembership();
       if (token) {
         await loginWithToken(token);
@@ -772,6 +778,78 @@ export const BusinessTab = ({
       if (verification && typeof verification === "object") {
         setIsVerified(!!verification.verified);
       }
+    }
+    if (!success) {
+      setShowInquiryCta(true);
+    }
+  };
+
+  const submitBusinessInquiry = async () => {
+    if (!token) {
+      toast({
+        title: "로그인이 필요합니다",
+        variant: "destructive",
+        duration: 3000,
+      });
+      return;
+    }
+    setInquirySubmitting(true);
+    try {
+      const res = await request<any>({
+        path: "/api/support/business-registration-inquiries",
+        method: "POST",
+        token,
+        headers: mockHeaders,
+        jsonBody: {
+          organizationType,
+          reason: "사업자 설정 문의",
+          errorMessage: "",
+          ownerForm: {
+            companyName: String(businessData.companyName || "").trim(),
+            representativeName: String(
+              extracted.representativeName || "",
+            ).trim(),
+            businessNumber: String(businessData.businessNumber || "").replace(
+              /\D/g,
+              "",
+            ),
+            phone: String(businessData.phone || "").replace(/\D/g, ""),
+            email: String(extracted.email || "").trim(),
+            businessType: String(extracted.businessType || "").trim(),
+            businessItem: String(extracted.businessItem || "").trim(),
+            address: String(businessData.address || "").trim(),
+            startDate: String(extracted.startDate || "").replace(/\D/g, ""),
+          },
+          license: {
+            fileId: String(licenseFileId || "").trim() || null,
+            s3Key: String(licenseS3Key || "").trim() || null,
+            originalName: String(licenseFileName || "").trim() || null,
+          },
+        },
+      });
+      if (!res.ok) {
+        const body: any = res.data || {};
+        toast({
+          title: "문의 접수 실패",
+          description: String(body?.message || "잠시 후 다시 시도해주세요."),
+          variant: "destructive",
+          duration: 3000,
+        });
+        return;
+      }
+      toast({
+        title: "문의가 접수되었습니다",
+        description: "담당자가 확인 후 연락드릴게요.",
+      });
+    } catch {
+      toast({
+        title: "문의 접수 실패",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+        duration: 3000,
+      });
+    } finally {
+      setInquirySubmitting(false);
     }
   };
 
@@ -1068,6 +1146,22 @@ export const BusinessTab = ({
                     이미 등록된 사업자를 검색해 소속을 신청합니다.
                   </div>
                 </button>
+                <button
+                  type="button"
+                  className="app-surface app-surface--panel w-full text-left p-4 transition-colors hover:bg-white"
+                  onClick={() => {
+                    setSetupModeLocked(true);
+                    resetLocalBusinessState();
+                    updateSetupMode("manual");
+                  }}
+                >
+                  <div className="text-sm font-medium">
+                    직접 입력으로 신규 등록
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    사업자등록증 없이 직접 정보를 입력해 새로 등록합니다.
+                  </div>
+                </button>
               </div>
 
               <JoinRequestsSection
@@ -1095,7 +1189,9 @@ export const BusinessTab = ({
                   <div className="text-sm font-medium">
                     {setupMode === "license"
                       ? "신규 사업자 등록"
-                      : "기존 사업자 소속 신청"}
+                      : setupMode === "manual"
+                        ? "직접 입력으로 신규 등록"
+                        : "기존 사업자 소속 신청"}
                   </div>
                   <Button
                     type="button"
@@ -1111,20 +1207,26 @@ export const BusinessTab = ({
                 </div>
               )}
 
-              {(membership === "owner" || setupMode === "license") && (
+              {(membership === "owner" ||
+                setupMode === "license" ||
+                setupMode === "manual") && (
                 <div className="space-y-6">
-                  <BusinessLicenseUpload
-                    ref={licenseUploadRef}
-                    membership={membership}
-                    licenseStatus={licenseStatus}
-                    isVerified={isVerified}
-                    licenseFileName={licenseFileName}
-                    licenseDeleteLoading={licenseDeleteLoading}
-                    onFileUpload={handleFileUpload}
-                    onDeleteLicense={handleDeleteLicense}
-                  />
+                  {setupMode !== "manual" && (
+                    <BusinessLicenseUpload
+                      ref={licenseUploadRef}
+                      membership={membership}
+                      licenseStatus={licenseStatus}
+                      isVerified={isVerified}
+                      licenseFileName={licenseFileName}
+                      licenseDeleteLoading={licenseDeleteLoading}
+                      onFileUpload={handleFileUpload}
+                      onDeleteLicense={handleDeleteLicense}
+                    />
+                  )}
 
-                  {(membership === "owner" || licenseStatus !== "missing") && (
+                  {(membership === "owner" ||
+                    licenseStatus !== "missing" ||
+                    setupMode === "manual") && (
                     <BusinessForm
                       businessData={businessData}
                       extracted={extracted}
@@ -1151,6 +1253,22 @@ export const BusinessTab = ({
                           updatedAt: Date.now(),
                         });
                       }}
+                      renderActions={({ disabled }) =>
+                        showInquiryCta ? (
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            className="font-semibold"
+                            disabled={disabled || inquirySubmitting}
+                            onClick={() => void submitBusinessInquiry()}
+                          >
+                            {inquirySubmitting
+                              ? "문의 접수 중..."
+                              : "관리자에게 문의"}
+                          </Button>
+                        ) : null
+                      }
                     />
                   )}
                 </div>
