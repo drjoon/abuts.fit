@@ -60,6 +60,96 @@ function withBridgeHeaders(extra = {}) {
   return { ...base, ...extra };
 }
 
+function buildMachineCompatibilityMeta({
+  stageKey,
+  ok,
+  reason,
+  targetDiameter,
+  targetDiameterGroup,
+  matchedMachineId,
+  matchedDiameter,
+  matchedDiameterGroup,
+}) {
+  const meta = {
+    stage: stageKey,
+    ok,
+    checkedAt: new Date(),
+  };
+  if (reason) meta.reason = reason;
+  if (Number.isFinite(targetDiameter))
+    meta.targetDiameter = Number(targetDiameter);
+  if (targetDiameterGroup) meta.targetDiameterGroup = targetDiameterGroup;
+  if (matchedMachineId) meta.matchedMachineId = matchedMachineId;
+  if (Number.isFinite(matchedDiameter))
+    meta.matchedDiameter = Number(matchedDiameter);
+  if (matchedDiameterGroup) meta.matchedDiameterGroup = matchedDiameterGroup;
+  return meta;
+}
+
+function attachMachineCompatibilityMeta({ request, meta }) {
+  if (!request || !meta) return;
+  request.caseInfos = request.caseInfos || {};
+  request.caseInfos.machineCompatibility = meta;
+  if (typeof request.markModified === "function") {
+    request.markModified("caseInfos");
+  }
+}
+
+async function ensureMachineCompatibilityOrThrow({ request, stageKey }) {
+  const targetDiameterRaw = resolveTargetDiameter(request);
+  const targetDiameter = Number(targetDiameterRaw);
+  const targetDiameterGroup = inferDiameterGroupFromDiameter(targetDiameter);
+
+  if (!Number.isFinite(targetDiameter) || targetDiameter <= 0) {
+    const reason = "소재 직경 정보를 찾을 수 없습니다.";
+    const meta = buildMachineCompatibilityMeta({
+      stageKey,
+      ok: false,
+      reason,
+      targetDiameter: null,
+      targetDiameterGroup: null,
+    });
+    const err = new Error(reason);
+    err.statusCode = 400;
+    err.machineCompatibilityMeta = meta;
+    throw err;
+  }
+
+  try {
+    const selection = await chooseMachineForCamMachining({
+      request,
+      requireCeil: true,
+    });
+    const meta = buildMachineCompatibilityMeta({
+      stageKey,
+      ok: true,
+      reason: "",
+      targetDiameter,
+      targetDiameterGroup,
+      matchedMachineId: selection?.machineId,
+      matchedDiameter: selection?.diameter,
+      matchedDiameterGroup: selection?.diameterGroup,
+    });
+    attachMachineCompatibilityMeta({ request, meta });
+    return selection;
+  } catch (error) {
+    const reason =
+      error?.message ||
+      `소재 직경 ${targetDiameter}mm 이상을 처리할 수 있는 장비를 찾을 수 없습니다.`;
+    const meta = buildMachineCompatibilityMeta({
+      stageKey,
+      ok: false,
+      reason,
+      targetDiameter,
+      targetDiameterGroup,
+    });
+    const err = new Error(reason);
+    err.statusCode = error?.statusCode || 409;
+    err.machineCompatibilityMeta = meta;
+    throw err;
+  }
+}
+
 function inferDiameterGroupFromDiameter(diameter) {
   if (!Number.isFinite(diameter) || diameter <= 0) return null;
   if (diameter <= 6) return "6";
@@ -83,6 +173,15 @@ function inferDiameterGroupFromRequest(request) {
 
   const diameter = diameterCandidates.length ? diameterCandidates[0] : null;
   return inferDiameterGroupFromDiameter(diameter) || "8";
+}
+
+function resolveTargetDiameter(request) {
+  const schedule = request?.productionSchedule || {};
+  const maxD = Number(request?.caseInfos?.maxDiameter);
+  if (Number.isFinite(maxD) && maxD > 0) return maxD;
+  const scheduled = Number(schedule?.diameter);
+  if (Number.isFinite(scheduled) && scheduled > 0) return scheduled;
+  return 8;
 }
 
 export async function triggerEspritForNc({ request, force = false }) {
@@ -275,9 +374,11 @@ async function screenCamMachineForRequest({ request }) {
 async function chooseMachineForCamMachining({
   request,
   ignoreAllowAssign = false,
+  requireCeil = false,
 }) {
   if (!request) throw new Error("request is required");
   const schedule = request.productionSchedule || {};
+  const targetDiameter = resolveTargetDiameter(request);
   const toDiameterGroup = (d) => {
     if (!Number.isFinite(d) || d <= 0) return null;
     if (d <= 6) return "6";
@@ -286,10 +387,6 @@ async function chooseMachineForCamMachining({
     return "12";
   };
 
-  const targetDiameterRaw = Number(request?.caseInfos?.maxDiameter);
-  const targetDiameter = Number.isFinite(targetDiameterRaw)
-    ? targetDiameterRaw
-    : Number(schedule?.diameter) || 8;
   console.log("[CAM-CHOOSE] input", {
     requestId: request?.requestId,
     maxDiameter: request?.caseInfos?.maxDiameter,
@@ -368,13 +465,34 @@ async function chooseMachineForCamMachining({
     count: ceilCandidates.length,
     list: ceilCandidates.map((c) => ({ m: c.machineId, d: c.availableDia })),
   });
-  // 의뢰 승인(pre-CAM) 시에는 목표 직경 이상 장비가 없으면 억지로 더 작은 직경을 선택하지 않는다.
-  // (ignoreAllowAssign=true인 호출에서는 호환 장비가 없으면 빈 풀을 그대로 둔다)
-  const pool = ceilCandidates.length
+  const hasCeil = ceilCandidates.length > 0;
+  const pool = hasCeil
     ? ceilCandidates
-    : ignoreAllowAssign
+    : requireCeil
       ? []
-      : candidatesWithDia;
+      : ignoreAllowAssign
+        ? []
+        : candidatesWithDia;
+
+  if (!pool.length) {
+    if (!candidatesWithDia.length) {
+      const err = new Error(
+        "배정 가능한 장비(allowRequestAssign) 또는 소재 직경 정보를 찾을 수 없습니다.",
+      );
+      err.statusCode = 409;
+      err.code = "NO_ASSIGNABLE_MACHINE";
+      throw err;
+    }
+
+    const err = new Error(
+      `소재 직경 ${targetDiameter}mm 이상을 처리할 수 있는 장비를 찾을 수 없습니다. 현재 소재 직경: ${candidatesWithDia
+        .map((c) => `${c.machineId}=${c.availableDia}`)
+        .join(", ")}`,
+    );
+    err.statusCode = 409;
+    err.code = "NO_COMPAT_MACHINE";
+    throw err;
+  }
 
   const ranked = (pool || [])
     .map((c) => {
@@ -559,8 +677,8 @@ export async function deleteStageFile(req, res) {
 
 export async function updateReviewStatusByStage(req, res) {
   const session = await mongoose.startSession();
+  const { id } = req.params;
   try {
-    const { id } = req.params;
     const { stage, status, reason, stageOverride } = req.body || {};
 
     if (!Types.ObjectId.isValid(id)) {
@@ -613,13 +731,11 @@ export async function updateReviewStatusByStage(req, res) {
         throw err;
       }
 
-      // b3: 의뢰 승인 시, 조건에 맞는 장비가 없으면 승인 자체를 막는다(상태 변경 없음)
-      if (String(stage || "").trim() === "request" && status === "APPROVED") {
-        const screening = await screenCamMachineForRequest({ request });
-        if (!screening.ok) {
-          // 브리지/장비 상태와 무관하게 의뢰 승인은 진행한다.
-          // (장비 배정/자동 가공은 이후 단계에서 best-effort로 처리)
-        }
+      if (status === "APPROVED" && effectiveStage === "request") {
+        await ensureMachineCompatibilityOrThrow({
+          request,
+          stageKey: "request",
+        });
       }
 
       ensureReviewByStageDefaults(request);
@@ -801,7 +917,10 @@ export async function updateReviewStatusByStage(req, res) {
         }
 
         if (effectiveStage === "cam") {
-          const selected = await chooseMachineForCamMachining({ request });
+          const selected = await ensureMachineCompatibilityOrThrow({
+            request,
+            stageKey: "cam",
+          });
           request.productionSchedule = request.productionSchedule || {};
           request.productionSchedule.assignedMachine = selected.machineId;
           request.productionSchedule.queuePosition = selected.queuePosition;
@@ -914,6 +1033,24 @@ export async function updateReviewStatusByStage(req, res) {
       message: acceptedMessage,
     });
   } catch (error) {
+    if (error?.machineCompatibilityMeta && Types.ObjectId.isValid(id)) {
+      try {
+        await Request.findByIdAndUpdate(
+          id,
+          {
+            $set: {
+              "caseInfos.machineCompatibility": error.machineCompatibilityMeta,
+            },
+          },
+          { timestamps: false },
+        ).catch(() => null);
+      } catch (compatErr) {
+        console.error(
+          "[REVIEW] machineCompatibility meta persist failed",
+          compatErr,
+        );
+      }
+    }
     const statusCode = error.statusCode || 500;
     return res.status(statusCode).json({
       success: false,

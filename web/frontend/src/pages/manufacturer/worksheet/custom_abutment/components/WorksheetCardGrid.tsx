@@ -184,7 +184,8 @@ export const WorksheetCardGrid = ({
         const progress = uploadProgress[request._id];
         const isUploading = uploading[request._id];
         const requestStageLabel = stageLabel;
-        const showCamDiameter = isCamStage || isMachiningStage;
+        const showCamDiameter =
+          camMaterialDiameter != null || !!camMaterialDiameterGroup;
         const requestStageOrder = stageOrder[requestStageLabel] ?? 0;
         const isCompletedForCurrentStage =
           requestStageOrder > currentStageOrder;
@@ -323,6 +324,21 @@ export const WorksheetCardGrid = ({
               className={`${base} bg-slate-50 text-slate-700 border-slate-200`}
             >
               {s || "의뢰"}
+            </Badge>
+          );
+        })();
+
+        const camDiaBadge = (() => {
+          const g = String(camGroup || "").trim();
+          if (!g) return null;
+          const base = "text-[10px] px-1.5 py-0.5 leading-[1.1] border ml-1";
+          return (
+            <Badge
+              variant="outline"
+              className={`${base} bg-indigo-50 text-indigo-700 border-indigo-200`}
+              title="CAM 소재 직경 그룹"
+            >
+              {`CAM ${g}`}
             </Badge>
           );
         })();
@@ -481,6 +497,7 @@ export const WorksheetCardGrid = ({
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     {stageBadge}
+                    {camDiaBadge}
                     {isNewSystemRequest && (
                       <Badge
                         variant="outline"
