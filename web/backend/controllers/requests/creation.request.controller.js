@@ -16,6 +16,7 @@ import {
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import {
   buildStandardStlFileName,
+  uploadS3ToRhinoServer,
   uploadToRhinoServer,
 } from "./creation.helpers.controller.js";
 import { getRequestorOrgId } from "./utils.js";
@@ -971,6 +972,25 @@ export async function createRequestsBulk(req, res) {
           const tNorm0 = Date.now();
           const normalizedCaseInfos =
             await normalizeCaseInfosImplantFields(caseInfos);
+          const fileMeta = raw?.file;
+          if (!fileMeta?.s3Key) {
+            throw new Error("STL 파일 정보(file.s3Key)가 필요합니다.");
+          }
+          if (fileMeta?.s3Key) {
+            const originalName = String(
+              fileMeta.originalName || fileMeta.name || "",
+            ).trim();
+            normalizedCaseInfos.file = {
+              originalName: originalName || "file.stl",
+              fileSize: Number(fileMeta.size) || undefined,
+              fileType:
+                String(fileMeta.mimetype || fileMeta.fileType || "") ||
+                "application/octet-stream",
+              s3Key: fileMeta.s3Key,
+              s3Url: fileMeta.s3Url || undefined,
+              uploadedAt: new Date(),
+            };
+          }
           const normMs = Date.now() - tNorm0;
           const implantManufacturer = String(
             normalizedCaseInfos.implantManufacturer || "",
@@ -1126,6 +1146,29 @@ export async function createRequestsBulk(req, res) {
           const tSave0 = Date.now();
           await newRequest.save();
           const saveMs = Date.now() - tSave0;
+
+          if (normalizedCaseInfos?.file?.s3Key) {
+            const bgFileName = buildStandardStlFileName({
+              requestId: newRequest.requestId,
+              clinicName,
+              patientName,
+              tooth,
+              originalFileName: normalizedCaseInfos.file.originalName,
+            });
+            newRequest.caseInfos.file.filePath = bgFileName;
+            await Request.updateOne(
+              { _id: newRequest._id },
+              { $set: { "caseInfos.file.filePath": bgFileName } },
+            );
+            uploadS3ToRhinoServer(
+              normalizedCaseInfos.file.s3Key,
+              bgFileName,
+            ).catch((err) =>
+              console.error(
+                `[Rhino-Parallel-Upload] Failed for request ${newRequest.requestId}: ${err.message}`,
+              ),
+            );
+          }
 
           const totalMs = Date.now() - iStart;
           perItemStats.push({
