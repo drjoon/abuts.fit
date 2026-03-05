@@ -237,7 +237,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendSerialCode = null;
             FaceHoleProcessFilePath = null;
             ConnectionMachiningProcessFilePath = null;
-            lotNumber = "";
+            lotNumber = "ACR";
             exTab = null;
             ResetDentalAddinMoveModuleState();
         }
@@ -2894,11 +2894,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 return;
             }
-            SetStaticField(mainModuleType, "TurningDepth", AppConfig.TurningDepth);
-            SetStaticField(mainModuleType, "TurningExtend", AppConfig.TurningExtend);
+            // 우선 순위: UserData.NumData -> AppConfig 기본값
+            double[] numData = GetMainModuleField<double[]>(mainModuleType, "NumData");
+            double frontMillDepth = (numData != null && numData.Length > 2 && numData[2] > 0) ? numData[2] : AppConfig.TurningDepth;
+            double turningDepth = (numData != null && numData.Length > 3 && numData[3] > 0) ? numData[3] : AppConfig.TurningDepth;
+            double turningExtend = AppConfig.TurningExtend;
+
+            SetStaticField(mainModuleType, "MillingDepth", frontMillDepth);
+            SetStaticField(mainModuleType, "DownZ", frontMillDepth);
+            SetStaticField(mainModuleType, "TurningDepth", turningDepth);
+            SetStaticField(mainModuleType, "TurningExtend", turningExtend);
             SetStaticField(mainModuleType, "Chamfer", AppConfig.ExitAngle);
             SetStaticField(mainModuleType, "AngleNumber", AppConfig.ExitAngle);
-            AppLogger.Log($"DentalAddin: Turning 파라미터 설정 - Depth:{AppConfig.TurningDepth}, Extend:{AppConfig.TurningExtend}, Angle:{AppConfig.ExitAngle}");
+            AppLogger.Log($"DentalAddin: Turning/Milling 파라미터 설정 - FrontDepth:{frontMillDepth}, TurningDepth:{turningDepth}, Extend:{turningExtend}, Angle:{AppConfig.ExitAngle}");
         }
         private static Type ResolveMoveModuleType(Type mainModuleType)
         {
