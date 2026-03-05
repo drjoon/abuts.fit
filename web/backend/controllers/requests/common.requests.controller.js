@@ -198,6 +198,8 @@ export async function getAllRequests(req, res) {
       "caseInfos.implantType",
       "caseInfos.maxDiameter",
       "caseInfos.connectionDiameter",
+      "productionSchedule.scheduledShipPickup",
+      "timeline.estimatedShipYmd",
       "requestor",
     ].join(" ");
 
