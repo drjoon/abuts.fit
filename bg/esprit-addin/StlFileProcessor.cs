@@ -955,6 +955,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         }
         private static double? TryComputeStlBoundingTopZ(Document document)
         {
+            double? result = null;
+            List<string> createdFeatureKeys = null;
+            SelectionSet selectionSet = null;
             try
             {
                 if (document?.GraphicsCollection == null || document?.FeatureRecognition == null)
@@ -962,7 +965,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return null;
                 }
                 const string selectionName = "StlBoundingTemp";
-                SelectionSet selectionSet;
                 try { selectionSet = document.SelectionSets.Add(selectionName); }
                 catch { selectionSet = document.SelectionSets[selectionName]; }
                 if (selectionSet == null) return null;
@@ -998,6 +1000,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 document.FeatureRecognition.CreatePartProfileShadow(selectionSet, plane, espGraphicObjectReturnType.espFeatureChains);
                 document.Refresh();
                 FeatureChain created = null;
+                createdFeatureKeys = new List<string>();
                 try
                 {
                     foreach (FeatureChain fc in document.FeatureChains)
@@ -1005,8 +1008,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         if (fc?.Key == null) continue;
                         if (!beforeKeys.Contains(fc.Key))
                         {
-                            created = fc;
-                            break;
+                            createdFeatureKeys.Add(fc.Key);
+                            if (created == null)
+                            {
+                                created = fc;
+                            }
                         }
                     }
                 }
@@ -1026,13 +1032,46 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     if (double.IsNaN(z) || double.IsInfinity(z)) continue;
                     if (z > maxZ) maxZ = z;
                 }
-                if (double.IsNegativeInfinity(maxZ)) return null;
-                return maxZ;
+                if (!double.IsNegativeInfinity(maxZ))
+                {
+                    result = maxZ;
+                }
             }
             catch (Exception ex)
             {
                 AppLogger.Log($"StlFileProcessor: STL bounding topZ 계산 실패 - {ex.GetType().Name}:{ex.Message}");
-                return null;
+            }
+            finally
+            {
+                if (selectionSet != null)
+                {
+                    try { selectionSet.RemoveAll(); } catch { }
+                }
+                CleanupTemporaryFeatureChains(document, createdFeatureKeys, "Stl bounding");
+            }
+            return result;
+        }
+
+        private static void CleanupTemporaryFeatureChains(Document document, List<string> keys, string context)
+        {
+            if (document?.FeatureChains == null || keys == null || keys.Count == 0)
+            {
+                return;
+            }
+            foreach (string key in keys)
+            {
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    continue;
+                }
+                try
+                {
+                    document.FeatureChains.Remove(key);
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Log($"{context}: 임시 FeatureChain 제거 실패 - Key:{key}, {ex.GetType().Name}:{ex.Message}");
+                }
             }
         }
         private void TryApplyCompositeSplitByFinishLine(Type mainModuleType, double? stlTopZ, double? finishLineTopZ)
