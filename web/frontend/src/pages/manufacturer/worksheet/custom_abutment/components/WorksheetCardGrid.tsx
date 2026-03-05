@@ -125,7 +125,12 @@ export const WorksheetCardGrid = ({
         const isDeletingNc = !!deletingNc[request._id];
         const lotPart = String(request.lotNumber?.part || "").trim();
         const lotPartDisplay = lotPart.replace(/^CA(P)?/i, "").trim();
-        const camMaterialDiameter = request.productionSchedule?.diameter;
+        const camMaterialDiameter = (() => {
+          const raw = (request.productionSchedule || {}).diameter;
+          const n = Number(raw);
+          if (Number.isFinite(n) && n > 0) return n;
+          return null;
+        })();
         const camMaterialDiameterGroup =
           request.productionSchedule?.diameterGroup;
         const camGroup = (() => {
@@ -303,12 +308,7 @@ export const WorksheetCardGrid = ({
           caseInfos.maxDiameter > 0
             ? caseInfos.maxDiameter
             : null;
-        const camDiameter =
-          typeof camMaterialDiameter === "number" &&
-          Number.isFinite(camMaterialDiameter) &&
-          camMaterialDiameter > 0
-            ? camMaterialDiameter
-            : null;
+        const camDiameter = camMaterialDiameter;
 
         const sp = request.shippingPriority;
         const urgency = String(sp?.level || "").trim();
