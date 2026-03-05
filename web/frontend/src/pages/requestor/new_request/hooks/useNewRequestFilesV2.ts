@@ -19,7 +19,9 @@ import { request } from "@/shared/api/apiClient";
 import { removeUploadedFile } from "../utils/localFileStorage";
 import { getLocalDraft, getFileKey } from "../utils/localDraftStorage";
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || "/api";
+const API_BASE_URL =
+  (import.meta.env.DEV && (import.meta.env.VITE_API_BASE_URL as string)) ||
+  "/api";
 
 type UseNewRequestFilesV2Params = {
   draftId: string | null;

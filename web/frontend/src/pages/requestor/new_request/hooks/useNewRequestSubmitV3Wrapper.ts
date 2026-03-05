@@ -5,7 +5,9 @@ import { getFileKey, clearLocalDraft } from "../utils/localDraftStorage";
 import { type CaseInfos } from "./newRequestTypes";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || "/api";
+const API_BASE_URL =
+  (import.meta.env.DEV && (import.meta.env.VITE_API_BASE_URL as string)) ||
+  "/api";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type UseNewRequestSubmitV3WrapperParams = {

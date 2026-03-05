@@ -6,7 +6,9 @@ import { createParseLog } from "@/shared/services/parseLogService";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 
 const NEW_REQUEST_DRAFT_ID_STORAGE_KEY = "abutsfit:new-request-draft-id:v1";
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || "/api";
+const API_BASE_URL =
+  (import.meta.env.DEV && (import.meta.env.VITE_API_BASE_URL as string)) ||
+  "/api";
 
 type UseNewRequestSubmitV2Params = {
   existingRequestId?: string;

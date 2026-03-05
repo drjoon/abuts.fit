@@ -12,7 +12,8 @@ const DRAFT_META_KEY_PREFIX = "abutsfit:new-request-draft-meta:v1:";
 // 로컬을 단일 출처로 사용: 캐시 TTL을 넉넉히 7일로 확장
 const DRAFT_META_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || "/api";
+const API_BASE_URL =
+  (import.meta.env.DEV && import.meta.env.VITE_API_BASE_URL) || "/api";
 
 /**
  * Draft 메타 캐시 관리 및 Draft API 통신 훅
