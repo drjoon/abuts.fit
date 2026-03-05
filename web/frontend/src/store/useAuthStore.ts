@@ -13,6 +13,7 @@ export interface User {
   email: string;
   role: UserRole;
   avatar?: string;
+  profileImage?: string;
   companyName?: string;
   referralCode?: string;
   approvedAt?: string | null;
@@ -36,6 +37,8 @@ const normalizeApiUser = (u: any): User | null => {
     name: String(u.name || ""),
     email: String(u.email || ""),
     role: u.role as UserRole,
+    profileImage:
+      typeof u.profileImage === "string" ? u.profileImage : undefined,
     companyName: String(u.organization || u.companyName || ""),
     referralCode: String(u.referralCode || ""),
     approvedAt: u.approvedAt ? String(u.approvedAt) : null,
@@ -179,6 +182,8 @@ export const useAuthStore = create<AuthState>((set, get) => {
           name: String(u.name || ""),
           email: String(u.email || ""),
           role: u.role as UserRole,
+          profileImage:
+            typeof u.profileImage === "string" ? u.profileImage : undefined,
           companyName: String(u.organization || u.companyName || ""),
           referralCode: String(u.referralCode || ""),
           approvedAt: u.approvedAt ? String(u.approvedAt) : null,
