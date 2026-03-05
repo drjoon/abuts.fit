@@ -324,6 +324,67 @@ function toKstYmd(d) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+async function createSalesmen({
+  count = 10,
+  rootCount = 3,
+  password = "Abc!1234",
+  now = new Date(),
+  allowUnreferred = true,
+} = {}) {
+  const salesmen = [];
+  const salesmanRoots = [];
+
+  for (let i = 1; i <= count; i += 1) {
+    const email = `s${String(i).padStart(3, "0")}@gmail.com`;
+    const referralCode = randomReferralCode(4);
+    let referredByUserId = null;
+    let referralGroupLeaderId = null;
+    const isRoot = i <= rootCount;
+    const isUnreferred =
+      allowUnreferred && !isRoot && i !== 4 && Math.random() < 0.2;
+
+    if (!isRoot && !isUnreferred) {
+      const root = salesmanRoots.length ? pick(salesmanRoots) : null;
+      const candidates = salesmen.filter(
+        (s) => String(s.leaderId) === String(root?.id),
+      );
+      const pool = candidates.length ? candidates : salesmen;
+      const parent = pool.length ? pick(pool) : null;
+      referredByUserId = parent?.id || null;
+      referralGroupLeaderId =
+        root?.id || parent?.leaderId || parent?.id || null;
+    }
+
+    const salesman = await User.create({
+      name: `데모 영업자${i}`,
+      email,
+      password,
+      role: "salesman",
+      referralCode,
+      referredByUserId,
+      referralGroupLeaderId,
+      approvedAt: now,
+      active: true,
+    });
+
+    const leaderId = referralGroupLeaderId || salesman._id;
+    const saved = {
+      id: salesman._id,
+      email,
+      leaderId,
+      parentId: referredByUserId,
+    };
+    salesmen.push(saved);
+    if (isRoot) salesmanRoots.push({ id: salesman._id, email });
+  }
+
+  return { salesmen, salesmanRoots };
+}
+
+export async function seedSalesmenOnly(options = {}) {
+  return createSalesmen(options);
+}
+
 export async function seedBulkUsersAndData() {
   const BULK_NOW = new Date();
   const REQUESTOR_PW = "Abc!1234";
@@ -352,10 +413,14 @@ export async function seedBulkUsersAndData() {
     "r004@gmail.com",
   ];
 
-  const requestors = [];
-  const salesmen = [];
-  const salesmanRoots = [];
   const ROOT_COUNT = 3;
+  const requestors = [];
+  const { salesmen, salesmanRoots } = await createSalesmen({
+    count: 10,
+    rootCount: ROOT_COUNT,
+    password: SALESMAN_PW,
+    now: BULK_NOW,
+  });
 
   const creditLedgerDocs = [];
   const requestDocs = [];
@@ -363,45 +428,6 @@ export async function seedBulkUsersAndData() {
   const salesmanLedgerDocs = [];
   const salesmanEarnTotals = new Map();
   const generatedRequestIds = new Set();
-
-  const SALESMAN_COUNT = 10;
-  for (let i = 1; i <= SALESMAN_COUNT; i += 1) {
-    const email = `s${String(i).padStart(3, "0")}@gmail.com`;
-    const referralCode = randomReferralCode(4);
-    let referredByUserId = null;
-    let referralGroupLeaderId = null;
-    const isRoot = i <= ROOT_COUNT;
-    const isUnreferred = !isRoot && i !== 4 && Math.random() < 0.2;
-    if (!isRoot && !isUnreferred) {
-      const root = salesmanRoots.length ? pick(salesmanRoots) : null;
-      const candidates = salesmen.filter(
-        (s) => String(s.leaderId) === String(root?.id),
-      );
-      const parent = candidates.length ? pick(candidates) : pick(salesmen);
-      referredByUserId = parent?.id || null;
-      referralGroupLeaderId =
-        root?.id || parent?.leaderId || parent?.id || null;
-    }
-    const salesman = await User.create({
-      name: `데모 영업자${i}`,
-      email,
-      password: SALESMAN_PW,
-      role: "salesman",
-      referralCode,
-      referredByUserId,
-      referralGroupLeaderId,
-      approvedAt: BULK_NOW,
-      active: true,
-    });
-    const leaderId = referralGroupLeaderId || salesman._id;
-    salesmen.push({
-      id: salesman._id,
-      email,
-      leaderId,
-      parentId: referredByUserId,
-    });
-    if (isRoot) salesmanRoots.push({ id: salesman._id, email });
-  }
 
   for (let i = 1; i <= REQUESTOR_COUNT; i += 1) {
     const email = `r${String(i).padStart(3, "0")}@gmail.com`;
