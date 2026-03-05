@@ -37,6 +37,40 @@ interface ShippingPolicy {
 
 const STORAGE_KEY_PREFIX = "abutsfit:shipping-policy:v1:";
 
+type DiameterKey = "d6" | "d8" | "d10" | "d12";
+
+type LeadTimeEntry = {
+  minBusinessDays: number;
+  maxBusinessDays: number;
+};
+
+type ManufacturerLeadTimeData = {
+  leadTimes: Record<DiameterKey, LeadTimeEntry>;
+  weeklyBatchDays: string[];
+};
+
+const DEFAULT_MANUFACTURER_LEAD_TIMES: Record<DiameterKey, LeadTimeEntry> = {
+  d6: { minBusinessDays: 1, maxBusinessDays: 2 },
+  d8: { minBusinessDays: 1, maxBusinessDays: 2 },
+  d10: { minBusinessDays: 4, maxBusinessDays: 7 },
+  d12: { minBusinessDays: 4, maxBusinessDays: 7 },
+};
+
+const DIAMETER_LABELS: Record<DiameterKey, string> = {
+  d6: "직경 6mm",
+  d8: "직경 8mm",
+  d10: "직경 10mm",
+  d12: "직경 12mm",
+};
+
+const WEEKDAY_LABELS: Record<string, string> = {
+  mon: "월",
+  tue: "화",
+  wed: "수",
+  thu: "목",
+  fri: "금",
+};
+
 type ShippingItemApi = {
   id: string;
   mongoId?: string;
@@ -73,6 +107,10 @@ export const RequestorBulkShippingBannerCard = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEtaReady, setIsEtaReady] = useState(false);
   const etaWaitStartRef = useRef<number | null>(null);
+  const [leadTimeData, setLeadTimeData] =
+    useState<ManufacturerLeadTimeData | null>(null);
+  const [isLeadTimeLoading, setIsLeadTimeLoading] = useState(false);
+  const [isLeadTimeModalOpen, setIsLeadTimeModalOpen] = useState(false);
 
   const [originalBulkEtaById, setOriginalBulkEtaById] = useState<
     Record<string, string | null>
@@ -226,15 +264,8 @@ export const RequestorBulkShippingBannerCard = ({
       return "제조사 리드타임 기준으로 발송일이 계산됩니다.";
     }
 
-    const dayLabels: Record<string, string> = {
-      mon: "월",
-      tue: "화",
-      wed: "수",
-      thu: "목",
-      fri: "금",
-    };
     const days = (policy.weeklyBatchDays || [])
-      .map((d) => dayLabels[d])
+      .map((d) => WEEKDAY_LABELS[d])
       .join(", ");
 
     if (days) {
@@ -247,6 +278,13 @@ export const RequestorBulkShippingBannerCard = ({
   const handleOpenModal = () => {
     setIsModalOpen(true);
     onOpenBulkModal();
+  };
+
+  const handleLeadTimeButtonClick = () => {
+    setIsLeadTimeModalOpen(true);
+    if (!leadTimeData && !isLeadTimeLoading) {
+      void handleFetchLeadTimes();
+    }
   };
 
   const canToggleMode = (status?: string) => {
@@ -497,6 +535,64 @@ export const RequestorBulkShippingBannerCard = ({
     // 토글은 PATCH 1회로 끝내서 체감 속도를 극대화
   };
 
+  const normalizeLeadTimes = (
+    raw?: Record<string, Partial<LeadTimeEntry>>,
+  ): Record<DiameterKey, LeadTimeEntry> => {
+    const next = { ...DEFAULT_MANUFACTURER_LEAD_TIMES };
+    (Object.keys(next) as DiameterKey[]).forEach((key) => {
+      const entry = raw?.[key];
+      if (!entry) return;
+      const min = Number.isFinite(entry.minBusinessDays)
+        ? Math.max(0, Math.floor(Number(entry.minBusinessDays)))
+        : next[key].minBusinessDays;
+      const max = Number.isFinite(entry.maxBusinessDays)
+        ? Math.max(0, Math.floor(Number(entry.maxBusinessDays)))
+        : next[key].maxBusinessDays;
+      next[key] = {
+        minBusinessDays: Math.min(min, max),
+        maxBusinessDays: Math.max(min, max),
+      };
+    });
+    return next;
+  };
+
+  const formatWeeklyBatchDays = (days: string[]) =>
+    days
+      .map((d) => WEEKDAY_LABELS[d] || d)
+      .filter(Boolean)
+      .join(", ");
+
+  const handleFetchLeadTimes = async () => {
+    if (isLeadTimeLoading) return;
+    setIsLeadTimeLoading(true);
+    try {
+      const res = await apiFetch<any>({
+        path: "/api/organizations/manufacturer-lead-times",
+        method: "GET",
+      });
+      if (!res.ok) {
+        throw new Error(res.data?.message || "조회에 실패했습니다.");
+      }
+      const body: any = res.data || {};
+      const data = body.data || body;
+      setLeadTimeData({
+        leadTimes: normalizeLeadTimes(data?.leadTimes),
+        weeklyBatchDays: Array.isArray(data?.weeklyBatchDays)
+          ? (data.weeklyBatchDays as string[])
+          : [],
+      });
+      toast({ title: "제조사 리드타임을 불러왔습니다." });
+    } catch (error: any) {
+      toast({
+        title: "리드타임 조회 실패",
+        description: error?.message || "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLeadTimeLoading(false);
+    }
+  };
+
   return (
     <>
       <Card className="app-glass-card app-glass-card--lg flex-none">
@@ -524,7 +620,7 @@ export const RequestorBulkShippingBannerCard = ({
             {getCardMessage()}
           </CardDescription>
         </CardHeader>
-        <CardContent className="text-right pt-2">
+        <CardContent className="flex flex-col items-end gap-2 pt-2 text-right">
           <Button
             variant="default"
             className="whitespace-nowrap px-4 py-2 h-11 bg-primary text-white font-semibold shadow-lg"
@@ -532,18 +628,28 @@ export const RequestorBulkShippingBannerCard = ({
           >
             배송 대기 내역
           </Button>
+          <Button
+            variant="outline"
+            className="h-10 whitespace-nowrap px-4 font-semibold"
+            onClick={handleLeadTimeButtonClick}
+            disabled={isLeadTimeLoading}
+          >
+            {isLeadTimeLoading ? "조회 중..." : "제조사 리드타임 조회"}
+          </Button>
         </CardContent>
       </Card>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-bold">
-              배송 대기 현황
-            </DialogTitle>
-            <CardDescription className="text-xs text-muted-foreground">
-              제조사 리드타임 기준 발송일이 계산됩니다.
-            </CardDescription>
+            <div className="flex flex-col gap-2">
+              <DialogTitle className="text-2xl font-bold">
+                배송 대기 현황
+              </DialogTitle>
+              <CardDescription className="text-xs text-muted-foreground">
+                제조사 리드타임 기준 발송일이 계산됩니다.
+              </CardDescription>
+            </div>
           </DialogHeader>
           {!isEtaReady ? (
             <div className="py-6 space-y-4">
@@ -571,56 +677,101 @@ export const RequestorBulkShippingBannerCard = ({
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="app-glass-card app-glass-card--lg p-4 space-y-3 max-h-96 overflow-y-auto">
-                {bulkItems.length === 0 ? (
-                  <div className="text-sm text-slate-600 text-center py-8">
-                    배송 대기 중인 제품이 없습니다.
-                  </div>
-                ) : (
-                  bulkGroups.map((group) => (
-                    <div
-                      key={group.etaKey}
-                      className="app-surface app-surface--panel"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-xs text-slate-700">
-                          <span className="font-medium">발송 예정일:</span>{" "}
-                          <span className="text-foreground font-medium">
-                            {group.etaKey === "-"
-                              ? "-"
-                              : formatEta(group.etaKey)}
-                          </span>
-                          <span className="ml-2 text-slate-600">
-                            ({group.items.length}개)
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        {group.items.map((item) => (
-                          <div
-                            key={item.id}
-                            className="app-surface app-surface--item p-2"
-                          >
-                            <p className="text-sm font-medium text-foreground truncate">
-                              {item.title || item.id}
-                            </p>
-                            <p className="text-xs text-slate-600 truncate">
-                              {item.clinic || ""}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {item.patient || "-"} / {item.tooth || "-"} /{" "}
-                              {item.diameter || "-"}
-                            </p>
-                          </div>
-                        ))}
+              {bulkItems.length === 0 ? (
+                <div className="text-sm text-slate-600 text-center py-8">
+                  배송 대기 중인 제품이 없습니다.
+                </div>
+              ) : (
+                bulkGroups.map((group) => (
+                  <div
+                    key={group.etaKey}
+                    className="app-surface app-surface--panel"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs text-slate-700">
+                        <span className="font-medium">발송 예정일:</span>{" "}
+                        <span className="text-foreground font-medium">
+                          {group.etaKey === "-" ? "-" : formatEta(group.etaKey)}
+                        </span>
+                        <span className="ml-2 text-slate-600">
+                          ({group.items.length}개)
+                        </span>
                       </div>
                     </div>
-                  ))
-                )}
-              </div>
+
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {group.items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="app-surface app-surface--item p-2"
+                        >
+                          <p className="text-sm font-medium text-foreground truncate">
+                            {item.title || item.id}
+                          </p>
+                          <p className="text-xs text-slate-600 truncate">
+                            {item.clinic || ""}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {item.patient || "-"} / {item.tooth || "-"} /{" "}
+                            {item.diameter || "-"}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isLeadTimeModalOpen} onOpenChange={setIsLeadTimeModalOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <div>
+              <DialogTitle className="text-2xl font-bold">
+                제조사 배송 리드타임
+              </DialogTitle>
+              <CardDescription className="text-xs text-muted-foreground">
+                직경별 예상 리드타임과 정기 발송 요일을 확인하세요.
+              </CardDescription>
+            </div>
+          </DialogHeader>
+          <div className="space-y-4">
+            {leadTimeData ? (
+              <>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {(Object.keys(DIAMETER_LABELS) as DiameterKey[]).map(
+                    (key) => {
+                      const entry = leadTimeData.leadTimes[key];
+                      return (
+                        <div
+                          key={key}
+                          className="rounded-2xl border border-slate-200 bg-white/80 p-4 text-center shadow-sm"
+                        >
+                          <p className="text-[12px] font-semibold text-slate-700">
+                            {DIAMETER_LABELS[key]}
+                          </p>
+                          <p className="mt-2 text-base font-bold text-slate-900">
+                            {entry
+                              ? `${entry.minBusinessDays}~${entry.maxBusinessDays} 영업일`
+                              : "-"}
+                          </p>
+                        </div>
+                      );
+                    },
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="space-y-3">
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </>
