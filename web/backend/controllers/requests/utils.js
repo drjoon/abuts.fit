@@ -307,6 +307,42 @@ export async function normalizeCaseInfosImplantFields(caseInfos) {
   };
 }
 
+function inferDiameterGroupFromDiameter(diameter) {
+  const d = Number(diameter);
+  if (!Number.isFinite(d) || d <= 0) return null;
+  if (d <= 6) return "6";
+  if (d <= 8) return "8";
+  if (d <= 10) return "10";
+  return "12";
+}
+
+function normalizeProductionScheduleDiameter(obj) {
+  if (!obj) return obj;
+  const schedule =
+    typeof obj.productionSchedule === "object" && obj.productionSchedule
+      ? { ...obj.productionSchedule }
+      : {};
+  const ci = obj.caseInfos || {};
+  const candidates = [schedule.diameter, ci.camDiameter, ci.maxDiameter]
+    .map((v) => Number(v))
+    .filter((v) => Number.isFinite(v) && v > 0);
+
+  const rawDiameter = candidates.length ? candidates[0] : null;
+  const group = inferDiameterGroupFromDiameter(rawDiameter) || "8";
+  const groupToNumber = (g) => {
+    if (g === "6") return 6;
+    if (g === "8") return 8;
+    if (g === "10") return 10;
+    return 12;
+  };
+  const normalizedDiameter = groupToNumber(group);
+
+  schedule.diameter = normalizedDiameter;
+  schedule.diameterGroup = group;
+  obj.productionSchedule = schedule;
+  return obj;
+}
+
 export async function normalizeRequestForResponse(requestDoc) {
   if (!requestDoc) return requestDoc;
   const obj =
@@ -315,6 +351,7 @@ export async function normalizeRequestForResponse(requestDoc) {
       : requestDoc;
   const ci = obj.caseInfos || {};
   obj.caseInfos = await normalizeCaseInfosImplantFields(ci);
+  normalizeProductionScheduleDiameter(obj);
   if (obj?.lotNumber && typeof obj.lotNumber === "object") {
     const finalRaw = obj.lotNumber.final;
     if (typeof finalRaw === "string") {

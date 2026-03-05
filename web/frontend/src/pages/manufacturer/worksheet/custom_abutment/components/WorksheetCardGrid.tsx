@@ -127,14 +127,12 @@ export const WorksheetCardGrid = ({
         const lotPart = String(request.lotNumber?.part || "").trim();
         const lotPartDisplay = lotPart.replace(/^CA(P)?/i, "").trim();
         const camMaterialDiameter = (() => {
-          const sched = (request.productionSchedule || {}) as any;
-          const raw = sched.diameter;
-          const n = Number(raw);
-          if (Number.isFinite(n) && n > 0) return n;
-          const g = String(sched.diameterGroup || "").trim();
-          if (g === "6" || g === "8" || g === "10" || g === "12") {
-            return Number(g);
-          }
+          const sched = request.productionSchedule || {};
+          const raw = Number(sched.diameter);
+          if (Number.isFinite(raw) && raw > 0) return raw;
+          const ci = (request.caseInfos || {}) as any;
+          const camDia = Number(ci?.camDiameter);
+          if (Number.isFinite(camDia) && camDia > 0) return camDia;
           return null;
         })();
         if (debugLog) {
@@ -161,7 +159,7 @@ export const WorksheetCardGrid = ({
                   dbg,
                 );
               } else {
-                console.debug(
+                console.log(
                   "[FRONT] CAM card: camMaterialDiameter resolved",
                   dbg,
                 );
@@ -169,23 +167,10 @@ export const WorksheetCardGrid = ({
             }
           } catch {}
         }
-        const camMaterialDiameterGroup =
-          request.productionSchedule?.diameterGroup;
-        const camGroup = (() => {
-          const g = String(camMaterialDiameterGroup || "").trim();
-          if (g) return g;
-          const d = Number(camMaterialDiameter);
-          if (!Number.isFinite(d) || d <= 0) return "";
-          if (d <= 6) return "6";
-          if (d <= 8) return "8";
-          if (d <= 10) return "10";
-          return "12";
-        })();
         const progress = uploadProgress[request._id];
         const isUploading = uploading[request._id];
         const requestStageLabel = stageLabel;
-        const showCamDiameter =
-          camMaterialDiameter != null || !!camMaterialDiameterGroup;
+        const showCamDiameter = camMaterialDiameter != null;
         const requestStageOrder = stageOrder[requestStageLabel] ?? 0;
         const isCompletedForCurrentStage =
           requestStageOrder > currentStageOrder;
@@ -324,21 +309,6 @@ export const WorksheetCardGrid = ({
               className={`${base} bg-slate-50 text-slate-700 border-slate-200`}
             >
               {s || "의뢰"}
-            </Badge>
-          );
-        })();
-
-        const camDiaBadge = (() => {
-          const g = String(camGroup || "").trim();
-          if (!g) return null;
-          const base = "text-[10px] px-1.5 py-0.5 leading-[1.1] border ml-1";
-          return (
-            <Badge
-              variant="outline"
-              className={`${base} bg-indigo-50 text-indigo-700 border-indigo-200`}
-              title="CAM 소재 직경 그룹"
-            >
-              {`CAM ${g}`}
             </Badge>
           );
         })();
@@ -497,7 +467,6 @@ export const WorksheetCardGrid = ({
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     {stageBadge}
-                    {camDiaBadge}
                     {isNewSystemRequest && (
                       <Badge
                         variant="outline"
