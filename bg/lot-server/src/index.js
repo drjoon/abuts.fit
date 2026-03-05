@@ -287,6 +287,10 @@ async function handleNewImage(filePath) {
 
 async function main() {
   await enforceIpAllowlist();
+  // Ensure base watch directory exists to avoid early exit on some environments
+  try {
+    await ensureDir(WATCH_DIR);
+  } catch {}
   await ensureDir(PROCESSED_DIR);
   await ensureDir(FAILED_DIR);
 
