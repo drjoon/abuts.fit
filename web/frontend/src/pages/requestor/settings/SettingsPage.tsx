@@ -102,16 +102,13 @@ export const RequestorSettingsPage = () => {
         icon: Building2,
         content: <BusinessTab userData={user} />,
       },
-    ];
-
-    if (canManageStaff) {
-      base.push({
+      {
         key: "staff",
         label: "임직원",
         icon: Users,
         content: <StaffTab userData={user} />,
-      });
-    }
+      },
+    ];
 
     base.push(
       {

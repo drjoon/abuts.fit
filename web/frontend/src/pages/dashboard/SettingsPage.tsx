@@ -19,5 +19,9 @@ export const SettingsPage = () => {
     return <SalesmanSettingsPage />;
   }
 
+  if (user?.role === "requestor") {
+    return <RequestorSettingsPage />;
+  }
+
   return <RequestorSettingsPage />;
 };
