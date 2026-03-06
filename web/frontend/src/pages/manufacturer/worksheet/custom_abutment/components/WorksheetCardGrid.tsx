@@ -124,11 +124,14 @@ export const WorksheetCardGrid = ({
 
         const hasNcFile = !!caseInfos.ncFile?.s3Key;
         const isDeletingNc = !!deletingNc[request._id];
-        const lotPart = String(request.lotNumber?.part || "").trim();
+        const lotCodeSource = String(
+          request.lotNumber?.final || request.lotNumber?.part || "",
+        ).trim();
         const rawLotSuffix = (() => {
-          const match = lotPart.match(/[A-Z]{3}$/i);
+          const match = lotCodeSource.match(/[A-Z]{3}$/i);
           return match ? match[0].toUpperCase() : "";
         })();
+        const lotPart = String(request.lotNumber?.part || "").trim();
         const lotPartDisplay = lotPart.replace(/^CA(P)?/i, "").trim();
         const camMaterialDiameter = (() => {
           const sched = request.productionSchedule || {};
@@ -471,14 +474,16 @@ export const WorksheetCardGrid = ({
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     {stageBadge}
-                    {rawLotSuffix && (
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] px-2 py-0.5 font-bold uppercase tracking-[0.08em] bg-slate-900/80 text-white border-transparent"
-                      >
-                        LOT {rawLotSuffix}
-                      </Badge>
-                    )}
+                    {rawLotSuffix &&
+                      (stageForRollback === "CAM" ||
+                        stageOrder[stageForRollback] >= stageOrder["CAM"]) && (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] px-2 py-0.5 font-bold uppercase tracking-[0.08em] bg-slate-900/80 text-white border-transparent"
+                        >
+                          LOT {rawLotSuffix}
+                        </Badge>
+                      )}
                     {isNewSystemRequest && (
                       <Badge
                         variant="outline"
