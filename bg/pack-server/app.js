@@ -37,10 +37,24 @@ const ALLOW_IPS = String(
   .map((s) => s.trim())
   .filter(Boolean);
 
+const LOG_FILE = path.resolve(__dirname, "logs.txt");
+const logStream = fs.createWriteStream(LOG_FILE, { flags: "w" });
+logStream.on("error", (err) => {
+  console.error("[pack-server] log stream error", err);
+});
+
 const log = (message, meta) => {
   const stamp = new Date().toISOString();
   const suffix = meta ? ` ${JSON.stringify(meta)}` : "";
-  console.log(`[pack-server] ${stamp} ${message}${suffix}`);
+  const line = `[pack-server] ${stamp} ${message}${suffix}`;
+  console.log(line);
+  if (logStream.writable) {
+    logStream.write(`${line}\n`, (err) => {
+      if (err) {
+        console.error("[pack-server] failed to write log line", err);
+      }
+    });
+  }
 };
 
 const jsonResponse = (res, statusCode, body) => {
@@ -362,6 +376,11 @@ const writeZplToTemp = async (zpl) => {
   return tempPath;
 };
 
+const toPsSingleQuoted = (value) => {
+  const raw = String(value ?? "");
+  return `'${raw.replace(/'/g, "''")}'`;
+};
+
 const printRawZpl = ({ filePath, printer, title, copies, paperProfile }) =>
   new Promise((resolve, reject) => {
     if (isWindows) {
@@ -370,10 +389,14 @@ const printRawZpl = ({ filePath, printer, title, copies, paperProfile }) =>
         return reject(new Error("Printer is required"));
       }
 
+      const escapedPrinter = toPsSingleQuoted(targetPrinter);
+      const escapedFilePath = toPsSingleQuoted(filePath);
+      const escapedJobTitle = toPsSingleQuoted(String(title || "Pack Label"));
+
       const psScript = [
-        "$printerName = $args[0]",
-        "$filePath = $args[1]",
-        '$jobTitle = if ($args.Length -ge 3 -and $args[2]) { $args[2] } else { "Pack Label" }',
+        `$printerName = ${escapedPrinter}`,
+        `$filePath = ${escapedFilePath}`,
+        `$jobTitle = ${escapedJobTitle}`,
         'Add-Type -TypeDefinition @"',
         "using System;",
         "using System.Runtime.InteropServices;",
@@ -427,8 +450,8 @@ const printRawZpl = ({ filePath, printer, title, copies, paperProfile }) =>
         "  if ($ptr -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::FreeHGlobal($ptr) }",
         "  if ($handle -ne [IntPtr]::Zero) { [void][RawPrinterHelper]::ClosePrinter($handle) }",
         "}",
-        'Write-Output "RAW print sent"',
-      ].join("; ");
+        "if (-not [RawPrinterHelper]::ClosePrinter($handle)) { }",
+      ].join("\r\n");
 
       const psArgs = [
         "-NoProfile",
@@ -436,9 +459,6 @@ const printRawZpl = ({ filePath, printer, title, copies, paperProfile }) =>
         "Bypass",
         "-Command",
         psScript,
-        targetPrinter,
-        filePath,
-        String(title || "Pack Label"),
       ];
 
       log("printRawZpl", {

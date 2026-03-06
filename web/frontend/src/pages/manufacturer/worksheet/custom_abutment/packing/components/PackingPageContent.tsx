@@ -5,7 +5,10 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
-import { type ManufacturerRequest, deriveStageForFilter } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import {
+  type ManufacturerRequest,
+  deriveStageForFilter,
+} from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import { WorksheetCardGrid } from "../../components/WorksheetCardGrid";
 import { PreviewModal } from "../../components/PreviewModal";
 import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers";
@@ -22,7 +25,11 @@ import {
 } from "../utils/packLabelRenderer";
 import { Settings } from "lucide-react";
 
-export const PackingPageContent = ({ showQueueBar = true }: { showQueueBar?: boolean }) => {
+export const PackingPageContent = ({
+  showQueueBar = true,
+}: {
+  showQueueBar?: boolean;
+}) => {
   const { user, token } = useAuthStore();
   const { worksheetSearch, showCompleted } = useOutletContext<{
     worksheetSearch: string;
@@ -45,9 +52,13 @@ export const PackingPageContent = ({ showQueueBar = true }: { showQueueBar?: boo
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmTitle, setConfirmTitle] = useState("");
   const [confirmDescription, setConfirmDescription] = useState<ReactNode>("");
-  const [confirmAction, setConfirmAction] = useState<(() => void | Promise<void>) | null>(null);
+  const [confirmAction, setConfirmAction] = useState<
+    (() => void | Promise<void>) | null
+  >(null);
   const [deletingNc, setDeletingNc] = useState<Record<string, boolean>>({});
-  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
+    {},
+  );
   const [isPrintingPackingLabels, setIsPrintingPackingLabels] = useState(false);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
@@ -170,14 +181,23 @@ export const PackingPageContent = ({ showQueueBar = true }: { showQueueBar?: boo
 
   const handleUploadByStage = useCallback(
     (req: ManufacturerRequest, files: File[]) =>
-      handleUploadStageFile({ req, stage: "packing", file: files[0], source: "manual" }),
+      handleUploadStageFile({
+        req,
+        stage: "packing",
+        file: files[0],
+        source: "manual",
+      }),
     [handleUploadStageFile],
   );
 
   const handleCardApprove = useCallback(
     (req: ManufacturerRequest) => {
       if (!req?._id) return;
-      void handleUpdateReviewStatus({ req, status: "APPROVED", stageOverride: "packing" });
+      void handleUpdateReviewStatus({
+        req,
+        status: "APPROVED",
+        stageOverride: "packing",
+      });
     },
     [handleUpdateReviewStatus],
   );
@@ -187,19 +207,35 @@ export const PackingPageContent = ({ showQueueBar = true }: { showQueueBar?: boo
       if (!req?._id) return;
       const stage = deriveStageForFilter(req);
       if (stage === "가공") {
-        void handleDeleteStageFile({ req, stage: "machining", rollbackOnly: true });
+        void handleDeleteStageFile({
+          req,
+          stage: "machining",
+          rollbackOnly: true,
+        });
         return;
       }
       if (stage === "세척.포장" || stage === "세척.패킹") {
-        void handleDeleteStageFile({ req, stage: "packing", rollbackOnly: true });
+        void handleDeleteStageFile({
+          req,
+          stage: "packing",
+          rollbackOnly: true,
+        });
         return;
       }
       if (stage === "발송" || stage === "포장.발송") {
-        void handleUpdateReviewStatus({ req, status: "PENDING", stageOverride: "shipping" });
+        void handleUpdateReviewStatus({
+          req,
+          status: "PENDING",
+          stageOverride: "shipping",
+        });
         return;
       }
       if (stage === "추적관리") {
-        void handleDeleteStageFile({ req, stage: "tracking", rollbackOnly: true });
+        void handleDeleteStageFile({
+          req,
+          stage: "tracking",
+          rollbackOnly: true,
+        });
       }
     },
     [handleDeleteStageFile, handleUpdateReviewStatus],
@@ -207,7 +243,9 @@ export const PackingPageContent = ({ showQueueBar = true }: { showQueueBar?: boo
 
   const handleOpenNextRequest = useCallback(
     (currentReqId: string) => {
-      const currentIndex = filteredAndSorted.findIndex((r) => r._id === currentReqId);
+      const currentIndex = filteredAndSorted.findIndex(
+        (r) => r._id === currentReqId,
+      );
       if (currentIndex === -1) return;
       const nextReq = filteredAndSorted[currentIndex + 1];
       if (!nextReq) {
@@ -223,12 +261,17 @@ export const PackingPageContent = ({ showQueueBar = true }: { showQueueBar?: boo
 
   const handlePrintPackingLabels = useCallback(async () => {
     if (!paginatedRequests.length) {
-      toast({ title: "출력할 의뢰 없음", description: "현재 화면에 출력할 의뢰가 없습니다.", variant: "destructive" });
+      toast({
+        title: "출력할 의뢰 없음",
+        description: "현재 화면에 출력할 의뢰가 없습니다.",
+        variant: "destructive",
+      });
       return;
     }
     setIsPrintingPackingLabels(true);
     let successCount = 0;
     let failCount = 0;
+    let firstErrorMessage = "";
     try {
       for (const req of paginatedRequests) {
         try {
@@ -240,24 +283,34 @@ export const PackingPageContent = ({ showQueueBar = true }: { showQueueBar?: boo
             String((req as any)?.requestor?.organization || "").trim() ||
             String((req as any)?.requestor?.name || "").trim() ||
             "-";
-          const implantManufacturer = String((caseInfos as any)?.implantManufacturer || "").trim();
+          const implantManufacturer = String(
+            (caseInfos as any)?.implantManufacturer || "",
+          ).trim();
           const isDentium = /\bDENTIUM\b/i.test(implantManufacturer)
             ? true
             : implantManufacturer.includes("덴티움");
           const screwType = isDentium ? "8B" : "0A";
           const clinicName = String(caseInfos.clinicName || "").trim() || "-";
-          const implantSystem = String((caseInfos as any)?.implantSystem || "").trim();
-          const implantType = String((caseInfos as any)?.implantType || "").trim();
+          const implantSystem = String(
+            (caseInfos as any)?.implantSystem || "",
+          ).trim();
+          const implantType = String(
+            (caseInfos as any)?.implantType || "",
+          ).trim();
           const createdAtIso = req.createdAt ? String(req.createdAt) : "";
-          const { manufacturingDate, rawSources } = resolveManufacturingDate(req);
+          const { manufacturingDate, rawSources } =
+            resolveManufacturingDate(req);
           if (!manufacturingDate) {
-            console.warn("[PackingPage] manufacturing date missing for pack label", {
-              requestId: req.requestId,
-              manufacturerStage: req.manufacturerStage,
-              productionSchedule: req.productionSchedule,
-              rawSources,
-              reviewByStage: req.caseInfos?.reviewByStage,
-            });
+            console.warn(
+              "[PackingPage] manufacturing date missing for pack label",
+              {
+                requestId: req.requestId,
+                manufacturerStage: req.manufacturerStage,
+                productionSchedule: req.productionSchedule,
+                rawSources,
+                reviewByStage: req.caseInfos?.reviewByStage,
+              },
+            );
             failCount += 1;
             toast({
               title: "제조일자를 확인할 수 없습니다",
@@ -267,9 +320,12 @@ export const PackingPageContent = ({ showQueueBar = true }: { showQueueBar?: boo
             continue;
           }
           const material =
-            (typeof (caseInfos as any)?.material === "string" && (caseInfos as any).material) ||
-            (typeof (req as any)?.material === "string" && (req as any).material) ||
-            (typeof (req.lotNumber as any)?.material === "string" && (req.lotNumber as any).material) ||
+            (typeof (caseInfos as any)?.material === "string" &&
+              (caseInfos as any).material) ||
+            (typeof (req as any)?.material === "string" &&
+              (req as any).material) ||
+            (typeof (req.lotNumber as any)?.material === "string" &&
+              (req.lotNumber as any).material) ||
             "";
           const payload = {
             printer: printerProfile || undefined,
@@ -299,16 +355,25 @@ export const PackingPageContent = ({ showQueueBar = true }: { showQueueBar?: boo
               targetDots: packLabelDots,
               designDots: packLabelDesignDots,
             });
-            const base = String(req.requestId || lot || "pack").replace(/[^a-zA-Z0-9._-]+/g, "_");
+            const base = String(req.requestId || lot || "pack").replace(
+              /[^a-zA-Z0-9._-]+/g,
+              "_",
+            );
             await downloadPngFromCanvas(canvas, `${base}-pack.png`);
             successCount += 1;
             continue;
           }
-          const response = await fetch("/api/requests/packing/print-packing-label", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
+          const response = await fetch(
+            "/api/requests/packing/print-packing-label",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(payload),
+            },
+          );
           const data = await response.json().catch(() => null);
           if (!response.ok || !data?.success) {
             throw new Error(data?.message || "패킹 라벨 출력에 실패했습니다.");
@@ -316,6 +381,12 @@ export const PackingPageContent = ({ showQueueBar = true }: { showQueueBar?: boo
           successCount += 1;
         } catch (error) {
           failCount += 1;
+          if (!firstErrorMessage) {
+            firstErrorMessage =
+              error instanceof Error && error.message
+                ? error.message
+                : "패킹 라벨 출력에 실패했습니다.";
+          }
           console.error("Packing label print failed:", error);
         }
       }
@@ -323,10 +394,18 @@ export const PackingPageContent = ({ showQueueBar = true }: { showQueueBar?: boo
         toast({
           title: "패킹 라벨 출력 완료",
           description:
-            failCount > 0 ? `${successCount}건 출력 성공 / ${failCount}건 실패` : `${successCount}건의 패킹 라벨이 출력되었습니다.`,
+            failCount > 0
+              ? `${successCount}건 출력 성공 / ${failCount}건 실패`
+              : `${successCount}건의 패킹 라벨이 출력되었습니다.`,
         });
       } else {
-        toast({ title: "패킹 라벨 출력 실패", description: "출력에 실패했습니다. 프린터 설정을 확인해주세요.", variant: "destructive" });
+        toast({
+          title: "패킹 라벨 출력 실패",
+          description:
+            firstErrorMessage ||
+            "출력에 실패했습니다. pack-server 로그를 확인해주세요.",
+          variant: "destructive",
+        });
       }
     } finally {
       setIsPrintingPackingLabels(false);
@@ -390,7 +469,9 @@ export const PackingPageContent = ({ showQueueBar = true }: { showQueueBar?: boo
             <div className="flex gap-2 justify-center">
               <button
                 onClick={handlePrintPackingLabels}
-                disabled={isPrintingPackingLabels || paginatedRequests.length === 0}
+                disabled={
+                  isPrintingPackingLabels || paginatedRequests.length === 0
+                }
                 className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
                   isPrintingPackingLabels || paginatedRequests.length === 0
                     ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
@@ -430,7 +511,9 @@ export const PackingPageContent = ({ showQueueBar = true }: { showQueueBar?: boo
                 tabStage="packing"
               />
               <div ref={sentinelRef} className="py-4 text-center text-gray-500">
-                {visibleCount >= filteredAndSorted.length ? "모든 의뢰를 표시했습니다." : "스크롤하여 더보기"}
+                {visibleCount >= filteredAndSorted.length
+                  ? "모든 의뢰를 표시했습니다."
+                  : "스크롤하여 더보기"}
               </div>
             </>
           )

@@ -1,6 +1,7 @@
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -47,12 +48,12 @@ export const PackingPrinterSettingsDialog = ({
           <DialogTitle className="text-base font-semibold text-slate-900">
             프린터 설정
           </DialogTitle>
+          <DialogDescription className="text-sm text-slate-600 leading-relaxed">
+            패킹 라벨 출력은 로컬 프린터 서버(5788)의 CUPS 프린터 목록을
+            사용합니다.
+          </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4">
-          <div className="text-sm text-slate-600 leading-relaxed">
-            패킹 라벨 출력은 로컬 프린터 서버(5788)의 CUPS 프린터 목록을 사용합니다.
-          </div>
-
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
@@ -92,7 +93,9 @@ export const PackingPrinterSettingsDialog = ({
               )}
             </select>
 
-            {printerError ? <div className="text-xs text-rose-600">{printerError}</div> : null}
+            {printerError ? (
+              <div className="text-xs text-rose-600">{printerError}</div>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-2">
@@ -118,7 +121,9 @@ export const PackingPrinterSettingsDialog = ({
                 ))
               )}
             </select>
-            {paperError ? <div className="text-xs text-rose-600">{paperError}</div> : null}
+            {paperError ? (
+              <div className="text-xs text-rose-600">{paperError}</div>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-2">
