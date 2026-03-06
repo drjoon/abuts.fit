@@ -41,9 +41,9 @@ namespace DentalAddin
 
         public static string[] PrcFilePath = new string[13];
 
-        public static string PrcDirectory = "C:\\Program Files (x86)\\D.P.Technology\\ESPRIT\\AddIns\\DentalAddin\\";
+        public static string PrcDirectory = EnsureTrailingSeparator(AppConfig.AddInRootDirectory);
 
-        public static string DefaultXmlFileName = "C:\\Program Files (x86)\\D.P.Technology\\ESPRIT\\AddIns\\DentalAddin\\Viles\\DefaultPath\\Tech_Default_Path.xml";
+        public static string DefaultXmlFileName = Path.Combine(AppConfig.AddInRootDirectory, "Viles", "DefaultPath", "Tech_Default_Path.xml");
 
         private static int SurfaceNumber;
 
@@ -248,6 +248,45 @@ namespace DentalAddin
         public static double RoughType;
 
         public static double x3;
+
+        private static string EnsureTrailingSeparator(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return string.Empty;
+            }
+
+            if (path.EndsWith("\\", StringComparison.Ordinal) || path.EndsWith("/", StringComparison.Ordinal))
+            {
+                return path;
+            }
+
+            return path + Path.DirectorySeparatorChar;
+        }
+
+        private static string ResolveSurfaceRoot()
+        {
+            string preferred = AppConfig.SurfaceRootDirectory;
+            if (!string.IsNullOrWhiteSpace(preferred) && Directory.Exists(preferred))
+            {
+                return preferred;
+            }
+
+            string fallback = Path.Combine(AppConfig.AddInRootDirectory, "Surface");
+            if (!Directory.Exists(fallback))
+            {
+                try
+                {
+                    Directory.CreateDirectory(fallback);
+                }
+                catch (Exception ex)
+                {
+                    DentalLogger.Log($"ResolveSurfaceRoot - Surface 디렉터리 생성 실패: {ex.Message}");
+                }
+            }
+
+            return fallback;
+        }
 
         private static bool HasPoints(params int[] indices)
         {
@@ -717,6 +756,13 @@ namespace DentalAddin
 
             try
             {
+                double preferredRl = SpindleSide ? 2.0 : 1.0;
+                if (RL != 1.0 && RL != 2.0)
+                {
+                    RL = preferredRl;
+                    DentalLogger.Log($"Main - RL 기본값 보정 (SpindleSide:{SpindleSide}, RL:{RL})");
+                }
+
                 Clean_Module.Clean();
                 DentalLogger.Log("Main - Clean 완료");
 
@@ -862,10 +908,8 @@ namespace DentalAddin
                                         case 6:
                                             goto IL_004c;
                                         case 7:
-                                            goto IL_0057;
-                                        case 8:
                                             goto IL_007f;
-                                        case 9:
+                                        case 8:
                                             goto IL_0092;
                                         case 11:
                                             goto IL_009d;
@@ -4417,20 +4461,21 @@ namespace DentalAddin
 
         public static void Emerge()
         {
-            string mergeFileName = default(string);
-            string mergeFileName2 = default(string);
-            if (RL == 1.0)
+            string surfaceRoot = ResolveSurfaceRoot();
+            string projectFile = RL == 2.0 ? "Project2.igs" : "Project1.igs";
+            string extrudeFile = RL == 2.0 ? "ExtrudeL.igs" : "ExtrudeR.igs";
+            string mergeFileName = Path.Combine(surfaceRoot, projectFile);
+            string mergeFileName2 = Path.Combine(surfaceRoot, extrudeFile);
+
+            if (!File.Exists(mergeFileName))
             {
-                mergeFileName = "C:\\Program Files (x86)\\D.P.Technology\\ESPRIT\\AddIns\\DentalAddin\\Viles\\Surface\\Project1.igs";
-                mergeFileName2 = "C:\\Program Files (x86)\\D.P.Technology\\ESPRIT\\AddIns\\DentalAddin\\Viles\\Surface\\ExtrudeR.igs";
+                DentalLogger.Log($"Emerge - Project surface 파일을 찾지 못했습니다: {mergeFileName}");
+                return;
             }
-            else if (RL == 2.0)
-            {
-                mergeFileName = "C:\\Program Files (x86)\\D.P.Technology\\ESPRIT\\AddIns\\DentalAddin\\Viles\\Surface\\Project2.igs";
-                mergeFileName2 = "C:\\Program Files (x86)\\D.P.Technology\\ESPRIT\\AddIns\\DentalAddin\\Viles\\Surface\\ExtrudeL.igs";
-            }
+
             DentalLogger.Log($"Emerge - MergeFile1: {mergeFileName}");
             Document.MergeFile(mergeFileName, RuntimeHelpers.GetObjectValue(Missing.Value));
+
             SelectionSet selectionSet = Document.SelectionSets["Smove"];
             if (selectionSet == null)
             {
@@ -4460,6 +4505,11 @@ namespace DentalAddin
                 if (finishingMethod == 1)
                 {
                     DentalLogger.Log("Emerge - FinishingMethod==1, Extrude 파일 로드 생략");
+                    return;
+                }
+                if (!File.Exists(mergeFileName2))
+                {
+                    DentalLogger.Log($"Emerge - Extrude surface 파일을 찾지 못했습니다: {mergeFileName2}");
                     return;
                 }
                 DentalLogger.Log($"Emerge - MergeFile2: {mergeFileName2}");

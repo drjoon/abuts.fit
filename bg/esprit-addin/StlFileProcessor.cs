@@ -19,10 +19,12 @@ using EspritTechnology;
 using Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging;
 using Abuts.EspritAddIns.ESPRIT2025AddinProject;
 using static Org.BouncyCastle.Math.EC.ECCurve;
+
 namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 {
     public class StlFileProcessor
     {
+        private const string StlImportLayerName = "AbutsStlImport";
         private static readonly HttpClient BackendHttp;
         static StlFileProcessor()
         {
@@ -35,6 +37,167 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 Timeout = TimeSpan.FromSeconds(10)
             };
+        }
+        private static bool DetermineFaceBeforeComposite()
+        {
+            string flag = Environment.GetEnvironmentVariable("ABUTS_FACE_BEFORE_COMPOSITE");
+            if (!string.IsNullOrWhiteSpace(flag))
+            {
+                return flag.Equals("1", StringComparison.OrdinalIgnoreCase) || flag.Equals("true", StringComparison.OrdinalIgnoreCase);
+            }
+            return AppConfig.FaceBeforeCompositeDefault;
+        }
+
+        private static void LogBoundingBox(Document document, string context)
+        {
+            try
+            {
+                SelectionSet ss = GetOrCreateSelectionSet(document, "BoundingBoxLogger");
+                ss?.RemoveAll();
+                foreach (GraphicObject graphic in document.GraphicsCollection)
+                {
+                    if (graphic?.GraphicObjectType == espGraphicObjectType.espSTL_Model)
+                    {
+                        ss?.Add(graphic, Missing.Value);
+                    }
+                }
+                if (ss == null || ss.Count == 0)
+                {
+                    AppLogger.Log($"{context}: BoundingBox - STL 미확인");
+                    return;
+                }
+                double minX = double.PositiveInfinity, minY = double.PositiveInfinity, minZ = double.PositiveInfinity;
+                double maxX = double.NegativeInfinity, maxY = double.NegativeInfinity, maxZ = double.NegativeInfinity;
+                foreach (GraphicObject g in ss)
+                {
+                    try
+                    {
+                        dynamic dg = g;
+                        var bbox = dg?.BoundingBox;
+                        if (bbox == null) continue;
+                        minX = Math.Min(minX, (double)bbox.MinX);
+                        minY = Math.Min(minY, (double)bbox.MinY);
+                        minZ = Math.Min(minZ, (double)bbox.MinZ);
+                        maxX = Math.Max(maxX, (double)bbox.MaxX);
+                        maxY = Math.Max(maxY, (double)bbox.MaxY);
+                        maxZ = Math.Max(maxZ, (double)bbox.MaxZ);
+                    }
+                    catch { }
+                }
+                AppLogger.Log($"{context}: STL BoundingBox -> X[{minX:F3},{maxX:F3}] Y[{minY:F3},{maxY:F3}] Z[{minZ:F3},{maxZ:F3}]");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"{context}: BoundingBox 로깅 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private static double? TryComputeFeatureChainMaxZ(FeatureChain chain, List<string> createdKeys)
+        {
+            if (chain == null)
+            {
+                return null;
+            }
+            double maxZ = double.NegativeInfinity;
+            try
+            {
+                double length = chain.Length;
+                double step = Math.Max(0.05, length / 800.0);
+                for (double t = 0.0; t <= length; t += step)
+                {
+                    Point pt = chain.PointAlong(t);
+                    if (pt == null) continue;
+                    double z = pt.Z;
+                    if (double.IsNaN(z) || double.IsInfinity(z)) continue;
+                    if (z > maxZ) maxZ = z;
+                }
+                if (!double.IsNegativeInfinity(maxZ))
+                {
+                    AppLogger.Log($"StlFileProcessor: FeatureChain maxZ={maxZ:F4} (Points~{Math.Ceiling(chain.Length / step)})");
+                    return maxZ;
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"StlFileProcessor: FeatureChain maxZ 계산 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+            finally
+            {
+                CleanupTemporaryFeatureChains(chain?.Document, createdKeys, "FeatureChain maxZ");
+            }
+            return null;
+        }
+
+        private static SelectionSet GetOrCreateSelectionSet(Document document, string name)
+        {
+            if (document?.SelectionSets == null || string.IsNullOrWhiteSpace(name)) return null;
+            try
+            {
+                SelectionSet existing = null;
+                try { existing = document.SelectionSets[name]; } catch { }
+                if (existing != null) return existing;
+                return document.SelectionSets.Add(name);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static Layer GetOrCreateLayer(Document document, string layerName)
+        {
+            if (document?.Layers == null || string.IsNullOrWhiteSpace(layerName))
+            {
+                return null;
+            }
+            try
+            {
+                Layer existing = null;
+                try { existing = document.Layers[layerName]; } catch { }
+                if (existing != null)
+                {
+                    return existing;
+                }
+                return document.Layers.Add(layerName);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void RemoveLayerIfExists(Document document, string layerName)
+        {
+            if (document?.Layers == null || string.IsNullOrWhiteSpace(layerName))
+            {
+                return;
+            }
+            try
+            {
+                Layer existing = null;
+                try { existing = document.Layers[layerName]; } catch { }
+                if (existing == null)
+                {
+                    return;
+                }
+                document.Layers.Remove(layerName);
+                document.Refresh();
+                AppLogger.Log($"StlFileProcessor: 레이어 제거 - {layerName}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"StlFileProcessor: 레이어 제거 실패 - {layerName} ({ex.GetType().Name}:{ex.Message})");
+            }
+        }
+
+        private void ResetAllDentalAddinStaticFields()
+        {
+            try
+            {
+                // 원본 정리 로직이 제거되었을 때를 위한 안전한 초기화 더미
+                AppLogger.Log("StlFileProcessor: DentalAddin static 필드 초기화 생략 (no-op)");
+            }
+            catch { }
         }
         private static string GetBackendUrl()
         {
@@ -153,6 +316,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     document.ActiveLayer = stlLayer;
                 }
                 document.MergeFile(stlPath);
+                LogBoundingBox(document, "AfterMerge");
                 if (prevLayer != null)
                 {
                     try
@@ -169,6 +333,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 UpdateLatheBarDiameter(document, stlPath, machineBarDiameter, materialDiameter);
                 Rotate90Degrees(document);
                 FitActiveWindow(document);
+                LogBoundingBox(document, "AfterRotate");
                 InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ);
                 CaptureNcMetadata(document);
                 string ncFilePath = RunPostProcessing(document, stlPath, ResolveBackPointForNc(effectiveBackLimit), ResolveStockDiameterForNc(document));
@@ -1025,21 +1190,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     return null;
                 }
-                double maxZ = double.NegativeInfinity;
-                double length = created.Length;
-                double step = Math.Max(0.1, length / 500.0);
-                for (double t = 0.0; t <= length; t += step)
-                {
-                    Point pt = created.PointAlong(t);
-                    if (pt == null) continue;
-                    double z = pt.Z;
-                    if (double.IsNaN(z) || double.IsInfinity(z)) continue;
-                    if (z > maxZ) maxZ = z;
-                }
-                if (!double.IsNegativeInfinity(maxZ))
-                {
-                    result = maxZ;
-                }
+                result = TryComputeFeatureChainMaxZ(created, createdFeatureKeys);
             }
             catch (Exception ex)
             {
@@ -1120,176 +1271,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             catch (Exception ex)
             {
                 AppLogger.Log($"DentalAddin: finishLine 기반 Composite2SplitAB 설정 실패 - {ex.GetType().Name}:{ex.Message}");
-            }
-        }
-        private void ResetAllDentalAddinStaticFields()
-        {
-            try
-            {
-                Type mainModuleType = ResolveMainModuleType();
-                if (mainModuleType == null)
-                {
-                    AppLogger.Log("StlFileProcessor: MainModule 타입을 찾을 수 없어 static 필드 초기화 생략");
-                    return;
-                }
-
-                // MainModule의 주요 static 필드 초기화
-                ResetStaticField(mainModuleType, "Document", null);
-                ResetStaticField(mainModuleType, "Jump", 0);
-                ResetStaticField(mainModuleType, "RL", 0.0);
-                ResetStaticField(mainModuleType, "SpindleSide", false);
-                ResetStaticField(mainModuleType, "RoughType", 0.0);
-                ResetStaticField(mainModuleType, "AngleNumber", 0.0);
-                ResetStaticField(mainModuleType, "SemiAngle", 0.0);
-                ResetStaticField(mainModuleType, "ReverseOn", false);
-                ResetStaticField(mainModuleType, "Eror", 0);
-                ResetStaticField(mainModuleType, "FC1", null);
-                ResetStaticField(mainModuleType, "FC2", null);
-                ResetStaticField(mainModuleType, "FC3", null);
-                ResetStaticField(mainModuleType, "FC4", null);
-                ResetStaticField(mainModuleType, "FC5", null);
-                ResetStaticField(mainModuleType, "Fcc", null);
-                ResetStaticField(mainModuleType, "tfc", null);
-                ResetStaticField(mainModuleType, "Fcb1", null);
-                ResetStaticField(mainModuleType, "FcM", null);
-                ResetStaticField(mainModuleType, "SS1", null);
-                ResetStaticField(mainModuleType, "Ss", null);
-                ResetStaticField(mainModuleType, "Wp", null);
-                ResetStaticField(mainModuleType, "Gas", null);
-                ResetStaticField(mainModuleType, "seg", null);
-                ResetStaticField(mainModuleType, "Pt12", null);
-                ResetStaticField(mainModuleType, "IntPt", null);
-
-                // 배열 필드 초기화
-                ResetStaticArrayField(mainModuleType, "Fcb2", 13);
-                ResetStaticArrayField(mainModuleType, "ptp", 7);
-                ResetStaticArrayField(mainModuleType, "FcNumber", 7);
-                ResetStaticArrayField(mainModuleType, "Matrix1", 19);
-                ResetStaticArrayField(mainModuleType, "Matrix2", 19);
-                ResetStaticArrayField(mainModuleType, "Matrix3", 37);
-                ResetStaticArrayField(mainModuleType, "P", 37);
-                ResetStaticArrayField(mainModuleType, "Q", 9);
-                ResetStaticArrayField(mainModuleType, "Percent", 5);
-                ResetStaticArrayField(mainModuleType, "PercentB", 5);
-                ResetStaticArrayField(mainModuleType, "NumberT", 9);
-
-                // MoveSTL_Module 초기화
-                Type moveModuleType = ResolveMoveModuleType(mainModuleType);
-                if (moveModuleType != null)
-                {
-                    ResetStaticField(moveModuleType, "NeedMove", false);
-                    ResetStaticField(moveModuleType, "NonConnection", false);
-                    ResetStaticField(moveModuleType, "FrontPointX", double.NaN);
-                    ResetStaticField(moveModuleType, "BackPointX", double.NaN);
-                    ResetStaticField(moveModuleType, "NeedMoveY", 0.0);
-                    ResetStaticField(moveModuleType, "NeedMoveZ", 0.0);
-                    ResetStaticField(moveModuleType, "FrontStock", 0.0);
-                    ResetStaticField(moveModuleType, "FirstPX", 0.0);
-                    ResetStaticField(moveModuleType, "ExtendMill", 0.0);
-                    ResetStaticField(moveModuleType, "Chazhi", 0.0);
-                    ResetStaticField(moveModuleType, "RMTI", 0.0);
-                    ResetStaticField(moveModuleType, "MTI", 0.0);
-                }
-
-                AppLogger.Log("StlFileProcessor: DentalAddin static 필드 초기화 완료");
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Log($"StlFileProcessor: DentalAddin static 필드 초기화 실패 - {ex.GetType().Name}:{ex.Message}");
-            }
-        }
-
-        private void ResetStaticField(Type type, string fieldName, object value)
-        {
-            try
-            {
-                FieldInfo field = type.GetField(fieldName, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-                if (field != null)
-                {
-                    field.SetValue(null, value);
-                }
-            }
-            catch
-            {
-                // 필드가 없거나 설정 실패 시 무시
-            }
-        }
-
-        private void ResetStaticArrayField(Type type, string fieldName, int length)
-        {
-            try
-            {
-                FieldInfo field = type.GetField(fieldName, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-                if (field != null && field.FieldType.IsArray)
-                {
-                    Type elementType = field.FieldType.GetElementType();
-                    Array newArray = Array.CreateInstance(elementType, length);
-                    field.SetValue(null, newArray);
-                }
-            }
-            catch
-            {
-                // 필드가 없거나 설정 실패 시 무시
-            }
-        }
-
-        private const string StlImportLayerName = "AbutsStlImport";
-
-        private static void RemoveLayerIfExists(Document document, string layerName)
-        {
-            if (document?.Layers == null || string.IsNullOrWhiteSpace(layerName))
-            {
-                return;
-            }
-            try
-            {
-                Layer existing = null;
-                try
-                {
-                    existing = document.Layers[layerName];
-                }
-                catch
-                {
-                }
-                if (existing == null)
-                {
-                    return;
-                }
-                document.Layers.Remove(layerName);
-                document.Refresh();
-                AppLogger.Log($"StlFileProcessor: 레이어 제거 - {layerName}");
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Log($"StlFileProcessor: 레이어 제거 실패 - {layerName} ({ex.GetType().Name}:{ex.Message})");
-            }
-        }
-
-        private static Layer GetOrCreateLayer(Document document, string layerName)
-        {
-            if (document?.Layers == null || string.IsNullOrWhiteSpace(layerName))
-            {
-                return null;
-            }
-            try
-            {
-                Layer existing = null;
-                try
-                {
-                    existing = document.Layers[layerName];
-                }
-                catch
-                {
-                }
-                if (existing != null)
-                {
-                    return existing;
-                }
-                return document.Layers.Add(layerName);
-            }
-            catch
-            {
-                return null;
             }
         }
 
@@ -2139,11 +2120,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 EnsurePrcSlot(prcDirectory, prcPaths, prcNames, 2, @"4_ReverseTurning prc\Reverse Turning Process.prc");
                 EnsurePrcSlot(prcDirectory, prcPaths, prcNames, 3, @"5_Rough prc\MillRough_3D.prc");
                 // index 4: FaceHole -> backend
-                EnsurePrcSlot(prcDirectory, prcPaths, prcNames, 5, @"7_FrontFace prc\FACE.prc");
+                bool faceBeforeComposite = DetermineFaceBeforeComposite();
+                if (faceBeforeComposite)
+                {
+                    EnsurePrcSlot(prcDirectory, prcPaths, prcNames, 5, @"7_FrontFace prc\FACE.prc");
+                }
                 EnsurePrcSlot(prcDirectory, prcPaths, prcNames, 6, @"8_0-180 prc\3D.prc");
                 EnsurePrcSlot(prcDirectory, prcPaths, prcNames, 7, @"9_90-270 prc\3D_2.prc");
                 // index 8: Connection -> backend
                 EnsurePrcSlot(prcDirectory, prcPaths, prcNames, 9, @"6_Semi_Rough prc\SemiRough_2D.prc");
+                if (!faceBeforeComposite)
+                {
+                    EnsurePrcSlot(prcDirectory, prcPaths, prcNames, 5, @"7_FrontFace prc\FACE.prc");
+                }
                 // 10,11 Composite handled separately
                 EnsurePrcSlot(prcDirectory, prcPaths, prcNames, 12, @"10_MarkText prc\MarkText.prc");
             }
@@ -2951,34 +2940,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             field.SetValue(null, defaultValue);
             return true;
-        }
-        private static SelectionSet GetOrCreateSelectionSet(Document document, string name)
-        {
-            if (document == null)
-            {
-                return null;
-            }
-            try
-            {
-                SelectionSet existing = document.SelectionSets[name];
-                if (existing != null)
-                {
-                    return existing;
-                }
-            }
-            catch
-            {
-                // ignore
-            }
-            try
-            {
-                return document.SelectionSets.Add(name);
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Log($"StlFileProcessor: SelectionSet 생성 실패 - {ex.Message}");
-                return null;
-            }
         }
     }
 }
