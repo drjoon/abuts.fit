@@ -25,28 +25,28 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/121</span>
+                <span class='fraction'>0/130</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/139</span>
+                <span class='fraction'>0/149</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/19</span>
+                <span class='fraction'>0/20</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/111</span>
+                <span class='fraction'>0/119</span>
             </div>
         
             
@@ -350,10 +350,43 @@
 <a name='L285'></a><a href='#L285'>285</a>
 <a name='L286'></a><a href='#L286'>286</a>
 <a name='L287'></a><a href='#L287'>287</a>
-<a name='L288'></a><a href='#L288'>288</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L288'></a><a href='#L288'>288</a>
+<a name='L289'></a><a href='#L289'>289</a>
+<a name='L290'></a><a href='#L290'>290</a>
+<a name='L291'></a><a href='#L291'>291</a>
+<a name='L292'></a><a href='#L292'>292</a>
+<a name='L293'></a><a href='#L293'>293</a>
+<a name='L294'></a><a href='#L294'>294</a>
+<a name='L295'></a><a href='#L295'>295</a>
+<a name='L296'></a><a href='#L296'>296</a>
+<a name='L297'></a><a href='#L297'>297</a>
+<a name='L298'></a><a href='#L298'>298</a>
+<a name='L299'></a><a href='#L299'>299</a>
+<a name='L300'></a><a href='#L300'>300</a>
+<a name='L301'></a><a href='#L301'>301</a>
+<a name='L302'></a><a href='#L302'>302</a>
+<a name='L303'></a><a href='#L303'>303</a>
+<a name='L304'></a><a href='#L304'>304</a>
+<a name='L305'></a><a href='#L305'>305</a>
+<a name='L306'></a><a href='#L306'>306</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -498,6 +531,7 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -586,6 +620,7 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -615,6 +650,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -640,6 +676,21 @@
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import GuideProgress from "../../models/guideProgress.model.js";
 import User from "../../models/user.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import { emitAppEventToUser } from "../../socket.js";
+&nbsp;
+const GUIDE_PROGRESS_EVENT = <span class="cstat-no" title="statement not covered" >"guide-progress:updated";</span>
+&nbsp;
+const emitGuideProgressUpdated = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(u</span>serId, doc) =&gt; {</span>
+  const uid = <span class="cstat-no" title="statement not covered" >String(userId || "").trim();</span>
+<span class="cstat-no" title="statement not covered" >  if (!uid || !doc) <span class="cstat-no" title="statement not covered" >return;</span></span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  emitAppEventToUser(uid, GUIDE_PROGRESS_EVENT, {</span>
+    tourId: doc.tourId,
+    steps: doc.steps || [],
+    finishedAt: doc.finishedAt || null,
+    updatedAt: doc.updatedAt,
+  });
+};
 &nbsp;
 const normalizeTourId = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(t</span>ourId) =&gt; <span class="cstat-no" title="statement not covered" >String(tourId || "").trim();</span></span>
 const normalizeStepId = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(s</span>tepId) =&gt; <span class="cstat-no" title="statement not covered" >String(stepId || "").trim();</span></span>
@@ -689,7 +740,7 @@ const computeRequestorOnboardingDoneMap = <span class="cstat-no" title="statemen
   const done = <span class="cstat-no" title="statement not covered" >{};</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  done["requestor.account.profileImage"] = Boolean(</span>
-    String(user?.profileImage || "").trim()
+    String(user?.profileImage || "").trim(),
   );
 &nbsp;
   const phoneVerifiedAt = <span class="cstat-no" title="statement not covered" >user?.phoneVerifiedAt</span>
@@ -704,8 +755,8 @@ const computeRequestorOnboardingDoneMap = <span class="cstat-no" title="statemen
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  done["requestor.business.licenseUpload"] = Boolean(</span>
     String(organization?.businessLicense?.s3Key || "").trim() ||
-      String(organization?.businessLicense?.originalName || "").trim() ||
-      String(organization?.businessLicense?.fileId || "").trim()
+    String(organization?.businessLicense?.originalName || "").trim() ||
+    String(organization?.businessLicense?.fileId || "").trim(),
   );
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  done["requestor.business.companyName"] =</span>
@@ -715,20 +766,20 @@ const computeRequestorOnboardingDoneMap = <span class="cstat-no" title="statemen
 <span class="cstat-no" title="statement not covered" >  done["requestor.business.representativeName"] =</span>
     String(ex?.representativeName || "").trim().length &gt;= 2;
 <span class="cstat-no" title="statement not covered" >  done["requestor.business.phoneNumber"] = Boolean(</span>
-    normalizePhoneNumber(String(ex?.phoneNumber || "").trim())
+    normalizePhoneNumber(String(ex?.phoneNumber || "").trim()),
   );
 <span class="cstat-no" title="statement not covered" >  done["requestor.business.businessNumber"] = Boolean(</span>
-    normalizeBusinessNumber(String(ex?.businessNumber || "").trim())
+    normalizeBusinessNumber(String(ex?.businessNumber || "").trim()),
   );
 <span class="cstat-no" title="statement not covered" >  done["requestor.business.businessType"] =</span>
     String(ex?.businessType || "").trim().length &gt;= 2;
 <span class="cstat-no" title="statement not covered" >  done["requestor.business.businessItem"] =</span>
     String(ex?.businessItem || "").trim().length &gt;= 2;
 <span class="cstat-no" title="statement not covered" >  done["requestor.business.email"] = isValidEmail(</span>
-    String(ex?.email || "").trim()
+    String(ex?.email || "").trim(),
   );
 <span class="cstat-no" title="statement not covered" >  done["requestor.business.address"] = isValidAddress(</span>
-    String(ex?.address || "").trim()
+    String(ex?.address || "").trim(),
   );
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  return done;</span>
@@ -771,7 +822,7 @@ export async function <span class="fstat-no" title="function not covered" >getGu
       const nextSteps = <span class="cstat-no" title="statement not covered" >defaultSteps.map(<span class="fstat-no" title="function not covered" >(s</span>) =&gt; {</span>
         const stepId = <span class="cstat-no" title="statement not covered" >String(s?.stepId || "").trim();</span>
         const prev = <span class="cstat-no" title="statement not covered" >prevSteps.find(</span>
-<span class="fstat-no" title="function not covered" >          (p</span>) =&gt; <span class="cstat-no" title="statement not covered" >String(p?.stepId || "").trim() === stepId</span>
+<span class="fstat-no" title="function not covered" >          (p</span>) =&gt; <span class="cstat-no" title="statement not covered" >String(p?.stepId || "").trim() === stepId,</span>
         );
         const isDone = <span class="cstat-no" title="statement not covered" >Boolean(doneMap[stepId]);</span>
 <span class="cstat-no" title="statement not covered" >        return {</span>
@@ -785,6 +836,7 @@ export async function <span class="fstat-no" title="function not covered" >getGu
 <span class="cstat-no" title="statement not covered" >      doc.steps = nextSteps;</span>
 <span class="cstat-no" title="statement not covered" >      doc.finishedAt = nextFinishedAt ? doc.finishedAt || nextFinishedAt : null;</span>
 <span class="cstat-no" title="statement not covered" >      await doc.save();</span>
+<span class="cstat-no" title="statement not covered" >      emitGuideProgressUpdated(req.user?._id, doc);</span>
     }
 &nbsp;
 <span class="cstat-no" title="statement not covered" >    return res.status(200).json({</span>
@@ -827,7 +879,7 @@ export async function <span class="fstat-no" title="function not covered" >patch
 &nbsp;
     const defaultSteps = <span class="cstat-no" title="statement not covered" >GuideProgress.getDefaultSteps(tourId);</span>
     const allowed = <span class="cstat-no" title="statement not covered" >new Set(</span>
-      defaultSteps.map(<span class="fstat-no" title="function not covered" >(s</span>) =&gt; <span class="cstat-no" title="statement not covered" >String(s?.stepId || "").trim())</span>.filter(Boolean)
+      defaultSteps.map(<span class="fstat-no" title="function not covered" >(s</span>) =&gt; <span class="cstat-no" title="statement not covered" >String(s?.stepId || "").trim())</span>.filter(Boolean),
     );
 &nbsp;
 <span class="cstat-no" title="statement not covered" >    if (allowed.size &gt; 0 &amp;&amp; !allowed.has(stepId)) {</span>
@@ -859,7 +911,7 @@ export async function <span class="fstat-no" title="function not covered" >patch
         ? defaultSteps.map(<span class="fstat-no" title="function not covered" >(s</span>) =&gt; {
             const id = <span class="cstat-no" title="statement not covered" >String(s?.stepId || "").trim();</span>
             const found = <span class="cstat-no" title="statement not covered" >steps.find(</span>
-<span class="fstat-no" title="function not covered" >              (p</span>) =&gt; <span class="cstat-no" title="statement not covered" >String(p?.stepId || "").trim() === id</span>
+<span class="fstat-no" title="function not covered" >              (p</span>) =&gt; <span class="cstat-no" title="statement not covered" >String(p?.stepId || "").trim() === id,</span>
             );
 <span class="cstat-no" title="statement not covered" >            return {</span>
               stepId: id,
@@ -873,6 +925,7 @@ export async function <span class="fstat-no" title="function not covered" >patch
 <span class="cstat-no" title="statement not covered" >    doc.steps = normalizedSteps;</span>
 <span class="cstat-no" title="statement not covered" >    doc.finishedAt = recalcFinishedAt(normalizedSteps);</span>
 <span class="cstat-no" title="statement not covered" >    await doc.save();</span>
+<span class="cstat-no" title="statement not covered" >    emitGuideProgressUpdated(req.user?._id, doc);</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >    return res.status(200).json({</span>
       success: true,
@@ -906,6 +959,7 @@ export async function <span class="fstat-no" title="function not covered" >reset
 <span class="cstat-no" title="statement not covered" >    doc.steps = GuideProgress.getDefaultSteps(tourId);</span>
 <span class="cstat-no" title="statement not covered" >    doc.finishedAt = null;</span>
 <span class="cstat-no" title="statement not covered" >    await doc.save();</span>
+<span class="cstat-no" title="statement not covered" >    emitGuideProgressUpdated(req.user?._id, doc);</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >    return res.status(200).json({</span>
       success: true,
@@ -931,7 +985,7 @@ export async function <span class="fstat-no" title="function not covered" >reset
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-21T01:27:52.926Z
+                at 2026-03-06T11:11:46.573Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

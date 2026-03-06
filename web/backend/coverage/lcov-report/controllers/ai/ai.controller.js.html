@@ -25,14 +25,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/248</span>
+                <span class='fraction'>0/251</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/258</span>
+                <span class='fraction'>0/256</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/242</span>
+                <span class='fraction'>0/244</span>
             </div>
         
             
@@ -860,12 +860,18 @@
 <a name='L795'></a><a href='#L795'>795</a>
 <a name='L796'></a><a href='#L796'>796</a>
 <a name='L797'></a><a href='#L797'>797</a>
-<a name='L798'></a><a href='#L798'>798</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L798'></a><a href='#L798'>798</a>
+<a name='L799'></a><a href='#L799'>799</a>
+<a name='L800'></a><a href='#L800'>800</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -905,17 +911,18 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -1208,9 +1215,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1659,7 +1663,11 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { GoogleGenerativeAI } from "@google/generative-ai";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Organization from "../../models/organization.model.js";
+import {
+  assertOrganizationRole,
+  buildOrganizationTypeFilter,
+} from "../organizations/organizationRole.util.js";
 import s3Utils, { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
 &nbsp;
 // 지연 초기화: dotenv 로드 후 첫 호출 시 초기화
@@ -1700,17 +1708,18 @@ export async function <span class="fstat-no" title="function not covered" >parse
       });
     }
 &nbsp;
-<span class="cstat-no" title="statement not covered" >    if (!req.user || req.user.role !== "requestor") {</span>
-<span class="cstat-no" title="statement not covered" >      return res.status(403).json({</span>
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = <span class="cstat-no" title="statement not covered" >assertOrganizationRole(req, res);</span>
+<span class="cstat-no" title="statement not covered" >    if (!roleCheck) <span class="cstat-no" title="statement not covered" >return;</span></span>
+    const { organizationType } = <span class="cstat-no" title="statement not covered" >roleCheck;</span>
 &nbsp;
     const hasOrganization = <span class="cstat-no" title="statement not covered" >!!req.user.organizationId;</span>
     let org = <span class="cstat-no" title="statement not covered" >null;</span>
 <span class="cstat-no" title="statement not covered" >    if (hasOrganization) {</span>
-<span class="cstat-no" title="statement not covered" >      org = await RequestorOrganization.findById(req.user.organizationId)</span>
+      const orgTypeFilter = <span class="cstat-no" title="statement not covered" >buildOrganizationTypeFilter(organizationType);</span>
+<span class="cstat-no" title="statement not covered" >      org = await Organization.findOne({</span>
+        _id: req.user.organizationId,
+        ...orgTypeFilter,
+      })
         .select({ owner: 1, owners: 1 })
         .lean();
       const meId = <span class="cstat-no" title="statement not covered" >String(req.user._id);</span>
@@ -1780,7 +1789,7 @@ export async function <span class="fstat-no" title="function not covered" >parse
       };
 &nbsp;
 <span class="cstat-no" title="statement not covered" >      if (hasOrganization &amp;&amp; org?._id) {</span>
-<span class="cstat-no" title="statement not covered" >        await RequestorOrganization.findByIdAndUpdate(req.user.organizationId, {</span>
+<span class="cstat-no" title="statement not covered" >        await Organization.findByIdAndUpdate(req.user.organizationId, {</span>
           $set: {
             businessLicense: {
               fileId: fileId || null,
@@ -1992,7 +2001,7 @@ export async function <span class="fstat-no" title="function not covered" >parse
 &nbsp;
 <span class="cstat-no" title="statement not covered" >    if (hasOrganization &amp;&amp; org?._id) {</span>
 <span class="cstat-no" title="statement not covered" >      try {</span>
-<span class="cstat-no" title="statement not covered" >        await RequestorOrganization.findByIdAndUpdate(req.user.organizationId, {</span>
+<span class="cstat-no" title="statement not covered" >        await Organization.findByIdAndUpdate(req.user.organizationId, {</span>
           $set: normalizedBusinessNumber ? setWithBusinessNumber : baseSet,
         });
       } catch (e) {
@@ -2004,18 +2013,15 @@ export async function <span class="fstat-no" title="function not covered" >parse
               "사업자등록번호가 이미 등록되어 있어 자동 저장을 건너뛰었습니다. 사업자등록번호를 확인하거나, 기존 기공소에 가입 요청을 진행해주세요.",
           };
 &nbsp;
-<span class="cstat-no" title="statement not covered" >          await RequestorOrganization.findByIdAndUpdate(</span>
-            req.user.organizationId,
-            {
-              $set: {
-                ...baseSet,
-                verification: {
-                  ...verificationOverride,
-                  checkedAt: new Date(),
-                },
+<span class="cstat-no" title="statement not covered" >          await Organization.findByIdAndUpdate(req.user.organizationId, {</span>
+            $set: {
+              ...baseSet,
+              verification: {
+                ...verificationOverride,
+                checkedAt: new Date(),
               },
             },
-          );
+          });
 &nbsp;
 <span class="cstat-no" title="statement not covered" >          return res.json({</span>
             success: true,
@@ -2461,7 +2467,7 @@ export default { parseFilenames, parseBusinessLicense, recognizeLotNumber };
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-21T01:27:52.926Z
+                at 2026-03-06T11:11:46.573Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

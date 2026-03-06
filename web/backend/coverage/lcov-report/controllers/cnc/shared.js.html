@@ -32,7 +32,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/231</span>
+                <span class='fraction'>0/233</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/180</span>
+                <span class='fraction'>0/179</span>
             </div>
         
             
@@ -1047,10 +1047,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1126,6 +1123,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1148,8 +1148,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -1185,6 +1183,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1650,12 +1650,9 @@ export async function <span class="fstat-no" title="function not covered" >rollb
   const request = <span class="cstat-no" title="statement not covered" >await Request.findOne({ requestId: rid });</span>
 <span class="cstat-no" title="statement not covered" >  if (!request) <span class="cstat-no" title="statement not covered" >return null;</span></span>
 &nbsp;
-  const status = <span class="cstat-no" title="statement not covered" >String(request.status || "").trim();</span>
   const stage = <span class="cstat-no" title="statement not covered" >String(request.manufacturerStage || "").trim();</span>
-&nbsp;
-<span class="cstat-no" title="statement not covered" >  if (!["생산", "가공"].includes(status) &amp;&amp; !["생산", "가공"].includes(stage)) {</span>
-<span class="cstat-no" title="statement not covered" >    return request;</span>
-  }
+  const rollbackStages = <span class="cstat-no" title="statement not covered" >["가공", "세척.패킹"];</span>
+<span class="cstat-no" title="statement not covered" >  if (!rollbackStages.includes(stage)) <span class="cstat-no" title="statement not covered" >return request;</span></span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  try {</span>
     const orgId =
@@ -1731,6 +1728,9 @@ export async function <span class="fstat-no" title="function not covered" >rollb
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  request.caseInfos = request.caseInfos || {};</span>
 <span class="cstat-no" title="statement not covered" >  request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};</span>
+<span class="cstat-no" title="statement not covered" >  request.caseInfos.rollbackCounts = request.caseInfos.rollbackCounts || {};</span>
+<span class="cstat-no" title="statement not covered" >  request.caseInfos.rollbackCounts.cam =</span>
+    Number(request.caseInfos.rollbackCounts.cam || 0) + 1;
 &nbsp;
   const now = <span class="cstat-no" title="statement not covered" >new Date();</span>
 &nbsp;
@@ -1752,9 +1752,7 @@ export async function <span class="fstat-no" title="function not covered" >rollb
     ...machiningReview,
   };
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  request.status = "CAM";</span>
 <span class="cstat-no" title="statement not covered" >  request.manufacturerStage = "CAM";</span>
-<span class="cstat-no" title="statement not covered" >  request.status2 = "없음";</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  request.productionSchedule = request.productionSchedule || {};</span>
 <span class="cstat-no" title="statement not covered" >  request.productionSchedule.actualMachiningStart = null;</span>
@@ -1790,9 +1788,11 @@ export async function <span class="fstat-no" title="function not covered" >getMa
 export async function <span class="fstat-no" title="function not covered" >getProductionQueuesHandler(</span>req, res) {
 <span class="cstat-no" title="statement not covered" >  try {</span>
     const requests = <span class="cstat-no" title="statement not covered" >await Request.find({</span>
-      status: { $in: ["의뢰", "CAM", "생산", "가공"] },
+      manufacturerStage: { $in: ["의뢰", "CAM", "가공"] },
     })
-      .select("requestId status productionSchedule caseInfos timeline")
+      .select(
+        "requestId manufacturerStage productionSchedule caseInfos timeline",
+      )
       .populate({
         path: "productionSchedule.machiningRecord",
         select:
@@ -1804,7 +1804,7 @@ export async function <span class="fstat-no" title="function not covered" >getPr
 <span class="cstat-no" title="statement not covered" >    for (const machineId in queues) {</span>
 <span class="cstat-no" title="statement not covered" >      queues[machineId] = queues[machineId].map(<span class="fstat-no" title="function not covered" >(r</span>eq, index) =&gt; (<span class="cstat-no" title="statement not covered" >{</span></span>
         requestId: req.requestId,
-        status: req.status,
+        status: req.manufacturerStage || req.status,
         queuePosition:
           req.productionSchedule?.queuePosition != null
             ? req.productionSchedule.queuePosition
@@ -1885,7 +1885,7 @@ export {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-21T01:27:52.926Z
+                at 2026-03-06T11:11:46.573Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

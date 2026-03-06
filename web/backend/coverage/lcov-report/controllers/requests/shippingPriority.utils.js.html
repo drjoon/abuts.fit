@@ -25,14 +25,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/89</span>
+                <span class='fraction'>0/80</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/89</span>
+                <span class='fraction'>0/70</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/73</span>
+                <span class='fraction'>0/66</span>
             </div>
         
             
@@ -216,18 +216,7 @@
 <a name='L151'></a><a href='#L151'>151</a>
 <a name='L152'></a><a href='#L152'>152</a>
 <a name='L153'></a><a href='#L153'>153</a>
-<a name='L154'></a><a href='#L154'>154</a>
-<a name='L155'></a><a href='#L155'>155</a>
-<a name='L156'></a><a href='#L156'>156</a>
-<a name='L157'></a><a href='#L157'>157</a>
-<a name='L158'></a><a href='#L158'>158</a>
-<a name='L159'></a><a href='#L159'>159</a>
-<a name='L160'></a><a href='#L160'>160</a>
-<a name='L161'></a><a href='#L161'>161</a>
-<a name='L162'></a><a href='#L162'>162</a>
-<a name='L163'></a><a href='#L163'>163</a>
-<a name='L164'></a><a href='#L164'>164</a>
-<a name='L165'></a><a href='#L165'>165</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L154'></a><a href='#L154'>154</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -273,23 +262,12 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -398,7 +376,7 @@
 } from "./utils.js";
 import { isKoreanBusinessDay } from "../../utils/krBusinessDays.js";
 &nbsp;
-const WAYBILL_INPUT_CUTOFF_HOUR_KST = <span class="cstat-no" title="statement not covered" >15;</span>
+const WAYBILL_INPUT_CUTOFF_HOUR_KST = <span class="cstat-no" title="statement not covered" >14;</span>
 &nbsp;
 function <span class="fstat-no" title="function not covered" >toKstYmd(</span>d) {
 <span class="cstat-no" title="statement not covered" >  if (!d) <span class="cstat-no" title="statement not covered" >return null;</span></span>
@@ -437,24 +415,13 @@ async function <span class="fstat-no" title="function not covered" >prevKoreanBu
 }
 &nbsp;
 export function <span class="fstat-no" title="function not covered" >resolveEffectiveShippingMode(</span>requestLike) {
-  const finalMode = <span class="cstat-no" title="statement not covered" >String(requestLike?.finalShipping?.mode || "").trim();</span>
-<span class="cstat-no" title="statement not covered" >  if (finalMode === "express" || finalMode === "normal") <span class="cstat-no" title="statement not covered" >return finalMode;</span></span>
-&nbsp;
-  const originalMode = <span class="cstat-no" title="statement not covered" >String(requestLike?.originalShipping?.mode || "").trim();</span>
-<span class="cstat-no" title="statement not covered" >  if (originalMode === "express" || originalMode === "normal")</span>
-<span class="cstat-no" title="statement not covered" >    return originalMode;</span>
-&nbsp;
-  const legacy = <span class="cstat-no" title="statement not covered" >String(requestLike?.shippingMode || "").trim();</span>
-<span class="cstat-no" title="statement not covered" >  if (legacy === "express" || legacy === "normal") <span class="cstat-no" title="statement not covered" >return legacy;</span></span>
-&nbsp;
+  // 신속배송(express) 모드 폐지: 항상 'normal' 로 처리
 <span class="cstat-no" title="statement not covered" >  return "normal";</span>
 }
 &nbsp;
 export async function <span class="fstat-no" title="function not covered" >computeShippingPriority(</span>{ request, now }) {
-  const stage = <span class="cstat-no" title="statement not covered" >String(</span>
-    request?.manufacturerStage || request?.status || "",
-  ).trim();
-  const isPreShip = <span class="cstat-no" title="statement not covered" >["의뢰", "CAM", "생산"].includes(stage);</span>
+  const stage = <span class="cstat-no" title="statement not covered" >String(request?.manufacturerStage || "").trim();</span>
+  const isPreShip = <span class="cstat-no" title="statement not covered" >["의뢰", "CAM", "가공"].includes(stage);</span>
 &nbsp;
   const mode = <span class="cstat-no" title="statement not covered" >resolveEffectiveShippingMode(request);</span>
 &nbsp;
@@ -562,7 +529,7 @@ export async function <span class="fstat-no" title="function not covered" >compu
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-21T01:27:52.926Z
+                at 2026-03-06T11:11:46.573Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

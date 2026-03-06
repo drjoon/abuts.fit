@@ -178,7 +178,10 @@ export const RequestPage = ({
               ? "/api/requests/all"
               : "/api/requests";
         const stageFilterForTab = (() => {
-          if (tabStage === "request") return ["의뢰"];
+          if (tabStage === "request")
+            return showCompleted
+              ? ["의뢰", "CAM", "가공", "세척.패킹", "포장.발송", "추적관리"]
+              : ["의뢰"];
           if (isCamStage)
             return showCompleted
               ? ["CAM", "가공", "세척.패킹", "포장.발송", "추적관리"]

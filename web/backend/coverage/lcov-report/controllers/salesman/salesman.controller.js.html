@@ -25,14 +25,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/211</span>
+                <span class='fraction'>0/214</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/205</span>
+                <span class='fraction'>0/211</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/187</span>
+                <span class='fraction'>0/190</span>
             </div>
         
             
@@ -572,7 +572,19 @@
 <a name='L507'></a><a href='#L507'>507</a>
 <a name='L508'></a><a href='#L508'>508</a>
 <a name='L509'></a><a href='#L509'>509</a>
-<a name='L510'></a><a href='#L510'>510</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L510'></a><a href='#L510'>510</a>
+<a name='L511'></a><a href='#L511'>511</a>
+<a name='L512'></a><a href='#L512'>512</a>
+<a name='L513'></a><a href='#L513'>513</a>
+<a name='L514'></a><a href='#L514'>514</a>
+<a name='L515'></a><a href='#L515'>515</a>
+<a name='L516'></a><a href='#L516'>516</a>
+<a name='L517'></a><a href='#L517'>517</a>
+<a name='L518'></a><a href='#L518'>518</a>
+<a name='L519'></a><a href='#L519'>519</a>
+<a name='L520'></a><a href='#L520'>520</a>
+<a name='L521'></a><a href='#L521'>521</a>
+<a name='L522'></a><a href='#L522'>522</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -856,6 +868,12 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -951,6 +969,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1047,6 +1068,9 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1365,6 +1389,12 @@ export async function <span class="fstat-no" title="function not covered" >getSa
     }
 &nbsp;
     const period = <span class="cstat-no" title="statement not covered" >parsePeriod(req.query?.period) || "30d";</span>
+    const ymInput = <span class="cstat-no" title="statement not covered" >parseYearMonth(req.query?.ym);</span>
+    const now = <span class="cstat-no" title="statement not covered" >new Date();</span>
+    const effectiveYm = <span class="cstat-no" title="statement not covered" >ymInput || {</span>
+      year: now.getUTCFullYear(),
+      month: now.getUTCMonth() + 1,
+    };
 &nbsp;
     const commissionRate = <span class="cstat-no" title="statement not covered" >0.05;</span>
     const indirectCommissionRate = <span class="cstat-no" title="statement not covered" >commissionRate * 0.5;</span>
@@ -1434,7 +1464,10 @@ export async function <span class="fstat-no" title="function not covered" >getSa
 <span class="cstat-no" title="statement not covered" >      return res.status(200).json({</span>
         success: true,
         data: {
-          ym: `${effectiveYm.year}-${String(effectiveYm.month).padStart(2, "0")}`,
+          ym:
+            period === "all"
+              ? `${effectiveYm.year}-${String(effectiveYm.month).padStart(2, "0")}`
+              : null,
           period: period || null,
           commissionRate,
           indirectCommissionRate,
@@ -1478,7 +1511,7 @@ export async function <span class="fstat-no" title="function not covered" >getSa
       {
         $match: {
           requestorOrganizationId: { $in: orgObjectIds },
-          status: "완료",
+          "caseInfos.reviewByStage.shipping.status": "APPROVED",
           createdAt: { $gte: start, $lt: end },
         },
       },
@@ -1558,7 +1591,10 @@ export async function <span class="fstat-no" title="function not covered" >getSa
 <span class="cstat-no" title="statement not covered" >    return res.status(200).json({</span>
       success: true,
       data: {
-        ym: null,
+        ym:
+          period === "all"
+            ? `${effectiveYm.year}-${String(effectiveYm.month).padStart(2, "0")}`
+            : null,
         period,
         commissionRate,
         indirectCommissionRate,
@@ -1597,7 +1633,7 @@ export async function <span class="fstat-no" title="function not covered" >getSa
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-21T01:27:52.926Z
+                at 2026-03-06T11:11:46.573Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

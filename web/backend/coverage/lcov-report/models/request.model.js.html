@@ -651,7 +651,18 @@
 <a name='L586'></a><a href='#L586'>586</a>
 <a name='L587'></a><a href='#L587'>587</a>
 <a name='L588'></a><a href='#L588'>588</a>
-<a name='L589'></a><a href='#L589'>589</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L589'></a><a href='#L589'>589</a>
+<a name='L590'></a><a href='#L590'>590</a>
+<a name='L591'></a><a href='#L591'>591</a>
+<a name='L592'></a><a href='#L592'>592</a>
+<a name='L593'></a><a href='#L593'>593</a>
+<a name='L594'></a><a href='#L594'>594</a>
+<a name='L595'></a><a href='#L595'>595</a>
+<a name='L596'></a><a href='#L596'>596</a>
+<a name='L597'></a><a href='#L597'>597</a>
+<a name='L598'></a><a href='#L598'>598</a>
+<a name='L599'></a><a href='#L599'>599</a>
+<a name='L600'></a><a href='#L600'>600</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -1146,16 +1157,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1173,6 +1177,17 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1183,6 +1198,13 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1309,6 +1331,19 @@ const requestSchema = <span class="cstat-no" title="statement not covered" >new 
       implantType: String, // e.g. Hex, Non-hex (type)
       maxDiameter: Number,
       connectionDiameter: Number,
+      newSystemRequest: {
+        requested: { type: Boolean, default: false },
+        manufacturer: String,
+        system: String,
+        message: String,
+        free: { type: Boolean, default: false },
+        tag: String,
+      },
+      // esprit-addin: 의뢰별 공정 PRC 파일명(또는 절대경로)
+      // - Face Hole 공정: AcroDent/1_Face Hole/
+      // - Connection 공정: AcroDent/2_Connection/
+      faceHolePrcFileName: String,
+      connectionPrcFileName: String,
       workType: String,
       reviewByStage: {
         request: {
@@ -1350,7 +1385,7 @@ const requestSchema = <span class="cstat-no" title="statement not covered" >new 
           },
           reason: String,
         },
-        packaging: {
+        packing: {
           status: {
             type: String,
             enum: ["PENDING", "APPROVED", "REJECTED"],
@@ -1390,6 +1425,14 @@ const requestSchema = <span class="cstat-no" title="statement not covered" >new 
           reason: String,
         },
       },
+      rollbackCounts: {
+        request: { type: Number, default: 0 },
+        cam: { type: Number, default: 0 },
+        machining: { type: Number, default: 0 },
+        packing: { type: Number, default: 0 },
+        shipping: { type: Number, default: 0 },
+        tracking: { type: Number, default: 0 },
+      },
       stageFiles: {
         machining: {
           fileName: String,
@@ -1412,7 +1455,7 @@ const requestSchema = <span class="cstat-no" title="statement not covered" >new 
             default: Date.now,
           },
         },
-        packaging: {
+        packing: {
           fileName: String,
           fileType: String,
           fileSize: Number,
@@ -1531,39 +1574,21 @@ const requestSchema = <span class="cstat-no" title="statement not covered" >new 
         },
       },
     },
-    status: {
-      // [레거시] 의뢰인용 상태 — SSOT는 caseInfos.reviewByStage. 추후 제거 예정.
+    // 제조 공정 단계 SSOT
+    manufacturerStage: {
       type: String,
       enum: [
         "의뢰",
         "CAM",
         "가공",
-        "세척.포장",
-        "발송",
+        "세척.패킹",
+        "포장.발송",
         "추적관리",
         "취소",
-        "완료",
       ],
       default: "의뢰",
     },
-    // [레거시] 공정 내 세부 단계 — SSOT는 caseInfos.reviewByStage. 추후 제거 예정.
-    status2: {
-      type: String,
-      enum: ["없음", "전", "중", "후"],
-      default: "없음",
-    },
-    // 제조사용 스테이지 (UI 표기용)
-    manufacturerStage: {
-      type: String,
-      enum: ["의뢰", "CAM", "생산", "가공", "세척.포장", "발송", "추적관리"],
-      default: "의뢰",
-    },
-    // 레거시: 배송 모드 (프론트/백엔드 일부 로직에서 사용)
-    shippingMode: {
-      type: String,
-      enum: ["normal", "express"],
-      default: "normal",
-    },
+    // 레거시: 배송 모드 제거됨 (묶음 배송만 사용)
     // 레거시: 출고일(또는 희망 출고일) (KST 기준)
     requestedShipDate: Date,
 &nbsp;
@@ -1590,6 +1615,12 @@ const requestSchema = <span class="cstat-no" title="statement not covered" >new 
       },
       updatedAt: Date, // 마지막 변경 시각
     },
+    // 가상 우편함 할당 주소 (A1A1 ~ C4C4)
+    mailboxAddress: {
+      type: String,
+      default: null,
+      index: true,
+    },
     // 생산 스케줄 (생산자 관점, 시각 단위 관리)
     productionSchedule: {
       // 예정 시각
@@ -1598,6 +1629,7 @@ const requestSchema = <span class="cstat-no" title="statement not covered" >new 
       scheduledMachiningStart: Date, // 가공 시작 예정 시각 (CAM 완료 직후)
       scheduledMachiningComplete: Date, // 가공 완료 예정 시각 (가공 시작 + 15분)
       scheduledBatchProcessing: Date, // 세척/검사/포장 예정 시각 (50~100개 모아서 처리)
+      scheduledPickupRequest: Date, // 택배 수거 신청 시각 (15:00)
       scheduledShipPickup: Date, // 택배 수거 시각 (매일 16:00)
 &nbsp;
       // 실제 시각
@@ -1693,6 +1725,8 @@ const requestSchema = <span class="cstat-no" title="statement not covered" >new 
     },
 &nbsp;
     timeline: {
+      originalEstimatedShipYmd: String, // 최초 계산된 발송 예정일(YYYY-MM-DD)
+      nextEstimatedShipYmd: String, // 재조정된 다음 발송 예정일(YYYY-MM-DD)
       estimatedShipYmd: String, // YYYY-MM-DD 형식 (KST 기준, 발송 예정일)
       actualCompletion: Date,
     },
@@ -1739,7 +1773,7 @@ const requestSchema = <span class="cstat-no" title="statement not covered" >new 
   "caseInfos.clinicName": 1,
   "caseInfos.patientName": 1,
   "caseInfos.tooth": 1,
-  status: 1,
+  manufacturerStage: 1,
   createdAt: -1,
 });
 &nbsp;
@@ -1748,14 +1782,14 @@ const requestSchema = <span class="cstat-no" title="statement not covered" >new 
   "caseInfos.clinicName": 1,
   "caseInfos.patientName": 1,
   "caseInfos.tooth": 1,
-  status: 1,
+  manufacturerStage: 1,
   createdAt: -1,
 });
 &nbsp;
 // 대시보드 조회 최적화를 위한 복합 인덱스
 <span class="cstat-no" title="statement not covered" >requestSchema.index({</span>
   requestorOrganizationId: 1,
-  status: 1,
+  manufacturerStage: 1,
   "caseInfos.implantSystem": 1,
   createdAt: -1,
 });
@@ -1763,7 +1797,7 @@ const requestSchema = <span class="cstat-no" title="statement not covered" >new 
 // 제조사 대시보드 조회를 위한 인덱스
 <span class="cstat-no" title="statement not covered" >requestSchema.index({</span>
   manufacturer: 1,
-  status: 1,
+  manufacturerStage: 1,
   "caseInfos.implantSystem": 1,
   createdAt: -1,
 });
@@ -1771,8 +1805,7 @@ const requestSchema = <span class="cstat-no" title="statement not covered" >new 
 // 배송 모드 및 상태 기반 조회를 위한 인덱스
 <span class="cstat-no" title="statement not covered" >requestSchema.index({</span>
   requestorOrganizationId: 1,
-  status: 1,
-  shippingMode: 1,
+  manufacturerStage: 1,
 });
 &nbsp;
 // 의뢰 ID 자동 생성 (YYYYMMDD-XXXXXXXX)
@@ -1834,7 +1867,7 @@ export default Request;
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-21T01:27:52.926Z
+                at 2026-03-06T11:11:46.573Z
             </div>
         <script src="../prettify.js"></script>
         <script>

@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/11</span>
+                <span class='fraction'>0/13</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/9</span>
+                <span class='fraction'>0/11</span>
             </div>
         
             
@@ -85,7 +85,26 @@
 <a name='L20'></a><a href='#L20'>20</a>
 <a name='L21'></a><a href='#L21'>21</a>
 <a name='L22'></a><a href='#L22'>22</a>
-<a name='L23'></a><a href='#L23'>23</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -93,38 +112,34 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import { buildOrganizationTypeFilter } from "./organizationRole.util.js";
 &nbsp;
-export async function <span class="fstat-no" title="function not covered" >resolveOwnedOrg(</span>req) {
+export async function <span class="fstat-no" title="function not covered" >resolveOwnedOrg(</span>req, organizationType) {
   const orgId = <span class="cstat-no" title="statement not covered" >req.user?.organizationId;</span>
 <span class="cstat-no" title="statement not covered" >  if (!orgId) <span class="cstat-no" title="statement not covered" >return null;</span></span>
   const meId = <span class="cstat-no" title="statement not covered" >req.user?._id;</span>
+  const orgTypeFilter = <span class="cstat-no" title="statement not covered" >buildOrganizationTypeFilter(organizationType);</span>
   const org = <span class="cstat-no" title="statement not covered" >await RequestorOrganization.findOne({</span>
     _id: orgId,
+    ...orgTypeFilter,
     $or: [{ owner: meId }, { owners: meId }],
   });
 <span class="cstat-no" title="statement not covered" >  return org;</span>
 }
 &nbsp;
-export async function <span class="fstat-no" title="function not covered" >resolvePrimaryOwnedOrg(</span>req) {
+export async function <span class="fstat-no" title="function not covered" >resolvePrimaryOwnedOrg(</span>req, organizationType) {
   const orgId = <span class="cstat-no" title="statement not covered" >req.user?.organizationId;</span>
 <span class="cstat-no" title="statement not covered" >  if (!orgId) <span class="cstat-no" title="statement not covered" >return null;</span></span>
+  const orgTypeFilter = <span class="cstat-no" title="statement not covered" >buildOrganizationTypeFilter(organizationType);</span>
   const org = <span class="cstat-no" title="statement not covered" >await RequestorOrganization.findOne({</span>
     _id: orgId,
+    ...orgTypeFilter,
     owner: req.user._id,
   });
 <span class="cstat-no" title="statement not covered" >  return org;</span>
@@ -136,7 +151,7 @@ export async function <span class="fstat-no" title="function not covered" >resol
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-21T01:27:52.926Z
+                at 2026-03-06T11:11:46.573Z
             </div>
         <script src="../../prettify.js"></script>
         <script>
