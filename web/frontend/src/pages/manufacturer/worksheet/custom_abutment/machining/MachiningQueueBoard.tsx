@@ -160,8 +160,13 @@ export const MachiningQueueBoard = ({
           >
             재배정
           </button>
-          <div className="text-[12px] font-extrabold text-slate-700">
-            전체 자동 가공 허용
+          <div className="flex flex-col items-end leading-tight">
+            <div className="text-[12px] font-extrabold text-slate-700">
+              전체 자동 가공 시작
+            </div>
+            <div className="text-[10px] font-semibold text-slate-500">
+              현재 가공은 그대로 유지
+            </div>
           </div>
           <button
             type="button"
@@ -200,6 +205,27 @@ export const MachiningQueueBoard = ({
               : null;
 
           const isActive = activeMachineId === m.uid;
+          const machineQueue = Array.isArray(queueMap?.[m.uid])
+            ? queueMap[m.uid]
+            : [];
+          const nowPlayingHint = nowPlayingHintMap?.[m.uid] || null;
+          const machiningActive =
+            nowPlayingHint != null ||
+            machineQueue.some((item) => {
+              const recordStatus = String(item?.machiningRecord?.status || "")
+                .trim()
+                .toUpperCase();
+              if (recordStatus === "RUNNING" || recordStatus === "PROCESSING") {
+                return true;
+              }
+              const startedAt = item?.machiningRecord?.startedAt
+                ? new Date(item.machiningRecord.startedAt).getTime()
+                : 0;
+              const completedAt = item?.machiningRecord?.completedAt
+                ? new Date(item.machiningRecord.completedAt).getTime()
+                : 0;
+              return startedAt > 0 && completedAt <= 0;
+            });
 
           return (
             <MachineQueueCard
@@ -207,16 +233,17 @@ export const MachiningQueueBoard = ({
               machineId={m.uid}
               machineName={m.name}
               machine={m}
-              queue={Array.isArray(queueMap?.[m.uid]) ? queueMap[m.uid] : []}
+              queue={machineQueue}
               machiningElapsedSeconds={
                 typeof machiningElapsedSecondsMap?.[m.uid] === "number"
                   ? machiningElapsedSecondsMap[m.uid]
                   : null
               }
               lastCompleted={lastCompletedMap?.[m.uid] || null}
-              nowPlayingHint={nowPlayingHintMap?.[m.uid] || null}
+              nowPlayingHint={nowPlayingHint}
               onOpenRequestLog={(requestId) => setEventLogRequestId(requestId)}
               autoEnabled={m.allowAutoMachining === true}
+              machiningActive={machiningActive}
               onToggleAuto={(next) => {
                 requestToggleMachineAuto(m.uid, next);
               }}

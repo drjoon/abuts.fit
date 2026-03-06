@@ -76,6 +76,7 @@ export const MachineQueueCard = ({
   queue,
   onOpenRequestLog,
   autoEnabled,
+  machiningActive,
   onToggleAuto,
   onToggleRequestAssign,
   machineStatus,
@@ -201,6 +202,10 @@ export const MachineQueueCard = ({
     }
     return formatElapsedMMSS(machiningElapsedSeconds);
   })();
+  const machiningStatusLabel = machiningActive ? "가공 중" : "대기";
+  const machiningStatusClass = machiningActive
+    ? "bg-blue-50 text-blue-700 border-blue-200"
+    : "bg-slate-50 text-slate-600 border-slate-200";
 
   const [completedRolledBack, setCompletedRolledBack] = useState(false);
   const isCompletedRolledBack = completedRolledBack;
@@ -238,21 +243,22 @@ export const MachineQueueCard = ({
       }}
     >
       <div className="app-glass-card-content flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <div className="truncate text-[15px] font-extrabold text-slate-900">
               {headerTitle}
             </div>
             <span
-              className={`w-3 h-3 rounded-full ${statusColor} ${
+              className={`h-3 w-3 shrink-0 rounded-full ${statusColor} ${
                 statusRefreshing ? "animate-pulse" : ""
               }`}
+              title="장비 상태"
             />
           </div>
         </div>
 
         <div
-          className="flex items-center gap-2"
+          className="flex items-center gap-2 justify-end shrink-0"
           title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
         >
           <MaterialDiameterChip
@@ -288,7 +294,6 @@ export const MachineQueueCard = ({
               }`}
             />
           </button>
-
           <div className="text-[11px] font-extrabold text-slate-700">
             자동가공
           </div>
@@ -309,6 +314,25 @@ export const MachineQueueCard = ({
             />
           </button>
         </div>
+      </div>
+
+      <div className="app-glass-card-content mt-2 flex items-center justify-end gap-2 flex-wrap">
+        <span
+          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-black ${machiningStatusClass}`}
+          title="실제 가공 진행 상태"
+        >
+          {machiningStatusLabel}
+        </span>
+        <span
+          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-black ${
+            autoEnabled
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border-slate-200 bg-slate-50 text-slate-600"
+          }`}
+          title="다음 자동 시작 허용 상태"
+        >
+          자동가공 {autoEnabled ? "ON" : "OFF"}
+        </span>
       </div>
 
       <div className="app-glass-card-content mt-4 flex flex-col gap-2 text-sm">

@@ -6,6 +6,59 @@ import {
 import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
 
+const REASSIGN_STAGE_SET = ["의뢰", "CAM", "가공"];
+
+const normalizeDiameterGroup = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (raw.includes("+")) return "12";
+  const numeric = Number.parseFloat(raw.replace(/[^0-9.]/g, ""));
+  if (Number.isFinite(numeric) && numeric > 10) return "12";
+  if (Number.isFinite(numeric) && numeric > 0)
+    return String(Math.round(numeric));
+  return raw;
+};
+
+const inferMaterialDiameterGroup = (machine) => {
+  const currentGroup = normalizeDiameterGroup(
+    machine?.currentMaterial?.diameterGroup,
+  );
+  if (currentGroup) return currentGroup;
+
+  const diameter = Number(machine?.currentMaterial?.diameter);
+  if (Number.isFinite(diameter) && diameter > 0) {
+    if (diameter <= 6) return "6";
+    if (diameter <= 8) return "8";
+    if (diameter <= 10) return "10";
+    return "12";
+  }
+
+  return "";
+};
+
+const isMachiningInProgress = (reqItem) => {
+  const record = reqItem?.productionSchedule?.machiningRecord;
+  if (!record) return false;
+
+  const status = String(record?.status || "")
+    .trim()
+    .toUpperCase();
+  if (status === "RUNNING" || status === "PROCESSING") return true;
+
+  const startedAt = record?.startedAt
+    ? new Date(record.startedAt).getTime()
+    : 0;
+  const completedAt = record?.completedAt
+    ? new Date(record.completedAt).getTime()
+    : 0;
+  return startedAt > 0 && completedAt <= 0;
+};
+
+const getMachiningLoad = (reqItem) => {
+  const qty = Number(reqItem?.productionSchedule?.machiningQty ?? 1);
+  return Number.isFinite(qty) && qty > 0 ? qty : 1;
+};
+
 export async function getProductionQueues(req, res) {
   try {
     const requests = await Request.find({
@@ -112,13 +165,18 @@ const inferDiameterGroup = (reqItem) => {
 export async function reassignProductionQueues(req, res) {
   try {
     const requests = await Request.find({
-      manufacturerStage: { $in: ["CAM", "가공"] },
-    }).select(
-      "_id requestId manufacturerStage productionSchedule assignedMachine caseInfos",
-    );
+      manufacturerStage: { $in: REASSIGN_STAGE_SET },
+    })
+      .select(
+        "_id requestId manufacturerStage productionSchedule assignedMachine caseInfos",
+      )
+      .populate({
+        path: "productionSchedule.machiningRecord",
+        select: "status startedAt completedAt machineId",
+      });
 
     const cncMachines = await CncMachine.find({ status: "active" })
-      .select({ machineId: 1, maxModelDiameterGroups: 1 })
+      .select({ machineId: 1, maxModelDiameterGroups: 1, currentMaterial: 1 })
       .lean();
 
     const machineUids = cncMachines
@@ -140,11 +198,16 @@ export async function reassignProductionQueues(req, res) {
     for (const m of cncMachines) {
       const uid = String(m?.machineId || "").trim();
       if (!uid || !allowAssignSet.has(uid)) continue;
-      const groups = Array.isArray(m?.maxModelDiameterGroups)
-        ? m.maxModelDiameterGroups
-        : [];
+      const materialGroup = inferMaterialDiameterGroup(m);
+      const groups = materialGroup
+        ? [materialGroup]
+        : Array.isArray(m?.maxModelDiameterGroups)
+          ? m.maxModelDiameterGroups
+              .map((g) => normalizeDiameterGroup(g))
+              .filter(Boolean)
+          : [];
       for (const g of groups) {
-        const key = String(g || "").trim();
+        const key = normalizeDiameterGroup(g);
         if (!key) continue;
         if (!machinesByGroup.has(key)) machinesByGroup.set(key, []);
         machinesByGroup.get(key).push(uid);
@@ -161,10 +224,27 @@ export async function reassignProductionQueues(req, res) {
     const assignmentsByMachine = new Map();
     const ops = [];
     const sortedRequests = [...requests].sort((a, b) => {
+      const aRunning = isMachiningInProgress(a);
+      const bRunning = isMachiningInProgress(b);
+      if (aRunning !== bRunning) return aRunning ? -1 : 1;
+
+      const aPos = Number(a?.productionSchedule?.queuePosition ?? 0);
+      const bPos = Number(b?.productionSchedule?.queuePosition ?? 0);
+      const aPosOk = Number.isFinite(aPos) && aPos > 0;
+      const bPosOk = Number.isFinite(bPos) && bPos > 0;
+      if (aPosOk && bPosOk && aPos !== bPos) return aPos - bPos;
+      if (aPosOk !== bPosOk) return aPosOk ? -1 : 1;
+
       const aTime = a.productionSchedule?.scheduledShipPickup || new Date(0);
       const bTime = b.productionSchedule?.scheduledShipPickup || new Date(0);
-      return aTime - bTime;
+      const diff = aTime - bTime;
+      if (diff !== 0) return diff;
+
+      return String(a?.requestId || "").localeCompare(
+        String(b?.requestId || ""),
+      );
     });
+
     for (const reqItem of sortedRequests) {
       const group = inferDiameterGroup(reqItem);
       const rawCandidates = machinesByGroup.get(group) || [];
@@ -176,6 +256,28 @@ export async function reassignProductionQueues(req, res) {
         ),
       ).sort((a, b) => String(a).localeCompare(String(b)));
       if (!candidates.length) continue;
+
+      const lockedMachineId = String(
+        reqItem?.productionSchedule?.machiningRecord?.machineId ||
+          reqItem?.productionSchedule?.assignedMachine ||
+          reqItem?.assignedMachine ||
+          "",
+      ).trim();
+      const isLocked = isMachiningInProgress(reqItem);
+
+      if (isLocked && lockedMachineId && candidates.includes(lockedMachineId)) {
+        const load = getMachiningLoad(reqItem);
+        queueCounts.set(
+          lockedMachineId,
+          (queueCounts.get(lockedMachineId) || 0) + load,
+        );
+
+        if (!assignmentsByMachine.has(lockedMachineId)) {
+          assignmentsByMachine.set(lockedMachineId, []);
+        }
+        assignmentsByMachine.get(lockedMachineId).push(reqItem);
+        continue;
+      }
 
       let selected = null;
       let minCount = Infinity;
@@ -205,7 +307,8 @@ export async function reassignProductionQueues(req, res) {
       }
 
       if (!selected) continue;
-      queueCounts.set(selected, (queueCounts.get(selected) || 0) + 1);
+      const load = getMachiningLoad(reqItem);
+      queueCounts.set(selected, (queueCounts.get(selected) || 0) + load);
 
       if (!assignmentsByMachine.has(selected)) {
         assignmentsByMachine.set(selected, []);

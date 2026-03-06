@@ -121,16 +121,18 @@ const WorksheetCncMachineCard = ({
   onCardClick,
   continuousEnabled,
 }: WorksheetMachineCardProps) => {
-  const { state: continuousState } = useCncContinuous(
-    continuousEnabled ? machine.uid : null,
-  );
+  const { state: continuousState } = useCncContinuous(machine.uid);
   const { token } = useAuthStore();
   const { toast } = useToast();
   const statusForChip = statusOverride ?? (machine.status as string);
-  const showContinuousInfo =
-    continuousEnabled &&
-    continuousState &&
-    (continuousState.isRunning || continuousState.nextJob);
+  const hasContinuousActivity =
+    continuousState != null &&
+    Boolean(
+      continuousState.isRunning ||
+      continuousState.currentJob ||
+      continuousState.nextJob,
+    );
+  const showContinuousInfo = hasContinuousActivity;
   const continuousElapsedMin = continuousState?.isRunning
     ? Math.floor(continuousState.elapsedSeconds / 60)
     : 0;
@@ -272,6 +274,10 @@ const WorksheetCncMachineCard = ({
             <span>{machine.lastUpdated}</span>
           </div>
         )}
+        <div className="flex justify-between">
+          <span className="font-medium text-slate-700">자동 가공</span>
+          <span>{continuousEnabled ? "ON" : "OFF"}</span>
+        </div>
       </div>
 
       <div className="app-glass-card-content mt-auto pt-3 space-y-2">

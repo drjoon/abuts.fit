@@ -80,6 +80,7 @@ export type MachineQueueCardProps = {
   queue: QueueItem[];
   onOpenRequestLog?: (requestId: string) => void;
   autoEnabled: boolean;
+  machiningActive?: boolean;
   onToggleAuto: (next: boolean) => void;
   onToggleRequestAssign?: (next: boolean) => void;
   machineStatus?: MachineStatus | null;
