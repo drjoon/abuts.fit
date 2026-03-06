@@ -29,6 +29,11 @@ import { allocateVirtualMailboxAddress } from "./mailbox.utils.js";
 import { triggerNextAutoMachiningAfterComplete } from "../cnc/machiningBridge.js";
 import { computeShippingPriority } from "./shippingPriority.utils.js";
 import { getAllProductionQueues } from "../cnc/shared.js";
+import {
+  buildMachineQueueLoadMap,
+  inferCurrentMaterialDiameter,
+  inferDiameterGroupFromValue,
+} from "../cnc/distribution.utils.js";
 import { getOrganizationCreditBalanceBreakdown } from "./creation.helpers.controller.js";
 import s3Utils, {
   deleteFileFromS3,
@@ -151,11 +156,8 @@ async function ensureMachineCompatibilityOrThrow({ request, stageKey }) {
 }
 
 function inferDiameterGroupFromDiameter(diameter) {
-  if (!Number.isFinite(diameter) || diameter <= 0) return null;
-  if (diameter <= 6) return "6";
-  if (diameter <= 8) return "8";
-  if (diameter <= 10) return "10";
-  return "12";
+  const group = inferDiameterGroupFromValue(diameter);
+  return group || null;
 }
 
 function inferDiameterGroupFromRequest(request) {
@@ -417,7 +419,7 @@ async function chooseMachineForCamMachining({
       const machineId = String(m?.machineId || "").trim();
       if (!machineId) return null;
       if (!ignoreAllowAssign && !allowAssignSet.has(machineId)) return null;
-      const materialDia = Number(m?.currentMaterial?.diameter);
+      const materialDia = inferCurrentMaterialDiameter(m);
       if (!Number.isFinite(materialDia) || materialDia <= 0) {
         console.warn(
           "[chooseMachineForCamMachining] skip machine without material",
@@ -446,16 +448,9 @@ async function chooseMachineForCamMachining({
     );
   }
 
-  const queueCounts = await Promise.all(
-    candidatesWithDia.map(async (c) => {
-      const count = await Request.countDocuments({
-        "productionSchedule.assignedMachine": c.machineId,
-        manufacturerStage: { $in: ["CAM", "가공"] },
-      });
-      return { machineId: c.machineId, count };
-    }),
+  const queueCountMap = await buildMachineQueueLoadMap(
+    candidatesWithDia.map((c) => c.machineId),
   );
-  const queueCountMap = new Map(queueCounts.map((q) => [q.machineId, q.count]));
 
   const ceilCandidates = candidatesWithDia.filter(
     (c) => c.availableDia >= targetDiameter,

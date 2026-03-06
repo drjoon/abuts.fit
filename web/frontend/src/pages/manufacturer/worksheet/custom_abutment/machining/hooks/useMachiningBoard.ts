@@ -199,9 +199,7 @@ export const useMachiningBoard = ({
   >({});
 
   const reconcileMachiningTimersFromQueues = useCallback((map: QueueMap) => {
-    const nextBases: Record<string, number> = {
-      ...machiningElapsedBaseRef.current,
-    };
+    const nextBases: Record<string, number> = {};
     const nextSecondsFromQueues: Record<string, number> = {};
     const nextHintsFromQueues: Record<string, NowPlayingHint> = {};
 
@@ -259,11 +257,8 @@ export const useMachiningBoard = ({
     }
 
     machiningElapsedBaseRef.current = nextBases;
-    setMachiningElapsedSecondsMap((prev) => ({
-      ...prev,
-      ...nextSecondsFromQueues,
-    }));
-    setNowPlayingHintMap((prev) => ({ ...prev, ...nextHintsFromQueues }));
+    setMachiningElapsedSecondsMap(nextSecondsFromQueues);
+    setNowPlayingHintMap(nextHintsFromQueues);
   }, []);
 
   const refreshProductionQueues = useCallback(async () => {
@@ -514,6 +509,17 @@ export const useMachiningBoard = ({
     };
   }, [token, refreshProductionQueues]);
 
+  useEffect(() => {
+    const handleQueuesUpdated = () => {
+      void refreshProductionQueues();
+    };
+
+    window.addEventListener("cnc-queues-updated", handleQueuesUpdated);
+    return () => {
+      window.removeEventListener("cnc-queues-updated", handleQueuesUpdated);
+    };
+  }, [refreshProductionQueues]);
+
   const refreshLastCompletedFromServer = useCallback(async () => {
     if (!token) return;
     try {
@@ -638,7 +644,13 @@ export const useMachiningBoard = ({
       });
 
       delete machiningElapsedBaseRef.current[mid];
-      setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: 0 }));
+      setMachiningElapsedSecondsMap((prev) => {
+        const next = { ...prev };
+        delete next[mid];
+        return next;
+      });
+
+      void refreshProductionQueues();
     });
 
     const offSettingsChanged = onCncMachineSettingsChanged((data: any) => {
@@ -676,7 +688,12 @@ export const useMachiningBoard = ({
       offCompleted?.();
       offSettingsChanged?.();
     };
-  }, [token, setMachines]);
+  }, [
+    refreshLastCompletedFromServer,
+    refreshProductionQueues,
+    token,
+    setMachines,
+  ]);
 
   const refreshMachineStatuses = useCallback(async () => {
     if (!token) return;
