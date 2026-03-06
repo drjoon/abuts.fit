@@ -177,6 +177,25 @@ export const RequestPage = ({
             : user?.role === "manufacturer"
               ? "/api/requests/all"
               : "/api/requests";
+        const stageFilterForTab = (() => {
+          if (tabStage === "request") return ["의뢰"];
+          if (isCamStage)
+            return showCompleted
+              ? ["CAM", "가공", "세척.패킹", "포장.발송", "추적관리"]
+              : ["CAM"];
+          if (isMachiningStage)
+            return showCompleted
+              ? ["가공", "세척.패킹", "포장.발송", "추적관리"]
+              : ["가공"];
+          if (tabStage === "packing")
+            return showCompleted
+              ? ["세척.패킹", "포장.발송", "추적관리"]
+              : ["세척.패킹"];
+          if (tabStage === "shipping")
+            return showCompleted ? ["포장.발송", "추적관리"] : ["포장.발송"];
+          if (tabStage === "tracking") return ["추적관리"];
+          return [] as string[];
+        })();
 
         const path = (() => {
           const url = new URL(basePath, window.location.origin);
@@ -185,18 +204,12 @@ export const RequestPage = ({
           url.searchParams.set("limit", String(PAGE_LIMIT));
           url.searchParams.set("view", "worksheet");
           url.searchParams.set("includeTotal", "0");
-          // Stage-scoped paging: fetch only current tab's stage from backend
-          const manufacturerStageForTab = (() => {
-            if (isMachiningStage) return "가공";
-            if (isCamStage) return "CAM";
-            if (tabStage === "request") return "의뢰";
-            if (tabStage === "packing") return "세척.패킹";
-            if (tabStage === "shipping") return "포장.발송";
-            if (tabStage === "tracking") return "추적관리";
-            return "";
-          })();
-          if (manufacturerStageForTab) {
-            url.searchParams.set("manufacturerStage", manufacturerStageForTab);
+          if (stageFilterForTab.length === 1) {
+            url.searchParams.set("manufacturerStage", stageFilterForTab[0]);
+          } else if (stageFilterForTab.length > 1) {
+            for (const stage of stageFilterForTab) {
+              url.searchParams.append("manufacturerStageIn", stage);
+            }
           }
           return url.pathname + url.search;
         })();

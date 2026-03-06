@@ -650,6 +650,9 @@ export const PackingPage = ({
             : user?.role === "manufacturer"
               ? "/api/requests/all"
               : "/api/requests";
+        const stageFilterForTab = showCompleted
+          ? ["세척.패킹", "포장.발송", "추적관리"]
+          : ["세척.패킹"];
 
         const path = (() => {
           const url = new URL(basePath, window.location.origin);
@@ -658,7 +661,13 @@ export const PackingPage = ({
             url.searchParams.set("limit", String(PAGE_LIMIT));
             url.searchParams.set("view", "worksheet");
             url.searchParams.set("includeTotal", "0");
-            url.searchParams.set("manufacturerStage", "세척.패킹");
+            if (stageFilterForTab.length === 1) {
+              url.searchParams.set("manufacturerStage", stageFilterForTab[0]);
+            } else {
+              for (const stage of stageFilterForTab) {
+                url.searchParams.append("manufacturerStageIn", stage);
+              }
+            }
           }
           return url.pathname + url.search;
         })();
@@ -729,7 +738,7 @@ export const PackingPage = ({
         if (!silent) setIsLoading(false);
       }
     },
-    [token, user?.role, toast],
+    [showCompleted, token, user?.role, toast],
   );
 
   const fetchRequests = useCallback(

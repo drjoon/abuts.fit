@@ -152,6 +152,15 @@ export async function getAllRequests(req, res) {
     if (req.query.manufacturerStage) {
       filter.manufacturerStage = req.query.manufacturerStage;
     }
+    if (req.query.manufacturerStageIn) {
+      const raw = Array.isArray(req.query.manufacturerStageIn)
+        ? req.query.manufacturerStageIn
+        : [req.query.manufacturerStageIn];
+      const values = raw.map((v) => String(v || "").trim()).filter(Boolean);
+      if (values.length) {
+        filter.manufacturerStage = { $in: values };
+      }
+    }
     if (req.query.implantType) filter.implantType = req.query.implantType;
 
     // 제조사: 본인에게 배정되었거나 미배정된 의뢰 + 취소 제외
