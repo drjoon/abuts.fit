@@ -37,7 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { Settings } from "lucide-react";
 
-// TODO: 개발 완료 후 false로 변경 (LOT 인식 API 호출 대신 "AAD" 하드코딩)
+// TODO: 개발 완료 후 false로 변경 (LOT 인식 API 호출 대신 첫 번째 의뢰 강제 승인)
 const IS_SIMULATION_MODE = true;
 
 type FilePreviewInfo = {
@@ -50,6 +50,17 @@ type PreviewFiles = {
   cam?: File | null;
   title?: string;
   request?: ManufacturerRequest | null;
+};
+
+type PackingCaptureStageFile = {
+  fileName?: string;
+  fileType?: string | null;
+  fileSize?: number | null;
+  filePath?: string;
+  s3Key?: string;
+  s3Url?: string;
+  source?: "manual" | "worker";
+  uploadedAt?: string | Date | null;
 };
 
 export const PackingPage = ({
@@ -192,6 +203,33 @@ export const PackingPage = ({
       URL.revokeObjectURL(url);
     }
   };
+
+  const resolveManufacturingDate = useCallback((req: ManufacturerRequest) => {
+    const productionCompletedAt =
+      (req.productionSchedule?.actualMachiningComplete as
+        | string
+        | Date
+        | null) || null;
+    const machiningReviewedAt =
+      (req.caseInfos?.reviewByStage?.machining?.updatedAt as
+        | string
+        | undefined) || "";
+    const timelineCompletedAt =
+      (req.timeline?.actualCompletion as string | Date | null) || null;
+
+    return {
+      manufacturingDate:
+        toKstYmd(productionCompletedAt) ||
+        toKstYmd(machiningReviewedAt) ||
+        toKstYmd(timelineCompletedAt) ||
+        "",
+      rawSources: {
+        productionCompletedAt,
+        machiningReviewedAt,
+        timelineCompletedAt,
+      },
+    };
+  }, []);
 
   const renderPackLabelToCanvas = async (opts: {
     mailboxCode: string;
@@ -600,9 +638,9 @@ export const PackingPage = ({
     }
   }, [fetchPrinters, printerModalOpen, printerOptions.length]);
 
-  const fetchRequests = useCallback(
+  const fetchRequestsList = useCallback(
     async (silent = false, append = false) => {
-      if (!token) return;
+      if (!token) return null;
 
       try {
         if (!silent) setIsLoading(true);
@@ -620,7 +658,7 @@ export const PackingPage = ({
             url.searchParams.set("limit", String(PAGE_LIMIT));
             url.searchParams.set("view", "worksheet");
             url.searchParams.set("includeTotal", "0");
-            url.searchParams.set("status", "세척.패킹");
+            url.searchParams.set("manufacturerStage", "세척.패킹");
           }
           return url.pathname + url.search;
         })();
@@ -639,7 +677,7 @@ export const PackingPage = ({
             description: "잠시 후 다시 시도해주세요.",
             variant: "destructive",
           });
-          return;
+          return null;
         }
 
         const data = await res.json();
@@ -676,7 +714,9 @@ export const PackingPage = ({
           if (user?.role === "manufacturer") {
             hasMoreRef.current = list.length >= PAGE_LIMIT;
           }
+          return list as ManufacturerRequest[];
         }
+        return list as ManufacturerRequest[];
       } catch (error) {
         console.error("Error fetching requests:", error);
         toast({
@@ -684,11 +724,19 @@ export const PackingPage = ({
           description: "네트워크 오류가 발생했습니다.",
           variant: "destructive",
         });
+        return null;
       } finally {
         if (!silent) setIsLoading(false);
       }
     },
     [token, user?.role, toast],
+  );
+
+  const fetchRequests = useCallback(
+    async (silent = false, append = false) => {
+      await fetchRequestsList(silent, append);
+    },
+    [fetchRequestsList],
   );
 
   const fetchNextPage = useCallback(async () => {
@@ -834,15 +882,15 @@ export const PackingPage = ({
               }
 
               let rawLot: string = "";
+              let matchingRequest: ManufacturerRequest | undefined;
 
               if (IS_SIMULATION_MODE) {
                 await new Promise((resolve) => setTimeout(resolve, 800)); // 시뮬레이션 지연
-                const firstPackingReq =
+                matchingRequest =
                   requests.find(
                     (r) => deriveStageForFilter(r) === "세척.패킹",
                   ) || requests[0];
-                rawLot =
-                  extractLotSuffix3(firstPackingReq?.lotNumber?.part) || "AAD";
+                rawLot = extractLotSuffix3(matchingRequest?.lotNumber?.part);
               } else {
                 const aiRes = await fetch("/api/ai/recognize-lot-number", {
                   method: "POST",
@@ -869,8 +917,17 @@ export const PackingPage = ({
                 rawLot = aiData?.data?.lotNumber || "";
               }
 
+              if (IS_SIMULATION_MODE && !matchingRequest) {
+                toast({
+                  title: "승인할 의뢰가 없습니다",
+                  description: "세척·패킹 단계 의뢰를 먼저 불러와주세요.",
+                  variant: "destructive",
+                });
+                return;
+              }
+
               const recognizedSuffix = extractLotSuffix3(rawLot || "");
-              if (!recognizedSuffix) {
+              if (!IS_SIMULATION_MODE && !recognizedSuffix) {
                 toast({
                   title: "LOT 코드를 인식하지 못했습니다",
                   description:
@@ -880,11 +937,13 @@ export const PackingPage = ({
                 return;
               }
 
-              const matchingRequest = requests.find((req) => {
-                const part = String(req.lotNumber?.part || "");
-                const partSuffix = extractLotSuffix3(part);
-                return partSuffix === recognizedSuffix;
-              });
+              if (!matchingRequest) {
+                matchingRequest = requests.find((req) => {
+                  const part = String(req.lotNumber?.part || "");
+                  const partSuffix = extractLotSuffix3(part);
+                  return partSuffix === recognizedSuffix;
+                });
+              }
 
               if (!matchingRequest) {
                 toast({
@@ -1064,12 +1123,32 @@ export const PackingPage = ({
       if (evt?.type !== "packing:capture-processed") return;
       const payload = evt?.data || {};
 
-      void fetchRequests();
-
       const requestId = String(payload?.requestId || "").trim();
+      const requestMongoId = String(payload?.requestMongoId || "").trim();
       const suffix = String(payload?.recognizedSuffix || "").trim();
       const printSuccess = !!payload?.print?.success;
       const printMessage = String(payload?.print?.message || "").trim();
+
+      void (async () => {
+        const refreshed = await fetchRequestsList(true);
+        if (previewOpen && previewFiles.request?._id) {
+          const currentPreviewId = String(
+            previewFiles.request._id || "",
+          ).trim();
+          const matchedRequest = (refreshed || []).find((req) => {
+            const mongoId = String(req._id || "").trim();
+            const businessId = String(req.requestId || "").trim();
+            return (
+              mongoId === currentPreviewId ||
+              (requestMongoId && mongoId === requestMongoId) ||
+              (requestId && businessId === requestId)
+            );
+          });
+          if (matchedRequest) {
+            await handleOpenPreview(matchedRequest);
+          }
+        }
+      })();
 
       toast({
         title: printSuccess
@@ -1084,7 +1163,14 @@ export const PackingPage = ({
     return () => {
       unsubscribe?.();
     };
-  }, [fetchRequests, toast, token]);
+  }, [
+    fetchRequestsList,
+    handleOpenPreview,
+    previewFiles.request,
+    previewOpen,
+    toast,
+    token,
+  ]);
 
   const searchLower = worksheetSearch.toLowerCase();
   const currentStageForTab = "세척.패킹";
@@ -1267,10 +1353,19 @@ export const PackingPage = ({
             (caseInfos as any)?.implantType || "",
           ).trim();
           const createdAtIso = req.createdAt ? String(req.createdAt) : "";
-          const manufacturingDate = toKstYmd(
-            req.productionSchedule?.actualMachiningComplete || null,
-          );
+          const { manufacturingDate, rawSources } =
+            resolveManufacturingDate(req);
           if (!manufacturingDate) {
+            console.warn(
+              "[PackingPage] manufacturing date missing for pack label",
+              {
+                requestId: req.requestId,
+                manufacturerStage: req.manufacturerStage,
+                productionSchedule: req.productionSchedule,
+                rawSources,
+                reviewByStage: req.caseInfos?.reviewByStage,
+              },
+            );
             failCount += 1;
             toast({
               title: "제조일자를 확인할 수 없습니다",
@@ -1279,6 +1374,14 @@ export const PackingPage = ({
             });
             continue;
           }
+          console.log(
+            "[PackingPage] resolved manufacturing date for pack label",
+            {
+              requestId: req.requestId,
+              manufacturingDate,
+              rawSources,
+            },
+          );
           const material =
             (typeof (caseInfos as any)?.material === "string" &&
               (caseInfos as any).material) ||
@@ -1380,7 +1483,17 @@ export const PackingPage = ({
     } finally {
       setIsPrintingPackingLabels(false);
     }
-  }, [getLotLabel, paginatedRequests, printerProfile, toast, token]);
+  }, [
+    getLotLabel,
+    packOutputMode,
+    paginatedRequests,
+    paperProfile,
+    printerProfile,
+    renderPackLabelToCanvas,
+    resolveManufacturingDate,
+    toast,
+    token,
+  ]);
 
   const diameterQueueForPacking = useMemo(() => {
     const labels: DiameterBucketKey[] = ["6", "8", "10", "12"];

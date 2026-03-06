@@ -188,8 +188,15 @@ export interface RequestBase {
   _id?: string; // Mongo ObjectId
   requestId?: string; // YYYYMMDD-###### 형식의 의뢰 ID
   title?: string;
-  status?: string;
-  manufacturerStage?: "의뢰" | "CAM" | "생산" | "발송" | "추적관리" | string;
+  manufacturerStage?:
+    | "의뢰"
+    | "CAM"
+    | "가공"
+    | "세척.패킹"
+    | "포장.발송"
+    | "추적관리"
+    | "취소"
+    | string;
   lotNumber?: {
     material?: string;
     part?: string;

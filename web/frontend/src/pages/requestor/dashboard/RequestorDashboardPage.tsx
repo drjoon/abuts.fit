@@ -117,8 +117,7 @@ export const RequestorDashboardPage = () => {
     if (stageLabel === "취소") {
       return true;
     }
-    const statusLabel = String(requestLike?.status || "").trim();
-    return statusLabel === "취소";
+    return false;
   };
 
   const filterAbutmentRequest = (r: any) => {
@@ -387,7 +386,7 @@ export const RequestorDashboardPage = () => {
         headers: {
           "Content-Type": "application/json",
         },
-        jsonBody: { status: "취소" },
+        jsonBody: { manufacturerStage: "취소" },
       });
 
       if (!res.ok) {

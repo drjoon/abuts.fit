@@ -81,14 +81,6 @@ export const deriveStageForFilter = (req: ManufacturerRequest) => {
         return saved;
     }
   }
-
-  // Fallback: manufacturerStage가 비어 있고 status만 있는 경우, 새 표준 라벨만 처리
-  const status = (req.status || "").trim();
-  if (status === "세척.패킹") return "세척.패킹";
-  if (status === "포장.발송") return "포장.발송";
-  if (status === "추적관리" || status === "완료") return "추적관리";
-  if (status === "가공") return "가공";
-  if (status === "CAM") return "CAM";
   return "의뢰";
 };
 

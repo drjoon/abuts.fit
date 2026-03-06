@@ -19,7 +19,11 @@ async function migrate() {
   let updatedCount = 0;
   for (const req of requests) {
     const oldStage = req.manufacturerStage;
-    applyStatusMapping(req, req.status);
+    const legacyStatus = String(req.get("status") || "").trim();
+
+    if (!oldStage && legacyStatus) {
+      applyStatusMapping(req, legacyStatus);
+    }
 
     if (oldStage !== req.manufacturerStage) {
       await req.save();

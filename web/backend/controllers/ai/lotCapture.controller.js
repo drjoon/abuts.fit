@@ -323,7 +323,20 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   });
 
   const recognizedSuffix = extractLotSuffix3(recognized?.lotNumber || "");
+  console.log("[lot-capture] recognition result", {
+    originalName: name,
+    s3Key: key,
+    recognizedLotNumber: String(recognized?.lotNumber || "").trim(),
+    recognizedSuffix,
+    confidence: String(recognized?.confidence || "").trim() || "unknown",
+    provider: String(recognized?.provider || "").trim() || "unknown",
+  });
   if (!recognizedSuffix) {
+    console.warn("[lot-capture] no lot suffix recognized", {
+      originalName: name,
+      s3Key: key,
+      recognized: recognized || null,
+    });
     return res.status(200).json(
       new ApiResponse(
         200,
@@ -339,12 +352,40 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   }
 
   const regex = new RegExp(`${recognizedSuffix}$`, "i");
-  const request = await Request.findOne({
+  let request = await Request.findOne({
     status: { $ne: "취소" },
     "lotNumber.part": { $regex: regex },
   });
 
+  console.log("[lot-capture] suffix match lookup", {
+    recognizedSuffix,
+    matched: !!request,
+    matchedRequestId: request?.requestId || null,
+    matchedMongoId: request?._id ? String(request._id) : null,
+    matchedLotPart: String(request?.lotNumber?.part || "").trim() || null,
+  });
+
+  if (!request && process.env.NODE_ENV === "development") {
+    request = await Request.findOne({
+      status: { $ne: "취소" },
+      manufacturerStage: "packing",
+    }).sort({ createdAt: 1 });
+
+    console.warn("[lot-capture] development fallback applied", {
+      recognizedSuffix,
+      fallbackMatched: !!request,
+      fallbackRequestId: request?.requestId || null,
+      fallbackMongoId: request?._id ? String(request._id) : null,
+      fallbackLotPart: String(request?.lotNumber?.part || "").trim() || null,
+    });
+  }
+
   if (!request) {
+    console.warn("[lot-capture] no matching request found", {
+      recognizedSuffix,
+      originalName: name,
+      s3Key: key,
+    });
     return res.status(200).json(
       new ApiResponse(
         200,
@@ -385,6 +426,15 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     reason: "",
   };
 
+  console.log("[lot-capture] applying packing capture to request", {
+    recognizedSuffix,
+    requestId: request.requestId,
+    requestMongoId: String(request._id || ""),
+    lotPart: String(request?.lotNumber?.part || "").trim() || null,
+    stage: String(request?.manufacturerStage || "").trim() || null,
+    imageName: name,
+  });
+
   await ensureFinishedLotNumberForPacking(request);
   await ensureShippingPackageAndChargeFee({ request, session: null });
   applyStatusMapping(request, "발송");
@@ -407,6 +457,20 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     recognizedSuffix,
     recognized: recognized || null,
     movedToStage: "포장.발송",
+    packingFile: {
+      fileName: request.caseInfos?.stageFiles?.packing?.fileName || name,
+      fileType: request.caseInfos?.stageFiles?.packing?.fileType || null,
+      fileSize: request.caseInfos?.stageFiles?.packing?.fileSize || null,
+      filePath: request.caseInfos?.stageFiles?.packing?.filePath || name,
+      s3Key: request.caseInfos?.stageFiles?.packing?.s3Key || key,
+      s3Url:
+        request.caseInfos?.stageFiles?.packing?.s3Url ||
+        String(s3Url || "").trim() ||
+        "",
+      source: request.caseInfos?.stageFiles?.packing?.source || "worker",
+      uploadedAt:
+        request.caseInfos?.stageFiles?.packing?.uploadedAt || new Date(),
+    },
     print: {
       success: !!printResult?.success,
       message: printResult?.message || null,

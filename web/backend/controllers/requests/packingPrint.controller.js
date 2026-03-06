@@ -97,6 +97,12 @@ const callPackServer = async ({ path, method, body }) => {
     headers["x-pack-secret"] = PACK_PRINT_SERVER_SHARED_SECRET;
   }
 
+  console.log("[packingPrint] proxy request", {
+    method,
+    url,
+    hasBody: Boolean(body),
+  });
+
   const res = await withTimeout(
     (signal) =>
       fetch(url, {
@@ -115,6 +121,14 @@ const callPackServer = async ({ path, method, body }) => {
   } catch {
     parsed = null;
   }
+
+  console.log("[packingPrint] proxy response", {
+    method,
+    url,
+    status: res.status,
+    success: parsed?.success ?? null,
+    message: parsed?.message || null,
+  });
 
   return { res, text, body: parsed };
 };
@@ -161,6 +175,12 @@ export async function printPackPackingLabel(req, res) {
     const payload =
       req.body && typeof req.body === "object" ? { ...req.body } : {};
 
+    console.log("[packingPrint] print request received", {
+      requestId: payload?.requestId || null,
+      printer: payload?.printer || null,
+      paperProfile: payload?.paperProfile || null,
+    });
+
     const requestedPaper = String(payload.paperProfile || "").trim();
     const allowed = Array.isArray(PACK_PAPER_OPTIONS) ? PACK_PAPER_OPTIONS : [];
     const resolvedPaper =
@@ -202,6 +222,10 @@ export async function printPackPackingLabel(req, res) {
     });
   } catch (error) {
     const status = error?.statusCode || 500;
+    console.error("[packingPrint] print proxy error", {
+      status,
+      message: error?.message || null,
+    });
     return res.status(status).json({
       success: false,
       message:

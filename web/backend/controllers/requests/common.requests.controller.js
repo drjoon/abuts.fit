@@ -149,7 +149,9 @@ export async function getAllRequests(req, res) {
     // 필터링 파라미터
     const role = req.user?.role;
     let filter = {};
-    if (req.query.status) filter.manufacturerStage = req.query.status;
+    if (req.query.manufacturerStage) {
+      filter.manufacturerStage = req.query.manufacturerStage;
+    }
     if (req.query.implantType) filter.implantType = req.query.implantType;
 
     // 제조사: 본인에게 배정되었거나 미배정된 의뢰 + 취소 제외
@@ -189,6 +191,7 @@ export async function getAllRequests(req, res) {
       "manufacturerStage",
       "createdAt",
       "mailboxAddress",
+      "requestorOrganizationId",
       "referenceIds",
       "caseInfos.clinicName",
       "caseInfos.patientName",
@@ -207,6 +210,7 @@ export async function getAllRequests(req, res) {
       "caseInfos.camDiameter",
       "productionSchedule.diameter",
       "productionSchedule.diameterGroup",
+      "productionSchedule.actualMachiningComplete",
       "productionSchedule.scheduledShipPickup",
       "timeline.estimatedShipYmd",
       "requestor",
@@ -218,7 +222,8 @@ export async function getAllRequests(req, res) {
     if (view !== "full") {
       query = query
         .select(worksheetSelect)
-        .populate("requestor", "name organization");
+        .populate("requestor", "name organization")
+        .populate("requestorOrganizationId", "name extracted");
       if (includeDelivery) {
         // 배송 정보가 필요한 경우에만 최소 필드로 populate
         query = query.populate(
@@ -287,11 +292,13 @@ export async function getMyRequests(req, res) {
 
     // 기본 필터: 로그인한 의뢰자 소속 기공소(조직) 기준
     const filter = await buildRequestorOrgScopeFilter(req);
-    if (req.query.status) filter.manufacturerStage = req.query.status;
-    if (req.query.statusIn) {
-      const raw = Array.isArray(req.query.statusIn)
-        ? req.query.statusIn
-        : [req.query.statusIn];
+    if (req.query.manufacturerStage) {
+      filter.manufacturerStage = req.query.manufacturerStage;
+    }
+    if (req.query.manufacturerStageIn) {
+      const raw = Array.isArray(req.query.manufacturerStageIn)
+        ? req.query.manufacturerStageIn
+        : [req.query.manufacturerStageIn];
       const values = raw.map((v) => String(v || "").trim()).filter(Boolean);
       if (values.length) {
         filter.manufacturerStage = { $in: values };
@@ -536,10 +543,10 @@ export async function updateRequest(req, res) {
 export async function updateRequestStatus(req, res) {
   try {
     const requestId = req.params.id;
-    const { status } = req.body;
+    const { manufacturerStage } = req.body;
 
     // 상태 유효성 검사 (SSOT 라벨)
-    const validStatuses = [
+    const validStages = [
       "의뢰",
       "CAM",
       "가공",
@@ -548,10 +555,10 @@ export async function updateRequestStatus(req, res) {
       "추적관리",
       "취소",
     ];
-    if (!validStatuses.includes(status)) {
+    if (!validStages.includes(manufacturerStage)) {
       return res.status(400).json({
         success: false,
-        message: "유효하지 않은 상태입니다.",
+        message: "유효하지 않은 공정 단계입니다.",
       });
     }
 
@@ -588,7 +595,7 @@ export async function updateRequestStatus(req, res) {
     }
 
     // 상태 변경 권한 확인
-    if (status === "취소" && !isRequestor && !isAdmin) {
+    if (manufacturerStage === "취소" && !isRequestor && !isAdmin) {
       return res.status(403).json({
         success: false,
         message: "의뢰자 또는 관리자만 의뢰를 취소할 수 있습니다.",
@@ -596,7 +603,7 @@ export async function updateRequestStatus(req, res) {
     }
 
     // 취소는 의뢰/CAM 단계에서만 가능 (manufacturerStage도 허용 범위에 포함)
-    if (status === "취소") {
+    if (manufacturerStage === "취소") {
       const manufacturerStage = String(request.manufacturerStage || "").trim();
       const allowedCancelStages = ["의뢰", "CAM"];
       const isStageAllowed = allowedCancelStages.includes(manufacturerStage);
@@ -611,7 +618,7 @@ export async function updateRequestStatus(req, res) {
     }
 
     // 의뢰 상태 변경
-    applyStatusMapping(request, status);
+    applyStatusMapping(request, manufacturerStage);
 
     // 신속배송(express) 모드 제거됨
 
@@ -619,7 +626,7 @@ export async function updateRequestStatus(req, res) {
 
     res.status(200).json({
       success: true,
-      message: "의뢰 상태가 성공적으로 변경되었습니다.",
+      message: "의뢰 공정 단계가 성공적으로 변경되었습니다.",
       data: request,
     });
   } catch (error) {

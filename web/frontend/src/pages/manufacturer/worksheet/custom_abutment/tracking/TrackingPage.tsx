@@ -124,7 +124,7 @@ export const TrackingInquiryPage = () => {
         url.searchParams.set("view", "worksheet");
         url.searchParams.set("includeTotal", "0");
         url.searchParams.set("includeDelivery", "1");
-        url.searchParams.set("status", "추적관리");
+        url.searchParams.set("manufacturerStage", "추적관리");
         const res = await fetch(url.pathname + url.search, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",

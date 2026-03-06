@@ -12,18 +12,10 @@ import { usePresetStorage } from "@/pages/requestor/new_request/hooks/usePresetS
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
 import { getNormalizedStageLabel } from "@/utils/stage";
 
-const EDITABLE_STATUSES = new Set(["의뢰", "CAM", "의뢰접수", "가공전"]); // 의뢰, CAM 단계만 수정 가능
+const EDITABLE_STATUSES = new Set(["의뢰", "CAM"]);
 
 const STAGE_BADGE_BASE =
   "text-[10px] h-4 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
-
-const LEGACY_STATUS_TO_STAGE: Record<string, string> = {
-  의뢰접수: "의뢰",
-  가공전: "CAM",
-  가공후: "가공",
-  배송중: "포장.발송",
-  완료: "추적관리",
-};
 
 const STAGE_BADGE_STYLES: Record<
   string,
@@ -54,9 +46,7 @@ const resolveStageLabel = (item: any): string | null => {
     if (label) return label;
   } catch {}
 
-  const rawStatus = String(item?.status || "").trim();
-  if (!rawStatus) return null;
-  return LEGACY_STATUS_TO_STAGE[rawStatus] || rawStatus;
+  return null;
 };
 
 const renderStageBadge = (item: any) => {
@@ -151,9 +141,9 @@ export const RequestorRecentRequestsCard = ({
     return (fromDetail || fromSummary || {}) as any;
   };
 
-  const canEditRequest = (status?: string | null) => {
-    if (!status) return false;
-    return EDITABLE_STATUSES.has(status);
+  const canEditRequest = (manufacturerStage?: string | null) => {
+    if (!manufacturerStage) return false;
+    return EDITABLE_STATUSES.has(manufacturerStage);
   };
 
   const normalizeImplantCaseInfos = (ci: any) => {
@@ -250,8 +240,9 @@ export const RequestorRecentRequestsCard = ({
       }
       if (!selectedRequestId) return;
 
-      const status = detail?.status || selectedSummary?.status;
-      if (status && !canEditRequest(status)) {
+      const manufacturerStage =
+        detail?.manufacturerStage || selectedSummary?.manufacturerStage;
+      if (manufacturerStage && !canEditRequest(manufacturerStage)) {
         toast({
           title: "변경 불가",
           description: "의뢰 또는 CAM 단계에서만 변경할 수 있습니다.",
@@ -391,19 +382,8 @@ export const RequestorRecentRequestsCard = ({
   }, [open]);
 
   const isCancelableRequest = (r: any) => {
-    // 백엔드 정책: "의뢰", "CAM", "의뢰접수", "가공전" 단계일 때 취소 가능
-    const status = String(r?.status || "");
     const stage = String(r?.manufacturerStage || "");
-    return (
-      status === "의뢰" ||
-      status === "의뢰접수" ||
-      status === "CAM" ||
-      status === "가공전" ||
-      stage === "의뢰" ||
-      stage === "의뢰접수" ||
-      stage === "CAM" ||
-      stage === "가공전"
-    );
+    return stage === "의뢰" || stage === "CAM";
   };
 
   return (

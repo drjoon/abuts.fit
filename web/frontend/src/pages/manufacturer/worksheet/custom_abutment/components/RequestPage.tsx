@@ -186,7 +186,7 @@ export const RequestPage = ({
           url.searchParams.set("view", "worksheet");
           url.searchParams.set("includeTotal", "0");
           // Stage-scoped paging: fetch only current tab's stage from backend
-          const serverStatusForTab = (() => {
+          const manufacturerStageForTab = (() => {
             if (isMachiningStage) return "가공";
             if (isCamStage) return "CAM";
             if (tabStage === "request") return "의뢰";
@@ -195,8 +195,8 @@ export const RequestPage = ({
             if (tabStage === "tracking") return "추적관리";
             return "";
           })();
-          if (serverStatusForTab) {
-            url.searchParams.set("status", serverStatusForTab);
+          if (manufacturerStageForTab) {
+            url.searchParams.set("manufacturerStage", manufacturerStageForTab);
           }
           return url.pathname + url.search;
         })();

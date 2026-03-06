@@ -79,7 +79,6 @@ type ShippingItemApi = {
   patient?: string;
   tooth?: string;
   diameter?: string;
-  status?: string;
   stageKey?:
     | "request"
     | "cam"
@@ -412,7 +411,7 @@ export const RequestorBulkShippingBannerCard = ({
   })();
 
   const toggleSingleItem = async (item: ShippingItemApi) => {
-    if (!canToggleMode(item.status)) {
+    if (!canToggleMode(item.stageLabel)) {
       toast({
         title: "변경 불가",
         description: "의뢰 단계에서만 배송 방식을 변경할 수 있습니다.",
@@ -469,7 +468,7 @@ export const RequestorBulkShippingBannerCard = ({
   };
 
   const toggleAllShippingMode = async () => {
-    const hasNonEligible = items.some((it) => !canToggleMode(it.status));
+    const hasNonEligible = items.some((it) => !canToggleMode(it.stageLabel));
     if (hasNonEligible) {
       toast({
         title: "변경 불가",

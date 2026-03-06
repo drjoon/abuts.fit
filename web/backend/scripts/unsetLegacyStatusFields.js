@@ -13,15 +13,15 @@ async function migrate() {
   await mongoose.connect(mongoUri);
 
   const filter = {
-    $or: [{ status1: { $exists: true } }],
+    $or: [{ status: { $exists: true } }, { status1: { $exists: true } }],
   };
 
   const found = await Request.countDocuments(filter);
-  console.log(`Found ${found} requests with legacy status1 field.`);
+  console.log(`Found ${found} requests with legacy status fields.`);
 
   if (found > 0) {
     const result = await Request.updateMany(filter, {
-      $unset: { status1: "" },
+      $unset: { status: "", status1: "" },
     });
 
     const modified =

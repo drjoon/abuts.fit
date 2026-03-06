@@ -42,10 +42,10 @@ export type PastRequestsModalProps = {
   title?: string;
   onSelectRequest: (request: any) => void;
   /** 기본: 완료/취소만 표시 */
-  statusIn?: string[];
+  manufacturerStageIn?: string[];
 };
 
-const DEFAULT_STATUS_IN = ["완료", "취소"];
+const DEFAULT_MANUFACTURER_STAGE_IN = ["추적관리", "취소"];
 
 const PAGE_SIZE = 50;
 
@@ -95,17 +95,20 @@ export const PastRequestsModal = ({
   onOpenChange,
   title,
   onSelectRequest,
-  statusIn,
+  manufacturerStageIn,
 }: PastRequestsModalProps) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
 
-  const initialStatusIn = useMemo(
+  const initialManufacturerStageIn = useMemo(
     () =>
-      (statusIn && statusIn.length ? statusIn : DEFAULT_STATUS_IN)
+      (manufacturerStageIn && manufacturerStageIn.length
+        ? manufacturerStageIn
+        : DEFAULT_MANUFACTURER_STAGE_IN
+      )
         .map((s) => String(s))
         .filter(Boolean),
-    [statusIn],
+    [manufacturerStageIn],
   );
 
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
@@ -124,11 +127,11 @@ export const PastRequestsModal = ({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  const effectiveStatusIn = useMemo(() => {
-    if (statusMode === "completed") return ["완료"];
+  const effectiveManufacturerStageIn = useMemo(() => {
+    if (statusMode === "completed") return ["추적관리"];
     if (statusMode === "cancel") return ["취소"];
-    return initialStatusIn;
-  }, [statusMode, initialStatusIn]);
+    return initialManufacturerStageIn;
+  }, [statusMode, initialManufacturerStageIn]);
 
   const resetFilters = () => {
     setPeriod("30d");
@@ -146,7 +149,9 @@ export const PastRequestsModal = ({
     params.set("sortOrder", "desc");
     if (from) params.set("from", from);
     if (to) params.set("to", to);
-    effectiveStatusIn.forEach((s) => params.append("statusIn", s));
+    effectiveManufacturerStageIn.forEach((s) =>
+      params.append("manufacturerStageIn", s),
+    );
     return `/api/requests/my?${params.toString()}`;
   };
 
@@ -236,7 +241,6 @@ export const PastRequestsModal = ({
       const ci = r?.caseInfos || {};
       const hay = [
         r?.requestId,
-        r?.status,
         r?.manufacturerStage,
         ci?.clinicName,
         ci?.patientName,
@@ -333,9 +337,7 @@ export const PastRequestsModal = ({
                 {filteredRows.map((r: any) => {
                   const ci = r?.caseInfos || {};
                   const id = String(r?._id || r?.id || "");
-                  const stage = String(
-                    r?.status || r?.manufacturerStage || "-",
-                  );
+                  const stage = String(r?.manufacturerStage || "-");
                   const caseText =
                     [ci?.clinicName, ci?.patientName, ci?.tooth]
                       .filter(Boolean)

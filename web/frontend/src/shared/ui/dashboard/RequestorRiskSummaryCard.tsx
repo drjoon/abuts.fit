@@ -13,7 +13,6 @@ export type RiskSummary = {
     manufacturer?: string;
     riskLevel?: string;
     message?: string;
-    status?: string;
     manufacturerStage?: string;
     dueDate?: string | null;
     nextEstimatedShipYmd?: string | null;
@@ -218,7 +217,7 @@ export const RequestorRiskSummaryCard = ({
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       {getStatusBadge(
-                        item.status || "",
+                        item.manufacturerStage || "",
                         item.manufacturerStage,
                       )}
                       {item.riskLevel === "danger" ? (

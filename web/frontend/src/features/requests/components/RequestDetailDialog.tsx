@@ -22,7 +22,6 @@ export type RequestDetailDialogCaseInfos = {
 
 export type RequestDetailDialogRequest = {
   title?: string;
-  status?: string;
   manufacturerStage?: string;
   requestId?: string;
   createdAt?: string;
@@ -176,7 +175,7 @@ export const RequestDetailDialog = ({
             <div className="flex items-center gap-2 pr-8">
               {request &&
                 getStatusBadge(
-                  request.status || "-",
+                  request.manufacturerStage || "-",
                   request.manufacturerStage,
                 )}
               {extraBadge}

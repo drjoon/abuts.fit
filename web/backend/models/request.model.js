@@ -311,7 +311,7 @@ const requestSchema = new mongoose.Schema(
         },
       },
     },
-    // 제조사용 스테이지 (UI 표기용) — status와 동일한 값을 사용한다.
+    // 제조 공정 단계 SSOT
     manufacturerStage: {
       type: String,
       enum: [

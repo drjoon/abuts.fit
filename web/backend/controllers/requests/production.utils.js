@@ -469,7 +469,7 @@ export function calculateRiskSummary(requests) {
     if (!schedule || typeof originalYmd !== "string" || !originalYmd.trim())
       continue;
 
-    const status = String(req.status || "");
+    const status = String(req.manufacturerStage || "");
     const baseYmd = originalYmd.trim();
     const startOfDayShip = new Date(`${baseYmd}T00:00:00+09:00`);
     if (Number.isNaN(startOfDayShip.getTime())) continue;

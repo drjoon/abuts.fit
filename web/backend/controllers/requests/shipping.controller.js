@@ -1012,7 +1012,7 @@ export async function updateMyShippingMode(req, res) {
 
           // 생산 스케줄 재계산
           const newSchedule = recalculateProductionSchedule({
-            currentStage: req.status,
+            currentStage: req.manufacturerStage,
             newShippingMode: shippingMode,
             maxDiameter,
             requestedAt,
