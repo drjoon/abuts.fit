@@ -272,6 +272,7 @@ public string LastMachiningCompleteJobId;
 public string LastStartFailJobId;
 public int StartFailCount;
 public DateTime NextStartAttemptUtc;
+public DateTime MockCompletionDueUtc;
 }
 private static readonly object StateLock = new object();
 private static readonly Dictionary<string, MachineState> MachineStates
@@ -424,6 +425,7 @@ LastMachiningFailJobId = null,
 LastMachiningCompleteJobId = null,
 StartFailCount = 0,
 NextStartAttemptUtc = DateTime.MinValue,
+MockCompletionDueUtc = DateTime.MinValue,
 };
 MachineStates[machineId] = state;
 }
@@ -448,6 +450,7 @@ if (!string.IsNullOrEmpty(state.PendingConsumeJobId))
             state.IsRunning = false;
             state.AwaitingStart = false;
             state.SawBusy = false;
+            state.MockCompletionDueUtc = DateTime.MinValue;
         }
     }
     else
@@ -514,6 +517,7 @@ state.IsRunning = false;
 state.AwaitingStart = false;
 state.CurrentJob = null;
 state.SawBusy = false;
+state.MockCompletionDueUtc = DateTime.MinValue;
 }
 return;
 }
@@ -524,7 +528,37 @@ Console.WriteLine("[CncMachining] alarm read failed machine={0} err={1}", machin
 }
 }
 // 가공 완료 체크
-var done = await DetectMachiningCompletion(machineId, state);
+var nowUtc = DateTime.UtcNow;
+var mockDone = false;
+if (Config.MockCncMachining)
+{
+lock (StateLock)
+{
+if (state.MockCompletionDueUtc != DateTime.MinValue && nowUtc >= state.MockCompletionDueUtc)
+{
+mockDone = true;
+Console.WriteLine(
+"[CncMachining] MOCK completion due reached machine={0} jobId={1} now={2:o} due={3:o}",
+machineId,
+state.CurrentJob?.id,
+nowUtc,
+state.MockCompletionDueUtc
+);
+state.MockCompletionDueUtc = DateTime.MinValue;
+}
+else if (state.MockCompletionDueUtc != DateTime.MinValue)
+{
+Console.WriteLine(
+"[CncMachining] MOCK completion pending machine={0} jobId={1} now={2:o} due={3:o}",
+machineId,
+state.CurrentJob?.id,
+nowUtc,
+state.MockCompletionDueUtc
+);
+}
+}
+}
+var done = mockDone || await DetectMachiningCompletion(machineId, state);
 if (done)
 {
 Console.WriteLine("[CncMachining] job completed machine={0} slot=O{1}",
@@ -555,25 +589,27 @@ catch { }
 var completedJobId = state.CurrentJob?.id;
 if (!string.IsNullOrEmpty(completedJobId))
 {
-    if (!await TryConsumeBackendQueueJob(machineId, completedJobId))
-    {
-        Console.WriteLine("[CncMachining] consume after complete failed (will retry) machine={0} jobId={1}", machineId, completedJobId);
-        lock (StateLock)
-        {
-            state.PendingConsumeJobId = completedJobId;
-            state.ConsumeFailCount = Math.Max(1, state.ConsumeFailCount);
-            state.NextConsumeAttemptUtc = DateTime.UtcNow.AddSeconds(2);
-            state.IsRunning = false;
-            state.AwaitingStart = false;
-        }
-        return;
-    }
+if (!await TryConsumeBackendQueueJob(machineId, completedJobId))
+{
+Console.WriteLine("[CncMachining] consume after complete failed (will retry) machine={0} jobId={1}", machineId, completedJobId);
+lock (StateLock)
+{
+state.PendingConsumeJobId = completedJobId;
+state.ConsumeFailCount = Math.Max(1, state.ConsumeFailCount);
+state.NextConsumeAttemptUtc = DateTime.UtcNow.AddSeconds(2);
+state.IsRunning = false;
+state.AwaitingStart = false;
+state.MockCompletionDueUtc = DateTime.MinValue;
+}
+return;
+}
 }
 lock (StateLock)
 {
 state.IsRunning = false;
 state.CurrentJob = null;
 state.SawBusy = false;
+state.MockCompletionDueUtc = DateTime.MinValue;
 }
 }
 else
@@ -711,16 +747,28 @@ if (Config.MockCncMachining)
     Console.WriteLine("[CncMachining] MOCK start bypass machine={0} jobId={1} file={2}", machineId, job?.id, job?.fileName);
     _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "READY", null));
     _ = Task.Run(() => NotifyMachiningStarted(job, machineId));
+    var mockStartUtc = DateTime.UtcNow;
+    var mockDuration = Config.CncJobAssumeMinutes > 0
+        ? TimeSpan.FromMinutes(Config.CncJobAssumeMinutes)
+        : TimeSpan.FromSeconds(10);
+    Console.WriteLine(
+        "[CncMachining] MOCK state set machine={0} jobId={1} durationSec={2} dueAt={3:o}",
+        machineId,
+        job?.id,
+        mockDuration.TotalSeconds,
+        mockStartUtc + mockDuration
+    );
     lock (StateLock)
     {
         state.CurrentJob = job;
         state.CurrentSlot = SLOT_A; // 임의 슬롯
         state.IsRunning = true;
         state.AwaitingStart = false;
-        state.StartedAtUtc = DateTime.UtcNow;
+        state.StartedAtUtc = mockStartUtc;
         state.LastTickNotifyAtUtc = DateTime.MinValue;
         state.ProductCountBefore = 0;
         state.SawBusy = false;
+        state.MockCompletionDueUtc = mockStartUtc + mockDuration;
     }
 
     // 시작 시점에 STARTED tick을 한 번 보내 로컬 타이머가 바로 시작되도록 한다.

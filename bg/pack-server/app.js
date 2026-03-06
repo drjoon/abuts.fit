@@ -37,24 +37,10 @@ const ALLOW_IPS = String(
   .map((s) => s.trim())
   .filter(Boolean);
 
-const LOG_FILE = path.resolve(process.cwd(), "logs.txt");
-const logStream = fs.createWriteStream(LOG_FILE, { flags: "w" });
-logStream.on("error", (err) => {
-  console.error("[pack-server] log stream error", err);
-});
-
 const log = (message, meta) => {
   const stamp = new Date().toISOString();
   const suffix = meta ? ` ${JSON.stringify(meta)}` : "";
-  const line = `[pack-server] ${stamp} ${message}${suffix}`;
-  console.log(line);
-  if (logStream.writable) {
-    logStream.write(`${line}\n`, (err) => {
-      if (err) {
-        console.error("[pack-server] failed to write log line", err);
-      }
-    });
-  }
+  console.log(`[pack-server] ${stamp} ${message}${suffix}`);
 };
 
 const jsonResponse = (res, statusCode, body) => {
@@ -114,8 +100,39 @@ const readBody = (req) =>
     req.on("error", reject);
   });
 
+const isWindows = process.platform === "win32";
+
 const listPrinters = () =>
   new Promise((resolve, reject) => {
+    if (isWindows) {
+      const psScript = [
+        "if (Get-Command Get-CimInstance -ErrorAction SilentlyContinue) {",
+        "  Get-CimInstance Win32_Printer | Select-Object -ExpandProperty Name",
+        "} elseif (Get-Command Get-WmiObject -ErrorAction SilentlyContinue) {",
+        "  Get-WmiObject Win32_Printer | Select-Object -ExpandProperty Name",
+        "} else {",
+        '  throw \"No printer query cmdlets available\"',
+        "}",
+      ].join("; ");
+
+      const psArgs = ["-NoProfile", "-Command", psScript];
+
+      execFile(
+        "powershell.exe",
+        psArgs,
+        { windowsHide: true },
+        (err, stdout) => {
+          if (err) return reject(err);
+          const printers = stdout
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+          return resolve(printers);
+        },
+      );
+      return;
+    }
+
     execFile("lpstat", ["-p"], (err, stdout) => {
       if (err) return reject(err);
       const printers = stdout
@@ -347,6 +364,102 @@ const writeZplToTemp = async (zpl) => {
 
 const printRawZpl = ({ filePath, printer, title, copies, paperProfile }) =>
   new Promise((resolve, reject) => {
+    if (isWindows) {
+      const targetPrinter = String(printer || DEFAULT_PRINTER || "").trim();
+      if (!targetPrinter) {
+        return reject(new Error("Printer is required"));
+      }
+
+      const psScript = [
+        "$printerName = $args[0]",
+        "$filePath = $args[1]",
+        '$jobTitle = if ($args.Length -ge 3 -and $args[2]) { $args[2] } else { "Pack Label" }',
+        'Add-Type -TypeDefinition @"',
+        "using System;",
+        "using System.Runtime.InteropServices;",
+        "public static class RawPrinterHelper {",
+        "  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]",
+        "  public class DOCINFOA {",
+        "    [MarshalAs(UnmanagedType.LPWStr)] public string pDocName;",
+        "    [MarshalAs(UnmanagedType.LPWStr)] public string pOutputFile;",
+        "    [MarshalAs(UnmanagedType.LPWStr)] public string pDataType;",
+        "  }",
+        '  [DllImport("winspool.drv", EntryPoint="OpenPrinterW", SetLastError=true, CharSet=CharSet.Unicode)]',
+        "  public static extern bool OpenPrinter(string szPrinter, out IntPtr hPrinter, IntPtr pd);",
+        '  [DllImport("winspool.drv", SetLastError=true, CharSet=CharSet.Unicode)]',
+        "  public static extern bool ClosePrinter(IntPtr hPrinter);",
+        '  [DllImport("winspool.drv", SetLastError=true, CharSet=CharSet.Unicode)]',
+        "  public static extern bool StartDocPrinter(IntPtr hPrinter, int level, DOCINFOA di);",
+        '  [DllImport("winspool.drv", SetLastError=true)]',
+        "  public static extern bool EndDocPrinter(IntPtr hPrinter);",
+        '  [DllImport("winspool.drv", SetLastError=true)]',
+        "  public static extern bool StartPagePrinter(IntPtr hPrinter);",
+        '  [DllImport("winspool.drv", SetLastError=true)]',
+        "  public static extern bool EndPagePrinter(IntPtr hPrinter);",
+        '  [DllImport("winspool.drv", SetLastError=true)]',
+        "  public static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, int dwCount, out int dwWritten);",
+        "}",
+        '"@',
+        "$bytes = [System.IO.File]::ReadAllBytes($filePath)",
+        "$docInfo = New-Object RawPrinterHelper+DOCINFOA",
+        "$docInfo.pDocName = $jobTitle",
+        '$docInfo.pDataType = "RAW"',
+        "$handle = [IntPtr]::Zero",
+        "$opened = [RawPrinterHelper]::OpenPrinter($printerName, [ref]$handle, [IntPtr]::Zero)",
+        'if (-not $opened) { throw "OpenPrinter failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" }',
+        "$ptr = [Runtime.InteropServices.Marshal]::AllocHGlobal($bytes.Length)",
+        "try {",
+        "  [Runtime.InteropServices.Marshal]::Copy($bytes, 0, $ptr, $bytes.Length)",
+        '  if (-not [RawPrinterHelper]::StartDocPrinter($handle, 1, $docInfo)) { throw "StartDocPrinter failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" }',
+        "  try {",
+        '    if (-not [RawPrinterHelper]::StartPagePrinter($handle)) { throw "StartPagePrinter failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" }',
+        "    try {",
+        "      $written = 0",
+        '      if (-not [RawPrinterHelper]::WritePrinter($handle, $ptr, $bytes.Length, [ref]$written)) { throw "WritePrinter failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" }',
+        '      if ($written -ne $bytes.Length) { throw "Incomplete RAW write: $written / $($bytes.Length)" }',
+        "    } finally {",
+        "      [void][RawPrinterHelper]::EndPagePrinter($handle)",
+        "    }",
+        "  } finally {",
+        "    [void][RawPrinterHelper]::EndDocPrinter($handle)",
+        "  }",
+        "} finally {",
+        "  if ($ptr -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::FreeHGlobal($ptr) }",
+        "  if ($handle -ne [IntPtr]::Zero) { [void][RawPrinterHelper]::ClosePrinter($handle) }",
+        "}",
+        'Write-Output "RAW print sent"',
+      ].join("; ");
+
+      const psArgs = [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        psScript,
+        targetPrinter,
+        filePath,
+        String(title || "Pack Label"),
+      ];
+
+      log("printRawZpl", {
+        command: "powershell.exe",
+        printer: targetPrinter,
+        paperProfile,
+        filePath,
+      });
+
+      execFile(
+        "powershell.exe",
+        psArgs,
+        { windowsHide: true },
+        (err, stdout, stderr) => {
+          if (err) return reject(new Error(stderr || err.message));
+          resolve(stdout);
+        },
+      );
+      return;
+    }
+
     const args = ["-o", "raw"];
     if (printer) args.push("-d", printer);
     if (title) args.push("-t", title);
@@ -356,6 +469,13 @@ const printRawZpl = ({ filePath, printer, title, copies, paperProfile }) =>
       args.push("-n", String(Math.floor(copies)));
     }
     args.push(filePath);
+
+    log("printRawZpl", {
+      command: "lp",
+      printer,
+      paperProfile,
+      filePath,
+    });
 
     execFile("lp", args, (err, stdout, stderr) => {
       if (err) return reject(new Error(stderr || err.message));

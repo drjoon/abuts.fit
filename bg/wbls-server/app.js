@@ -37,7 +37,7 @@ const ALLOW_IPS = String(
   .map((s) => s.trim())
   .filter(Boolean);
 
-const LOG_FILE = path.resolve(process.cwd(), "logs.txt");
+const LOG_FILE = path.resolve(__dirname, "logs.txt");
 const logStream = fs.createWriteStream(LOG_FILE, { flags: "w" });
 logStream.on("error", (err) => {
   console.error("[print-server] log stream error", err);

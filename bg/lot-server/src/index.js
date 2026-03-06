@@ -6,7 +6,7 @@ import fs from "fs/promises";
 import { createWriteStream } from "fs";
 import os from "os";
 
-const LOG_FILE = path.resolve(process.cwd(), "logs.txt");
+const LOG_FILE = path.resolve(__dirname, "logs.txt");
 const logStream = createWriteStream(LOG_FILE, { flags: "w" });
 logStream.on("error", (err) => {
   console.error("[lot-server] log stream error", err);
@@ -42,6 +42,14 @@ const ALLOW_IPS = String(
 const WAIT_STABLE_MS = Number(process.env.LOT_WAIT_STABLE_MS || 800);
 
 const TTL_DAYS = Number(process.env.LOT_LOCAL_TTL_DAYS || 15);
+const PROCESS_ATTEMPTS = Math.max(
+  1,
+  Number(process.env.LOT_PROCESS_ATTEMPTS || 2),
+);
+const PROCESS_RETRY_DELAY_MS = Math.max(
+  0,
+  Number(process.env.LOT_PROCESS_RETRY_DELAY_MS || 1000),
+);
 
 async function ensureDir(p) {
   await fs.mkdir(p, { recursive: true });
@@ -62,6 +70,15 @@ function logLine(message) {
 function isImageFile(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   return [".jpg", ".jpeg", ".png"].includes(ext);
+}
+
+function formatError(err) {
+  if (!err) return "unknown error";
+  const parts = [];
+  if (err?.message) parts.push(err.message);
+  if (err?.cause?.message) parts.push(`cause=${err.cause.message}`);
+  if (err?.code) parts.push(`code=${err.code}`);
+  return parts.length ? parts.join(" ") : String(err);
 }
 
 async function sleep(ms) {
@@ -246,6 +263,50 @@ async function enforceIpAllowlist() {
   );
 }
 
+async function processImageOnce(filePath) {
+  const originalName = path.basename(filePath);
+  const { buffer, mimeType } = await resizeToOneFifth(filePath);
+  const fileSize = buffer.length;
+
+  const presign = await apiPostJson(`${BACKEND_BASE}/api/bg/presign-upload`, {
+    sourceStep: "packing-capture",
+    fileName: originalName.replace(/\s+/g, "_"),
+  });
+
+  if (!presign?.ok) {
+    throw new Error(
+      `presign failed (${presign?.status}): ${presign?.body?.message || presign?.text || ""}`.trim(),
+    );
+  }
+
+  const presignData = presign.body?.data || presign.body;
+  const uploadUrl = presignData?.url;
+  const s3Key = presignData?.key;
+  const bucket = presignData?.bucket;
+  const s3Url = presignData?.s3Url;
+
+  if (!uploadUrl || !s3Key || !bucket || !s3Url) {
+    throw new Error("presign response missing fields");
+  }
+
+  await uploadToPresignedUrl({ uploadUrl, mimeType, buffer });
+
+  const done = await apiPostJson(`${BACKEND_BASE}/api/bg/lot-capture/packing`, {
+    s3Key,
+    s3Url,
+    originalName,
+    fileSize,
+  });
+
+  if (!done?.ok) {
+    throw new Error(
+      `capture register failed (${done?.status}): ${done?.body?.message || done?.text || ""}`.trim(),
+    );
+  }
+
+  return { originalName, fileSize };
+}
+
 async function handleNewImage(filePath) {
   if (!isImageFile(filePath)) return;
 
@@ -260,59 +321,30 @@ async function handleNewImage(filePath) {
     return;
   }
 
-  try {
-    const originalName = path.basename(filePath);
-    const { buffer, mimeType } = await resizeToOneFifth(filePath);
-
-    const presign = await apiPostJson(`${BACKEND_BASE}/api/bg/presign-upload`, {
-      sourceStep: "packing-capture",
-      fileName: originalName.replace(/\s+/g, "_"),
-    });
-
-    if (!presign.ok) {
-      throw new Error(
-        `presign failed (${presign.status}): ${presign.body?.message || presign.text || ""}`.trim(),
+  let lastError = null;
+  for (let attempt = 1; attempt <= PROCESS_ATTEMPTS; attempt += 1) {
+    try {
+      const { originalName, fileSize } = await processImageOnce(filePath);
+      await moveFileSafely(filePath, PROCESSED_DIR);
+      logLine(
+        `[lot-server] processed -> ${PROCESSED_DIR}: ${originalName} (${fileSize} bytes, attempts=${attempt})`,
       );
-    }
-
-    const presignData = presign.body?.data || presign.body;
-    const uploadUrl = presignData?.url;
-    const s3Key = presignData?.key;
-    const bucket = presignData?.bucket;
-    const s3Url = presignData?.s3Url;
-
-    if (!uploadUrl || !s3Key || !bucket || !s3Url) {
-      throw new Error("presign response missing fields");
-    }
-
-    await uploadToPresignedUrl({ uploadUrl, mimeType, buffer });
-
-    const done = await apiPostJson(
-      `${BACKEND_BASE}/api/bg/lot-capture/packing`,
-      {
-        s3Key,
-        s3Url,
-        originalName,
-        fileSize: buffer.length,
-      },
-    );
-
-    if (!done.ok) {
-      throw new Error(
-        `capture register failed (${done.status}): ${done.body?.message || done.text || ""}`.trim(),
+      return;
+    } catch (err) {
+      lastError = err;
+      logLine(
+        `[lot-server] attempt ${attempt}/${PROCESS_ATTEMPTS} failed for ${filePath}: ${formatError(err)}`,
       );
+      if (attempt < PROCESS_ATTEMPTS && PROCESS_RETRY_DELAY_MS) {
+        await sleep(PROCESS_RETRY_DELAY_MS * attempt);
+      }
     }
-
-    await moveFileSafely(filePath, PROCESSED_DIR);
-    logLine(
-      `[lot-server] processed -> ${PROCESSED_DIR}: ${originalName} (${buffer.length} bytes)`,
-    );
-  } catch (e) {
-    await moveFileSafely(filePath, FAILED_DIR);
-    logLine(
-      `[lot-server] failed -> ${FAILED_DIR}: ${filePath} (${e?.message || e})`,
-    );
   }
+
+  await moveFileSafely(filePath, FAILED_DIR);
+  logLine(
+    `[lot-server] failed -> ${FAILED_DIR}: ${filePath} (${formatError(lastError)})`,
+  );
 }
 
 async function main() {
