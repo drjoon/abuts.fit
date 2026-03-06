@@ -458,9 +458,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             if (!File.Exists(resolved))
             {
-                AppLogger.Log($"StlFileProcessor.TryResolveBackendPrcPath: PRC 파일 없음 - {resolved}");
+                AppLogger.Log($"DentalAddin.TryResolveBackendPrcPath: PRC 파일 없음 - {resolved}");
                 return false;
             }
+            AppLogger.Log($"DentalAddin.TryResolveBackendPrcPath: PRC 확인 완료 - subDir={subDir}, file={fileName}, resolved={resolved}");
             return true;
         }
         private void ResetDentalAddinMoveModuleState()
@@ -1546,16 +1547,16 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 ? null
                 : new HashSet<string>(targetNames, StringComparer.OrdinalIgnoreCase);
             int max = Math.Min(count, 40);
-            for (int idx = 1; idx <= max; idx++)
+            for (int i = 1; i <= max; i++)
             {
-                FreeFormFeature feature = document.FreeFormFeatures[idx];
+                FreeFormFeature feature = document.FreeFormFeatures[i];
                 if (feature == null)
                 {
-                    AppLogger.Log($"{context} - Feature[{idx}] null");
+                    AppLogger.Log($"{context} - Feature[{i}] null");
                     continue;
                 }
                 string name = feature.Name ?? "(no-name)";
-                AppLogger.Log($"{context} - Feature[{idx}] {name}");
+                AppLogger.Log($"{context} - Feature[{i}] {name}");
                 pending?.Remove(name);
             }
             if (count > 40)
@@ -1647,13 +1648,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             SetStaticField(mainModuleType, "PrcDirectory", prcDirectory);
             string[] prcPaths = EnsurePrcArray(GetMainModuleField<string[]>(mainModuleType, "PrcFilePath"));
             string[] prcNames = EnsurePrcArray(GetMainModuleField<string[]>(mainModuleType, "PrcFileName"));
-            int[] numCombobox = GetMainModuleField<int[]>(mainModuleType, "NumCombobox");
+            int[] numCombobox = EnsureComboArray(GetMainModuleField<int[]>(mainModuleType, "NumCombobox"));
             SetStaticField(mainModuleType, "PrcFilePath", prcPaths);
             SetStaticField(mainModuleType, "PrcFileName", prcNames);
+            SetStaticField(mainModuleType, "NumCombobox", numCombobox);
             EnsurePrcBaseDefaults(prcDirectory, prcPaths, prcNames);
             EnsureFaceConnectionFromBackend(prcPaths, prcNames);
             EnsureCompositeDefaults(prcDirectory, prcPaths, prcNames);
             ApplyEnvOverrides(prcPaths);
+            ForceFourAxisFinishing(mainModuleType, numCombobox);
             bool reverseEnabled = numCombobox != null && numCombobox.Length > 4 && numCombobox[4] == 1;
             SetStaticField(mainModuleType, "ReverseOn", reverseEnabled);
             AppLogger.Log(reverseEnabled
@@ -1696,6 +1699,26 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 AppLogger.Log($"DentalAddin: Finishing PRC 확인 실패 - {ex.GetType().Name}:{ex.Message}");
             }
+        }
+
+        private static void ForceFourAxisFinishing(Type mainModuleType, int[] numCombobox)
+        {
+            if (numCombobox == null || numCombobox.Length <= 1)
+            {
+                return;
+            }
+
+            const int FourAxisIndex = 1;
+            if (numCombobox[1] != FourAxisIndex)
+            {
+                numCombobox[1] = FourAxisIndex;
+                SetStaticField(mainModuleType, "NumCombobox", numCombobox);
+                AppLogger.Log("DentalAddin: Finishing Method 강제 설정 - 4 Axis Milling");
+            }
+
+            int desiredMachineType = 2; // ComboBox index(1) + 1
+            SetStaticField(mainModuleType, "machinetype", desiredMachineType);
+            AppLogger.Log("DentalAddin: MachineType 강제 설정 - machinetype=2 (4 Axis)");
         }
         private static void EnsureCompositeEnabled(Type mainModuleType, string[] prcPaths)
         {
@@ -1998,6 +2021,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             return source;
         }
+
+        private static int[] EnsureComboArray(int[] source)
+        {
+            if (source == null || source.Length < 7)
+            {
+                return new int[7];
+            }
+            return source;
+        }
         private static void AssignProcessPath(string[] paths, string[] names, int index, string resolvedPath)
         {
             if (paths == null || names == null)
@@ -2157,10 +2189,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 if (prcPaths.Length > 4 && string.IsNullOrWhiteSpace(prcPaths[4]))
                 {
                     prcPaths[4] = FaceHoleProcessFilePath;
+                    AppLogger.Log($"DentalAddin.EnsureFaceConnectionFromBackend: PRC[4] 채움 - {FaceHoleProcessFilePath}");
+                }
+                else if (prcPaths.Length > 4)
+                {
+                    AppLogger.Log($"DentalAddin.EnsureFaceConnectionFromBackend: PRC[4] 기존값 유지 - {prcPaths[4]}");
                 }
                 if (prcNames.Length > 4 && string.IsNullOrWhiteSpace(prcNames[4]))
                 {
                     prcNames[4] = Path.GetFileName(FaceHoleProcessFilePath);
+                }
+                else if (prcNames.Length > 4)
+                {
+                    AppLogger.Log($"DentalAddin.EnsureFaceConnectionFromBackend: PRC[4] Name 기존값 유지 - {prcNames[4]}");
                 }
                 // Connection -> index 8
                 if (string.IsNullOrWhiteSpace(ConnectionMachiningProcessFilePath) || !File.Exists(ConnectionMachiningProcessFilePath))
@@ -2170,10 +2211,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 if (prcPaths.Length > 8 && string.IsNullOrWhiteSpace(prcPaths[8]))
                 {
                     prcPaths[8] = ConnectionMachiningProcessFilePath;
+                    AppLogger.Log($"DentalAddin.EnsureFaceConnectionFromBackend: PRC[8] 채움 - {ConnectionMachiningProcessFilePath}");
+                }
+                else if (prcPaths.Length > 8)
+                {
+                    AppLogger.Log($"DentalAddin.EnsureFaceConnectionFromBackend: PRC[8] 기존값 유지 - {prcPaths[8]}");
                 }
                 if (prcNames.Length > 8 && string.IsNullOrWhiteSpace(prcNames[8]))
                 {
                     prcNames[8] = Path.GetFileName(ConnectionMachiningProcessFilePath);
+                }
+                else if (prcNames.Length > 8)
+                {
+                    AppLogger.Log($"DentalAddin.EnsureFaceConnectionFromBackend: PRC[8] Name 기존값 유지 - {prcNames[8]}");
                 }
             }
             catch (Exception ex)

@@ -3,11 +3,14 @@ import dotenv from "dotenv";
 import sharp from "sharp";
 import path from "path";
 import fs from "fs/promises";
+import { createWriteStream } from "fs";
 import os from "os";
 
-const LOG_FILE =
-  process.env.LOT_LOG_FILE || path.resolve(process.cwd(), "lot-server.log");
-const LOG_RETENTION_MS = 10 * 60 * 1000; // 10 minutes
+const LOG_FILE = path.resolve(process.cwd(), "logs.txt");
+const logStream = createWriteStream(LOG_FILE, { flags: "w" });
+logStream.on("error", (err) => {
+  console.error("[lot-server] log stream error", err);
+});
 
 dotenv.config({ path: path.resolve(process.cwd(), "local.env") });
 
@@ -47,26 +50,13 @@ async function ensureDir(p) {
 function logLine(message) {
   const line = `${new Date().toISOString()} ${message}`;
   console.log(line);
-  fs
-    .appendFile(LOG_FILE, `${line}\n`)
-    .then(() => pruneLogFile().catch(() => {}))
-    .catch(() => {});
-}
-
-async function pruneLogFile() {
-  try {
-    const raw = await fs.readFile(LOG_FILE, "utf8").catch(() => "");
-    if (!raw) return;
-    const lines = raw.split(/\r?\n/).filter(Boolean);
-    const cutoff = Date.now() - LOG_RETENTION_MS;
-    const kept = lines.filter((ln) => {
-      const ts = ln.slice(0, 24); // "2026-03-05T01:39:53.910Z"
-      const t = Date.parse(ts);
-      return Number.isFinite(t) && t >= cutoff;
+  if (logStream.writable) {
+    logStream.write(`${line}\n`, (err) => {
+      if (err) {
+        console.error("[lot-server] failed to write log line", err);
+      }
     });
-    if (kept.length === lines.length) return;
-    await fs.writeFile(LOG_FILE, kept.join("\n") + (kept.length ? "\n" : ""));
-  } catch {}
+  }
 }
 
 function isImageFile(filePath) {
@@ -264,7 +254,9 @@ async function handleNewImage(filePath) {
   const stable = await waitForStableFile(filePath);
   if (!stable) {
     await moveFileSafely(filePath, FAILED_DIR);
-    logLine(`[lot-server] failed (unstable file) -> ${FAILED_DIR}: ${filePath}`);
+    logLine(
+      `[lot-server] failed (unstable file) -> ${FAILED_DIR}: ${filePath}`,
+    );
     return;
   }
 
@@ -317,7 +309,9 @@ async function handleNewImage(filePath) {
     );
   } catch (e) {
     await moveFileSafely(filePath, FAILED_DIR);
-    logLine(`[lot-server] failed -> ${FAILED_DIR}: ${filePath} (${e?.message || e})`);
+    logLine(
+      `[lot-server] failed -> ${FAILED_DIR}: ${filePath} (${e?.message || e})`,
+    );
   }
 }
 
@@ -352,7 +346,9 @@ async function main() {
       try {
         await handleNewImage(full);
       } catch (err) {
-        logLine(`[lot-server] initial scan error for ${full}: ${err?.message || err}`);
+        logLine(
+          `[lot-server] initial scan error for ${full}: ${err?.message || err}`,
+        );
       }
     }
   } catch {}
@@ -372,13 +368,17 @@ async function main() {
 
   watcher.on("add", (p) => {
     handleNewImage(p).catch((err) => {
-      logLine(`[lot-server] watcher add error for ${p}: ${err?.message || err}`);
+      logLine(
+        `[lot-server] watcher add error for ${p}: ${err?.message || err}`,
+      );
     });
   });
 
   watcher.on("change", (p) => {
     handleNewImage(p).catch((err) => {
-      logLine(`[lot-server] watcher change error for ${p}: ${err?.message || err}`);
+      logLine(
+        `[lot-server] watcher change error for ${p}: ${err?.message || err}`,
+      );
     });
   });
 
@@ -391,8 +391,7 @@ async function main() {
   });
 
   setInterval(() => {
-    fs
-      .readdir(WATCH_DIR, { withFileTypes: true })
+    fs.readdir(WATCH_DIR, { withFileTypes: true })
       .then((entries) => {
         for (const ent of entries) {
           if (!ent.isFile()) continue;
@@ -404,10 +403,6 @@ async function main() {
         logLine(`[lot-server] rescan failed: ${err?.message || err}`);
       });
   }, 3 * 1000);
-
-  setInterval(() => {
-    pruneLogFile().catch(() => {});
-  }, 60 * 1000);
 
   logLine(`[lot-server] watching: ${WATCH_DIR}`);
   logLine(`[lot-server] backend: ${BACKEND_BASE}`);

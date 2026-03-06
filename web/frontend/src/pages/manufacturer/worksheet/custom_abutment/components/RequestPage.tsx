@@ -846,20 +846,29 @@ export const RequestPage = ({
 
   const handleOpenNextRequest = useCallback(
     (currentReqId: string) => {
+      // 현재 요청이 목록에서 사라진 경우(승인 직후 단계 이동 등)를 대비해
+      // 1) 기존 위치 기반 다음 요청, 2) 목록의 첫 번째 다른 요청 순으로 탐색한다.
       const currentIndex = filteredAndSorted.findIndex(
         (r) => r._id === currentReqId,
       );
-      if (currentIndex === -1) return;
 
-      const nextReq = filteredAndSorted[currentIndex + 1];
+      let nextReq: ManufacturerRequest | undefined;
+      if (currentIndex >= 0) {
+        nextReq = filteredAndSorted[currentIndex + 1];
+      }
+
       if (!nextReq) {
-        // 마지막 카드인 경우 모달 닫기
+        nextReq = filteredAndSorted.find((r) => r._id !== currentReqId);
+      }
+
+      if (!nextReq) {
+        // 마지막 카드이거나 다른 의뢰가 없는 경우 모달을 닫는다.
         setPreviewOpen(false);
         return;
       }
 
       setTimeout(() => {
-        void handleOpenPreview(nextReq);
+        void handleOpenPreview(nextReq as ManufacturerRequest);
       }, 200);
     },
     [filteredAndSorted, handleOpenPreview, setPreviewOpen],

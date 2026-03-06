@@ -37,10 +37,24 @@ const ALLOW_IPS = String(
   .map((s) => s.trim())
   .filter(Boolean);
 
+const LOG_FILE = path.resolve(process.cwd(), "logs.txt");
+const logStream = fs.createWriteStream(LOG_FILE, { flags: "w" });
+logStream.on("error", (err) => {
+  console.error("[print-server] log stream error", err);
+});
+
 const log = (message, meta) => {
   const stamp = new Date().toISOString();
   const suffix = meta ? ` ${JSON.stringify(meta)}` : "";
-  console.log(`[print-server] ${stamp} ${message}${suffix}`);
+  const line = `[print-server] ${stamp} ${message}${suffix}`;
+  console.log(line);
+  if (logStream.writable) {
+    logStream.write(`${line}\n`, (err) => {
+      if (err) {
+        console.error("[print-server] failed to write log line", err);
+      }
+    });
+  }
 };
 
 const jsonResponse = (res, statusCode, body) => {

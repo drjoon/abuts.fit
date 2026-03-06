@@ -288,6 +288,108 @@ namespace DentalAddin
             return fallback;
         }
 
+        private static SelectionSet EnsureSelectionSet(string name)
+        {
+            if (Document?.SelectionSets == null)
+            {
+                DentalLogger.Log($"SelectionSet 확보 실패 - Document.SelectionSets null (name:{name})");
+                return null;
+            }
+
+            SelectionSet selectionSet = null;
+            try
+            {
+                selectionSet = Document.SelectionSets[name];
+            }
+            catch
+            {
+            }
+
+            if (selectionSet != null)
+            {
+                return selectionSet;
+            }
+
+            try
+            {
+                selectionSet = Document.SelectionSets.Add(name);
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"SelectionSet 생성 실패 - name:{name}, msg:{ex.Message}");
+            }
+
+            return selectionSet;
+        }
+
+        private static GraphicObject GetLatestSurface(string context)
+        {
+            if (Document?.GraphicsCollection == null)
+            {
+                DentalLogger.Log($"{context} - GraphicsCollection null");
+                return null;
+            }
+
+            int count = Document.GraphicsCollection.Count;
+            for (int i = count; i >= 1; i--)
+            {
+                if (Document.GraphicsCollection[i] is GraphicObject graphicObject &&
+                    graphicObject.GraphicObjectType == espGraphicObjectType.espSurface)
+                {
+                    return graphicObject;
+                }
+            }
+
+            DentalLogger.Log($"{context} - Surface 객체를 찾지 못했습니다 (count:{count})");
+            return null;
+        }
+
+        private static GraphicObject MergeSurfaceWithLogging(string filePath, string context)
+        {
+            DentalLogger.Log($"{context} - MergeFile: {filePath}");
+            Document.MergeFile(filePath, RuntimeHelpers.GetObjectValue(Missing.Value));
+            GraphicObject surface = GetLatestSurface(context);
+            if (surface == null)
+            {
+                DentalLogger.Log($"{context} - MergeFile 후 Surface 미생성");
+                return null;
+            }
+
+            if (surface.Layer != null)
+            {
+                surface.Layer.Visible = false;
+            }
+
+            return surface;
+        }
+
+        private static void ApplySurfaceTranslation(GraphicObject surface, string context)
+        {
+            if (surface == null)
+            {
+                DentalLogger.Log($"{context} - Surface null");
+                return;
+            }
+
+            if (!MoveSTL_Module.NeedMove)
+            {
+                DentalLogger.Log($"{context} - Move 필요 없음 (NeedMove=False)");
+                return;
+            }
+
+            SelectionSet selectionSet = EnsureSelectionSet("Smove");
+            if (selectionSet == null)
+            {
+                DentalLogger.Log($"{context} - SelectionSet 'Smove' 생성 실패");
+                return;
+            }
+
+            selectionSet.RemoveAll();
+            selectionSet.Add(surface, RuntimeHelpers.GetObjectValue(Missing.Value));
+            selectionSet.Translate(0.0, MoveSTL_Module.NeedMoveY, MoveSTL_Module.NeedMoveZ, 0);
+            DentalLogger.Log($"{context} - Surface Translate 적용 (dY:{MoveSTL_Module.NeedMoveY:0.000}, dZ:{MoveSTL_Module.NeedMoveZ:0.000})");
+        }
+
         private static bool HasPoints(params int[] indices)
         {
             if (ptp == null)
@@ -4445,7 +4547,9 @@ namespace DentalAddin
 
         public static void MainFree()
         {
+            DentalLogger.Log("MainFree - MoveSurface 시작");
             MoveSTL_Module.MoveSurface();
+            DentalLogger.Log($"MainFree - MoveSurface 결과 NeedMove:{MoveSTL_Module.NeedMove}, dY:{MoveSTL_Module.NeedMoveY:0.000}, dZ:{MoveSTL_Module.NeedMoveZ:0.000}");
             Emerge();
             Composite();
             int count = Document.GraphicsCollection.Count;
