@@ -14402,7 +14402,7 @@ FN:10,normalizeTypeLabel
 FN:19,normalizeFamilyLabel
 FN:27,buildDisplayLabels
 FN:39,buildPrcFileNames
-FN:84,getConnections
+FN:84,getImplantPresets
 FN:99,(anonymous_5)
 FN:102,(anonymous_6)
 FN:149,(anonymous_7)
@@ -14410,14 +14410,14 @@ FN:160,(anonymous_8)
 FN:163,(anonymous_9)
 FN:167,(anonymous_10)
 FN:177,(anonymous_11)
-FN:198,findConnectionByDiameter
+FN:198,findImplantPresetByDiameter
 FNF:13
 FNH:0
 FNDA:0,normalizeTypeLabel
 FNDA:0,normalizeFamilyLabel
 FNDA:0,buildDisplayLabels
 FNDA:0,buildPrcFileNames
-FNDA:0,getConnections
+FNDA:0,getImplantPresets
 FNDA:0,(anonymous_5)
 FNDA:0,(anonymous_6)
 FNDA:0,(anonymous_7)
@@ -14425,7 +14425,7 @@ FNDA:0,(anonymous_8)
 FNDA:0,(anonymous_9)
 FNDA:0,(anonymous_10)
 FNDA:0,(anonymous_11)
-FNDA:0,findConnectionByDiameter
+FNDA:0,findImplantPresetByDiameter
 DA:11,0
 DA:12,0
 DA:13,0

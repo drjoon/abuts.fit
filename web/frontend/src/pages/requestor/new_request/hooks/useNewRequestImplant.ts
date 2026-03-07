@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import type { Connection } from "./newRequestTypes";
 
-const CONNECTIONS_STORAGE_KEY = "abutsfit:connections:v5";
-const CONNECTIONS_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1년
+const IMPLANT_PRESETS_STORAGE_KEY = "abutsfit:implant-presets:v1";
+const IMPLANT_PRESETS_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1년
 
 export type UseNewRequestImplantParams = {
   token: string | null;
@@ -30,14 +30,16 @@ export const useNewRequestImplant = ({
   const [implantFamily, setImplantFamily] = useState("");
   const [implantType, setImplantType] = useState("");
 
-  // connections 목록은 토큰 기준으로 한 번만 조회
+  // implant preset 목록은 토큰 기준으로 한 번만 조회
   useEffect(() => {
-    const loadConnections = async () => {
+    const loadImplantPresets = async () => {
       try {
         // 1) localStorage 캐시 확인
         if (typeof window !== "undefined") {
           try {
-            const stored = window.localStorage.getItem(CONNECTIONS_STORAGE_KEY);
+            const stored = window.localStorage.getItem(
+              IMPLANT_PRESETS_STORAGE_KEY,
+            );
             if (stored) {
               const parsed = JSON.parse(stored) as {
                 data: any[];
@@ -45,7 +47,11 @@ export const useNewRequestImplant = ({
                 cachedAt: number;
               };
               const age = Date.now() - parsed.cachedAt;
-              if (age <= CONNECTIONS_TTL_MS && Array.isArray(parsed.data)) {
+              if (
+                age <= IMPLANT_PRESETS_TTL_MS &&
+                Array.isArray(parsed.data) &&
+                parsed.data.length > 0
+              ) {
                 setConnections(parsed.data);
                 return;
               }
@@ -55,7 +61,7 @@ export const useNewRequestImplant = ({
 
         // 2) 캐시가 없거나 만료된 경우 서버에서 조회 후 캐시 저장
         const res = await apiFetch<any>({
-          path: "/api/connections",
+          path: "/api/implant-presets",
           method: "GET",
           token,
         });
@@ -77,7 +83,7 @@ export const useNewRequestImplant = ({
               cachedAt: Date.now(),
             };
             window.localStorage.setItem(
-              CONNECTIONS_STORAGE_KEY,
+              IMPLANT_PRESETS_STORAGE_KEY,
               JSON.stringify(payload),
             );
           } catch {}
@@ -85,7 +91,7 @@ export const useNewRequestImplant = ({
       } catch {}
     };
 
-    loadConnections();
+    loadImplantPresets();
   }, [token]);
 
   // clinicName / connections 에 따라 기본 임플란트 선택
