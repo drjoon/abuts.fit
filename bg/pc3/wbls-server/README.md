@@ -1,5 +1,8 @@
 # abuts wbls-server
 
+This document is an **operational document**.
+It is not an authoritative rules document; actual behavior is defined by the code and root `rules.md`.
+
 Waybill (송장) label print server for shipping boxes (multiple products).
 
 ## Features
@@ -24,12 +27,14 @@ node app.js
 2. Install Node.js (default `C:\Program Files\nodejs\node.exe`).
 3. Prepare `local.env` with printer info.
 4. From an elevated PowerShell in this folder:
+
    ```powershell
    ./install-windows-service.ps1 -Action install
    ```
 
    - Other actions: `-Action remove|restart|status`
    - Customize service/node paths via `-ServiceName`, `-NssmPath`, `-NodePath`.
+
 5. Logs rotate under `./logs/stdout.log`, `./logs/stderr.log`.
 
 ## Environment variables

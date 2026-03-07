@@ -1,5 +1,8 @@
 # abuts pack-server
 
+This document is an **operational document**.
+It is not an authoritative rules document; actual behavior is defined by the code and root `rules.md`.
+
 Custom abutment packing label print server (single product label).
 
 ## Features
@@ -24,12 +27,14 @@ Default port: `5788`
 2. Install Node.js (default `C:\Program Files\nodejs\node.exe`).
 3. Configure `local.env`.
 4. Run PowerShell (관리자) in this folder:
+
    ```powershell
    ./install-windows-service.ps1 -Action install
    ```
 
    - Other actions: `-Action remove|restart|status`
    - Override service name/path if needed using `-ServiceName`, `-NssmPath`, `-NodePath`.
+
 5. Logs: `./logs/stdout.log`, `./logs/stderr.log` (auto-rotated).
 
 ## Security

@@ -1,5 +1,8 @@
 # Abuts.fit API 문서
 
+- 이 문서는 **API 레퍼런스 문서**입니다.
+- 정책 기준 문서가 아니며, 실제 동작 기준은 코드와 루트 `rules.md`입니다.
+
 ## 개요
 
 이 문서는 Abuts.fit 백엔드 API의 사용법을 설명합니다. 모든 API는 RESTful 원칙을 따르며, JSON 형식으로 데이터를 주고받습니다.
@@ -80,18 +83,21 @@ AWS_S3_BUCKET_NAME=abuts-fit
 ## 개발 환경 설정
 
 1. 의존성 설치:
+
 ```bash
 cd backend
 npm install
 ```
 
 2. 환경 변수 설정:
+
 ```bash
 cp .env.example .env
 # .env 파일을 편집하여 필요한 값을 설정
 ```
 
 3. 서버 실행:
+
 ```bash
 npm run dev
 ```
