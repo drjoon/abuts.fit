@@ -90,8 +90,14 @@ export async function disconnectDb() {
 }
 
 export async function clearAllCollections() {
-  const collections = mongoose.connection.collections;
-  for (const key of Object.keys(collections || {})) {
-    await collections[key].deleteMany({});
+  const db = mongoose.connection.db;
+  if (!db) {
+    throw new Error("MongoDB connection is not ready.");
+  }
+
+  const collections = await db.listCollections({}, { nameOnly: true }).toArray();
+  for (const collection of collections) {
+    if (!collection?.name) continue;
+    await db.collection(collection.name).deleteMany({});
   }
 }

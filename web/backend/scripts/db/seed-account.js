@@ -1,5 +1,5 @@
 import { connectDb, disconnectDb } from "./_mongo.js";
-import { seedBulkAccounts, seedDefaultAccounts } from "./_seed.shared.js";
+import { seedBulkAccounts, seedDefaultAccounts } from "./seed/accounts.js";
 
 function parseCountArg(name) {
   const raw = process.argv.slice(2).find((arg) => arg.startsWith(`${name}=`));
@@ -22,7 +22,9 @@ async function run() {
       const result = await seedDefaultAccounts();
       console.log("[db] seed-account done", {
         mode: "default",
-        emails: Object.values(result.users || {}).map((user) => user?.email).filter(Boolean),
+        emails: Object.values(result.users || {})
+          .map((user) => user?.email)
+          .filter(Boolean),
       });
       return;
     }

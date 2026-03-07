@@ -1,6 +1,6 @@
 import { connectDb, disconnectDb } from "./_mongo.js";
 import { seedCoreShared } from "./_core.shared.js";
-import { seedRequestData } from "./_seed.shared.js";
+import { seedRequestData } from "./seed/data.js";
 
 function parseCountArg() {
   const raw = process.argv[2];
