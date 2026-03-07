@@ -7,6 +7,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -469,6 +470,32 @@ export const PreviewModal = ({
     ? String(rightMeta?.filePath || rightTitle).trim() || rightTitle
     : rightTitle;
 
+  const formatElapsed = (secRaw?: number | null) => {
+    const sec = Number.isFinite(Number(secRaw))
+      ? Math.max(0, Math.floor(Number(secRaw)))
+      : null;
+    if (sec == null) return "";
+    const mm = String(Math.floor(sec / 60)).padStart(2, "0");
+    const ss = String(sec % 60).padStart(2, "0");
+    return `${mm}:${ss}`;
+  };
+
+  const getRealtimeToneClass = (tone?: string | null) => {
+    if (tone === "amber") {
+      return "bg-amber-50 text-amber-700 border-amber-200";
+    }
+    if (tone === "indigo") {
+      return "bg-indigo-50 text-indigo-700 border-indigo-200";
+    }
+    if (tone === "rose") {
+      return "bg-rose-50 text-rose-700 border-rose-200";
+    }
+    if (tone === "slate") {
+      return "bg-slate-50 text-slate-700 border-slate-200";
+    }
+    return "bg-blue-50 text-blue-700 border-blue-200";
+  };
+
   const onDownload = () => {
     if (!hasRightFile) return;
     if (isStageFileStage) {
@@ -504,6 +531,14 @@ export const PreviewModal = ({
 
   const pickInputId = `right-upload-${activeReq?._id || "pending"}`;
 
+  const realtimeBadge = String(activeReq?.realtimeProgress?.badge || "").trim();
+  const realtimeElapsedLabel = formatElapsed(
+    activeReq?.realtimeProgress?.elapsedSeconds,
+  );
+  const realtimeToneClass = getRealtimeToneClass(
+    activeReq?.realtimeProgress?.tone,
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -516,6 +551,24 @@ export const PreviewModal = ({
         </DialogDescription>
 
         <div className="h-full flex flex-col gap-4 overflow-hidden">
+          {(realtimeBadge || realtimeElapsedLabel) && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 shrink-0">
+              {realtimeBadge ? (
+                <Badge
+                  variant="outline"
+                  className={`text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] ${realtimeToneClass}`}
+                >
+                  {realtimeBadge}
+                </Badge>
+              ) : null}
+              {realtimeElapsedLabel ? (
+                <span className="tabular-nums font-bold text-blue-600 text-sm">
+                  {realtimeElapsedLabel}
+                </span>
+              ) : null}
+            </div>
+          )}
+
           <div className="flex items-center justify-end gap-2 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 shrink-0">
             {!isRequestStage && (
               <button

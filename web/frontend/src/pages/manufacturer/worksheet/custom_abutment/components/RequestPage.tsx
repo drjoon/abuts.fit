@@ -66,6 +66,38 @@ type PreviewFiles = {
   request?: ManufacturerRequest | null;
 };
 
+const mergeTransientRealtimeProgress = (
+  prevRequests: ManufacturerRequest[],
+  nextRequests: ManufacturerRequest[],
+): ManufacturerRequest[] => {
+  const prevByKey = new Map<string, ManufacturerRequest>();
+
+  for (const req of prevRequests) {
+    const requestId = String(req?.requestId || "").trim();
+    const mongoId = String(req?._id || "").trim();
+    if (requestId) prevByKey.set(`requestId:${requestId}`, req);
+    if (mongoId) prevByKey.set(`mongoId:${mongoId}`, req);
+  }
+
+  return nextRequests.map((req) => {
+    const requestId = String(req?.requestId || "").trim();
+    const mongoId = String(req?._id || "").trim();
+    const prev =
+      (requestId ? prevByKey.get(`requestId:${requestId}`) : null) ||
+      (mongoId ? prevByKey.get(`mongoId:${mongoId}`) : null) ||
+      null;
+
+    if (!prev?.realtimeProgress || req?.realtimeProgress) {
+      return req;
+    }
+
+    return {
+      ...req,
+      realtimeProgress: prev.realtimeProgress,
+    };
+  });
+};
+
 export const RequestPage = ({
   showQueueBar = true,
   filterRequests,
@@ -257,10 +289,18 @@ export const RequestPage = ({
                   ),
                   r,
                 );
-              return Array.from(map.values()) as any[];
+              return mergeTransientRealtimeProgress(
+                prev,
+                Array.from(map.values()) as any[],
+              );
             });
           } else {
-            setRequests(list);
+            setRequests((prev) =>
+              mergeTransientRealtimeProgress(
+                prev,
+                list as ManufacturerRequest[],
+              ),
+            );
           }
           // if received less than limit, no more pages
           hasMoreRef.current = list.length >= PAGE_LIMIT;

@@ -67,6 +67,7 @@ export function useWorksheetRealtimeStatus({
 
       const requestId = String(notification?.data?.requestId || "").trim();
       const sourceStep = String(notification?.data?.sourceStep || "").trim();
+      let shouldRefreshList = false;
       if (requestId) {
         setRequests((prev) =>
           prev.map((r) => {
@@ -87,6 +88,7 @@ export function useWorksheetRealtimeStatus({
             }
             if (sourceStep === "3-nc") {
               delete realtimeBaseRef.current[requestId];
+              shouldRefreshList = true;
               return {
                 ...(r as any),
                 realtimeProgress: null,
@@ -95,6 +97,9 @@ export function useWorksheetRealtimeStatus({
             return r;
           }),
         );
+      }
+      if (shouldRefreshList && fetchRequests) {
+        void fetchRequests(true);
       }
       if (
         !requestId ||
