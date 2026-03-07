@@ -293,10 +293,21 @@ export const RequestPage = ({
       // reset paging
       pageRef.current = 1;
       hasMoreRef.current = true;
-      await fetchRequestsCore(silent, false);
+      return await fetchRequestsCore(silent, false);
     },
     [fetchRequestsCore],
   );
+
+  const refreshRequests = useCallback(
+    async (silent = false) => {
+      return await fetchRequests(silent);
+    },
+    [fetchRequests],
+  );
+
+  const reloadRequests = useCallback(async () => {
+    await refreshRequests();
+  }, [refreshRequests]);
 
   const fetchNextPage = useCallback(async () => {
     if (isFetchingPageRef.current) return;
@@ -339,7 +350,7 @@ export const RequestPage = ({
     stage: tabStage,
     isCamStage,
     isMachiningStage,
-    fetchRequests,
+    fetchRequests: reloadRequests,
     setDownloading,
     setUploading,
     setDeletingCam,
@@ -795,6 +806,89 @@ export const RequestPage = ({
       return new Date(a.createdAt) < new Date(b.createdAt) ? 1 : -1;
     });
 
+  const getFilteredAndSortedRequests = useCallback(
+    (sourceRequests: ManufacturerRequest[]) => {
+      const base = (() => {
+        if (showCompleted) {
+          if (tabStage === "shipping") {
+            return sourceRequests.filter((req) => {
+              const stage = String(req.manufacturerStage || "").trim();
+              if (stage === "추적관리") return true;
+              if (!filterRequests) return true;
+              try {
+                return filterRequests(req);
+              } catch {
+                return false;
+              }
+            });
+          }
+          return sourceRequests.filter((req) => {
+            const stage = deriveStageForFilter(req);
+            const order = stageOrder[stage] ?? 0;
+            return order >= currentStageOrder;
+          });
+        }
+
+        if (tabStage === "shipping") {
+          return sourceRequests.filter((req) => {
+            const stage = String(req.manufacturerStage || "").trim();
+            if (stage === "추적관리") return false;
+            try {
+              return filterRequests ? filterRequests(req) : true;
+            } catch {
+              return false;
+            }
+          });
+        }
+
+        const filtered = filterRequests
+          ? sourceRequests.filter((req) => {
+              try {
+                return filterRequests(req);
+              } catch {
+                return false;
+              }
+            })
+          : sourceRequests;
+
+        if (filterRequests) return filtered;
+
+        return filtered.filter((req) => {
+          const stage = deriveStageForFilter(req);
+          const order = stageOrder[stage] ?? 0;
+          return order <= currentStageOrder;
+        });
+      })();
+
+      return base
+        .filter((request) => {
+          const caseInfos = request.caseInfos || {};
+          const text = (
+            (request.referenceIds?.join(",") || "") +
+            (request.requestor?.organization || "") +
+            (request.requestor?.name || "") +
+            (caseInfos.clinicName || "") +
+            (caseInfos.patientName || "") +
+            (request.description || "") +
+            (caseInfos.tooth || "") +
+            (caseInfos.connectionDiameter || "") +
+            (caseInfos.implantManufacturer || "") +
+            (caseInfos.implantBrand || "") +
+            (caseInfos.implantFamily || "") +
+            (caseInfos.implantType || "")
+          ).toLowerCase();
+          return text.includes(searchLower);
+        })
+        .sort((a, b) => {
+          const aScore = a.shippingPriority?.score ?? 0;
+          const bScore = b.shippingPriority?.score ?? 0;
+          if (aScore !== bScore) return bScore - aScore;
+          return new Date(a.createdAt) < new Date(b.createdAt) ? 1 : -1;
+        });
+    },
+    [currentStageOrder, filterRequests, searchLower, showCompleted, tabStage],
+  );
+
   const DEBUG = (() => {
     try {
       const sp = new URLSearchParams(window.location.search);
@@ -863,33 +957,45 @@ export const RequestPage = ({
   ]);
 
   const handleOpenNextRequest = useCallback(
-    (currentReqId: string) => {
-      // 현재 요청이 목록에서 사라진 경우(승인 직후 단계 이동 등)를 대비해
-      // 1) 기존 위치 기반 다음 요청, 2) 목록의 첫 번째 다른 요청 순으로 탐색한다.
+    async (currentReqId: string) => {
       const currentIndex = filteredAndSorted.findIndex(
         (r) => r._id === currentReqId,
       );
 
+      const preferredNextId =
+        currentIndex >= 0
+          ? filteredAndSorted[currentIndex + 1]?._id || null
+          : null;
+
+      const refreshed = await refreshRequests(true);
+      const latestList = Array.isArray(refreshed)
+        ? getFilteredAndSortedRequests(refreshed as ManufacturerRequest[])
+        : getFilteredAndSortedRequests(requests);
+
       let nextReq: ManufacturerRequest | undefined;
-      if (currentIndex >= 0) {
-        nextReq = filteredAndSorted[currentIndex + 1];
+      if (preferredNextId) {
+        nextReq = latestList.find((r) => r._id === preferredNextId);
       }
 
       if (!nextReq) {
-        nextReq = filteredAndSorted.find((r) => r._id !== currentReqId);
+        nextReq = latestList.find((r) => r._id !== currentReqId);
       }
 
       if (!nextReq) {
-        // 마지막 카드이거나 다른 의뢰가 없는 경우 모달을 닫는다.
         setPreviewOpen(false);
         return;
       }
 
-      setTimeout(() => {
-        void handleOpenPreview(nextReq as ManufacturerRequest);
-      }, 200);
+      await handleOpenPreview(nextReq as ManufacturerRequest);
     },
-    [filteredAndSorted, handleOpenPreview, setPreviewOpen],
+    [
+      filteredAndSorted,
+      getFilteredAndSortedRequests,
+      handleOpenPreview,
+      refreshRequests,
+      requests,
+      setPreviewOpen,
+    ],
   );
 
   totalCountRef.current = filteredAndSorted.length;

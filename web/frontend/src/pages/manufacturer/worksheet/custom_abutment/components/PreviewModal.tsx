@@ -1,10 +1,9 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { DialogClose } from "@radix-ui/react-dialog";
 import { RefreshCw, Trash2, Upload } from "lucide-react";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
@@ -46,7 +45,10 @@ type PreviewModalProps = {
     stageOverride?: ReviewStageKey;
     keepPreviewOpen?: boolean;
   }) => Promise<void>;
-  onDeleteCam: (req: ManufacturerRequest) => Promise<void>;
+  onDeleteCam: (
+    req: ManufacturerRequest,
+    opts?: { rollbackOnly?: boolean; navigate?: boolean },
+  ) => Promise<void>;
   onDeleteNc: (
     req: ManufacturerRequest,
     opts?: { nextStage?: string; navigate?: boolean },
@@ -72,7 +74,7 @@ type PreviewModalProps = {
     req: ManufacturerRequest,
     stage: string,
   ) => Promise<void>;
-  onOpenNextRequest?: (currentReqId: string) => void;
+  onOpenNextRequest?: (currentReqId: string) => Promise<void>;
   setSearchParams: (
     nextInit: ((prev: URLSearchParams) => URLSearchParams) | URLSearchParams,
     navigateOpts?: { replace?: boolean },
@@ -125,10 +127,19 @@ export const PreviewModal = ({
   const { toast } = useToast();
   const [regenerating, setRegenerating] = useState(false);
   const req = previewFiles.request as ManufacturerRequest | null;
-  if (!req) return null;
+  const lastStableReqRef = useRef<ManufacturerRequest | null>(null);
+
+  useEffect(() => {
+    if (req) {
+      lastStableReqRef.current = req;
+    }
+  }, [req]);
+
+  const activeReq = req || lastStableReqRef.current;
+  if (!activeReq && !open) return null;
 
   const finishLinePoints = ((previewFiles.finishLinePoints ??
-    req.caseInfos?.finishLine?.points) ||
+    activeReq?.caseInfos?.finishLine?.points) ||
     null) as number[][] | null;
 
   const currentReviewStageKey = getReviewStageKeyByTab({
@@ -159,51 +170,33 @@ export const PreviewModal = ({
         | "packing"
         | "shipping"
         | "tracking";
-      return !!req.caseInfos?.stageFiles?.[key]?.s3Key || !!previewStageUrl;
+      return (
+        !!activeReq?.caseInfos?.stageFiles?.[key]?.s3Key || !!previewStageUrl
+      );
     }
     if (isCamStage) {
-      return !!req.caseInfos?.ncFile?.s3Key || !!previewNcText;
+      return !!activeReq?.caseInfos?.ncFile?.s3Key || !!previewNcText;
     }
-    // 의뢰 단계에서는 camFile이 있어야 다음으로 진행 가능
-    return !!req.caseInfos?.camFile?.s3Key || !!previewFiles.cam;
+    return !!activeReq?.caseInfos?.camFile?.s3Key || !!previewFiles.cam;
   })();
 
   const controlBtnClass =
     "inline-flex h-8 w-8 items-center justify-center rounded-md border text-[13px] font-medium transition";
 
-  const openBackConfirm = (fn: () => void | Promise<void>) => {
-    const title = isMachiningStage
-      ? "가공 → CAM 이동"
-      : isCamStage
-        ? "CAM → 의뢰 이동"
-        : "의뢰 → 이전 단계";
-    const desc = isMachiningStage
-      ? "가공 단계에서 CAM 단계로 돌아갑니다. 진행할까요?"
-      : isCamStage
-        ? "CAM 단계에서 의뢰 단계로 돌아갑니다. 진행할까요?"
-        : "의뢰 단계에서 이전 단계로 돌아갑니다. 진행할까요?";
-
-    setConfirmTitle(title);
-    setConfirmDescription(desc);
-    // React useState에 함수 자체를 저장하기 위한 패턴
-    setConfirmAction(() => fn);
-    setConfirmOpen(true);
-  };
-
-  const isUploading = !!uploading[req._id || ""];
+  const isUploading = !!uploading[activeReq?._id || ""];
 
   const originalName =
-    req.caseInfos?.file?.filePath ||
-    req.caseInfos?.file?.originalName ||
+    activeReq?.caseInfos?.file?.filePath ||
+    activeReq?.caseInfos?.file?.originalName ||
     "original.stl";
-  const camName = req.caseInfos?.camFile?.s3Key
-    ? req.caseInfos?.camFile?.filePath ||
-      req.caseInfos?.camFile?.originalName ||
+  const camName = activeReq?.caseInfos?.camFile?.s3Key
+    ? activeReq?.caseInfos?.camFile?.filePath ||
+      activeReq?.caseInfos?.camFile?.originalName ||
       "filled.stl"
     : "filled.stl";
   const ncName =
-    req.caseInfos?.ncFile?.filePath ||
-    req.caseInfos?.ncFile?.originalName ||
+    activeReq?.caseInfos?.ncFile?.filePath ||
+    activeReq?.caseInfos?.ncFile?.originalName ||
     previewNcName ||
     "program.nc";
 
@@ -239,7 +232,7 @@ export const PreviewModal = ({
         | "tracking";
       void (async () => {
         await onUploadStageFile({
-          req,
+          req: activeReq,
           stage: key,
           file,
           source: "manual",
@@ -248,7 +241,7 @@ export const PreviewModal = ({
         if (key === "packing") {
           try {
             await onUpdateReviewStatus({
-              req,
+              req: activeReq,
               status: "APPROVED",
               stageOverride: "packing",
             });
@@ -266,19 +259,19 @@ export const PreviewModal = ({
       return;
     }
     if (isCamStage) {
-      void onUploadNc(req, [file]);
+      void onUploadNc(activeReq, [file]);
       return;
     }
-    void onUploadCam(req, [file]);
+    void onUploadCam(activeReq, [file]);
   };
 
   const rightMeta = isStageFileStage
-    ? req.caseInfos?.stageFiles?.[
+    ? activeReq?.caseInfos?.stageFiles?.[
         imageStageKey as "machining" | "packing" | "shipping" | "tracking"
       ]
     : isCamStage
-      ? req.caseInfos?.ncFile
-      : req.caseInfos?.camFile;
+      ? activeReq?.caseInfos?.ncFile
+      : activeReq?.caseInfos?.camFile;
   const hasRightFile = !!rightMeta?.s3Key;
 
   const canRegenerateFilledStl = !isStageFileStage;
@@ -311,7 +304,7 @@ export const PreviewModal = ({
     if (isCamStage) {
       setRegenerating(true);
       try {
-        const requestId = String(req?.requestId || "").trim();
+        const requestId = String(activeReq?.requestId || "").trim();
         if (!requestId) {
           toast({
             title: "실패",
@@ -363,24 +356,25 @@ export const PreviewModal = ({
     }
 
     const standardFilePath =
-      req?.requestId &&
-      req?.caseInfos?.clinicName &&
-      req?.caseInfos?.patientName &&
-      req?.caseInfos?.tooth
+      activeReq?.requestId &&
+      activeReq?.caseInfos?.clinicName &&
+      activeReq?.caseInfos?.patientName &&
+      activeReq?.caseInfos?.tooth
         ? buildStandardStlFileName({
-            requestId: String(req.requestId),
-            clinicName: String(req.caseInfos.clinicName || ""),
-            patientName: String(req.caseInfos.patientName || ""),
-            tooth: String(req.caseInfos.tooth || ""),
+            requestId: String(activeReq.requestId),
+            clinicName: String(activeReq.caseInfos.clinicName || ""),
+            patientName: String(activeReq.caseInfos.patientName || ""),
+            tooth: String(activeReq.caseInfos.tooth || ""),
             originalFileName:
-              req.caseInfos?.file?.originalName || previewFiles.original?.name,
+              activeReq.caseInfos?.file?.originalName ||
+              previewFiles.original?.name,
           })
         : "";
 
     const filePath = String(
       standardFilePath ||
-        req.caseInfos?.file?.filePath ||
-        req.caseInfos?.file?.originalName ||
+        activeReq?.caseInfos?.file?.filePath ||
+        activeReq?.caseInfos?.file?.originalName ||
         previewFiles.original?.name ||
         "",
     ).trim();
@@ -478,21 +472,21 @@ export const PreviewModal = ({
   const onDownload = () => {
     if (!hasRightFile) return;
     if (isStageFileStage) {
-      void onDownloadStageFile(req, imageStageKey);
+      void onDownloadStageFile(activeReq, imageStageKey);
       return;
     }
     if (isCamStage) {
-      void onDownloadNcFile(req);
+      void onDownloadNcFile(activeReq);
       return;
     }
-    void onDownloadCamStl(req);
+    void onDownloadCamStl(activeReq);
   };
 
   const onDelete = () => {
     if (!hasRightFile) return;
     if (isStageFileStage) {
       void onDeleteStageFile({
-        req,
+        req: activeReq,
         stage: imageStageKey as
           | "machining"
           | "packing"
@@ -502,13 +496,13 @@ export const PreviewModal = ({
       return;
     }
     if (isCamStage) {
-      void onDeleteNc(req);
+      void onDeleteNc(activeReq);
       return;
     }
-    void onDeleteCam(req);
+    void onDeleteCam(activeReq);
   };
 
-  const pickInputId = `right-upload-${req._id}`;
+  const pickInputId = `right-upload-${activeReq?._id || "pending"}`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -521,7 +515,6 @@ export const PreviewModal = ({
           의뢰 파일과 NC 내용을 확인하는 영역입니다.
         </DialogDescription>
 
-        {/* 상단 컨트롤 버튼들 */}
         <div className="absolute right-4 top-4 flex items-center gap-2">
           {!isRequestStage && (
             <button
@@ -545,22 +538,27 @@ export const PreviewModal = ({
                     stageKey === "tracking"
                   ) {
                     await onDeleteStageFile({
-                      req,
+                      req: activeReq,
                       stage: stageKey,
                       rollbackOnly: true,
+                      navigate: false,
                     });
                   } else if (isCamStage) {
-                    await onDeleteNc(req, { nextStage: "request" });
+                    await onDeleteNc(activeReq, {
+                      nextStage: "request",
+                      navigate: false,
+                    });
                   } else {
-                    await onDeleteCam(req);
+                    await onDeleteCam(activeReq, { navigate: false });
                   }
                 };
 
-                void performBack().then(() => {
-                  if (onOpenNextRequest && req._id) {
-                    onOpenNextRequest(req._id);
+                void (async () => {
+                  await performBack();
+                  if (onOpenNextRequest && activeReq._id) {
+                    await onOpenNextRequest(activeReq._id);
                   }
-                });
+                })();
               }}
               aria-label="이전 공정"
               title="이전 공정"
@@ -582,16 +580,14 @@ export const PreviewModal = ({
               e.stopPropagation();
               try {
                 await onUpdateReviewStatus({
-                  req,
+                  req: activeReq,
                   status: "APPROVED",
                   stageOverride: currentReviewStageKey,
                   keepPreviewOpen: true,
                 });
 
                 if (isCamStage) {
-                  const requestId = String(
-                    (req as any)?.requestId || "",
-                  ).trim();
+                  const requestId = String(activeReq.requestId).trim();
                   if (!token) {
                     throw new Error("로그인이 필요합니다.");
                   }
@@ -624,12 +620,10 @@ export const PreviewModal = ({
                   }
                 }
 
-                // 성공 시에만 다음 요청으로 이동
-                if (onOpenNextRequest && req._id) {
-                  onOpenNextRequest(req._id);
+                if (onOpenNextRequest && activeReq._id) {
+                  await onOpenNextRequest(activeReq._id);
                 }
               } catch (err) {
-                // 실패 시(BG 앱 미시동 등) 다음 공정으로 넘기지 않음
                 console.error("Review status update failed:", err);
               }
             }}
@@ -653,93 +647,7 @@ export const PreviewModal = ({
           </DialogClose>
         </div>
 
-        {/* 본문 영역 */}
         <div className="h-full flex flex-col gap-4 overflow-hidden">
-          {/* 모달 제목 영역 */}
-          <div className="flex items-center gap-2 pb-2 border-b">
-            {req.referenceIds && req.referenceIds.length > 0 && (
-              <>
-                {req.referenceIds.map((ref, idx) => (
-                  <span
-                    key={idx}
-                    className="inline-flex items-center px-2 py-1 rounded text-sm font-semibold bg-purple-50 text-purple-700 border border-purple-200"
-                  >
-                    #{idx + 1}
-                  </span>
-                ))}
-                <span className="inline-flex items-center px-2 py-1 rounded text-sm font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                  {req.referenceIds.length}
-                </span>
-              </>
-            )}
-
-            {(() => {
-              const lotRaw = (req.lotNumber?.final ??
-                req.lotNumber?.part ??
-                "") as string | number;
-              const lotBadge = String(lotRaw || "")
-                .replace(/^CA(P)?/i, "")
-                .slice(-3);
-              const org =
-                req.requestor?.organization || req.requestor?.name || "";
-              const clinic = req.caseInfos?.clinicName || "";
-              const patient = req.caseInfos?.patientName || "미지정";
-              const tooth = req.caseInfos?.tooth || "-";
-              const requestId = req.requestId || "";
-
-              return (
-                <div className="flex flex-col gap-1 min-w-0">
-                  {/* 데스크탑 */}
-                  <div className="hidden md:flex flex-wrap items-center gap-2 text-sm text-slate-700">
-                    <span className="truncate max-w-[220px]" title={org}>
-                      {org || "-"}
-                    </span>
-                    <span className="text-slate-400">/</span>
-                    <span className="truncate max-w-[180px]" title={clinic}>
-                      {clinic || "-"}
-                    </span>
-                    <span className="text-slate-400">/</span>
-                    <span className="truncate max-w-[140px]" title={patient}>
-                      {patient}
-                    </span>
-                    <span className="text-slate-400">/</span>
-                    <span>{tooth}</span>
-                    <span className="text-slate-400">/</span>
-                    <span
-                      className="font-medium text-slate-800"
-                      title={requestId}
-                    >
-                      {requestId || "-"}
-                    </span>
-                    {lotBadge && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200">
-                        {lotBadge}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* 모바일 */}
-                  <div className="flex md:hidden flex-wrap items-center gap-2 text-sm text-slate-700">
-                    <span className="truncate max-w-[160px]" title={clinic}>
-                      {clinic || "-"}
-                    </span>
-                    <span className="text-slate-400">/</span>
-                    <span className="truncate max-w-[140px]" title={patient}>
-                      {patient}
-                    </span>
-                    <span className="text-slate-400">/</span>
-                    <span>{tooth}</span>
-                    {lotBadge && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200">
-                        {lotBadge}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-
           {previewLoading ? (
             <div className="rounded-lg border border-dashed p-8 flex flex-col items-center gap-2 text-sm text-slate-500">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />
@@ -747,21 +655,20 @@ export const PreviewModal = ({
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0 overflow-hidden">
-              {/* 왼쪽: STL 뷰어 (가공 단계만 NC 텍스트) */}
               <div className="border rounded-lg p-3 space-y-2 flex flex-col overflow-hidden">
                 <button
                   type="button"
                   className="text-sm font-semibold text-blue-700 hover:underline text-left max-w-[320px] truncate"
                   onClick={() => {
                     if (isMachiningStage) {
-                      void onDownloadNcFile(req);
+                      void onDownloadNcFile(activeReq);
                       return;
                     }
                     if (isCamStage || isImageStage) {
-                      void onDownloadCamStl(req);
+                      void onDownloadCamStl(activeReq);
                       return;
                     }
-                    void onDownloadOriginalStl(req);
+                    void onDownloadOriginalStl(activeReq);
                   }}
                 >
                   {leftTitle}
@@ -787,7 +694,6 @@ export const PreviewModal = ({
                 )}
               </div>
 
-              {/* 오른쪽: 단계별 이미지/NC/캠 뷰어 */}
               <div
                 className="border rounded-lg p-3 space-y-2 flex flex-col overflow-hidden"
                 onDragOver={(e) => {

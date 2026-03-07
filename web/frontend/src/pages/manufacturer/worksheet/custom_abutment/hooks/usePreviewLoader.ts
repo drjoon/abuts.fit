@@ -261,7 +261,7 @@ export function usePreviewLoader({
           finishLinePoints: finishLineResult.points,
           finishLineSource: finishLineResult.source,
         });
-        setPreviewOpen(true);
+        setPreviewOpen((prev) => (prev ? prev : true));
         toast({
           title: "다운로드 완료",
           description:

@@ -242,21 +242,75 @@ export const PackingPageContent = ({
   );
 
   const handleOpenNextRequest = useCallback(
-    (currentReqId: string) => {
+    async (currentReqId: string) => {
       const currentIndex = filteredAndSorted.findIndex(
         (r) => r._id === currentReqId,
       );
-      if (currentIndex === -1) return;
-      const nextReq = filteredAndSorted[currentIndex + 1];
+      const preferredNextId =
+        currentIndex >= 0
+          ? filteredAndSorted[currentIndex + 1]?._id || null
+          : null;
+
+      const refreshed = await fetchRequestsList(true, false);
+      const latestList = Array.isArray(refreshed) ? refreshed : requests;
+      const latestFilteredAndSorted = latestList
+        .filter((req) => {
+          const stage = deriveStageForFilter(req);
+          if (showCompleted) {
+            return ["세척.패킹", "포장.발송", "추적관리"].includes(stage);
+          }
+          return stage === "세척.패킹";
+        })
+        .filter((request) => {
+          const caseInfos = request.caseInfos || {};
+          const text = (
+            (request.referenceIds?.join(",") || "") +
+            (request.requestor?.organization || "") +
+            (request.requestor?.name || "") +
+            (caseInfos.clinicName || "") +
+            (caseInfos.patientName || "") +
+            (request.description || "") +
+            (caseInfos.tooth || "") +
+            (caseInfos.connectionDiameter || "") +
+            (caseInfos.implantManufacturer || "") +
+            (caseInfos.implantBrand || "") +
+            (caseInfos.implantFamily || "") +
+            (caseInfos.implantType || "")
+          ).toLowerCase();
+          return text.includes(worksheetSearch.toLowerCase());
+        })
+        .sort((a, b) => {
+          const aScore = a.shippingPriority?.score ?? 0;
+          const bScore = b.shippingPriority?.score ?? 0;
+          if (aScore !== bScore) return bScore - aScore;
+          return new Date(a.createdAt) < new Date(b.createdAt) ? 1 : -1;
+        });
+
+      let nextReq: ManufacturerRequest | undefined;
+      if (preferredNextId) {
+        nextReq = latestFilteredAndSorted.find(
+          (r) => r._id === preferredNextId,
+        );
+      }
+      if (!nextReq) {
+        nextReq = latestFilteredAndSorted.find((r) => r._id !== currentReqId);
+      }
       if (!nextReq) {
         setPreviewOpen(false);
         return;
       }
-      setTimeout(() => {
-        void handleOpenPreview(nextReq);
-      }, 200);
+
+      await handleOpenPreview(nextReq);
     },
-    [filteredAndSorted, handleOpenPreview],
+    [
+      fetchRequestsList,
+      filteredAndSorted,
+      handleOpenPreview,
+      requests,
+      setPreviewOpen,
+      showCompleted,
+      worksheetSearch,
+    ],
   );
 
   const handlePrintPackingLabels = useCallback(async () => {
