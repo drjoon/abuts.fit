@@ -750,7 +750,7 @@ export function NewRequestDetailsSection({
       </div>
 
       <Dialog open={isDetailOpen} onOpenChange={handleDialogOpenChange}>
-        <DialogContent className="sm:w-auto max-w-screen-xl w-[calc(120vw-1rem)] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:w-[1050px] lg:w-[900px] max-w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">
               STL 확인 및 정보 입력
