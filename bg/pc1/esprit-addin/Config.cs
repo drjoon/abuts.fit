@@ -37,7 +37,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public const bool FaceBeforeCompositeDefault = true;
         public const int DefaultEspritPort = 8001;
         public const string DefaultBackendUrl = "https://abuts.fit/api";
-        public const string DefaultBridgeSharedSecret = "t1ZYB4ELMWBKHDuyyUgnx4HdyRg";
+        public const string DefaultBridgeSharedSecret = "";
         public const double DefaultTurningDepth = 1.0;
         public const double DefaultExitAngle = 30.0;
         public const double DefaultTurningExtend = 3.5;

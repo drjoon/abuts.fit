@@ -12,7 +12,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         /// <summary>
         /// 백엔드 URL (request-meta 등 호출용)
         public const string BackendUrl = "https://abuts.fit/api";
-        public const string BridgeSharedSecret = "t1ZYB4ELMWBKHDuyyUgnx4HdyRg";
+        public const string BridgeSharedSecret = "<redacted>";
 
         /// <summary>
         /// Exit Angle (도) - 피드백 반영
