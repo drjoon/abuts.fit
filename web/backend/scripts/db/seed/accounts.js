@@ -1,3 +1,4 @@
+import CreditLedger from "../../../models/creditLedger.model.js";
 import User from "../../../models/user.model.js";
 import {
   NOW,
@@ -8,6 +9,30 @@ import {
   randInt,
   randomReferralCode,
 } from "./utils.js";
+
+async function grantRequestorSeedCredit({
+  organizationId,
+  userId,
+  uniqueKey,
+  amount = 500000,
+}) {
+  const ledgerKey = `seed:requestor-credit:${uniqueKey}`;
+  const existing = await CreditLedger.findOne({ uniqueKey: ledgerKey })
+    .select({ _id: 1 })
+    .lean();
+  if (existing) return false;
+
+  await CreditLedger.create({
+    organizationId,
+    userId,
+    type: "CHARGE",
+    amount,
+    refType: "SEED_REQUESTOR_CHARGE",
+    refId: null,
+    uniqueKey: ledgerKey,
+  });
+  return true;
+}
 
 export async function seedDefaultAccounts() {
   const passwords = {
@@ -65,6 +90,16 @@ export async function seedDefaultAccounts() {
   });
   await attachUserToOrganization(requestorOwner._id, requestorOrg);
   await attachUserToOrganization(requestorStaff._id, requestorOrg);
+  await grantRequestorSeedCredit({
+    organizationId: requestorOrg._id,
+    userId: requestorOwner._id,
+    uniqueKey: requestorOwner.email,
+  });
+  await grantRequestorSeedCredit({
+    organizationId: requestorOrg._id,
+    userId: requestorStaff._id,
+    uniqueKey: requestorStaff.email,
+  });
 
   const manufacturerOwner = await findOrCreateUser({
     name: "데모 제조사 대표",
@@ -314,7 +349,9 @@ export async function seedBulkAccounts({
     let referralGroupLeaderId = null;
     if (i <= salesIntroParents.length) {
       const parentEmail = salesIntroParents[i - 1];
-      const parentSalesman = createdSalesmen.find((s) => s.email === parentEmail);
+      const parentSalesman = createdSalesmen.find(
+        (s) => s.email === parentEmail,
+      );
       if (parentSalesman) {
         parentId = parentSalesman.id;
         referralGroupLeaderId = parentSalesman.leaderId || parentSalesman.id;
@@ -322,7 +359,9 @@ export async function seedBulkAccounts({
     } else if (i <= salesIntroParents.length + requestorIntroParents.length) {
       const parentEmail =
         requestorIntroParents[i - salesIntroParents.length - 1];
-      const parentRequestor = createdRequestors.find((r) => r.email === parentEmail);
+      const parentRequestor = createdRequestors.find(
+        (r) => r.email === parentEmail,
+      );
       if (parentRequestor) {
         parentId = parentRequestor.id;
         referralGroupLeaderId = parentRequestor.leaderId || parentRequestor.id;
@@ -374,6 +413,12 @@ export async function seedBulkAccounts({
       email,
       orgId: org._id,
       leaderId: effectiveLeaderId,
+    });
+
+    await grantRequestorSeedCredit({
+      organizationId: org._id,
+      userId: owner._id,
+      uniqueKey: owner.email,
     });
   }
 

@@ -37,7 +37,11 @@ const DEV_ACCOUNTS: DevAccount[] = [
     email: "manufacturer.owner@demo.abuts.fit",
     password: "Mo!7vL#6pR@3sB8$",
   },
-  { label: "영업자", email: "s001@gmail.com", password: "Abc!1234" },
+  {
+    label: "영업자",
+    email: "salesman.owner@demo.abuts.fit",
+    password: "So!8qL#3mV@6pK2$",
+  },
   {
     label: "관리자",
     email: "admin.owner@demo.abuts.fit",

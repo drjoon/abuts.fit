@@ -1,9 +1,9 @@
-import { clearAllCollections, connectDb, disconnectDb } from "./_mongo.js";
+import { connectDb, disconnectDb, dropCurrentDatabase } from "./_mongo.js";
 
 async function run() {
   try {
     await connectDb();
-    await clearAllCollections();
+    await dropCurrentDatabase();
     console.log("[db] reset done");
   } finally {
     await disconnectDb();
