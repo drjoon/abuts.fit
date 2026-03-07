@@ -5,12 +5,7 @@ import { addUploadedFiles, filterNewFiles } from "../utils/localFileStorage";
 import { useToast } from "@/shared/hooks/use-toast";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 
-/**
- * V3 방식 파일 업로드 래퍼
- * - 파일 드롭 시 IndexedDB + 로컬 스토리지에만 저장
- * - S3 업로드 없음 (제출 시에만 업로드)
- */
-export const useNewRequestFilesV3Wrapper = ({
+export const useNewRequestLocalFiles = ({
   setFiles,
   setSelectedPreviewIndex,
   updateCaseInfos,
@@ -34,7 +29,6 @@ export const useNewRequestFilesV3Wrapper = ({
   const handleUpload = useCallback(
     async (filesToUpload: File[]) => {
       try {
-        // 1. 중복 파일 필터링
         const { newFiles, duplicateFiles } = filterNewFiles(filesToUpload);
 
         if (duplicateFiles.length > 0) {
@@ -47,16 +41,13 @@ export const useNewRequestFilesV3Wrapper = ({
 
         if (newFiles.length === 0) return;
 
-        // 2. IndexedDB에 파일 저장
         for (const file of newFiles) {
           const fileKey = getFileKey(file);
           await saveFile(fileKey, file);
         }
 
-        // 3. 로컬 스토리지에 메타데이터 저장
         addUploadedFiles(newFiles);
 
-        // 4. UI 상태 업데이트 (SSOT 키 기반 중복 방지)
         setFiles((prev) => {
           const seen = new Set<string>();
           const out: File[] = [];
@@ -85,7 +76,6 @@ export const useNewRequestFilesV3Wrapper = ({
 
         setSelectedPreviewIndex((prev) => (prev === null ? 0 : prev));
 
-        // 5. 파일명 파싱으로 정보 자동 채우기 (SSOT 키 사용)
         if (updateCaseInfos) {
           newFiles.forEach((f) => {
             const normalizedName = normalize(f.name);
@@ -120,7 +110,7 @@ export const useNewRequestFilesV3Wrapper = ({
           duration: 2000,
         });
       } catch (error) {
-        console.error("[V3 Upload] Error:", error);
+        console.error("[NewRequestLocalFiles] Error:", error);
         toast({
           title: "오류",
           description: "파일 추가 중 오류가 발생했습니다.",

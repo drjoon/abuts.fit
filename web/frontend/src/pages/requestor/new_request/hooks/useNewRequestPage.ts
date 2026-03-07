@@ -2,16 +2,15 @@ import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useNewRequestClinics } from "./useNewRequestClinics";
+import { useNewRequestSubmit } from "./useNewRequestSubmit";
 import { useNewRequestSubmitV2 } from "./useNewRequestSubmitV2";
 import { useDraftMeta } from "./useDraftMeta";
 import { useNewRequestFilesV2 } from "./useNewRequestFilesV2";
 import { useNewRequestImplant } from "./useNewRequestImplant";
-import { useNewRequestFilesV3Wrapper } from "./useNewRequestFilesV3Wrapper";
-import { useNewRequestSubmitV3Wrapper } from "./useNewRequestSubmitV3Wrapper";
+import { useNewRequestLocalFiles } from "./useNewRequestLocalFiles";
 import { type DraftCaseInfo, type CaseInfos } from "./newRequestTypes";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
-import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { getLocalDraft, initLocalDraft } from "../utils/localDraftStorage";
 import { getFile } from "../utils/fileIndexedDB";
 
@@ -69,8 +68,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     removeCaseInfos,
     patchDraftImmediately,
     status: draftStatus,
-    error: draftError,
-    deleteDraft,
     resetDraft,
     initialDraftFiles,
   } = useDraftMeta();
@@ -302,8 +299,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   // 임플란트 정보 관리
   const {
     connections,
-    selectedConnectionId,
-    setSelectedConnectionId,
     implantManufacturer,
     setImplantManufacturer,
     implantSystem,
@@ -364,10 +359,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   // 클리닉 프리셋 관리
   const {
     clinicPresets: rawClinicPresets,
-    selectedClinicId: rawSelectedClinicId,
     handleSelectClinic: rawHandleSelectClinic,
     handleAddOrSelectClinic: rawHandleAddOrSelectClinic,
-    handleRenameClinic,
     handleDeleteClinic,
   } = useNewRequestClinics({
     clinicStorageKey,
@@ -448,7 +441,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   );
 
   // V3 래퍼: 로컬 저장만 수행 (S3 업로드 없음)
-  const { handleUpload: v3HandleUpload } = useNewRequestFilesV3Wrapper({
+  const { handleUpload: handleLocalUpload } = useNewRequestLocalFiles({
     setFiles,
     setSelectedPreviewIndex,
     updateCaseInfos,
@@ -458,14 +451,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   // 파일 관리 (업로드/삭제/복원)
   const {
     files: fileList,
-    draftFiles: draftFileList,
-    isDragOver: v2IsDragOver,
     selectedPreviewIndex: previewIndex,
-    handleUpload: rawHandleUpload,
     handleRemoveFile,
-    handleDragOver: v2HandleDragOver,
-    handleDragLeave: v2HandleDragLeave,
-    handleDrop: v2HandleDrop,
   } = useNewRequestFilesV2({
     draftId,
     token,
@@ -500,40 +487,26 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       const droppedFiles = Array.from(e.dataTransfer.files);
       if (droppedFiles.length === 0) return;
       // V3 방식: 로컬 저장만
-      await v3HandleUpload(droppedFiles);
+      await handleLocalUpload(droppedFiles);
     },
-    [v3HandleUpload],
+    [handleLocalUpload],
   );
 
   const handleUploadUnchecked = useCallback(
     async (incomingFiles: File[]) => {
       // V3 방식: 로컬 저장만
-      await v3HandleUpload(incomingFiles);
+      await handleLocalUpload(incomingFiles);
     },
-    [v3HandleUpload],
+    [handleLocalUpload],
   );
-
-  const buildDuplicateCheckPayload = useCallback((file: File) => {
-    const parsed = parseFilenameWithRules(file.name);
-    const clinicName = String(parsed.clinicName || "").trim();
-    const patientName = String(parsed.patientName || "").trim();
-    const tooth = String(parsed.tooth || "").trim();
-    if (!clinicName || !patientName || !tooth) return null;
-
-    return {
-      clinicName,
-      patientName,
-      tooth,
-    };
-  }, []);
 
   const handleUpload = useCallback(
     async (incomingFiles: File[]) => {
       // V3 방식: 드롭/선택 시 로컬 저장만 수행하고,
       // 실제 S3 업로드는 제출 시점에만 진행한다.
-      await v3HandleUpload(incomingFiles);
+      await handleLocalUpload(incomingFiles);
     },
-    [v3HandleUpload],
+    [handleLocalUpload],
   );
 
   const setupNextPath = "/dashboard/new-request";
@@ -827,19 +800,17 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   );
 
   // V3 제출 래퍼: 로컬에서 파일 가져와 S3 업로드 후 제출
-  const { handleSubmit: v3HandleSubmit, isSubmitting: v3IsSubmitting } =
-    useNewRequestSubmitV3Wrapper({
-      token,
-      navigate,
-      files,
-      setFiles,
-      setSelectedPreviewIndex,
-      caseInfosMap,
-      duplicateResolutions,
-    });
+  const { handleSubmit: submitNewRequest } = useNewRequestSubmit({
+    token,
+    navigate,
+    files,
+    setFiles,
+    setSelectedPreviewIndex,
+    caseInfosMap,
+    duplicateResolutions,
+  });
 
   const {
-    handleSubmit: rawHandleSubmit,
     handleSubmitWithDuplicateResolutions:
       rawHandleSubmitWithDuplicateResolutions,
     handleCancel,
@@ -869,7 +840,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
     // V3 방식: 로컬에서 파일 가져와 S3 업로드 후 제출
     try {
-      await v3HandleSubmit();
+      await submitNewRequest();
       setDuplicateResolutions([]);
     } catch (error: any) {
       // 중복 감지 에러 처리
@@ -889,7 +860,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     ensureSetupForUpload,
     duplicateResolutions,
     files,
-    v3HandleSubmit,
+    submitNewRequest,
     setDuplicateResolutions,
     handleServerDuplicateDetected,
   ]);
@@ -908,13 +879,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     },
     [ensureSetupForUpload, rawHandleSubmitWithDuplicateResolutions],
   );
-
-  // 환자 사례 미리보기 (파일 기반)
-  const patientCasesPreview = useMemo(() => {
-    // 파일 이름에서 환자명/치아 정보 추출 (간단한 구현)
-    // 실제로는 AI 분석 결과를 사용하거나 사용자 입력을 기반으로 함
-    return [];
-  }, [files]);
 
   // Draft 준비 완료 여부
   const isReady = draftStatus === "ready" && !!draftId;

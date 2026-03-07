@@ -10,7 +10,7 @@ const API_BASE_URL =
   "/api";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-type UseNewRequestSubmitV3WrapperParams = {
+type UseNewRequestSubmitParams = {
   token: string | null;
   navigate: (path: string) => void;
   files: File[];
@@ -24,12 +24,7 @@ type UseNewRequestSubmitV3WrapperParams = {
   }>;
 };
 
-/**
- * V3 방식 제출 래퍼
- * - 제출 시 로컬에서 파일을 가져와 S3 업로드
- * - Draft 생성 후 Request 생성
- */
-export const useNewRequestSubmitV3Wrapper = ({
+export const useNewRequestSubmit = ({
   token,
   navigate,
   files,
@@ -37,10 +32,9 @@ export const useNewRequestSubmitV3Wrapper = ({
   setSelectedPreviewIndex,
   caseInfosMap,
   duplicateResolutions,
-}: UseNewRequestSubmitV3WrapperParams) => {
+}: UseNewRequestSubmitParams) => {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // SSOT: fileKey = `${name(NFC)}:${size}` created by getFileKey
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
 
   const getHeaders = () => {
@@ -80,7 +74,6 @@ export const useNewRequestSubmitV3Wrapper = ({
     try {
       const createdRequests: any[] = [];
 
-      // 0) Pre-validate: weekly batch days (묶음 배송 요일) must be set
       try {
         const precheckRes = await fetch(
           `${API_BASE_URL}/requestor-organizations/me`,
@@ -96,7 +89,6 @@ export const useNewRequestSubmitV3Wrapper = ({
           ? preData.data.shippingPolicy.weeklyBatchDays
           : [];
         if (!weeklyDays.length) {
-          // Highlight shipping section and abort early
           try {
             if (typeof window !== "undefined") {
               window.dispatchEvent(
@@ -115,10 +107,8 @@ export const useNewRequestSubmitV3Wrapper = ({
           return;
         }
       } catch {
-        // 사전 검증 실패 시에는 계속 진행(서버 측에서 한 번 더 방어)
       }
 
-      // 1) IndexedDB에서 모든 파일을 병렬로 읽고, 업로드 대상 배열 구성
       const resolvedFiles = await Promise.all(
         files.map(async (file) => {
           const key = getFileKey(file);
@@ -131,15 +121,13 @@ export const useNewRequestSubmitV3Wrapper = ({
         }),
       );
 
-      // 2) 업로드를 병렬로 수행하면서 진행 토스트 표시 (기존 컴포넌트 재사용)
       const uploaded = await uploadFilesWithToast(resolvedFiles);
 
-      // 3) 업로드 결과를 일괄 생성 API로 전송
       const items = files.map((file, idx) => {
         const fileKey = getFileKey(file);
         const caseInfos = caseInfosMap?.[fileKey];
         if (!caseInfos) {
-          console.warn("[V3 Submit] No caseInfos for file", {
+          console.warn("[NewRequestSubmit] No caseInfos for file", {
             fileKey,
             fileName: file.name,
             size: file.size,
@@ -204,13 +192,11 @@ export const useNewRequestSubmitV3Wrapper = ({
             .filter((resolution) => String(resolution.caseId || "").trim())
         : undefined;
 
-      // 업로드 완료 직후, 벌크 등록 처리 중임을 명확히 표시해 공백 시간을 제거
       const creatingToast = toast({
         title: "의뢰 생성 중",
         description: "서버에서 의뢰를 등록하는 중입니다...",
       });
 
-      // 3-b) Rate limit(429) 시 Retry-After 헤더를 존중하여 재시도 (최대 3회)
       const bulkCreateWithRetry = async () => {
         const maxRetries = 3;
         let attempt = 0;
@@ -256,7 +242,6 @@ export const useNewRequestSubmitV3Wrapper = ({
           });
         }
       } else if (status === 207) {
-        // 일부 성공 (207 Multi-Status)
         if (Array.isArray(bulkData?.data)) {
           createdRequests.push(...bulkData.data);
         }
@@ -278,7 +263,6 @@ export const useNewRequestSubmitV3Wrapper = ({
           });
           alreadyNotifiedError = true;
         }
-        // UX: 묶음 배송 요일 미설정 에러 시, 배송 섹션 하이라이트 신호를 보낸다.
         try {
           const needsWeeklyDays = (() => {
             try {
@@ -305,12 +289,10 @@ export const useNewRequestSubmitV3Wrapper = ({
         throw err;
       }
 
-      // 4. 결과 처리 (부분 성공 지원)
       const errors = Array.isArray((bulkData as any)?.errors)
         ? (bulkData as any).errors
         : [];
       if (errors.length > 0 && createdRequests.length > 0) {
-        // 실패 항목만 남기고 재시도 유도
         const failedIndexes = errors
           .map((e: any) => Number(e?.index))
           .filter((n: any) => Number.isFinite(n) && n >= 0 && n < files.length);
@@ -318,7 +300,6 @@ export const useNewRequestSubmitV3Wrapper = ({
           failedIndexes.includes(idx),
         );
 
-        // 드래프트는 유지(부분 성공), UI에 실패 파일만 남김
         setFiles(failedFiles);
         setSelectedPreviewIndex(failedFiles.length ? 0 : null);
 
@@ -336,14 +317,12 @@ export const useNewRequestSubmitV3Wrapper = ({
             duration: 6000,
           });
         }
-        return; // 대시보드 이동/드래프트 초기화 스킵
+        return;
       }
 
       if (createdRequests.length > 0) {
-        // 전체 성공 - 로컬 Draft 초기화
         await clearLocalDraft();
 
-        // 상태 초기화
         setFiles([]);
         setSelectedPreviewIndex(null);
 
@@ -362,7 +341,6 @@ export const useNewRequestSubmitV3Wrapper = ({
           });
         }
 
-        // 페이지 이동
         navigate("/dashboard");
       } else {
         throw new Error(
@@ -370,11 +348,9 @@ export const useNewRequestSubmitV3Wrapper = ({
         );
       }
     } catch (error: any) {
-      console.error("[V3 Submit] Error:", error);
+      console.error("[NewRequestSubmit] Error:", error);
 
-      // 서버에서 이미 에러 토스트를 표시한 경우 중복 토스트 방지
       if (alreadyNotifiedError) {
-        // 별도로 주의 하이라이트는 보낸다.
         try {
           const msg = String(error?.message || "");
           if (
@@ -388,7 +364,6 @@ export const useNewRequestSubmitV3Wrapper = ({
         } catch {}
         return;
       }
-      // 중복 감지 에러는 상위에서 처리하려면 throw 유지
       if (error?.code === "DUPLICATE_REQUEST") throw error;
 
       toast({

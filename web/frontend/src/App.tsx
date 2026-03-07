@@ -43,10 +43,8 @@ const DashboardHome = lazy(() =>
     default: m.DashboardHome,
   })),
 );
-const NewRequestPage = lazy(() =>
-  import("./pages/requestor/new_request/NewRequestPageV2").then((m) => ({
-    default: m.NewRequestPage,
-  })),
+const NewRequestPage = lazy(
+  () => import("./pages/requestor/new_request/NewRequestPage"),
 );
 const ManufacturerWorksheetPage = lazy(() =>
   import("./pages/manufacturer/worksheet/WorksheetPage").then((m) => ({
