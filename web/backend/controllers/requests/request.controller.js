@@ -57,8 +57,12 @@ export const {
   getWblPrintSettings,
 } = shippingController;
 
-export const { getPackPrinters, printPackPackingLabel, getPackPrintSettings } =
-  packingPrintController;
+export const {
+  getPackPrinters,
+  printPackPackingLabel,
+  printPackZpl,
+  getPackPrintSettings,
+} = packingPrintController;
 
 // Export default object for default imports
 export default {

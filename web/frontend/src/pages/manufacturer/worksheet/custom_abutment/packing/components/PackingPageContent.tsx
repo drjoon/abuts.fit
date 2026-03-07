@@ -19,6 +19,7 @@ import { usePackingPrintSettings } from "../hooks/usePackingPrintSettings";
 import { usePackingWorksheetData } from "../hooks/usePackingWorksheetData";
 import { usePackingCapture } from "../hooks/usePackingCapture";
 import {
+  buildPackLabelBitmapZpl,
   downloadPngFromCanvas,
   getLotLabel,
   renderPackLabelToCanvas,
@@ -421,13 +422,13 @@ export const PackingPageContent = ({
             caseType: "Custom Abutment",
             printedAt: new Date().toISOString(),
           };
+          const canvas = await renderPackLabelToCanvas({
+            ...payload,
+            dpi: packLabelDpi,
+            targetDots: packLabelDots,
+            designDots: packLabelDesignDots,
+          });
           if (packOutputMode === "image") {
-            const canvas = await renderPackLabelToCanvas({
-              ...payload,
-              dpi: packLabelDpi,
-              targetDots: packLabelDots,
-              designDots: packLabelDesignDots,
-            });
             const base = String(req.requestId || lot || "pack").replace(
               /[^a-zA-Z0-9._-]+/g,
               "_",
@@ -436,17 +437,27 @@ export const PackingPageContent = ({
             successCount += 1;
             continue;
           }
-          const response = await fetch(
-            "/api/requests/packing/print-packing-label",
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(payload),
+          const zpl = buildPackLabelBitmapZpl({
+            canvas,
+            labelWidth: packLabelDots?.pw,
+            labelHeight: packLabelDots?.ll,
+          });
+          const response = await fetch("/api/requests/packing/print-zpl", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
             },
-          );
+            body: JSON.stringify({
+              printer: payload.printer,
+              paperProfile: payload.paperProfile,
+              copies: payload.copies,
+              requestId: payload.requestId,
+              title:
+                `Custom Abutment Packing ${payload.requestId || lot || ""}`.trim(),
+              zpl,
+            }),
+          });
           const data = await response.json().catch(() => null);
           if (!response.ok || !data?.success) {
             throw new Error(data?.message || "패킹 라벨 출력에 실패했습니다.");

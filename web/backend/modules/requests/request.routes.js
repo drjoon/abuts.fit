@@ -208,6 +208,14 @@ router.get(
 
 // 패킹 라벨 출력 (pack-server 프록시)
 router.post(
+  "/packing/print-zpl",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.printPackZpl,
+);
+
+// 패킹 라벨 출력 (pack-server 프록시)
+router.post(
   "/packing/print-packing-label",
   authenticate,
   authorize(["manufacturer", "admin"]),

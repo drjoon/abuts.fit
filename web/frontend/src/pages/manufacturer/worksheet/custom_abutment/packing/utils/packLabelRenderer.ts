@@ -29,9 +29,7 @@ export const downloadPngFromCanvas = async (
   canvas: HTMLCanvasElement,
   name: string,
 ) => {
-  const blob: Blob | null = await new Promise((resolve) =>
-    canvas.toBlob((b) => resolve(b), "image/png"),
-  );
+  const blob = await canvasToPngBlob(canvas);
   if (!blob) throw new Error("PNG 생성에 실패했습니다.");
   const url = URL.createObjectURL(blob);
   try {
@@ -44,6 +42,93 @@ export const downloadPngFromCanvas = async (
   } finally {
     URL.revokeObjectURL(url);
   }
+};
+
+export const canvasToPngBlob = async (canvas: HTMLCanvasElement) => {
+  const blob: Blob | null = await new Promise((resolve) =>
+    canvas.toBlob((b) => resolve(b), "image/png"),
+  );
+  return blob;
+};
+
+export const canvasToZplGraphic = (canvas: HTMLCanvasElement) => {
+  const width = canvas.width;
+  const height = canvas.height;
+  if (!width || !height) {
+    throw new Error("캔버스 크기가 올바르지 않습니다.");
+  }
+
+  const bytesPerRow = Math.ceil(width / 8);
+  const normalizedCanvas = document.createElement("canvas");
+  normalizedCanvas.width = width;
+  normalizedCanvas.height = height;
+  const normalizedCtx = normalizedCanvas.getContext("2d");
+  if (!normalizedCtx) {
+    throw new Error("canvas context를 생성할 수 없습니다.");
+  }
+
+  normalizedCtx.fillStyle = "white";
+  normalizedCtx.fillRect(0, 0, width, height);
+  normalizedCtx.drawImage(canvas, 0, 0, width, height);
+
+  const image = normalizedCtx.getImageData(0, 0, width, height);
+  const data = image.data;
+  const rows: string[] = [];
+
+  for (let y = 0; y < height; y += 1) {
+    let rowHex = "";
+    for (let byteIndex = 0; byteIndex < bytesPerRow; byteIndex += 1) {
+      let value = 0;
+      for (let bit = 0; bit < 8; bit += 1) {
+        const x = byteIndex * 8 + bit;
+        if (x >= width) continue;
+        const idx = (y * width + x) * 4;
+        const r = data[idx] ?? 255;
+        const g = data[idx + 1] ?? 255;
+        const b = data[idx + 2] ?? 255;
+        const a = data[idx + 3] ?? 255;
+        const luminance = (r * 299 + g * 587 + b * 114) / 1000;
+        const isBlack = a > 0 && luminance < 200;
+        if (isBlack) {
+          value |= 1 << (7 - bit);
+        }
+      }
+      rowHex += value.toString(16).toUpperCase().padStart(2, "0");
+    }
+    rows.push(rowHex);
+  }
+
+  const totalBytes = bytesPerRow * height;
+  return {
+    width,
+    height,
+    bytesPerRow,
+    totalBytes,
+    data: rows.join("\n"),
+  };
+};
+
+export const buildPackLabelBitmapZpl = ({
+  canvas,
+  labelWidth,
+  labelHeight,
+}: {
+  canvas: HTMLCanvasElement;
+  labelWidth?: number;
+  labelHeight?: number;
+}) => {
+  const graphic = canvasToZplGraphic(canvas);
+  const pw = Number(labelWidth) || graphic.width;
+  const ll = Number(labelHeight) || graphic.height;
+  return [
+    "^XA",
+    `^PW${pw}`,
+    `^LL${ll}`,
+    "^LH0,0",
+    "^CI28",
+    `^FO0,0^GFA,${graphic.totalBytes},${graphic.totalBytes},${graphic.bytesPerRow},${graphic.data}`,
+    "^XZ",
+  ].join("\n");
 };
 
 export const resolveManufacturingDate = (req: ManufacturerRequest) => {
