@@ -4,7 +4,11 @@ import sharp from "sharp";
 import path from "path";
 import fs from "fs/promises";
 import { createWriteStream } from "fs";
+import { fileURLToPath } from "url";
 import os from "os";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const LOG_FILE = path.resolve(__dirname, "logs.txt");
 const logStream = createWriteStream(LOG_FILE, { flags: "w" });
@@ -440,7 +444,17 @@ async function main() {
   logLine(`[lot-server] backend: ${BACKEND_BASE}`);
 }
 
+process.on("uncaughtException", (err) => {
+  logLine(`[lot-server] uncaughtException: ${formatError(err)}`);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  logLine(`[lot-server] unhandledRejection: ${formatError(reason)}`);
+  process.exit(1);
+});
+
 main().catch((e) => {
-  console.error("[lot-server] fatal:", e);
+  logLine(`[lot-server] fatal: ${formatError(e)}`);
   process.exit(1);
 });
