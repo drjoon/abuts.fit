@@ -135,6 +135,14 @@ namespace HiLinkBridgeWebApi48.Controllers
                                     {
                                         enq.bridgePath = job.bridgePath;
                                     }
+                                    if (enq != null && !string.IsNullOrWhiteSpace(job.s3Key))
+                                    {
+                                        enq.s3Key = job.s3Key;
+                                    }
+                                    if (enq != null && !string.IsNullOrWhiteSpace(job.s3Bucket))
+                                    {
+                                        enq.s3Bucket = job.s3Bucket;
+                                    }
                                 }
                                 catch { }
                             }

@@ -19,6 +19,8 @@ namespace HiLinkBridgeWebApi48.Controllers
             public string requestId { get; set; }
             public string machineId { get; set; }
             public string bridgePath { get; set; }
+            public string s3Key { get; set; }
+            public string s3Bucket { get; set; }
         }
 
         [HttpPost]
@@ -52,6 +54,21 @@ namespace HiLinkBridgeWebApi48.Controllers
                     if (!string.IsNullOrEmpty(bp))
                     {
                         job.bridgePath = bp;
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var sk = (req.s3Key ?? string.Empty).Trim();
+                    if (!string.IsNullOrEmpty(sk))
+                    {
+                        job.s3Key = sk;
+                    }
+                    var sb = (req.s3Bucket ?? string.Empty).Trim();
+                    if (!string.IsNullOrEmpty(sb))
+                    {
+                        job.s3Bucket = sb;
                     }
                 }
                 catch { }

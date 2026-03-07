@@ -455,6 +455,15 @@ export async function triggerNextAutoMachiningAfterComplete({
     const bridgePath = String(
       pick?.ncFile?.filePath || pick?.caseInfos?.ncFile?.filePath || "",
     ).trim();
+    const originalFileName = String(
+      pick?.ncFile?.originalName || pick?.caseInfos?.ncFile?.originalName || "",
+    ).trim();
+    const s3Key = String(
+      pick?.ncFile?.s3Key || pick?.caseInfos?.ncFile?.s3Key || "",
+    ).trim();
+    const s3Bucket = String(
+      pick?.ncFile?.s3Bucket || pick?.caseInfos?.ncFile?.s3Bucket || "",
+    ).trim();
     const rawFileName = String(
       pick?.ncFile?.fileName || pick?.caseInfos?.ncFile?.fileName || "",
     ).trim();
@@ -463,7 +472,7 @@ export async function triggerNextAutoMachiningAfterComplete({
 
     console.log(
       `[bridge:auto-next] attempting to trigger ${requestId} on ${mid}`,
-      { bridgePath, fileName },
+      { bridgePath, fileName, originalFileName, hasS3Key: !!s3Key },
     );
 
     if (!fileName || !bridgePath) {
@@ -526,9 +535,12 @@ export async function triggerNextAutoMachiningAfterComplete({
       headers: withBridgeHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         fileName: fileName || null,
+        originalFileName: originalFileName || fileName || null,
         requestId,
         machineId: mid,
         bridgePath: bridgePath || null,
+        s3Key: s3Key || null,
+        s3Bucket: s3Bucket || null,
       }),
     });
     if (!triggerResp.ok) {
