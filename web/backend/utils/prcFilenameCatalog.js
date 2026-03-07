@@ -163,10 +163,11 @@ export function buildPrcFileNamesFromCatalog(
   const normalizedType = normalizeImplantType(type);
   const normalizedFamily = String(family || "").trim();
   const catalog = loadPrcCatalog();
-  const key = `${canonicalKey}|${normalizedFamily}|${normalizedType}`;
+  const connectionKey = `${canonicalKey}|${normalizedFamily}|${normalizedType}`;
+  const faceHoleKey = `${canonicalKey}|${normalizedType}`;
   return {
-    faceHolePrcFileName: catalog.faceHoleMap.get(key) || "",
-    connectionPrcFileName: catalog.connectionMap.get(key) || "",
+    faceHolePrcFileName: catalog.faceHoleMap.get(faceHoleKey) || "",
+    connectionPrcFileName: catalog.connectionMap.get(connectionKey) || "",
   };
 }
 
