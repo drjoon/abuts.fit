@@ -9,6 +9,7 @@ import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { emitAppEventGlobal } from "../../socket.js";
+import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
 import {
   applyStatusMapping,
   ensureFinishedLotNumberForPacking,
@@ -449,6 +450,24 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
       status: printResult?.status,
     });
   }
+
+  emitBgRuntimeStatus({
+    requestId: request.requestId,
+    requestMongoId: String(request._id || "").trim(),
+    source: "lot-server",
+    stage: "packing",
+    status: "completed",
+    label: printResult?.success
+      ? "각인 인식 완료 + 패킹 라벨 출력"
+      : "각인 인식 완료",
+    tone: printResult?.success ? "amber" : "slate",
+    clear: true,
+    metadata: {
+      recognizedSuffix,
+      printSuccess: !!printResult?.success,
+      printMessage: printResult?.message || null,
+    },
+  });
 
   emitAppEventGlobal("packing:capture-processed", {
     source: "bg-lot-capture",

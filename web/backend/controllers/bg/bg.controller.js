@@ -10,6 +10,7 @@ import Request from "../../models/request.model.js";
 import CncEvent from "../../models/cncEvent.model.js";
 import { getPresignedPutUrl } from "../../utils/s3.utils.js";
 import { applyStatusMapping } from "../requests/utils.js";
+import { emitBgRuntimeStatus } from "./bgRuntimeEvents.js";
 
 const BG_STORAGE_BASE =
   process.env.BG_STORAGE_PATH ||
@@ -633,6 +634,57 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         fileName: String(fileName || "").trim() || null,
       },
       timestamp: new Date(),
+    });
+  } catch {
+    // ignore
+  }
+
+  try {
+    const step = String(sourceStep || "").trim();
+    const stepLabel =
+      step === "2-filled"
+        ? "Filled STL 수신"
+        : step === "3-nc"
+          ? "NC 생성 완료"
+          : step === "cnc"
+            ? "가공 완료"
+            : step === "cnc-preload"
+              ? "NC 프리로드 완료"
+              : "BG 처리 완료";
+    const stepStage =
+      step === "2-filled"
+        ? "request"
+        : step === "3-nc"
+          ? "cam"
+          : step === "cnc" || step === "cnc-preload"
+            ? "machining"
+            : null;
+    emitBgRuntimeStatus({
+      requestId: request?.requestId || null,
+      requestMongoId: String(request?._id || "").trim() || null,
+      source: step || "bg",
+      stage: stepStage,
+      status:
+        String(status || "")
+          .trim()
+          .toLowerCase() === "success"
+          ? "completed"
+          : "failed",
+      label: stepLabel,
+      tone:
+        String(status || "")
+          .trim()
+          .toLowerCase() === "success"
+          ? "blue"
+          : "rose",
+      clear:
+        String(status || "")
+          .trim()
+          .toLowerCase() === "success",
+      metadata: {
+        fileName: String(fileName || "").trim() || null,
+        sourceStep: step || null,
+      },
     });
   } catch {
     // ignore

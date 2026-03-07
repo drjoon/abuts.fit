@@ -1,3 +1,5 @@
+import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
+
 const PACK_PRINT_SERVER_BASE = String(
   process.env.PACK_PRINT_SERVER_BASE || "http://localhost:5788",
 ).trim();
@@ -174,6 +176,21 @@ export async function printPackPackingLabel(req, res) {
   try {
     const payload =
       req.body && typeof req.body === "object" ? { ...req.body } : {};
+    const requestId = String(payload?.requestId || "").trim();
+
+    emitBgRuntimeStatus({
+      requestId: requestId || null,
+      source: "pack-server",
+      stage: "packing",
+      status: "started",
+      label: "패킹 라벨 출력중",
+      tone: "amber",
+      startedAt: new Date().toISOString(),
+      metadata: {
+        printer: payload?.printer || null,
+        paperProfile: payload?.paperProfile || null,
+      },
+    });
 
     console.log("[packingPrint] print request received", {
       requestId: payload?.requestId || null,
@@ -211,20 +228,54 @@ export async function printPackPackingLabel(req, res) {
     });
 
     if (!upstream.ok || !body?.success) {
+      emitBgRuntimeStatus({
+        requestId: requestId || null,
+        source: "pack-server",
+        stage: "packing",
+        status: "failed",
+        label: "패킹 라벨 출력 실패",
+        tone: "rose",
+        metadata: {
+          message: body?.message || text || "패킹 라벨 출력에 실패했습니다.",
+        },
+      });
       return res.status(upstream.status || 502).json({
         success: false,
         message: body?.message || text || "패킹 라벨 출력에 실패했습니다.",
       });
     }
 
+    emitBgRuntimeStatus({
+      requestId: requestId || null,
+      source: "pack-server",
+      stage: "packing",
+      status: "completed",
+      label: "패킹 라벨 출력 완료",
+      tone: "amber",
+      clear: true,
+    });
+
     return res.status(200).json({
       success: true,
     });
   } catch (error) {
     const status = error?.statusCode || 500;
+    const requestId = String(req?.body?.requestId || "").trim();
     console.error("[packingPrint] print proxy error", {
       status,
       message: error?.message || null,
+    });
+    emitBgRuntimeStatus({
+      requestId: requestId || null,
+      source: "pack-server",
+      stage: "packing",
+      status: "failed",
+      label: "패킹 라벨 출력 실패",
+      tone: "rose",
+      metadata: {
+        status,
+        message: error?.message || null,
+      },
     });
     return res.status(status).json({
       success: false,

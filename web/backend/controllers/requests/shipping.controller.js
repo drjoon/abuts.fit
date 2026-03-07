@@ -3,6 +3,7 @@ import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import hanjinService from "../../services/hanjin.service.js";
+import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
 import { handleHanjinTrackingWebhook } from "../webhooks/hanjinWebhook.controller.js";
 import { Types } from "mongoose";
 import {
@@ -537,6 +538,24 @@ const buildHanjinDraftPayload = (requests) => {
 export async function printHanjinLabels(req, res) {
   try {
     const { mailboxAddresses, payload, wblPrintOptions } = req.body || {};
+    const runtimeRequestId = Array.isArray(payload?.address_list)
+      ? String(payload?.address_list?.[0]?.msg_key || "").trim()
+      : "";
+
+    emitBgRuntimeStatus({
+      requestId: runtimeRequestId || null,
+      source: "wbls-server",
+      stage: "shipping",
+      status: "started",
+      label: "운송장 출력중",
+      tone: "slate",
+      startedAt: new Date().toISOString(),
+      metadata: {
+        mailboxAddresses: Array.isArray(mailboxAddresses)
+          ? mailboxAddresses
+          : [],
+      },
+    });
 
     const path = resolveHanjinPath(
       "HANJIN_PRINT_WBL_PATH",
@@ -585,6 +604,22 @@ export async function printHanjinLabels(req, res) {
       });
     }
 
+    emitBgRuntimeStatus({
+      requestId: runtimeRequestId || null,
+      source: "wbls-server",
+      stage: "shipping",
+      status: wblPrint?.success === false ? "failed" : "completed",
+      label:
+        wblPrint?.success === false ? "운송장 출력 실패" : "운송장 출력 완료",
+      tone: wblPrint?.success === false ? "rose" : "slate",
+      clear: wblPrint?.success !== false,
+      metadata: {
+        skipped: !!wblPrint?.skipped,
+        message: wblPrint?.message || null,
+        reason: wblPrint?.reason || null,
+      },
+    });
+
     return res.status(200).json({
       success: true,
       data: {
@@ -595,6 +630,17 @@ export async function printHanjinLabels(req, res) {
     });
   } catch (error) {
     console.error("Error in printHanjinLabels:", error);
+    emitBgRuntimeStatus({
+      requestId: null,
+      source: "wbls-server",
+      stage: "shipping",
+      status: "failed",
+      label: "운송장 출력 실패",
+      tone: "rose",
+      metadata: {
+        message: error?.message || null,
+      },
+    });
     return res.status(500).json({
       success: false,
       message: "한진 운송장 출력 요청 중 오류가 발생했습니다.",

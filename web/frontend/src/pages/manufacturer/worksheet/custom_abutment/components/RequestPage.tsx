@@ -51,13 +51,8 @@ import { PreviewModal } from "./PreviewModal";
 import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers";
 import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
 import { useStageDropHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useStageDropHandlers";
+import { useWorksheetRealtimeStatus } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus";
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
-import {
-  onCncMachiningCompleted,
-  onCncMachiningTick,
-  onAppEvent,
-  onNotification,
-} from "@/shared/realtime/socket";
 
 type FilePreviewInfo = {
   originalName: string;
@@ -115,7 +110,6 @@ export const RequestPage = ({
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
     {},
   );
-  const realtimeBaseRef = useRef<Record<string, number>>({});
   const [visibleCount, setVisibleCount] = useState(12);
   const visibleCountRef = useRef(12);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -370,224 +364,17 @@ export const RequestPage = ({
     decodeNcText,
   });
 
-  useEffect(() => {
-    const keys = Object.keys(realtimeBaseRef.current || {});
-    if (!keys.length) return;
-    const id = window.setInterval(() => {
-      setRequests((prev) =>
-        prev.map((req) => {
-          const rid = String(req?.requestId || "").trim();
-          const base = realtimeBaseRef.current[rid];
-          if (!rid || typeof base !== "number") return req;
-          const current = req.realtimeProgress || {};
-          if (!current?.badge) return req;
-          return {
-            ...req,
-            realtimeProgress: {
-              ...current,
-              elapsedSeconds: Math.max(
-                0,
-                Math.floor((Date.now() - base) / 1000),
-              ),
-            },
-          };
-        }),
-      );
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, [requests]);
-
-  useEffect(() => {
-    if (!token) return;
-
-    const unsubBg = onNotification((notification: any) => {
-      const type = String(notification?.type || "").trim();
-      if (type !== "bg-file-processed") return;
-
-      const requestId = String(notification?.data?.requestId || "").trim();
-      const sourceStep = String(notification?.data?.sourceStep || "").trim();
-      if (requestId) {
-        setRequests((prev) =>
-          prev.map((r) => {
-            if (String((r as any)?.requestId || "").trim() !== requestId) {
-              return r;
-            }
-            if (sourceStep === "2-filled") {
-              delete realtimeBaseRef.current[requestId];
-              return {
-                ...(r as any),
-                realtimeProgress: {
-                  badge: "Filled STL 수신",
-                  elapsedSeconds: null,
-                  startedAt: null,
-                  tone: "blue",
-                },
-              } as any;
-            }
-            if (sourceStep === "3-nc") {
-              delete realtimeBaseRef.current[requestId];
-              return {
-                ...(r as any),
-                realtimeProgress: null,
-              } as any;
-            }
-            return r;
-          }),
-        );
-      }
-      if (!requestId) {
-        void fetchRequests(true);
-        return;
-      }
-
-      void (async () => {
-        const list = await fetchRequestsCore(true);
-        if (!previewOpen) return;
-        if (!list || !Array.isArray(list) || list.length === 0) return;
-
-        const updated = list.find(
-          (r: any) => String(r?.requestId || "").trim() === requestId,
-        );
-        if (!updated) return;
-
-        const currentRid = String(
-          (previewFiles as any)?.request?.requestId || "",
-        ).trim();
-        if (currentRid && currentRid !== requestId) return;
-
-        await handleOpenPreview(updated as any);
-      })();
-    });
-
-    const unsubAppEvent = onAppEvent((evt: any) => {
-      const type = String(evt?.type || "").trim();
-      const payload = evt?.data || {};
-      const requestId = String(payload?.requestId || "").trim();
-      if (!requestId) return;
-
-      if (type === "request:cam-processing-started") {
-        const startedAt = String(
-          payload?.startedAt || new Date().toISOString(),
-        );
-        const base = new Date(startedAt).getTime();
-        realtimeBaseRef.current[requestId] = Number.isFinite(base)
-          ? base
-          : Date.now();
-        setRequests((prev) =>
-          prev.map((r) => {
-            if (String((r as any)?.requestId || "").trim() !== requestId) {
-              return r;
-            }
-            return {
-              ...(r as any),
-              realtimeProgress: {
-                badge: "CAM 생성중",
-                startedAt,
-                elapsedSeconds: 0,
-                tone: "indigo",
-              },
-            } as any;
-          }),
-        );
-        return;
-      }
-
-      if (type === "request:filled-processing-started") {
-        setRequests((prev) =>
-          prev.map((r) => {
-            if (String((r as any)?.requestId || "").trim() !== requestId) {
-              return r;
-            }
-            return {
-              ...(r as any),
-              realtimeProgress: {
-                badge: "Filled STL 생성중",
-                elapsedSeconds: null,
-                startedAt: null,
-                tone: "blue",
-              },
-            } as any;
-          }),
-        );
-      }
-    });
-
-    const unsubTick = onCncMachiningTick((data: any) => {
-      const requestId = data?.requestId ? String(data.requestId).trim() : "";
-      if (!requestId) return;
-      const elapsedSecondsRaw = data?.elapsedSeconds;
-      const elapsedSeconds = Number.isFinite(Number(elapsedSecondsRaw))
-        ? Math.max(0, Math.floor(Number(elapsedSecondsRaw)))
-        : 0;
-      const machineId = data?.machineId ? String(data.machineId).trim() : "";
-      const jobId = data?.jobId ? String(data.jobId).trim() : "";
-      const phase = data?.phase ? String(data.phase).trim() : "";
-      const percentRaw = data?.percent;
-      const percent = Number.isFinite(Number(percentRaw))
-        ? Math.max(0, Math.min(100, Number(percentRaw)))
-        : null;
-
-      setRequests((prev) =>
-        prev.map((r) => {
-          if (String((r as any)?.requestId || "").trim() !== requestId)
-            return r;
-          const productionSchedule = (r as any)?.productionSchedule || {};
-          return {
-            ...r,
-            productionSchedule: {
-              ...productionSchedule,
-              machiningProgress: {
-                ...(productionSchedule?.machiningProgress || {}),
-                machineId: machineId || null,
-                jobId: jobId || null,
-                phase: phase || null,
-                percent,
-                elapsedSeconds,
-              },
-            },
-          } as any;
-        }),
-      );
-    });
-
-    const unsubCompleted = onCncMachiningCompleted((data: any) => {
-      const requestId = data?.requestId ? String(data.requestId).trim() : "";
-      if (!requestId) {
-        void fetchRequests(true);
-        return;
-      }
-
-      setRequests((prev) =>
-        prev.filter((r) => {
-          const rid = String((r as any)?.requestId || "").trim();
-          return rid !== requestId;
-        }),
-      );
-
-      void fetchRequests(true);
-    });
-
-    const handleRequestRollback = () => {
-      void fetchRequests();
-    };
-
-    window.addEventListener("request-rollback", handleRequestRollback);
-
-    return () => {
-      if (typeof unsubBg === "function") unsubBg();
-      if (typeof unsubAppEvent === "function") unsubAppEvent();
-      if (typeof unsubTick === "function") unsubTick();
-      if (typeof unsubCompleted === "function") unsubCompleted();
-      window.removeEventListener("request-rollback", handleRequestRollback);
-    };
-  }, [
+  const { realtimeBaseRef } = useWorksheetRealtimeStatus({
+    enabled: true,
+    token,
+    setRequests,
     fetchRequests,
     fetchRequestsCore,
-    handleOpenPreview,
-    previewFiles,
     previewOpen,
-    token,
-  ]);
+    previewFiles,
+    handleOpenPreview,
+    removeOnMachiningComplete: true,
+  });
 
   const {
     handlePageDrop,

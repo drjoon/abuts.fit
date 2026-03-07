@@ -13,6 +13,7 @@ import { WorksheetCardGrid } from "../../components/WorksheetCardGrid";
 import { PreviewModal } from "../../components/PreviewModal";
 import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers";
 import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
+import { useWorksheetRealtimeStatus } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus";
 import { PackingPrinterSettingsDialog } from "../components/PackingPrinterSettingsDialog";
 import { usePackingPrintSettings } from "../hooks/usePackingPrintSettings";
 import { usePackingWorksheetData } from "../hooks/usePackingWorksheetData";
@@ -159,6 +160,18 @@ export const PackingPageContent = ({
     setPreviewStageName,
     setPreviewFiles,
     setPreviewOpen,
+  });
+
+  useWorksheetRealtimeStatus({
+    enabled: true,
+    token,
+    setRequests,
+    fetchRequests,
+    fetchRequestsCore: fetchRequestsList,
+    previewOpen,
+    previewFiles,
+    handleOpenPreview,
+    removeOnMachiningComplete: false,
   });
 
   const {
