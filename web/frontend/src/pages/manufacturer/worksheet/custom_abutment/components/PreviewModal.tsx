@@ -515,139 +515,139 @@ export const PreviewModal = ({
           의뢰 파일과 NC 내용을 확인하는 영역입니다.
         </DialogDescription>
 
-        <div className="absolute right-4 top-4 flex items-center gap-2">
-          {!isRequestStage && (
+        <div className="h-full flex flex-col gap-4 overflow-hidden">
+          <div className="flex items-center justify-end gap-2 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 shrink-0">
+            {!isRequestStage && (
+              <button
+                type="button"
+                className={`${controlBtnClass} ${
+                  reviewSaving
+                    ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+                disabled={reviewSaving}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+
+                  const performBack = async () => {
+                    const stageKey = currentReviewStageKey;
+                    if (
+                      stageKey === "machining" ||
+                      stageKey === "packing" ||
+                      stageKey === "shipping" ||
+                      stageKey === "tracking"
+                    ) {
+                      await onDeleteStageFile({
+                        req: activeReq,
+                        stage: stageKey,
+                        rollbackOnly: true,
+                        navigate: false,
+                      });
+                    } else if (isCamStage) {
+                      await onDeleteNc(activeReq, {
+                        nextStage: "request",
+                        navigate: false,
+                      });
+                    } else {
+                      await onDeleteCam(activeReq, { navigate: false });
+                    }
+                  };
+
+                  void (async () => {
+                    await performBack();
+                    if (onOpenNextRequest && activeReq._id) {
+                      await onOpenNextRequest(activeReq._id);
+                    }
+                  })();
+                }}
+                aria-label="이전 공정"
+                title="이전 공정"
+              >
+                ←
+              </button>
+            )}
+
             <button
               type="button"
               className={`${controlBtnClass} ${
-                reviewSaving
+                reviewSaving || !canApprove
                   ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
                   : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
               }`}
-              disabled={reviewSaving}
-              onClick={(e) => {
+              disabled={reviewSaving || !canApprove}
+              onClick={async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                try {
+                  await onUpdateReviewStatus({
+                    req: activeReq,
+                    status: "APPROVED",
+                    stageOverride: currentReviewStageKey,
+                    keepPreviewOpen: true,
+                  });
 
-                const performBack = async () => {
-                  const stageKey = currentReviewStageKey;
-                  if (
-                    stageKey === "machining" ||
-                    stageKey === "packing" ||
-                    stageKey === "shipping" ||
-                    stageKey === "tracking"
-                  ) {
-                    await onDeleteStageFile({
-                      req: activeReq,
-                      stage: stageKey,
-                      rollbackOnly: true,
-                      navigate: false,
-                    });
-                  } else if (isCamStage) {
-                    await onDeleteNc(activeReq, {
-                      nextStage: "request",
-                      navigate: false,
-                    });
-                  } else {
-                    await onDeleteCam(activeReq, { navigate: false });
+                  if (isCamStage) {
+                    const requestId = String(activeReq.requestId).trim();
+                    if (!token) {
+                      throw new Error("로그인이 필요합니다.");
+                    }
+                    if (!requestId) {
+                      throw new Error(
+                        "requestId가 없어 NC 동기화를 진행할 수 없습니다.",
+                      );
+                    }
+
+                    const ensureRes = await fetch(
+                      `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/ensure-bridge`,
+                      {
+                        method: "POST",
+                        headers: {
+                          Authorization: `Bearer ${token}`,
+                          "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({}),
+                      },
+                    );
+                    const ensureBody: any = await ensureRes
+                      .json()
+                      .catch(() => ({}));
+                    if (!ensureRes.ok || ensureBody?.success === false) {
+                      throw new Error(
+                        ensureBody?.message ||
+                          ensureBody?.error ||
+                          "NC 파일 bridge-store 동기화에 실패했습니다.",
+                      );
+                    }
                   }
-                };
 
-                void (async () => {
-                  await performBack();
                   if (onOpenNextRequest && activeReq._id) {
                     await onOpenNextRequest(activeReq._id);
                   }
-                })();
+                } catch (err) {
+                  console.error("Review status update failed:", err);
+                }
               }}
-              aria-label="이전 공정"
-              title="이전 공정"
+              aria-label="다음 공정"
+              title="다음 공정"
             >
-              ←
+              →
             </button>
-          )}
 
-          <button
-            type="button"
-            className={`${controlBtnClass} ${
-              reviewSaving || !canApprove
-                ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-            }`}
-            disabled={reviewSaving || !canApprove}
-            onClick={async (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              try {
-                await onUpdateReviewStatus({
-                  req: activeReq,
-                  status: "APPROVED",
-                  stageOverride: currentReviewStageKey,
-                  keepPreviewOpen: true,
-                });
+            <DialogClose asChild>
+              <button
+                type="button"
+                className={`${controlBtnClass} ${
+                  reviewSaving
+                    ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                X
+              </button>
+            </DialogClose>
+          </div>
 
-                if (isCamStage) {
-                  const requestId = String(activeReq.requestId).trim();
-                  if (!token) {
-                    throw new Error("로그인이 필요합니다.");
-                  }
-                  if (!requestId) {
-                    throw new Error(
-                      "requestId가 없어 NC 동기화를 진행할 수 없습니다.",
-                    );
-                  }
-
-                  const ensureRes = await fetch(
-                    `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/ensure-bridge`,
-                    {
-                      method: "POST",
-                      headers: {
-                        Authorization: `Bearer ${token}`,
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({}),
-                    },
-                  );
-                  const ensureBody: any = await ensureRes
-                    .json()
-                    .catch(() => ({}));
-                  if (!ensureRes.ok || ensureBody?.success === false) {
-                    throw new Error(
-                      ensureBody?.message ||
-                        ensureBody?.error ||
-                        "NC 파일 bridge-store 동기화에 실패했습니다.",
-                    );
-                  }
-                }
-
-                if (onOpenNextRequest && activeReq._id) {
-                  await onOpenNextRequest(activeReq._id);
-                }
-              } catch (err) {
-                console.error("Review status update failed:", err);
-              }
-            }}
-            aria-label="다음 공정"
-            title="다음 공정"
-          >
-            →
-          </button>
-
-          <DialogClose asChild>
-            <button
-              type="button"
-              className={`${controlBtnClass} ${
-                reviewSaving
-                  ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              X
-            </button>
-          </DialogClose>
-        </div>
-
-        <div className="h-full flex flex-col gap-4 overflow-hidden">
           {previewLoading ? (
             <div className="rounded-lg border border-dashed p-8 flex flex-col items-center gap-2 text-sm text-slate-500">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />
