@@ -72,16 +72,16 @@ async function readConnectionSeedFromFolder() {
   const seen = new Set();
 
   for (const fileName of files) {
-    const parsed = parseConnectionPrcFileName(fileName);
-    const row = parsed
+    const parsedFile = parseConnectionPrcFileName(fileName);
+    const row = parsedFile
       ? {
-          manufacturer: parsed.manufacturer,
-          manufacturerKor: parsed.manufacturerKor,
-          system: parsed.system,
-          family: parsed.family,
-          type: parsed.type,
+          manufacturer: parsedFile.manufacturer,
+          manufacturerKor: parsedFile.manufacturerKor,
+          system: parsedFile.system,
+          family: parsedFile.family,
+          type: parsedFile.type,
           category: CONNECTION_CATEGORY,
-          fileName: parsed.fileName,
+          fileName: parsedFile.fileName,
           isActive: true,
         }
       : null;
