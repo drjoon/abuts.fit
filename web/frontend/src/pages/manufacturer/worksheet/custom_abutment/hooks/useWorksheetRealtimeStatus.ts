@@ -193,6 +193,9 @@ export function useWorksheetRealtimeStatus({
             } as any;
           }),
         );
+        if (fetchRequests) {
+          void fetchRequests(true);
+        }
         return;
       }
 

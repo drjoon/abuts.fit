@@ -55,6 +55,8 @@ const PROCESS_RETRY_DELAY_MS = Math.max(
   Number(process.env.LOT_PROCESS_RETRY_DELAY_MS || 1000),
 );
 
+const inflightFiles = new Set();
+
 async function ensureDir(p) {
   await fs.mkdir(p, { recursive: true });
 }
@@ -313,42 +315,52 @@ async function processImageOnce(filePath) {
 
 async function handleNewImage(filePath) {
   if (!isImageFile(filePath)) return;
-
-  logLine(`[lot-server] detected new image: ${filePath}`);
-
-  const stable = await waitForStableFile(filePath);
-  if (!stable) {
-    await moveFileSafely(filePath, FAILED_DIR);
-    logLine(
-      `[lot-server] failed (unstable file) -> ${FAILED_DIR}: ${filePath}`,
-    );
+  if (inflightFiles.has(filePath)) {
+    logLine(`[lot-server] skip duplicate in-flight file: ${filePath}`);
     return;
   }
 
-  let lastError = null;
-  for (let attempt = 1; attempt <= PROCESS_ATTEMPTS; attempt += 1) {
-    try {
-      const { originalName, fileSize } = await processImageOnce(filePath);
-      await moveFileSafely(filePath, PROCESSED_DIR);
+  inflightFiles.add(filePath);
+
+  try {
+    logLine(`[lot-server] detected new image: ${filePath}`);
+
+    const stable = await waitForStableFile(filePath);
+    if (!stable) {
+      await moveFileSafely(filePath, FAILED_DIR);
       logLine(
-        `[lot-server] processed -> ${PROCESSED_DIR}: ${originalName} (${fileSize} bytes, attempts=${attempt})`,
+        `[lot-server] failed (unstable file) -> ${FAILED_DIR}: ${filePath}`,
       );
       return;
-    } catch (err) {
-      lastError = err;
-      logLine(
-        `[lot-server] attempt ${attempt}/${PROCESS_ATTEMPTS} failed for ${filePath}: ${formatError(err)}`,
-      );
-      if (attempt < PROCESS_ATTEMPTS && PROCESS_RETRY_DELAY_MS) {
-        await sleep(PROCESS_RETRY_DELAY_MS * attempt);
+    }
+
+    let lastError = null;
+    for (let attempt = 1; attempt <= PROCESS_ATTEMPTS; attempt += 1) {
+      try {
+        const { originalName, fileSize } = await processImageOnce(filePath);
+        await moveFileSafely(filePath, PROCESSED_DIR);
+        logLine(
+          `[lot-server] processed -> ${PROCESSED_DIR}: ${originalName} (${fileSize} bytes, attempts=${attempt})`,
+        );
+        return;
+      } catch (err) {
+        lastError = err;
+        logLine(
+          `[lot-server] attempt ${attempt}/${PROCESS_ATTEMPTS} failed for ${filePath}: ${formatError(err)}`,
+        );
+        if (attempt < PROCESS_ATTEMPTS && PROCESS_RETRY_DELAY_MS) {
+          await sleep(PROCESS_RETRY_DELAY_MS * attempt);
+        }
       }
     }
-  }
 
-  await moveFileSafely(filePath, FAILED_DIR);
-  logLine(
-    `[lot-server] failed -> ${FAILED_DIR}: ${filePath} (${formatError(lastError)})`,
-  );
+    await moveFileSafely(filePath, FAILED_DIR);
+    logLine(
+      `[lot-server] failed -> ${FAILED_DIR}: ${filePath} (${formatError(lastError)})`,
+    );
+  } finally {
+    inflightFiles.delete(filePath);
+  }
 }
 
 async function main() {

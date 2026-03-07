@@ -15,6 +15,7 @@ import {
   ensureFinishedLotNumberForPacking,
   getTodayYmdInKst,
 } from "../../controllers/requests/utils.js";
+import { allocateVirtualMailboxAddress } from "../requests/mailbox.utils.js";
 
 let _apiKey = null;
 let _genAI = null;
@@ -369,7 +370,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   if (!request && process.env.NODE_ENV === "development") {
     request = await Request.findOne({
       status: { $ne: "취소" },
-      manufacturerStage: "packing",
+      manufacturerStage: "세척.패킹",
     }).sort({ createdAt: 1 });
 
     console.warn("[lot-capture] development fallback applied", {
@@ -437,6 +438,20 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   });
 
   await ensureFinishedLotNumberForPacking(request);
+  if (!request.mailboxAddress) {
+    try {
+      const requestorOrgId =
+        request.requestorOrganizationId || request.requestor?.organizationId;
+      request.mailboxAddress =
+        await allocateVirtualMailboxAddress(requestorOrgId);
+    } catch (err) {
+      console.error("[lot-capture] mailbox allocation failed", {
+        requestId: request.requestId,
+        requestMongoId: String(request._id || ""),
+        message: err?.message || String(err),
+      });
+    }
+  }
   await ensureShippingPackageAndChargeFee({ request, session: null });
   applyStatusMapping(request, "발송");
 
