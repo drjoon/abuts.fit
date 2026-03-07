@@ -7,7 +7,7 @@ const __dirname = path.dirname(__filename);
 const PRC_CONNECTION_DIR = path.resolve(
   __dirname,
   "../../..",
-  "bg/esprit-addin/AcroDent/2_Connection",
+  "bg/pc1/esprit-addin/AcroDent/2_Connection",
 );
 
 const MANUFACTURER_CANONICAL_OVERRIDES = {

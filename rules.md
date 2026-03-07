@@ -309,11 +309,14 @@
 - **Frontend Build**: `web/frontend/dist`에 위치.
 - **Backend Server**: 정적 파일 서빙 + API 제공.
 - **백그라운드 서비스 통합 (`bg/` 폴더)**:
-  - `bg/bridge-server`: CNC 장비(Hi-Link) 연동 브리지 서버.
-  - `bg/rhino-server`: Rhino Compute 기반 3D 연산 서버.
-  - `bg/esprite-addin`: ESPRIT 2025용 CAM 자동화 애드인.
+  - `bg/pc1/bridge-server`: CNC 장비(Hi-Link) 연동 브리지 서버.
+  - `bg/pc1/rhino-server`: Rhino Compute 기반 3D 연산 서버.
+  - `bg/pc1/esprit-addin`: ESPRIT 2025용 CAM 자동화 애드인.
+  - `bg/pc2/lot-server`: LOT 캡처/후처리 서버.
+  - `bg/pc2/pack-server`: 패킹 라벨 프린트 서버.
+  - `bg/pc3/wbls-server`: 운송장 출력 서버.
   - `bg/storage`: BG 프로그램 간 파일 공유를 위한 로컬 스토리지.
-  - **운영 정책**: 당분간 하나의 로컬 컴퓨터 내에서 통합 운영하며, 부하 증가 시 분리 검토.
+  - **운영 정책**: Windows PC 기준으로 `PC1=rhino/esprit/bridge`, `PC2=lot/pack`, `PC3=wbls` 배치로 운영한다.
   - **공통 인터페이스 (Web Server)**: 모든 BG 프로그램은 아래 엔드포인트를 제공해야 합니다. (Port: Rhino=8000, ESPRIT=8001, Bridge=8002)
     - `GET /health` 또는 `/ping`: 서비스 상태 확인 (Alive).
     - `POST /control/start`: 운영 시작.
@@ -336,7 +339,7 @@
 
 **구현**:
 
-1. `bg/esprit-addin/StlFileProcessor.cs` - `EnsureCustomCyclePrc()`:
+1. `bg/pc1/esprit-addin/StlFileProcessor.cs` - `EnsureCustomCyclePrc()`:
    - 백엔드 `faceHolePrcFileName`/`connectionPrcFileName`이 비어있으면 `AddRunError()` 후 `return`으로 공정 중단
    - AppConfig 폴백 로직 제거 (임의 폴백 금지)
    - 백엔드가 준 파일명으로 AcroDent 경로에서 찾지 못해도 에러 처리
@@ -362,14 +365,14 @@
 
 **구현**:
 
-- `bg/esprit-addin/Connect.cs` - `RecoverPendingNcToQueue()`:
+- `bg/pc1/esprit-addin/Connect.cs` - `RecoverPendingNcToQueue()`:
   - 무조건 `return`으로 복구 스킵
   - 환경변수 토글(`ABUTS_RECOVER_PENDING_NC`) 제거
   - TTL purge만 실행 후 종료
 
 ### 7.3 Esprit 2_Connection 파일명 SSOT 및 DB 동기화 정책
 
-- `bg/esprit-addin/AcroDent/2_Connection` 폴더에 존재하는 PRC 파일명이 `hanhwa-connection` 임플란트 정보의 **SSOT**다.
+- `bg/pc1/esprit-addin/AcroDent/2_Connection` 폴더에 존재하는 PRC 파일명이 `hanhwa-connection` 임플란트 정보의 **SSOT**다.
 - 백엔드 DB의 임플란트/커넥션 seed는 수기 상수보다 위 폴더 파일명을 기준으로 추가/변경한다.
 - 동기화 스크립트는 `web/backend/scripts/db/implant-preset.js`를 사용한다.
 - 파일명 규칙은 `{제조사}_{시스템}_{타입코드}_Connection.prc`를 따른다.
@@ -379,7 +382,7 @@
 - **환경별 정책**:
   - `production`: 기존 DB 문서는 유지하고, SSOT 폴더에서 파싱된 **새 임플란트 정보만 추가**한다. 기존 문서를 수정/삭제하지 않는다.
   - `development`, `test`, `local`: 기존 `hanhwa-connection` 임플란트 정보를 **리셋 후** SSOT 폴더 기준으로 다시 시딩한다.
-- 운영 중 새로운 임플란트 조합이 추가되면, 먼저 `bg/esprit-addin/AcroDent/2_Connection`에 PRC 파일을 반영한 뒤 스크립트를 실행한다.
+- 운영 중 새로운 임플란트 조합이 추가되면, 먼저 `bg/pc1/esprit-addin/AcroDent/2_Connection`에 PRC 파일을 반영한 뒤 스크립트를 실행한다.
 - Esprit Add-in과 백엔드는 모두 이 SSOT에서 파생된 canonical manufacturer/system/type 및 PRC 파일명을 사용해야 하며, 임의 폴백은 허용하지 않는다.
 
 ### 11.2 팝빌 처리 아키텍처
@@ -576,7 +579,7 @@
   - `MOCK_DEV_TOKEN` 조건부 로직 제거
   - `x-mock-role`, `x-mock-email`, `x-mock-name`, `x-mock-organization`, `x-mock-phone` 헤더 제거
   - SettingsPage, useNewRequestPage 등에서 mockHeaders 정리
-  - **예외**: bg/bridge-server는 MOCK 모드 유지 (별도 운영)
+  - **예외**: `bg/pc1/bridge-server`는 MOCK 모드 유지 (별도 운영)
 
 ### 13.3 대시보드 시각적 명확성 개선
 

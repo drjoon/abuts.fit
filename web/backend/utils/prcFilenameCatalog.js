@@ -16,13 +16,13 @@ const __dirname = path.dirname(__filename);
 export const PRC_FACE_HOLE_DIR = path.resolve(
   __dirname,
   "../../..",
-  "bg/esprit-addin/AcroDent/1_Face Hole",
+  "bg/pc1/esprit-addin/AcroDent/1_Face Hole",
 );
 
 export const PRC_CONNECTION_DIR = path.resolve(
   __dirname,
   "../../..",
-  "bg/esprit-addin/AcroDent/2_Connection",
+  "bg/pc1/esprit-addin/AcroDent/2_Connection",
 );
 
 function normalizeCodeChar(raw) {
