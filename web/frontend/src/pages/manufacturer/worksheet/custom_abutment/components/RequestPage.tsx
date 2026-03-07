@@ -540,7 +540,14 @@ export const RequestPage = ({
         stageOverride: stageKey,
       });
     },
-    [tabStage, isCamStage, isMachiningStage, handleUpdateReviewStatus],
+    [
+      tabStage,
+      isCamStage,
+      isMachiningStage,
+      handleUpdateReviewStatus,
+      realtimeBaseRef,
+      setRequests,
+    ],
   );
 
   const enableCardRollback =

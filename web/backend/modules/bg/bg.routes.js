@@ -28,6 +28,12 @@ router.post(
   bgController.getPresignedUploadUrl,
 );
 router.post(
+  "/runtime-status",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  bgController.registerRuntimeStatus,
+);
+router.post(
   "/lot-capture/packing",
   requireBridgeIpAllowlist,
   requireBridgeSecret,

@@ -43,7 +43,7 @@ const resolveMailboxList = (mailboxAddresses) =>
 
 async function resolveHanjinPayload({ mailboxAddresses, payload }) {
   if (payload && typeof payload === "object") {
-    return { payload, usedDbRequests: false };
+    return { payload, usedDbRequests: false, requestIds: [] };
   }
 
   const list = resolveMailboxList(mailboxAddresses);
@@ -70,6 +70,9 @@ async function resolveHanjinPayload({ mailboxAddresses, payload }) {
   return {
     payload: buildHanjinDraftPayload(requests, list),
     usedDbRequests: true,
+    requestIds: requests
+      .map((req) => String(req?.requestId || "").trim())
+      .filter(Boolean),
   };
 }
 
@@ -581,6 +584,39 @@ export async function printHanjinLabels(req, res) {
       throw err;
     }
 
+    const runtimeRequestIds = Array.isArray(resolved?.requestIds)
+      ? resolved.requestIds
+      : [];
+    const emitShippingRuntime = (payloadPerRequest) => {
+      if (runtimeRequestIds.length > 0) {
+        runtimeRequestIds.forEach((rid) => {
+          emitBgRuntimeStatus({
+            ...payloadPerRequest,
+            requestId: rid,
+          });
+        });
+        return;
+      }
+      emitBgRuntimeStatus({
+        ...payloadPerRequest,
+        requestId: null,
+      });
+    };
+
+    emitShippingRuntime({
+      source: "wbls-server",
+      stage: "shipping",
+      status: "started",
+      label: "운송장 출력중",
+      tone: "slate",
+      startedAt: new Date().toISOString(),
+      metadata: {
+        mailboxAddresses: Array.isArray(mailboxAddresses)
+          ? mailboxAddresses
+          : [],
+      },
+    });
+
     const data = await hanjinService.requestPrintApi({
       path: path.replace("{client_id}", HANJIN_CLIENT_ID),
       method: "POST",
@@ -604,21 +640,49 @@ export async function printHanjinLabels(req, res) {
       });
     }
 
-    emitBgRuntimeStatus({
-      requestId: runtimeRequestId || null,
-      source: "wbls-server",
-      stage: "shipping",
-      status: wblPrint?.success === false ? "failed" : "completed",
-      label:
-        wblPrint?.success === false ? "운송장 출력 실패" : "운송장 출력 완료",
-      tone: wblPrint?.success === false ? "rose" : "slate",
-      clear: wblPrint?.success !== false,
-      metadata: {
-        skipped: !!wblPrint?.skipped,
-        message: wblPrint?.message || null,
-        reason: wblPrint?.reason || null,
-      },
+    const perRequestIdStatus = {};
+    runtimeRequestIds.forEach((rid) => {
+      perRequestIdStatus[rid] =
+        wblPrint?.success === false ? "failed" : "completed";
     });
+
+    if (runtimeRequestIds.length > 0) {
+      runtimeRequestIds.forEach((rid) => {
+        emitBgRuntimeStatus({
+          requestId: rid,
+          source: "wbls-server",
+          stage: "shipping",
+          status: perRequestIdStatus[rid],
+          label:
+            perRequestIdStatus[rid] === "failed"
+              ? "운송장 출력 실패"
+              : "운송장 출력 완료",
+          tone: perRequestIdStatus[rid] === "failed" ? "rose" : "slate",
+          clear: perRequestIdStatus[rid] !== "failed",
+          metadata: {
+            skipped: !!wblPrint?.skipped,
+            message: wblPrint?.message || null,
+            reason: wblPrint?.reason || null,
+          },
+        });
+      });
+    } else {
+      emitBgRuntimeStatus({
+        requestId: null,
+        source: "wbls-server",
+        stage: "shipping",
+        status: wblPrint?.success === false ? "failed" : "completed",
+        label:
+          wblPrint?.success === false ? "운송장 출력 실패" : "운송장 출력 완료",
+        tone: wblPrint?.success === false ? "rose" : "slate",
+        clear: wblPrint?.success !== false,
+        metadata: {
+          skipped: !!wblPrint?.skipped,
+          message: wblPrint?.message || null,
+          reason: wblPrint?.reason || null,
+        },
+      });
+    }
 
     return res.status(200).json({
       success: true,

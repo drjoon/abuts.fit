@@ -18,6 +18,37 @@ def load_cached_metadata(_: Path) -> dict:
     return {}
 def save_cached_metadata(_: Path, __: dict) -> None:
     return
+def notify_runtime_status(item: dict | None, *, source: str, stage: str, status: str, label: str, tone: str | None = None, clear: bool = False, metadata: dict | None = None) -> None:
+    try:
+        backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api").rstrip("/")
+        if not backend_url:
+            return
+        request_id = None
+        request_mongo_id = None
+        if isinstance(item, dict):
+            request_id = item.get("requestId") or None
+            request_mongo_id = item.get("requestMongoId") or None
+        payload = {
+            "requestId": request_id,
+            "requestMongoId": request_mongo_id,
+            "source": source,
+            "stage": stage,
+            "status": status,
+            "label": label,
+            "tone": tone,
+            "clear": bool(clear),
+            "metadata": metadata or {},
+        }
+        if status == "started":
+            payload["startedAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        requests.post(
+            f"{backend_url}/bg/runtime-status",
+            json=payload,
+            timeout=10,
+            headers=settings.bridge_headers(),
+        )
+    except Exception as e:
+        log(f"runtime-status notify failed: {e}")
 def upload_via_presign(out_path: Path, original_name: str, item: dict) -> bool:
     try:
         backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api").rstrip("/")
@@ -186,7 +217,7 @@ async def process_single_stl(p: Path, force_reprocess: bool = False):
         prefixed_input = canonicalize_input_name(p.name)
         base_stem = Path(prefixed_input).stem
         out_name = settings.sanitize_filename(f"{base_stem}.filled.stl")
-        req_id = None
+        req_id = settings.extract_request_id_from_name(prefixed_input)
         out_path = settings.STORE_OUT_DIR / out_name
         with state.in_flight_lock:
             if p.name in state.in_flight:
@@ -228,6 +259,15 @@ async def process_single_stl(p: Path, force_reprocess: bool = False):
                 "inputName": p.name,
                 "outputName": out_name,
             }
+            notify_runtime_status(
+                {"requestId": req_id},
+                source="rhino-server",
+                stage="request",
+                status="started",
+                label="Filled STL 생성중",
+                tone="blue",
+                metadata={"fileName": p.name, "outputName": out_name},
+            )
             log(f"Calling run_rhino_python for: {p.name}")
             log_text, output_info = await run_rhino_python(input_stl=p, output_stl=out_path)
             log(f"Auto-processing done: {out_name}")
@@ -284,6 +324,15 @@ async def process_single_stl(p: Path, force_reprocess: bool = False):
                     log(f"output stat fallback error ({out_path}): {e}")
             if not output_ok:
                 log(f"Output file not confirmed after processing: {out_path}")
+                notify_runtime_status(
+                    {"requestId": req_id},
+                    source="rhino-server",
+                    stage="request",
+                    status="failed",
+                    label="Filled STL 생성 실패",
+                    tone="rose",
+                    metadata={"fileName": p.name, "outputName": out_name},
+                )
                 if log_text:
                     tail = log_text.strip()
                     if tail:
@@ -300,6 +349,15 @@ async def process_single_stl(p: Path, force_reprocess: bool = False):
                 )
         except Exception as e:
             log(f"Auto-processing failed for {p.name}: {e}")
+            notify_runtime_status(
+                {"requestId": req_id},
+                source="rhino-server",
+                stage="request",
+                status="failed",
+                label="Filled STL 생성 실패",
+                tone="rose",
+                metadata={"fileName": p.name, "error": str(e)},
+            )
             state.recent_history.append(
                 {
                     "file": p.name,

@@ -12,9 +12,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import type { DeliveryInfoSummary, RequestBase } from "@/types/request";
+import type { DeliveryInfoSummary } from "@/types/request";
 import { toKstYmd } from "@/shared/date/kst";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import type { ManufacturerRequest } from "../utils/request";
+import { useWorksheetRealtimeStatus } from "../hooks/useWorksheetRealtimeStatus";
 
 type InquiryTab = "process" | "shipping" | "udi";
 type DateRange =
@@ -23,8 +25,6 @@ type DateRange =
   | "lastMonth"
   | "thisMonth"
   | "recent90";
-
-type ManufacturerRequest = RequestBase;
 
 type ProcessStage = "전체" | "의뢰" | "CAM" | "생산" | "발송" | "추적관리";
 
@@ -111,6 +111,12 @@ export const TrackingInquiryPage = () => {
     Record<InquiryTab, DateRange>
   >(defaultDateRangeByTab);
   const dateRange = dateRangeByTab[tab];
+
+  useWorksheetRealtimeStatus({
+    enabled: true,
+    token,
+    setRequests,
+  });
 
   useEffect(() => {
     if (!token) return;

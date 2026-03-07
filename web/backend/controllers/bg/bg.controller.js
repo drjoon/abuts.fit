@@ -733,6 +733,89 @@ export const getBgStatus = asyncHandler(async (req, res) => {
   return res.status(200).json(new ApiResponse(200, { ok: true }, "OK"));
 });
 
+export const registerRuntimeStatus = asyncHandler(async (req, res) => {
+  const {
+    requestId,
+    requestMongoId,
+    source,
+    stage,
+    status,
+    label,
+    tone,
+    startedAt,
+    elapsedSeconds,
+    clear,
+    metadata,
+  } = req.body || {};
+
+  const normalizedSource = String(source || "").trim();
+  const normalizedStatus = String(status || "")
+    .trim()
+    .toLowerCase();
+  const normalizedLabel = String(label || "").trim();
+  const normalizedRequestId = String(requestId || "").trim();
+  const normalizedMongoId = String(requestMongoId || "").trim();
+
+  if (!normalizedSource || !normalizedStatus) {
+    throw new ApiError(400, "source and status are required");
+  }
+
+  let resolvedRequestId = normalizedRequestId;
+  let resolvedMongoId = normalizedMongoId;
+
+  if ((!resolvedRequestId || !resolvedMongoId) && resolvedMongoId) {
+    const found = await Request.findById(resolvedMongoId)
+      .select({ _id: 1, requestId: 1 })
+      .lean()
+      .catch(() => null);
+    if (found) {
+      resolvedRequestId =
+        String(found.requestId || "").trim() || resolvedRequestId;
+      resolvedMongoId = String(found._id || "").trim() || resolvedMongoId;
+    }
+  }
+
+  if ((!resolvedRequestId || !resolvedMongoId) && resolvedRequestId) {
+    const found = await Request.findOne({ requestId: resolvedRequestId })
+      .select({ _id: 1, requestId: 1 })
+      .lean()
+      .catch(() => null);
+    if (found) {
+      resolvedRequestId =
+        String(found.requestId || "").trim() || resolvedRequestId;
+      resolvedMongoId = String(found._id || "").trim() || resolvedMongoId;
+    }
+  }
+
+  emitBgRuntimeStatus({
+    requestId: resolvedRequestId || null,
+    requestMongoId: resolvedMongoId || null,
+    source: normalizedSource,
+    stage: stage ? String(stage).trim() : null,
+    status: normalizedStatus,
+    label: normalizedLabel || null,
+    tone: tone ? String(tone).trim() : null,
+    startedAt: startedAt || null,
+    elapsedSeconds,
+    clear: clear === true,
+    metadata: metadata && typeof metadata === "object" ? metadata : null,
+  });
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        ok: true,
+        requestId: resolvedRequestId || null,
+        requestMongoId: resolvedMongoId || null,
+        source: normalizedSource,
+        status: normalizedStatus,
+      },
+      "Runtime status registered",
+    ),
+  );
+});
+
 // requestId로 의뢰 메타(caseInfos 등)를 조회
 // GET /api/bg/request-meta?requestId=... or ?filePath=...
 export const getRequestMeta = asyncHandler(async (req, res) => {

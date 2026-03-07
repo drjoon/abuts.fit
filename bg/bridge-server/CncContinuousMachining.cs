@@ -1556,11 +1556,56 @@ req.Headers.Add("X-Bridge-Secret", secret);
 }
 }
 private static readonly System.Net.Http.HttpClient Http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+private static async Task NotifyRuntimeStatus(string requestId, string source, string stage, string status, string label, string tone, object metadata = null, bool clear = false)
+{
+try
+{
+var backend = GetBackendBase();
+if (string.IsNullOrEmpty(backend)) return;
+var url = backend + "/bg/runtime-status";
+var payload = new
+{
+    requestId = string.IsNullOrWhiteSpace(requestId) ? null : requestId,
+    source = source,
+    stage = stage,
+    status = status,
+    label = label,
+    tone = tone,
+    clear = clear,
+    startedAt = string.Equals(status, "started", StringComparison.OrdinalIgnoreCase) ? DateTime.UtcNow : (DateTime?)null,
+    metadata = metadata,
+};
+var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+using (var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url))
+{
+AddAuthHeader(req);
+AddSecretHeader(req);
+req.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+using (var resp = await Http.SendAsync(req))
+{
+_ = await resp.Content.ReadAsStringAsync();
+}
+}
+}
+catch (Exception ex)
+{
+Console.WriteLine("[CncMachining] NotifyRuntimeStatus error: backend={0} err={1}", GetBackendBase(), ex.Message);
+}
+}
 private static async Task NotifyMachiningStarted(CncJobItem job, string machineId)
 {
 try
 {
 var backend = GetBackendBase();
+_ = Task.Run(() => NotifyRuntimeStatus(
+job?.requestId,
+"bridge-server",
+"machining",
+"started",
+"가공 시작",
+"indigo",
+new { machineId = machineId, fileName = job?.fileName, jobId = job?.id }
+));
 var url = backend + "/bg/register-file";
 var canonical = string.IsNullOrWhiteSpace(job?.originalFileName)
 ? job?.fileName
@@ -1691,6 +1736,16 @@ try
 {
 var backend = GetBackendBase();
 if (string.IsNullOrEmpty(backend)) return;
+_ = Task.Run(() => NotifyRuntimeStatus(
+job?.requestId,
+"bridge-server",
+"machining",
+string.Equals(status, "READY", StringComparison.OrdinalIgnoreCase) ? "started" : "failed",
+string.Equals(status, "READY", StringComparison.OrdinalIgnoreCase) ? "NC 프리로드 준비 완료" : "NC 프리로드 실패",
+string.Equals(status, "READY", StringComparison.OrdinalIgnoreCase) ? "slate" : "rose",
+new { machineId = machineId, fileName = job?.fileName, error = error },
+string.Equals(status, "READY", StringComparison.OrdinalIgnoreCase)
+));
 var url = backend + "/bg/register-file";
 var canonical = string.IsNullOrWhiteSpace(job?.originalFileName)
 ? job?.fileName

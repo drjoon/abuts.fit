@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -34,6 +37,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
     internal class EspritHttpServer : IDisposable
     {
         private readonly Application _espApp;
+        private static readonly HttpClient RuntimeHttp = new HttpClient(new HttpClientHandler
+        {
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+            UseProxy = false,
+        })
+        {
+            Timeout = TimeSpan.FromSeconds(10),
+        };
         private HttpListener _listener;
         private CancellationTokenSource _cts;
         private readonly string _baseUrl = "http://+:8001/";
@@ -43,6 +54,58 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private readonly object _queueLock = new object();
         private Task _queueProcessorTask;
         private CancellationTokenSource _queueProcessorCts;
+        private static void AddRuntimeBridgeSecret(HttpRequestMessage req)
+        {
+            var secret = (AppConfig.GetBridgeSecret() ?? string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(secret))
+            {
+                try { req.Headers.Remove("X-Bridge-Secret"); } catch { }
+                req.Headers.Add("X-Bridge-Secret", secret);
+            }
+        }
+        private static async Task NotifyRuntimeStatus(
+            string requestId,
+            string status,
+            string label,
+            string tone,
+            object metadata = null,
+            bool clear = false)
+        {
+            try
+            {
+                var backendBase = (AppConfig.GetBackendUrl() ?? string.Empty).Trim().TrimEnd('/');
+                if (string.IsNullOrWhiteSpace(backendBase)) return;
+                var url = backendBase + "/bg/runtime-status";
+                var payload = new
+                {
+                    requestId = string.IsNullOrWhiteSpace(requestId) ? null : requestId,
+                    source = "esprit-addin",
+                    stage = "cam",
+                    status = status,
+                    label = label,
+                    tone = tone,
+                    clear = clear,
+                    startedAt = string.Equals(status, "started", StringComparison.OrdinalIgnoreCase)
+                        ? DateTime.UtcNow
+                        : (DateTime?)null,
+                    metadata = metadata,
+                };
+                var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+                using (var req = new HttpRequestMessage(HttpMethod.Post, url))
+                {
+                    req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                    AddRuntimeBridgeSecret(req);
+                    using (var resp = await RuntimeHttp.SendAsync(req))
+                    {
+                        _ = await resp.Content.ReadAsStringAsync();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"[HTTP Server] runtime-status notify failed: {ex.Message}");
+            }
+        }
         public void EnqueueNcRequest(NcGenerationRequest req)
         {
             if (req == null || string.IsNullOrWhiteSpace(req.RequestId))
@@ -139,6 +202,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         {
             var request = context.Request;
             var response = context.Response;
+            NcGenerationRequest req = null;
             response.ContentType = "application/json";
             var allowRaw = (AppConfig.GetEspritAllowIpsRaw() ?? string.Empty).Trim();
             if (!string.IsNullOrEmpty(allowRaw))
@@ -201,7 +265,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
                 // POST / - NC 생성 요청
-                NcGenerationRequest req;
                 using (var reader = request.InputStream)
                 {
                     var serializer = new System.Runtime.Serialization.Json.DataContractJsonSerializer(typeof(NcGenerationRequest));
@@ -215,6 +278,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
                 AppLogger.Log($"[HTTP Server] Accepted NC request: {req.RequestId} (Clinic: {req.ClinicName}, Patient: {req.PatientName})");
+                await NotifyRuntimeStatus(
+                    req.RequestId,
+                    "started",
+                    "CAM 생성중",
+                    "indigo",
+                    new
+                    {
+                        clinicName = req.ClinicName,
+                        patientName = req.PatientName,
+                        tooth = req.Tooth,
+                        lotNumber = req.LotNumber,
+                    }
+                );
                 // 큐에 요청 추가
                 lock (_queueLock)
                 {
@@ -231,6 +307,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             catch (Exception ex)
             {
                 AppLogger.Log($"[HTTP Server] Request handling error: {ex.Message}");
+                await NotifyRuntimeStatus(
+                    req?.RequestId,
+                    "failed",
+                    "CAM 생성 실패",
+                    "rose",
+                    new { error = ex.Message }
+                );
                 try
                 {
                     response.StatusCode = (int)HttpStatusCode.InternalServerError;
@@ -270,6 +353,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         if (string.IsNullOrWhiteSpace(safeName))
                         {
                             AppLogger.Log("[NC Processing] Cannot determine safe file name from StlPath; aborting download.");
+                            await NotifyRuntimeStatus(
+                                req?.RequestId,
+                                "failed",
+                                "CAM 생성 실패",
+                                "rose",
+                                new { error = "invalid_stl_path" }
+                            );
                             return;
                         }
                         var filledDir = AppConfig.StorageFilledDirectory;
@@ -286,6 +376,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         if (!ok)
                         {
                             AppLogger.Log($"[NC Processing] Failed to download STL via /bg/source-file for RequestId={req.RequestId}, filePath={req.StlPath}");
+                            await NotifyRuntimeStatus(
+                                req?.RequestId,
+                                "failed",
+                                "CAM 생성 실패",
+                                "rose",
+                                new { error = "download_source_file_failed", filePath = req?.StlPath }
+                            );
                             return;
                         }
                         stlPath = targetPath;
@@ -294,6 +391,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     catch (Exception ex)
                     {
                         AppLogger.Log($"[NC Processing] Error while downloading STL from backend: {ex.GetType().Name}:{ex.Message}");
+                        await NotifyRuntimeStatus(
+                            req?.RequestId,
+                            "failed",
+                            "CAM 생성 실패",
+                            "rose",
+                            new { error = ex.Message, filePath = req?.StlPath }
+                        );
                         return;
                     }
                 }
@@ -311,6 +415,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 AppLogger.Log($"[NC Processing] CAM processing failed: {ex.Message}");
                 AppLogger.Log($"[NC Processing] Stack trace: {ex.StackTrace}");
+                await NotifyRuntimeStatus(
+                    req?.RequestId,
+                    "failed",
+                    "CAM 생성 실패",
+                    "rose",
+                    new { error = ex.Message }
+                );
             }
         }
         private void RunCamProcessing(NcGenerationRequest req, string stlPath)
@@ -318,6 +429,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             if (req.MaterialDiameter <= 5)
             {
                 AppLogger.Log("[NC Processing] MaterialDiameter is missing or invalid. Aborting CAM process.");
+                NotifyRuntimeStatus(
+                    req?.RequestId,
+                    "failed",
+                    "CAM 생성 실패",
+                    "rose",
+                    new { error = "invalid_material_diameter", materialDiameter = req?.MaterialDiameter }
+                ).GetAwaiter().GetResult();
                 return;
             }
             AppLogger.Log($"[NC Processing] Starting CAM processing: RequestId={req.RequestId}, Clinic={req.ClinicName}, Patient={req.PatientName}, Tooth={req.Tooth}");
