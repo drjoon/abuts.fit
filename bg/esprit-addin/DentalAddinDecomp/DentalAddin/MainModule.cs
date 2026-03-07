@@ -4242,7 +4242,9 @@ namespace DentalAddin
                             goto IL_02a3;
                         IL_02a3:
                             num2 = 39;
-                            techLatheMoldParallelPlanes.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + Math.Abs(DownZ));
+                            // techLatheMoldParallelPlanes.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + Math.Abs(DownZ));
+                            techLatheMoldParallelPlanes.BottomZLimit = MoveSTL_Module.FrontPointX;
+                            DentalLogger.Log($"free - FrontFace Right FrontPointX:{MoveSTL_Module.FrontPointX} ZLimit Bottom:{techLatheMoldParallelPlanes.BottomZLimit}");
                             goto IL_0309;
                         IL_02c9:
                             num2 = 41;
@@ -4253,7 +4255,9 @@ namespace DentalAddin
                             goto IL_0309;
                         IL_02dc:
                             num2 = 42;
-                            techLatheMoldParallelPlanes.BottomZLimit = MoveSTL_Module.FrontPointX - Math.Abs(DownZ);
+                            // techLatheMoldParallelPlanes.BottomZLimit = 1.0 * (MoveSTL_Module.FrontPointX - Math.Abs(DownZ));
+                            techLatheMoldParallelPlanes.BottomZLimit = MoveSTL_Module.FrontPointX;
+                            DentalLogger.Log($"free - FrontFace Left ZLimit FrontPointX:{MoveSTL_Module.FrontPointX} Bottom:{techLatheMoldParallelPlanes.BottomZLimit}");
                             goto IL_02f6;
                         IL_02f6:
                             num2 = 43;
@@ -4271,6 +4275,29 @@ namespace DentalAddin
                                 return;
                             }
                             Document.Operations.Add(techLatheMoldParallelPlanes, array[5], RuntimeHelpers.GetObjectValue(Missing.Value));
+                            try
+                            {
+                                DentalLogger.Log($"free - FrontFace Add 직후 Ops.Count={Document.Operations.Count}");
+                                for (int i = 1; i <= Document.Operations.Count; i++)
+                                {
+                                    object op = null;
+                                    try { op = Document.Operations[i]; } catch { }
+                                    if (op == null)
+                                    {
+                                        DentalLogger.Log($"free - FrontFace Add 직후 Op[{i}] null");
+                                        continue;
+                                    }
+                                    string name = null;
+                                    string key = null;
+                                    try { name = (string)op.GetType().InvokeMember("Name", BindingFlags.GetProperty, null, op, null); } catch { }
+                                    try { key = (string)op.GetType().InvokeMember("Key", BindingFlags.GetProperty, null, op, null); } catch { }
+                                    DentalLogger.Log($"free - FrontFace Add 직후 Op[{i}] {name ?? "(no-name)"} Key:{key}");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                DentalLogger.Log($"free - FrontFace Add 후 Ops Count 확인 실패: {ex.GetType().Name}:{ex.Message}");
+                            }
                             goto IL_033d;
                         IL_033d:
                             num2 = 46;
@@ -4524,7 +4551,32 @@ namespace DentalAddin
                             break;
                     }
                     num2 = 75;
+                    DentalLogger.Log("free - MainFree 호출 직전");
                     MainFree();
+                    try
+                    {
+                        DentalLogger.Log("free - MainFree 호출 직후");
+                        DentalLogger.Log($"free - 종료 직전 Ops.Count={Document.Operations.Count}");
+                        for (int i = 1; i <= Document.Operations.Count; i++)
+                        {
+                            object op = null;
+                            try { op = Document.Operations[i]; } catch { }
+                            if (op == null)
+                            {
+                                DentalLogger.Log($"free - Op[{i}] null");
+                                continue;
+                            }
+                            string name = null;
+                            string key = null;
+                            try { name = (string)op.GetType().InvokeMember("Name", BindingFlags.GetProperty, null, op, null); } catch { }
+                            try { key = (string)op.GetType().InvokeMember("Key", BindingFlags.GetProperty, null, op, null); } catch { }
+                            DentalLogger.Log($"free - Op[{i}] {name ?? "(no-name)"} Key:{key}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        DentalLogger.Log($"free - 종료 직전 Ops 로깅 실패: {ex.GetType().Name}:{ex.Message}");
+                    }
                     break;
                 end_IL_0000:;
                 }

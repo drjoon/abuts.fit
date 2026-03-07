@@ -34,6 +34,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private static readonly string DefaultAddInRootDirectory = Path.Combine(DefaultBaseDirectory, "esprit-addin");
         private static string DefaultPrcRootDirectory => Path.Combine(DefaultAddInRootDirectory, "AcroDent");
         private static readonly string DefaultSurfaceRootDirectory = Path.Combine(DefaultAddInRootDirectory, "Surface");
+        public const bool FaceBeforeCompositeDefault = true;
         public const string DefaultBackendUrl = "https://abuts.fit/api";
         public const string DefaultBridgeSharedSecret = "t1ZYB4ELMWBKHDuyyUgnx4HdyRg";
         public const double DefaultTurningDepth = 1.0;

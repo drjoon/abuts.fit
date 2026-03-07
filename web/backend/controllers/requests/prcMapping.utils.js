@@ -17,6 +17,53 @@ function normalizeKeyToken(raw) {
   }
 }
 
+function normalizeSystemAliasByManufacturer(manufacturer, system) {
+  const m = normalizeImplantManufacturer(manufacturer);
+  const sys = normalizeImplantSystem(system);
+  if (!m || !sys) return sys;
+
+  const upper = sys.toUpperCase().replace(/\s+/g, " ").trim();
+  if (m === "OSSTEM") {
+    if (upper === "REGULAR" || upper === "TS") return "TS";
+    return sys;
+  }
+  if (m === "DENTIUM") {
+    if (upper === "REGULAR" || upper === "SUPERLINE") return "SuperLine";
+    return sys;
+  }
+  if (m === "DIO") {
+    if (upper === "REGULAR" || upper === "UF") return "UF";
+    return sys;
+  }
+  if (m === "MEGAGEN") {
+    if (
+      upper === "ANYONE REGULAR" ||
+      upper === "ANYONE" ||
+      upper === "ANYONE HEX" ||
+      upper === "ANYONE-R"
+    ) {
+      return "AnyOne";
+    }
+    return sys;
+  }
+  if (m === "NEO") {
+    if (upper === "REGULAR" || upper === "IS") return "IS";
+    return sys;
+  }
+  if (m === "DENTIS") {
+    if (upper === "REGULAR" || upper === "SQ") return "SQ";
+    return sys;
+  }
+  return sys;
+}
+
+function getCanonicalManufacturerSystemKey(manufacturer, system) {
+  const m = normalizeImplantManufacturer(manufacturer);
+  const sys = normalizeSystemAliasByManufacturer(m, system);
+  if (!m || !sys) return "";
+  return `${m}_${sys}`;
+}
+
 function normalizeImplantManufacturer(raw) {
   const s = normalizeKeyToken(raw).toUpperCase();
   if (s === "OSSTEM" || s === "오스템") return "OSSTEM";
@@ -31,9 +78,6 @@ function normalizeImplantManufacturer(raw) {
 function normalizeImplantSystem(raw) {
   const s = normalizeKeyToken(raw);
   if (!s) return "";
-  const upper = s.toUpperCase().replace(/\s+/g, " ").trim();
-  if (upper === "ANYONE REGULAR" || upper === "ANYONE") return "AnyOne";
-  if (upper === "ANYONE HEX" || upper === "ANYONE-R") return "AnyOne";
   // UI 입력값 그대로 SSOT로 사용 (스프레드시트 표기와 맞춰야 함)
   // 예: Regular, SuperLine, UF, AnyOne, IS, SQ
   return s;
@@ -52,23 +96,21 @@ function normalizeImplantType(raw) {
 // 실제 로컬 PRC 폴더( bg/esprit-addin/AcroDent/1_Face Hole, 2_Connection )에 존재하는 파일명과 동일해야 함
 // (addon에서 정규화 탐색을 하지만, 백엔드 응답도 스프레드시트/폴더명과 1:1 매칭되도록 유지)
 const FACE_HOLE_PRC_MAP = {
-  "OSSTEM|Regular|Hex": "오스템_TS_RH_FaceHole.prc",
-  "DENTIUM|SuperLine|Hex": "덴티움_SuperLine_RH_FaceHole.prc",
-  "DIO|UF|Hex": "디오_UF_RH_FaceHole.prc",
-  "MEGAGEN|AnyOne|Hex": "메가젠_AnyOne_RH_FaceHole.prc",
-  "NEO|IS|Hex": "네오_IS_RH_FaceHole.prc",
-  "NEO|Regular|Hex": "네오_IS_RH_FaceHole.prc",
-  "DENTIS|SQ|Hex": "덴티스_SQ_RH_FaceHole.prc",
+  "OSSTEM_TS|Hex": "오스템_TS_RH_FaceHole.prc",
+  "DENTIUM_SuperLine|Hex": "덴티움_SuperLine_RH_FaceHole.prc",
+  "DIO_UF|Hex": "디오_UF_RH_FaceHole.prc",
+  "MEGAGEN_AnyOne|Hex": "메가젠_AnyOne_RH_FaceHole.prc",
+  "NEO_IS|Hex": "네오_IS_RH_FaceHole.prc",
+  "DENTIS_SQ|Hex": "덴티스_SQ_RH_FaceHole.prc",
 };
 
 const CONNECTION_PRC_MAP = {
-  "OSSTEM|Regular|Hex": "오스템_TS_RH_Connection.prc",
-  "DENTIUM|SuperLine|Hex": "덴티움_SuperLine_RH_Connection.prc",
-  "DIO|UF|Hex": "디오_UF_RH_Connection.prc",
-  "MEGAGEN|AnyOne|Hex": "메가젠_AnyOne_RH_Connection.prc",
-  "NEO|IS|Hex": "네오_IS_RH_Connection.prc",
-  "NEO|Regular|Hex": "네오_IS_RH_Connection.prc",
-  "DENTIS|SQ|Hex": "덴티스_SQ_RH_Connection.prc",
+  "OSSTEM_TS|Hex": "오스템_TS_RH_Connection.prc",
+  "DENTIUM_SuperLine|Hex": "덴티움_SuperLine_RH_Connection.prc",
+  "DIO_UF|Hex": "디오_UF_RH_Connection.prc",
+  "MEGAGEN_AnyOne|Hex": "메가젠_AnyOne_RH_Connection.prc",
+  "NEO_IS|Hex": "네오_IS_RH_Connection.prc",
+  "DENTIS_SQ|Hex": "덴티스_SQ_RH_Connection.prc",
 };
 
 /**
@@ -79,10 +121,9 @@ const CONNECTION_PRC_MAP = {
  * @returns {{ faceHolePrcFileName: string, connectionPrcFileName: string }}
  */
 export function getPrcFileNamesByImplant(manufacturer, system, type) {
-  const m = normalizeImplantManufacturer(manufacturer);
-  const sys = normalizeImplantSystem(system);
+  const canonicalKey = getCanonicalManufacturerSystemKey(manufacturer, system);
   const t = normalizeImplantType(type);
-  const key = `${m}|${sys}|${t}`;
+  const key = `${canonicalKey}|${t}`;
 
   const faceHolePrcFileName = FACE_HOLE_PRC_MAP[key] || "";
   const connectionPrcFileName = CONNECTION_PRC_MAP[key] || "";
@@ -106,7 +147,10 @@ export function resolvePrcFileNames(caseInfos) {
   const manufacturer = normalizeImplantManufacturer(
     caseInfos.implantManufacturer,
   );
-  const system = normalizeImplantSystem(caseInfos.implantSystem);
+  const system = normalizeSystemAliasByManufacturer(
+    manufacturer,
+    caseInfos.implantSystem,
+  );
   const type = normalizeImplantType(caseInfos.implantType);
 
   if (!manufacturer || !system || !type) {

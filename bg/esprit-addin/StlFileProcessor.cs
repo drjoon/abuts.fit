@@ -217,7 +217,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private string _backendSerialCode;
         public string FaceHoleProcessFilePath { get; set; }
         public string ConnectionMachiningProcessFilePath { get; set; }
-        public double DefaultFrontLimitX { get; set; } = -9.5;
+        public double DefaultFrontLimitX { get; set; } = -8;
         public double DefaultBackLimitX { get; set; } = 0;
         public string lotNumber { get; set; } = "ACR";
         public StlFileProcessor(Application app, string outputFolder = null,
@@ -230,7 +230,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public Esprit.PMTab exTab;
         public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null)
         {
+
             AppLogger.BeginRun();
+            AppLogger.Log("StlFileProcessor: Process 시작");
             ResetPerRunState();
             Directory.CreateDirectory(_outputFolder);
             Document document = EnsureDocument();
@@ -244,6 +246,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             RemoveLayerIfExists(document, StlImportLayerName);
             double effectiveFrontLimit = frontLimitX ?? DefaultFrontLimitX;
             double effectiveBackLimit = backLimitX ?? DefaultBackLimitX;
+            AppLogger.Log($"StlFileProcessor: LimitX 적용 - Front:{effectiveFrontLimit}, Back:{effectiveBackLimit}");
             string requestId = null;
             RequestMetaCaseInfos requestMeta = null;
             double? finishLineTopZ = null;

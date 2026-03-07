@@ -119,6 +119,7 @@
       <SubType>UserControl</SubType>
     </Compile>
     <Compile Include="Logging\AppLogger.cs" />
+    <Compile Include="EspritUiDispatcher.cs" />
     <Compile Include="StlFileProcessor.cs" />
     <Compile Include="EspritHttpServer.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
