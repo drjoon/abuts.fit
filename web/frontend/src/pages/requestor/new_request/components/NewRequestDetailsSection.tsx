@@ -750,13 +750,13 @@ export function NewRequestDetailsSection({
       </div>
 
       <Dialog open={isDetailOpen} onOpenChange={handleDialogOpenChange}>
-        <DialogContent className="max-w-6xl">
+        <DialogContent className="sm:w-auto max-w-screen-xl w-[calc(120vw-1rem)] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">
               STL 확인 및 정보 입력
             </DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-1 lg:grid-cols-[45%_55%] gap-4 items-stretch mr-4">
+          <div className="grid grid-cols-1 lg:grid-cols-[45%_55%] gap-4 items-stretch sm:pr-2">
             <div className="app-glass-card app-glass-card--lg h-full flex flex-col">
               <div className="app-glass-card-content flex-1">
                 {detailFile ? (
