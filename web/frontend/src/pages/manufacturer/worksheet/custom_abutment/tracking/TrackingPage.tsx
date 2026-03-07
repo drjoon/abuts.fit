@@ -15,7 +15,10 @@ import { Button } from "@/components/ui/button";
 import type { DeliveryInfoSummary } from "@/types/request";
 import { toKstYmd } from "@/shared/date/kst";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
-import type { ManufacturerRequest } from "../utils/request";
+import {
+  deriveStageForFilter,
+  type ManufacturerRequest,
+} from "../utils/request";
 import { useWorksheetRealtimeStatus } from "../hooks/useWorksheetRealtimeStatus";
 
 type InquiryTab = "process" | "shipping" | "udi";
@@ -112,10 +115,16 @@ export const TrackingInquiryPage = () => {
   >(defaultDateRangeByTab);
   const dateRange = dateRangeByTab[tab];
 
+  const matchesCurrentPage = useCallback(
+    (req: ManufacturerRequest) => deriveStageForFilter(req) === "추적관리",
+    [],
+  );
+
   useWorksheetRealtimeStatus({
     enabled: true,
     token,
     setRequests,
+    matchesCurrentPage,
   });
 
   useEffect(() => {

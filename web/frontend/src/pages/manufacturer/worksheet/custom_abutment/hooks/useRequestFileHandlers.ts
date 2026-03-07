@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
 import {
+  deriveStageForFilter,
   type ManufacturerRequest,
   type ReviewStageKey,
   getReviewStageKeyByTab,
@@ -13,6 +14,8 @@ type UseRequestFileHandlersProps = {
   isCamStage: boolean;
   isMachiningStage: boolean;
   fetchRequests: () => Promise<void>;
+  setRequests?: React.Dispatch<React.SetStateAction<ManufacturerRequest[]>>;
+  matchesCurrentPage?: (req: ManufacturerRequest) => boolean;
   setDownloading: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   setUploading: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   setUploadProgress: React.Dispatch<
@@ -41,6 +44,8 @@ export const useRequestFileHandlers = ({
   isCamStage,
   isMachiningStage,
   fetchRequests,
+  setRequests,
+  matchesCurrentPage,
   setDownloading,
   setUploading,
   setUploadProgress,
@@ -59,6 +64,54 @@ export const useRequestFileHandlers = ({
 }: UseRequestFileHandlersProps) => {
   const { toast } = useToast();
   const { uploadFiles } = useS3TempUpload({ token });
+
+  const applySingleRequestPatch = useCallback(
+    (nextRequest: ManufacturerRequest | null | undefined) => {
+      if (!nextRequest || !setRequests) return false;
+      const requestId = String(nextRequest.requestId || "").trim();
+      const mongoId = String(nextRequest._id || "").trim();
+      const shouldKeep = matchesCurrentPage
+        ? matchesCurrentPage(nextRequest)
+        : true;
+
+      setRequests((prev) => {
+        if (!shouldKeep) {
+          return prev.filter((item) => {
+            const itemRequestId = String(item?.requestId || "").trim();
+            const itemMongoId = String(item?._id || "").trim();
+            if (requestId && itemRequestId === requestId) return false;
+            if (mongoId && itemMongoId === mongoId) return false;
+            return true;
+          });
+        }
+
+        let found = false;
+        const updated = prev.map((item) => {
+          const itemRequestId = String(item?.requestId || "").trim();
+          const itemMongoId = String(item?._id || "").trim();
+          const isSame =
+            (requestId && itemRequestId === requestId) ||
+            (mongoId && itemMongoId === mongoId);
+          if (!isSame) return item;
+          found = true;
+          return {
+            ...item,
+            ...nextRequest,
+            realtimeProgress:
+              deriveStageForFilter(nextRequest) === "의뢰"
+                ? nextRequest.realtimeProgress || item.realtimeProgress || null
+                : null,
+          };
+        });
+
+        if (found) return updated;
+        return [nextRequest, ...updated];
+      });
+
+      return true;
+    },
+    [matchesCurrentPage, setRequests],
+  );
 
   const downloadByEndpoint = useCallback(
     async (endpoint: string, errorMessage: string) => {
@@ -189,7 +242,16 @@ export const useRequestFileHandlers = ({
           throw err;
         }
 
-        await fetchRequests();
+        const body = await res
+          .clone()
+          .json()
+          .catch(() => null);
+        const updatedRequest = (body?.data ||
+          null) as ManufacturerRequest | null;
+        const patched = applySingleRequestPatch(updatedRequest);
+        if (!patched) {
+          await fetchRequests();
+        }
 
         let successTitle = "검토 상태 변경 완료";
         let successDescription =
@@ -204,10 +266,6 @@ export const useRequestFileHandlers = ({
               : "미승인 상태로 변경되었습니다.";
 
         try {
-          const body = await res
-            .clone()
-            .json()
-            .catch(() => null);
           if (body?.message) {
             successDescription = body.message;
             if (body.message.includes("자동 가공 명령")) {
@@ -250,6 +308,7 @@ export const useRequestFileHandlers = ({
       stage,
       toast,
       fetchRequests,
+      applySingleRequestPatch,
       isCamStage,
       isMachiningStage,
       setSearchParams,

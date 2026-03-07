@@ -9,8 +9,12 @@ import fs from "fs/promises";
 import Request from "../../models/request.model.js";
 import CncEvent from "../../models/cncEvent.model.js";
 import { getPresignedPutUrl } from "../../utils/s3.utils.js";
-import { applyStatusMapping } from "../requests/utils.js";
+import {
+  applyStatusMapping,
+  normalizeRequestForResponse,
+} from "../requests/utils.js";
 import { emitBgRuntimeStatus } from "./bgRuntimeEvents.js";
+import { emitAppEventToRoles } from "../../socket.js";
 
 const BG_STORAGE_BASE =
   process.env.BG_STORAGE_PATH ||
@@ -616,6 +620,9 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     { $set: updateData },
     { new: true },
   );
+  const normalizedUpdatedRequest = updatedRequest
+    ? await normalizeRequestForResponse(updatedRequest)
+    : null;
   console.log(
     `[BG-Callback] Request updated successfully. caseInfos.camFile=${JSON.stringify(
       updatedRequest?.caseInfos?.camFile,
@@ -686,6 +693,36 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         sourceStep: step || null,
       },
     });
+
+    const stageChangedSteps = new Set([
+      "2-filled",
+      "3-nc",
+      "cnc",
+      "cnc-preload",
+    ]);
+    const isSuccess =
+      String(status || "")
+        .trim()
+        .toLowerCase() === "success";
+    if (isSuccess && stageChangedSteps.has(step) && normalizedUpdatedRequest) {
+      emitAppEventToRoles(["manufacturer", "admin"], "request:stage-changed", {
+        source: "bg-file-processed",
+        requestId: request?.requestId || null,
+        requestMongoId: String(request?._id || "").trim() || null,
+        fromStage: String(request?.manufacturerStage || "").trim() || null,
+        toStage:
+          String(normalizedUpdatedRequest?.manufacturerStage || "").trim() ||
+          null,
+        reviewStage:
+          step === "2-filled"
+            ? "request"
+            : step === "3-nc"
+              ? "cam"
+              : "machining",
+        reviewStatus: "APPROVED",
+        request: normalizedUpdatedRequest,
+      });
+    }
   } catch {
     // ignore
   }

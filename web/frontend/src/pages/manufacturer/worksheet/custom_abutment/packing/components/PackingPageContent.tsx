@@ -117,6 +117,17 @@ export const PackingPageContent = ({
     fetchPrinters,
   } = usePackingPrintSettings({ token });
 
+  const matchesCurrentPage = useCallback(
+    (req: ManufacturerRequest) => {
+      const stage = deriveStageForFilter(req);
+      if (showCompleted) {
+        return ["세척.패킹", "포장.발송", "추적관리"].includes(stage);
+      }
+      return stage === "세척.패킹";
+    },
+    [showCompleted],
+  );
+
   const {
     handleDownloadOriginalStl,
     handleDownloadNcFile,
@@ -131,6 +142,8 @@ export const PackingPageContent = ({
     isCamStage: false,
     isMachiningStage: false,
     fetchRequests,
+    setRequests,
+    matchesCurrentPage,
     setDownloading,
     setUploading,
     setUploadProgress,
@@ -173,6 +186,7 @@ export const PackingPageContent = ({
     previewFiles,
     handleOpenPreview,
     removeOnMachiningComplete: false,
+    matchesCurrentPage,
   });
 
   const {

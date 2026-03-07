@@ -14,6 +14,7 @@ import {
   applyStatusMapping,
   ensureFinishedLotNumberForPacking,
   getTodayYmdInKst,
+  normalizeRequestForResponse,
 } from "../../controllers/requests/utils.js";
 import { allocateVirtualMailboxAddress } from "../requests/mailbox.utils.js";
 
@@ -456,6 +457,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   applyStatusMapping(request, "발송");
 
   await request.save();
+  const normalizedRequest = await normalizeRequestForResponse(request);
 
   const printResult = await triggerPackingLabelPrint(request, recognizedSuffix);
   if (!printResult?.success) {
@@ -491,6 +493,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     recognizedSuffix,
     recognized: recognized || null,
     movedToStage: "포장.발송",
+    request: normalizedRequest,
     packingFile: {
       fileName: request.caseInfos?.stageFiles?.packing?.fileName || name,
       fileType: request.caseInfos?.stageFiles?.packing?.fileType || null,
@@ -509,6 +512,17 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
       success: !!printResult?.success,
       message: printResult?.message || null,
     },
+  });
+
+  emitAppEventGlobal("request:stage-changed", {
+    source: "bg-lot-capture",
+    requestId: request.requestId,
+    requestMongoId: String(request._id || ""),
+    fromStage: "세척.패킹",
+    toStage: String(normalizedRequest?.manufacturerStage || "포장.발송").trim(),
+    reviewStage: "packing",
+    reviewStatus: "APPROVED",
+    request: normalizedRequest,
   });
 
   return res.status(200).json(

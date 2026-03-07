@@ -5,7 +5,10 @@ import {
   onCncMachiningCompleted,
   onCncMachiningTick,
 } from "@/shared/realtime/socket";
-import type { ManufacturerRequest } from "../utils/request";
+import {
+  deriveStageForFilter,
+  type ManufacturerRequest,
+} from "../utils/request";
 
 type UseWorksheetRealtimeStatusParams = {
   enabled?: boolean;
@@ -17,6 +20,7 @@ type UseWorksheetRealtimeStatusParams = {
   previewFiles?: any;
   handleOpenPreview?: (req: ManufacturerRequest) => Promise<void>;
   removeOnMachiningComplete?: boolean;
+  matchesCurrentPage?: (req: ManufacturerRequest) => boolean;
 };
 
 export function useWorksheetRealtimeStatus({
@@ -29,8 +33,53 @@ export function useWorksheetRealtimeStatus({
   previewFiles,
   handleOpenPreview,
   removeOnMachiningComplete = false,
+  matchesCurrentPage,
 }: UseWorksheetRealtimeStatusParams) {
   const realtimeBaseRef = useRef<Record<string, number>>({});
+
+  const applyRequestPatch = (
+    prev: ManufacturerRequest[],
+    nextRequest: ManufacturerRequest | null | undefined,
+  ) => {
+    if (!nextRequest) return prev;
+    const requestId = String(nextRequest.requestId || "").trim();
+    const mongoId = String(nextRequest._id || "").trim();
+    const shouldKeep = matchesCurrentPage
+      ? matchesCurrentPage(nextRequest)
+      : true;
+
+    if (!shouldKeep) {
+      return prev.filter((item) => {
+        const itemRequestId = String(item?.requestId || "").trim();
+        const itemMongoId = String(item?._id || "").trim();
+        if (requestId && itemRequestId === requestId) return false;
+        if (mongoId && itemMongoId === mongoId) return false;
+        return true;
+      });
+    }
+
+    let found = false;
+    const updated = prev.map((item) => {
+      const itemRequestId = String(item?.requestId || "").trim();
+      const itemMongoId = String(item?._id || "").trim();
+      const isSame =
+        (requestId && itemRequestId === requestId) ||
+        (mongoId && itemMongoId === mongoId);
+      if (!isSame) return item;
+      found = true;
+      return {
+        ...item,
+        ...nextRequest,
+        realtimeProgress:
+          nextRequest.realtimeProgress === undefined
+            ? item.realtimeProgress || null
+            : nextRequest.realtimeProgress,
+      };
+    });
+
+    if (found) return updated;
+    return [nextRequest, ...updated];
+  };
 
   useEffect(() => {
     if (!enabled) return;
@@ -182,20 +231,50 @@ export function useWorksheetRealtimeStatus({
       }
 
       if (type === "packing:capture-processed") {
-        setRequests((prev) =>
-          prev.map((r) => {
-            if (String((r as any)?.requestId || "").trim() !== requestId) {
-              return r;
-            }
-            return {
-              ...(r as any),
+        const eventRequest = payload?.request as
+          | ManufacturerRequest
+          | undefined;
+        if (eventRequest) {
+          setRequests((prev) =>
+            applyRequestPatch(prev, {
+              ...eventRequest,
               realtimeProgress: null,
-            } as any;
+            }),
+          );
+        } else {
+          setRequests((prev) =>
+            prev.map((r) => {
+              if (String((r as any)?.requestId || "").trim() !== requestId) {
+                return r;
+              }
+              return {
+                ...(r as any),
+                realtimeProgress: null,
+              } as any;
+            }),
+          );
+        }
+        return;
+      }
+
+      if (type === "request:stage-changed") {
+        const eventRequest = payload?.request as
+          | ManufacturerRequest
+          | undefined;
+        if (!eventRequest) return;
+        setRequests((prev) =>
+          applyRequestPatch(prev, {
+            ...eventRequest,
+            manufacturerStage:
+              String(
+                eventRequest.manufacturerStage || payload?.toStage || "",
+              ).trim() || eventRequest.manufacturerStage,
+            realtimeProgress:
+              deriveStageForFilter(eventRequest) === "의뢰"
+                ? eventRequest.realtimeProgress || null
+                : null,
           }),
         );
-        if (fetchRequests) {
-          void fetchRequests(true);
-        }
         return;
       }
 
@@ -312,6 +391,7 @@ export function useWorksheetRealtimeStatus({
     previewFiles,
     handleOpenPreview,
     removeOnMachiningComplete,
+    matchesCurrentPage,
   ]);
 
   return {

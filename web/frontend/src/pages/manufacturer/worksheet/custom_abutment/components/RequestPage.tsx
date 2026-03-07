@@ -345,6 +345,54 @@ export const RequestPage = ({
     await refreshRequests();
   }, [refreshRequests]);
 
+  const matchesCurrentPage = useCallback(
+    (req: ManufacturerRequest) => {
+      if (filterRequests) {
+        return filterRequests(req);
+      }
+      const stage = deriveStageForFilter(req);
+      if (tabStage === "request") {
+        return showCompleted
+          ? [
+              "의뢰",
+              "CAM",
+              "가공",
+              "세척.패킹",
+              "포장.발송",
+              "추적관리",
+            ].includes(stage)
+          : stage === "의뢰";
+      }
+      if (isCamStage) {
+        return showCompleted
+          ? ["CAM", "가공", "세척.패킹", "포장.발송", "추적관리"].includes(
+              stage,
+            )
+          : stage === "CAM";
+      }
+      if (isMachiningStage) {
+        return showCompleted
+          ? ["가공", "세척.패킹", "포장.발송", "추적관리"].includes(stage)
+          : stage === "가공";
+      }
+      if (tabStage === "packing") {
+        return showCompleted
+          ? ["세척.패킹", "포장.발송", "추적관리"].includes(stage)
+          : stage === "세척.패킹";
+      }
+      if (tabStage === "shipping") {
+        return showCompleted
+          ? ["포장.발송", "추적관리"].includes(stage)
+          : stage === "포장.발송";
+      }
+      if (tabStage === "tracking") {
+        return stage === "추적관리";
+      }
+      return true;
+    },
+    [filterRequests, isCamStage, isMachiningStage, showCompleted, tabStage],
+  );
+
   const fetchNextPage = useCallback(async () => {
     if (isFetchingPageRef.current) return;
     if (!hasMoreRef.current) return;
@@ -387,6 +435,8 @@ export const RequestPage = ({
     isCamStage,
     isMachiningStage,
     fetchRequests: reloadRequests,
+    setRequests,
+    matchesCurrentPage,
     setDownloading,
     setUploading,
     setDeletingCam,
@@ -414,6 +464,7 @@ export const RequestPage = ({
     previewFiles,
     handleOpenPreview,
     removeOnMachiningComplete: true,
+    matchesCurrentPage,
   });
 
   const {

@@ -321,24 +321,26 @@ export async function triggerEspritForNc({ request, force = false }) {
   }
 }
 
-const revertManufacturerStageByReviewStage = (request, stage) => {
-  const prevMap = {
-    request: "의뢰",
-    cam: "의뢰",
-    machining: "CAM",
-    packing: "가공",
-    shipping: "세척.패킹",
-    tracking: "포장.발송",
-  };
-  const prevStage = prevMap[stage];
-  if (prevStage) {
-    applyStatusMapping(request, prevStage);
-  }
-  // 포장.발송 단계에서 롤백할 때 우편함 주소 해제
-  if (stage === "shipping") {
-    request.mailboxAddress = null;
-  }
-};
+function emitWorksheetStageChanged(request, payload = {}) {
+  const requestId = String(request?.requestId || "").trim();
+  const requestMongoId = String(request?._id || "").trim();
+  if (!requestId && !requestMongoId) return;
+
+  emitAppEventToRoles(["manufacturer", "admin"], "request:stage-changed", {
+    requestId,
+    requestMongoId,
+    manufacturerStage: String(request?.manufacturerStage || "").trim() || null,
+    reviewStage: payload.reviewStage || null,
+    reviewStatus: payload.reviewStatus || null,
+    fromStage: payload.fromStage || null,
+    toStage:
+      payload.toStage ||
+      String(request?.manufacturerStage || "").trim() ||
+      null,
+    source: payload.source || "review-status",
+    request,
+  });
+}
 
 async function screenCamMachineForRequest({ request }) {
   if (!request) {
@@ -617,7 +619,11 @@ export async function deleteStageFile(req, res) {
       };
       const prevStage = prevStageMap[stage];
       if (prevStage) {
-        request.manufacturerStage = prevStage;
+        applyStatusMapping(request, prevStage);
+      }
+      // 포장.발송 단계에서 롤백할 때 우편함 주소 해제
+      if (stage === "shipping") {
+        request.mailboxAddress = null;
       }
 
       await request.save();
@@ -717,6 +723,7 @@ export async function updateReviewStatusByStage(req, res) {
 
     let resultRequest = null;
     let acceptedMessage = "";
+    let previousManufacturerStage = null;
 
     await session.withTransaction(async () => {
       const request = await Request.findById(id)
@@ -736,6 +743,9 @@ export async function updateReviewStatusByStage(req, res) {
       }
 
       ensureReviewByStageDefaults(request);
+      previousManufacturerStage =
+        String(request.manufacturerStage || "").trim() || null;
+
       request.caseInfos.reviewByStage[effectiveStage] = {
         status,
         updatedAt: new Date(),
@@ -1034,9 +1044,21 @@ export async function updateReviewStatusByStage(req, res) {
       resultRequest = request;
     });
 
+    const normalizedResult = await normalizeRequestForResponse(resultRequest);
+    emitWorksheetStageChanged(normalizedResult, {
+      reviewStage: String(stageOverride || stage || "").trim() || null,
+      reviewStatus: String(status || "").trim() || null,
+      fromStage:
+        typeof previousManufacturerStage === "string"
+          ? previousManufacturerStage
+          : null,
+      toStage: String(normalizedResult?.manufacturerStage || "").trim() || null,
+      source: "review-status",
+    });
+
     return res.status(200).json({
       success: true,
-      data: await normalizeRequestForResponse(resultRequest),
+      data: normalizedResult,
       message: acceptedMessage,
     });
   } catch (error) {

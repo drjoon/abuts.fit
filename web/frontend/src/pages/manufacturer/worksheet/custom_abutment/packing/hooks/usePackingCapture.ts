@@ -284,6 +284,7 @@ export const usePackingCapture = ({
       const suffix = String(payload?.recognizedSuffix || "").trim();
       const printSuccess = !!payload?.print?.success;
       const printMessage = String(payload?.print?.message || "").trim();
+      const eventRequest = payload?.request as ManufacturerRequest | undefined;
       if (requestId) {
         setRequests((prev) =>
           prev.map((req) => {
@@ -296,20 +297,21 @@ export const usePackingCapture = ({
         );
       }
       void (async () => {
-        const refreshed = await fetchRequestsList(true);
         if (previewOpen && previewFiles.request?._id) {
           const currentPreviewId = String(
             previewFiles.request._id || "",
           ).trim();
-          const matchedRequest = (refreshed || []).find((req) => {
-            const mongoId = String(req._id || "").trim();
-            const businessId = String(req.requestId || "").trim();
-            return (
-              mongoId === currentPreviewId ||
-              (requestMongoId && mongoId === requestMongoId) ||
-              (requestId && businessId === requestId)
-            );
-          });
+          const matchedRequest = eventRequest
+            ? (() => {
+                const mongoId = String(eventRequest._id || "").trim();
+                const businessId = String(eventRequest.requestId || "").trim();
+                return mongoId === currentPreviewId ||
+                  (requestMongoId && mongoId === requestMongoId) ||
+                  (requestId && businessId === requestId)
+                  ? eventRequest
+                  : null;
+              })()
+            : null;
           if (matchedRequest) await handleOpenPreview(matchedRequest);
         }
       })();
@@ -326,7 +328,6 @@ export const usePackingCapture = ({
       unsubscribe?.();
     };
   }, [
-    fetchRequestsList,
     handleOpenPreview,
     previewFiles.request,
     previewOpen,
