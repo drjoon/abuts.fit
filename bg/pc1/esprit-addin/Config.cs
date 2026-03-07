@@ -22,10 +22,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public const string TurningExtendEnv = "ABUTS_TURNING_EXTEND";
         public const string RoughfreeformSplitEnableEnv = "ABUTS_ROUGHFREEFORM_SPLIT_ENABLE";
         public const string CompositeSplitEnableEnv = "ABUTS_COMPOSITE_SPLIT_ENABLE";
-        public const string CompositeSplitXEnv = "ABUTS_COMPOSITE_SPLIT_X";
         public const string CompositePrcAEnv = "ABUTS_COMPOSITE_PRC_A";
         public const string CompositePrcBEnv = "ABUTS_COMPOSITE_PRC_B";
         public const string BackendUrlEnv = "ABUTS_BACKEND_URL";
+        public const string EspritPortEnv = "ESPRIT_ADDIN_PORT";
         public const string BridgeSecretEnv = "ABUTS_BRIDGE_SECRET";
         public const string EspritAllowIpsEnv = "ESPRIT_ALLOW_IPS";
         private const string DefaultBaseDirectory = @"C:\Users\user\abuts.fit\bg";
@@ -35,6 +35,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private static string DefaultPrcRootDirectory => Path.Combine(DefaultAddInRootDirectory, "AcroDent");
         private static readonly string DefaultSurfaceRootDirectory = Path.Combine(DefaultAddInRootDirectory, "Surface");
         public const bool FaceBeforeCompositeDefault = true;
+        public const int DefaultEspritPort = 8001;
         public const string DefaultBackendUrl = "https://abuts.fit/api";
         public const string DefaultBridgeSharedSecret = "t1ZYB4ELMWBKHDuyyUgnx4HdyRg";
         public const double DefaultTurningDepth = 1.0;
@@ -53,6 +54,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public static int[] DefaultBackturnDiameters = { 6, 8, 10, 12, 14 };
         public static double[] DefaultBackturnClearances = {0.584, 1.161, 1.738, 2.316, 2.893};
         public static string BaseDirectory => GetEnvOrDefault(BaseDirectoryEnv, DefaultBaseDirectory);
+        public static int EspritPort => GetIntEnvOrDefault(EspritPortEnv, DefaultEspritPort);
         public static string StorageFilledDirectory => GetEnvOrDefault(StorageFilledEnv, DefaultStorageFilledDirectory);
         public static string StorageNcDirectory => GetEnvOrDefault(StorageNcEnv, DefaultStorageNcDirectory);
         public static string AddInRootDirectory => GetEnvOrDefault(AddInRootEnv, DefaultAddInRootDirectory);
@@ -77,6 +79,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public static string GetEspritAllowIpsRaw()
         {
             return GetEnvOrDefault(EspritAllowIpsEnv, "");
+        }
+        public static string GetEspritBaseUrl()
+        {
+            return $"http://+:{EspritPort}/";
         }
         private static string GetEnvOrDefault(string key, string fallback)
         {

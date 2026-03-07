@@ -26,7 +26,7 @@ function loadLocalEnv() {
 
 loadLocalEnv();
 
-const PORT = Number(process.env.PRINT_SERVER_PORT || 5777);
+const PORT = Number(process.env.PRINT_SERVER_PORT || 8005);
 const ALLOW_ORIGIN = process.env.PRINT_SERVER_ORIGIN || "*";
 const DEFAULT_MEDIA_PROFILE = String(
   process.env.WBL_MEDIA_DEFAULT || "FS",

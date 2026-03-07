@@ -38,7 +38,7 @@ function getGenAI() {
 }
 
 const PACK_PRINT_SERVER_BASE = String(
-  process.env.PACK_PRINT_SERVER_BASE || "http://localhost:5788",
+  process.env.PACK_PRINT_SERVER_BASE || "http://localhost:8004",
 ).replace(/\/+$/, "");
 const PACK_PRINT_SERVER_SECRET = String(
   process.env.PACK_PRINT_SERVER_SHARED_SECRET || "",

@@ -14,9 +14,19 @@ namespace HiLinkBridgeWebApi48
 {
     internal static class Program
     {
-        private const string BaseAddress = "http://+:8002";
+        private static readonly int BridgeServerPort = ParsePort(Environment.GetEnvironmentVariable("BRIDGE_SERVER_PORT"), 8002);
+        private static readonly string BaseAddress = $"http://+:{BridgeServerPort}";
         private static int _shutdownOnce = 0;
         private static readonly ManualResetEventSlim ExitEvent = new ManualResetEventSlim(false);
+
+        private static int ParsePort(string value, int fallback)
+        {
+            if (int.TryParse((value ?? string.Empty).Trim(), out var parsed) && parsed > 0)
+            {
+                return parsed;
+            }
+            return fallback;
+        }
 
         private static void PurgeOldFiles(string dirPath, int days)
         {
@@ -226,4 +236,4 @@ namespace HiLinkBridgeWebApi48
         }
     }
 }
-// netsh http add urlacl url=http://+:8002/ user=desktop-udai2ar\user
+// netsh http add urlacl url=http://+:{BRIDGE_SERVER_PORT}/ user=desktop-udai2ar\user

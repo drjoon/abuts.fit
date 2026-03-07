@@ -812,8 +812,11 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     setPrinterLoading(true);
     setPrinterError(null);
     try {
-      const response = await fetch("http://localhost:5777/printers");
-      const data = await response.json();
+      const response = await request<any>({
+        path: "/api/requests/packing/printers",
+        method: "GET",
+      });
+      const data = response.data as any;
       if (!response.ok || !data?.success) {
         throw new Error(data?.message || "프린터 목록을 불러올 수 없습니다.");
       }
@@ -893,17 +896,17 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     }
 
     try {
-      const response = await fetch("http://localhost:5777/print-zpl", {
+      const response = await request<any>({
+        path: "/api/requests/packing/print-zpl",
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        jsonBody: {
           zpl,
           printer: printerProfile || undefined,
           title: "Hanjin Label",
           paperProfile,
-        }),
+        },
       });
-      const data = await response.json().catch(() => null);
+      const data = response.data as any;
       if (!response.ok || !data?.success) {
         throw new Error(data?.message || "로컬 프린터 출력에 실패했습니다.");
       }

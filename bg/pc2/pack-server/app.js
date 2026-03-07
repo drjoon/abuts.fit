@@ -24,7 +24,7 @@ function loadLocalEnv() {
 
 loadLocalEnv();
 
-const PORT = Number(process.env.PACK_PRINT_SERVER_PORT || 5788);
+const PORT = Number(process.env.PACK_PRINT_SERVER_PORT || 8004);
 const ALLOW_ORIGIN = process.env.PACK_PRINT_SERVER_ORIGIN || "*";
 const DEFAULT_PRINTER = process.env.PACK_PRINT_SERVER_DEFAULT_PRINTER || "";
 const SHARED_SECRET = String(

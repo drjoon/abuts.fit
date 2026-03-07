@@ -47,7 +47,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         };
         private HttpListener _listener;
         private CancellationTokenSource _cts;
-        private readonly string _baseUrl = "http://+:8001/";
+        private readonly string _baseUrl = AppConfig.GetEspritBaseUrl();
         private bool _isRunning = true;
         
         private readonly Queue<NcGenerationRequest> _ncQueue = new Queue<NcGenerationRequest>();
@@ -135,13 +135,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 _queueProcessorCts = new CancellationTokenSource();
                 _queueProcessorTask = Task.Run(() => ProcessQueueLoop(_queueProcessorCts.Token), _queueProcessorCts.Token);
                 AppLogger.Log($"[HTTP Server] Started at {_baseUrl}");
-                AppLogger.Log($"[HTTP Server] Listening on all interfaces on port 8001");
+                AppLogger.Log($"[HTTP Server] Listening on all interfaces on port {AppConfig.EspritPort}");
                 AppLogger.Log($"[HTTP Server] NC processing queue started");
             }
             catch (Exception ex)
             {
                 AppLogger.Log($"[HTTP Server] Failed to start: {ex.Message}");
-                AppLogger.Log($"[HTTP Server] Note: Administrator privileges may be required for http://+:8001/");
+                AppLogger.Log($"[HTTP Server] Note: Administrator privileges may be required for {AppConfig.GetEspritBaseUrl()}");
             }
         }
         public void Stop()

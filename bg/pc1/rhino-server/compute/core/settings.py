@@ -28,10 +28,11 @@ DEFAULT_RHINOCODE_MAC = Path(
     "/Applications/Rhino 8.app/Contents/Resources/bin/rhinocode"
 )
 MAX_RHINO_CONCURRENCY = 1
+RHINO_SERVER_PORT = int(os.getenv("RHINO_SERVER_PORT", "8000"))
 
 JOB_CALLBACK_URL = os.getenv(
     "RHINO_JOB_CALLBACK_URL",
-    "http://127.0.0.1:8000/api/rhino/internal/job-callback",
+    f"http://127.0.0.1:{RHINO_SERVER_PORT}/api/rhino/internal/job-callback",
 )
 
 

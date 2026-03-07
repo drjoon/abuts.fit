@@ -46,6 +46,16 @@ export const MailboxContentsModal = ({
   const stageLabel =
     requests.find((req) => req.manufacturerStage)?.manufacturerStage || "의뢰";
 
+  const getImplantInfo = (req: ManufacturerRequest) => {
+    const parts = [
+      String(req.caseInfos?.implantManufacturer || "").trim(),
+      String(req.caseInfos?.implantBrand || "").trim(),
+      String(req.caseInfos?.implantFamily || "").trim(),
+      String(req.caseInfos?.implantType || "").trim(),
+    ].filter(Boolean);
+    return parts.join(" / ");
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[80vh] overflow-y-auto p-4 sm:p-6">
@@ -73,16 +83,16 @@ export const MailboxContentsModal = ({
                 {requests.length}건
               </Badge>
               {onRollbackAll ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    className="h-8 text-xs gap-1"
-                    disabled={isRollingBackAll}
-                    onClick={() => onRollbackAll(requests)}
-                  >
-                    <ArrowLeft className="h-3 w-3" />
-                  </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 text-xs gap-1"
+                  disabled={isRollingBackAll}
+                  onClick={() => onRollbackAll(requests)}
+                >
+                  <ArrowLeft className="h-3 w-3" />
+                </Button>
               ) : null}
             </span>
           </DialogTitle>
@@ -120,11 +130,17 @@ export const MailboxContentsModal = ({
                     {req.requestId}
                   </div>
                   <div className="text-xs text-slate-600 mt-1 space-y-0.5">
+                    {req.caseInfos?.clinicName && (
+                      <div>치과: {req.caseInfos.clinicName}</div>
+                    )}
                     {req.caseInfos?.patientName && (
                       <div>환자: {req.caseInfos.patientName}</div>
                     )}
                     {req.caseInfos?.tooth && (
                       <div>치아: {req.caseInfos.tooth}</div>
+                    )}
+                    {getImplantInfo(req) && (
+                      <div>임플란트: {getImplantInfo(req)}</div>
                     )}
                   </div>
                 </div>
