@@ -48,7 +48,9 @@ export interface RequestCaseInfos {
   patientName?: string;
   tooth?: string;
   implantManufacturer?: string;
+  implantBrand?: string;
   implantSystem?: string;
+  implantFamily?: string;
   implantType?: string;
   maxDiameter?: number;
   connectionDiameter?: number;

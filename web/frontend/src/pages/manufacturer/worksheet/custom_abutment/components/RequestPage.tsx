@@ -781,7 +781,9 @@ export const RequestPage = ({
         (request.description || "") +
         (caseInfos.tooth || "") +
         (caseInfos.connectionDiameter || "") +
-        (caseInfos.implantSystem || "") +
+        (caseInfos.implantManufacturer || "") +
+        (caseInfos.implantBrand || caseInfos.implantSystem || "") +
+        (caseInfos.implantFamily || "") +
         (caseInfos.implantType || "")
       ).toLowerCase();
       return text.includes(searchLower);

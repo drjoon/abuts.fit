@@ -244,21 +244,27 @@ export async function normalizeCaseInfosImplantFields(caseInfos) {
   const ci = caseInfos && typeof caseInfos === "object" ? { ...caseInfos } : {};
 
   const manufacturer = (ci.implantManufacturer || "").trim();
-  const system = (ci.implantSystem || "").trim();
+  const brandInput = (ci.implantBrand || "").trim();
+  const system = (ci.implantSystem || brandInput || "").trim();
   const family = (ci.implantFamily || "").trim();
   const type = (ci.implantType || "").trim();
   const legacyConnectionType = (ci.connectionType || "").trim();
+  delete ci.implantBrand;
   delete ci.connectionType;
 
   // 이미 신 스키마가 완성되어 있으면 그대로
   if (manufacturer && system && family && type) {
-    return normalizeImplantFields({
+    const normalized = normalizeImplantFields({
       ...ci,
       implantManufacturer: manufacturer,
       implantSystem: system,
       implantFamily: family,
       implantType: type,
     });
+    return {
+      ...normalized,
+      implantBrand: normalized.implantSystem,
+    };
   }
 
   // 레거시(밀린 값) 케이스를 최대한 복원
@@ -272,13 +278,17 @@ export async function normalizeCaseInfosImplantFields(caseInfos) {
   // 1) 과거 스키마(implantSystem=제조사)로 들어온 경우
   //    제조사가 비어 있고 connectionType이 있는 경우가 많음
   if (!candidateManufacturer && system && legacyConnectionType && !type) {
-    return normalizeImplantFields({
+    const normalized = normalizeImplantFields({
       ...ci,
       implantManufacturer: system,
       implantSystem: (ci.implantType || "").trim(),
       implantFamily: (ci.implantFamily || "").trim() || "Regular",
       implantType: legacyConnectionType,
     });
+    return {
+      ...normalized,
+      implantBrand: normalized.implantSystem,
+    };
   }
 
   // 2) connections DB로 복원 시도
@@ -294,24 +304,32 @@ export async function normalizeCaseInfosImplantFields(caseInfos) {
       .lean();
 
     if (found) {
-      return normalizeImplantFields({
+      const normalized = normalizeImplantFields({
         ...ci,
         implantManufacturer: found.manufacturer,
         implantSystem: found.system || rawA,
         implantFamily: found.family || rawFamily || "Regular",
         implantType: found.type,
       });
+      return {
+        ...normalized,
+        implantBrand: normalized.implantSystem,
+      };
     }
   }
 
   // 3) 마지막 fallback: 있는 값들을 최대한 채움
-  return normalizeImplantFields({
+  const normalized = normalizeImplantFields({
     ...ci,
     implantManufacturer: candidateManufacturer,
     implantSystem: rawA,
     implantFamily: rawFamily || "Regular",
     implantType: rawB,
   });
+  return {
+    ...normalized,
+    implantBrand: normalized.implantSystem,
+  };
 }
 
 function inferDiameterGroupFromDiameter(diameter) {

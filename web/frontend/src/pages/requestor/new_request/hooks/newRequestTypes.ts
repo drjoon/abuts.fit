@@ -34,6 +34,7 @@ export type CaseInfos = {
   patientName?: string;
   tooth?: string;
   implantManufacturer?: string;
+  implantBrand?: string;
   implantSystem?: string;
   implantFamily?: string;
   implantType?: string;

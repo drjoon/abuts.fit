@@ -25,6 +25,7 @@ export interface CaseInfos {
   patientName: string;
   tooth: string;
   implantManufacturer?: string;
+  implantBrand?: string;
   implantSystem?: string;
   implantType?: string;
   maxDiameter?: number;

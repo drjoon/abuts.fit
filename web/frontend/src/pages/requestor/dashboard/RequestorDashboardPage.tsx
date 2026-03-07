@@ -124,8 +124,10 @@ export const RequestorDashboardPage = () => {
   const filterAbutmentRequest = (r: any) => {
     if (!r) return false;
     const ci = r.caseInfos || {};
-    const implantSystem = String(ci.implantSystem || "").trim();
-    return Boolean(implantSystem);
+    const implantBrand = String(
+      ci.implantBrand || ci.implantSystem || "",
+    ).trim();
+    return Boolean(implantBrand);
   };
 
   const getModalItems = (all: any[], label: string) => {
@@ -349,7 +351,12 @@ export const RequestorDashboardPage = () => {
       teethText: ci.tooth || request.toothNumber || request.tooth || "",
       implantManufacturer:
         ci.implantManufacturer || request.implantManufacturer || "",
-      implantSystem: ci.implantSystem || request.implantSystem || "",
+      implantSystem:
+        ci.implantBrand ||
+        ci.implantSystem ||
+        request.implantBrand ||
+        request.implantSystem ||
+        "",
       implantFamily: ci.implantFamily || request.implantFamily || "",
       implantType: ci.implantType || request.implantType || "",
     });
@@ -366,7 +373,13 @@ export const RequestorDashboardPage = () => {
     setEditingImplantManufacturer(
       ci.implantManufacturer || request.implantManufacturer || "",
     );
-    setEditingImplantSystem(ci.implantSystem || request.implantSystem || "");
+    setEditingImplantSystem(
+      ci.implantBrand ||
+        ci.implantSystem ||
+        request.implantBrand ||
+        request.implantSystem ||
+        "",
+    );
     setEditingImplantFamily(ci.implantFamily || request.implantFamily || "");
     setEditingImplantType(ci.implantType || request.implantType || "");
   };

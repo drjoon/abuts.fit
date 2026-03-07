@@ -291,8 +291,13 @@ export const PackingPageContent = ({
             : implantManufacturer.includes("덴티움");
           const screwType = isDentium ? "8B" : "0A";
           const clinicName = String(caseInfos.clinicName || "").trim() || "-";
-          const implantSystem = String(
-            (caseInfos as any)?.implantSystem || "",
+          const implantBrand = String(
+            (caseInfos as any)?.implantBrand ||
+              (caseInfos as any)?.implantSystem ||
+              "",
+          ).trim();
+          const implantFamily = String(
+            (caseInfos as any)?.implantFamily || "",
           ).trim();
           const implantType = String(
             (caseInfos as any)?.implantType || "",
@@ -340,7 +345,8 @@ export const PackingPageContent = ({
             requestDate: createdAtIso,
             manufacturingDate,
             implantManufacturer,
-            implantSystem,
+            implantBrand,
+            implantFamily,
             implantType,
             patientName: caseInfos.patientName || "",
             toothNumber: caseInfos.tooth || "",

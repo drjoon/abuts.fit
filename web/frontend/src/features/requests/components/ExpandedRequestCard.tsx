@@ -316,13 +316,15 @@ export const ExpandedRequestCard = ({
 
                   const implantManufacturer =
                     caseInfos.implantManufacturer ||
-                    spec.implantManufacturer ||
                     spec.implantCompany ||
                     request.implantManufacturer;
                   const implantSystem =
+                    caseInfos.implantBrand ||
                     caseInfos.implantSystem ||
+                    spec.implantBrand ||
                     spec.implantSystem ||
                     spec.implantProduct ||
+                    request.implantBrand ||
                     request.implantSystem;
                   const implantFamily =
                     caseInfos.implantFamily ||

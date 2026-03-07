@@ -154,7 +154,11 @@ export const RequestorRecentRequestsCard = ({
     const rawManufacturer =
       typeof ci?.implantManufacturer === "string" ? ci.implantManufacturer : "";
     const rawSystem =
-      typeof ci?.implantSystem === "string" ? ci.implantSystem : "";
+      typeof ci?.implantBrand === "string"
+        ? ci.implantBrand
+        : typeof ci?.implantSystem === "string"
+          ? ci.implantSystem
+          : "";
     const rawFamily =
       typeof ci?.implantFamily === "string" ? ci.implantFamily : "";
     const rawType = typeof ci?.implantType === "string" ? ci.implantType : "";

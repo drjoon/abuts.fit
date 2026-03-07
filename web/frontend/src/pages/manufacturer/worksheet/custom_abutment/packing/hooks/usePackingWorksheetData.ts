@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type ManufacturerRequest, deriveStageForFilter, getDiameterBucketIndex, stageOrder } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import {
+  type ManufacturerRequest,
+  deriveStageForFilter,
+  getDiameterBucketIndex,
+  stageOrder,
+} from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import { type DiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 import { type WorksheetQueueItem } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
 
@@ -83,10 +88,20 @@ export const usePackingWorksheetData = ({
             setRequests((prev) => {
               const map = new Map<string, any>();
               for (const r of prev) {
-                map.set(String((r as any)?._id || (r as any)?.requestId || Math.random()), r);
+                map.set(
+                  String(
+                    (r as any)?._id || (r as any)?.requestId || Math.random(),
+                  ),
+                  r,
+                );
               }
               for (const r of list) {
-                map.set(String((r as any)?._id || (r as any)?.requestId || Math.random()), r);
+                map.set(
+                  String(
+                    (r as any)?._id || (r as any)?.requestId || Math.random(),
+                  ),
+                  r,
+                );
               }
               return Array.from(map.values()) as any[];
             });
@@ -114,9 +129,12 @@ export const usePackingWorksheetData = ({
     [showCompleted, token, toast, userRole],
   );
 
-  const fetchRequests = useCallback(async (silent = false, append = false) => {
-    await fetchRequestsList(silent, append);
-  }, [fetchRequestsList]);
+  const fetchRequests = useCallback(
+    async (silent = false, append = false) => {
+      await fetchRequestsList(silent, append);
+    },
+    [fetchRequestsList],
+  );
 
   const fetchNextPage = useCallback(async () => {
     if (isFetchingPageRef.current || !hasMoreRef.current) return;
@@ -164,7 +182,9 @@ export const usePackingWorksheetData = ({
           (request.description || "") +
           (caseInfos.tooth || "") +
           (caseInfos.connectionDiameter || "") +
-          (caseInfos.implantSystem || "") +
+          (caseInfos.implantManufacturer || "") +
+          (caseInfos.implantBrand || caseInfos.implantSystem || "") +
+          (caseInfos.implantFamily || "") +
           (caseInfos.implantType || "")
         ).toLowerCase();
         return text.includes(searchLower);
@@ -200,15 +220,18 @@ export const usePackingWorksheetData = ({
         patient: caseInfos.patientName || "",
         tooth: caseInfos.tooth || "",
         connectionDiameter:
-          typeof caseInfos.connectionDiameter === "number" && Number.isFinite(caseInfos.connectionDiameter)
+          typeof caseInfos.connectionDiameter === "number" &&
+          Number.isFinite(caseInfos.connectionDiameter)
             ? caseInfos.connectionDiameter
             : null,
         maxDiameter:
-          typeof caseInfos.maxDiameter === "number" && Number.isFinite(caseInfos.maxDiameter)
+          typeof caseInfos.maxDiameter === "number" &&
+          Number.isFinite(caseInfos.maxDiameter)
             ? caseInfos.maxDiameter
             : null,
         camDiameter:
-          typeof req.productionSchedule?.diameter === "number" && Number.isFinite(req.productionSchedule.diameter)
+          typeof req.productionSchedule?.diameter === "number" &&
+          Number.isFinite(req.productionSchedule.diameter)
             ? req.productionSchedule.diameter
             : null,
         programText: req.description,
@@ -228,14 +251,22 @@ export const usePackingWorksheetData = ({
         buckets["12"].push(item);
       }
     }
-    return { labels, counts, total: counts.reduce((sum, c) => sum + c, 0), buckets };
+    return {
+      labels,
+      counts,
+      total: counts.reduce((sum, c) => sum + c, 0),
+      buckets,
+    };
   }, [filteredAndSorted]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries[0].isIntersecting || !userScrolledRef.current) return;
-        if (visibleCount >= filteredAndSorted.length - 3 && hasMoreRef.current) {
+        if (
+          visibleCount >= filteredAndSorted.length - 3 &&
+          hasMoreRef.current
+        ) {
           void fetchNextPage();
         }
         if (visibleCount < filteredAndSorted.length) {

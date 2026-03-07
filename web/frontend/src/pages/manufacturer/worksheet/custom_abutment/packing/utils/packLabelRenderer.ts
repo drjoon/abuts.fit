@@ -14,7 +14,8 @@ export type PackLabelRenderOptions = {
   toothNumber: string;
   material: string;
   implantManufacturer: string;
-  implantSystem: string;
+  implantBrand: string;
+  implantFamily: string;
   implantType: string;
   manufacturingDate: string;
   caseType: string;
@@ -50,8 +51,9 @@ export const resolveManufacturingDate = (req: ManufacturerRequest) => {
     (req.productionSchedule?.actualMachiningComplete as string | Date | null) ||
     null;
   const machiningReviewedAt =
-    (req.caseInfos?.reviewByStage?.machining?.updatedAt as string | undefined) ||
-    "";
+    (req.caseInfos?.reviewByStage?.machining?.updatedAt as
+      | string
+      | undefined) || "";
   const timelineCompletedAt =
     (req.timeline?.actualCompletion as string | Date | null) || null;
 
@@ -110,9 +112,7 @@ const truncateToFit = (
   return best;
 };
 
-export const renderPackLabelToCanvas = async (
-  opts: PackLabelRenderOptions,
-) => {
+export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   const dpi = Number(opts.dpi) || 203;
   const baseDpi = Number(opts.designDots?.dpi) || 203;
   const baseWidth = Number(opts.designDots?.pw) || 520;
@@ -171,7 +171,11 @@ export const renderPackLabelToCanvas = async (
     w: number,
     padding = 0,
   ) => {
-    const t = truncateToFit(ctx, String(text || "-"), Math.max(0, w - padding * 2));
+    const t = truncateToFit(
+      ctx,
+      String(text || "-"),
+      Math.max(0, w - padding * 2),
+    );
     const metrics = ctx.measureText(t);
     const tx = x + Math.max(0, (w - metrics.width) / 2);
     ctx.fillText(t, tx, y);
@@ -185,7 +189,11 @@ export const renderPackLabelToCanvas = async (
     h: number,
     padding = 0,
   ) => {
-    const t = truncateToFit(ctx, String(text || "-"), Math.max(0, w - padding * 2));
+    const t = truncateToFit(
+      ctx,
+      String(text || "-"),
+      Math.max(0, w - padding * 2),
+    );
     const metrics = ctx.measureText(t);
     const tx = x + Math.max(0, (w - metrics.width) / 2);
     const ascent = metrics.actualBoundingBoxAscent || 0;
@@ -199,7 +207,11 @@ export const renderPackLabelToCanvas = async (
       lotNumber: opts.lotNumber || "-",
       manufacturingDate: dateOnly(opts.manufacturingDate),
     }),
-    { errorCorrectionLevel: "M", margin: 0, width: Math.max(1, Math.round(80 * scale)) },
+    {
+      errorCorrectionLevel: "M",
+      margin: 0,
+      width: Math.max(1, Math.round(80 * scale)),
+    },
   );
   const qr1Img = new Image();
   await new Promise<void>((resolve, reject) => {
@@ -213,7 +225,11 @@ export const renderPackLabelToCanvas = async (
       lotNumber: opts.lotNumber || "-",
       manufacturingDate: dateOnly(opts.manufacturingDate),
     }),
-    { errorCorrectionLevel: "M", margin: 0, width: Math.max(1, Math.round(70 * scale)) },
+    {
+      errorCorrectionLevel: "M",
+      margin: 0,
+      width: Math.max(1, Math.round(70 * scale)),
+    },
   );
   const qr2Img = new Image();
   await new Promise<void>((resolve, reject) => {
@@ -224,7 +240,11 @@ export const renderPackLabelToCanvas = async (
 
   const qr3DataUrl = await QRCode.toDataURL(
     JSON.stringify({ company: ABUTS_COMPANY_NAME, web: ABUTS_WEB }),
-    { errorCorrectionLevel: "M", margin: 0, width: Math.max(1, Math.round(70 * scale)) },
+    {
+      errorCorrectionLevel: "M",
+      margin: 0,
+      width: Math.max(1, Math.round(70 * scale)),
+    },
   );
   const qr3Img = new Image();
   await new Promise<void>((resolve, reject) => {
@@ -272,7 +292,7 @@ export const renderPackLabelToCanvas = async (
   drawBox(42, 254, 436, 32);
   ctx.font = "22px Arial";
   fillTextCentered(
-    `${opts.implantManufacturer || "-"} / ${opts.implantSystem || "-"} / ${opts.implantType || "-"}`,
+    `${opts.implantManufacturer || "-"} / ${opts.implantBrand || "-"} / ${opts.implantFamily || "-"} / ${opts.implantType || "-"}`,
     42,
     263,
     436,

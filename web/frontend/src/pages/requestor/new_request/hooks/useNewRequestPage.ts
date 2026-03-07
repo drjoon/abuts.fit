@@ -336,18 +336,22 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       console.log("[useNewRequestPage] Syncing implant state for file:", {
         currentFileKey,
         implantManufacturer: currentCaseInfos.implantManufacturer,
-        implantSystem: currentCaseInfos.implantSystem,
+        implantSystem:
+          currentCaseInfos.implantBrand || currentCaseInfos.implantSystem,
         implantFamily: currentCaseInfos.implantFamily,
         implantType: currentCaseInfos.implantType,
       });
       setImplantManufacturer(currentCaseInfos.implantManufacturer || "");
-      setImplantSystem(currentCaseInfos.implantSystem || "");
+      setImplantSystem(
+        currentCaseInfos.implantBrand || currentCaseInfos.implantSystem || "",
+      );
       setImplantFamily(currentCaseInfos.implantFamily || "");
       setImplantType(currentCaseInfos.implantType || "");
     }
   }, [
     currentFileKey,
     currentCaseInfos.implantManufacturer,
+    currentCaseInfos.implantBrand,
     currentCaseInfos.implantSystem,
     currentCaseInfos.implantFamily,
     currentCaseInfos.implantType,
@@ -725,7 +729,11 @@ export const useNewRequestPage = (existingRequestId?: string) => {
                   ? ci.implantManufacturer
                   : "",
               implantSystem:
-                typeof ci.implantSystem === "string" ? ci.implantSystem : "",
+                typeof ci.implantBrand === "string"
+                  ? ci.implantBrand
+                  : typeof ci.implantSystem === "string"
+                    ? ci.implantSystem
+                    : "",
               implantFamily:
                 typeof ci.implantFamily === "string" ? ci.implantFamily : "",
               implantType:

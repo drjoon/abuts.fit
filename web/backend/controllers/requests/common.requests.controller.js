@@ -212,7 +212,9 @@ export async function getAllRequests(req, res) {
       "caseInfos.reviewByStage",
       "caseInfos.finishLine",
       "caseInfos.implantManufacturer",
+      "caseInfos.implantBrand",
       "caseInfos.implantSystem",
+      "caseInfos.implantFamily",
       "caseInfos.implantType",
       "caseInfos.maxDiameter",
       "caseInfos.connectionDiameter",
@@ -258,8 +260,9 @@ export async function getAllRequests(req, res) {
           request: r,
           now,
         });
+        const normalized = await normalizeRequestForResponse(r);
         return {
-          ...r,
+          ...normalized,
           shippingPriority,
         };
       }),

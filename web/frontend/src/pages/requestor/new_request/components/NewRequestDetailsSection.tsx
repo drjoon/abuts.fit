@@ -371,7 +371,8 @@ export function NewRequestDetailsSection({
     patientName: detailCaseInfos?.patientName || "",
     tooth: detailCaseInfos?.tooth || "",
     implantManufacturer: detailCaseInfos?.implantManufacturer || "",
-    implantSystem: detailCaseInfos?.implantSystem || "",
+    implantSystem:
+      detailCaseInfos?.implantBrand || detailCaseInfos?.implantSystem || "",
     implantFamily: detailCaseInfos?.implantFamily || "",
     implantType: detailCaseInfos?.implantType || "",
   };
