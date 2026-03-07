@@ -89,26 +89,17 @@ export async function disconnectDb() {
   await mongoose.disconnect();
 }
 
-export async function dropCurrentDatabase() {
-  const db = mongoose.connection.db;
-  if (!db) {
-    throw new Error("MongoDB connection is not ready.");
-  }
-
-  await db.dropDatabase();
-}
-
 export async function clearAllCollections() {
   const db = mongoose.connection.db;
   if (!db) {
     throw new Error("MongoDB connection is not ready.");
   }
 
-  const collections = await db
-    .listCollections({}, { nameOnly: true })
-    .toArray();
+  const collections = await db.listCollections().toArray();
   for (const collection of collections) {
     if (!collection?.name) continue;
+    if (collection.type !== "collection") continue;
+    if (collection.name.startsWith("system.")) continue;
     await db.collection(collection.name).deleteMany({});
   }
 }
