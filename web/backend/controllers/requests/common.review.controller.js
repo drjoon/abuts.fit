@@ -40,6 +40,7 @@ import s3Utils, {
   getSignedUrl as getSignedUrlForS3Key,
 } from "../../utils/s3.utils.js";
 import { resolvePrcFileNames } from "./prcMapping.utils.js";
+import { emitAppEventToRoles } from "../../socket.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -865,6 +866,16 @@ export async function updateReviewStatusByStage(req, res) {
           }
 
           request.productionSchedule.actualCamStart = new Date();
+          emitAppEventToRoles(
+            ["manufacturer", "admin"],
+            "request:cam-processing-started",
+            {
+              requestId: String(request.requestId || "").trim(),
+              requestMongoId: String(request._id || "").trim(),
+              startedAt: request.productionSchedule.actualCamStart,
+              source: "review-status",
+            },
+          );
           await triggerEspritForNc({ request, session });
           acceptedMessage =
             "CAM 작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다.";

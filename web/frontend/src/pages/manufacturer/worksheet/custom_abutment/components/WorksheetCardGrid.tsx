@@ -54,6 +54,32 @@ export const WorksheetCardGrid = ({
   debugLog = false,
 }: WorksheetCardGridProps) => {
   const camDiaLogRef = useRef<Record<string, number | null>>({});
+  const formatElapsed = (secRaw?: number | null) => {
+    const sec = Number.isFinite(Number(secRaw))
+      ? Math.max(0, Math.floor(Number(secRaw)))
+      : null;
+    if (sec == null) return "";
+    const mm = String(Math.floor(sec / 60)).padStart(2, "0");
+    const ss = String(sec % 60).padStart(2, "0");
+    return `${mm}:${ss}`;
+  };
+
+  const getRealtimeToneClass = (tone?: string | null) => {
+    if (tone === "amber") {
+      return "bg-amber-50 text-amber-700 border-amber-200";
+    }
+    if (tone === "indigo") {
+      return "bg-indigo-50 text-indigo-700 border-indigo-200";
+    }
+    if (tone === "rose") {
+      return "bg-rose-50 text-rose-700 border-rose-200";
+    }
+    if (tone === "slate") {
+      return "bg-slate-50 text-slate-700 border-slate-200";
+    }
+    return "bg-blue-50 text-blue-700 border-blue-200";
+  };
+
   useEffect(() => {
     if (!debugLog) return;
     requests.forEach((request) => {
@@ -325,14 +351,17 @@ export const WorksheetCardGrid = ({
           if (!isMachiningStage) return "";
           const secRaw = (request as any)?.productionSchedule?.machiningProgress
             ?.elapsedSeconds;
-          const sec = Number.isFinite(Number(secRaw))
-            ? Math.max(0, Math.floor(Number(secRaw)))
-            : null;
-          if (sec == null) return "";
-          const mm = String(Math.floor(sec / 60)).padStart(2, "0");
-          const ss = String(sec % 60).padStart(2, "0");
-          return `${mm}:${ss}`;
+          return formatElapsed(secRaw);
         })();
+        const realtimeBadge = String(
+          request.realtimeProgress?.badge || "",
+        ).trim();
+        const realtimeElapsedLabel = formatElapsed(
+          request.realtimeProgress?.elapsedSeconds,
+        );
+        const realtimeToneClass = getRealtimeToneClass(
+          request.realtimeProgress?.tone,
+        );
 
         const maxDiameter =
           typeof caseInfos.maxDiameter === "number" &&
@@ -511,8 +540,24 @@ export const WorksheetCardGrid = ({
                   </div>
                 )}
                 {(() => {
-                  // (의뢰/CAM) 카드 상단의 진행상태 표시/배지는 사용하지 않음
-                  return null;
+                  if (!realtimeBadge && !realtimeElapsedLabel) return null;
+                  return (
+                    <div className="flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
+                      {realtimeBadge ? (
+                        <Badge
+                          variant="outline"
+                          className={`text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] ${realtimeToneClass}`}
+                        >
+                          {realtimeBadge}
+                        </Badge>
+                      ) : null}
+                      {realtimeElapsedLabel ? (
+                        <span className="tabular-nums font-bold text-blue-600">
+                          {realtimeElapsedLabel}
+                        </span>
+                      ) : null}
+                    </div>
+                  );
                 })()}
                 {!!machiningElapsedLabel && (
                   <div className="flex items-center gap-2 text-[12px] text-slate-500">

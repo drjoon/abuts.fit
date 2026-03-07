@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useState, type DragEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type DragEvent,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { onAppEvent } from "@/shared/realtime/socket";
 import {
   deriveStageForFilter,
@@ -15,6 +22,7 @@ export const usePackingCapture = ({
   uploadStageFile,
   updateReviewStatus,
   fetchRequestsList,
+  setRequests,
   previewOpen,
   previewFiles,
   handleOpenPreview,
@@ -28,6 +36,7 @@ export const usePackingCapture = ({
     silent?: boolean,
     append?: boolean,
   ) => Promise<ManufacturerRequest[] | null>;
+  setRequests: Dispatch<SetStateAction<ManufacturerRequest[]>>;
   previewOpen: boolean;
   previewFiles: any;
   handleOpenPreview: (req: ManufacturerRequest) => Promise<void>;
@@ -157,6 +166,25 @@ export const usePackingCapture = ({
                 });
                 return;
               }
+              setRequests((prev) =>
+                prev.map((req) => {
+                  if (
+                    String(req.requestId || "").trim() !==
+                    String(matchingRequest?.requestId || "").trim()
+                  ) {
+                    return req;
+                  }
+                  return {
+                    ...req,
+                    realtimeProgress: {
+                      badge: "각인 인식 대기중",
+                      startedAt: new Date().toISOString(),
+                      elapsedSeconds: 0,
+                      tone: "amber",
+                    },
+                  };
+                }),
+              );
               await uploadStageFile({
                 req: matchingRequest,
                 stage: "packing",
@@ -203,6 +231,7 @@ export const usePackingCapture = ({
       previewFiles.request,
       previewOpen,
       requests,
+      setRequests,
       toast,
       token,
       updateReviewStatus,
@@ -255,6 +284,17 @@ export const usePackingCapture = ({
       const suffix = String(payload?.recognizedSuffix || "").trim();
       const printSuccess = !!payload?.print?.success;
       const printMessage = String(payload?.print?.message || "").trim();
+      if (requestId) {
+        setRequests((prev) =>
+          prev.map((req) => {
+            if (String(req.requestId || "").trim() !== requestId) return req;
+            return {
+              ...req,
+              realtimeProgress: null,
+            };
+          }),
+        );
+      }
       void (async () => {
         const refreshed = await fetchRequestsList(true);
         if (previewOpen && previewFiles.request?._id) {
@@ -290,6 +330,7 @@ export const usePackingCapture = ({
     handleOpenPreview,
     previewFiles.request,
     previewOpen,
+    setRequests,
     toast,
     token,
   ]);

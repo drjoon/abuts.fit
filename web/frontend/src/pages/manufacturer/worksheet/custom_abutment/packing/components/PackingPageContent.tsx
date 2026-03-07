@@ -75,6 +75,7 @@ export const PackingPageContent = ({
 
   const {
     requests,
+    setRequests,
     isLoading,
     fetchRequestsList,
     fetchRequests,
@@ -174,6 +175,7 @@ export const PackingPageContent = ({
     uploadStageFile: handleUploadStageFile,
     updateReviewStatus: handleUpdateReviewStatus,
     fetchRequestsList,
+    setRequests,
     previewOpen,
     previewFiles,
     handleOpenPreview,

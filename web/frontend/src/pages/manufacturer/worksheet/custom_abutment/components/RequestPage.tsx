@@ -55,6 +55,7 @@ import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
 import {
   onCncMachiningCompleted,
   onCncMachiningTick,
+  onAppEvent,
   onNotification,
 } from "@/shared/realtime/socket";
 
@@ -114,6 +115,7 @@ export const RequestPage = ({
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
     {},
   );
+  const realtimeBaseRef = useRef<Record<string, number>>({});
   const [visibleCount, setVisibleCount] = useState(12);
   const visibleCountRef = useRef(12);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -369,6 +371,33 @@ export const RequestPage = ({
   });
 
   useEffect(() => {
+    const keys = Object.keys(realtimeBaseRef.current || {});
+    if (!keys.length) return;
+    const id = window.setInterval(() => {
+      setRequests((prev) =>
+        prev.map((req) => {
+          const rid = String(req?.requestId || "").trim();
+          const base = realtimeBaseRef.current[rid];
+          if (!rid || typeof base !== "number") return req;
+          const current = req.realtimeProgress || {};
+          if (!current?.badge) return req;
+          return {
+            ...req,
+            realtimeProgress: {
+              ...current,
+              elapsedSeconds: Math.max(
+                0,
+                Math.floor((Date.now() - base) / 1000),
+              ),
+            },
+          };
+        }),
+      );
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [requests]);
+
+  useEffect(() => {
     if (!token) return;
 
     const unsubBg = onNotification((notification: any) => {
@@ -376,6 +405,36 @@ export const RequestPage = ({
       if (type !== "bg-file-processed") return;
 
       const requestId = String(notification?.data?.requestId || "").trim();
+      const sourceStep = String(notification?.data?.sourceStep || "").trim();
+      if (requestId) {
+        setRequests((prev) =>
+          prev.map((r) => {
+            if (String((r as any)?.requestId || "").trim() !== requestId) {
+              return r;
+            }
+            if (sourceStep === "2-filled") {
+              delete realtimeBaseRef.current[requestId];
+              return {
+                ...(r as any),
+                realtimeProgress: {
+                  badge: "Filled STL 수신",
+                  elapsedSeconds: null,
+                  startedAt: null,
+                  tone: "blue",
+                },
+              } as any;
+            }
+            if (sourceStep === "3-nc") {
+              delete realtimeBaseRef.current[requestId];
+              return {
+                ...(r as any),
+                realtimeProgress: null,
+              } as any;
+            }
+            return r;
+          }),
+        );
+      }
       if (!requestId) {
         void fetchRequests(true);
         return;
@@ -398,6 +457,59 @@ export const RequestPage = ({
 
         await handleOpenPreview(updated as any);
       })();
+    });
+
+    const unsubAppEvent = onAppEvent((evt: any) => {
+      const type = String(evt?.type || "").trim();
+      const payload = evt?.data || {};
+      const requestId = String(payload?.requestId || "").trim();
+      if (!requestId) return;
+
+      if (type === "request:cam-processing-started") {
+        const startedAt = String(
+          payload?.startedAt || new Date().toISOString(),
+        );
+        const base = new Date(startedAt).getTime();
+        realtimeBaseRef.current[requestId] = Number.isFinite(base)
+          ? base
+          : Date.now();
+        setRequests((prev) =>
+          prev.map((r) => {
+            if (String((r as any)?.requestId || "").trim() !== requestId) {
+              return r;
+            }
+            return {
+              ...(r as any),
+              realtimeProgress: {
+                badge: "CAM 생성중",
+                startedAt,
+                elapsedSeconds: 0,
+                tone: "indigo",
+              },
+            } as any;
+          }),
+        );
+        return;
+      }
+
+      if (type === "request:filled-processing-started") {
+        setRequests((prev) =>
+          prev.map((r) => {
+            if (String((r as any)?.requestId || "").trim() !== requestId) {
+              return r;
+            }
+            return {
+              ...(r as any),
+              realtimeProgress: {
+                badge: "Filled STL 생성중",
+                elapsedSeconds: null,
+                startedAt: null,
+                tone: "blue",
+              },
+            } as any;
+          }),
+        );
+      }
     });
 
     const unsubTick = onCncMachiningTick((data: any) => {
@@ -463,6 +575,7 @@ export const RequestPage = ({
 
     return () => {
       if (typeof unsubBg === "function") unsubBg();
+      if (typeof unsubAppEvent === "function") unsubAppEvent();
       if (typeof unsubTick === "function") unsubTick();
       if (typeof unsubCompleted === "function") unsubCompleted();
       window.removeEventListener("request-rollback", handleRequestRollback);
@@ -611,6 +724,29 @@ export const RequestPage = ({
         isCamStage,
         isMachiningStage,
       });
+      if (stageKey === "request") {
+        realtimeBaseRef.current[String(req.requestId || "").trim()] =
+          Date.now();
+        setRequests((prev) =>
+          prev.map((item) => {
+            if (
+              String(item.requestId || "").trim() !==
+              String(req.requestId || "").trim()
+            ) {
+              return item;
+            }
+            return {
+              ...item,
+              realtimeProgress: {
+                badge: "CAM 생성중",
+                startedAt: new Date().toISOString(),
+                elapsedSeconds: 0,
+                tone: "indigo",
+              },
+            };
+          }),
+        );
+      }
       void handleUpdateReviewStatus({
         req,
         status: "APPROVED",

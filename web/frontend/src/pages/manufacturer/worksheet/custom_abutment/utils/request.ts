@@ -3,6 +3,12 @@ import type { RequestBase } from "@/types/request";
 export type ManufacturerRequest = RequestBase & {
   referenceIds?: string[];
   mailboxAddress?: string | null;
+  realtimeProgress?: {
+    badge?: string | null;
+    startedAt?: string | null;
+    elapsedSeconds?: number | null;
+    tone?: "blue" | "amber" | "slate" | "indigo" | "rose" | null;
+  } | null;
 };
 
 export type ReviewStageKey =
