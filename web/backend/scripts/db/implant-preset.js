@@ -11,15 +11,6 @@ const CONNECTION_DIR = PRC_CONNECTION_DIR;
 const CONNECTION_FAMILIES = ["Regular", "Mini"];
 const CONNECTION_TYPES = ["Hex", "Non-Hex"];
 
-function getRuntimeEnv() {
-  const raw = String(process.env.NODE_ENV || "development")
-    .trim()
-    .toLowerCase();
-  if (raw === "production") return "production";
-  if (raw === "test") return "test";
-  return "local";
-}
-
 function buildDerivedConnectionRows(parsedRows) {
   const grouped = new Map();
 
@@ -108,7 +99,7 @@ async function readConnectionSeedFromFolder() {
   return { parsed: buildDerivedConnectionRows(parsed), skipped, files };
 }
 
-async function syncProdAddOnly(rows) {
+async function syncAddOnly(rows) {
   let inserted = 0;
   let existing = 0;
 
@@ -135,30 +126,11 @@ async function syncProdAddOnly(rows) {
   return { mode: "add-only", inserted, existing, removed: 0, updated: 0 };
 }
 
-async function syncResetAndSeed(rows) {
-  const deleteResult = await Connection.deleteMany({
-    category: CONNECTION_CATEGORY,
-  });
-
-  if (rows.length > 0) {
-    await Connection.insertMany(rows, { ordered: true });
-  }
-
-  return {
-    mode: "reset-and-seed",
-    inserted: rows.length,
-    existing: 0,
-    removed: deleteResult.deletedCount || 0,
-    updated: 0,
-  };
-}
-
 async function run() {
-  const runtimeEnv = getRuntimeEnv();
   try {
     console.log("[db] implant-preset sync start", {
-      nodeEnv: runtimeEnv,
       ssotDir: CONNECTION_DIR,
+      mode: "add-only",
     });
     await connectDb();
 
@@ -169,13 +141,9 @@ async function run() {
       );
     }
 
-    const result =
-      runtimeEnv === "production"
-        ? await syncProdAddOnly(parsed)
-        : await syncResetAndSeed(parsed);
+    const result = await syncAddOnly(parsed);
 
     console.log("[db] implant-preset sync done", {
-      nodeEnv: runtimeEnv,
       ssotDir: CONNECTION_DIR,
       scanned: files.length,
       parsed: parsed.length,

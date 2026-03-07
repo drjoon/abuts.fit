@@ -930,7 +930,7 @@ export const BusinessTab = ({
       const processingToast = toast({
         title: "AI 인식 중",
         description:
-          "사업자등록증을 인식하고 있어요. 약 5초 정도 걸릴 수 있어요.",
+          "사업자등록증을 인식하고 있어요. 약 10초 정도 걸릴 수 있어요.",
         duration: 60000,
       });
       const res = await request<any>({

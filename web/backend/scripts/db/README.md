@@ -4,28 +4,40 @@
 
 ## 실행
 
-- **DB 전체 초기화(컬렉션 deleteMany)**
+- **DB 전체 초기화(컬렉션 deleteMany, 더미 데이터 없음)**
 
 ```bash
 npm run db:reset
 ```
 
-- **초기화 + 계정 36개(데모 + 영업자 10명 + 의뢰자 20명)**
+- **기본 계정 8개 생성**
 
 ```bash
-npm run db:reset-account
+npm run db:seed-account
 ```
 
-- **계정 + 더미 의뢰/배송/정산 시드 (리셋 없이)**
+- **대량 계정 생성**
 
 ```bash
-npm run db:seed
+npm run db:seed-account -- r=20 s=10
 ```
 
-- **초기화 + 계정 + 더미 의뢰/배송/정산 (풀 시드)**
+- **의뢰/배송/정산 데이터 생성 (기본 50건)**
 
 ```bash
-npm run db:reset-seed
+npm run db:seed-data
+```
+
+- **의뢰/배송/정산 데이터 생성 (건수 지정)**
+
+```bash
+npm run db:seed-data -- 200
+```
+
+- **임플란트 프리셋 추가 (reset 없이 add-only)**
+
+```bash
+npm run db:implant-preset
 ```
 
 ## 안전장치
@@ -41,7 +53,9 @@ ABUTS_DB_FORCE=true
 
 - `reset`은 dropDatabase가 아니라 **각 컬렉션 deleteMany**로 정리합니다.
 - DB 연결은 `scripts/db/_mongo.js`의 규칙을 따릅니다.
+- `seed-data`는 기존 계정을 사용하므로, 먼저 `db:seed-account`를 실행하는 것을 권장합니다.
+- `implant-preset`은 모든 환경에서 **기존 데이터는 유지하고 없는 항목만 추가**합니다.
 
 ## 강제 실행
 
-ABUTS_DB_FORCE=true npm run db:reset-seed
+ABUTS_DB_FORCE=true npm run db:reset

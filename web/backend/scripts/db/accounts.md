@@ -15,7 +15,7 @@
 - requestor.owner@demo.abuts.fit / `Rq!8zY#4fQ@7nC5$` (owner) — org: 데모기공소
 - requestor.staff@demo.abuts.fit / `Rs!9xT#5gA@6mD4$` (staff) — org: 데모기공소, referredBy=owner
 
-## 대량 시드 (reset-and-seed.js 기준)
+## 대량 시드 (`seed-account`, `seed-data` 기준)
 
 - 공통 비밀번호: `Abc!1234`
 - 리퍼럴 코드: 대문자/숫자 4자리(영업자) 혹은 5자리(의뢰자) 랜덤
