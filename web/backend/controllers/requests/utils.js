@@ -482,6 +482,7 @@ export async function computePriceForRequest({
   clinicName,
   patientName,
   tooth,
+  forceNewOrderPricing = false,
 }) {
   const now = new Date();
 
@@ -511,7 +512,7 @@ export async function computePriceForRequest({
     .select({ _id: 1 })
     .lean();
 
-  if (existing) {
+  if (existing && !forceNewOrderPricing) {
     return {
       baseAmount: REMAKE_FIXED_PRICE,
       discountAmount: 0,

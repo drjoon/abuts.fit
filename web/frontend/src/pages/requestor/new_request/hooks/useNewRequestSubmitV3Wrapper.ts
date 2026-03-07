@@ -177,6 +177,7 @@ export const useNewRequestSubmitV3Wrapper = ({
             tooth: String(caseInfos.tooth || "").trim(),
             implantManufacturer: caseInfos.implantManufacturer,
             implantSystem: caseInfos.implantSystem,
+            implantFamily: caseInfos.implantFamily,
             implantType: caseInfos.implantType,
             maxDiameter: caseInfos.maxDiameter,
             connectionDiameter: caseInfos.connectionDiameter,
@@ -186,6 +187,22 @@ export const useNewRequestSubmitV3Wrapper = ({
           requestedShipDate: caseInfos.requestedShipDate,
         };
       });
+      const duplicateResolutionsForBulk = Array.isArray(duplicateResolutions)
+        ? duplicateResolutions
+            .map((resolution) => {
+              const matchedIndex = files.findIndex(
+                (file) => getFileKey(file) === String(resolution.caseId || ""),
+              );
+              return {
+                ...resolution,
+                caseId:
+                  matchedIndex >= 0
+                    ? String(matchedIndex)
+                    : String(resolution.caseId || ""),
+              };
+            })
+            .filter((resolution) => String(resolution.caseId || "").trim())
+        : undefined;
 
       // 업로드 완료 직후, 벌크 등록 처리 중임을 명확히 표시해 공백 시간을 제거
       const creatingToast = toast({
@@ -202,7 +219,11 @@ export const useNewRequestSubmitV3Wrapper = ({
           const res = await fetch(`${API_BASE_URL}/requests/bulk`, {
             method: "POST",
             headers: getHeaders(),
-            body: JSON.stringify({ items, enableDuplicateRequestCheck: false }),
+            body: JSON.stringify({
+              items,
+              enableDuplicateRequestCheck: false,
+              duplicateResolutions: duplicateResolutionsForBulk,
+            }),
           });
           if (res.status === 429) {
             const ra = res.headers.get("retry-after");

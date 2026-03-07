@@ -12,6 +12,7 @@ import {
   buildRequestorOrgScopeFilter,
   normalizeRequestStage,
   REQUEST_STAGE_ORDER,
+  canAccessRequestAsRequestor,
 } from "./utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import {
@@ -810,6 +811,30 @@ export async function createRequestsBulk(req, res) {
     const enableDuplicateRequestCheck = Boolean(
       req.body && req.body.enableDuplicateRequestCheck,
     );
+    const duplicateResolutions = Array.isArray(req.body?.duplicateResolutions)
+      ? req.body.duplicateResolutions
+          .filter((r) => r && typeof r === "object")
+          .map((r) => ({
+            caseId: String(r.caseId || "").trim(),
+            strategy: String(r.strategy || "").trim(),
+            existingRequestId: String(r.existingRequestId || "").trim(),
+          }))
+      : null;
+    const resolutionsByCaseId = new Map();
+
+    if (duplicateResolutions) {
+      for (const r of duplicateResolutions) {
+        const strategy = String(r.strategy || "").trim();
+        if (!strategy) continue;
+        if (!["skip", "replace", "remake"].includes(strategy)) {
+          return res.status(400).json({
+            success: false,
+            message: "유효하지 않은 duplicateResolutions.strategy 입니다.",
+          });
+        }
+        resolutionsByCaseId.set(String(r.caseId || ""), r);
+      }
+    }
 
     if (enableDuplicateRequestCheck) {
       // 1) 사전 중복 검사: 동일 clinic/patient/tooth 이 기존 DB에 존재하면 409 반환
@@ -1052,12 +1077,69 @@ export async function createRequestsBulk(req, res) {
           }
 
           const tPrice0 = Date.now();
+          const duplicateResolution = resolutionsByCaseId.get(String(i));
+          const resolutionStrategy = String(
+            duplicateResolution?.strategy || "",
+          ).trim();
+          let existingRequestForResolution = null;
+          let forceNewOrderPricing = false;
+
+          if (
+            duplicateResolution &&
+            (resolutionStrategy === "replace" ||
+              resolutionStrategy === "remake")
+          ) {
+            existingRequestForResolution = await Request.findById(
+              duplicateResolution.existingRequestId,
+            )
+              .select({
+                _id: 1,
+                requestId: 1,
+                requestor: 1,
+                requestorOrganizationId: 1,
+                manufacturerStage: 1,
+              })
+              .populate("requestor", "_id organizationId");
+
+            if (!existingRequestForResolution) {
+              throw new Error("기존 의뢰를 찾을 수 없습니다.");
+            }
+            if (
+              !(await canAccessRequestAsRequestor(
+                req,
+                existingRequestForResolution,
+              ))
+            ) {
+              throw new Error("기존 의뢰에 접근 권한이 없습니다.");
+            }
+
+            const existingStage = String(
+              existingRequestForResolution.manufacturerStage || "",
+            ).trim();
+            const currentStageOrder = REQUEST_STAGE_ORDER[existingStage] ?? 0;
+
+            if (resolutionStrategy === "replace") {
+              if (existingStage === "추적관리") {
+                throw new Error(
+                  "완료된 의뢰는 새 의뢰로 교체할 수 없습니다. 재의뢰로 진행해주세요.",
+                );
+              }
+              if (currentStageOrder > 1) {
+                throw new Error(
+                  "생산 이후 단계에서는 기존 의뢰를 교체할 수 없습니다.",
+                );
+              }
+              forceNewOrderPricing = true;
+            }
+          }
+
           const computedPrice = await computePriceForRequest({
             requestorId: req.user._id,
             requestorOrgId: req.user?.organizationId,
             clinicName,
             patientName,
             tooth,
+            forceNewOrderPricing,
           });
           const priceMs = Date.now() - tPrice0;
 
@@ -1082,6 +1164,18 @@ export async function createRequestsBulk(req, res) {
                 : null,
             price: computedPrice,
           });
+
+          if (
+            resolutionStrategy === "remake" &&
+            existingRequestForResolution?.requestId
+          ) {
+            newRequest.referenceIds = Array.from(
+              new Set([
+                ...(newRequest.referenceIds || []),
+                String(existingRequestForResolution.requestId),
+              ]),
+            );
+          }
 
           await ensureLotNumberForMachining(newRequest);
           newRequest.originalShipping = { mode: shippingMode, requestedAt };
@@ -1186,6 +1280,16 @@ export async function createRequestsBulk(req, res) {
           const tSave0 = Date.now();
           await newRequest.save();
           const saveMs = Date.now() - tSave0;
+
+          if (
+            resolutionStrategy === "replace" &&
+            existingRequestForResolution &&
+            String(existingRequestForResolution.manufacturerStage || "") !==
+              "취소"
+          ) {
+            existingRequestForResolution.manufacturerStage = "취소";
+            await existingRequestForResolution.save();
+          }
 
           if (normalizedCaseInfos?.file?.s3Key) {
             const bgFileName = buildStandardStlFileName({
