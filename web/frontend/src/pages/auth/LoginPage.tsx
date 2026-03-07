@@ -1,20 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
@@ -26,29 +19,30 @@ type DevAccount = {
   password: string;
 };
 
-const DEV_ACCOUNTS: DevAccount[] = [
-  {
-    label: "의뢰자",
-    email: "requestor.owner@demo.abuts.fit",
-    password: "Rq!8zY#4fQ@7nC5$",
-  },
-  {
-    label: "제조사",
-    email: "manufacturer.owner@demo.abuts.fit",
-    password: "Mo!7vL#6pR@3sB8$",
-  },
-  {
-    label: "영업자",
-    email: "salesman.owner@demo.abuts.fit",
-    password: "So!8qL#3mV@6pK2$",
-  },
-  {
-    label: "관리자",
-    email: "admin.owner@demo.abuts.fit",
-    password: "Ao!6fN#9rV@4cH2$",
-  },
-];
 const isDev = import.meta.env.DEV;
+
+const parseDevAccounts = (rawValue: string | undefined): DevAccount[] => {
+  if (!rawValue) return [];
+
+  try {
+    const parsed = JSON.parse(rawValue);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter((account): account is DevAccount => {
+      if (!account || typeof account !== "object") return false;
+
+      return (
+        typeof account.label === "string" &&
+        typeof account.email === "string" &&
+        typeof account.password === "string"
+      );
+    });
+  } catch {
+    return [];
+  }
+};
+
+const DEV_ACCOUNTS = parseDevAccounts(import.meta.env.VITE_DEV_LOGIN_ACCOUNTS);
 
 export const LoginPage = () => {
   const [email, setEmail] = useState("");
@@ -122,6 +116,7 @@ export const LoginPage = () => {
     setPassword(account.password);
     setStep("password");
     setIsLoading(true);
+
     try {
       const result = await login(account.email, account.password);
       if (result.success) {
@@ -134,7 +129,7 @@ export const LoginPage = () => {
           variant: "destructive",
         });
       }
-    } catch (error) {
+    } catch {
       toast({
         title: "오류 발생",
         description: "로그인 중 오류가 발생했습니다.",
@@ -363,7 +358,7 @@ export const LoginPage = () => {
                   </Button>
                 </div>
 
-                {isDev && (
+                {isDev && DEV_ACCOUNTS.length > 0 && (
                   <div className="mt-6 flex items-center justify-end">
                     <Button
                       type="button"
@@ -381,7 +376,7 @@ export const LoginPage = () => {
         </section>
       </main>
 
-      {isDev && (
+      {isDev && DEV_ACCOUNTS.length > 0 && (
         <Dialog open={devModalOpen} onOpenChange={setDevModalOpen}>
           <DialogContent className="max-w-lg bg-slate-950/95 text-white backdrop-blur-xl border-white/10">
             <DialogHeader>
