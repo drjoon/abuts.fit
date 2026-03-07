@@ -1,5 +1,11 @@
 import Connection from "../../models/connection.model.js";
 import Request from "../../models/request.model.js";
+import { normalizeImplantFields } from "../../utils/implantCanonical.js";
+import {
+  buildExpectedPrcFileName,
+  buildPrcFileNamesFromCatalog,
+  getPrcTypeCodeByFamily,
+} from "../../utils/prcFilenameCatalog.js";
 
 function normalizeTypeLabel(type) {
   if (typeof type !== "string") return "";
@@ -10,91 +16,63 @@ function normalizeTypeLabel(type) {
   return t;
 }
 
-function getPrcTypeCode(system, type) {
-  const sys = typeof system === "string" ? system.trim() : "";
-  const t = normalizeTypeLabel(type);
-  const isMini = sys.toLowerCase().includes("mini");
-  const isNonHex = t === "Non-Hex";
-  if (isMini) {
-    return isNonHex ? "MN" : "MH";
-  }
-  return isNonHex ? "RN" : "RH";
+function normalizeFamilyLabel(family) {
+  const value = String(family || "")
+    .trim()
+    .toLowerCase();
+  if (value === "mini") return "Mini";
+  return "Regular";
 }
 
-function getManufacturerKor(manufacturer) {
-  switch ((manufacturer || "").trim().toUpperCase()) {
-    case "OSSTEM":
-      return "오스템";
-    case "DENTIUM":
-      return "덴티움";
-    case "DENTIS":
-      return "덴티스";
-    case "DIO":
-      return "디오";
-    case "MEGAGEN":
-      return "메가젠";
-    case "NEOBIOTECH":
-      return "네오";
-    default:
-      return null;
-  }
+function buildDisplayLabels({ manufacturer, system, family, type }) {
+  return {
+    displayManufacturer: String(manufacturer || "").trim(),
+    displayBrand: String(system || "").trim(),
+    displayFamily: normalizeFamilyLabel(family),
+    displayType: normalizeTypeLabel(type),
+  };
 }
 
-function getSystemCode(manufacturer, system) {
-  const m = (manufacturer || "").trim().toUpperCase();
-  const s = (system || "").trim();
+function buildPrcFileNames({
+  manufacturer,
+  system,
+  family,
+  type,
+  legacyFileName,
+}) {
+  const normalizedType = normalizeTypeLabel(type);
+  const normalizedFamily = normalizeFamilyLabel(family);
+  const typeCode = getPrcTypeCodeByFamily(normalizedFamily, normalizedType);
+  const catalogNames = buildPrcFileNamesFromCatalog(
+    manufacturer,
+    system,
+    normalizedType,
+    normalizedFamily,
+  );
+  const expectedConnectionFileName = buildExpectedPrcFileName(
+    "connection",
+    manufacturer,
+    system,
+    normalizedType,
+    normalizedFamily,
+  );
 
-  // 현재 CAM/ESPRIT 쪽 파일명 규칙(스프레드시트)과 UI 표기값을 연결
-  // 여기서 매핑되지 않는 경우엔 DB의 fileName을 그대로 쓰도록 fallback한다.
-  if (m === "OSSTEM") {
-    if (s === "Regular") return "TS";
-    if (s === "Mini") return "TS";
-  }
-  if (m === "DENTIUM") {
-    if (s === "Regular") return "SuperLine";
-    if (s === "Mini") return "SuperLine";
-  }
-  if (m === "DENTIS") {
-    if (s === "Regular") return "SQ";
-    if (s === "Mini") return "SQ";
-  }
-  if (m === "DIO") {
-    if (s === "Regular") return "UF";
-    if (s === "Mini") return "UF";
-  }
-  if (m === "MEGAGEN") {
-    if (s === "AnyOne Regular") return "AnyOne";
-    if (s === "AnyOne") return "AnyOne";
-    if (s === "AnyRidge") return "AnyRidge";
-  }
-  if (m === "NEOBIOTECH") {
-    if (s === "Regular") return "IS";
-    if (s === "Mini") return "IS";
-  }
-
-  return null;
-}
-
-function buildPrcFileNames({ manufacturer, system, type, legacyFileName }) {
-  const kor = getManufacturerKor(manufacturer);
-  const sysCode = getSystemCode(manufacturer, system);
-  const typeCode = getPrcTypeCode(system, type);
-
-  if (!kor || !sysCode || !typeCode) {
+  if (!catalogNames.connectionPrcFileName || !typeCode) {
     return {
       connectionPrcFileName:
         typeof legacyFileName === "string" ? legacyFileName : null,
-      faceHolePrcFileName: null,
+      faceHolePrcFileName: catalogNames.faceHolePrcFileName || null,
       prcTypeCode: typeCode || null,
-      prcSystemCode: sysCode || null,
+      prcSystemCode: String(system || "").trim() || null,
     };
   }
 
   return {
-    connectionPrcFileName: `${kor}_${sysCode}_${typeCode}_Connection.prc`,
-    faceHolePrcFileName: `${kor}_${sysCode}_${typeCode}_FaceHole.prc`,
+    connectionPrcFileName:
+      catalogNames.connectionPrcFileName || expectedConnectionFileName,
+    faceHolePrcFileName: catalogNames.faceHolePrcFileName || null,
     prcTypeCode: typeCode,
-    prcSystemCode: sysCode,
+    prcSystemCode: String(system || "").trim() || null,
   };
 }
 
@@ -119,28 +97,76 @@ export async function getConnections(req, res) {
 
     const sorted = all
       .map((c) => {
+        const normalized = normalizeImplantFields({
+          implantManufacturer: c.manufacturer,
+          implantSystem: c.system,
+          implantFamily: c.family,
+          implantType: c.type,
+        });
         const computed = buildPrcFileNames({
-          manufacturer: c.manufacturer,
-          system: c.system,
-          type: c.type,
+          manufacturer: normalized.implantManufacturer,
+          system: normalized.implantSystem,
+          family: normalized.implantFamily || c.family,
+          type: normalized.implantType,
           legacyFileName: c.fileName,
+        });
+        const display = buildDisplayLabels({
+          manufacturer: normalized.implantManufacturer,
+          system: normalized.implantSystem,
+          family: normalized.implantFamily || c.family,
+          type: normalized.implantType,
         });
         return {
           ...c,
+          manufacturer: normalized.implantManufacturer,
+          system: normalized.implantSystem,
+          family: normalized.implantFamily || normalizeFamilyLabel(c.family),
+          type: normalized.implantType,
+          canonicalKey: `${normalized.implantManufacturer}|${normalized.implantSystem}|${normalized.implantFamily || normalizeFamilyLabel(c.family)}|${normalized.implantType}`,
+          prcMatchScore:
+            typeof c.fileName === "string" &&
+            c.fileName === computed.connectionPrcFileName
+              ? 2
+              : computed.connectionPrcFileName
+                ? 1
+                : 0,
           // UI / 저장은 manufacturer/system/type 그대로 사용
           // CAM/ESPRIT용 파일명만 별도 필드로 제공
           connectionPrcFileName: computed.connectionPrcFileName,
           faceHolePrcFileName: computed.faceHolePrcFileName,
           prcTypeCode: computed.prcTypeCode,
           prcSystemCode: computed.prcSystemCode,
+          displayManufacturer: display.displayManufacturer,
+          displayBrand: display.displayBrand,
+          displayFamily: display.displayFamily,
+          displayType: display.displayType,
           usageCount: usageMap.get(c._id.toString()) || 0,
         };
+      })
+      .sort((a, b) => {
+        if (b.prcMatchScore !== a.prcMatchScore) {
+          return b.prcMatchScore - a.prcMatchScore;
+        }
+        if (b.usageCount !== a.usageCount) return b.usageCount - a.usageCount;
+        if (a.manufacturer !== b.manufacturer)
+          return a.manufacturer.localeCompare(b.manufacturer);
+        if (a.system !== b.system) return a.system.localeCompare(b.system);
+        if (a.family !== b.family) return a.family.localeCompare(b.family);
+        return a.type.localeCompare(b.type);
+      })
+      .filter((item, index, arr) => {
+        return (
+          arr.findIndex(
+            (candidate) => candidate.canonicalKey === item.canonicalKey,
+          ) === index
+        );
       })
       .sort((a, b) => {
         if (b.usageCount !== a.usageCount) return b.usageCount - a.usageCount;
         if (a.manufacturer !== b.manufacturer)
           return a.manufacturer.localeCompare(b.manufacturer);
         if (a.system !== b.system) return a.system.localeCompare(b.system);
+        if (a.family !== b.family) return a.family.localeCompare(b.family);
         return a.type.localeCompare(b.type);
       });
 

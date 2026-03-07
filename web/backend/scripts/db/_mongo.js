@@ -17,10 +17,6 @@ export function getMongoUri() {
     return mongoUriTest || "mongodb://localhost:27017/abutsFitTest";
   }
 
-  if (nodeEnv !== "production" && mongoUriTest) {
-    return mongoUriTest;
-  }
-
   return mongoUri || "mongodb://localhost:27017/abutsFit";
 }
 
@@ -52,7 +48,7 @@ export function assertSafeToMutateDb(mongoUri) {
     throw new Error(
       `Refusing to mutate remote MongoDB without ABUTS_DB_FORCE=true. (db=${
         dbName || "unknown"
-      })`
+      })`,
     );
   }
 
@@ -60,7 +56,7 @@ export function assertSafeToMutateDb(mongoUri) {
     throw new Error(
       `Refusing to mutate DB in production. Set ABUTS_DB_FORCE=true to override. (db=${
         dbName || "unknown"
-      })`
+      })`,
     );
   }
 
@@ -68,7 +64,7 @@ export function assertSafeToMutateDb(mongoUri) {
     throw new Error(
       `Refusing to mutate unexpected DB name: ${
         dbName || "unknown"
-      }. Set ABUTS_DB_FORCE=true to override.`
+      }. Set ABUTS_DB_FORCE=true to override.`,
     );
   }
 

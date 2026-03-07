@@ -128,6 +128,9 @@ export async function createRequest(req, res) {
             const implantSystem = String(
               normalizedCaseInfos.implantSystem || "",
             ).trim();
+            const implantFamily = String(
+              normalizedCaseInfos.implantFamily || "",
+            ).trim();
             const implantType = String(
               normalizedCaseInfos.implantType || "",
             ).trim();
@@ -138,11 +141,16 @@ export async function createRequest(req, res) {
                 message: "치과이름, 환자이름, 치아번호는 모두 필수입니다.",
               });
             }
-            if (!implantManufacturer || !implantSystem || !implantType) {
+            if (
+              !implantManufacturer ||
+              !implantSystem ||
+              !implantFamily ||
+              !implantType
+            ) {
               return res.status(400).json({
                 success: false,
                 message:
-                  "커스텀 어벗 의뢰의 경우 임플란트 제조사/시스템/유형은 모두 필수입니다.",
+                  "커스텀 어벗 의뢰의 경우 임플란트 Manufacturer/Brand/Family/Type은 모두 필수입니다.",
               });
             }
 
@@ -354,6 +362,9 @@ export async function createRequest(req, res) {
             const implantSystem = String(
               normalizedCaseInfos.implantSystem || "",
             ).trim();
+            const implantFamily = String(
+              normalizedCaseInfos.implantFamily || "",
+            ).trim();
             const implantType = String(
               normalizedCaseInfos.implantType || "",
             ).trim();
@@ -365,11 +376,16 @@ export async function createRequest(req, res) {
               });
             }
 
-            if (!implantManufacturer || !implantSystem || !implantType) {
+            if (
+              !implantManufacturer ||
+              !implantSystem ||
+              !implantFamily ||
+              !implantType
+            ) {
               return res.status(400).json({
                 success: false,
                 message:
-                  "커스텀 어벗 의뢰의 경우 임플란트 제조사/시스템/유형은 모두 필수입니다.",
+                  "커스텀 어벗 의뢰의 경우 임플란트 Manufacturer/Brand/Family/Type은 모두 필수입니다.",
               });
             }
 
@@ -529,6 +545,7 @@ export async function createRequest(req, res) {
       normalizedCaseInfos.implantManufacturer || ""
     ).trim();
     const implantSystem = (normalizedCaseInfos.implantSystem || "").trim();
+    const implantFamily = (normalizedCaseInfos.implantFamily || "").trim();
     const implantType = (normalizedCaseInfos.implantType || "").trim();
 
     if (!patientName || !tooth || !clinicName) {
@@ -538,11 +555,16 @@ export async function createRequest(req, res) {
       });
     }
 
-    if (!implantManufacturer || !implantSystem || !implantType) {
+    if (
+      !implantManufacturer ||
+      !implantSystem ||
+      !implantFamily ||
+      !implantType
+    ) {
       return res.status(400).json({
         success: false,
         message:
-          "커스텀 어벗 의뢰의 경우 임플란트 제조사/시스템/유형은 모두 필수입니다.",
+          "커스텀 어벗 의뢰의 경우 임플란트 Manufacturer/Brand/Family/Type은 모두 필수입니다.",
       });
     }
 
@@ -972,9 +994,31 @@ export async function createRequestsBulk(req, res) {
           const tNorm0 = Date.now();
           const normalizedCaseInfos =
             await normalizeCaseInfosImplantFields(caseInfos);
+          const implantManufacturer = String(
+            normalizedCaseInfos.implantManufacturer || "",
+          ).trim();
+          const implantSystem = String(
+            normalizedCaseInfos.implantSystem || "",
+          ).trim();
+          const implantFamily = String(
+            normalizedCaseInfos.implantFamily || "",
+          ).trim();
+          const implantType = String(
+            normalizedCaseInfos.implantType || "",
+          ).trim();
           const fileMeta = raw?.file;
           if (!fileMeta?.s3Key) {
             throw new Error("STL 파일 정보(file.s3Key)가 필요합니다.");
+          }
+          if (
+            !implantManufacturer ||
+            !implantSystem ||
+            !implantFamily ||
+            !implantType
+          ) {
+            throw new Error(
+              "커스텀 어벗 의뢰의 경우 임플란트 Manufacturer/Brand/Family/Type은 모두 필수입니다.",
+            );
           }
           if (fileMeta?.s3Key) {
             const originalName = String(
@@ -992,22 +1036,18 @@ export async function createRequestsBulk(req, res) {
             };
           }
           const normMs = Date.now() - tNorm0;
-          const implantManufacturer = String(
-            normalizedCaseInfos.implantManufacturer || "",
-          ).trim();
-          const implantSystem = String(
-            normalizedCaseInfos.implantSystem || "",
-          ).trim();
-          const implantType = String(
-            normalizedCaseInfos.implantType || "",
-          ).trim();
 
           if (!patientName || !tooth || !clinicName) {
             throw new Error("치과이름, 환자이름, 치아번호는 모두 필수입니다.");
           }
-          if (!implantManufacturer || !implantSystem || !implantType) {
+          if (
+            !implantManufacturer ||
+            !implantSystem ||
+            !implantFamily ||
+            !implantType
+          ) {
             throw new Error(
-              "커스텀 어벗 의뢰의 경우 임플란트 제조사/시스템/유형은 모두 필수입니다.",
+              "커스텀 어벗 의뢰의 경우 임플란트 Manufacturer/Brand/Family/Type은 모두 필수입니다.",
             );
           }
 

@@ -92,9 +92,12 @@ export const RequestorRecentRequestsCard = ({
     setImplantManufacturer,
     implantSystem,
     setImplantSystem,
+    implantFamily,
+    setImplantFamily,
     implantType,
     setImplantType,
     syncSelectedConnection,
+    familyOptions,
     typeOptions,
   } = useNewRequestImplant({
     token: token || null,
@@ -151,30 +154,38 @@ export const RequestorRecentRequestsCard = ({
       typeof ci?.implantManufacturer === "string" ? ci.implantManufacturer : "";
     const rawSystem =
       typeof ci?.implantSystem === "string" ? ci.implantSystem : "";
+    const rawFamily =
+      typeof ci?.implantFamily === "string" ? ci.implantFamily : "";
     const rawType = typeof ci?.implantType === "string" ? ci.implantType : "";
 
     if (!connections || connections.length === 0) {
       return {
         manufacturer: rawManufacturer,
         system: rawSystem,
+        family: rawFamily,
         type: rawType,
       };
     }
 
     const manufacturers = new Set(connections.map((c: any) => c.manufacturer));
     const systems = new Set(connections.map((c: any) => c.system));
+    const families = new Set(
+      connections.map((c: any) => c.family || "Regular"),
+    );
     const types = new Set(connections.map((c: any) => c.type));
 
     const direct = connections.find(
       (c: any) =>
         c.manufacturer === rawManufacturer &&
         c.system === rawSystem &&
+        (c.family || "Regular") === (rawFamily || "Regular") &&
         c.type === rawType,
     );
     if (direct) {
       return {
         manufacturer: direct.manufacturer,
         system: direct.system,
+        family: direct.family || "Regular",
         type: direct.type,
       };
     }
@@ -195,6 +206,7 @@ export const RequestorRecentRequestsCard = ({
         return {
           manufacturer: chosen.manufacturer,
           system: chosen.system,
+          family: chosen.family || "Regular",
           type: chosen.type,
         };
       }
@@ -208,6 +220,11 @@ export const RequestorRecentRequestsCard = ({
       if (rawSystem && systems.has(rawSystem)) {
         candidates = candidates.filter((c: any) => c.system === rawSystem);
       }
+      if (rawFamily && families.has(rawFamily)) {
+        candidates = candidates.filter(
+          (c: any) => (c.family || "Regular") === rawFamily,
+        );
+      }
       if (rawType && types.has(rawType)) {
         candidates = candidates.filter((c: any) => c.type === rawType);
       }
@@ -216,6 +233,7 @@ export const RequestorRecentRequestsCard = ({
         return {
           manufacturer: chosen.manufacturer,
           system: chosen.system,
+          family: chosen.family || "Regular",
           type: chosen.type,
         };
       }
@@ -224,6 +242,7 @@ export const RequestorRecentRequestsCard = ({
     return {
       manufacturer: rawManufacturer,
       system: rawSystem,
+      family: rawFamily,
       type: rawType,
     };
   };
@@ -346,6 +365,7 @@ export const RequestorRecentRequestsCard = ({
       tooth: ci?.tooth || "",
       implantManufacturer: normalized.manufacturer || "",
       implantSystem: normalized.system || "",
+      implantFamily: normalized.family || "",
       implantType: normalized.type || "",
       maxDiameter: ci?.maxDiameter ?? null,
       connectionDiameter: ci?.connectionDiameter ?? null,
@@ -447,9 +467,10 @@ export const RequestorRecentRequestsCard = ({
                         {(() => {
                           const m = item.caseInfos?.implantManufacturer;
                           const s = item.caseInfos?.implantSystem;
+                          const f = item.caseInfos?.implantFamily;
                           const t = item.caseInfos?.implantType;
-                          if (!m && !s && !t) return "-";
-                          return `${m || "-"} / ${s || "-"} / ${t || "-"}`;
+                          if (!m && !s && !f && !t) return "-";
+                          return `${m || "-"} / ${s || "-"} / ${f || "-"} / ${t || "-"}`;
                         })()}
                       </span>
                       {item.caseInfos?.maxDiameter && (

@@ -43,16 +43,20 @@ type Props = {
   caseInfosMap?: Record<string, CaseInfos>;
   updateCaseInfos: (fileKey: string, updates: Partial<CaseInfos>) => void;
   connections: Connection[];
+  familyOptions: string[];
   typeOptions: string[];
   implantManufacturer: string;
   setImplantManufacturer: (v: string) => void;
   implantSystem: string;
   setImplantSystem: (v: string) => void;
+  implantFamily: string;
+  setImplantFamily: (v: string) => void;
   implantType: string;
   setImplantType: (v: string) => void;
   syncSelectedConnection: (
     manufacturer: string,
     system: string,
+    family: string,
     type: string,
   ) => void;
   fileVerificationStatus: Record<string, boolean>;
@@ -97,11 +101,14 @@ export function NewRequestDetailsSection({
   caseInfosMap,
   updateCaseInfos,
   connections,
+  familyOptions,
   typeOptions,
   implantManufacturer,
   setImplantManufacturer,
   implantSystem,
   setImplantSystem,
+  implantFamily,
+  setImplantFamily,
   implantType,
   setImplantType,
   syncSelectedConnection,
@@ -216,7 +223,7 @@ export function NewRequestDetailsSection({
 
   const newSystemInfoCopy = useMemo(
     () =>
-      '"신규 시스템 의뢰"로 무상처리되며, 개발을 위해 랩 아날로그 샘플을 보내주시길 요청드립니다.',
+      '"신규 임플란트 의뢰"로 무상처리되며, 개발을 위해 랩 아날로그 샘플을 보내주시길 요청드립니다.',
     [],
   );
   const normalizeKeyPart = (s: string) => {
@@ -240,11 +247,13 @@ export function NewRequestDetailsSection({
   ] = useState(false);
   const [showNewSystemForm, setShowNewSystemForm] = useState(false);
   const [newSystemManufacturer, setNewSystemManufacturer] = useState("");
-  const [newSystemSystem, setNewSystemSystem] = useState("");
+  const [newSystemBrand, setNewSystemBrand] = useState("");
+  const [newSystemFamily, setNewSystemFamily] = useState("");
   const [confirmNewSystemOpen, setConfirmNewSystemOpen] = useState(false);
   const [pendingNewSystem, setPendingNewSystem] = useState<{
     manufacturer: string;
-    system: string;
+    brand: string;
+    family: string;
   } | null>(null);
   const listContainerRef = useRef<HTMLDivElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -334,7 +343,8 @@ export function NewRequestDetailsSection({
   const resetNewSystemForm = useCallback(() => {
     setShowNewSystemForm(false);
     setNewSystemManufacturer("");
-    setNewSystemSystem("");
+    setNewSystemBrand("");
+    setNewSystemFamily("");
     setDetailCaseInfos({
       newSystemRequest: undefined,
     });
@@ -342,25 +352,27 @@ export function NewRequestDetailsSection({
 
   const handleNewSystemRequestClick = useCallback(() => {
     const manufacturer = newSystemManufacturer.trim();
-    const system = newSystemSystem.trim();
-    if (!manufacturer || !system) {
+    const brand = newSystemBrand.trim();
+    const family = newSystemFamily.trim();
+    if (!manufacturer || !brand || !family) {
       toast({
-        title: "신규 시스템 입력 필요",
-        description: "제조사와 시스템을 모두 입력해주세요.",
+        title: "신규 임플란트 입력 필요",
+        description: "Manufacturer, Brand, Family를 모두 입력해주세요.",
         variant: "destructive",
         duration: 4000,
       });
       return;
     }
-    setPendingNewSystem({ manufacturer, system });
+    setPendingNewSystem({ manufacturer, brand, family });
     setConfirmNewSystemOpen(true);
-  }, [newSystemManufacturer, newSystemSystem, toast]);
+  }, [newSystemBrand, newSystemFamily, newSystemManufacturer, toast]);
   const detailImplantInfo = {
     clinicName: detailCaseInfos?.clinicName || "",
     patientName: detailCaseInfos?.patientName || "",
     tooth: detailCaseInfos?.tooth || "",
     implantManufacturer: detailCaseInfos?.implantManufacturer || "",
     implantSystem: detailCaseInfos?.implantSystem || "",
+    implantFamily: detailCaseInfos?.implantFamily || "",
     implantType: detailCaseInfos?.implantType || "",
   };
 
@@ -370,7 +382,8 @@ export function NewRequestDetailsSection({
       setNewSystemManufacturer(
         detailCaseInfos.newSystemRequest.manufacturer || "",
       );
-      setNewSystemSystem(detailCaseInfos.newSystemRequest.system || "");
+      setNewSystemBrand(detailCaseInfos.newSystemRequest.system || "");
+      setNewSystemFamily(detailCaseInfos.newSystemRequest.family || "");
     }
   }, [detailCaseInfos?.newSystemRequest?.requested]);
 
@@ -737,7 +750,7 @@ export function NewRequestDetailsSection({
       </div>
 
       <Dialog open={isDetailOpen} onOpenChange={handleDialogOpenChange}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-6xl">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">
               STL 확인 및 정보 입력
@@ -787,11 +800,14 @@ export function NewRequestDetailsSection({
                     showImplantSelect={showImplantSelect}
                     readOnly={!detailFile}
                     connections={connections}
+                    familyOptions={familyOptions}
                     typeOptions={typeOptions}
                     implantManufacturer={implantManufacturer}
                     setImplantManufacturer={setImplantManufacturer}
                     implantSystem={implantSystem}
                     setImplantSystem={setImplantSystem}
+                    implantFamily={implantFamily}
+                    setImplantFamily={setImplantFamily}
                     implantType={implantType}
                     setImplantType={setImplantType}
                     syncSelectedConnection={syncSelectedConnection}
@@ -819,7 +835,7 @@ export function NewRequestDetailsSection({
                           className="bg-white text-blue-700 border-blue-200 hover:bg-blue-50"
                           onClick={() => setShowNewSystemForm(true)}
                         >
-                          신규 시스템 요청
+                          신규 임플란트 요청
                         </Button>
                       ) : (
                         <div className="flex items-center gap-2">
@@ -843,18 +859,23 @@ export function NewRequestDetailsSection({
                     </div>
                     {showNewSystemForm && (
                       <div className="flex flex-col gap-2">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                           <Input
-                            placeholder="제조사 입력"
+                            placeholder="Manufacturer"
                             value={newSystemManufacturer}
                             onChange={(e) =>
                               setNewSystemManufacturer(e.target.value)
                             }
                           />
                           <Input
-                            placeholder="시스템 입력"
-                            value={newSystemSystem}
-                            onChange={(e) => setNewSystemSystem(e.target.value)}
+                            placeholder="Brand"
+                            value={newSystemBrand}
+                            onChange={(e) => setNewSystemBrand(e.target.value)}
+                          />
+                          <Input
+                            placeholder="Family"
+                            value={newSystemFamily}
+                            onChange={(e) => setNewSystemFamily(e.target.value)}
                           />
                         </div>
                       </div>
@@ -935,7 +956,9 @@ export function NewRequestDetailsSection({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>신규 시스템 의뢰로 접수할까요?</AlertDialogTitle>
+            <AlertDialogTitle>
+              신규 임플란트 의뢰로 접수할까요?
+            </AlertDialogTitle>
             <AlertDialogDescription>{newSystemInfoCopy}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -950,22 +973,25 @@ export function NewRequestDetailsSection({
             <AlertDialogAction
               onClick={async () => {
                 if (!pendingNewSystem) return;
-                const { manufacturer, system } = pendingNewSystem;
+                const { manufacturer, brand, family } = pendingNewSystem;
                 const message = "랩 아날로그 샘플 한 개를 요청드립니다";
                 setDetailCaseInfos({
                   implantManufacturer: manufacturer,
-                  implantSystem: system,
+                  implantSystem: brand,
+                  implantFamily: family,
                   newSystemRequest: {
                     requested: true,
                     manufacturer,
-                    system,
+                    brand,
+                    system: brand,
+                    family,
                     message,
                     free: true,
-                    tag: "신규 시스템 의뢰",
+                    tag: "신규 임플란트 의뢰",
                   },
                 });
                 toast({
-                  title: "신규 시스템으로 접수",
+                  title: "신규 임플란트로 접수",
                   description:
                     "무상 처리 및 랩 아날로그 샘플 요청으로 전달됩니다.",
                   duration: 3500,

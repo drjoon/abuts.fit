@@ -367,6 +367,21 @@
   - 환경변수 토글(`ABUTS_RECOVER_PENDING_NC`) 제거
   - TTL purge만 실행 후 종료
 
+### 7.3 Esprit 2_Connection 파일명 SSOT 및 DB 동기화 정책
+
+- `bg/esprit-addin/AcroDent/2_Connection` 폴더에 존재하는 PRC 파일명이 `hanhwa-connection` 임플란트 정보의 **SSOT**다.
+- 백엔드 DB의 임플란트/커넥션 seed는 수기 상수보다 위 폴더 파일명을 기준으로 추가/변경한다.
+- 동기화 스크립트는 `web/backend/scripts/db/implant-preset.js`를 사용한다.
+- 파일명 규칙은 `{제조사}_{시스템}_{타입코드}_Connection.prc`를 따른다.
+  - 예: `오스템_TS_RH_Connection.prc`
+  - 제조사 토큰은 한글명 기준으로 파싱한다.
+  - 타입코드 `RH/RN/MH/MN`은 각각 `Hex/Non-Hex/Hex/Non-Hex`로 해석한다.
+- **환경별 정책**:
+  - `production`: 기존 DB 문서는 유지하고, SSOT 폴더에서 파싱된 **새 임플란트 정보만 추가**한다. 기존 문서를 수정/삭제하지 않는다.
+  - `development`, `test`, `local`: 기존 `hanhwa-connection` 임플란트 정보를 **리셋 후** SSOT 폴더 기준으로 다시 시딩한다.
+- 운영 중 새로운 임플란트 조합이 추가되면, 먼저 `bg/esprit-addin/AcroDent/2_Connection`에 PRC 파일을 반영한 뒤 스크립트를 실행한다.
+- Esprit Add-in과 백엔드는 모두 이 SSOT에서 파생된 canonical manufacturer/system/type 및 PRC 파일명을 사용해야 하며, 임의 폴백은 허용하지 않는다.
+
 ### 11.2 팝빌 처리 아키텍처
 
 - **단일 백그라운드 워커 전담**: 팝빌 관련 작업(세금계산서 발행/취소, 계좌조회, 알림 발송)은 백그라운드 워커(`popbillWorker.js`)가 전담한다.

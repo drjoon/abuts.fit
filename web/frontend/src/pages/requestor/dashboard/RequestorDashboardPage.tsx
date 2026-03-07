@@ -75,6 +75,7 @@ export const RequestorDashboardPage = () => {
   const [editingImplantManufacturer, setEditingImplantManufacturer] =
     useState("");
   const [editingImplantSystem, setEditingImplantSystem] = useState("");
+  const [editingImplantFamily, setEditingImplantFamily] = useState("");
   const [editingImplantType, setEditingImplantType] = useState("");
   const [selectedRiskSummaryItem, setSelectedRiskSummaryItem] =
     useState<RiskSummaryItem | null>(null);
@@ -349,6 +350,7 @@ export const RequestorDashboardPage = () => {
       implantManufacturer:
         ci.implantManufacturer || request.implantManufacturer || "",
       implantSystem: ci.implantSystem || request.implantSystem || "",
+      implantFamily: ci.implantFamily || request.implantFamily || "",
       implantType: ci.implantType || request.implantType || "",
     });
 
@@ -365,6 +367,7 @@ export const RequestorDashboardPage = () => {
       ci.implantManufacturer || request.implantManufacturer || "",
     );
     setEditingImplantSystem(ci.implantSystem || request.implantSystem || "");
+    setEditingImplantFamily(ci.implantFamily || request.implantFamily || "");
     setEditingImplantType(ci.implantType || request.implantType || "");
   };
 
@@ -618,6 +621,7 @@ export const RequestorDashboardPage = () => {
         editingTeethText={editingTeethText}
         editingImplantManufacturer={editingImplantManufacturer}
         editingImplantSystem={editingImplantSystem}
+        editingImplantFamily={editingImplantFamily}
         editingImplantType={editingImplantType}
         onChangeDescription={setEditingDescription}
         onChangeClinicName={setEditingClinicName}
@@ -625,6 +629,7 @@ export const RequestorDashboardPage = () => {
         onChangeTeethText={setEditingTeethText}
         onChangeImplantManufacturer={setEditingImplantManufacturer}
         onChangeImplantSystem={setEditingImplantSystem}
+        onChangeImplantFamily={setEditingImplantFamily}
         onChangeImplantType={setEditingImplantType}
         onClose={() => setEditingRequest(null)}
         onSave={async () => {
@@ -655,6 +660,9 @@ export const RequestorDashboardPage = () => {
             }
             if (editingImplantSystem.trim()) {
               payload.caseInfos.implantSystem = editingImplantSystem.trim();
+            }
+            if (editingImplantFamily.trim()) {
+              payload.caseInfos.implantFamily = editingImplantFamily.trim();
             }
             if (editingImplantType.trim()) {
               payload.caseInfos.implantType = editingImplantType.trim();

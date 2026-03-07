@@ -16,6 +16,7 @@ import {
   toKstYmd,
   ymdToMmDd,
 } from "../../utils/krBusinessDays.js";
+import { normalizeImplantFields } from "../../utils/implantCanonical.js";
 
 export {
   addKoreanBusinessDays,
@@ -244,18 +245,20 @@ export async function normalizeCaseInfosImplantFields(caseInfos) {
 
   const manufacturer = (ci.implantManufacturer || "").trim();
   const system = (ci.implantSystem || "").trim();
+  const family = (ci.implantFamily || "").trim();
   const type = (ci.implantType || "").trim();
   const legacyConnectionType = (ci.connectionType || "").trim();
   delete ci.connectionType;
 
   // 이미 신 스키마가 완성되어 있으면 그대로
-  if (manufacturer && system && type) {
-    return {
+  if (manufacturer && system && family && type) {
+    return normalizeImplantFields({
       ...ci,
       implantManufacturer: manufacturer,
       implantSystem: system,
+      implantFamily: family,
       implantType: type,
-    };
+    });
   }
 
   // 레거시(밀린 값) 케이스를 최대한 복원
@@ -263,48 +266,52 @@ export async function normalizeCaseInfosImplantFields(caseInfos) {
   // - 현재 문제 데이터: implantSystem=시스템(Regular), implantType=유형(Hex), connectionType=유형(Hex)
   const candidateManufacturer = manufacturer || "";
   const rawA = system; // implantSystem
+  const rawFamily = family; // implantFamily
   const rawB = type || legacyConnectionType; // implantType 우선
 
   // 1) 과거 스키마(implantSystem=제조사)로 들어온 경우
   //    제조사가 비어 있고 connectionType이 있는 경우가 많음
   if (!candidateManufacturer && system && legacyConnectionType && !type) {
-    return {
+    return normalizeImplantFields({
       ...ci,
       implantManufacturer: system,
       implantSystem: (ci.implantType || "").trim(),
+      implantFamily: (ci.implantFamily || "").trim() || "Regular",
       implantType: legacyConnectionType,
-    };
+    });
   }
 
-  // 2) connections DB로 복원 시도 (system/type 조합으로 manufacturer 찾기)
-  //    - (Regular, Hex) 같은 조합이 manufacturer별로 중복될 수 있으나,
-  //      기존 데이터가 밀린 상태라면 manufacturer가 없으므로 첫 매칭을 사용한다.
-  if (!candidateManufacturer && rawA && rawB) {
+  // 2) connections DB로 복원 시도
+  if (rawA && rawB) {
     const found = await Connection.findOne({
       isActive: true,
-      system: rawA,
+      ...(candidateManufacturer ? { manufacturer: candidateManufacturer } : {}),
+      $or: [{ system: rawA }, { family: rawA }],
+      ...(rawFamily ? { family: rawFamily } : {}),
       type: rawB,
     })
-      .select({ manufacturer: 1, system: 1, type: 1 })
+      .select({ manufacturer: 1, system: 1, family: 1, type: 1 })
       .lean();
 
     if (found) {
-      return {
+      return normalizeImplantFields({
         ...ci,
         implantManufacturer: found.manufacturer,
-        implantSystem: found.system,
+        implantSystem: found.system || rawA,
+        implantFamily: found.family || rawFamily || "Regular",
         implantType: found.type,
-      };
+      });
     }
   }
 
   // 3) 마지막 fallback: 있는 값들을 최대한 채움
-  return {
+  return normalizeImplantFields({
     ...ci,
     implantManufacturer: candidateManufacturer,
     implantSystem: rawA,
+    implantFamily: rawFamily || "Regular",
     implantType: rawB,
-  };
+  });
 }
 
 function inferDiameterGroupFromDiameter(diameter) {

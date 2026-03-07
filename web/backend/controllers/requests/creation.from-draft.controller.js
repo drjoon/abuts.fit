@@ -258,17 +258,20 @@ export async function createRequestsFromDraft(req, res) {
           const nsr = ci?.newSystemRequest;
           if (nsr?.requested) {
             const manufacturer = String(nsr.manufacturer || "").trim();
-            const system = String(nsr.system || "").trim();
+            const brand = String(nsr.brand || nsr.system || "").trim();
+            const family = String(nsr.family || "").trim();
             const message = String(
               nsr.message || "랩 아날로그 샘플 한 개를 요청드립니다",
             ).trim();
             return {
               requested: true,
               manufacturer,
-              system,
+              brand,
+              system: brand,
+              family,
               message,
               free: true,
-              tag: nsr.tag || "신규 시스템 의뢰",
+              tag: nsr.tag || "신규 임플란트 의뢰",
             };
           }
           return undefined;
@@ -281,7 +284,7 @@ export async function createRequestsFromDraft(req, res) {
             supply: 0,
             vat: 0,
             free: true,
-            discountReason: "신규 시스템 의뢰(무상)",
+            discountReason: "신규 임플란트 의뢰(무상)",
             discountType: "free",
           };
         }

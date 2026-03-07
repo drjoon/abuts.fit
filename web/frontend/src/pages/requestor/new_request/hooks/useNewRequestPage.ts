@@ -308,9 +308,12 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     setImplantManufacturer,
     implantSystem,
     setImplantSystem,
+    implantFamily,
+    setImplantFamily,
     implantType,
     setImplantType,
     syncSelectedConnection,
+    familyOptions,
     typeOptions,
   } = useNewRequestImplant({
     token,
@@ -334,19 +337,23 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         currentFileKey,
         implantManufacturer: currentCaseInfos.implantManufacturer,
         implantSystem: currentCaseInfos.implantSystem,
+        implantFamily: currentCaseInfos.implantFamily,
         implantType: currentCaseInfos.implantType,
       });
       setImplantManufacturer(currentCaseInfos.implantManufacturer || "");
       setImplantSystem(currentCaseInfos.implantSystem || "");
+      setImplantFamily(currentCaseInfos.implantFamily || "");
       setImplantType(currentCaseInfos.implantType || "");
     }
   }, [
     currentFileKey,
     currentCaseInfos.implantManufacturer,
     currentCaseInfos.implantSystem,
+    currentCaseInfos.implantFamily,
     currentCaseInfos.implantType,
     setImplantManufacturer,
     setImplantSystem,
+    setImplantFamily,
     setImplantType,
   ]);
 
@@ -363,6 +370,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     implant: {
       manufacturer: implantManufacturer,
       system: implantSystem,
+      family: implantFamily,
       type: implantType,
     },
   });
@@ -419,6 +427,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         if (favorite) {
           updates.implantManufacturer = favorite.manufacturer;
           updates.implantSystem = favorite.system;
+          updates.implantFamily = favorite.family;
           updates.implantType = favorite.type;
         }
 
@@ -717,6 +726,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
                   : "",
               implantSystem:
                 typeof ci.implantSystem === "string" ? ci.implantSystem : "",
+              implantFamily:
+                typeof ci.implantFamily === "string" ? ci.implantFamily : "",
               implantType:
                 typeof ci.implantType === "string" ? ci.implantType : "",
               maxDiameter:
@@ -740,13 +751,20 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         }
 
         if (req.caseInfos) {
-          const { implantManufacturer, implantSystem, implantType } =
-            req.caseInfos;
+          const {
+            implantManufacturer,
+            implantSystem,
+            implantFamily,
+            implantType,
+          } = req.caseInfos;
           if (typeof implantManufacturer === "string") {
             setImplantManufacturer(implantManufacturer);
           }
           if (typeof implantSystem === "string") {
             setImplantSystem(implantSystem);
+          }
+          if (typeof implantFamily === "string") {
+            setImplantFamily(implantFamily);
           }
           if (typeof implantType === "string") {
             setImplantType(implantType);
@@ -762,6 +780,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     setCaseInfosMap,
     setImplantManufacturer,
     setImplantSystem,
+    setImplantFamily,
     setImplantType,
   ]);
 
@@ -929,9 +948,12 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     setImplantManufacturer,
     implantSystem,
     setImplantSystem,
+    implantFamily,
+    setImplantFamily,
     implantType,
     setImplantType,
     syncSelectedConnection,
+    familyOptions,
     connections,
 
     // 클리닉 프리셋

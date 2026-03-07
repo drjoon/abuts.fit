@@ -255,7 +255,7 @@ export async function seedAccountsDev() {
         patientName: "홍길동",
         tooth: "11",
         manufacturer: "OSSTEM",
-        system: "Regular",
+        system: "TS",
         type: "Hex",
         lastUsedAt: NOW,
       },
@@ -268,7 +268,7 @@ export async function seedAccountsDev() {
       requestor: requestorOwner._id,
       clinicName: "데모치과",
       manufacturer: "OSSTEM",
-      system: "Regular",
+      system: "TS",
       type: "Hex",
     },
     {
@@ -276,7 +276,7 @@ export async function seedAccountsDev() {
         requestor: requestorOwner._id,
         clinicName: "데모치과",
         manufacturer: "OSSTEM",
-        system: "Regular",
+        system: "TS",
         type: "Hex",
         useCount: 1,
       },
@@ -583,7 +583,7 @@ export async function seedBulkUsersAndData() {
           patientName: `환자${i}-${k}`,
           tooth: "11",
           implantManufacturer: "OSSTEM",
-          implantSystem: "Regular",
+          implantSystem: "TS",
           implantType: "Hex",
           reviewByStage: {
             shipping: {

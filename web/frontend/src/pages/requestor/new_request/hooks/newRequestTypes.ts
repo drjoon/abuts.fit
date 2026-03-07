@@ -1,6 +1,7 @@
 export type ClinicFavoriteImplant = {
   manufacturer: string;
   system: string;
+  family?: string;
   type: string;
 };
 
@@ -13,8 +14,15 @@ export type ClinicPreset = {
 export type Connection = {
   _id?: string;
   manufacturer: string;
+  manufacturerKor?: string;
   system: string;
+  family?: string;
   type: string;
+  isActive?: boolean;
+  displayManufacturer?: string | null;
+  displayBrand?: string | null;
+  displayFamily?: string | null;
+  displayType?: string | null;
   connectionPrcFileName?: string | null;
   faceHolePrcFileName?: string | null;
   prcTypeCode?: string | null;
@@ -27,6 +35,7 @@ export type CaseInfos = {
   tooth?: string;
   implantManufacturer?: string;
   implantSystem?: string;
+  implantFamily?: string;
   implantType?: string;
   maxDiameter?: number;
   connectionDiameter?: number;
@@ -36,7 +45,9 @@ export type CaseInfos = {
   newSystemRequest?: {
     requested: boolean;
     manufacturer?: string;
+    brand?: string;
     system?: string;
+    family?: string;
     message?: string;
     free?: boolean;
     tag?: string;

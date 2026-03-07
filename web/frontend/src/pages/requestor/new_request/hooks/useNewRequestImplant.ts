@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import type { Connection } from "./newRequestTypes";
 
-const CONNECTIONS_STORAGE_KEY = "abutsfit:connections:v2";
+const CONNECTIONS_STORAGE_KEY = "abutsfit:connections:v5";
 const CONNECTIONS_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1년
 
 export type UseNewRequestImplantParams = {
@@ -11,6 +11,7 @@ export type UseNewRequestImplantParams = {
   onDefaultImplantChange?: (fields: {
     implantManufacturer: string;
     implantSystem: string;
+    implantFamily: string;
     implantType: string;
   }) => void;
 };
@@ -26,6 +27,7 @@ export const useNewRequestImplant = ({
   >(null);
   const [implantManufacturer, setImplantManufacturer] = useState("");
   const [implantSystem, setImplantSystem] = useState("");
+  const [implantFamily, setImplantFamily] = useState("");
   const [implantType, setImplantType] = useState("");
 
   // connections 목록은 토큰 기준으로 한 번만 조회
@@ -89,7 +91,7 @@ export const useNewRequestImplant = ({
   // clinicName / connections 에 따라 기본 임플란트 선택
   useEffect(() => {
     // 이미 임플란트 정보가 구체적으로 설정되어 있다면 덮어쓰지 않는다.
-    if (implantManufacturer && implantSystem && implantType) {
+    if (implantManufacturer && implantSystem && implantFamily && implantType) {
       return;
     }
 
@@ -101,34 +103,46 @@ export const useNewRequestImplant = ({
 
         const list = connections;
 
-        // 기본값은
-        // 1) OSSTEM / Regular / Hex
-        // 2) 전체 목록의 첫 항목
         const preferred = list.find(
           (c) =>
-            c.manufacturer === "OSSTEM" &&
-            c.system === "Regular" &&
-            c.type === "Hex",
+            c.family === "Regular" && c.type === "Hex" && c.isActive !== false,
         ) as
-          | { manufacturer?: string; system?: string; type?: string }
+          | {
+              manufacturer?: string;
+              system?: string;
+              family?: string;
+              type?: string;
+            }
           | undefined;
 
         const fallbackFirst = list[0] as
-          | { manufacturer?: string; system?: string; type?: string }
+          | {
+              manufacturer?: string;
+              system?: string;
+              family?: string;
+              type?: string;
+            }
           | undefined;
 
         const baseManufacturer =
-          preferred?.manufacturer || fallbackFirst?.manufacturer || "OSSTEM";
-        const baseSystem =
-          preferred?.system || fallbackFirst?.system || "Regular";
+          preferred?.manufacturer || fallbackFirst?.manufacturer || "";
+        const baseSystem = preferred?.system || fallbackFirst?.system || "";
+        const baseFamily =
+          preferred?.family || fallbackFirst?.family || "Regular";
         const baseType = preferred?.type || fallbackFirst?.type || "Hex";
+
+        if (!baseManufacturer || !baseSystem || !baseFamily || !baseType) {
+          return;
+        }
 
         const nextManufacturer = baseManufacturer;
         const nextSystem = baseSystem;
+        const nextFamily = baseFamily;
         const nextType = baseType;
 
         setImplantManufacturer(nextManufacturer);
         setImplantSystem(nextSystem);
+        setImplantFamily(nextFamily);
         setImplantType(nextType);
 
         if (list.length > 0) {
@@ -136,6 +150,7 @@ export const useNewRequestImplant = ({
             (c) =>
               c.manufacturer === nextManufacturer &&
               c.system === nextSystem &&
+              (c.family || "Regular") === nextFamily &&
               c.type === nextType,
           );
           setSelectedConnectionId(found?._id ? String(found._id) : null);
@@ -146,6 +161,7 @@ export const useNewRequestImplant = ({
           onDefaultImplantChange({
             implantManufacturer: nextManufacturer,
             implantSystem: nextSystem,
+            implantFamily: nextFamily,
             implantType: nextType,
           });
         }
@@ -159,28 +175,41 @@ export const useNewRequestImplant = ({
     connections,
     implantManufacturer,
     implantSystem,
+    implantFamily,
     implantType,
   ]);
 
   const syncSelectedConnection = (
     manufacturer: string,
     system: string,
+    family: string,
     type: string,
   ) => {
     const found = connections.find(
       (c) =>
         c.manufacturer === manufacturer &&
         c.system === system &&
+        (c.family || "Regular") === family &&
         c.type === type,
     );
     setSelectedConnectionId(found?._id ? String(found._id) : null);
   };
 
-  const typeOptions = connections
+  const familyOptions = connections
     .filter(
       (c) =>
         (!implantManufacturer || c.manufacturer === implantManufacturer) &&
         (!implantSystem || c.system === implantSystem),
+    )
+    .map((c) => (c.family || "Regular") as string)
+    .filter((v, idx, arr) => arr.indexOf(v) === idx);
+
+  const typeOptions = connections
+    .filter(
+      (c) =>
+        (!implantManufacturer || c.manufacturer === implantManufacturer) &&
+        (!implantSystem || c.system === implantSystem) &&
+        (!implantFamily || (c.family || "Regular") === implantFamily),
     )
     .map((c) => c.type as string)
     .filter((v, idx, arr) => arr.indexOf(v) === idx);
@@ -193,9 +222,12 @@ export const useNewRequestImplant = ({
     setImplantManufacturer,
     implantSystem,
     setImplantSystem,
+    implantFamily,
+    setImplantFamily,
     implantType,
     setImplantType,
     syncSelectedConnection,
+    familyOptions,
     typeOptions,
   };
 };

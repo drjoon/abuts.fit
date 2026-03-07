@@ -61,11 +61,14 @@ export const NewRequestPage = () => {
     handleUpload,
     handleUploadUnchecked,
     handleRemoveFile,
+    familyOptions,
     typeOptions,
     implantManufacturer,
     setImplantManufacturer,
     implantSystem,
     setImplantSystem,
+    implantFamily,
+    setImplantFamily,
     implantType,
     setImplantType,
     syncSelectedConnection,
@@ -142,6 +145,7 @@ export const NewRequestPage = () => {
       tooth: "",
       implantManufacturer: "",
       implantSystem: "",
+      implantFamily: "",
       implantType: "",
       maxDiameter: undefined,
       connectionDiameter: undefined,
@@ -151,6 +155,7 @@ export const NewRequestPage = () => {
     });
     setImplantManufacturer("");
     setImplantSystem("");
+    setImplantFamily("");
     setImplantType("");
 
     const fileInput = document.getElementById(
@@ -549,11 +554,14 @@ export const NewRequestPage = () => {
               caseInfosMap={caseInfosMap}
               updateCaseInfos={updateCaseInfos}
               connections={connections}
+              familyOptions={familyOptions}
               typeOptions={typeOptions}
               implantManufacturer={implantManufacturer}
               setImplantManufacturer={setImplantManufacturer}
               implantSystem={implantSystem}
               setImplantSystem={setImplantSystem}
+              implantFamily={implantFamily}
+              setImplantFamily={setImplantFamily}
               implantType={implantType}
               setImplantType={setImplantType}
               syncSelectedConnection={syncSelectedConnection}

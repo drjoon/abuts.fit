@@ -489,7 +489,7 @@ export const WorksheetCardGrid = ({
                         variant="outline"
                         className="border-emerald-400 text-emerald-700 bg-emerald-50"
                       >
-                        신규 시스템
+                        신규 임플란트
                       </Badge>
                     )}
                   </div>

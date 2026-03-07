@@ -18,16 +18,20 @@ type Props = {
   readOnly?: boolean;
   implantSelectSource?: "hook" | "caseInfos";
   connections: Connection[];
+  familyOptions: string[];
   typeOptions: string[];
   implantManufacturer: string;
   setImplantManufacturer: (v: string) => void;
   implantSystem: string;
   setImplantSystem: (v: string) => void;
+  implantFamily: string;
+  setImplantFamily: (v: string) => void;
   implantType: string;
   setImplantType: (v: string) => void;
   syncSelectedConnection: (
     manufacturer: string,
     system: string,
+    family: string,
     type: string,
   ) => void;
   clinicNameOptions: Option[];
@@ -49,11 +53,14 @@ export function NewRequestPatientImplantFields({
   readOnly,
   implantSelectSource = "hook",
   connections,
+  familyOptions,
   typeOptions,
   implantManufacturer,
   setImplantManufacturer,
   implantSystem,
   setImplantSystem,
+  implantFamily,
+  setImplantFamily,
   implantType,
   setImplantType,
   syncSelectedConnection,
@@ -68,19 +75,12 @@ export function NewRequestPatientImplantFields({
   clearAllTeethPresets,
   handleAddOrSelectClinic,
 }: Props) {
-  const enforcedImplantType = "Hex" as const;
-  const caseInfos =
-    rawCaseInfos && rawCaseInfos.implantType !== enforcedImplantType
-      ? { ...rawCaseInfos, implantType: enforcedImplantType }
-      : rawCaseInfos;
+  const caseInfos = rawCaseInfos;
   const setCaseInfos = useCallback(
     (updates: Partial<CaseInfos>) => {
-      setCaseInfosRaw({
-        ...updates,
-        implantType: enforcedImplantType,
-      });
+      setCaseInfosRaw(updates);
     },
-    [enforcedImplantType, setCaseInfosRaw],
+    [setCaseInfosRaw],
   );
   const hasClinicName = Boolean((caseInfos?.clinicName || "").trim());
   const implantDisabled = Boolean(readOnly || !hasClinicName);
@@ -93,18 +93,128 @@ export function NewRequestPatientImplantFields({
     implantSelectSource === "caseInfos"
       ? caseInfos?.implantSystem || ""
       : implantSystem;
-  const currentType = enforcedImplantType;
+  const currentFamily =
+    implantSelectSource === "caseInfos"
+      ? caseInfos?.implantFamily || ""
+      : implantFamily;
+  const currentType =
+    implantSelectSource === "caseInfos"
+      ? caseInfos?.implantType || ""
+      : implantType;
 
-  const currentTypeOptions = useMemo(() => {
-    return [enforcedImplantType];
-  }, [enforcedImplantType]);
+  const currentTypeOptions = useMemo(() => typeOptions || [], [typeOptions]);
+
+  const connectionOptions = useMemo(() => {
+    return connections
+      .filter(
+        (c) =>
+          typeof c.manufacturer === "string" &&
+          typeof c.system === "string" &&
+          c.manufacturer.trim() &&
+          c.system.trim(),
+      )
+      .sort((a, b) => {
+        const manufacturerCompare = a.manufacturer.localeCompare(
+          b.manufacturer,
+          "ko",
+        );
+        if (manufacturerCompare !== 0) return manufacturerCompare;
+        return a.system.localeCompare(b.system, "ko");
+      });
+  }, [connections]);
+
+  const manufacturerOptions = useMemo(() => {
+    return [...new Set(connectionOptions.map((c) => c.manufacturer))];
+  }, [connectionOptions]);
+
+  const systemOptions = useMemo(() => {
+    return [
+      ...new Set(
+        connectionOptions
+          .filter((c) => c.manufacturer === currentManufacturer)
+          .map((c) => c.system),
+      ),
+    ];
+  }, [connectionOptions, currentManufacturer]);
+
+  const currentFamilyOptions = useMemo(() => {
+    const base = connectionOptions
+      .filter(
+        (c) =>
+          c.manufacturer === currentManufacturer && c.system === currentSystem,
+      )
+      .map((c) => c.family || "Regular");
+    return [...new Set(base.length ? base : familyOptions)];
+  }, [connectionOptions, currentManufacturer, currentSystem, familyOptions]);
+
+  const manufacturerLabelMap = useMemo(() => {
+    return new Map(
+      manufacturerOptions.map((manufacturer) => {
+        const sample = connectionOptions.find(
+          (c) => c.manufacturer === manufacturer,
+        );
+        return [manufacturer, sample?.displayManufacturer || manufacturer];
+      }),
+    );
+  }, [connectionOptions, manufacturerOptions]);
+
+  const brandLabelMap = useMemo(() => {
+    return new Map(
+      systemOptions.map((system) => {
+        const sample = connectionOptions.find(
+          (c) => c.manufacturer === currentManufacturer && c.system === system,
+        );
+        return [system, sample?.displayBrand || system];
+      }),
+    );
+  }, [connectionOptions, currentManufacturer, systemOptions]);
+
+  const familyLabelMap = useMemo(() => {
+    return new Map(
+      currentFamilyOptions.map((family) => {
+        const sample = connectionOptions.find(
+          (c) =>
+            c.manufacturer === currentManufacturer &&
+            c.system === currentSystem &&
+            (c.family || "Regular") === family,
+        );
+        return [family, sample?.displayFamily || family];
+      }),
+    );
+  }, [
+    connectionOptions,
+    currentFamilyOptions,
+    currentManufacturer,
+    currentSystem,
+  ]);
+
+  const typeLabelMap = useMemo(() => {
+    return new Map(
+      currentTypeOptions.map((type) => {
+        const sample = connectionOptions.find(
+          (c) =>
+            c.manufacturer === currentManufacturer &&
+            c.system === currentSystem &&
+            (c.family || "Regular") === currentFamily &&
+            c.type === type,
+        );
+        return [type, sample?.displayType || type];
+      }),
+    );
+  }, [
+    connectionOptions,
+    currentFamily,
+    currentManufacturer,
+    currentSystem,
+    currentTypeOptions,
+  ]);
 
   useEffect(() => {
     const manufacturer = caseInfos?.implantManufacturer;
     if (!manufacturer) return;
 
-    const manufacturerConnections = connections.filter(
-      (c) => c.manufacturer === manufacturer && c.type === enforcedImplantType,
+    const manufacturerConnections = connectionOptions.filter(
+      (c) => c.manufacturer === manufacturer,
     );
     if (!manufacturerConnections.length) return;
 
@@ -117,18 +227,27 @@ export function NewRequestPatientImplantFields({
     const fallbackSystem = manufacturerConnections[0].system || "";
     if (!fallbackSystem) return;
 
-    setCaseInfos({ implantSystem: fallbackSystem });
+    const fallbackFamily = manufacturerConnections[0].family || "Regular";
+    const fallbackType = manufacturerConnections[0].type || "Hex";
+    setCaseInfos({
+      implantSystem: fallbackSystem,
+      implantFamily: fallbackFamily,
+      implantType: fallbackType,
+    });
     if (implantSelectSource !== "caseInfos") {
       setImplantSystem(fallbackSystem);
+      setImplantFamily(fallbackFamily);
+      setImplantType(fallbackType);
     }
   }, [
     caseInfos?.implantManufacturer,
     caseInfos?.implantSystem,
-    connections,
-    enforcedImplantType,
+    connectionOptions,
     implantSelectSource,
     setCaseInfos,
+    setImplantFamily,
     setImplantSystem,
+    setImplantType,
   ]);
 
   return (
@@ -265,93 +384,61 @@ export function NewRequestPatientImplantFields({
       {showImplantSelect && (
         <div className="space-y-4">
           <div className="space-y-1">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px] md:text-[11px]">
-              <div className="min-w-0 space-y-1">
-                <Select value={currentType} disabled>
-                  <SelectTrigger disabled={implantDisabled || !currentSystem}>
-                    <SelectValue placeholder="유형" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(() => {
-                      const base = currentTypeOptions || [];
-                      const list =
-                        currentType && !base.includes(currentType)
-                          ? [currentType, ...base]
-                          : base;
-                      return list.map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {t}
-                        </SelectItem>
-                      ));
-                    })()}
-                  </SelectContent>
-                </Select>
-              </div>
-
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-[10px] md:text-[11px]">
               <div className="min-w-0 space-y-1">
                 <Select
                   value={currentManufacturer}
                   onValueChange={(value) => {
                     if (implantDisabled) return;
-                    const firstForManufacturer = connections.find(
-                      (c) =>
-                        c.manufacturer === value &&
-                        c.type === enforcedImplantType,
+                    const firstForManufacturer = connectionOptions.find(
+                      (c) => c.manufacturer === value,
                     );
-                    const nextSystem =
-                      typeof firstForManufacturer?.system === "string"
-                        ? firstForManufacturer.system
-                        : "";
-                    const firstForType = connections.find(
-                      (c) =>
-                        c.manufacturer === value &&
-                        c.system === nextSystem &&
-                        c.type === enforcedImplantType,
-                    );
-                    const nextType =
-                      typeof firstForType?.type === "string"
-                        ? firstForType.type
-                        : enforcedImplantType;
+                    const nextSystem = firstForManufacturer?.system || "";
+                    const nextFamily =
+                      firstForManufacturer?.family || "Regular";
+                    const nextType = firstForManufacturer?.type || "Hex";
                     if (implantSelectSource === "caseInfos") {
                       setCaseInfos({
                         implantManufacturer: value,
                         implantSystem: nextSystem,
+                        implantFamily: nextFamily,
                         implantType: nextType,
                       });
-                      syncSelectedConnection(value, nextSystem, nextType);
+                      syncSelectedConnection(
+                        value,
+                        nextSystem,
+                        nextFamily,
+                        nextType,
+                      );
                       return;
                     }
-
                     setImplantManufacturer(value);
                     setImplantSystem(nextSystem);
-                    setImplantType(enforcedImplantType);
-                    syncSelectedConnection(value, nextSystem, nextType);
+                    setImplantFamily(nextFamily);
+                    setImplantType(nextType);
+                    syncSelectedConnection(
+                      value,
+                      nextSystem,
+                      nextFamily,
+                      nextType,
+                    );
                     setCaseInfos({
                       implantManufacturer: value,
                       implantSystem: nextSystem,
+                      implantFamily: nextFamily,
                       implantType: nextType,
                     });
                   }}
                 >
                   <SelectTrigger disabled={implantDisabled}>
-                    <SelectValue placeholder="임플란트제조사" />
+                    <SelectValue placeholder="Manufacturer" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(() => {
-                      const base = [
-                        ...new Set(connections.map((c) => c.manufacturer)),
-                      ];
-                      const list =
-                        currentManufacturer &&
-                        !base.includes(currentManufacturer)
-                          ? [currentManufacturer, ...base]
-                          : base;
-                      return list.map((m) => (
-                        <SelectItem key={m} value={m}>
-                          {m}
-                        </SelectItem>
-                      ));
-                    })()}
+                    {manufacturerOptions.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {manufacturerLabelMap.get(m) || m}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -361,38 +448,39 @@ export function NewRequestPatientImplantFields({
                   value={currentSystem}
                   onValueChange={(value) => {
                     if (implantDisabled) return;
-                    const firstForType = connections.find(
+                    const first = connectionOptions.find(
                       (c) =>
                         c.manufacturer === currentManufacturer &&
-                        c.system === value &&
-                        c.type === enforcedImplantType,
+                        c.system === value,
                     );
-                    const nextType =
-                      typeof firstForType?.type === "string"
-                        ? firstForType.type
-                        : enforcedImplantType;
+                    const nextFamily = first?.family || "Regular";
+                    const nextType = first?.type || "Hex";
                     if (implantSelectSource === "caseInfos") {
                       setCaseInfos({
                         implantSystem: value,
+                        implantFamily: nextFamily,
                         implantType: nextType,
                       });
                       syncSelectedConnection(
                         currentManufacturer,
                         value,
+                        nextFamily,
                         nextType,
                       );
                       return;
                     }
-
                     setImplantSystem(value);
-                    setImplantType(enforcedImplantType);
+                    setImplantFamily(nextFamily);
+                    setImplantType(nextType);
                     syncSelectedConnection(
-                      implantManufacturer,
+                      currentManufacturer,
                       value,
+                      nextFamily,
                       nextType,
                     );
                     setCaseInfos({
                       implantSystem: value,
+                      implantFamily: nextFamily,
                       implantType: nextType,
                     });
                   }}
@@ -401,29 +489,106 @@ export function NewRequestPatientImplantFields({
                   <SelectTrigger
                     disabled={implantDisabled || !currentManufacturer}
                   >
-                    <SelectValue placeholder="시스템" />
+                    <SelectValue placeholder="Brand" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(() => {
-                      const base = [
-                        ...new Set(
-                          connections
-                            .filter(
-                              (c) => c.manufacturer === currentManufacturer,
-                            )
-                            .map((c) => c.system),
-                        ),
-                      ];
-                      const list =
-                        currentSystem && !base.includes(currentSystem)
-                          ? [currentSystem, ...base]
-                          : base;
-                      return list.map((s) => (
-                        <SelectItem key={s} value={s}>
-                          {s}
-                        </SelectItem>
-                      ));
-                    })()}
+                    {systemOptions.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {brandLabelMap.get(s) || s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="min-w-0 space-y-1">
+                <Select
+                  value={currentFamily}
+                  onValueChange={(value) => {
+                    if (implantDisabled) return;
+                    const first = connectionOptions.find(
+                      (c) =>
+                        c.manufacturer === currentManufacturer &&
+                        c.system === currentSystem &&
+                        (c.family || "Regular") === value,
+                    );
+                    const nextType = first?.type || "Hex";
+                    if (implantSelectSource === "caseInfos") {
+                      setCaseInfos({
+                        implantFamily: value,
+                        implantType: nextType,
+                      });
+                      syncSelectedConnection(
+                        currentManufacturer,
+                        currentSystem,
+                        value,
+                        nextType,
+                      );
+                      return;
+                    }
+                    setImplantFamily(value);
+                    setImplantType(nextType);
+                    syncSelectedConnection(
+                      currentManufacturer,
+                      currentSystem,
+                      value,
+                      nextType,
+                    );
+                    setCaseInfos({
+                      implantFamily: value,
+                      implantType: nextType,
+                    });
+                  }}
+                  disabled={implantDisabled || !currentSystem}
+                >
+                  <SelectTrigger disabled={implantDisabled || !currentSystem}>
+                    <SelectValue placeholder="Family" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currentFamilyOptions.map((family) => (
+                      <SelectItem key={family} value={family}>
+                        {familyLabelMap.get(family) || family}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="min-w-0 space-y-1">
+                <Select
+                  value={currentType}
+                  onValueChange={(value) => {
+                    if (implantDisabled) return;
+                    if (implantSelectSource === "caseInfos") {
+                      setCaseInfos({ implantType: value });
+                      syncSelectedConnection(
+                        currentManufacturer,
+                        currentSystem,
+                        currentFamily || "Regular",
+                        value,
+                      );
+                      return;
+                    }
+                    setImplantType(value);
+                    syncSelectedConnection(
+                      currentManufacturer,
+                      currentSystem,
+                      currentFamily || "Regular",
+                      value,
+                    );
+                    setCaseInfos({ implantType: value });
+                  }}
+                  disabled={implantDisabled || !currentFamily}
+                >
+                  <SelectTrigger disabled={implantDisabled || !currentFamily}>
+                    <SelectValue placeholder="Type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currentTypeOptions.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {typeLabelMap.get(t) || t}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

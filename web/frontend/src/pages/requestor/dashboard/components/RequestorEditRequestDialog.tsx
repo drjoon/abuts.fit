@@ -19,6 +19,7 @@ export type EditingRequestState = {
   teethText?: string;
   implantManufacturer?: string;
   implantSystem?: string;
+  implantFamily?: string;
   implantType?: string;
 } | null;
 
@@ -30,6 +31,7 @@ type RequestorEditRequestDialogProps = {
   editingTeethText: string;
   editingImplantManufacturer: string;
   editingImplantSystem: string;
+  editingImplantFamily: string;
   editingImplantType: string;
   onChangeDescription: (value: string) => void;
   onChangeClinicName: (value: string) => void;
@@ -37,6 +39,7 @@ type RequestorEditRequestDialogProps = {
   onChangeTeethText: (value: string) => void;
   onChangeImplantManufacturer: (value: string) => void;
   onChangeImplantSystem: (value: string) => void;
+  onChangeImplantFamily: (value: string) => void;
   onChangeImplantType: (value: string) => void;
   onClose: () => void;
   onSave: () => void | Promise<void>;
@@ -50,6 +53,7 @@ export const RequestorEditRequestDialog = ({
   editingTeethText,
   editingImplantManufacturer,
   editingImplantSystem,
+  editingImplantFamily,
   editingImplantType,
   onChangeDescription,
   onChangeClinicName,
@@ -57,6 +61,7 @@ export const RequestorEditRequestDialog = ({
   onChangeTeethText,
   onChangeImplantManufacturer,
   onChangeImplantSystem,
+  onChangeImplantFamily,
   onChangeImplantType,
   onClose,
   onSave,
@@ -75,6 +80,7 @@ export const RequestorEditRequestDialog = ({
       teethText: editingTeethText,
       implantManufacturer: editingImplantManufacturer,
       implantSystem: editingImplantSystem,
+      implantFamily: editingImplantFamily,
       implantType: editingImplantType,
       description: editingDescription,
     });
@@ -83,6 +89,7 @@ export const RequestorEditRequestDialog = ({
     editingDescription,
     editingImplantManufacturer,
     editingImplantSystem,
+    editingImplantFamily,
     editingImplantType,
     editingPatientName,
     editingRequest?.id,
@@ -137,7 +144,7 @@ export const RequestorEditRequestDialog = ({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>의뢰 정보 수정</DialogTitle>
         </DialogHeader>
@@ -199,10 +206,10 @@ export const RequestorEditRequestDialog = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="space-y-1">
                 <label className="text-md font-medium text-muted-foreground">
-                  임플란트 제조사
+                  Manufacturer
                 </label>
                 <input
                   type="text"
@@ -215,7 +222,7 @@ export const RequestorEditRequestDialog = ({
               </div>
               <div className="space-y-1">
                 <label className="text-md font-medium text-muted-foreground">
-                  임플란트 시스템
+                  Brand
                 </label>
                 <input
                   type="text"
@@ -223,12 +230,25 @@ export const RequestorEditRequestDialog = ({
                   onChange={(e) => onChangeImplantSystem(e.target.value)}
                   onBlur={maybeSave}
                   className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1"
+                  placeholder="예: SQ"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-md font-medium text-muted-foreground">
+                  Family
+                </label>
+                <input
+                  type="text"
+                  value={editingImplantFamily}
+                  onChange={(e) => onChangeImplantFamily(e.target.value)}
+                  onBlur={maybeSave}
+                  className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1"
                   placeholder="예: Regular"
                 />
               </div>
               <div className="space-y-1">
                 <label className="text-md font-medium text-muted-foreground">
-                  임플란트 유형
+                  Type
                 </label>
                 <input
                   type="text"
