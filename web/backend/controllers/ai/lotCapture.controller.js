@@ -56,7 +56,7 @@ async function triggerPackingLabelPrint(request, recognizedSuffix) {
       String(recognizedSuffix || "").trim(),
     patientName: String(ci.patientName || "").trim(),
     toothNumber: String(ci.tooth || "").trim(),
-    material: String(ci.material || ci.implantSystem || "").trim(),
+    material: String(ci.material || ci.implantBrand || "").trim(),
     caseType: "Custom Abutment",
     printedAt: new Date().toISOString(),
   };

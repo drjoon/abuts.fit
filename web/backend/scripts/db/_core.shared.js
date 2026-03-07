@@ -18,7 +18,8 @@ async function upsertConnections() {
       updateOne: {
         filter: {
           manufacturer: c.manufacturer,
-          system: c.system,
+          brand: c.brand,
+          family: c.family,
           type: c.type,
           category: c.category,
         },
@@ -37,15 +38,15 @@ async function upsertConnections() {
 }
 
 async function upsertFilenameRules() {
-  const ops = (Array.isArray(FILENAME_RULES_SEED) ? FILENAME_RULES_SEED : []).map(
-    (r) => ({
-      updateOne: {
-        filter: { ruleId: r.ruleId },
-        update: r,
-        upsert: true,
-      },
-    }),
-  );
+  const ops = (
+    Array.isArray(FILENAME_RULES_SEED) ? FILENAME_RULES_SEED : []
+  ).map((r) => ({
+    updateOne: {
+      filter: { ruleId: r.ruleId },
+      update: r,
+      upsert: true,
+    },
+  }));
   if (ops.length === 0) return { matched: 0, modified: 0, upserted: 0 };
   const result = await FilenameRule.bulkWrite(ops, { ordered: false });
   return {

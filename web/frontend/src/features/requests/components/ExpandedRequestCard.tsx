@@ -318,14 +318,11 @@ export const ExpandedRequestCard = ({
                     caseInfos.implantManufacturer ||
                     spec.implantCompany ||
                     request.implantManufacturer;
-                  const implantSystem =
+                  const implantBrand =
                     caseInfos.implantBrand ||
-                    caseInfos.implantSystem ||
                     spec.implantBrand ||
-                    spec.implantSystem ||
                     spec.implantProduct ||
-                    request.implantBrand ||
-                    request.implantSystem;
+                    request.implantBrand;
                   const implantFamily =
                     caseInfos.implantFamily ||
                     spec.implantFamily ||
@@ -346,7 +343,7 @@ export const ExpandedRequestCard = ({
 
                   if (
                     !implantManufacturer &&
-                    !implantSystem &&
+                    !implantBrand &&
                     !implantFamily &&
                     !implantType &&
                     maxDiameter == null &&
@@ -367,7 +364,7 @@ export const ExpandedRequestCard = ({
                         <span className="text-muted-foreground text-xs w-20">
                           Brand
                         </span>
-                        <span>{implantSystem || "-"}</span>
+                        <span>{implantBrand || "-"}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-muted-foreground text-xs w-20">

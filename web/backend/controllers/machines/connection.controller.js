@@ -24,10 +24,13 @@ function normalizeFamilyLabel(family) {
   return "Regular";
 }
 
-function buildDisplayLabels({ manufacturer, system, family, type }) {
+function buildDisplayLabels({ manufacturer, brand, family, type }) {
   return {
     displayManufacturer: String(manufacturer || "").trim(),
-    displayBrand: String(system || "").trim(),
+    displayBrand: String(brand || "")
+      .trim()
+      .replace("Hanwha", "HWH")
+      .replace("hanwha", "HWH"),
     displayFamily: normalizeFamilyLabel(family),
     displayType: normalizeTypeLabel(type),
   };
@@ -35,7 +38,7 @@ function buildDisplayLabels({ manufacturer, system, family, type }) {
 
 function buildPrcFileNames({
   manufacturer,
-  system,
+  brand,
   family,
   type,
   legacyFileName,
@@ -45,14 +48,14 @@ function buildPrcFileNames({
   const typeCode = getPrcTypeCodeByFamily(normalizedFamily, normalizedType);
   const catalogNames = buildPrcFileNamesFromCatalog(
     manufacturer,
-    system,
+    brand,
     normalizedType,
     normalizedFamily,
   );
   const expectedConnectionFileName = buildExpectedPrcFileName(
     "connection",
     manufacturer,
-    system,
+    brand,
     normalizedType,
     normalizedFamily,
   );
@@ -63,7 +66,7 @@ function buildPrcFileNames({
         typeof legacyFileName === "string" ? legacyFileName : null,
       faceHolePrcFileName: catalogNames.faceHolePrcFileName || null,
       prcTypeCode: typeCode || null,
-      prcSystemCode: String(system || "").trim() || null,
+      prcBrandCode: String(brand || "").trim() || null,
     };
   }
 
@@ -72,7 +75,7 @@ function buildPrcFileNames({
       catalogNames.connectionPrcFileName || expectedConnectionFileName,
     faceHolePrcFileName: catalogNames.faceHolePrcFileName || null,
     prcTypeCode: typeCode,
-    prcSystemCode: String(system || "").trim() || null,
+    prcBrandCode: String(brand || "").trim() || null,
   };
 }
 
@@ -99,30 +102,30 @@ export async function getConnections(req, res) {
       .map((c) => {
         const normalized = normalizeImplantFields({
           implantManufacturer: c.manufacturer,
-          implantSystem: c.system,
+          implantBrand: c.brand,
           implantFamily: c.family,
           implantType: c.type,
         });
         const computed = buildPrcFileNames({
           manufacturer: normalized.implantManufacturer,
-          system: normalized.implantSystem,
+          brand: normalized.implantBrand,
           family: normalized.implantFamily || c.family,
           type: normalized.implantType,
           legacyFileName: c.fileName,
         });
         const display = buildDisplayLabels({
           manufacturer: normalized.implantManufacturer,
-          system: normalized.implantSystem,
+          brand: normalized.implantBrand,
           family: normalized.implantFamily || c.family,
           type: normalized.implantType,
         });
         return {
           ...c,
           manufacturer: normalized.implantManufacturer,
-          system: normalized.implantSystem,
+          brand: normalized.implantBrand,
           family: normalized.implantFamily || normalizeFamilyLabel(c.family),
           type: normalized.implantType,
-          canonicalKey: `${normalized.implantManufacturer}|${normalized.implantSystem}|${normalized.implantFamily || normalizeFamilyLabel(c.family)}|${normalized.implantType}`,
+          canonicalKey: `${normalized.implantManufacturer}|${normalized.implantBrand}|${normalized.implantFamily || normalizeFamilyLabel(c.family)}|${normalized.implantType}`,
           prcMatchScore:
             typeof c.fileName === "string" &&
             c.fileName === computed.connectionPrcFileName
@@ -130,12 +133,12 @@ export async function getConnections(req, res) {
               : computed.connectionPrcFileName
                 ? 1
                 : 0,
-          // UI / 저장은 manufacturer/system/type 그대로 사용
+          // UI / 저장은 manufacturer/brand/family/type 그대로 사용
           // CAM/ESPRIT용 파일명만 별도 필드로 제공
           connectionPrcFileName: computed.connectionPrcFileName,
           faceHolePrcFileName: computed.faceHolePrcFileName,
           prcTypeCode: computed.prcTypeCode,
-          prcSystemCode: computed.prcSystemCode,
+          prcBrandCode: computed.prcBrandCode,
           displayManufacturer: display.displayManufacturer,
           displayBrand: display.displayBrand,
           displayFamily: display.displayFamily,
@@ -150,7 +153,7 @@ export async function getConnections(req, res) {
         if (b.usageCount !== a.usageCount) return b.usageCount - a.usageCount;
         if (a.manufacturer !== b.manufacturer)
           return a.manufacturer.localeCompare(b.manufacturer);
-        if (a.system !== b.system) return a.system.localeCompare(b.system);
+        if (a.brand !== b.brand) return a.brand.localeCompare(b.brand);
         if (a.family !== b.family) return a.family.localeCompare(b.family);
         return a.type.localeCompare(b.type);
       })
@@ -165,7 +168,7 @@ export async function getConnections(req, res) {
         if (b.usageCount !== a.usageCount) return b.usageCount - a.usageCount;
         if (a.manufacturer !== b.manufacturer)
           return a.manufacturer.localeCompare(b.manufacturer);
-        if (a.system !== b.system) return a.system.localeCompare(b.system);
+        if (a.brand !== b.brand) return a.brand.localeCompare(b.brand);
         if (a.family !== b.family) return a.family.localeCompare(b.family);
         return a.type.localeCompare(b.type);
       });

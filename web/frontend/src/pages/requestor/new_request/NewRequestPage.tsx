@@ -65,8 +65,8 @@ export const NewRequestPage = () => {
     typeOptions,
     implantManufacturer,
     setImplantManufacturer,
-    implantSystem,
-    setImplantSystem,
+    implantBrand,
+    setImplantBrand,
     implantFamily,
     setImplantFamily,
     implantType,
@@ -144,7 +144,7 @@ export const NewRequestPage = () => {
       patientName: "",
       tooth: "",
       implantManufacturer: "",
-      implantSystem: "",
+      implantBrand: "",
       implantFamily: "",
       implantType: "",
       maxDiameter: undefined,
@@ -154,7 +154,7 @@ export const NewRequestPage = () => {
       workType: "abutment",
     });
     setImplantManufacturer("");
-    setImplantSystem("");
+    setImplantBrand("");
     setImplantFamily("");
     setImplantType("");
 
@@ -558,8 +558,8 @@ export const NewRequestPage = () => {
               typeOptions={typeOptions}
               implantManufacturer={implantManufacturer}
               setImplantManufacturer={setImplantManufacturer}
-              implantSystem={implantSystem}
-              setImplantSystem={setImplantSystem}
+              implantBrand={implantBrand}
+              setImplantBrand={setImplantBrand}
               implantFamily={implantFamily}
               setImplantFamily={setImplantFamily}
               implantType={implantType}

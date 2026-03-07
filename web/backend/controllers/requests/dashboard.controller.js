@@ -124,7 +124,7 @@ export async function getAssignedDashboardSummary(req, res) {
 
     const baseFilter = {
       manufacturerStage: { $ne: "취소" },
-      "caseInfos.implantSystem": { $exists: true, $ne: "" },
+      "caseInfos.implantBrand": { $exists: true, $ne: "" },
       "productionSchedule.assignedMachine": { $in: machineIds },
     };
 
@@ -494,7 +494,7 @@ export async function getMyDashboardSummary(req, res) {
             $match: {
               ...requestFilter,
               ...dateFilter,
-              "caseInfos.implantSystem": { $exists: true, $ne: "" },
+              "caseInfos.implantBrand": { $exists: true, $ne: "" },
             },
           },
           {
@@ -598,7 +598,7 @@ export async function getMyDashboardSummary(req, res) {
         ]),
         Request.find({
           ...requestFilter,
-          "caseInfos.implantSystem": { $exists: true, $ne: "" },
+          "caseInfos.implantBrand": { $exists: true, $ne: "" },
           manufacturerStage: { $ne: "취소" },
         })
           .select({
@@ -804,7 +804,7 @@ export async function getMyDashboardSummary(req, res) {
         {
           $match: {
             ...requestFilter,
-            "caseInfos.implantSystem": { $exists: true, $ne: "" },
+            "caseInfos.implantBrand": { $exists: true, $ne: "" },
             manufacturerStage: { $ne: "취소" },
           },
         },
@@ -898,7 +898,7 @@ export async function getDashboardRiskSummary(req, res) {
 
     const baseFilter = {
       manufacturerStage: { $ne: "취소" },
-      "caseInfos.implantSystem": { $exists: true, $ne: "" },
+      "caseInfos.implantBrand": { $exists: true, $ne: "" },
     };
 
     const role = String(req.user?.role || "");

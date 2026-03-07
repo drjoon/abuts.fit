@@ -183,7 +183,7 @@ export const usePackingWorksheetData = ({
           (caseInfos.tooth || "") +
           (caseInfos.connectionDiameter || "") +
           (caseInfos.implantManufacturer || "") +
-          (caseInfos.implantBrand || caseInfos.implantSystem || "") +
+          (caseInfos.implantBrand || "") +
           (caseInfos.implantFamily || "") +
           (caseInfos.implantType || "")
         ).toLowerCase();

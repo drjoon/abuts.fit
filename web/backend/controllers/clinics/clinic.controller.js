@@ -138,7 +138,7 @@ export async function deleteClinic(req, res) {
     // 연결된 프리셋도 비활성화 (soft delete 대신 전체 삭제해도 무방)
     await ImplantPreset.updateMany(
       { clinic: clinic._id },
-      { $set: { isDefault: false } }
+      { $set: { isDefault: false } },
     );
 
     res.json({
@@ -190,7 +190,8 @@ export async function getImplantPresets(req, res) {
 export async function createImplantPreset(req, res) {
   try {
     const { clinicId } = req.params;
-    const { label, manufacturer, system, type, isDefault } = req.body || {};
+    const { label, manufacturer, brand, family, type, isDefault } =
+      req.body || {};
 
     const clinic = await Clinic.findOne({
       _id: clinicId,
@@ -212,10 +213,10 @@ export async function createImplantPreset(req, res) {
       });
     }
 
-    if (!manufacturer || !system || !type) {
+    if (!manufacturer || !brand || !family || !type) {
       return res.status(400).json({
         success: false,
-        message: "제조사, 시스템, 유형은 모두 필수입니다.",
+        message: "제조사, 브랜드, 패밀리, 유형은 모두 필수입니다.",
       });
     }
 
@@ -235,7 +236,7 @@ export async function createImplantPreset(req, res) {
     if (isDefault) {
       await ImplantPreset.updateMany(
         { clinic: clinic._id },
-        { $set: { isDefault: false } }
+        { $set: { isDefault: false } },
       );
     }
 
@@ -243,7 +244,8 @@ export async function createImplantPreset(req, res) {
       clinic: clinic._id,
       label: trimmedLabel,
       manufacturer,
-      system,
+      brand,
+      family,
       type,
       isDefault: Boolean(isDefault),
     });
@@ -262,7 +264,8 @@ export async function createImplantPreset(req, res) {
 export async function updateImplantPreset(req, res) {
   try {
     const { presetId } = req.params;
-    const { label, manufacturer, system, type, isDefault } = req.body || {};
+    const { label, manufacturer, brand, family, type, isDefault } =
+      req.body || {};
 
     const preset = await ImplantPreset.findById(presetId).populate({
       path: "clinic",
@@ -295,8 +298,11 @@ export async function updateImplantPreset(req, res) {
     if (typeof manufacturer === "string" && manufacturer.trim()) {
       preset.manufacturer = manufacturer.trim();
     }
-    if (typeof system === "string" && system.trim()) {
-      preset.system = system.trim();
+    if (typeof brand === "string" && brand.trim()) {
+      preset.brand = brand.trim();
+    }
+    if (typeof family === "string" && family.trim()) {
+      preset.family = family.trim();
     }
     if (typeof type === "string" && type.trim()) {
       preset.type = type.trim();
@@ -306,7 +312,7 @@ export async function updateImplantPreset(req, res) {
       if (isDefault) {
         await ImplantPreset.updateMany(
           { clinic: preset.clinic._id },
-          { $set: { isDefault: false } }
+          { $set: { isDefault: false } },
         );
       }
       preset.isDefault = isDefault;

@@ -64,7 +64,7 @@ const requestSchema = new mongoose.Schema(
       patientName: String,
       tooth: String,
       implantManufacturer: String, // e.g. OSSTEM, Straumann (manufacturer)
-      implantSystem: String, // e.g. TS, SQ, UF (brand system)
+      implantBrand: String,
       implantFamily: String, // e.g. Regular, Mini
       implantType: String, // e.g. Hex, Non-hex (type)
       maxDiameter: Number,
@@ -72,7 +72,7 @@ const requestSchema = new mongoose.Schema(
       newSystemRequest: {
         requested: { type: Boolean, default: false },
         manufacturer: String,
-        system: String,
+        brand: String,
         message: String,
         free: { type: Boolean, default: false },
         tag: String,
@@ -528,7 +528,7 @@ requestSchema.index({
 requestSchema.index({
   requestorOrganizationId: 1,
   manufacturerStage: 1,
-  "caseInfos.implantSystem": 1,
+  "caseInfos.implantBrand": 1,
   createdAt: -1,
 });
 
@@ -536,7 +536,7 @@ requestSchema.index({
 requestSchema.index({
   manufacturer: 1,
   manufacturerStage: 1,
-  "caseInfos.implantSystem": 1,
+  "caseInfos.implantBrand": 1,
   createdAt: -1,
 });
 

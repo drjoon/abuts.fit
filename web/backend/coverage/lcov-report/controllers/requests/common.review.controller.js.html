@@ -25,28 +25,28 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/470</span>
+                <span class='fraction'>0/460</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/468</span>
+                <span class='fraction'>0/464</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/47</span>
+                <span class='fraction'>0/46</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/442</span>
+                <span class='fraction'>0/437</span>
             </div>
         
             
@@ -1273,11 +1273,7 @@
 <a name='L1208'></a><a href='#L1208'>1208</a>
 <a name='L1209'></a><a href='#L1209'>1209</a>
 <a name='L1210'></a><a href='#L1210'>1210</a>
-<a name='L1211'></a><a href='#L1211'>1211</a>
-<a name='L1212'></a><a href='#L1212'>1212</a>
-<a name='L1213'></a><a href='#L1213'>1213</a>
-<a name='L1214'></a><a href='#L1214'>1214</a>
-<a name='L1215'></a><a href='#L1215'>1215</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L1211'></a><a href='#L1211'>1211</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1316,6 +1312,11 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1430,9 +1431,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1553,6 +1551,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1721,20 +1720,13 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -2522,6 +2514,11 @@ import { allocateVirtualMailboxAddress } from "./mailbox.utils.js";
 import { triggerNextAutoMachiningAfterComplete } from "../cnc/machiningBridge.js";
 import { computeShippingPriority } from "./shippingPriority.utils.js";
 import { getAllProductionQueues } from "../cnc/shared.js";
+import {
+  buildMachineQueueLoadMap,
+  inferCurrentMaterialDiameter,
+  inferDiameterGroupFromValue,
+} from "../cnc/distribution.utils.js";
 import { getOrganizationCreditBalanceBreakdown } from "./creation.helpers.controller.js";
 import s3Utils, {
   deleteFileFromS3,
@@ -2644,11 +2641,8 @@ async function <span class="fstat-no" title="function not covered" >ensureMachin
 }
 &nbsp;
 function <span class="fstat-no" title="function not covered" >inferDiameterGroupFromDiameter(</span>diameter) {
-<span class="cstat-no" title="statement not covered" >  if (!Number.isFinite(diameter) || diameter &lt;= 0) <span class="cstat-no" title="statement not covered" >return null;</span></span>
-<span class="cstat-no" title="statement not covered" >  if (diameter &lt;= 6) <span class="cstat-no" title="statement not covered" >return "6";</span></span>
-<span class="cstat-no" title="statement not covered" >  if (diameter &lt;= 8) <span class="cstat-no" title="statement not covered" >return "8";</span></span>
-<span class="cstat-no" title="statement not covered" >  if (diameter &lt;= 10) <span class="cstat-no" title="statement not covered" >return "10";</span></span>
-<span class="cstat-no" title="statement not covered" >  return "12";</span>
+  const group = <span class="cstat-no" title="statement not covered" >inferDiameterGroupFromValue(diameter);</span>
+<span class="cstat-no" title="statement not covered" >  return group || null;</span>
 }
 &nbsp;
 function <span class="fstat-no" title="function not covered" >inferDiameterGroupFromRequest(</span>request) {
@@ -2758,7 +2752,8 @@ export async function <span class="fstat-no" title="function not covered" >trigg
       PatientName: request?.caseInfos?.patientName || "",
       Tooth: request?.caseInfos?.tooth || "",
       ImplantManufacturer: request?.caseInfos?.implantManufacturer || "",
-      ImplantSystem: request?.caseInfos?.implantSystem || "",
+      ImplantBrand: request?.caseInfos?.implantBrand || "",
+      ImplantFamily: request?.caseInfos?.implantFamily || "",
       ImplantType: request?.caseInfos?.implantType || "",
       MaxDiameter: Number(request?.caseInfos?.maxDiameter || 0),
       ConnectionDiameter: Number(request?.caseInfos?.connectionDiameter || 0),
@@ -2910,7 +2905,7 @@ async function <span class="fstat-no" title="function not covered" >chooseMachin
       const machineId = <span class="cstat-no" title="statement not covered" >String(m?.machineId || "").trim();</span>
 <span class="cstat-no" title="statement not covered" >      if (!machineId) <span class="cstat-no" title="statement not covered" >return null;</span></span>
 <span class="cstat-no" title="statement not covered" >      if (!ignoreAllowAssign &amp;&amp; !allowAssignSet.has(machineId)) <span class="cstat-no" title="statement not covered" >return null;</span></span>
-      const materialDia = <span class="cstat-no" title="statement not covered" >Number(m?.currentMaterial?.diameter);</span>
+      const materialDia = <span class="cstat-no" title="statement not covered" >inferCurrentMaterialDiameter(m);</span>
 <span class="cstat-no" title="statement not covered" >      if (!Number.isFinite(materialDia) || materialDia &lt;= 0) {</span>
 <span class="cstat-no" title="statement not covered" >        console.warn(</span>
           "[chooseMachineForCamMachining] skip machine without material",
@@ -2939,16 +2934,9 @@ async function <span class="fstat-no" title="function not covered" >chooseMachin
     );
   }
 &nbsp;
-  const queueCounts = <span class="cstat-no" title="statement not covered" >await Promise.all(</span>
-    candidatesWithDia.map(<span class="fstat-no" title="function not covered" >as</span>ync (c) =&gt; {
-      const count = <span class="cstat-no" title="statement not covered" >await Request.countDocuments({</span>
-        "productionSchedule.assignedMachine": c.machineId,
-        manufacturerStage: { $in: ["CAM", "가공"] },
-      });
-<span class="cstat-no" title="statement not covered" >      return { machineId: c.machineId, count };</span>
-    }),
+  const queueCountMap = <span class="cstat-no" title="statement not covered" >await buildMachineQueueLoadMap(</span>
+    candidatesWithDia.map(<span class="fstat-no" title="function not covered" >(c</span>) =&gt; <span class="cstat-no" title="statement not covered" >c.machineId)</span>,
   );
-  const queueCountMap = <span class="cstat-no" title="statement not covered" >new Map(queueCounts.map(<span class="fstat-no" title="function not covered" >(q</span>) =&gt; <span class="cstat-no" title="statement not covered" >[q.machineId, q.count])</span>);</span>
 &nbsp;
   const ceilCandidates = <span class="cstat-no" title="statement not covered" >candidatesWithDia.filter(</span>
 <span class="fstat-no" title="function not covered" >    (c</span>) =&gt; <span class="cstat-no" title="statement not covered" >c.availableDia &gt;= targetDiameter,</span>
@@ -3352,8 +3340,8 @@ export async function <span class="fstat-no" title="function not covered" >updat
           ) {
             const impl = <span class="cstat-no" title="statement not covered" >request.caseInfos || {};</span>
             const detail = <span class="cstat-no" title="statement not covered" >`${String(impl.implantManufacturer || "").trim()}/${String(</span>
-              impl.implantSystem || "",
-            ).trim()}/${String(impl.implantType || "").trim()}`;
+              impl.implantBrand || "",
+            ).trim()}/${String(impl.implantFamily || "").trim()}/${String(impl.implantType || "").trim()}`;
             const err = <span class="cstat-no" title="statement not covered" >new Error(</span>
               `PRC 매핑을 찾을 수 없습니다. Implant=${detail}. PRC 파일명은 의뢰 승인 시점에 필수로 확정되어야 합니다.`,
             );
@@ -3712,7 +3700,7 @@ export async function <span class="fstat-no" title="function not covered" >saveS
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-03-06T11:11:46.573Z
+                at 2026-03-07T09:59:23.514Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

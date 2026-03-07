@@ -4,8 +4,8 @@ const connectionSchema = new mongoose.Schema(
   {
     manufacturer: { type: String, required: true },
     manufacturerKor: { type: String, default: "" },
-    system: { type: String, required: true },
-    family: { type: String, default: "Regular" },
+    brand: { type: String, required: true },
+    family: { type: String, required: true },
     type: { type: String, required: true },
     category: { type: String, required: true },
     fileName: { type: String, required: true },

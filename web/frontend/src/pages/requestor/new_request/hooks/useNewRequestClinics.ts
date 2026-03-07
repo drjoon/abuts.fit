@@ -53,7 +53,7 @@ export const useNewRequestClinics = ({
 
   useEffect(() => {
     if (!selectedClinicId) return;
-    if (!implant.manufacturer || !implant.system || !implant.type) return;
+    if (!implant.manufacturer || !implant.brand || !implant.type) return;
 
     setClinicPresets((prev) => {
       const idx = prev.findIndex((c) => c.id === selectedClinicId);
@@ -65,7 +65,7 @@ export const useNewRequestClinics = ({
       if (
         prevFav &&
         prevFav.manufacturer === implant.manufacturer &&
-        prevFav.system === implant.system &&
+        prevFav.brand === implant.brand &&
         prevFav.type === implant.type
       ) {
         return prev;
@@ -78,7 +78,7 @@ export const useNewRequestClinics = ({
       };
       return next;
     });
-  }, [selectedClinicId, implant.manufacturer, implant.system, implant.type]);
+  }, [selectedClinicId, implant.manufacturer, implant.brand, implant.type]);
 
   const handleSelectClinic = (id: string | null) => {
     setSelectedClinicId(id);
@@ -90,7 +90,7 @@ export const useNewRequestClinics = ({
 
     setClinicPresets((prev) => {
       const existing = prev.find(
-        (c) => c.name.toLowerCase() === trimmed.toLowerCase()
+        (c) => c.name.toLowerCase() === trimmed.toLowerCase(),
       );
       if (existing) {
         setSelectedClinicId(existing.id);
@@ -100,7 +100,7 @@ export const useNewRequestClinics = ({
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
       const favoriteImplant: ClinicFavoriteImplant | undefined =
-        implant.manufacturer && implant.system && implant.type
+        implant.manufacturer && implant.brand && implant.type
           ? implant
           : undefined;
 

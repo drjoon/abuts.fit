@@ -258,7 +258,7 @@ export async function createRequestsFromDraft(req, res) {
           const nsr = ci?.newSystemRequest;
           if (nsr?.requested) {
             const manufacturer = String(nsr.manufacturer || "").trim();
-            const brand = String(nsr.brand || nsr.system || "").trim();
+            const brand = String(nsr.brand || "").trim();
             const family = String(nsr.family || "").trim();
             const message = String(
               nsr.message || "랩 아날로그 샘플 한 개를 요청드립니다",
@@ -267,7 +267,6 @@ export async function createRequestsFromDraft(req, res) {
               requested: true,
               manufacturer,
               brand,
-              system: brand,
               family,
               message,
               free: true,

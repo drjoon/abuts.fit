@@ -1,6 +1,6 @@
 export type ClinicFavoriteImplant = {
   manufacturer: string;
-  system: string;
+  brand: string;
   family?: string;
   type: string;
 };
@@ -15,7 +15,7 @@ export type Connection = {
   _id?: string;
   manufacturer: string;
   manufacturerKor?: string;
-  system: string;
+  brand?: string;
   family?: string;
   type: string;
   isActive?: boolean;
@@ -35,7 +35,6 @@ export type CaseInfos = {
   tooth?: string;
   implantManufacturer?: string;
   implantBrand?: string;
-  implantSystem?: string;
   implantFamily?: string;
   implantType?: string;
   maxDiameter?: number;
@@ -47,7 +46,6 @@ export type CaseInfos = {
     requested: boolean;
     manufacturer?: string;
     brand?: string;
-    system?: string;
     family?: string;
     message?: string;
     free?: boolean;

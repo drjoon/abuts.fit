@@ -22,15 +22,15 @@ type Props = {
   typeOptions: string[];
   implantManufacturer: string;
   setImplantManufacturer: (v: string) => void;
-  implantSystem: string;
-  setImplantSystem: (v: string) => void;
+  implantBrand: string;
+  setImplantBrand: (v: string) => void;
   implantFamily: string;
   setImplantFamily: (v: string) => void;
   implantType: string;
   setImplantType: (v: string) => void;
   syncSelectedConnection: (
     manufacturer: string,
-    system: string,
+    brand: string,
     family: string,
     type: string,
   ) => void;
@@ -57,8 +57,8 @@ export function NewRequestPatientImplantFields({
   typeOptions,
   implantManufacturer,
   setImplantManufacturer,
-  implantSystem,
-  setImplantSystem,
+  implantBrand,
+  setImplantBrand,
   implantFamily,
   setImplantFamily,
   implantType,
@@ -89,10 +89,10 @@ export function NewRequestPatientImplantFields({
     implantSelectSource === "caseInfos"
       ? caseInfos?.implantManufacturer || ""
       : implantManufacturer;
-  const currentSystem =
+  const currentBrand =
     implantSelectSource === "caseInfos"
-      ? caseInfos?.implantSystem || ""
-      : implantSystem;
+      ? caseInfos?.implantBrand || ""
+      : implantBrand;
   const currentFamily =
     implantSelectSource === "caseInfos"
       ? caseInfos?.implantFamily || ""
@@ -109,9 +109,9 @@ export function NewRequestPatientImplantFields({
       .filter(
         (c) =>
           typeof c.manufacturer === "string" &&
-          typeof c.system === "string" &&
+          typeof c.brand === "string" &&
           c.manufacturer.trim() &&
-          c.system.trim(),
+          c.brand.trim(),
       )
       .sort((a, b) => {
         const manufacturerCompare = a.manufacturer.localeCompare(
@@ -119,7 +119,7 @@ export function NewRequestPatientImplantFields({
           "ko",
         );
         if (manufacturerCompare !== 0) return manufacturerCompare;
-        return a.system.localeCompare(b.system, "ko");
+        return a.brand!.localeCompare(b.brand!, "ko");
       });
   }, [connections]);
 
@@ -127,12 +127,12 @@ export function NewRequestPatientImplantFields({
     return [...new Set(connectionOptions.map((c) => c.manufacturer))];
   }, [connectionOptions]);
 
-  const systemOptions = useMemo(() => {
+  const brandOptions = useMemo(() => {
     return [
       ...new Set(
         connectionOptions
           .filter((c) => c.manufacturer === currentManufacturer)
-          .map((c) => c.system),
+          .map((c) => c.brand),
       ),
     ];
   }, [connectionOptions, currentManufacturer]);
@@ -141,11 +141,11 @@ export function NewRequestPatientImplantFields({
     const base = connectionOptions
       .filter(
         (c) =>
-          c.manufacturer === currentManufacturer && c.system === currentSystem,
+          c.manufacturer === currentManufacturer && c.brand === currentBrand,
       )
-      .map((c) => c.family || "Regular");
+      .map((c) => c.family);
     return [...new Set(base.length ? base : familyOptions)];
-  }, [connectionOptions, currentManufacturer, currentSystem, familyOptions]);
+  }, [connectionOptions, currentManufacturer, currentBrand, familyOptions]);
 
   const manufacturerLabelMap = useMemo(() => {
     return new Map(
@@ -160,14 +160,14 @@ export function NewRequestPatientImplantFields({
 
   const brandLabelMap = useMemo(() => {
     return new Map(
-      systemOptions.map((system) => {
+      brandOptions.map((brand) => {
         const sample = connectionOptions.find(
-          (c) => c.manufacturer === currentManufacturer && c.system === system,
+          (c) => c.manufacturer === currentManufacturer && c.brand === brand,
         );
-        return [system, sample?.displayBrand || system];
+        return [brand, sample?.displayBrand || brand];
       }),
     );
-  }, [connectionOptions, currentManufacturer, systemOptions]);
+  }, [connectionOptions, currentManufacturer, brandOptions]);
 
   const familyLabelMap = useMemo(() => {
     return new Map(
@@ -175,8 +175,8 @@ export function NewRequestPatientImplantFields({
         const sample = connectionOptions.find(
           (c) =>
             c.manufacturer === currentManufacturer &&
-            c.system === currentSystem &&
-            (c.family || "Regular") === family,
+            c.brand === currentBrand &&
+            c.family === family,
         );
         return [family, sample?.displayFamily || family];
       }),
@@ -185,7 +185,7 @@ export function NewRequestPatientImplantFields({
     connectionOptions,
     currentFamilyOptions,
     currentManufacturer,
-    currentSystem,
+    currentBrand,
   ]);
 
   const typeLabelMap = useMemo(() => {
@@ -194,8 +194,8 @@ export function NewRequestPatientImplantFields({
         const sample = connectionOptions.find(
           (c) =>
             c.manufacturer === currentManufacturer &&
-            c.system === currentSystem &&
-            (c.family || "Regular") === currentFamily &&
+            c.brand === currentBrand &&
+            c.family === currentFamily &&
             c.type === type,
         );
         return [type, sample?.displayType || type];
@@ -205,7 +205,7 @@ export function NewRequestPatientImplantFields({
     connectionOptions,
     currentFamily,
     currentManufacturer,
-    currentSystem,
+    currentBrand,
     currentTypeOptions,
   ]);
 
@@ -218,35 +218,35 @@ export function NewRequestPatientImplantFields({
     );
     if (!manufacturerConnections.length) return;
 
-    const systemFromCase = caseInfos?.implantSystem || "";
-    const isValidSystem = manufacturerConnections.some(
-      (c) => c.system === systemFromCase,
+    const brandFromCase = caseInfos?.implantBrand || "";
+    const isValidBrand = manufacturerConnections.some(
+      (c) => c.brand === brandFromCase,
     );
-    if (isValidSystem) return;
+    if (isValidBrand) return;
 
-    const fallbackSystem = manufacturerConnections[0].system || "";
-    if (!fallbackSystem) return;
+    const fallbackBrand = manufacturerConnections[0].brand || "";
+    if (!fallbackBrand) return;
 
-    const fallbackFamily = manufacturerConnections[0].family || "Regular";
+    const fallbackFamily = manufacturerConnections[0].family;
     const fallbackType = manufacturerConnections[0].type || "Hex";
     setCaseInfos({
-      implantSystem: fallbackSystem,
+      implantBrand: fallbackBrand,
       implantFamily: fallbackFamily,
       implantType: fallbackType,
     });
     if (implantSelectSource !== "caseInfos") {
-      setImplantSystem(fallbackSystem);
+      setImplantBrand(fallbackBrand);
       setImplantFamily(fallbackFamily);
       setImplantType(fallbackType);
     }
   }, [
     caseInfos?.implantManufacturer,
-    caseInfos?.implantSystem,
+    caseInfos?.implantBrand,
     connectionOptions,
     implantSelectSource,
     setCaseInfos,
     setImplantFamily,
-    setImplantSystem,
+    setImplantBrand,
     setImplantType,
   ]);
 
@@ -393,38 +393,37 @@ export function NewRequestPatientImplantFields({
                     const firstForManufacturer = connectionOptions.find(
                       (c) => c.manufacturer === value,
                     );
-                    const nextSystem = firstForManufacturer?.system || "";
-                    const nextFamily =
-                      firstForManufacturer?.family || "Regular";
+                    const nextBrand = firstForManufacturer?.brand || "";
+                    const nextFamily = firstForManufacturer?.family || "";
                     const nextType = firstForManufacturer?.type || "Hex";
                     if (implantSelectSource === "caseInfos") {
                       setCaseInfos({
                         implantManufacturer: value,
-                        implantSystem: nextSystem,
+                        implantBrand: nextBrand,
                         implantFamily: nextFamily,
                         implantType: nextType,
                       });
                       syncSelectedConnection(
                         value,
-                        nextSystem,
+                        nextBrand,
                         nextFamily,
                         nextType,
                       );
                       return;
                     }
                     setImplantManufacturer(value);
-                    setImplantSystem(nextSystem);
+                    setImplantBrand(nextBrand);
                     setImplantFamily(nextFamily);
                     setImplantType(nextType);
                     syncSelectedConnection(
                       value,
-                      nextSystem,
+                      nextBrand,
                       nextFamily,
                       nextType,
                     );
                     setCaseInfos({
                       implantManufacturer: value,
-                      implantSystem: nextSystem,
+                      implantBrand: nextBrand,
                       implantFamily: nextFamily,
                       implantType: nextType,
                     });
@@ -445,19 +444,19 @@ export function NewRequestPatientImplantFields({
 
               <div className="min-w-0 space-y-1">
                 <Select
-                  value={currentSystem}
+                  value={currentBrand}
                   onValueChange={(value) => {
                     if (implantDisabled) return;
                     const first = connectionOptions.find(
                       (c) =>
                         c.manufacturer === currentManufacturer &&
-                        c.system === value,
+                        c.brand === value,
                     );
-                    const nextFamily = first?.family || "Regular";
+                    const nextFamily = first?.family || "";
                     const nextType = first?.type || "Hex";
                     if (implantSelectSource === "caseInfos") {
                       setCaseInfos({
-                        implantSystem: value,
+                        implantBrand: value,
                         implantFamily: nextFamily,
                         implantType: nextType,
                       });
@@ -469,7 +468,7 @@ export function NewRequestPatientImplantFields({
                       );
                       return;
                     }
-                    setImplantSystem(value);
+                    setImplantBrand(value);
                     setImplantFamily(nextFamily);
                     setImplantType(nextType);
                     syncSelectedConnection(
@@ -479,7 +478,7 @@ export function NewRequestPatientImplantFields({
                       nextType,
                     );
                     setCaseInfos({
-                      implantSystem: value,
+                      implantBrand: value,
                       implantFamily: nextFamily,
                       implantType: nextType,
                     });
@@ -492,7 +491,7 @@ export function NewRequestPatientImplantFields({
                     <SelectValue placeholder="Brand" />
                   </SelectTrigger>
                   <SelectContent>
-                    {systemOptions.map((s) => (
+                    {brandOptions.map((s) => (
                       <SelectItem key={s} value={s}>
                         {brandLabelMap.get(s) || s}
                       </SelectItem>
@@ -509,8 +508,8 @@ export function NewRequestPatientImplantFields({
                     const first = connectionOptions.find(
                       (c) =>
                         c.manufacturer === currentManufacturer &&
-                        c.system === currentSystem &&
-                        (c.family || "Regular") === value,
+                        c.brand === currentBrand &&
+                        c.family === value,
                     );
                     const nextType = first?.type || "Hex";
                     if (implantSelectSource === "caseInfos") {
@@ -520,7 +519,7 @@ export function NewRequestPatientImplantFields({
                       });
                       syncSelectedConnection(
                         currentManufacturer,
-                        currentSystem,
+                        currentBrand,
                         value,
                         nextType,
                       );
@@ -530,7 +529,7 @@ export function NewRequestPatientImplantFields({
                     setImplantType(nextType);
                     syncSelectedConnection(
                       currentManufacturer,
-                      currentSystem,
+                      currentBrand,
                       value,
                       nextType,
                     );
@@ -539,9 +538,9 @@ export function NewRequestPatientImplantFields({
                       implantType: nextType,
                     });
                   }}
-                  disabled={implantDisabled || !currentSystem}
+                  disabled={implantDisabled || !currentBrand}
                 >
-                  <SelectTrigger disabled={implantDisabled || !currentSystem}>
+                  <SelectTrigger disabled={implantDisabled || !currentBrand}>
                     <SelectValue placeholder="Family" />
                   </SelectTrigger>
                   <SelectContent>
@@ -563,8 +562,8 @@ export function NewRequestPatientImplantFields({
                       setCaseInfos({ implantType: value });
                       syncSelectedConnection(
                         currentManufacturer,
-                        currentSystem,
-                        currentFamily || "Regular",
+                        currentBrand,
+                        currentFamily,
                         value,
                       );
                       return;
@@ -572,8 +571,8 @@ export function NewRequestPatientImplantFields({
                     setImplantType(value);
                     syncSelectedConnection(
                       currentManufacturer,
-                      currentSystem,
-                      currentFamily || "Regular",
+                      currentBrand,
+                      currentFamily,
                       value,
                     );
                     setCaseInfos({ implantType: value });

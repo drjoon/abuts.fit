@@ -74,7 +74,7 @@ export const RequestorDashboardPage = () => {
   const [editingTeethText, setEditingTeethText] = useState("");
   const [editingImplantManufacturer, setEditingImplantManufacturer] =
     useState("");
-  const [editingImplantSystem, setEditingImplantSystem] = useState("");
+  const [editingImplantBrand, setEditingImplantBrand] = useState("");
   const [editingImplantFamily, setEditingImplantFamily] = useState("");
   const [editingImplantType, setEditingImplantType] = useState("");
   const [selectedRiskSummaryItem, setSelectedRiskSummaryItem] =
@@ -124,9 +124,7 @@ export const RequestorDashboardPage = () => {
   const filterAbutmentRequest = (r: any) => {
     if (!r) return false;
     const ci = r.caseInfos || {};
-    const implantBrand = String(
-      ci.implantBrand || ci.implantSystem || "",
-    ).trim();
+    const implantBrand = String(ci.implantBrand).trim();
     return Boolean(implantBrand);
   };
 
@@ -334,12 +332,8 @@ export const RequestorDashboardPage = () => {
     setEditingRequest({
       id: mongoId,
       requestId: request.requestId || displayId,
-      createdAt: request.createdAt || request.date || "",
-      estimatedShipYmd:
-        request.timeline?.estimatedShipYmd ||
-        request.estimatedShipYmd ||
-        request.dueDate ||
-        "",
+      createdAt: request.createdAt,
+      estimatedShipYmd: request.estimatedShipYmd || request.dueDate || "",
       title: request.title || displayId,
       description: request.description || "",
       clinicName:
@@ -351,12 +345,7 @@ export const RequestorDashboardPage = () => {
       teethText: ci.tooth || request.toothNumber || request.tooth || "",
       implantManufacturer:
         ci.implantManufacturer || request.implantManufacturer || "",
-      implantSystem:
-        ci.implantBrand ||
-        ci.implantSystem ||
-        request.implantBrand ||
-        request.implantSystem ||
-        "",
+      implantBrand: ci.implantBrand || request.implantBrand || "",
       implantFamily: ci.implantFamily || request.implantFamily || "",
       implantType: ci.implantType || request.implantType || "",
     });
@@ -373,13 +362,7 @@ export const RequestorDashboardPage = () => {
     setEditingImplantManufacturer(
       ci.implantManufacturer || request.implantManufacturer || "",
     );
-    setEditingImplantSystem(
-      ci.implantBrand ||
-        ci.implantSystem ||
-        request.implantBrand ||
-        request.implantSystem ||
-        "",
-    );
+    setEditingImplantBrand(ci.implantBrand || request.implantBrand || "");
     setEditingImplantFamily(ci.implantFamily || request.implantFamily || "");
     setEditingImplantType(ci.implantType || request.implantType || "");
   };
@@ -633,7 +616,7 @@ export const RequestorDashboardPage = () => {
         editingPatientName={editingPatientName}
         editingTeethText={editingTeethText}
         editingImplantManufacturer={editingImplantManufacturer}
-        editingImplantSystem={editingImplantSystem}
+        editingImplantBrand={editingImplantBrand}
         editingImplantFamily={editingImplantFamily}
         editingImplantType={editingImplantType}
         onChangeDescription={setEditingDescription}
@@ -641,7 +624,7 @@ export const RequestorDashboardPage = () => {
         onChangePatientName={setEditingPatientName}
         onChangeTeethText={setEditingTeethText}
         onChangeImplantManufacturer={setEditingImplantManufacturer}
-        onChangeImplantSystem={setEditingImplantSystem}
+        onChangeImplantBrand={setEditingImplantBrand}
         onChangeImplantFamily={setEditingImplantFamily}
         onChangeImplantType={setEditingImplantType}
         onClose={() => setEditingRequest(null)}
@@ -671,8 +654,8 @@ export const RequestorDashboardPage = () => {
               payload.caseInfos.implantManufacturer =
                 editingImplantManufacturer.trim();
             }
-            if (editingImplantSystem.trim()) {
-              payload.caseInfos.implantSystem = editingImplantSystem.trim();
+            if (editingImplantBrand.trim()) {
+              payload.caseInfos.implantBrand = editingImplantBrand.trim();
             }
             if (editingImplantFamily.trim()) {
               payload.caseInfos.implantFamily = editingImplantFamily.trim();

@@ -213,7 +213,6 @@ export async function getAllRequests(req, res) {
       "caseInfos.finishLine",
       "caseInfos.implantManufacturer",
       "caseInfos.implantBrand",
-      "caseInfos.implantSystem",
       "caseInfos.implantFamily",
       "caseInfos.implantType",
       "caseInfos.maxDiameter",
@@ -513,14 +512,6 @@ export async function updateRequest(req, res) {
       updateData.caseInfos &&
       typeof updateData.caseInfos === "object"
     ) {
-      if (
-        typeof updateData.caseInfos.connectionType === "string" &&
-        !updateData.caseInfos.implantType
-      ) {
-        updateData.caseInfos.implantType = updateData.caseInfos.connectionType;
-      }
-      delete updateData.caseInfos.connectionType;
-
       updateData.caseInfos = await normalizeCaseInfosImplantFields(
         updateData.caseInfos,
       );

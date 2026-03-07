@@ -186,7 +186,7 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
     patientName,
     tooth,
     implantManufacturer,
-    implantSystem,
+    implantBrand,
     implantFamily,
     implantType,
     maxDiameter,
@@ -236,7 +236,7 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
     tooth,
     ...(await normalizeCaseInfosImplantFields({
       implantManufacturer,
-      implantSystem,
+      implantBrand,
       implantFamily,
       implantType,
     })),
@@ -299,7 +299,7 @@ export const addFilesToDraftBulk = asyncHandler(async (req, res) => {
         patientName,
         tooth,
         implantManufacturer,
-        implantSystem,
+        implantBrand,
         implantFamily,
         implantType,
         maxDiameter,
@@ -327,7 +327,7 @@ export const addFilesToDraftBulk = asyncHandler(async (req, res) => {
 
       const normalizedImplant = await normalizeCaseInfosImplantFields({
         implantManufacturer,
-        implantSystem,
+        implantBrand,
         implantFamily,
         implantType,
       });

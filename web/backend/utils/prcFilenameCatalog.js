@@ -2,11 +2,11 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import {
-  getCanonicalManufacturerSystemKey,
+  getCanonicalManufacturerBrandKey,
   getPrcManufacturerKor,
   getManufacturerByPrcKor,
   normalizeImplantManufacturer,
-  normalizeImplantSystem,
+  normalizeImplantBrand,
   normalizeImplantType,
 } from "./implantCanonical.js";
 
@@ -45,10 +45,10 @@ export function parsePrcTypeCode(typeCode) {
   };
 }
 
-export function getPrcTypeCode(system, type) {
-  const sys = normalizeImplantSystem(system, "");
+export function getPrcTypeCode(brand, type) {
+  const normalizedBrand = normalizeImplantBrand(brand, "");
   const normalizedType = normalizeImplantType(type);
-  const familyChar = /mini/i.test(String(sys || "")) ? "M" : "R";
+  const familyChar = /mini/i.test(String(normalizedBrand || "")) ? "M" : "R";
   const implantTypeChar = normalizedType === "Non-Hex" ? "N" : "H";
   return `${familyChar}${implantTypeChar}`;
 }
@@ -73,24 +73,25 @@ function parsePrcBaseFileName(fileName, suffix) {
   if (!match) return null;
 
   const manufacturerKor = String(match[1] || "").trim();
-  const rawSystem = String(match[2] || "").trim();
+  const rawBrand = String(match[2] || "").trim();
   const typeCode = String(match[3] || "")
     .trim()
     .toUpperCase();
   const parsedType = parsePrcTypeCode(typeCode);
   const manufacturer = getManufacturerByPrcKor(manufacturerKor);
-  const system = normalizeImplantSystem(rawSystem, manufacturer);
+  const brand = normalizeImplantBrand(rawBrand, manufacturer);
   const implantType = parsedType?.implantType || "";
-  const family = parsedType?.family || "Regular";
-  const canonicalKey = getCanonicalManufacturerSystemKey(manufacturer, system);
+  const family = parsedType?.family || "";
+  const canonicalKey = getCanonicalManufacturerBrandKey(manufacturer, brand);
 
-  if (!manufacturer || !system || !implantType || !canonicalKey) return null;
+  if (!manufacturer || !brand || !family || !implantType || !canonicalKey)
+    return null;
 
   return {
     canonicalKey,
     manufacturer: normalizeImplantManufacturer(manufacturer),
     manufacturerKor,
-    system,
+    brand,
     family,
     type: implantType,
     typeCode,
@@ -154,13 +155,13 @@ export function loadPrcCatalog() {
 
 export function buildPrcFileNamesFromCatalog(
   manufacturer,
-  system,
+  brand,
   type,
   family,
 ) {
-  const canonicalKey = getCanonicalManufacturerSystemKey(manufacturer, system);
+  const canonicalKey = getCanonicalManufacturerBrandKey(manufacturer, brand);
   const normalizedType = normalizeImplantType(type);
-  const normalizedFamily = String(family || "").trim() || "Regular";
+  const normalizedFamily = String(family || "").trim();
   const catalog = loadPrcCatalog();
   const key = `${canonicalKey}|${normalizedFamily}|${normalizedType}`;
   return {
@@ -172,16 +173,16 @@ export function buildPrcFileNamesFromCatalog(
 export function buildExpectedPrcFileName(
   kind,
   manufacturer,
-  system,
+  brand,
   type,
   family,
 ) {
   const manufacturerKor = getPrcManufacturerKor(manufacturer);
-  const normalizedSystem = normalizeImplantSystem(system, manufacturer);
-  const prcTypeCode = family
-    ? getPrcTypeCodeByFamily(family, type)
-    : getPrcTypeCode(normalizedSystem, type);
-  if (!manufacturerKor || !normalizedSystem || !prcTypeCode) return "";
+  const normalizedBrand = normalizeImplantBrand(brand, manufacturer);
+  const normalizedFamily = String(family || "").trim();
+  const prcTypeCode = getPrcTypeCodeByFamily(normalizedFamily, type);
+  if (!manufacturerKor || !normalizedBrand || !normalizedFamily || !prcTypeCode)
+    return "";
   const suffix = kind === "faceHole" ? "FaceHole" : "Connection";
-  return `${manufacturerKor}_${normalizedSystem}_${prcTypeCode}_${suffix}.prc`;
+  return `${manufacturerKor}_${normalizedBrand}_${prcTypeCode}_${suffix}.prc`;
 }

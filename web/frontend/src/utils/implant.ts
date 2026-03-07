@@ -1,7 +1,6 @@
 export type ImplantDisplaySource = {
   implantManufacturer?: string | null;
   implantBrand?: string | null;
-  implantSystem?: string | null;
   implantFamily?: string | null;
   implantType?: string | null;
 };
@@ -25,18 +24,11 @@ function isKnownImplantFamily(value?: string | null) {
 
 export function formatImplantDisplay(source?: ImplantDisplaySource | null) {
   const manufacturer = normalizeImplantPart(source?.implantManufacturer);
-  const rawBrand = normalizeImplantPart(
-    source?.implantBrand || source?.implantSystem,
-  );
+  const rawBrand = normalizeImplantPart(source?.implantBrand);
   const rawFamily = normalizeImplantPart(source?.implantFamily);
   const rawType = normalizeImplantPart(source?.implantType);
-
   const family = rawFamily || (isKnownImplantFamily(rawBrand) ? rawBrand : "");
-  const brand = rawFamily
-    ? rawBrand
-    : isKnownImplantFamily(rawBrand)
-      ? "-"
-      : rawBrand;
+  const brand = isKnownImplantFamily(rawBrand) ? "-" : rawBrand;
   const type = rawType;
 
   if (!manufacturer && !rawBrand && !family && !type) {

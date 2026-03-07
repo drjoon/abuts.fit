@@ -2,7 +2,6 @@ import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
-import Connection from "../../models/connection.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import LotCounter from "../../models/lotCounter.model.js";
 import {
@@ -240,96 +239,35 @@ export async function getDeliveryEtaLeadDays() {
   }
 }
 
-export async function normalizeCaseInfosImplantFields(caseInfos) {
+export async function normalizeCaseInfosImplantFields(
+  caseInfos,
+  strict = true,
+) {
   const ci = caseInfos && typeof caseInfos === "object" ? { ...caseInfos } : {};
 
   const manufacturer = (ci.implantManufacturer || "").trim();
-  const brandInput = (ci.implantBrand || "").trim();
-  const system = (ci.implantSystem || brandInput || "").trim();
+  const brand = (ci.implantBrand || "").trim();
   const family = (ci.implantFamily || "").trim();
   const type = (ci.implantType || "").trim();
-  const legacyConnectionType = (ci.connectionType || "").trim();
-  delete ci.implantBrand;
-  delete ci.connectionType;
 
-  // 이미 신 스키마가 완성되어 있으면 그대로
-  if (manufacturer && system && family && type) {
-    const normalized = normalizeImplantFields({
-      ...ci,
-      implantManufacturer: manufacturer,
-      implantSystem: system,
-      implantFamily: family,
-      implantType: type,
-    });
-    return {
-      ...normalized,
-      implantBrand: normalized.implantSystem,
-    };
-  }
-
-  // 레거시(밀린 값) 케이스를 최대한 복원
-  // - 과거: implantSystem=제조사, implantType=시스템, connectionType=유형
-  // - 현재 문제 데이터: implantSystem=시스템(Regular), implantType=유형(Hex), connectionType=유형(Hex)
-  const candidateManufacturer = manufacturer || "";
-  const rawA = system; // implantSystem
-  const rawFamily = family; // implantFamily
-  const rawB = type || legacyConnectionType; // implantType 우선
-
-  // 1) 과거 스키마(implantSystem=제조사)로 들어온 경우
-  //    제조사가 비어 있고 connectionType이 있는 경우가 많음
-  if (!candidateManufacturer && system && legacyConnectionType && !type) {
-    const normalized = normalizeImplantFields({
-      ...ci,
-      implantManufacturer: system,
-      implantSystem: (ci.implantType || "").trim(),
-      implantFamily: (ci.implantFamily || "").trim() || "Regular",
-      implantType: legacyConnectionType,
-    });
-    return {
-      ...normalized,
-      implantBrand: normalized.implantSystem,
-    };
-  }
-
-  // 2) connections DB로 복원 시도
-  if (rawA && rawB) {
-    const found = await Connection.findOne({
-      isActive: true,
-      ...(candidateManufacturer ? { manufacturer: candidateManufacturer } : {}),
-      $or: [{ system: rawA }, { family: rawA }],
-      ...(rawFamily ? { family: rawFamily } : {}),
-      type: rawB,
-    })
-      .select({ manufacturer: 1, system: 1, family: 1, type: 1 })
-      .lean();
-
-    if (found) {
-      const normalized = normalizeImplantFields({
-        ...ci,
-        implantManufacturer: found.manufacturer,
-        implantSystem: found.system || rawA,
-        implantFamily: found.family || rawFamily || "Regular",
-        implantType: found.type,
-      });
-      return {
-        ...normalized,
-        implantBrand: normalized.implantSystem,
-      };
+  if (strict) {
+    const missing = [];
+    if (!manufacturer) missing.push("implantManufacturer");
+    if (!brand) missing.push("implantBrand");
+    if (!family) missing.push("implantFamily");
+    if (!type) missing.push("implantType");
+    if (missing.length > 0) {
+      throw new Error(`Missing required implant fields: ${missing.join(", ")}`);
     }
   }
 
-  // 3) 마지막 fallback: 있는 값들을 최대한 채움
-  const normalized = normalizeImplantFields({
+  return normalizeImplantFields({
     ...ci,
-    implantManufacturer: candidateManufacturer,
-    implantSystem: rawA,
-    implantFamily: rawFamily || "Regular",
-    implantType: rawB,
+    implantManufacturer: manufacturer,
+    implantBrand: brand,
+    implantFamily: family,
+    implantType: type,
   });
-  return {
-    ...normalized,
-    implantBrand: normalized.implantSystem,
-  };
 }
 
 function inferDiameterGroupFromDiameter(diameter) {
@@ -375,7 +313,7 @@ export async function normalizeRequestForResponse(requestDoc) {
       ? requestDoc.toObject()
       : requestDoc;
   const ci = obj.caseInfos || {};
-  obj.caseInfos = await normalizeCaseInfosImplantFields(ci);
+  obj.caseInfos = await normalizeCaseInfosImplantFields(ci, false);
   normalizeProductionScheduleDiameter(obj);
   if (obj?.lotNumber && typeof obj.lotNumber === "object") {
     const finalRaw = obj.lotNumber.final;
@@ -523,7 +461,7 @@ export async function computePriceForRequest({
     "caseInfos.patientName": patientName,
     "caseInfos.tooth": tooth,
     "caseInfos.clinicName": clinicName,
-    "caseInfos.implantSystem": { $exists: true, $ne: "" },
+    "caseInfos.implantBrand": { $exists: true, $ne: "" },
     manufacturerStage: { $ne: "취소" },
     createdAt: { $gte: remakeCutoff },
   })

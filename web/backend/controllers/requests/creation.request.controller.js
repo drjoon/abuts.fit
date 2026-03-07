@@ -126,8 +126,8 @@ export async function createRequest(req, res) {
             const implantManufacturer = String(
               normalizedCaseInfos.implantManufacturer || "",
             ).trim();
-            const implantSystem = String(
-              normalizedCaseInfos.implantSystem || "",
+            const implantBrand = String(
+              normalizedCaseInfos.implantBrand || "",
             ).trim();
             const implantFamily = String(
               normalizedCaseInfos.implantFamily || "",
@@ -144,7 +144,7 @@ export async function createRequest(req, res) {
             }
             if (
               !implantManufacturer ||
-              !implantSystem ||
+              !implantBrand ||
               !implantFamily ||
               !implantType
             ) {
@@ -360,8 +360,8 @@ export async function createRequest(req, res) {
             const implantManufacturer = String(
               normalizedCaseInfos.implantManufacturer || "",
             ).trim();
-            const implantSystem = String(
-              normalizedCaseInfos.implantSystem || "",
+            const implantBrand = String(
+              normalizedCaseInfos.implantBrand || "",
             ).trim();
             const implantFamily = String(
               normalizedCaseInfos.implantFamily || "",
@@ -379,7 +379,7 @@ export async function createRequest(req, res) {
 
             if (
               !implantManufacturer ||
-              !implantSystem ||
+              !implantBrand ||
               !implantFamily ||
               !implantType
             ) {
@@ -545,7 +545,7 @@ export async function createRequest(req, res) {
     const implantManufacturer = (
       normalizedCaseInfos.implantManufacturer || ""
     ).trim();
-    const implantSystem = (normalizedCaseInfos.implantSystem || "").trim();
+    const implantBrand = (normalizedCaseInfos.implantBrand || "").trim();
     const implantFamily = (normalizedCaseInfos.implantFamily || "").trim();
     const implantType = (normalizedCaseInfos.implantType || "").trim();
 
@@ -558,7 +558,7 @@ export async function createRequest(req, res) {
 
     if (
       !implantManufacturer ||
-      !implantSystem ||
+      !implantBrand ||
       !implantFamily ||
       !implantType
     ) {
@@ -1022,8 +1022,8 @@ export async function createRequestsBulk(req, res) {
           const implantManufacturer = String(
             normalizedCaseInfos.implantManufacturer || "",
           ).trim();
-          const implantSystem = String(
-            normalizedCaseInfos.implantSystem || "",
+          const implantBrand = String(
+            normalizedCaseInfos.implantBrand || "",
           ).trim();
           const implantFamily = String(
             normalizedCaseInfos.implantFamily || "",
@@ -1037,7 +1037,7 @@ export async function createRequestsBulk(req, res) {
           }
           if (
             !implantManufacturer ||
-            !implantSystem ||
+            !implantBrand ||
             !implantFamily ||
             !implantType
           ) {
@@ -1067,7 +1067,7 @@ export async function createRequestsBulk(req, res) {
           }
           if (
             !implantManufacturer ||
-            !implantSystem ||
+            !implantBrand ||
             !implantFamily ||
             !implantType
           ) {

@@ -25,14 +25,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/214</span>
+                <span class='fraction'>0/212</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/198</span>
+                <span class='fraction'>0/194</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/209</span>
+                <span class='fraction'>0/207</span>
             </div>
         
             
@@ -771,13 +771,7 @@
 <a name='L706'></a><a href='#L706'>706</a>
 <a name='L707'></a><a href='#L707'>707</a>
 <a name='L708'></a><a href='#L708'>708</a>
-<a name='L709'></a><a href='#L709'>709</a>
-<a name='L710'></a><a href='#L710'>710</a>
-<a name='L711'></a><a href='#L711'>711</a>
-<a name='L712'></a><a href='#L712'>712</a>
-<a name='L713'></a><a href='#L713'>713</a>
-<a name='L714'></a><a href='#L714'>714</a>
-<a name='L715'></a><a href='#L715'>715</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L709'></a><a href='#L709'>709</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1004,6 +998,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1037,6 +1032,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1276,13 +1272,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1293,9 +1283,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1705,7 +1693,8 @@ export async function <span class="fstat-no" title="function not covered" >getAl
       "caseInfos.reviewByStage",
       "caseInfos.finishLine",
       "caseInfos.implantManufacturer",
-      "caseInfos.implantSystem",
+      "caseInfos.implantBrand",
+      "caseInfos.implantFamily",
       "caseInfos.implantType",
       "caseInfos.maxDiameter",
       "caseInfos.connectionDiameter",
@@ -1751,8 +1740,9 @@ export async function <span class="fstat-no" title="function not covered" >getAl
           request: r,
           now,
         });
+        const normalized = <span class="cstat-no" title="statement not covered" >await normalizeRequestForResponse(r);</span>
 <span class="cstat-no" title="statement not covered" >        return {</span>
-          ...r,
+          ...normalized,
           shippingPriority,
         };
       }),
@@ -2003,14 +1993,6 @@ export async function <span class="fstat-no" title="function not covered" >updat
       updateData.caseInfos &amp;&amp;
       typeof updateData.caseInfos === "object"
     ) {
-<span class="cstat-no" title="statement not covered" >      if (</span>
-        typeof updateData.caseInfos.connectionType === "string" &amp;&amp;
-        !updateData.caseInfos.implantType
-      ) {
-<span class="cstat-no" title="statement not covered" >        updateData.caseInfos.implantType = updateData.caseInfos.connectionType;</span>
-      }
-<span class="cstat-no" title="statement not covered" >      delete updateData.caseInfos.connectionType;</span>
-&nbsp;
 <span class="cstat-no" title="statement not covered" >      updateData.caseInfos = await normalizeCaseInfosImplantFields(</span>
         updateData.caseInfos,
       );
@@ -2212,7 +2194,7 @@ export async function <span class="fstat-no" title="function not covered" >delet
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-03-06T11:11:46.573Z
+                at 2026-03-07T09:59:23.514Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

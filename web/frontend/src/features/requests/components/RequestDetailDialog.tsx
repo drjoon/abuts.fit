@@ -15,7 +15,7 @@ export type RequestDetailDialogCaseInfos = {
   patientName?: string;
   tooth?: string;
   implantManufacturer?: string;
-  implantSystem?: string;
+  implantBrand?: string;
   implantFamily?: string;
   implantType?: string;
   maxDiameter?: number | null;

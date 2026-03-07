@@ -1,7 +1,8 @@
 export const CONNECTIONS_SEED = [
   {
     manufacturer: "NEOBIOTECH",
-    system: "IS",
+    brand: "IS",
+    family: "Regular",
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "네오_IS_RH_Connection.prc",
@@ -9,7 +10,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "NEOBIOTECH",
-    system: "IS",
+    brand: "IS",
+    family: "Regular",
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "네오_IS_RN_Connection.prc",
@@ -17,7 +19,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "DENTIS",
-    system: "Mini",
+    brand: "Mini",
+    family: "Mini",
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "덴티스_SQ_MH_Connection.prc",
@@ -25,7 +28,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "DENTIS",
-    system: "Mini",
+    brand: "Mini",
+    family: "Mini",
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "덴티스_SQ_MN_Connection.prc",
@@ -33,7 +37,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "DENTIS",
-    system: "SQ",
+    brand: "SQ",
+    family: "Regular",
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "덴티스_SQ_RH_Connection.prc",
@@ -41,7 +46,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "DENTIS",
-    system: "SQ",
+    brand: "SQ",
+    family: "Regular",
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "덴티스_SQ_RN_Connection.prc",
@@ -49,7 +55,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "DENTIUM",
-    system: "SuperLine",
+    brand: "SuperLine",
+    family: "Regular",
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "덴티움_SuperLine_RH_Connection.prc",
@@ -57,7 +64,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "DENTIUM",
-    system: "SuperLine",
+    brand: "SuperLine",
+    family: "Regular",
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "덴티움_SuperLine_RN_Connection.prc",
@@ -65,7 +73,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "DIO",
-    system: "Mini",
+    brand: "Mini",
+    family: "Mini",
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "디오_UF_MH_Connection.prc",
@@ -73,7 +82,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "DIO",
-    system: "Mini",
+    brand: "Mini",
+    family: "Mini",
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "디오_UF_MN_Connection.prc",
@@ -81,7 +91,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "DIO",
-    system: "UF",
+    brand: "UF",
+    family: "Regular",
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "디오_UF_RH_Connection.prc",
@@ -89,7 +100,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "DIO",
-    system: "UF",
+    brand: "UF",
+    family: "Regular",
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "디오_UF_RN_Connection.prc",
@@ -97,7 +109,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "MEGAGEN",
-    system: "AnyRidge",
+    brand: "AnyRidge",
+    family: "Regular",
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "메가젠_AnyRidge_RH_Connection.prc",
@@ -105,7 +118,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "MEGAGEN",
-    system: "AnyRidge",
+    brand: "AnyRidge",
+    family: "Regular",
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "메가젠_AnyRidge_RN_Connection.prc",
@@ -113,7 +127,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "MEGAGEN",
-    system: "AnyOne",
+    brand: "AnyOne",
+    family: "Regular",
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "메가젠_AnyOne_RH_Connection.prc",
@@ -121,7 +136,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "MEGAGEN",
-    system: "AnyOne",
+    brand: "AnyOne",
+    family: "Regular",
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "메가젠_AnyOne_RN_Connection.prc",
@@ -129,7 +145,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "OSSTEM",
-    system: "KS System",
+    brand: "KS System",
+    family: "Regular",
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "오스템_KS_Connection.prc",
@@ -137,7 +154,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "OSSTEM",
-    system: "KS System",
+    brand: "KS System",
+    family: "Regular",
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "오스템_KS_Non_Connection.prc",
@@ -145,7 +163,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "OSSTEM",
-    system: "Mini",
+    brand: "Mini",
+    family: "Mini",
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "오스템_TS_MH_Connection.prc",
@@ -153,7 +172,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "OSSTEM",
-    system: "Mini",
+    brand: "Mini",
+    family: "Mini",
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "오스템_TS_MN_Connection.prc",
@@ -161,7 +181,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "OSSTEM",
-    system: "TS",
+    brand: "TS",
+    family: "Regular",
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "오스템_TS_RH_Connection.prc",
@@ -169,7 +190,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "OSSTEM",
-    system: "TS",
+    brand: "TS",
+    family: "Regular",
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "오스템_TS_RN_Connection.prc",
@@ -177,7 +199,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "OSSTEM",
-    system: "SSR",
+    brand: "SSR",
+    family: "Regular",
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "오스템_SSR_Connection.prc",
@@ -185,7 +208,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "OSSTEM",
-    system: "SSR",
+    brand: "SSR",
+    family: "Regular",
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "오스템_SSR_Non_Connection.prc",
@@ -193,7 +217,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "TOPPLAN",
-    system: "Mini",
+    brand: "Mini",
+    family: "Mini",
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "탑플란_M_Connection.prc",
@@ -201,7 +226,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "TOPPLAN",
-    system: "Mini",
+    brand: "Mini",
+    family: "Mini",
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "탑플란_M_Non_Connection.prc",
@@ -209,7 +235,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "TOPPLAN",
-    system: "Regular",
+    brand: "Regular",
+    family: "Regular",
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "탑플란_R_Connection.prc",
@@ -217,7 +244,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "TOPPLAN",
-    system: "Regular",
+    brand: "Regular",
+    family: "Regular",
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "탑플란_R_Non_Connection.prc",
@@ -226,7 +254,8 @@ export const CONNECTIONS_SEED = [
 
   {
     manufacturer: "DENTIS",
-    system: "Standard",
+    brand: "Standard",
+    family: "Regular",
     type: "Hex",
     category: "star-connection",
     fileName: "DENTIS_Connection.prc",
@@ -234,7 +263,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "DENTIS",
-    system: "Standard",
+    brand: "Standard",
+    family: "Regular",
     type: "Non-Hex (NH)",
     category: "star-connection",
     fileName: "DENTIS_NH_Connection.prc",
@@ -242,7 +272,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "DENTIUM",
-    system: "Standard",
+    brand: "Standard",
+    family: "Regular",
     type: "Hex",
     category: "star-connection",
     fileName: "DENTIUM_Connection.prc",
@@ -250,7 +281,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "DENTIUM",
-    system: "Standard",
+    brand: "Standard",
+    family: "Regular",
     type: "Non-Hex (NH)",
     category: "star-connection",
     fileName: "DENTIUM_NH_Connection.prc",
@@ -258,7 +290,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "DIO",
-    system: "Standard",
+    brand: "Standard",
+    family: "Regular",
     type: "Hex",
     category: "star-connection",
     fileName: "DIO_Connection.prc",
@@ -266,7 +299,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "DIO",
-    system: "Standard",
+    brand: "Standard",
+    family: "Regular",
     type: "Non-Hex (NH)",
     category: "star-connection",
     fileName: "DIO_NH_Connection.prc",
@@ -274,7 +308,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "DIO",
-    system: "Narrow (Mini)",
+    brand: "Narrow (Mini)",
+    family: "Mini",
     type: "Hex",
     category: "star-connection",
     fileName: "DIO_Narrow(Mini)_Connection.prc",
@@ -282,7 +317,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "DIO",
-    system: "Narrow (Mini)",
+    brand: "Narrow (Mini)",
+    family: "Mini",
     type: "Non-Hex (NH)",
     category: "star-connection",
     fileName: "DIO_Narrow(Mini)_NH_Connection.prc",
@@ -290,7 +326,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "MEGAGEN",
-    system: "AnyOne",
+    brand: "AnyOne",
+    family: "Regular",
     type: "Hex",
     category: "star-connection",
     fileName: "MEGAGEN_AnyOne_Connection.prc",
@@ -298,7 +335,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "MEGAGEN",
-    system: "AnyOne",
+    brand: "AnyOne",
+    family: "Regular",
     type: "Non-Hex (NH)",
     category: "star-connection",
     fileName: "MEGAGEN_AnyOne_NH_Connection.prc",
@@ -306,7 +344,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "MEGAGEN",
-    system: "AnyRidge",
+    brand: "AnyRidge",
+    family: "Regular",
     type: "Hex",
     category: "star-connection",
     fileName: "MEGAGEN_AnyRidge_Connection.prc",
@@ -314,7 +353,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "MEGAGEN",
-    system: "AnyRidge",
+    brand: "AnyRidge",
+    family: "Regular",
     type: "Non-Hex (NH)",
     category: "star-connection",
     fileName: "MEGAGEN_AnyRidge_NH_Connection.prc",
@@ -322,7 +362,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "Neobiotech",
-    system: "Standard",
+    brand: "Standard",
+    family: "Regular",
     type: "Hex",
     category: "star-connection",
     fileName: "Neobiotech_Connection.prc",
@@ -330,7 +371,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "Neobiotech",
-    system: "Standard",
+    brand: "Standard",
+    family: "Regular",
     type: "Non-Hex (NH)",
     category: "star-connection",
     fileName: "Neobiotech_NH_Connection.prc",
@@ -338,7 +380,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "OSSTEM",
-    system: "Mini",
+    brand: "Mini",
+    family: "Mini",
     type: "Hex",
     category: "star-connection",
     fileName: "OSSTEM_Mini_Connection.prc",
@@ -346,7 +389,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "OSSTEM",
-    system: "Mini",
+    brand: "Mini",
+    family: "Mini",
     type: "Non-Hex (NH)",
     category: "star-connection",
     fileName: "OSSTEM_Mini_NH_Connection.prc",
@@ -354,7 +398,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "OSSTEM",
-    system: "Regular",
+    brand: "Regular",
+    family: "Regular",
     type: "Hex",
     category: "star-connection",
     fileName: "OSSTEM_Regular_Connection.prc",
@@ -362,7 +407,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "OSSTEM",
-    system: "Regular",
+    brand: "Regular",
+    family: "Regular",
     type: "Non-Hex (NH)",
     category: "star-connection",
     fileName: "OSSTEM_Regular_NH_Connection.prc",
@@ -370,7 +416,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "STRAUMANN",
-    system: "NC (Narrow)",
+    brand: "NC (Narrow)",
+    family: "Mini",
     type: "Hex",
     category: "star-connection",
     fileName: "STRAUMANN_NC_Connection.prc",
@@ -378,7 +425,8 @@ export const CONNECTIONS_SEED = [
   },
   {
     manufacturer: "STRAUMANN",
-    system: "RC (Regular)",
+    brand: "RC (Regular)",
+    family: "Regular",
     type: "Hex",
     category: "star-connection",
     fileName: "STRAUMANN_RC_Connection.prc",

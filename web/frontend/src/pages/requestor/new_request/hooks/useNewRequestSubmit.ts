@@ -106,8 +106,7 @@ export const useNewRequestSubmit = ({
           setIsSubmitting(false);
           return;
         }
-      } catch {
-      }
+      } catch {}
 
       const resolvedFiles = await Promise.all(
         files.map(async (file) => {
@@ -164,7 +163,7 @@ export const useNewRequestSubmit = ({
             patientName,
             tooth: String(caseInfos.tooth || "").trim(),
             implantManufacturer: caseInfos.implantManufacturer,
-            implantSystem: caseInfos.implantSystem,
+            implantBrand: caseInfos.implantBrand,
             implantFamily: caseInfos.implantFamily,
             implantType: caseInfos.implantType,
             maxDiameter: caseInfos.maxDiameter,

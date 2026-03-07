@@ -291,18 +291,12 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     ],
   );
 
-  // useNewRequestImplant 내부에서 clinicName이 바뀔 때마다
-  // 임플란트 정보를 초기화(sync)하려고 시도하는 로직이
-  // 파일 전환 시 원치 않는 덮어쓰기를 유발할 수 있음.
-  // syncSelectedConnection을 수동으로만 호출하도록 NewRequestPatientImplantFields 수정 검토 필요.
-
-  // 임플란트 정보 관리
   const {
     connections,
     implantManufacturer,
     setImplantManufacturer,
-    implantSystem,
-    setImplantSystem,
+    implantBrand,
+    setImplantBrand,
     implantFamily,
     setImplantFamily,
     implantType,
@@ -331,15 +325,12 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       console.log("[useNewRequestPage] Syncing implant state for file:", {
         currentFileKey,
         implantManufacturer: currentCaseInfos.implantManufacturer,
-        implantSystem:
-          currentCaseInfos.implantBrand || currentCaseInfos.implantSystem,
+        implantBrand: currentCaseInfos.implantBrand,
         implantFamily: currentCaseInfos.implantFamily,
         implantType: currentCaseInfos.implantType,
       });
       setImplantManufacturer(currentCaseInfos.implantManufacturer || "");
-      setImplantSystem(
-        currentCaseInfos.implantBrand || currentCaseInfos.implantSystem || "",
-      );
+      setImplantBrand(currentCaseInfos.implantBrand || "");
       setImplantFamily(currentCaseInfos.implantFamily || "");
       setImplantType(currentCaseInfos.implantType || "");
     }
@@ -347,11 +338,10 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     currentFileKey,
     currentCaseInfos.implantManufacturer,
     currentCaseInfos.implantBrand,
-    currentCaseInfos.implantSystem,
     currentCaseInfos.implantFamily,
     currentCaseInfos.implantType,
     setImplantManufacturer,
-    setImplantSystem,
+    setImplantBrand,
     setImplantFamily,
     setImplantType,
   ]);
@@ -366,7 +356,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     clinicStorageKey,
     implant: {
       manufacturer: implantManufacturer,
-      system: implantSystem,
+      brand: implantBrand,
       family: implantFamily,
       type: implantType,
     },
@@ -423,7 +413,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         const updates: any = { clinicName: trimmedName };
         if (favorite) {
           updates.implantManufacturer = favorite.manufacturer;
-          updates.implantSystem = favorite.system;
+          updates.implantBrand = favorite.brand;
           updates.implantFamily = favorite.family;
           updates.implantType = favorite.type;
         }
@@ -701,12 +691,9 @@ export const useNewRequestPage = (existingRequestId?: string) => {
                 typeof ci.implantManufacturer === "string"
                   ? ci.implantManufacturer
                   : "",
-              implantSystem:
-                typeof ci.implantBrand === "string"
-                  ? ci.implantBrand
-                  : typeof ci.implantSystem === "string"
-                    ? ci.implantSystem
-                    : "",
+              implantBrand:
+                typeof ci.implantBrand === "string" ? ci.implantBrand : "",
+
               implantFamily:
                 typeof ci.implantFamily === "string" ? ci.implantFamily : "",
               implantType:
@@ -734,15 +721,15 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         if (req.caseInfos) {
           const {
             implantManufacturer,
-            implantSystem,
+            implantBrand,
             implantFamily,
             implantType,
           } = req.caseInfos;
           if (typeof implantManufacturer === "string") {
             setImplantManufacturer(implantManufacturer);
           }
-          if (typeof implantSystem === "string") {
-            setImplantSystem(implantSystem);
+          if (typeof implantBrand === "string") {
+            setImplantBrand(implantBrand);
           }
           if (typeof implantFamily === "string") {
             setImplantFamily(implantFamily);
@@ -760,7 +747,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     token,
     setCaseInfosMap,
     setImplantManufacturer,
-    setImplantSystem,
+    setImplantBrand,
     setImplantFamily,
     setImplantType,
   ]);
@@ -918,8 +905,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     typeOptions,
     implantManufacturer,
     setImplantManufacturer,
-    implantSystem,
-    setImplantSystem,
+    implantBrand,
+    setImplantBrand,
     implantFamily,
     setImplantFamily,
     implantType,

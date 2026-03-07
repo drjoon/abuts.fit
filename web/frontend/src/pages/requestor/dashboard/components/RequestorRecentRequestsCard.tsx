@@ -91,8 +91,8 @@ export const RequestorRecentRequestsCard = ({
     connections,
     implantManufacturer,
     setImplantManufacturer,
-    implantSystem,
-    setImplantSystem,
+    implantBrand,
+    setImplantBrand,
     implantFamily,
     setImplantFamily,
     implantType,
@@ -153,12 +153,8 @@ export const RequestorRecentRequestsCard = ({
   const normalizeImplantCaseInfos = (ci: any) => {
     const rawManufacturer =
       typeof ci?.implantManufacturer === "string" ? ci.implantManufacturer : "";
-    const rawSystem =
-      typeof ci?.implantBrand === "string"
-        ? ci.implantBrand
-        : typeof ci?.implantSystem === "string"
-          ? ci.implantSystem
-          : "";
+    const rawBrand =
+      typeof ci?.implantBrand === "string" ? ci.implantBrand : "";
     const rawFamily =
       typeof ci?.implantFamily === "string" ? ci.implantFamily : "";
     const rawType = typeof ci?.implantType === "string" ? ci.implantType : "";
@@ -166,69 +162,43 @@ export const RequestorRecentRequestsCard = ({
     if (!connections || connections.length === 0) {
       return {
         manufacturer: rawManufacturer,
-        system: rawSystem,
+        brand: rawBrand,
         family: rawFamily,
         type: rawType,
       };
     }
 
     const manufacturers = new Set(connections.map((c: any) => c.manufacturer));
-    const systems = new Set(connections.map((c: any) => c.system));
-    const families = new Set(
-      connections.map((c: any) => c.family || "Regular"),
-    );
+    const brands = new Set(connections.map((c: any) => c.brand));
+    const families = new Set(connections.map((c: any) => c.family));
     const types = new Set(connections.map((c: any) => c.type));
 
     const direct = connections.find(
       (c: any) =>
         c.manufacturer === rawManufacturer &&
-        c.system === rawSystem &&
-        (c.family || "Regular") === (rawFamily || "Regular") &&
+        c.brand === rawBrand &&
+        c.family === rawFamily &&
         c.type === rawType,
     );
     if (direct) {
       return {
         manufacturer: direct.manufacturer,
-        system: direct.system,
-        family: direct.family || "Regular",
+        brand: direct.brand,
+        family: direct.family,
         type: direct.type,
       };
     }
 
-    // case1) rawManufacturer 자리에 시스템이 들어간 케이스 (예: Regular / Hex / Hex)
-    if (!manufacturers.has(rawManufacturer) && systems.has(rawManufacturer)) {
-      let candidates = connections.filter(
-        (c: any) => c.system === rawManufacturer,
-      );
-      if (rawSystem) {
-        candidates = candidates.filter((c: any) => c.type === rawSystem);
-      } else if (rawType) {
-        candidates = candidates.filter((c: any) => c.type === rawType);
-      }
-
-      const chosen = candidates[0];
-      if (chosen) {
-        return {
-          manufacturer: chosen.manufacturer,
-          system: chosen.system,
-          family: chosen.family || "Regular",
-          type: chosen.type,
-        };
-      }
-    }
-
-    // case2) 제조사는 맞는데 시스템/유형이 꼬인 케이스
+    // 제조사는 맞는데 family/type 기준으로만 좁혀서 복원
     if (manufacturers.has(rawManufacturer)) {
       let candidates = connections.filter(
         (c: any) => c.manufacturer === rawManufacturer,
       );
-      if (rawSystem && systems.has(rawSystem)) {
-        candidates = candidates.filter((c: any) => c.system === rawSystem);
+      if (rawBrand && brands.has(rawBrand)) {
+        candidates = candidates.filter((c: any) => c.brand === rawBrand);
       }
       if (rawFamily && families.has(rawFamily)) {
-        candidates = candidates.filter(
-          (c: any) => (c.family || "Regular") === rawFamily,
-        );
+        candidates = candidates.filter((c: any) => c.family === rawFamily);
       }
       if (rawType && types.has(rawType)) {
         candidates = candidates.filter((c: any) => c.type === rawType);
@@ -237,8 +207,8 @@ export const RequestorRecentRequestsCard = ({
       if (chosen) {
         return {
           manufacturer: chosen.manufacturer,
-          system: chosen.system,
-          family: chosen.family || "Regular",
+          brand: chosen.brand,
+          family: chosen.family,
           type: chosen.type,
         };
       }
@@ -246,7 +216,7 @@ export const RequestorRecentRequestsCard = ({
 
     return {
       manufacturer: rawManufacturer,
-      system: rawSystem,
+      brand: rawBrand,
       family: rawFamily,
       type: rawType,
     };
@@ -369,7 +339,7 @@ export const RequestorRecentRequestsCard = ({
       patientName: ci?.patientName || "",
       tooth: ci?.tooth || "",
       implantManufacturer: normalized.manufacturer || "",
-      implantSystem: normalized.system || "",
+      implantBrand: normalized.brand || "",
       implantFamily: normalized.family || "",
       implantType: normalized.type || "",
       maxDiameter: ci?.maxDiameter ?? null,

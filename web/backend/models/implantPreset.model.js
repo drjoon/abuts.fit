@@ -24,16 +24,17 @@ const implantPresetSchema = new mongoose.Schema(
       index: true,
     },
     manufacturer: { type: String, required: true },
-    system: { type: String, required: true },
+    brand: { type: String, required: true },
+    family: { type: String, required: true },
     type: { type: String, required: true },
     lastUsedAt: { type: Date, default: Date.now, index: -1 },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 implantPresetSchema.index(
   { requestor: 1, clinicName: 1, patientName: 1, tooth: 1 },
-  { unique: true }
+  { unique: true },
 );
 
 const ImplantPreset = mongoose.model("ImplantPreset", implantPresetSchema);

@@ -25,14 +25,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/102</span>
+                <span class='fraction'>0/104</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/79</span>
+                <span class='fraction'>0/84</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/102</span>
+                <span class='fraction'>0/104</span>
             </div>
         
             
@@ -428,7 +428,13 @@
 <a name='L363'></a><a href='#L363'>363</a>
 <a name='L364'></a><a href='#L364'>364</a>
 <a name='L365'></a><a href='#L365'>365</a>
-<a name='L366'></a><a href='#L366'>366</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L366'></a><a href='#L366'>366</a>
+<a name='L367'></a><a href='#L367'>367</a>
+<a name='L368'></a><a href='#L368'>368</a>
+<a name='L369'></a><a href='#L369'>369</a>
+<a name='L370'></a><a href='#L370'>370</a>
+<a name='L371'></a><a href='#L371'>371</a>
+<a name='L372'></a><a href='#L372'>372</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -620,6 +626,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -678,6 +685,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -692,6 +700,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -721,6 +730,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -933,7 +945,7 @@ export async function <span class="fstat-no" title="function not covered" >delet
     // 연결된 프리셋도 비활성화 (soft delete 대신 전체 삭제해도 무방)
 <span class="cstat-no" title="statement not covered" >    await ImplantPreset.updateMany(</span>
       { clinic: clinic._id },
-      { $set: { isDefault: false } }
+      { $set: { isDefault: false } },
     );
 &nbsp;
 <span class="cstat-no" title="statement not covered" >    res.json({</span>
@@ -985,7 +997,8 @@ export async function <span class="fstat-no" title="function not covered" >getIm
 export async function <span class="fstat-no" title="function not covered" >createImplantPreset(</span>req, res) {
 <span class="cstat-no" title="statement not covered" >  try {</span>
     const { clinicId } = <span class="cstat-no" title="statement not covered" >req.params;</span>
-    const { label, manufacturer, system, type, isDefault } = <span class="cstat-no" title="statement not covered" >req.body || {};</span>
+    const { label, manufacturer, brand, family, type, isDefault } =
+<span class="cstat-no" title="statement not covered" >      req.body || {};</span>
 &nbsp;
     const clinic = <span class="cstat-no" title="statement not covered" >await Clinic.findOne({</span>
       _id: clinicId,
@@ -1007,10 +1020,10 @@ export async function <span class="fstat-no" title="function not covered" >creat
       });
     }
 &nbsp;
-<span class="cstat-no" title="statement not covered" >    if (!manufacturer || !system || !type) {</span>
+<span class="cstat-no" title="statement not covered" >    if (!manufacturer || !brand || !family || !type) {</span>
 <span class="cstat-no" title="statement not covered" >      return res.status(400).json({</span>
         success: false,
-        message: "제조사, 시스템, 유형은 모두 필수입니다.",
+        message: "제조사, 브랜드, 패밀리, 유형은 모두 필수입니다.",
       });
     }
 &nbsp;
@@ -1030,7 +1043,7 @@ export async function <span class="fstat-no" title="function not covered" >creat
 <span class="cstat-no" title="statement not covered" >    if (isDefault) {</span>
 <span class="cstat-no" title="statement not covered" >      await ImplantPreset.updateMany(</span>
         { clinic: clinic._id },
-        { $set: { isDefault: false } }
+        { $set: { isDefault: false } },
       );
     }
 &nbsp;
@@ -1038,7 +1051,8 @@ export async function <span class="fstat-no" title="function not covered" >creat
       clinic: clinic._id,
       label: trimmedLabel,
       manufacturer,
-      system,
+      brand,
+      family,
       type,
       isDefault: Boolean(isDefault),
     });
@@ -1057,7 +1071,8 @@ export async function <span class="fstat-no" title="function not covered" >creat
 export async function <span class="fstat-no" title="function not covered" >updateImplantPreset(</span>req, res) {
 <span class="cstat-no" title="statement not covered" >  try {</span>
     const { presetId } = <span class="cstat-no" title="statement not covered" >req.params;</span>
-    const { label, manufacturer, system, type, isDefault } = <span class="cstat-no" title="statement not covered" >req.body || {};</span>
+    const { label, manufacturer, brand, family, type, isDefault } =
+<span class="cstat-no" title="statement not covered" >      req.body || {};</span>
 &nbsp;
     const preset = <span class="cstat-no" title="statement not covered" >await ImplantPreset.findById(presetId).populate({</span>
       path: "clinic",
@@ -1090,8 +1105,11 @@ export async function <span class="fstat-no" title="function not covered" >updat
 <span class="cstat-no" title="statement not covered" >    if (typeof manufacturer === "string" &amp;&amp; manufacturer.trim()) {</span>
 <span class="cstat-no" title="statement not covered" >      preset.manufacturer = manufacturer.trim();</span>
     }
-<span class="cstat-no" title="statement not covered" >    if (typeof system === "string" &amp;&amp; system.trim()) {</span>
-<span class="cstat-no" title="statement not covered" >      preset.system = system.trim();</span>
+<span class="cstat-no" title="statement not covered" >    if (typeof brand === "string" &amp;&amp; brand.trim()) {</span>
+<span class="cstat-no" title="statement not covered" >      preset.brand = brand.trim();</span>
+    }
+<span class="cstat-no" title="statement not covered" >    if (typeof family === "string" &amp;&amp; family.trim()) {</span>
+<span class="cstat-no" title="statement not covered" >      preset.family = family.trim();</span>
     }
 <span class="cstat-no" title="statement not covered" >    if (typeof type === "string" &amp;&amp; type.trim()) {</span>
 <span class="cstat-no" title="statement not covered" >      preset.type = type.trim();</span>
@@ -1101,7 +1119,7 @@ export async function <span class="fstat-no" title="function not covered" >updat
 <span class="cstat-no" title="statement not covered" >      if (isDefault) {</span>
 <span class="cstat-no" title="statement not covered" >        await ImplantPreset.updateMany(</span>
           { clinic: preset.clinic._id },
-          { $set: { isDefault: false } }
+          { $set: { isDefault: false } },
         );
       }
 <span class="cstat-no" title="statement not covered" >      preset.isDefault = isDefault;</span>
@@ -1165,7 +1183,7 @@ export default {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-03-06T11:11:46.573Z
+                at 2026-03-07T09:59:23.514Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

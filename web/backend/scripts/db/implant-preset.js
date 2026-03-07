@@ -24,11 +24,11 @@ function buildDerivedConnectionRows(parsedRows) {
   const grouped = new Map();
 
   for (const row of parsedRows) {
-    const key = [row.manufacturer, row.manufacturerKor, row.system].join("|");
+    const key = [row.manufacturer, row.manufacturerKor, row.brand].join("|");
     const bucket = grouped.get(key) || {
       manufacturer: row.manufacturer,
       manufacturerKor: row.manufacturerKor,
-      system: row.system,
+      brand: row.brand,
       actualByKey: new Map(),
     };
     bucket.actualByKey.set(`${row.family}|${row.type}`, row);
@@ -43,13 +43,13 @@ function buildDerivedConnectionRows(parsedRows) {
         rows.push({
           manufacturer: bucket.manufacturer,
           manufacturerKor: bucket.manufacturerKor,
-          system: bucket.system,
+          brand: bucket.brand,
           family,
           type,
           category: CONNECTION_CATEGORY,
           fileName:
             actual?.fileName ||
-            `${bucket.manufacturer}_${bucket.system}_${family}_${type}`,
+            `${bucket.manufacturer}_${bucket.brand}_${family}_${type}`,
           isActive: Boolean(actual),
         });
       }
@@ -77,7 +77,7 @@ async function readConnectionSeedFromFolder() {
       ? {
           manufacturer: parsedFile.manufacturer,
           manufacturerKor: parsedFile.manufacturerKor,
-          system: parsedFile.system,
+          brand: parsedFile.brand,
           family: parsedFile.family,
           type: parsedFile.type,
           category: CONNECTION_CATEGORY,
@@ -90,9 +90,13 @@ async function readConnectionSeedFromFolder() {
       continue;
     }
 
-    const key = [row.manufacturer, row.system, row.type, row.category].join(
-      "|",
-    );
+    const key = [
+      row.manufacturer,
+      row.brand,
+      row.family,
+      row.type,
+      row.category,
+    ].join("|");
     if (seen.has(key)) {
       skipped.push(fileName);
       continue;
@@ -111,7 +115,7 @@ async function syncProdAddOnly(rows) {
   for (const row of rows) {
     const found = await Connection.findOne({
       manufacturer: row.manufacturer,
-      system: row.system,
+      brand: row.brand,
       family: row.family,
       type: row.type,
       category: row.category,
@@ -179,7 +183,7 @@ async function run() {
       result,
       rows: parsed.map((row) => ({
         manufacturer: row.manufacturer,
-        system: row.system,
+        brand: row.brand,
         family: row.family,
         type: row.type,
         isActive: row.isActive,

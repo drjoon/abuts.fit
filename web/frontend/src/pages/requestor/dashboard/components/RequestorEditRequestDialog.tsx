@@ -18,7 +18,7 @@ export type EditingRequestState = {
   patientName?: string;
   teethText?: string;
   implantManufacturer?: string;
-  implantSystem?: string;
+  implantBrand?: string;
   implantFamily?: string;
   implantType?: string;
 } | null;
@@ -30,7 +30,7 @@ type RequestorEditRequestDialogProps = {
   editingPatientName: string;
   editingTeethText: string;
   editingImplantManufacturer: string;
-  editingImplantSystem: string;
+  editingImplantBrand: string;
   editingImplantFamily: string;
   editingImplantType: string;
   onChangeDescription: (value: string) => void;
@@ -38,7 +38,7 @@ type RequestorEditRequestDialogProps = {
   onChangePatientName: (value: string) => void;
   onChangeTeethText: (value: string) => void;
   onChangeImplantManufacturer: (value: string) => void;
-  onChangeImplantSystem: (value: string) => void;
+  onChangeImplantBrand: (value: string) => void;
   onChangeImplantFamily: (value: string) => void;
   onChangeImplantType: (value: string) => void;
   onClose: () => void;
@@ -52,7 +52,7 @@ export const RequestorEditRequestDialog = ({
   editingPatientName,
   editingTeethText,
   editingImplantManufacturer,
-  editingImplantSystem,
+  editingImplantBrand,
   editingImplantFamily,
   editingImplantType,
   onChangeDescription,
@@ -60,7 +60,7 @@ export const RequestorEditRequestDialog = ({
   onChangePatientName,
   onChangeTeethText,
   onChangeImplantManufacturer,
-  onChangeImplantSystem,
+  onChangeImplantBrand,
   onChangeImplantFamily,
   onChangeImplantType,
   onClose,
@@ -79,7 +79,7 @@ export const RequestorEditRequestDialog = ({
       patientName: editingPatientName,
       teethText: editingTeethText,
       implantManufacturer: editingImplantManufacturer,
-      implantSystem: editingImplantSystem,
+      implantBrand: editingImplantBrand,
       implantFamily: editingImplantFamily,
       implantType: editingImplantType,
       description: editingDescription,
@@ -88,12 +88,12 @@ export const RequestorEditRequestDialog = ({
     editingClinicName,
     editingDescription,
     editingImplantManufacturer,
-    editingImplantSystem,
     editingImplantFamily,
     editingImplantType,
     editingPatientName,
     editingRequest?.id,
     editingTeethText,
+    editingImplantBrand,
   ]);
 
   useEffect(() => {
@@ -226,8 +226,8 @@ export const RequestorEditRequestDialog = ({
                 </label>
                 <input
                   type="text"
-                  value={editingImplantSystem}
-                  onChange={(e) => onChangeImplantSystem(e.target.value)}
+                  value={editingImplantBrand}
+                  onChange={(e) => onChangeImplantBrand(e.target.value)}
                   onBlur={maybeSave}
                   className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1"
                   placeholder="예: SQ"

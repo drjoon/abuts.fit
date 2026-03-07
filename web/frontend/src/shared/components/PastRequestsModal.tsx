@@ -247,7 +247,7 @@ export const PastRequestsModal = ({
         ci?.patientName,
         ci?.tooth,
         ci?.implantManufacturer,
-        ci?.implantSystem,
+        ci?.implantBrand,
         ci?.implantFamily,
         ci?.implantType,
       ]

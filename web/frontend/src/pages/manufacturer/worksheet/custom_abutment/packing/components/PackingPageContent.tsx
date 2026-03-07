@@ -292,9 +292,7 @@ export const PackingPageContent = ({
           const screwType = isDentium ? "8B" : "0A";
           const clinicName = String(caseInfos.clinicName || "").trim() || "-";
           const implantBrand = String(
-            (caseInfos as any)?.implantBrand ||
-              (caseInfos as any)?.implantSystem ||
-              "",
+            (caseInfos as any)?.implantBrand || "",
           ).trim();
           const implantFamily = String(
             (caseInfos as any)?.implantFamily || "",

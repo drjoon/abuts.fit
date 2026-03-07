@@ -23,7 +23,7 @@ const PRC_CONNECTION_DIR = path.resolve(
 
 export const IMPLANT_MANUFACTURER_DEFS = IMPLANT_MANUFACTURER_CATALOG;
 
-function normalizeSystemToken(raw) {
+function normalizeBrandToken(raw) {
   return normalizeKeyToken(raw)
     .toUpperCase()
     .replace(/[_\-]+/g, "")
@@ -33,7 +33,7 @@ function normalizeSystemToken(raw) {
 function readConnectionCatalog() {
   const manufacturerByPrcKor = new Map();
   const prcKorByManufacturer = new Map();
-  const systemsByManufacturer = new Map();
+  const brandsByManufacturer = new Map();
 
   try {
     const entries = fs.readdirSync(PRC_CONNECTION_DIR, { withFileTypes: true });
@@ -44,8 +44,8 @@ function readConnectionCatalog() {
       if (!match) continue;
 
       const manufacturerKor = normalizeKeyToken(match[1]);
-      const system = normalizeKeyToken(match[2]);
-      if (!manufacturerKor || !system) continue;
+      const brand = normalizeKeyToken(match[2]);
+      if (!manufacturerKor || !brand) continue;
 
       const manufacturer = Object.entries(IMPLANT_MANUFACTURER_DEFS).find(
         ([, def]) =>
@@ -60,10 +60,10 @@ function readConnectionCatalog() {
       manufacturerByPrcKor.set(manufacturerKor, manufacturer);
       prcKorByManufacturer.set(manufacturer, manufacturerKor);
 
-      const systems = systemsByManufacturer.get(manufacturer) || [];
-      if (!systems.includes(system)) {
-        systems.push(system);
-        systemsByManufacturer.set(manufacturer, systems);
+      const brands = brandsByManufacturer.get(manufacturer) || [];
+      if (!brands.includes(brand)) {
+        brands.push(brand);
+        brandsByManufacturer.set(manufacturer, brands);
       }
     }
   } catch {}
@@ -71,7 +71,7 @@ function readConnectionCatalog() {
   return {
     manufacturerByPrcKor,
     prcKorByManufacturer,
-    systemsByManufacturer,
+    brandsByManufacturer,
   };
 }
 
@@ -97,31 +97,31 @@ export function getManufacturerByPrcKor(prcKor) {
   return CONNECTION_CATALOG.manufacturerByPrcKor.get(target) || "";
 }
 
-export function normalizeImplantSystem(raw, manufacturer) {
-  const sys = normalizeKeyToken(raw);
+export function normalizeImplantBrand(raw, manufacturer) {
+  const brand = normalizeKeyToken(raw);
   const m = normalizeImplantManufacturer(manufacturer);
-  if (!sys) return "";
+  if (!brand) return "";
 
-  const systems = CONNECTION_CATALOG.systemsByManufacturer.get(m) || [];
-  if (!systems.length) return sys;
+  const brands = CONNECTION_CATALOG.brandsByManufacturer.get(m) || [];
+  if (!brands.length) return brand;
 
-  const normalizedRaw = normalizeSystemToken(sys);
-  const exact = systems.find((candidate) => candidate === sys);
+  const normalizedRaw = normalizeBrandToken(brand);
+  const exact = brands.find((candidate) => candidate === brand);
   if (exact) return exact;
 
-  const tokenMatched = systems.find(
-    (candidate) => normalizeSystemToken(candidate) === normalizedRaw,
+  const tokenMatched = brands.find(
+    (candidate) => normalizeBrandToken(candidate) === normalizedRaw,
   );
   if (tokenMatched) return tokenMatched;
 
   if (
     (normalizedRaw === "REGULAR" || normalizedRaw === "MINI") &&
-    systems.length === 1
+    brands.length === 1
   ) {
-    return systems[0];
+    return brands[0];
   }
 
-  return sys;
+  return brand;
 }
 
 export function normalizeImplantType(raw) {
@@ -147,26 +147,26 @@ export function normalizeImplantFields(caseInfos) {
   const implantManufacturer = normalizeImplantManufacturer(
     ci.implantManufacturer,
   );
-  const implantSystem = normalizeImplantSystem(
-    ci.implantSystem,
+  const implantBrand = normalizeImplantBrand(
+    ci.implantBrand,
     implantManufacturer,
   );
-  const implantFamily = normalizeImplantFamily(ci.implantFamily) || "Regular";
+  const implantFamily = normalizeImplantFamily(ci.implantFamily);
   const implantType = normalizeImplantType(ci.implantType);
   return {
     ...ci,
     implantManufacturer,
-    implantSystem,
+    implantBrand,
     implantFamily,
     implantType,
   };
 }
 
-export function getCanonicalManufacturerSystemKey(manufacturer, system) {
+export function getCanonicalManufacturerBrandKey(manufacturer, brand) {
   const m = normalizeImplantManufacturer(manufacturer);
-  const sys = normalizeImplantSystem(system, m);
-  if (!m || !sys) return "";
-  return `${m}_${sys}`;
+  const normalizedBrand = normalizeImplantBrand(brand, m);
+  if (!m || !normalizedBrand) return "";
+  return `${m}_${normalizedBrand}`;
 }
 
 export function getPrcManufacturerToken(manufacturer) {

@@ -267,7 +267,8 @@ export async function triggerEspritForNc({ request, force = false }) {
       PatientName: request?.caseInfos?.patientName || "",
       Tooth: request?.caseInfos?.tooth || "",
       ImplantManufacturer: request?.caseInfos?.implantManufacturer || "",
-      ImplantSystem: request?.caseInfos?.implantSystem || "",
+      ImplantBrand: request?.caseInfos?.implantBrand || "",
+      ImplantFamily: request?.caseInfos?.implantFamily || "",
       ImplantType: request?.caseInfos?.implantType || "",
       MaxDiameter: Number(request?.caseInfos?.maxDiameter || 0),
       ConnectionDiameter: Number(request?.caseInfos?.connectionDiameter || 0),
@@ -854,8 +855,8 @@ export async function updateReviewStatusByStage(req, res) {
           ) {
             const impl = request.caseInfos || {};
             const detail = `${String(impl.implantManufacturer || "").trim()}/${String(
-              impl.implantSystem || "",
-            ).trim()}/${String(impl.implantType || "").trim()}`;
+              impl.implantBrand || "",
+            ).trim()}/${String(impl.implantFamily || "").trim()}/${String(impl.implantType || "").trim()}`;
             const err = new Error(
               `PRC 매핑을 찾을 수 없습니다. Implant=${detail}. PRC 파일명은 의뢰 승인 시점에 필수로 확정되어야 합니다.`,
             );

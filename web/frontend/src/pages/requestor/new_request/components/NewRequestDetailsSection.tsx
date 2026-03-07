@@ -47,15 +47,15 @@ type Props = {
   typeOptions: string[];
   implantManufacturer: string;
   setImplantManufacturer: (v: string) => void;
-  implantSystem: string;
-  setImplantSystem: (v: string) => void;
+  implantBrand: string;
+  setImplantBrand: (v: string) => void;
   implantFamily: string;
   setImplantFamily: (v: string) => void;
   implantType: string;
   setImplantType: (v: string) => void;
   syncSelectedConnection: (
     manufacturer: string,
-    system: string,
+    brand: string,
     family: string,
     type: string,
   ) => void;
@@ -105,8 +105,8 @@ export function NewRequestDetailsSection({
   typeOptions,
   implantManufacturer,
   setImplantManufacturer,
-  implantSystem,
-  setImplantSystem,
+  implantBrand,
+  setImplantBrand,
   implantFamily,
   setImplantFamily,
   implantType,
@@ -366,13 +366,13 @@ export function NewRequestDetailsSection({
     setPendingNewSystem({ manufacturer, brand, family });
     setConfirmNewSystemOpen(true);
   }, [newSystemBrand, newSystemFamily, newSystemManufacturer, toast]);
+
   const detailImplantInfo = {
     clinicName: detailCaseInfos?.clinicName || "",
     patientName: detailCaseInfos?.patientName || "",
     tooth: detailCaseInfos?.tooth || "",
     implantManufacturer: detailCaseInfos?.implantManufacturer || "",
-    implantSystem:
-      detailCaseInfos?.implantBrand || detailCaseInfos?.implantSystem || "",
+    implantBrand: detailCaseInfos?.implantBrand || "",
     implantFamily: detailCaseInfos?.implantFamily || "",
     implantType: detailCaseInfos?.implantType || "",
   };
@@ -383,7 +383,7 @@ export function NewRequestDetailsSection({
       setNewSystemManufacturer(
         detailCaseInfos.newSystemRequest.manufacturer || "",
       );
-      setNewSystemBrand(detailCaseInfos.newSystemRequest.system || "");
+      setNewSystemBrand(detailCaseInfos.newSystemRequest.brand || "");
       setNewSystemFamily(detailCaseInfos.newSystemRequest.family || "");
     }
   }, [detailCaseInfos?.newSystemRequest?.requested]);
@@ -805,8 +805,8 @@ export function NewRequestDetailsSection({
                     typeOptions={typeOptions}
                     implantManufacturer={implantManufacturer}
                     setImplantManufacturer={setImplantManufacturer}
-                    implantSystem={implantSystem}
-                    setImplantSystem={setImplantSystem}
+                    implantBrand={implantBrand}
+                    setImplantBrand={setImplantBrand}
                     implantFamily={implantFamily}
                     setImplantFamily={setImplantFamily}
                     implantType={implantType}
@@ -978,13 +978,12 @@ export function NewRequestDetailsSection({
                 const message = "랩 아날로그 샘플 한 개를 요청드립니다";
                 setDetailCaseInfos({
                   implantManufacturer: manufacturer,
-                  implantSystem: brand,
+                  implantBrand: brand,
                   implantFamily: family,
                   newSystemRequest: {
                     requested: true,
                     manufacturer,
                     brand,
-                    system: brand,
                     family,
                     message,
                     free: true,
