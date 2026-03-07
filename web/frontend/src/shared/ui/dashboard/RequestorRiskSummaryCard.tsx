@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
+import { formatImplantDisplay } from "@/utils/implant";
 
 export type RiskSummary = {
   delayedCount?: number;
@@ -248,13 +249,7 @@ export const RequestorRiskSummaryCard = ({
                       <span className="ml-1">#{item.caseInfos.tooth}</span>
                     )}
                     <span className="ml-1">
-                      {(() => {
-                        const m = item.caseInfos?.implantManufacturer;
-                        const s = item.caseInfos?.implantSystem;
-                        const t = item.caseInfos?.implantType;
-                        if (!m && !s && !t) return "-";
-                        return `${m || "-"} / ${s || "-"} / ${t || "-"}`;
-                      })()}
+                      {formatImplantDisplay(item.caseInfos)}
                     </span>
                   </div>
                   <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2">

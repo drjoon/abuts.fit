@@ -26,6 +26,7 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { formatImplantDisplay } from "@/utils/implant";
 
 type ApiMyRequestsResponse = {
   success: boolean;
@@ -247,6 +248,7 @@ export const PastRequestsModal = ({
         ci?.tooth,
         ci?.implantManufacturer,
         ci?.implantSystem,
+        ci?.implantFamily,
         ci?.implantType,
       ]
         .map((v) => String(v || "").toLowerCase())
@@ -342,14 +344,7 @@ export const PastRequestsModal = ({
                     [ci?.clinicName, ci?.patientName, ci?.tooth]
                       .filter(Boolean)
                       .join(" ") || "-";
-                  const implantText =
-                    [
-                      ci?.implantManufacturer,
-                      ci?.implantSystem,
-                      ci?.implantType,
-                    ]
-                      .filter(Boolean)
-                      .join(" ") || "-";
+                  const implantText = formatImplantDisplay(ci);
                   const requestId = String(r?.requestId || "-");
                   return (
                     <TableRow

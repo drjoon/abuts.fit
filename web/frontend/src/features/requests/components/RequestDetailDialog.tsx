@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { formatImplantDisplay } from "@/utils/implant";
 
 export type RequestDetailDialogCaseInfos = {
   clinicName?: string;
@@ -15,6 +16,7 @@ export type RequestDetailDialogCaseInfos = {
   tooth?: string;
   implantManufacturer?: string;
   implantSystem?: string;
+  implantFamily?: string;
   implantType?: string;
   maxDiameter?: number | null;
   connectionDiameter?: number | null;
@@ -130,16 +132,7 @@ export const RequestDetailDialog = ({
   footer,
 }: RequestDetailDialogProps) => {
   const caseInfos = request?.caseInfos || {};
-  const implantLabel = [
-    caseInfos.implantManufacturer,
-    caseInfos.implantSystem,
-    caseInfos.implantType,
-  ]
-    .filter(Boolean)
-    .join(" / ")
-    .trim();
-
-  const implantDisplay = implantLabel || "-";
+  const implantDisplay = formatImplantDisplay(caseInfos);
 
   const maxDiameter = caseInfos.maxDiameter;
   const connectionDiameter = caseInfos.connectionDiameter;

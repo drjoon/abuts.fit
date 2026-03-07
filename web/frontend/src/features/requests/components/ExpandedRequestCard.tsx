@@ -171,7 +171,7 @@ export const ExpandedRequestCard = ({
         description: `${droppedFiles.length}개 파일이 추가되었습니다.`,
       });
     },
-    [toast]
+    [toast],
   );
 
   const removeFile = (index: number) => {
@@ -185,7 +185,7 @@ export const ExpandedRequestCard = ({
     window.location.href = `/api/payments/process-payment?requestId=${
       request.id
     }&amount=${paymentStatus.amount}&returnUrl=${encodeURIComponent(
-      window.location.href
+      window.location.href,
     )}`;
   };
 
@@ -312,7 +312,7 @@ export const ExpandedRequestCard = ({
               <div className="text-sm space-y-1">
                 {(() => {
                   const caseInfos = request.caseInfos || {};
-                  const spec = request.specifications || {}; // Legacy
+                  const spec = request.spec || {};
 
                   const implantManufacturer =
                     caseInfos.implantManufacturer ||
@@ -324,6 +324,10 @@ export const ExpandedRequestCard = ({
                     spec.implantSystem ||
                     spec.implantProduct ||
                     request.implantSystem;
+                  const implantFamily =
+                    caseInfos.implantFamily ||
+                    spec.implantFamily ||
+                    request.implantFamily;
                   const implantType =
                     caseInfos.implantType ||
                     spec.implantType ||
@@ -341,6 +345,7 @@ export const ExpandedRequestCard = ({
                   if (
                     !implantManufacturer &&
                     !implantSystem &&
+                    !implantFamily &&
                     !implantType &&
                     maxDiameter == null &&
                     connectionDiameter == null
@@ -352,19 +357,25 @@ export const ExpandedRequestCard = ({
                     <>
                       <div className="flex items-center gap-2">
                         <span className="text-muted-foreground text-xs w-20">
-                          제조사
+                          Manufacturer
                         </span>
                         <span>{implantManufacturer || "-"}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-muted-foreground text-xs w-20">
-                          시스템
+                          Brand
                         </span>
                         <span>{implantSystem || "-"}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-muted-foreground text-xs w-20">
-                          유형
+                          Family
+                        </span>
+                        <span>{implantFamily || "-"}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground text-xs w-20">
+                          Type
                         </span>
                         <span>{implantType || "-"}</span>
                       </div>

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, ArrowRight } from "lucide-react";
+import { formatImplantDisplay } from "@/utils/implant";
 import {
   type ManufacturerRequest,
   computeStageLabel,
@@ -575,15 +576,7 @@ export const WorksheetCardGrid = ({
                 )}
                 <div className="flex flex-wrap items-center justify-between gap-1 text-[12px] text-slate-500">
                   <div className="flex items-center gap-1">
-                    {(caseInfos.implantManufacturer ||
-                      caseInfos.implantSystem ||
-                      caseInfos.implantType) && (
-                      <span>
-                        {caseInfos.implantManufacturer || "-"} /{" "}
-                        {caseInfos.implantSystem || "-"} /{" "}
-                        {caseInfos.implantType || "-"}
-                      </span>
-                    )}
+                    <span>{formatImplantDisplay(caseInfos as any)}</span>
                   </div>
                   <div className="flex items-center gap-1">
                     {sp?.label &&
