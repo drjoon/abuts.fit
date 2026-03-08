@@ -189,26 +189,6 @@ export const PackingPageContent = ({
     matchesCurrentPage,
   });
 
-  const {
-    isDraggingOver,
-    ocrProcessing,
-    ocrStage,
-    handlePageDrop,
-    handlePageDragOver,
-    handlePageDragLeave,
-  } = usePackingCapture({
-    token,
-    requests,
-    toast,
-    uploadStageFile: handleUploadStageFile,
-    updateReviewStatus: handleUpdateReviewStatus,
-    fetchRequestsList,
-    setRequests,
-    previewOpen,
-    previewFiles,
-    handleOpenPreview,
-  });
-
   const handleUploadByStage = useCallback(
     (req: ManufacturerRequest, files: File[]) =>
       handleUploadStageFile({
@@ -343,6 +323,250 @@ export const PackingPageContent = ({
     ],
   );
 
+  const handlePrintSinglePackingLabel = useCallback(
+    async (
+      req: ManufacturerRequest,
+      options?: {
+        silentSuccess?: boolean;
+        silentError?: boolean;
+      },
+    ) => {
+      const requireNonEmptyString = (
+        value: unknown,
+        fieldLabel: string,
+        request: ManufacturerRequest,
+      ) => {
+        if (typeof value !== "string") {
+          throw new Error(
+            `${request.requestId || "의뢰"}: ${fieldLabel} 값이 비어 있습니다. 백엔드 데이터를 확인해주세요.`,
+          );
+        }
+        const text = value.trim();
+        if (!text) {
+          throw new Error(
+            `${request.requestId || "의뢰"}: ${fieldLabel} 값이 비어 있습니다. 백엔드 데이터를 확인해주세요.`,
+          );
+        }
+        return text;
+      };
+
+      const resolvePackMailboxCode = (request: ManufacturerRequest) =>
+        requireNonEmptyString(request.mailboxAddress, "메일함 코드", request);
+
+      const resolvePackScrewCode = (request: ManufacturerRequest) => {
+        const manufacturer = requireNonEmptyString(
+          (request.caseInfos as any)?.implantManufacturer,
+          "제조사",
+          request,
+        );
+        const isDentium = /\bDENTIUM\b/i.test(manufacturer)
+          ? true
+          : manufacturer.includes("덴티움");
+        const legacy = isDentium ? "8B" : "0A";
+        return legacy.split("").reverse().join("");
+      };
+
+      const resolvePackFullLotNumber = (request: ManufacturerRequest) => {
+        const value = String((request as any)?.lotNumber?.value || "").trim();
+        return requireNonEmptyString(value, "풀 로트번호", request);
+      };
+
+      const caseInfos = req.caseInfos || {};
+      const fullLotNumber = resolvePackFullLotNumber(req);
+      const labName =
+        String((req as any)?.requestorOrganizationId?.name || "").trim() ||
+        String((req as any)?.requestor?.organization || "").trim() ||
+        String((req as any)?.requestor?.name || "").trim() ||
+        "-";
+      const implantManufacturer = requireNonEmptyString(
+        (caseInfos as any)?.implantManufacturer,
+        "제조사",
+        req,
+      );
+      const clinicName = requireNonEmptyString(
+        caseInfos.clinicName,
+        "치과명",
+        req,
+      );
+      const implantBrand = requireNonEmptyString(
+        (caseInfos as any)?.implantBrand,
+        "브랜드",
+        req,
+      );
+      const implantFamily = requireNonEmptyString(
+        (caseInfos as any)?.implantFamily,
+        "패밀리",
+        req,
+      );
+      const implantType = requireNonEmptyString(
+        (caseInfos as any)?.implantType,
+        "타입",
+        req,
+      );
+      const patientName = requireNonEmptyString(
+        caseInfos.patientName,
+        "환자명",
+        req,
+      );
+      const toothNumber = requireNonEmptyString(
+        caseInfos.tooth,
+        "치아번호",
+        req,
+      );
+      const createdAtIso = req.createdAt ? String(req.createdAt) : "";
+      const { manufacturingDate, rawSources } = resolveManufacturingDate(req);
+
+      if (!manufacturingDate) {
+        console.warn(
+          "[PackingPage] manufacturing date missing for pack label",
+          {
+            requestId: req.requestId,
+            manufacturerStage: req.manufacturerStage,
+            productionSchedule: req.productionSchedule,
+            rawSources,
+            reviewByStage: req.caseInfos?.reviewByStage,
+          },
+        );
+        throw new Error(
+          `${req.requestId || fullLotNumber || "의뢰"}: 제조일자를 확인할 수 없어 라벨을 생성할 수 없습니다.`,
+        );
+      }
+
+      const material =
+        (typeof (caseInfos as any)?.material === "string" &&
+          (caseInfos as any).material) ||
+        (typeof (req as any)?.material === "string" && (req as any).material) ||
+        (typeof (req.lotNumber as any)?.material === "string" &&
+          (req.lotNumber as any).material) ||
+        "";
+      const mailboxCode = resolvePackMailboxCode(req);
+      const screwType = resolvePackScrewCode(req);
+      const payload = {
+        printer: printerProfile || undefined,
+        paperProfile: paperProfile || undefined,
+        copies: 1,
+        requestId: req.requestId,
+        lotNumber: fullLotNumber,
+        mailboxCode,
+        screwType,
+        clinicName,
+        labName,
+        requestDate: createdAtIso,
+        manufacturingDate,
+        implantManufacturer,
+        implantBrand,
+        implantFamily,
+        implantType,
+        patientName,
+        toothNumber,
+        material,
+        caseType: "Custom Abutment",
+        printedAt: new Date().toISOString(),
+      };
+
+      const canvas = await renderPackLabelToCanvas({
+        ...payload,
+        dpi: packLabelDpi,
+        targetDots: packLabelDots,
+        designDots: packLabelDesignDots,
+      });
+
+      if (packOutputMode === "image") {
+        const base = String(req.requestId || fullLotNumber || "pack").replace(
+          /[^a-zA-Z0-9._-]+/g,
+          "_",
+        );
+        await downloadPngFromCanvas(canvas, `${base}-pack.png`);
+        if (!options?.silentSuccess) {
+          toast({
+            title: "패킹 라벨 저장 완료",
+            description: `${req.requestId || fullLotNumber} 이미지가 저장되었습니다.`,
+          });
+        }
+        return;
+      }
+
+      const zpl = buildPackLabelBitmapZpl({
+        canvas,
+        labelWidth: packLabelDots?.pw,
+        labelHeight: packLabelDots?.ll,
+      });
+      const response = await fetch("/api/requests/packing/print-zpl", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          printer: payload.printer,
+          paperProfile: payload.paperProfile,
+          copies: payload.copies,
+          requestId: payload.requestId,
+          title:
+            `Custom Abutment Packing ${payload.requestId || fullLotNumber || ""}`.trim(),
+          zpl,
+        }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || "패킹 라벨 출력에 실패했습니다.");
+      }
+      if (!options?.silentSuccess) {
+        toast({
+          title: "패킹 라벨 출력 완료",
+          description: `${req.requestId || fullLotNumber} 라벨을 출력했습니다.`,
+        });
+      }
+    },
+    [
+      packLabelDesignDots,
+      packLabelDots,
+      packLabelDpi,
+      packOutputMode,
+      paperProfile,
+      printerProfile,
+      toast,
+      token,
+    ],
+  );
+
+  const {
+    isDraggingOver,
+    ocrProcessing,
+    ocrStage,
+    handlePageDrop,
+    handlePageDragOver,
+    handlePageDragLeave,
+  } = usePackingCapture({
+    token,
+    requests,
+    toast,
+    uploadStageFile: handleUploadStageFile,
+    updateReviewStatus: handleUpdateReviewStatus,
+    fetchRequestsList,
+    setRequests,
+    previewOpen,
+    previewFiles,
+    handleOpenPreview,
+    handleAutoPrintProcessedRequest: async (req) => {
+      try {
+        await handlePrintSinglePackingLabel(req, {
+          silentSuccess: true,
+          silentError: false,
+        });
+      } catch (error) {
+        toast({
+          title: "패킹 라벨 자동 출력 실패",
+          description:
+            error instanceof Error && error.message
+              ? error.message
+              : "패킹 라벨 자동 출력 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      }
+    },
+  });
+
   const handlePrintPackingLabels = useCallback(async () => {
     if (!paginatedRequests.length) {
       toast({
@@ -357,193 +581,13 @@ export const PackingPageContent = ({
     let failCount = 0;
     let firstErrorMessage = "";
 
-    const requireNonEmptyString = (
-      value: unknown,
-      fieldLabel: string,
-      req: ManufacturerRequest,
-    ) => {
-      if (typeof value !== "string") {
-        throw new Error(
-          `${req.requestId || "의뢰"}: ${fieldLabel} 값이 비어 있습니다. 백엔드 데이터를 확인해주세요.`,
-        );
-      }
-      const text = value.trim();
-      if (!text) {
-        throw new Error(
-          `${req.requestId || "의뢰"}: ${fieldLabel} 값이 비어 있습니다. 백엔드 데이터를 확인해주세요.`,
-        );
-      }
-      return text;
-    };
-
-    const resolvePackMailboxCode = (req: ManufacturerRequest) =>
-      requireNonEmptyString(req.mailboxAddress, "메일함 코드", req);
-
-    const resolvePackScrewCode = (req: ManufacturerRequest) => {
-      const manufacturer = requireNonEmptyString(
-        (req.caseInfos as any)?.implantManufacturer,
-        "제조사",
-        req,
-      );
-      const isDentium = /\bDENTIUM\b/i.test(manufacturer)
-        ? true
-        : manufacturer.includes("덴티움");
-      const legacy = isDentium ? "8B" : "0A";
-      return legacy.split("").reverse().join("");
-    };
-
-    const resolvePackFullLotNumber = (req: ManufacturerRequest) => {
-      const lot = (req as any)?.lotNumber || {};
-      const fullLot =
-        (typeof lot.final === "string" && lot.final.trim()) ||
-        (typeof lot.part === "string" && lot.part.trim()) ||
-        "";
-      return requireNonEmptyString(fullLot, "풀 로트번호", req);
-    };
-
     try {
       for (const req of paginatedRequests) {
         try {
-          const caseInfos = req.caseInfos || {};
-          const fullLotNumber = resolvePackFullLotNumber(req);
-          const labName =
-            String((req as any)?.requestorOrganizationId?.name || "").trim() ||
-            String((req as any)?.requestor?.organization || "").trim() ||
-            String((req as any)?.requestor?.name || "").trim() ||
-            "-";
-          const implantManufacturer = requireNonEmptyString(
-            (caseInfos as any)?.implantManufacturer,
-            "제조사",
-            req,
-          );
-          const clinicName = requireNonEmptyString(
-            caseInfos.clinicName,
-            "치과명",
-            req,
-          );
-          const implantBrand = requireNonEmptyString(
-            (caseInfos as any)?.implantBrand,
-            "브랜드",
-            req,
-          );
-          const implantFamily = requireNonEmptyString(
-            (caseInfos as any)?.implantFamily,
-            "패밀리",
-            req,
-          );
-          const implantType = requireNonEmptyString(
-            (caseInfos as any)?.implantType,
-            "타입",
-            req,
-          );
-          const patientName = requireNonEmptyString(
-            caseInfos.patientName,
-            "환자명",
-            req,
-          );
-          const toothNumber = requireNonEmptyString(
-            caseInfos.tooth,
-            "치아번호",
-            req,
-          );
-          const createdAtIso = req.createdAt ? String(req.createdAt) : "";
-          const { manufacturingDate, rawSources } =
-            resolveManufacturingDate(req);
-
-          if (!manufacturingDate) {
-            console.warn(
-              "[PackingPage] manufacturing date missing for pack label",
-              {
-                requestId: req.requestId,
-                manufacturerStage: req.manufacturerStage,
-                productionSchedule: req.productionSchedule,
-                rawSources,
-                reviewByStage: req.caseInfos?.reviewByStage,
-              },
-            );
-            failCount += 1;
-            toast({
-              title: "제조일자를 확인할 수 없습니다",
-              description: `${req.requestId || fullLotNumber || "의뢰"}의 가공 완료 시각이 없어 라벨을 생성할 수 없습니다.`,
-              variant: "destructive",
-            });
-            continue;
-          }
-
-          const material =
-            (typeof (caseInfos as any)?.material === "string" &&
-              (caseInfos as any).material) ||
-            (typeof (req as any)?.material === "string" &&
-              (req as any).material) ||
-            (typeof (req.lotNumber as any)?.material === "string" &&
-              (req.lotNumber as any).material) ||
-            "";
-          const mailboxCode = resolvePackMailboxCode(req);
-          const screwType = resolvePackScrewCode(req);
-          const lotNumber = fullLotNumber;
-          const payload = {
-            printer: printerProfile || undefined,
-            paperProfile: paperProfile || undefined,
-            copies: 1,
-            requestId: req.requestId,
-            lotNumber,
-            mailboxCode,
-            screwType,
-            clinicName,
-            labName,
-            requestDate: createdAtIso,
-            manufacturingDate,
-            implantManufacturer,
-            implantBrand,
-            implantFamily,
-            implantType,
-            patientName,
-            toothNumber,
-            material,
-            caseType: "Custom Abutment",
-            printedAt: new Date().toISOString(),
-          };
-          const canvas = await renderPackLabelToCanvas({
-            ...payload,
-            dpi: packLabelDpi,
-            targetDots: packLabelDots,
-            designDots: packLabelDesignDots,
+          await handlePrintSinglePackingLabel(req, {
+            silentSuccess: true,
+            silentError: true,
           });
-
-          if (packOutputMode === "image") {
-            const base = String(
-              req.requestId || fullLotNumber || "pack",
-            ).replace(/[^a-zA-Z0-9._-]+/g, "_");
-            await downloadPngFromCanvas(canvas, `${base}-pack.png`);
-            successCount += 1;
-            continue;
-          }
-
-          const zpl = buildPackLabelBitmapZpl({
-            canvas,
-            labelWidth: packLabelDots?.pw,
-            labelHeight: packLabelDots?.ll,
-          });
-          const response = await fetch("/api/requests/packing/print-zpl", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              printer: payload.printer,
-              paperProfile: payload.paperProfile,
-              copies: payload.copies,
-              requestId: payload.requestId,
-              title:
-                `Custom Abutment Packing ${payload.requestId || fullLotNumber || ""}`.trim(),
-              zpl,
-            }),
-          });
-          const data = await response.json().catch(() => null);
-          if (!response.ok || !data?.success) {
-            throw new Error(data?.message || "패킹 라벨 출력에 실패했습니다.");
-          }
           successCount += 1;
         } catch (error) {
           failCount += 1;
@@ -587,6 +631,7 @@ export const PackingPageContent = ({
     printerProfile,
     toast,
     token,
+    handlePrintSinglePackingLabel,
   ]);
 
   const isEmpty = !isLoading && paginatedRequests.length === 0;

@@ -38,76 +38,6 @@ function getGenAI() {
   return _genAI;
 }
 
-const PACK_PRINT_SERVER_BASE = String(
-  process.env.PACK_PRINT_SERVER_BASE || "http://localhost:8004",
-).replace(/\/+$/, "");
-const PACK_PRINT_SERVER_SECRET = String(
-  process.env.PACK_PRINT_SERVER_SHARED_SECRET || "",
-).trim();
-const PACK_PRINT_TIMEOUT_MS = Number(process.env.PACK_PRINT_TIMEOUT_MS || 5000);
-
-async function triggerPackingLabelPrint(request, recognizedSuffix) {
-  const requestId = String(request?.requestId || request?._id || "").trim();
-  if (!requestId) {
-    return { success: false, skipped: true, reason: "missing_request_id" };
-  }
-
-  const ci = request?.caseInfos || {};
-  const payload = {
-    requestId,
-    lotNumber:
-      String(request?.lotNumber?.value || "").trim() ||
-      String(recognizedSuffix || "").trim(),
-    patientName: String(ci.patientName || "").trim(),
-    toothNumber: String(ci.tooth || "").trim(),
-    material: String(ci.material || ci.implantBrand || "").trim(),
-    caseType: "Custom Abutment",
-    printedAt: new Date().toISOString(),
-  };
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), PACK_PRINT_TIMEOUT_MS);
-
-  try {
-    const headers = { "Content-Type": "application/json" };
-    if (PACK_PRINT_SERVER_SECRET) {
-      headers["x-pack-secret"] = PACK_PRINT_SERVER_SECRET;
-    }
-
-    const res = await fetch(`${PACK_PRINT_SERVER_BASE}/print-packing-label`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-
-    const text = await res.text().catch(() => "");
-    let body = null;
-    try {
-      body = text ? JSON.parse(text) : null;
-    } catch {
-      body = null;
-    }
-
-    if (!res.ok) {
-      return {
-        success: false,
-        status: res.status,
-        message: body?.message || text || "print request failed",
-      };
-    }
-
-    return { success: true, status: res.status, data: body || null };
-  } catch (error) {
-    return {
-      success: false,
-      message: error?.message || "print request failed",
-    };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 function extractLotSuffix3(value) {
   const s = String(value || "").toUpperCase();
   const match = s.match(/[A-Z]{3}(?!.*[A-Z])/);
@@ -469,30 +399,18 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   await request.save();
   const normalizedRequest = await normalizeRequestForResponse(request);
 
-  const printResult = await triggerPackingLabelPrint(request, recognizedSuffix);
-  if (!printResult?.success) {
-    console.warn("[lot-capture] pack label print failed", {
-      requestId: request.requestId,
-      reason: printResult?.reason || printResult?.message || "unknown",
-      status: printResult?.status,
-    });
-  }
-
   emitBgRuntimeStatus({
     requestId: request.requestId,
     requestMongoId: String(request._id || "").trim(),
     source: "lot-server",
     stage: "packing",
     status: "completed",
-    label: printResult?.success
-      ? "각인 인식 완료 + 패킹 라벨 출력"
-      : "각인 인식 완료",
-    tone: printResult?.success ? "amber" : "slate",
+    label: "각인 인식 완료",
+    tone: "slate",
     clear: true,
     metadata: {
       recognizedSuffix,
-      printSuccess: !!printResult?.success,
-      printMessage: printResult?.message || null,
+      autoPrintHandledBy: "frontend",
     },
   });
 
@@ -519,8 +437,8 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
         request.caseInfos?.stageFiles?.packing?.uploadedAt || new Date(),
     },
     print: {
-      success: !!printResult?.success,
-      message: printResult?.message || null,
+      success: null,
+      message: "frontend_auto_print",
     },
   });
 

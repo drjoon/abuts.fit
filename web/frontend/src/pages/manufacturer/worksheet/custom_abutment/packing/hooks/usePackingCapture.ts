@@ -26,6 +26,7 @@ export const usePackingCapture = ({
   previewOpen,
   previewFiles,
   handleOpenPreview,
+  handleAutoPrintProcessedRequest,
 }: {
   token?: string | null;
   requests: ManufacturerRequest[];
@@ -40,6 +41,7 @@ export const usePackingCapture = ({
   previewOpen: boolean;
   previewFiles: any;
   handleOpenPreview: (req: ManufacturerRequest) => Promise<void>;
+  handleAutoPrintProcessedRequest?: (req: ManufacturerRequest) => Promise<void>;
 }) => {
   const { uploadFiles: uploadToS3 } = useS3TempUpload({ token });
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -282,8 +284,6 @@ export const usePackingCapture = ({
       const requestId = String(payload?.requestId || "").trim();
       const requestMongoId = String(payload?.requestMongoId || "").trim();
       const suffix = String(payload?.recognizedSuffix || "").trim();
-      const printSuccess = !!payload?.print?.success;
-      const printMessage = String(payload?.print?.message || "").trim();
       const eventRequest = payload?.request as ManufacturerRequest | undefined;
       if (requestId) {
         setRequests((prev) =>
@@ -314,14 +314,15 @@ export const usePackingCapture = ({
             : null;
           if (matchedRequest) await handleOpenPreview(matchedRequest);
         }
+        if (eventRequest && handleAutoPrintProcessedRequest) {
+          await handleAutoPrintProcessedRequest(eventRequest);
+        }
       })();
       toast({
-        title: printSuccess
-          ? "자동 패킹 완료 + 라벨 출력"
-          : "자동 패킹 완료 (라벨 출력 확인 필요)",
+        title: "자동 처리 완료",
         description: requestId
-          ? `${requestId}${suffix ? ` / LOT ${suffix}` : ""}${printSuccess ? "" : printMessage ? ` / ${printMessage}` : ""}`
-          : "LOT 캡쳐 자동 처리 결과가 반영되었습니다.",
+          ? `${requestId}${suffix ? ` · ${suffix}` : ""}`
+          : "세척.패킹 처리 결과가 반영되었습니다.",
       });
     });
     return () => {
@@ -334,6 +335,7 @@ export const usePackingCapture = ({
     setRequests,
     toast,
     token,
+    handleAutoPrintProcessedRequest,
   ]);
 
   return {
