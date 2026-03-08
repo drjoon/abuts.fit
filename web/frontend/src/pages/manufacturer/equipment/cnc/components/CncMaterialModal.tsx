@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ChangeEvent,
   type ReactNode,
@@ -115,8 +116,44 @@ export const CncMaterialModal = ({
   );
   const [loading, setLoading] = useState(false);
 
+  const hydrationSignature = useMemo(() => {
+    const rawGroups =
+      Array.isArray(maxModelDiameterGroups) && maxModelDiameterGroups.length > 0
+        ? (maxModelDiameterGroups as DiameterGroup[])
+        : ([base.diameterGroup] as DiameterGroup[]);
+    const sortedGroups = [...rawGroups].sort();
+    return JSON.stringify({
+      machineId,
+      materialType: base.materialType,
+      heatNo: base.heatNo,
+      diameter: base.diameter,
+      diameterGroup: base.diameterGroup,
+      remainingLength: base.remainingLength,
+      sortedGroups,
+    });
+  }, [
+    base.diameter,
+    base.diameterGroup,
+    base.heatNo,
+    base.materialType,
+    base.remainingLength,
+    machineId,
+    maxModelDiameterGroups,
+  ]);
+
+  const lastHydrationSignatureRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      lastHydrationSignatureRef.current = null;
+      return;
+    }
+
+    if (lastHydrationSignatureRef.current === hydrationSignature) {
+      return;
+    }
+
+    lastHydrationSignatureRef.current = hydrationSignature;
     setMode("replace");
     setMaterialType(base.materialType);
     setHeatNo(base.heatNo);
@@ -134,7 +171,7 @@ export const CncMaterialModal = ({
     ) as DiameterGroup[];
     setMaxDiaGroups(ensured.length > 0 ? ensured : [base.diameterGroup]);
     setRemainingInput(String(base.remainingLength || ""));
-  }, [open, base, maxModelDiameterGroups]);
+  }, [base, hydrationSignature, maxModelDiameterGroups, open]);
 
   const title: ReactNode =
     mode === "replace"
