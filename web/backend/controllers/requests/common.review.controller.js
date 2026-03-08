@@ -42,6 +42,26 @@ import { resolvePrcFileNames } from "./prcMapping.utils.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
 
+function revertManufacturerStageByReviewStage(request, stage) {
+  const prevStageMap = {
+    machining: "CAM",
+    packing: "가공",
+    shipping: "세척.패킹",
+    tracking: "포장.발송",
+  };
+  const prevStage = prevStageMap[String(stage || "").trim()];
+  if (!prevStage) return;
+  applyStatusMapping(request, prevStage);
+
+  if (stage === "shipping") {
+    request.mailboxAddress = null;
+  }
+
+  if (stage === "tracking") {
+    request.manufacturerStage = "포장.발송";
+  }
+}
+
 async function ensureRequestCreditSpendOnMachiningEnter({
   request,
   organizationId,

@@ -735,14 +735,34 @@ export const RequestPage = ({
           : "의뢰";
   const currentStageOrder = stageOrder[currentStageForTab] ?? 0;
 
+  const isPrePickupShippingVisible = (req: ManufacturerRequest) => {
+    const stage = String(req.manufacturerStage || "").trim();
+    const di =
+      req.deliveryInfoRef && typeof req.deliveryInfoRef === "object"
+        ? (req.deliveryInfoRef as any)
+        : null;
+    const statusCode = Number(di?.tracking?.lastStatusCode || 0);
+    const isCanceled =
+      String(di?.tracking?.lastStatusText || "").trim() === "예약취소";
+    const hasPickupReservation = Boolean(
+      di?.trackingNumber || di?.shippedAt || di?.tracking?.lastStatusText,
+    );
+    return (
+      stage === "추적관리" &&
+      hasPickupReservation &&
+      !di?.deliveredAt &&
+      !isCanceled &&
+      (!Number.isFinite(statusCode) || statusCode < 11)
+    );
+  };
+
   const filteredBase = (() => {
     // 완료포함: 탭 기준 단계 이상 모든 건 포함 (CAM 탭=CAM~추적관리, 생산 탭=생산~추적관리)
     if (showCompleted) {
       // 발송 탭에서는 "발송" 단계만 보여주되(WorkSheet.tsx filterRequests), 완료 포함은 status 기준 숨김을 해제하는 의미다.
       if (tabStage === "shipping") {
         return requests.filter((req) => {
-          const stage = String(req.manufacturerStage || "").trim();
-          if (stage === "추적관리") return true;
+          if (isPrePickupShippingVisible(req)) return true;
           if (!filterRequests) return true;
           try {
             return filterRequests(req);
@@ -761,8 +781,7 @@ export const RequestPage = ({
     // 발송 탭 기본: 완료 건은 숨김 (헤더의 완료포함 체크 시에만 노출)
     if (tabStage === "shipping") {
       return requests.filter((req) => {
-        const stage = String(req.manufacturerStage || "").trim();
-        if (stage === "추적관리") return false;
+        if (isPrePickupShippingVisible(req)) return true;
         try {
           return filterRequests ? filterRequests(req) : true;
         } catch {
@@ -825,8 +844,7 @@ export const RequestPage = ({
         if (showCompleted) {
           if (tabStage === "shipping") {
             return sourceRequests.filter((req) => {
-              const stage = String(req.manufacturerStage || "").trim();
-              if (stage === "추적관리") return true;
+              if (isPrePickupShippingVisible(req)) return true;
               if (!filterRequests) return true;
               try {
                 return filterRequests(req);
@@ -844,8 +862,7 @@ export const RequestPage = ({
 
         if (tabStage === "shipping") {
           return sourceRequests.filter((req) => {
-            const stage = String(req.manufacturerStage || "").trim();
-            if (stage === "추적관리") return false;
+            if (isPrePickupShippingVisible(req)) return true;
             try {
               return filterRequests ? filterRequests(req) : true;
             } catch {
@@ -1272,7 +1289,9 @@ export const RequestPage = ({
             ) : tabStage === "shipping" ? (
               <div className="w-full">
                 <MailboxGrid
-                  requests={filteredAndSorted.filter((r) => r.mailboxAddress)}
+                  requests={filteredAndSorted.filter(
+                    (r) => r.mailboxAddress || isPrePickupShippingVisible(r),
+                  )}
                   onBoxClick={(address, reqs) =>
                     handleRegisterShipment(address, reqs)
                   }

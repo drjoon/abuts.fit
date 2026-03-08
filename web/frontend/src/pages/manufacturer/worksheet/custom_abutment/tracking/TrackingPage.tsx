@@ -106,9 +106,6 @@ export const TrackingInquiryPage = () => {
   const onScrollRef = useRef<(() => void) | null>(null);
   const [loading, setLoading] = useState(false);
   const [syncingTracking, setSyncingTracking] = useState(false);
-  const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(
-    null,
-  );
   const [cancellingAll, setCancellingAll] = useState(false);
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
   // Network pagination per stage (tracking)
@@ -722,45 +719,48 @@ export const TrackingInquiryPage = () => {
     });
   }, [baseFiltered]);
 
-  const resolveCancelableMailboxAddresses = useCallback(
-    (row?: ManufacturerRequest | null): string[] => {
-      if (!row) return [];
-      const rowDelivery = normalizeDeliveryInfo(row.deliveryInfoRef);
-      const rowMailbox = String(row.mailboxAddress || "").trim();
-      const rowTracking = String(rowDelivery.trackingNumber || "").trim();
-
-      const grouped = shippingRows.filter((candidate) => {
-        const candidateDelivery = normalizeDeliveryInfo(
-          candidate.deliveryInfoRef,
-        );
-        const candidateMailbox = String(candidate.mailboxAddress || "").trim();
-        const candidateTracking = String(
-          candidateDelivery.trackingNumber || "",
-        ).trim();
-        if (rowMailbox && candidateMailbox === rowMailbox) return true;
-        if (
-          rowTracking &&
-          candidateTracking &&
-          candidateTracking === rowTracking
-        ) {
-          return true;
-        }
-        return false;
-      });
-
-      const mailboxList = Array.from(
-        new Set(
-          grouped
-            .map((candidate) => String(candidate.mailboxAddress || "").trim())
-            .filter(Boolean),
-        ),
+  const resolveCancelableMailboxAddresses = useCallback((): string[] => {
+    const prePickupRows = shippingRows.filter((row) => {
+      const di = normalizeDeliveryInfo(row.deliveryInfoRef);
+      const status = getShippingStatus(row);
+      const statusCode = Number(di?.tracking?.lastStatusCode || 0);
+      const hasPickupReservation = Boolean(
+        di.trackingNumber || di.shippedAt || di?.tracking?.lastStatusText,
       );
+      return (
+        hasPickupReservation &&
+        !Boolean(di.deliveredAt) &&
+        status !== "예약취소" &&
+        (!Number.isFinite(statusCode) || statusCode < 11)
+      );
+    });
 
-      if (mailboxList.length) return mailboxList;
-      return rowMailbox ? [rowMailbox] : [];
-    },
-    [shippingRows],
-  );
+    return Array.from(
+      new Set(
+        prePickupRows.flatMap((row) => {
+          const di = normalizeDeliveryInfo(row.deliveryInfoRef);
+          const directMailbox = String(row.mailboxAddress || "").trim();
+          if (directMailbox) return [directMailbox];
+
+          const trackingNumber = String(di.trackingNumber || "").trim();
+          if (!trackingNumber) return [];
+
+          return prePickupRows
+            .filter((candidate) => {
+              const candidateDi = normalizeDeliveryInfo(
+                candidate.deliveryInfoRef,
+              );
+              return (
+                String(candidateDi.trackingNumber || "").trim() ===
+                trackingNumber
+              );
+            })
+            .map((candidate) => String(candidate.mailboxAddress || "").trim())
+            .filter(Boolean);
+        }),
+      ),
+    );
+  }, [shippingRows]);
 
   const cancelPickupByMailboxes = useCallback(
     async (mailboxAddresses: string[]): Promise<string[]> => {
@@ -789,63 +789,14 @@ export const TrackingInquiryPage = () => {
     [],
   );
 
-  const handleCancelPickup = useCallback(
-    async (row: ManufacturerRequest) => {
-      const requestId = String(row.requestId || "").trim();
-      const mailboxAddresses = resolveCancelableMailboxAddresses(row);
-      if (!mailboxAddresses.length) {
-        toast({
-          title: "취소 불가",
-          description: "취소 가능한 우편함 정보를 찾을 수 없습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-      setCancellingRequestId(requestId || mailboxAddresses[0]);
-      try {
-        const canceled = await cancelPickupByMailboxes(mailboxAddresses);
-        toast({
-          title: "택배 접수 취소 완료",
-          description: `${canceled.join(", ")} 우편함 접수를 취소했습니다.`,
-        });
-      } catch (error) {
-        toast({
-          title: "택배 취소 실패",
-          description:
-            error instanceof Error
-              ? error.message
-              : "택배 취소에 실패했습니다.",
-          variant: "destructive",
-        });
-      } finally {
-        setCancellingRequestId(null);
-      }
-    },
-    [cancelPickupByMailboxes, resolveCancelableMailboxAddresses, toast],
-  );
-
   const bulkCancelableMailboxes = useMemo(() => {
-    return Array.from(
-      new Set(
-        shippingRows
-          .filter((row) => {
-            const di = normalizeDeliveryInfo(row.deliveryInfoRef);
-            const status = getShippingStatus(row);
-            return (
-              Boolean(di.trackingNumber || di.shippedAt) &&
-              !Boolean(di.deliveredAt) &&
-              status !== "예약취소"
-            );
-          })
-          .flatMap((row) => resolveCancelableMailboxAddresses(row)),
-      ),
-    );
+    return resolveCancelableMailboxAddresses();
   }, [resolveCancelableMailboxAddresses, shippingRows]);
 
   const handleCancelAllPickup = useCallback(async () => {
     if (!bulkCancelableMailboxes.length) {
       toast({
-        title: "전체 취소 대상 없음",
+        title: "집하 전 취소 대상 없음",
         description: "집하 전 취소 가능한 접수 건이 없습니다.",
       });
       return;
@@ -854,14 +805,16 @@ export const TrackingInquiryPage = () => {
     try {
       const canceled = await cancelPickupByMailboxes(bulkCancelableMailboxes);
       toast({
-        title: "전체 접수 취소 완료",
+        title: "집하 전 택배 접수 취소 완료",
         description: `${canceled.length}개 우편함 접수를 취소했습니다.`,
       });
     } catch (error) {
       toast({
-        title: "전체 취소 실패",
+        title: "집하 전 택배 접수 취소 실패",
         description:
-          error instanceof Error ? error.message : "전체 취소에 실패했습니다.",
+          error instanceof Error
+            ? error.message
+            : "집하 전 택배 접수 취소에 실패했습니다.",
         variant: "destructive",
       });
     } finally {
@@ -971,8 +924,8 @@ export const TrackingInquiryPage = () => {
         <Tabs value={tab} onValueChange={(v) => setTab(v as InquiryTab)}>
           <div className="flex items-center gap-3">
             <TabsList className="flex-1 justify-center">
-              <TabsTrigger value="process">생산공정일지</TabsTrigger>
               <TabsTrigger value="shipping">택배/배송</TabsTrigger>
+              <TabsTrigger value="process">생산공정일지</TabsTrigger>
               <TabsTrigger value="udi">UDI신고</TabsTrigger>
             </TabsList>
           </div>
@@ -999,7 +952,9 @@ export const TrackingInquiryPage = () => {
                   onClick={handleCancelAllPickup}
                   disabled={cancellingAll || !bulkCancelableMailboxes.length}
                 >
-                  {cancellingAll ? "전체 취소 중..." : "전체 취소"}
+                  {cancellingAll
+                    ? "집하전 택배 접수 취소 중..."
+                    : "집하전 택배 접수 취소"}
                 </Button>
               )}
               {tab === "shipping" && (
@@ -1193,7 +1148,6 @@ export const TrackingInquiryPage = () => {
                     <TableHead>접수(발송)</TableHead>
                     <TableHead>배송완료</TableHead>
                     <TableHead>상태</TableHead>
-                    <TableHead className="text-right">작업</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1204,14 +1158,6 @@ export const TrackingInquiryPage = () => {
                       ? String(di.deliveredAt)
                       : "";
                     const status = getShippingStatus(r);
-                    const isCancelable =
-                      Boolean(di.trackingNumber || di.shippedAt) &&
-                      !Boolean(di.deliveredAt) &&
-                      status !== "예약취소";
-                    const actionKey = String(
-                      r.requestId || r.mailboxAddress || "",
-                    ).trim();
-
                     return (
                       <TableRow key={String(r._id || r.requestId)}>
                         <TableCell className="font-medium">
@@ -1222,29 +1168,13 @@ export const TrackingInquiryPage = () => {
                         <TableCell>{formatDateTime(shippedAt)}</TableCell>
                         <TableCell>{formatDateTime(deliveredAt)}</TableCell>
                         <TableCell>{status}</TableCell>
-                        <TableCell className="text-right">
-                          {isCancelable ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => void handleCancelPickup(r)}
-                              disabled={cancellingRequestId === actionKey}
-                            >
-                              {cancellingRequestId === actionKey
-                                ? "취소 중..."
-                                : "택배 취소"}
-                            </Button>
-                          ) : (
-                            <span className="text-xs text-slate-400">-</span>
-                          )}
-                        </TableCell>
                       </TableRow>
                     );
                   })}
                   {!loading && shippingRows.length === 0 && (
                     <TableRow>
                       <TableCell
-                        colSpan={7}
+                        colSpan={6}
                         className="text-center text-muted-foreground"
                       >
                         조회 결과가 없습니다.

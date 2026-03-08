@@ -830,16 +830,12 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     });
   };
 
-  const toggleSelectAllOccupied = () => {
-    setSelectedMailboxes((prev) => {
-      if (
-        occupiedAddresses.length > 0 &&
-        prev.size === occupiedAddresses.length
-      ) {
-        return new Set();
-      }
-      return new Set(occupiedAddresses);
-    });
+  const selectAllOccupied = () => {
+    setSelectedMailboxes(new Set(occupiedAddresses));
+  };
+
+  const clearAllOccupied = () => {
+    setSelectedMailboxes(new Set());
   };
 
   const resolvePrintPayload = (payload: any) => {
@@ -1176,10 +1172,6 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
 
   const hasRequestedPickup = selectedRequestedAddresses.length > 0;
 
-  const isAllOccupiedSelected =
-    occupiedAddresses.length > 0 &&
-    selectedMailboxes.size === occupiedAddresses.length;
-
   const pickupButtonLabel = isRequestingPickup
     ? hasRequestedPickup
       ? "취소 중..."
@@ -1297,7 +1289,7 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
         <div className="flex flex-wrap items-center justify-center gap-2 pb-3 px-2">
           <button
             type="button"
-            onClick={toggleSelectAllOccupied}
+            onClick={selectAllOccupied}
             disabled={occupiedAddresses.length === 0}
             className={`px-3 py-1 text-xs rounded-full border transition-colors ${
               occupiedAddresses.length === 0
@@ -1305,7 +1297,21 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                 : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
             }`}
           >
-            {isAllOccupiedSelected ? "선택 해제" : "전체 선택"}
+            전체 선택
+          </button>
+          <button
+            type="button"
+            onClick={clearAllOccupied}
+            disabled={
+              occupiedAddresses.length === 0 || selectedMailboxes.size === 0
+            }
+            className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+              occupiedAddresses.length === 0 || selectedMailboxes.size === 0
+                ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+            }`}
+          >
+            전체 해제
           </button>
           <div className="text-xs text-slate-500">
             선택 {selectedOccupiedAddresses.length} / 전체{" "}
@@ -1494,20 +1500,26 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                         ) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          if (isOccupied && onBoxClick) {
-                            onBoxClick(address, items);
+                          if (isOccupied) {
+                            toggleMailboxSelection(address);
                           }
                         };
+
+                        const isSelected = selectedMailboxes.has(address);
 
                         return (
                           <div
                             key={address}
+                            onClick={handleClick}
+                            onTouchEnd={handleClick}
                             className={`
                               relative flex flex-col items-center justify-between p-1 rounded border transition-all select-none
                               ${
-                                isOccupied
-                                  ? getMailboxColorClass(items)
-                                  : "bg-white border-slate-200"
+                                isOccupied && isSelected
+                                  ? "bg-blue-100 border-blue-500 shadow-sm"
+                                  : isOccupied
+                                    ? getMailboxColorClass(items)
+                                    : "bg-white border-slate-200"
                               }
                             `}
                             style={{
@@ -1519,7 +1531,7 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                             {isOccupied ? (
                               <input
                                 type="checkbox"
-                                checked={selectedMailboxes.has(address)}
+                                checked={isSelected}
                                 onChange={() => toggleMailboxSelection(address)}
                                 className="absolute left-0.5 top-0.5 h-3 w-3 accent-blue-600"
                                 onClick={(e) => e.stopPropagation()}
@@ -1527,43 +1539,41 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                             ) : null}
                             {/* 상단 라벨 */}
                             <div
-                              onClick={handleClick}
-                              onTouchEnd={handleClick}
                               className={`font-mono font-bold leading-none text-center w-full pointer-events-none ${
-                                isOccupied
-                                  ? getMailboxColorClass(items).includes(
-                                      "bg-blue",
-                                    )
-                                    ? "text-blue-800"
-                                    : getMailboxColorClass(items).includes(
-                                          "bg-red",
-                                        )
-                                      ? "text-red-800"
-                                      : "text-slate-700"
-                                  : "text-slate-400"
+                                isOccupied && isSelected
+                                  ? "text-blue-800"
+                                  : isOccupied
+                                    ? getMailboxColorClass(items).includes(
+                                        "bg-blue",
+                                      )
+                                      ? "text-blue-800"
+                                      : getMailboxColorClass(items).includes(
+                                            "bg-red",
+                                          )
+                                        ? "text-red-800"
+                                        : "text-slate-700"
+                                    : "text-slate-400"
                               }`}
                               style={{ fontSize: "9px" }}
                             >
                               {address}
                             </div>
                             {/* 중앙 카운트 */}
-                            <div
-                              onClick={handleClick}
-                              onTouchEnd={handleClick}
-                              className="flex-1 flex items-center justify-center pointer-events-none"
-                            >
+                            <div className="flex-1 flex items-center justify-center pointer-events-none">
                               {isOccupied && (
                                 <div
                                   className={`font-bold leading-none ${
-                                    getMailboxColorClass(items).includes(
-                                      "bg-blue",
-                                    )
+                                    isSelected
                                       ? "text-blue-700"
                                       : getMailboxColorClass(items).includes(
-                                            "bg-red",
+                                            "bg-blue",
                                           )
-                                        ? "text-red-700"
-                                        : "text-slate-700"
+                                        ? "text-blue-700"
+                                        : getMailboxColorClass(items).includes(
+                                              "bg-red",
+                                            )
+                                          ? "text-red-700"
+                                          : "text-slate-700"
                                   }`}
                                   style={{ fontSize: "16px" }}
                                 >
