@@ -980,19 +980,17 @@ export const RequestPage = ({
           ? filteredAndSorted[currentIndex + 1]?._id || null
           : null;
 
+      if (!preferredNextId) {
+        setPreviewOpen(false);
+        return;
+      }
+
       const refreshed = await refreshRequests(true);
       const latestList = Array.isArray(refreshed)
         ? getFilteredAndSortedRequests(refreshed as ManufacturerRequest[])
         : getFilteredAndSortedRequests(requests);
 
-      let nextReq: ManufacturerRequest | undefined;
-      if (preferredNextId) {
-        nextReq = latestList.find((r) => r._id === preferredNextId);
-      }
-
-      if (!nextReq) {
-        nextReq = latestList.find((r) => r._id !== currentReqId);
-      }
+      const nextReq = latestList.find((r) => r._id === preferredNextId);
 
       if (!nextReq) {
         setPreviewOpen(false);
@@ -1010,9 +1008,6 @@ export const RequestPage = ({
       setPreviewOpen,
     ],
   );
-
-  totalCountRef.current = filteredAndSorted.length;
-  const paginatedRequests = filteredAndSorted.slice(0, visibleCount);
 
   useEffect(() => {
     visibleCountRef.current = 12;
@@ -1055,16 +1050,21 @@ export const RequestPage = ({
       { threshold: 0.2 },
     );
 
-    if (sentinelRef.current) {
-      observer.observe(sentinelRef.current);
+    const target = sentinelRef.current;
+    if (target) {
+      observer.observe(target);
     }
 
     return () => {
-      if (sentinelRef.current) {
-        observer.unobserve(sentinelRef.current);
+      if (target) {
+        observer.unobserve(target);
       }
+      observer.disconnect();
     };
   }, [visibleCount, filteredAndSorted.length, fetchNextPage]);
+
+  totalCountRef.current = filteredAndSorted.length;
+  const paginatedRequests = filteredAndSorted.slice(0, visibleCount);
 
   const handleRegisterShipment = useCallback(
     async (address: string, reqs: ManufacturerRequest[]) => {
