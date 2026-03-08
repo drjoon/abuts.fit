@@ -38,9 +38,10 @@ async function grantWelcomeBonusIfEligible({ organizationId, userId }) {
   if (!organizationId) return null;
 
   const org = await RequestorOrganization.findById(organizationId)
-    .select({ extracted: 1 })
+    .select({ organizationType: 1, extracted: 1 })
     .lean();
   if (!org) return null;
+  if (String(org.organizationType || "") !== "requestor") return null;
 
   const businessNumber = normalizeBusinessNumberDigits(
     org?.extracted?.businessNumber,
