@@ -74,7 +74,9 @@ const callHanjinApi = async ({
   const responseBody = response.data as any;
   if (!response.ok || !responseBody?.success) {
     const message =
-      responseBody?.message || `한진 API 호출 실패 (status=${response.status})`;
+      responseBody?.error ||
+      responseBody?.message ||
+      `한진 API 호출 실패 (status=${response.status})`;
     throw new Error(message);
   }
   return responseBody?.data;
@@ -112,7 +114,9 @@ const callHanjinApiWithMeta = async ({
   const responseBody = response.data as any;
   if (!response.ok || !responseBody?.success) {
     const message =
-      responseBody?.message || `한진 API 호출 실패 (status=${response.status})`;
+      responseBody?.error ||
+      responseBody?.message ||
+      `한진 API 호출 실패 (status=${response.status})`;
     throw new Error(message);
   }
   return {
@@ -1039,11 +1043,15 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
       }
     } catch (error) {
       console.error("택배 수거 처리 실패:", error);
+      const errorMessage =
+        error instanceof Error && error.message
+          ? error.message
+          : pickupRequested
+            ? "택배 수거 접수 취소에 실패했습니다."
+            : "택배 수거 접수에 실패했습니다.";
       toast({
         title: pickupRequested ? "취소 실패" : "택배 수거 접수 실패",
-        description: pickupRequested
-          ? "택배 수거 접수 취소에 실패했습니다."
-          : "택배 수거 접수에 실패했습니다.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {

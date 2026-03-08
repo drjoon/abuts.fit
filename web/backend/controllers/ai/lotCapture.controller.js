@@ -1,7 +1,4 @@
-import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
-import ShippingPackage from "../../models/shippingPackage.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
 import s3Utils, { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
@@ -13,11 +10,9 @@ import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
 import {
   applyStatusMapping,
   ensureFinishedLotNumberForPacking,
-  getTodayYmdInKst,
   normalizeRequestForResponse,
 } from "../../controllers/requests/utils.js";
 import { allocateVirtualMailboxAddress } from "../requests/mailbox.utils.js";
-import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
 
 let _apiKey = null;
 let _genAI = null;
@@ -42,107 +37,6 @@ function extractLotSuffix3(value) {
   const s = String(value || "").toUpperCase();
   const match = s.match(/[A-Z]{3}(?!.*[A-Z])/);
   return match ? match[0] : "";
-}
-
-function toKstYmd(d) {
-  if (!d) return null;
-  const date = d instanceof Date ? d : new Date(d);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
-}
-
-async function ensureShippingPackageAndChargeFee({ request, session }) {
-  if (!request) return;
-
-  const organizationIdRaw =
-    request.requestorOrganizationId || request.requestor?.organizationId;
-  const organizationId =
-    organizationIdRaw && Types.ObjectId.isValid(String(organizationIdRaw))
-      ? new Types.ObjectId(String(organizationIdRaw))
-      : null;
-
-  if (!organizationId) {
-    throw new ApiError(400, "조직 정보가 없어 발송 박스를 생성할 수 없습니다.");
-  }
-
-  const pickup = request?.productionSchedule?.scheduledShipPickup;
-  const shipDateYmd = toKstYmd(pickup) || getTodayYmdInKst();
-
-  let pkg;
-  try {
-    pkg = await ShippingPackage.findOneAndUpdate(
-      { organizationId, shipDateYmd },
-      {
-        $setOnInsert: {
-          organizationId,
-          shipDateYmd,
-          createdBy: null,
-        },
-        $addToSet: { requestIds: request._id },
-      },
-      {
-        new: true,
-        upsert: true,
-        setDefaultsOnInsert: true,
-        session: session || null,
-      },
-    );
-  } catch (e) {
-    const msg = String(e?.message || "");
-    const code = e?.code;
-    if (code === 11000 || msg.includes("E11000")) {
-      pkg = await ShippingPackage.findOne({ organizationId, shipDateYmd })
-        .session(session || null)
-        .lean();
-      if (pkg?._id) {
-        await ShippingPackage.updateOne(
-          { _id: pkg._id },
-          { $addToSet: { requestIds: request._id } },
-          { session: session || null },
-        );
-      }
-    } else {
-      throw e;
-    }
-  }
-
-  if (pkg?._id) {
-    request.shippingPackageId = pkg._id;
-  }
-
-  const fee = Number(pkg?.shippingFeeSupply || 0);
-  if (fee > 0) {
-    const uniqueKey = `shippingPackage:${String(pkg._id)}:shipping_fee`;
-    const result = await CreditLedger.updateOne(
-      { uniqueKey },
-      {
-        $setOnInsert: {
-          organizationId,
-          userId: null,
-          type: "SPEND",
-          amount: -fee,
-          refType: "SHIPPING_PACKAGE",
-          refId: pkg._id,
-          uniqueKey,
-        },
-      },
-      { upsert: true, session: session || null },
-    );
-
-    if (result?.upsertedCount) {
-      await emitCreditBalanceUpdatedToOrganization({
-        organizationId,
-        balanceDelta: -fee,
-        reason: "shipping_fee_spend",
-        refId: pkg._id,
-      });
-    }
-  }
 }
 
 async function recognizeLotNumberFromS3({ s3Key, originalName }) {
@@ -365,7 +259,6 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
       });
     }
   }
-  await ensureShippingPackageAndChargeFee({ request, session: null });
   applyStatusMapping(request, "발송");
 
   await request.save();

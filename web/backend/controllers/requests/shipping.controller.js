@@ -2,6 +2,7 @@ import Request from "../../models/request.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
+import CreditLedger from "../../models/creditLedger.model.js";
 import hanjinService from "../../services/hanjin.service.js";
 import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
 import { handleHanjinTrackingWebhook } from "../webhooks/hanjinWebhook.controller.js";
@@ -23,6 +24,7 @@ import {
   getRequestorOrgId,
   ensureReviewByStageDefaults,
 } from "./utils.js";
+import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
 
 const __cache = new Map();
 const memo = async ({ key, ttlMs, fn }) => {
@@ -40,6 +42,215 @@ const resolveMailboxList = (mailboxAddresses) =>
   Array.isArray(mailboxAddresses)
     ? mailboxAddresses.map((v) => String(v || "").trim()).filter(Boolean)
     : [];
+
+const extractTrackingNumberFromPickupData = (data) => {
+  const candidates = [
+    data?.trackingNumber,
+    data?.waybillNumber,
+    data?.wbl_num,
+    data?.wblNum,
+    data?.invoiceNo,
+    data?.invoiceNumber,
+    data?.orderNo,
+    data?.orderNumber,
+    data?.data?.trackingNumber,
+    data?.data?.waybillNumber,
+    data?.data?.wbl_num,
+    data?.data?.wblNum,
+    data?.result?.trackingNumber,
+    data?.result?.waybillNumber,
+    data?.result?.wbl_num,
+    data?.result?.wblNum,
+  ];
+  for (const candidate of candidates) {
+    const value = String(candidate || "").trim();
+    if (value) return value;
+  }
+  return "";
+};
+
+async function ensureShippingPackageAndChargeFeeOnPickup({
+  requests,
+  actorUserId,
+}) {
+  const list = Array.isArray(requests) ? requests.filter(Boolean) : [];
+  if (!list.length) {
+    throw new Error("발송 패키지를 생성할 의뢰가 없습니다.");
+  }
+
+  const organizationIds = Array.from(
+    new Set(
+      list
+        .map((request) => {
+          const raw = getRequestorOrgId(request);
+          const value = String(raw || "").trim();
+          return Types.ObjectId.isValid(value) ? value : "";
+        })
+        .filter(Boolean),
+    ),
+  );
+
+  if (organizationIds.length !== 1) {
+    throw new Error(
+      "우편함 묶음의 조직 정보가 일관되지 않아 발송 박스를 생성할 수 없습니다.",
+    );
+  }
+
+  const organizationId = new Types.ObjectId(organizationIds[0]);
+  const shipDateYmd = getTodayYmdInKst();
+
+  let pkg = null;
+  try {
+    pkg = await ShippingPackage.findOneAndUpdate(
+      { organizationId, shipDateYmd },
+      {
+        $setOnInsert: {
+          organizationId,
+          shipDateYmd,
+          createdBy: actorUserId || null,
+        },
+        $addToSet: {
+          requestIds: { $each: list.map((request) => request._id) },
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+      },
+    );
+  } catch (error) {
+    const message = String(error?.message || "");
+    if (error?.code === 11000 || message.includes("E11000")) {
+      pkg = await ShippingPackage.findOne({ organizationId, shipDateYmd });
+      if (pkg?._id) {
+        await ShippingPackage.updateOne(
+          { _id: pkg._id },
+          {
+            $addToSet: {
+              requestIds: { $each: list.map((request) => request._id) },
+            },
+          },
+        );
+        pkg = await ShippingPackage.findById(pkg._id);
+      }
+    } else {
+      throw error;
+    }
+  }
+
+  if (!pkg?._id) {
+    throw new Error("발송 박스 생성에 실패했습니다.");
+  }
+
+  const fee = Number(pkg.shippingFeeSupply || 0);
+  if (fee > 0) {
+    const uniqueKey = `shippingPackage:${String(pkg._id)}:shipping_fee`;
+    const chargeResult = await CreditLedger.updateOne(
+      { uniqueKey },
+      {
+        $setOnInsert: {
+          organizationId,
+          userId: actorUserId || null,
+          type: "SPEND",
+          amount: -fee,
+          refType: "SHIPPING_PACKAGE",
+          refId: pkg._id,
+          uniqueKey,
+        },
+      },
+      { upsert: true },
+    );
+
+    if (chargeResult?.upsertedCount) {
+      console.log("[SHIPPING_PICKUP_CHARGE] charged shipping fee", {
+        organizationId: String(organizationId),
+        shippingPackageId: String(pkg._id),
+        fee,
+        requestIds: list
+          .map((request) => String(request.requestId || ""))
+          .filter(Boolean),
+      });
+      await emitCreditBalanceUpdatedToOrganization({
+        organizationId,
+        balanceDelta: -fee,
+        reason: "shipping_fee_spend",
+        refId: pkg._id,
+      });
+    }
+  }
+
+  return pkg;
+}
+
+async function finalizeMailboxPickupShipment({
+  requests,
+  pickupData,
+  actorUserId,
+}) {
+  const list = Array.isArray(requests) ? requests.filter(Boolean) : [];
+  if (!list.length) return [];
+
+  const pkg = await ensureShippingPackageAndChargeFeeOnPickup({
+    requests: list,
+    actorUserId,
+  });
+  const trackingNumber = extractTrackingNumberFromPickupData(pickupData);
+  const actualShipPickup = new Date();
+  const updatedIds = [];
+
+  for (const request of list) {
+    let deliveryInfo = null;
+    if (request.deliveryInfoRef) {
+      deliveryInfo = await DeliveryInfo.findById(request.deliveryInfoRef);
+    }
+
+    if (!deliveryInfo) {
+      deliveryInfo = await DeliveryInfo.create({
+        request: request._id,
+        trackingNumber: trackingNumber || undefined,
+        carrier: "hanjin",
+        shippedAt: actualShipPickup,
+      });
+      request.deliveryInfoRef = deliveryInfo._id;
+    } else {
+      if (trackingNumber) {
+        deliveryInfo.trackingNumber = trackingNumber;
+      }
+      deliveryInfo.carrier = "hanjin";
+      if (!deliveryInfo.shippedAt) {
+        deliveryInfo.shippedAt = actualShipPickup;
+      }
+      await deliveryInfo.save();
+    }
+
+    ensureReviewByStageDefaults(request);
+    request.caseInfos.reviewByStage.shipping = {
+      ...request.caseInfos.reviewByStage.shipping,
+      status: "APPROVED",
+      updatedAt: actualShipPickup,
+      updatedBy: actorUserId || null,
+      reason: "",
+    };
+
+    applyStatusMapping(request, "추적관리");
+    request.productionSchedule = request.productionSchedule || {};
+    request.productionSchedule.actualShipPickup = actualShipPickup;
+    request.mailboxAddress = null;
+    request.shippingPackageId = pkg._id;
+
+    await request.save();
+    updatedIds.push(String(request.requestId || "").trim());
+  }
+
+  console.log("[HANJIN_PICKUP_FINALIZED] finalized shipment", {
+    shippingPackageId: String(pkg._id),
+    trackingNumber: trackingNumber || null,
+    requestIds: updatedIds,
+  });
+
+  return updatedIds;
+}
 
 async function resolveHanjinPayload({ mailboxAddresses, payload }) {
   if (payload && typeof payload === "object") {
@@ -1056,7 +1267,18 @@ export async function requestHanjinPickup(req, res) {
       });
 
       const data = await callHanjinWithFallback({ data: orderBody });
-      results.push({ mailbox, success: true, data });
+      const requestDocs = await Request.find({
+        _id: { $in: group.map((request) => request._id) },
+        manufacturerStage: "포장.발송",
+      });
+
+      const updatedIds = await finalizeMailboxPickupShipment({
+        requests: requestDocs,
+        pickupData: data,
+        actorUserId: req.user?._id || null,
+      });
+
+      results.push({ mailbox, success: true, data, updatedIds });
     }
 
     return res.status(200).json({
@@ -1843,6 +2065,11 @@ export async function registerShipment(req, res) {
       });
     }
 
+    const pkg = await ensureShippingPackageAndChargeFeeOnPickup({
+      requests,
+      actorUserId: req.user?._id || null,
+    });
+
     const updatedIds = [];
 
     for (const r of requests) {
@@ -1894,6 +2121,7 @@ export async function registerShipment(req, res) {
       r.productionSchedule = r.productionSchedule || {};
       r.productionSchedule.actualShipPickup = actualShipPickup;
       r.mailboxAddress = null;
+      r.shippingPackageId = pkg._id;
 
       await r.save();
       updatedIds.push(r.requestId);
