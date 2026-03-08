@@ -613,15 +613,7 @@ export const RequestPage = ({
             ) {
               return item;
             }
-            return {
-              ...item,
-              realtimeProgress: {
-                badge: "CAM 생성중",
-                startedAt: new Date().toISOString(),
-                elapsedSeconds: 0,
-                tone: "indigo",
-              },
-            };
+            return item;
           }),
         );
       }

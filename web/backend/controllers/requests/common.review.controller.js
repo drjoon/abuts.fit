@@ -884,17 +884,6 @@ export async function updateReviewStatusByStage(req, res) {
             throw err;
           }
 
-          request.productionSchedule.actualCamStart = new Date();
-          emitAppEventToRoles(
-            ["manufacturer", "admin"],
-            "request:cam-processing-started",
-            {
-              requestId: String(request.requestId || "").trim(),
-              requestMongoId: String(request._id || "").trim(),
-              startedAt: request.productionSchedule.actualCamStart,
-              source: "review-status",
-            },
-          );
           await triggerEspritForNc({ request, session });
           acceptedMessage =
             "CAM 작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다.";

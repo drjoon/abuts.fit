@@ -184,29 +184,6 @@ export function useWorksheetRealtimeStatus({
       if (!requestId) return;
 
       if (type === "request:cam-processing-started") {
-        const startedAt = String(
-          payload?.startedAt || new Date().toISOString(),
-        );
-        const base = new Date(startedAt).getTime();
-        realtimeBaseRef.current[requestId] = Number.isFinite(base)
-          ? base
-          : Date.now();
-        setRequests((prev) =>
-          prev.map((r) => {
-            if (String((r as any)?.requestId || "").trim() !== requestId) {
-              return r;
-            }
-            return {
-              ...(r as any),
-              realtimeProgress: {
-                badge: "CAM 생성중",
-                startedAt,
-                elapsedSeconds: 0,
-                tone: "indigo",
-              },
-            } as any;
-          }),
-        );
         return;
       }
 
