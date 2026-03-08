@@ -351,6 +351,7 @@ export async function getLastCompletedMachiningMap(req, res) {
         machineId: mid,
         jobId: rec?.jobId != null ? String(rec.jobId) : null,
         requestId: rid || null,
+        requestMongoId: reqDoc?._id ? String(reqDoc._id) : null,
         displayLabel: String(displayLabel || "").trim() || null,
         clinicName,
         patientName,

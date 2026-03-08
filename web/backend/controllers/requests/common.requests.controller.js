@@ -171,6 +171,7 @@ export async function getRequestSummaryByRequestId(req, res) {
     }
 
     const request = await Request.findOne({ requestId }).select({
+      _id: 1,
       requestId: 1,
       caseInfos: 1,
     });
@@ -189,6 +190,7 @@ export async function getRequestSummaryByRequestId(req, res) {
     return res.json({
       success: true,
       data: {
+        _id: request._id,
         requestId: request.requestId,
         tooth,
         maxDiameter,

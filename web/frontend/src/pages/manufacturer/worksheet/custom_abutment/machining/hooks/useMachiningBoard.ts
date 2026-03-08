@@ -904,27 +904,35 @@ export const useMachiningBoard = ({
   }, [openReservationForMachine, searchParams, setSearchParams]);
 
   const rollbackRequestInQueue = useCallback(
-    async (machineId: string, requestId: string) => {
+    async (
+      machineId: string,
+      requestId: string,
+      requestMongoId?: string | null,
+    ) => {
       if (!token) return;
       const rid = String(requestId || "").trim();
-      if (!rid) return;
+      const directMongoId = String(requestMongoId || "").trim();
+      if (!rid && !directMongoId) return;
 
       try {
-        const res = await fetch(
-          `/api/requests/request-id/${encodeURIComponent(rid)}/summary`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
+        let reqId = directMongoId;
+        if (!reqId) {
+          const res = await fetch(
+            `/api/requests/by-request/${encodeURIComponent(rid)}/summary`,
+            {
+              method: "GET",
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
             },
-          },
-        );
-        const body: any = await res.json().catch(() => ({}));
-        const reqId = String(body?.data?._id || "").trim();
-        if (!res.ok || body?.success === false || !reqId) {
-          throw new Error(
-            body?.message || body?.error || "롤백 대상 의뢰 조회 실패",
           );
+          const body: any = await res.json().catch(() => ({}));
+          reqId = String(body?.data?._id || "").trim();
+          if (!res.ok || body?.success === false || !reqId) {
+            throw new Error(
+              body?.message || body?.error || "롤백 대상 의뢰 조회 실패",
+            );
+          }
         }
 
         const rollbackRes = await fetch(

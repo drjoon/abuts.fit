@@ -51,6 +51,7 @@ export type LastCompletedMachining = {
   machineId: string;
   jobId: string | null;
   requestId: string | null;
+  requestMongoId?: string | null;
   displayLabel: string | null;
   clinicName?: string;
   patientName?: string;
