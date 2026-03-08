@@ -98,17 +98,7 @@ def upload_via_presign(out_path: Path, original_name: str, item: dict) -> bool:
             register_payload["requestId"] = req_id
         metadata = item.get("metadata") if isinstance(item, dict) else None
         if isinstance(metadata, dict) and metadata:
-            try:
-                import json as _json
-                log(
-                    "[upload_via_presign] Attaching metadata: "
-                    + _json.dumps(metadata, ensure_ascii=False)[:2000]
-                )
-            except Exception:
-                log("[upload_via_presign] Attaching metadata (raw)")
             register_payload["metadata"] = metadata
-        else:
-            log("[upload_via_presign] No metadata attached")
         reg_resp = requests.post(
             register_url,
             json=register_payload,
