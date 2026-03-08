@@ -171,11 +171,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     {
                         continue;
                     }
-                    string existing = Environment.GetEnvironmentVariable(key);
-                    if (!string.IsNullOrEmpty(existing))
-                    {
-                        continue;
-                    }
                     value = Unquote(value);
                     Environment.SetEnvironmentVariable(key, value);
                 }

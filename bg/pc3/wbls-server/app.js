@@ -18,9 +18,7 @@ function loadLocalEnv() {
     const key = trimmed.slice(0, idx).trim();
     const value = trimmed.slice(idx + 1).trim();
     if (!key) continue;
-    if (typeof process.env[key] === "undefined") {
-      process.env[key] = value;
-    }
+    process.env[key] = value;
   }
 }
 

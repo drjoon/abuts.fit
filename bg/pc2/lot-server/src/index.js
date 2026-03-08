@@ -16,7 +16,10 @@ logStream.on("error", (err) => {
   console.error("[lot-server] log stream error", err);
 });
 
-dotenv.config({ path: path.resolve(process.cwd(), "local.env") });
+dotenv.config({
+  path: path.resolve(process.cwd(), "local.env"),
+  override: true,
+});
 
 const WATCH_DIR = process.env.LOT_WATCH_DIR || "C:/abuts.fit/images";
 const PROCESSED_DIR =

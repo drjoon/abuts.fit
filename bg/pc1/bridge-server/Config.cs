@@ -37,8 +37,6 @@ namespace HiLinkBridgeWebApi48
                     var key = line.Substring(0, eq).Trim();
                     var value = line.Substring(eq + 1).Trim();
                     if (key.Length == 0) continue;
-                    var existing = Environment.GetEnvironmentVariable(key);
-                    if (!string.IsNullOrEmpty(existing)) continue;
                     value = Unquote(value);
                     Environment.SetEnvironmentVariable(key, value);
                 }

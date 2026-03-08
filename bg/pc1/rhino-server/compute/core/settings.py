@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 
 APP_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(dotenv_path=APP_ROOT / "local.env", override=False)
+load_dotenv(dotenv_path=APP_ROOT / "local.env", override=True)
 
 SCRIPT_DIR = APP_ROOT / "scripts"
 _env_storage_root = os.getenv("BG_STORAGE_ROOT", "").strip()
