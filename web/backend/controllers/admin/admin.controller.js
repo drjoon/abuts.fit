@@ -1636,6 +1636,9 @@ export async function logSecurityEvent({
   ipAddress = "",
 }) {
   try {
+    if (!userId) {
+      return;
+    }
     await ActivityLog.create({
       userId,
       action,

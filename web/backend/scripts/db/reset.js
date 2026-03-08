@@ -6,15 +6,11 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-async function runImplantPresetSeed() {
+async function runScript(scriptName) {
   await new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [path.join(__dirname, "implant-preset.js")],
-      {
-        stdio: "inherit",
-      },
-    );
+    const child = spawn(process.execPath, [path.join(__dirname, scriptName)], {
+      stdio: "inherit",
+    });
 
     child.on("error", reject);
     child.on("exit", (code) => {
@@ -22,7 +18,7 @@ async function runImplantPresetSeed() {
         resolve();
         return;
       }
-      reject(new Error(`implant-preset exited with code ${code}`));
+      reject(new Error(`${scriptName} exited with code ${code}`));
     });
   });
 }
@@ -36,7 +32,8 @@ async function run() {
     await disconnectDb();
   }
 
-  await runImplantPresetSeed();
+  await runScript("implant-preset.js");
+  await runScript("seed-account.js");
 }
 
 run().catch((err) => {
