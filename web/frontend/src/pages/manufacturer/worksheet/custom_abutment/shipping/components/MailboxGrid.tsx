@@ -1108,15 +1108,17 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
 
   // Handle requesting or cancelling pickup
   const handlePickupAction = async () => {
-    const printedAddresses = selectedPrintedAddresses;
     const requestedAddresses = selectedRequestedAddresses;
     const hasRequestedPickup = requestedAddresses.length > 0;
 
-    if (!hasRequestedPickup && printedAddresses.length === 0) {
+    const targetAddresses = hasRequestedPickup
+      ? requestedAddresses
+      : selectedOccupiedAddresses;
+
+    if (!targetAddresses.length) {
       toast({
         title: "접수 불가",
-        description:
-          "먼저 운송장을 출력한 우편함이 있어야 택배 접수를 할 수 있습니다.",
+        description: "택배 접수 또는 취소할 우편함을 먼저 선택해주세요.",
         variant: "destructive",
       });
       return;
@@ -1127,20 +1129,20 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
       if (!hasRequestedPickup) {
         await callHanjinApi({
           path: "/api/requests/shipping/hanjin/pickup",
-          mailboxAddresses: printedAddresses,
+          mailboxAddresses: targetAddresses,
         });
         toast({
           title: "택배 수거 접수 완료",
-          description: `${printedAddresses.length}개 우편함의 택배 수거가 접수되었습니다.`,
+          description: `${targetAddresses.length}개 우편함의 택배 수거가 접수되었습니다.`,
         });
       } else {
         await callHanjinApi({
           path: "/api/requests/shipping/hanjin/pickup-cancel",
-          mailboxAddresses: requestedAddresses,
+          mailboxAddresses: targetAddresses,
         });
         toast({
-          title: "택배 수거 접수 취소",
-          description: "택배 수거 접수가 취소되었습니다.",
+          title: "택배 수거 취소 완료",
+          description: `${targetAddresses.length}개 우편함의 택배 수거를 취소했습니다.`,
         });
       }
     } catch (error) {
@@ -1161,7 +1163,7 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     }
   };
 
-  const canRequestPickup = selectedPrintedAddresses.length > 0;
+  const canRequestPickup = selectedOccupiedAddresses.length > 0;
 
   const hasRequestedPickup = selectedRequestedAddresses.length > 0;
 
