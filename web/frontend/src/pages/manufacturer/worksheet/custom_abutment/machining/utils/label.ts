@@ -3,7 +3,7 @@ import type { QueueItem } from "../types";
 const normalizeLotPart = (raw: string) =>
   String(raw || "")
     .trim()
-    .replace(/^CAP/i, "")
+    .replace(/^CA/i, "")
     .replace(/-/g, " ")
     .trim();
 

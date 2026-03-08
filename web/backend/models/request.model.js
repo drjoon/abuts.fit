@@ -26,7 +26,7 @@ const requestSchema = new mongoose.Schema(
         type: String,
       },
       value: {
-        // 단일 로트번호 : CAP + YYMMDD + -AAA (workType에 따라 prefix 변형 가능)
+        // 단일 로트번호 : CA + YYMMDD + -AAA (workType에 따라 prefix 변형 가능)
         type: String,
         unique: true,
         sparse: true,

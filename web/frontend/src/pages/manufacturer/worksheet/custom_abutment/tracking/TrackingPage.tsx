@@ -191,8 +191,7 @@ export const TrackingInquiryPage = () => {
         "택배사",
         "송장번호",
         "원재료(Heat No.)",
-        "반제품(CAP)",
-        "완제품(CA)",
+        "제조번호(CA)",
       ];
 
       const escapeCsv = (value: string) => {
@@ -648,8 +647,7 @@ export const TrackingInquiryPage = () => {
       "택배사",
       "송장번호",
       "원재료(Heat No.)",
-      "반제품(CAP)",
-      "완제품(CA)",
+      "제조번호(CA)",
     ];
 
     const escapeCsv = (value: string) => {

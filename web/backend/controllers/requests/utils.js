@@ -315,6 +315,26 @@ export async function normalizeRequestForResponse(requestDoc) {
   const ci = obj.caseInfos || {};
   obj.caseInfos = await normalizeCaseInfosImplantFields(ci, false);
   normalizeProductionScheduleDiameter(obj);
+  const requestorOrgRaw = obj?.requestorOrganizationId;
+  if (
+    requestorOrgRaw &&
+    typeof requestorOrgRaw === "object" &&
+    !Array.isArray(requestorOrgRaw)
+  ) {
+    const orgName =
+      typeof requestorOrgRaw.name === "string"
+        ? requestorOrgRaw.name.trim()
+        : "";
+    const extracted =
+      requestorOrgRaw.extracted && typeof requestorOrgRaw.extracted === "object"
+        ? requestorOrgRaw.extracted
+        : undefined;
+    obj.requestorOrganization = {
+      _id: requestorOrgRaw._id ? String(requestorOrgRaw._id) : undefined,
+      name: orgName || undefined,
+      extracted,
+    };
+  }
   if (obj?.lotNumber && typeof obj.lotNumber === "object") {
     const valueRaw =
       typeof obj.lotNumber.value === "string" ? obj.lotNumber.value.trim() : "";
@@ -383,12 +403,12 @@ export async function ensureLotNumberForMachining(requestDoc) {
   const existingValue = String(requestDoc.lotNumber.value || "").trim();
   if (existingValue) return;
 
-  // 로트 규칙(반제품/CAP, 크라운은 CR): PREFIX + YYMMDD + "-" + 26진 3자리 (AAA, AAB, ... ZZZ 이후 다시 AAA)
+  // 로트 규칙(CA, 크라운은 CR): PREFIX + YYMMDD + "-" + 26진 3자리 (AAA, AAB, ... ZZZ 이후 다시 AAA)
   const todayYmd = getTodayYmdInKst(); // YYYY-MM-DD
   const yyMMdd = todayYmd.replace(/-/g, "").slice(2); // YYMMDD
 
   const letters = await nextLotLetters();
-  const prefix = getWorkTypePrefix(requestDoc, { defaultPrefix: "CAP" });
+  const prefix = getWorkTypePrefix(requestDoc, { defaultPrefix: "CA" });
   requestDoc.lotNumber.value = `${prefix}${yyMMdd}-${letters}`;
 }
 

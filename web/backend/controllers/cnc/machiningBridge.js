@@ -242,7 +242,7 @@ function formatRequestLabelForCompleted(reqDoc, fallbackRequestId) {
   const patientName = String(reqDoc?.caseInfos?.patientName || "").trim();
   const tooth = String(reqDoc?.caseInfos?.tooth || "").trim();
   const lotPartRaw = String(reqDoc?.lotNumber?.value || "").trim();
-  const lotPart = lotPartRaw.replace(/^CAP/i, "").replace(/-/g, " ").trim();
+  const lotPart = lotPartRaw.replace(/^CA/i, "").replace(/-/g, " ").trim();
   const ridSuffix = rid.includes("-") ? rid.split("-").pop() || rid : rid;
 
   const parts = [clinicName, patientName, tooth, lotPart, ridSuffix]

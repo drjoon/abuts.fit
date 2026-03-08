@@ -159,12 +159,7 @@ export const resolveManufacturingDate = (req: ManufacturerRequest) => {
 export const getLotLabel = (req: ManufacturerRequest) => {
   const lot = req.lotNumber as any;
   if (!lot) return "";
-  return (
-    (typeof lot.final === "string" && lot.final.trim()) ||
-    (typeof lot.part === "string" && lot.part.trim()) ||
-    (typeof lot.material === "string" && lot.material.trim()) ||
-    ""
-  );
+  return typeof lot.value === "string" ? lot.value.trim() : "";
 };
 
 const dateOnly = (value: string) => {

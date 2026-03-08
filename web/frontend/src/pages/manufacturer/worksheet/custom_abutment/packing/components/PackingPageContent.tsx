@@ -373,11 +373,11 @@ export const PackingPageContent = ({
 
       const caseInfos = req.caseInfos || {};
       const fullLotNumber = resolvePackFullLotNumber(req);
-      const labName =
-        String((req as any)?.requestorOrganizationId?.name || "").trim() ||
-        String((req as any)?.requestor?.organization || "").trim() ||
-        String((req as any)?.requestor?.name || "").trim() ||
-        "-";
+      const labName = requireNonEmptyString(
+        req.requestorOrganization?.name,
+        "사업자명",
+        req,
+      );
       const implantManufacturer = requireNonEmptyString(
         (caseInfos as any)?.implantManufacturer,
         "제조사",
