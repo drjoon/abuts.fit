@@ -456,11 +456,35 @@ const resolveLotShortCode = (request) => {
 const resolveMailboxCode = (request) =>
   String(request?.mailboxAddress || "").trim();
 
-const buildShippingRemark = (request) => {
-  const mailboxCode = resolveMailboxCode(request);
-  const screwCode = resolveLegacyScrewCode(request);
-  const lotShortCode = resolveLotShortCode(request);
-  return [mailboxCode, screwCode, lotShortCode].filter(Boolean).join(" / ");
+const resolveRequestOrganizationName = (request) => {
+  const requestor = request?.requestor || {};
+  const requestorOrg = request?.requestorOrganizationId || {};
+  const extracted = requestorOrg?.extracted || {};
+  return (
+    String(requestorOrg?.name || "").trim() ||
+    String(extracted?.companyName || "").trim() ||
+    String(requestor?.organization || "").trim() ||
+    String(request?.caseInfos?.clinicName || "").trim() ||
+    String(requestor?.name || "").trim()
+  );
+};
+
+const buildShippingRemark = ({
+  mailboxCode,
+  organizationName,
+  requestCount,
+}) => {
+  const quantityLabel =
+    Number.isFinite(Number(requestCount)) && Number(requestCount) > 0
+      ? `${Math.round(Number(requestCount))}건`
+      : "";
+  return [
+    String(mailboxCode || "").trim(),
+    String(organizationName || "").trim(),
+    quantityLabel,
+  ]
+    .filter(Boolean)
+    .join(" / ");
 };
 
 const buildHanjinInsertOrderBody = ({ mailbox, requests }) => {
@@ -694,6 +718,10 @@ const enrichHanjinAddressList = ({ addressList, metaByMsgKey = {} }) => {
       ).trim(),
       remark: String(row?.remark || meta?.remark || "").trim(),
       mailbox_code: String(row?.mailbox_code || meta?.mailboxCode || "").trim(),
+      organization_name: String(
+        row?.organization_name || meta?.organizationName || "",
+      ).trim(),
+      request_count: Number(row?.request_count || meta?.requestCount || 0),
       screw_code: String(row?.screw_code || meta?.screwCode || "").trim(),
       lot_short_code: String(
         row?.lot_short_code || meta?.lotShortCode || "",
@@ -818,74 +846,81 @@ const ensureHanjinEnv = () => {
 const buildHanjinDraftPayload = (requests) => {
   ensureHanjinEnv();
 
-  const mailboxToQuantity = new Map();
+  const mailboxGroupMap = new Map();
   for (const r of requests) {
     const mailbox = String(r?.mailboxAddress || "").trim();
     if (!mailbox) continue;
-    mailboxToQuantity.set(mailbox, (mailboxToQuantity.get(mailbox) || 0) + 1);
+    if (!mailboxGroupMap.has(mailbox)) {
+      mailboxGroupMap.set(mailbox, []);
+    }
+    mailboxGroupMap.get(mailbox).push(r);
   }
 
   const metaByMsgKey = {};
-  const addressList = requests.map((r) => {
-    const requestor = r.requestor || {};
-    const requestorOrg = r.requestorOrganizationId || {};
-    const extracted = requestorOrg.extracted || {};
-    const addr = requestor.address || {};
+  const addressList = Array.from(mailboxGroupMap.entries()).map(
+    ([mailbox, group]) => {
+      const first = Array.isArray(group) ? group[0] || {} : {};
+      const requestor = first.requestor || {};
+      const requestorOrg = first.requestorOrganizationId || {};
+      const extracted = requestorOrg.extracted || {};
+      const addr = requestor.address || {};
 
-    const clinicName = r.caseInfos?.clinicName || extracted.companyName || "";
-    const addressText =
-      addr.street ||
-      addr.address1 ||
-      addr.address2 ||
-      requestor.addressText ||
-      extracted.address ||
-      "";
+      const organizationName = resolveRequestOrganizationName(first);
+      const addressText =
+        addr.street ||
+        addr.address1 ||
+        addr.address2 ||
+        requestor.addressText ||
+        extracted.address ||
+        "";
 
-    const receiverZip = normalizeHanjinZip(
-      addr.zipCode || extracted.zipCode || "",
-    );
+      const receiverZip = normalizeHanjinZip(
+        addr.zipCode || extracted.zipCode || "",
+      );
 
-    const mailbox = String(r?.mailboxAddress || "").trim();
-    const quantity =
-      mailbox && mailboxToQuantity.has(mailbox)
-        ? mailboxToQuantity.get(mailbox)
-        : 1;
-    const orgName =
-      String(requestorOrg.name || "").trim() ||
-      String(extracted.companyName || "").trim() ||
-      String(requestor.organization || "").trim() ||
-      String(clinicName || "").trim() ||
-      String(requestor.name || "").trim();
+      const requestCount = Array.isArray(group) ? group.length : 0;
+      const remark = buildShippingRemark({
+        mailboxCode: mailbox,
+        organizationName,
+        requestCount,
+      });
 
-    const msgKey = `${mailbox || "-"} / ${orgName || "-"} / ${quantity}`
-      .replace(/[\r\n]+/g, " ")
-      .trim()
-      .slice(0, 100);
+      const msgKey =
+        `${mailbox || "-"} / ${organizationName || "-"} / ${requestCount}`
+          .replace(/[\r\n]+/g, " ")
+          .trim()
+          .slice(0, 100);
 
-    metaByMsgKey[msgKey] = {
-      mailboxCode: mailbox,
-      screwCode: resolveLegacyScrewCode(r),
-      lotShortCode: resolveLotShortCode(r),
-      lotFullNumber: resolveFullLotNumber(r),
-      remark: buildShippingRemark(r),
-    };
+      metaByMsgKey[msgKey] = {
+        mailboxCode: mailbox,
+        organizationName,
+        requestCount,
+        screwCode: resolveLegacyScrewCode(first),
+        lotShortCode: resolveLotShortCode(first),
+        lotFullNumber: resolveFullLotNumber(first),
+        remark,
+      };
 
-    return {
-      csr_num: HANJIN_CSR_NUM,
-      snd_zip: HANJIN_SHIPPER_ZIP,
-      rcv_zip: receiverZip,
-      address: addressText,
-      msg_key: msgKey,
-      receiver_name:
-        clinicName ||
-        requestor.name ||
-        extracted.representativeName ||
-        extracted.companyName ||
-        "",
-      receiver_phone:
-        requestor.phoneNumber || extracted.phoneNumber || requestor.phone || "",
-    };
-  });
+      return {
+        csr_num: HANJIN_CSR_NUM,
+        snd_zip: HANJIN_SHIPPER_ZIP,
+        rcv_zip: receiverZip,
+        address: addressText,
+        msg_key: msgKey,
+        receiver_name:
+          organizationName ||
+          requestor.name ||
+          extracted.representativeName ||
+          extracted.companyName ||
+          "",
+        receiver_phone:
+          requestor.phoneNumber ||
+          extracted.phoneNumber ||
+          requestor.phone ||
+          "",
+      };
+    },
+  );
 
   return {
     payload: {

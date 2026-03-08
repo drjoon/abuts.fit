@@ -260,7 +260,21 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
       const cenRaw = String(row.cen_nam || "").trim();
       const tml = isMeaningfulHanjinText(tmlRaw) ? tmlRaw : "";
       const cen = isMeaningfulHanjinText(cenRaw) ? cenRaw : "";
-      const remark = String(row.remark || row.msg_key || "").trim();
+      const mailboxCode = String(row.mailbox_code || "").trim();
+      const organizationName = String(row.organization_name || "").trim();
+      const requestCount = Number(row.request_count || 0);
+      const remark = String(
+        row.remark ||
+          [
+            mailboxCode,
+            organizationName,
+            requestCount > 0 ? `${requestCount}건` : "",
+          ]
+            .filter(Boolean)
+            .join(" / ") ||
+          row.msg_key ||
+          "",
+      ).trim();
       const printedYmd = String(
         row.prt_ymd || row.wbl_dt || new Date().toISOString().slice(0, 10),
       )
@@ -514,11 +528,7 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
         '700 28px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
       );
       fitText(
-        remark ||
-          [row.mailbox_code, row.screw_code, row.lot_short_code]
-            .filter(Boolean)
-            .join(" / ") ||
-          "-",
+        remark || "-",
         130,
         596,
         820,
@@ -578,8 +588,17 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     void zplLabels;
     for (const row of rows) {
       const wblNum = String(row.wbl_num || "").trim() || "unknown";
+      const mailboxCode = String(row.mailbox_code || "").trim() || "BOX";
+      const organizationName = String(row.organization_name || "")
+        .trim()
+        .replace(/[\\/:*?"<>|]+/g, "-")
+        .replace(/\s+/g, "_")
+        .slice(0, 30);
       const blob = await renderRowToPngBlob(row);
-      dir.file(`wbl_${wblNum}.png`, blob);
+      dir.file(
+        `wbl_${mailboxCode}${organizationName ? `_${organizationName}` : ""}_${wblNum}.png`,
+        blob,
+      );
     }
 
     const zipBlob = await zip.generateAsync({ type: "blob" });
