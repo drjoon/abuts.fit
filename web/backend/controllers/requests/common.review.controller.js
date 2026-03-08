@@ -744,6 +744,51 @@ export async function deleteStageFile(req, res) {
       if (prevStage) {
         applyStatusMapping(request, prevStage);
       }
+      request.productionSchedule = request.productionSchedule || {};
+      if (stage === "machining") {
+        request.productionSchedule.actualMachiningStart = null;
+        request.productionSchedule.actualMachiningComplete = null;
+        request.productionSchedule.assignedMachine = null;
+        request.productionSchedule.queuePosition = null;
+        request.assignedMachine = null;
+      }
+      if (stage === "packing") {
+        request.productionSchedule.actualMachiningStart = null;
+        request.productionSchedule.actualMachiningComplete = null;
+        request.productionSchedule.assignedMachine = null;
+        request.productionSchedule.queuePosition = null;
+        request.assignedMachine = null;
+        try {
+          const selected = await chooseMachineForCamMachining({
+            request,
+            requireCeil: true,
+          });
+          request.productionSchedule.assignedMachine = selected.machineId;
+          request.productionSchedule.queuePosition = selected.queuePosition;
+          if (selected.diameterGroup) {
+            request.productionSchedule.diameterGroup = selected.diameterGroup;
+          }
+          if (Number.isFinite(selected.diameter)) {
+            request.productionSchedule.diameter = selected.diameter;
+          }
+          request.assignedMachine = selected.machineId;
+          await Machine.updateOne(
+            { uid: selected.machineId },
+            { $set: { lastAssignmentAt: new Date() } },
+          );
+          console.log("[ROLLBACK-PACKING] reassigned machine", {
+            requestId: request?.requestId,
+            machineId: selected.machineId,
+            queuePosition: selected.queuePosition,
+            diameter: selected.diameter,
+          });
+        } catch (error) {
+          console.warn("[ROLLBACK-PACKING] machine reassignment failed", {
+            requestId: request?.requestId,
+            message: error?.message || String(error || ""),
+          });
+        }
+      }
       // 포장.발송 단계에서 롤백할 때 우편함 주소 해제
       if (stage === "shipping") {
         request.mailboxAddress = null;
