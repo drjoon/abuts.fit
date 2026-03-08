@@ -95,6 +95,46 @@ const getBusinessDraftStorageKey = (userId?: string | null) => {
   return `${BUSINESS_DRAFT_STORAGE_KEY}:${userId}`;
 };
 
+const createEmptyExtracted = (): LicenseExtracted => ({
+  companyName: "",
+  businessNumber: "",
+  address: "",
+  zipCode: "",
+  phoneNumber: "",
+  email: "",
+  representativeName: "",
+  businessType: "",
+  businessItem: "",
+  startDate: "",
+});
+
+const normalizeBusinessData = (
+  value?: Partial<BusinessData> | null,
+): BusinessData => ({
+  companyName: String(value?.companyName || "").trim(),
+  businessNumber: String(value?.businessNumber || "").trim(),
+  address: String(value?.address || "").trim(),
+  zipCode: String(value?.zipCode || "").trim(),
+  phone: String(value?.phone || "").trim(),
+});
+
+const normalizeExtracted = (
+  value?: Partial<LicenseExtracted> | null,
+): LicenseExtracted => ({
+  ...createEmptyExtracted(),
+  ...(value || {}),
+  companyName: String(value?.companyName || "").trim(),
+  businessNumber: String(value?.businessNumber || "").trim(),
+  address: String(value?.address || "").trim(),
+  zipCode: String(value?.zipCode || "").trim(),
+  phoneNumber: String(value?.phoneNumber || "").trim(),
+  email: String(value?.email || "").trim(),
+  representativeName: String(value?.representativeName || "").trim(),
+  businessType: String(value?.businessType || "").trim(),
+  businessItem: String(value?.businessItem || "").trim(),
+  startDate: String(value?.startDate || "").trim(),
+});
+
 type BusinessDraftPayload = {
   businessData: BusinessData;
   extracted: LicenseExtracted;
@@ -117,7 +157,11 @@ const readStoredBusinessDraft = (
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed?.businessData) return null;
-    return parsed;
+    return {
+      ...parsed,
+      businessData: normalizeBusinessData(parsed.businessData),
+      extracted: normalizeExtracted(parsed.extracted),
+    };
   } catch {
     return null;
   }
@@ -228,22 +272,19 @@ export const BusinessTab = ({
     hasAnyData: boolean;
   }>({ payload: null, hasAnyLicense: false, hasAnyData: false });
 
-  const [extracted, setExtracted] = useState<LicenseExtracted>({});
+  const [extracted, setExtracted] =
+    useState<LicenseExtracted>(createEmptyExtracted);
   const [isVerified, setIsVerified] = useState<boolean>(false);
 
-  const [businessData, setBusinessData] = useState<BusinessData>({
-    companyName: "",
-    businessNumber: "",
-    address: "",
-    zipCode: "",
-    phone: "",
-  });
+  const [businessData, setBusinessData] = useState<BusinessData>(() =>
+    normalizeBusinessData(),
+  );
   const [companyNameTouched, setCompanyNameTouched] = useState(false);
   const [errors, setErrors] = useState<Record<string, boolean>>({});
 
   const applyStoredDraft = useCallback((draft: BusinessDraftPayload) => {
-    setBusinessData(draft.businessData);
-    setExtracted(draft.extracted);
+    setBusinessData(normalizeBusinessData(draft.businessData));
+    setExtracted(normalizeExtracted(draft.extracted));
     setLicenseFileName(draft.licenseFileName);
     setLicenseFileId(draft.licenseFileId);
     setLicenseS3Key(draft.licenseS3Key);
@@ -601,7 +642,7 @@ export const BusinessTab = ({
       setLicenseS3Key("");
       setLicenseStatus("missing");
       setIsVerified(false);
-      setExtracted({});
+      setExtracted(createEmptyExtracted());
       setErrors({});
       setBusinessData((prev) => ({
         ...prev,
@@ -624,7 +665,7 @@ export const BusinessTab = ({
     setLicenseS3Key("");
     setLicenseStatus("missing");
     setIsVerified(false);
-    setExtracted({});
+    setExtracted(createEmptyExtracted());
     setErrors({});
     setBusinessData((prev) => ({
       ...prev,
@@ -664,7 +705,7 @@ export const BusinessTab = ({
         zipCode: "",
         phone: "",
       });
-      setExtracted({});
+      setExtracted(createEmptyExtracted());
       await refreshMembership();
       if (token) {
         await loginWithToken(token);
@@ -959,7 +1000,9 @@ export const BusinessTab = ({
 
         const body: any = res.data || {};
         const data = body.data || body;
-        const nextExtracted: LicenseExtracted = data?.extracted || {};
+        const nextExtracted: LicenseExtracted = normalizeExtracted(
+          data?.extracted || {},
+        );
         const verification = data?.verification;
         const hasAnyExtracted = Object.values(nextExtracted || {}).some((v) =>
           String(v || "").trim(),
@@ -1010,6 +1053,15 @@ export const BusinessTab = ({
         setIsVerified(!!data?.verification?.verified);
         setLicenseStatus("ready");
         processingToast.dismiss();
+
+        if (nextExtracted.address && !nextExtracted.zipCode) {
+          toast({
+            title: "주소는 인식됐지만 우편번호는 확인이 필요합니다",
+            description:
+              "주소 검색 버튼으로 우편번호를 선택한 뒤 저장해주세요.",
+            duration: 3500,
+          });
+        }
 
         if (
           String((verification as any)?.reason || "").trim() ===

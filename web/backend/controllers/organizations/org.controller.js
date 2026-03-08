@@ -971,6 +971,7 @@ export async function clearMyBusinessLicense(req, res) {
     const roleCheck = assertOrganizationRole(req, res);
     if (!roleCheck) return;
     const { organizationType } = roleCheck;
+    const orgTypeFilter = { organizationType };
 
     if (!req.user.organizationId) {
       return res.status(200).json({
@@ -1020,6 +1021,7 @@ export async function clearMyBusinessLicense(req, res) {
         },
         "extracted.companyName": "",
         "extracted.address": "",
+        "extracted.zipCode": "",
         "extracted.phoneNumber": "",
         "extracted.email": "",
         "extracted.representativeName": "",
