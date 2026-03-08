@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -71,6 +72,7 @@ export const PackingPageContent = ({
   const [selectedPackingRequestIds, setSelectedPackingRequestIds] = useState<
     string[]
   >([]);
+  const didInitPackingSelectionRef = useRef(false);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -293,8 +295,11 @@ export const PackingPageContent = ({
     setSelectedPackingRequestIds((prev) => {
       const validIds = new Set(allPackingRequestIds);
       const next = prev.filter((id) => validIds.has(id));
-      if (next.length > 0) return next;
-      return allPackingRequestIds;
+      if (!didInitPackingSelectionRef.current) {
+        didInitPackingSelectionRef.current = true;
+        return allPackingRequestIds;
+      }
+      return next;
     });
   }, [allPackingRequestIds]);
 

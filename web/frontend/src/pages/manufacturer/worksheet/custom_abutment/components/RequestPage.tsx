@@ -166,6 +166,7 @@ export const RequestPage = ({
   const [selectedPackingRequestIds, setSelectedPackingRequestIds] = useState<
     string[]
   >([]);
+  const didInitPackingSelectionRef = useRef(false);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -1093,8 +1094,11 @@ export const RequestPage = ({
         filteredAndSorted.map((req) => String(req._id || "")).filter(Boolean),
       );
       const next = prev.filter((id) => validIds.has(id));
-      if (next.length > 0) return next;
-      return Array.from(validIds);
+      if (!didInitPackingSelectionRef.current) {
+        didInitPackingSelectionRef.current = true;
+        return Array.from(validIds);
+      }
+      return next;
     });
   }, [filteredAndSorted, tabStage]);
 

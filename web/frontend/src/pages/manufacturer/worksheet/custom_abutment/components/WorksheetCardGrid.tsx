@@ -424,11 +424,22 @@ export const WorksheetCardGrid = ({
           e.stopPropagation();
         };
 
+        const handleToggleSelected = (e: React.MouseEvent) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onToggleSelected?.(request);
+        };
+
+        const handleOpenCardPreview = (e: React.MouseEvent) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onOpenPreview(request);
+        };
+
         return (
           <Card
             key={request._id}
-            onClick={() => onToggleSelected?.(request)}
-            className={`relative h-full border cursor-pointer ${
+            className={`relative h-full border ${
               isSelected
                 ? "border-blue-500 bg-blue-50/40"
                 : isCompletedForCurrentStage
@@ -437,12 +448,11 @@ export const WorksheetCardGrid = ({
             }`}
           >
             {onToggleSelected ? (
-              <input
-                type="checkbox"
-                checked={isSelected}
-                onChange={() => onToggleSelected(request)}
-                onClick={(e) => e.stopPropagation()}
-                className="absolute left-3 top-3 z-10 h-4 w-4 accent-blue-600"
+              <button
+                type="button"
+                onClick={handleToggleSelected}
+                className="absolute inset-0 z-0 rounded-xl"
+                aria-label={`${String(request.requestId || "의뢰")} 선택 토글`}
               />
             ) : null}
             <div className="absolute right-2 top-2 z-20 flex gap-1">
@@ -502,14 +512,22 @@ export const WorksheetCardGrid = ({
               </div>
             )}
             <CardContent
-              className={`p-3 flex-1 flex flex-col gap-2 ${
+              className={`relative z-10 p-3 flex-1 flex flex-col gap-2 ${
                 isNewSystemRequest ? "bg-emerald-50/40" : ""
               }`}
             >
-              <div className="space-y-2 text-[15px] text-slate-700 rounded-xl p-3 transition">
+              <div
+                className="space-y-2 text-[15px] text-slate-700 rounded-xl p-3 transition"
+                onClick={handleOpenCardPreview}
+              >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     {stageBadge}
+                    {shouldShowFullLot && (
+                      <Badge variant="outline" className={lotBadgeClass}>
+                        {lotCodeSource}
+                      </Badge>
+                    )}
                     {isNewSystemRequest && (
                       <Badge
                         variant="outline"
@@ -631,11 +649,6 @@ export const WorksheetCardGrid = ({
                           {sp.label}
                         </Badge>
                       )}
-                    {shouldShowFullLot && (
-                      <Badge variant="outline" className={lotBadgeClass}>
-                        {lotCodeSource}
-                      </Badge>
-                    )}
                   </div>
                 </div>
                 {/* 백그라운드 작업 실패 시 안내 메시지 */}
