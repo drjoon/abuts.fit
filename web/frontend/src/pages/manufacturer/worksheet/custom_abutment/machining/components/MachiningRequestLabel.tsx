@@ -6,9 +6,7 @@ type Props = {
   patientName?: string | null;
   tooth?: string | null;
   requestId?: string | null;
-  lotNumber?: string | null;
   className?: string;
-  lotBadgeClassName?: string;
 };
 
 export const MachiningRequestLabel = ({
@@ -17,24 +15,13 @@ export const MachiningRequestLabel = ({
   patientName,
   tooth,
   requestId,
-  lotNumber,
   className,
-  lotBadgeClassName,
 }: Props) => {
   const org = String(organization || "").trim();
   const clinic = String(clinicName || "").trim();
   const patient = String(patientName || "").trim() || "미지정";
   const t = String(tooth || "").trim() || "-";
   const rid = String(requestId || "").trim();
-
-  const lotBadge = String(lotNumber || "")
-    .trim()
-    .replace(/^CA(P)?/i, "")
-    .slice(-3);
-
-  const badgeClass =
-    lotBadgeClassName ||
-    "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200";
 
   const desktopParts = [org, clinic, patient, t, rid].filter(Boolean);
   const mobileParts = [clinic, patient, t].filter(Boolean);
@@ -54,7 +41,6 @@ export const MachiningRequestLabel = ({
         ) : (
           <span className="truncate">-</span>
         )}
-        {lotBadge ? <span className={badgeClass}>{lotBadge}</span> : null}
       </div>
 
       <div className="flex md:hidden flex-wrap items-center gap-2 text-sm text-slate-700 min-w-0">
@@ -70,7 +56,6 @@ export const MachiningRequestLabel = ({
         ) : (
           <span className="truncate">-</span>
         )}
-        {lotBadge ? <span className={badgeClass}>{lotBadge}</span> : null}
       </div>
     </div>
   );

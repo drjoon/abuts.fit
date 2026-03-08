@@ -538,6 +538,11 @@ export const PreviewModal = ({
   const realtimeToneClass = getRealtimeToneClass(
     activeReq?.realtimeProgress?.tone,
   );
+  const fullLotLabel = isRequestStage
+    ? ""
+    : String(
+        activeReq?.lotNumber?.final || activeReq?.lotNumber?.part || "",
+      ).trim();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -570,6 +575,14 @@ export const PreviewModal = ({
           )}
 
           <div className="flex items-center justify-end gap-2 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 shrink-0">
+            {fullLotLabel ? (
+              <Badge
+                variant="outline"
+                className="mr-1 text-[11px] px-2 py-0.5 font-semibold bg-violet-50 text-violet-700 border-violet-200"
+              >
+                {fullLotLabel}
+              </Badge>
+            ) : null}
             {!isRequestStage && (
               <button
                 type="button"

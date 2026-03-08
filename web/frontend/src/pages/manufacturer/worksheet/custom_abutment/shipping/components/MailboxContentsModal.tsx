@@ -28,15 +28,15 @@ export const MailboxContentsModal = ({
   onRollbackAll,
   isRollingBackAll = false,
 }: MailboxContentsModalProps) => {
-  const getLotLabel = (req: ManufacturerRequest) => {
-    const lot = req.lotNumber;
-    if (!lot) return "";
-    return (
-      (typeof lot.final === "string" && lot.final.trim()) ||
-      (typeof lot.part === "string" && lot.part.trim()) ||
-      (typeof lot.material === "string" && lot.material.trim()) ||
-      ""
-    );
+  const getLotShortCode = (req: ManufacturerRequest) => {
+    const full = String(
+      req.lotNumber?.final ||
+        req.lotNumber?.part ||
+        req.lotNumber?.material ||
+        "",
+    ).trim();
+    const match = full.match(/[A-Z]{3}$/i);
+    return match ? match[0].toUpperCase() : "";
   };
 
   const primaryOrganization =
@@ -118,9 +118,9 @@ export const MailboxContentsModal = ({
                     <ArrowLeft className="h-3 w-3" />
                   </Button>
                 )}
-                {getLotLabel(req) && (
-                  <Badge className="text-[11px] bg-purple-50 text-purple-700 border border-purple-200">
-                    {getLotLabel(req)}
+                {getLotShortCode(req) && (
+                  <Badge className="text-[11px] bg-slate-900 text-white border border-slate-900">
+                    {getLotShortCode(req)}
                   </Badge>
                 )}
               </div>
@@ -130,18 +130,15 @@ export const MailboxContentsModal = ({
                     {req.requestId}
                   </div>
                   <div className="text-xs text-slate-600 mt-1 space-y-0.5">
-                    {req.caseInfos?.clinicName && (
-                      <div>치과: {req.caseInfos.clinicName}</div>
+                    <div>
+                      {req.caseInfos?.clinicName || "-"} /{" "}
+                      {req.caseInfos?.patientName || "미지정"} /{" "}
+                      {req.caseInfos?.tooth || "-"}
+                    </div>
+                    {getLotShortCode(req) && (
+                      <div>LOT: {getLotShortCode(req)}</div>
                     )}
-                    {req.caseInfos?.patientName && (
-                      <div>환자: {req.caseInfos.patientName}</div>
-                    )}
-                    {req.caseInfos?.tooth && (
-                      <div>치아: {req.caseInfos.tooth}</div>
-                    )}
-                    {getImplantInfo(req) && (
-                      <div>임플란트: {getImplantInfo(req)}</div>
-                    )}
+                    {getImplantInfo(req) && <div>{getImplantInfo(req)}</div>}
                   </div>
                 </div>
               </div>

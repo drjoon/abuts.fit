@@ -4,7 +4,6 @@ import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import {
   normalizeCaseInfosImplantFields,
   computePriceForRequest,
-  ensureLotNumberForMachining,
   addKoreanBusinessDays,
   getTodayYmdInKst,
   toKstYmd,
@@ -186,8 +185,6 @@ export async function createRequest(req, res) {
                   : null,
               price: computedPrice,
             });
-
-            await ensureLotNumberForMachining(newRequest);
             newRequest.originalShipping = { mode: shippingMode, requestedAt };
             newRequest.shippingMode = shippingMode; // legacy
             newRequest.finalShipping = {
@@ -422,9 +419,6 @@ export async function createRequest(req, res) {
                   : null,
               price: computedPrice,
             });
-
-            await ensureLotNumberForMachining(newRequest);
-
             newRequest.originalShipping = { mode: shippingMode, requestedAt };
             newRequest.shippingMode = shippingMode; // legacy
             newRequest.finalShipping = {
@@ -590,8 +584,6 @@ export async function createRequest(req, res) {
           : null,
       price: computedPrice,
     });
-
-    await ensureLotNumberForMachining(newRequest);
 
     // 원본 배송 옵션 저장
     newRequest.originalShipping = {
@@ -1177,7 +1169,6 @@ export async function createRequestsBulk(req, res) {
             );
           }
 
-          await ensureLotNumberForMachining(newRequest);
           newRequest.originalShipping = { mode: shippingMode, requestedAt };
           newRequest.shippingMode = shippingMode; // legacy
           newRequest.finalShipping = {

@@ -266,6 +266,7 @@ export async function getAllRequests(req, res) {
       "requestId",
       "manufacturerStage",
       "createdAt",
+      "lotNumber",
       "mailboxAddress",
       "requestorOrganizationId",
       "referenceIds",

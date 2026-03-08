@@ -15,7 +15,6 @@ import {
   addKoreanBusinessDays,
   normalizeKoreanBusinessDay,
   getTodayYmdInKst,
-  ensureLotNumberForMachining,
   toKstYmd,
   getRequestorOrgId,
   normalizeRequestStage,
@@ -751,8 +750,6 @@ export async function createRequestsFromDraft(req, res) {
             caseInfos: item.caseInfosWithFile,
             manufacturerStage: "의뢰",
           };
-
-          await ensureLotNumberForMachining(newRequest);
 
           newRequest.originalShipping = {
             mode: shippingMode,

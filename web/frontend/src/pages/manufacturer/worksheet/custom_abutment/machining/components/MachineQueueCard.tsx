@@ -214,20 +214,9 @@ export const MachineQueueCard = ({
 
   const lastCompletedSummary = (() =>
     buildLastCompletedSummary(effectiveLastCompleted))();
-
-  const lastCompletedLotRaw = String(
-    (effectiveLastCompleted as any)?.lotNumber?.final ||
-      (effectiveLastCompleted as any)?.lotNumber?.part ||
-      "",
-  )
-    .trim()
-    .replace(/^CA(P)?/i, "");
   const lastCompletedRequestId = String(
     effectiveLastCompleted?.requestId || "",
   ).trim();
-
-  const machiningLotBadgeClass =
-    "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200";
 
   useEffect(() => {
     setCompletedRolledBack(false);
@@ -430,8 +419,6 @@ export const MachineQueueCard = ({
                       patientName={(effectiveLastCompleted as any)?.patientName}
                       tooth={(effectiveLastCompleted as any)?.tooth}
                       requestId={(effectiveLastCompleted as any)?.requestId}
-                      lotNumber={lastCompletedLotRaw}
-                      lotBadgeClassName={machiningLotBadgeClass}
                       className="text-[15px] leading-tight"
                     />
                   ) : (
@@ -525,12 +512,6 @@ export const MachineQueueCard = ({
                       patientName={currentSlot?.patientName}
                       tooth={(currentSlot as any)?.tooth}
                       requestId={currentSlot?.requestId}
-                      lotNumber={String(
-                        currentSlot?.lotNumber?.final ||
-                          currentSlot?.lotNumber?.part ||
-                          "",
-                      ).trim()}
-                      lotBadgeClassName={machiningLotBadgeClass}
                       className="text-[15px]"
                     />
                   ) : (
@@ -636,12 +617,6 @@ export const MachineQueueCard = ({
                       patientName={nextSlot?.patientName}
                       tooth={(nextSlot as any)?.tooth}
                       requestId={nextSlot?.requestId}
-                      lotNumber={String(
-                        nextSlot?.lotNumber?.final ||
-                          nextSlot?.lotNumber?.part ||
-                          "",
-                      ).trim()}
-                      lotBadgeClassName={machiningLotBadgeClass}
                       className="text-[15px]"
                     />
                   ) : (

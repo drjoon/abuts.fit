@@ -154,12 +154,6 @@ export const WorksheetCardGrid = ({
         const lotCodeSource = String(
           request.lotNumber?.final || request.lotNumber?.part || "",
         ).trim();
-        const rawLotSuffix = (() => {
-          const match = lotCodeSource.match(/[A-Z]{3}$/i);
-          return match ? match[0].toUpperCase() : "";
-        })();
-        const lotPart = String(request.lotNumber?.part || "").trim();
-        const lotPartDisplay = lotPart.replace(/^CA(P)?/i, "").trim();
         const camMaterialDiameter = (() => {
           const sched = request.productionSchedule || {};
           const raw = Number(sched.diameter);
@@ -210,6 +204,8 @@ export const WorksheetCardGrid = ({
           requestStageOrder > currentStageOrder;
 
         const stageForRollback = deriveStageForFilter(request);
+        const shouldShowFullLot =
+          !!lotCodeSource && stageOrder[stageForRollback] >= stageOrder["CAM"];
         const rollbackCountFromRequest = Number(
           caseInfos.rollbackCounts?.request || 0,
         );
@@ -504,16 +500,6 @@ export const WorksheetCardGrid = ({
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     {stageBadge}
-                    {rawLotSuffix &&
-                      (stageForRollback === "CAM" ||
-                        stageOrder[stageForRollback] >= stageOrder["CAM"]) && (
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] px-2 py-0.5 font-bold uppercase tracking-[0.08em] bg-slate-900/80 text-white border-transparent"
-                        >
-                          LOT {rawLotSuffix}
-                        </Badge>
-                      )}
                     {isNewSystemRequest && (
                       <Badge
                         variant="outline"
@@ -589,13 +575,11 @@ export const WorksheetCardGrid = ({
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
-                  <span>환자 {caseInfos.patientName || "미지정"}</span>
-                  {caseInfos.tooth && (
-                    <>
-                      <span>•</span>
-                      <span>치아번호 {caseInfos.tooth}</span>
-                    </>
-                  )}
+                  <span>
+                    치과: {caseInfos.clinicName || "-"} /{" "}
+                    {caseInfos.patientName || "미지정"} /{" "}
+                    {caseInfos.tooth || "-"}
+                  </span>
                   {caseInfos.connectionDiameter && (
                     <>
                       <span>•</span>
@@ -637,9 +621,9 @@ export const WorksheetCardGrid = ({
                           {sp.label}
                         </Badge>
                       )}
-                    {lotPartDisplay && (
+                    {shouldShowFullLot && (
                       <Badge variant="outline" className={lotBadgeClass}>
-                        {lotPartDisplay}
+                        {lotCodeSource}
                       </Badge>
                     )}
                   </div>
