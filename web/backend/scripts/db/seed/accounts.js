@@ -34,6 +34,30 @@ async function grantRequestorSeedCredit({
   return true;
 }
 
+async function grantRequestorWelcomeBonus({
+  organizationId,
+  userId,
+  uniqueKey,
+  amount = 30000,
+}) {
+  const ledgerKey = `seed:requestor-welcome-bonus:${uniqueKey}`;
+  const existing = await CreditLedger.findOne({ uniqueKey: ledgerKey })
+    .select({ _id: 1 })
+    .lean();
+  if (existing) return false;
+
+  await CreditLedger.create({
+    organizationId,
+    userId,
+    type: "BONUS",
+    amount,
+    refType: "WELCOME_BONUS",
+    refId: organizationId,
+    uniqueKey: ledgerKey,
+  });
+  return true;
+}
+
 export async function seedDefaultAccounts() {
   const passwords = {
     requestorOwner: "Rq!8zY#4fQ@7nC5$",
@@ -99,6 +123,11 @@ export async function seedDefaultAccounts() {
     organizationId: requestorOrg._id,
     userId: requestorStaff._id,
     uniqueKey: requestorStaff.email,
+  });
+  await grantRequestorWelcomeBonus({
+    organizationId: requestorOrg._id,
+    userId: requestorOwner._id,
+    uniqueKey: requestorOrg._id,
   });
 
   const manufacturerOwner = await findOrCreateUser({
@@ -419,6 +448,11 @@ export async function seedBulkAccounts({
       organizationId: org._id,
       userId: owner._id,
       uniqueKey: owner.email,
+    });
+    await grantRequestorWelcomeBonus({
+      organizationId: org._id,
+      userId: owner._id,
+      uniqueKey: org._id,
     });
   }
 
