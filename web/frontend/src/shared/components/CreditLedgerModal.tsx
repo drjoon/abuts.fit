@@ -51,6 +51,8 @@ type CreditLedgerItem = {
   tooth?: string;
   clinicName?: string;
   manufacturerStage?: string;
+  bonusReason?: string;
+  trackingNumbers?: string[];
   lotNumber?: {
     value?: string;
   } | null;
@@ -107,12 +109,26 @@ const formatShortCode = (value: string) => {
   return s || "-";
 };
 
+const REF_TYPE_LABELS: Record<string, string> = {
+  SHIPPING_PACKAGE: "택배비",
+  REQUEST: "의뢰",
+  WELCOME_BONUS: "가입 축하 보너스",
+  SEED_REQUESTOR_CHARGE: "시드 초기 충전",
+};
+
 const refTypeLabel = (refType?: string) => {
   const t = String(refType || "").trim();
   if (!t) return "-";
-  if (t === "SHIPPING_FEE") return "배송비 (발송 1회)";
-  if (t === "REQUEST") return "의뢰";
-  return t;
+  return REF_TYPE_LABELS[t] || t;
+};
+
+const formatTrackingNumbers = (trackingNumbers?: string[]) => {
+  const values = Array.isArray(trackingNumbers)
+    ? trackingNumbers.map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
+  if (values.length === 0) return "-";
+  if (values.length === 1) return values[0];
+  return `${values[0]} 외 ${values.length - 1}건`;
 };
 
 const hashToBase36 = (input: string) => {
@@ -134,6 +150,92 @@ const formatRequestIdSafe = (requestId?: string, seed?: string) => {
     .padStart(6, "0")
     .slice(-6);
   return `${datePart}-${code}`;
+};
+
+const renderTransactionDetail = ({
+  item,
+  safeRef,
+  onOpenRequestDetail,
+}: {
+  item: CreditLedgerItem;
+  safeRef: string;
+  onOpenRequestDetail: () => void;
+}) => {
+  const refType = String(item.refType || "");
+  const requestSummary = item.refRequestSummary;
+  const shortCode = safeRef || formatShortCode(String(item.uniqueKey || ""));
+
+  if (refType === "REQUEST") {
+    return (
+      <>
+        <span className="text-[11px] text-muted-foreground">
+          {refTypeLabel(refType)}
+        </span>
+        <span className="pt-1 font-mono text-xs font-semibold text-slate-900">
+          {shortCode}
+        </span>
+        <span className="pt-1 text-[11px] text-slate-700">
+          {requestSummary?.clinicName || item.clinicName || "-"} /{" "}
+          {requestSummary?.patientName || item.patientName || "-"} /{" "}
+          {requestSummary?.tooth || item.tooth || "-"}
+        </span>
+        <div className="pt-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-6 px-2 text-[11px]"
+            onClick={onOpenRequestDetail}
+          >
+            자세히 보기
+          </Button>
+        </div>
+      </>
+    );
+  }
+
+  if (refType === "SHIPPING_PACKAGE") {
+    return (
+      <>
+        <span className="text-[11px] text-muted-foreground">
+          {refTypeLabel(refType)}
+        </span>
+        <span className="pt-1 font-mono text-xs font-semibold text-slate-900">
+          {shortCode}
+        </span>
+        <span className="pt-1 text-[11px] text-slate-700">
+          송장번호 {formatTrackingNumbers(item.trackingNumbers)}
+        </span>
+      </>
+    );
+  }
+
+  if (refType === "WELCOME_BONUS") {
+    return (
+      <>
+        <span className="text-[11px] text-muted-foreground">
+          {refTypeLabel(refType)}
+        </span>
+        <span className="pt-1 font-mono text-xs font-semibold text-slate-900">
+          {shortCode}
+        </span>
+        <span className="pt-1 text-[11px] text-slate-700">
+          {item.bonusReason || "보너스 지급"}
+        </span>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <span className="text-[11px] text-muted-foreground">
+        {refTypeLabel(refType)}
+      </span>
+      <span className="pt-1 font-mono text-xs font-semibold text-slate-900">
+        {shortCode}
+      </span>
+    </>
+  );
 };
 
 export const CreditLedgerModal = ({
@@ -369,7 +471,7 @@ export const CreditLedgerModal = ({
                 <Input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="검색 (참조/코드/refId)"
+                  placeholder="검색 (거래내역/코드/refId)"
                   className="h-9 w-full sm:w-[320px]"
                 />
               </div>
@@ -386,7 +488,7 @@ export const CreditLedgerModal = ({
                     <TableHead className="w-[80px]">유형</TableHead>
                     <TableHead className="w-[110px] text-right">금액</TableHead>
                     <TableHead className="w-[110px] text-right">잔액</TableHead>
-                    <TableHead>참조</TableHead>
+                    <TableHead>거래내역</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -442,34 +544,12 @@ export const CreditLedgerModal = ({
                         </TableCell>
                         <TableCell className="text-xs">
                           <div className="flex flex-col leading-4">
-                            <span className="font-mono text-xs font-semibold">
-                              {safeRef ||
-                                formatShortCode(String(r.uniqueKey || ""))}
-                            </span>
-                            <span className="text-[11px] text-muted-foreground">
-                              {refTypeLabel(r.refType)}
-                            </span>
-                            {String(r.refType || "") === "REQUEST" &&
-                              (r.patientName || r.tooth) && (
-                                <span className="pt-1 text-[11px] text-slate-700">
-                                  {r.patientName || "-"} / {r.tooth || "-"}
-                                </span>
-                              )}
-                            {String(r.refType || "") === "REQUEST" && (
-                              <div className="pt-1">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-6 px-2 text-[11px]"
-                                  onClick={() =>
-                                    setSelectedDetail(toRequestDetail(r))
-                                  }
-                                >
-                                  자세히
-                                </Button>
-                              </div>
-                            )}
+                            {renderTransactionDetail({
+                              item: r,
+                              safeRef,
+                              onOpenRequestDetail: () =>
+                                setSelectedDetail(toRequestDetail(r)),
+                            })}
                           </div>
                         </TableCell>
                       </TableRow>

@@ -1,7 +1,10 @@
 import CreditLedger from "../../models/creditLedger.model.js";
+import BonusGrant from "../../models/bonusGrant.model.js";
 import ChargeOrder from "../../models/chargeOrder.model.js";
 import BankTransaction from "../../models/bankTransaction.model.js";
+import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import ShippingPackage from "../../models/shippingPackage.model.js";
 import User from "../../models/user.model.js";
 import SalesmanLedger from "../../models/salesmanLedger.model.js";
 import Request from "../../models/request.model.js";
@@ -18,6 +21,26 @@ function normalizeNumber(n) {
   const v = Number(n || 0);
   if (!Number.isFinite(v)) return 0;
   return Math.round(v);
+}
+
+function buildRequestSummary(doc) {
+  if (!doc?._id) return null;
+  return {
+    requestId: String(doc.requestId || ""),
+    manufacturerStage: String(doc.manufacturerStage || ""),
+    patientName: String(doc?.caseInfos?.patientName || ""),
+    tooth: String(doc?.caseInfos?.tooth || ""),
+    clinicName: String(doc?.caseInfos?.clinicName || ""),
+    lotNumber: {
+      value: String(doc?.lotNumber?.value || ""),
+    },
+  };
+}
+
+function parseBonusGrantIdFromUniqueKey(uniqueKey) {
+  const raw = String(uniqueKey || "").trim();
+  const m = raw.match(/^bonus_grant:(.+)$/);
+  return m ? m[1] : "";
 }
 
 function parseYmd(ymd) {
@@ -559,27 +582,173 @@ export async function adminGetOrganizationLedger(req, res) {
       ),
     );
 
+    const shippingPackageRefIds = Array.from(
+      new Set(
+        (items || [])
+          .filter(
+            (it) =>
+              String(it?.refType || "") === "SHIPPING_PACKAGE" &&
+              it?.refId &&
+              Types.ObjectId.isValid(String(it.refId)),
+          )
+          .map((it) => String(it.refId)),
+      ),
+    );
+
+    const welcomeBonusGrantIds = Array.from(
+      new Set(
+        (items || [])
+          .filter((it) => String(it?.refType || "") === "WELCOME_BONUS")
+          .map((it) => parseBonusGrantIdFromUniqueKey(it?.uniqueKey))
+          .filter((id) => Types.ObjectId.isValid(id)),
+      ),
+    );
+
     const refRequestIdById = new Map();
+    const refRequestSummaryById = new Map();
     if (requestRefIds.length > 0) {
       const requestDocs = await Request.find({
         _id: { $in: requestRefIds.map((id) => new Types.ObjectId(id)) },
       })
-        .select({ _id: 1, requestId: 1 })
+        .select({
+          _id: 1,
+          requestId: 1,
+          manufacturerStage: 1,
+          lotNumber: 1,
+          "caseInfos.patientName": 1,
+          "caseInfos.tooth": 1,
+          "caseInfos.clinicName": 1,
+        })
         .lean();
 
       for (const doc of requestDocs || []) {
         if (doc?._id) {
           refRequestIdById.set(String(doc._id), String(doc.requestId || ""));
+          refRequestSummaryById.set(String(doc._id), buildRequestSummary(doc));
         }
       }
     }
 
+    const shippingTrackingNumbersByPackageId = new Map();
+    if (shippingPackageRefIds.length > 0) {
+      const packageDocs = await ShippingPackage.find({
+        _id: { $in: shippingPackageRefIds.map((id) => new Types.ObjectId(id)) },
+      })
+        .select({ _id: 1, requestIds: 1 })
+        .lean();
+
+      const requestIdSet = new Set();
+      for (const pkg of packageDocs || []) {
+        for (const requestId of pkg?.requestIds || []) {
+          if (requestId) requestIdSet.add(String(requestId));
+        }
+      }
+
+      const deliveryInfoByRequestId = new Map();
+      if (requestIdSet.size > 0) {
+        const deliveryInfos = await DeliveryInfo.find({
+          request: {
+            $in: Array.from(requestIdSet).map((id) => new Types.ObjectId(id)),
+          },
+        })
+          .select({ request: 1, trackingNumber: 1 })
+          .lean();
+
+        for (const delivery of deliveryInfos || []) {
+          if (delivery?.request) {
+            deliveryInfoByRequestId.set(
+              String(delivery.request),
+              String(delivery.trackingNumber || ""),
+            );
+          }
+        }
+      }
+
+      for (const pkg of packageDocs || []) {
+        const trackingNumbers = Array.from(
+          new Set(
+            (pkg?.requestIds || [])
+              .map(
+                (requestId) =>
+                  deliveryInfoByRequestId.get(String(requestId)) || "",
+              )
+              .filter(Boolean),
+          ),
+        );
+        shippingTrackingNumbersByPackageId.set(
+          String(pkg._id),
+          trackingNumbers,
+        );
+      }
+    }
+
+    const welcomeBonusReasonByGrantId = new Map();
+    if (welcomeBonusGrantIds.length > 0) {
+      const grants = await BonusGrant.find({
+        _id: { $in: welcomeBonusGrantIds.map((id) => new Types.ObjectId(id)) },
+      })
+        .select({ _id: 1, source: 1, overrideReason: 1, businessNumber: 1 })
+        .lean();
+
+      for (const grant of grants || []) {
+        if (!grant?._id) continue;
+        const source = String(grant.source || "");
+        const overrideReason = String(grant.overrideReason || "").trim();
+        const businessNumber = String(grant.businessNumber || "").trim();
+        let reason = "가입 축하 크레딧";
+        if (source === "admin" && overrideReason) {
+          reason = `관리자 지급 · ${overrideReason}`;
+        } else if (source === "migrated") {
+          reason = "시드/마이그레이션 가입 축하 크레딧";
+        }
+        if (businessNumber) {
+          reason = `${reason} · 사업자번호 ${businessNumber}`;
+        }
+        welcomeBonusReasonByGrantId.set(String(grant._id), reason);
+      }
+    }
+
     const enrichedItems = (items || []).map((it) => {
-      if (String(it?.refType || "") !== "REQUEST") return it;
-      const refRequestId = it?.refId
-        ? refRequestIdById.get(String(it.refId)) || ""
-        : "";
-      return { ...it, refRequestId };
+      const refType = String(it?.refType || "");
+      if (refType === "REQUEST") {
+        const refId = it?.refId ? String(it.refId) : "";
+        const refRequestId = refId ? refRequestIdById.get(refId) || "" : "";
+        const requestSummary = refId
+          ? refRequestSummaryById.get(refId) || null
+          : null;
+        return {
+          ...it,
+          refRequestId,
+          refRequestSummary: requestSummary,
+          patientName: requestSummary?.patientName || "",
+          tooth: requestSummary?.tooth || "",
+          clinicName: requestSummary?.clinicName || "",
+          manufacturerStage: requestSummary?.manufacturerStage || "",
+          lotNumber: requestSummary?.lotNumber || null,
+        };
+      }
+
+      if (refType === "SHIPPING_PACKAGE") {
+        const refId = it?.refId ? String(it.refId) : "";
+        return {
+          ...it,
+          trackingNumbers: refId
+            ? shippingTrackingNumbersByPackageId.get(refId) || []
+            : [],
+        };
+      }
+
+      if (refType === "WELCOME_BONUS") {
+        const grantId = parseBonusGrantIdFromUniqueKey(it?.uniqueKey);
+        return {
+          ...it,
+          bonusReason: grantId
+            ? welcomeBonusReasonByGrantId.get(grantId) || ""
+            : "",
+        };
+      }
+
+      return it;
     });
 
     return res.json({
