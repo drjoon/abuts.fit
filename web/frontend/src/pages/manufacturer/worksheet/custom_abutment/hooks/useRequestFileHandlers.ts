@@ -113,6 +113,25 @@ export const useRequestFileHandlers = ({
     [matchesCurrentPage, setRequests],
   );
 
+  const removeSingleRequest = useCallback(
+    (targetRequest: ManufacturerRequest | null | undefined) => {
+      if (!targetRequest || !setRequests) return false;
+      const requestId = String(targetRequest.requestId || "").trim();
+      const mongoId = String(targetRequest._id || "").trim();
+      setRequests((prev) =>
+        prev.filter((item) => {
+          const itemRequestId = String(item?.requestId || "").trim();
+          const itemMongoId = String(item?._id || "").trim();
+          if (requestId && itemRequestId === requestId) return false;
+          if (mongoId && itemMongoId === mongoId) return false;
+          return true;
+        }),
+      );
+      return true;
+    },
+    [setRequests],
+  );
+
   const downloadByEndpoint = useCallback(
     async (endpoint: string, errorMessage: string) => {
       if (!token) return;
@@ -341,12 +360,20 @@ export const useRequestFileHandlers = ({
         if (!res.ok) {
           throw new Error("delete cam file failed");
         }
+        const body = await res
+          .clone()
+          .json()
+          .catch(() => null);
+        const updatedRequest = (body?.data ||
+          null) as ManufacturerRequest | null;
         toast({
           title: "롤백 완료",
           description: "의뢰 단계로 되돌렸습니다.",
         });
-
-        await fetchRequests();
+        const patched = applySingleRequestPatch(updatedRequest);
+        if (!patched) {
+          removeSingleRequest(req);
+        }
 
         if (navigate) {
           setPreviewOpen(false);
@@ -368,6 +395,8 @@ export const useRequestFileHandlers = ({
       token,
       toast,
       fetchRequests,
+      applySingleRequestPatch,
+      removeSingleRequest,
       setDeletingCam,
       setPreviewOpen,
       setPreviewFiles,
@@ -402,12 +431,21 @@ export const useRequestFileHandlers = ({
         if (!res.ok) {
           throw new Error("delete nc file failed");
         }
+        const body = await res
+          .clone()
+          .json()
+          .catch(() => null);
+        const updatedRequest = (body?.data ||
+          null) as ManufacturerRequest | null;
         const stageLabel = targetStage === "request" ? "의뢰" : "CAM";
         toast({
           title: "롤백 완료",
           description: `${stageLabel} 단계로 되돌렸습니다.`,
         });
-        await fetchRequests();
+        const patched = applySingleRequestPatch(updatedRequest);
+        if (!patched) {
+          removeSingleRequest(req);
+        }
 
         if (navigate) {
           setPreviewOpen(false);
@@ -429,6 +467,8 @@ export const useRequestFileHandlers = ({
       token,
       toast,
       fetchRequests,
+      applySingleRequestPatch,
+      removeSingleRequest,
       setDeletingNc,
       setPreviewOpen,
       setPreviewNcText,
@@ -684,6 +724,7 @@ export const useRequestFileHandlers = ({
       uploadFiles,
       toast,
       fetchRequests,
+      applySingleRequestPatch,
       decodeNcText,
       setUploading,
       setUploadProgress,
@@ -760,8 +801,16 @@ export const useRequestFileHandlers = ({
           title: "업로드 완료",
           description: "파일이 저장되었습니다.",
         });
-
-        await fetchRequests();
+        const body = await res
+          .clone()
+          .json()
+          .catch(() => null);
+        const updatedRequest = (body?.data ||
+          null) as ManufacturerRequest | null;
+        const patched = applySingleRequestPatch(updatedRequest);
+        if (!patched) {
+          await fetchRequests();
+        }
 
         if (params.stage === "machining") {
           try {
@@ -795,6 +844,7 @@ export const useRequestFileHandlers = ({
       uploadFiles,
       toast,
       fetchRequests,
+      applySingleRequestPatch,
       setUploading,
       setUploadProgress,
       setPreviewStageUrl,
@@ -834,6 +884,12 @@ export const useRequestFileHandlers = ({
         if (!res.ok) {
           throw new Error("delete stage file failed");
         }
+        const body = await res
+          .clone()
+          .json()
+          .catch(() => null);
+        const updatedRequest = (body?.data ||
+          null) as ManufacturerRequest | null;
 
         toast(
           rollbackOnly
@@ -846,7 +902,10 @@ export const useRequestFileHandlers = ({
                 description: "파일을 삭제했습니다.",
               },
         );
-        await fetchRequests();
+        const patched = applySingleRequestPatch(updatedRequest);
+        if (!patched) {
+          removeSingleRequest(params.req);
+        }
 
         if (navigate) {
           if (params.stage === "machining" && !rollbackOnly) {
@@ -876,6 +935,8 @@ export const useRequestFileHandlers = ({
       token,
       toast,
       fetchRequests,
+      applySingleRequestPatch,
+      removeSingleRequest,
       setUploading,
       setPreviewStageUrl,
       setPreviewStageName,

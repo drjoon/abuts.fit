@@ -341,18 +341,11 @@ export function useWorksheetRealtimeStatus({
       if (fetchRequests) void fetchRequests(true);
     });
 
-    const handleRequestRollback = () => {
-      if (fetchRequests) void fetchRequests();
-    };
-
-    window.addEventListener("request-rollback", handleRequestRollback);
-
     return () => {
       if (typeof unsubBg === "function") unsubBg();
       if (typeof unsubAppEvent === "function") unsubAppEvent();
       if (typeof unsubTick === "function") unsubTick();
       if (typeof unsubCompleted === "function") unsubCompleted();
-      window.removeEventListener("request-rollback", handleRequestRollback);
     };
   }, [
     enabled,
