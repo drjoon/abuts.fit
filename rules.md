@@ -185,6 +185,15 @@
 - 팝빌 작업은 web에서 직접 처리하지 않고 큐 + 전용 워커가 처리합니다.
 - 모든 큐 작업은 idempotency key를 둡니다.
 
+### 6.7 한진 REST 인증
+
+- 한진 REST API의 인증 SSOT는 최신 스펙 문서입니다.
+- Authorization 헤더는 `HMAC-SHA256 Credential=...` 같은 AWS 스타일을 사용하지 않습니다.
+- 한진 REST Authorization 형식은 반드시 `client_id={CLIENT_ID} timestamp={yyyyMMddHHmmss} signature={hex_hmac}` 를 사용합니다.
+- signature 원문은 `timestamp + METHOD + queryString + secretKey` 순서이며, 결과 인코딩은 `hex` 입니다.
+- `customer-check` 검증 성공(`resultCode=OK`)을 기준으로 인증 로직을 확인한 뒤 주문/취소 API를 연동합니다.
+- 한진 REST 주문/취소/고객검증 경로는 문서 기준 `/parcel-delivery/v1/...` 를 우선 사용합니다.
+
 ## 7. BG 서비스 규칙
 
 ### 7.1 배치와 포트

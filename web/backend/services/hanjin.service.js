@@ -6,7 +6,6 @@ const apiKey = String(process.env.HANJIN_API_KEY || "").trim();
 const secretKey = String(process.env.HANJIN_SECRET_KEY || "").trim();
 
 const DEFAULT_TIMEOUT_MS = Number(process.env.HANJIN_TIMEOUT_MS || 15000);
-const SIGNED_HEADERS = ["content-type", "x-api-key", "x-amz-date"];
 
 function sanitizeForLog(value) {
   if (value == null) return value;
@@ -64,37 +63,33 @@ function formatKstTimestamp(date = new Date()) {
   return `${map.year}${map.month}${map.day}${map.hour}${map.minute}${map.second}`;
 }
 
-function canonicalizeBody(body) {
-  if (body == null) return "";
-  if (typeof body === "string") return body;
-  return JSON.stringify(body);
+function canonicalizeQuery(params) {
+  if (!params) return "";
+  const searchParams = new URLSearchParams();
+  for (const [key, rawValue] of Object.entries(params)) {
+    if (rawValue == null) continue;
+    if (Array.isArray(rawValue)) {
+      for (const item of rawValue) {
+        if (item == null) continue;
+        searchParams.append(key, String(item));
+      }
+      continue;
+    }
+    searchParams.append(key, String(rawValue));
+  }
+  return searchParams.toString();
 }
 
-function buildSignature({ method, path, timestamp, body }) {
+function buildSignature({ method, timestamp, params }) {
   ensureConfigured();
-  const canonical = [
-    method.toUpperCase(),
-    path,
-    timestamp,
-    canonicalizeBody(body),
-  ].join("\n");
-  return crypto
-    .createHmac("sha256", secretKey)
-    .update(canonical)
-    .digest("base64");
+  const queryString = canonicalizeQuery(params);
+  const canonical = `${timestamp}${String(method || "GET").toUpperCase()}${queryString}${secretKey}`;
+  return crypto.createHmac("sha256", secretKey).update(canonical).digest("hex");
 }
 
-function buildAuthorizationHeader({
-  method,
-  path,
-  timestamp,
-  body,
-  signedHeaders = SIGNED_HEADERS,
-}) {
-  const signature = buildSignature({ method, path, timestamp, body });
-  return `HMAC-SHA256 Credential=${clientId}, SignedHeaders=${signedHeaders.join(
-    ";",
-  )}, Signature=${signature}`;
+function buildAuthorizationHeader({ method, timestamp, params }) {
+  const signature = buildSignature({ method, timestamp, params });
+  return `client_id=${clientId} timestamp=${timestamp} signature=${signature}`;
 }
 
 function resolveUrl(baseUrl, path = "/") {
@@ -104,12 +99,6 @@ function resolveUrl(baseUrl, path = "/") {
     url: url.toString(),
     canonicalPath: url.pathname + (url.search || ""),
   };
-}
-
-function formatAwsDate(date = new Date()) {
-  return (
-    date.toISOString().replace(/[-:]/g, "").replace(".", "").slice(0, 15) + "Z"
-  );
 }
 
 async function requestHanjin({
@@ -125,13 +114,10 @@ async function requestHanjin({
   const { url, canonicalPath } = resolveUrl(baseUrl, path);
   const now = new Date();
   const timestamp = formatKstTimestamp(now);
-  const amzDate = formatAwsDate(now);
   const authorization = buildAuthorizationHeader({
     method,
-    path: canonicalPath,
     timestamp,
-    body: data,
-    signedHeaders: SIGNED_HEADERS,
+    params,
   });
 
   console.log("[hanjin] outbound request", {
@@ -154,8 +140,6 @@ async function requestHanjin({
       headers: {
         "Content-Type": "application/json",
         "x-api-key": apiKey,
-        "X-Amz-Date": amzDate,
-        Date: new Date().toUTCString(),
         Authorization: authorization,
         ...headers,
       },

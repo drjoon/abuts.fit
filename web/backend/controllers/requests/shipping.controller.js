@@ -355,6 +355,7 @@ const HANJIN_PATH_FALLBACKS = {
   HANJIN_PRINT_WBL_PATH: "/v1/wbl/{client_id}/print-wbls",
   HANJIN_PICKUP_REQUEST_PATH: "/parcel-delivery/v1/order/insert-order",
   HANJIN_PICKUP_CANCEL_PATH: "/parcel-delivery/v1/order/cancel-order",
+  HANJIN_CUSTOMER_CHECK_PATH: "/parcel-delivery/v1/customer/customer-check",
 };
 
 const HANJIN_SENDER_ZIP = String(
@@ -371,6 +372,63 @@ const HANJIN_SENDER_TEL = String(process.env.HANJIN_SENDER_TEL || "").trim();
 const HANJIN_SENDER_MOBILE = String(
   process.env.HANJIN_SENDER_MOBILE || "",
 ).trim();
+
+export async function validateHanjinCustomerCheck(req, res) {
+  try {
+    ensureHanjinEnv();
+
+    const cntractNo = String(
+      req.query?.cntractNo || process.env.HANJIN_CSR_NUM || "",
+    ).trim();
+    const custBizNo = String(req.query?.custBizNo || "").trim();
+
+    if (!cntractNo) {
+      return res.status(400).json({
+        success: false,
+        message: "cntractNo가 필요합니다.",
+      });
+    }
+
+    const path = resolveHanjinPath(
+      "HANJIN_CUSTOMER_CHECK_PATH",
+      HANJIN_PATH_FALLBACKS.HANJIN_CUSTOMER_CHECK_PATH,
+    );
+    const params = {
+      cntractNo,
+      ...(custBizNo ? { custBizNo } : {}),
+    };
+
+    console.log("[hanjin][customer-check] request", {
+      path,
+      params,
+    });
+
+    const data = await hanjinService.requestCustomerApi({
+      path,
+      method: "GET",
+      params,
+    });
+
+    console.log("[hanjin][customer-check] response", {
+      path,
+      params,
+      data,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error("Error in validateHanjinCustomerCheck:", error);
+    return res.status(error?.status || 500).json({
+      success: false,
+      message: "한진 계약번호 검증 중 오류가 발생했습니다.",
+      error: error.message,
+      data: error?.data,
+    });
+  }
+}
 
 const ensureHanjinSenderEnv = () => {
   if (!HANJIN_SENDER_ZIP) {

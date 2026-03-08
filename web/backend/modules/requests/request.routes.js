@@ -167,6 +167,13 @@ router.post(
   requestController.printHanjinLabels,
 );
 
+router.get(
+  "/shipping/hanjin/customer-check",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.validateHanjinCustomerCheck,
+);
+
 // 한진 택배 수거 접수
 router.post(
   "/shipping/hanjin/pickup",

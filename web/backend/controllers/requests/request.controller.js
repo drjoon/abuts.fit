@@ -51,6 +51,7 @@ export const {
   registerShipment,
   rollbackMailboxShipping,
   printHanjinLabels,
+  validateHanjinCustomerCheck,
   requestHanjinPickup,
   cancelHanjinPickup,
   simulateHanjinWebhook,
