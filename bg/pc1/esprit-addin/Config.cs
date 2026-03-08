@@ -22,6 +22,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public const string TurningExtendEnv = "ABUTS_TURNING_EXTEND";
         public const string RoughfreeformSplitEnableEnv = "ABUTS_ROUGHFREEFORM_SPLIT_ENABLE";
         public const string CompositeSplitEnableEnv = "ABUTS_COMPOSITE_SPLIT_ENABLE";
+        public const string CompositeSplitXEnv = "ABUTS_COMPOSITE_SPLIT_X";
         public const string CompositePrcAEnv = "ABUTS_COMPOSITE_PRC_A";
         public const string CompositePrcBEnv = "ABUTS_COMPOSITE_PRC_B";
         public const string BackendUrlEnv = "ABUTS_BACKEND_URL";
@@ -51,7 +52,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public const double DefaultLeftRatio = (DefaultLeftRatioOffset+DefaultStlShift) / 20.0;
         public const double DefaultRightRatioOffset = -0.3;
         // -0.2 for left 0.2 to #520(STL origin) which means back-turning will compensate
-
         public static int[] DefaultBackturnDiameters = { 6, 8, 10, 12, 14 };
         public static double[] DefaultBackturnClearances = {0.584, 1.161, 1.738, 2.316, 2.893};
         public static string BaseDirectory => GetEnvOrDefault(BaseDirectoryEnv, DefaultBaseDirectory);
@@ -172,11 +172,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         continue;
                     }
                     value = Unquote(value);
-                    var existing = Environment.GetEnvironmentVariable(key);
-                    if (!string.IsNullOrWhiteSpace(existing))
-                    {
-                        continue;
-                    }
                     Environment.SetEnvironmentVariable(key, value);
                 }
             }

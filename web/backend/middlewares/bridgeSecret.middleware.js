@@ -4,6 +4,33 @@ function getSecrets(envKeys) {
     .filter(Boolean);
 }
 
+function logSecretMismatch(req, envKeys, provided, label) {
+  try {
+    const path = String(req.originalUrl || req.url || "");
+    const loadedKeys = envKeys.filter(
+      (key) => String(process.env[key] || "").trim().length > 0,
+    );
+    console.warn("[BG-SECRET] mismatch", {
+      path,
+      label,
+      loadedKeys,
+      providedLength: String(provided || "").length,
+      remoteIp: req.ip,
+      forwardedFor: req.headers["x-forwarded-for"] || null,
+    });
+  } catch {}
+}
+
+function buildSecretMismatchDebug(envKeys, provided) {
+  if (process.env.NODE_ENV !== "development") return undefined;
+  return {
+    loadedKeys: envKeys.filter(
+      (key) => String(process.env[key] || "").trim().length > 0,
+    ),
+    providedLength: String(provided || "").length,
+  };
+}
+
 export function requireSecretFromEnv(envKey, label = "secret") {
   return function requireSecret(req, res, next) {
     const secrets = getSecrets([envKey]);
@@ -13,9 +40,11 @@ export function requireSecretFromEnv(envKey, label = "secret") {
 
     const provided = String(req.headers["x-bridge-secret"] || "");
     if (!provided || !secrets.includes(provided)) {
+      logSecretMismatch(req, [envKey], provided, label);
       return res.status(401).json({
         success: false,
         message: `Invalid ${label}`,
+        debug: buildSecretMismatchDebug([envKey], provided),
       });
     }
     return next();
@@ -31,9 +60,11 @@ export function requireAnySecretFromEnv(envKeys, label = "secret") {
 
     const provided = String(req.headers["x-bridge-secret"] || "");
     if (!provided || !secrets.includes(provided)) {
+      logSecretMismatch(req, envKeys, provided, label);
       return res.status(401).json({
         success: false,
         message: `Invalid ${label}`,
+        debug: buildSecretMismatchDebug(envKeys, provided),
       });
     }
     return next();

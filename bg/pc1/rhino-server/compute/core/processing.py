@@ -133,7 +133,13 @@ def fetch_pending_stl_list() -> list[dict]:
         return []
     url = f"{backend}/bg/pending-stl"
     try:
-        res = requests.get(url, timeout=10, headers=settings.bridge_headers())
+        headers = settings.bridge_headers()
+        log(
+            "pending-stl request: "
+            f"backend={backend} url={url} "
+            f"secret_len={len(str(headers.get('X-Bridge-Secret', '')))}"
+        )
+        res = requests.get(url, timeout=10, headers=headers)
         if res.status_code != 200:
             log(f"pending-stl fetch failed: status={res.status_code} body={res.text}")
             return []
