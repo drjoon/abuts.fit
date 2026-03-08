@@ -134,21 +134,58 @@ async function ensureShippingPackageAndChargeFeeOnPickup({
     new Set(
       list
         .map((request) => {
-          const raw = getRequestorOrgId(request);
-          const value = String(raw || "").trim();
+          const rawOrg = request?.requestorOrganizationId;
+          const value =
+            rawOrg && typeof rawOrg === "object"
+              ? String(rawOrg?._id || rawOrg?.id || "").trim()
+              : String(rawOrg || "").trim();
           return Types.ObjectId.isValid(value) ? value : "";
         })
         .filter(Boolean),
     ),
   );
+  const organizationNames = Array.from(
+    new Set(
+      list
+        .map((request) => resolveRequestOrganizationName(request))
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
 
-  if (organizationIds.length !== 1) {
+  if (organizationIds.length > 1) {
     throw new Error(
       "우편함 묶음의 조직 정보가 일관되지 않아 발송 박스를 생성할 수 없습니다.",
     );
   }
+  if (!organizationIds.length && organizationNames.length > 1) {
+    throw new Error(
+      "우편함 묶음의 조직명 정보가 일관되지 않아 발송 박스를 생성할 수 없습니다.",
+    );
+  }
 
-  const organizationId = new Types.ObjectId(organizationIds[0]);
+  let organizationId = null;
+  if (organizationIds.length === 1) {
+    organizationId = new Types.ObjectId(organizationIds[0]);
+  } else {
+    const fallbackName = organizationNames[0] || "";
+    if (!fallbackName) {
+      throw new Error(
+        "우편함 묶음의 조직 정보를 확인할 수 없어 발송 박스를 생성할 수 없습니다.",
+      );
+    }
+    const orgDoc = await RequestorOrganization.findOne({
+      $or: [{ name: fallbackName }, { "extracted.companyName": fallbackName }],
+    })
+      .select({ _id: 1 })
+      .lean();
+    if (!orgDoc?._id) {
+      throw new Error(
+        "우편함 묶음의 조직 정보를 확인할 수 없어 발송 박스를 생성할 수 없습니다.",
+      );
+    }
+    organizationId = new Types.ObjectId(String(orgDoc._id));
+  }
   const shipDateYmd = getTodayYmdInKst();
 
   let pkg = null;
@@ -574,9 +611,45 @@ const resolveRequestOrganizationName = (request) => {
     String(requestorOrg?.name || "").trim() ||
     String(extracted?.companyName || "").trim() ||
     String(requestor?.organization || "").trim() ||
-    String(request?.caseInfos?.clinicName || "").trim() ||
     String(requestor?.name || "").trim()
   );
+};
+
+const resolveReceiverZipSource = (request) => {
+  const requestor = request?.requestor || {};
+  const requestorOrg = request?.requestorOrganizationId || {};
+  const extracted = requestorOrg?.extracted || {};
+  const addr = requestor.address || {};
+  return (
+    addr.zipCode ||
+    addr.postalCode ||
+    requestor.zipCode ||
+    requestor.postalCode ||
+    requestor.address?.zipCode ||
+    extracted.zipCode ||
+    extracted.postalCode ||
+    extracted.zipcode ||
+    extracted.postcode ||
+    extracted.addressZipCode ||
+    ""
+  );
+};
+
+const splitKoreanAddressDetail = (fullAddress) => {
+  const raw = String(fullAddress || "")
+    .trim()
+    .replace(/\s+/g, " ");
+  if (!raw) {
+    return { baseAddr: "", detailAddr: "" };
+  }
+  const match = raw.match(/^(.*?)(\d+.*)$/);
+  if (match) {
+    return {
+      baseAddr: String(match[1] || "").trim(),
+      detailAddr: String(match[2] || "").trim(),
+    };
+  }
+  return { baseAddr: raw, detailAddr: raw };
 };
 
 const buildShippingRemark = ({
@@ -608,13 +681,25 @@ const buildHanjinInsertOrderBody = ({ mailbox, requests }) => {
   const extracted = requestorOrg.extracted || {};
   const addr = requestor.address || {};
 
-  const receiverZip = normalizeHanjinZip(
-    addr.zipCode || extracted.zipCode || "",
-  );
-  const receiverBaseAddr =
+  const receiverZip = normalizeHanjinZip(resolveReceiverZipSource(first));
+  if (!receiverZip) {
+    throw Object.assign(
+      new Error("수하인 우편번호가 없어 한진 택배 접수를 진행할 수 없습니다."),
+      {
+        statusCode: 400,
+        code: "HANJIN_RECEIVER_ZIP_REQUIRED",
+      },
+    );
+  }
+  const receiverFullAddr =
     String(addr.street || addr.address1 || extracted.address || "").trim() ||
     String(requestor.addressText || "").trim();
-  const receiverDtlAddr = String(addr.address2 || "").trim();
+  const receiverSplit = splitKoreanAddressDetail(receiverFullAddr);
+  const receiverBaseAddr = receiverSplit.baseAddr || receiverFullAddr;
+  const receiverDtlAddr =
+    String(addr.address2 || "").trim() ||
+    receiverSplit.detailAddr ||
+    receiverBaseAddr;
 
   const receiverName =
     String(first.caseInfos?.clinicName || "").trim() ||
@@ -1430,6 +1515,41 @@ export async function requestHanjinPickup(req, res) {
       const orderBody = buildHanjinInsertOrderBody({
         mailbox,
         requests: group,
+      });
+
+      console.log("[hanjin][pickup] mailbox organization debug", {
+        mailbox,
+        organizations: group.map((request) => ({
+          requestId: String(request?.requestId || "").trim(),
+          requestorOrganizationId:
+            request?.requestorOrganizationId &&
+            typeof request.requestorOrganizationId === "object"
+              ? String(request.requestorOrganizationId?._id || "").trim()
+              : String(request?.requestorOrganizationId || "").trim(),
+          requestorOrganizationName:
+            request?.requestorOrganizationId &&
+            typeof request.requestorOrganizationId === "object"
+              ? String(request.requestorOrganizationId?.name || "").trim()
+              : "",
+          extractedCompanyName: String(
+            request?.requestorOrganizationId?.extracted?.companyName || "",
+          ).trim(),
+          requestorOrganization: String(
+            request?.requestor?.organization || "",
+          ).trim(),
+          clinicName: String(request?.caseInfos?.clinicName || "").trim(),
+          resolvedOrganizationName: resolveRequestOrganizationName(request),
+          receiverZipSource: String(
+            resolveReceiverZipSource(request) || "",
+          ).trim(),
+          requestorAddress: request?.requestor?.address || null,
+          requestorAddressText: String(
+            request?.requestor?.addressText || "",
+          ).trim(),
+          extractedAddress: String(
+            request?.requestorOrganizationId?.extracted?.address || "",
+          ).trim(),
+        })),
       });
 
       console.log("[hanjin][pickup] mailbox order body", {
