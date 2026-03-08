@@ -3,6 +3,7 @@ import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
 import { GuideFocus } from "@/shared/ui/GuideFocus";
 import {
@@ -21,6 +22,44 @@ import {
   normalizeStartDate,
   isValidStartDate,
 } from "./validations";
+
+declare global {
+  interface Window {
+    daum?: {
+      Postcode?: new (options: {
+        oncomplete: (data: {
+          zonecode?: string;
+          address?: string;
+          roadAddress?: string;
+          jibunAddress?: string;
+        }) => void;
+        onclose?: () => void;
+      }) => { open: (options?: { popupName?: string }) => void };
+    };
+  }
+}
+
+const POSTCODE_SCRIPT_SRC =
+  "https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
+
+let postcodeScriptPromise: Promise<void> | null = null;
+const POSTCODE_POPUP_NAME = "daum-postcode";
+let postcodePopupOpen = false;
+
+const loadPostcodeScript = () => {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (window.daum?.Postcode) return Promise.resolve();
+  if (postcodeScriptPromise) return postcodeScriptPromise;
+  postcodeScriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = POSTCODE_SCRIPT_SRC;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("주소 검색 스크립트 로딩 실패"));
+    document.body.appendChild(script);
+  });
+  return postcodeScriptPromise;
+};
 
 interface BusinessFormProps {
   businessData: BusinessData;
@@ -53,6 +92,7 @@ export const BusinessForm = ({
   onAutoSave,
   renderActions,
 }: BusinessFormProps) => {
+  const { toast } = useToast();
   const repNameRef = useRef<HTMLInputElement | null>(null);
   const startDateRef = useRef<HTMLInputElement | null>(null);
   const companyNameRef = useRef<HTMLInputElement | null>(null);
@@ -61,6 +101,7 @@ export const BusinessForm = ({
   const bizTypeRef = useRef<HTMLInputElement | null>(null);
   const bizItemRef = useRef<HTMLInputElement | null>(null);
   const emailRef = useRef<HTMLInputElement | null>(null);
+  const zipCodeRef = useRef<HTMLInputElement | null>(null);
   const addressRef = useRef<HTMLInputElement | null>(null);
   const submitRef = useRef<HTMLButtonElement | null>(null);
 
@@ -73,6 +114,7 @@ export const BusinessForm = ({
     | "bizType"
     | "bizItem"
     | "email"
+    | "zipCode"
     | "address"
     | "submit";
 
@@ -94,6 +136,7 @@ export const BusinessForm = ({
       { key: "bizType", ref: bizTypeRef, value: extracted.businessType },
       { key: "bizItem", ref: bizItemRef, value: extracted.businessItem },
       { key: "email", ref: emailRef, value: extracted.email },
+      { key: "zipCode", ref: zipCodeRef, value: businessData.zipCode },
       { key: "address", ref: addressRef, value: businessData.address },
       // submit 버튼은 항상 마지막으로 포커스
       { key: "submit", ref: submitRef, value: "" },
@@ -146,6 +189,50 @@ export const BusinessForm = ({
     licenseStatus === "uploading" ||
     licenseStatus === "processing" ||
     (membership !== "owner" && membership !== "none");
+
+  const handleOpenAddressSearch = async () => {
+    try {
+      await loadPostcodeScript();
+      if (!window.daum?.Postcode) {
+        throw new Error("주소 검색 스크립트 로딩 실패");
+      }
+      if (postcodePopupOpen) {
+        window.open("", POSTCODE_POPUP_NAME)?.focus();
+        return;
+      }
+      postcodePopupOpen = true;
+      new window.daum.Postcode({
+        oncomplete: (data) => {
+          const nextAddress =
+            data.roadAddress || data.jibunAddress || data.address || "";
+          const nextZipCode = String(data.zonecode || "").trim();
+          setBusinessData((prev) => ({
+            ...prev,
+            address: nextAddress || prev.address,
+            zipCode: nextZipCode || prev.zipCode,
+          }));
+          setErrors((prev) => ({
+            ...prev,
+            address: false,
+            zipCode: false,
+          }));
+          requestAnimationFrame(() => {
+            addressRef.current?.focus();
+          });
+        },
+        onclose: () => {
+          postcodePopupOpen = false;
+        },
+      }).open({ popupName: POSTCODE_POPUP_NAME });
+    } catch {
+      postcodePopupOpen = false;
+      toast({
+        title: "주소 검색을 불러오지 못했습니다",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -500,7 +587,44 @@ export const BusinessForm = ({
         <Label htmlFor="address">주소</Label>
         <GuideFocus className="rounded-xl p-1">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div className="md:col-span-3">
+            <div className="md:col-span-1">
+              <Input
+                id="zipCode"
+                ref={zipCodeRef}
+                className={cn(
+                  errors.zipCode &&
+                    "border-destructive focus-visible:ring-destructive",
+                )}
+                value={businessData.zipCode}
+                placeholder="우편번호"
+                onChange={(e) => {
+                  setBusinessData((prev) => ({
+                    ...prev,
+                    zipCode: e.target.value,
+                  }));
+                  setErrors((prev) => ({ ...prev, zipCode: false }));
+                }}
+                onKeyDown={(e) => {
+                  if ((e.nativeEvent as any)?.isComposing) return;
+                  const v = String(businessData.zipCode || "").trim();
+                  const isNav =
+                    e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
+                  if (isNav && v) {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      focusNext(addressRef);
+                      return;
+                    }
+                    if (handleNav(e, "zipCode")) return;
+                  }
+                }}
+                onBlur={() => {
+                  if (disabled) return;
+                  onAutoSave?.();
+                }}
+              />
+            </div>
+            <div className="md:col-span-2">
               <Input
                 id="address"
                 ref={addressRef}
@@ -509,6 +633,7 @@ export const BusinessForm = ({
                     "border-destructive focus-visible:ring-destructive",
                 )}
                 value={businessData.address}
+                placeholder="주소 검색"
                 onChange={(e) => {
                   setBusinessData((prev) => ({
                     ...prev,
@@ -537,6 +662,27 @@ export const BusinessForm = ({
                 }}
               />
             </div>
+            <div className="md:col-span-1">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={disabled}
+                onClick={() => {
+                  void handleOpenAddressSearch();
+                }}
+              >
+                주소 검색
+              </Button>
+            </div>
+          </div>
+        </GuideFocus>
+      </div>
+
+      <div className="space-y-2">
+        <GuideFocus className="rounded-xl p-1">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="md:col-span-3" />
             <div className="md:col-span-1">
               <Button
                 type="button"

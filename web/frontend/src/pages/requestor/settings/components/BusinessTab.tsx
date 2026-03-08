@@ -235,6 +235,7 @@ export const BusinessTab = ({
     companyName: "",
     businessNumber: "",
     address: "",
+    zipCode: "",
     phone: "",
   });
   const [companyNameTouched, setCompanyNameTouched] = useState(false);
@@ -339,6 +340,7 @@ export const BusinessTab = ({
               : orgName || prev.companyName,
             businessNumber: nextBusinessNumber || prev.businessNumber,
             address: String(ex?.address || "").trim() || prev.address,
+            zipCode: String(ex?.zipCode || "").trim() || prev.zipCode,
             phone: nextPhone || prev.phone,
           };
         });
@@ -606,6 +608,7 @@ export const BusinessTab = ({
         companyName: "",
         businessNumber: "",
         address: "",
+        zipCode: "",
         phone: "",
       }));
       setCompanyNameTouched(false);
@@ -628,6 +631,7 @@ export const BusinessTab = ({
       companyName: "",
       businessNumber: "",
       address: "",
+      zipCode: "",
       phone: "",
     }));
     setCompanyNameTouched(false);
@@ -657,6 +661,7 @@ export const BusinessTab = ({
         companyName: "",
         businessNumber: "",
         address: "",
+        zipCode: "",
         phone: "",
       });
       setExtracted({});
@@ -719,6 +724,7 @@ export const BusinessTab = ({
       companyName: "",
       businessNumber: "",
       address: "",
+      zipCode: "",
       phone: "",
     });
     setCompanyNameTouched(false);
@@ -966,6 +972,7 @@ export const BusinessTab = ({
             String(nextExtracted?.businessNumber || "").trim() ||
             prev.businessNumber,
           address: String(nextExtracted?.address || "").trim() || prev.address,
+          zipCode: String(nextExtracted?.zipCode || "").trim() || prev.zipCode,
           phoneNumber:
             String(nextExtracted?.phoneNumber || "").trim() || prev.phoneNumber,
           email: String(nextExtracted?.email || "").trim() || prev.email,
@@ -995,6 +1002,8 @@ export const BusinessTab = ({
               : nextCompanyName || prev.companyName,
             businessNumber: aiBusinessNumber || prev.businessNumber,
             address: nextExtracted?.address?.trim() || prev.address,
+            zipCode:
+              String(nextExtracted?.zipCode || "").trim() || prev.zipCode,
             phone: aiPhone || prev.phone,
           };
         });

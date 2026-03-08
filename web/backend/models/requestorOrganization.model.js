@@ -80,6 +80,7 @@ const requestorOrganizationSchema = new mongoose.Schema(
       companyName: { type: String, default: "" },
       businessNumber: { type: String, default: undefined },
       address: { type: String, default: "" },
+      zipCode: { type: String, default: "" },
       phoneNumber: { type: String, default: "" },
       email: { type: String, default: "" },
       representativeName: { type: String, default: "" },

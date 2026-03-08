@@ -84,6 +84,7 @@ export const handleSave = async (
     const businessItem = String(extracted.businessItem || "").trim();
     const taxEmail = String(extracted.email || "").trim();
     const address = String(businessData.address || "").trim();
+    const zipCode = String(businessData.zipCode || "").trim();
     const startDateRaw = String(extracted.startDate || "").trim();
     const startDate = normalizeStartDate(startDateRaw);
 
@@ -101,6 +102,7 @@ export const handleSave = async (
       !businessItem ||
       !taxEmail ||
       !address ||
+      !zipCode ||
       !startDate;
 
     if (requiredMissing && !allowPartialUpdate) {
@@ -114,6 +116,7 @@ export const handleSave = async (
           businessItem: !businessItem,
           email: !taxEmail,
           address: !address,
+          zipCode: !zipCode,
           startDate: !startDate,
         };
         setErrors(nextErrors);
@@ -204,6 +207,7 @@ export const handleSave = async (
         businessItem,
         email: taxEmail,
         address,
+        zipCode,
         startDate,
         ...(businessLicense &&
         (String(businessLicense?.s3Key || "").trim() ||

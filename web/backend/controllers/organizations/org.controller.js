@@ -574,6 +574,7 @@ export async function updateMyOrganization(req, res) {
     const businessTypeProvided = hasOwn(req.body, "businessType");
     const emailProvided = hasOwn(req.body, "email");
     const addressProvided = hasOwn(req.body, "address");
+    const zipCodeProvided = hasOwn(req.body, "zipCode");
     const startDateProvided = hasOwn(req.body, "startDate");
     const shippingPolicyProvided = hasOwn(req.body, "shippingPolicy");
 
@@ -599,6 +600,7 @@ export async function updateMyOrganization(req, res) {
         businessTypeProvided ||
         emailProvided ||
         addressProvided ||
+        zipCodeProvided ||
         startDateProvided ||
         hasOwn(req.body, "businessLicense");
       if (!canEdit && (nonShippingProvided || !shippingPolicyProvided)) {
@@ -618,6 +620,7 @@ export async function updateMyOrganization(req, res) {
     const businessType = String(req.body?.businessType || "").trim();
     const email = String(req.body?.email || "").trim();
     const address = String(req.body?.address || "").trim();
+    const zipCode = String(req.body?.zipCode || "").trim();
     const startDateRaw = String(req.body?.startDate || "").trim();
     const startDate = normalizeStartDate(startDateRaw);
 
@@ -692,6 +695,7 @@ export async function updateMyOrganization(req, res) {
     if (businessTypeProvided) extractedPatch.businessType = businessType;
     if (emailProvided) extractedPatch.email = email;
     if (addressProvided) extractedPatch.address = address;
+    if (zipCodeProvided) extractedPatch.zipCode = zipCode;
     if (startDateProvided) extractedPatch.startDate = startDate;
 
     if (businessNumberProvided) {
