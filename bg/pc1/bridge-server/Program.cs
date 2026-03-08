@@ -82,7 +82,6 @@ namespace HiLinkBridgeWebApi48
                     HILINK_DLL_HOLD_FATAL_MS = Environment.GetEnvironmentVariable("HILINK_DLL_HOLD_FATAL_MS"),
                     HILINK_FAILFAST_ON_HANG = Environment.GetEnvironmentVariable("HILINK_FAILFAST_ON_HANG"),
                     MOCK_CNC_MACHINING_ENABLED = Environment.GetEnvironmentVariable("MOCK_CNC_MACHINING_ENABLED"),
-                    DUMMY_CNC_SCHEDULER_ENABLED = Environment.GetEnvironmentVariable("DUMMY_CNC_SCHEDULER_ENABLED"),
                     CNC_JOB_ASSUME_MINUTES = Environment.GetEnvironmentVariable("CNC_JOB_ASSUME_MINUTES"),
                 };
                 using (var client = new HttpClient())
@@ -134,7 +133,6 @@ namespace HiLinkBridgeWebApi48
         private static void Shutdown()
         {
             if (Interlocked.Exchange(ref _shutdownOnce, 1) == 1) return;
-            try { DummyCncScheduler.Stop(); } catch { }
             try { CncMachining.Stop(); } catch { }
             try { Mode1WorkerQueue.Stop(); } catch { }
             try { Mode1HandleStore.InvalidateAll(); } catch { }
@@ -222,7 +220,6 @@ namespace HiLinkBridgeWebApi48
                 }
                 catch { }
                 MachinesInitializer.InitializeFromConfig();
-                DummyCncScheduler.Start();
                 CncMachining.Start();
                 // NcFileWatcher 미사용: 이벤트 기반(백엔드 트리거)으로 처리
                 Console.WriteLine("Initialization done. Press Enter to exit.");

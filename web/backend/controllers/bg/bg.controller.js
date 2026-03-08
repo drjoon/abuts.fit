@@ -42,7 +42,6 @@ export const registerBridgeSettings = asyncHandler(async (req, res) => {
     HILINK_DLL_HOLD_FATAL_MS,
     HILINK_FAILFAST_ON_HANG,
     MOCK_CNC_MACHINING_ENABLED,
-    DUMMY_CNC_SCHEDULER_ENABLED,
     CNC_JOB_ASSUME_MINUTES,
   } = req.body || {};
 
@@ -66,7 +65,6 @@ export const registerBridgeSettings = asyncHandler(async (req, res) => {
       : null,
     hilinkFailfastOnHang: parseBool(HILINK_FAILFAST_ON_HANG),
     mockCncMachiningEnabled: parseBool(MOCK_CNC_MACHINING_ENABLED),
-    dummyCncSchedulerEnabled: parseBool(DUMMY_CNC_SCHEDULER_ENABLED),
     cncJobAssumeMinutes: Number.isFinite(Number(CNC_JOB_ASSUME_MINUTES))
       ? Number(CNC_JOB_ASSUME_MINUTES)
       : null,

@@ -6,6 +6,7 @@ import {
   warmupCache,
   startPeriodicCacheRefresh,
 } from "./utils/cacheWarming.js";
+import { startDummyCncScheduler } from "./jobs/dummyCncWorker.js";
 
 // 포트 설정 (EB 기본 upstream 포트는 8080)
 const PORT = process.env.PORT || 8080;
@@ -33,6 +34,8 @@ dbReady
     if (process.env.NODE_ENV === "production") {
       startPeriodicCacheRefresh();
     }
+
+    startDummyCncScheduler();
   })
   .catch((err) => {
     console.error("MongoDB 연결 실패(서버는 계속 실행):", err);

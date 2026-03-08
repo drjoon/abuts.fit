@@ -1,44 +1,4 @@
-import {
-  CncMachine,
-  getOrCreateCncMachine,
-  getTodayYmdInKst,
-  isKoreanBusinessDay,
-} from "./shared.js";
-
-export async function getDummySettingsForBridge(req, res) {
-  try {
-    const ymdRaw = typeof req.query?.ymd === "string" ? req.query.ymd : "";
-    const ymd = (ymdRaw || "").trim() || getTodayYmdInKst();
-    const isBusinessDay = await isKoreanBusinessDay(ymd);
-
-    const machines = await CncMachine.find({ status: "active" })
-      .sort({ machineId: 1 })
-      .lean();
-
-    const list = Array.isArray(machines)
-      ? machines.map((m) => ({
-          machineId: m.machineId,
-          dummySettings: m.dummySettings || null,
-        }))
-      : [];
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        ymd,
-        isBusinessDay,
-        machines: list,
-      },
-    });
-  } catch (error) {
-    console.error("Error in getDummySettingsForBridge:", error);
-    return res.status(500).json({
-      success: false,
-      message: "브리지 더미 설정 조회 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
+import { CncMachine, getOrCreateCncMachine } from "./shared.js";
 
 export async function updateDummyEnabledBulk(req, res) {
   try {
@@ -71,45 +31,6 @@ export async function updateDummyEnabledBulk(req, res) {
     return res.status(500).json({
       success: false,
       message: "더미 가공 설정 저장 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
-
-export async function updateDummyLastRunKeyForBridge(req, res) {
-  try {
-    const { machineId } = req.params;
-    const { lastRunKey } = req.body || {};
-
-    const key = typeof lastRunKey === "string" ? lastRunKey.trim() : "";
-    if (!key) {
-      return res.status(400).json({
-        success: false,
-        message: "lastRunKey is required",
-      });
-    }
-
-    const machine = await getOrCreateCncMachine(machineId);
-    if (!machine) {
-      return res.status(400).json({
-        success: false,
-        message: "machineId is required",
-      });
-    }
-
-    machine.dummySettings = machine.dummySettings || {};
-    machine.dummySettings.lastRunKey = key;
-    await machine.save();
-
-    return res.status(200).json({
-      success: true,
-      data: { machineId, lastRunKey: key },
-    });
-  } catch (error) {
-    console.error("Error in updateDummyLastRunKeyForBridge:", error);
-    return res.status(500).json({
-      success: false,
-      message: "브리지 lastRunKey 업데이트 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

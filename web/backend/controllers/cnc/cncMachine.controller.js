@@ -40,8 +40,6 @@ import {
   updateMaterialRemaining,
 } from "../../controllers/cnc/material.js";
 import {
-  getDummySettingsForBridge,
-  updateDummyLastRunKeyForBridge,
   updateDummySettings,
   updateDummyEnabledBulk,
 } from "../../controllers/cnc/dummy.js";
@@ -58,12 +56,10 @@ import {
 } from "../../controllers/cnc/machiningBridge.js";
 
 export {
-  getDummySettingsForBridge,
   getMachineFlagsForBridge,
   getDbBridgeQueueSnapshotForBridge,
   consumeBridgeQueueJobForBridge,
   createCncDirectDownloadPresignForBridge,
-  updateDummyLastRunKeyForBridge,
   recordMachiningTickForBridge,
   triggerNextAutoMachiningManually,
   recordMachiningStartForBridge,

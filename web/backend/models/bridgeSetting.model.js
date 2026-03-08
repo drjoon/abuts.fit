@@ -7,7 +7,6 @@ const BridgeSettingSchema = new mongoose.Schema(
     hilinkDllHoldFatalMs: { type: Number, default: null },
     hilinkFailfastOnHang: { type: Boolean, default: null },
     mockCncMachiningEnabled: { type: Boolean, default: null },
-    dummyCncSchedulerEnabled: { type: Boolean, default: null },
     cncJobAssumeMinutes: { type: Number, default: null },
   },
   {

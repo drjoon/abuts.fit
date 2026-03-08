@@ -19,12 +19,6 @@ router.post(
 );
 
 router.get(
-  "/bridge/dummy-settings",
-  requireBridgeIpAllowlist,
-  requireBridgeSecret,
-  cncMachineController.getDummySettingsForBridge,
-);
-router.get(
   "/bridge/queue-snapshot/:machineId",
   requireBridgeIpAllowlist,
   requireBridgeSecret,
@@ -81,12 +75,6 @@ router.post(
   authenticate,
   authorizeRoles("manufacturer", "admin"),
   cncMachineController.triggerNextAutoMachiningManually,
-);
-router.patch(
-  "/bridge/dummy-settings/:machineId/last-run-key",
-  requireBridgeIpAllowlist,
-  requireBridgeSecret,
-  cncMachineController.updateDummyLastRunKeyForBridge,
 );
 
 // 모든 라우트에 인증 필요

@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
+using PayloadUpdateActivateProg = Hi_Link.Libraries.Model.UpdateMachineActivateProgNo;
 
 namespace HiLinkBridgeWebApi48.Controllers
 {
@@ -18,6 +19,123 @@ namespace HiLinkBridgeWebApi48.Controllers
             public short? ioUid { get; set; }
             public short? panelType { get; set; }
             public int? status { get; set; }
+        }
+
+        public class DummyRunRequest
+        {
+            public short? headType { get; set; }
+            public int? programNo { get; set; }
+            public string programName { get; set; }
+            public short? ioUid { get; set; }
+            public short? panelType { get; set; }
+            public int? status { get; set; }
+            public string trigger { get; set; }
+            public string minuteKey { get; set; }
+        }
+
+        [HttpPost]
+        [Route("dummy/run")]
+        public HttpResponseMessage DummyRun(string machines, [FromBody] DummyRunRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(machines))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machines parameter is required" });
+            }
+
+            var programNo = req?.programNo;
+            if (!programNo.HasValue || programNo.Value <= 0)
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "programNo is required" });
+            }
+
+            var machineIds = BridgeShared.ParseMachineIds(machines);
+            var results = new List<object>();
+            var headType = req?.headType ?? 1;
+            var ioUid = req?.ioUid ?? 61;
+            var panelType = req?.panelType ?? 0;
+            var status = req?.status == null || req?.status == 1;
+            var trigger = (req?.trigger ?? string.Empty).Trim();
+            var minuteKey = (req?.minuteKey ?? string.Empty).Trim();
+            var programName = (req?.programName ?? string.Empty).Trim();
+
+            foreach (var machineId in machineIds)
+            {
+                if (BridgeShared.IsMockCncMachiningEnabled())
+                {
+                    results.Add(new
+                    {
+                        machineId,
+                        success = true,
+                        mock = true,
+                        message = "Mock dummy machining accepted",
+                        programNo = programNo.Value,
+                        programName,
+                        headType,
+                        trigger,
+                        minuteKey,
+                    });
+                    continue;
+                }
+
+                var cooldownKey = $"dummy-run:{machineId}";
+                if (BridgeShared.IsControlOnCooldown(cooldownKey))
+                {
+                    results.Add(new { machineId, success = false, message = "Too many requests" });
+                    continue;
+                }
+
+                var dto = new PayloadUpdateActivateProg
+                {
+                    headType = headType,
+                    programNo = (short)programNo.Value,
+                };
+
+                var activateRes = Mode1HandleStore.SetActivateProgram(machineId, dto, out var activateError);
+                if (activateRes != 0)
+                {
+                    results.Add(new
+                    {
+                        machineId,
+                        success = false,
+                        message = activateError ?? $"SetActivateProgram failed (result={activateRes})",
+                        step = "activate",
+                    });
+                    continue;
+                }
+
+                if (!Mode1Api.TrySetMachinePanelIO(machineId, panelType, ioUid, status, out var startError))
+                {
+                    results.Add(new
+                    {
+                        machineId,
+                        success = false,
+                        message = startError ?? "SetMachinePanelIO failed",
+                        step = "start",
+                    });
+                    continue;
+                }
+
+                results.Add(new
+                {
+                    machineId,
+                    success = true,
+                    mock = false,
+                    message = "Dummy machining started",
+                    programNo = programNo.Value,
+                    programName,
+                    headType,
+                    trigger,
+                    minuteKey,
+                });
+            }
+
+            var allSucceeded = results.All(r =>
+            {
+                var prop = r.GetType().GetProperty("success");
+                return prop != null && prop.GetValue(r) is bool ok && ok;
+            });
+
+            return Request.CreateResponse(allSucceeded ? HttpStatusCode.OK : HttpStatusCode.BadGateway, new { success = allSucceeded, results });
         }
 
         // POST /api/cnc/start?machines=M3,M4

@@ -9,6 +9,10 @@ import {
 const KST_TZ = "Asia/Seoul";
 const BRIDGE_BASE = process.env.BRIDGE_BASE;
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET || "dev-secret";
+const INTERVAL_MS = 60 * 1000;
+
+let timerHandle = null;
+let running = false;
 
 function withBridgeHeaders(extra = {}) {
   return {
@@ -44,7 +48,50 @@ function getCurrentHmInKst() {
   return `${hour}:${minute}`;
 }
 
-async function runDummySchedulesOnce() {
+async function persistLastRunKey(machineId, minuteKey) {
+  try {
+    await CncMachine.updateOne(
+      { machineId },
+      { $set: { "dummySettings.lastRunKey": minuteKey } },
+    );
+  } catch (error) {
+    console.error("dummyCncWorker: failed to persist lastRunKey", {
+      machineId,
+      minuteKey,
+      error,
+    });
+  }
+}
+
+async function triggerDummyRun({
+  machineId,
+  programName,
+  programNo,
+  minuteKey,
+}) {
+  const url = `${BRIDGE_BASE}/api/cnc/dummy/run?machines=${encodeURIComponent(machineId)}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: withBridgeHeaders({
+      "Content-Type": "application/json",
+    }),
+    body: JSON.stringify({
+      headType: 1,
+      programName,
+      programNo,
+      trigger: "scheduled",
+      minuteKey,
+    }),
+  });
+  const body = await response.json().catch(() => ({}));
+  return {
+    ok: response.ok && body?.success !== false,
+    status: response.status,
+    body,
+  };
+}
+
+export async function runDummySchedulesOnce() {
   if (!BRIDGE_BASE) {
     console.error("dummyCncWorker: BRIDGE_BASE is not configured");
     return;
@@ -65,6 +112,7 @@ async function runDummySchedulesOnce() {
   const minuteKey = `${todayYmd} ${currentHm}`;
 
   try {
+    const isBizToday = await isKoreanBusinessDay(todayYmd);
     const machines = await CncMachine.find({
       "dummySettings.enabled": { $ne: false },
       "dummySettings.schedules.enabled": true,
@@ -82,11 +130,17 @@ async function runDummySchedulesOnce() {
         continue;
       }
 
-      if (excludeHolidays) {
-        const isBiz = await isKoreanBusinessDay(todayYmd);
-        if (!isBiz) {
-          continue;
-        }
+      if (excludeHolidays && !isBizToday) {
+        continue;
+      }
+
+      const matchedSchedule = schedules.find((s) => {
+        if (!s || s.enabled === false) return false;
+        const time = typeof s.time === "string" ? s.time : "";
+        return Boolean(time) && time === currentHm;
+      });
+      if (!matchedSchedule) {
+        continue;
       }
 
       const progNo = parseProgramNoFromName(programName);
@@ -94,91 +148,50 @@ async function runDummySchedulesOnce() {
         console.warn(
           `dummyCncWorker: cannot parse program number from name '${programName}' for machine ${machine.machineId}`,
         );
+        await persistLastRunKey(machine.machineId, minuteKey);
         continue;
       }
 
-      let executedForThisMinute = false;
-      for (const s of schedules) {
-        if (!s || s.enabled === false) continue;
-        const time = typeof s.time === "string" ? s.time : "";
-        if (!time) continue;
-        if (time !== currentHm) continue;
-
-        const uid = String(machine.machineId || "").trim();
-        if (!uid) {
-          console.warn(
-            `dummyCncWorker: machine ${machine._id} has no machineId, skip`,
-          );
-          continue;
-        }
-
-        try {
-          const actRes = await fetch(
-            `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(uid)}/programs/activate`,
-            {
-              method: "POST",
-              headers: withBridgeHeaders({
-                "Content-Type": "application/json",
-              }),
-              body: JSON.stringify({ headType: 1, programNo: progNo }),
-            },
-          );
-          const actBody = await actRes.json().catch(() => ({}));
-          if (!actRes.ok || actBody?.success === false) {
-            console.error(
-              "dummyCncWorker: activate program failed",
-              uid,
-              actBody,
-            );
-            continue;
-          }
-
-          const startRes = await fetch(
-            `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(uid)}/start`,
-            {
-              method: "POST",
-              headers: withBridgeHeaders({
-                "Content-Type": "application/json",
-              }),
-              body: JSON.stringify({ status: 0, ioUid: 0 }),
-            },
-          );
-          const startBody = await startRes.json().catch(() => ({}));
-          if (!startRes.ok || startBody?.success === false) {
-            console.error(
-              "dummyCncWorker: start machine failed",
-              uid,
-              startBody,
-            );
-            continue;
-          }
-
-          console.log(
-            `dummyCncWorker: started dummy program ${programName} (no=${progNo}) on ${uid} at ${currentHm} (KST)`,
-          );
-          executedForThisMinute = true;
-        } catch (err) {
-          console.error("dummyCncWorker: error while processing schedule", {
-            machineId: machine.machineId,
-            time,
-            error: String(err?.message || err),
-          });
-        }
+      const uid = String(machine.machineId || "").trim();
+      if (!uid) {
+        console.warn(
+          `dummyCncWorker: machine ${machine._id} has no machineId, skip`,
+        );
+        continue;
       }
 
-      if (executedForThisMinute) {
-        try {
-          await CncMachine.updateOne(
-            { _id: machine._id },
-            { $set: { "dummySettings.lastRunKey": minuteKey } },
-          );
-        } catch (e) {
-          console.error(
-            "dummyCncWorker: failed to update lastRunKey",
-            machine.machineId,
-            e,
-          );
+      await persistLastRunKey(uid, minuteKey);
+
+      try {
+        const result = await triggerDummyRun({
+          machineId: uid,
+          programName,
+          programNo: progNo,
+          minuteKey,
+        });
+        if (!result.ok) {
+          console.error("dummyCncWorker: dummy run failed", {
+            machineId: uid,
+            minuteKey,
+            status: result.status,
+            body: result.body,
+          });
+          continue;
         }
+        console.log("dummyCncWorker: dummy run requested", {
+          machineId: uid,
+          minuteKey,
+          currentHm,
+          programName,
+          programNo: progNo,
+          result: result.body,
+        });
+      } catch (err) {
+        console.error("dummyCncWorker: error while processing schedule", {
+          machineId: uid,
+          minuteKey,
+          error: String(err?.message || err),
+        });
       }
     }
   } catch (err) {
@@ -186,18 +199,40 @@ async function runDummySchedulesOnce() {
   }
 }
 
-const INTERVAL_MS = 60 * 1000; // 1분
-
 async function loop() {
-  await runDummySchedulesOnce();
-  setTimeout(loop, INTERVAL_MS);
+  if (running) {
+    return;
+  }
+  running = true;
+  try {
+    await runDummySchedulesOnce();
+  } catch (err) {
+    console.error("dummyCncWorker: loop error", err);
+  } finally {
+    running = false;
+    timerHandle = setTimeout(loop, INTERVAL_MS);
+  }
 }
 
-if (process.env.DUMMY_CNC_WORKER_ENABLED !== "false") {
+export function startDummyCncScheduler() {
+  if (process.env.DUMMY_CNC_WORKER_ENABLED === "false") {
+    console.log("dummyCncWorker is disabled");
+    return;
+  }
+  if (timerHandle) {
+    return;
+  }
   loop().catch((err) => {
+    running = false;
+    timerHandle = null;
     console.error("dummyCncWorker: initialization failed", err);
-    process.exit(1);
   });
-} else {
-  console.log("dummyCncWorker is disabled");
+}
+
+export function stopDummyCncScheduler() {
+  if (timerHandle) {
+    clearTimeout(timerHandle);
+    timerHandle = null;
+  }
+  running = false;
 }

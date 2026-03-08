@@ -124,12 +124,10 @@ namespace HiLinkBridgeWebApi48
                 : (trimmed + "/api");
         }
         public static string BridgeSharedSecret => Get("BRIDGE_SHARED_SECRET", "");
-        public static string BridgeAllowIpsRaw => Get("BRIDGE_ALLOW_IPS", "");
+        public static string BridgeAllowIpsRaw => Get("BRIDGE_ALLOW_IPS", "127.0.0.1,::1");
         public static IEnumerable<string> BridgeAllowIps => BridgeAllowIpsRaw.Split(',').Select(ip => ip.Trim()).Where(ip => !string.IsNullOrEmpty(ip));
         public static string BridgeStoreRoot => ResolveStoreRoot();
         public static string BridgeSerial => Get("BRIDGE_SERIAL", "");
-        public static bool DummyCncSchedulerEnabled =>
-            !string.Equals(Get("DUMMY_CNC_SCHEDULER_ENABLED", ""), "false", StringComparison.OrdinalIgnoreCase);
         public static bool MockCncMachining =>
             IsTrue(Get("MOCK_CNC_MACHINING_ENABLED", ""));
         private static bool IsTrue(string value)
