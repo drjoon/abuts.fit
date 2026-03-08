@@ -246,10 +246,6 @@ export function useWorksheetRealtimeStatus({
               String(
                 eventRequest.manufacturerStage || payload?.toStage || "",
               ).trim() || eventRequest.manufacturerStage,
-            realtimeProgress:
-              deriveStageForFilter(eventRequest) === "의뢰"
-                ? eventRequest.realtimeProgress || null
-                : null,
           }),
         );
         return;
