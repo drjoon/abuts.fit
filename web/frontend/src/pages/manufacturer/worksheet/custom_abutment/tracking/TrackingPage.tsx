@@ -98,7 +98,7 @@ export const TrackingInquiryPage = () => {
     showCompleted: boolean;
   }>();
 
-  const [tab, setTab] = useState<InquiryTab>("process");
+  const [tab, setTab] = useState<InquiryTab>("shipping");
   const [visibleCount, setVisibleCount] = useState(30);
   const visibleCountRef = useRef(30);
   const totalCountRef = useRef(0);

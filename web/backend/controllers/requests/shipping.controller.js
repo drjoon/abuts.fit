@@ -149,10 +149,7 @@ const extractTrackingNumberFromPickupData = (data) => {
   return "";
 };
 
-async function ensureShippingPackageAndChargeFeeOnPickup({
-  requests,
-  actorUserId,
-}) {
+async function ensureShippingPackageForPickup({ requests, actorUserId }) {
   const list = Array.isArray(requests) ? requests.filter(Boolean) : [];
   if (!list.length) {
     throw new Error("발송 패키지를 생성할 의뢰가 없습니다.");
@@ -260,44 +257,60 @@ async function ensureShippingPackageAndChargeFeeOnPickup({
     throw new Error("발송 박스 생성에 실패했습니다.");
   }
 
-  const fee = Number(pkg.shippingFeeSupply || 0);
-  if (fee > 0) {
-    const uniqueKey = `shippingPackage:${String(pkg._id)}:shipping_fee`;
-    const chargeResult = await CreditLedger.updateOne(
-      { uniqueKey },
-      {
-        $setOnInsert: {
-          organizationId,
-          userId: actorUserId || null,
-          type: "SPEND",
-          amount: -fee,
-          refType: "SHIPPING_PACKAGE",
-          refId: pkg._id,
-          uniqueKey,
-        },
-      },
-      { upsert: true },
-    );
-
-    if (chargeResult?.upsertedCount) {
-      console.log("[SHIPPING_PICKUP_CHARGE] charged shipping fee", {
-        organizationId: String(organizationId),
-        shippingPackageId: String(pkg._id),
-        fee,
-        requestIds: list
-          .map((request) => String(request.requestId || ""))
-          .filter(Boolean),
-      });
-      await emitCreditBalanceUpdatedToOrganization({
-        organizationId,
-        balanceDelta: -fee,
-        reason: "shipping_fee_spend",
-        refId: pkg._id,
-      });
-    }
-  }
-
   return pkg;
+}
+
+export async function chargeShippingFeeOnPickupComplete({
+  shippingPackageId,
+  actorUserId,
+}) {
+  const pkgId = String(shippingPackageId || "").trim();
+  if (!pkgId || !Types.ObjectId.isValid(pkgId)) return false;
+
+  const pkg = await ShippingPackage.findById(pkgId)
+    .select({ _id: 1, organizationId: 1, shippingFeeSupply: 1, requestIds: 1 })
+    .lean();
+  if (!pkg?._id || !pkg.organizationId) return false;
+
+  const fee = Number(pkg.shippingFeeSupply || 0);
+  if (!Number.isFinite(fee) || fee <= 0) return false;
+
+  const uniqueKey = `shippingPackage:${String(pkg._id)}:shipping_fee`;
+  const chargeResult = await CreditLedger.updateOne(
+    { uniqueKey },
+    {
+      $setOnInsert: {
+        organizationId: pkg.organizationId,
+        userId: actorUserId || null,
+        type: "SPEND",
+        amount: -fee,
+        refType: "SHIPPING_PACKAGE",
+        refId: pkg._id,
+        uniqueKey,
+      },
+    },
+    { upsert: true },
+  );
+
+  if (!chargeResult?.upsertedCount) return false;
+
+  console.log("[SHIPPING_PICKUP_CHARGE] charged shipping fee on status 11", {
+    organizationId: String(pkg.organizationId),
+    shippingPackageId: String(pkg._id),
+    fee,
+    requestIds: Array.isArray(pkg.requestIds)
+      ? pkg.requestIds.map((id) => String(id || "")).filter(Boolean)
+      : [],
+  });
+
+  await emitCreditBalanceUpdatedToOrganization({
+    organizationId: pkg.organizationId,
+    balanceDelta: -fee,
+    reason: "shipping_fee_spend",
+    refId: pkg._id,
+  });
+
+  return true;
 }
 
 async function finalizeMailboxPickupShipment({
@@ -308,7 +321,7 @@ async function finalizeMailboxPickupShipment({
   const list = Array.isArray(requests) ? requests.filter(Boolean) : [];
   if (!list.length) return [];
 
-  const pkg = await ensureShippingPackageAndChargeFeeOnPickup({
+  const pkg = await ensureShippingPackageForPickup({
     requests: list,
     actorUserId,
   });
@@ -1969,6 +1982,12 @@ export async function syncHanjinTracking(req, res) {
       if (String(last?.statusCode || "") === "66" && last?.occurredAt) {
         deliveryInfo.deliveredAt = last.occurredAt;
       }
+      if (String(last?.statusCode || "") === "11") {
+        await chargeShippingFeeOnPickupComplete({
+          shippingPackageId: requestDoc.shippingPackageId,
+          actorUserId: req.user?._id || null,
+        });
+      }
       if (isTrackingStageEligible(deliveryInfo)) {
         requestDoc.manufacturerStage = "추적관리";
       } else {
@@ -2626,7 +2645,7 @@ export async function registerShipment(req, res) {
       });
     }
 
-    const pkg = await ensureShippingPackageAndChargeFeeOnPickup({
+    const pkg = await ensureShippingPackageForPickup({
       requests,
       actorUserId: req.user?._id || null,
     });

@@ -3,6 +3,7 @@ import Request from "../../models/request.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import User from "../../models/user.model.js";
 import SalesmanLedger from "../../models/salesmanLedger.model.js";
+import { chargeShippingFeeOnPickupComplete } from "../requests/shipping.controller.js";
 
 const toBool = (v) =>
   String(v || "")
@@ -303,6 +304,13 @@ export async function handleHanjinTrackingWebhook(req, res) {
           console.error("[hanjinWebhook] salesman earn update failed", e);
         }
       }
+    }
+
+    if (String(deliveryInfo?.tracking?.lastStatusCode || "").trim() === "11") {
+      await chargeShippingFeeOnPickupComplete({
+        shippingPackageId: request.shippingPackageId,
+        actorUserId: null,
+      });
     }
 
     if (isTrackingStageEligible(deliveryInfo)) {
