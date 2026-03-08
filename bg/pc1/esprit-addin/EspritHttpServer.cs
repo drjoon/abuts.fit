@@ -204,6 +204,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             var response = context.Response;
             NcGenerationRequest req = null;
             response.ContentType = "application/json";
+            var sharedSecret = (AppConfig.GetBridgeSecret() ?? string.Empty).Trim();
             var allowRaw = (AppConfig.GetEspritAllowIpsRaw() ?? string.Empty).Trim();
             if (!string.IsNullOrEmpty(allowRaw))
             {
@@ -234,6 +235,18 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     AppLogger.Log($"[HTTP Server] Forbidden by allowlist: ip={ip}");
                     response.StatusCode = (int)HttpStatusCode.Forbidden;
                     byte[] buffer = Encoding.UTF8.GetBytes("{\"ok\": false, \"message\": \"forbidden\"}");
+                    response.OutputStream.Write(buffer, 0, buffer.Length);
+                    return;
+                }
+            }
+            if (!string.IsNullOrEmpty(sharedSecret))
+            {
+                var provided = (request.Headers["X-Bridge-Secret"] ?? string.Empty).Trim();
+                if (!string.Equals(provided, sharedSecret, StringComparison.Ordinal))
+                {
+                    AppLogger.Log("[HTTP Server] Unauthorized: invalid X-Bridge-Secret");
+                    response.StatusCode = (int)HttpStatusCode.Unauthorized;
+                    byte[] buffer = Encoding.UTF8.GetBytes("{\"ok\": false, \"message\": \"unauthorized\"}");
                     response.OutputStream.Write(buffer, 0, buffer.Length);
                     return;
                 }

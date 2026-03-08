@@ -184,7 +184,7 @@ def dotnet_rollforward_env() -> dict:
 
 def bridge_headers() -> dict:
     headers = {}
-    secret = os.getenv("BRIDGE_SHARED_SECRET", "").strip()
+    secret = os.getenv("RHINO_SHARED_SECRET", "").strip()
     if secret:
         headers["X-Bridge-Secret"] = secret
     return headers

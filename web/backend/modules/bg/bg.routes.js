@@ -2,7 +2,10 @@ import { Router } from "express";
 import * as bgController from "../../controllers/bg/bg.controller.js";
 import { handlePackingCapture } from "../../controllers/ai/lotCapture.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
-import { requireBridgeSecret } from "../../middlewares/bridgeSecret.middleware.js";
+import {
+  requireBgWorkerSecret,
+  requireBridgeSecret,
+} from "../../middlewares/bridgeSecret.middleware.js";
 import { requireBridgeIpAllowlist } from "../../middlewares/bridgeIpAllowlist.middleware.js";
 
 const router = Router();
@@ -11,74 +14,74 @@ const router = Router();
 router.post(
   "/register-file",
   requireBridgeIpAllowlist,
-  requireBridgeSecret,
+  requireBgWorkerSecret,
   bgController.registerProcessedFile,
 );
 
 router.post(
   "/register-finish-line",
   requireBridgeIpAllowlist,
-  requireBridgeSecret,
+  requireBgWorkerSecret,
   bgController.registerFinishLine,
 );
 router.post(
   "/presign-upload",
   requireBridgeIpAllowlist,
-  requireBridgeSecret,
+  requireBgWorkerSecret,
   bgController.getPresignedUploadUrl,
 );
 router.post(
   "/runtime-status",
   requireBridgeIpAllowlist,
-  requireBridgeSecret,
+  requireBgWorkerSecret,
   bgController.registerRuntimeStatus,
 );
 router.post(
   "/lot-capture/packing",
   requireBridgeIpAllowlist,
-  requireBridgeSecret,
+  requireBgWorkerSecret,
   handlePackingCapture,
 );
 router.get(
   "/file-status",
   requireBridgeIpAllowlist,
-  requireBridgeSecret,
+  requireBgWorkerSecret,
   bgController.getFileProcessingStatus,
 );
 router.get(
   "/status",
   requireBridgeIpAllowlist,
-  requireBridgeSecret,
+  requireBgWorkerSecret,
   bgController.getBgStatus,
 );
 router.get(
   "/pending-stl",
   requireBridgeIpAllowlist,
-  requireBridgeSecret,
+  requireBgWorkerSecret,
   bgController.listPendingStl,
 );
 router.get(
   "/pending-nc",
   requireBridgeIpAllowlist,
-  requireBridgeSecret,
+  requireBgWorkerSecret,
   bgController.listPendingNc,
 );
 router.get(
   "/original-file",
   requireBridgeIpAllowlist,
-  requireBridgeSecret,
+  requireBgWorkerSecret,
   bgController.downloadOriginalFile,
 );
 router.get(
   "/source-file",
   requireBridgeIpAllowlist,
-  requireBridgeSecret,
+  requireBgWorkerSecret,
   bgController.downloadSourceFile,
 );
 router.get(
   "/request-meta",
   requireBridgeIpAllowlist,
-  requireBridgeSecret,
+  requireBgWorkerSecret,
   bgController.getRequestMeta,
 );
 

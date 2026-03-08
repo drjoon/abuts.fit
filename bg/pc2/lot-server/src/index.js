@@ -28,7 +28,7 @@ const BACKEND_BASE = (
   process.env.BACKEND_BASE || "http://localhost:8080"
 ).replace(/\/+$/, "");
 
-const BRIDGE_SECRET = String(process.env.BRIDGE_SHARED_SECRET || "").trim();
+const LOT_SHARED_SECRET = String(process.env.LOT_SHARED_SECRET || "").trim();
 
 const IP_DISCOVERY_URL = String(
   process.env.LOT_IP_DISCOVERY_URL || "https://api.ipify.org",
@@ -135,7 +135,7 @@ async function resizeToOneFifth(inputPath) {
 
 async function apiPostJson(url, json) {
   const headers = { "Content-Type": "application/json" };
-  if (BRIDGE_SECRET) headers["X-Bridge-Secret"] = BRIDGE_SECRET;
+  if (LOT_SHARED_SECRET) headers["X-Bridge-Secret"] = LOT_SHARED_SECRET;
 
   const res = await fetch(url, {
     method: "POST",

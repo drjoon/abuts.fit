@@ -60,7 +60,7 @@ def _post_finish_line(request_id: str, input_file_name: str, finish_line: dict):
         body = json.dumps(payload, ensure_ascii=False)
 
         client = System.Net.Http.HttpClient()
-        secret = os.environ.get("BRIDGE_SHARED_SECRET")
+        secret = os.environ.get("RHINO_SHARED_SECRET")
         if secret:
             try:
                 client.DefaultRequestHeaders.Remove("X-Bridge-Secret")

@@ -57,11 +57,20 @@ const BRIDGE_PROCESS_BASE =
 
 const BRIDGE_BASE = process.env.BRIDGE_BASE;
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
+const ESPRIT_SHARED_SECRET = process.env.ESPRIT_SHARED_SECRET;
 
 function withBridgeHeaders(extra = {}) {
   const base = {};
   if (BRIDGE_SHARED_SECRET) {
     base["X-Bridge-Secret"] = BRIDGE_SHARED_SECRET;
+  }
+  return { ...base, ...extra };
+}
+
+function withEspritHeaders(extra = {}) {
+  const base = {};
+  if (ESPRIT_SHARED_SECRET) {
+    base["X-Bridge-Secret"] = ESPRIT_SHARED_SECRET;
   }
   return { ...base, ...extra };
 }
@@ -286,7 +295,7 @@ export async function triggerEspritForNc({ request, force = false }) {
     });
     resp = await fetch(espritUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withEspritHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload),
       signal: controller.signal,
     });

@@ -20,7 +20,7 @@ const RHINO_SERVER_UPLOAD_BASE_URL = String(
 ).replace(/\/+$/, "");
 
 const RHINO_SHARED_SECRET = String(
-  process.env.BRIDGE_SHARED_SECRET || "",
+  process.env.RHINO_SHARED_SECRET || "",
 ).trim();
 
 const rhinoAuthHeaders = () => {

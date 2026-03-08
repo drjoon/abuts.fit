@@ -11,8 +11,8 @@ export async function uploadToRhinoServer(fileBuffer, fileName) {
       process.env.RHINO_SERVER_URL ||
       process.env.RHINO_COMPUTE_BASE_URL ||
       "http://localhost:8000";
-    const BRIDGE_SHARED_SECRET = String(
-      process.env.BRIDGE_SHARED_SECRET || "",
+    const RHINO_SHARED_SECRET = String(
+      process.env.RHINO_SHARED_SECRET || "",
     ).trim();
     const formData = new FormData();
     formData.append("file", fileBuffer, { filename: fileName });
@@ -23,8 +23,8 @@ export async function uploadToRhinoServer(fileBuffer, fileName) {
       {
         headers: {
           ...formData.getHeaders(),
-          ...(BRIDGE_SHARED_SECRET
-            ? { "X-Bridge-Secret": BRIDGE_SHARED_SECRET }
+          ...(RHINO_SHARED_SECRET
+            ? { "X-Bridge-Secret": RHINO_SHARED_SECRET }
             : {}),
         },
         timeout: 30000,

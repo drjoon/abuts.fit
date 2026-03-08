@@ -26,7 +26,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public const string CompositePrcBEnv = "ABUTS_COMPOSITE_PRC_B";
         public const string BackendUrlEnv = "ABUTS_BACKEND_URL";
         public const string EspritPortEnv = "ESPRIT_ADDIN_PORT";
-        public const string BridgeSecretEnv = "ABUTS_BRIDGE_SECRET";
+        public const string EspritSharedSecretEnv = "ESPRIT_SHARED_SECRET";
+        public const string LegacyBridgeSecretEnv = "ABUTS_BRIDGE_SECRET";
         public const string EspritAllowIpsEnv = "ESPRIT_ALLOW_IPS";
         private const string DefaultBaseDirectory = @"C:\Users\user\abuts.fit\bg";
         private static readonly string DefaultStorageFilledDirectory = Path.Combine(DefaultBaseDirectory, "storage", "2-filled");
@@ -74,7 +75,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         }
         public static string GetBridgeSecret()
         {
-            return GetEnvOrDefault(BridgeSecretEnv, DefaultBridgeSharedSecret);
+            var primary = GetEnvOrDefault(EspritSharedSecretEnv, string.Empty);
+            if (!string.IsNullOrWhiteSpace(primary)) return primary;
+            return GetEnvOrDefault(LegacyBridgeSecretEnv, DefaultBridgeSharedSecret);
         }
         public static string GetEspritAllowIpsRaw()
         {

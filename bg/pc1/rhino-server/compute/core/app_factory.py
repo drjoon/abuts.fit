@@ -22,7 +22,7 @@ def create_app():
         for ip in allow_ips_raw.split(",")
         if ip and ip.strip()
     }
-    shared_secret = settings.os.getenv("BRIDGE_SHARED_SECRET", "").strip()
+    shared_secret = settings.os.getenv("RHINO_SHARED_SECRET", "").strip()
 
     @app.middleware("http")
     async def auth_middleware(request: Request, call_next):

@@ -45,8 +45,8 @@ const RHINO_SERVER_URL =
  */
 async function uploadToRhinoServer(fileBuffer, fileName) {
   try {
-    const BRIDGE_SHARED_SECRET = String(
-      process.env.BRIDGE_SHARED_SECRET || "",
+    const RHINO_SHARED_SECRET = String(
+      process.env.RHINO_SHARED_SECRET || "",
     ).trim();
     // 기존 Rhino Compute 서버 업로드 로직 유지
     const formData = new FormData();
@@ -58,8 +58,8 @@ async function uploadToRhinoServer(fileBuffer, fileName) {
       {
         headers: {
           ...formData.getHeaders(),
-          ...(BRIDGE_SHARED_SECRET
-            ? { "X-Bridge-Secret": BRIDGE_SHARED_SECRET }
+          ...(RHINO_SHARED_SECRET
+            ? { "X-Bridge-Secret": RHINO_SHARED_SECRET }
             : {}),
         },
         timeout: 5000,
