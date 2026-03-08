@@ -356,37 +356,125 @@ export const PackingPageContent = ({
     let successCount = 0;
     let failCount = 0;
     let firstErrorMessage = "";
+
+    const requireNonEmptyString = (
+      value: unknown,
+      fieldLabel: string,
+      req: ManufacturerRequest,
+    ) => {
+      if (typeof value !== "string") {
+        throw new Error(
+          `${req.requestId || "의뢰"}: ${fieldLabel} 값이 비어 있습니다. 백엔드 데이터를 확인해주세요.`,
+        );
+      }
+      const text = value.trim();
+      if (!text) {
+        throw new Error(
+          `${req.requestId || "의뢰"}: ${fieldLabel} 값이 비어 있습니다. 백엔드 데이터를 확인해주세요.`,
+        );
+      }
+      return text;
+    };
+
+    const normalizeLotValue = (...values: unknown[]) => {
+      for (const value of values) {
+        const text = String(value || "").trim();
+        if (text) return text;
+      }
+      return "";
+    };
+
+    const resolvePackTopLeftValue = (req: ManufacturerRequest, lot: string) => {
+      const candidates = [
+        req.mailboxAddress,
+        lot,
+        (req as any)?.lotNumber?.part,
+        req.requestId,
+      ];
+      return normalizeLotValue(...candidates) || "-";
+    };
+
+    const resolvePackTopCenterValue = (
+      implantManufacturer: string,
+      implantBrand: string,
+      implantFamily: string,
+      implantType: string,
+    ) =>
+      [implantManufacturer, implantBrand, implantFamily, implantType].join(
+        " / ",
+      );
+
+    const resolvePackTopRightValue = (
+      req: ManufacturerRequest,
+      lot: string,
+      tooth: string,
+    ) => {
+      const lotText = normalizeLotValue(
+        lot,
+        (req as any)?.lotNumber?.final,
+        (req as any)?.lotNumber?.part,
+      );
+      if (lotText) {
+        return lotText.length >= 3 ? lotText.slice(-3) : lotText;
+      }
+      const toothText = String(tooth || "")
+        .trim()
+        .replace(/^#/, "");
+      if (toothText) return toothText;
+      const requestId = String(req.requestId || "").trim();
+      if (requestId) return requestId.slice(-3);
+      return "-";
+    };
+
     try {
       for (const req of paginatedRequests) {
         try {
           const caseInfos = req.caseInfos || {};
           const lot = getLotLabel(req);
-          const mailboxCode = String(req.mailboxAddress || "").trim() || "-";
           const labName =
             String((req as any)?.requestorOrganizationId?.name || "").trim() ||
             String((req as any)?.requestor?.organization || "").trim() ||
             String((req as any)?.requestor?.name || "").trim() ||
             "-";
-          const implantManufacturer = String(
-            (caseInfos as any)?.implantManufacturer || "",
-          ).trim();
-          const isDentium = /\bDENTIUM\b/i.test(implantManufacturer)
-            ? true
-            : implantManufacturer.includes("덴티움");
-          const screwType = isDentium ? "8B" : "0A";
-          const clinicName = String(caseInfos.clinicName || "").trim() || "-";
-          const implantBrand = String(
-            (caseInfos as any)?.implantBrand || "",
-          ).trim();
-          const implantFamily = String(
-            (caseInfos as any)?.implantFamily || "",
-          ).trim();
-          const implantType = String(
-            (caseInfos as any)?.implantType || "",
-          ).trim();
+          const implantManufacturer = requireNonEmptyString(
+            (caseInfos as any)?.implantManufacturer,
+            "제조사",
+            req,
+          );
+          const clinicName = requireNonEmptyString(
+            caseInfos.clinicName,
+            "치과명",
+            req,
+          );
+          const implantBrand = requireNonEmptyString(
+            (caseInfos as any)?.implantBrand,
+            "브랜드",
+            req,
+          );
+          const implantFamily = requireNonEmptyString(
+            (caseInfos as any)?.implantFamily,
+            "패밀리",
+            req,
+          );
+          const implantType = requireNonEmptyString(
+            (caseInfos as any)?.implantType,
+            "타입",
+            req,
+          );
+          const patientName = requireNonEmptyString(
+            caseInfos.patientName,
+            "환자명",
+            req,
+          );
+          const toothNumber = requireNonEmptyString(
+            caseInfos.tooth,
+            "치아번호",
+            req,
+          );
           const createdAtIso = req.createdAt ? String(req.createdAt) : "";
           const { manufacturingDate, rawSources } =
             resolveManufacturingDate(req);
+
           if (!manufacturingDate) {
             console.warn(
               "[PackingPage] manufacturing date missing for pack label",
@@ -406,6 +494,7 @@ export const PackingPageContent = ({
             });
             continue;
           }
+
           const material =
             (typeof (caseInfos as any)?.material === "string" &&
               (caseInfos as any).material) ||
@@ -414,12 +503,20 @@ export const PackingPageContent = ({
             (typeof (req.lotNumber as any)?.material === "string" &&
               (req.lotNumber as any).material) ||
             "";
+          const mailboxCode = resolvePackTopLeftValue(req, lot);
+          const screwType = resolvePackTopCenterValue(
+            implantManufacturer,
+            implantBrand,
+            implantFamily,
+            implantType,
+          );
+          const lotNumber = resolvePackTopRightValue(req, lot, toothNumber);
           const payload = {
             printer: printerProfile || undefined,
             paperProfile: paperProfile || undefined,
             copies: 1,
             requestId: req.requestId,
-            lotNumber: lot,
+            lotNumber,
             mailboxCode,
             screwType,
             clinicName,
@@ -430,8 +527,8 @@ export const PackingPageContent = ({
             implantBrand,
             implantFamily,
             implantType,
-            patientName: caseInfos.patientName || "",
-            toothNumber: caseInfos.tooth || "",
+            patientName,
+            toothNumber,
             material,
             caseType: "Custom Abutment",
             printedAt: new Date().toISOString(),
@@ -442,6 +539,7 @@ export const PackingPageContent = ({
             targetDots: packLabelDots,
             designDots: packLabelDesignDots,
           });
+
           if (packOutputMode === "image") {
             const base = String(req.requestId || lot || "pack").replace(
               /[^a-zA-Z0-9._-]+/g,
@@ -451,6 +549,7 @@ export const PackingPageContent = ({
             successCount += 1;
             continue;
           }
+
           const zpl = buildPackLabelBitmapZpl({
             canvas,
             labelWidth: packLabelDots?.pw,
@@ -488,6 +587,7 @@ export const PackingPageContent = ({
           console.error("Packing label print failed:", error);
         }
       }
+
       if (successCount > 0) {
         toast({
           title: "패킹 라벨 출력 완료",

@@ -196,6 +196,15 @@ const ensureHanjinSenderEnv = () => {
   }
 };
 
+const normalizeHanjinZip = (value) => {
+  const digits = String(value || "")
+    .replace(/\D+/g, "")
+    .trim();
+  if (!digits) return "";
+  if (digits.length >= 5) return digits.slice(0, 5);
+  return digits;
+};
+
 const buildHanjinInsertOrderBody = ({ mailbox, requests }) => {
   ensureHanjinEnv();
   ensureHanjinSenderEnv();
@@ -207,9 +216,9 @@ const buildHanjinInsertOrderBody = ({ mailbox, requests }) => {
   const extracted = requestorOrg.extracted || {};
   const addr = requestor.address || {};
 
-  const receiverZip = String(addr.zipCode || extracted.zipCode || "")
-    .trim()
-    .slice(0, 6);
+  const receiverZip = normalizeHanjinZip(
+    addr.zipCode || extracted.zipCode || "",
+  );
   const receiverBaseAddr =
     String(addr.street || addr.address1 || extracted.address || "").trim() ||
     String(requestor.addressText || "").trim();
@@ -488,9 +497,8 @@ const buildHanjinDraftPayload = (requests) => {
       extracted.address ||
       "";
 
-    const receiverZip = String(addr.zipCode || extracted.zipCode || "").slice(
-      0,
-      6,
+    const receiverZip = normalizeHanjinZip(
+      addr.zipCode || extracted.zipCode || "",
     );
 
     const mailbox = String(r?.mailboxAddress || "").trim();
