@@ -73,38 +73,7 @@ def _post_finish_line(request_id: str, input_file_name: str, finish_line: dict):
             System.Text.Encoding.UTF8,
             "application/json",
         )
-
-        point_count = 0
-        try:
-            point_count = len((finish_line or {}).get("points") or [])
-        except Exception:
-            point_count = 0
-        log(
-            "finishline post start requestId={} file={} points={}".format(
-                request_id,
-                input_file_name,
-                point_count,
-            )
-        )
         resp = client.PostAsync(url, content).Result
-        ok = bool(resp and resp.IsSuccessStatusCode)
-        status_code = None
-        response_text = ""
-        try:
-            status_code = int(resp.StatusCode)
-        except Exception:
-            status_code = None
-        try:
-            response_text = resp.Content.ReadAsStringAsync().Result or ""
-        except Exception:
-            response_text = ""
-        log(
-            "finishline post {} status={} body={}".format(
-                "ok" if ok else "failed",
-                status_code,
-                response_text[:500],
-            )
-        )
     except Exception as e:
         log("finishline post failed: " + str(e))
 
