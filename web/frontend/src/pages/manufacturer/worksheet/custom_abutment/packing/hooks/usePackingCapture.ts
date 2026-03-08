@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
   type DragEvent,
   type Dispatch,
@@ -49,6 +50,28 @@ export const usePackingCapture = ({
   const [ocrStage, setOcrStage] = useState<"idle" | "upload" | "recognize">(
     "idle",
   );
+  const requestsRef = useRef(requests);
+  const previewOpenRef = useRef(previewOpen);
+  const previewFilesRef = useRef(previewFiles);
+  const handleOpenPreviewRef = useRef(handleOpenPreview);
+  const handleAutoPrintProcessedRequestRef = useRef(
+    handleAutoPrintProcessedRequest,
+  );
+
+  useEffect(() => {
+    requestsRef.current = requests;
+    previewOpenRef.current = previewOpen;
+    previewFilesRef.current = previewFiles;
+    handleOpenPreviewRef.current = handleOpenPreview;
+    handleAutoPrintProcessedRequestRef.current =
+      handleAutoPrintProcessedRequest;
+  }, [
+    handleAutoPrintProcessedRequest,
+    handleOpenPreview,
+    previewFiles,
+    previewOpen,
+    requests,
+  ]);
 
   const extractLotSuffix3 = useCallback((value: string | null | undefined) => {
     const s = String(value || "").toUpperCase();
@@ -285,37 +308,90 @@ export const usePackingCapture = ({
       const requestMongoId = String(payload?.requestMongoId || "").trim();
       const suffix = String(payload?.recognizedSuffix || "").trim();
       const eventRequest = payload?.request as ManufacturerRequest | undefined;
-      if (requestId) {
-        setRequests((prev) =>
-          prev.map((req) => {
-            if (String(req.requestId || "").trim() !== requestId) return req;
+      const movedToStage = String(payload?.movedToStage || "").trim();
+      const mergedEventRequest = (() => {
+        const currentRequest = requestsRef.current.find((req) => {
+          const currentMongoId = String(req._id || "").trim();
+          const currentRequestId = String(req.requestId || "").trim();
+          return (
+            (!!requestMongoId && currentMongoId === requestMongoId) ||
+            (!!requestId && currentRequestId === requestId)
+          );
+        });
+        if (currentRequest && eventRequest) {
+          return {
+            ...currentRequest,
+            ...eventRequest,
+            requestor: eventRequest.requestor || currentRequest.requestor,
+            requestorOrganization:
+              eventRequest.requestorOrganization ||
+              currentRequest.requestorOrganization,
+            caseInfos: {
+              ...(currentRequest.caseInfos || {}),
+              ...(eventRequest.caseInfos || {}),
+            },
+            lotNumber: eventRequest.lotNumber || currentRequest.lotNumber,
+            productionSchedule:
+              eventRequest.productionSchedule ||
+              currentRequest.productionSchedule,
+            timeline: eventRequest.timeline || currentRequest.timeline,
+          } as ManufacturerRequest;
+        }
+        return eventRequest || currentRequest;
+      })();
+      if (requestId || requestMongoId) {
+        setRequests((prev) => {
+          if (movedToStage && movedToStage !== "세척.패킹") {
+            return prev.filter((req) => {
+              const currentMongoId = String(req._id || "").trim();
+              const currentRequestId = String(req.requestId || "").trim();
+              return !(
+                (!!requestMongoId && currentMongoId === requestMongoId) ||
+                (!!requestId && currentRequestId === requestId)
+              );
+            });
+          }
+          return prev.map((req) => {
+            const currentMongoId = String(req._id || "").trim();
+            const currentRequestId = String(req.requestId || "").trim();
+            if (
+              (!requestMongoId || currentMongoId !== requestMongoId) &&
+              (!requestId || currentRequestId !== requestId)
+            ) {
+              return req;
+            }
             return {
               ...req,
+              ...(mergedEventRequest || {}),
               realtimeProgress: null,
             };
-          }),
-        );
+          });
+        });
       }
       void (async () => {
-        if (previewOpen && previewFiles.request?._id) {
+        if (previewOpenRef.current && previewFilesRef.current.request?._id) {
           const currentPreviewId = String(
-            previewFiles.request._id || "",
+            previewFilesRef.current.request._id || "",
           ).trim();
-          const matchedRequest = eventRequest
+          const matchedRequest = mergedEventRequest
             ? (() => {
-                const mongoId = String(eventRequest._id || "").trim();
-                const businessId = String(eventRequest.requestId || "").trim();
+                const mongoId = String(mergedEventRequest._id || "").trim();
+                const businessId = String(
+                  mergedEventRequest.requestId || "",
+                ).trim();
                 return mongoId === currentPreviewId ||
                   (requestMongoId && mongoId === requestMongoId) ||
                   (requestId && businessId === requestId)
-                  ? eventRequest
+                  ? mergedEventRequest
                   : null;
               })()
             : null;
-          if (matchedRequest) await handleOpenPreview(matchedRequest);
+          if (matchedRequest) {
+            await handleOpenPreviewRef.current(matchedRequest);
+          }
         }
-        if (eventRequest && handleAutoPrintProcessedRequest) {
-          await handleAutoPrintProcessedRequest(eventRequest);
+        if (mergedEventRequest && handleAutoPrintProcessedRequestRef.current) {
+          await handleAutoPrintProcessedRequestRef.current(mergedEventRequest);
         }
       })();
       toast({
@@ -328,15 +404,7 @@ export const usePackingCapture = ({
     return () => {
       unsubscribe?.();
     };
-  }, [
-    handleOpenPreview,
-    previewFiles.request,
-    previewOpen,
-    setRequests,
-    toast,
-    token,
-    handleAutoPrintProcessedRequest,
-  ]);
+  }, [setRequests, toast, token]);
 
   return {
     isDraggingOver,

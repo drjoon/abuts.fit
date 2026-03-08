@@ -1,6 +1,18 @@
 import { io, Socket } from "socket.io-client";
 
 let socket: Socket | null = null;
+const appEventSubscribers = new Set<(evt: AppEventMessage) => void>();
+
+const handleAppEvent = (evt: AppEventMessage) => {
+  appEventSubscribers.forEach((callback) => {
+    callback(evt);
+  });
+};
+
+function bindSharedSocketListeners(target: Socket) {
+  target.off("app-event", handleAppEvent);
+  target.on("app-event", handleAppEvent);
+}
 
 export interface SocketMessage {
   _id: string;
@@ -94,23 +106,12 @@ export interface AppEventMessage {
 }
 
 export function onAppEvent(callback: (evt: AppEventMessage) => void) {
-  const s = getSocket();
-  if (s) {
-    s.on("app-event", callback);
-    return () => s.off("app-event", callback);
+  appEventSubscribers.add(callback);
+  if (socket) {
+    bindSharedSocketListeners(socket);
   }
-  let bound: Socket | null = null;
-  const timer = setInterval(() => {
-    const cur = getSocket();
-    if (cur) {
-      clearInterval(timer);
-      bound = cur;
-      cur.on("app-event", callback);
-    }
-  }, 100);
   return () => {
-    clearInterval(timer);
-    bound?.off("app-event", callback);
+    appEventSubscribers.delete(callback);
   };
 }
 
@@ -165,6 +166,8 @@ export function initializeSocket(token: string): Socket {
     console.error("Socket.io 연결 오류:", error.message);
   });
 
+  bindSharedSocketListeners(socket);
+
   return socket;
 }
 
@@ -174,6 +177,7 @@ export function getSocket(): Socket | null {
 
 export function disconnectSocket() {
   if (socket) {
+    socket.off("app-event", handleAppEvent);
     socket.disconnect();
     socket = null;
   }

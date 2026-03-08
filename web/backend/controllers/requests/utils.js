@@ -306,6 +306,12 @@ function normalizeProductionScheduleDiameter(obj) {
   return obj;
 }
 
+function canonicalizeLotNumberValue(raw) {
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (!value) return "";
+  return value.replace(/^CAP/i, "CA");
+}
+
 export async function normalizeRequestForResponse(requestDoc) {
   if (!requestDoc) return requestDoc;
   const obj =
@@ -316,28 +322,44 @@ export async function normalizeRequestForResponse(requestDoc) {
   obj.caseInfos = await normalizeCaseInfosImplantFields(ci, false);
   normalizeProductionScheduleDiameter(obj);
   const requestorOrgRaw = obj?.requestorOrganizationId;
-  if (
-    requestorOrgRaw &&
-    typeof requestorOrgRaw === "object" &&
-    !Array.isArray(requestorOrgRaw)
-  ) {
-    const orgName =
-      typeof requestorOrgRaw.name === "string"
-        ? requestorOrgRaw.name.trim()
-        : "";
-    const extracted =
-      requestorOrgRaw.extracted && typeof requestorOrgRaw.extracted === "object"
-        ? requestorOrgRaw.extracted
-        : undefined;
-    obj.requestorOrganization = {
-      _id: requestorOrgRaw._id ? String(requestorOrgRaw._id) : undefined,
-      name: orgName || undefined,
-      extracted,
-    };
+  const requestorOrgId = (() => {
+    if (!requestorOrgRaw) return "";
+    if (
+      typeof requestorOrgRaw === "object" &&
+      !Array.isArray(requestorOrgRaw) &&
+      requestorOrgRaw._id
+    ) {
+      return String(requestorOrgRaw._id);
+    }
+    return String(requestorOrgRaw);
+  })();
+  if (requestorOrgId && Types.ObjectId.isValid(requestorOrgId)) {
+    const requestorOrgDoc = await RequestorOrganization.findById(requestorOrgId)
+      .select({ name: 1, extracted: 1 })
+      .lean();
+    if (requestorOrgDoc) {
+      const extracted =
+        requestorOrgDoc.extracted &&
+        typeof requestorOrgDoc.extracted === "object"
+          ? requestorOrgDoc.extracted
+          : undefined;
+      const orgName =
+        typeof requestorOrgDoc.name === "string"
+          ? requestorOrgDoc.name.trim()
+          : "";
+      const companyName =
+        typeof extracted?.companyName === "string"
+          ? extracted.companyName.trim()
+          : "";
+      obj.requestorOrganization = {
+        _id: requestorOrgId,
+        name: orgName || companyName || undefined,
+        extracted,
+      };
+    }
   }
   if (obj?.lotNumber && typeof obj.lotNumber === "object") {
-    const valueRaw =
-      typeof obj.lotNumber.value === "string" ? obj.lotNumber.value.trim() : "";
+    const valueRaw = canonicalizeLotNumberValue(obj.lotNumber.value);
     if (valueRaw) {
       obj.lotNumber.value = valueRaw;
     }
@@ -400,8 +422,11 @@ export async function ensureLotNumberForMachining(requestDoc) {
   if (!requestDoc) return;
 
   requestDoc.lotNumber = requestDoc.lotNumber || {};
-  const existingValue = String(requestDoc.lotNumber.value || "").trim();
-  if (existingValue) return;
+  const existingValue = canonicalizeLotNumberValue(requestDoc.lotNumber.value);
+  if (existingValue) {
+    requestDoc.lotNumber.value = existingValue;
+    return;
+  }
 
   // 로트 규칙(CA, 크라운은 CR): PREFIX + YYMMDD + "-" + 26진 3자리 (AAA, AAB, ... ZZZ 이후 다시 AAA)
   const todayYmd = getTodayYmdInKst(); // YYYY-MM-DD
