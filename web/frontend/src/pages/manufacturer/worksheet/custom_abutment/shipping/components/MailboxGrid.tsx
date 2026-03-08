@@ -147,7 +147,6 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
   );
   const [isPrinting, setIsPrinting] = useState(false);
   const [isRequestingPickup, setIsRequestingPickup] = useState(false);
-  const [pickupRequested, setPickupRequested] = useState(false);
   const [devTestLoading, setDevTestLoading] = useState({
     label: false,
     order: false,
@@ -763,6 +762,31 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     return Array.from(addressMap.keys());
   }, [addressMap]);
 
+  const pickupRequestedMailboxes = useMemo(() => {
+    const set = new Set<string>();
+    for (const req of requests) {
+      const mailbox = String(req?.mailboxAddress || "").trim();
+      if (!mailbox) continue;
+      const di =
+        req?.deliveryInfoRef && typeof req.deliveryInfoRef === "object"
+          ? (req.deliveryInfoRef as any)
+          : null;
+      const hasPickup = Boolean(
+        di?.trackingNumber ||
+        di?.shippedAt ||
+        di?.tracking?.lastStatusText ||
+        String(req?.manufacturerStage || "").trim() === "추적관리",
+      );
+      const isDelivered = Boolean(di?.deliveredAt);
+      const isCanceled =
+        String(di?.tracking?.lastStatusText || "").trim() === "예약취소";
+      if (hasPickup && !isDelivered && !isCanceled) {
+        set.add(mailbox);
+      }
+    }
+    return set;
+  }, [requests]);
+
   const resolvePrintPayload = (payload: any) => {
     if (!payload) return null;
     if (typeof payload === "string" && payload.startsWith("http")) {
@@ -1026,12 +1050,16 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     const printedAddresses = occupiedAddresses.filter((addr) =>
       printedMailboxes.has(addr),
     );
+    const requestedAddresses = occupiedAddresses.filter((addr) =>
+      pickupRequestedMailboxes.has(addr),
+    );
+    const hasRequestedPickup = requestedAddresses.length > 0;
 
-    if (!pickupRequested && printedAddresses.length === 0) {
+    if (!hasRequestedPickup && printedAddresses.length === 0) {
       toast({
         title: "접수 불가",
         description:
-          "택배 수거를 접수할 우편함이 없습니다. 먼저 운송장을 출력해주세요.",
+          "먼저 운송장을 출력한 우편함이 있어야 택배 접수를 할 수 있습니다.",
         variant: "destructive",
       });
       return;
@@ -1039,12 +1067,11 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
 
     setIsRequestingPickup(true);
     try {
-      if (!pickupRequested) {
+      if (!hasRequestedPickup) {
         await callHanjinApi({
           path: "/api/requests/shipping/hanjin/pickup",
           mailboxAddresses: printedAddresses,
         });
-        setPickupRequested(true);
         toast({
           title: "택배 수거 접수 완료",
           description: `${printedAddresses.length}개 우편함의 택배 수거가 접수되었습니다.`,
@@ -1052,9 +1079,8 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
       } else {
         await callHanjinApi({
           path: "/api/requests/shipping/hanjin/pickup-cancel",
-          mailboxAddresses: Array.from(printedMailboxes),
+          mailboxAddresses: requestedAddresses,
         });
-        setPickupRequested(false);
         toast({
           title: "택배 수거 접수 취소",
           description: "택배 수거 접수가 취소되었습니다.",
@@ -1065,11 +1091,11 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
       const errorMessage =
         error instanceof Error && error.message
           ? error.message
-          : pickupRequested
+          : hasRequestedPickup
             ? "택배 수거 접수 취소에 실패했습니다."
             : "택배 수거 접수에 실패했습니다.";
       toast({
-        title: pickupRequested ? "취소 실패" : "택배 수거 접수 실패",
+        title: hasRequestedPickup ? "취소 실패" : "택배 수거 접수 실패",
         description: errorMessage,
         variant: "destructive",
       });
@@ -1081,11 +1107,15 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
   const canRequestPickup =
     occupiedAddresses.filter((addr) => printedMailboxes.has(addr)).length > 0;
 
+  const hasRequestedPickup =
+    occupiedAddresses.filter((addr) => pickupRequestedMailboxes.has(addr))
+      .length > 0;
+
   const pickupButtonLabel = isRequestingPickup
-    ? pickupRequested
+    ? hasRequestedPickup
       ? "취소 중..."
       : "접수 중..."
-    : pickupRequested
+    : hasRequestedPickup
       ? "↩️ 접수 취소"
       : "🚚 택배 접수";
 
@@ -1180,12 +1210,12 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
             <button
               onClick={handlePickupAction}
               disabled={
-                isRequestingPickup || (!pickupRequested && !canRequestPickup)
+                isRequestingPickup || (!hasRequestedPickup && !canRequestPickup)
               }
               className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
-                isRequestingPickup || (!pickupRequested && !canRequestPickup)
+                isRequestingPickup || (!hasRequestedPickup && !canRequestPickup)
                   ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                  : pickupRequested
+                  : hasRequestedPickup
                     ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 shadow-sm"
                     : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm"
               }`}

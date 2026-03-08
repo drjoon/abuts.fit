@@ -251,6 +251,15 @@ export function useWorksheetRealtimeStatus({
         return;
       }
 
+      if (type === "request:delivery-updated") {
+        const eventRequest = payload?.request as
+          | ManufacturerRequest
+          | undefined;
+        if (!eventRequest) return;
+        setRequests((prev) => applyRequestPatch(prev, eventRequest));
+        return;
+      }
+
       if (type === "bg:runtime-status") {
         const clear = payload?.clear === true;
         const label = String(payload?.label || "").trim();

@@ -54,6 +54,7 @@ export const {
   validateHanjinCustomerCheck,
   requestHanjinPickup,
   cancelHanjinPickup,
+  syncHanjinTracking,
   simulateHanjinWebhook,
   getWblPrintSettings,
 } = shippingController;

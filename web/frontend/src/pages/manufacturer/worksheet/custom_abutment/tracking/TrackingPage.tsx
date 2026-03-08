@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
+import { request } from "@/shared/api/apiClient";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -80,6 +81,15 @@ const formatDateTime = (d?: string) => {
   return dt.toLocaleString("ko-KR");
 };
 
+const getShippingStatus = (req: ManufacturerRequest) => {
+  const di = normalizeDeliveryInfo(req.deliveryInfoRef);
+  const lastStatusText = String(di?.tracking?.lastStatusText || "").trim();
+  if (di.deliveredAt) return "배송완료";
+  if (lastStatusText) return lastStatusText;
+  if (di.trackingNumber || di.shippedAt) return "접수";
+  return "-";
+};
+
 export const TrackingInquiryPage = () => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -95,6 +105,10 @@ export const TrackingInquiryPage = () => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const onScrollRef = useRef<(() => void) | null>(null);
   const [loading, setLoading] = useState(false);
+  const [syncingTracking, setSyncingTracking] = useState(false);
+  const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(
+    null,
+  );
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
   // Network pagination per stage (tracking)
   const PAGE_LIMIT = 30;
@@ -758,6 +772,87 @@ export const TrackingInquiryPage = () => {
     });
   }, [baseFiltered]);
 
+  const handleCancelPickup = useCallback(
+    async (row: ManufacturerRequest) => {
+      const mailbox = String(row.mailboxAddress || "").trim();
+      const requestId = String(row.requestId || "").trim();
+      if (!mailbox) {
+        toast({
+          title: "취소 불가",
+          description: "우편함 정보가 없어 접수 취소를 진행할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setCancellingRequestId(requestId || mailbox);
+      try {
+        const response = await request<any>({
+          path: "/api/requests/shipping/hanjin/pickup-cancel",
+          method: "POST",
+          jsonBody: { mailboxAddresses: [mailbox] },
+        });
+        const body = response.data as any;
+        if (!response.ok || !body?.success) {
+          throw new Error(body?.message || "택배 취소에 실패했습니다.");
+        }
+        toast({
+          title: "택배 접수 취소 완료",
+          description: `${mailbox} 우편함 접수를 취소했습니다.`,
+        });
+      } catch (error) {
+        toast({
+          title: "택배 취소 실패",
+          description:
+            error instanceof Error
+              ? error.message
+              : "택배 취소에 실패했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setCancellingRequestId(null);
+      }
+    },
+    [toast],
+  );
+
+  const handleSyncTracking = useCallback(async () => {
+    if (!shippingRows.length) {
+      toast({
+        title: "동기화할 배송건 없음",
+        description: "송장번호가 있는 배송건이 없습니다.",
+      });
+      return;
+    }
+    setSyncingTracking(true);
+    try {
+      const requestIds = shippingRows
+        .map((row) => String(row.requestId || "").trim())
+        .filter(Boolean);
+      const response = await request<any>({
+        path: "/api/requests/shipping/hanjin/tracking-sync",
+        method: "POST",
+        jsonBody: { requestIds },
+      });
+      const body = response.data as any;
+      if (!response.ok || !body?.success) {
+        throw new Error(body?.message || "배송조회 동기화에 실패했습니다.");
+      }
+      toast({
+        title: "배송조회 동기화 완료",
+        description: `${Array.isArray(body?.data?.synced) ? body.data.synced.length : 0}건 상태를 확인했습니다.`,
+      });
+    } catch (error) {
+      toast({
+        title: "배송조회 동기화 실패",
+        description:
+          error instanceof Error ? error.message : "동기화에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setSyncingTracking(false);
+    }
+  }, [shippingRows, toast]);
+
   const currentRows =
     tab === "process"
       ? processRows
@@ -842,6 +937,17 @@ export const TrackingInquiryPage = () => {
               />
             </div>
             <div className="flex items-center gap-2">
+              {tab === "shipping" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="px-4"
+                  onClick={handleSyncTracking}
+                  disabled={syncingTracking}
+                >
+                  {syncingTracking ? "동기화 중..." : "배송조회 동기화"}
+                </Button>
+              )}
               {tab === "udi" && (
                 <Button
                   variant="outline"
@@ -1022,6 +1128,7 @@ export const TrackingInquiryPage = () => {
                     <TableHead>접수(발송)</TableHead>
                     <TableHead>배송완료</TableHead>
                     <TableHead>상태</TableHead>
+                    <TableHead className="text-right">작업</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1031,11 +1138,14 @@ export const TrackingInquiryPage = () => {
                     const deliveredAt = di.deliveredAt
                       ? String(di.deliveredAt)
                       : "";
-                    const status = deliveredAt
-                      ? "완료"
-                      : shippedAt || di.trackingNumber
-                        ? "배송중"
-                        : "-";
+                    const status = getShippingStatus(r);
+                    const isCancelable =
+                      Boolean(di.trackingNumber || di.shippedAt) &&
+                      !Boolean(di.deliveredAt) &&
+                      status !== "예약취소";
+                    const actionKey = String(
+                      r.requestId || r.mailboxAddress || "",
+                    ).trim();
 
                     return (
                       <TableRow key={String(r._id || r.requestId)}>
@@ -1047,13 +1157,29 @@ export const TrackingInquiryPage = () => {
                         <TableCell>{formatDateTime(shippedAt)}</TableCell>
                         <TableCell>{formatDateTime(deliveredAt)}</TableCell>
                         <TableCell>{status}</TableCell>
+                        <TableCell className="text-right">
+                          {isCancelable ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => void handleCancelPickup(r)}
+                              disabled={cancellingRequestId === actionKey}
+                            >
+                              {cancellingRequestId === actionKey
+                                ? "취소 중..."
+                                : "택배 취소"}
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-slate-400">-</span>
+                          )}
+                        </TableCell>
                       </TableRow>
                     );
                   })}
                   {!loading && shippingRows.length === 0 && (
                     <TableRow>
                       <TableCell
-                        colSpan={6}
+                        colSpan={7}
                         className="text-center text-muted-foreground"
                       >
                         조회 결과가 없습니다.

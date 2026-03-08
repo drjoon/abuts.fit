@@ -190,6 +190,13 @@ router.post(
   requestController.cancelHanjinPickup,
 );
 
+router.post(
+  "/shipping/hanjin/tracking-sync",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.syncHanjinTracking,
+);
+
 // 한진 배송정보 수신 시뮬레이션 (개발용)
 router.post(
   "/shipping/hanjin/webhook-simulate",

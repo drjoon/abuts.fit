@@ -6,6 +6,7 @@ import CreditLedger from "../../models/creditLedger.model.js";
 import hanjinService from "../../services/hanjin.service.js";
 import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
 import { handleHanjinTrackingWebhook } from "../webhooks/hanjinWebhook.controller.js";
+import { emitAppEventToRoles } from "../../socket.js";
 import { Types } from "mongoose";
 import {
   buildRequestorOrgScopeFilter,
@@ -18,6 +19,7 @@ import {
   getDeliveryEtaLeadDays,
   applyStatusMapping,
   bumpRollbackCount,
+  normalizeRequestForResponse,
   normalizeRequestStage,
   normalizeRequestStageLabel,
   REQUEST_STAGE_GROUPS,
@@ -36,6 +38,56 @@ const memo = async ({ key, ttlMs, fn }) => {
   const value = await fn();
   __cache.set(key, { value, expiresAt: now + ttlMs });
   return value;
+};
+
+const emitDeliveryUpdated = async (requestDoc, extra = {}) => {
+  const normalized = await normalizeRequestForResponse(requestDoc);
+  emitAppEventToRoles(["manufacturer", "admin"], "request:delivery-updated", {
+    requestId: String(requestDoc?.requestId || "").trim() || null,
+    requestMongoId: String(requestDoc?._id || "").trim() || null,
+    request: normalized,
+    ...extra,
+  });
+};
+
+const extractTrackingRows = (data) => {
+  if (!data || typeof data !== "object") return [];
+  if (Array.isArray(data.wblList)) return data.wblList;
+  if (Array.isArray(data.data?.wblList)) return data.data.wblList;
+  if (Array.isArray(data.result?.wblList)) return data.result.wblList;
+  return [];
+};
+
+const normalizeTrackingEvents = (wrkList) => {
+  const list = Array.isArray(wrkList) ? wrkList : [];
+  return list
+    .map((item) => ({
+      statusCode:
+        item?.statusCode != null ? String(item.statusCode).trim() : undefined,
+      statusText:
+        item?.statusName != null ? String(item.statusName).trim() : undefined,
+      occurredAt:
+        item?.statusDate != null ? new Date(item.statusDate) : undefined,
+      location:
+        item?.agencyName != null ? String(item.agencyName).trim() : undefined,
+      description:
+        item?.description != null ? String(item.description).trim() : undefined,
+      raw: item ?? undefined,
+    }))
+    .filter((item) => item.statusCode || item.statusText || item.occurredAt);
+};
+
+const buildTrackingStatusLabel = (deliveryInfo) => {
+  const deliveredAt = deliveryInfo?.deliveredAt
+    ? new Date(deliveryInfo.deliveredAt)
+    : null;
+  if (deliveredAt && !Number.isNaN(deliveredAt.getTime())) return "배송완료";
+  const statusText = String(
+    deliveryInfo?.tracking?.lastStatusText || "",
+  ).trim();
+  if (statusText) return statusText;
+  if (deliveryInfo?.trackingNumber || deliveryInfo?.shippedAt) return "접수";
+  return "-";
 };
 
 const resolveMailboxList = (mailboxAddresses) =>
@@ -1400,6 +1452,20 @@ export async function requestHanjinPickup(req, res) {
         actorUserId: req.user?._id || null,
       });
 
+      const updatedDocs = await Request.find({
+        _id: { $in: requestDocs.map((request) => request._id) },
+      })
+        .populate("requestor", "name organization phoneNumber address")
+        .populate("requestorOrganizationId", "name extracted")
+        .populate("deliveryInfoRef");
+
+      for (const doc of updatedDocs) {
+        await emitDeliveryUpdated(doc, {
+          source: "hanjin-pickup",
+          shippingStatusLabel: buildTrackingStatusLabel(doc.deliveryInfoRef),
+        });
+      }
+
       results.push({ mailbox, success: true, data, updatedIds });
     }
 
@@ -1506,6 +1572,33 @@ export async function cancelHanjinPickup(req, res) {
         custOrdNo,
       };
       const data = await callHanjinWithFallback({ data: cancelBody });
+
+      const requestDocs = await Request.find({
+        mailboxAddress: mailbox,
+      })
+        .populate("requestor", "name organization phoneNumber address")
+        .populate("requestorOrganizationId", "name extracted")
+        .populate("deliveryInfoRef");
+
+      for (const requestDoc of requestDocs) {
+        if (
+          requestDoc.deliveryInfoRef &&
+          typeof requestDoc.deliveryInfoRef === "object"
+        ) {
+          requestDoc.deliveryInfoRef.tracking =
+            requestDoc.deliveryInfoRef.tracking || {};
+          requestDoc.deliveryInfoRef.tracking.lastStatusCode = "03";
+          requestDoc.deliveryInfoRef.tracking.lastStatusText = "예약취소";
+          requestDoc.deliveryInfoRef.tracking.lastEventAt = new Date();
+          requestDoc.deliveryInfoRef.tracking.lastSyncedAt = new Date();
+          await requestDoc.deliveryInfoRef.save();
+        }
+        await emitDeliveryUpdated(requestDoc, {
+          source: "hanjin-pickup-cancel",
+          shippingStatusLabel: "예약취소",
+        });
+      }
+
       results.push({ mailbox, success: true, data });
     }
 
@@ -1563,6 +1656,122 @@ export async function simulateHanjinWebhook(req, res) {
       success: false,
       message: "한진 배송정보 수신 시뮬레이션 중 오류가 발생했습니다.",
       error: error.message,
+    });
+  }
+}
+
+/**
+ * 한진 배송정보 복수건 동기화
+ * @route POST /api/requests/shipping/hanjin/tracking-sync
+ */
+export async function syncHanjinTracking(req, res) {
+  try {
+    const { requestIds, trackingNumbers } = req.body || {};
+
+    const requestIdList = Array.isArray(requestIds)
+      ? requestIds.map((v) => String(v || "").trim()).filter(Boolean)
+      : [];
+    const trackingNumberList = Array.isArray(trackingNumbers)
+      ? trackingNumbers.map((v) => String(v || "").trim()).filter(Boolean)
+      : [];
+
+    const query = {
+      deliveryInfoRef: { $ne: null },
+    };
+    if (requestIdList.length) {
+      query.requestId = { $in: requestIdList };
+    }
+
+    const requests = await Request.find(query)
+      .populate("requestor", "name organization phoneNumber address")
+      .populate("requestorOrganizationId", "name extracted")
+      .populate("deliveryInfoRef");
+
+    const targetRequests = requests.filter((requestDoc) => {
+      const di = requestDoc.deliveryInfoRef;
+      const trackingNumber = String(di?.trackingNumber || "").trim();
+      if (!trackingNumber) return false;
+      if (!trackingNumberList.length) return true;
+      return trackingNumberList.includes(trackingNumber);
+    });
+
+    if (!targetRequests.length) {
+      return res.status(404).json({
+        success: false,
+        message: "동기화할 배송정보를 찾을 수 없습니다.",
+      });
+    }
+
+    const path = "/parcel-delivery/v1/tracking/tracking-wbls";
+    const wblNoList = targetRequests.map((requestDoc) => ({
+      wblNo: String(requestDoc.deliveryInfoRef?.trackingNumber || "").trim(),
+    }));
+
+    const data = await hanjinService.requestOrderApi({
+      path,
+      method: "POST",
+      data: {
+        custEdiCd: HANJIN_CLIENT_ID,
+        wblNoList,
+      },
+    });
+
+    const rows = extractTrackingRows(data);
+    const rowMap = new Map(
+      rows.map((row) => [String(row?.wblNo || row?.wbNo || "").trim(), row]),
+    );
+
+    const synced = [];
+    for (const requestDoc of targetRequests) {
+      const deliveryInfo = requestDoc.deliveryInfoRef;
+      const trackingNumber = String(deliveryInfo?.trackingNumber || "").trim();
+      const row = rowMap.get(trackingNumber);
+      if (!row || !deliveryInfo) continue;
+
+      const events = normalizeTrackingEvents(row?.wrkList);
+      const last = events.length ? events[events.length - 1] : null;
+      deliveryInfo.tracking = deliveryInfo.tracking || {};
+      if (last?.statusCode)
+        deliveryInfo.tracking.lastStatusCode = last.statusCode;
+      if (last?.statusText)
+        deliveryInfo.tracking.lastStatusText = last.statusText;
+      if (last?.occurredAt) deliveryInfo.tracking.lastEventAt = last.occurredAt;
+      deliveryInfo.tracking.lastSyncedAt = new Date();
+      if (events.length) {
+        deliveryInfo.events = events;
+      }
+      if (String(last?.statusCode || "") === "66" && last?.occurredAt) {
+        deliveryInfo.deliveredAt = last.occurredAt;
+        requestDoc.manufacturerStage = "추적관리";
+      }
+
+      await deliveryInfo.save();
+      await requestDoc.save();
+      await emitDeliveryUpdated(requestDoc, {
+        source: "hanjin-tracking-sync",
+        shippingStatusLabel: buildTrackingStatusLabel(deliveryInfo),
+      });
+      synced.push({
+        requestId: requestDoc.requestId,
+        trackingNumber,
+        statusCode: deliveryInfo.tracking?.lastStatusCode || null,
+        statusText: deliveryInfo.tracking?.lastStatusText || null,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        synced,
+      },
+    });
+  } catch (error) {
+    console.error("Error in syncHanjinTracking:", error);
+    return res.status(error?.status || 500).json({
+      success: false,
+      message: "한진 배송조회 동기화 중 오류가 발생했습니다.",
+      error: error.message,
+      data: error?.data,
     });
   }
 }
