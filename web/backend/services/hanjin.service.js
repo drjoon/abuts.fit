@@ -8,6 +8,22 @@ const secretKey = String(process.env.HANJIN_SECRET_KEY || "").trim();
 const DEFAULT_TIMEOUT_MS = Number(process.env.HANJIN_TIMEOUT_MS || 15000);
 const SIGNED_HEADERS = ["content-type", "x-api-key", "x-amz-date"];
 
+function sanitizeForLog(value) {
+  if (value == null) return value;
+  if (Array.isArray(value)) return value.map(sanitizeForLog);
+  if (typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nestedValue]) => [
+        key,
+        /secret|signature|authorization|api[-_]?key/i.test(key)
+          ? "[redacted]"
+          : sanitizeForLog(nestedValue),
+      ]),
+    );
+  }
+  return value;
+}
+
 const baseUrls = {
   // 운송장 출력(라벨) API – Swagger: swagger-print-wbl.html
   print: (
@@ -118,6 +134,16 @@ async function requestHanjin({
     signedHeaders: SIGNED_HEADERS,
   });
 
+  console.log("[hanjin] outbound request", {
+    clientId,
+    method,
+    url,
+    canonicalPath,
+    timestamp,
+    params: sanitizeForLog(params),
+    data: sanitizeForLog(data),
+  });
+
   try {
     const response = await axios({
       url,
@@ -134,12 +160,30 @@ async function requestHanjin({
         ...headers,
       },
     });
+    console.log("[hanjin] outbound response", {
+      clientId,
+      method,
+      url,
+      status: response.status,
+      data: sanitizeForLog(response.data),
+    });
     return response.data;
   } catch (error) {
     const status = error.response?.status;
     const payload = error.response?.data;
     const message =
       payload?.message || error.message || "hanjin request failed";
+    console.error("[hanjin] outbound error", {
+      clientId,
+      method,
+      url,
+      canonicalPath,
+      status,
+      timestamp,
+      data: sanitizeForLog(data),
+      response: sanitizeForLog(payload),
+      message,
+    });
     const enriched = new Error(`[hanjin] ${message}`);
     enriched.status = status;
     enriched.data = payload;

@@ -1234,23 +1234,44 @@ export async function requestHanjinPickup(req, res) {
     const pathCandidates = buildHanjinPathCandidates(path);
 
     const callHanjinWithFallback = async ({ data }) => {
+      console.log("[hanjin][pickup] trying candidates", {
+        pathCandidates,
+        data,
+      });
       let lastError = null;
       for (const candidate of pathCandidates) {
         try {
+          console.log("[hanjin][pickup] trying candidate", {
+            candidate,
+            data,
+          });
           const out = await hanjinService.requestOrderApi({
             path: candidate,
             method: "POST",
             data,
           });
+          console.log("[hanjin][pickup] candidate success", {
+            candidate,
+          });
           lastError = null;
           return out;
         } catch (err) {
+          console.error("[hanjin][pickup] candidate failed", {
+            candidate,
+            status: err?.status,
+            message: err?.message,
+            response: err?.data,
+          });
           lastError = err;
           if (err?.status !== 404) {
             throw err;
           }
         }
       }
+      console.log("[hanjin][pickup] all candidates failed", {
+        pathCandidates,
+        lastError,
+      });
       throw lastError;
     };
 
@@ -1299,6 +1320,14 @@ export async function requestHanjinPickup(req, res) {
       const orderBody = buildHanjinInsertOrderBody({
         mailbox,
         requests: group,
+      });
+
+      console.log("[hanjin][pickup] mailbox order body", {
+        mailbox,
+        requestCount: group.length,
+        path,
+        pathCandidates,
+        orderBody,
       });
 
       const data = await callHanjinWithFallback({ data: orderBody });
