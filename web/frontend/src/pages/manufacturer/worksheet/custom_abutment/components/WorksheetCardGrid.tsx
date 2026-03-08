@@ -212,11 +212,11 @@ export const WorksheetCardGrid = ({
           caseInfos.rollbackCounts?.machining || 0,
         );
         const canRollback =
-          stageForRollback !== "추적관리" &&
-          (stageForRollback !== "의뢰" ||
-            rollbackCountFromRequest > 0 ||
-            rollbackCountFromCam > 0 ||
-            rollbackCountFromMachining > 0);
+          stageForRollback === "추적관리" ||
+          stageForRollback !== "의뢰" ||
+          rollbackCountFromRequest > 0 ||
+          rollbackCountFromCam > 0 ||
+          rollbackCountFromMachining > 0;
 
         const reviewStageKey = (() => {
           const stage = String(tabStage || "").trim();

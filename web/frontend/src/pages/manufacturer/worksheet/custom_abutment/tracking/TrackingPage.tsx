@@ -109,6 +109,7 @@ export const TrackingInquiryPage = () => {
   const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(
     null,
   );
+  const [cancellingAll, setCancellingAll] = useState(false);
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
   // Network pagination per stage (tracking)
   const PAGE_LIMIT = 30;
@@ -199,60 +200,6 @@ export const TrackingInquiryPage = () => {
       } finally {
         if (!silent) setLoading(false);
       }
-    };
-
-    const handleDownloadUdi = () => {
-      const header = [
-        "의뢰ID",
-        "환자/치아",
-        "발송일",
-        "택배사",
-        "송장번호",
-        "원재료(Heat No.)",
-        "제조번호(CA)",
-      ];
-
-      const escapeCsv = (value: string) => {
-        if (value == null) return "";
-        const s = String(value);
-        if (/[\",\\n]/.test(s)) {
-          return '"' + s.replace(/"/g, '""') + '"';
-        }
-        return s;
-      };
-
-      const rows = udiRows.map((r) => {
-        const ci: any = r.caseInfos || {};
-        const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-        const shippedAt = di.shippedAt || di.deliveredAt || "";
-        const shippedDate = shippedAt ? String(shippedAt).slice(0, 10) : "";
-        const lotMaterial = String(r.lotNumber?.material || "");
-        const lotValue = String(r.lotNumber?.value || "");
-        return [
-          r.requestId || "",
-          `${ci.patientName || ""} / ${ci.tooth || ""}`,
-          shippedDate,
-          di.carrier || "",
-          di.trackingNumber || "",
-          lotMaterial,
-          lotValue,
-          normalizeLotNumberLabel(r),
-        ];
-      });
-
-      const csvRows: string[] = [];
-      csvRows.push(header.map(escapeCsv).join(","));
-      rows.forEach((row) => csvRows.push(row.map(escapeCsv).join(",")));
-      const csvContent = "\uFEFF" + csvRows.join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "UDI-지난달-발송내역.csv";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
     };
 
     // initial load or token change → reset paging
@@ -775,32 +722,91 @@ export const TrackingInquiryPage = () => {
     });
   }, [baseFiltered]);
 
+  const resolveCancelableMailboxAddresses = useCallback(
+    (row?: ManufacturerRequest | null): string[] => {
+      if (!row) return [];
+      const rowDelivery = normalizeDeliveryInfo(row.deliveryInfoRef);
+      const rowMailbox = String(row.mailboxAddress || "").trim();
+      const rowTracking = String(rowDelivery.trackingNumber || "").trim();
+
+      const grouped = shippingRows.filter((candidate) => {
+        const candidateDelivery = normalizeDeliveryInfo(
+          candidate.deliveryInfoRef,
+        );
+        const candidateMailbox = String(candidate.mailboxAddress || "").trim();
+        const candidateTracking = String(
+          candidateDelivery.trackingNumber || "",
+        ).trim();
+        if (rowMailbox && candidateMailbox === rowMailbox) return true;
+        if (
+          rowTracking &&
+          candidateTracking &&
+          candidateTracking === rowTracking
+        ) {
+          return true;
+        }
+        return false;
+      });
+
+      const mailboxList = Array.from(
+        new Set(
+          grouped
+            .map((candidate) => String(candidate.mailboxAddress || "").trim())
+            .filter(Boolean),
+        ),
+      );
+
+      if (mailboxList.length) return mailboxList;
+      return rowMailbox ? [rowMailbox] : [];
+    },
+    [shippingRows],
+  );
+
+  const cancelPickupByMailboxes = useCallback(
+    async (mailboxAddresses: string[]): Promise<string[]> => {
+      const targets = Array.from(
+        new Set(
+          mailboxAddresses
+            .map((value) => String(value || "").trim())
+            .filter(Boolean),
+        ),
+      );
+      if (!targets.length) {
+        throw new Error("취소 가능한 우편함 정보가 없습니다.");
+      }
+
+      const response = await request<any>({
+        path: "/api/requests/shipping/hanjin/pickup-cancel",
+        method: "POST",
+        jsonBody: { mailboxAddresses: targets },
+      });
+      const body = response.data as any;
+      if (!response.ok || !body?.success) {
+        throw new Error(body?.message || "택배 취소에 실패했습니다.");
+      }
+      return targets;
+    },
+    [],
+  );
+
   const handleCancelPickup = useCallback(
     async (row: ManufacturerRequest) => {
-      const mailbox = String(row.mailboxAddress || "").trim();
       const requestId = String(row.requestId || "").trim();
-      if (!mailbox) {
+      const mailboxAddresses = resolveCancelableMailboxAddresses(row);
+      if (!mailboxAddresses.length) {
         toast({
           title: "취소 불가",
-          description: "우편함 정보가 없어 접수 취소를 진행할 수 없습니다.",
+          description: "취소 가능한 우편함 정보를 찾을 수 없습니다.",
           variant: "destructive",
         });
         return;
       }
-      setCancellingRequestId(requestId || mailbox);
+      setCancellingRequestId(requestId || mailboxAddresses[0]);
       try {
-        const response = await request<any>({
-          path: "/api/requests/shipping/hanjin/pickup-cancel",
-          method: "POST",
-          jsonBody: { mailboxAddresses: [mailbox] },
-        });
-        const body = response.data as any;
-        if (!response.ok || !body?.success) {
-          throw new Error(body?.message || "택배 취소에 실패했습니다.");
-        }
+        const canceled = await cancelPickupByMailboxes(mailboxAddresses);
         toast({
           title: "택배 접수 취소 완료",
-          description: `${mailbox} 우편함 접수를 취소했습니다.`,
+          description: `${canceled.join(", ")} 우편함 접수를 취소했습니다.`,
         });
       } catch (error) {
         toast({
@@ -815,8 +821,53 @@ export const TrackingInquiryPage = () => {
         setCancellingRequestId(null);
       }
     },
-    [toast],
+    [cancelPickupByMailboxes, resolveCancelableMailboxAddresses, toast],
   );
+
+  const bulkCancelableMailboxes = useMemo(() => {
+    return Array.from(
+      new Set(
+        shippingRows
+          .filter((row) => {
+            const di = normalizeDeliveryInfo(row.deliveryInfoRef);
+            const status = getShippingStatus(row);
+            return (
+              Boolean(di.trackingNumber || di.shippedAt) &&
+              !Boolean(di.deliveredAt) &&
+              status !== "예약취소"
+            );
+          })
+          .flatMap((row) => resolveCancelableMailboxAddresses(row)),
+      ),
+    );
+  }, [resolveCancelableMailboxAddresses, shippingRows]);
+
+  const handleCancelAllPickup = useCallback(async () => {
+    if (!bulkCancelableMailboxes.length) {
+      toast({
+        title: "전체 취소 대상 없음",
+        description: "집하 전 취소 가능한 접수 건이 없습니다.",
+      });
+      return;
+    }
+    setCancellingAll(true);
+    try {
+      const canceled = await cancelPickupByMailboxes(bulkCancelableMailboxes);
+      toast({
+        title: "전체 접수 취소 완료",
+        description: `${canceled.length}개 우편함 접수를 취소했습니다.`,
+      });
+    } catch (error) {
+      toast({
+        title: "전체 취소 실패",
+        description:
+          error instanceof Error ? error.message : "전체 취소에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setCancellingAll(false);
+    }
+  }, [bulkCancelableMailboxes, cancelPickupByMailboxes, toast]);
 
   const handleSyncTracking = useCallback(async () => {
     if (!shippingRows.length) {
@@ -940,6 +991,17 @@ export const TrackingInquiryPage = () => {
               />
             </div>
             <div className="flex items-center gap-2">
+              {tab === "shipping" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="px-4"
+                  onClick={handleCancelAllPickup}
+                  disabled={cancellingAll || !bulkCancelableMailboxes.length}
+                >
+                  {cancellingAll ? "전체 취소 중..." : "전체 취소"}
+                </Button>
+              )}
               {tab === "shipping" && (
                 <Button
                   variant="outline"

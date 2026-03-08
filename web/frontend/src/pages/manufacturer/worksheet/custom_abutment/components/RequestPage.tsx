@@ -552,10 +552,10 @@ export const RequestPage = ({
       }
 
       if (stage === "추적관리") {
-        return handleDeleteStageFile({
+        return handleUpdateReviewStatus({
           req,
-          stage: "tracking",
-          rollbackOnly: true,
+          status: "PENDING",
+          stageOverride: "shipping",
         });
       }
 
