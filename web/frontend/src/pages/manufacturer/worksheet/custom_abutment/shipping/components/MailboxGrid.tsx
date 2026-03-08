@@ -170,6 +170,7 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const touchStartXRef = useRef<number>(0);
   const shelfRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const didInitSelectionRef = useRef(false);
 
   useEffect(() => {
     const storedProfile = localStorage.getItem("worksheet:printer:profile");
@@ -772,8 +773,13 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
           occupiedAddresses.includes(address),
         ),
       );
-      if (next.size > 0) return next;
-      return new Set(occupiedAddresses);
+
+      if (!didInitSelectionRef.current) {
+        didInitSelectionRef.current = true;
+        return new Set(occupiedAddresses);
+      }
+
+      return next;
     });
   }, [occupiedAddresses]);
 
@@ -1506,6 +1512,15 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                         };
 
                         const isSelected = selectedMailboxes.has(address);
+                        const handleOpenDetails = (
+                          e: React.MouseEvent | React.TouchEvent,
+                        ) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (isOccupied && onBoxClick) {
+                            onBoxClick(address, items);
+                          }
+                        };
 
                         return (
                           <div
@@ -1523,20 +1538,11 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                               }
                             `}
                             style={{
-                              width: "48px",
-                              height: "37px",
+                              width: "62px",
+                              height: "44px",
                               touchAction: "manipulation",
                             }}
                           >
-                            {isOccupied ? (
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleMailboxSelection(address)}
-                                className="absolute left-0.5 top-0.5 h-3 w-3 accent-blue-600"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            ) : null}
                             {/* 상단 라벨 */}
                             <div
                               className={`font-mono font-bold leading-none text-center w-full pointer-events-none ${
@@ -1559,9 +1565,11 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                               {address}
                             </div>
                             {/* 중앙 카운트 */}
-                            <div className="flex-1 flex items-center justify-center pointer-events-none">
+                            <div className="flex-1 flex items-center justify-center">
                               {isOccupied && (
-                                <div
+                                <button
+                                  type="button"
+                                  onClick={handleOpenDetails}
                                   className={`font-bold leading-none ${
                                     isSelected
                                       ? "text-blue-700"
@@ -1575,10 +1583,11 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                                           ? "text-red-700"
                                           : "text-slate-700"
                                   }`}
-                                  style={{ fontSize: "16px" }}
+                                  style={{ fontSize: "18px" }}
+                                  aria-label={`${address} 내용 보기`}
                                 >
                                   {items.length}
-                                </div>
+                                </button>
                               )}
                             </div>
                           </div>
