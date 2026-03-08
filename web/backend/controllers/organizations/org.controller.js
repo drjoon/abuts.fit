@@ -49,6 +49,89 @@ function buildAddressCandidates(address) {
   ];
 }
 
+function decodeXmlText(value) {
+  return String(value || "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .trim();
+}
+
+function extractFirstXmlTagValue(xml, tagName) {
+  const match = String(xml || "").match(
+    new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, "i"),
+  );
+  return decodeXmlText(match?.[1] || "");
+}
+
+function extractXmlItemList(xml) {
+  const source = String(xml || "");
+  const matches = [...source.matchAll(/<item>([\s\S]*?)<\/item>/gi)];
+  return matches.map((match) => {
+    const itemXml = match?.[1] || "";
+    return {
+      zipNo: extractFirstXmlTagValue(itemXml, "zipNo"),
+      lnmAdres: extractFirstXmlTagValue(itemXml, "lnmAdres"),
+      rnAdres: extractFirstXmlTagValue(itemXml, "rnAdres"),
+      ctpNm: extractFirstXmlTagValue(itemXml, "ctpNm"),
+      sggNm: extractFirstXmlTagValue(itemXml, "sggNm"),
+      emdNm: extractFirstXmlTagValue(itemXml, "emdNm"),
+      liNm: extractFirstXmlTagValue(itemXml, "liNm"),
+      rn: extractFirstXmlTagValue(itemXml, "rn"),
+      buldMnnm: extractFirstXmlTagValue(itemXml, "buldMnnm"),
+      buldSlno: extractFirstXmlTagValue(itemXml, "buldSlno"),
+    };
+  });
+}
+
+async function requestEpostPostalLookup(address) {
+  const serviceKey = String(
+    process.env.EPOST_POSTAL_SERVICE_KEY ||
+      process.env.DATA_GO_KR_SERVICE_KEY ||
+      process.env.SERVICE_KEY ||
+      "",
+  )
+    .trim()
+    .replace(/^"|"$/g, "");
+
+  if (!serviceKey) {
+    throw Object.assign(new Error("SERVICE_KEY가 설정되지 않았습니다."), {
+      statusCode: 500,
+    });
+  }
+
+  const url = new URL(
+    "http://openapi.epost.go.kr/postal/retrieveLotNumberAdressAreaCdService/retrieveLotNumberAdressAreaCdService/getDetailListAreaCd",
+  );
+  url.searchParams.set("ServiceKey", serviceKey);
+  url.searchParams.set("searchSe", "road");
+  url.searchParams.set("srchwrd", address);
+  url.searchParams.set("countPerPage", "10");
+  url.searchParams.set("currentPage", "1");
+
+  const response = await fetch(url.toString(), { method: "GET" });
+  const xml = await response.text();
+
+  if (!response.ok) {
+    throw Object.assign(new Error("epost 주소 우편번호 조회에 실패했습니다."), {
+      statusCode: response.status || 502,
+      data: xml,
+    });
+  }
+
+  const items = extractXmlItemList(xml);
+  const first =
+    items.find((item) => String(item.zipNo || "").trim()) || items[0];
+
+  return {
+    postalCode: String(first?.zipNo || "").trim(),
+    formattedAddress: String(first?.rnAdres || first?.lnmAdres || "").trim(),
+    raw: xml,
+  };
+}
+
 async function requestGoogleGeocode(address) {
   const apiKey = String(process.env.GOOGLE_API_KEY || "").trim();
   if (!apiKey) {
@@ -81,19 +164,40 @@ async function lookupPostalCodeByAddress(address) {
   let lastData = null;
 
   for (const candidate of candidates) {
-    const data = await requestGoogleGeocode(candidate);
-    lastData = data;
-    const results = Array.isArray(data?.results) ? data.results : [];
-    for (const result of results) {
-      const postalCode = extractPostalCodeFromGeocodingResult(result);
-      if (postalCode) {
+    try {
+      const epostData = await requestEpostPostalLookup(candidate);
+      lastData = epostData.raw;
+      if (epostData.postalCode) {
         return {
-          postalCode,
-          formattedAddress: String(result?.formatted_address || "").trim(),
+          postalCode: epostData.postalCode,
+          formattedAddress: epostData.formattedAddress,
           matchedAddress: candidate,
-          raw: data,
+          provider: "epost",
+          raw: epostData.raw,
         };
       }
+    } catch (error) {
+      lastData = error?.data || lastData;
+    }
+
+    try {
+      const data = await requestGoogleGeocode(candidate);
+      lastData = data;
+      const results = Array.isArray(data?.results) ? data.results : [];
+      for (const result of results) {
+        const postalCode = extractPostalCodeFromGeocodingResult(result);
+        if (postalCode) {
+          return {
+            postalCode,
+            formattedAddress: String(result?.formatted_address || "").trim(),
+            matchedAddress: candidate,
+            provider: "google",
+            raw: data,
+          };
+        }
+      }
+    } catch (error) {
+      lastData = error?.data || lastData;
     }
   }
 
@@ -103,6 +207,7 @@ async function lookupPostalCodeByAddress(address) {
       lastData?.results?.[0]?.formatted_address || "",
     ).trim(),
     matchedAddress: candidates[0] || "",
+    provider: "",
     raw: lastData,
   };
 }
@@ -134,6 +239,7 @@ export async function lookupPostalCode(req, res) {
         zipCode: data.postalCode,
         formattedAddress: data.formattedAddress,
         matchedAddress: data.matchedAddress,
+        provider: data.provider,
       },
     });
   } catch (error) {
