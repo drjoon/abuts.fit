@@ -384,39 +384,61 @@ export async function rollbackRequestToCamByRequestId(requestId) {
     const orgId =
       request.requestorOrganizationId || request.requestor?.organizationId;
     if (orgId) {
-      const amount = Number(request.price?.amount || 0);
-      if (amount > 0) {
-        const spendKey = `request:${String(request._id)}:cam_approve_spend`;
+      const spendRows = await CreditLedger.find({
+        organizationId: orgId,
+        type: "SPEND",
+        refType: "REQUEST",
+        refId: request._id,
+      })
+        .select({ amount: 1 })
+        .lean();
+
+      const refundRows = await CreditLedger.find({
+        organizationId: orgId,
+        type: "REFUND",
+        refType: "REQUEST",
+        refId: request._id,
+      })
+        .select({ amount: 1 })
+        .lean();
+
+      const totalSpendAbs = Math.abs(
+        (spendRows || []).reduce((acc, row) => {
+          const amount = Number(row?.amount || 0);
+          return acc + (Number.isFinite(amount) ? amount : 0);
+        }, 0),
+      );
+      const totalRefund = (refundRows || []).reduce((acc, row) => {
+        const amount = Number(row?.amount || 0);
+        return acc + (Number.isFinite(amount) ? amount : 0);
+      }, 0);
+
+      const refundAmount = Math.max(0, totalSpendAbs - totalRefund);
+      if (refundAmount > 0) {
         const refundKey = `request:${String(request._id)}:cam_approve_refund`;
-
-        const spend = await CreditLedger.findOne({
-          uniqueKey: spendKey,
-          type: "SPEND",
-        }).lean();
-
-        if (spend) {
-          const existingRefund = await CreditLedger.findOne({
-            uniqueKey: refundKey,
-          }).lean();
-
-          if (!existingRefund) {
-            await CreditLedger.create({
+        const result = await CreditLedger.updateOne(
+          { uniqueKey: refundKey },
+          {
+            $setOnInsert: {
               organizationId: orgId,
               userId: null,
               type: "REFUND",
-              amount,
+              amount: refundAmount,
               refType: "REQUEST",
               refId: request._id,
               uniqueKey: refundKey,
-            });
+            },
+          },
+          { upsert: true },
+        );
 
-            await emitCreditBalanceUpdatedToOrganization({
-              organizationId: orgId,
-              balanceDelta: amount,
-              reason: "cam_approve_refund",
-              refId: request._id,
-            });
-          }
+        if (result?.upsertedCount) {
+          await emitCreditBalanceUpdatedToOrganization({
+            organizationId: orgId,
+            balanceDelta: refundAmount,
+            reason: "cam_approve_refund",
+            refId: request._id,
+          });
         }
       }
     }
