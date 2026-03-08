@@ -366,6 +366,18 @@ const requestSchema = new mongoose.Schema(
         type: String,
         default: null,
       },
+      snapshotFingerprint: {
+        type: String,
+        default: null,
+      },
+      snapshotCapturedAt: {
+        type: Date,
+        default: null,
+      },
+      snapshotRequestIds: {
+        type: [String],
+        default: undefined,
+      },
     },
     // 생산 스케줄 (생산자 관점, 시각 단위 관리)
     productionSchedule: {

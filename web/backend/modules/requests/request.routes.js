@@ -182,6 +182,13 @@ router.post(
   requestController.requestHanjinPickup,
 );
 
+router.post(
+  "/shipping/hanjin/pickup-and-print",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.requestHanjinPickupAndPrint,
+);
+
 // 한진 택배 수거 접수 취소
 router.post(
   "/shipping/hanjin/pickup-cancel",

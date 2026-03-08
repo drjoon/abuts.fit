@@ -1,0 +1,475 @@
+import Request from "../../models/request.model.js";
+import hanjinService from "../../services/hanjin.service.js";
+
+const HANJIN_CLIENT_ID = String(process.env.HANJIN_CLIENT_ID || "").trim();
+const HANJIN_CSR_NUM = String(process.env.HANJIN_CSR_NUM || "").trim();
+const HANJIN_SHIPPER_ZIP = String(process.env.HANJIN_SHIPPER_ZIP || "").trim();
+const WBL_PRINT_SERVER_BASE = String(process.env.WBL_PRINT_SERVER_BASE || "").trim();
+const WBL_PRINT_SHARED_SECRET = String(process.env.WBL_PRINT_SHARED_SECRET || "").trim();
+const WBL_DOWNLOAD_TIMEOUT_MS = Number(process.env.WBL_DOWNLOAD_TIMEOUT_MS || 15000);
+const WBL_PRINTER_DEFAULT = String(process.env.WBL_PRINTER_DEFAULT || "").trim();
+const WBL_MEDIA_DEFAULT = String(process.env.WBL_MEDIA_DEFAULT || "FS").trim();
+const WBL_MEDIA_OPTIONS = String(process.env.WBL_MEDIA_OPTIONS || "FS")
+  .split(",")
+  .map((v) => String(v || "").trim())
+  .filter(Boolean);
+
+const HANJIN_PATH_FALLBACKS = {
+  HANJIN_PRINT_WBL_PATH: "/v1/wbl/{client_id}/print-wbls",
+  HANJIN_PICKUP_REQUEST_PATH: "/parcel-delivery/v1/order/insert-order",
+  HANJIN_PICKUP_CANCEL_PATH: "/parcel-delivery/v1/order/cancel-order",
+  HANJIN_CUSTOMER_CHECK_PATH: "/parcel-delivery/v1/customer/customer-check",
+};
+
+const HANJIN_SENDER_ZIP = String(
+  process.env.HANJIN_SENDER_ZIP || process.env.HANJIN_SHIPPER_ZIP || "",
+).trim();
+const HANJIN_SENDER_BASE_ADDR = String(process.env.HANJIN_SENDER_BASE_ADDR || "").trim();
+const HANJIN_SENDER_DTL_ADDR = String(process.env.HANJIN_SENDER_DTL_ADDR || "").trim();
+const HANJIN_SENDER_NAME = String(process.env.HANJIN_SENDER_NAME || "").trim();
+const HANJIN_SENDER_TEL = String(process.env.HANJIN_SENDER_TEL || "").trim();
+const HANJIN_SENDER_MOBILE = String(process.env.HANJIN_SENDER_MOBILE || "").trim();
+
+export const resolveMailboxList = (mailboxAddresses) =>
+  Array.isArray(mailboxAddresses)
+    ? mailboxAddresses.map((v) => String(v || "").trim()).filter(Boolean)
+    : [];
+
+export const resolveHanjinPath = (envKey, fallbackPath) => {
+  const raw = String(process.env[envKey] || "").trim();
+  if (raw) return raw;
+  return fallbackPath || "";
+};
+
+export const buildHanjinPathCandidates = (rawPath) => {
+  const path = String(rawPath || "").trim();
+  if (!path) return [];
+  const candidates = [path];
+  if (path.startsWith("/api/")) {
+    candidates.push(path.replace(/^\/api\//, "/"));
+  }
+  return [...new Set(candidates)];
+};
+
+export const getHanjinPathFallbacks = () => HANJIN_PATH_FALLBACKS;
+
+export const getWblPrintSettingsPayload = () => ({
+  printer: {
+    default: WBL_PRINTER_DEFAULT || null,
+  },
+  media: {
+    default: WBL_MEDIA_DEFAULT || null,
+    options: WBL_MEDIA_OPTIONS,
+  },
+});
+
+export const ensureHanjinEnv = () => {
+  if (!HANJIN_CLIENT_ID) {
+    throw Object.assign(new Error("HANJIN_CLIENT_ID가 설정되지 않았습니다."), {
+      statusCode: 500,
+    });
+  }
+  if (!HANJIN_CSR_NUM) {
+    throw Object.assign(new Error("HANJIN_CSR_NUM이 설정되지 않았습니다."), {
+      statusCode: 500,
+    });
+  }
+  if (!HANJIN_SHIPPER_ZIP) {
+    throw Object.assign(new Error("HANJIN_SHIPPER_ZIP이 설정되지 않았습니다."), {
+      statusCode: 500,
+    });
+  }
+};
+
+const ensureHanjinSenderEnv = () => {
+  if (!HANJIN_SENDER_ZIP) throw Object.assign(new Error("HANJIN_SENDER_ZIP 환경 변수가 필요합니다."), { statusCode: 500 });
+  if (!HANJIN_SENDER_BASE_ADDR) throw Object.assign(new Error("HANJIN_SENDER_BASE_ADDR 환경 변수가 필요합니다."), { statusCode: 500 });
+  if (!HANJIN_SENDER_DTL_ADDR) throw Object.assign(new Error("HANJIN_SENDER_DTL_ADDR 환경 변수가 필요합니다."), { statusCode: 500 });
+  if (!HANJIN_SENDER_NAME) throw Object.assign(new Error("HANJIN_SENDER_NAME 환경 변수가 필요합니다."), { statusCode: 500 });
+  if (!HANJIN_SENDER_TEL) throw Object.assign(new Error("HANJIN_SENDER_TEL 환경 변수가 필요합니다."), { statusCode: 500 });
+};
+
+const normalizeHanjinZip = (value) => {
+  const digits = String(value || "").replace(/\D+/g, "").trim();
+  if (!digits) return "";
+  if (digits.length === 5) return digits;
+  return digits.slice(0, 5);
+};
+
+const resolveMailboxCode = (request) => String(request?.mailboxAddress || "").trim();
+
+const resolveRequestOrganizationName = (request) => {
+  const requestor = request?.requestor || {};
+  const requestorOrg = request?.requestorOrganizationId || {};
+  const extracted = requestorOrg?.extracted || {};
+  return (
+    requestorOrg?.name ||
+    extracted?.companyName ||
+    requestor?.organization ||
+    request?.caseInfos?.clinicName ||
+    requestor?.name ||
+    ""
+  );
+};
+
+const resolveReceiverZipSource = (request) => {
+  const requestor = request?.requestor || {};
+  const requestorOrg = request?.requestorOrganizationId || {};
+  const extracted = requestorOrg?.extracted || {};
+  return (
+    requestor?.address?.postalCode ||
+    requestor?.zipCode ||
+    requestor?.postalCode ||
+    extracted?.zipCode ||
+    extracted?.postalCode ||
+    ""
+  );
+};
+
+const normalizeReceiverAddressForHanjin = (request) => {
+  const requestor = request?.requestor || {};
+  const requestorOrg = request?.requestorOrganizationId || {};
+  const extracted = requestorOrg?.extracted || {};
+  const addressCandidates = [
+    requestor?.addressText,
+    requestor?.address?.roadAddress,
+    requestor?.address?.address1,
+    requestor?.address,
+    extracted?.address,
+  ];
+  return addressCandidates
+    .map((value) => String(value || "").trim())
+    .find(Boolean) || "";
+};
+
+export const buildResolvedLabelData = ({ data, metaByMsgKey = {} }) => {
+  const enrichedData =
+    data && typeof data === "object"
+      ? {
+          ...data,
+          address_list: enrichHanjinAddressList({
+            addressList: data.address_list,
+            metaByMsgKey,
+          }),
+        }
+      : data;
+
+  const zplLabels =
+    enrichedData && typeof enrichedData === "object"
+      ? buildHanjinWblZplLabels({ addressList: enrichedData.address_list })
+      : [];
+
+  return {
+    ...(enrichedData || {}),
+    zplLabels,
+  };
+};
+
+export const executeHanjinLabelPrint = async ({ path, payload, metaByMsgKey, wblPrintOptions }) => {
+  const data = await hanjinService.requestPrintApi({
+    path: path.replace("{client_id}", HANJIN_CLIENT_ID),
+    method: "POST",
+    data: payload,
+  });
+
+  const labelData = buildResolvedLabelData({ data, metaByMsgKey });
+  const shouldTriggerWblPrint = wblPrintOptions && typeof wblPrintOptions === "object";
+  const wblPrint = shouldTriggerWblPrint
+    ? await triggerWblServerPrint(labelData, wblPrintOptions)
+    : { success: true, skipped: true, reason: "image_mode" };
+
+  return { labelData, wblPrint };
+};
+
+export const executeHanjinOrderApiWithFallback = async ({
+  pathCandidates,
+  data,
+  logPrefix = "[hanjin][order]",
+}) => {
+  let lastError = null;
+  for (const candidate of pathCandidates) {
+    try {
+      const out = await hanjinService.requestOrderApi({
+        path: candidate,
+        method: "POST",
+        data,
+      });
+      lastError = null;
+      return out;
+    } catch (err) {
+      console.error(`${logPrefix} candidate failed`, {
+        candidate,
+        status: err?.status,
+        message: err?.message,
+        response: err?.data,
+      });
+      lastError = err;
+      if (err?.status !== 404) {
+        throw err;
+      }
+    }
+  }
+  throw lastError;
+};
+
+export const buildHanjinOrderFallbackCaller =
+  ({ pathCandidates, logPrefix }) =>
+  async ({ data }) => {
+    console.log(`${logPrefix} trying candidates`, {
+      pathCandidates,
+      data,
+    });
+    const out = await executeHanjinOrderApiWithFallback({ pathCandidates, data, logPrefix });
+    console.log(`${logPrefix} candidate success`, {
+      pathCandidates,
+    });
+    return out;
+  };
+
+export const findPackingStageRequestsByMailboxes = async (mailboxAddresses = [], options = {}) => {
+  const list = resolveMailboxList(mailboxAddresses);
+  if (!list.length) return [];
+
+  let query = Request.find({
+    mailboxAddress: { $in: list },
+    manufacturerStage: "포장.발송",
+  });
+
+  if (options.populateRequestor !== false) {
+    query = query.populate("requestor", "name organization phoneNumber address");
+    query = query.populate("requestorOrganizationId", "name extracted");
+  }
+
+  if (options.select && typeof options.select === "object") {
+    query = query.select(options.select);
+  }
+
+  if (options.lean) {
+    query = query.lean();
+  }
+
+  return query;
+};
+
+export const resolveHanjinPayload = async function ({ mailboxAddresses, payload }) {
+  const preResolvedRequests = Array.isArray(this?.requests) ? this.requests : null;
+  if (payload && typeof payload === "object") {
+    return {
+      payload,
+      metaByMsgKey: {},
+      usedDbRequests: false,
+      requestIds: [],
+    };
+  }
+
+  const list = resolveMailboxList(mailboxAddresses);
+  if (!list.length) {
+    const error = new Error("mailboxAddresses가 필요합니다.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const requests = preResolvedRequests?.length
+    ? preResolvedRequests
+    : await findPackingStageRequestsByMailboxes(list, { lean: true });
+
+  if (!requests.length) {
+    const error = new Error("조건에 맞는 의뢰를 찾을 수 없습니다.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const built = buildHanjinDraftPayload(requests);
+
+  return {
+    payload: built.payload,
+    metaByMsgKey: built.metaByMsgKey || {},
+    usedDbRequests: true,
+    requestIds: requests
+      .map((req) => String(req?.requestId || "").trim())
+      .filter(Boolean),
+  };
+};
+
+export const buildHanjinInsertOrderBody = ({ mailbox, requests }) => {
+  ensureHanjinEnv();
+  ensureHanjinSenderEnv();
+
+  const list = Array.isArray(requests) ? requests : [];
+  const first = list[0] || {};
+  const organizationName = resolveRequestOrganizationName(first);
+  const receiverZip = normalizeHanjinZip(resolveReceiverZipSource(first));
+  const addressText = normalizeReceiverAddressForHanjin(first);
+  const ymd = String(new Date().toISOString().slice(0, 10)).replace(/-/g, "");
+  const custOrdNo = `ABUTS_${ymd}_${String(mailbox || "-")}`.slice(0, 30);
+
+  return {
+    custEdiCd: HANJIN_CLIENT_ID,
+    custOrdNo,
+    sndZip: HANJIN_SENDER_ZIP,
+    sndBaseAddr: HANJIN_SENDER_BASE_ADDR,
+    sndDtlAddr: HANJIN_SENDER_DTL_ADDR,
+    sndPrn: HANJIN_SENDER_NAME,
+    sndTel: HANJIN_SENDER_TEL,
+    sndHphn: HANJIN_SENDER_MOBILE || HANJIN_SENDER_TEL,
+    rcvZip: receiverZip,
+    rcvAddr: addressText,
+    rcvPrn: organizationName,
+    rcvTel: String(first?.requestor?.phoneNumber || "").trim(),
+    rcvHphn: String(first?.requestor?.phoneNumber || "").trim(),
+    goodsNm: "의료기기",
+    qty: 1,
+  };
+};
+
+const buildHanjinDraftPayload = (requests) => {
+  ensureHanjinEnv();
+
+  const mailboxGroupMap = new Map();
+  for (const r of requests) {
+    const mailbox = String(r?.mailboxAddress || "").trim();
+    if (!mailbox) continue;
+    if (!mailboxGroupMap.has(mailbox)) mailboxGroupMap.set(mailbox, []);
+    mailboxGroupMap.get(mailbox).push(r);
+  }
+
+  const metaByMsgKey = {};
+  const addressList = Array.from(mailboxGroupMap.entries()).map(([mailbox, group]) => {
+    const first = group[0] || {};
+    const requestor = first.requestor || {};
+    const requestorOrg = first.requestorOrganizationId || {};
+    const extracted = requestorOrg.extracted || {};
+    const organizationName = resolveRequestOrganizationName(first);
+    const addressText = normalizeReceiverAddressForHanjin(first);
+    const receiverZip = normalizeHanjinZip(resolveReceiverZipSource(first));
+    const msgKey = String(mailbox || "").trim();
+
+    metaByMsgKey[msgKey] = {
+      mailbox_code: resolveMailboxCode(first),
+      organization_name: organizationName,
+      request_count: group.length,
+      remark: [resolveMailboxCode(first), organizationName, `${group.length}건`]
+        .filter(Boolean)
+        .join(" / "),
+    };
+
+    return {
+      client_id: HANJIN_CLIENT_ID,
+      csr_num: HANJIN_CSR_NUM,
+      snd_zip: HANJIN_SHIPPER_ZIP,
+      rcv_zip: receiverZip,
+      address: addressText,
+      msg_key: msgKey,
+      receiver_name:
+        organizationName ||
+        requestor.name ||
+        extracted.representativeName ||
+        extracted.companyName ||
+        "",
+      receiver_phone:
+        requestor.phoneNumber ||
+        extracted.phoneNumber ||
+        requestor.phone ||
+        "",
+    };
+  });
+
+  return {
+    payload: {
+      client_id: HANJIN_CLIENT_ID,
+      csr_num: HANJIN_CSR_NUM,
+      address_list: addressList,
+    },
+    metaByMsgKey,
+  };
+};
+
+const enrichHanjinAddressList = ({ addressList, metaByMsgKey }) =>
+  (Array.isArray(addressList) ? addressList : []).map((row) => {
+    const msgKey = String(row?.msg_key || row?.msgKey || "").trim();
+    const meta = metaByMsgKey?.[msgKey] || {};
+    return {
+      ...row,
+      mailbox_code: meta.mailbox_code || row?.mailbox_code || null,
+      organization_name: meta.organization_name || row?.organization_name || null,
+      request_count: meta.request_count || row?.request_count || null,
+      remark: meta.remark || row?.remark || null,
+    };
+  });
+
+const buildHanjinWblZplLabels = ({ addressList }) =>
+  (Array.isArray(addressList) ? addressList : [])
+    .filter((row) => String(row?.result_code || row?.resultCode || "OK").trim() === "OK")
+    .map((row) => String(row?.zpl || row?.ZPL || "").trim())
+    .filter(Boolean);
+
+async function triggerWblServerPrint(payload, options = null) {
+  if (!WBL_PRINT_SERVER_BASE) {
+    return {
+      success: false,
+      reason: "no_wbl_print_server_base",
+      message: "운송장 출력 서버 기본 URL이 설정되지 않았습니다.",
+    };
+  }
+
+  const printer = String(options?.printer || "").trim();
+  const media = String(options?.paperProfile || options?.media || "").trim();
+  const quantity = Number(options?.quantity || 1);
+  const skipPrint = Boolean(options?.skipPrint);
+
+  if (skipPrint) {
+    return {
+      success: true,
+      skipped: true,
+      reason: "skip_print_option",
+      message: "출력 건너뛰기 옵션이 활성화되었습니다.",
+    };
+  }
+
+  if (!printer) {
+    return {
+      success: false,
+      reason: "no_printer_selected",
+      message: "프린터를 선택해주세요.",
+    };
+  }
+
+  if (!media) {
+    return {
+      success: false,
+      reason: "no_media_selected",
+      message: "용지 종류를 선택해주세요.",
+    };
+  }
+
+  if (!payload?.zplLabels?.length) {
+    return {
+      success: false,
+      reason: "no_zpl_labels",
+      message: "출력할 ZPL 라벨 데이터가 없습니다.",
+    };
+  }
+
+  try {
+    const response = await fetch(`${WBL_PRINT_SERVER_BASE}/print`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        printer,
+        media,
+        quantity,
+        labels: payload.zplLabels,
+        sharedSecret: WBL_PRINT_SHARED_SECRET,
+      }),
+    });
+    const data = await response.json();
+    return { success: response.ok, ...data };
+  } catch (error) {
+    return {
+      success: false,
+      status: 500,
+      message: error.message,
+      reason: "wbl_print_server_error",
+    };
+  }
+}

@@ -3,6 +3,15 @@ import type { RequestBase } from "@/types/request";
 export type ManufacturerRequest = RequestBase & {
   referenceIds?: string[];
   mailboxAddress?: string | null;
+  deliveryInfoRef?: any;
+  shippingLabelPrinted?: {
+    printed?: boolean | null;
+    printedAt?: string | null;
+    mailboxAddress?: string | null;
+    snapshotFingerprint?: string | null;
+    snapshotCapturedAt?: string | null;
+    snapshotRequestIds?: string[] | null;
+  } | null;
   realtimeProgress?: {
     badge?: string | null;
     startedAt?: string | null;

@@ -145,8 +145,23 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
   const [selectedMailboxes, setSelectedMailboxes] = useState<Set<string>>(
     new Set(),
   );
-  const [isPrinting, setIsPrinting] = useState(false);
   const [isRequestingPickup, setIsRequestingPickup] = useState(false);
+  const [optimisticRequestedMailboxes, setOptimisticRequestedMailboxes] =
+    useState<Set<string>>(new Set());
+  const [optimisticPrintedMailboxes, setOptimisticPrintedMailboxes] = useState<
+    Set<string>
+  >(new Set());
+  const [mailboxChangeMeta, setMailboxChangeMeta] = useState<
+    Record<
+      string,
+      {
+        changed: boolean;
+        printed: boolean;
+        currentRequestIds: string[];
+        previousRequestIds: string[];
+      }
+    >
+  >({});
   const [devTestLoading, setDevTestLoading] = useState({
     label: false,
     order: false,
@@ -802,8 +817,45 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
         set.add(mailbox);
       }
     }
+    for (const mailbox of optimisticRequestedMailboxes) {
+      set.add(mailbox);
+    }
     return set;
-  }, [requests]);
+  }, [optimisticRequestedMailboxes, requests]);
+
+  useEffect(() => {
+    if (optimisticRequestedMailboxes.size === 0) return;
+    setOptimisticRequestedMailboxes((prev) => {
+      const next = new Set(prev);
+      for (const mailbox of prev) {
+        if (pickupRequestedMailboxes.has(mailbox)) {
+          next.delete(mailbox);
+        }
+      }
+      return next;
+    });
+  }, [optimisticRequestedMailboxes.size, pickupRequestedMailboxes]);
+
+  useEffect(() => {
+    if (optimisticPrintedMailboxes.size === 0) return;
+    setOptimisticPrintedMailboxes((prev) => {
+      const next = new Set(prev);
+      for (const mailbox of prev) {
+        const mailboxRequests = requests.filter(
+          (req) => String(req?.mailboxAddress || "").trim() === mailbox,
+        );
+        if (
+          mailboxRequests.length > 0 &&
+          mailboxRequests.every((req) =>
+            Boolean((req as any)?.shippingLabelPrinted?.printed),
+          )
+        ) {
+          next.delete(mailbox);
+        }
+      }
+      return next;
+    });
+  }, [optimisticPrintedMailboxes.size, requests]);
 
   const printedMailboxes = useMemo(() => {
     const set = new Set<string>();
@@ -815,18 +867,15 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
         set.add(mailbox);
       }
     }
+    for (const mailbox of optimisticPrintedMailboxes) {
+      set.add(mailbox);
+    }
     return set;
-  }, [requests]);
+  }, [optimisticPrintedMailboxes, requests]);
 
   const selectedOccupiedAddresses = useMemo(
     () => occupiedAddresses.filter((addr) => selectedMailboxes.has(addr)),
     [occupiedAddresses, selectedMailboxes],
-  );
-
-  const selectedPrintedAddresses = useMemo(
-    () =>
-      selectedOccupiedAddresses.filter((addr) => printedMailboxes.has(addr)),
-    [selectedOccupiedAddresses, printedMailboxes],
   );
 
   const selectedRequestedAddresses = useMemo(
@@ -837,6 +886,72 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     [selectedOccupiedAddresses, pickupRequestedMailboxes],
   );
 
+  const selectedRequestedOrOptimisticAddresses = useMemo(() => {
+    const requested = selectedOccupiedAddresses.filter((addr) =>
+      pickupRequestedMailboxes.has(addr),
+    );
+    if (requested.length > 0) return requested;
+    return selectedOccupiedAddresses.filter((addr) =>
+      optimisticRequestedMailboxes.has(addr),
+    );
+  }, [
+    optimisticRequestedMailboxes,
+    pickupRequestedMailboxes,
+    selectedOccupiedAddresses,
+  ]);
+
+  const selectedMailboxRequests = useMemo(() => {
+    const byMailbox = new Map<string, ManufacturerRequest[]>();
+    for (const req of requests) {
+      const mailbox = String(req?.mailboxAddress || "").trim();
+      if (!mailbox || !selectedMailboxes.has(mailbox)) continue;
+      if (!byMailbox.has(mailbox)) byMailbox.set(mailbox, []);
+      byMailbox.get(mailbox)?.push(req);
+    }
+    return byMailbox;
+  }, [requests, selectedMailboxes]);
+
+  const selectedRequestedMailboxChanges = useMemo(() => {
+    return selectedRequestedOrOptimisticAddresses.map((address) => {
+      const mailboxRequests = selectedMailboxRequests.get(address) || [];
+      const currentRequestIds = mailboxRequests
+        .map((req) => String(req?.requestId || "").trim())
+        .filter(Boolean)
+        .sort();
+      const printedMeta = mailboxRequests[0]?.shippingLabelPrinted;
+      const previousRequestIds = Array.isArray(printedMeta?.snapshotRequestIds)
+        ? printedMeta.snapshotRequestIds
+            .map((value) => String(value || "").trim())
+            .filter(Boolean)
+            .sort()
+        : [];
+      const previousFingerprint = String(
+        printedMeta?.snapshotFingerprint || "",
+      ).trim();
+      const currentFingerprint = JSON.stringify(
+        currentRequestIds.map((requestId) => ({ address, requestId })),
+      );
+      const changed =
+        !previousFingerprint || previousFingerprint !== currentFingerprint;
+
+      return {
+        address,
+        changed,
+        currentRequestIds,
+        previousRequestIds,
+      };
+    });
+  }, [selectedMailboxRequests, selectedRequestedOrOptimisticAddresses]);
+
+  const hasModifiedRequestedSelection = useMemo(
+    () =>
+      selectedRequestedMailboxChanges.some((item) => {
+        const backendMeta = mailboxChangeMeta[item.address];
+        return backendMeta ? backendMeta.changed : item.changed;
+      }),
+    [mailboxChangeMeta, selectedRequestedMailboxChanges],
+  );
+
   const toggleMailboxSelection = (address: string) => {
     setSelectedMailboxes((prev) => {
       const next = new Set(prev);
@@ -844,14 +959,6 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
       else next.add(address);
       return next;
     });
-  };
-
-  const selectAllOccupied = () => {
-    setSelectedMailboxes(new Set(occupiedAddresses));
-  };
-
-  const clearAllOccupied = () => {
-    setSelectedMailboxes(new Set());
   };
 
   const resolvePrintPayload = (payload: any) => {
@@ -977,80 +1084,123 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     }
   };
 
-  // Handle printing shipping labels
-  const handlePrintLabels = async () => {
-    if (selectedOccupiedAddresses.length === 0) {
+  const handlePickupWithLabel = async ({
+    modifyOnly = false,
+  }: {
+    modifyOnly?: boolean;
+  } = {}) => {
+    const targetAddresses = modifyOnly
+      ? selectedRequestedOrOptimisticAddresses
+      : selectedOccupiedAddresses;
+
+    if (targetAddresses.length === 0) {
       toast({
         title: "우편함 없음",
-        description: "운송장을 출력할 우편함을 선택해주세요.",
+        description: modifyOnly
+          ? "접수 내용 수정할 우편함을 선택해주세요."
+          : "택배 접수할 우편함을 선택해주세요.",
         variant: "destructive",
       });
       return;
     }
 
-    setIsPrinting(true);
+    setIsRequestingPickup(true);
     try {
-      if (shippingOutputMode === "image") {
-        const { data, wblPrint } = await callHanjinApiWithMeta({
-          path: "/api/requests/shipping/hanjin/print-labels",
-          mailboxAddresses: selectedOccupiedAddresses,
-        });
-
-        const candidatePayload =
-          (wblPrint as any)?.data || wblPrint || (data as any);
-        const printPayload = resolvePrintPayload(candidatePayload);
-
-        if (printPayload) {
-          await handleDownloadWaybillPdf(candidatePayload);
-          toast({
-            title: "운송장 저장 완료",
-            description: `${selectedOccupiedAddresses.length}개 우편함의 운송장을 다운로드했습니다.`,
-          });
-          return;
-        }
-
-        if (Array.isArray((data as any)?.address_list)) {
-          await saveGeneratedWaybillPngs({
-            addressList: (data as any).address_list,
-            zplLabels: (data as any).zplLabels,
-          });
-          toast({
-            title: "운송장 저장 완료",
-            description: `${selectedOccupiedAddresses.length}개 우편함의 운송장을 다운로드했습니다.`,
-          });
-          return;
-        }
-
-        if (wblPrint?.success) {
-          toast({
-            title: "운송장 출력 완료",
-            description: `${selectedOccupiedAddresses.length}개 우편함의 운송장이 출력되었습니다.`,
-          });
-          return;
-        }
-
-        toast({
-          title: "출력 데이터 없음",
-          description:
-            "운송장 응답에 PDF(URL/Base64) 데이터가 포함되지 않아 다운로드할 수 없습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
       const { data, wblPrint } = await callHanjinApiWithMeta({
-        path: "/api/requests/shipping/hanjin/print-labels",
-        mailboxAddresses: selectedOccupiedAddresses,
+        path: "/api/requests/shipping/hanjin/pickup-and-print",
+        mailboxAddresses: targetAddresses,
         wblPrintOptions: {
           printer: printerProfile || undefined,
           paperProfile,
         },
       });
 
+      const changedMailboxAddressSet = new Set(
+        Array.isArray((data as any)?.changedMailboxAddresses)
+          ? (data as any).changedMailboxAddresses
+              .map((value: any) => String(value || "").trim())
+              .filter(Boolean)
+          : [],
+      );
+      const nextMailboxChangeMeta = Array.isArray((data as any)?.mailboxChanges)
+        ? Object.fromEntries(
+            (data as any).mailboxChanges.map((item: any) => {
+              const mailboxAddress = String(item?.mailboxAddress || "").trim();
+              return [
+                mailboxAddress,
+                {
+                  changed:
+                    changedMailboxAddressSet.size > 0
+                      ? changedMailboxAddressSet.has(mailboxAddress)
+                      : Boolean(item?.changed),
+                  printed: Boolean(item?.printed),
+                  currentRequestIds: Array.isArray(item?.currentRequestIds)
+                    ? item.currentRequestIds
+                        .map((value: any) => String(value || "").trim())
+                        .filter(Boolean)
+                    : [],
+                  previousRequestIds: Array.isArray(item?.previousRequestIds)
+                    ? item.previousRequestIds
+                        .map((value: any) => String(value || "").trim())
+                        .filter(Boolean)
+                    : [],
+                },
+              ];
+            }),
+          )
+        : null;
+      if (nextMailboxChangeMeta) {
+        setMailboxChangeMeta((prev) => ({
+          ...prev,
+          ...nextMailboxChangeMeta,
+        }));
+      }
+
+      setOptimisticRequestedMailboxes((prev) => {
+        const next = new Set(prev);
+        targetAddresses.forEach((address) => next.add(address));
+        return next;
+      });
+      setOptimisticPrintedMailboxes((prev) => {
+        const next = new Set(prev);
+        targetAddresses.forEach((address) => next.add(address));
+        return next;
+      });
+
+      if (shippingOutputMode === "image") {
+        const candidatePayload =
+          (wblPrint as any)?.data ||
+          wblPrint ||
+          (data as any)?.label ||
+          (data as any);
+        const printPayload = resolvePrintPayload(candidatePayload);
+
+        if (printPayload) {
+          await handleDownloadWaybillPdf(candidatePayload);
+          toast({
+            title: modifyOnly ? "접수 내용 수정 완료" : "택배 접수 완료",
+            description: `${targetAddresses.length}개 우편함의 라벨 저장 후 접수가 완료되었습니다.`,
+          });
+          return;
+        }
+
+        if (Array.isArray((data as any)?.label?.address_list)) {
+          await saveGeneratedWaybillPngs({
+            addressList: (data as any).label.address_list,
+            zplLabels: (data as any).label.zplLabels,
+          });
+          toast({
+            title: modifyOnly ? "접수 내용 수정 완료" : "택배 접수 완료",
+            description: `${targetAddresses.length}개 우편함의 라벨 저장 후 접수가 완료되었습니다.`,
+          });
+          return;
+        }
+      }
+
       if (wblPrint?.success) {
         toast({
-          title: "운송장 출력 완료",
-          description: `${selectedOccupiedAddresses.length}개 우편함의 운송장이 출력되었습니다.`,
+          title: modifyOnly ? "접수 내용 수정 완료" : "택배 접수 완료",
+          description: `${targetAddresses.length}개 우편함의 라벨 출력 후 접수가 완료되었습니다.`,
         });
         return;
       }
@@ -1059,10 +1209,10 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
         wblPrint?.skipped &&
         wblPrint?.reason === "wbl_print_server_not_configured"
       ) {
-        await triggerLocalPrint(data);
+        await triggerLocalPrint((data as any)?.label || data);
         toast({
-          title: "운송장 출력 완료",
-          description: `${selectedOccupiedAddresses.length}개 우편함의 운송장이 출력되었습니다.`,
+          title: modifyOnly ? "접수 내용 수정 완료" : "택배 접수 완료",
+          description: `${targetAddresses.length}개 우편함의 라벨 출력 후 접수가 완료되었습니다.`,
         });
         return;
       }
@@ -1089,26 +1239,48 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
         return;
       }
 
-      await triggerLocalPrint(data);
+      await triggerLocalPrint((data as any)?.label || data);
       toast({
-        title: "운송장 출력 완료",
-        description: `${selectedOccupiedAddresses.length}개 우편함의 운송장이 출력되었습니다.`,
+        title: modifyOnly ? "접수 내용 수정 완료" : "택배 접수 완료",
+        description: `${targetAddresses.length}개 우편함의 라벨 출력 후 접수가 완료되었습니다.`,
       });
     } catch (error) {
-      console.error("운송장 출력 실패:", error);
+      if (!modifyOnly) {
+        setOptimisticRequestedMailboxes((prev) => {
+          const next = new Set(prev);
+          targetAddresses.forEach((address) => next.delete(address));
+          return next;
+        });
+        setOptimisticPrintedMailboxes((prev) => {
+          const next = new Set(prev);
+          targetAddresses.forEach((address) => next.delete(address));
+          return next;
+        });
+        setMailboxChangeMeta((prev) => {
+          const next = { ...prev };
+          targetAddresses.forEach((address) => {
+            delete next[address];
+          });
+          return next;
+        });
+      }
+      console.error("택배 접수/라벨 처리 실패:", error);
       toast({
-        title: "운송장 출력 실패",
-        description: "운송장 출력에 실패했습니다.",
+        title: modifyOnly ? "접수 내용 수정 실패" : "택배 접수 실패",
+        description:
+          error instanceof Error && error.message
+            ? error.message
+            : "택배 접수 및 라벨 출력에 실패했습니다.",
         variant: "destructive",
       });
     } finally {
-      setIsPrinting(false);
+      setIsRequestingPickup(false);
     }
   };
 
   // Handle requesting or cancelling pickup
   const handlePickupAction = async () => {
-    const requestedAddresses = selectedRequestedAddresses;
+    const requestedAddresses = selectedRequestedOrOptimisticAddresses;
     const hasRequestedPickup = requestedAddresses.length > 0;
 
     const targetAddresses = hasRequestedPickup
@@ -1140,6 +1312,23 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
           path: "/api/requests/shipping/hanjin/pickup-cancel",
           mailboxAddresses: targetAddresses,
         });
+        setOptimisticRequestedMailboxes((prev) => {
+          const next = new Set(prev);
+          targetAddresses.forEach((address) => next.delete(address));
+          return next;
+        });
+        setOptimisticPrintedMailboxes((prev) => {
+          const next = new Set(prev);
+          targetAddresses.forEach((address) => next.delete(address));
+          return next;
+        });
+        setMailboxChangeMeta((prev) => {
+          const next = { ...prev };
+          targetAddresses.forEach((address) => {
+            delete next[address];
+          });
+          return next;
+        });
         toast({
           title: "택배 수거 취소 완료",
           description: `${targetAddresses.length}개 우편함의 택배 수거를 취소했습니다.`,
@@ -1147,6 +1336,32 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
       }
     } catch (error) {
       console.error("택배 수거 처리 실패:", error);
+      if (hasRequestedPickup) {
+        setOptimisticRequestedMailboxes((prev) => {
+          const next = new Set(prev);
+          targetAddresses.forEach((address) => next.add(address));
+          return next;
+        });
+        setOptimisticPrintedMailboxes((prev) => {
+          const next = new Set(prev);
+          targetAddresses.forEach((address) => next.add(address));
+          return next;
+        });
+        setMailboxChangeMeta((prev) => {
+          const next = { ...prev };
+          targetAddresses.forEach((address) => {
+            if (!next[address]) {
+              next[address] = {
+                changed: false,
+                printed: true,
+                currentRequestIds: [],
+                previousRequestIds: [],
+              };
+            }
+          });
+          return next;
+        });
+      }
       const errorMessage =
         error instanceof Error && error.message
           ? error.message
@@ -1167,13 +1382,31 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
 
   const hasRequestedPickup = selectedRequestedAddresses.length > 0;
 
-  const pickupButtonLabel = isRequestingPickup
-    ? hasRequestedPickup
-      ? "취소 중..."
-      : "접수 중..."
-    : hasRequestedPickup
-      ? "↩️ 접수 취소"
-      : "🚚 택배 접수";
+  const allSelectedRequested =
+    selectedOccupiedAddresses.length > 0 &&
+    selectedRequestedOrOptimisticAddresses.length ===
+      selectedOccupiedAddresses.length;
+
+  const shouldShowModifyPickup =
+    selectedRequestedOrOptimisticAddresses.length > 0;
+
+  const hasRequestedSelection = shouldShowModifyPickup;
+
+  const canModifyPickup = shouldShowModifyPickup;
+
+  const modifyTargetCount = selectedRequestedOrOptimisticAddresses.length;
+
+  const canCancelPickup = selectedRequestedOrOptimisticAddresses.length > 0;
+
+  const selectedRequestedCount = selectedRequestedOrOptimisticAddresses.length;
+
+  const pickupPrimaryLabel = hasRequestedSelection
+    ? "↩️ 택배 취소"
+    : "🚚 라벨 출력 후 택배 접수";
+
+  const modifyPickupLabel = hasModifiedRequestedSelection
+    ? "🔄 변경 내용 재출력 후 재접수"
+    : "📝 접수 내용 수정";
 
   const runDevTest = async (
     kind: "label" | "order" | "webhook",
@@ -1189,7 +1422,7 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
             ? "배송정보 수신 모의가 완료되었습니다."
             : kind === "order"
               ? "주문정보(수거) 송신이 완료되었습니다."
-              : "운송장 출력 모의가 완료되었습니다.",
+              : "택배 접수 + 운송장 출력 모의가 완료되었습니다.",
       });
     } catch (error) {
       console.error(`DEV 테스트(${kind}) 실패:`, error);
@@ -1206,7 +1439,7 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
   const handleDevLabelTest = () =>
     runDevTest("label", async () => {
       await callHanjinApi({
-        path: "/api/requests/shipping/hanjin/print-labels",
+        path: "/api/requests/shipping/hanjin/pickup-and-print",
         payload: HANJIN_DEV_TEST_PAYLOAD,
       });
     });
@@ -1236,9 +1469,9 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
 
   return (
     <div className="w-full flex flex-col h-full relative">
-      {/* 고정 영역: 운송장 출력/택배 수거 접수 + 선반 그룹 버튼 */}
+      {/* 고정 영역: 택배 접수 중심 액션 + 선반 그룹 버튼 */}
       <div className="flex-shrink-0 w-full sticky top-0 z-40 -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8">
-        {/* 운송장 출력 및 택배 수거 접수 버튼 */}
+        {/* 택배 접수 중심 액션 버튼 */}
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4 pb-1 px-2">
           <div className="flex items-center gap-2">
             <button
@@ -1253,64 +1486,56 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
 
           <div className="flex gap-2 justify-center">
             <button
-              onClick={handlePrintLabels}
-              disabled={isPrinting || selectedOccupiedAddresses.length === 0}
-              className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
-                isPrinting || selectedOccupiedAddresses.length === 0
-                  ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                  : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm"
-              }`}
-            >
-              {isPrinting ? "출력 중..." : "📦 운송장 출력"}
-            </button>
-            <button
-              onClick={handlePickupAction}
+              onClick={
+                hasRequestedSelection
+                  ? handlePickupAction
+                  : () => void handlePickupWithLabel()
+              }
               disabled={
-                isRequestingPickup || (!hasRequestedPickup && !canRequestPickup)
+                isRequestingPickup ||
+                (hasRequestedSelection ? !canCancelPickup : !canRequestPickup)
               }
               className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
-                isRequestingPickup || (!hasRequestedPickup && !canRequestPickup)
+                isRequestingPickup ||
+                (hasRequestedSelection ? !canCancelPickup : !canRequestPickup)
                   ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                  : hasRequestedPickup
+                  : hasRequestedSelection
                     ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 shadow-sm"
                     : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm"
               }`}
             >
-              {pickupButtonLabel}
+              {isRequestingPickup
+                ? hasRequestedSelection
+                  ? "취소 중..."
+                  : "접수 중..."
+                : pickupPrimaryLabel}
             </button>
+            {shouldShowModifyPickup ? (
+              <button
+                onClick={() => void handlePickupWithLabel({ modifyOnly: true })}
+                disabled={
+                  isRequestingPickup ||
+                  !canModifyPickup ||
+                  modifyTargetCount === 0
+                }
+                className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
+                  isRequestingPickup ||
+                  !canModifyPickup ||
+                  modifyTargetCount === 0
+                    ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm"
+                }`}
+              >
+                {isRequestingPickup ? "수정 중..." : modifyPickupLabel}
+              </button>
+            ) : null}
           </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-center gap-2 pt-2 pb-3 px-2 text-center">
-          <button
-            type="button"
-            onClick={selectAllOccupied}
-            disabled={occupiedAddresses.length === 0}
-            className={`px-3 py-1 text-xs rounded-full border transition-colors ${
-              occupiedAddresses.length === 0
-                ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-            }`}
-          >
-            전체 선택
-          </button>
-          <button
-            type="button"
-            onClick={clearAllOccupied}
-            disabled={
-              occupiedAddresses.length === 0 || selectedMailboxes.size === 0
-            }
-            className={`px-3 py-1 text-xs rounded-full border transition-colors ${
-              occupiedAddresses.length === 0 || selectedMailboxes.size === 0
-                ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-            }`}
-          >
-            전체 해제
-          </button>
           <div className="text-xs text-slate-500">
-            전체 {occupiedAddresses.length}개 / 선택{" "}
-            {selectedOccupiedAddresses.length}개
+            선택 {selectedOccupiedAddresses.length}개 / 접수됨{" "}
+            {selectedRequestedCount}개
           </div>
         </div>
 
@@ -1478,11 +1703,14 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                   {shelf}
                   {sRow}
                 </div>
-                <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-md">
+                <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-md">
                   {binCols.map((bCol) => (
                     <div key={bCol} className="flex flex-col gap-1">
                       {binRows.map((bRow) => {
                         const address = `${shelf}${sRow}${bCol}${bRow}`;
+                        if (bRow === "4") {
+                          return null;
+                        }
                         const items = addressMap.get(address) || [];
                         const isOccupied = items.length > 0;
 
@@ -1497,6 +1725,9 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                         };
 
                         const isSelected = selectedMailboxes.has(address);
+                        const isOptimisticRequested =
+                          optimisticRequestedMailboxes.has(address) &&
+                          !printedMailboxes.has(address);
                         const handleOpenDetails = (
                           e: React.MouseEvent | React.TouchEvent,
                         ) => {
@@ -1520,11 +1751,14 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                               ${
                                 isOccupied && isSelected
                                   ? "bg-blue-100 border-blue-500 shadow-sm"
-                                  : isOccupied && printedMailboxes.has(address)
-                                    ? "bg-white border-orange-400 shadow-sm"
-                                    : isOccupied
-                                      ? getMailboxColorClass(items)
-                                      : "bg-white border-slate-200"
+                                  : isOccupied && isOptimisticRequested
+                                    ? "bg-emerald-50 border-emerald-500 shadow-sm"
+                                    : isOccupied &&
+                                        printedMailboxes.has(address)
+                                      ? "bg-white border-orange-400 shadow-sm"
+                                      : isOccupied
+                                        ? getMailboxColorClass(items)
+                                        : "bg-white border-slate-200"
                               }
                             `}
                             style={{
@@ -1538,17 +1772,19 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                               className={`font-mono font-bold leading-none text-center w-full pointer-events-none ${
                                 isOccupied && isSelected
                                   ? "text-blue-800"
-                                  : isOccupied
-                                    ? getMailboxColorClass(items).includes(
-                                        "bg-blue",
-                                      )
-                                      ? "text-blue-800"
-                                      : getMailboxColorClass(items).includes(
-                                            "bg-red",
-                                          )
-                                        ? "text-red-800"
-                                        : "text-slate-700"
-                                    : "text-slate-400"
+                                  : isOccupied && isOptimisticRequested
+                                    ? "text-emerald-800"
+                                    : isOccupied
+                                      ? getMailboxColorClass(items).includes(
+                                          "bg-blue",
+                                        )
+                                        ? "text-blue-800"
+                                        : getMailboxColorClass(items).includes(
+                                              "bg-red",
+                                            )
+                                          ? "text-red-800"
+                                          : "text-slate-700"
+                                      : "text-slate-400"
                               }`}
                               style={{ fontSize: "9px" }}
                             >
@@ -1563,15 +1799,17 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                                   className={`font-bold leading-none ${
                                     isSelected
                                       ? "text-blue-700"
-                                      : getMailboxColorClass(items).includes(
-                                            "bg-blue",
-                                          )
-                                        ? "text-blue-700"
+                                      : isOptimisticRequested
+                                        ? "text-emerald-700"
                                         : getMailboxColorClass(items).includes(
-                                              "bg-red",
+                                              "bg-blue",
                                             )
-                                          ? "text-red-700"
-                                          : "text-slate-700"
+                                          ? "text-blue-700"
+                                          : getMailboxColorClass(
+                                                items,
+                                              ).includes("bg-red")
+                                            ? "text-red-700"
+                                            : "text-slate-700"
                                   }`}
                                   style={{ fontSize: "18px" }}
                                   aria-label={`${address} 내용 보기`}

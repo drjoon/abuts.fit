@@ -1,23 +1,22 @@
 import Request from "../../models/request.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
+import hanjinService from "../../services/hanjin.service.js";
 import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
-import { handleHanjinTrackingWebhook } from "../webhooks/hanjinWebhook.controller.js";
 import { emitAppEventToRoles } from "../../socket.js";
-import { Types } from "mongoose";
 import {
   applyStatusMapping,
-  bumpRollbackCount,
   normalizeRequestForResponse,
-  REQUEST_STAGE_GROUPS,
   ensureReviewByStageDefaults,
 } from "./utils.js";
-import { chargeShippingFeeOnPickupComplete } from "./shippingRequestor.controller.js";
+import { ensureShippingPackageForPickup } from "./shippingRequestor.controller.js";
 import {
+  buildHanjinInsertOrderBody,
   buildHanjinOrderFallbackCaller,
   buildHanjinPathCandidates,
   executeHanjinLabelPrint,
   findPackingStageRequestsByMailboxes,
   getHanjinPathFallbacks,
+  getWblPrintSettingsPayload,
   resolveHanjinPath,
   resolveHanjinPayload,
   resolveMailboxList,
@@ -111,34 +110,6 @@ const buildPickupAndPrintResponseData = ({
   zplLabels: Array.isArray(labelData?.zplLabels) ? labelData.zplLabels : [],
 });
 
-const buildResolvedLabelData = ({ data, metaByMsgKey = {} }) => {
-  const enrichedData =
-    data && typeof data === "object"
-      ? {
-          ...data,
-          address_list: enrichHanjinAddressList({
-            addressList: data.address_list,
-            metaByMsgKey,
-          }),
-        }
-      : data;
-
-  const zplLabels =
-    enrichedData && typeof enrichedData === "object"
-      ? buildHanjinWblZplLabels({ addressList: enrichedData.address_list })
-      : [];
-
-  return {
-    ...(enrichedData || {}),
-    zplLabels,
-  };
-};
-
-const buildLabelPrintExecutionResult = ({ labelData, wblPrint }) => ({
-  labelData,
-  wblPrint,
-});
-
 const buildPrintLabelsSuccessPayload = ({ labelData, wblPrint }) => ({
   success: true,
   data: labelData,
@@ -218,115 +189,6 @@ const resolveCapturedSuccessBody = (capturedPayload, fallbackMessage) => {
   };
 };
 
-const executeHanjinLabelPrint = async ({
-  path,
-  payload,
-  metaByMsgKey,
-  wblPrintOptions,
-}) => {
-  const data = await hanjinService.requestPrintApi({
-    path: path.replace("{client_id}", HANJIN_CLIENT_ID),
-    method: "POST",
-    data: payload,
-  });
-
-  const labelData = buildResolvedLabelData({
-    data,
-    metaByMsgKey,
-  });
-
-  const shouldTriggerWblPrint =
-    wblPrintOptions && typeof wblPrintOptions === "object";
-  const wblPrint = shouldTriggerWblPrint
-    ? await triggerWblServerPrint(labelData, wblPrintOptions)
-    : { success: true, skipped: true, reason: "image_mode" };
-
-  return buildLabelPrintExecutionResult({
-    labelData,
-    wblPrint,
-  });
-};
-
-const executeHanjinOrderApiWithFallback = async ({
-  pathCandidates,
-  data,
-  logPrefix = "[hanjin][order]",
-}) => {
-  let lastError = null;
-  for (const candidate of pathCandidates) {
-    try {
-      const out = await hanjinService.requestOrderApi({
-        path: candidate,
-        method: "POST",
-        data,
-      });
-      lastError = null;
-      return out;
-    } catch (err) {
-      console.error(`${logPrefix} candidate failed`, {
-        candidate,
-        status: err?.status,
-        message: err?.message,
-        response: err?.data,
-      });
-      lastError = err;
-      if (err?.status !== 404) {
-        throw err;
-      }
-    }
-  }
-  throw lastError;
-};
-
-const buildHanjinOrderFallbackCaller =
-  ({ pathCandidates, logPrefix }) =>
-  async ({ data }) => {
-    console.log(`${logPrefix} trying candidates`, {
-      pathCandidates,
-      data,
-    });
-    const out = await executeHanjinOrderApiWithFallback({
-      pathCandidates,
-      data,
-      logPrefix,
-    });
-    console.log(`${logPrefix} candidate success`, {
-      pathCandidates,
-    });
-    return out;
-  };
-
-const findPackingStageRequestsByMailboxes = async (
-  mailboxAddresses = [],
-  options = {},
-) => {
-  const list = resolveMailboxList(mailboxAddresses);
-  if (!list.length) return [];
-
-  let query = Request.find({
-    mailboxAddress: { $in: list },
-    manufacturerStage: "포장.발송",
-  });
-
-  if (options.populateRequestor !== false) {
-    query = query.populate(
-      "requestor",
-      "name organization phoneNumber address",
-    );
-    query = query.populate("requestorOrganizationId", "name extracted");
-  }
-
-  if (options.select && typeof options.select === "object") {
-    query = query.select(options.select);
-  }
-
-  if (options.lean) {
-    query = query.lean();
-  }
-
-  return query;
-};
-
 const findPrePrintSnapshotRequests = async (mailboxAddresses = []) =>
   findPackingStageRequestsByMailboxes(mailboxAddresses, {
     populateRequestor: false,
@@ -394,71 +256,6 @@ const executeIntegratedCapturedStep = async ({
     ok: true,
     captured,
     body,
-  };
-};
-
-const executeIntegratedPickupAndPrintFlow = async ({
-  req,
-  res,
-  mailboxAddresses,
-  wblPrintOptions,
-}) => {
-  const {
-    changedMailboxAddressesBeforePrint,
-    mailboxChangeResponse,
-    selectedRequestsBeforePrint,
-  } = await preparePickupAndPrintChangeContext(mailboxAddresses);
-  const printTargetMailboxAddresses = changedMailboxAddressesBeforePrint.length
-    ? changedMailboxAddressesBeforePrint
-    : mailboxAddresses;
-
-  const pickupStep = await executeIntegratedCapturedStep({
-    res,
-    controllerFn: requestHanjinPickup,
-    reqLike: req,
-    fallbackMessage: "한진 택배 접수에 실패했습니다.",
-  });
-  if (!pickupStep.ok) {
-    return pickupStep;
-  }
-
-  const printReq = buildIntegratedPrintRequest({
-    req,
-    mailboxAddresses: printTargetMailboxAddresses,
-    wblPrintOptions,
-  });
-  printReq.__resolvedHanjinPayload = {
-    mailboxAddresses: printTargetMailboxAddresses,
-    requests: Array.isArray(selectedRequestsBeforePrint)
-      ? selectedRequestsBeforePrint.filter((requestDoc) =>
-          printTargetMailboxAddresses.includes(
-            String(requestDoc?.mailboxAddress || "").trim(),
-          ),
-        )
-      : [],
-  };
-
-  const printStep = await executeIntegratedCapturedStep({
-    res,
-    controllerFn: printHanjinLabels,
-    reqLike: printReq,
-    fallbackMessage: "운송장 출력에 실패했습니다.",
-  });
-  if (!printStep.ok) {
-    return printStep;
-  }
-
-  return {
-    ok: true,
-    payload: buildIntegratedPickupAndPrintSuccessResponse({
-      pickupBody: pickupStep.body,
-      printBody: printStep.body,
-      mailboxChangeResponse,
-      changedMailboxAddressesBeforePrint,
-    }),
-    printTargetMailboxAddresses,
-    pickupStep,
-    printStep,
   };
 };
 
@@ -613,33 +410,6 @@ const persistPrintedMailboxState = async ({
   }
 };
 
-const extractTrackingRows = (data) => {
-  if (!data || typeof data !== "object") return [];
-  if (Array.isArray(data.wblList)) return data.wblList;
-  if (Array.isArray(data.data?.wblList)) return data.data.wblList;
-  if (Array.isArray(data.result?.wblList)) return data.result.wblList;
-  return [];
-};
-
-const normalizeTrackingEvents = (wrkList) => {
-  const list = Array.isArray(wrkList) ? wrkList : [];
-  return list
-    .map((item) => ({
-      statusCode:
-        item?.statusCode != null ? String(item.statusCode).trim() : undefined,
-      statusText:
-        item?.statusName != null ? String(item.statusName).trim() : undefined,
-      occurredAt:
-        item?.statusDate != null ? new Date(item.statusDate) : undefined,
-      location:
-        item?.agencyName != null ? String(item.agencyName).trim() : undefined,
-      description:
-        item?.description != null ? String(item.description).trim() : undefined,
-      raw: item ?? undefined,
-    }))
-    .filter((item) => item.statusCode || item.statusText || item.occurredAt);
-};
-
 const buildTrackingStatusLabel = (deliveryInfo) => {
   const deliveredAt = deliveryInfo?.deliveredAt
     ? new Date(deliveryInfo.deliveredAt)
@@ -652,21 +422,6 @@ const buildTrackingStatusLabel = (deliveryInfo) => {
   if (deliveryInfo?.trackingNumber || deliveryInfo?.shippedAt) return "접수";
   return "-";
 };
-
-const isTrackingStageEligible = (deliveryInfo) => {
-  const deliveredAt = deliveryInfo?.deliveredAt
-    ? new Date(deliveryInfo.deliveredAt)
-    : null;
-  if (deliveredAt && !Number.isNaN(deliveredAt.getTime())) return true;
-
-  const code = String(deliveryInfo?.tracking?.lastStatusCode || "").trim();
-  return ["11", "14", "31", "32", "63", "66", "92"].includes(code);
-};
-
-const resolveMailboxList = (mailboxAddresses) =>
-  Array.isArray(mailboxAddresses)
-    ? mailboxAddresses.map((v) => String(v || "").trim()).filter(Boolean)
-    : [];
 
 const extractTrackingNumberFromPickupData = (data) => {
   const candidates = [
@@ -753,12 +508,6 @@ async function finalizeMailboxPickupShipment({
     updatedIds.push(String(request.requestId || "").trim());
   }
 
-  console.log("[HANJIN_PICKUP_FINALIZED] finalized shipment", {
-    shippingPackageId: String(pkg._id),
-    trackingNumber: trackingNumber || null,
-    requestIds: updatedIds,
-  });
-
   return updatedIds;
 }
 
@@ -809,43 +558,7 @@ async function executeSingleMailboxPickup({
   callHanjinWithFallback,
   actorUserId,
 }) {
-  const orderBody = buildHanjinInsertOrderBody({
-    mailbox,
-    requests: group,
-  });
-
-  console.log("[hanjin][pickup] mailbox organization debug", {
-    mailbox,
-    organizations: group.map((request) => ({
-      requestId: String(request?.requestId || "").trim(),
-      requestorOrganizationId:
-        request?.requestorOrganizationId &&
-        typeof request.requestorOrganizationId === "object"
-          ? String(request.requestorOrganizationId?._id || "").trim()
-          : String(request?.requestorOrganizationId || "").trim(),
-      requestorOrganizationName:
-        request?.requestorOrganizationId &&
-        typeof request.requestorOrganizationId === "object"
-          ? String(request.requestorOrganizationId?.name || "").trim()
-          : "",
-      extractedCompanyName: String(
-        request?.requestorOrganizationId?.extracted?.companyName || "",
-      ).trim(),
-      requestorOrganization: String(
-        request?.requestor?.organization || "",
-      ).trim(),
-      clinicName: String(request?.caseInfos?.clinicName || "").trim(),
-      resolvedOrganizationName: resolveRequestOrganizationName(request),
-      receiverZipSource: String(resolveReceiverZipSource(request) || "").trim(),
-      requestorAddress: request?.requestor?.address || null,
-      requestorAddressText: String(
-        request?.requestor?.addressText || "",
-      ).trim(),
-      extractedAddress: String(
-        request?.requestorOrganizationId?.extracted?.address || "",
-      ).trim(),
-    })),
-  });
+  const orderBody = buildHanjinInsertOrderBody({ mailbox, requests: group });
 
   console.log("[hanjin][pickup] mailbox order body", {
     mailbox,
@@ -864,50 +577,6 @@ async function executeSingleMailboxPickup({
   });
 }
 
-async function resolveHanjinPayload({ mailboxAddresses, payload }) {
-  const preResolvedRequests = Array.isArray(this?.requests)
-    ? this.requests
-    : null;
-  if (payload && typeof payload === "object") {
-    return {
-      payload,
-      metaByMsgKey: {},
-      usedDbRequests: false,
-      requestIds: [],
-    };
-  }
-
-  const list = resolveMailboxList(mailboxAddresses);
-  if (!list.length) {
-    const error = new Error("mailboxAddresses가 필요합니다.");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const requests = preResolvedRequests?.length
-    ? preResolvedRequests
-    : await findPackingStageRequestsByMailboxes(list, {
-        lean: true,
-      });
-
-  if (!requests.length) {
-    const error = new Error("조건에 맞는 의뢰를 찾을 수 없습니다.");
-    error.statusCode = 404;
-    throw error;
-  }
-
-  const built = buildHanjinDraftPayload(requests, list);
-
-  return {
-    payload: built.payload,
-    metaByMsgKey: built.metaByMsgKey || {},
-    usedDbRequests: true,
-    requestIds: requests
-      .map((req) => String(req?.requestId || "").trim())
-      .filter(Boolean),
-  };
-}
-
 const groupRequestsByMailbox = (requests = []) => {
   const byMailbox = new Map();
   for (const request of Array.isArray(requests) ? requests : []) {
@@ -919,114 +588,124 @@ const groupRequestsByMailbox = (requests = []) => {
   return byMailbox;
 };
 
-const resolveHanjinPath = (envKey, fallbackPath) => {
-  const raw = String(process.env[envKey] || "").trim();
-  if (raw) return raw;
-  return fallbackPath || "";
-};
+export async function getWblPrintSettings(req, res) {
+  return res.status(200).json({
+    success: true,
+    data: getWblPrintSettingsPayload(),
+  });
+}
 
-const buildHanjinPathCandidates = (rawPath) => {
-  const path = String(rawPath || "").trim();
-  if (!path) return [];
-
-  const candidates = [path];
-  if (path.startsWith("/api/")) {
-    candidates.push(path.replace(/^\/api\//, "/"));
-  }
-
-  return [...new Set(candidates)];
-};
-
-/**
- * 우편함 전체 롤백 (포장.발송 → 세척.패킹)
- * @route POST /api/requests/shipping/mailbox-rollback
- */
-export async function rollbackMailboxShipping(req, res) {
+export async function validateHanjinCustomerCheck(req, res) {
   try {
-    const { mailboxAddress, requestIds } = req.body || {};
+    ensureHanjinEnv();
 
-    const mailbox = String(mailboxAddress || "").trim();
-    if (!mailbox) {
+    const cntractNo = String(
+      req.query?.cntractNo || process.env.HANJIN_CSR_NUM || "",
+    ).trim();
+    const custBizNo = String(req.query?.custBizNo || "").trim();
+
+    if (!cntractNo) {
       return res.status(400).json({
         success: false,
-        message: "mailboxAddress가 필요합니다.",
+        message: "cntractNo가 필요합니다.",
       });
     }
 
-    const ids = Array.isArray(requestIds)
-      ? requestIds
-          .map((v) => String(v || "").trim())
-          .filter((v) => Types.ObjectId.isValid(v))
-      : [];
-
-    const filter = {
-      mailboxAddress: mailbox,
-      manufacturerStage: "포장.발송",
+    const path = resolveHanjinPath(
+      "HANJIN_CUSTOMER_CHECK_PATH",
+      getHanjinPathFallbacks().HANJIN_CUSTOMER_CHECK_PATH,
+    );
+    const params = {
+      cntractNo,
+      ...(custBizNo ? { custBizNo } : {}),
     };
 
-    if (ids.length) {
-      filter._id = { $in: ids };
-    }
-
-    const requests = await Request.find(filter);
-    if (!requests.length) {
-      return res.status(404).json({
-        success: false,
-        message: "조건에 맞는 의뢰를 찾을 수 없습니다.",
-      });
-    }
-
-    const updatedIds = [];
-    for (const r of requests) {
-      ensureReviewByStageDefaults(r);
-      r.caseInfos.reviewByStage.shipping = {
-        ...r.caseInfos.reviewByStage.shipping,
-        status: "PENDING",
-        updatedAt: new Date(),
-        updatedBy: req.user?._id,
-        reason: "",
-      };
-      bumpRollbackCount(r, "shipping");
-      applyStatusMapping(r, "세척.패킹");
-      r.shippingLabelPrinted = {
-        ...(r.shippingLabelPrinted || {}),
-        printed: false,
-        printedAt: null,
-        mailboxAddress: String(r.mailboxAddress || "").trim() || null,
-        snapshotFingerprint: null,
-        snapshotCapturedAt: null,
-        snapshotRequestIds: [],
-      };
-      await r.save();
-      updatedIds.push(r.requestId);
-    }
+    const data = await hanjinService.requestCustomerApi({
+      path,
+      method: "GET",
+      params,
+    });
 
     return res.status(200).json({
       success: true,
-      message: `${updatedIds.length}건이 롤백되었습니다.`,
-      data: { updatedIds },
+      data,
     });
   } catch (error) {
-    console.error("Error in rollbackMailboxShipping:", error);
+    console.error("Error in validateHanjinCustomerCheck:", error);
+    return res.status(error?.status || 500).json({
+      success: false,
+      message: "한진 계약번호 검증 중 오류가 발생했습니다.",
+      error: error.message,
+      data: error?.data,
+    });
+  }
+}
+
+export async function printHanjinLabels(req, res) {
+  try {
+    const { mailboxAddresses, payload, wblPrintOptions } = req.body || {};
+    const preResolved = req?.__resolvedHanjinPayload || null;
+    const path = resolveHanjinPath(
+      "HANJIN_PRINT_WBL_PATH",
+      getHanjinPathFallbacks().HANJIN_PRINT_WBL_PATH,
+    );
+    if (!path) {
+      return res.status(400).json({
+        success: false,
+        message: "HANJIN_PRINT_WBL_PATH가 설정되지 않았습니다.",
+      });
+    }
+
+    let resolved;
+    try {
+      resolved = await resolveHanjinPayload.call(preResolved, {
+        mailboxAddresses,
+        payload,
+      });
+    } catch (err) {
+      if (err.statusCode) {
+        return res.status(err.statusCode).json({
+          success: false,
+          message: err.message,
+        });
+      }
+      throw err;
+    }
+
+    const { labelData, wblPrint } = await executeHanjinLabelPrint({
+      path,
+      payload: resolved.payload,
+      metaByMsgKey: resolved.metaByMsgKey,
+      wblPrintOptions,
+    });
+
+    await persistPrintedMailboxState({
+      mailboxAddresses,
+      requests: Array.isArray(preResolved?.requests)
+        ? preResolved.requests
+        : [],
+    });
+
+    return res
+      .status(200)
+      .json(buildPrintLabelsSuccessPayload({ labelData, wblPrint }));
+  } catch (error) {
+    console.error("Error in printHanjinLabels:", error);
     return res.status(500).json({
       success: false,
-      message: "우편함 롤백 중 오류가 발생했습니다.",
+      message: "한진 운송장 출력 요청 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
 }
 
-/**
- * 한진 택배 수거 접수 (메일박스 기준)
- * @route POST /api/requests/shipping/hanjin/pickup
- */
 export async function requestHanjinPickup(req, res) {
   try {
     const { mailboxAddresses, payload } = req.body || {};
 
     const path = resolveHanjinPath(
       "HANJIN_PICKUP_REQUEST_PATH",
-      HANJIN_PATH_FALLBACKS.HANJIN_PICKUP_REQUEST_PATH,
+      getHanjinPathFallbacks().HANJIN_PICKUP_REQUEST_PATH,
     );
     if (!path) {
       return res.status(400).json({
@@ -1055,13 +734,11 @@ export async function requestHanjinPickup(req, res) {
     }
 
     const pathCandidates = buildHanjinPathCandidates(path);
-
     const callHanjinWithFallback = buildHanjinOrderFallbackCaller({
       pathCandidates,
       logPrefix: "[hanjin][pickup]",
     });
 
-    // payload가 직접 들어오면(DEV/운영 수동 테스트) 그대로 전달
     if (payload && typeof payload === "object") {
       const data = await callHanjinWithFallback({ data: payload });
       return res.status(200).json({ success: true, data });
@@ -1070,7 +747,6 @@ export async function requestHanjinPickup(req, res) {
     const requests = await findPackingStageRequestsByMailboxes(list, {
       lean: true,
     });
-
     if (!requests.length) {
       return res.status(404).json({
         success: false,
@@ -1079,7 +755,6 @@ export async function requestHanjinPickup(req, res) {
     }
 
     const byMailbox = groupRequestsByMailbox(requests);
-
     const results = [];
     for (const mailbox of list) {
       const group = byMailbox.get(mailbox) || [];
@@ -1092,7 +767,6 @@ export async function requestHanjinPickup(req, res) {
         });
         continue;
       }
-
       results.push(
         await executeSingleMailboxPickup({
           mailbox,
@@ -1105,10 +779,7 @@ export async function requestHanjinPickup(req, res) {
       );
     }
 
-    return res.status(200).json({
-      success: true,
-      data: { results },
-    });
+    return res.status(200).json({ success: true, data: { results } });
   } catch (error) {
     console.error("Error in requestHanjinPickup:", error);
     return res.status(500).json({
@@ -1119,17 +790,12 @@ export async function requestHanjinPickup(req, res) {
   }
 }
 
-/**
- * 한진 택배 수거 접수 취소 (메일박스 기준)
- * @route POST /api/requests/shipping/hanjin/pickup-cancel
- */
 export async function cancelHanjinPickup(req, res) {
   try {
     const { mailboxAddresses, payload } = req.body || {};
-
     const path = resolveHanjinPath(
       "HANJIN_PICKUP_CANCEL_PATH",
-      HANJIN_PATH_FALLBACKS.HANJIN_PICKUP_CANCEL_PATH,
+      getHanjinPathFallbacks().HANJIN_PICKUP_CANCEL_PATH,
     );
     if (!path) {
       return res.status(400).json({
@@ -1141,11 +807,7 @@ export async function cancelHanjinPickup(req, res) {
     if (payload && !Array.isArray(mailboxAddresses)) {
       return res.status(200).json({
         success: true,
-        data: {
-          mocked: true,
-          path,
-          payload,
-        },
+        data: { mocked: true, path, payload },
       });
     }
 
@@ -1161,6 +823,7 @@ export async function cancelHanjinPickup(req, res) {
       }
       throw err;
     }
+    void resolved;
 
     const list = resolveMailboxList(mailboxAddresses);
     if (!list.length && !(payload && typeof payload === "object")) {
@@ -1171,13 +834,11 @@ export async function cancelHanjinPickup(req, res) {
     }
 
     const pathCandidates = buildHanjinPathCandidates(path);
-
     const callHanjinWithFallback = buildHanjinOrderFallbackCaller({
       pathCandidates,
       logPrefix: "[hanjin][pickup-cancel]",
     });
 
-    // payload가 직접 들어오면(DEV/운영 수동 테스트) 그대로 전달
     if (payload && typeof payload === "object") {
       const data = await callHanjinWithFallback({ data: payload });
       return res.status(200).json({ success: true, data });
@@ -1193,9 +854,7 @@ export async function cancelHanjinPickup(req, res) {
       };
       const data = await callHanjinWithFallback({ data: cancelBody });
 
-      const requestDocs = await Request.find({
-        mailboxAddress: mailbox,
-      })
+      const requestDocs = await Request.find({ mailboxAddress: mailbox })
         .populate("requestor", "name organization phoneNumber address")
         .populate("requestorOrganizationId", "name extracted")
         .populate("deliveryInfoRef");
@@ -1224,186 +883,88 @@ export async function cancelHanjinPickup(req, res) {
       results.push({ mailbox, success: true, data });
     }
 
-    return res.status(200).json({
-      success: true,
-      data: { results },
-    });
+    return res.status(200).json({ success: true, data: { results } });
   } catch (error) {
     console.error("Error in cancelHanjinPickup:", error);
     return res.status(500).json({
       success: false,
-      message: "한진 택배 수거 취소 중 오류가 발생했습니다.",
+      message: "한진 택배 수거 접수 취소 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
 }
 
-export async function simulateHanjinWebhook(req, res) {
+export async function requestHanjinPickupAndPrint(req, res) {
   try {
-    const payload = req.body?.payload;
-    if (!payload || typeof payload !== "object") {
+    const body = req.body || {};
+    const mailboxAddresses = resolveMailboxList(body.mailboxAddresses);
+    if (!mailboxAddresses.length) {
       return res.status(400).json({
         success: false,
-        message: "payload(JSON)가 필요합니다.",
+        message: "mailboxAddresses가 필요합니다.",
       });
     }
 
-    if (payload.mock) {
-      return res.status(200).json({
-        success: true,
-        data: {
-          mocked: true,
-          payload,
-        },
-      });
+    const {
+      changedMailboxAddressesBeforePrint,
+      mailboxChangeResponse,
+      selectedRequestsBeforePrint,
+    } = await preparePickupAndPrintChangeContext(mailboxAddresses);
+    const printTargetMailboxAddresses =
+      changedMailboxAddressesBeforePrint.length
+        ? changedMailboxAddressesBeforePrint
+        : mailboxAddresses;
+
+    const pickupStep = await executeIntegratedCapturedStep({
+      res,
+      controllerFn: requestHanjinPickup,
+      reqLike: req,
+      fallbackMessage: "한진 택배 접수에 실패했습니다.",
+    });
+    if (!pickupStep.ok) {
+      return pickupStep.response;
     }
 
-    const injectedSecret = String(
-      process.env.HANJIN_WEBHOOK_SECRET || "",
-    ).trim();
-
-    const mockReq = {
-      ...req,
-      body: payload,
-      headers: {
-        ...req.headers,
-        "x-webhook-secret": req.headers["x-webhook-secret"] || injectedSecret,
-      },
+    const printReq = buildIntegratedPrintRequest({
+      req,
+      mailboxAddresses: printTargetMailboxAddresses,
+      wblPrintOptions: body.wblPrintOptions,
+    });
+    printReq.__resolvedHanjinPayload = {
+      mailboxAddresses: printTargetMailboxAddresses,
+      requests: Array.isArray(selectedRequestsBeforePrint)
+        ? selectedRequestsBeforePrint.filter((requestDoc) =>
+            printTargetMailboxAddresses.includes(
+              String(requestDoc?.mailboxAddress || "").trim(),
+            ),
+          )
+        : [],
     };
 
-    return handleHanjinTrackingWebhook(mockReq, res);
+    const printStep = await executeIntegratedCapturedStep({
+      res,
+      controllerFn: printHanjinLabels,
+      reqLike: printReq,
+      fallbackMessage: "운송장 출력에 실패했습니다.",
+    });
+    if (!printStep.ok) {
+      return printStep.response;
+    }
+
+    return res.status(200).json(
+      buildIntegratedPickupAndPrintSuccessResponse({
+        pickupBody: pickupStep.body,
+        printBody: printStep.body,
+        mailboxChangeResponse,
+        changedMailboxAddressesBeforePrint,
+      }),
+    );
   } catch (error) {
-    console.error("Error in simulateHanjinWebhook:", error);
+    console.error("Error in requestHanjinPickupAndPrint:", error);
     return res.status(500).json({
       success: false,
-      message: "한진 배송정보 수신 시뮬레이션 중 오류가 발생했습니다.",
+      message: "한진 택배 접수 및 운송장 출력 중 오류가 발생했습니다.",
       error: error.message,
-    });
-  }
-}
-
-/**
- * 한진 배송정보 복수건 동기화
- * @route POST /api/requests/shipping/hanjin/tracking-sync
- */
-export async function syncHanjinTracking(req, res) {
-  try {
-    const { requestIds, trackingNumbers } = req.body || {};
-
-    const requestIdList = Array.isArray(requestIds)
-      ? requestIds.map((v) => String(v || "").trim()).filter(Boolean)
-      : [];
-    const trackingNumberList = Array.isArray(trackingNumbers)
-      ? trackingNumbers.map((v) => String(v || "").trim()).filter(Boolean)
-      : [];
-
-    const query = {
-      deliveryInfoRef: { $ne: null },
-    };
-    if (requestIdList.length) {
-      query.requestId = { $in: requestIdList };
-    }
-
-    const requests = await Request.find(query)
-      .populate("requestor", "name organization phoneNumber address")
-      .populate("requestorOrganizationId", "name extracted")
-      .populate("deliveryInfoRef");
-
-    const targetRequests = requests.filter((requestDoc) => {
-      const di = requestDoc.deliveryInfoRef;
-      const trackingNumber = String(di?.trackingNumber || "").trim();
-      if (!trackingNumber) return false;
-      if (!trackingNumberList.length) return true;
-      return trackingNumberList.includes(trackingNumber);
-    });
-
-    if (!targetRequests.length) {
-      return res.status(404).json({
-        success: false,
-        message: "동기화할 배송정보를 찾을 수 없습니다.",
-      });
-    }
-
-    const path = "/parcel-delivery/v1/tracking/tracking-wbls";
-    const wblNoList = targetRequests.map((requestDoc) => ({
-      wblNo: String(requestDoc.deliveryInfoRef?.trackingNumber || "").trim(),
-    }));
-
-    const data = await hanjinService.requestOrderApi({
-      path,
-      method: "POST",
-      data: {
-        custEdiCd: HANJIN_CLIENT_ID,
-        wblNoList,
-      },
-    });
-
-    const rows = extractTrackingRows(data);
-    const rowMap = new Map(
-      rows.map((row) => [String(row?.wblNo || row?.wbNo || "").trim(), row]),
-    );
-
-    const synced = [];
-    for (const requestDoc of targetRequests) {
-      const deliveryInfo = requestDoc.deliveryInfoRef;
-      const trackingNumber = String(deliveryInfo?.trackingNumber || "").trim();
-      const row = rowMap.get(trackingNumber);
-      if (!row || !deliveryInfo) continue;
-
-      const events = normalizeTrackingEvents(row?.wrkList);
-      const last = events.length ? events[events.length - 1] : null;
-      deliveryInfo.tracking = deliveryInfo.tracking || {};
-      if (last?.statusCode)
-        deliveryInfo.tracking.lastStatusCode = last.statusCode;
-      if (last?.statusText)
-        deliveryInfo.tracking.lastStatusText = last.statusText;
-      if (last?.occurredAt) deliveryInfo.tracking.lastEventAt = last.occurredAt;
-      deliveryInfo.tracking.lastSyncedAt = new Date();
-      if (events.length) {
-        deliveryInfo.events = events;
-      }
-      if (String(last?.statusCode || "") === "66" && last?.occurredAt) {
-        deliveryInfo.deliveredAt = last.occurredAt;
-      }
-      if (String(last?.statusCode || "") === "11") {
-        await chargeShippingFeeOnPickupComplete({
-          shippingPackageId: requestDoc.shippingPackageId,
-          actorUserId: req.user?._id || null,
-        });
-      }
-      if (isTrackingStageEligible(deliveryInfo)) {
-        requestDoc.manufacturerStage = "추적관리";
-      } else {
-        requestDoc.manufacturerStage = "포장.발송";
-      }
-
-      await deliveryInfo.save();
-      await requestDoc.save();
-      await emitDeliveryUpdated(requestDoc, {
-        source: "hanjin-tracking-sync",
-        shippingStatusLabel: buildTrackingStatusLabel(deliveryInfo),
-      });
-      synced.push({
-        requestId: requestDoc.requestId,
-        trackingNumber,
-        statusCode: deliveryInfo.tracking?.lastStatusCode || null,
-        statusText: deliveryInfo.tracking?.lastStatusText || null,
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        synced,
-      },
-    });
-  } catch (error) {
-    console.error("Error in syncHanjinTracking:", error);
-    return res.status(error?.status || 500).json({
-      success: false,
-      message: "한진 배송조회 동기화 중 오류가 발생했습니다.",
-      error: error.message,
-      data: error?.data,
     });
   }
 }

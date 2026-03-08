@@ -3,7 +3,7 @@ import Request from "../../models/request.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import User from "../../models/user.model.js";
 import SalesmanLedger from "../../models/salesmanLedger.model.js";
-import { chargeShippingFeeOnPickupComplete } from "../requests/shipping.controller.js";
+import { chargeShippingFeeOnPickupComplete } from "../requests/shippingRequestor.controller.js";
 
 const toBool = (v) =>
   String(v || "")
