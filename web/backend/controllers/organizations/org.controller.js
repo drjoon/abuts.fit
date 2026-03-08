@@ -212,10 +212,105 @@ async function lookupPostalCodeByAddress(address) {
   };
 }
 
+async function normalizeOrganizationAddressFields({ address, zipCode }) {
+  const rawAddress = String(address || "").trim();
+  const rawZipCode = String(zipCode || "").trim();
+  if (!rawAddress) {
+    return {
+      address: "",
+      zipCode: rawZipCode,
+      provider: "",
+      matchedAddress: "",
+    };
+  }
+
+  try {
+    const lookup = await lookupPostalCodeByAddress(rawAddress);
+    const normalizedAddress = String(
+      lookup?.formattedAddress || rawAddress,
+    ).trim();
+    const normalizedZipCode = String(lookup?.postalCode || rawZipCode).trim();
+
+    return {
+      address: normalizedAddress || rawAddress,
+      zipCode: normalizedZipCode,
+      provider: String(lookup?.provider || "").trim(),
+      matchedAddress: String(lookup?.matchedAddress || "").trim(),
+    };
+  } catch (error) {
+    return {
+      address: rawAddress,
+      zipCode: rawZipCode,
+      provider: "",
+      matchedAddress: rawAddress,
+    };
+  }
+}
+
 function normalizeBusinessNumberDigits(input) {
   const digits = String(input || "").replace(/\D/g, "");
   if (digits.length !== 10) return "";
   return digits;
+}
+
+function formatBusinessNumber(input) {
+  const digits = normalizeBusinessNumberDigits(input);
+  if (!digits) return "";
+  return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
+}
+
+async function findOrganizationByAnchors({
+  organizationType,
+  organizationId,
+  businessNumber,
+  userId,
+  orgName,
+}) {
+  const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
+
+  if (organizationId) {
+    const byId = await RequestorOrganization.findOne({
+      _id: organizationId,
+      ...orgTypeFilter,
+    });
+    if (byId) return byId;
+  }
+
+  if (userId) {
+    const byMembership = await RequestorOrganization.findOne({
+      ...orgTypeFilter,
+      $or: [
+        { owner: userId },
+        { owners: userId },
+        { members: userId },
+        { "joinRequests.user": userId },
+      ],
+    }).sort({ createdAt: 1 });
+    if (byMembership) return byMembership;
+  }
+
+  const safeOrgName = String(orgName || "").trim();
+  if (safeOrgName) {
+    const matches = await RequestorOrganization.find({
+      ...orgTypeFilter,
+      name: safeOrgName,
+      $or: [{ owner: userId }, { owners: userId }, { members: userId }],
+    })
+      .sort({ createdAt: 1 })
+      .limit(1);
+    if (Array.isArray(matches) && matches[0]) return matches[0];
+  }
+
+  const normalizedBusinessNumber = formatBusinessNumber(businessNumber);
+  if (normalizedBusinessNumber) {
+    const byBusinessNumber = await RequestorOrganization.findOne({
+      ...orgTypeFilter,
+      "extracted.businessNumber": normalizedBusinessNumber,
+    });
+    if (byBusinessNumber) return byBusinessNumber;
+  }
+
+  return null;
 }
 
 export async function lookupPostalCode(req, res) {
@@ -408,153 +503,21 @@ export async function getMyOrganization(req, res) {
     const roleCheck = assertOrganizationRole(req, res);
     if (!roleCheck) return;
     const { organizationType } = roleCheck;
-    const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
-    let org = null;
     let orgName = "";
-    if (req.user.organizationId) {
-      org = await RequestorOrganization.findOne({
-        _id: req.user.organizationId,
-        ...orgTypeFilter,
-      });
-    } else {
-      orgName = String(req.user.organization || "").trim();
-      if (orgName) {
-        if (String(req.user.referralCode || "").startsWith("mock_")) {
-          org = await RequestorOrganization.findOne({
-            name: orgName,
-            ...orgTypeFilter,
-          });
-          if (!org) {
-            org = await RequestorOrganization.create({
-              organizationType,
-              name: orgName,
-              owner: req.user._id,
-              owners: [],
-              members: [req.user._id],
-              joinRequests: [],
-            });
-            await User.findByIdAndUpdate(req.user._id, {
-              $set: { organizationId: org._id, organization: org.name },
-            });
-          }
-        } else {
-          const matches = await RequestorOrganization.find({
-            name: orgName,
-            ...orgTypeFilter,
-          })
-            .select({ _id: 1 })
-            .limit(2)
-            .lean();
-          if (Array.isArray(matches) && matches.length === 0) {
-            try {
-              org = await RequestorOrganization.create({
-                organizationType,
-                name: orgName,
-                owner: req.user._id,
-                owners: [],
-                members: [req.user._id],
-                joinRequests: [],
-              });
-              await User.findByIdAndUpdate(req.user._id, {
-                $set: { organizationId: org._id, organization: org.name },
-              });
-            } catch {
-              // ignore
-            }
-          } else if (Array.isArray(matches) && matches.length === 1) {
-            org = await RequestorOrganization.findById(matches[0]._id);
+    orgName = String(req.user.organization || "").trim();
+    let org = await findOrganizationByAnchors({
+      organizationType,
+      organizationId: req.user.organizationId,
+      businessNumber: "",
+      userId: req.user._id,
+      orgName,
+    });
 
-            if (org) {
-              const meId = String(req.user._id);
-              const ownerId = String(org.owner);
-              const isOwner =
-                Array.isArray(org.owners) &&
-                org.owners.some((c) => String(c) === meId);
-              const isMember =
-                Array.isArray(org.members) &&
-                org.members.some((m) => String(m) === meId);
-
-              if (ownerId !== meId && !isOwner && !isMember) {
-                try {
-                  org = await RequestorOrganization.create({
-                    organizationType,
-                    name: orgName,
-                    owner: req.user._id,
-                    owners: [],
-                    members: [req.user._id],
-                    joinRequests: [],
-                  });
-                  await User.findByIdAndUpdate(req.user._id, {
-                    $set: { organizationId: org._id, organization: org.name },
-                  });
-                } catch {
-                  // ignore
-                }
-              }
-            }
-          } else {
-            const owned = await RequestorOrganization.findOne({
-              name: orgName,
-              ...orgTypeFilter,
-              $or: [{ owner: req.user._id }, { owners: req.user._id }],
-            })
-              .select({ _id: 1 })
-              .lean();
-
-            if (owned?._id) {
-              org = await RequestorOrganization.findById(owned._id);
-            } else {
-              const memberOrg = await RequestorOrganization.findOne({
-                name: orgName,
-                ...orgTypeFilter,
-                members: req.user._id,
-              })
-                .select({ _id: 1 })
-                .lean();
-
-              if (memberOrg?._id) {
-                org = await RequestorOrganization.findById(memberOrg._id);
-              } else {
-                try {
-                  org = await RequestorOrganization.create({
-                    organizationType,
-                    name: orgName,
-                    owner: req.user._id,
-                    owners: [],
-                    members: [req.user._id],
-                    joinRequests: [],
-                  });
-                  await User.findByIdAndUpdate(req.user._id, {
-                    $set: { organizationId: org._id, organization: org.name },
-                  });
-                } catch {
-                  // ignore
-                }
-              }
-            }
-
-            if (org?._id) {
-              const meId2 = String(req.user._id);
-              const ownerId2 = String(org.owner);
-              const isOwner2 =
-                Array.isArray(org.owners) &&
-                org.owners.some((c) => String(c) === meId2);
-              const isMember2 =
-                Array.isArray(org.members) &&
-                org.members.some((m) => String(m) === meId2);
-
-              if (ownerId2 === meId2 || isOwner2 || isMember2) {
-                await User.findByIdAndUpdate(req.user._id, {
-                  $set: { organizationId: org._id, organization: org.name },
-                });
-              }
-            }
-          }
-        }
-      }
-    }
-
-    if (!org && orgName) {
+    if (
+      !org &&
+      orgName &&
+      String(req.user.referralCode || "").startsWith("mock_")
+    ) {
       try {
         org = await RequestorOrganization.create({
           organizationType,
@@ -803,17 +766,21 @@ export async function updateMyOrganization(req, res) {
     const businessTypeProvided = hasOwn(req.body, "businessType");
     const emailProvided = hasOwn(req.body, "email");
     const addressProvided = hasOwn(req.body, "address");
+    const addressDetailProvided = hasOwn(req.body, "addressDetail");
     const zipCodeProvided = hasOwn(req.body, "zipCode");
     const startDateProvided = hasOwn(req.body, "startDate");
     const shippingPolicyProvided = hasOwn(req.body, "shippingPolicy");
 
     const hasOrganization = !!req.user.organizationId;
-    let org = null;
+    const nextNameProvided = hasOwn(req.body, "name");
+    let org = await findOrganizationByAnchors({
+      organizationType,
+      organizationId: req.user.organizationId,
+      businessNumber: req.body?.businessNumber,
+      userId: req.user._id,
+      orgName: req.user.organization,
+    });
     if (hasOrganization) {
-      org = await RequestorOrganization.findOne({
-        _id: req.user.organizationId,
-        ...orgTypeFilter,
-      });
       const meId = String(req.user._id);
       const canEdit =
         org &&
@@ -829,6 +796,7 @@ export async function updateMyOrganization(req, res) {
         businessTypeProvided ||
         emailProvided ||
         addressProvided ||
+        addressDetailProvided ||
         zipCodeProvided ||
         startDateProvided ||
         hasOwn(req.body, "businessLicense");
@@ -849,6 +817,7 @@ export async function updateMyOrganization(req, res) {
     const businessType = String(req.body?.businessType || "").trim();
     const email = String(req.body?.email || "").trim();
     const address = String(req.body?.address || "").trim();
+    const addressDetail = String(req.body?.addressDetail || "").trim();
     const zipCode = String(req.body?.zipCode || "").trim();
     const startDateRaw = String(req.body?.startDate || "").trim();
     const startDate = normalizeStartDate(startDateRaw);
@@ -869,6 +838,15 @@ export async function updateMyOrganization(req, res) {
     const businessNumber = businessNumberRaw
       ? normalizeBusinessNumber(businessNumberRaw)
       : "";
+    const currentBusinessNumber = formatBusinessNumber(
+      org?.extracted?.businessNumber || "",
+    );
+    const isBusinessNumberChanging =
+      businessNumberProvided &&
+      Boolean(currentBusinessNumber) &&
+      Boolean(businessNumber) &&
+      currentBusinessNumber !== businessNumber;
+    const isVerifiedOrganization = Boolean(org?.verification?.verified);
 
     if (phoneNumberRaw && !phoneNumber) {
       return res.status(400).json({
@@ -881,6 +859,15 @@ export async function updateMyOrganization(req, res) {
       return res.status(400).json({
         success: false,
         message: "사업자등록번호 형식이 올바르지 않습니다.",
+      });
+    }
+
+    if (isVerifiedOrganization && isBusinessNumberChanging) {
+      return res.status(400).json({
+        success: false,
+        reason: "business_number_locked",
+        message:
+          "검증 완료된 사업자의 사업자등록번호는 직접 변경할 수 없습니다. 관리자에게 사업자 전환을 요청해주세요.",
       });
     }
 
@@ -905,9 +892,57 @@ export async function updateMyOrganization(req, res) {
       });
     }
 
+    const normalizedAddressFields =
+      addressProvided || zipCodeProvided
+        ? await normalizeOrganizationAddressFields({ address, zipCode })
+        : null;
+
+    let attachToOrg = null;
+    if (businessNumber) {
+      const existingOrgByBusinessNumber = await RequestorOrganization.findOne({
+        ...orgTypeFilter,
+        "extracted.businessNumber": businessNumber,
+      });
+
+      if (
+        existingOrgByBusinessNumber &&
+        (!org || String(existingOrgByBusinessNumber._id) !== String(org._id))
+      ) {
+        if (hasOrganization) {
+          return res.status(409).json({
+            success: false,
+            reason: "business_number_switch_requires_admin",
+            message:
+              "기존 조직에 연결된 상태에서는 사업자등록번호로 다른 조직으로 전환할 수 없습니다. 관리자에게 사업자 전환을 요청해주세요.",
+          });
+        }
+
+        const meId = String(req.user._id);
+        const ownerId = String(existingOrgByBusinessNumber.owner || "");
+        const isOwner =
+          Array.isArray(existingOrgByBusinessNumber.owners) &&
+          existingOrgByBusinessNumber.owners.some((c) => String(c) === meId);
+        const isMember =
+          Array.isArray(existingOrgByBusinessNumber.members) &&
+          existingOrgByBusinessNumber.members.some((m) => String(m) === meId);
+
+        if (ownerId === meId || isOwner || isMember) {
+          attachToOrg = existingOrgByBusinessNumber;
+          org = existingOrgByBusinessNumber;
+        } else {
+          return res.status(409).json({
+            success: false,
+            reason: "duplicate_business_number",
+            message:
+              "이미 등록된 사업자등록번호입니다. 기존 조직에 가입 요청을 진행해주세요.",
+          });
+        }
+      }
+    }
+
     const patch = {};
     const unsetPatch = {};
-    if (nextName) patch.name = nextName;
+    if (nextNameProvided && nextName) patch.name = nextName;
 
     if (
       businessLicense &&
@@ -923,8 +958,17 @@ export async function updateMyOrganization(req, res) {
     if (phoneNumberProvided) extractedPatch.phoneNumber = phoneNumber;
     if (businessTypeProvided) extractedPatch.businessType = businessType;
     if (emailProvided) extractedPatch.email = email;
-    if (addressProvided) extractedPatch.address = address;
-    if (zipCodeProvided) extractedPatch.zipCode = zipCode;
+    if (addressProvided)
+      extractedPatch.address =
+        normalizedAddressFields?.address != null
+          ? normalizedAddressFields.address
+          : address;
+    if (addressDetailProvided) extractedPatch.addressDetail = addressDetail;
+    if (zipCodeProvided)
+      extractedPatch.zipCode =
+        normalizedAddressFields?.zipCode != null
+          ? normalizedAddressFields.zipCode
+          : zipCode;
     if (startDateProvided) extractedPatch.startDate = startDate;
 
     if (businessNumberProvided) {
@@ -966,7 +1010,7 @@ export async function updateMyOrganization(req, res) {
       patch["shippingPolicy.updatedAt"] = new Date();
     }
 
-    if (businessNumber) {
+    if (businessNumber && !attachToOrg) {
       const query = {
         "extracted.businessNumber": businessNumber,
         ...orgTypeFilter,
@@ -1006,7 +1050,39 @@ export async function updateMyOrganization(req, res) {
       }
     }
 
-    if (!hasOrganization) {
+    if (!hasOrganization && attachToOrg) {
+      await User.findByIdAndUpdate(
+        req.user._id,
+        {
+          $set: {
+            organizationId: attachToOrg._id,
+            organization: attachToOrg.name,
+          },
+        },
+        { new: true },
+      );
+
+      const meId = String(req.user._id);
+      const isMember =
+        Array.isArray(attachToOrg.members) &&
+        attachToOrg.members.some((m) => String(m) === meId);
+      if (!isMember && String(attachToOrg.owner || "") !== meId) {
+        await RequestorOrganization.findByIdAndUpdate(attachToOrg._id, {
+          $addToSet: { members: req.user._id },
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          attached: true,
+          organizationId: attachToOrg._id,
+          organizationName: attachToOrg.name,
+        },
+      });
+    }
+
+    if (!hasOrganization && !attachToOrg) {
       const requiredMissing =
         !nextName ||
         !representativeName ||

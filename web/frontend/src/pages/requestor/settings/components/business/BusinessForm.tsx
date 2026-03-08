@@ -103,8 +103,9 @@ export const BusinessForm = ({
   const bizTypeRef = useRef<HTMLInputElement | null>(null);
   const bizItemRef = useRef<HTMLInputElement | null>(null);
   const emailRef = useRef<HTMLInputElement | null>(null);
-  const zipCodeRef = useRef<HTMLInputElement | null>(null);
   const addressRef = useRef<HTMLInputElement | null>(null);
+  const addressDetailRef = useRef<HTMLInputElement | null>(null);
+  const zipCodeRef = useRef<HTMLInputElement | null>(null);
   const submitRef = useRef<HTMLButtonElement | null>(null);
 
   type FieldKey =
@@ -116,8 +117,9 @@ export const BusinessForm = ({
     | "bizType"
     | "bizItem"
     | "email"
-    | "zipCode"
     | "address"
+    | "addressDetail"
+    | "zipCode"
     | "submit";
 
   const focusNextEmpty = (current: FieldKey) => {
@@ -138,8 +140,13 @@ export const BusinessForm = ({
       { key: "bizType", ref: bizTypeRef, value: extracted.businessType },
       { key: "bizItem", ref: bizItemRef, value: extracted.businessItem },
       { key: "email", ref: emailRef, value: extracted.email },
-      { key: "zipCode", ref: zipCodeRef, value: businessData.zipCode },
       { key: "address", ref: addressRef, value: businessData.address },
+      {
+        key: "addressDetail",
+        ref: addressDetailRef,
+        value: businessData.addressDetail,
+      },
+      { key: "zipCode", ref: zipCodeRef, value: businessData.zipCode },
       // submit 버튼은 항상 마지막으로 포커스
       { key: "submit", ref: submitRef, value: "" },
     ];
@@ -211,6 +218,7 @@ export const BusinessForm = ({
           setBusinessData((prev) => ({
             ...prev,
             address: nextAddress || prev.address,
+            addressDetail: prev.addressDetail,
             zipCode: nextZipCode || prev.zipCode,
           }));
           setErrors((prev) => ({
@@ -219,13 +227,14 @@ export const BusinessForm = ({
             zipCode: false,
           }));
           requestAnimationFrame(() => {
-            addressRef.current?.focus();
+            addressDetailRef.current?.focus();
           });
         },
         onclose: () => {
           postcodePopupOpen = false;
         },
       }).open({ popupName: POSTCODE_POPUP_NAME });
+      window.open("", POSTCODE_POPUP_NAME)?.focus();
     } catch {
       postcodePopupOpen = false;
       toast({
@@ -566,19 +575,14 @@ export const BusinessForm = ({
                     e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
                   if (isNav && v) {
                     if (e.key === "Enter") {
-                      if (focusNextEmptyAndMaybeSubmit("email")) {
-                        e.preventDefault();
-                        return;
-                      }
+                      e.preventDefault();
+                      if (focusNextEmptyAndMaybeSubmit("email")) return;
+                      focusNext(addressRef);
+                      return;
                     } else {
                       if (handleNav(e, "email")) return;
                     }
                   }
-                  if (e.key !== "Enter") return;
-                  e.preventDefault();
-                  // 이메일이 마지막 빈 칸이면 submit 실행, 아니면 다음으로 이동
-                  if (focusNextEmptyAndMaybeSubmit("email")) return;
-                  focusNext(addressRef);
                 }}
                 onBlur={() => {
                   if (disabled) return;
@@ -594,6 +598,75 @@ export const BusinessForm = ({
         <Label htmlFor="address">주소</Label>
         <GuideFocus className="rounded-xl p-1">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="md:col-span-2">
+              <Input
+                id="address"
+                ref={addressRef}
+                className={cn(
+                  errors.address &&
+                    "border-destructive focus-visible:ring-destructive",
+                )}
+                value={businessData.address}
+                placeholder="주소1 (정규화된 도로명 주소)"
+                onChange={(e) => {
+                  setBusinessData((prev) => ({
+                    ...prev,
+                    address: e.target.value,
+                  }));
+                  setErrors((prev) => ({ ...prev, address: false }));
+                }}
+                onKeyDown={(e) => {
+                  if ((e.nativeEvent as any)?.isComposing) return;
+                  const v = String(businessData.address || "").trim();
+                  const isNav =
+                    e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
+                  if (isNav && v) {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      focusNext(addressDetailRef);
+                      return;
+                    }
+                    if (handleNav(e, "address")) return;
+                  }
+                }}
+                onBlur={() => {
+                  if (disabled) return;
+                  onAutoSave?.();
+                }}
+              />
+            </div>
+            <div className="md:col-span-1">
+              <Input
+                id="addressDetail"
+                ref={addressDetailRef}
+                value={businessData.addressDetail}
+                placeholder="주소2 (동, 호수 등 상세주소)"
+                onChange={(e) => {
+                  setBusinessData((prev) => ({
+                    ...prev,
+                    addressDetail: e.target.value,
+                  }));
+                }}
+                onKeyDown={(e) => {
+                  if ((e.nativeEvent as any)?.isComposing) return;
+                  const v = String(businessData.addressDetail || "").trim();
+                  const isNav =
+                    e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
+                  if (isNav && v) {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      focusNext(zipCodeRef);
+                      return;
+                    }
+                    if (handleNav(e, "addressDetail")) return;
+                  }
+                }}
+                onBlur={() => {
+                  if (disabled) return;
+                  onAutoSave?.();
+                }}
+              />
+            </div>
             <div className="md:col-span-1">
               <Input
                 id="zipCode"
@@ -619,7 +692,7 @@ export const BusinessForm = ({
                   if (isNav && v) {
                     if (e.key === "Enter") {
                       e.preventDefault();
-                      focusNext(addressRef);
+                      onSave();
                       return;
                     }
                     if (handleNav(e, "zipCode")) return;
@@ -631,45 +704,7 @@ export const BusinessForm = ({
                 }}
               />
             </div>
-            <div className="md:col-span-2">
-              <Input
-                id="address"
-                ref={addressRef}
-                className={cn(
-                  errors.address &&
-                    "border-destructive focus-visible:ring-destructive",
-                )}
-                value={businessData.address}
-                placeholder="주소 검색"
-                onChange={(e) => {
-                  setBusinessData((prev) => ({
-                    ...prev,
-                    address: e.target.value,
-                  }));
-                  setErrors((prev) => ({ ...prev, address: false }));
-                }}
-                onKeyDown={(e) => {
-                  if ((e.nativeEvent as any)?.isComposing) return;
-                  const v = String(businessData.address || "").trim();
-                  const isNav =
-                    e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
-                  if (isNav && v) {
-                    // 주소는 Enter 시 바로 제출
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      onSave();
-                      return;
-                    }
-                    if (handleNav(e, "address")) return;
-                  }
-                }}
-                onBlur={() => {
-                  if (disabled) return;
-                  onAutoSave?.();
-                }}
-              />
-            </div>
-            <div className="md:col-span-1">
+            <div className="md:col-span-4">
               <Button
                 type="button"
                 variant="outline"

@@ -84,6 +84,7 @@ export const handleSave = async (
     const businessItem = String(extracted.businessItem || "").trim();
     const taxEmail = String(extracted.email || "").trim();
     const address = String(businessData.address || "").trim();
+    const addressDetail = String(businessData.addressDetail || "").trim();
     const zipCode = String(businessData.zipCode || "").trim();
     const startDateRaw = String(extracted.startDate || "").trim();
     const startDate = normalizeStartDate(startDateRaw);
@@ -207,6 +208,7 @@ export const handleSave = async (
         businessItem,
         email: taxEmail,
         address,
+        addressDetail,
         zipCode,
         startDate,
         ...(businessLicense &&

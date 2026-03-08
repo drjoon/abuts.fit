@@ -99,6 +99,7 @@ const createEmptyExtracted = (): LicenseExtracted => ({
   companyName: "",
   businessNumber: "",
   address: "",
+  addressDetail: "",
   zipCode: "",
   phoneNumber: "",
   email: "",
@@ -114,6 +115,7 @@ const normalizeBusinessData = (
   companyName: String(value?.companyName || "").trim(),
   businessNumber: String(value?.businessNumber || "").trim(),
   address: String(value?.address || "").trim(),
+  addressDetail: String(value?.addressDetail || "").trim(),
   zipCode: String(value?.zipCode || "").trim(),
   phone: String(value?.phone || "").trim(),
 });
@@ -126,6 +128,7 @@ const normalizeExtracted = (
   companyName: String(value?.companyName || "").trim(),
   businessNumber: String(value?.businessNumber || "").trim(),
   address: String(value?.address || "").trim(),
+  addressDetail: String(value?.addressDetail || "").trim(),
   zipCode: String(value?.zipCode || "").trim(),
   phoneNumber: String(value?.phoneNumber || "").trim(),
   email: String(value?.email || "").trim(),
@@ -383,6 +386,8 @@ export const BusinessTab = ({
               : orgName || prev.companyName,
             businessNumber: nextBusinessNumber || prev.businessNumber,
             address: String(ex?.address || "").trim() || prev.address,
+            addressDetail:
+              String(ex?.addressDetail || "").trim() || prev.addressDetail,
             zipCode: String(ex?.zipCode || "").trim() || prev.zipCode,
             phone: nextPhone || prev.phone,
           };
@@ -441,6 +446,7 @@ export const BusinessTab = ({
     Boolean(String(businessData.companyName || "").trim()) ||
     Boolean(String(businessData.businessNumber || "").trim()) ||
     Boolean(String(businessData.address || "").trim()) ||
+    Boolean(String(businessData.addressDetail || "").trim()) ||
     Boolean(String(businessData.phone || "").trim()) ||
     Object.values(extracted || {}).some((v) => Boolean(String(v || "").trim()));
 
@@ -651,6 +657,7 @@ export const BusinessTab = ({
         companyName: "",
         businessNumber: "",
         address: "",
+        addressDetail: "",
         zipCode: "",
         phone: "",
       }));
@@ -674,6 +681,7 @@ export const BusinessTab = ({
       companyName: "",
       businessNumber: "",
       address: "",
+      addressDetail: "",
       zipCode: "",
       phone: "",
     }));
@@ -704,6 +712,7 @@ export const BusinessTab = ({
         companyName: "",
         businessNumber: "",
         address: "",
+        addressDetail: "",
         zipCode: "",
         phone: "",
       });
@@ -761,12 +770,13 @@ export const BusinessTab = ({
     setLicenseS3Key("");
     setLicenseStatus("missing");
     setIsVerified(false);
-    setExtracted({});
+    setExtracted(createEmptyExtracted());
     setErrors({});
     setBusinessData({
       companyName: "",
       businessNumber: "",
       address: "",
+      addressDetail: "",
       zipCode: "",
       phone: "",
     });
@@ -867,6 +877,7 @@ export const BusinessTab = ({
             businessType: String(extracted.businessType || "").trim(),
             businessItem: String(extracted.businessItem || "").trim(),
             address: String(businessData.address || "").trim(),
+            addressDetail: String(businessData.addressDetail || "").trim(),
             startDate: String(extracted.startDate || "").replace(/\D/g, ""),
           },
           license: {
@@ -1017,6 +1028,9 @@ export const BusinessTab = ({
             String(nextExtracted?.businessNumber || "").trim() ||
             prev.businessNumber,
           address: String(nextExtracted?.address || "").trim() || prev.address,
+          addressDetail:
+            String(nextExtracted?.addressDetail || "").trim() ||
+            prev.addressDetail,
           zipCode: String(nextExtracted?.zipCode || "").trim() || prev.zipCode,
           phoneNumber:
             String(nextExtracted?.phoneNumber || "").trim() || prev.phoneNumber,
@@ -1047,6 +1061,8 @@ export const BusinessTab = ({
               : nextCompanyName || prev.companyName,
             businessNumber: aiBusinessNumber || prev.businessNumber,
             address: nextExtracted?.address?.trim() || prev.address,
+            addressDetail:
+              nextExtracted?.addressDetail?.trim() || prev.addressDetail,
             zipCode:
               String(nextExtracted?.zipCode || "").trim() || prev.zipCode,
             phone: aiPhone || prev.phone,
@@ -1070,23 +1086,22 @@ export const BusinessTab = ({
             const zipLookupBody: any = zipLookupRes.data || {};
             const zipLookupData = zipLookupBody?.data || zipLookupBody || {};
             const lookedUpZipCode = String(zipLookupData?.zipCode || "").trim();
+            const lookedUpAddress = String(
+              zipLookupData?.formattedAddress || "",
+            ).trim();
             if (zipLookupRes.ok && lookedUpZipCode) {
               setExtracted((prev) => ({
                 ...prev,
+                address: lookedUpAddress || prev.address,
                 zipCode: lookedUpZipCode,
               }));
               setBusinessData((prev) => ({
                 ...prev,
+                address: lookedUpAddress || prev.address,
                 zipCode: lookedUpZipCode,
               }));
             } else {
               setAutoOpenAddressSearchSignal((prev) => prev + 1);
-              toast({
-                title: "주소는 인식됐지만 우편번호는 확인이 필요합니다",
-                description:
-                  "주소 검색 창을 열었어요. 검색 결과를 선택하면 우편번호가 자동 입력됩니다.",
-                duration: 3500,
-              });
             }
           } catch {
             setAutoOpenAddressSearchSignal((prev) => prev + 1);

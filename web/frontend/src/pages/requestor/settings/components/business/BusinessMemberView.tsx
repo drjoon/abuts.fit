@@ -72,9 +72,19 @@ export const BusinessMemberView = ({
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label>주소</Label>
-          <Input value={businessData.address || ""} readOnly />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="space-y-2 md:col-span-1">
+            <Label>주소1</Label>
+            <Input value={businessData.address || ""} readOnly />
+          </div>
+          <div className="space-y-2 md:col-span-1">
+            <Label>주소2</Label>
+            <Input value={businessData.addressDetail || ""} readOnly />
+          </div>
+          <div className="space-y-2 md:col-span-1">
+            <Label>우편번호</Label>
+            <Input value={businessData.zipCode || ""} readOnly />
+          </div>
         </div>
       </div>
     </div>

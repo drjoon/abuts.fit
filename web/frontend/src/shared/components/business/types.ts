@@ -2,6 +2,7 @@ export type LicenseExtracted = {
   companyName?: string;
   businessNumber?: string;
   address?: string;
+  addressDetail?: string;
   zipCode?: string;
   phoneNumber?: string;
   email?: string;
@@ -15,6 +16,7 @@ export type BusinessData = {
   companyName: string;
   businessNumber: string;
   address: string;
+  addressDetail: string;
   zipCode: string;
   phone: string;
 };

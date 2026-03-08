@@ -591,6 +591,19 @@ const resolveFullLotNumber = (request) => {
   );
 };
 
+const resolveReceiverAddressDetailSource = (request) => {
+  const requestor = request?.requestor || {};
+  const requestorOrg = request?.requestorOrganizationId || {};
+  const extracted = requestorOrg?.extracted || {};
+  const addr = requestor.address || {};
+  return (
+    String(extracted.addressDetail || "").trim() ||
+    String(addr.detail || "").trim() ||
+    String(addr.addressDetail || "").trim() ||
+    String(addr.address2 || "").trim()
+  );
+};
+
 const resolveLotShortCode = (request) => {
   const fullLot = resolveFullLotNumber(request);
   if (!fullLot) return "";
@@ -621,18 +634,72 @@ const resolveReceiverZipSource = (request) => {
   const extracted = requestorOrg?.extracted || {};
   const addr = requestor.address || {};
   return (
-    addr.zipCode ||
-    addr.postalCode ||
-    requestor.zipCode ||
-    requestor.postalCode ||
-    requestor.address?.zipCode ||
     extracted.zipCode ||
     extracted.postalCode ||
     extracted.zipcode ||
     extracted.postcode ||
     extracted.addressZipCode ||
+    addr.zipCode ||
+    addr.postalCode ||
+    requestor.zipCode ||
+    requestor.postalCode ||
+    requestor.address?.zipCode ||
     ""
   );
+};
+
+const resolveReceiverAddressSource = (request) => {
+  const requestor = request?.requestor || {};
+  const requestorOrg = request?.requestorOrganizationId || {};
+  const extracted = requestorOrg?.extracted || {};
+  const addr = requestor.address || {};
+  return (
+    String(extracted.address || "").trim() ||
+    String(addr.street || "").trim() ||
+    String(addr.address1 || "").trim() ||
+    String(addr.address2 || "").trim() ||
+    String(requestor.addressText || "").trim() ||
+    String(
+      typeof requestor.address === "string" ? requestor.address : "",
+    ).trim()
+  );
+};
+
+const buildReceiverAddressCandidates = (address) => {
+  const raw = String(address || "")
+    .trim()
+    .replace(/\s+/g, " ");
+  if (!raw) return [];
+
+  const withoutParen = raw
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const beforeComma = raw.split(",")[0]?.trim() || "";
+  const beforeDongHo = raw
+    .replace(/\b\d+동\b.*$/u, "")
+    .replace(/\b\d+호\b.*$/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return [
+    ...new Set([raw, withoutParen, beforeComma, beforeDongHo].filter(Boolean)),
+  ];
+};
+
+const looksLikeRoadAddress = (address) => {
+  const value = String(address || "").trim();
+  if (!value) return false;
+  return /(로|길)\s*\d+/u.test(value);
+};
+
+const normalizeReceiverAddressForHanjin = (request) => {
+  const rawAddress = resolveReceiverAddressSource(request);
+  const candidates = buildReceiverAddressCandidates(rawAddress);
+  const preferred = candidates.find((candidate) =>
+    looksLikeRoadAddress(candidate),
+  );
+  return preferred || candidates[0] || "";
 };
 
 const splitKoreanAddressDetail = (fullAddress) => {
@@ -691,15 +758,8 @@ const buildHanjinInsertOrderBody = ({ mailbox, requests }) => {
       },
     );
   }
-  const receiverFullAddr =
-    String(addr.street || addr.address1 || extracted.address || "").trim() ||
-    String(requestor.addressText || "").trim();
-  const receiverSplit = splitKoreanAddressDetail(receiverFullAddr);
-  const receiverBaseAddr = receiverSplit.baseAddr || receiverFullAddr;
-  const receiverDtlAddr =
-    String(addr.address2 || "").trim() ||
-    receiverSplit.detailAddr ||
-    receiverBaseAddr;
+  const receiverBaseAddr = normalizeReceiverAddressForHanjin(first);
+  const receiverDtlAddr = resolveReceiverAddressDetailSource(first) || ".";
 
   const receiverName =
     String(first.caseInfos?.clinicName || "").trim() ||
@@ -917,13 +977,6 @@ const enrichHanjinAddressList = ({ addressList, metaByMsgKey = {} }) => {
         row?.organization_name || meta?.organizationName || "",
       ).trim(),
       request_count: Number(row?.request_count || meta?.requestCount || 0),
-      screw_code: String(row?.screw_code || meta?.screwCode || "").trim(),
-      lot_short_code: String(
-        row?.lot_short_code || meta?.lotShortCode || "",
-      ).trim(),
-      lot_full_number: String(
-        row?.lot_full_number || meta?.lotFullNumber || "",
-      ).trim(),
     };
   });
 };
@@ -1058,20 +1111,44 @@ const buildHanjinDraftPayload = (requests) => {
       const requestor = first.requestor || {};
       const requestorOrg = first.requestorOrganizationId || {};
       const extracted = requestorOrg.extracted || {};
-      const addr = requestor.address || {};
 
       const organizationName = resolveRequestOrganizationName(first);
-      const addressText =
-        addr.street ||
-        addr.address1 ||
-        addr.address2 ||
-        requestor.addressText ||
-        extracted.address ||
-        "";
+      const addressText = normalizeReceiverAddressForHanjin(first);
 
-      const receiverZip = normalizeHanjinZip(
-        addr.zipCode || extracted.zipCode || "",
-      );
+      const receiverZip = normalizeHanjinZip(resolveReceiverZipSource(first));
+      if (!addressText) {
+        throw Object.assign(
+          new Error(
+            "수하인 주소가 없어 한진 운송장 출력을 진행할 수 없습니다.",
+          ),
+          {
+            statusCode: 400,
+            code: "HANJIN_RECEIVER_ADDRESS_REQUIRED",
+          },
+        );
+      }
+      if (!looksLikeRoadAddress(addressText)) {
+        throw Object.assign(
+          new Error(
+            `한진 운송장 출력용 주소가 도로명 형식이 아닙니다: ${addressText}`,
+          ),
+          {
+            statusCode: 400,
+            code: "HANJIN_RECEIVER_ADDRESS_INVALID",
+          },
+        );
+      }
+      if (!receiverZip) {
+        throw Object.assign(
+          new Error(
+            "수하인 우편번호가 없어 한진 운송장 출력을 진행할 수 없습니다.",
+          ),
+          {
+            statusCode: 400,
+            code: "HANJIN_RECEIVER_ZIP_REQUIRED",
+          },
+        );
+      }
 
       const requestCount = Array.isArray(group) ? group.length : 0;
       const remark = buildShippingRemark({
@@ -1090,9 +1167,6 @@ const buildHanjinDraftPayload = (requests) => {
         mailboxCode: mailbox,
         organizationName,
         requestCount,
-        screwCode: resolveLegacyScrewCode(first),
-        lotShortCode: resolveLotShortCode(first),
-        lotFullNumber: resolveFullLotNumber(first),
         remark,
       };
 
