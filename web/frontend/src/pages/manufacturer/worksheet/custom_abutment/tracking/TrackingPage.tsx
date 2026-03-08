@@ -127,10 +127,15 @@ export const TrackingInquiryPage = () => {
   >(defaultDateRangeByTab);
   const dateRange = dateRangeByTab[tab];
 
-  const matchesCurrentPage = useCallback(
-    (req: ManufacturerRequest) => deriveStageForFilter(req) === "추적관리",
-    [],
-  );
+  const matchesCurrentPage = useCallback((req: ManufacturerRequest) => {
+    const stage = deriveStageForFilter(req);
+    const di = normalizeDeliveryInfo(req.deliveryInfoRef);
+    return (
+      stage === "추적관리" ||
+      (stage === "포장.발송" &&
+        Boolean(di.trackingNumber || di.shippedAt || di.deliveredAt))
+    );
+  }, []);
 
   useWorksheetRealtimeStatus({
     enabled: true,
@@ -151,7 +156,6 @@ export const TrackingInquiryPage = () => {
         url.searchParams.set("view", "worksheet");
         url.searchParams.set("includeTotal", "0");
         url.searchParams.set("includeDelivery", "1");
-        url.searchParams.set("manufacturerStage", "추적관리");
         const res = await fetch(url.pathname + url.search, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
@@ -284,7 +288,6 @@ export const TrackingInquiryPage = () => {
         url.searchParams.set("view", "worksheet");
         url.searchParams.set("includeTotal", "0");
         url.searchParams.set("includeDelivery", "1");
-        url.searchParams.set("status", "추적관리");
         const res = await fetch(url.pathname + url.search, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",

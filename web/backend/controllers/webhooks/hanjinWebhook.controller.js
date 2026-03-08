@@ -34,6 +34,16 @@ const normalizeEvents = (events) => {
     .filter((e) => e.statusCode || e.statusText || e.occurredAt);
 };
 
+const isTrackingStageEligible = (deliveryInfo) => {
+  const deliveredAt = deliveryInfo?.deliveredAt
+    ? new Date(deliveryInfo.deliveredAt)
+    : null;
+  if (deliveredAt && !Number.isNaN(deliveredAt.getTime())) return true;
+
+  const code = String(deliveryInfo?.tracking?.lastStatusCode || "").trim();
+  return ["11", "14", "31", "32", "63", "66", "92"].includes(code);
+};
+
 export async function handleHanjinTrackingWebhook(req, res) {
   try {
     const secret = String(process.env.HANJIN_WEBHOOK_SECRET || "").trim();
@@ -187,7 +197,6 @@ export async function handleHanjinTrackingWebhook(req, res) {
         reason: "",
       };
 
-      request.manufacturerStage = "추적관리";
       request.timeline = request.timeline || {};
       if (!request.timeline.actualCompletion) {
         request.timeline.actualCompletion = deliveryInfo.deliveredAt;
@@ -296,9 +305,12 @@ export async function handleHanjinTrackingWebhook(req, res) {
       }
     }
 
-    if (String(request.manufacturerStage || "").trim() !== "추적관리") {
+    if (isTrackingStageEligible(deliveryInfo)) {
       request.manufacturerStage = "추적관리";
       request.status = "추적관리";
+    } else {
+      request.manufacturerStage = "포장.발송";
+      request.status = "포장.발송";
     }
 
     await request.save();

@@ -90,6 +90,16 @@ const buildTrackingStatusLabel = (deliveryInfo) => {
   return "-";
 };
 
+const isTrackingStageEligible = (deliveryInfo) => {
+  const deliveredAt = deliveryInfo?.deliveredAt
+    ? new Date(deliveryInfo.deliveredAt)
+    : null;
+  if (deliveredAt && !Number.isNaN(deliveredAt.getTime())) return true;
+
+  const code = String(deliveryInfo?.tracking?.lastStatusCode || "").trim();
+  return ["11", "14", "31", "32", "63", "66", "92"].includes(code);
+};
+
 const resolveMailboxList = (mailboxAddresses) =>
   Array.isArray(mailboxAddresses)
     ? mailboxAddresses.map((v) => String(v || "").trim()).filter(Boolean)
@@ -322,10 +332,9 @@ async function finalizeMailboxPickupShipment({
       reason: "",
     };
 
-    applyStatusMapping(request, "추적관리");
+    applyStatusMapping(request, "포장.발송");
     request.productionSchedule = request.productionSchedule || {};
     request.productionSchedule.actualShipPickup = actualShipPickup;
-    request.mailboxAddress = null;
     request.shippingPackageId = pkg._id;
 
     await request.save();
@@ -1783,6 +1792,8 @@ export async function cancelHanjinPickup(req, res) {
           requestDoc.deliveryInfoRef.tracking.lastSyncedAt = new Date();
           await requestDoc.deliveryInfoRef.save();
         }
+        requestDoc.manufacturerStage = "포장.발송";
+        await requestDoc.save();
         await emitDeliveryUpdated(requestDoc, {
           source: "hanjin-pickup-cancel",
           shippingStatusLabel: "예약취소",
@@ -1932,7 +1943,11 @@ export async function syncHanjinTracking(req, res) {
       }
       if (String(last?.statusCode || "") === "66" && last?.occurredAt) {
         deliveryInfo.deliveredAt = last.occurredAt;
+      }
+      if (isTrackingStageEligible(deliveryInfo)) {
         requestDoc.manufacturerStage = "추적관리";
+      } else {
+        requestDoc.manufacturerStage = "포장.발송";
       }
 
       await deliveryInfo.save();
@@ -2635,13 +2650,12 @@ export async function registerShipment(req, res) {
         reason: "",
       };
 
-      // 3. Move to Tracking Stage
-      applyStatusMapping(r, "추적관리");
+      // 3. Keep shipping stage until pickup complete/tracking milestone arrives
+      applyStatusMapping(r, "포장.발송");
 
-      // 4. Mark actual pickup + clear mailbox address
+      // 4. Mark actual pickup request and preserve mailbox for later partial edits/cancel
       r.productionSchedule = r.productionSchedule || {};
       r.productionSchedule.actualShipPickup = actualShipPickup;
-      r.mailboxAddress = null;
       r.shippingPackageId = pkg._id;
 
       await r.save();
