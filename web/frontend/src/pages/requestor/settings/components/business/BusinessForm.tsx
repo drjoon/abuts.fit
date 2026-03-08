@@ -198,6 +198,7 @@ export const BusinessForm = ({
     licenseStatus === "uploading" ||
     licenseStatus === "processing" ||
     (membership !== "owner" && membership !== "none");
+  const hasExtraAction = Boolean(renderActions);
 
   const handleOpenAddressSearch = async () => {
     try {
@@ -252,12 +253,6 @@ export const BusinessForm = ({
 
   return (
     <div className="space-y-6">
-      {renderActions ? (
-        <div className="flex justify-end gap-2">
-          {renderActions({ disabled })}
-        </div>
-      ) : null}
-
       <div className="space-y-2">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="space-y-2">
@@ -598,7 +593,20 @@ export const BusinessForm = ({
         <Label htmlFor="address">주소</Label>
         <GuideFocus className="rounded-xl p-1">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div className="md:col-span-2">
+            <div className="md:col-span-1">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={disabled}
+                onClick={() => {
+                  void handleOpenAddressSearch();
+                }}
+              >
+                주소 검색
+              </Button>
+            </div>
+            <div className="md:col-span-1">
               <Input
                 id="address"
                 ref={addressRef}
@@ -704,19 +712,6 @@ export const BusinessForm = ({
                 }}
               />
             </div>
-            <div className="md:col-span-4">
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                disabled={disabled}
-                onClick={() => {
-                  void handleOpenAddressSearch();
-                }}
-              >
-                주소 검색
-              </Button>
-            </div>
           </div>
         </GuideFocus>
       </div>
@@ -724,7 +719,14 @@ export const BusinessForm = ({
       <div className="space-y-2">
         <GuideFocus className="rounded-xl p-1">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div className="md:col-span-3" />
+            <div
+              className={cn(
+                "md:col-span-3",
+                hasExtraAction && "flex justify-end",
+              )}
+            >
+              {renderActions ? renderActions({ disabled }) : null}
+            </div>
             <div className="md:col-span-1">
               <Button
                 type="button"

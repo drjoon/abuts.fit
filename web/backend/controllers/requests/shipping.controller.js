@@ -702,23 +702,6 @@ const normalizeReceiverAddressForHanjin = (request) => {
   return preferred || candidates[0] || "";
 };
 
-const splitKoreanAddressDetail = (fullAddress) => {
-  const raw = String(fullAddress || "")
-    .trim()
-    .replace(/\s+/g, " ");
-  if (!raw) {
-    return { baseAddr: "", detailAddr: "" };
-  }
-  const match = raw.match(/^(.*?)(\d+.*)$/);
-  if (match) {
-    return {
-      baseAddr: String(match[1] || "").trim(),
-      detailAddr: String(match[2] || "").trim(),
-    };
-  }
-  return { baseAddr: raw, detailAddr: raw };
-};
-
 const buildShippingRemark = ({
   mailboxCode,
   organizationName,
@@ -760,6 +743,13 @@ const buildHanjinInsertOrderBody = ({ mailbox, requests }) => {
   }
   const receiverBaseAddr = normalizeReceiverAddressForHanjin(first);
   const receiverDtlAddr = resolveReceiverAddressDetailSource(first) || ".";
+
+  console.log("[hanjin][pickup] receiver address resolved", {
+    mailbox: String(mailbox || "").trim(),
+    receiverZip,
+    receiverBaseAddr,
+    receiverDtlAddr,
+  });
 
   const receiverName =
     String(first.caseInfos?.clinicName || "").trim() ||
@@ -1169,6 +1159,12 @@ const buildHanjinDraftPayload = (requests) => {
         requestCount,
         remark,
       };
+
+      console.log("[hanjin][label] receiver address resolved", {
+        mailbox: String(mailbox || "").trim(),
+        receiverZip,
+        address: addressText,
+      });
 
       return {
         csr_num: HANJIN_CSR_NUM,
