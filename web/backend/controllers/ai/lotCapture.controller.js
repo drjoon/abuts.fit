@@ -265,19 +265,13 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   const providedSuffix = extractLotSuffix3(
     String(recognizedSuffix || "").trim() || providedLotNumber,
   );
-  const recognized = providedSuffix
-    ? {
-        lotNumber: providedLotNumber || providedSuffix,
-        confidence: "provided",
-        provider: "lot-server",
-      }
-    : await recognizeLotNumberFromS3({
-        s3Key: key,
-        originalName: name,
-      });
+  const recognized = {
+    lotNumber: providedLotNumber || providedSuffix,
+    confidence: providedSuffix ? "provided" : "missing",
+    provider: providedSuffix ? "lot-server" : "none",
+  };
 
-  const finalRecognizedSuffix =
-    providedSuffix || extractLotSuffix3(recognized?.lotNumber || "");
+  const finalRecognizedSuffix = providedSuffix;
   console.log("[lot-capture] recognition result", {
     originalName: name,
     s3Key: key,
@@ -291,6 +285,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
       originalName: name,
       s3Key: key,
       recognized: recognized || null,
+      aiFallbackDisabled: true,
     });
     return res.status(200).json(
       new ApiResponse(
