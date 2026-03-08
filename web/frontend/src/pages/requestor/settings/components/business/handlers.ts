@@ -299,6 +299,13 @@ export const handleSave = async (
         title: "설정이 저장되었습니다",
         description: "사업자 정보가 성공적으로 업데이트되었습니다.",
       });
+      navigate(nextPath || "/dashboard/new-request");
+      return {
+        success: true,
+        welcomeBonusGranted,
+        welcomeBonusAmount,
+        verification,
+      };
     }
 
     return {
