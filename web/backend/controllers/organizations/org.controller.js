@@ -924,10 +924,24 @@ export async function updateMyOrganization(req, res) {
       );
     }
 
+    const granted = await grantWelcomeBonusIfEligible({
+      organizationId: org._id,
+      userId: req.user._id,
+    });
+
+    const salesmanGranted = await grantSalesmanReferralBonusIfEligible({
+      organizationId: org._id,
+      userId: req.user._id,
+    });
+
     return res.json({
       success: true,
       data: {
         updated: true,
+        welcomeBonusGranted: Boolean(granted),
+        welcomeBonusAmount: granted || 0,
+        salesmanReferralBonusGranted: Boolean(salesmanGranted),
+        salesmanReferralBonusAmount: salesmanGranted || 0,
         verification: verificationResult
           ? {
               verified: !!verificationResult.verified,
