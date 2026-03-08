@@ -718,8 +718,8 @@ export const PackingPageContent = ({
 
         {isLoading && <WorksheetLoading />}
 
-        <div className="flex-shrink-0 w-full sticky top-0 z-40 -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 my-4">
-          <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4 pb-3 px-2">
+        <div className="flex-shrink-0 w-full sticky top-0 z-40 -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 my-2">
+          <div className="flex flex-col sm:flex-row gap-2 justify-center pt-4 pb-1 px-2">
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -736,7 +736,7 @@ export const PackingPageContent = ({
                 disabled={
                   isPrintingPackingLabels || paginatedRequests.length === 0
                 }
-                className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
+                className={`px-4 py-1 text-sm font-medium rounded-lg transition-colors border ${
                   isPrintingPackingLabels || paginatedRequests.length === 0
                     ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
                     : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm"
@@ -754,7 +754,7 @@ export const PackingPageContent = ({
           </div>
         ) : !isLoading ? (
           <>
-            <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
+            <div className="mb-3 flex flex-wrap items-center justify-center gap-1">
               <button
                 type="button"
                 onClick={handleSelectAllPackingRequests}

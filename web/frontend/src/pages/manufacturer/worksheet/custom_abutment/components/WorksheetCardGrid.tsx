@@ -439,22 +439,17 @@ export const WorksheetCardGrid = ({
         return (
           <Card
             key={request._id}
+            onClick={onToggleSelected ? handleToggleSelected : undefined}
             className={`relative h-full border ${
               isSelected
                 ? "border-blue-500 bg-blue-50/40"
                 : isCompletedForCurrentStage
                   ? "border-emerald-500 bg-emerald-50/30"
                   : "border-slate-200"
-            }`}
+            } ${onToggleSelected ? "cursor-pointer" : ""}`}
+            role={onToggleSelected ? "button" : undefined}
+            aria-pressed={onToggleSelected ? isSelected : undefined}
           >
-            {onToggleSelected ? (
-              <button
-                type="button"
-                onClick={handleToggleSelected}
-                className="absolute inset-0 z-0 rounded-xl"
-                aria-label={`${String(request.requestId || "의뢰")} 선택 토글`}
-              />
-            ) : null}
             <div className="absolute right-2 top-2 z-20 flex gap-1">
               {onRollback && canRollback && (
                 <button
@@ -669,6 +664,28 @@ export const WorksheetCardGrid = ({
                 )}
               </div>
             </CardContent>
+            {onToggleSelected ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleToggleSelected(e);
+                }}
+                className={`absolute right-3 bottom-3 z-20 h-7 w-7 rounded-full border flex items-center justify-center text-sm font-semibold transition ${
+                  isSelected
+                    ? "bg-blue-500 border-blue-500 text-white"
+                    : "bg-white border-slate-300 text-slate-500"
+                }`}
+                aria-label={
+                  isSelected
+                    ? `${String(request.requestId || "의뢰")} 선택 해제`
+                    : `${String(request.requestId || "의뢰")} 선택`
+                }
+              >
+                {isSelected ? "✓" : ""}
+              </button>
+            ) : null}
           </Card>
         );
       })}
