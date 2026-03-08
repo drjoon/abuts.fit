@@ -2,6 +2,21 @@ import mongoose from "mongoose";
 import CreditLedger from "../../models/creditLedger.model.js";
 import Request from "../../models/request.model.js";
 
+function buildRequestSummary(doc) {
+  if (!doc?._id) return null;
+  return {
+    requestId: String(doc.requestId || ""),
+    manufacturerStage: String(doc.manufacturerStage || ""),
+    patientName: String(doc?.caseInfos?.patientName || ""),
+    tooth: String(doc?.caseInfos?.tooth || ""),
+    clinicName: String(doc?.caseInfos?.clinicName || ""),
+    lotNumber: {
+      part: String(doc?.lotNumber?.part || ""),
+      final: String(doc?.lotNumber?.final || ""),
+    },
+  };
+}
+
 function parsePeriod(period) {
   const p = String(period || "").trim();
   if (!p || p === "all") return null;
@@ -174,26 +189,47 @@ export async function listMyCreditLedger(req, res) {
   );
 
   const refRequestIdById = new Map();
+  const refRequestSummaryById = new Map();
   if (requestRefIds.length > 0) {
     const requestDocs = await Request.find({
       _id: { $in: requestRefIds.map((id) => new mongoose.Types.ObjectId(id)) },
     })
-      .select({ _id: 1, requestId: 1 })
+      .select({
+        _id: 1,
+        requestId: 1,
+        manufacturerStage: 1,
+        lotNumber: 1,
+        "caseInfos.patientName": 1,
+        "caseInfos.tooth": 1,
+        "caseInfos.clinicName": 1,
+      })
       .lean();
 
     for (const doc of requestDocs || []) {
       if (doc?._id) {
         refRequestIdById.set(String(doc._id), String(doc.requestId || ""));
+        refRequestSummaryById.set(String(doc._id), buildRequestSummary(doc));
       }
     }
   }
 
   const enrichedItems = (items || []).map((it) => {
     if (String(it?.refType || "") !== "REQUEST") return it;
-    const refRequestId = it?.refId
-      ? refRequestIdById.get(String(it.refId)) || ""
-      : "";
-    return { ...it, refRequestId };
+    const refId = it?.refId ? String(it.refId) : "";
+    const refRequestId = refId ? refRequestIdById.get(refId) || "" : "";
+    const requestSummary = refId
+      ? refRequestSummaryById.get(refId) || null
+      : null;
+    return {
+      ...it,
+      refRequestId,
+      refRequestSummary: requestSummary,
+      patientName: requestSummary?.patientName || "",
+      tooth: requestSummary?.tooth || "",
+      clinicName: requestSummary?.clinicName || "",
+      manufacturerStage: requestSummary?.manufacturerStage || "",
+      lotNumber: requestSummary?.lotNumber || null,
+    };
   });
 
   return res.json({

@@ -42,6 +42,81 @@ import s3Utils, {
 import { resolvePrcFileNames } from "./prcMapping.utils.js";
 import { emitAppEventToRoles } from "../../socket.js";
 
+async function ensureRequestCreditSpendOnMachiningEnter({
+  request,
+  organizationId,
+  actorUserId,
+  session,
+}) {
+  if (!request || !organizationId) return;
+
+  const uniqueKey = `request:${String(request._id)}:machining_spend`;
+  const existingSpend = await CreditLedger.findOne({ uniqueKey })
+    .select({ _id: 1 })
+    .session(session || null)
+    .lean();
+  if (existingSpend?._id) {
+    console.log("[CREDIT_SPEND] skip existing machining spend", {
+      requestId: request?.requestId,
+      requestMongoId: String(request?._id || ""),
+      uniqueKey,
+    });
+    return;
+  }
+
+  const storedAmount = Number(request?.price?.amount || 0);
+  const spendAmount =
+    Number.isFinite(storedAmount) && storedAmount >= 0
+      ? storedAmount
+      : Number.NaN;
+
+  const resolvedAmount = Number.isFinite(spendAmount)
+    ? spendAmount
+    : Number(
+        (
+          await computePriceForRequest({
+            requestorId: request?.requestor,
+            requestorOrgId: organizationId,
+            clinicName: request?.caseInfos?.clinicName || "",
+            patientName: request?.caseInfos?.patientName || "",
+            tooth: request?.caseInfos?.tooth || "",
+          })
+        )?.amount || 0,
+      );
+
+  if (!Number.isFinite(resolvedAmount) || resolvedAmount <= 0) {
+    console.log("[CREDIT_SPEND] skip non-positive machining spend", {
+      requestId: request?.requestId,
+      requestMongoId: String(request?._id || ""),
+      resolvedAmount,
+    });
+    return;
+  }
+
+  await CreditLedger.updateOne(
+    { uniqueKey },
+    {
+      $setOnInsert: {
+        organizationId,
+        userId: actorUserId || null,
+        type: "SPEND",
+        amount: -resolvedAmount,
+        refType: "REQUEST",
+        refId: request._id,
+        uniqueKey,
+      },
+    },
+    { upsert: true, session },
+  );
+
+  console.log("[CREDIT_SPEND] machining spend inserted", {
+    requestId: request?.requestId,
+    requestMongoId: String(request?._id || ""),
+    amount: resolvedAmount,
+    organizationId: String(organizationId),
+  });
+}
+
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
   process.env.ESPRIT_BASE ||
@@ -932,6 +1007,15 @@ export async function updateReviewStatusByStage(req, res) {
         }
 
         if (effectiveStage === "cam") {
+          if (resolvedRequestorOrgId && !isNewSystemFree) {
+            await ensureRequestCreditSpendOnMachiningEnter({
+              request,
+              organizationId: resolvedRequestorOrgId,
+              actorUserId: req.user?._id || null,
+              session,
+            });
+          }
+
           const selected = await ensureMachineCompatibilityOrThrow({
             request,
             stageKey: "cam",
