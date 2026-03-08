@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -200,6 +200,8 @@ export const BusinessForm = ({
     (membership !== "owner" && membership !== "none");
   const hasExtraAction = Boolean(renderActions);
 
+  const [addressPromptActive, setAddressPromptActive] = useState(false);
+
   const handleOpenAddressSearch = (options?: { silent?: boolean }) => {
     const silent = Boolean(options?.silent);
     try {
@@ -226,6 +228,7 @@ export const BusinessForm = ({
         return;
       }
       postcodePopupOpen = true;
+      setAddressPromptActive(false);
       new window.daum.Postcode({
         oncomplete: (data) => {
           const nextAddress =
@@ -250,7 +253,6 @@ export const BusinessForm = ({
           postcodePopupOpen = false;
         },
       }).open({ popupName: POSTCODE_POPUP_NAME });
-      window.open("", POSTCODE_POPUP_NAME)?.focus();
     } catch {
       postcodePopupOpen = false;
       if (!silent) {
@@ -275,22 +277,13 @@ export const BusinessForm = ({
 
   useEffect(() => {
     if (!autoOpenAddressSearchSignal) return;
-    if (window.daum?.Postcode) {
-      handleOpenAddressSearch({ silent: true });
-      return;
-    }
-    loadPostcodeScript()
-      .then(() => {
-        handleOpenAddressSearch({ silent: true });
-      })
-      .catch(() => {
-        toast({
-          title: "주소 검색을 불러오지 못했습니다",
-          description: "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-        });
-      });
-  }, [autoOpenAddressSearchSignal]);
+    setAddressPromptActive(true);
+    toast({
+      title: "주소 확인이 필요합니다",
+      description:
+        "[주소 검색] 버튼을 눌러 도로명 주소와 우편번호를 선택해주세요.",
+    });
+  }, [autoOpenAddressSearchSignal, toast]);
 
   return (
     <div className="space-y-6">
