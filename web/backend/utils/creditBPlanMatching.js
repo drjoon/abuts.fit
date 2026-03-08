@@ -4,6 +4,7 @@ import BankTransaction from "../models/bankTransaction.model.js";
 import CreditLedger from "../models/creditLedger.model.js";
 import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
+import { emitCreditBalanceUpdatedToOrganization } from "./creditRealtime.js";
 
 export function extractDepositCodeFromText(text) {
   const raw = String(text || "");
@@ -195,7 +196,7 @@ async function matchTxWithOrder({ tx, order }) {
 
       // 크레딧 즉시 충전
       const uniqueKey = `bplan:bankTx:${String(tx._id)}:charge`;
-      await CreditLedger.updateOne(
+      const creditLedgerResult = await CreditLedger.updateOne(
         { uniqueKey },
         {
           $setOnInsert: {
@@ -210,6 +211,15 @@ async function matchTxWithOrder({ tx, order }) {
         },
         { upsert: true, session },
       );
+
+      if (creditLedgerResult?.upsertedCount) {
+        await emitCreditBalanceUpdatedToOrganization({
+          organizationId: order.organizationId,
+          balanceDelta: Number(order.supplyAmount),
+          reason: "bplan_auto_charge",
+          refId: order._id,
+        });
+      }
 
       // 세금계산서 Draft 생성 (다음날 12시 일괄 발행용)
       const existingDraft = await TaxInvoiceDraft.findOne(

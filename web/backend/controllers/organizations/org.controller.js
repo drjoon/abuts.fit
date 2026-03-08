@@ -12,6 +12,7 @@ import {
   assertOrganizationRole,
   buildOrganizationTypeFilter,
 } from "./organizationRole.util.js";
+import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
 
 const WELCOME_BONUS_AMOUNT = 30000;
 const SALESMAN_REFERRAL_BONUS_AMOUNT = 50000;
@@ -113,6 +114,13 @@ async function grantWelcomeBonusIfEligible({ organizationId, userId }) {
     { $set: { creditLedgerId: ledgerDoc?._id || null } },
   );
 
+  await emitCreditBalanceUpdatedToOrganization({
+    organizationId,
+    balanceDelta: WELCOME_BONUS_AMOUNT,
+    reason: "welcome_bonus",
+    refId: ledgerDoc?._id || grant._id,
+  });
+
   return WELCOME_BONUS_AMOUNT;
 }
 
@@ -153,6 +161,14 @@ async function grantSalesmanReferralBonusIfEligible({
   );
 
   if (!result?.upsertedCount) return null;
+
+  await emitCreditBalanceUpdatedToOrganization({
+    organizationId,
+    balanceDelta: SALESMAN_REFERRAL_BONUS_AMOUNT,
+    reason: "salesman_referral_bonus",
+    refId: organizationId,
+  });
+
   return SALESMAN_REFERRAL_BONUS_AMOUNT;
 }
 

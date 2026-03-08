@@ -31,6 +31,7 @@ import s3Utils, {
   deleteFileFromS3,
   getSignedUrl as getSignedUrlForS3Key,
 } from "../../utils/s3.utils.js";
+import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -54,6 +55,72 @@ function withBridgeHeaders(extra = {}) {
     base["X-Bridge-Secret"] = BRIDGE_SHARED_SECRET;
   }
   return { ...base, ...extra };
+}
+
+async function ensureRequestCancelRefund({ request, actorUserId }) {
+  if (!request?._id) return;
+
+  const organizationId =
+    request.requestorOrganizationId || request.requestor?.organizationId;
+  if (!organizationId) return;
+
+  const spendRows = await CreditLedger.find({
+    organizationId,
+    type: "SPEND",
+    refType: "REQUEST",
+    refId: request._id,
+  })
+    .select({ amount: 1 })
+    .lean();
+
+  const refundRows = await CreditLedger.find({
+    organizationId,
+    type: "REFUND",
+    refType: "REQUEST",
+    refId: request._id,
+  })
+    .select({ amount: 1 })
+    .lean();
+
+  const totalSpendAbs = Math.abs(
+    (spendRows || []).reduce((acc, row) => {
+      const amount = Number(row?.amount || 0);
+      return acc + (Number.isFinite(amount) ? amount : 0);
+    }, 0),
+  );
+  const totalRefund = (refundRows || []).reduce((acc, row) => {
+    const amount = Number(row?.amount || 0);
+    return acc + (Number.isFinite(amount) ? amount : 0);
+  }, 0);
+
+  const refundAmount = Math.max(0, totalSpendAbs - totalRefund);
+  if (!Number.isFinite(refundAmount) || refundAmount <= 0) return;
+
+  const uniqueKey = `request:${String(request._id)}:cancel_refund`;
+  const result = await CreditLedger.updateOne(
+    { uniqueKey },
+    {
+      $setOnInsert: {
+        organizationId,
+        userId: actorUserId || null,
+        type: "REFUND",
+        amount: refundAmount,
+        refType: "REQUEST",
+        refId: request._id,
+        uniqueKey,
+      },
+    },
+    { upsert: true },
+  );
+
+  if (result?.upsertedCount) {
+    await emitCreditBalanceUpdatedToOrganization({
+      organizationId,
+      balanceDelta: refundAmount,
+      reason: "request_cancel_refund",
+      refId: request._id,
+    });
+  }
 }
 
 async function ensureDeliveryInfoShippedAtNow({ request, session }) {
@@ -621,6 +688,13 @@ export async function updateRequestStatus(req, res) {
     }
 
     // 의뢰 상태 변경
+    if (manufacturerStage === "취소") {
+      await ensureRequestCancelRefund({
+        request,
+        actorUserId: req.user?._id || null,
+      });
+    }
+
     applyStatusMapping(request, manufacturerStage);
 
     // 신속배송(express) 모드 제거됨
@@ -691,6 +765,11 @@ export async function deleteRequest(req, res) {
     }
 
     // 의뢰 취소 처리 (상태를 '취소'로 변경)
+    await ensureRequestCancelRefund({
+      request,
+      actorUserId: req.user?._id || null,
+    });
+
     applyStatusMapping(request, "취소");
     await request.save();
 

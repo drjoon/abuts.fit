@@ -6,6 +6,7 @@ import TaxInvoiceDraft from "../../models/taxInvoiceDraft.model.js";
 import AdminAuditLog from "../../models/adminAuditLog.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
+import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
 import {
   upsertBankTransaction,
   autoMatchBankTransactionsOnce,
@@ -459,7 +460,7 @@ export async function adminManualMatch(req, res) {
       );
 
       const uniqueKey = `bplan:bankTx:${String(tx._id)}:charge`;
-      await CreditLedger.updateOne(
+      const creditLedgerResult = await CreditLedger.updateOne(
         { uniqueKey },
         {
           $setOnInsert: {
@@ -474,6 +475,15 @@ export async function adminManualMatch(req, res) {
         },
         { upsert: true, session },
       );
+
+      if (creditLedgerResult?.upsertedCount) {
+        await emitCreditBalanceUpdatedToOrganization({
+          organizationId: order.organizationId,
+          balanceDelta: Number(order.supplyAmount),
+          reason: "bplan_admin_charge",
+          refId: order._id,
+        });
+      }
 
       const existingDraft = await TaxInvoiceDraft.findOne(
         { chargeOrderId: order._id },

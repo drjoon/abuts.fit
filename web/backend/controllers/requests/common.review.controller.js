@@ -6,7 +6,6 @@ import Machine from "../../models/machine.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import User from "../../models/user.model.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
@@ -40,46 +39,8 @@ import s3Utils, {
   getSignedUrl as getSignedUrlForS3Key,
 } from "../../utils/s3.utils.js";
 import { resolvePrcFileNames } from "./prcMapping.utils.js";
-import { emitAppEventToUser, emitAppEventToRoles } from "../../socket.js";
-
-async function emitCreditBalanceUpdatedToOrganization({
-  organizationId,
-  balanceDelta,
-  reason,
-  refId,
-}) {
-  const orgId = String(organizationId || "").trim();
-  if (!orgId) return;
-  const delta = Number(balanceDelta || 0);
-  if (!Number.isFinite(delta) || delta === 0) return;
-
-  const org = await RequestorOrganization.findById(orgId)
-    .select({ owner: 1, owners: 1, members: 1 })
-    .lean()
-    .catch(() => null);
-  if (!org) return;
-
-  const targetUserIds = Array.from(
-    new Set(
-      [
-        org.owner,
-        ...(Array.isArray(org.owners) ? org.owners : []),
-        ...(Array.isArray(org.members) ? org.members : []),
-      ]
-        .map((id) => String(id || "").trim())
-        .filter(Boolean),
-    ),
-  );
-
-  for (const userId of targetUserIds) {
-    emitAppEventToUser(userId, "credit:balance-updated", {
-      organizationId: orgId,
-      balanceDelta: delta,
-      reason: String(reason || "").trim() || null,
-      refId: refId ? String(refId) : null,
-    });
-  }
-}
+import { emitAppEventToRoles } from "../../socket.js";
+import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
 
 async function ensureRequestCreditSpendOnMachiningEnter({
   request,

@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import BonusGrant from "../../models/bonusGrant.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
+import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
 
 const DEFAULT_WELCOME_BONUS_AMOUNT = 30000;
 
@@ -20,7 +21,7 @@ function formatBusinessNumber(digits10) {
 export async function adminOverrideWelcomeBonus(req, res) {
   try {
     const businessNumberDigits = normalizeBusinessNumberDigits(
-      req.body?.businessNumber
+      req.body?.businessNumber,
     );
     if (!businessNumberDigits) {
       return res.status(400).json({
@@ -98,7 +99,7 @@ export async function adminOverrideWelcomeBonus(req, res) {
           uniqueKey,
         },
       },
-      { upsert: true }
+      { upsert: true },
     );
 
     if (!result?.upsertedCount) {
@@ -114,8 +115,15 @@ export async function adminOverrideWelcomeBonus(req, res) {
 
     await BonusGrant.updateOne(
       { _id: grant._id },
-      { $set: { creditLedgerId: ledgerDoc?._id || null } }
+      { $set: { creditLedgerId: ledgerDoc?._id || null } },
     );
+
+    await emitCreditBalanceUpdatedToOrganization({
+      organizationId,
+      balanceDelta: amount,
+      reason: "admin_welcome_bonus",
+      refId: ledgerDoc?._id || grant._id,
+    });
 
     return res.json({
       success: true,
@@ -140,7 +148,7 @@ export async function adminListBonusGrants(req, res) {
   try {
     const type = String(req.query?.type || "").trim() || "WELCOME_BONUS";
     const businessNumberDigits = normalizeBusinessNumberDigits(
-      req.query?.businessNumber
+      req.query?.businessNumber,
     );
 
     const q = { type };

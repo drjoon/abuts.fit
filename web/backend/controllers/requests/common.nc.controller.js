@@ -11,6 +11,7 @@ import {
 } from "./utils.js";
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
 import { triggerEspritForNc } from "./common.review.controller.js";
+import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
 
 const BRIDGE_BASE = process.env.BRIDGE_BASE;
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
@@ -567,7 +568,7 @@ export async function deleteNcFileAndRollbackCam(req, res) {
         const refundAmount = Math.abs(totalSpend);
         if (refundAmount > 0) {
           const uniqueKey = `request:${String(request._id)}:rollback_cam_refund`;
-          await CreditLedger.updateOne(
+          const result = await CreditLedger.updateOne(
             { uniqueKey },
             {
               $setOnInsert: {
@@ -582,6 +583,15 @@ export async function deleteNcFileAndRollbackCam(req, res) {
             },
             { upsert: true },
           );
+
+          if (result?.upsertedCount) {
+            await emitCreditBalanceUpdatedToOrganization({
+              organizationId,
+              balanceDelta: refundAmount,
+              reason: "rollback_cam_refund",
+              refId: request._id,
+            });
+          }
         }
       }
     }

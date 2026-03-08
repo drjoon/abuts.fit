@@ -17,6 +17,7 @@ import {
   normalizeRequestForResponse,
 } from "../../controllers/requests/utils.js";
 import { allocateVirtualMailboxAddress } from "../requests/mailbox.utils.js";
+import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
 
 let _apiKey = null;
 let _genAI = null;
@@ -187,7 +188,7 @@ async function ensureShippingPackageAndChargeFee({ request, session }) {
   const fee = Number(pkg?.shippingFeeSupply || 0);
   if (fee > 0) {
     const uniqueKey = `shippingPackage:${String(pkg._id)}:shipping_fee`;
-    await CreditLedger.updateOne(
+    const result = await CreditLedger.updateOne(
       { uniqueKey },
       {
         $setOnInsert: {
@@ -202,6 +203,15 @@ async function ensureShippingPackageAndChargeFee({ request, session }) {
       },
       { upsert: true, session: session || null },
     );
+
+    if (result?.upsertedCount) {
+      await emitCreditBalanceUpdatedToOrganization({
+        organizationId,
+        balanceDelta: -fee,
+        reason: "shipping_fee_spend",
+        refId: pkg._id,
+      });
+    }
   }
 }
 

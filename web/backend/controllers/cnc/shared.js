@@ -17,6 +17,7 @@ import {
   getAllProductionQueues,
   recalculateQueueOnMaterialChange,
 } from "../../controllers/requests/production.utils.js";
+import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
 
 export const CAM_RETRY_BATCH_LIMIT = Number(
   process.env.CAM_RETRY_BATCH_LIMIT || 30,
@@ -407,6 +408,13 @@ export async function rollbackRequestToCamByRequestId(requestId) {
               refType: "REQUEST",
               refId: request._id,
               uniqueKey: refundKey,
+            });
+
+            await emitCreditBalanceUpdatedToOrganization({
+              organizationId: orgId,
+              balanceDelta: amount,
+              reason: "cam_approve_refund",
+              refId: request._id,
             });
           }
         }

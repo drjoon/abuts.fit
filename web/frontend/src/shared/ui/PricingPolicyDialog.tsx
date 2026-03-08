@@ -113,6 +113,10 @@ export const PricingPolicyDialog = ({ open, onOpenChange }: Props) => {
                   2. 무료 크레딧(보너스)
                 </h3>
                 <p>
+                  신규 가입 기공소는 가입 시{" "}
+                  <b>가입축하 무료 크레딧 30,000원</b>이 1회 지급됩니다.
+                </p>
+                <p>
                   무료 크레딧은 <b>유료 크레딧과 같은 금액 기준</b>으로
                   사용됩니다.
                 </p>
