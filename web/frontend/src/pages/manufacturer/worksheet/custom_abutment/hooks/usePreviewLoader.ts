@@ -187,8 +187,25 @@ export function usePreviewLoader({
             ? req.caseInfos.finishLine.points
             : null;
           if (Array.isArray(casePoints) && casePoints.length >= 2) {
+            console.log(
+              "[usePreviewLoader] finish line loaded from caseInfos",
+              {
+                requestId: req.requestId,
+                requestMongoId: req._id,
+                pointCount: casePoints.length,
+              },
+            );
             return { points: casePoints, source: "caseInfos" as const };
           }
+
+          console.warn("[usePreviewLoader] finish line missing for preview", {
+            requestId: req.requestId,
+            requestMongoId: req._id,
+            hasFinishLineObject: !!req.caseInfos?.finishLine,
+            pointCount: Array.isArray(req.caseInfos?.finishLine?.points)
+              ? req.caseInfos.finishLine.points.length
+              : 0,
+          });
 
           return { points: null, source: null } as const;
         };

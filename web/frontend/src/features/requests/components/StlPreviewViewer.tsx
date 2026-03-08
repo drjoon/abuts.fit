@@ -178,8 +178,18 @@ export function StlPreviewViewer({
         const center = new THREE.Vector3();
         bbox.getCenter(center);
         mesh.position.sub(center);
+        scene.add(mesh);
 
         const hasFinishLine = Array.isArray(finishLinePoints);
+        if (!hasFinishLine || finishLinePoints!.length < 2) {
+          console.log("[StlPreviewViewer] finish line unavailable", {
+            fileName: file.name,
+            hasFinishLine,
+            finishLinePointCount: Array.isArray(finishLinePoints)
+              ? finishLinePoints.length
+              : 0,
+          });
+        }
         if (hasFinishLine && finishLinePoints!.length >= 2) {
           const pts = finishLinePoints!
             .filter((p) => Array.isArray(p) && p.length >= 3)
@@ -213,9 +223,23 @@ export function StlPreviewViewer({
               transparent: true,
               opacity: 1,
               depthTest: false,
+              depthWrite: false,
             });
             finishLine = new THREE.Mesh(tubeGeometry, tubeMaterial);
+            finishLine.renderOrder = 10;
             scene.add(finishLine);
+            console.log("[StlPreviewViewer] finish line rendered", {
+              fileName: file.name,
+              finishLinePointCount: finishLinePoints!.length,
+              renderedPointCount: pts.length,
+              radius,
+            });
+          } else {
+            console.warn("[StlPreviewViewer] finish line points filtered out", {
+              fileName: file.name,
+              finishLinePointCount: finishLinePoints!.length,
+              renderedPointCount: pts.length,
+            });
           }
         }
 
@@ -224,8 +248,6 @@ export function StlPreviewViewer({
         const dist = radius * 1.5;
         camera.position.set(dist, -dist, dist * 1.1);
         camera.lookAt(0, 0, 0);
-
-        scene.add(mesh);
       } catch (e) {
         console.error("[StlPreviewViewer] failed to load STL", e);
         setError("STL 파일을 불러오지 못했습니다");

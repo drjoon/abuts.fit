@@ -74,9 +74,37 @@ def _post_finish_line(request_id: str, input_file_name: str, finish_line: dict):
             "application/json",
         )
 
+        point_count = 0
+        try:
+            point_count = len((finish_line or {}).get("points") or [])
+        except Exception:
+            point_count = 0
+        log(
+            "finishline post start requestId={} file={} points={}".format(
+                request_id,
+                input_file_name,
+                point_count,
+            )
+        )
         resp = client.PostAsync(url, content).Result
         ok = bool(resp and resp.IsSuccessStatusCode)
-        log("finishline post " + ("ok" if ok else "failed"))
+        status_code = None
+        response_text = ""
+        try:
+            status_code = int(resp.StatusCode)
+        except Exception:
+            status_code = None
+        try:
+            response_text = resp.Content.ReadAsStringAsync().Result or ""
+        except Exception:
+            response_text = ""
+        log(
+            "finishline post {} status={} body={}".format(
+                "ok" if ok else "failed",
+                status_code,
+                response_text[:500],
+            )
+        )
     except Exception as e:
         log("finishline post failed: " + str(e))
 
@@ -437,6 +465,21 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                 "points": [[float(p.X), float(p.Y), float(p.Z)] for p in pts],
                 "pt0": [float(pt0.X), float(pt0.Y), float(pt0.Z)] if pt0 else None,
             }
+
+            log(
+                "finishline detected points={} planeCount={} hasPt0={}".format(
+                    len(finish_line_payload.get("points") or []),
+                    finish_line_payload.get("sectionCount"),
+                    bool(finish_line_payload.get("pt0")),
+                )
+            )
+            try:
+                encoded_finish_line = base64.b64encode(
+                    json.dumps(finish_line_payload, ensure_ascii=False).encode("utf-8")
+                ).decode("ascii")
+                log("FINISHLINE_RESULT:" + encoded_finish_line)
+            except Exception as encode_err:
+                log("Finishline encode failed: " + str(encode_err))
 
             req_id = _extract_request_id_from_path(input_path)
             if req_id:
