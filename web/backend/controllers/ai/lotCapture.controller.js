@@ -280,61 +280,25 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     confidence: String(recognized?.confidence || "").trim() || "unknown",
     provider: String(recognized?.provider || "").trim() || "unknown",
   });
-  if (!finalRecognizedSuffix) {
-    console.warn("[lot-capture] no lot suffix recognized", {
-      originalName: name,
-      s3Key: key,
-      recognized: recognized || null,
-      aiFallbackDisabled: true,
-    });
-    return res.status(200).json(
-      new ApiResponse(
-        200,
-        {
-          ok: false,
-          recognized: recognized || null,
-          matched: false,
-          reason: "no_lot_suffix",
-        },
-        "LOT 코드를 인식하지 못했습니다.",
-      ),
-    );
-  }
-
-  const regex = new RegExp(`${finalRecognizedSuffix}$`, "i");
-  let request = await Request.findOne({
+  const request = await Request.findOne({
     status: { $ne: "취소" },
-    "lotNumber.value": { $regex: regex },
-  });
+    manufacturerStage: "세척.패킹",
+  }).sort({ createdAt: 1 });
 
-  console.log("[lot-capture] suffix match lookup", {
-    recognizedSuffix: finalRecognizedSuffix,
+  console.warn("[lot-capture] temporary fallback applied", {
+    recognizedSuffix: finalRecognizedSuffix || null,
     matched: !!request,
     matchedRequestId: request?.requestId || null,
     matchedMongoId: request?._id ? String(request._id) : null,
     matchedLotPart: String(request?.lotNumber?.value || "").trim() || null,
   });
 
-  if (!request && process.env.NODE_ENV === "development") {
-    request = await Request.findOne({
-      status: { $ne: "취소" },
-      manufacturerStage: "세척.패킹",
-    }).sort({ createdAt: 1 });
-
-    console.warn("[lot-capture] development fallback applied", {
-      recognizedSuffix: finalRecognizedSuffix,
-      fallbackMatched: !!request,
-      fallbackRequestId: request?.requestId || null,
-      fallbackMongoId: request?._id ? String(request._id) : null,
-      fallbackLotPart: String(request?.lotNumber?.value || "").trim() || null,
-    });
-  }
-
   if (!request) {
     console.warn("[lot-capture] no matching request found", {
-      recognizedSuffix: finalRecognizedSuffix,
+      recognizedSuffix: finalRecognizedSuffix || null,
       originalName: name,
       s3Key: key,
+      temporaryFallback: true,
     });
     return res.status(200).json(
       new ApiResponse(
@@ -343,9 +307,10 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
           ok: true,
           recognized: recognized || null,
           matched: false,
-          suffix: finalRecognizedSuffix,
+          suffix: finalRecognizedSuffix || null,
+          reason: "no_packing_request",
         },
-        "일치하는 의뢰가 없습니다.",
+        "세척.패킹 의뢰가 없습니다.",
       ),
     );
   }
@@ -377,7 +342,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   };
 
   console.log("[lot-capture] applying packing capture to request", {
-    recognizedSuffix: finalRecognizedSuffix,
+    recognizedSuffix: finalRecognizedSuffix || null,
     requestId: request.requestId,
     requestMongoId: String(request._id || ""),
     lotPart: String(request?.lotNumber?.value || "").trim() || null,
@@ -416,7 +381,8 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     tone: "slate",
     clear: true,
     metadata: {
-      recognizedSuffix: finalRecognizedSuffix,
+      recognizedSuffix: finalRecognizedSuffix || null,
+      temporaryFallback: true,
       autoPrintHandledBy: "frontend",
     },
   });
@@ -425,7 +391,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     source: "bg-lot-capture",
     requestId: request.requestId,
     requestMongoId: String(request._id || ""),
-    recognizedSuffix: finalRecognizedSuffix,
+    recognizedSuffix: finalRecognizedSuffix || null,
     recognized: recognized || null,
     movedToStage: "포장.발송",
     request: normalizedRequest,
@@ -467,7 +433,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
         ok: true,
         matched: true,
         requestId: request.requestId,
-        suffix: finalRecognizedSuffix,
+        suffix: finalRecognizedSuffix || null,
         recognized: recognized || null,
         print: {
           success: null,
