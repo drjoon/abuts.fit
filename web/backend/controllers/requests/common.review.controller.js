@@ -590,14 +590,23 @@ async function chooseMachineForCamMachining({
       return { ...c, queue };
     })
     .sort((a, b) => {
+      if (a.queue !== b.queue) return a.queue - b.queue;
       if (a.availableDia !== b.availableDia)
         return a.availableDia - b.availableDia;
-      if (a.queue !== b.queue) return a.queue - b.queue;
       return a.machineId.localeCompare(b.machineId);
     });
 
   const chosen = ranked[0];
   const queuePosition = (queueCountMap.get(chosen.machineId) || 0) + 1;
+  console.log("[CAM-CHOOSE] ranked", {
+    requestId: request?.requestId,
+    targetDiameter,
+    ranked: ranked.map((item) => ({
+      m: item.machineId,
+      q: item.queue,
+      d: item.availableDia,
+    })),
+  });
   console.log("[CAM-CHOOSE] chosen", {
     requestId: request?.requestId,
     chosen: chosen && { m: chosen.machineId, d: chosen.availableDia },
