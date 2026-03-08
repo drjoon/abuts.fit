@@ -18,6 +18,7 @@ interface OrganizationStepProps {
   defaultCompleted?: boolean;
   onComplete?: () => void;
   registerGoNextAction?: (action: (() => Promise<boolean>) | null) => void;
+  registerBusyState?: (busy: boolean) => void;
 }
 
 const OWNER_FIELDS = [
@@ -191,6 +192,7 @@ export const OrganizationStep = ({
   defaultCompleted,
   onComplete,
   registerGoNextAction,
+  registerBusyState,
 }: OrganizationStepProps) => {
   const resolvedRole = role ?? "member";
   const { token, user } = useAuthStore();
@@ -831,6 +833,15 @@ export const OrganizationStep = ({
     }
     return () => registerGoNextAction?.(null);
   }, [resolvedRole, registerGoNextAction, handleOwnerSave, handleJoin]);
+
+  useEffect(() => {
+    if (!registerBusyState) return;
+    const isLicenseProcessing =
+      resolvedRole === "owner" &&
+      (licenseStatus === "uploading" || licenseStatus === "processing");
+    registerBusyState(isLicenseProcessing);
+    return () => registerBusyState(false);
+  }, [licenseStatus, registerBusyState, resolvedRole]);
 
   const renderOwnerForm = () => (
     <div className="space-y-4">

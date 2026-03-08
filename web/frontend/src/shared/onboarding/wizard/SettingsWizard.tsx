@@ -142,6 +142,7 @@ export const SettingsWizard = ({
   >(() => createStepCompletionState());
   const nextActionRef = useRef<(() => Promise<boolean>) | null>(null);
   const [nextLoading, setNextLoading] = useState(false);
+  const [stepBusy, setStepBusy] = useState(false);
 
   const handleLogout = useCallback(() => {
     logout();
@@ -154,6 +155,10 @@ export const SettingsWizard = ({
     },
     [],
   );
+
+  const registerStepBusyState = useCallback((busy: boolean) => {
+    setStepBusy(busy);
+  }, []);
 
   useEffect(() => {
     if (!token) return;
@@ -419,6 +424,7 @@ export const SettingsWizard = ({
                 defaultCompleted={stepCompleted.organization}
                 onComplete={() => handleStepComplete("organization")}
                 registerGoNextAction={registerGoNextAction}
+                registerBusyState={registerStepBusyState}
               />
             )}
 
@@ -430,7 +436,7 @@ export const SettingsWizard = ({
                   <Button
                     variant="outline"
                     onClick={handlePrev}
-                    disabled={nextLoading}
+                    disabled={nextLoading || stepBusy}
                     className="w-20 h-11"
                   >
                     이전
@@ -447,7 +453,9 @@ export const SettingsWizard = ({
                       void handleNext();
                     }}
                     disabled={
-                      nextLoading || (currentStep === "role" && !selectedRole)
+                      nextLoading ||
+                      stepBusy ||
+                      (currentStep === "role" && !selectedRole)
                     }
                     className="w-20 h-11"
                   >
