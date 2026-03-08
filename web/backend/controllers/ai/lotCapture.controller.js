@@ -251,7 +251,8 @@ async function recognizeLotNumberFromS3({ s3Key, originalName }) {
 }
 
 export const handlePackingCapture = asyncHandler(async (req, res) => {
-  const { s3Key, s3Url, originalName, fileSize } = req.body || {};
+  const { s3Key, s3Url, originalName, fileSize, recognizedSuffix, lotNumber } =
+    req.body || {};
 
   const key = String(s3Key || "").trim();
   if (!key) {
@@ -260,21 +261,32 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
 
   const name = String(originalName || "").trim() || "capture.jpg";
 
-  const recognized = await recognizeLotNumberFromS3({
-    s3Key: key,
-    originalName: name,
-  });
+  const providedLotNumber = String(lotNumber || "").trim();
+  const providedSuffix = extractLotSuffix3(
+    String(recognizedSuffix || "").trim() || providedLotNumber,
+  );
+  const recognized = providedSuffix
+    ? {
+        lotNumber: providedLotNumber || providedSuffix,
+        confidence: "provided",
+        provider: "lot-server",
+      }
+    : await recognizeLotNumberFromS3({
+        s3Key: key,
+        originalName: name,
+      });
 
-  const recognizedSuffix = extractLotSuffix3(recognized?.lotNumber || "");
+  const finalRecognizedSuffix =
+    providedSuffix || extractLotSuffix3(recognized?.lotNumber || "");
   console.log("[lot-capture] recognition result", {
     originalName: name,
     s3Key: key,
     recognizedLotNumber: String(recognized?.lotNumber || "").trim(),
-    recognizedSuffix,
+    recognizedSuffix: finalRecognizedSuffix,
     confidence: String(recognized?.confidence || "").trim() || "unknown",
     provider: String(recognized?.provider || "").trim() || "unknown",
   });
-  if (!recognizedSuffix) {
+  if (!finalRecognizedSuffix) {
     console.warn("[lot-capture] no lot suffix recognized", {
       originalName: name,
       s3Key: key,
@@ -294,14 +306,14 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     );
   }
 
-  const regex = new RegExp(`${recognizedSuffix}$`, "i");
+  const regex = new RegExp(`${finalRecognizedSuffix}$`, "i");
   let request = await Request.findOne({
     status: { $ne: "취소" },
     "lotNumber.value": { $regex: regex },
   });
 
   console.log("[lot-capture] suffix match lookup", {
-    recognizedSuffix,
+    recognizedSuffix: finalRecognizedSuffix,
     matched: !!request,
     matchedRequestId: request?.requestId || null,
     matchedMongoId: request?._id ? String(request._id) : null,
@@ -315,7 +327,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     }).sort({ createdAt: 1 });
 
     console.warn("[lot-capture] development fallback applied", {
-      recognizedSuffix,
+      recognizedSuffix: finalRecognizedSuffix,
       fallbackMatched: !!request,
       fallbackRequestId: request?.requestId || null,
       fallbackMongoId: request?._id ? String(request._id) : null,
@@ -325,7 +337,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
 
   if (!request) {
     console.warn("[lot-capture] no matching request found", {
-      recognizedSuffix,
+      recognizedSuffix: finalRecognizedSuffix,
       originalName: name,
       s3Key: key,
     });
@@ -336,7 +348,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
           ok: true,
           recognized: recognized || null,
           matched: false,
-          suffix: recognizedSuffix,
+          suffix: finalRecognizedSuffix,
         },
         "일치하는 의뢰가 없습니다.",
       ),
@@ -370,7 +382,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   };
 
   console.log("[lot-capture] applying packing capture to request", {
-    recognizedSuffix,
+    recognizedSuffix: finalRecognizedSuffix,
     requestId: request.requestId,
     requestMongoId: String(request._id || ""),
     lotPart: String(request?.lotNumber?.value || "").trim() || null,
@@ -409,7 +421,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     tone: "slate",
     clear: true,
     metadata: {
-      recognizedSuffix,
+      recognizedSuffix: finalRecognizedSuffix,
       autoPrintHandledBy: "frontend",
     },
   });
@@ -418,7 +430,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     source: "bg-lot-capture",
     requestId: request.requestId,
     requestMongoId: String(request._id || ""),
-    recognizedSuffix,
+    recognizedSuffix: finalRecognizedSuffix,
     recognized: recognized || null,
     movedToStage: "포장.발송",
     request: normalizedRequest,
@@ -460,11 +472,11 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
         ok: true,
         matched: true,
         requestId: request.requestId,
-        suffix: recognizedSuffix,
+        suffix: finalRecognizedSuffix,
         recognized: recognized || null,
         print: {
-          success: !!printResult?.success,
-          message: printResult?.message || null,
+          success: null,
+          message: "frontend_auto_print",
         },
       },
       "포장 캡쳐 처리 완료",

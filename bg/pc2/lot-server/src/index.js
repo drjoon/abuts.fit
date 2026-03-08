@@ -90,6 +90,22 @@ function formatError(err) {
   return parts.length ? parts.join(" ") : String(err);
 }
 
+function extractRecognizedSuffixFromFileName(fileName) {
+  const base = path.basename(
+    String(fileName || ""),
+    path.extname(String(fileName || "")),
+  );
+  const upper = base.toUpperCase();
+  const matches = upper.match(/[A-Z]{3}/g) || [];
+  for (let i = matches.length - 1; i >= 0; i -= 1) {
+    const token = String(matches[i] || "").trim();
+    if (token && token !== "CAP") {
+      return token;
+    }
+  }
+  return "";
+}
+
 async function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -274,6 +290,7 @@ async function enforceIpAllowlist() {
 
 async function processImageOnce(filePath) {
   const originalName = path.basename(filePath);
+  const recognizedSuffix = extractRecognizedSuffixFromFileName(originalName);
   const { buffer, mimeType } = await resizeToOneFifth(filePath);
   const fileSize = buffer.length;
 
@@ -305,6 +322,7 @@ async function processImageOnce(filePath) {
     s3Url,
     originalName,
     fileSize,
+    recognizedSuffix,
   });
 
   if (!done?.ok) {
