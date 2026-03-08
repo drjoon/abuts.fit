@@ -5,6 +5,14 @@ import {
   toKstYmd,
 } from "./utils.js";
 import { isKoreanBusinessDay } from "../../utils/krBusinessDays.js";
+import CncMachine from "../../models/cncMachine.model.js";
+import Machine from "../../models/machine.model.js";
+import {
+  MACHINING_ASSIGN_STAGE_SET,
+  buildMachineQueueLoadMap,
+  getMachiningLoadWeight,
+  normalizeDiameterGroupValue,
+} from "../cnc/distribution.utils.js";
 
 /**
  * 생산 스케줄 계산 유틸리티 (시각 단위 관리)
@@ -389,31 +397,132 @@ export async function recalculateQueueOnMaterialChange(
   machineId,
   newDiameterGroup,
 ) {
+  const normalizedGroup = normalizeDiameterGroupValue(newDiameterGroup);
+  if (!normalizedGroup) return 0;
+
   const Request = (await import("../../models/request.model.js")).default;
 
-  // 해당 직경 그룹의 unassigned 의뢰 조회
-  const unassignedRequests = await Request.find({
-    manufacturerStage: { $in: ["의뢰", "CAM", "가공"] },
-    "productionSchedule.assignedMachine": null,
-    "productionSchedule.diameterGroup": newDiameterGroup,
-  });
+  const activeMachines = await CncMachine.find({ status: "active" })
+    .select({ machineId: 1, currentMaterial: 1 })
+    .lean();
+  const machineIds = activeMachines
+    .map((m) => String(m?.machineId || "").trim())
+    .filter(Boolean);
 
-  // 발송(픽업) 예정시각 순으로 정렬하여 장비에 할당
-  const sortedRequests = unassignedRequests.sort((a, b) => {
-    const aTime = a.productionSchedule?.scheduledShipPickup || new Date(0);
-    const bTime = b.productionSchedule?.scheduledShipPickup || new Date(0);
-    return aTime - bTime;
-  });
+  if (!machineIds.length) return 0;
 
-  // 장비 할당 업데이트
-  for (let i = 0; i < sortedRequests.length; i++) {
-    const req = sortedRequests[i];
-    req.productionSchedule.assignedMachine = machineId;
-    req.productionSchedule.queuePosition = i + 1;
-    await req.save();
+  const machineFlags = await Machine.find({ uid: { $in: machineIds } })
+    .select({ uid: 1, allowRequestAssign: 1 })
+    .lean();
+  const allowAssignSet = new Set(
+    machineFlags
+      .filter((m) => m?.allowRequestAssign !== false)
+      .map((m) => String(m?.uid || "").trim())
+      .filter(Boolean),
+  );
+
+  const candidateMachineIds = activeMachines
+    .map((m) => {
+      const uid = String(m?.machineId || "").trim();
+      if (!uid || !allowAssignSet.has(uid)) return null;
+      const group = normalizeDiameterGroupValue(
+        m?.currentMaterial?.diameterGroup || m?.currentMaterial?.diameter,
+      );
+      return group === normalizedGroup ? uid : null;
+    })
+    .filter((uid) => Boolean(uid));
+
+  if (!candidateMachineIds.length) return 0;
+
+  const queueLoadMap = await buildMachineQueueLoadMap(candidateMachineIds);
+
+  const assignedCounts = await Request.find({
+    manufacturerStage: { $in: MACHINING_ASSIGN_STAGE_SET },
+    "productionSchedule.assignedMachine": { $in: candidateMachineIds },
+  })
+    .select("productionSchedule.assignedMachine")
+    .lean();
+
+  const queueLengthMap = new Map(candidateMachineIds.map((id) => [id, 0]));
+  for (const doc of assignedCounts) {
+    const uid = String(doc?.productionSchedule?.assignedMachine || "").trim();
+    if (!uid || !queueLengthMap.has(uid)) continue;
+    queueLengthMap.set(uid, (queueLengthMap.get(uid) || 0) + 1);
   }
 
-  return sortedRequests.length;
+  const unassignedRequests = await Request.find({
+    manufacturerStage: { $in: MACHINING_ASSIGN_STAGE_SET },
+    $or: [
+      { "productionSchedule.assignedMachine": { $exists: false } },
+      { "productionSchedule.assignedMachine": null },
+      { "productionSchedule.assignedMachine": "" },
+    ],
+    "productionSchedule.diameterGroup": normalizedGroup,
+  })
+    .sort({
+      "productionSchedule.scheduledShipPickup": 1,
+      requestId: 1,
+    })
+    .lean();
+
+  if (!unassignedRequests.length) return 0;
+
+  const roundRobinIndexByKey = new Map();
+  const ops = [];
+
+  for (const req of unassignedRequests) {
+    let selected = null;
+    let minLoad = Infinity;
+    const tied = [];
+
+    for (const uid of candidateMachineIds) {
+      const load = queueLoadMap.get(uid) || 0;
+      if (load < minLoad) {
+        minLoad = load;
+        tied.length = 0;
+        tied.push(uid);
+      } else if (load === minLoad) {
+        tied.push(uid);
+      }
+    }
+
+    if (!tied.length) break;
+
+    if (tied.length === 1) {
+      selected = tied[0];
+    } else {
+      const key = tied.slice().sort().join("|");
+      const idx = roundRobinIndexByKey.get(key) || 0;
+      selected = tied[idx % tied.length];
+      roundRobinIndexByKey.set(key, (idx + 1) % tied.length);
+    }
+
+    if (!selected) break;
+
+    const loadWeight = getMachiningLoadWeight(req);
+    queueLoadMap.set(selected, (queueLoadMap.get(selected) || 0) + loadWeight);
+    const nextQueuePos = (queueLengthMap.get(selected) || 0) + 1;
+    queueLengthMap.set(selected, nextQueuePos);
+
+    ops.push({
+      updateOne: {
+        filter: { _id: req._id },
+        update: {
+          $set: {
+            "productionSchedule.assignedMachine": selected,
+            "productionSchedule.queuePosition": nextQueuePos,
+            assignedMachine: selected,
+          },
+        },
+      },
+    });
+  }
+
+  if (ops.length) {
+    await Request.bulkWrite(ops);
+  }
+
+  return ops.length;
 }
 
 /**
