@@ -540,9 +540,7 @@ export const PreviewModal = ({
   );
   const fullLotLabel = isRequestStage
     ? ""
-    : String(
-        activeReq?.lotNumber?.final || activeReq?.lotNumber?.part || "",
-      ).trim();
+    : String(activeReq?.lotNumber?.value || "").trim();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

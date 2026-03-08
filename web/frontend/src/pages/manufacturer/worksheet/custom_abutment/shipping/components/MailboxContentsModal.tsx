@@ -30,10 +30,7 @@ export const MailboxContentsModal = ({
 }: MailboxContentsModalProps) => {
   const getLotShortCode = (req: ManufacturerRequest) => {
     const full = String(
-      req.lotNumber?.final ||
-        req.lotNumber?.part ||
-        req.lotNumber?.material ||
-        "",
+      req.lotNumber?.value || req.lotNumber?.material || "",
     ).trim();
     const match = full.match(/[A-Z]{3}$/i);
     return match ? match[0].toUpperCase() : "";

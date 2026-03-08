@@ -316,9 +316,10 @@ export async function normalizeRequestForResponse(requestDoc) {
   obj.caseInfos = await normalizeCaseInfosImplantFields(ci, false);
   normalizeProductionScheduleDiameter(obj);
   if (obj?.lotNumber && typeof obj.lotNumber === "object") {
-    const finalRaw = obj.lotNumber.final;
-    if (typeof finalRaw === "string") {
-      obj.lotNumber.final = stripCustomAbutmentLotPrefix(finalRaw);
+    const valueRaw =
+      typeof obj.lotNumber.value === "string" ? obj.lotNumber.value.trim() : "";
+    if (valueRaw) {
+      obj.lotNumber.value = valueRaw;
     }
   }
   return obj;
@@ -367,14 +368,6 @@ async function nextLotLetters() {
   return toLetters(Math.max(seq, 0));
 }
 
-function stripCustomAbutmentLotPrefix(value) {
-  if (typeof value !== "string") return "";
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  if (/^CAP/i.test(trimmed)) return trimmed;
-  return trimmed.replace(/^CA(?!P)/i, "");
-}
-
 function getWorkTypePrefix(requestDoc, { defaultPrefix }) {
   const raw = String(requestDoc?.caseInfos?.workType || "")
     .trim()
@@ -387,7 +380,8 @@ export async function ensureLotNumberForMachining(requestDoc) {
   if (!requestDoc) return;
 
   requestDoc.lotNumber = requestDoc.lotNumber || {};
-  if (requestDoc.lotNumber.part) return;
+  const existingValue = String(requestDoc.lotNumber.value || "").trim();
+  if (existingValue) return;
 
   // 로트 규칙(반제품/CAP, 크라운은 CR): PREFIX + YYMMDD + "-" + 26진 3자리 (AAA, AAB, ... ZZZ 이후 다시 AAA)
   const todayYmd = getTodayYmdInKst(); // YYYY-MM-DD
@@ -395,41 +389,13 @@ export async function ensureLotNumberForMachining(requestDoc) {
 
   const letters = await nextLotLetters();
   const prefix = getWorkTypePrefix(requestDoc, { defaultPrefix: "CAP" });
-  requestDoc.lotNumber.part = `${prefix}${yyMMdd}-${letters}`;
+  requestDoc.lotNumber.value = `${prefix}${yyMMdd}-${letters}`;
 }
 
 export async function ensureFinishedLotNumberForPacking(requestDoc) {
   if (!requestDoc) return;
 
-  requestDoc.lotNumber = requestDoc.lotNumber || {};
-  if (requestDoc.lotNumber.final) return;
-
-  const todayYmd = getTodayYmdInKst();
-  const yyMMdd = todayYmd.replace(/-/g, "").slice(2);
-  const partLot = String(requestDoc.lotNumber?.part || "");
-  const prefixRaw = getWorkTypePrefix(requestDoc, { defaultPrefix: "CA" });
-  const shouldStripPrefix =
-    typeof prefixRaw === "string" && prefixRaw.trim().toUpperCase() === "CA";
-  const prefix = shouldStripPrefix ? "" : prefixRaw;
-  const reuseSequence = (() => {
-    // lotNumber.part 예: CAP241120-ABC → "CAP" 이후 모든 문자열("241120-ABC")을 재사용
-    if (!partLot.startsWith("CAP")) return null;
-    return partLot.slice(3) || null;
-  })();
-
-  if (reuseSequence) {
-    const finalRaw = `${prefix}${reuseSequence}`;
-    requestDoc.lotNumber.final = shouldStripPrefix
-      ? stripCustomAbutmentLotPrefix(finalRaw)
-      : finalRaw;
-    return;
-  }
-
-  const letters = await nextLotLetters();
-  const finalRaw = `${prefix}${yyMMdd}-${letters}`;
-  requestDoc.lotNumber.final = shouldStripPrefix
-    ? stripCustomAbutmentLotPrefix(finalRaw)
-    : finalRaw;
+  await ensureLotNumberForMachining(requestDoc);
 }
 
 export async function computePriceForRequest({

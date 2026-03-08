@@ -217,6 +217,12 @@ export const MachineQueueCard = ({
   const lastCompletedRequestId = String(
     effectiveLastCompleted?.requestId || "",
   ).trim();
+  const getLotShortCode = (slot?: QueueItem | null) =>
+    String(slot?.lotNumber?.value || "")
+      .trim()
+      .replace(/^CA(P)?/i, "")
+      .slice(-3)
+      .toUpperCase();
 
   useEffect(() => {
     setCompletedRolledBack(false);
@@ -419,6 +425,9 @@ export const MachineQueueCard = ({
                       patientName={(effectiveLastCompleted as any)?.patientName}
                       tooth={(effectiveLastCompleted as any)?.tooth}
                       requestId={(effectiveLastCompleted as any)?.requestId}
+                      lotShortCode={getLotShortCode(
+                        effectiveLastCompleted as any,
+                      )}
                       className="text-[15px] leading-tight"
                     />
                   ) : (
@@ -512,6 +521,7 @@ export const MachineQueueCard = ({
                       patientName={currentSlot?.patientName}
                       tooth={(currentSlot as any)?.tooth}
                       requestId={currentSlot?.requestId}
+                      lotShortCode={getLotShortCode(currentSlot)}
                       className="text-[15px]"
                     />
                   ) : (
@@ -617,6 +627,7 @@ export const MachineQueueCard = ({
                       patientName={nextSlot?.patientName}
                       tooth={(nextSlot as any)?.tooth}
                       requestId={nextSlot?.requestId}
+                      lotShortCode={getLotShortCode(nextSlot)}
                       className="text-[15px]"
                     />
                   ) : (

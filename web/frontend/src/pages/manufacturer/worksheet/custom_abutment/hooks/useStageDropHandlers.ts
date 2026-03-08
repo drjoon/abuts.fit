@@ -65,7 +65,7 @@ export function useStageDropHandlers({
 
         const matchingRequest = requests.find(
           (req) =>
-            String(req.lotNumber?.part || "").trim() ===
+            String(req.lotNumber?.value || "").trim() ===
             recognizedLotNumber.trim(),
         );
 

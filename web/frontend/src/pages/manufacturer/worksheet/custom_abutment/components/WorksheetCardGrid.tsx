@@ -151,9 +151,7 @@ export const WorksheetCardGrid = ({
 
         const hasNcFile = !!caseInfos.ncFile?.s3Key;
         const isDeletingNc = !!deletingNc[request._id];
-        const lotCodeSource = String(
-          request.lotNumber?.final || request.lotNumber?.part || "",
-        ).trim();
+        const lotCodeSource = String(request.lotNumber?.value || "").trim();
         const camMaterialDiameter = (() => {
           const sched = request.productionSchedule || {};
           const raw = Number(sched.diameter);

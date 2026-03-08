@@ -200,8 +200,7 @@ export interface RequestBase {
     | string;
   lotNumber?: {
     material?: string;
-    part?: string;
-    final?: string;
+    value?: string;
   };
   assignedMachine?: string; // 가공 직전 배정된 장비 (M3, M4 등)
   createdAt?: string;

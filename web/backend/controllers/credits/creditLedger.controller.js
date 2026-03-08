@@ -11,8 +11,7 @@ function buildRequestSummary(doc) {
     tooth: String(doc?.caseInfos?.tooth || ""),
     clinicName: String(doc?.caseInfos?.clinicName || ""),
     lotNumber: {
-      part: String(doc?.lotNumber?.part || ""),
-      final: String(doc?.lotNumber?.final || ""),
+      value: String(doc?.lotNumber?.value || ""),
     },
   };
 }

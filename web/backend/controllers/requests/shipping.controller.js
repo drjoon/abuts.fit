@@ -227,8 +227,7 @@ const resolveLegacyScrewCode = (request) => {
 const resolveFullLotNumber = (request) => {
   const lot = request?.lotNumber || {};
   return (
-    (typeof lot.final === "string" && lot.final.trim()) ||
-    (typeof lot.part === "string" && lot.part.trim()) ||
+    (typeof lot.value === "string" && lot.value.trim()) ||
     (typeof lot.material === "string" && lot.material.trim()) ||
     ""
   );

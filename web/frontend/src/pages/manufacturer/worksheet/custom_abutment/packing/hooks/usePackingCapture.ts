@@ -110,7 +110,7 @@ export const usePackingCapture = ({
                   requests.find(
                     (r) => deriveStageForFilter(r) === "세척.패킹",
                   ) || requests[0];
-                rawLot = extractLotSuffix3(matchingRequest?.lotNumber?.part);
+                rawLot = extractLotSuffix3(matchingRequest?.lotNumber?.value);
               } else {
                 const aiRes = await fetch("/api/ai/recognize-lot-number", {
                   method: "POST",
@@ -155,7 +155,7 @@ export const usePackingCapture = ({
               if (!matchingRequest) {
                 matchingRequest = requests.find(
                   (req) =>
-                    extractLotSuffix3(String(req.lotNumber?.part || "")) ===
+                    extractLotSuffix3(String(req.lotNumber?.value || "")) ===
                     recognizedSuffix,
                 );
               }

@@ -279,8 +279,7 @@ export async function deleteCamFileAndRollback(req, res) {
     };
     bumpRollbackCount(request, "cam");
     request.lotNumber = request.lotNumber || {};
-    request.lotNumber.part = undefined;
-    request.lotNumber.final = undefined;
+    request.lotNumber.value = undefined;
     request.lotNumber.material = "";
     request.manufacturerStage = "의뢰";
 

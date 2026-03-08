@@ -25,14 +25,8 @@ const requestSchema = new mongoose.Schema(
         // 원소재 Heat No.
         type: String,
       },
-      part: {
-        // 반제품 : CAP + YYMMDD + -AAA
-        type: String,
-        unique: true,
-        sparse: true,
-      },
-      final: {
-        // 완제품 : CA + YYMMDD + -AAA
+      value: {
+        // 단일 로트번호 : CAP + YYMMDD + -AAA (workType에 따라 prefix 변형 가능)
         type: String,
         unique: true,
         sparse: true,

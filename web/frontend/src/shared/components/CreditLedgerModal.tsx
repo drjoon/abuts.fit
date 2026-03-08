@@ -52,8 +52,7 @@ type CreditLedgerItem = {
   clinicName?: string;
   manufacturerStage?: string;
   lotNumber?: {
-    part?: string;
-    final?: string;
+    value?: string;
   } | null;
   refRequestSummary?: {
     requestId?: string;
@@ -62,8 +61,7 @@ type CreditLedgerItem = {
     tooth?: string;
     clinicName?: string;
     lotNumber?: {
-      part?: string;
-      final?: string;
+      value?: string;
     } | null;
   } | null;
 };
@@ -289,9 +287,7 @@ export const CreditLedgerModal = ({
     : null;
 
   const selectedDetailLotNumber =
-    selectedDetailLedgerRow?.lotNumber?.final ||
-    selectedDetailLedgerRow?.lotNumber?.part ||
-    "-";
+    selectedDetailLedgerRow?.lotNumber?.value || "-";
 
   return (
     <>

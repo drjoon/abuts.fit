@@ -281,7 +281,10 @@ export const useMachiningBoard = ({
         const arr = Array.isArray(list) ? list : [];
         normalized[mid] = arr.map((item: any) => {
           const lotPart = String(
-            item?.lotNumber?.part || item?.lotPart || item?.lotNumberPart || "",
+            item?.lotNumber?.value ||
+              item?.lotPart ||
+              item?.lotNumberValue ||
+              "",
           ).trim();
           const tooth = String(
             item?.tooth || item?.caseInfos?.tooth || "",
@@ -293,10 +296,10 @@ export const useMachiningBoard = ({
             lotNumber: lotPart
               ? {
                   ...(item?.lotNumber || {}),
-                  part: lotPart,
+                  value: lotPart,
                 }
               : item?.lotNumber,
-          } satisfies QueueItem;
+          };
         });
       });
       setQueueMap(normalized);

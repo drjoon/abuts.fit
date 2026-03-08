@@ -367,7 +367,7 @@ export async function triggerEspritForNc({ request, force = false }) {
       MaterialDiameter: Number(matDia || 0),
       MaterialDiameterGroup: String(matGroup || ""),
       WorkType: request?.caseInfos?.workType || "",
-      LotNumber: request?.lotNumber?.part || "",
+      LotNumber: request?.lotNumber?.value || "",
     };
     console.log("[ESPRIT] POST / payload", {
       RequestId: payload.RequestId,

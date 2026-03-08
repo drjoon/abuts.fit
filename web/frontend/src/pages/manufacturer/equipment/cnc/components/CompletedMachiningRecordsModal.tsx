@@ -233,9 +233,7 @@ export const CompletedMachiningRecordsModal = ({
             sec % 60,
           ).padStart(2, "0")}`;
 
-    const lotRaw = String(
-      (it as any)?.lotNumber?.final || (it as any)?.lotNumber?.part || "",
-    )
+    const lotRaw = String((it as any)?.lotNumber?.value || "")
       .trim()
       .replace(/^CA(P)?/i, "");
     const clinic = String((it as any)?.clinicName || "").trim();
@@ -245,9 +243,6 @@ export const CompletedMachiningRecordsModal = ({
 
     return { hhmm, mmss, clinic, patient, tooth, rid, lotRaw };
   };
-
-  const machiningLotBadgeClass =
-    "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200";
 
   const formattedItems = useMemo(
     () => items.map((it) => formatRow(it)),
@@ -302,8 +297,7 @@ export const CompletedMachiningRecordsModal = ({
                         patientName={row.patient}
                         tooth={row.tooth}
                         requestId={row.rid}
-                        lotNumber={row.lotRaw}
-                        lotBadgeClassName={machiningLotBadgeClass}
+                        lotShortCode={row.lotRaw.slice(-3).toUpperCase()}
                         className="text-[15px]"
                       />
                     </div>

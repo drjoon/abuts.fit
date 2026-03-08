@@ -17,7 +17,10 @@ export const formatMachiningLabel = (q: QueueItem | null | undefined) => {
   if (!q) return "-";
 
   const lotPartRaw = String(
-    q?.lotNumber?.part || (q as any)?.lotPart || (q as any)?.lotNumberPart || "",
+    q?.lotNumber?.value ||
+      (q as any)?.lotPart ||
+      (q as any)?.lotNumberValue ||
+      "",
   ).trim();
   const lotPart = normalizeLotPart(lotPartRaw);
 

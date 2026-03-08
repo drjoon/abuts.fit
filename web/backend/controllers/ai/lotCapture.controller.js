@@ -56,7 +56,7 @@ async function triggerPackingLabelPrint(request, recognizedSuffix) {
   const payload = {
     requestId,
     lotNumber:
-      String(request?.lotNumber?.part || "").trim() ||
+      String(request?.lotNumber?.value || "").trim() ||
       String(recognizedSuffix || "").trim(),
     patientName: String(ci.patientName || "").trim(),
     toothNumber: String(ci.tooth || "").trim(),
@@ -367,7 +367,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   const regex = new RegExp(`${recognizedSuffix}$`, "i");
   let request = await Request.findOne({
     status: { $ne: "취소" },
-    "lotNumber.part": { $regex: regex },
+    "lotNumber.value": { $regex: regex },
   });
 
   console.log("[lot-capture] suffix match lookup", {
@@ -375,7 +375,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     matched: !!request,
     matchedRequestId: request?.requestId || null,
     matchedMongoId: request?._id ? String(request._id) : null,
-    matchedLotPart: String(request?.lotNumber?.part || "").trim() || null,
+    matchedLotPart: String(request?.lotNumber?.value || "").trim() || null,
   });
 
   if (!request && process.env.NODE_ENV === "development") {
@@ -389,7 +389,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
       fallbackMatched: !!request,
       fallbackRequestId: request?.requestId || null,
       fallbackMongoId: request?._id ? String(request._id) : null,
-      fallbackLotPart: String(request?.lotNumber?.part || "").trim() || null,
+      fallbackLotPart: String(request?.lotNumber?.value || "").trim() || null,
     });
   }
 
@@ -443,7 +443,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     recognizedSuffix,
     requestId: request.requestId,
     requestMongoId: String(request._id || ""),
-    lotPart: String(request?.lotNumber?.part || "").trim() || null,
+    lotPart: String(request?.lotNumber?.value || "").trim() || null,
     stage: String(request?.manufacturerStage || "").trim() || null,
     imageName: name,
   });

@@ -906,8 +906,8 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
       `[BG] getRequestMeta: finishLine points available requestId=${request.requestId} count=${finishLinePoints.length}`,
     );
   }
-  const lotPart = request?.lotNumber?.part || "";
-  const serialCode = lotPart.length >= 3 ? lotPart.slice(-3) : "";
+  const lotValue = request?.lotNumber?.value || "";
+  const serialCode = lotValue.length >= 3 ? lotValue.slice(-3) : "";
   return res.status(200).json(
     new ApiResponse(
       200,
@@ -927,7 +927,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           maxDiameter: ci.maxDiameter || 0,
           connectionDiameter: ci.connectionDiameter || 0,
           workType: ci.workType || "",
-          lotNumber: lotPart,
+          lotNumber: lotValue,
           // esprit-addin에서 공정 PRC를 선택하기 위한 의뢰별 설정
           // 값이 없으면 addin에서 폴백(AppConfig) 경로를 쓰되, 가능한 한 백엔드에서 내려준다.
           faceHolePrcFileName: ci.faceHolePrcFileName || "",

@@ -241,7 +241,7 @@ function formatRequestLabelForCompleted(reqDoc, fallbackRequestId) {
   const clinicName = String(reqDoc?.caseInfos?.clinicName || "").trim();
   const patientName = String(reqDoc?.caseInfos?.patientName || "").trim();
   const tooth = String(reqDoc?.caseInfos?.tooth || "").trim();
-  const lotPartRaw = String(reqDoc?.lotNumber?.part || "").trim();
+  const lotPartRaw = String(reqDoc?.lotNumber?.value || "").trim();
   const lotPart = lotPartRaw.replace(/^CAP/i, "").replace(/-/g, " ").trim();
   const ridSuffix = rid.includes("-") ? rid.split("-").pop() || rid : rid;
 
@@ -331,11 +331,8 @@ export async function getLastCompletedMachiningMap(req, res) {
       const tooth = reqDoc?.caseInfos?.tooth
         ? String(reqDoc.caseInfos.tooth).trim()
         : "";
-      const lotPart = reqDoc?.lotNumber?.part
-        ? String(reqDoc.lotNumber.part).trim()
-        : "";
-      const lotFinal = reqDoc?.lotNumber?.final
-        ? String(reqDoc.lotNumber.final).trim()
+      const lotValue = reqDoc?.lotNumber?.value
+        ? String(reqDoc.lotNumber.value).trim()
         : "";
       const completedAt = rec?.completedAt
         ? new Date(rec.completedAt).toISOString()
@@ -361,8 +358,7 @@ export async function getLastCompletedMachiningMap(req, res) {
           reqDoc?.caseInfos?.rollbackCounts?.machining || 0,
         ),
         lotNumber: {
-          part: lotPart || undefined,
-          final: lotFinal || undefined,
+          value: lotValue || undefined,
         },
         completedAt,
         durationSeconds,
