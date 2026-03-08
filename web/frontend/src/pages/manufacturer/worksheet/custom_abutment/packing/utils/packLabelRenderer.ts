@@ -229,7 +229,7 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   const COMPANY_TEL_FAX = "T 055-314-4607  F 055-901-0241";
   const ABUTS_COMPANY_NAME = "어벗츠 주식회사";
   const ABUTS_SALES_PERMIT = "판매업허가 제####호";
-  const ABUTS_ADDR = "경상남도 거제시 거제중앙로29길 6, 3층(고현동)";
+  const ABUTS_ADDR = "경상남도 김해시 흥동 전하로 85번길 5";
   const ABUTS_TEL = "T 1588-3948";
   const ABUTS_WEB = "https://abuts.fit";
 

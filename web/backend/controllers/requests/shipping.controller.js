@@ -43,7 +43,12 @@ const resolveMailboxList = (mailboxAddresses) =>
 
 async function resolveHanjinPayload({ mailboxAddresses, payload }) {
   if (payload && typeof payload === "object") {
-    return { payload, usedDbRequests: false, requestIds: [] };
+    return {
+      payload,
+      metaByMsgKey: {},
+      usedDbRequests: false,
+      requestIds: [],
+    };
   }
 
   const list = resolveMailboxList(mailboxAddresses);
@@ -67,8 +72,11 @@ async function resolveHanjinPayload({ mailboxAddresses, payload }) {
     throw error;
   }
 
+  const built = buildHanjinDraftPayload(requests, list);
+
   return {
-    payload: buildHanjinDraftPayload(requests, list),
+    payload: built.payload,
+    metaByMsgKey: built.metaByMsgKey || {},
     usedDbRequests: true,
     requestIds: requests
       .map((req) => String(req?.requestId || "").trim())
@@ -205,6 +213,46 @@ const normalizeHanjinZip = (value) => {
   return digits;
 };
 
+const resolveLegacyScrewCode = (request) => {
+  const manufacturer = String(
+    request?.caseInfos?.implantManufacturer || "",
+  ).trim();
+  const isDentium = /\bDENTIUM\b/i.test(manufacturer)
+    ? true
+    : manufacturer.includes("덴티움");
+  const legacy = isDentium ? "8B" : "0A";
+  return legacy.split("").reverse().join("");
+};
+
+const resolveFullLotNumber = (request) => {
+  const lot = request?.lotNumber || {};
+  return (
+    (typeof lot.final === "string" && lot.final.trim()) ||
+    (typeof lot.part === "string" && lot.part.trim()) ||
+    (typeof lot.material === "string" && lot.material.trim()) ||
+    ""
+  );
+};
+
+const resolveLotShortCode = (request) => {
+  const fullLot = resolveFullLotNumber(request);
+  if (!fullLot) return "";
+  const token = fullLot.includes("-")
+    ? fullLot.split("-").filter(Boolean).pop() || fullLot
+    : fullLot;
+  return token.trim();
+};
+
+const resolveMailboxCode = (request) =>
+  String(request?.mailboxAddress || "").trim();
+
+const buildShippingRemark = (request) => {
+  const mailboxCode = resolveMailboxCode(request);
+  const screwCode = resolveLegacyScrewCode(request);
+  const lotShortCode = resolveLotShortCode(request);
+  return [mailboxCode, screwCode, lotShortCode].filter(Boolean).join(" / ");
+};
+
 const buildHanjinInsertOrderBody = ({ mailbox, requests }) => {
   ensureHanjinEnv();
   ensureHanjinSenderEnv();
@@ -317,38 +365,79 @@ const buildHanjinWblZplLabels = ({ addressList }) => {
   const list = Array.isArray(addressList) ? addressList : [];
   if (!list.length) return [];
 
-  // 4x6 inch label baseline (Zebra): width ~812 dots @203dpi, height ~1218
-  // Keep it simple: print tracking + condensed address highlight.
   return list
     .filter((row) => row && row.result_code === "OK" && row.wbl_num)
     .map((row) => {
       const wbl = escapeZplText(row.wbl_num);
-      const prtAdd = escapeZplText(row.prt_add);
+      const prtAdd = escapeZplText(row.prt_add || row.address || row.rcv_add);
       const tmlRaw = escapeZplText(row.tml_nam);
       const cenRaw = escapeZplText(row.cen_nam);
       const tml = isMeaningfulHanjinText(tmlRaw) ? tmlRaw : "";
       const cen = isMeaningfulHanjinText(cenRaw) ? cenRaw : "";
-      const msgKey = escapeZplText(row.msg_key);
-
-      const tmlLine = (() => {
-        if (tml && cen) return `TML: ${tml} / ${cen}`;
-        if (tml) return `TML: ${tml}`;
-        if (cen) return `TML: ${cen}`;
-        return "";
-      })();
+      const receiverName = escapeZplText(row.rcv_prn || row.rcv_nam || "");
+      const receiverTel = escapeZplText(row.rcv_tel || row.rcv_hphn || "");
+      const receiverZip = escapeZplText(row.rcv_zip || "");
+      const senderName = escapeZplText(row.snd_prn || row.snd_nam || "");
+      const senderTel = escapeZplText(row.snd_tel || row.snd_hphn || "");
+      const senderAddr = escapeZplText(row.snd_add || row.snd_addr || "");
+      const printedYmd = escapeZplText(row.prt_ymd || row.wbl_dt || "");
+      const typeLabel = escapeZplText(row.pay_typ || row.fare_typ || "S");
+      const remark = escapeZplText(row.remark || row.msg_key || "");
+      const routeLarge = escapeZplText(tml || "CB");
+      const routeMid = escapeZplText(cen || "650");
 
       return [
         "^XA",
         "^CI28",
-        "^PW812",
-        "^LL1218",
+        "^PW1218",
+        "^LL812",
         "^LH0,0",
-        "^FO40,40^A0N,48,48^FDHANJIN WBL^FS",
-        `^FO40,120^A0N,42,42^FD${wbl}^FS`,
-        `^FO40,180^BCN,120,Y,N,N^FD${wbl}^FS`,
-        tmlLine ? `^FO40,330^A0N,28,28^FD${escapeZplText(tmlLine)}^FS` : "",
-        prtAdd ? `^FO40,380^A0N,32,32^FD${prtAdd}^FS` : "",
-        msgKey ? `^FO40,440^A0N,24,24^FDKEY: ${msgKey}^FS` : "",
+        "^FO18,18^GB1180,768,2^FS",
+        "^FO18,58^GB1180,2,2^FS",
+        "^FO18,150^GB1180,2,2^FS",
+        "^FO18,290^GB1180,2,2^FS",
+        "^FO18,428^GB1180,2,2^FS",
+        "^FO18,562^GB1180,2,2^FS",
+        "^FO700,58^GB2,92,2^FS",
+        "^FO860,58^GB2,92,2^FS",
+        "^FO980,58^GB2,92,2^FS",
+        "^FO110,150^GB2,140,2^FS",
+        "^FO110,428^GB2,134,2^FS",
+        "^FO30,48^A0N,24,24^FD운송장번호^FS",
+        `^FO150,44^A0N,30,30^FD${wbl}^FS`,
+        "^FO520,44^A0N,18,18^FDP. 1^FS",
+        "^FO590,44^A0N,18,18^FD1 / 1^FS",
+        "^FO945,44^A0N,28,28^FD한진택배^FS",
+        "^FO1045,44^A0N,18,18^FD1588-0011^FS",
+        "^FO34,102^A0N,20,20^FD발도^FS",
+        "^FO740,102^A0N,20,20^FD도착점^FS",
+        "^FO892,102^A0N,20,20^FD권역^FS",
+        "^FO1012,102^A0N,20,20^FD구분^FS",
+        `^FO34,136^A0N,86,86^FD${routeLarge}^FS`,
+        `^FO730,136^A0N,50,50^FD${routeMid}^FS`,
+        receiverName ? `^FO730,186^A0N,24,24^FD${receiverName}^FS` : "",
+        receiverZip ? `^FO880,136^A0N,48,48^FD${receiverZip}^FS` : "",
+        remark ? `^FO1012,136^A0N,26,26^FB160,2,4,L,0^FD${remark}^FS` : "",
+        "^FO44,202^A0B,24,24^FD받는분^FS",
+        receiverName ? `^FO132,186^A0N,34,34^FD${receiverName}^FS` : "",
+        receiverTel ? `^FO470,186^A0N,24,24^FD${receiverTel}^FS` : "",
+        prtAdd ? `^FO132,234^A0N,28,28^FB1010,2,6,L,0^FD${prtAdd}^FS` : "",
+        `^FO902,220^BCN,70,N,N,N^FD${wbl}^FS`,
+        `^FO930,294^A0N,20,20^FD${wbl}^FS`,
+        "^FO44,474^A0B,24,24^FD보내는분^FS",
+        senderName ? `^FO132,462^A0N,26,26^FD${senderName}^FS` : "",
+        senderTel ? `^FO480,462^A0N,22,22^FD${senderTel}^FS` : "",
+        printedYmd ? `^FO882,462^A0N,20,20^FD${printedYmd}^FS` : "",
+        `^FO1042,462^A0N,20,20^FDType:${typeLabel}^FS`,
+        senderAddr
+          ? `^FO132,514^A0N,20,20^FB900,2,4,L,0^FD${senderAddr}^FS`
+          : "",
+        remark ? `^FO34,596^A0N,28,28^FD비고^FS` : "",
+        remark ? `^FO130,596^A0N,28,28^FB820,2,6,L,0^FD${remark}^FS` : "",
+        "^FO34,728^A0N,16,16^FD개인정보 보호를 위하여 인수하신 화물의 운송장증을 폐기하여 주시기 바랍니다.^FS",
+        `^FO904,620^BCN,88,N,N,N^FD${wbl}^FS`,
+        `^FO836,736^A0N,18,18^FD운임Type:${typeLabel}^FS`,
+        `^FO988,736^A0N,24,24^FD${wbl}^FS`,
         "^XZ",
       ]
         .filter(Boolean)
@@ -360,6 +449,50 @@ const buildHanjinWblZpl = ({ addressList }) => {
   const labels = buildHanjinWblZplLabels({ addressList });
   if (!labels.length) return null;
   return labels.join("\n");
+};
+
+const enrichHanjinAddressList = ({ addressList, metaByMsgKey = {} }) => {
+  const list = Array.isArray(addressList) ? addressList : [];
+  return list.map((row) => {
+    const msgKey = String(row?.msg_key || "").trim();
+    const meta = msgKey ? metaByMsgKey[msgKey] || {} : {};
+    const senderAddr = [HANJIN_SENDER_BASE_ADDR, HANJIN_SENDER_DTL_ADDR]
+      .map((v) => String(v || "").trim())
+      .filter(Boolean)
+      .join(" ");
+    return {
+      ...row,
+      snd_nam: String(
+        row?.snd_nam || row?.snd_prn || HANJIN_SENDER_NAME || "",
+      ).trim(),
+      snd_prn: String(
+        row?.snd_prn || row?.snd_nam || HANJIN_SENDER_NAME || "",
+      ).trim(),
+      snd_tel: String(
+        row?.snd_tel || row?.snd_hphn || HANJIN_SENDER_TEL || "",
+      ).trim(),
+      snd_hphn: String(
+        row?.snd_hphn ||
+          row?.snd_tel ||
+          HANJIN_SENDER_MOBILE ||
+          HANJIN_SENDER_TEL ||
+          "",
+      ).trim(),
+      snd_add: String(row?.snd_add || row?.snd_addr || senderAddr || "").trim(),
+      snd_addr: String(
+        row?.snd_addr || row?.snd_add || senderAddr || "",
+      ).trim(),
+      remark: String(row?.remark || meta?.remark || "").trim(),
+      mailbox_code: String(row?.mailbox_code || meta?.mailboxCode || "").trim(),
+      screw_code: String(row?.screw_code || meta?.screwCode || "").trim(),
+      lot_short_code: String(
+        row?.lot_short_code || meta?.lotShortCode || "",
+      ).trim(),
+      lot_full_number: String(
+        row?.lot_full_number || meta?.lotFullNumber || "",
+      ).trim(),
+    };
+  });
 };
 
 async function triggerWblServerPrint(payload, options = null) {
@@ -482,6 +615,7 @@ const buildHanjinDraftPayload = (requests) => {
     mailboxToQuantity.set(mailbox, (mailboxToQuantity.get(mailbox) || 0) + 1);
   }
 
+  const metaByMsgKey = {};
   const addressList = requests.map((r) => {
     const requestor = r.requestor || {};
     const requestorOrg = r.requestorOrganizationId || {};
@@ -518,6 +652,14 @@ const buildHanjinDraftPayload = (requests) => {
       .trim()
       .slice(0, 100);
 
+    metaByMsgKey[msgKey] = {
+      mailboxCode: mailbox,
+      screwCode: resolveLegacyScrewCode(r),
+      lotShortCode: resolveLotShortCode(r),
+      lotFullNumber: resolveFullLotNumber(r),
+      remark: buildShippingRemark(r),
+    };
+
     return {
       csr_num: HANJIN_CSR_NUM,
       snd_zip: HANJIN_SHIPPER_ZIP,
@@ -536,9 +678,12 @@ const buildHanjinDraftPayload = (requests) => {
   });
 
   return {
-    client_id: HANJIN_CLIENT_ID,
-    csr_num: HANJIN_CSR_NUM,
-    address_list: addressList,
+    payload: {
+      client_id: HANJIN_CLIENT_ID,
+      csr_num: HANJIN_CSR_NUM,
+      address_list: addressList,
+    },
+    metaByMsgKey,
   };
 };
 
@@ -631,15 +776,26 @@ export async function printHanjinLabels(req, res) {
       data: resolved.payload,
     });
 
-    const zplLabels =
+    const enrichedData =
       data && typeof data === "object"
-        ? buildHanjinWblZplLabels({ addressList: data.address_list })
+        ? {
+            ...data,
+            address_list: enrichHanjinAddressList({
+              addressList: data.address_list,
+              metaByMsgKey: resolved.metaByMsgKey,
+            }),
+          }
+        : data;
+
+    const zplLabels =
+      enrichedData && typeof enrichedData === "object"
+        ? buildHanjinWblZplLabels({ addressList: enrichedData.address_list })
         : [];
 
     const shouldTriggerWblPrint =
       wblPrintOptions && typeof wblPrintOptions === "object";
     const wblPrint = shouldTriggerWblPrint
-      ? await triggerWblServerPrint(data, wblPrintOptions)
+      ? await triggerWblServerPrint(enrichedData, wblPrintOptions)
       : { success: true, skipped: true, reason: "image_mode" };
     if (shouldTriggerWblPrint && !wblPrint?.success) {
       console.warn("[shipping] wbl print fallback needed", {
@@ -695,7 +851,7 @@ export async function printHanjinLabels(req, res) {
     return res.status(200).json({
       success: true,
       data: {
-        ...(data || {}),
+        ...(enrichedData || {}),
         zplLabels,
       },
       wblPrint,
