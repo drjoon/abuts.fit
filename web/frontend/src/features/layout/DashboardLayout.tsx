@@ -47,6 +47,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
+import { onAppEvent } from "@/shared/realtime/socket";
 
 const sidebarItems = {
   requestor: [
@@ -293,6 +294,41 @@ export const DashboardLayout = () => {
       window.removeEventListener("abuts:credits:updated", onCreditsUpdated);
     };
   }, [fetchCreditBalance]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (!user) return;
+    if (user.role !== "requestor") return;
+    if (!user.organizationId) return;
+
+    const unsubscribe = onAppEvent((evt) => {
+      const type = String(evt?.type || "").trim();
+      const payload = evt?.data || {};
+      if (type !== "credit:balance-updated") return;
+
+      const eventOrgId = String(payload?.organizationId || "").trim();
+      const myOrgId = String(user.organizationId || "").trim();
+      if (!eventOrgId || !myOrgId || eventOrgId !== myOrgId) return;
+
+      const delta = Number(payload?.balanceDelta || 0);
+      if (!Number.isFinite(delta) || delta === 0) {
+        void fetchCreditBalance();
+        return;
+      }
+
+      setCreditBalance((prev) => {
+        if (prev === null || !Number.isFinite(Number(prev))) {
+          void fetchCreditBalance();
+          return prev;
+        }
+        return Number(prev) + delta;
+      });
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [fetchCreditBalance, token, user]);
 
   const isMockUser = Boolean((user as any)?.mockUserId);
 
