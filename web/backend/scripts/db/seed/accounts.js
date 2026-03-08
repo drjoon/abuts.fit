@@ -1,4 +1,5 @@
 import CreditLedger from "../../../models/creditLedger.model.js";
+import BonusGrant from "../../../models/bonusGrant.model.js";
 import User from "../../../models/user.model.js";
 import {
   NOW,
@@ -31,22 +32,49 @@ async function grantRequestorSeedCredit({
     refId: null,
     uniqueKey: ledgerKey,
   });
+
   return true;
 }
 
 async function grantRequestorWelcomeBonus({
   organizationId,
   userId,
+  businessNumber,
   uniqueKey,
   amount = 30000,
 }) {
-  const ledgerKey = `seed:requestor-welcome-bonus:${uniqueKey}`;
+  const businessNumberDigits = String(businessNumber || "").replace(/\D/g, "");
+  if (!businessNumberDigits) return false;
+
+  let grant = await BonusGrant.findOne({
+    type: "WELCOME_BONUS",
+    businessNumber: businessNumberDigits,
+    isOverride: false,
+  })
+    .select({ _id: 1, creditLedgerId: 1 })
+    .lean();
+
+  if (!grant) {
+    grant = await BonusGrant.create({
+      type: "WELCOME_BONUS",
+      businessNumber: businessNumberDigits,
+      amount,
+      organizationId,
+      userId: userId || null,
+      isOverride: false,
+      source: "migrated",
+    });
+  }
+
+  if (grant?.creditLedgerId) return false;
+
+  const ledgerKey = `bonus_grant:${String(grant._id || uniqueKey)}`;
   const existing = await CreditLedger.findOne({ uniqueKey: ledgerKey })
     .select({ _id: 1 })
     .lean();
   if (existing) return false;
 
-  await CreditLedger.create({
+  const ledger = await CreditLedger.create({
     organizationId,
     userId,
     type: "BONUS",
@@ -55,6 +83,12 @@ async function grantRequestorWelcomeBonus({
     refId: organizationId,
     uniqueKey: ledgerKey,
   });
+
+  await BonusGrant.updateOne(
+    { _id: grant._id },
+    { $set: { creditLedgerId: ledger._id } },
+  );
+
   return true;
 }
 
@@ -117,16 +151,12 @@ export async function seedDefaultAccounts() {
   await grantRequestorSeedCredit({
     organizationId: requestorOrg._id,
     userId: requestorOwner._id,
-    uniqueKey: requestorOwner.email,
-  });
-  await grantRequestorSeedCredit({
-    organizationId: requestorOrg._id,
-    userId: requestorStaff._id,
-    uniqueKey: requestorStaff.email,
+    uniqueKey: `org:${String(requestorOrg._id)}`,
   });
   await grantRequestorWelcomeBonus({
     organizationId: requestorOrg._id,
     userId: requestorOwner._id,
+    businessNumber: "111-11-11111",
     uniqueKey: requestorOrg._id,
   });
 
@@ -447,11 +477,12 @@ export async function seedBulkAccounts({
     await grantRequestorSeedCredit({
       organizationId: org._id,
       userId: owner._id,
-      uniqueKey: owner.email,
+      uniqueKey: `org:${String(org._id)}`,
     });
     await grantRequestorWelcomeBonus({
       organizationId: org._id,
       userId: owner._id,
+      businessNumber,
       uniqueKey: org._id,
     });
   }
