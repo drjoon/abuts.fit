@@ -846,7 +846,7 @@ export const TrackingInquiryPage = () => {
       }
       toast({
         title: "배송조회 동기화 완료",
-        description: `${Array.isArray(body?.data?.synced) ? body.data.synced.length : 0}건 상태를 확인했습니다.`,
+        description: `${Array.isArray(body?.data?.synced) ? body.data.synced.length : 0}건 상태를 확인했고, 집하 완료 전까지 10분 간격으로 재확인합니다.`,
       });
     } catch (error) {
       toast({

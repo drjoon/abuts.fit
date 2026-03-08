@@ -18,7 +18,7 @@ import {
   buildShippingPackagesSummary,
   chargeShippingFeeOnPickupComplete,
   ensureShippingPackageForPickup,
-} from "./shippingRequestor.helpers.js";
+} from "./shipping.Requestor.helpers.js";
 
 export async function updateMyShippingMode(req, res) {
   try {

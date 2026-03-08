@@ -1,28 +1,28 @@
 import Request from "../../models/request.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
-import { handleHanjinTrackingWebhook } from "../webhooks/hanjinWebhook.controller.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import { Types } from "mongoose";
 import {
   applyStatusMapping,
   bumpRollbackCount,
   normalizeRequestForResponse,
-  REQUEST_STAGE_GROUPS,
   ensureReviewByStageDefaults,
 } from "./utils.js";
-import { chargeShippingFeeOnPickupComplete } from "./shippingRequestor.controller.js";
+import { chargeShippingFeeOnPickupComplete } from "./shipping.Requestor.helpers.js";
 import {
-  buildHanjinOrderFallbackCaller,
-  buildHanjinPathCandidates,
-  executeHanjinLabelPrint,
-  findPackingStageRequestsByMailboxes,
-  getHanjinPathFallbacks,
-  resolveHanjinPath,
-  resolveHanjinPayload,
-  resolveMailboxList,
-  ensureHanjinEnv,
-} from "./shippingHanjin.helpers.js";
+  buildMailboxChangeResponse,
+  buildMailboxChangeSet,
+  executeIntegratedCapturedStep,
+} from "./shipping.MailboxRealtime.helpers.js";
+import {
+  applyTrackingRowsToRequests,
+  extractTrackingRows,
+  HANJIN_CLIENT_ID,
+  resolveTrackingSyncTargets,
+  syncHanjinTrackingPayload,
+} from "./shipping.Tracking.helpers.js";
+import { startHanjinTrackingPoll } from "./shipping.TrackingPoller.js";
 
 const emitDeliveryUpdated = async (requestDoc, extra = {}) => {
   const normalized = await normalizeRequestForResponse(requestDoc);
@@ -32,69 +32,6 @@ const emitDeliveryUpdated = async (requestDoc, extra = {}) => {
     request: normalized,
     ...extra,
   });
-};
-
-const buildMailboxSnapshotFingerprint = (requests = []) => {
-  const tokens = (Array.isArray(requests) ? requests : [])
-    .map((requestDoc) => ({
-      requestMongoId: String(requestDoc?._id || "").trim(),
-      requestId: String(requestDoc?.requestId || "").trim(),
-      mailboxAddress: String(requestDoc?.mailboxAddress || "").trim(),
-      stage: String(requestDoc?.manufacturerStage || "").trim(),
-    }))
-    .filter((item) => item.requestMongoId || item.requestId)
-    .sort((a, b) => {
-      const aKey = `${a.mailboxAddress}|${a.requestId}|${a.requestMongoId}`;
-      const bKey = `${b.mailboxAddress}|${b.requestId}|${b.requestMongoId}`;
-      return aKey.localeCompare(bKey);
-    });
-
-  return JSON.stringify(tokens);
-};
-
-const buildMailboxSnapshotByAddress = (requests = []) => {
-  const byMailbox = new Map();
-  for (const requestDoc of Array.isArray(requests) ? requests : []) {
-    const mailboxAddress = String(requestDoc?.mailboxAddress || "").trim();
-    if (!mailboxAddress) continue;
-    if (!byMailbox.has(mailboxAddress)) byMailbox.set(mailboxAddress, []);
-    byMailbox.get(mailboxAddress).push(requestDoc);
-  }
-
-  const snapshotByAddress = new Map();
-  for (const [mailboxAddress, group] of byMailbox.entries()) {
-    snapshotByAddress.set(mailboxAddress, {
-      mailboxAddress,
-      requestIds: group
-        .map((requestDoc) => String(requestDoc?.requestId || "").trim())
-        .filter(Boolean)
-        .sort(),
-      requestMongoIds: group
-        .map((requestDoc) => String(requestDoc?._id || "").trim())
-        .filter(Boolean)
-        .sort(),
-      fingerprint: buildMailboxSnapshotFingerprint(group),
-    });
-  }
-  return snapshotByAddress;
-};
-
-const getLastPrintedSnapshotForMailbox = (requests = []) => {
-  const first = (Array.isArray(requests) ? requests : []).find(Boolean);
-  const shippingLabelPrinted = first?.shippingLabelPrinted || {};
-  const requestIds = Array.isArray(shippingLabelPrinted?.snapshotRequestIds)
-    ? shippingLabelPrinted.snapshotRequestIds
-        .map((value) => String(value || "").trim())
-        .filter(Boolean)
-        .sort()
-    : [];
-
-  return {
-    fingerprint: String(shippingLabelPrinted?.snapshotFingerprint || "").trim(),
-    requestIds,
-    capturedAt: shippingLabelPrinted?.snapshotCapturedAt || null,
-    printed: Boolean(shippingLabelPrinted?.printed),
-  };
 };
 
 const buildPickupAndPrintResponseData = ({
@@ -208,195 +145,6 @@ const buildIntegratedPrintRequest = ({
   },
 });
 
-const resolveCapturedSuccessBody = (capturedPayload, fallbackMessage) => {
-  if (capturedPayload?.body?.success) {
-    return capturedPayload.body;
-  }
-  return {
-    success: false,
-    message: fallbackMessage,
-  };
-};
-
-const executeHanjinLabelPrint = async ({
-  path,
-  payload,
-  metaByMsgKey,
-  wblPrintOptions,
-}) => {
-  const data = await hanjinService.requestPrintApi({
-    path: path.replace("{client_id}", HANJIN_CLIENT_ID),
-    method: "POST",
-    data: payload,
-  });
-
-  const labelData = buildResolvedLabelData({
-    data,
-    metaByMsgKey,
-  });
-
-  const shouldTriggerWblPrint =
-    wblPrintOptions && typeof wblPrintOptions === "object";
-  const wblPrint = shouldTriggerWblPrint
-    ? await triggerWblServerPrint(labelData, wblPrintOptions)
-    : { success: true, skipped: true, reason: "image_mode" };
-
-  return buildLabelPrintExecutionResult({
-    labelData,
-    wblPrint,
-  });
-};
-
-const executeHanjinOrderApiWithFallback = async ({
-  pathCandidates,
-  data,
-  logPrefix = "[hanjin][order]",
-}) => {
-  let lastError = null;
-  for (const candidate of pathCandidates) {
-    try {
-      const out = await hanjinService.requestOrderApi({
-        path: candidate,
-        method: "POST",
-        data,
-      });
-      lastError = null;
-      return out;
-    } catch (err) {
-      console.error(`${logPrefix} candidate failed`, {
-        candidate,
-        status: err?.status,
-        message: err?.message,
-        response: err?.data,
-      });
-      lastError = err;
-      if (err?.status !== 404) {
-        throw err;
-      }
-    }
-  }
-  throw lastError;
-};
-
-const buildHanjinOrderFallbackCaller =
-  ({ pathCandidates, logPrefix }) =>
-  async ({ data }) => {
-    console.log(`${logPrefix} trying candidates`, {
-      pathCandidates,
-      data,
-    });
-    const out = await executeHanjinOrderApiWithFallback({
-      pathCandidates,
-      data,
-      logPrefix,
-    });
-    console.log(`${logPrefix} candidate success`, {
-      pathCandidates,
-    });
-    return out;
-  };
-
-const findPackingStageRequestsByMailboxes = async (
-  mailboxAddresses = [],
-  options = {},
-) => {
-  const list = resolveMailboxList(mailboxAddresses);
-  if (!list.length) return [];
-
-  let query = Request.find({
-    mailboxAddress: { $in: list },
-    manufacturerStage: "포장.발송",
-  });
-
-  if (options.populateRequestor !== false) {
-    query = query.populate(
-      "requestor",
-      "name organization phoneNumber address",
-    );
-    query = query.populate("requestorOrganizationId", "name extracted");
-  }
-
-  if (options.select && typeof options.select === "object") {
-    query = query.select(options.select);
-  }
-
-  if (options.lean) {
-    query = query.lean();
-  }
-
-  return query;
-};
-
-const findPrePrintSnapshotRequests = async (mailboxAddresses = []) =>
-  findPackingStageRequestsByMailboxes(mailboxAddresses, {
-    populateRequestor: false,
-    select: {
-      _id: 1,
-      requestId: 1,
-      mailboxAddress: 1,
-      manufacturerStage: 1,
-      shippingLabelPrinted: 1,
-    },
-  });
-
-const executeCapturedController = async (controllerFn, reqLike) => {
-  const capture = createCapturedJsonResponder();
-  await controllerFn(reqLike, capture.responder);
-  return capture.captured;
-};
-
-const executeCapturedControllerSuccessBody = async ({
-  controllerFn,
-  reqLike,
-  fallbackMessage,
-}) => {
-  const captured = await executeCapturedController(controllerFn, reqLike);
-  return {
-    captured,
-    body: resolveCapturedSuccessBody(captured, fallbackMessage),
-  };
-};
-
-const respondCapturedControllerFailure = ({ res, captured, fallbackMessage }) =>
-  res.status(captured?.statusCode || 500).json(
-    captured?.body || {
-      success: false,
-      message: fallbackMessage,
-    },
-  );
-
-const executeIntegratedCapturedStep = async ({
-  res,
-  controllerFn,
-  reqLike,
-  fallbackMessage,
-}) => {
-  const { captured, body } = await executeCapturedControllerSuccessBody({
-    controllerFn,
-    reqLike,
-    fallbackMessage,
-  });
-
-  if (!body?.success) {
-    return {
-      ok: false,
-      response: respondCapturedControllerFailure({
-        res,
-        captured,
-        fallbackMessage,
-      }),
-      captured,
-      body,
-    };
-  }
-
-  return {
-    ok: true,
-    captured,
-    body,
-  };
-};
-
 const executeIntegratedPickupAndPrintFlow = async ({
   req,
   res,
@@ -462,36 +210,6 @@ const executeIntegratedPickupAndPrintFlow = async ({
   };
 };
 
-const buildMailboxChangeResponse = ({
-  mailboxAddresses = [],
-  changeSet = new Map(),
-}) => {
-  const changedMailboxAddresses = mailboxAddresses.filter((address) => {
-    const change = changeSet.get(address);
-    return change?.changed;
-  });
-
-  return {
-    mailboxChanges: mailboxAddresses.map((address) => {
-      const change = changeSet.get(address);
-      return {
-        mailboxAddress: address,
-        changed: Boolean(change?.changed),
-        printed: Boolean(change?.printed),
-        currentRequestIds: Array.isArray(change?.requestIds)
-          ? change.requestIds
-          : [],
-        previousRequestIds: Array.isArray(change?.previousRequestIds)
-          ? change.previousRequestIds
-          : [],
-      };
-    }),
-    changedMailboxAddresses,
-    allSelectedAlreadySynced:
-      mailboxAddresses.length > 0 && changedMailboxAddresses.length === 0,
-  };
-};
-
 const preparePickupAndPrintChangeContext = async (mailboxAddresses = []) => {
   const selectedRequestsBeforePrint =
     await findPrePrintSnapshotRequests(mailboxAddresses);
@@ -511,156 +229,6 @@ const preparePickupAndPrintChangeContext = async (mailboxAddresses = []) => {
       changeSet: mailboxChangesBeforePrint,
     }),
   };
-};
-
-const buildMailboxChangeSet = (requests = []) => {
-  const snapshotByAddress = buildMailboxSnapshotByAddress(requests);
-  const result = new Map();
-
-  for (const [mailboxAddress, snapshot] of snapshotByAddress.entries()) {
-    const group = (Array.isArray(requests) ? requests : []).filter(
-      (requestDoc) =>
-        String(requestDoc?.mailboxAddress || "").trim() === mailboxAddress,
-    );
-    const previous = getLastPrintedSnapshotForMailbox(group);
-    const changed =
-      !previous.printed ||
-      !previous.fingerprint ||
-      previous.fingerprint !== snapshot.fingerprint;
-
-    result.set(mailboxAddress, {
-      mailboxAddress,
-      changed,
-      currentFingerprint: snapshot.fingerprint,
-      previousFingerprint: previous.fingerprint,
-      requestIds: snapshot.requestIds,
-      previousRequestIds: previous.requestIds,
-      printed: previous.printed,
-      snapshotCapturedAt: previous.capturedAt,
-    });
-  }
-
-  return result;
-};
-
-const createCapturedJsonResponder = () => {
-  let captured = null;
-  return {
-    get captured() {
-      return captured;
-    },
-    responder: {
-      status(code) {
-        this.statusCode = code;
-        return this;
-      },
-      json(payload) {
-        captured = {
-          statusCode: this.statusCode || 200,
-          body: payload,
-        };
-        return payload;
-      },
-    },
-  };
-};
-
-const persistPrintedMailboxState = async ({
-  mailboxAddresses = [],
-  requests = [],
-}) => {
-  const addresses = Array.isArray(mailboxAddresses)
-    ? mailboxAddresses.map((v) => String(v || "").trim()).filter(Boolean)
-    : [];
-  if (!addresses.length) return;
-
-  const requestDocs =
-    Array.isArray(requests) && requests.length
-      ? requests
-      : await Request.find({ mailboxAddress: { $in: addresses } }).select({
-          _id: 1,
-          requestId: 1,
-          mailboxAddress: 1,
-          manufacturerStage: 1,
-        });
-
-  const snapshotByAddress = buildMailboxSnapshotByAddress(requestDocs);
-  const printedAt = new Date();
-
-  const bulkOps = [];
-  for (const address of addresses) {
-    const snapshot = snapshotByAddress.get(address);
-    if (!snapshot) continue;
-    bulkOps.push({
-      updateMany: {
-        filter: { mailboxAddress: address },
-        update: {
-          $set: {
-            "shippingLabelPrinted.printed": true,
-            "shippingLabelPrinted.printedAt": printedAt,
-            "shippingLabelPrinted.mailboxAddress": address,
-            "shippingLabelPrinted.snapshotFingerprint": snapshot.fingerprint,
-            "shippingLabelPrinted.snapshotCapturedAt": printedAt,
-            "shippingLabelPrinted.snapshotRequestIds": snapshot.requestIds,
-          },
-        },
-      },
-    });
-  }
-
-  if (bulkOps.length) {
-    await Request.bulkWrite(bulkOps);
-  }
-};
-
-const extractTrackingRows = (data) => {
-  if (!data || typeof data !== "object") return [];
-  if (Array.isArray(data.wblList)) return data.wblList;
-  if (Array.isArray(data.data?.wblList)) return data.data.wblList;
-  if (Array.isArray(data.result?.wblList)) return data.result.wblList;
-  return [];
-};
-
-const normalizeTrackingEvents = (wrkList) => {
-  const list = Array.isArray(wrkList) ? wrkList : [];
-  return list
-    .map((item) => ({
-      statusCode:
-        item?.statusCode != null ? String(item.statusCode).trim() : undefined,
-      statusText:
-        item?.statusName != null ? String(item.statusName).trim() : undefined,
-      occurredAt:
-        item?.statusDate != null ? new Date(item.statusDate) : undefined,
-      location:
-        item?.agencyName != null ? String(item.agencyName).trim() : undefined,
-      description:
-        item?.description != null ? String(item.description).trim() : undefined,
-      raw: item ?? undefined,
-    }))
-    .filter((item) => item.statusCode || item.statusText || item.occurredAt);
-};
-
-const buildTrackingStatusLabel = (deliveryInfo) => {
-  const deliveredAt = deliveryInfo?.deliveredAt
-    ? new Date(deliveryInfo.deliveredAt)
-    : null;
-  if (deliveredAt && !Number.isNaN(deliveredAt.getTime())) return "배송완료";
-  const statusText = String(
-    deliveryInfo?.tracking?.lastStatusText || "",
-  ).trim();
-  if (statusText) return statusText;
-  if (deliveryInfo?.trackingNumber || deliveryInfo?.shippedAt) return "접수";
-  return "-";
-};
-
-const isTrackingStageEligible = (deliveryInfo) => {
-  const deliveredAt = deliveryInfo?.deliveredAt
-    ? new Date(deliveryInfo.deliveredAt)
-    : null;
-  if (deliveredAt && !Number.isNaN(deliveredAt.getTime())) return true;
-
-  const code = String(deliveryInfo?.tracking?.lastStatusCode || "").trim();
-  return ["11", "14", "31", "32", "63", "66", "92"].includes(code);
 };
 
 const resolveMailboxList = (mailboxAddresses) =>
@@ -1017,272 +585,6 @@ export async function rollbackMailboxShipping(req, res) {
 }
 
 /**
- * 한진 택배 수거 접수 (메일박스 기준)
- * @route POST /api/requests/shipping/hanjin/pickup
- */
-export async function requestHanjinPickup(req, res) {
-  try {
-    const { mailboxAddresses, payload } = req.body || {};
-
-    const path = resolveHanjinPath(
-      "HANJIN_PICKUP_REQUEST_PATH",
-      HANJIN_PATH_FALLBACKS.HANJIN_PICKUP_REQUEST_PATH,
-    );
-    if (!path) {
-      return res.status(400).json({
-        success: false,
-        message: "HANJIN_PICKUP_REQUEST_PATH가 설정되지 않았습니다.",
-      });
-    }
-
-    if (payload && !Array.isArray(mailboxAddresses)) {
-      return res.status(200).json({
-        success: true,
-        data: {
-          mocked: true,
-          path,
-          payload,
-        },
-      });
-    }
-
-    const list = resolveMailboxList(mailboxAddresses);
-    if (!list.length && !(payload && typeof payload === "object")) {
-      return res.status(400).json({
-        success: false,
-        message: "mailboxAddresses가 필요합니다.",
-      });
-    }
-
-    const pathCandidates = buildHanjinPathCandidates(path);
-
-    const callHanjinWithFallback = buildHanjinOrderFallbackCaller({
-      pathCandidates,
-      logPrefix: "[hanjin][pickup]",
-    });
-
-    // payload가 직접 들어오면(DEV/운영 수동 테스트) 그대로 전달
-    if (payload && typeof payload === "object") {
-      const data = await callHanjinWithFallback({ data: payload });
-      return res.status(200).json({ success: true, data });
-    }
-
-    const requests = await findPackingStageRequestsByMailboxes(list, {
-      lean: true,
-    });
-
-    if (!requests.length) {
-      return res.status(404).json({
-        success: false,
-        message: "조건에 맞는 의뢰를 찾을 수 없습니다.",
-      });
-    }
-
-    const byMailbox = groupRequestsByMailbox(requests);
-
-    const results = [];
-    for (const mailbox of list) {
-      const group = byMailbox.get(mailbox) || [];
-      if (!group.length) {
-        results.push({
-          mailbox,
-          success: false,
-          skipped: true,
-          reason: "no_requests",
-        });
-        continue;
-      }
-
-      results.push(
-        await executeSingleMailboxPickup({
-          mailbox,
-          group,
-          path,
-          pathCandidates,
-          callHanjinWithFallback,
-          actorUserId: req.user?._id || null,
-        }),
-      );
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: { results },
-    });
-  } catch (error) {
-    console.error("Error in requestHanjinPickup:", error);
-    return res.status(500).json({
-      success: false,
-      message: "한진 택배 수거 접수 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
-
-/**
- * 한진 택배 수거 접수 취소 (메일박스 기준)
- * @route POST /api/requests/shipping/hanjin/pickup-cancel
- */
-export async function cancelHanjinPickup(req, res) {
-  try {
-    const { mailboxAddresses, payload } = req.body || {};
-
-    const path = resolveHanjinPath(
-      "HANJIN_PICKUP_CANCEL_PATH",
-      HANJIN_PATH_FALLBACKS.HANJIN_PICKUP_CANCEL_PATH,
-    );
-    if (!path) {
-      return res.status(400).json({
-        success: false,
-        message: "HANJIN_PICKUP_CANCEL_PATH가 설정되지 않았습니다.",
-      });
-    }
-
-    if (payload && !Array.isArray(mailboxAddresses)) {
-      return res.status(200).json({
-        success: true,
-        data: {
-          mocked: true,
-          path,
-          payload,
-        },
-      });
-    }
-
-    let resolved;
-    try {
-      resolved = await resolveHanjinPayload({ mailboxAddresses, payload });
-    } catch (err) {
-      if (err.statusCode) {
-        return res.status(err.statusCode).json({
-          success: false,
-          message: err.message,
-        });
-      }
-      throw err;
-    }
-
-    const list = resolveMailboxList(mailboxAddresses);
-    if (!list.length && !(payload && typeof payload === "object")) {
-      return res.status(400).json({
-        success: false,
-        message: "mailboxAddresses가 필요합니다.",
-      });
-    }
-
-    const pathCandidates = buildHanjinPathCandidates(path);
-
-    const callHanjinWithFallback = buildHanjinOrderFallbackCaller({
-      pathCandidates,
-      logPrefix: "[hanjin][pickup-cancel]",
-    });
-
-    // payload가 직접 들어오면(DEV/운영 수동 테스트) 그대로 전달
-    if (payload && typeof payload === "object") {
-      const data = await callHanjinWithFallback({ data: payload });
-      return res.status(200).json({ success: true, data });
-    }
-
-    const ymd = getTodayYmdInKst().replace(/-/g, "");
-    const results = [];
-    for (const mailbox of list) {
-      const custOrdNo = `ABUTS_${ymd}_${String(mailbox || "-")}`.slice(0, 30);
-      const cancelBody = {
-        custEdiCd: HANJIN_CLIENT_ID,
-        custOrdNo,
-      };
-      const data = await callHanjinWithFallback({ data: cancelBody });
-
-      const requestDocs = await Request.find({
-        mailboxAddress: mailbox,
-      })
-        .populate("requestor", "name organization phoneNumber address")
-        .populate("requestorOrganizationId", "name extracted")
-        .populate("deliveryInfoRef");
-
-      for (const requestDoc of requestDocs) {
-        if (
-          requestDoc.deliveryInfoRef &&
-          typeof requestDoc.deliveryInfoRef === "object"
-        ) {
-          requestDoc.deliveryInfoRef.tracking =
-            requestDoc.deliveryInfoRef.tracking || {};
-          requestDoc.deliveryInfoRef.tracking.lastStatusCode = "03";
-          requestDoc.deliveryInfoRef.tracking.lastStatusText = "예약취소";
-          requestDoc.deliveryInfoRef.tracking.lastEventAt = new Date();
-          requestDoc.deliveryInfoRef.tracking.lastSyncedAt = new Date();
-          await requestDoc.deliveryInfoRef.save();
-        }
-        requestDoc.manufacturerStage = "포장.발송";
-        await requestDoc.save();
-        await emitDeliveryUpdated(requestDoc, {
-          source: "hanjin-pickup-cancel",
-          shippingStatusLabel: "예약취소",
-        });
-      }
-
-      results.push({ mailbox, success: true, data });
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: { results },
-    });
-  } catch (error) {
-    console.error("Error in cancelHanjinPickup:", error);
-    return res.status(500).json({
-      success: false,
-      message: "한진 택배 수거 취소 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
-
-export async function simulateHanjinWebhook(req, res) {
-  try {
-    const payload = req.body?.payload;
-    if (!payload || typeof payload !== "object") {
-      return res.status(400).json({
-        success: false,
-        message: "payload(JSON)가 필요합니다.",
-      });
-    }
-
-    if (payload.mock) {
-      return res.status(200).json({
-        success: true,
-        data: {
-          mocked: true,
-          payload,
-        },
-      });
-    }
-
-    const injectedSecret = String(
-      process.env.HANJIN_WEBHOOK_SECRET || "",
-    ).trim();
-
-    const mockReq = {
-      ...req,
-      body: payload,
-      headers: {
-        ...req.headers,
-        "x-webhook-secret": req.headers["x-webhook-secret"] || injectedSecret,
-      },
-    };
-
-    return handleHanjinTrackingWebhook(mockReq, res);
-  } catch (error) {
-    console.error("Error in simulateHanjinWebhook:", error);
-    return res.status(500).json({
-      success: false,
-      message: "한진 배송정보 수신 시뮬레이션 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
-
-/**
  * 한진 배송정보 복수건 동기화
  * @route POST /api/requests/shipping/hanjin/tracking-sync
  */
@@ -1290,31 +592,9 @@ export async function syncHanjinTracking(req, res) {
   try {
     const { requestIds, trackingNumbers } = req.body || {};
 
-    const requestIdList = Array.isArray(requestIds)
-      ? requestIds.map((v) => String(v || "").trim()).filter(Boolean)
-      : [];
-    const trackingNumberList = Array.isArray(trackingNumbers)
-      ? trackingNumbers.map((v) => String(v || "").trim()).filter(Boolean)
-      : [];
-
-    const query = {
-      deliveryInfoRef: { $ne: null },
-    };
-    if (requestIdList.length) {
-      query.requestId = { $in: requestIdList };
-    }
-
-    const requests = await Request.find(query)
-      .populate("requestor", "name organization phoneNumber address")
-      .populate("requestorOrganizationId", "name extracted")
-      .populate("deliveryInfoRef");
-
-    const targetRequests = requests.filter((requestDoc) => {
-      const di = requestDoc.deliveryInfoRef;
-      const trackingNumber = String(di?.trackingNumber || "").trim();
-      if (!trackingNumber) return false;
-      if (!trackingNumberList.length) return true;
-      return trackingNumberList.includes(trackingNumber);
+    const targetRequests = await resolveTrackingSyncTargets({
+      requestIds,
+      trackingNumbers,
     });
 
     if (!targetRequests.length) {
@@ -1343,53 +623,21 @@ export async function syncHanjinTracking(req, res) {
       rows.map((row) => [String(row?.wblNo || row?.wbNo || "").trim(), row]),
     );
 
-    const synced = [];
-    for (const requestDoc of targetRequests) {
-      const deliveryInfo = requestDoc.deliveryInfoRef;
-      const trackingNumber = String(deliveryInfo?.trackingNumber || "").trim();
-      const row = rowMap.get(trackingNumber);
-      if (!row || !deliveryInfo) continue;
+    const synced = await applyTrackingRowsToRequests({
+      requestDocs: targetRequests,
+      rowMap,
+      actorUserId: req.user?._id || null,
+      source: "hanjin-tracking-sync",
+    });
 
-      const events = normalizeTrackingEvents(row?.wrkList);
-      const last = events.length ? events[events.length - 1] : null;
-      deliveryInfo.tracking = deliveryInfo.tracking || {};
-      if (last?.statusCode)
-        deliveryInfo.tracking.lastStatusCode = last.statusCode;
-      if (last?.statusText)
-        deliveryInfo.tracking.lastStatusText = last.statusText;
-      if (last?.occurredAt) deliveryInfo.tracking.lastEventAt = last.occurredAt;
-      deliveryInfo.tracking.lastSyncedAt = new Date();
-      if (events.length) {
-        deliveryInfo.events = events;
-      }
-      if (String(last?.statusCode || "") === "66" && last?.occurredAt) {
-        deliveryInfo.deliveredAt = last.occurredAt;
-      }
-      if (String(last?.statusCode || "") === "11") {
-        await chargeShippingFeeOnPickupComplete({
-          shippingPackageId: requestDoc.shippingPackageId,
-          actorUserId: req.user?._id || null,
-        });
-      }
-      if (isTrackingStageEligible(deliveryInfo)) {
-        requestDoc.manufacturerStage = "추적관리";
-      } else {
-        requestDoc.manufacturerStage = "포장.발송";
-      }
-
-      await deliveryInfo.save();
-      await requestDoc.save();
-      await emitDeliveryUpdated(requestDoc, {
-        source: "hanjin-tracking-sync",
-        shippingStatusLabel: buildTrackingStatusLabel(deliveryInfo),
-      });
-      synced.push({
-        requestId: requestDoc.requestId,
-        trackingNumber,
-        statusCode: deliveryInfo.tracking?.lastStatusCode || null,
-        statusText: deliveryInfo.tracking?.lastStatusText || null,
-      });
-    }
+    await startHanjinTrackingPoll({
+      requestIds: targetRequests.map((requestDoc) =>
+        String(requestDoc.requestId || "").trim(),
+      ),
+      actorUserId: req.user?._id || null,
+      source: "hanjin-tracking-sync-poll",
+      runImmediate: false,
+    });
 
     return res.status(200).json({
       success: true,

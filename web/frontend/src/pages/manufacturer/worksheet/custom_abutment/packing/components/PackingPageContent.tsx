@@ -27,11 +27,11 @@ import { usePackingWorksheetData } from "../hooks/usePackingWorksheetData";
 import { usePackingCapture } from "../hooks/usePackingCapture";
 import {
   buildPackLabelBitmapZpl,
-  downloadPngFromCanvas,
   getLotLabel,
   renderPackLabelToCanvas,
   resolveManufacturingDate,
 } from "../utils/packLabelRenderer";
+import { savePackingLabelsAsZip } from "../utils/packLabelZip";
 import { Settings } from "lucide-react";
 
 export const PackingPageContent = ({
@@ -531,21 +531,6 @@ export const PackingPageContent = ({
         designDots: packLabelDesignDots,
       });
 
-      if (packOutputMode === "image") {
-        const base = String(req.requestId || fullLotNumber || "pack").replace(
-          /[^a-zA-Z0-9._-]+/g,
-          "_",
-        );
-        await downloadPngFromCanvas(canvas, `${base}-pack.png`);
-        if (!options?.silentSuccess) {
-          toast({
-            title: "패킹 라벨 저장 완료",
-            description: `${req.requestId || fullLotNumber} 이미지가 저장되었습니다.`,
-          });
-        }
-        return;
-      }
-
       const zpl = buildPackLabelBitmapZpl({
         canvas,
         labelWidth: packLabelDots?.pw,
@@ -640,6 +625,34 @@ export const PackingPageContent = ({
       return;
     }
     setIsPrintingPackingLabels(true);
+
+    if (packOutputMode === "image") {
+      try {
+        await savePackingLabelsAsZip({
+          requests: selectedRequests,
+          packLabelDpi,
+          packLabelDots,
+          packLabelDesignDots,
+        });
+        toast({
+          title: "패킹 라벨 저장 완료",
+          description: `${selectedRequests.length}건의 패킹 라벨을 zip으로 저장했습니다.`,
+        });
+      } catch (error) {
+        toast({
+          title: "패킹 라벨 저장 실패",
+          description:
+            error instanceof Error && error.message
+              ? error.message
+              : "패킹 라벨 zip 저장에 실패했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsPrintingPackingLabels(false);
+      }
+      return;
+    }
+
     let successCount = 0;
     let failCount = 0;
     let firstErrorMessage = "";

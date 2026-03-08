@@ -204,14 +204,6 @@ router.post(
   requestController.syncHanjinTracking,
 );
 
-// 한진 배송정보 수신 시뮬레이션 (개발용)
-router.post(
-  "/shipping/hanjin/webhook-simulate",
-  authenticate,
-  authorize(["manufacturer", "admin"]),
-  requestController.simulateHanjinWebhook,
-);
-
 // 패킹 라벨 프린터 목록 조회 (pack-server 프록시)
 router.get(
   "/packing/printers",

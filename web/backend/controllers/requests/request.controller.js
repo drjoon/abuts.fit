@@ -2,8 +2,8 @@ import * as creationController from "./creation.controller.js";
 import * as commonController from "./common.controller.js";
 import * as dashboardController from "./dashboard.controller.js";
 import * as shippingController from "./shipping.controller.js";
-import * as shippingHanjinController from "./shippingHanjin.controller.js";
-import * as shippingRequestorController from "./shippingRequestor.controller.js";
+import * as shippingHanjinController from "./shipping.Hanjin.controller.js";
+import * as shippingRequestorController from "./shipping.Requestor.controller.js";
 import * as packingPrintController from "./packingPrint.controller.js";
 
 // Re-export individual functions for named imports
@@ -53,11 +53,8 @@ export const {
   registerShipment,
 } = shippingRequestorController;
 
-export const {
-  rollbackMailboxShipping,
-  syncHanjinTracking,
-  simulateHanjinWebhook,
-} = shippingController;
+export const { rollbackMailboxShipping, syncHanjinTracking } =
+  shippingController;
 
 export const {
   printHanjinLabels,
