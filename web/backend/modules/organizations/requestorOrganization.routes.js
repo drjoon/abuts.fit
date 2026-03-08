@@ -29,9 +29,9 @@ router.patch(
 );
 
 router.post(
-  "/me/postal-code-lookup",
+  "/postal-code-lookup",
   authorize(["requestor", "salesman", "manufacturer", "admin"]),
-  requestorOrganizationController.lookupOrganizationPostalCode,
+  requestorOrganizationController.lookupPostalCode,
 );
 
 router.delete(

@@ -27,7 +27,29 @@ function extractPostalCodeFromGeocodingResult(result) {
   return String(postal?.long_name || postal?.short_name || "").trim();
 }
 
-async function lookupPostalCodeByAddress(address) {
+function buildAddressCandidates(address) {
+  const raw = String(address || "")
+    .trim()
+    .replace(/\s+/g, " ");
+  if (!raw) return [];
+
+  const withoutParen = raw
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const beforeComma = raw.split(",")[0]?.trim() || "";
+  const beforeDongHo = raw
+    .replace(/\b\d+동\b.*$/u, "")
+    .replace(/\b\d+호\b.*$/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return [
+    ...new Set([raw, withoutParen, beforeComma, beforeDongHo].filter(Boolean)),
+  ];
+}
+
+async function requestGoogleGeocode(address) {
   const apiKey = String(process.env.GOOGLE_API_KEY || "").trim();
   if (!apiKey) {
     throw Object.assign(new Error("GOOGLE_API_KEY가 설정되지 않았습니다."), {
@@ -51,22 +73,37 @@ async function lookupPostalCodeByAddress(address) {
     });
   }
 
-  const results = Array.isArray(data?.results) ? data.results : [];
-  for (const result of results) {
-    const postalCode = extractPostalCodeFromGeocodingResult(result);
-    if (postalCode) {
-      return {
-        postalCode,
-        formattedAddress: String(result?.formatted_address || "").trim(),
-        raw: data,
-      };
+  return data;
+}
+
+async function lookupPostalCodeByAddress(address) {
+  const candidates = buildAddressCandidates(address);
+  let lastData = null;
+
+  for (const candidate of candidates) {
+    const data = await requestGoogleGeocode(candidate);
+    lastData = data;
+    const results = Array.isArray(data?.results) ? data.results : [];
+    for (const result of results) {
+      const postalCode = extractPostalCodeFromGeocodingResult(result);
+      if (postalCode) {
+        return {
+          postalCode,
+          formattedAddress: String(result?.formatted_address || "").trim(),
+          matchedAddress: candidate,
+          raw: data,
+        };
+      }
     }
   }
 
   return {
     postalCode: "",
-    formattedAddress: String(results?.[0]?.formatted_address || "").trim(),
-    raw: data,
+    formattedAddress: String(
+      lastData?.results?.[0]?.formatted_address || "",
+    ).trim(),
+    matchedAddress: candidates[0] || "",
+    raw: lastData,
   };
 }
 
@@ -76,11 +113,8 @@ function normalizeBusinessNumberDigits(input) {
   return digits;
 }
 
-export async function lookupOrganizationPostalCode(req, res) {
+export async function lookupPostalCode(req, res) {
   try {
-    const roleCheck = assertOrganizationRole(req, res);
-    if (!roleCheck) return;
-
     const address = String(
       req.body?.address || req.query?.address || "",
     ).trim();
@@ -99,6 +133,7 @@ export async function lookupOrganizationPostalCode(req, res) {
         address,
         zipCode: data.postalCode,
         formattedAddress: data.formattedAddress,
+        matchedAddress: data.matchedAddress,
       },
     });
   } catch (error) {

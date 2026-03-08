@@ -1057,7 +1057,7 @@ export const BusinessTab = ({
         if (nextExtracted.address && !nextExtracted.zipCode) {
           try {
             const zipLookupRes = await request<any>({
-              path: "/api/organizations/me/postal-code-lookup",
+              path: "/api/organizations/postal-code-lookup",
               method: "POST",
               token,
               headers: mockHeaders,
