@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,6 +74,7 @@ interface BusinessFormProps {
   setCompanyNameTouched: (touched: boolean) => void;
   onSave: () => void; // 제출(서버 저장)
   onAutoSave?: () => void; // 블러/탭 시 로컬 draft 저장만
+  autoOpenAddressSearchSignal?: number;
   renderActions?: (props: { disabled: boolean }) => React.ReactNode;
 }
 
@@ -90,6 +91,7 @@ export const BusinessForm = ({
   setCompanyNameTouched,
   onSave,
   onAutoSave,
+  autoOpenAddressSearchSignal,
   renderActions,
 }: BusinessFormProps) => {
   const { toast } = useToast();
@@ -233,6 +235,11 @@ export const BusinessForm = ({
       });
     }
   };
+
+  useEffect(() => {
+    if (!autoOpenAddressSearchSignal) return;
+    void handleOpenAddressSearch();
+  }, [autoOpenAddressSearchSignal]);
 
   return (
     <div className="space-y-6">

@@ -281,6 +281,8 @@ export const BusinessTab = ({
   );
   const [companyNameTouched, setCompanyNameTouched] = useState(false);
   const [errors, setErrors] = useState<Record<string, boolean>>({});
+  const [autoOpenAddressSearchSignal, setAutoOpenAddressSearchSignal] =
+    useState(0);
 
   const applyStoredDraft = useCallback((draft: BusinessDraftPayload) => {
     setBusinessData(normalizeBusinessData(draft.businessData));
@@ -1078,18 +1080,20 @@ export const BusinessTab = ({
                 zipCode: lookedUpZipCode,
               }));
             } else {
+              setAutoOpenAddressSearchSignal((prev) => prev + 1);
               toast({
                 title: "주소는 인식됐지만 우편번호는 확인이 필요합니다",
                 description:
-                  "주소 검색 버튼으로 우편번호를 선택한 뒤 저장해주세요.",
+                  "주소 검색 창을 열었어요. 검색 결과를 선택하면 우편번호가 자동 입력됩니다.",
                 duration: 3500,
               });
             }
           } catch {
+            setAutoOpenAddressSearchSignal((prev) => prev + 1);
             toast({
               title: "주소는 인식됐지만 우편번호는 확인이 필요합니다",
               description:
-                "주소 검색 버튼으로 우편번호를 선택한 뒤 저장해주세요.",
+                "주소 검색 창을 열었어요. 검색 결과를 선택하면 우편번호가 자동 입력됩니다.",
               duration: 3500,
             });
           }
@@ -1332,6 +1336,7 @@ export const BusinessTab = ({
                       setErrors={setErrors}
                       setCompanyNameTouched={setCompanyNameTouched}
                       onSave={handleSave}
+                      autoOpenAddressSearchSignal={autoOpenAddressSearchSignal}
                       onAutoSave={() => {
                         if (!authUserId) return;
                         if (!allowLocalDraft) return;
