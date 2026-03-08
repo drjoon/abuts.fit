@@ -17,10 +17,98 @@ import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealti
 const WELCOME_BONUS_AMOUNT = 30000;
 const SALESMAN_REFERRAL_BONUS_AMOUNT = 50000;
 
+function extractPostalCodeFromGeocodingResult(result) {
+  const components = Array.isArray(result?.address_components)
+    ? result.address_components
+    : [];
+  const postal = components.find(
+    (item) => Array.isArray(item?.types) && item.types.includes("postal_code"),
+  );
+  return String(postal?.long_name || postal?.short_name || "").trim();
+}
+
+async function lookupPostalCodeByAddress(address) {
+  const apiKey = String(process.env.GOOGLE_API_KEY || "").trim();
+  if (!apiKey) {
+    throw Object.assign(new Error("GOOGLE_API_KEY가 설정되지 않았습니다."), {
+      statusCode: 500,
+    });
+  }
+
+  const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
+  url.searchParams.set("address", address);
+  url.searchParams.set("key", apiKey);
+  url.searchParams.set("language", "ko");
+  url.searchParams.set("region", "kr");
+
+  const response = await fetch(url.toString(), { method: "GET" });
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw Object.assign(new Error("주소 우편번호 조회에 실패했습니다."), {
+      statusCode: response.status || 502,
+      data,
+    });
+  }
+
+  const results = Array.isArray(data?.results) ? data.results : [];
+  for (const result of results) {
+    const postalCode = extractPostalCodeFromGeocodingResult(result);
+    if (postalCode) {
+      return {
+        postalCode,
+        formattedAddress: String(result?.formatted_address || "").trim(),
+        raw: data,
+      };
+    }
+  }
+
+  return {
+    postalCode: "",
+    formattedAddress: String(results?.[0]?.formatted_address || "").trim(),
+    raw: data,
+  };
+}
+
 function normalizeBusinessNumberDigits(input) {
   const digits = String(input || "").replace(/\D/g, "");
   if (digits.length !== 10) return "";
   return digits;
+}
+
+export async function lookupOrganizationPostalCode(req, res) {
+  try {
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+
+    const address = String(
+      req.body?.address || req.query?.address || "",
+    ).trim();
+
+    if (!address) {
+      return res.status(400).json({
+        success: false,
+        message: "address가 필요합니다.",
+      });
+    }
+
+    const data = await lookupPostalCodeByAddress(address);
+    return res.status(200).json({
+      success: true,
+      data: {
+        address,
+        zipCode: data.postalCode,
+        formattedAddress: data.formattedAddress,
+      },
+    });
+  } catch (error) {
+    return res.status(error?.statusCode || 500).json({
+      success: false,
+      message: "주소 우편번호 조회 중 오류가 발생했습니다.",
+      error: error.message,
+      data: error?.data,
+    });
+  }
 }
 
 function isDuplicateKeyErrorForMongo(err) {

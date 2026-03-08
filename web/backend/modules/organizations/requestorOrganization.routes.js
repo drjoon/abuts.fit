@@ -28,6 +28,12 @@ router.patch(
   requestorOrganizationController.updateMyOrganization,
 );
 
+router.post(
+  "/me/postal-code-lookup",
+  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  requestorOrganizationController.lookupOrganizationPostalCode,
+);
+
 router.delete(
   "/me/business-license",
   requestorOrganizationController.clearMyBusinessLicense,

@@ -1055,12 +1055,44 @@ export const BusinessTab = ({
         processingToast.dismiss();
 
         if (nextExtracted.address && !nextExtracted.zipCode) {
-          toast({
-            title: "주소는 인식됐지만 우편번호는 확인이 필요합니다",
-            description:
-              "주소 검색 버튼으로 우편번호를 선택한 뒤 저장해주세요.",
-            duration: 3500,
-          });
+          try {
+            const zipLookupRes = await request<any>({
+              path: "/api/organizations/me/postal-code-lookup",
+              method: "POST",
+              token,
+              headers: mockHeaders,
+              jsonBody: {
+                address: String(nextExtracted.address || "").trim(),
+              },
+            });
+            const zipLookupBody: any = zipLookupRes.data || {};
+            const zipLookupData = zipLookupBody?.data || zipLookupBody || {};
+            const lookedUpZipCode = String(zipLookupData?.zipCode || "").trim();
+            if (zipLookupRes.ok && lookedUpZipCode) {
+              setExtracted((prev) => ({
+                ...prev,
+                zipCode: lookedUpZipCode,
+              }));
+              setBusinessData((prev) => ({
+                ...prev,
+                zipCode: lookedUpZipCode,
+              }));
+            } else {
+              toast({
+                title: "주소는 인식됐지만 우편번호는 확인이 필요합니다",
+                description:
+                  "주소 검색 버튼으로 우편번호를 선택한 뒤 저장해주세요.",
+                duration: 3500,
+              });
+            }
+          } catch {
+            toast({
+              title: "주소는 인식됐지만 우편번호는 확인이 필요합니다",
+              description:
+                "주소 검색 버튼으로 우편번호를 선택한 뒤 저장해주세요.",
+              duration: 3500,
+            });
+          }
         }
 
         if (

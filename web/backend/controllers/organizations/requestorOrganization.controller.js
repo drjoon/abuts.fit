@@ -8,6 +8,7 @@ export const {
   searchOrganizations,
   updateMyOrganization,
   clearMyBusinessLicense,
+  lookupOrganizationPostalCode,
 } = orgController;
 
 export const {
