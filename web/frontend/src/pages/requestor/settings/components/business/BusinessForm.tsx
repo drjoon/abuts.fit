@@ -200,11 +200,26 @@ export const BusinessForm = ({
     (membership !== "owner" && membership !== "none");
   const hasExtraAction = Boolean(renderActions);
 
-  const handleOpenAddressSearch = async () => {
+  const handleOpenAddressSearch = (options?: { silent?: boolean }) => {
+    const silent = Boolean(options?.silent);
     try {
-      await loadPostcodeScript();
       if (!window.daum?.Postcode) {
-        throw new Error("주소 검색 스크립트 로딩 실패");
+        loadPostcodeScript().catch(() => {
+          if (!silent) {
+            toast({
+              title: "주소 검색 스크립트를 불러오지 못했습니다",
+              description: "잠시 후 다시 시도해주세요.",
+              variant: "destructive",
+            });
+          }
+        });
+        if (!silent) {
+          toast({
+            title: "주소 검색 준비 중",
+            description: "잠시만 기다린 뒤 다시 눌러주세요.",
+          });
+        }
+        return;
       }
       if (postcodePopupOpen) {
         window.open("", POSTCODE_POPUP_NAME)?.focus();
@@ -238,17 +253,43 @@ export const BusinessForm = ({
       window.open("", POSTCODE_POPUP_NAME)?.focus();
     } catch {
       postcodePopupOpen = false;
-      toast({
-        title: "주소 검색을 불러오지 못했습니다",
-        description: "잠시 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
+      if (!silent) {
+        toast({
+          title: "주소 검색을 불러오지 못했습니다",
+          description: "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+      }
     }
   };
 
   useEffect(() => {
+    void loadPostcodeScript().catch(() => {
+      toast({
+        title: "주소 검색 스크립트를 불러오지 못했습니다",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    });
+  }, []);
+
+  useEffect(() => {
     if (!autoOpenAddressSearchSignal) return;
-    void handleOpenAddressSearch();
+    if (window.daum?.Postcode) {
+      handleOpenAddressSearch({ silent: true });
+      return;
+    }
+    loadPostcodeScript()
+      .then(() => {
+        handleOpenAddressSearch({ silent: true });
+      })
+      .catch(() => {
+        toast({
+          title: "주소 검색을 불러오지 못했습니다",
+          description: "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+      });
   }, [autoOpenAddressSearchSignal]);
 
   return (
