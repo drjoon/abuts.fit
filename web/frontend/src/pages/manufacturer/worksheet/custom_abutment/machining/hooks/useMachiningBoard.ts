@@ -812,6 +812,34 @@ export const useMachiningBoard = ({
         if (!res.ok || body?.success === false) {
           throw new Error(body?.message || "전체 자동 가공 설정 저장 실패");
         }
+
+        if (enabled === true) {
+          const resp = await fetch(
+            `/api/cnc-machines/machining/auto-trigger/${encodeURIComponent(m.uid)}`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+            },
+          );
+          const triggerBody: any = await resp.json().catch(() => ({}));
+          if (!resp.ok || triggerBody?.success === false) {
+            throw new Error(
+              triggerBody?.message ||
+                triggerBody?.error ||
+                `${m.name || m.uid} 자동 가공 트리거 호출 실패`,
+            );
+          }
+        }
+      }
+
+      if (enabled) {
+        toast({
+          title: "전체 자동 가공 ON",
+          description: "각 장비의 대기 의뢰 자동 시작을 요청했습니다.",
+        });
       }
     } catch (e: any) {
       setMachines((prevList) =>
@@ -878,31 +906,49 @@ export const useMachiningBoard = ({
   const rollbackRequestInQueue = useCallback(
     async (machineId: string, requestId: string) => {
       if (!token) return;
-      const mid = String(machineId || "").trim();
       const rid = String(requestId || "").trim();
-      if (!mid || !rid) return;
+      if (!rid) return;
 
       try {
         const res = await fetch(
-          `/api/cnc-machines/${encodeURIComponent(mid)}/production-queue/batch`,
+          `/api/requests/request-id/${encodeURIComponent(rid)}/summary`,
           {
-            method: "POST",
+            method: "GET",
             headers: {
-              "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
-            body: JSON.stringify({ deleteRequestIds: [rid] }),
           },
         );
         const body: any = await res.json().catch(() => ({}));
-        if (!res.ok || body?.success === false) {
+        const reqId = String(body?.data?._id || "").trim();
+        if (!res.ok || body?.success === false || !reqId) {
           throw new Error(
-            body?.message || body?.error || "CAM으로 되돌리기 실패",
+            body?.message || body?.error || "롤백 대상 의뢰 조회 실패",
+          );
+        }
+
+        const rollbackRes = await fetch(
+          `/api/requests/${encodeURIComponent(reqId)}/stage-file?stage=machining&rollbackOnly=1`,
+          {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+        const rollbackBody: any = await rollbackRes.json().catch(() => ({}));
+        if (!rollbackRes.ok || rollbackBody?.success === false) {
+          throw new Error(
+            rollbackBody?.message ||
+              rollbackBody?.error ||
+              "CAM으로 되돌리기 실패",
           );
         }
 
         window.dispatchEvent(new Event("cnc-queues-updated"));
         window.dispatchEvent(new Event("request-rollback"));
+        void refreshProductionQueues();
+        void refreshLastCompletedFromServer();
       } catch (e: any) {
         toast({
           title: "CAM으로 되돌리기 실패",
@@ -911,7 +957,7 @@ export const useMachiningBoard = ({
         });
       }
     },
-    [refreshProductionQueues, toast, token],
+    [refreshLastCompletedFromServer, refreshProductionQueues, toast, token],
   );
 
   const approveMachiningFromRollback = useCallback(
