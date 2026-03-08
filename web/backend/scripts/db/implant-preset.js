@@ -99,9 +99,9 @@ async function readConnectionSeedFromFolder() {
   return { parsed: buildDerivedConnectionRows(parsed), skipped, files };
 }
 
-async function syncAddOnly(rows) {
+async function syncUpsert(rows) {
   let inserted = 0;
-  let existing = 0;
+  let updated = 0;
 
   for (const row of rows) {
     const found = await Connection.findOne({
@@ -111,11 +111,21 @@ async function syncAddOnly(rows) {
       type: row.type,
       category: row.category,
     })
-      .select({ _id: 1 })
+      .select({ _id: 1, manufacturerKor: 1, fileName: 1, isActive: 1 })
       .lean();
 
     if (found) {
-      existing += 1;
+      await Connection.updateOne(
+        { _id: found._id },
+        {
+          $set: {
+            manufacturerKor: row.manufacturerKor,
+            fileName: row.fileName,
+            isActive: row.isActive,
+          },
+        },
+      );
+      updated += 1;
       continue;
     }
 
@@ -123,14 +133,14 @@ async function syncAddOnly(rows) {
     inserted += 1;
   }
 
-  return { mode: "add-only", inserted, existing, removed: 0, updated: 0 };
+  return { mode: "upsert", inserted, updated, removed: 0, existing: 0 };
 }
 
 async function run() {
   try {
     console.log("[db] implant-preset sync start", {
       ssotDir: CONNECTION_DIR,
-      mode: "add-only",
+      mode: "upsert",
     });
     await connectDb();
 
@@ -141,7 +151,7 @@ async function run() {
       );
     }
 
-    const result = await syncAddOnly(parsed);
+    const result = await syncUpsert(parsed);
 
     console.log("[db] implant-preset sync done", {
       ssotDir: CONNECTION_DIR,

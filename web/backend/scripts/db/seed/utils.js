@@ -122,7 +122,13 @@ export async function createSalesmen({
 
 export async function findOrCreateUser(doc) {
   const existing = await User.findOne({ email: doc.email });
-  if (existing) return existing;
+  if (existing) {
+    Object.entries(doc).forEach(([key, value]) => {
+      existing[key] = value;
+    });
+    await existing.save();
+    return existing;
+  }
   return User.create(doc);
 }
 
@@ -150,17 +156,22 @@ export async function findOrCreateOrganization({
     });
   } else {
     const nextMembers = [ownerId, ...memberIds].filter(Boolean);
+    const nextOwners = [ownerId].filter(Boolean);
     await RequestorOrganization.updateOne(
       { _id: organization._id },
       {
         $set: {
           owner: ownerId,
+          name,
           extracted: {
             ...(organization.extracted || {}),
             ...extracted,
           },
         },
-        $addToSet: { members: { $each: nextMembers } },
+        $addToSet: {
+          owners: { $each: nextOwners },
+          members: { $each: nextMembers },
+        },
       },
     );
     organization = await RequestorOrganization.findById(organization._id);
