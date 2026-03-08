@@ -163,6 +163,9 @@ export const RequestPage = ({
     ManufacturerRequest[]
   >([]);
   const [isRollingBackAll, setIsRollingBackAll] = useState(false);
+  const [selectedPackingRequestIds, setSelectedPackingRequestIds] = useState<
+    string[]
+  >([]);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -1083,6 +1086,36 @@ export const RequestPage = ({
   totalCountRef.current = filteredAndSorted.length;
   const paginatedRequests = filteredAndSorted.slice(0, visibleCount);
 
+  useEffect(() => {
+    if (tabStage !== "packing") return;
+    setSelectedPackingRequestIds((prev) => {
+      const validIds = new Set(
+        filteredAndSorted.map((req) => String(req._id || "")).filter(Boolean),
+      );
+      const next = prev.filter((id) => validIds.has(id));
+      if (next.length > 0) return next;
+      return Array.from(validIds);
+    });
+  }, [filteredAndSorted, tabStage]);
+
+  const handleTogglePackingRequest = useCallback((req: ManufacturerRequest) => {
+    const id = String(req._id || "").trim();
+    if (!id) return;
+    setSelectedPackingRequestIds((prev) =>
+      prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id],
+    );
+  }, []);
+
+  const handleSelectAllPackingRequests = useCallback(() => {
+    setSelectedPackingRequestIds(
+      filteredAndSorted.map((req) => String(req._id || "")).filter(Boolean),
+    );
+  }, [filteredAndSorted]);
+
+  const handleClearPackingRequests = useCallback(() => {
+    setSelectedPackingRequestIds([]);
+  }, []);
+
   const handleRegisterShipment = useCallback(
     async (address: string, reqs: ManufacturerRequest[]) => {
       if (!reqs.length) return;
@@ -1303,8 +1336,42 @@ export const RequestPage = ({
               </div>
             ) : (
               <>
+                {tabStage === "packing" && (
+                  <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSelectAllPackingRequests}
+                      disabled={!filteredAndSorted.length}
+                    >
+                      전체 선택
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleClearPackingRequests}
+                      disabled={!selectedPackingRequestIds.length}
+                    >
+                      전체 해제
+                    </Button>
+                    <div className="text-xs text-slate-500">
+                      선택 {selectedPackingRequestIds.length} / 전체{" "}
+                      {filteredAndSorted.length}
+                    </div>
+                  </div>
+                )}
                 <WorksheetCardGrid
                   requests={paginatedRequests}
+                  selectedRequestIds={
+                    tabStage === "packing" ? selectedPackingRequestIds : []
+                  }
+                  onToggleSelected={
+                    tabStage === "packing"
+                      ? handleTogglePackingRequest
+                      : undefined
+                  }
                   onDownload={handleDownloadOriginal}
                   onOpenPreview={handleOpenPreview}
                   onDeleteCam={handleDeleteCam}

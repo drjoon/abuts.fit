@@ -14,6 +14,8 @@ import {
 
 type WorksheetCardGridProps = {
   requests: ManufacturerRequest[];
+  selectedRequestIds?: string[];
+  onToggleSelected?: (req: ManufacturerRequest) => void;
   onDownload: (req: ManufacturerRequest) => void;
   onOpenPreview: (req: ManufacturerRequest) => void;
   onDeleteCam: (req: ManufacturerRequest) => void;
@@ -35,6 +37,8 @@ type WorksheetCardGridProps = {
 
 export const WorksheetCardGrid = ({
   requests,
+  selectedRequestIds = [],
+  onToggleSelected,
   onDownload,
   onOpenPreview,
   onDeleteCam,
@@ -54,6 +58,7 @@ export const WorksheetCardGrid = ({
   debugLog = false,
 }: WorksheetCardGridProps) => {
   const camDiaLogRef = useRef<Record<string, number | null>>({});
+  const selectedRequestIdSet = new Set(selectedRequestIds);
   const formatElapsed = (secRaw?: number | null) => {
     const sec = Number.isFinite(Number(secRaw))
       ? Math.max(0, Math.floor(Number(secRaw)))
@@ -103,6 +108,7 @@ export const WorksheetCardGrid = ({
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {requests.map((request) => {
+        const isSelected = selectedRequestIdSet.has(String(request._id || ""));
         const caseInfos = (request.caseInfos ||
           {}) as typeof request.caseInfos & {
           newSystemRequest?: { requested?: boolean; free?: boolean };
@@ -421,18 +427,24 @@ export const WorksheetCardGrid = ({
         return (
           <Card
             key={request._id}
-            className={`relative shadow-sm hover:shadow-lg transition-all duration-300 h-full flex flex-col border-solid group/card ${
-              isCompletedForCurrentStage
-                ? "border-emerald-500 border-2"
-                : urgencyClass ||
-                  (isNewSystemRequest
-                    ? "border-emerald-400"
-                    : "border-slate-200")
+            onClick={() => onToggleSelected?.(request)}
+            className={`relative h-full border cursor-pointer ${
+              isSelected
+                ? "border-blue-500 bg-blue-50/40"
+                : isCompletedForCurrentStage
+                  ? "border-emerald-500 bg-emerald-50/30"
+                  : "border-slate-200"
             }`}
-            onClick={() => onOpenPreview(request)}
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
           >
+            {onToggleSelected ? (
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={() => onToggleSelected(request)}
+                onClick={(e) => e.stopPropagation()}
+                className="absolute left-3 top-3 z-10 h-4 w-4 accent-blue-600"
+              />
+            ) : null}
             <div className="absolute right-2 top-2 z-20 flex gap-1">
               {onRollback && canRollback && (
                 <button

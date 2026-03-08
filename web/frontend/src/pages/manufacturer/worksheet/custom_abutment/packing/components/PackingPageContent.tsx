@@ -1,4 +1,10 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -62,6 +68,9 @@ export const PackingPageContent = ({
     {},
   );
   const [isPrintingPackingLabels, setIsPrintingPackingLabels] = useState(false);
+  const [selectedPackingRequestIds, setSelectedPackingRequestIds] = useState<
+    string[]
+  >([]);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -95,6 +104,19 @@ export const PackingPageContent = ({
     worksheetSearch,
     toast,
   });
+
+  const allPackingRequestIds = useMemo(
+    () => filteredAndSorted.map((req) => String(req._id || "")).filter(Boolean),
+    [filteredAndSorted],
+  );
+
+  const paginatedPackingRequestIdSet = useMemo(
+    () =>
+      new Set(
+        paginatedRequests.map((req) => String(req._id || "")).filter(Boolean),
+      ),
+    [paginatedRequests],
+  );
 
   const {
     printerProfile,
@@ -250,6 +272,31 @@ export const PackingPageContent = ({
     },
     [handleDeleteStageFile, handleUpdateReviewStatus],
   );
+
+  const handleTogglePackingRequest = useCallback((req: ManufacturerRequest) => {
+    const id = String(req._id || "").trim();
+    if (!id) return;
+    setSelectedPackingRequestIds((prev) =>
+      prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id],
+    );
+  }, []);
+
+  const handleSelectAllPackingRequests = useCallback(() => {
+    setSelectedPackingRequestIds(allPackingRequestIds);
+  }, [allPackingRequestIds]);
+
+  const handleClearPackingRequests = useCallback(() => {
+    setSelectedPackingRequestIds([]);
+  }, []);
+
+  useEffect(() => {
+    setSelectedPackingRequestIds((prev) => {
+      const validIds = new Set(allPackingRequestIds);
+      const next = prev.filter((id) => validIds.has(id));
+      if (next.length > 0) return next;
+      return allPackingRequestIds;
+    });
+  }, [allPackingRequestIds]);
 
   const handleOpenNextRequest = useCallback(
     async (currentReqId: string) => {
@@ -700,37 +747,72 @@ export const PackingPageContent = ({
           <div className="flex justify-center py-8">
             <div className="text-gray-500">의뢰가 없습니다.</div>
           </div>
-        ) : (
-          !isLoading && (
-            <>
-              <WorksheetCardGrid
-                requests={paginatedRequests}
-                onDownload={handleDownloadOriginalStl}
-                onOpenPreview={handleOpenPreview}
-                onDeleteCam={() => {}}
-                onDeleteNc={handleDeleteNc}
-                onRollback={handleCardRollback}
-                onApprove={handleCardApprove}
-                onUploadNc={handleUploadByStage}
-                uploadProgress={uploadProgress}
-                isCamStage={false}
-                isMachiningStage={false}
-                uploading={uploading}
-                downloading={downloading}
-                deletingCam={{}}
-                deletingNc={deletingNc}
-                currentStageOrder={currentStageOrder}
-                tabStage="packing"
-              />
-              <div ref={sentinelRef} className="py-4 text-center text-gray-500">
-                {visibleCount >= filteredAndSorted.length
-                  ? "모든 의뢰를 표시했습니다."
-                  : "스크롤하여 더보기"}
+        ) : !isLoading ? (
+          <>
+            <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={handleSelectAllPackingRequests}
+                disabled={!allPackingRequestIds.length}
+                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                  !allPackingRequestIds.length
+                    ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                }`}
+              >
+                전체 선택
+              </button>
+              <button
+                type="button"
+                onClick={handleClearPackingRequests}
+                disabled={!selectedPackingRequestIds.length}
+                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                  !selectedPackingRequestIds.length
+                    ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                }`}
+              >
+                전체 해제
+              </button>
+              <div className="text-xs text-slate-500">
+                선택 {selectedPackingRequestIds.length} / 전체{" "}
+                {allPackingRequestIds.length}
               </div>
-            </>
-          )
-        )}
-
+            </div>
+            <WorksheetCardGrid
+              requests={paginatedRequests}
+              selectedRequestIds={Array.from(
+                new Set(
+                  selectedPackingRequestIds.filter((id) =>
+                    paginatedPackingRequestIdSet.has(id),
+                  ),
+                ),
+              )}
+              onToggleSelected={handleTogglePackingRequest}
+              onDownload={handleDownloadOriginalStl}
+              onOpenPreview={handleOpenPreview}
+              onDeleteCam={() => {}}
+              onDeleteNc={handleDeleteNc}
+              onRollback={handleCardRollback}
+              onApprove={handleCardApprove}
+              onUploadNc={handleUploadByStage}
+              uploadProgress={uploadProgress}
+              isCamStage={false}
+              isMachiningStage={false}
+              uploading={uploading}
+              downloading={downloading}
+              deletingCam={{}}
+              deletingNc={deletingNc}
+              currentStageOrder={currentStageOrder}
+              tabStage="packing"
+            />
+            <div ref={sentinelRef} className="py-4 text-center text-gray-500">
+              {visibleCount >= filteredAndSorted.length
+                ? "모든 의뢰를 표시했습니다."
+                : "스크롤하여 더보기"}
+            </div>
+          </>
+        ) : null}
         <PackingPrinterSettingsDialog
           open={printerModalOpen}
           onOpenChange={setPrinterModalOpen}
