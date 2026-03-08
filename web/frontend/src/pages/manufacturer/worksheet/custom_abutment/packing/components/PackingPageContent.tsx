@@ -795,8 +795,7 @@ export const PackingPageContent = ({
               </button>
               <div className="text-xs text-slate-500">
                 전체 {allPackingRequestIds.length}개 / 선택{" "}
-                {selectedPackingRequestIds.length}개 / 출력{" "}
-                {printedPackingCount}개
+                {selectedPackingRequestIds.length}개
               </div>
             </div>
             <WorksheetCardGrid

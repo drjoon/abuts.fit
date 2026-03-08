@@ -492,6 +492,8 @@ async function chooseMachineForCamMachining({
   request,
   ignoreAllowAssign = false,
   requireCeil = false,
+  reservedMachineLoadMap = null,
+  reservedQueuePositionMap = null,
 }) {
   if (!request) throw new Error("request is required");
   const schedule = request.productionSchedule || {};
@@ -617,7 +619,10 @@ async function chooseMachineForCamMachining({
 
   const ranked = (pool || [])
     .map((c) => {
-      const queue = queueCountMap.get(c.machineId) ?? 0;
+      const queue =
+        reservedMachineLoadMap?.get(c.machineId) ??
+        queueCountMap.get(c.machineId) ??
+        0;
       return { ...c, queue };
     })
     .sort((a, b) => {
@@ -635,7 +640,10 @@ async function chooseMachineForCamMachining({
     });
 
   const chosen = ranked[0];
-  const queuePosition = (queueCountMap.get(chosen.machineId) || 0) + 1;
+  const queuePosition =
+    (reservedQueuePositionMap?.get(chosen.machineId) ??
+      queueCountMap.get(chosen.machineId) ??
+      0) + 1;
   console.log("[CAM-CHOOSE] ranked", {
     requestId: request?.requestId,
     targetDiameter,
@@ -779,10 +787,30 @@ export async function deleteStageFile(req, res) {
         request.productionSchedule.queuePosition = null;
         request.assignedMachine = null;
         try {
+          if (!global.__rollbackPackingReservedMachineLoadMap) {
+            global.__rollbackPackingReservedMachineLoadMap = new Map();
+          }
+          if (!global.__rollbackPackingReservedQueuePositionMap) {
+            global.__rollbackPackingReservedQueuePositionMap = new Map();
+          }
           const selected = await chooseMachineForCamMachining({
             request,
             requireCeil: true,
+            reservedMachineLoadMap:
+              global.__rollbackPackingReservedMachineLoadMap,
+            reservedQueuePositionMap:
+              global.__rollbackPackingReservedQueuePositionMap,
           });
+          global.__rollbackPackingReservedMachineLoadMap.set(
+            selected.machineId,
+            (global.__rollbackPackingReservedMachineLoadMap.get(
+              selected.machineId,
+            ) || 0) + 1,
+          );
+          global.__rollbackPackingReservedQueuePositionMap.set(
+            selected.machineId,
+            selected.queuePosition,
+          );
           request.productionSchedule.assignedMachine = selected.machineId;
           request.productionSchedule.queuePosition = selected.queuePosition;
           if (selected.diameterGroup) {

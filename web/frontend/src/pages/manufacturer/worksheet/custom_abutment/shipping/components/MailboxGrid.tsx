@@ -1308,8 +1308,7 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
           </button>
           <div className="text-xs text-slate-500">
             전체 {occupiedAddresses.length}개 / 선택{" "}
-            {selectedOccupiedAddresses.length}개 / 출력{" "}
-            {selectedPrintedAddresses.length}개
+            {selectedOccupiedAddresses.length}개
           </div>
         </div>
 
