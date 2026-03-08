@@ -500,8 +500,13 @@ async function chooseMachineForCamMachining({
     .filter(Boolean);
 
   const machineFlags = await Machine.find({ uid: { $in: machineIds } })
-    .select({ uid: 1, allowRequestAssign: 1 })
+    .select({ uid: 1, allowRequestAssign: 1, lastAssignmentAt: 1 })
     .lean();
+  const machineFlagMap = new Map(
+    machineFlags
+      .map((m) => [String(m?.uid || "").trim(), m])
+      .filter(([uid]) => Boolean(uid)),
+  );
   const allowAssignSet = new Set(
     machineFlags
       .filter((m) => m?.allowRequestAssign !== false)
@@ -525,16 +530,22 @@ async function chooseMachineForCamMachining({
         return null;
       }
       const availableDia = materialDia;
+      const machineMeta = machineFlagMap.get(machineId) || null;
       return {
         machineId,
         availableDia,
+        lastAssignmentAt: machineMeta?.lastAssignmentAt || null,
       };
     })
     .filter(Boolean);
   console.log("[CAM-CHOOSE] candidates", {
     requestId: request?.requestId,
     count: candidatesWithDia.length,
-    list: candidatesWithDia.map((c) => ({ m: c.machineId, d: c.availableDia })),
+    list: candidatesWithDia.map((c) => ({
+      m: c.machineId,
+      d: c.availableDia,
+      lastAssignmentAt: c.lastAssignmentAt,
+    })),
   });
 
   if (!candidatesWithDia.length) {
@@ -593,6 +604,13 @@ async function chooseMachineForCamMachining({
       if (a.queue !== b.queue) return a.queue - b.queue;
       if (a.availableDia !== b.availableDia)
         return a.availableDia - b.availableDia;
+      const aAssignedAt = a.lastAssignmentAt
+        ? new Date(a.lastAssignmentAt).getTime()
+        : 0;
+      const bAssignedAt = b.lastAssignmentAt
+        ? new Date(b.lastAssignmentAt).getTime()
+        : 0;
+      if (aAssignedAt !== bAssignedAt) return aAssignedAt - bAssignedAt;
       return a.machineId.localeCompare(b.machineId);
     });
 
@@ -605,11 +623,16 @@ async function chooseMachineForCamMachining({
       m: item.machineId,
       q: item.queue,
       d: item.availableDia,
+      lastAssignmentAt: item.lastAssignmentAt,
     })),
   });
   console.log("[CAM-CHOOSE] chosen", {
     requestId: request?.requestId,
-    chosen: chosen && { m: chosen.machineId, d: chosen.availableDia },
+    chosen: chosen && {
+      m: chosen.machineId,
+      d: chosen.availableDia,
+      lastAssignmentAt: chosen.lastAssignmentAt,
+    },
     queuePosition,
   });
 
@@ -1046,6 +1069,11 @@ export async function updateReviewStatusByStage(req, res) {
             request.productionSchedule.diameter = selected.diameter;
           }
           request.assignedMachine = selected.machineId;
+          await Machine.updateOne(
+            { uid: selected.machineId },
+            { $set: { lastAssignmentAt: new Date() } },
+            { session },
+          );
           // CAM 승인 시점 디버깅: 현재 요청의 productionSchedule 과 장비별 생산 큐 일부를 로깅
           try {
             // 1) 현재 요청 스케줄

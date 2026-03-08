@@ -50,6 +50,10 @@ const machineSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    lastAssignmentAt: {
+      type: Date,
+      default: null,
+    },
     lastStatus: {
       status: { type: String, default: "Unknown" },
       updatedAt: { type: Date },
