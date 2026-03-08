@@ -6,6 +6,7 @@ import {
   addKoreanBusinessDays,
   applyStatusMapping,
 } from "../controllers/requests/utils.js";
+import { allocateVirtualMailboxAddress } from "../controllers/requests/mailbox.utils.js";
 
 /**
  * 공정 단계 자동 진행 워커
@@ -80,6 +81,19 @@ async function progressStages() {
 
     for (const req of productionToPackaging) {
       applyStatusMapping(req, "세척.패킹");
+      if (!req.mailboxAddress) {
+        try {
+          const requestorOrgId =
+            req.requestorOrganizationId || req.requestor?.organizationId;
+          req.mailboxAddress =
+            await allocateVirtualMailboxAddress(requestorOrgId);
+        } catch (error) {
+          console.error("[STAGE_WORKER] mailbox allocation failed", {
+            requestId: req.requestId,
+            message: error?.message || String(error),
+          });
+        }
+      }
       await req.save();
       updatedCount++;
       console.log(

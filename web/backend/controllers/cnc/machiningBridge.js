@@ -16,6 +16,7 @@ import {
   fetchBridgeQueueFromBridge,
   saveBridgeQueueSnapshot,
 } from "./shared.js";
+import { allocateVirtualMailboxAddress } from "../requests/mailbox.utils.js";
 
 const REQUEST_ID_REGEX = /(\d{8}-[A-Z0-9]{6,10})/i;
 
@@ -1193,6 +1194,22 @@ export async function recordMachiningCompleteForBridge(req, res) {
         // CNC 가공 완료 시 제조 단계는 세척/패킹 단계로 전환한다.
         // status/manufacturerStage enum 은 '세척.패킹' 을 사용한다.
         applyStatusMapping(request, "세척.패킹");
+        if (!request.mailboxAddress) {
+          try {
+            const requestorOrgId =
+              request.requestorOrganizationId ||
+              request.requestor?.organizationId ||
+              request.requestor?.organization?._id;
+            request.mailboxAddress =
+              await allocateVirtualMailboxAddress(requestorOrgId);
+          } catch (err) {
+            console.error("[MAILBOX_ALLOCATION_ERROR]", {
+              requestId,
+              machineId: mid,
+              message: err?.message || String(err),
+            });
+          }
+        }
         await request.save();
         console.log(
           "[bridge:machining:complete] request/record updated",
