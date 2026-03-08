@@ -120,6 +120,14 @@ export const PackingPageContent = ({
     [paginatedRequests],
   );
 
+  const printedPackingCount = useMemo(
+    () =>
+      filteredAndSorted.filter((req) =>
+        Boolean((req as any)?.shippingLabelPrinted?.printed),
+      ).length,
+    [filteredAndSorted],
+  );
+
   const {
     printerProfile,
     setPrinterProfile,
@@ -620,10 +628,13 @@ export const PackingPageContent = ({
   });
 
   const handlePrintPackingLabels = useCallback(async () => {
-    if (!paginatedRequests.length) {
+    const selectedRequests = paginatedRequests.filter((req) =>
+      selectedPackingRequestIds.includes(String(req._id || "")),
+    );
+    if (!selectedRequests.length) {
       toast({
         title: "출력할 의뢰 없음",
-        description: "현재 화면에 출력할 의뢰가 없습니다.",
+        description: "선택된 의뢰가 없습니다.",
         variant: "destructive",
       });
       return;
@@ -634,7 +645,7 @@ export const PackingPageContent = ({
     let firstErrorMessage = "";
 
     try {
-      for (const req of paginatedRequests) {
+      for (const req of selectedRequests) {
         try {
           await handlePrintSinglePackingLabel(req, {
             silentSuccess: true,
@@ -681,6 +692,7 @@ export const PackingPageContent = ({
     paginatedRequests,
     paperProfile,
     printerProfile,
+    selectedPackingRequestIds,
     toast,
     token,
     handlePrintSinglePackingLabel,
@@ -734,10 +746,12 @@ export const PackingPageContent = ({
               <button
                 onClick={handlePrintPackingLabels}
                 disabled={
-                  isPrintingPackingLabels || paginatedRequests.length === 0
+                  isPrintingPackingLabels ||
+                  selectedPackingRequestIds.length === 0
                 }
                 className={`px-4 py-1 text-sm font-medium rounded-lg transition-colors border ${
-                  isPrintingPackingLabels || paginatedRequests.length === 0
+                  isPrintingPackingLabels ||
+                  selectedPackingRequestIds.length === 0
                     ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
                     : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm"
                 }`}
@@ -754,7 +768,7 @@ export const PackingPageContent = ({
           </div>
         ) : !isLoading ? (
           <>
-            <div className="mb-3 flex flex-wrap items-center justify-center gap-1">
+            <div className="mb-3 flex flex-wrap items-center justify-center gap-1 text-center">
               <button
                 type="button"
                 onClick={handleSelectAllPackingRequests}
@@ -780,8 +794,9 @@ export const PackingPageContent = ({
                 전체 해제
               </button>
               <div className="text-xs text-slate-500">
-                선택 {selectedPackingRequestIds.length} / 전체{" "}
-                {allPackingRequestIds.length}
+                전체 {allPackingRequestIds.length}개 / 선택{" "}
+                {selectedPackingRequestIds.length}개 / 출력{" "}
+                {printedPackingCount}개
               </div>
             </div>
             <WorksheetCardGrid

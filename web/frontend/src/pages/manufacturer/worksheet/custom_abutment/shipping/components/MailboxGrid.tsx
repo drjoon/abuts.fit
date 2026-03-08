@@ -142,9 +142,6 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
   }, [shelfNames]);
 
   const [selectedGroupIdx, setSelectedGroupIdx] = useState(0);
-  const [printedMailboxes, setPrintedMailboxes] = useState<Set<string>>(
-    new Set(),
-  );
   const [selectedMailboxes, setSelectedMailboxes] = useState<Set<string>>(
     new Set(),
   );
@@ -808,6 +805,19 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     return set;
   }, [requests]);
 
+  const printedMailboxes = useMemo(() => {
+    const set = new Set<string>();
+    for (const req of requests) {
+      const mailbox = String(req?.mailboxAddress || "").trim();
+      if (!mailbox) continue;
+      const printed = Boolean((req as any)?.shippingLabelPrinted?.printed);
+      if (printed) {
+        set.add(mailbox);
+      }
+    }
+    return set;
+  }, [requests]);
+
   const selectedOccupiedAddresses = useMemo(
     () => occupiedAddresses.filter((addr) => selectedMailboxes.has(addr)),
     [occupiedAddresses, selectedMailboxes],
@@ -992,10 +1002,6 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
 
         if (printPayload) {
           await handleDownloadWaybillPdf(candidatePayload);
-          setPrintedMailboxes(
-            (prev) =>
-              new Set([...Array.from(prev), ...selectedOccupiedAddresses]),
-          );
           toast({
             title: "운송장 저장 완료",
             description: `${selectedOccupiedAddresses.length}개 우편함의 운송장을 다운로드했습니다.`,
@@ -1008,10 +1014,6 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
             addressList: (data as any).address_list,
             zplLabels: (data as any).zplLabels,
           });
-          setPrintedMailboxes(
-            (prev) =>
-              new Set([...Array.from(prev), ...selectedOccupiedAddresses]),
-          );
           toast({
             title: "운송장 저장 완료",
             description: `${selectedOccupiedAddresses.length}개 우편함의 운송장을 다운로드했습니다.`,
@@ -1020,10 +1022,6 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
         }
 
         if (wblPrint?.success) {
-          setPrintedMailboxes(
-            (prev) =>
-              new Set([...Array.from(prev), ...selectedOccupiedAddresses]),
-          );
           toast({
             title: "운송장 출력 완료",
             description: `${selectedOccupiedAddresses.length}개 우편함의 운송장이 출력되었습니다.`,
@@ -1050,10 +1048,6 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
       });
 
       if (wblPrint?.success) {
-        setPrintedMailboxes(
-          (prev) =>
-            new Set([...Array.from(prev), ...selectedOccupiedAddresses]),
-        );
         toast({
           title: "운송장 출력 완료",
           description: `${selectedOccupiedAddresses.length}개 우편함의 운송장이 출력되었습니다.`,
@@ -1066,10 +1060,6 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
         wblPrint?.reason === "wbl_print_server_not_configured"
       ) {
         await triggerLocalPrint(data);
-        setPrintedMailboxes(
-          (prev) =>
-            new Set([...Array.from(prev), ...selectedOccupiedAddresses]),
-        );
         toast({
           title: "운송장 출력 완료",
           description: `${selectedOccupiedAddresses.length}개 우편함의 운송장이 출력되었습니다.`,
@@ -1100,9 +1090,6 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
       }
 
       await triggerLocalPrint(data);
-      setPrintedMailboxes(
-        (prev) => new Set([...Array.from(prev), ...selectedOccupiedAddresses]),
-      );
       toast({
         title: "운송장 출력 완료",
         description: `${selectedOccupiedAddresses.length}개 우편함의 운송장이 출력되었습니다.`,
@@ -1292,7 +1279,7 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-center gap-2 pb-3 px-2">
+        <div className="flex flex-wrap items-center justify-center gap-2 pt-2 pb-3 px-2 text-center">
           <button
             type="button"
             onClick={selectAllOccupied}
@@ -1320,12 +1307,9 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
             전체 해제
           </button>
           <div className="text-xs text-slate-500">
-            선택 {selectedOccupiedAddresses.length} / 전체{" "}
-            {occupiedAddresses.length}
-          </div>
-          <div className="text-xs text-slate-500">
-            출력완료 {selectedPrintedAddresses.length} / 접수중{" "}
-            {selectedRequestedAddresses.length}
+            전체 {occupiedAddresses.length}개 / 선택{" "}
+            {selectedOccupiedAddresses.length}개 / 출력{" "}
+            {selectedPrintedAddresses.length}개
           </div>
         </div>
 
@@ -1527,14 +1511,19 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                             key={address}
                             onClick={handleClick}
                             onTouchEnd={handleClick}
+                            data-printed={
+                              printedMailboxes.has(address) ? "1" : "0"
+                            }
                             className={`
                               relative flex flex-col items-center justify-between p-1 rounded border transition-all select-none
                               ${
                                 isOccupied && isSelected
                                   ? "bg-blue-100 border-blue-500 shadow-sm"
-                                  : isOccupied
-                                    ? getMailboxColorClass(items)
-                                    : "bg-white border-slate-200"
+                                  : isOccupied && printedMailboxes.has(address)
+                                    ? "bg-white border-orange-400 shadow-sm"
+                                    : isOccupied
+                                      ? getMailboxColorClass(items)
+                                      : "bg-white border-slate-200"
                               }
                             `}
                             style={{

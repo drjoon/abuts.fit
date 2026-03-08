@@ -50,6 +50,24 @@ const emitDeliveryUpdated = async (requestDoc, extra = {}) => {
   });
 };
 
+const persistPrintedMailboxState = async (mailboxAddresses = []) => {
+  const addresses = Array.isArray(mailboxAddresses)
+    ? mailboxAddresses.map((v) => String(v || "").trim()).filter(Boolean)
+    : [];
+  if (!addresses.length) return;
+
+  const printedAt = new Date();
+  await Request.updateMany(
+    { mailboxAddress: { $in: addresses } },
+    {
+      $set: {
+        "shippingLabelPrinted.printed": true,
+        "shippingLabelPrinted.printedAt": printedAt,
+      },
+    },
+  );
+};
+
 const extractTrackingRows = (data) => {
   if (!data || typeof data !== "object") return [];
   if (Array.isArray(data.wblList)) return data.wblList;
@@ -1367,6 +1385,8 @@ export async function printHanjinLabels(req, res) {
       });
     }
 
+    await persistPrintedMailboxState(mailboxAddresses);
+
     return res.status(200).json({
       success: true,
       data: {
@@ -1447,7 +1467,12 @@ export async function rollbackMailboxShipping(req, res) {
       };
       bumpRollbackCount(r, "shipping");
       applyStatusMapping(r, "세척.패킹");
-      r.mailboxAddress = null;
+      r.shippingLabelPrinted = {
+        ...(r.shippingLabelPrinted || {}),
+        printed: false,
+        printedAt: null,
+        mailboxAddress: String(r.mailboxAddress || "").trim() || null,
+      };
       await r.save();
       updatedIds.push(r.requestId);
     }

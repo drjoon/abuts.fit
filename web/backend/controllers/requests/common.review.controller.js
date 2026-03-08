@@ -809,11 +809,6 @@ export async function deleteStageFile(req, res) {
           });
         }
       }
-      // 포장.발송 단계에서 롤백할 때 우편함 주소 해제
-      if (stage === "shipping") {
-        request.mailboxAddress = null;
-      }
-
       await request.save();
 
       return res.status(200).json({

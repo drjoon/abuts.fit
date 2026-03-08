@@ -353,6 +353,20 @@ const requestSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    shippingLabelPrinted: {
+      printed: {
+        type: Boolean,
+        default: false,
+      },
+      printedAt: {
+        type: Date,
+        default: null,
+      },
+      mailboxAddress: {
+        type: String,
+        default: null,
+      },
+    },
     // 생산 스케줄 (생산자 관점, 시각 단위 관리)
     productionSchedule: {
       // 예정 시각

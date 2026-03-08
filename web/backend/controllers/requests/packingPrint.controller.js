@@ -1,4 +1,5 @@
 import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
+import Request from "../../models/request.model.js";
 
 const PACK_PRINT_SERVER_BASE = String(
   process.env.PACK_PRINT_SERVER_BASE || "http://localhost:8004",
@@ -212,6 +213,18 @@ export async function printPackZpl(req, res) {
       tone: "amber",
       clear: true,
     });
+
+    if (requestId) {
+      await Request.updateOne(
+        { requestId },
+        {
+          $set: {
+            "shippingLabelPrinted.printed": true,
+            "shippingLabelPrinted.printedAt": new Date(),
+          },
+        },
+      );
+    }
 
     return res.status(200).json({
       success: true,
