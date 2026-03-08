@@ -170,6 +170,35 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return Array.Empty<PendingItem>();
             }
         }
+        private static void VerifyBackendAuthOnStartup()
+        {
+            try
+            {
+                var baseUrl = BackendApiBase();
+                if (string.IsNullOrWhiteSpace(baseUrl))
+                {
+                    AppLogger.Log("Connect: startup backend auth check skipped (backend url empty)");
+                    return;
+                }
+                var url = baseUrl + "/bg/pending-nc";
+                using (var req = new HttpRequestMessage(HttpMethod.Get, url))
+                {
+                    AddBridgeSecretHeader(req);
+                    var resp = BackendHttp.SendAsync(req).GetAwaiter().GetResult();
+                    var body = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        AppLogger.Log($"Connect: startup backend auth check failed status={resp.StatusCode} body={body}");
+                        return;
+                    }
+                    AppLogger.Log("Connect: startup backend auth check ok");
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"Connect: startup backend auth check error {ex.GetType().Name}:{ex.Message}");
+            }
+        }
         internal static bool DownloadSourceFileToFilledDir(string requestId, string filePath, string targetFullPath)
         {
             try
@@ -219,6 +248,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             try
             {
                 if (httpServer == null) return;
+                VerifyBackendAuthOnStartup();
                 // 정책: 단일 승인만 처리. pending-nc 복구는 항상 스킵.
                 // 승인 시 백엔드가 직접 esprit-addin HTTP 엔드포인트로 단일 작업을 트리거하므로,
                 // 재기동 시 pending 전체를 복구하면 "승인하지 않은 백로그"까지 자동 처리될 수 있다.
