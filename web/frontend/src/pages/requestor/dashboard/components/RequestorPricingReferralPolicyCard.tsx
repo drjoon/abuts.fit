@@ -195,7 +195,7 @@ export const RequestorPricingReferralPolicyCard = () => {
             </div>
           </div>
           <CardDescription className="space-y-1 text-xs text-slate-600 pt-2">
-            최근 30일 집계는 <b>완료</b> 주문 기준입니다.
+            최근 30일 집계는 <b>포장.발송</b> 기준입니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-2 pb-4 gap-3 text-xs text-foreground">

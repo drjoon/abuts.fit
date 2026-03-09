@@ -58,7 +58,7 @@ export const RequestorDashboardStatsCards = ({
               <Icon className="h-4 w-4 text-slate-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-foreground">
+              <div className="text-2xl font-bold text-foreground whitespace-nowrap tracking-tight">
                 {stat.value}
               </div>
               {stat.change && (

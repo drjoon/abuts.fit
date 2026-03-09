@@ -137,34 +137,54 @@ export const RequestorShippingSummaryCard = () => {
             <div className="text-xs text-slate-600">불러오는 중...</div>
           ) : (
             <>
-              <div className="flex items-baseline justify-between">
-                <span className="text-slate-600">박스 구성</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-auto px-2 py-1 text-sm font-semibold text-foreground"
-                  disabled={
-                    memo.todayCount === 0 || memo.todayRequests.length === 0
-                  }
-                  onClick={() => setDialogOpen(true)}
-                >
-                  {`(${memo.todayRequests.length.toLocaleString()}건)`}
-                </Button>
+              <div className="rounded-lg border border-blue-200/70 bg-blue-50/60 px-3 py-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold tracking-wide text-blue-700">
+                    오늘 기준
+                  </span>
+                  <span className="text-[11px] text-blue-700">
+                    {memo.todayCount.toLocaleString()}박스
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-slate-700">박스 구성</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto px-2 py-1 text-sm font-semibold text-foreground"
+                    disabled={
+                      memo.todayCount === 0 || memo.todayRequests.length === 0
+                    }
+                    onClick={() => setDialogOpen(true)}
+                  >
+                    {`${memo.todayRequests.length.toLocaleString()}건`}
+                  </Button>
+                </div>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-slate-700">배송비 합계(공급가)</span>
+                  <span className="text-lg font-semibold text-foreground">
+                    {memo.todayFee.toLocaleString()}원
+                  </span>
+                </div>
               </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-slate-600">배송비 합계(공급가)</span>
-                <span className="text-lg font-semibold text-foreground">
-                  {memo.todayFee.toLocaleString()}원
-                </span>
+              <div className="rounded-lg border border-slate-200 bg-white/70 px-3 py-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold tracking-wide text-slate-600">
+                    지난 30일
+                  </span>
+                  <span className="text-[11px] text-slate-600">
+                    {memo.last30Count.toLocaleString()}박스
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-slate-600">배송비 합계</span>
+                  <span className="text-sm font-semibold text-foreground">
+                    {memo.last30Fee.toLocaleString()}원
+                  </span>
+                </div>
               </div>
-              <div className="flex items-baseline justify-between pt-1 border-t border-dashed border-gray-200 mt-2">
-                <span className="text-slate-600">지난 30일 배송비 합계</span>
-                <span className="text-sm font-semibold text-foreground">
-                  {memo.last30Fee.toLocaleString()}원
-                </span>
-              </div>
-              <div className="mt-2 space-y-1 max-h-32 overflow-auto pr-1">
+              <div className="mt-1 space-y-1 max-h-32 overflow-auto pr-1">
                 {memo.items.length === 0 ? (
                   <div className="text-[11px] text-slate-600">
                     최근 30일 이내 발송된 박스가 없습니다.

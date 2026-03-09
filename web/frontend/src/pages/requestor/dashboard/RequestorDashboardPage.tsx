@@ -559,8 +559,8 @@ export const RequestorDashboardPage = () => {
         { label: "CAM", value: "0", icon: Clock },
         { label: "가공", value: "0", icon: Clock },
         { label: "세척.패킹", value: "0", icon: Clock },
-        { label: "포장.발송", value: "0개 / 0박스", icon: TrendingUp },
-        { label: "추적관리", value: "0개 / 0박스", icon: TrendingUp },
+        { label: "포장.발송", value: "0건/0박스", icon: TrendingUp },
+        { label: "추적관리", value: "0건/0박스", icon: TrendingUp },
       ];
     }
 
@@ -600,13 +600,13 @@ export const RequestorDashboardPage = () => {
       },
       {
         label: "포장.발송",
-        value: `${shippingProductCount}개 / ${shippingBoxCount}박스`,
+        value: `${shippingProductCount}건/${shippingBoxCount}박스`,
         change: s.inShippingChange ?? "+0%",
         icon: TrendingUp,
       },
       {
         label: "추적관리",
-        value: `${trackingProductCount}개 / ${trackingBoxCount}박스`,
+        value: `${trackingProductCount}건/${trackingBoxCount}박스`,
         change: s.inTrackingChange ?? "+0%",
         icon: TrendingUp,
       },
