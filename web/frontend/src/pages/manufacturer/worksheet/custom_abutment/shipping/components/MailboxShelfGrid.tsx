@@ -55,7 +55,11 @@ export const MailboxShelfGrid = ({
   }: {
     address: string;
     isOccupied: boolean;
-    mailboxStatus: "없음" | "녹색" | "주황" | "빨강";
+    mailboxStatus:
+      | "없음"
+      | "접수 및 출력 완료"
+      | "라벨 출력 완료"
+      | "오류 발생";
   }) => {
     const lines = [address];
     if (!isOccupied) {
@@ -113,11 +117,11 @@ export const MailboxShelfGrid = ({
                           hasPrinted && !showSuccessBorder && !showFailedBorder;
                         const showSelectedBorder = isOccupied && isSelected;
                         const mailboxStatus = showFailedBorder
-                          ? "빨강"
+                          ? "오류 발생"
                           : showSuccessBorder
-                            ? "녹색"
+                            ? "접수 및 출력 완료"
                             : showPrintedBorder
-                              ? "주황"
+                              ? "라벨 출력 완료"
                               : "없음";
 
                         const handleClick = (

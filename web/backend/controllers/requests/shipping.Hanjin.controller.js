@@ -159,6 +159,11 @@ const preparePickupAndPrintChangeContext = async (mailboxAddresses = []) => {
   };
 };
 
+const findIntegratedPrintRequests = async (mailboxAddresses = []) =>
+  findPackingStageRequestsByMailboxes(mailboxAddresses, {
+    lean: true,
+  });
+
 const buildTrackingStatusLabel = (deliveryInfo) => {
   const deliveredAt = deliveryInfo?.deliveredAt
     ? new Date(deliveryInfo.deliveredAt)
@@ -683,10 +688,13 @@ export async function requestHanjinPickupAndPrint(req, res) {
       mailboxAddresses: printTargetMailboxAddresses,
       wblPrintOptions: body.wblPrintOptions,
     });
+    const selectedRequestsForPrint = await findIntegratedPrintRequests(
+      printTargetMailboxAddresses,
+    );
     printReq.__resolvedHanjinPayload = {
       mailboxAddresses: printTargetMailboxAddresses,
-      requests: Array.isArray(selectedRequestsBeforePrint)
-        ? selectedRequestsBeforePrint.filter((requestDoc) =>
+      requests: Array.isArray(selectedRequestsForPrint)
+        ? selectedRequestsForPrint.filter((requestDoc) =>
             printTargetMailboxAddresses.includes(
               String(requestDoc?.mailboxAddress || "").trim(),
             ),

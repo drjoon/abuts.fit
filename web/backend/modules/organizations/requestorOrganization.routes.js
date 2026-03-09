@@ -34,6 +34,12 @@ router.post(
   requestorOrganizationController.lookupPostalCode,
 );
 
+router.put(
+  "/requestor-shipping-address",
+  authorize(["manufacturer", "admin"]),
+  requestorOrganizationController.updateRequestorOrganizationShippingAddress,
+);
+
 router.delete(
   "/me/business-license",
   requestorOrganizationController.clearMyBusinessLicense,

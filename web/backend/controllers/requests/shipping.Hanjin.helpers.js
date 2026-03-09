@@ -136,11 +136,24 @@ const normalizeHanjinZip = (value) => {
 };
 
 const resolveMailboxCode = (request) =>
-  String(request?.mailboxAddress || "").trim();
+  String(request?.mailboxAddress || request?.mailbox || "").trim();
+
+const resolveRequestorOrganization = (request) => {
+  const candidates = [
+    request?.requestorOrganization,
+    request?.requestorOrganizationId,
+    request?.requestor?.organizationInfo,
+  ];
+  return (
+    candidates.find(
+      (candidate) => candidate && typeof candidate === "object",
+    ) || {}
+  );
+};
 
 const resolveRequestOrganizationName = (request) => {
   const requestor = request?.requestor || {};
-  const requestorOrg = request?.requestorOrganizationId || {};
+  const requestorOrg = resolveRequestorOrganization(request);
   const extracted = requestorOrg?.extracted || {};
   return (
     requestorOrg?.name ||
@@ -154,7 +167,7 @@ const resolveRequestOrganizationName = (request) => {
 
 const resolveReceiverZipSource = (request) => {
   const requestor = request?.requestor || {};
-  const requestorOrg = request?.requestorOrganizationId || {};
+  const requestorOrg = resolveRequestorOrganization(request);
   const extracted = requestorOrg?.extracted || {};
   return (
     requestor?.address?.postalCode ||
@@ -168,7 +181,7 @@ const resolveReceiverZipSource = (request) => {
 
 const normalizeReceiverAddressForHanjin = (request) => {
   const requestor = request?.requestor || {};
-  const requestorOrg = request?.requestorOrganizationId || {};
+  const requestorOrg = resolveRequestorOrganization(request);
   const extracted = requestorOrg?.extracted || {};
   const addressCandidates = [
     requestor?.addressText,
@@ -176,6 +189,7 @@ const normalizeReceiverAddressForHanjin = (request) => {
     requestor?.address?.address1,
     requestor?.address,
     extracted?.address,
+    extracted?.address1,
   ];
   return (
     addressCandidates
@@ -184,10 +198,28 @@ const normalizeReceiverAddressForHanjin = (request) => {
   );
 };
 
+const resolveReceiverDetailAddress = (request) => {
+  const requestor = request?.requestor || {};
+  const requestorOrg = resolveRequestorOrganization(request);
+  const extracted = requestorOrg?.extracted || {};
+  const candidates = [
+    requestor?.address?.detailAddress,
+    requestor?.address?.address2,
+    requestor?.address?.detail,
+    requestor?.detailAddress,
+    extracted?.addressDetail,
+    extracted?.detailAddress,
+    extracted?.address2,
+  ];
+  return (
+    candidates.map((value) => String(value || "").trim()).find(Boolean) || ""
+  );
+};
+
 const logMissingReceiverAddressDiagnostics = ({ request, mailbox, reason }) => {
   try {
     const requestor = request?.requestor || {};
-    const requestorOrg = request?.requestorOrganizationId || {};
+    const requestorOrg = resolveRequestorOrganization(request);
     const extracted = requestorOrg?.extracted || {};
     console.error("[hanjin][address] missing receiver address", {
       reason,
@@ -442,18 +474,7 @@ export const buildHanjinInsertOrderBody = ({ mailbox, requests }) => {
   const organizationName = resolveRequestOrganizationName(first);
   const receiverZip = normalizeHanjinZip(resolveReceiverZipSource(first));
   const addressText = normalizeReceiverAddressForHanjin(first);
-  const requestorOrg = first?.requestorOrganizationId || {};
-  const extracted = requestorOrg?.extracted || {};
-  const receiverDetail = String(
-    first?.requestor?.address?.detailAddress ||
-      first?.requestor?.address?.address2 ||
-      first?.requestor?.address?.detail ||
-      first?.requestor?.detailAddress ||
-      extracted?.addressDetail ||
-      extracted?.detailAddress ||
-      extracted?.address2 ||
-      "",
-  ).trim();
+  const receiverDetail = resolveReceiverDetailAddress(first);
   if (!receiverDetail) {
     logMissingReceiverAddressDiagnostics({
       request: first,
@@ -517,7 +538,7 @@ const buildHanjinDraftPayload = (requests) => {
     ([mailbox, group]) => {
       const first = group[0] || {};
       const requestor = first.requestor || {};
-      const requestorOrg = first.requestorOrganizationId || {};
+      const requestorOrg = resolveRequestorOrganization(first);
       const extracted = requestorOrg.extracted || {};
       const organizationName = resolveRequestOrganizationName(first);
       const addressText = normalizeReceiverAddressForHanjin(first);

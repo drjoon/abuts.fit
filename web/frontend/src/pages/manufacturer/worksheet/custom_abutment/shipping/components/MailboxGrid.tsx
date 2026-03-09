@@ -286,16 +286,12 @@ export const MailboxGrid = ({
         const mailboxRequests = requests.filter(
           (req) => String(req?.mailboxAddress || "").trim() === mailbox,
         );
-        const hasPickup = mailboxRequests.some((req) => {
-          const deliveryMeta =
-            req?.deliveryMeta && typeof req.deliveryMeta === "object"
-              ? req.deliveryMeta
-              : null;
-          return Boolean(
-            req?.wasPickedUp ?? deliveryMeta?.wasPickedUp ?? false,
+        const printedSuccessfully =
+          mailboxRequests.length > 0 &&
+          mailboxRequests.every((req) =>
+            Boolean((req as any)?.shippingLabelPrinted?.printed),
           );
-        });
-        if (hasPickup) next.delete(mailbox);
+        if (printedSuccessfully) next.delete(mailbox);
       }
       return next;
     });

@@ -347,6 +347,91 @@ export async function lookupPostalCode(req, res) {
   }
 }
 
+export async function updateRequestorOrganizationShippingAddress(req, res) {
+  try {
+    const actorRole = String(req.user?.role || "").trim();
+    if (!["manufacturer", "admin"].includes(actorRole)) {
+      return res.status(403).json({
+        success: false,
+        message: "이 작업을 수행할 권한이 없습니다.",
+      });
+    }
+
+    const organizationId = String(req.body?.organizationId || "").trim();
+    const address = String(req.body?.address || "").trim();
+    const addressDetail = String(req.body?.addressDetail || "").trim();
+    const zipCode = String(req.body?.zipCode || "").trim();
+
+    if (!organizationId) {
+      return res.status(400).json({
+        success: false,
+        message: "organizationId가 필요합니다.",
+      });
+    }
+
+    if (!address) {
+      return res.status(400).json({
+        success: false,
+        message: "address가 필요합니다.",
+      });
+    }
+
+    if (!addressDetail) {
+      return res.status(400).json({
+        success: false,
+        message: "addressDetail이 필요합니다.",
+      });
+    }
+
+    const normalizedAddressFields = await normalizeOrganizationAddressFields({
+      address,
+      zipCode,
+    });
+
+    const org = await RequestorOrganization.findOne({
+      _id: organizationId,
+      ...buildOrganizationTypeFilter("requestor"),
+    });
+
+    if (!org) {
+      return res.status(404).json({
+        success: false,
+        message: "의뢰인 조직을 찾을 수 없습니다.",
+      });
+    }
+
+    const nextExtracted = {
+      ...(org.extracted ? org.extracted.toObject?.() || org.extracted : {}),
+      address: normalizedAddressFields?.address || address,
+      addressDetail,
+      zipCode: normalizedAddressFields?.zipCode || zipCode,
+    };
+
+    await RequestorOrganization.findByIdAndUpdate(org._id, {
+      $set: {
+        extracted: nextExtracted,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        organizationId: String(org._id),
+        address: nextExtracted.address || "",
+        addressDetail: nextExtracted.addressDetail || "",
+        zipCode: nextExtracted.zipCode || "",
+      },
+    });
+  } catch (error) {
+    return res.status(error?.statusCode || 500).json({
+      success: false,
+      message: "의뢰인 배송지 수정 중 오류가 발생했습니다.",
+      error: error.message,
+      data: error?.data,
+    });
+  }
+}
+
 function isDuplicateKeyErrorForMongo(err) {
   const code = err?.code;
   const name = String(err?.name || "");

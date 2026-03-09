@@ -1166,6 +1166,55 @@ export const RequestPage = ({
     setIsRollingBackAll(false);
   }, []);
 
+  const handleMailboxAddressSaved = useCallback(
+    (payload: {
+      organizationId: string;
+      address: string;
+      addressDetail: string;
+      zipCode: string;
+    }) => {
+      const organizationId = String(payload.organizationId || "").trim();
+      if (!organizationId) return;
+
+      setRequests((prev) =>
+        prev.map((req) => {
+          const reqOrganization =
+            (req as any)?.requestorOrganization ||
+            (req as any)?.requestorOrganizationId ||
+            null;
+          const reqOrganizationId = String(
+            reqOrganization?._id || reqOrganization || "",
+          ).trim();
+          if (reqOrganizationId !== organizationId) return req;
+
+          const nextRequestorOrganization = reqOrganization
+            ? {
+                ...reqOrganization,
+                extracted: {
+                  ...(reqOrganization?.extracted || {}),
+                  address: payload.address,
+                  addressDetail: payload.addressDetail,
+                  zipCode: payload.zipCode,
+                },
+              }
+            : reqOrganization;
+
+          return {
+            ...req,
+            requestorOrganization: nextRequestorOrganization,
+          };
+        }),
+      );
+
+      setMailboxErrorByAddress((prev) => {
+        const next = { ...prev };
+        delete next[mailboxModalAddress];
+        return next;
+      });
+    },
+    [mailboxModalAddress],
+  );
+
   useEffect(() => {
     if (!mailboxModalOpen || !mailboxModalAddress) return;
     const next = requests.filter(
@@ -1463,11 +1512,13 @@ export const RequestPage = ({
         address={mailboxModalAddress}
         requests={mailboxModalRequests}
         errorMessage={mailboxErrorByAddress[mailboxModalAddress] || ""}
+        token={token}
         onRollback={handleCardRollback}
         onRollbackAll={
           mailboxModalRequests.length ? handleRollbackAllInMailbox : undefined
         }
         isRollingBackAll={isRollingBackAll}
+        onAddressSaved={handleMailboxAddressSaved}
       />
 
       <PreviewModal

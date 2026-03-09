@@ -193,7 +193,10 @@ export const createCapturedJsonResponder = () => {
   };
 };
 
-export const resolveCapturedSuccessBody = (capturedPayload, fallbackMessage) => {
+export const resolveCapturedSuccessBody = (
+  capturedPayload,
+  fallbackMessage,
+) => {
   if (capturedPayload?.body?.success) {
     return capturedPayload.body;
   }
