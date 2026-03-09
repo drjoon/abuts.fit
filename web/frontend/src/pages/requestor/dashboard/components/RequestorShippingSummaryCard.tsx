@@ -129,7 +129,7 @@ export const RequestorShippingSummaryCard = () => {
       <Card className="app-glass-card app-glass-card--lg">
         <CardHeader className="pb-2">
           <CardTitle className="text-base font-semibold text-foreground">
-            오늘 발송 내역
+            발송 내역
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-2 pb-4 text-sm text-foreground space-y-2">
@@ -137,10 +137,10 @@ export const RequestorShippingSummaryCard = () => {
             <div className="text-xs text-slate-600">불러오는 중...</div>
           ) : (
             <>
-              <div className="rounded-lg border border-blue-200/70 bg-blue-50/60 px-3 py-3 space-y-2">
-                <div className="flex items-center justify-between gap-2">
+              <div className="rounded-lg border border-blue-200/70 bg-blue-50/60 px-3 py-3 space-y-1">
+                <div className="flex items-center justify-between gap-1">
                   <span className="text-[11px] font-semibold tracking-wide text-blue-700">
-                    오늘 기준
+                    오늘 발송 예정
                   </span>
                   <span className="text-[11px] text-blue-700">
                     {memo.todayCount.toLocaleString()}박스
@@ -152,7 +152,7 @@ export const RequestorShippingSummaryCard = () => {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-auto px-2 py-1 text-sm font-semibold text-foreground"
+                    className="h-auto px-2 py-0 text-sm font-semibold text-foreground"
                     disabled={
                       memo.todayCount === 0 || memo.todayRequests.length === 0
                     }
