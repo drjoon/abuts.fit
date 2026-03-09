@@ -37,25 +37,6 @@ export const MailboxGrid = ({
   onMailboxError,
 }: MailboxGridProps) => {
   const { toast } = useToast();
-  const formatElapsedMs = (value: unknown) => {
-    const ms = Number(value || 0);
-    if (!Number.isFinite(ms) || ms < 1000) {
-      return `${Math.max(0, Math.round(ms))}ms`;
-    }
-    return `${(ms / 1000).toFixed(1)}초`;
-  };
-  const logPickupAndPrintTimings = (data: any, targetAddresses: string[]) => {
-    const timings = data?.timings;
-    if (!timings) return;
-    console.log("[hanjin][pickup-and-print][frontend] timings", {
-      mailboxAddresses: targetAddresses,
-      timings,
-    });
-    toast({
-      title: "출력/접수 소요 시간",
-      description: `출력 ${formatElapsedMs(timings?.print?.elapsedMs)} / 접수 ${formatElapsedMs(timings?.pickup?.elapsedMs)} / 전체 ${formatElapsedMs(timings?.flow?.elapsedMs)}`,
-    });
-  };
   const shelfNames = Array.from({ length: 24 }, (_, i) =>
     String.fromCharCode(65 + i),
   );
@@ -68,9 +49,6 @@ export const MailboxGrid = ({
   }, [shelfNames]);
 
   const [selectedGroupIdx, setSelectedGroupIdx] = useState(0);
-  const [selectedMailboxes, setSelectedMailboxes] = useState<Set<string>>(
-    new Set(),
-  );
   const [isRequestingPickup, setIsRequestingPickup] = useState(false);
   const [activeHeaderAction, setActiveHeaderAction] = useState<
     "print" | "pickup" | null
@@ -94,7 +72,6 @@ export const MailboxGrid = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const touchStartXRef = useRef<number>(0);
   const shelfRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const didInitSelectionRef = useRef(false);
   const {
     printerProfile,
     setPrinterProfile,
@@ -185,7 +162,7 @@ export const MailboxGrid = ({
   };
 
   const handlePrintOnly = async ({
-    targetAddresses = selectedOccupiedAddresses,
+    targetAddresses = occupiedAddresses,
     modifyOnly = false,
   }: {
     targetAddresses?: string[];
@@ -195,8 +172,8 @@ export const MailboxGrid = ({
       toast({
         title: "우편함 없음",
         description: modifyOnly
-          ? "재출력할 우편함을 선택해주세요."
-          : "운송장을 출력할 우편함을 선택해주세요.",
+          ? "재출력할 우편함이 없습니다."
+          : "운송장을 출력할 우편함이 없습니다.",
         variant: "destructive",
       });
       return;
@@ -231,6 +208,8 @@ export const MailboxGrid = ({
         mailboxAddresses: targetAddresses,
         changedMailboxAddresses: (data as any)?.changedMailboxAddresses,
         mailboxChanges: (data as any)?.mailboxChanges,
+        pickupUpdatedMailboxAddresses: (data as any)
+          ?.pickupUpdatedMailboxAddresses,
         wblPrint,
       });
 
@@ -274,6 +253,27 @@ export const MailboxGrid = ({
           ...nextMailboxChangeMeta,
         }));
       }
+      const pickupUpdatedMailboxAddresses = Array.isArray(
+        (data as any)?.pickupUpdatedMailboxAddresses,
+      )
+        ? (data as any).pickupUpdatedMailboxAddresses
+            .map((value: any) => String(value || "").trim())
+            .filter(Boolean)
+        : [];
+
+      const notifyPickupUpdated = () => {
+        if (!modifyOnly || pickupUpdatedMailboxAddresses.length === 0) return;
+        toast({
+          title: "택배 접수 업데이트 완료",
+          description: `${pickupUpdatedMailboxAddresses.length}개 우편함의 접수 정보를 갱신했습니다.`,
+        });
+      };
+      const completedPrintCount =
+        modifyOnly && changedMailboxAddressSet.size > 0
+          ? changedMailboxAddressSet.size
+          : targetAddresses.length;
+      const completedPrintDescriptionImage = `${completedPrintCount}개 우편함의 라벨을 저장했습니다.`;
+      const completedPrintDescriptionPrint = `${completedPrintCount}개 우편함의 라벨 출력이 완료되었습니다.`;
 
       if (shippingOutputMode === "image") {
         const candidatePayload =
@@ -284,8 +284,9 @@ export const MailboxGrid = ({
           await handleDownloadWaybillPdf(candidatePayload);
           toast({
             title: modifyOnly ? "운송장 재출력 완료" : "운송장 출력 완료",
-            description: `${targetAddresses.length}개 우편함의 라벨을 저장했습니다.`,
+            description: completedPrintDescriptionImage,
           });
+          notifyPickupUpdated();
           return;
         }
 
@@ -296,8 +297,9 @@ export const MailboxGrid = ({
           });
           toast({
             title: modifyOnly ? "운송장 재출력 완료" : "운송장 출력 완료",
-            description: `${targetAddresses.length}개 우편함의 라벨을 저장했습니다.`,
+            description: completedPrintDescriptionImage,
           });
+          notifyPickupUpdated();
           return;
         }
       }
@@ -305,8 +307,9 @@ export const MailboxGrid = ({
       if (wblPrint?.success) {
         toast({
           title: modifyOnly ? "운송장 재출력 완료" : "운송장 출력 완료",
-          description: `${targetAddresses.length}개 우편함의 라벨 출력이 완료되었습니다.`,
+          description: completedPrintDescriptionPrint,
         });
+        notifyPickupUpdated();
         return;
       }
 
@@ -318,8 +321,9 @@ export const MailboxGrid = ({
         await triggerLocalPrint(data);
         toast({
           title: modifyOnly ? "운송장 재출력 완료" : "운송장 출력 완료",
-          description: `${targetAddresses.length}개 우편함의 라벨 출력이 완료되었습니다.`,
+          description: completedPrintDescriptionPrint,
         });
+        notifyPickupUpdated();
         return;
       }
 
@@ -348,8 +352,9 @@ export const MailboxGrid = ({
       await triggerLocalPrint(data);
       toast({
         title: modifyOnly ? "운송장 재출력 완료" : "운송장 출력 완료",
-        description: `${targetAddresses.length}개 우편함의 라벨 출력이 완료되었습니다.`,
+        description: completedPrintDescriptionPrint,
       });
+      notifyPickupUpdated();
     } catch (error) {
       console.error("운송장 출력 실패:", error);
       console.error("[shipping][print] error", {
@@ -415,23 +420,6 @@ export const MailboxGrid = ({
   const occupiedAddresses = useMemo(() => {
     return Array.from(addressMap.keys());
   }, [addressMap]);
-
-  useEffect(() => {
-    setSelectedMailboxes((prev) => {
-      const next = new Set(
-        Array.from(prev).filter((address) =>
-          occupiedAddresses.includes(address),
-        ),
-      );
-
-      if (!didInitSelectionRef.current) {
-        didInitSelectionRef.current = true;
-        return new Set(occupiedAddresses);
-      }
-
-      return next;
-    });
-  }, [occupiedAddresses]);
 
   const pickupRequestedMailboxes = useMemo(() => {
     const map = new Map<string, MailboxPickupStatus>();
@@ -558,104 +546,37 @@ export const MailboxGrid = ({
     };
   };
 
-  const selectedOccupiedAddresses = useMemo(
-    () => occupiedAddresses.filter((addr) => selectedMailboxes.has(addr)),
-    [occupiedAddresses, selectedMailboxes],
-  );
-
-  const selectedRequestedAddresses = useMemo(
+  const acceptedAddresses = useMemo(
     () =>
-      selectedOccupiedAddresses.filter(
+      occupiedAddresses.filter(
         (addr) => pickupRequestedMailboxes.get(addr) === "accepted",
       ),
-    [selectedOccupiedAddresses, pickupRequestedMailboxes],
+    [occupiedAddresses, pickupRequestedMailboxes],
   );
 
-  const selectedPrintedAddresses = useMemo(
+  const printedWorkflowAddresses = useMemo(
     () =>
-      selectedOccupiedAddresses.filter((addr) => {
+      occupiedAddresses.filter((addr) => {
         const status = pickupRequestedMailboxes.get(addr);
         return status === "printed";
       }),
-    [selectedOccupiedAddresses, pickupRequestedMailboxes],
+    [occupiedAddresses, pickupRequestedMailboxes],
   );
 
-  const selectedRequestedOrOptimisticAddresses = selectedRequestedAddresses;
-
-  const selectedMailboxRequests = useMemo(() => {
-    const byMailbox = new Map<string, ManufacturerRequest[]>();
-    for (const req of requests) {
-      const mailbox = String(req?.mailboxAddress || "").trim();
-      if (!mailbox || !selectedMailboxes.has(mailbox)) continue;
-      if (!byMailbox.has(mailbox)) byMailbox.set(mailbox, []);
-      byMailbox.get(mailbox)?.push(req);
-    }
-    return byMailbox;
-  }, [requests, selectedMailboxes]);
-
-  const selectedRequestedMailboxChanges = useMemo(() => {
-    return selectedRequestedOrOptimisticAddresses.map((address) => {
-      const mailboxRequests = selectedMailboxRequests.get(address) || [];
-      const currentRequestIds = mailboxRequests
-        .map((req) => String(req?.requestId || "").trim())
-        .filter(Boolean)
-        .sort();
-      const printedMeta = mailboxRequests[0]?.shippingLabelPrinted;
-      const previousRequestIds = Array.isArray(printedMeta?.snapshotRequestIds)
-        ? printedMeta.snapshotRequestIds
-            .map((value) => String(value || "").trim())
-            .filter(Boolean)
-            .sort()
-        : [];
-      const previousFingerprint = String(
-        printedMeta?.snapshotFingerprint || "",
-      ).trim();
-      const currentFingerprint = JSON.stringify(
-        currentRequestIds.map((requestId) => ({ address, requestId })),
-      );
-      const changed =
-        !previousFingerprint || previousFingerprint !== currentFingerprint;
-
-      return {
-        address,
-        changed,
-        currentRequestIds,
-        previousRequestIds,
-      };
-    });
-  }, [selectedMailboxRequests, selectedRequestedOrOptimisticAddresses]);
-
-  const selectedPrintedMailboxChanges = useMemo(() => {
-    return selectedPrintedAddresses.map((address) => {
+  const printedMailboxChanges = useMemo(() => {
+    return printedWorkflowAddresses.map((address) => {
       const backendMeta = mailboxChangeMeta[address];
       return {
         address,
         changed: backendMeta ? backendMeta.changed : false,
       };
     });
-  }, [mailboxChangeMeta, selectedPrintedAddresses]);
+  }, [mailboxChangeMeta, printedWorkflowAddresses]);
 
-  const hasModifiedPrintedSelection = useMemo(
-    () => selectedPrintedMailboxChanges.some((item) => item.changed),
-    [selectedPrintedMailboxChanges],
+  const hasModifiedPrintedMailbox = useMemo(
+    () => printedMailboxChanges.some((item) => item.changed),
+    [printedMailboxChanges],
   );
-
-  const toggleMailboxSelection = (address: string) => {
-    setSelectedMailboxes((prev) => {
-      const next = new Set(prev);
-      if (next.has(address)) next.delete(address);
-      else next.add(address);
-      return next;
-    });
-  };
-
-  const handleSelectAllMailboxes = () => {
-    setSelectedMailboxes(new Set(occupiedAddresses));
-  };
-
-  const handleClearSelectedMailboxes = () => {
-    setSelectedMailboxes(new Set());
-  };
 
   const triggerLocalPrint = async (payload: any) => {
     const addressList = payload?.address_list;
@@ -683,13 +604,11 @@ export const MailboxGrid = ({
 
     if (!zpl) {
       toast({
-        title: "출력 준비 실패",
-        description: "address_list에서 유효한 운송장 정보를 찾지 못했습니다.",
+        title: "로컬 출력 실패",
+        description: "운송장 응답에서 ZPL 데이터를 찾지 못했습니다.",
         variant: "destructive",
       });
-      return;
     }
-
     try {
       const response = await request<any>({
         path: "/api/requests/packing/print-zpl",
@@ -718,31 +637,31 @@ export const MailboxGrid = ({
     const normalizedExplicitTargets = Array.isArray(explicitTargetAddresses)
       ? explicitTargetAddresses.filter(Boolean)
       : [];
-    const requestedAddresses = normalizedExplicitTargets.length
+    const acceptedTargetAddresses = normalizedExplicitTargets.length
       ? normalizedExplicitTargets.filter(
           (addr) => pickupRequestedMailboxes.get(addr) === "accepted",
         )
-      : selectedRequestedOrOptimisticAddresses;
-    const hasRequestedPickup = requestedAddresses.length > 0;
+      : acceptedAddresses;
+    const hasAcceptedTarget = acceptedTargetAddresses.length > 0;
     const printedAddresses = normalizedExplicitTargets.length
       ? normalizedExplicitTargets.filter(
           (addr) => pickupRequestedMailboxes.get(addr) === "printed",
         )
-      : selectedPrintedAddresses;
-    const hasPrintedSelection = printedAddresses.length > 0;
+      : printedWorkflowAddresses;
+    const hasPrintedTarget = printedAddresses.length > 0;
 
-    const targetAddresses = hasRequestedPickup
-      ? requestedAddresses
-      : hasPrintedSelection
+    const targetAddresses = hasAcceptedTarget
+      ? acceptedTargetAddresses
+      : hasPrintedTarget
         ? printedAddresses
         : normalizedExplicitTargets.length
           ? normalizedExplicitTargets
-          : selectedOccupiedAddresses;
+          : occupiedAddresses;
 
     if (!targetAddresses.length) {
       toast({
         title: "접수 불가",
-        description: "택배 접수 또는 취소할 우편함을 먼저 선택해주세요.",
+        description: "택배 접수 또는 취소할 우편함이 없습니다.",
         variant: "destructive",
       });
       return;
@@ -751,7 +670,7 @@ export const MailboxGrid = ({
     setIsRequestingPickup(true);
     setActiveHeaderAction("pickup");
     try {
-      if (!hasRequestedPickup) {
+      if (!hasAcceptedTarget) {
         await callHanjinApi({
           path: "/api/requests/shipping/hanjin/pickup",
           mailboxAddresses: targetAddresses,
@@ -764,6 +683,10 @@ export const MailboxGrid = ({
         await callHanjinApi({
           path: "/api/requests/shipping/hanjin/pickup-cancel",
           mailboxAddresses: targetAddresses,
+        });
+        console.log("[shipping][pickup] cancel success", {
+          mailboxAddresses: targetAddresses,
+          timestamp: new Date().toISOString(),
         });
         setMailboxChangeMeta((prev) => {
           const next = { ...prev };
@@ -782,11 +705,11 @@ export const MailboxGrid = ({
       const errorMessage =
         error instanceof Error && error.message
           ? error.message
-          : hasRequestedPickup
+          : hasAcceptedTarget
             ? "택배 수거 접수 취소에 실패했습니다."
             : "택배 수거 접수에 실패했습니다.";
       toast({
-        title: hasRequestedPickup ? "취소 실패" : "택배 수거 접수 실패",
+        title: hasAcceptedTarget ? "취소 실패" : "택배 수거 접수 실패",
         description: errorMessage,
         variant: "destructive",
       });
@@ -796,48 +719,47 @@ export const MailboxGrid = ({
     }
   };
 
-  const canRequestPickup = selectedPrintedAddresses.length > 0;
+  const canRequestPickup = printedWorkflowAddresses.length > 0;
 
-  const hasRequestedSelection =
-    selectedRequestedOrOptimisticAddresses.length > 0;
+  const hasAcceptedMailbox = acceptedAddresses.length > 0;
 
-  const canCancelPickup = selectedRequestedOrOptimisticAddresses.length > 0;
+  const canCancelPickup = acceptedAddresses.length > 0;
 
-  const selectedRequestedCount = selectedRequestedAddresses.length;
+  const hasPrintedMailbox = printedWorkflowAddresses.length > 0;
 
-  const selectedPrintedCount = selectedPrintedAddresses.length;
+  const hasAnyOccupiedMailbox = occupiedAddresses.length > 0;
 
-  const hasPrintedSelection = selectedPrintedAddresses.length > 0;
-
-  const hasAnySelection = selectedOccupiedAddresses.length > 0;
-
-  const changedPrintedAddresses = selectedPrintedMailboxChanges
+  const changedPrintedAddresses = printedMailboxChanges
     .filter((item) => item.changed)
     .map((item) => item.address);
 
   const shouldReprintChangedOnly =
-    hasPrintedSelection &&
-    hasModifiedPrintedSelection &&
+    hasPrintedMailbox &&
+    hasModifiedPrintedMailbox &&
     changedPrintedAddresses.length > 0;
 
-  const pickupActionLabel = hasRequestedSelection
+  const printActionLabel = hasPrintedMailbox
+    ? "🖨️ 운송장 재출력"
+    : "🖨️ 운송장 출력";
+
+  const pickupActionLabel = hasAcceptedMailbox
     ? "↩️ 택배 취소"
     : "🚚 택배 접수";
 
-  const pickupActionLoadingLabel = hasRequestedSelection
+  const pickupActionLoadingLabel = hasAcceptedMailbox
     ? "취소 중..."
     : "접수 중...";
 
-  const pickupActionDisabled = hasRequestedSelection
+  const pickupActionDisabled = hasAcceptedMailbox
     ? !canCancelPickup
     : !canRequestPickup;
 
   const actionButtons = [
     {
-      label: "🖨️ 운송장 출력",
+      label: printActionLabel,
       loading: activeHeaderAction === "print" && isRequestingPickup,
       loadingLabel: "출력 중...",
-      disabled: !hasAnySelection,
+      disabled: !hasAnyOccupiedMailbox,
       variant: "blue" as const,
       onClick: () => {
         if (shouldReprintChangedOnly) {
@@ -855,7 +777,7 @@ export const MailboxGrid = ({
       loading: activeHeaderAction === "pickup" && isRequestingPickup,
       loadingLabel: pickupActionLoadingLabel,
       disabled: pickupActionDisabled,
-      variant: hasRequestedSelection ? ("rose" as const) : ("slate" as const),
+      variant: hasAcceptedMailbox ? ("rose" as const) : ("slate" as const),
       onClick: () => {
         void handlePickupAction();
       },
@@ -868,14 +790,7 @@ export const MailboxGrid = ({
         <MailboxActionHeader
           isRequestingPickup={isRequestingPickup}
           actionButtons={actionButtons}
-          selectedOccupiedCount={selectedOccupiedAddresses.length}
-          selectedPrintedCount={selectedPrintedCount}
-          selectedRequestedCount={selectedRequestedCount}
           onOpenPrinterSettings={() => setPrinterModalOpen(true)}
-          onSelectAll={handleSelectAllMailboxes}
-          onClearSelection={handleClearSelectedMailboxes}
-          disableSelectAll={occupiedAddresses.length === 0}
-          disableClearSelection={selectedMailboxes.size === 0}
         />
 
         <MailboxPrintSettingsDialog
@@ -912,12 +827,10 @@ export const MailboxGrid = ({
         printedMailboxes={printedMailboxes}
         pickupRequestedMailboxes={pickupRequestedMailboxes}
         failedMailboxes={failedMailboxes}
-        selectedMailboxes={selectedMailboxes}
         shelfRefs={shelfRefs}
         scrollContainerRef={scrollContainerRef}
         handleTouchStart={handleTouchStart}
         handleTouchEnd={handleTouchEnd}
-        toggleMailboxSelection={toggleMailboxSelection}
         getMailboxColorClass={getMailboxColorClass}
         onBoxClick={onBoxClick}
       />

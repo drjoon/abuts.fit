@@ -1,7 +1,6 @@
 import Request from "../../models/request.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import hanjinService from "../../services/hanjin.service.js";
-import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import {
   applyStatusMapping,
@@ -31,9 +30,7 @@ import {
 import {
   buildMailboxChangeResponse,
   buildMailboxChangeSet,
-  buildMailboxSnapshotByAddress,
   executeIntegratedCapturedStep,
-  getLastPrintedSnapshotForMailbox,
   persistPrintedMailboxState,
 } from "./shipping.MailboxRealtime.helpers.js";
 import { startHanjinTrackingPoll } from "./shipping.TrackingPoller.js";
@@ -52,11 +49,15 @@ const buildPickupAndPrintResponseData = ({
   pickupData,
   labelData,
   mailboxChangeResponse,
+  pickupUpdatedMailboxAddresses = [],
   timings,
 }) => ({
   pickup: pickupData,
   label: labelData,
   ...(mailboxChangeResponse || {}),
+  pickupUpdatedMailboxAddresses: Array.isArray(pickupUpdatedMailboxAddresses)
+    ? pickupUpdatedMailboxAddresses
+    : [],
   ...(timings ? { timings } : {}),
   address_list: Array.isArray(labelData?.address_list)
     ? labelData.address_list
@@ -64,9 +65,20 @@ const buildPickupAndPrintResponseData = ({
   zplLabels: Array.isArray(labelData?.zplLabels) ? labelData.zplLabels : [],
 });
 
-const buildPrintLabelsSuccessPayload = ({ labelData, wblPrint }) => ({
+const buildPrintLabelsSuccessPayload = ({
+  labelData,
+  wblPrint,
+  mailboxChangeResponse,
+  pickupUpdatedMailboxAddresses = [],
+}) => ({
   success: true,
-  data: labelData,
+  data: {
+    ...(labelData || {}),
+    ...(mailboxChangeResponse || {}),
+    pickupUpdatedMailboxAddresses: Array.isArray(pickupUpdatedMailboxAddresses)
+      ? pickupUpdatedMailboxAddresses
+      : [],
+  },
   wblPrint,
 });
 
@@ -74,6 +86,7 @@ const buildPickupAndPrintSuccessPayload = ({
   pickupData,
   labelData,
   mailboxChangeResponse,
+  pickupUpdatedMailboxAddresses,
   wblPrint,
   timings,
 }) => ({
@@ -82,6 +95,7 @@ const buildPickupAndPrintSuccessPayload = ({
     pickupData,
     labelData,
     mailboxChangeResponse,
+    pickupUpdatedMailboxAddresses,
     timings,
   }),
   wblPrint,
@@ -97,29 +111,22 @@ const buildMailboxChangeResponseWithChangedAddresses = ({
     : [],
 });
 
-const buildIntegratedMailboxChangePayload = ({
-  mailboxChangeResponse,
-  changedMailboxAddressesBeforePrint,
-}) =>
-  buildMailboxChangeResponseWithChangedAddresses({
-    mailboxChangeResponse,
-    changedMailboxAddresses: changedMailboxAddressesBeforePrint,
-  });
-
 const buildIntegratedPickupAndPrintSuccessResponse = ({
   pickupBody,
   printBody,
   mailboxChangeResponse,
   changedMailboxAddressesBeforePrint,
+  pickupUpdatedMailboxAddresses,
   timings,
 }) =>
   buildPickupAndPrintSuccessPayload({
     pickupData: pickupBody?.data,
     labelData: printBody?.data,
-    mailboxChangeResponse: buildIntegratedMailboxChangePayload({
+    mailboxChangeResponse: buildMailboxChangeResponseWithChangedAddresses({
       mailboxChangeResponse,
-      changedMailboxAddressesBeforePrint,
+      changedMailboxAddresses: changedMailboxAddressesBeforePrint,
     }),
+    pickupUpdatedMailboxAddresses,
     wblPrint: printBody?.wblPrint,
     timings,
   });
@@ -513,6 +520,7 @@ export async function printHanjinLabels(req, res) {
   try {
     const { mailboxAddresses, payload, wblPrintOptions } = req.body || {};
     const preResolved = req?.__resolvedHanjinPayload || null;
+    const normalizedMailboxAddresses = resolveMailboxList(mailboxAddresses);
     const path = resolveHanjinPath(
       "HANJIN_PRINT_WBL_PATH",
       getHanjinPathFallbacks().HANJIN_PRINT_WBL_PATH,
@@ -542,6 +550,28 @@ export async function printHanjinLabels(req, res) {
 
     debugHanjinPrintPayload(resolved.payload);
 
+    const printRequests = Array.isArray(preResolved?.requests)
+      ? preResolved.requests
+      : await findPrePrintSnapshotRequests(normalizedMailboxAddresses);
+    const mailboxChangeSet = buildMailboxChangeSet(printRequests);
+    const mailboxChangeResponse = buildMailboxChangeResponse({
+      mailboxAddresses: normalizedMailboxAddresses,
+      changeSet: mailboxChangeSet,
+    });
+    const pickupUpdatedMailboxAddresses = normalizedMailboxAddresses.filter(
+      (address) => {
+        const group = printRequests.filter(
+          (requestDoc) =>
+            String(requestDoc?.mailboxAddress || "").trim() === address,
+        );
+        return group.some(
+          (requestDoc) =>
+            String(requestDoc?.shippingWorkflow?.code || "").trim() ===
+            SHIPPING_WORKFLOW_CODES.ACCEPTED,
+        );
+      },
+    );
+
     const { labelData, wblPrint } = await executeHanjinLabelPrint({
       path,
       payload: resolved.payload,
@@ -550,14 +580,12 @@ export async function printHanjinLabels(req, res) {
     });
 
     await persistPrintedMailboxState({
-      mailboxAddresses,
-      requests: Array.isArray(preResolved?.requests)
-        ? preResolved.requests
-        : [],
+      mailboxAddresses: normalizedMailboxAddresses,
+      requests: printRequests,
     });
 
     const updatedDocs = await Request.find({
-      mailboxAddress: { $in: resolveMailboxList(mailboxAddresses) },
+      mailboxAddress: { $in: normalizedMailboxAddresses },
       manufacturerStage: "포장.발송",
     })
       .populate("requestor", "name organization phoneNumber address")
@@ -572,9 +600,14 @@ export async function printHanjinLabels(req, res) {
       });
     }
 
-    return res
-      .status(200)
-      .json(buildPrintLabelsSuccessPayload({ labelData, wblPrint }));
+    return res.status(200).json(
+      buildPrintLabelsSuccessPayload({
+        labelData,
+        wblPrint,
+        mailboxChangeResponse,
+        pickupUpdatedMailboxAddresses,
+      }),
+    );
   } catch (error) {
     console.error("Error in printHanjinLabels:", error);
     await markMailboxWorkflowError({
@@ -779,11 +812,24 @@ export async function cancelHanjinPickup(req, res) {
           updatedAt: new Date(),
         });
         await requestDoc.save();
-        await emitDeliveryUpdated(requestDoc, {
-          source: "hanjin-pickup-cancel",
-          shippingStatusLabel: "예약취소",
-        });
+        updatedIds.push(String(requestDoc.requestId || "").trim());
       }
+
+      const updatedSummary = requestDocs.map((doc) => ({
+        requestId: String(doc.requestId || "").trim(),
+        shippingWorkflowCode: doc.shippingWorkflow?.code || null,
+        manufacturerStage: doc.manufacturerStage,
+      }));
+      console.log("[hanjin][pickup-cancel] mailbox processed", {
+        mailbox,
+        updatedCount: requestDocs.length,
+        updatedSummary,
+        resultCode: data?.resultCode,
+      });
+
+      const updatedDocs = await Request.find({
+        _id: { $in: requestDocs.map((request) => request._id) },
+      });
 
       results.push({ mailbox, success: true, data });
     }
@@ -909,6 +955,8 @@ export async function requestHanjinPickupAndPrint(req, res) {
       printBody: printStep.body,
       mailboxChangeResponse,
       changedMailboxAddressesBeforePrint,
+      pickupUpdatedMailboxAddresses:
+        printStep.body?.data?.pickupUpdatedMailboxAddresses || [],
       timings,
     });
 

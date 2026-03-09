@@ -1,4 +1,4 @@
-import type React from "react";
+import * as React from "react";
 import type { ManufacturerRequest } from "../../utils/request";
 import {
   Tooltip,
@@ -25,12 +25,10 @@ type MailboxShelfGridProps = {
   printedMailboxes: Set<string>;
   pickupRequestedMailboxes: Map<string, MailboxPickupStatus>;
   failedMailboxes: Set<string>;
-  selectedMailboxes: Set<string>;
   shelfRefs: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   handleTouchStart: (e: React.TouchEvent) => void;
   handleTouchEnd: (e: React.TouchEvent) => void;
-  toggleMailboxSelection: (address: string) => void;
   getMailboxColorClass: (items: ManufacturerRequest[]) => string;
   onBoxClick?: (address: string, requests: ManufacturerRequest[]) => void;
 };
@@ -44,12 +42,10 @@ export const MailboxShelfGrid = ({
   printedMailboxes,
   pickupRequestedMailboxes,
   failedMailboxes,
-  selectedMailboxes,
   shelfRefs,
   scrollContainerRef,
   handleTouchStart,
   handleTouchEnd,
-  toggleMailboxSelection,
   getMailboxColorClass,
   onBoxClick,
 }: MailboxShelfGridProps) => {
@@ -114,7 +110,6 @@ export const MailboxShelfGrid = ({
                         const address = `${shelf}${sRow}${bCol}${bRow}`;
                         const items = addressMap.get(address) || [];
                         const isOccupied = items.length > 0;
-                        const isSelected = selectedMailboxes.has(address);
                         const hasPrinted = printedMailboxes.has(address);
                         const pickupStatus =
                           pickupRequestedMailboxes.get(address) || "none";
@@ -135,7 +130,6 @@ export const MailboxShelfGrid = ({
                           !showSuccessBorder &&
                           !showFailedBorder &&
                           !isErrorStatus;
-                        const showSelectedBorder = isOccupied && isSelected;
                         const mailboxStatus =
                           showFailedBorder || isErrorStatus
                             ? "오류 발생"
@@ -150,16 +144,6 @@ export const MailboxShelfGrid = ({
                                     : pickupStatus === "canceled"
                                       ? "취소"
                                       : "없음";
-
-                        const handleClick = (
-                          e: React.MouseEvent | React.TouchEvent,
-                        ) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (isOccupied) {
-                            toggleMailboxSelection(address);
-                          }
-                        };
 
                         const handleOpenDetails = (
                           e: React.MouseEvent | React.TouchEvent,
@@ -181,22 +165,13 @@ export const MailboxShelfGrid = ({
                           <Tooltip key={address}>
                             <TooltipTrigger asChild>
                               <div
-                                onClick={handleClick}
-                                onTouchEnd={handleClick}
+                                onClick={handleOpenDetails}
+                                onTouchEnd={handleOpenDetails}
                                 data-printed={hasPrinted ? "1" : "0"}
                                 className={`
                                   relative flex flex-col items-center justify-between p-1 rounded border transition-all select-none
-                                  ${
-                                    isOccupied && showSuccessBorder
-                                      ? "bg-blue-50 border-blue-200 shadow-sm"
-                                      : isOccupied && showAcceptedBorder
-                                        ? "bg-blue-50 border-blue-200 shadow-sm"
-                                        : isOccupied && showPrintedBorder
-                                          ? "bg-white border-slate-300 shadow-sm"
-                                          : showSelectedBorder
-                                            ? "bg-blue-50 border-blue-300 shadow-sm"
-                                            : "bg-white border-slate-200"
-                                  }
+                                  bg-white border-slate-200
+                                  ${isOccupied ? "cursor-pointer hover:shadow-md" : ""}
                                 `}
                                 style={{
                                   width: "62px",
@@ -218,25 +193,23 @@ export const MailboxShelfGrid = ({
                                 ) : null}
                                 <div
                                   className={`font-mono font-bold leading-none text-center w-full pointer-events-none ${
-                                    showSelectedBorder
-                                      ? "text-blue-800"
-                                      : showAcceptedBorder
+                                    showAcceptedBorder
+                                      ? "text-blue-700"
+                                      : showSuccessBorder
                                         ? "text-blue-700"
-                                        : showSuccessBorder
-                                          ? "text-blue-700"
-                                          : showPrintedBorder
-                                            ? "text-slate-900"
-                                            : isOccupied
-                                              ? getMailboxColorClass(
-                                                  items,
-                                                ).includes("bg-blue")
-                                                ? "text-blue-800"
-                                                : getMailboxColorClass(
-                                                      items,
-                                                    ).includes("bg-red")
-                                                  ? "text-red-800"
-                                                  : "text-slate-700"
-                                              : "text-slate-400"
+                                        : showPrintedBorder
+                                          ? "text-slate-900"
+                                          : isOccupied
+                                            ? getMailboxColorClass(
+                                                items,
+                                              ).includes("bg-blue")
+                                              ? "text-blue-800"
+                                              : getMailboxColorClass(
+                                                    items,
+                                                  ).includes("bg-red")
+                                                ? "text-red-800"
+                                                : "text-slate-700"
+                                            : "text-slate-400"
                                   }`}
                                   style={{ fontSize: "9px" }}
                                 >
@@ -248,7 +221,7 @@ export const MailboxShelfGrid = ({
                                       type="button"
                                       onClick={handleOpenDetails}
                                       className={`font-bold leading-none ${
-                                        isSelected || showSuccessBorder
+                                        showSuccessBorder
                                           ? "text-blue-700"
                                           : showAcceptedBorder
                                             ? "text-blue-700"

@@ -11,6 +11,7 @@ import {
   SHIPPING_WORKFLOW_LABELS,
 } from "./utils.js";
 import { chargeShippingFeeOnPickupComplete } from "./shipping.Requestor.helpers.js";
+import { resetPrintedAndAcceptedWorkingState } from "./shipping.MailboxRealtime.helpers.js";
 
 export const HANJIN_CLIENT_ID = String(
   process.env.HANJIN_CLIENT_ID || "",
@@ -199,6 +200,10 @@ export const applyTrackingRowsToRequests = async ({
         updatedAt: last?.occurredAt || new Date(),
       });
     } else if (hasPickupCompleted(trackingCode)) {
+      resetPrintedAndAcceptedWorkingState(
+        requestDoc,
+        deliveryInfo.pickedUpAt || last?.occurredAt || new Date(),
+      );
       applyShippingWorkflowState(requestDoc, {
         code: SHIPPING_WORKFLOW_CODES.PICKED_UP,
         label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.PICKED_UP],

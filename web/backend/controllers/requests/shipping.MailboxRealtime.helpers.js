@@ -185,6 +185,24 @@ export const persistPrintedMailboxState = async ({
   }
 };
 
+export const resetPrintedAndAcceptedWorkingState = (requestDoc, pickedUpAt) => {
+  if (!requestDoc || typeof requestDoc !== "object") return;
+
+  const effectivePickedUpAt = pickedUpAt || new Date();
+  requestDoc.shippingLabelPrinted = {
+    ...(requestDoc.shippingLabelPrinted || {}),
+    printed: false,
+    printedAt: null,
+  };
+  requestDoc.shippingWorkflow = {
+    ...(requestDoc.shippingWorkflow || {}),
+    printedAt: null,
+    acceptedAt: null,
+    pickedUpAt: effectivePickedUpAt,
+    updatedAt: effectivePickedUpAt,
+  };
+};
+
 export const createCapturedJsonResponder = () => {
   let captured = null;
   return {
