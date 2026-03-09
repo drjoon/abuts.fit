@@ -116,45 +116,62 @@ export const MailboxGrid = ({
     return map;
   }, [requests, workflowOverrideByRequestId]);
 
-  useEffect(() => {
-    if (!requests.length) return;
-    const sampleRaw = requests
-      .filter((req) => String(req?.mailboxAddress || "").trim())
-      .slice(0, 12)
-      .map((req) => ({
-        requestId: String(req?.requestId || "").trim(),
-        mailboxAddress: String(req?.mailboxAddress || "").trim(),
-        shippingWorkflowCode: String(
-          workflowOverrideByRequestId[String(req?.requestId || "").trim()]
-            ?.code ||
-            req?.shippingWorkflow?.code ||
-            "",
-        ).trim(),
-        shippingWorkflowLabel: String(
-          workflowOverrideByRequestId[String(req?.requestId || "").trim()]
-            ?.label ||
-            req?.shippingWorkflow?.label ||
-            "",
-        ).trim(),
-        shippingLabelPrinted: Boolean(
-          (req as any)?.shippingLabelPrinted?.printed,
-        ),
-      }));
-
-    const sig = JSON.stringify(sampleRaw);
-    const now = Date.now();
-    const shouldEmit =
-      sig !== lastRealtimeSampleSigRef.current &&
-      now - lastRealtimeSampleAtRef.current > 2000;
-    if (!shouldEmit) return;
-
-    lastRealtimeSampleSigRef.current = sig;
-    lastRealtimeSampleAtRef.current = now;
-    console.log("[shipping][mailbox][realtime] requests sample", {
-      size: requests.length,
-      sample: sampleRaw,
+  const clearWorkflowOverridesForMailboxes = (mailboxAddresses: string[]) => {
+    const targetMailboxSet = new Set(
+      mailboxAddresses
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    );
+    if (targetMailboxSet.size === 0) return;
+    setWorkflowOverrideByRequestId((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const req of requests) {
+        const mailboxAddress = String(req?.mailboxAddress || "").trim();
+        const requestId = String(req?.requestId || "").trim();
+        if (!mailboxAddress || !requestId) continue;
+        if (!targetMailboxSet.has(mailboxAddress)) continue;
+        if (!(requestId in next)) continue;
+        delete next[requestId];
+        changed = true;
+      }
+      return changed ? next : prev;
     });
-  }, [requests, workflowOverrideByRequestId]);
+  };
+
+  const applyWorkflowOverrideForMailboxes = (
+    mailboxAddresses: string[],
+    override: {
+      code: MailboxPickupStatus;
+      label: string;
+    },
+  ) => {
+    const targetMailboxSet = new Set(
+      mailboxAddresses
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    );
+    if (targetMailboxSet.size === 0) return;
+    setWorkflowOverrideByRequestId((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const req of requests) {
+        const mailboxAddress = String(req?.mailboxAddress || "").trim();
+        const requestId = String(req?.requestId || "").trim();
+        if (!mailboxAddress || !requestId) continue;
+        if (!targetMailboxSet.has(mailboxAddress)) continue;
+        if (
+          next[requestId]?.code === override.code &&
+          next[requestId]?.label === override.label
+        ) {
+          continue;
+        }
+        next[requestId] = override;
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  };
   const getMailboxColorClass = (items: ManufacturerRequest[]) => {
     if (items.length === 0) return "bg-white border-slate-200";
     const earliestShipDate = items.reduce((earliest, req) => {
@@ -213,14 +230,24 @@ export const MailboxGrid = ({
         title: modifyOnly ? "재출력 & 재접수 시작" : "운송장 출력 시작",
         description: `${targetAddresses.length}개 우편함의 운송장을 출력합니다.`,
       });
-      const { data, wblPrint } = await callHanjinApiWithMeta({
-        path: "/api/requests/shipping/hanjin/print-labels",
-        mailboxAddresses: targetAddresses,
-        wblPrintOptions: {
-          printer: printerProfile || undefined,
-          paperProfile,
-        },
-      });
+      const response = modifyOnly
+        ? await callHanjinApiWithMeta({
+            path: "/api/requests/shipping/hanjin/pickup-and-print",
+            mailboxAddresses: targetAddresses,
+            wblPrintOptions: {
+              printer: printerProfile || undefined,
+              paperProfile,
+            },
+          })
+        : await callHanjinApiWithMeta({
+            path: "/api/requests/shipping/hanjin/print-labels",
+            mailboxAddresses: targetAddresses,
+            wblPrintOptions: {
+              printer: printerProfile || undefined,
+              paperProfile,
+            },
+          });
+      const { data, wblPrint } = response;
 
       console.log("[shipping][print] api response", {
         mailboxAddresses: targetAddresses,
@@ -278,6 +305,18 @@ export const MailboxGrid = ({
             .map((value: any) => String(value || "").trim())
             .filter(Boolean)
         : [];
+      const workflowRefreshMailboxAddresses = modifyOnly
+        ? targetAddresses
+        : pickupUpdatedMailboxAddresses;
+      if (workflowRefreshMailboxAddresses.length > 0) {
+        clearWorkflowOverridesForMailboxes(workflowRefreshMailboxAddresses);
+      }
+      if (modifyOnly && targetAddresses.length > 0) {
+        applyWorkflowOverrideForMailboxes(targetAddresses, {
+          code: "accepted",
+          label: "접수",
+        });
+      }
 
       const notifyPickupUpdated = () => {
         if (!modifyOnly || pickupUpdatedMailboxAddresses.length === 0) return;
@@ -807,9 +846,11 @@ export const MailboxGrid = ({
       disabled: !hasAnyOccupiedMailbox,
       variant: "blue" as const,
       onClick: () => {
-        if (shouldReprintChangedOnly) {
+        if (hasPrintedMailbox) {
           void handlePrintOnly({
-            targetAddresses: changedPrintedAddresses,
+            targetAddresses: shouldReprintChangedOnly
+              ? changedPrintedAddresses
+              : occupiedAddresses,
             modifyOnly: true,
           });
           return;
