@@ -53,10 +53,6 @@ function revertManufacturerStageByReviewStage(request, stage) {
   if (!prevStage) return;
   applyStatusMapping(request, prevStage);
 
-  if (stage === "shipping") {
-    request.mailboxAddress = null;
-  }
-
   if (stage === "tracking") {
     request.manufacturerStage = "포장.발송";
   }
