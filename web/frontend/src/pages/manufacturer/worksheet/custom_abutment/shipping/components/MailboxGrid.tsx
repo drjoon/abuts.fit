@@ -19,9 +19,14 @@ import { useMailboxPrintSettings } from "./useMailboxPrintSettings";
 type MailboxGridProps = {
   requests: ManufacturerRequest[];
   onBoxClick?: (address: string, requests: ManufacturerRequest[]) => void;
+  onMailboxError?: (address: string, message: string) => void;
 };
 
-export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
+export const MailboxGrid = ({
+  requests,
+  onBoxClick,
+  onMailboxError,
+}: MailboxGridProps) => {
   const { toast } = useToast();
   const shelfNames = Array.from({ length: 24 }, (_, i) =>
     String.fromCharCode(65 + i),
@@ -44,6 +49,9 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
   const [optimisticPrintedMailboxes, setOptimisticPrintedMailboxes] = useState<
     Set<string>
   >(new Set());
+  const [failedMailboxes, setFailedMailboxes] = useState<Set<string>>(
+    new Set(),
+  );
   const [mailboxChangeMeta, setMailboxChangeMeta] = useState<
     Record<
       string,
@@ -240,6 +248,88 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     return set;
   }, [optimisticPrintedMailboxes, requests]);
 
+  useEffect(() => {
+    if (failedMailboxes.size === 0) return;
+    setFailedMailboxes((prev) => {
+      const next = new Set(prev);
+      for (const mailbox of prev) {
+        const mailboxRequests = requests.filter(
+          (req) => String(req?.mailboxAddress || "").trim() === mailbox,
+        );
+        const hasPickup = mailboxRequests.some((req) => {
+          const di =
+            req?.deliveryInfoRef && typeof req.deliveryInfoRef === "object"
+              ? (req.deliveryInfoRef as any)
+              : null;
+          return Boolean(di?.trackingNumber || di?.shippedAt);
+        });
+        if (hasPickup) next.delete(mailbox);
+      }
+      return next;
+    });
+  }, [failedMailboxes.size, requests]);
+
+  const resolveHanjinFailureMessage = (error: unknown) => {
+    const anyErr = error as any;
+    const data = anyErr?.data;
+    const resultMessage =
+      typeof data?.resultMessage === "string" ? data.resultMessage.trim() : "";
+    if (resultMessage) return resultMessage;
+    const resultMessageSnake =
+      typeof data?.result_message === "string"
+        ? data.result_message.trim()
+        : "";
+    if (resultMessageSnake) return resultMessageSnake;
+    const addressList = Array.isArray(data?.address_list)
+      ? data.address_list
+      : [];
+    const firstFailed = addressList.find(
+      (row: any) =>
+        String(row?.result_code || row?.resultCode || "OK").trim() !== "OK",
+    );
+    const failedMsg = String(
+      firstFailed?.result_msg ||
+        firstFailed?.resultMessage ||
+        firstFailed?.result_message ||
+        "",
+    ).trim();
+    if (failedMsg) return failedMsg;
+    return anyErr instanceof Error && anyErr.message
+      ? anyErr.message
+      : "택배 접수 및 라벨 출력에 실패했습니다.";
+  };
+
+  const resolveFailedMailboxesFromError = (error: unknown) => {
+    const anyErr = error as any;
+    const data = anyErr?.data;
+    const addressList = Array.isArray(data?.address_list)
+      ? data.address_list
+      : [];
+    const failedRows = addressList.filter(
+      (row: any) =>
+        String(row?.result_code || row?.resultCode || "OK").trim() !== "OK",
+    );
+    if (!failedRows.length) {
+      return {
+        addresses: [],
+        messages: [] as Array<{ address: string; message: string }>,
+      };
+    }
+    const messages = failedRows
+      .map((row: any) => {
+        const address = String(row?.msg_key || row?.msgKey || "").trim();
+        const message = String(
+          row?.result_msg || row?.resultMessage || row?.result_message || "",
+        ).trim();
+        return address && message ? { address, message } : null;
+      })
+      .filter(Boolean) as Array<{ address: string; message: string }>;
+    return {
+      addresses: messages.map((m) => m.address),
+      messages,
+    };
+  };
+
   const selectedOccupiedAddresses = useMemo(
     () => occupiedAddresses.filter((addr) => selectedMailboxes.has(addr)),
     [occupiedAddresses, selectedMailboxes],
@@ -407,6 +497,11 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
 
     setIsRequestingPickup(true);
     try {
+      setFailedMailboxes((prev) => {
+        const next = new Set(prev);
+        targetAddresses.forEach((addr) => next.delete(addr));
+        return next;
+      });
       const { data, wblPrint } = await callHanjinApiWithMeta({
         path: "/api/requests/shipping/hanjin/pickup-and-print",
         mailboxAddresses: targetAddresses,
@@ -456,17 +551,6 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
           ...nextMailboxChangeMeta,
         }));
       }
-
-      setOptimisticRequestedMailboxes((prev) => {
-        const next = new Set(prev);
-        targetAddresses.forEach((address) => next.add(address));
-        return next;
-      });
-      setOptimisticPrintedMailboxes((prev) => {
-        const next = new Set(prev);
-        targetAddresses.forEach((address) => next.add(address));
-        return next;
-      });
 
       if (shippingOutputMode === "image") {
         const candidatePayload =
@@ -546,32 +630,29 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
         description: `${targetAddresses.length}개 우편함의 라벨 출력 후 접수가 완료되었습니다.`,
       });
     } catch (error) {
-      if (!modifyOnly) {
-        setOptimisticRequestedMailboxes((prev) => {
-          const next = new Set(prev);
-          targetAddresses.forEach((address) => next.delete(address));
-          return next;
-        });
-        setOptimisticPrintedMailboxes((prev) => {
-          const next = new Set(prev);
-          targetAddresses.forEach((address) => next.delete(address));
-          return next;
-        });
-        setMailboxChangeMeta((prev) => {
-          const next = { ...prev };
-          targetAddresses.forEach((address) => {
-            delete next[address];
-          });
-          return next;
-        });
-      }
       console.error("택배 접수/라벨 처리 실패:", error);
+      const failedFromMsgKey = resolveFailedMailboxesFromError(error);
+      const failedTargets = failedFromMsgKey.addresses.length
+        ? failedFromMsgKey.addresses
+        : targetAddresses;
+      setFailedMailboxes((prev) => {
+        const next = new Set(prev);
+        failedTargets.forEach((addr) => next.add(addr));
+        return next;
+      });
+      if (onMailboxError) {
+        if (failedFromMsgKey.messages.length) {
+          failedFromMsgKey.messages.forEach((item) => {
+            onMailboxError(item.address, item.message);
+          });
+        } else {
+          const message = resolveHanjinFailureMessage(error);
+          failedTargets.forEach((addr) => onMailboxError(addr, message));
+        }
+      }
       toast({
         title: modifyOnly ? "접수 내용 수정 실패" : "택배 접수 실패",
-        description:
-          error instanceof Error && error.message
-            ? error.message
-            : "택배 접수 및 라벨 출력에 실패했습니다.",
+        description: resolveHanjinFailureMessage(error),
         variant: "destructive",
       });
     } finally {
@@ -763,6 +844,7 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
         printedMailboxes={printedMailboxes}
         pickupRequestedMailboxes={pickupRequestedMailboxes}
         optimisticRequestedMailboxes={optimisticRequestedMailboxes}
+        failedMailboxes={failedMailboxes}
         selectedMailboxes={selectedMailboxes}
         shelfRefs={shelfRefs}
         scrollContainerRef={scrollContainerRef}

@@ -62,7 +62,10 @@ export const callHanjinApi = async ({
       responseBody?.error ||
       responseBody?.message ||
       `한진 API 호출 실패 (status=${response.status})`;
-    throw new Error(message);
+    const err: any = new Error(message);
+    err.status = response.status;
+    err.data = responseBody?.data || responseBody;
+    throw err;
   }
   return responseBody?.data;
 };
@@ -102,7 +105,15 @@ export const callHanjinApiWithMeta = async ({
       responseBody?.error ||
       responseBody?.message ||
       `한진 API 호출 실패 (status=${response.status})`;
-    throw new Error(message);
+    const err: any = new Error(message);
+    err.status = response.status;
+    err.data = responseBody?.data || responseBody;
+    console.error("[HanjinApi] request failed", {
+      path,
+      status: response.status,
+      body: err.data,
+    });
+    throw err;
   }
   return {
     data: responseBody?.data,
@@ -144,7 +155,10 @@ export const resolvePrintPayload = (payload: any) => {
   return null;
 };
 
-export const downloadPdfFromBase64 = async (base64: string, fileName: string) => {
+export const downloadPdfFromBase64 = async (
+  base64: string,
+  fileName: string,
+) => {
   const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
   const blob = new Blob([bytes], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
@@ -287,7 +301,13 @@ export const saveGeneratedWaybillPngs = async ({
       ctx.restore();
     };
 
-    const line = (x1: number, y1: number, x2: number, y2: number, width = 2) => {
+    const line = (
+      x1: number,
+      y1: number,
+      x2: number,
+      y2: number,
+      width = 2,
+    ) => {
       ctx.beginPath();
       ctx.lineWidth = width;
       ctx.strokeStyle = "#111827";
@@ -317,11 +337,37 @@ export const saveGeneratedWaybillPngs = async ({
 
     box(18, 18, 1180, 768, 2);
     line(18, 58, 1198, 58, 2);
-    drawText("운송장번호", 30, 48, '700 18px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
-    fitText(wbl, 150, 44, 320, '700 30px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
-    drawText("P. 1", 520, 44, '500 16px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
-    drawText("1 / 1", 590, 44, '500 16px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
-    drawText("한진택배", 945, 44, '800 26px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
+    drawText(
+      "운송장번호",
+      30,
+      48,
+      '700 18px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
+    fitText(
+      wbl,
+      150,
+      44,
+      320,
+      '700 30px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
+    drawText(
+      "P. 1",
+      520,
+      44,
+      '500 16px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
+    drawText(
+      "1 / 1",
+      590,
+      44,
+      '500 16px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
+    drawText(
+      "한진택배",
+      945,
+      44,
+      '800 26px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
     drawText("1588-0011", 1045, 44, "500 12px Arial, sans-serif");
 
     const routeTop = 58;
@@ -329,22 +375,72 @@ export const saveGeneratedWaybillPngs = async ({
     line(700, routeTop, 700, 150, 2);
     line(860, routeTop, 860, 150, 2);
     line(980, routeTop, 980, 150, 2);
-    drawText("발도", 34, 102, '600 20px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
-    drawText("도착점", 740, 102, '600 20px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
-    drawText("권역", 892, 102, '600 20px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
-    drawText("구분", 1012, 102, '600 20px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
+    drawText(
+      "발도",
+      34,
+      102,
+      '600 20px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
+    drawText(
+      "도착점",
+      740,
+      102,
+      '600 20px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
+    drawText(
+      "권역",
+      892,
+      102,
+      '600 20px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
+    drawText(
+      "구분",
+      1012,
+      102,
+      '600 20px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
     fitText(tml || "CB", 34, 136, 620, "900 86px Arial, sans-serif");
     fitText(cen || "650", 730, 136, 120, "800 50px Arial, sans-serif");
-    fitText(receiverName || "-", 730, 186, 120, '700 24px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
+    fitText(
+      receiverName || "-",
+      730,
+      186,
+      120,
+      '700 24px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
     fitText(receiverZip || "D1", 880, 136, 90, "800 46px Arial, sans-serif");
-    fitText(remark || "-", 1012, 136, 160, '700 22px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
+    fitText(
+      remark || "-",
+      1012,
+      136,
+      160,
+      '700 22px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
 
     const receiverTop = 150;
     line(110, receiverTop, 110, 290, 2);
     sideLabel("받는분", 52, receiverTop + 8, 98);
-    fitText(receiverName || "-", 132, receiverTop + 36, 320, '700 34px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
-    fitText(receiverTel || "-", 470, receiverTop + 36, 240, "600 24px Arial, sans-serif");
-    fitText(receiverAddr || prtAdd || "-", 132, receiverTop + 92, 960, '600 28px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
+    fitText(
+      receiverName || "-",
+      132,
+      receiverTop + 36,
+      320,
+      '700 34px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
+    fitText(
+      receiverTel || "-",
+      470,
+      receiverTop + 36,
+      240,
+      "600 24px Arial, sans-serif",
+    );
+    fitText(
+      receiverAddr || prtAdd || "-",
+      132,
+      receiverTop + 92,
+      960,
+      '600 28px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
 
     const { default: JsBarcode } = await import("jsbarcode");
     const barcodeCanvas = document.createElement("canvas");
@@ -371,14 +467,55 @@ export const saveGeneratedWaybillPngs = async ({
     line(18, 562, 1198, 562, 2);
     line(110, senderTop, 110, 562, 2);
     sideLabel("보내는분", 52, senderTop + 8, 96);
-    fitText(senderName || "-", 132, senderTop + 38, 300, '700 24px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
-    fitText(senderTel || "-", 480, senderTop + 38, 220, "600 20px Arial, sans-serif");
-    fitText(senderAddr || "-", 132, senderTop + 86, 820, '500 18px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
-    fitText(printedYmd || "-", 882, senderTop + 38, 96, "500 18px Arial, sans-serif");
-    fitText(`Type:${fareType || "S"}`, 1042, senderTop + 38, 120, "500 18px Arial, sans-serif");
+    fitText(
+      senderName || "-",
+      132,
+      senderTop + 38,
+      300,
+      '700 24px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
+    fitText(
+      senderTel || "-",
+      480,
+      senderTop + 38,
+      220,
+      "600 20px Arial, sans-serif",
+    );
+    fitText(
+      senderAddr || "-",
+      132,
+      senderTop + 86,
+      820,
+      '500 18px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
+    fitText(
+      printedYmd || "-",
+      882,
+      senderTop + 38,
+      96,
+      "500 18px Arial, sans-serif",
+    );
+    fitText(
+      `Type:${fareType || "S"}`,
+      1042,
+      senderTop + 38,
+      120,
+      "500 18px Arial, sans-serif",
+    );
 
-    drawText("비고", 34, 596, '700 28px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
-    fitText(remark || "-", 130, 596, 820, '600 28px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
+    drawText(
+      "비고",
+      34,
+      596,
+      '700 28px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
+    fitText(
+      remark || "-",
+      130,
+      596,
+      820,
+      '600 28px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
     drawText(
       "※ 개인정보 보호를 위하여 인수하신 화물의 운송장증을 폐기하여 주시기 바랍니다.",
       34,
@@ -399,9 +536,21 @@ export const saveGeneratedWaybillPngs = async ({
       });
       ctx.drawImage(bottomBarcodeCanvas, 904, 620, 240, 76);
     } catch {}
-    fitText(`운임Type:${fareType || "S"}`, 836, 736, 120, "500 16px Arial, sans-serif");
+    fitText(
+      `운임Type:${fareType || "S"}`,
+      836,
+      736,
+      120,
+      "500 16px Arial, sans-serif",
+    );
     fitText(wbl, 988, 736, 132, "700 24px Arial, sans-serif");
-    fitText(goodsName, 132, senderTop + 122, 300, '600 18px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif');
+    fitText(
+      goodsName,
+      132,
+      senderTop + 122,
+      300,
+      '600 18px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    );
     fitText(boxCount, 470, senderTop + 122, 120, "600 18px Arial, sans-serif");
 
     const blob = await new Promise<Blob>((resolve, reject) => {

@@ -162,6 +162,9 @@ export const RequestPage = ({
   const [mailboxModalRequests, setMailboxModalRequests] = useState<
     ManufacturerRequest[]
   >([]);
+  const [mailboxErrorByAddress, setMailboxErrorByAddress] = useState<
+    Record<string, string>
+  >({});
   const [isRollingBackAll, setIsRollingBackAll] = useState(false);
   const [selectedPackingRequestIds, setSelectedPackingRequestIds] = useState<
     string[]
@@ -760,10 +763,11 @@ export const RequestPage = ({
     );
   };
 
-  const filteredBase = (() => {
-    // 완료포함: 탭 기준 단계 이상 모든 건 포함 (CAM 탭=CAM~추적관리, 생산 탭=생산~추적관리)
+  const filteredBase = useMemo(() => {
+    if (!Array.isArray(requests)) return [];
+
     if (showCompleted) {
-      // 발송 탭에서는 "발송" 단계만 보여주되(WorkSheet.tsx filterRequests), 완료 포함은 status 기준 숨김을 해제하는 의미다.
+      // 발송 탭: showCompleted가 켜져도 "접수전"은 포함
       if (tabStage === "shipping") {
         return requests.filter((req) => {
           if (isPrePickupShippingVisible(req)) return true;
@@ -782,7 +786,6 @@ export const RequestPage = ({
       });
     }
 
-    // 발송 탭 기본: 완료 건은 숨김 (헤더의 완료포함 체크 시에만 노출)
     if (tabStage === "shipping") {
       return requests.filter((req) => {
         if (isPrePickupShippingVisible(req)) return true;
@@ -814,33 +817,58 @@ export const RequestPage = ({
       // 현재 탭보다 높은 단계의 의뢰는 숨김 (단, showCompleted가 꺼져있을 때)
       return order <= currentStageOrder;
     });
-  })();
+  }, [currentStageOrder, filterRequests, requests, showCompleted, tabStage]);
 
-  const filteredAndSorted = filteredBase
-    .filter((request) => {
-      const caseInfos = request.caseInfos || {};
-      const text = (
-        (request.referenceIds?.join(",") || "") +
-        (request.requestor?.organization || "") +
-        (request.requestor?.name || "") +
-        (caseInfos.clinicName || "") +
-        (caseInfos.patientName || "") +
-        (request.description || "") +
-        (caseInfos.tooth || "") +
-        (caseInfos.connectionDiameter || "") +
-        (caseInfos.implantManufacturer || "") +
-        (caseInfos.implantBrand || "") +
-        (caseInfos.implantFamily || "") +
-        (caseInfos.implantType || "")
-      ).toLowerCase();
-      return text.includes(searchLower);
-    })
-    .sort((a, b) => {
-      const aScore = a.shippingPriority?.score ?? 0;
-      const bScore = b.shippingPriority?.score ?? 0;
-      if (aScore !== bScore) return bScore - aScore;
-      return new Date(a.createdAt) < new Date(b.createdAt) ? 1 : -1;
+  const filteredAndSorted = useMemo(() => {
+    return filteredBase
+      .filter((request) => {
+        const caseInfos = request.caseInfos || {};
+        const text = (
+          (request.referenceIds?.join(",") || "") +
+          (request.requestor?.organization || "") +
+          (request.requestor?.name || "") +
+          (caseInfos.clinicName || "") +
+          (caseInfos.patientName || "") +
+          (request.description || "") +
+          (caseInfos.tooth || "") +
+          (caseInfos.connectionDiameter || "") +
+          (caseInfos.implantManufacturer || "") +
+          (caseInfos.implantBrand || "") +
+          (caseInfos.implantFamily || "") +
+          (caseInfos.implantType || "")
+        ).toLowerCase();
+        return text.includes(searchLower);
+      })
+      .sort((a, b) => {
+        const aScore = a.shippingPriority?.score ?? 0;
+        const bScore = b.shippingPriority?.score ?? 0;
+        if (aScore !== bScore) return bScore - aScore;
+        return new Date(a.createdAt) < new Date(b.createdAt) ? 1 : -1;
+      });
+  }, [filteredBase, searchLower]);
+
+  useEffect(() => {
+    if (!Object.keys(mailboxErrorByAddress).length) return;
+    setMailboxErrorByAddress((prev) => {
+      const next = { ...prev };
+      for (const address of Object.keys(prev)) {
+        const mailboxRequests = filteredAndSorted.filter(
+          (r) => String(r?.mailboxAddress || "").trim() === address,
+        );
+        const hasPickup = mailboxRequests.some((req) => {
+          const di =
+            req?.deliveryInfoRef && typeof req.deliveryInfoRef === "object"
+              ? (req.deliveryInfoRef as any)
+              : null;
+          return Boolean(di?.trackingNumber || di?.shippedAt);
+        });
+        if (hasPickup) {
+          delete next[address];
+        }
+      }
+      return next;
     });
+  }, [filteredAndSorted, mailboxErrorByAddress]);
 
   const getFilteredAndSortedRequests = useCallback(
     (sourceRequests: ManufacturerRequest[]) => {
@@ -1332,6 +1360,16 @@ export const RequestPage = ({
                   onBoxClick={(address, reqs) =>
                     handleRegisterShipment(address, reqs)
                   }
+                  onMailboxError={(address, message) => {
+                    const key = String(address || "").trim();
+                    if (!key) return;
+                    const normalized = String(message || "").trim();
+                    if (!normalized) return;
+                    setMailboxErrorByAddress((prev) => ({
+                      ...prev,
+                      [key]: normalized,
+                    }));
+                  }}
                 />
               </div>
             ) : isEmpty ? (
@@ -1424,6 +1462,7 @@ export const RequestPage = ({
         onOpenChange={handleShipmentModalClose}
         address={mailboxModalAddress}
         requests={mailboxModalRequests}
+        errorMessage={mailboxErrorByAddress[mailboxModalAddress] || ""}
         onRollback={handleCardRollback}
         onRollbackAll={
           mailboxModalRequests.length ? handleRollbackAllInMailbox : undefined

@@ -14,6 +14,7 @@ type MailboxContentsModalProps = {
   onOpenChange: (open: boolean) => void;
   address: string;
   requests: ManufacturerRequest[];
+  errorMessage?: string;
   onRollback?: (req: ManufacturerRequest) => void;
   onRollbackAll?: (requests: ManufacturerRequest[]) => void;
   isRollingBackAll?: boolean;
@@ -24,6 +25,7 @@ export const MailboxContentsModal = ({
   onOpenChange,
   address,
   requests,
+  errorMessage,
   onRollback,
   onRollbackAll,
   isRollingBackAll = false,
@@ -94,6 +96,11 @@ export const MailboxContentsModal = ({
             </span>
           </DialogTitle>
         </DialogHeader>
+        {errorMessage ? (
+          <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            {errorMessage}
+          </div>
+        ) : null}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {requests.map((req) => (
             <div

@@ -13,6 +13,7 @@ import {
   buildHanjinInsertOrderBody,
   buildHanjinOrderFallbackCaller,
   buildHanjinPathCandidates,
+  debugHanjinPrintPayload,
   executeHanjinLabelPrint,
   findPackingStageRequestsByMailboxes,
   getHanjinPathFallbacks,
@@ -420,6 +421,8 @@ export async function printHanjinLabels(req, res) {
       throw err;
     }
 
+    debugHanjinPrintPayload(resolved.payload);
+
     const { labelData, wblPrint } = await executeHanjinLabelPrint({
       path,
       payload: resolved.payload,
@@ -439,10 +442,12 @@ export async function printHanjinLabels(req, res) {
       .json(buildPrintLabelsSuccessPayload({ labelData, wblPrint }));
   } catch (error) {
     console.error("Error in printHanjinLabels:", error);
-    return res.status(500).json({
+    return res.status(error?.statusCode || error?.status || 500).json({
       success: false,
-      message: "한진 운송장 출력 요청 중 오류가 발생했습니다.",
+      message:
+        error?.message || "한진 운송장 출력 요청 중 오류가 발생했습니다.",
       error: error.message,
+      data: error?.data,
     });
   }
 }
