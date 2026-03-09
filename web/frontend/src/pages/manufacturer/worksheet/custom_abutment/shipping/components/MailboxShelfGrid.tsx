@@ -7,7 +7,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-type MailboxPickupStatus = "none" | "requested" | "success" | "canceled";
+type MailboxPickupStatus =
+  | "none"
+  | "printed"
+  | "accepted"
+  | "picked_up"
+  | "completed"
+  | "canceled"
+  | "error";
 
 type MailboxShelfGridProps = {
   allShelvesToShow: string[];
@@ -57,8 +64,11 @@ export const MailboxShelfGrid = ({
     isOccupied: boolean;
     mailboxStatus:
       | "없음"
-      | "접수 및 출력 완료"
-      | "라벨 출력 완료"
+      | "접수"
+      | "출력"
+      | "집하"
+      | "완료"
+      | "취소"
       | "오류 발생";
   }) => {
     const lines = [address];
@@ -109,20 +119,37 @@ export const MailboxShelfGrid = ({
                         const pickupStatus =
                           pickupRequestedMailboxes.get(address) || "none";
                         const showFailedBorder = failedMailboxes.has(address);
+                        const isErrorStatus = pickupStatus === "error";
+                        const showAcceptedBorder =
+                          pickupStatus === "accepted" &&
+                          !showFailedBorder &&
+                          !isErrorStatus;
                         const showSuccessBorder =
-                          hasPrinted &&
-                          pickupStatus === "success" &&
-                          !showFailedBorder;
+                          (pickupStatus === "picked_up" ||
+                            pickupStatus === "completed") &&
+                          !showFailedBorder &&
+                          !isErrorStatus;
                         const showPrintedBorder =
-                          hasPrinted && !showSuccessBorder && !showFailedBorder;
+                          pickupStatus === "printed" &&
+                          !showAcceptedBorder &&
+                          !showSuccessBorder &&
+                          !showFailedBorder &&
+                          !isErrorStatus;
                         const showSelectedBorder = isOccupied && isSelected;
-                        const mailboxStatus = showFailedBorder
-                          ? "오류 발생"
-                          : showSuccessBorder
-                            ? "접수 및 출력 완료"
-                            : showPrintedBorder
-                              ? "라벨 출력 완료"
-                              : "없음";
+                        const mailboxStatus =
+                          showFailedBorder || isErrorStatus
+                            ? "오류 발생"
+                            : pickupStatus === "completed"
+                              ? "완료"
+                              : pickupStatus === "picked_up"
+                                ? "집하"
+                                : pickupStatus === "accepted"
+                                  ? "접수"
+                                  : pickupStatus === "printed"
+                                    ? "출력"
+                                    : pickupStatus === "canceled"
+                                      ? "취소"
+                                      : "없음";
 
                         const handleClick = (
                           e: React.MouseEvent | React.TouchEvent,
@@ -162,13 +189,15 @@ export const MailboxShelfGrid = ({
                                   ${
                                     isOccupied && showSuccessBorder
                                       ? "bg-emerald-50 border-emerald-200 shadow-sm"
-                                      : isOccupied && showPrintedBorder
-                                        ? "bg-white border-orange-400 shadow-sm"
-                                        : showSelectedBorder
-                                          ? "bg-indigo-50 border-indigo-300 shadow-sm"
-                                          : isOccupied
-                                            ? getMailboxColorClass(items)
-                                            : "bg-white border-slate-200"
+                                      : isOccupied && showAcceptedBorder
+                                        ? "bg-orange-50 border-orange-200 shadow-sm"
+                                        : isOccupied && showPrintedBorder
+                                          ? "bg-white border-orange-400 shadow-sm"
+                                          : showSelectedBorder
+                                            ? "bg-indigo-50 border-indigo-300 shadow-sm"
+                                            : isOccupied
+                                              ? getMailboxColorClass(items)
+                                              : "bg-white border-slate-200"
                                   }
                                 `}
                                 style={{
@@ -179,6 +208,9 @@ export const MailboxShelfGrid = ({
                               >
                                 {showSuccessBorder ? (
                                   <div className="pointer-events-none absolute inset-0 rounded border-2 border-emerald-500" />
+                                ) : null}
+                                {showAcceptedBorder ? (
+                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-orange-500" />
                                 ) : null}
                                 {showPrintedBorder ? (
                                   <div className="pointer-events-none absolute inset-0 rounded border-2 border-orange-400" />
@@ -193,21 +225,23 @@ export const MailboxShelfGrid = ({
                                   className={`font-mono font-bold leading-none text-center w-full pointer-events-none ${
                                     showSelectedBorder
                                       ? "text-indigo-800"
-                                      : showSuccessBorder
-                                        ? "text-emerald-800"
-                                        : showPrintedBorder
-                                          ? "text-orange-800"
-                                          : isOccupied
-                                            ? getMailboxColorClass(
-                                                items,
-                                              ).includes("bg-blue")
-                                              ? "text-blue-800"
-                                              : getMailboxColorClass(
-                                                    items,
-                                                  ).includes("bg-red")
-                                                ? "text-red-800"
-                                                : "text-slate-700"
-                                            : "text-slate-400"
+                                      : showAcceptedBorder
+                                        ? "text-orange-700"
+                                        : showSuccessBorder
+                                          ? "text-emerald-700"
+                                          : showPrintedBorder
+                                            ? "text-orange-800"
+                                            : isOccupied
+                                              ? getMailboxColorClass(
+                                                  items,
+                                                ).includes("bg-blue")
+                                                ? "text-blue-800"
+                                                : getMailboxColorClass(
+                                                      items,
+                                                    ).includes("bg-red")
+                                                  ? "text-red-800"
+                                                  : "text-slate-700"
+                                              : "text-slate-400"
                                   }`}
                                   style={{ fontSize: "9px" }}
                                 >

@@ -5,8 +5,11 @@ import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import {
   applyStatusMapping,
+  applyShippingWorkflowState,
   normalizeRequestForResponse,
   ensureReviewByStageDefaults,
+  SHIPPING_WORKFLOW_CODES,
+  SHIPPING_WORKFLOW_LABELS,
 } from "./utils.js";
 import { ensureShippingPackageForPickup } from "./shipping.Requestor.helpers.js";
 import {
@@ -254,6 +257,15 @@ async function finalizeMailboxPickupShipment({
     };
 
     applyStatusMapping(request, "포장.발송");
+    applyShippingWorkflowState(request, {
+      code: SHIPPING_WORKFLOW_CODES.ACCEPTED,
+      label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.ACCEPTED],
+      acceptedAt: actualShipPickup,
+      erroredAt: null,
+      canceledAt: null,
+      source: "hanjin-pickup",
+      updatedAt: actualShipPickup,
+    });
     request.productionSchedule = request.productionSchedule || {};
     request.productionSchedule.actualShipPickup = actualShipPickup;
     request.shippingPackageId = pkg._id;
@@ -329,6 +341,38 @@ async function executeSingleMailboxPickup({
     pickupData: data,
     actorUserId,
   });
+}
+
+async function markMailboxWorkflowError({
+  mailboxAddresses = [],
+  actorSource = "hanjin-error",
+}) {
+  const list = resolveMailboxList(mailboxAddresses);
+  if (!list.length) return;
+
+  const requestDocs = await Request.find({
+    mailboxAddress: { $in: list },
+    manufacturerStage: "포장.발송",
+  })
+    .populate("requestor", "name organization phoneNumber address")
+    .populate("requestorOrganizationId", "name extracted")
+    .populate("deliveryInfoRef");
+
+  for (const requestDoc of requestDocs) {
+    applyShippingWorkflowState(requestDoc, {
+      code: SHIPPING_WORKFLOW_CODES.ERROR,
+      label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.ERROR],
+      erroredAt: new Date(),
+      source: actorSource,
+      updatedAt: new Date(),
+    });
+    await requestDoc.save();
+    await emitDeliveryUpdated(requestDoc, {
+      source: actorSource,
+      shippingStatusLabel:
+        SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.ERROR],
+    });
+  }
 }
 
 const groupRequestsByMailbox = (requests = []) => {
@@ -442,11 +486,31 @@ export async function printHanjinLabels(req, res) {
         : [],
     });
 
+    const updatedDocs = await Request.find({
+      mailboxAddress: { $in: resolveMailboxList(mailboxAddresses) },
+      manufacturerStage: "포장.발송",
+    })
+      .populate("requestor", "name organization phoneNumber address")
+      .populate("requestorOrganizationId", "name extracted")
+      .populate("deliveryInfoRef");
+
+    for (const doc of updatedDocs) {
+      await emitDeliveryUpdated(doc, {
+        source: "hanjin-print",
+        shippingStatusLabel:
+          SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.PRINTED],
+      });
+    }
+
     return res
       .status(200)
       .json(buildPrintLabelsSuccessPayload({ labelData, wblPrint }));
   } catch (error) {
     console.error("Error in printHanjinLabels:", error);
+    await markMailboxWorkflowError({
+      mailboxAddresses: req.body?.mailboxAddresses,
+      actorSource: "hanjin-print-error",
+    });
     return res.status(error?.statusCode || error?.status || 500).json({
       success: false,
       message:
@@ -540,6 +604,10 @@ export async function requestHanjinPickup(req, res) {
     return res.status(200).json({ success: true, data: { results } });
   } catch (error) {
     console.error("Error in requestHanjinPickup:", error);
+    await markMailboxWorkflowError({
+      mailboxAddresses: req.body?.mailboxAddresses,
+      actorSource: "hanjin-pickup-error",
+    });
     return res.status(500).json({
       success: false,
       message: "한진 택배 수거 접수 중 오류가 발생했습니다.",
@@ -631,6 +699,15 @@ export async function cancelHanjinPickup(req, res) {
           await requestDoc.deliveryInfoRef.save();
         }
         requestDoc.manufacturerStage = "포장.발송";
+        applyShippingWorkflowState(requestDoc, {
+          code: SHIPPING_WORKFLOW_CODES.CANCELED,
+          label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.CANCELED],
+          canceledAt: new Date(),
+          trackingStatusCode: "03",
+          trackingStatusText: "예약취소",
+          source: "hanjin-pickup-cancel",
+          updatedAt: new Date(),
+        });
         await requestDoc.save();
         await emitDeliveryUpdated(requestDoc, {
           source: "hanjin-pickup-cancel",
@@ -729,13 +806,17 @@ export async function requestHanjinPickupAndPrint(req, res) {
         requestIds: requestIdsForPoll,
         actorUserId: req.user?._id || null,
         source: "hanjin-pickup-after-print",
-        runImmediate: false,
+        runImmediate: true,
       });
     }
 
     return res.status(200).json(responseBody);
   } catch (error) {
     console.error("Error in requestHanjinPickupAndPrint:", error);
+    await markMailboxWorkflowError({
+      mailboxAddresses: req.body?.mailboxAddresses,
+      actorSource: "hanjin-pickup-print-error",
+    });
     return res.status(500).json({
       success: false,
       message: "한진 택배 접수 및 운송장 출력 중 오류가 발생했습니다.",

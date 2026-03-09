@@ -5,9 +5,12 @@ import { emitAppEventToRoles } from "../../socket.js";
 import { Types } from "mongoose";
 import {
   applyStatusMapping,
+  applyShippingWorkflowState,
   bumpRollbackCount,
   normalizeRequestForResponse,
   ensureReviewByStageDefaults,
+  SHIPPING_WORKFLOW_CODES,
+  SHIPPING_WORKFLOW_LABELS,
 } from "./utils.js";
 import { chargeShippingFeeOnPickupComplete } from "./shipping.Requestor.helpers.js";
 import {
@@ -565,6 +568,19 @@ export async function rollbackMailboxShipping(req, res) {
         snapshotCapturedAt: null,
         snapshotRequestIds: [],
       };
+      applyShippingWorkflowState(r, {
+        code: SHIPPING_WORKFLOW_CODES.NONE,
+        label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.NONE],
+        printedAt: null,
+        acceptedAt: null,
+        pickedUpAt: null,
+        completedAt: null,
+        canceledAt: null,
+        trackingStatusCode: null,
+        trackingStatusText: null,
+        source: "mailbox-rollback",
+        updatedAt: new Date(),
+      });
       await r.save();
       updatedIds.push(r.requestId);
     }

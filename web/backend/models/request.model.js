@@ -379,6 +379,65 @@ const requestSchema = new mongoose.Schema(
         default: undefined,
       },
     },
+    shippingWorkflow: {
+      code: {
+        type: String,
+        default: "none",
+        enum: [
+          "none",
+          "printed",
+          "accepted",
+          "picked_up",
+          "completed",
+          "canceled",
+          "error",
+        ],
+      },
+      label: {
+        type: String,
+        default: "미처리",
+      },
+      printedAt: {
+        type: Date,
+        default: null,
+      },
+      acceptedAt: {
+        type: Date,
+        default: null,
+      },
+      pickedUpAt: {
+        type: Date,
+        default: null,
+      },
+      completedAt: {
+        type: Date,
+        default: null,
+      },
+      erroredAt: {
+        type: Date,
+        default: null,
+      },
+      canceledAt: {
+        type: Date,
+        default: null,
+      },
+      trackingStatusCode: {
+        type: String,
+        default: null,
+      },
+      trackingStatusText: {
+        type: String,
+        default: null,
+      },
+      source: {
+        type: String,
+        default: null,
+      },
+      updatedAt: {
+        type: Date,
+        default: null,
+      },
+    },
     // 생산 스케줄 (생산자 관점, 시각 단위 관리)
     productionSchedule: {
       // 예정 시각

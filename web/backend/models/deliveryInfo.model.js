@@ -17,6 +17,7 @@ const deliveryInfoSchema = new mongoose.Schema(
     trackingNumber: String,
     carrier: String,
     shippedAt: Date,
+    pickedUpAt: Date,
     deliveredAt: Date,
 
     tracking: {

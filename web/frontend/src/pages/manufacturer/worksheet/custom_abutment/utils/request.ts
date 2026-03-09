@@ -13,6 +13,7 @@ export type ManufacturerRequest = RequestBase & {
     pickupStatusCode?: string | null;
     pickupStatusText?: string | null;
     pickupCanceled?: boolean;
+    pickedUp?: boolean;
     delivered?: boolean;
   } | null;
   shippingLabelPrinted?: {

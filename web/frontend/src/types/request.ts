@@ -19,6 +19,7 @@ export interface DeliveryInfoSummary {
   trackingNumber?: string;
   carrier?: string;
   shippedAt?: string;
+  pickedUpAt?: string;
   deliveredAt?: string;
   tracking?: {
     lastStatusCode?: string;
@@ -259,6 +260,29 @@ export interface RequestBase {
 
   // 배송 정보 레퍼런스 (별도 DeliveryInfo 컬렉션)
   deliveryInfoRef?: string | DeliveryInfoSummary;
+
+  shippingWorkflow?: {
+    code?:
+      | "none"
+      | "printed"
+      | "accepted"
+      | "picked_up"
+      | "completed"
+      | "canceled"
+      | "error"
+      | string;
+    label?: string;
+    printedAt?: string | null;
+    acceptedAt?: string | null;
+    pickedUpAt?: string | null;
+    completedAt?: string | null;
+    erroredAt?: string | null;
+    canceledAt?: string | null;
+    trackingStatusCode?: string | null;
+    trackingStatusText?: string | null;
+    updatedAt?: string | null;
+    source?: string | null;
+  };
 
   shippingPackageId?: string;
 }

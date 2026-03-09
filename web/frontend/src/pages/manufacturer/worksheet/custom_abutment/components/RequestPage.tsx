@@ -242,6 +242,9 @@ export const RequestPage = ({
           url.searchParams.set("limit", String(PAGE_LIMIT));
           url.searchParams.set("view", "worksheet");
           url.searchParams.set("includeTotal", "0");
+          if (tabStage === "shipping" || tabStage === "tracking") {
+            url.searchParams.set("includeDelivery", "1");
+          }
           if (stageFilterForTab.length === 1) {
             url.searchParams.set("manufacturerStage", stageFilterForTab[0]);
           } else if (stageFilterForTab.length > 1) {

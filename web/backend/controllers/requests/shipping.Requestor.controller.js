@@ -8,9 +8,12 @@ import {
   getTodayYmdInKst,
   toKstYmd,
   applyStatusMapping,
+  applyShippingWorkflowState,
   REQUEST_STAGE_GROUPS,
   getRequestorOrgId,
   ensureReviewByStageDefaults,
+  SHIPPING_WORKFLOW_CODES,
+  SHIPPING_WORKFLOW_LABELS,
 } from "./utils.js";
 import {
   buildBulkShippingCandidates,
@@ -256,6 +259,14 @@ export async function registerShipment(req, res) {
       };
 
       applyStatusMapping(r, "포장.발송");
+      applyShippingWorkflowState(r, {
+        code: SHIPPING_WORKFLOW_CODES.ACCEPTED,
+        label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.ACCEPTED],
+        acceptedAt: actualShipPickup,
+        canceledAt: null,
+        source: "manual-shipment-register",
+        updatedAt: actualShipPickup,
+      });
       r.productionSchedule = r.productionSchedule || {};
       r.productionSchedule.actualShipPickup = actualShipPickup;
       r.shippingPackageId = pkg._id;

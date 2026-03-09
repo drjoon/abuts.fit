@@ -270,6 +270,8 @@ export async function getAllRequests(req, res) {
       "createdAt",
       "lotNumber",
       "mailboxAddress",
+      "shippingLabelPrinted",
+      "shippingWorkflow",
       "requestorOrganizationId",
       "referenceIds",
       "caseInfos.clinicName",
@@ -308,7 +310,7 @@ export async function getAllRequests(req, res) {
         // 배송 정보가 필요한 경우에만 최소 필드로 populate
         query = query.populate(
           "deliveryInfoRef",
-          "shippedAt deliveredAt carrier trackingNumber updatedAt",
+          "shippedAt pickedUpAt deliveredAt carrier trackingNumber updatedAt tracking",
         );
       }
       // requestorOrganizationId는 카드 뷰에서 미사용이므로 populate 생략

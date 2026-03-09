@@ -36,6 +36,111 @@ export const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
   d12: 4,
 };
 
+export const SHIPPING_WORKFLOW_CODES = {
+  NONE: "none",
+  PRINTED: "printed",
+  ACCEPTED: "accepted",
+  PICKED_UP: "picked_up",
+  COMPLETED: "completed",
+  CANCELED: "canceled",
+  ERROR: "error",
+};
+
+export const SHIPPING_WORKFLOW_LABELS = {
+  [SHIPPING_WORKFLOW_CODES.NONE]: "미처리",
+  [SHIPPING_WORKFLOW_CODES.PRINTED]: "출력",
+  [SHIPPING_WORKFLOW_CODES.ACCEPTED]: "접수",
+  [SHIPPING_WORKFLOW_CODES.PICKED_UP]: "집하",
+  [SHIPPING_WORKFLOW_CODES.COMPLETED]: "완료",
+  [SHIPPING_WORKFLOW_CODES.CANCELED]: "취소",
+  [SHIPPING_WORKFLOW_CODES.ERROR]: "에러",
+};
+
+export function resolveShippingWorkflowState({ requestLike, deliveryInfo }) {
+  const saved =
+    requestLike?.shippingWorkflow &&
+    typeof requestLike.shippingWorkflow === "object"
+      ? requestLike.shippingWorkflow
+      : {};
+  const tracking =
+    deliveryInfo?.tracking && typeof deliveryInfo.tracking === "object"
+      ? deliveryInfo.tracking
+      : {};
+  const statusCode = String(tracking?.lastStatusCode || "").trim();
+  const statusText = String(tracking?.lastStatusText || "").trim();
+  const printedAt =
+    requestLike?.shippingLabelPrinted?.printedAt || saved?.printedAt || null;
+  const acceptedAt = saved?.acceptedAt || null;
+  const pickedUpAt = deliveryInfo?.pickedUpAt || saved?.pickedUpAt || null;
+  const completedAt = deliveryInfo?.deliveredAt || saved?.completedAt || null;
+  const erroredAt = saved?.erroredAt || null;
+  const canceledAt =
+    saved?.canceledAt ||
+    (statusCode === "03" || statusText === "예약취소" ? new Date() : null);
+
+  let code = String(saved?.code || "").trim();
+  if (completedAt) code = SHIPPING_WORKFLOW_CODES.COMPLETED;
+  else if (erroredAt || code === SHIPPING_WORKFLOW_CODES.ERROR) {
+    code = SHIPPING_WORKFLOW_CODES.ERROR;
+  } else if (statusCode === "03" || statusText === "예약취소" || canceledAt) {
+    code = SHIPPING_WORKFLOW_CODES.CANCELED;
+  } else if (statusCode === "11" || pickedUpAt) {
+    code = SHIPPING_WORKFLOW_CODES.PICKED_UP;
+  } else if (acceptedAt || statusCode || statusText) {
+    code = SHIPPING_WORKFLOW_CODES.ACCEPTED;
+  } else if (printedAt || requestLike?.shippingLabelPrinted?.printed) {
+    code = SHIPPING_WORKFLOW_CODES.PRINTED;
+  } else {
+    code = SHIPPING_WORKFLOW_CODES.NONE;
+  }
+
+  return {
+    code,
+    label: SHIPPING_WORKFLOW_LABELS[code] || SHIPPING_WORKFLOW_LABELS.none,
+    printedAt: printedAt || null,
+    acceptedAt: acceptedAt || null,
+    pickedUpAt: pickedUpAt || null,
+    completedAt: completedAt || null,
+    erroredAt: erroredAt || null,
+    canceledAt: canceledAt || null,
+    trackingStatusCode: statusCode || null,
+    trackingStatusText: statusText || null,
+    updatedAt:
+      saved?.updatedAt ||
+      completedAt ||
+      canceledAt ||
+      pickedUpAt ||
+      acceptedAt ||
+      printedAt ||
+      null,
+    source: String(saved?.source || "").trim() || null,
+  };
+}
+
+export function applyShippingWorkflowState(requestLike, patch = {}) {
+  if (!requestLike || typeof requestLike !== "object") return requestLike;
+  const prev =
+    requestLike.shippingWorkflow &&
+    typeof requestLike.shippingWorkflow === "object"
+      ? requestLike.shippingWorkflow
+      : {};
+  const code = String(
+    patch?.code || prev?.code || SHIPPING_WORKFLOW_CODES.NONE,
+  ).trim();
+  const next = {
+    ...prev,
+    ...patch,
+    code,
+    label:
+      String(patch?.label || "").trim() ||
+      SHIPPING_WORKFLOW_LABELS[code] ||
+      SHIPPING_WORKFLOW_LABELS.none,
+    updatedAt: patch?.updatedAt || prev?.updatedAt || new Date(),
+  };
+  requestLike.shippingWorkflow = next;
+  return next;
+}
+
 export function getRequestorOrgId(req) {
   const raw = req?.user?.organizationId;
   return raw ? String(raw) : "";
@@ -404,6 +509,10 @@ export async function normalizeRequestForResponse(requestDoc) {
     obj?.deliveryInfoRef && typeof obj.deliveryInfoRef === "object"
       ? obj.deliveryInfoRef
       : null;
+  obj.shippingWorkflow = resolveShippingWorkflowState({
+    requestLike: obj,
+    deliveryInfo,
+  });
   if (deliveryInfo) {
     const deliveryMeta = deriveDeliveryMetaFields(deliveryInfo);
     obj.wasPickedUp = deliveryMeta.wasPickedUp;

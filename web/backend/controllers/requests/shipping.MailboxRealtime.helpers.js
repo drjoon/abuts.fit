@@ -1,4 +1,5 @@
 import Request from "../../models/request.model.js";
+import { SHIPPING_WORKFLOW_CODES, SHIPPING_WORKFLOW_LABELS } from "./utils.js";
 
 export const buildMailboxSnapshotFingerprint = (requests = []) => {
   const tokens = (Array.isArray(requests) ? requests : [])
@@ -152,16 +153,62 @@ export const persistPrintedMailboxState = async ({
     bulkOps.push({
       updateMany: {
         filter: { mailboxAddress: address },
-        update: {
-          $set: {
-            "shippingLabelPrinted.printed": true,
-            "shippingLabelPrinted.printedAt": printedAt,
-            "shippingLabelPrinted.mailboxAddress": address,
-            "shippingLabelPrinted.snapshotFingerprint": snapshot.fingerprint,
-            "shippingLabelPrinted.snapshotCapturedAt": printedAt,
-            "shippingLabelPrinted.snapshotRequestIds": snapshot.requestIds,
+        update: [
+          {
+            $set: {
+              "shippingLabelPrinted.printed": true,
+              "shippingLabelPrinted.printedAt": printedAt,
+              "shippingLabelPrinted.mailboxAddress": address,
+              "shippingLabelPrinted.snapshotFingerprint": snapshot.fingerprint,
+              "shippingLabelPrinted.snapshotCapturedAt": printedAt,
+              "shippingLabelPrinted.snapshotRequestIds": snapshot.requestIds,
+              "shippingWorkflow.printedAt": printedAt,
+              "shippingWorkflow.canceledAt": null,
+              "shippingWorkflow.source": "hanjin-print",
+              "shippingWorkflow.updatedAt": printedAt,
+              "shippingWorkflow.code": {
+                $cond: [
+                  {
+                    $in: [
+                      {
+                        $ifNull: [
+                          "$shippingWorkflow.code",
+                          SHIPPING_WORKFLOW_CODES.NONE,
+                        ],
+                      },
+                      [
+                        SHIPPING_WORKFLOW_CODES.NONE,
+                        SHIPPING_WORKFLOW_CODES.PRINTED,
+                      ],
+                    ],
+                  },
+                  SHIPPING_WORKFLOW_CODES.PRINTED,
+                  "$shippingWorkflow.code",
+                ],
+              },
+              "shippingWorkflow.label": {
+                $cond: [
+                  {
+                    $in: [
+                      {
+                        $ifNull: [
+                          "$shippingWorkflow.code",
+                          SHIPPING_WORKFLOW_CODES.NONE,
+                        ],
+                      },
+                      [
+                        SHIPPING_WORKFLOW_CODES.NONE,
+                        SHIPPING_WORKFLOW_CODES.PRINTED,
+                      ],
+                    ],
+                  },
+                  SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.PRINTED],
+                  "$shippingWorkflow.label",
+                ],
+              },
+            },
           },
-        },
+        ],
       },
     });
   }

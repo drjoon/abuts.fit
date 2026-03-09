@@ -4,7 +4,12 @@ import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import User from "../../models/user.model.js";
 import SalesmanLedger from "../../models/salesmanLedger.model.js";
 import { emitAppEventToRoles } from "../../socket.js";
-import { normalizeRequestForResponse } from "./utils.js";
+import {
+  applyShippingWorkflowState,
+  normalizeRequestForResponse,
+  SHIPPING_WORKFLOW_CODES,
+  SHIPPING_WORKFLOW_LABELS,
+} from "./utils.js";
 import { chargeShippingFeeOnPickupComplete } from "./shipping.Requestor.helpers.js";
 
 export const HANJIN_CLIENT_ID = String(
@@ -154,6 +159,9 @@ export const applyTrackingRowsToRequests = async ({
     if (String(last?.statusCode || "") === "66" && last?.occurredAt) {
       deliveryInfo.deliveredAt = last.occurredAt;
     }
+    if (hasPickupCompleted(last?.statusCode) && last?.occurredAt) {
+      deliveryInfo.pickedUpAt = last.occurredAt;
+    }
     if (hasPickupCompleted(last?.statusCode)) {
       await chargeShippingFeeOnPickupComplete({
         shippingPackageId: requestDoc.shippingPackageId,
@@ -166,6 +174,53 @@ export const applyTrackingRowsToRequests = async ({
     } else {
       requestDoc.manufacturerStage = "포장.발송";
       requestDoc.status = "포장.발송";
+    }
+
+    const trackingCode = String(last?.statusCode || "").trim();
+    const trackingText = String(last?.statusText || "").trim();
+    if (deliveryInfo?.deliveredAt) {
+      applyShippingWorkflowState(requestDoc, {
+        code: SHIPPING_WORKFLOW_CODES.COMPLETED,
+        label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.COMPLETED],
+        completedAt: deliveryInfo.deliveredAt,
+        trackingStatusCode: trackingCode || null,
+        trackingStatusText: trackingText || null,
+        source,
+        updatedAt: deliveryInfo.deliveredAt,
+      });
+    } else if (trackingCode === "03" || trackingText === "예약취소") {
+      applyShippingWorkflowState(requestDoc, {
+        code: SHIPPING_WORKFLOW_CODES.CANCELED,
+        label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.CANCELED],
+        canceledAt: last?.occurredAt || new Date(),
+        trackingStatusCode: trackingCode || null,
+        trackingStatusText: trackingText || null,
+        source,
+        updatedAt: last?.occurredAt || new Date(),
+      });
+    } else if (hasPickupCompleted(trackingCode)) {
+      applyShippingWorkflowState(requestDoc, {
+        code: SHIPPING_WORKFLOW_CODES.PICKED_UP,
+        label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.PICKED_UP],
+        pickedUpAt: deliveryInfo.pickedUpAt || last?.occurredAt || new Date(),
+        trackingStatusCode: trackingCode || null,
+        trackingStatusText: trackingText || null,
+        source,
+        updatedAt: deliveryInfo.pickedUpAt || last?.occurredAt || new Date(),
+      });
+    } else if (deliveryInfo?.trackingNumber || deliveryInfo?.shippedAt) {
+      applyShippingWorkflowState(requestDoc, {
+        code: SHIPPING_WORKFLOW_CODES.ACCEPTED,
+        label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.ACCEPTED],
+        acceptedAt:
+          requestDoc?.shippingWorkflow?.acceptedAt ||
+          deliveryInfo?.shippedAt ||
+          new Date(),
+        trackingStatusCode: trackingCode || null,
+        trackingStatusText: trackingText || null,
+        source,
+        updatedAt: last?.occurredAt || deliveryInfo?.shippedAt || new Date(),
+      });
     }
 
     await deliveryInfo.save();
@@ -209,6 +264,9 @@ const buildDeliveryMeta = (deliveryInfo) => {
   const pickupCanceled =
     pickupStatusText === "예약취소" || pickupStatusCode === "03";
   const delivered = Boolean(deliveryInfo?.deliveredAt);
+  const pickedUp = Boolean(
+    deliveryInfo?.pickedUpAt || pickupStatusCode === "11",
+  );
 
   return {
     wasPickedUp,
@@ -216,6 +274,7 @@ const buildDeliveryMeta = (deliveryInfo) => {
     pickupStatusText,
     pickupCanceled,
     delivered,
+    pickedUp,
   };
 };
 
