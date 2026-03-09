@@ -184,12 +184,59 @@ export const applyTrackingRowsToRequests = async ({
   return synced;
 };
 
+const buildDeliveryMeta = (deliveryInfo) => {
+  if (!deliveryInfo || typeof deliveryInfo !== "object") {
+    return {
+      wasPickedUp: false,
+      pickupStatusCode: null,
+      pickupStatusText: null,
+      pickupCanceled: false,
+      delivered: false,
+    };
+  }
+
+  const statusCodeRaw = deliveryInfo?.tracking?.lastStatusCode;
+  const statusTextRaw = deliveryInfo?.tracking?.lastStatusText;
+  const pickupStatusCode = statusCodeRaw
+    ? String(statusCodeRaw).trim() || null
+    : null;
+  const pickupStatusText = statusTextRaw
+    ? String(statusTextRaw).trim() || null
+    : null;
+  const wasPickedUp = Boolean(
+    deliveryInfo?.trackingNumber || deliveryInfo?.shippedAt,
+  );
+  const pickupCanceled =
+    pickupStatusText === "예약취소" || pickupStatusCode === "03";
+  const delivered = Boolean(deliveryInfo?.deliveredAt);
+
+  return {
+    wasPickedUp,
+    pickupStatusCode,
+    pickupStatusText,
+    pickupCanceled,
+    delivered,
+  };
+};
+
 export const emitDeliveryUpdated = async (requestDoc, extra = {}) => {
   const normalized = await normalizeRequestForResponse(requestDoc);
+  const deliveryInfo =
+    requestDoc?.deliveryInfoRef &&
+    typeof requestDoc.deliveryInfoRef === "object"
+      ? requestDoc.deliveryInfoRef
+      : null;
+  const deliveryMeta = buildDeliveryMeta(deliveryInfo);
+  if (normalized && typeof normalized === "object") {
+    normalized.wasPickedUp = deliveryMeta.wasPickedUp;
+    normalized.pickupStatusCode = deliveryMeta.pickupStatusCode;
+    normalized.pickupStatusText = deliveryMeta.pickupStatusText;
+  }
   emitAppEventToRoles(["manufacturer", "admin"], "request:delivery-updated", {
     requestId: String(requestDoc?.requestId || "").trim() || null,
     requestMongoId: String(requestDoc?._id || "").trim() || null,
     request: normalized,
+    deliveryMeta,
     ...extra,
   });
 };

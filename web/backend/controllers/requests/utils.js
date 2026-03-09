@@ -312,6 +312,41 @@ function canonicalizeLotNumberValue(raw) {
   return value.replace(/^CAP/i, "CA");
 }
 
+function deriveDeliveryMetaFields(deliveryInfo) {
+  if (!deliveryInfo || typeof deliveryInfo !== "object") {
+    return {
+      wasPickedUp: false,
+      pickupStatusCode: null,
+      pickupStatusText: null,
+      pickupCanceled: false,
+      delivered: false,
+    };
+  }
+
+  const statusCodeRaw = deliveryInfo?.tracking?.lastStatusCode;
+  const statusTextRaw = deliveryInfo?.tracking?.lastStatusText;
+  const pickupStatusCode = statusCodeRaw
+    ? String(statusCodeRaw).trim() || null
+    : null;
+  const pickupStatusText = statusTextRaw
+    ? String(statusTextRaw).trim() || null
+    : null;
+  const wasPickedUp = Boolean(
+    deliveryInfo?.trackingNumber || deliveryInfo?.shippedAt,
+  );
+  const pickupCanceled =
+    pickupStatusText === "예약취소" || pickupStatusCode === "03";
+  const delivered = Boolean(deliveryInfo?.deliveredAt);
+
+  return {
+    wasPickedUp,
+    pickupStatusCode,
+    pickupStatusText,
+    pickupCanceled,
+    delivered,
+  };
+}
+
 export async function normalizeRequestForResponse(requestDoc) {
   if (!requestDoc) return requestDoc;
   const obj =
@@ -364,6 +399,20 @@ export async function normalizeRequestForResponse(requestDoc) {
       obj.lotNumber.value = valueRaw;
     }
   }
+
+  const deliveryInfo =
+    obj?.deliveryInfoRef && typeof obj.deliveryInfoRef === "object"
+      ? obj.deliveryInfoRef
+      : null;
+  if (deliveryInfo) {
+    const deliveryMeta = deriveDeliveryMetaFields(deliveryInfo);
+    obj.wasPickedUp = deliveryMeta.wasPickedUp;
+    obj.pickupStatusCode = deliveryMeta.pickupStatusCode;
+    obj.pickupStatusText = deliveryMeta.pickupStatusText;
+    obj.pickupCanceled = deliveryMeta.pickupCanceled;
+    obj.deliveryMeta = deliveryMeta;
+  }
+
   return obj;
 }
 

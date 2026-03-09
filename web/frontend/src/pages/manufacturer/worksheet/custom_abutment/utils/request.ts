@@ -4,6 +4,17 @@ export type ManufacturerRequest = RequestBase & {
   referenceIds?: string[];
   mailboxAddress?: string | null;
   deliveryInfoRef?: any;
+  wasPickedUp?: boolean;
+  pickupStatusCode?: string | null;
+  pickupStatusText?: string | null;
+  pickupCanceled?: boolean;
+  deliveryMeta?: {
+    wasPickedUp?: boolean;
+    pickupStatusCode?: string | null;
+    pickupStatusText?: string | null;
+    pickupCanceled?: boolean;
+    delivered?: boolean;
+  } | null;
   shippingLabelPrinted?: {
     printed?: boolean | null;
     printedAt?: string | null;

@@ -16,6 +16,8 @@ import { MailboxShelfGroupTabs } from "./MailboxShelfGroupTabs";
 import { MailboxStickyHeader } from "./MailboxStickyHeader";
 import { useMailboxPrintSettings } from "./useMailboxPrintSettings";
 
+type MailboxPickupStatus = "none" | "requested" | "success" | "canceled";
+
 type MailboxGridProps = {
   requests: ManufacturerRequest[];
   onBoxClick?: (address: string, requests: ManufacturerRequest[]) => void;
@@ -171,7 +173,7 @@ export const MailboxGrid = ({
   }, [occupiedAddresses]);
 
   const pickupRequestedMailboxes = useMemo(() => {
-    const set = new Set<string>();
+    const map = new Map<string, MailboxPickupStatus>();
     for (const req of requests) {
       const mailbox = String(req?.mailboxAddress || "").trim();
       if (!mailbox) continue;
@@ -179,23 +181,50 @@ export const MailboxGrid = ({
         req?.deliveryInfoRef && typeof req.deliveryInfoRef === "object"
           ? (req.deliveryInfoRef as any)
           : null;
-      const hasPickup = Boolean(
-        di?.trackingNumber ||
-        di?.shippedAt ||
-        di?.tracking?.lastStatusText ||
-        String(req?.manufacturerStage || "").trim() === "추적관리",
+      const deliveryMeta =
+        req?.deliveryMeta && typeof req.deliveryMeta === "object"
+          ? req.deliveryMeta
+          : null;
+      const pickupStatusCode = String(
+        req?.pickupStatusCode || deliveryMeta?.pickupStatusCode || "",
+      ).trim();
+      const pickupStatusText = String(
+        req?.pickupStatusText || deliveryMeta?.pickupStatusText || "",
+      ).trim();
+      const pickupCanceled = Boolean(
+        req?.pickupCanceled ||
+        deliveryMeta?.pickupCanceled ||
+        pickupStatusCode === "03" ||
+        pickupStatusText === "예약취소",
       );
-      const isDelivered = Boolean(di?.deliveredAt);
-      const isCanceled =
-        String(di?.tracking?.lastStatusText || "").trim() === "예약취소";
-      if (hasPickup && !isDelivered && !isCanceled) {
-        set.add(mailbox);
+      const pickupCompleted = pickupStatusCode === "11";
+      const wasPickedUp = Boolean(
+        req?.wasPickedUp ?? deliveryMeta?.wasPickedUp ?? di?.trackingNumber,
+      );
+
+      let nextStatus: MailboxPickupStatus = "none";
+      if (pickupCanceled) nextStatus = "canceled";
+      else if (pickupCompleted) nextStatus = "success";
+      else if (wasPickedUp) nextStatus = "requested";
+
+      const prevStatus = map.get(mailbox);
+      const priority: Record<MailboxPickupStatus, number> = {
+        none: 0,
+        canceled: 1,
+        requested: 2,
+        success: 3,
+      };
+      if (!prevStatus || priority[nextStatus] >= priority[prevStatus]) {
+        map.set(mailbox, nextStatus);
       }
     }
     for (const mailbox of optimisticRequestedMailboxes) {
-      set.add(mailbox);
+      const prevStatus = map.get(mailbox);
+      if (!prevStatus || prevStatus === "none" || prevStatus === "canceled") {
+        map.set(mailbox, "requested");
+      }
     }
-    return set;
+    return map;
   }, [optimisticRequestedMailboxes, requests]);
 
   useEffect(() => {
@@ -203,7 +232,8 @@ export const MailboxGrid = ({
     setOptimisticRequestedMailboxes((prev) => {
       const next = new Set(prev);
       for (const mailbox of prev) {
-        if (pickupRequestedMailboxes.has(mailbox)) {
+        const status = pickupRequestedMailboxes.get(mailbox);
+        if (status && status !== "none" && status !== "canceled") {
           next.delete(mailbox);
         }
       }
@@ -257,11 +287,13 @@ export const MailboxGrid = ({
           (req) => String(req?.mailboxAddress || "").trim() === mailbox,
         );
         const hasPickup = mailboxRequests.some((req) => {
-          const di =
-            req?.deliveryInfoRef && typeof req.deliveryInfoRef === "object"
-              ? (req.deliveryInfoRef as any)
+          const deliveryMeta =
+            req?.deliveryMeta && typeof req.deliveryMeta === "object"
+              ? req.deliveryMeta
               : null;
-          return Boolean(di?.trackingNumber || di?.shippedAt);
+          return Boolean(
+            req?.wasPickedUp ?? deliveryMeta?.wasPickedUp ?? false,
+          );
         });
         if (hasPickup) next.delete(mailbox);
       }
@@ -338,14 +370,18 @@ export const MailboxGrid = ({
   const selectedRequestedAddresses = useMemo(
     () =>
       selectedOccupiedAddresses.filter((addr) =>
-        pickupRequestedMailboxes.has(addr),
+        ["requested", "success"].includes(
+          pickupRequestedMailboxes.get(addr) || "none",
+        ),
       ),
     [selectedOccupiedAddresses, pickupRequestedMailboxes],
   );
 
   const selectedRequestedOrOptimisticAddresses = useMemo(() => {
     const requested = selectedOccupiedAddresses.filter((addr) =>
-      pickupRequestedMailboxes.has(addr),
+      ["requested", "success"].includes(
+        pickupRequestedMailboxes.get(addr) || "none",
+      ),
     );
     if (requested.length > 0) return requested;
     return selectedOccupiedAddresses.filter((addr) =>
@@ -843,7 +879,6 @@ export const MailboxGrid = ({
         addressMap={addressMap}
         printedMailboxes={printedMailboxes}
         pickupRequestedMailboxes={pickupRequestedMailboxes}
-        optimisticRequestedMailboxes={optimisticRequestedMailboxes}
         failedMailboxes={failedMailboxes}
         selectedMailboxes={selectedMailboxes}
         shelfRefs={shelfRefs}

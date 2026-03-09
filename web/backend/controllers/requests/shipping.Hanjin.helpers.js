@@ -184,6 +184,58 @@ const normalizeReceiverAddressForHanjin = (request) => {
   );
 };
 
+const logMissingReceiverAddressDiagnostics = ({ request, mailbox, reason }) => {
+  try {
+    const requestor = request?.requestor || {};
+    const requestorOrg = request?.requestorOrganizationId || {};
+    const extracted = requestorOrg?.extracted || {};
+    console.error("[hanjin][address] missing receiver address", {
+      reason,
+      mailbox: String(mailbox || "").trim() || null,
+      requestId: String(request?.requestId || "").trim() || null,
+      requestMongoId: String(request?._id || "").trim() || null,
+      organizationName:
+        String(requestorOrg?.name || extracted?.companyName || "").trim() ||
+        null,
+      requestorAddressText: String(requestor?.addressText || "").trim() || null,
+      requestorAddress1:
+        String(
+          requestor?.address?.address1 || requestor?.address?.roadAddress || "",
+        ).trim() || null,
+      requestorAddress2:
+        String(
+          requestor?.address?.address2 ||
+            requestor?.address?.detailAddress ||
+            requestor?.detailAddress ||
+            "",
+        ).trim() || null,
+      requestorZip:
+        String(
+          requestor?.address?.postalCode ||
+            requestor?.zipCode ||
+            requestor?.postalCode ||
+            "",
+        ).trim() || null,
+      organizationAddress1:
+        String(extracted?.address || extracted?.address1 || "").trim() || null,
+      organizationAddress2:
+        String(
+          extracted?.addressDetail ||
+            extracted?.detailAddress ||
+            extracted?.address2 ||
+            "",
+        ).trim() || null,
+      organizationZip:
+        String(extracted?.zipCode || extracted?.postalCode || "").trim() ||
+        null,
+      extractedRepresentativeName:
+        String(extracted?.representativeName || "").trim() || null,
+    });
+  } catch (error) {
+    console.error("[hanjin][address] diagnostics logging failed", error);
+  }
+};
+
 export const buildResolvedLabelData = ({ data, metaByMsgKey = {} }) => {
   const enrichedData =
     data && typeof data === "object"
@@ -403,6 +455,11 @@ export const buildHanjinInsertOrderBody = ({ mailbox, requests }) => {
       "",
   ).trim();
   if (!receiverDetail) {
+    logMissingReceiverAddressDiagnostics({
+      request: first,
+      mailbox,
+      reason: "missing_rcvrDtlAddr",
+    });
     throw Object.assign(
       new Error(
         "수하인 상세주소(rcvrDtlAddr)가 비어 있어 한진 택배 접수를 진행할 수 없습니다. (사업자 상세주소를 입력해주세요)",
@@ -468,6 +525,11 @@ const buildHanjinDraftPayload = (requests) => {
       const msgKey = String(mailbox || "").trim();
 
       if (!String(addressText || "").trim()) {
+        logMissingReceiverAddressDiagnostics({
+          request: first,
+          mailbox: msgKey,
+          reason: "missing_print_address",
+        });
         throw Object.assign(
           new Error(
             `${resolveMailboxCode(first) || msgKey || "우편함"}: 수하인 주소(address)가 비어 있어 운송장 출력을 진행할 수 없습니다.`,
