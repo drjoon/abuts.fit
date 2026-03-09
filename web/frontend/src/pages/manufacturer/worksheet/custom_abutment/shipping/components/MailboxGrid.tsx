@@ -67,6 +67,16 @@ export const MailboxGrid = ({
       }
     >
   >({});
+  const [workflowOverrideByRequestId, setWorkflowOverrideByRequestId] =
+    useState<
+      Record<
+        string,
+        {
+          code: MailboxPickupStatus;
+          label: string;
+        }
+      >
+    >({});
   const lastRealtimeSampleSigRef = useRef<string>("");
   const lastRealtimeSampleAtRef = useRef<number>(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -104,7 +114,7 @@ export const MailboxGrid = ({
       }
     }
     return map;
-  }, [requests]);
+  }, [requests, workflowOverrideByRequestId]);
 
   useEffect(() => {
     if (!requests.length) return;
@@ -114,9 +124,17 @@ export const MailboxGrid = ({
       .map((req) => ({
         requestId: String(req?.requestId || "").trim(),
         mailboxAddress: String(req?.mailboxAddress || "").trim(),
-        shippingWorkflowCode: String(req?.shippingWorkflow?.code || "").trim(),
+        shippingWorkflowCode: String(
+          workflowOverrideByRequestId[String(req?.requestId || "").trim()]
+            ?.code ||
+            req?.shippingWorkflow?.code ||
+            "",
+        ).trim(),
         shippingWorkflowLabel: String(
-          req?.shippingWorkflow?.label || "",
+          workflowOverrideByRequestId[String(req?.requestId || "").trim()]
+            ?.label ||
+            req?.shippingWorkflow?.label ||
+            "",
         ).trim(),
         shippingLabelPrinted: Boolean(
           (req as any)?.shippingLabelPrinted?.printed,
@@ -136,7 +154,7 @@ export const MailboxGrid = ({
       size: requests.length,
       sample: sampleRaw,
     });
-  }, [requests]);
+  }, [requests, workflowOverrideByRequestId]);
   const getMailboxColorClass = (items: ManufacturerRequest[]) => {
     if (items.length === 0) return "bg-white border-slate-200";
     const earliestShipDate = items.reduce((earliest, req) => {
@@ -192,7 +210,7 @@ export const MailboxGrid = ({
         return next;
       });
       toast({
-        title: modifyOnly ? "운송장 재출력 시작" : "운송장 출력 시작",
+        title: modifyOnly ? "재출력 & 재접수 시작" : "운송장 출력 시작",
         description: `${targetAddresses.length}개 우편함의 운송장을 출력합니다.`,
       });
       const { data, wblPrint } = await callHanjinApiWithMeta({
@@ -283,7 +301,7 @@ export const MailboxGrid = ({
         if (printPayload) {
           await handleDownloadWaybillPdf(candidatePayload);
           toast({
-            title: modifyOnly ? "운송장 재출력 완료" : "운송장 출력 완료",
+            title: modifyOnly ? "재출력 & 재접수 완료" : "운송장 출력 완료",
             description: completedPrintDescriptionImage,
           });
           notifyPickupUpdated();
@@ -296,7 +314,7 @@ export const MailboxGrid = ({
             zplLabels: (data as any).zplLabels,
           });
           toast({
-            title: modifyOnly ? "운송장 재출력 완료" : "운송장 출력 완료",
+            title: modifyOnly ? "재출력 & 재접수 완료" : "운송장 출력 완료",
             description: completedPrintDescriptionImage,
           });
           notifyPickupUpdated();
@@ -306,7 +324,7 @@ export const MailboxGrid = ({
 
       if (wblPrint?.success) {
         toast({
-          title: modifyOnly ? "운송장 재출력 완료" : "운송장 출력 완료",
+          title: modifyOnly ? "재출력 & 재접수 완료" : "운송장 출력 완료",
           description: completedPrintDescriptionPrint,
         });
         notifyPickupUpdated();
@@ -382,7 +400,7 @@ export const MailboxGrid = ({
         }
       }
       toast({
-        title: modifyOnly ? "운송장 재출력 실패" : "운송장 출력 실패",
+        title: modifyOnly ? "재출력 & 재접수 실패" : "운송장 출력 실패",
         description: resolveHanjinFailureMessage(error),
         variant: "destructive",
       });
@@ -422,36 +440,38 @@ export const MailboxGrid = ({
   }, [addressMap]);
 
   const pickupRequestedMailboxes = useMemo(() => {
-    const map = new Map<string, MailboxPickupStatus>();
+    const workflowCodesByMailbox = new Map<string, Set<string>>();
     for (const req of requests) {
       const mailbox = String(req?.mailboxAddress || "").trim();
       if (!mailbox) continue;
-      const workflowCode = String(req?.shippingWorkflow?.code || "").trim();
-
-      let nextStatus: MailboxPickupStatus = "none";
-      if (workflowCode === "error") nextStatus = "error" as MailboxPickupStatus;
-      else if (workflowCode === "canceled") nextStatus = "canceled";
-      else if (workflowCode === "completed") nextStatus = "completed";
-      else if (workflowCode === "picked_up") nextStatus = "picked_up";
-      else if (workflowCode === "accepted") nextStatus = "accepted";
-      else if (workflowCode === "printed") nextStatus = "printed";
-
-      const prevStatus = map.get(mailbox);
-      const priority: Record<MailboxPickupStatus, number> = {
-        none: 0,
-        printed: 1,
-        accepted: 2,
-        picked_up: 3,
-        completed: 4,
-        canceled: 5,
-        error: 6,
-      };
-      if (!prevStatus || priority[nextStatus] >= priority[prevStatus]) {
-        map.set(mailbox, nextStatus);
+      const requestId = String(req?.requestId || "").trim();
+      const workflowCode = String(
+        workflowOverrideByRequestId[requestId]?.code ||
+          req?.shippingWorkflow?.code ||
+          "",
+      ).trim();
+      if (!workflowCodesByMailbox.has(mailbox)) {
+        workflowCodesByMailbox.set(mailbox, new Set<string>());
+      }
+      if (workflowCode) {
+        workflowCodesByMailbox.get(mailbox)?.add(workflowCode);
       }
     }
+
+    const map = new Map<string, MailboxPickupStatus>();
+    for (const [mailbox, codes] of workflowCodesByMailbox.entries()) {
+      let nextStatus: MailboxPickupStatus = "none";
+      if (codes.has("error")) nextStatus = "error";
+      else if (codes.has("canceled")) nextStatus = "canceled";
+      else if (codes.has("completed")) nextStatus = "completed";
+      else if (codes.has("picked_up")) nextStatus = "picked_up";
+      else if (codes.has("accepted")) nextStatus = "accepted";
+      else if (codes.has("printed")) nextStatus = "printed";
+      map.set(mailbox, nextStatus);
+    }
+
     return map;
-  }, [requests]);
+  }, [requests, workflowOverrideByRequestId]);
 
   const printedMailboxes = useMemo(() => {
     const set = new Set<string>();
@@ -558,9 +578,9 @@ export const MailboxGrid = ({
     () =>
       occupiedAddresses.filter((addr) => {
         const status = pickupRequestedMailboxes.get(addr);
-        return status === "printed";
+        return status === "printed" || printedMailboxes.has(addr);
       }),
-    [occupiedAddresses, pickupRequestedMailboxes],
+    [occupiedAddresses, pickupRequestedMailboxes, printedMailboxes],
   );
 
   const printedMailboxChanges = useMemo(() => {
@@ -680,14 +700,39 @@ export const MailboxGrid = ({
           description: `${targetAddresses.length}개 우편함의 택배 수거가 접수되었습니다.`,
         });
       } else {
-        await callHanjinApi({
+        const cancelResponse = await callHanjinApi({
           path: "/api/requests/shipping/hanjin/pickup-cancel",
           mailboxAddresses: targetAddresses,
         });
+        const updatedIds = Array.isArray((cancelResponse as any)?.results)
+          ? (cancelResponse as any).results
+              .flatMap((item: any) =>
+                Array.isArray(item?.updatedIds) ? item.updatedIds : [],
+              )
+              .map((value: any) => String(value || "").trim())
+              .filter(Boolean)
+          : [];
         console.log("[shipping][pickup] cancel success", {
           mailboxAddresses: targetAddresses,
+          updatedIds,
           timestamp: new Date().toISOString(),
         });
+        console.log("[shipping][pickup][cancel][overlay] apply", {
+          mailboxAddresses: targetAddresses,
+          updatedIds,
+        });
+        if (updatedIds.length) {
+          setWorkflowOverrideByRequestId((prev) => {
+            const next = { ...prev };
+            updatedIds.forEach((requestId) => {
+              next[requestId] = {
+                code: "canceled",
+                label: "취소",
+              };
+            });
+            return next;
+          });
+        }
         setMailboxChangeMeta((prev) => {
           const next = { ...prev };
           targetAddresses.forEach((address) => {
@@ -739,7 +784,7 @@ export const MailboxGrid = ({
     changedPrintedAddresses.length > 0;
 
   const printActionLabel = hasPrintedMailbox
-    ? "🖨️ 운송장 재출력"
+    ? "🖨️ 재출력 & 재접수"
     : "🖨️ 운송장 출력";
 
   const pickupActionLabel = hasAcceptedMailbox

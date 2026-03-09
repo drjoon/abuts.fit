@@ -183,42 +183,10 @@ export function useWorksheetRealtimeStatus({
       const requestId = String(payload?.requestId || "").trim();
       if (!requestId) return;
 
-      if (type === "request:cam-processing-started") {
-        return;
-      }
-
-      if (type === "request:filled-processing-started") {
-        setRequests((prev) =>
-          prev.map((r) => {
-            if (String((r as any)?.requestId || "").trim() !== requestId) {
-              return r;
-            }
-            return {
-              ...(r as any),
-              realtimeProgress: {
-                badge: "Filled STL 생성중",
-                elapsedSeconds: null,
-                startedAt: null,
-                tone: "blue",
-              },
-            } as any;
-          }),
-        );
-        return;
-      }
-
-      if (type === "packing:capture-processed") {
-        const eventRequest = payload?.request as
-          | ManufacturerRequest
-          | undefined;
-        if (eventRequest) {
-          setRequests((prev) =>
-            applyRequestPatch(prev, {
-              ...eventRequest,
-              realtimeProgress: null,
-            }),
-          );
-        } else {
+      switch (type) {
+        case "request:cam-processing-started":
+          return;
+        case "request:filled-processing-started":
           setRequests((prev) =>
             prev.map((r) => {
               if (String((r as any)?.requestId || "").trim() !== requestId) {
@@ -226,71 +194,120 @@ export function useWorksheetRealtimeStatus({
               }
               return {
                 ...(r as any),
-                realtimeProgress: null,
+                realtimeProgress: {
+                  badge: "Filled STL 생성중",
+                  elapsedSeconds: null,
+                  startedAt: null,
+                  tone: "blue",
+                },
               } as any;
             }),
           );
+          return;
+        case "packing:capture-processed":
+          const eventRequest = payload?.request as
+            | ManufacturerRequest
+            | undefined;
+          if (eventRequest) {
+            setRequests((prev) =>
+              applyRequestPatch(prev, {
+                ...eventRequest,
+                realtimeProgress: null,
+              }),
+            );
+          } else {
+            setRequests((prev) =>
+              prev.map((r) => {
+                if (String((r as any)?.requestId || "").trim() !== requestId) {
+                  return r;
+                }
+                return {
+                  ...(r as any),
+                  realtimeProgress: null,
+                } as any;
+              }),
+            );
+          }
+          return;
+        case "request:stage-changed": {
+          const eventRequest = payload?.request as
+            | ManufacturerRequest
+            | undefined;
+          if (!eventRequest) return;
+          setRequests((prev) =>
+            applyRequestPatch(prev, {
+              ...eventRequest,
+              manufacturerStage:
+                String(
+                  eventRequest.manufacturerStage || payload?.toStage || "",
+                ).trim() || eventRequest.manufacturerStage,
+            }),
+          );
+          return;
         }
-        return;
-      }
-
-      if (type === "request:stage-changed") {
-        const eventRequest = payload?.request as
-          | ManufacturerRequest
-          | undefined;
-        if (!eventRequest) return;
-        setRequests((prev) =>
-          applyRequestPatch(prev, {
-            ...eventRequest,
-            manufacturerStage:
-              String(
-                eventRequest.manufacturerStage || payload?.toStage || "",
-              ).trim() || eventRequest.manufacturerStage,
-          }),
-        );
-        return;
-      }
-
-      if (type === "request:delivery-updated") {
-        const eventRequest = payload?.request as
-          | ManufacturerRequest
-          | undefined;
-        if (!eventRequest) return;
-        setRequests((prev) => applyRequestPatch(prev, eventRequest));
-        return;
-      }
-
-      if (type === "bg:runtime-status") {
-        const clear = payload?.clear === true;
-        const label = String(payload?.label || "").trim();
-        const tone = String(payload?.tone || "blue").trim();
-        const startedAt = payload?.startedAt || null;
-        const elapsedSeconds = Number.isFinite(Number(payload?.elapsedSeconds))
-          ? Math.max(0, Math.floor(Number(payload?.elapsedSeconds)))
-          : null;
-        if (startedAt) {
-          const base = new Date(startedAt).getTime();
-          if (Number.isFinite(base)) realtimeBaseRef.current[requestId] = base;
+        case "request:delivery-updated": {
+          const eventRequest = payload?.request as
+            | ManufacturerRequest
+            | undefined;
+          if (!eventRequest) return;
+          console.log("[shipping][realtime][delivery-updated][recv]", {
+            requestId: String(eventRequest?.requestId || "").trim(),
+            mailboxAddress: String(eventRequest?.mailboxAddress || "").trim(),
+            shippingWorkflowCode: String(
+              eventRequest?.shippingWorkflow?.code || "",
+            ).trim(),
+            shippingWorkflowLabel: String(
+              eventRequest?.shippingWorkflow?.label || "",
+            ).trim(),
+            printed: Boolean(
+              (eventRequest as any)?.shippingLabelPrinted?.printed,
+            ),
+          });
+          setRequests((prev) => applyRequestPatch(prev, eventRequest));
+          return;
         }
-        if (clear) delete realtimeBaseRef.current[requestId];
-        setRequests((prev) =>
-          prev.map((r) => {
-            if (String((r as any)?.requestId || "").trim() !== requestId) {
-              return r;
-            }
-            return {
-              ...(r as any),
-              realtimeProgress: clear
-                ? null
-                : {
-                    badge: label || null,
-                    startedAt,
-                    elapsedSeconds,
-                    tone: (tone || null) as any,
-                  },
-            } as any;
-          }),
-        );
+        case "bg:runtime-status": {
+          const clear = payload?.clear === true;
+          const label = String(payload?.label || "").trim();
+          const tone = String(payload?.tone || "blue").trim();
+          const startedAt = payload?.startedAt || null;
+          const elapsedSeconds = Number.isFinite(
+            Number(payload?.elapsedSeconds),
+          )
+            ? Math.max(0, Math.floor(Number(payload?.elapsedSeconds)))
+            : null;
+
+          setRequests((prev) =>
+            prev.map((r) => {
+              if (String((r as any)?.requestId || "").trim() !== requestId) {
+                return r;
+              }
+              if (clear) {
+                delete realtimeBaseRef.current[requestId];
+                return {
+                  ...(r as any),
+                  realtimeProgress: null,
+                } as any;
+              }
+              const base = new Date(startedAt).getTime();
+              if (Number.isFinite(base)) {
+                realtimeBaseRef.current[requestId] = base;
+              }
+              return {
+                ...(r as any),
+                realtimeProgress: {
+                  badge: label || null,
+                  startedAt,
+                  elapsedSeconds,
+                  tone: (tone || null) as any,
+                },
+              } as any;
+            }),
+          );
+          return;
+        }
+        default:
+          return;
       }
     });
 
