@@ -1,7 +1,9 @@
 import Request from "../../models/request.model.js";
 import hanjinService from "../../services/hanjin.service.js";
 
-const HANJIN_CLIENT_ID = String(process.env.HANJIN_CLIENT_ID || "").trim();
+export const HANJIN_CLIENT_ID = String(
+  process.env.HANJIN_CLIENT_ID || "",
+).trim();
 const HANJIN_CSR_NUM = String(process.env.HANJIN_CSR_NUM || "").trim();
 const HANJIN_SHIPPER_ZIP = String(process.env.HANJIN_SHIPPER_ZIP || "").trim();
 const WBL_PRINT_SERVER_BASE = String(

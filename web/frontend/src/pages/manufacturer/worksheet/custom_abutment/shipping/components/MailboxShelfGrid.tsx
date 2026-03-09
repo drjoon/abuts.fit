@@ -65,7 +65,7 @@ export const MailboxShelfGrid = ({
     mailboxStatus:
       | "없음"
       | "접수"
-      | "출력"
+      | "운송장 출력"
       | "집하"
       | "완료"
       | "취소"
@@ -146,7 +146,7 @@ export const MailboxShelfGrid = ({
                                 : pickupStatus === "accepted"
                                   ? "접수"
                                   : pickupStatus === "printed"
-                                    ? "출력"
+                                    ? "운송장 출력"
                                     : pickupStatus === "canceled"
                                       ? "취소"
                                       : "없음";
@@ -188,16 +188,14 @@ export const MailboxShelfGrid = ({
                                   relative flex flex-col items-center justify-between p-1 rounded border transition-all select-none
                                   ${
                                     isOccupied && showSuccessBorder
-                                      ? "bg-emerald-50 border-emerald-200 shadow-sm"
+                                      ? "bg-blue-50 border-blue-200 shadow-sm"
                                       : isOccupied && showAcceptedBorder
-                                        ? "bg-orange-50 border-orange-200 shadow-sm"
+                                        ? "bg-blue-50 border-blue-200 shadow-sm"
                                         : isOccupied && showPrintedBorder
-                                          ? "bg-white border-orange-400 shadow-sm"
+                                          ? "bg-white border-slate-300 shadow-sm"
                                           : showSelectedBorder
-                                            ? "bg-indigo-50 border-indigo-300 shadow-sm"
-                                            : isOccupied
-                                              ? getMailboxColorClass(items)
-                                              : "bg-white border-slate-200"
+                                            ? "bg-blue-50 border-blue-300 shadow-sm"
+                                            : "bg-white border-slate-200"
                                   }
                                 `}
                                 style={{
@@ -207,30 +205,27 @@ export const MailboxShelfGrid = ({
                                 }}
                               >
                                 {showSuccessBorder ? (
-                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-emerald-500" />
+                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-blue-600" />
                                 ) : null}
                                 {showAcceptedBorder ? (
-                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-orange-500" />
+                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-dashed border-blue-600" />
                                 ) : null}
                                 {showPrintedBorder ? (
-                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-orange-400" />
+                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-dashed border-slate-900" />
                                 ) : null}
                                 {showFailedBorder ? (
-                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-red-500" />
-                                ) : null}
-                                {showSelectedBorder ? (
-                                  <div className="pointer-events-none absolute inset-[3px] rounded border-2 border-indigo-500" />
+                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-red-600" />
                                 ) : null}
                                 <div
                                   className={`font-mono font-bold leading-none text-center w-full pointer-events-none ${
                                     showSelectedBorder
-                                      ? "text-indigo-800"
+                                      ? "text-blue-800"
                                       : showAcceptedBorder
-                                        ? "text-orange-700"
+                                        ? "text-blue-700"
                                         : showSuccessBorder
-                                          ? "text-emerald-700"
+                                          ? "text-blue-700"
                                           : showPrintedBorder
-                                            ? "text-orange-800"
+                                            ? "text-slate-900"
                                             : isOccupied
                                               ? getMailboxColorClass(
                                                   items,
@@ -253,12 +248,12 @@ export const MailboxShelfGrid = ({
                                       type="button"
                                       onClick={handleOpenDetails}
                                       className={`font-bold leading-none ${
-                                        isSelected
-                                          ? "text-indigo-700"
-                                          : showSuccessBorder
-                                            ? "text-emerald-700"
+                                        isSelected || showSuccessBorder
+                                          ? "text-blue-700"
+                                          : showAcceptedBorder
+                                            ? "text-blue-700"
                                             : showPrintedBorder
-                                              ? "text-orange-700"
+                                              ? "text-slate-900"
                                               : getMailboxColorClass(
                                                     items,
                                                   ).includes("bg-blue")

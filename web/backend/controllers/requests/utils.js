@@ -77,19 +77,21 @@ export function resolveShippingWorkflowState({ requestLike, deliveryInfo }) {
   const canceledAt =
     saved?.canceledAt ||
     (statusCode === "03" || statusText === "예약취소" ? new Date() : null);
+  const hasTrackingCancelSignal =
+    statusCode === "03" || statusText === "예약취소";
 
   let code = String(saved?.code || "").trim();
   if (completedAt) code = SHIPPING_WORKFLOW_CODES.COMPLETED;
   else if (erroredAt || code === SHIPPING_WORKFLOW_CODES.ERROR) {
     code = SHIPPING_WORKFLOW_CODES.ERROR;
-  } else if (statusCode === "03" || statusText === "예약취소" || canceledAt) {
-    code = SHIPPING_WORKFLOW_CODES.CANCELED;
   } else if (statusCode === "11" || pickedUpAt) {
     code = SHIPPING_WORKFLOW_CODES.PICKED_UP;
   } else if (acceptedAt || statusCode || statusText) {
     code = SHIPPING_WORKFLOW_CODES.ACCEPTED;
   } else if (printedAt || requestLike?.shippingLabelPrinted?.printed) {
     code = SHIPPING_WORKFLOW_CODES.PRINTED;
+  } else if (hasTrackingCancelSignal || canceledAt) {
+    code = SHIPPING_WORKFLOW_CODES.CANCELED;
   } else {
     code = SHIPPING_WORKFLOW_CODES.NONE;
   }

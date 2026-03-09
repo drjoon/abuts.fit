@@ -163,49 +163,16 @@ export const persistPrintedMailboxState = async ({
               "shippingLabelPrinted.snapshotCapturedAt": printedAt,
               "shippingLabelPrinted.snapshotRequestIds": snapshot.requestIds,
               "shippingWorkflow.printedAt": printedAt,
+              "shippingWorkflow.acceptedAt": null,
+              "shippingWorkflow.pickedUpAt": null,
+              "shippingWorkflow.completedAt": null,
+              "shippingWorkflow.erroredAt": null,
               "shippingWorkflow.canceledAt": null,
               "shippingWorkflow.source": "hanjin-print",
               "shippingWorkflow.updatedAt": printedAt,
-              "shippingWorkflow.code": {
-                $cond: [
-                  {
-                    $in: [
-                      {
-                        $ifNull: [
-                          "$shippingWorkflow.code",
-                          SHIPPING_WORKFLOW_CODES.NONE,
-                        ],
-                      },
-                      [
-                        SHIPPING_WORKFLOW_CODES.NONE,
-                        SHIPPING_WORKFLOW_CODES.PRINTED,
-                      ],
-                    ],
-                  },
-                  SHIPPING_WORKFLOW_CODES.PRINTED,
-                  "$shippingWorkflow.code",
-                ],
-              },
-              "shippingWorkflow.label": {
-                $cond: [
-                  {
-                    $in: [
-                      {
-                        $ifNull: [
-                          "$shippingWorkflow.code",
-                          SHIPPING_WORKFLOW_CODES.NONE,
-                        ],
-                      },
-                      [
-                        SHIPPING_WORKFLOW_CODES.NONE,
-                        SHIPPING_WORKFLOW_CODES.PRINTED,
-                      ],
-                    ],
-                  },
-                  SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.PRINTED],
-                  "$shippingWorkflow.label",
-                ],
-              },
+              "shippingWorkflow.code": SHIPPING_WORKFLOW_CODES.PRINTED,
+              "shippingWorkflow.label":
+                SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.PRINTED],
             },
           },
         ],

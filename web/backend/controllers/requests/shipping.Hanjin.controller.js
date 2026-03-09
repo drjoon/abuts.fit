@@ -11,6 +11,7 @@ import {
   SHIPPING_WORKFLOW_CODES,
   SHIPPING_WORKFLOW_LABELS,
 } from "./utils.js";
+import { getTodayYmdInKst } from "../../utils/krBusinessDays.js";
 import { ensureShippingPackageForPickup } from "./shipping.Requestor.helpers.js";
 import {
   buildHanjinInsertOrderBody,
@@ -25,6 +26,7 @@ import {
   resolveHanjinPayload,
   resolveMailboxList,
   ensureHanjinEnv,
+  HANJIN_CLIENT_ID,
 } from "./shipping.Hanjin.helpers.js";
 import {
   buildMailboxChangeResponse,
@@ -50,10 +52,12 @@ const buildPickupAndPrintResponseData = ({
   pickupData,
   labelData,
   mailboxChangeResponse,
+  timings,
 }) => ({
   pickup: pickupData,
   label: labelData,
   ...(mailboxChangeResponse || {}),
+  ...(timings ? { timings } : {}),
   address_list: Array.isArray(labelData?.address_list)
     ? labelData.address_list
     : [],
@@ -71,12 +75,14 @@ const buildPickupAndPrintSuccessPayload = ({
   labelData,
   mailboxChangeResponse,
   wblPrint,
+  timings,
 }) => ({
   success: true,
   data: buildPickupAndPrintResponseData({
     pickupData,
     labelData,
     mailboxChangeResponse,
+    timings,
   }),
   wblPrint,
 });
@@ -105,6 +111,7 @@ const buildIntegratedPickupAndPrintSuccessResponse = ({
   printBody,
   mailboxChangeResponse,
   changedMailboxAddressesBeforePrint,
+  timings,
 }) =>
   buildPickupAndPrintSuccessPayload({
     pickupData: pickupBody?.data,
@@ -114,7 +121,46 @@ const buildIntegratedPickupAndPrintSuccessResponse = ({
       changedMailboxAddressesBeforePrint,
     }),
     wblPrint: printBody?.wblPrint,
+    timings,
   });
+
+const nowIso = () => new Date().toISOString();
+
+const buildStepTiming = ({
+  startedAtMs,
+  finishedAtMs,
+  startedAt,
+  finishedAt,
+}) => ({
+  startedAt,
+  finishedAt,
+  elapsedMs: Math.max(0, finishedAtMs - startedAtMs),
+});
+
+const isDuplicateOrderError = (data) => {
+  const code = String(data?.resultCode || data?.result_code || "").trim();
+  const message = String(
+    data?.resultMessage || data?.result_message || "",
+  ).trim();
+  return code === "ERROR-03" || message.includes("주문번호(custOrdNo) 중복");
+};
+
+const buildCancelCaller = () => {
+  const cancelPath = resolveHanjinPath(
+    "HANJIN_PICKUP_CANCEL_PATH",
+    getHanjinPathFallbacks().HANJIN_PICKUP_CANCEL_PATH,
+  );
+  if (!cancelPath) {
+    throw Object.assign(
+      new Error("HANJIN_PICKUP_CANCEL_PATH가 설정되지 않았습니다."),
+      { statusCode: 400 },
+    );
+  }
+  return buildHanjinOrderFallbackCaller({
+    pathCandidates: buildHanjinPathCandidates(cancelPath),
+    logPrefix: "[hanjin][pickup-cancel-auto]",
+  });
+};
 
 const buildIntegratedPrintRequest = ({
   req,
@@ -334,7 +380,31 @@ async function executeSingleMailboxPickup({
     orderBody,
   });
 
-  const data = await callHanjinWithFallback({ data: orderBody });
+  let data = await callHanjinWithFallback({ data: orderBody });
+  if (isDuplicateOrderError(data)) {
+    console.warn(
+      "[hanjin][pickup] duplicate order detected, cancel then retry",
+      {
+        mailbox,
+        resultCode: data?.resultCode,
+        resultMessage: data?.resultMessage,
+        wblNo: data?.wblNo,
+        custOrdNo: data?.custOrdNo || orderBody.custOrdNo,
+      },
+    );
+    const cancelHanjinWithFallback = buildCancelCaller();
+    const cancelBody = {
+      custEdiCd: orderBody.custEdiCd,
+      custOrdNo: String(data?.custOrdNo || orderBody.custOrdNo || "").trim(),
+    };
+    const cancelData = await cancelHanjinWithFallback({ data: cancelBody });
+    console.log("[hanjin][pickup] duplicate cancel completed", {
+      mailbox,
+      cancelBody,
+      cancelData,
+    });
+    data = await callHanjinWithFallback({ data: orderBody });
+  }
   return finalizeMailboxPickupResult({
     mailbox,
     group,
@@ -750,15 +820,11 @@ export async function requestHanjinPickupAndPrint(req, res) {
         ? changedMailboxAddressesBeforePrint
         : mailboxAddresses;
 
-    const pickupStep = await executeIntegratedCapturedStep({
-      res,
-      controllerFn: requestHanjinPickup,
-      reqLike: req,
-      fallbackMessage: "한진 택배 접수에 실패했습니다.",
-    });
-    if (!pickupStep.ok) {
-      return pickupStep.response;
-    }
+    const flowStartedAtMs = Date.now();
+    const flowStartedAt = nowIso();
+
+    const printStartedAtMs = Date.now();
+    const printStartedAt = nowIso();
 
     const printReq = buildIntegratedPrintRequest({
       req,
@@ -789,11 +855,61 @@ export async function requestHanjinPickupAndPrint(req, res) {
       return printStep.response;
     }
 
+    const printFinishedAtMs = Date.now();
+    const printFinishedAt = nowIso();
+
+    const pickupStartedAtMs = Date.now();
+    const pickupStartedAt = nowIso();
+
+    const pickupStep = await executeIntegratedCapturedStep({
+      res,
+      controllerFn: requestHanjinPickup,
+      reqLike: req,
+      fallbackMessage: "한진 택배 접수에 실패했습니다.",
+    });
+    if (!pickupStep.ok) {
+      return pickupStep.response;
+    }
+
+    const pickupFinishedAtMs = Date.now();
+    const pickupFinishedAt = nowIso();
+
+    const flowFinishedAtMs = Date.now();
+    const flowFinishedAt = nowIso();
+
+    const timings = {
+      flow: buildStepTiming({
+        startedAtMs: flowStartedAtMs,
+        finishedAtMs: flowFinishedAtMs,
+        startedAt: flowStartedAt,
+        finishedAt: flowFinishedAt,
+      }),
+      print: buildStepTiming({
+        startedAtMs: printStartedAtMs,
+        finishedAtMs: printFinishedAtMs,
+        startedAt: printStartedAt,
+        finishedAt: printFinishedAt,
+      }),
+      pickup: buildStepTiming({
+        startedAtMs: pickupStartedAtMs,
+        finishedAtMs: pickupFinishedAtMs,
+        startedAt: pickupStartedAt,
+        finishedAt: pickupFinishedAt,
+      }),
+    };
+
+    console.log("[hanjin][pickup-and-print] timings", {
+      mailboxAddresses,
+      printTargetMailboxAddresses,
+      timings,
+    });
+
     const responseBody = buildIntegratedPickupAndPrintSuccessResponse({
       pickupBody: pickupStep.body,
       printBody: printStep.body,
       mailboxChangeResponse,
       changedMailboxAddressesBeforePrint,
+      timings,
     });
 
     const requestIdsForPoll = Array.isArray(selectedRequestsBeforePrint)

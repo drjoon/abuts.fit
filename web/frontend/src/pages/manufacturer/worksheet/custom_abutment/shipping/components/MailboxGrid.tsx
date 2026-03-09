@@ -37,6 +37,25 @@ export const MailboxGrid = ({
   onMailboxError,
 }: MailboxGridProps) => {
   const { toast } = useToast();
+  const formatElapsedMs = (value: unknown) => {
+    const ms = Number(value || 0);
+    if (!Number.isFinite(ms) || ms < 1000) {
+      return `${Math.max(0, Math.round(ms))}ms`;
+    }
+    return `${(ms / 1000).toFixed(1)}초`;
+  };
+  const logPickupAndPrintTimings = (data: any, targetAddresses: string[]) => {
+    const timings = data?.timings;
+    if (!timings) return;
+    console.log("[hanjin][pickup-and-print][frontend] timings", {
+      mailboxAddresses: targetAddresses,
+      timings,
+    });
+    toast({
+      title: "출력/접수 소요 시간",
+      description: `출력 ${formatElapsedMs(timings?.print?.elapsedMs)} / 접수 ${formatElapsedMs(timings?.pickup?.elapsedMs)} / 전체 ${formatElapsedMs(timings?.flow?.elapsedMs)}`,
+    });
+  };
   const shelfNames = Array.from({ length: 24 }, (_, i) =>
     String.fromCharCode(65 + i),
   );
@@ -53,6 +72,9 @@ export const MailboxGrid = ({
     new Set(),
   );
   const [isRequestingPickup, setIsRequestingPickup] = useState(false);
+  const [activeHeaderAction, setActiveHeaderAction] = useState<
+    "print" | "pickup" | null
+  >(null);
   const [failedMailboxes, setFailedMailboxes] = useState<Set<string>>(
     new Set(),
   );
@@ -67,6 +89,8 @@ export const MailboxGrid = ({
       }
     >
   >({});
+  const lastRealtimeSampleSigRef = useRef<string>("");
+  const lastRealtimeSampleAtRef = useRef<number>(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const touchStartXRef = useRef<number>(0);
   const shelfRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -104,6 +128,38 @@ export const MailboxGrid = ({
     }
     return map;
   }, [requests]);
+
+  useEffect(() => {
+    if (!requests.length) return;
+    const sampleRaw = requests
+      .filter((req) => String(req?.mailboxAddress || "").trim())
+      .slice(0, 12)
+      .map((req) => ({
+        requestId: String(req?.requestId || "").trim(),
+        mailboxAddress: String(req?.mailboxAddress || "").trim(),
+        shippingWorkflowCode: String(req?.shippingWorkflow?.code || "").trim(),
+        shippingWorkflowLabel: String(
+          req?.shippingWorkflow?.label || "",
+        ).trim(),
+        shippingLabelPrinted: Boolean(
+          (req as any)?.shippingLabelPrinted?.printed,
+        ),
+      }));
+
+    const sig = JSON.stringify(sampleRaw);
+    const now = Date.now();
+    const shouldEmit =
+      sig !== lastRealtimeSampleSigRef.current &&
+      now - lastRealtimeSampleAtRef.current > 2000;
+    if (!shouldEmit) return;
+
+    lastRealtimeSampleSigRef.current = sig;
+    lastRealtimeSampleAtRef.current = now;
+    console.log("[shipping][mailbox][realtime] requests sample", {
+      size: requests.length,
+      sample: sampleRaw,
+    });
+  }, [requests]);
   const getMailboxColorClass = (items: ManufacturerRequest[]) => {
     if (items.length === 0) return "bg-white border-slate-200";
     const earliestShipDate = items.reduce((earliest, req) => {
@@ -125,6 +181,209 @@ export const MailboxGrid = ({
       return "bg-slate-50 border-slate-300 cursor-pointer hover:bg-slate-100 hover:shadow-md";
     } else {
       return "bg-red-50 border-red-400 cursor-pointer hover:bg-red-100 hover:shadow-md";
+    }
+  };
+
+  const handlePrintOnly = async ({
+    targetAddresses = selectedOccupiedAddresses,
+    modifyOnly = false,
+  }: {
+    targetAddresses?: string[];
+    modifyOnly?: boolean;
+  } = {}) => {
+    if (targetAddresses.length === 0) {
+      toast({
+        title: "우편함 없음",
+        description: modifyOnly
+          ? "재출력할 우편함을 선택해주세요."
+          : "운송장을 출력할 우편함을 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsRequestingPickup(true);
+    setActiveHeaderAction("print");
+    try {
+      console.log("[shipping][print] start", {
+        targetAddresses,
+        modifyOnly,
+      });
+      setFailedMailboxes((prev) => {
+        const next = new Set(prev);
+        targetAddresses.forEach((addr) => next.delete(addr));
+        return next;
+      });
+      toast({
+        title: modifyOnly ? "운송장 재출력 시작" : "운송장 출력 시작",
+        description: `${targetAddresses.length}개 우편함의 운송장을 출력합니다.`,
+      });
+      const { data, wblPrint } = await callHanjinApiWithMeta({
+        path: "/api/requests/shipping/hanjin/print-labels",
+        mailboxAddresses: targetAddresses,
+        wblPrintOptions: {
+          printer: printerProfile || undefined,
+          paperProfile,
+        },
+      });
+
+      console.log("[shipping][print] api response", {
+        mailboxAddresses: targetAddresses,
+        changedMailboxAddresses: (data as any)?.changedMailboxAddresses,
+        mailboxChanges: (data as any)?.mailboxChanges,
+        wblPrint,
+      });
+
+      const changedMailboxAddressSet = new Set(
+        Array.isArray((data as any)?.changedMailboxAddresses)
+          ? (data as any).changedMailboxAddresses
+              .map((value: any) => String(value || "").trim())
+              .filter(Boolean)
+          : [],
+      );
+      const nextMailboxChangeMeta = Array.isArray((data as any)?.mailboxChanges)
+        ? Object.fromEntries(
+            (data as any).mailboxChanges.map((item: any) => {
+              const mailboxAddress = String(item?.mailboxAddress || "").trim();
+              return [
+                mailboxAddress,
+                {
+                  changed:
+                    changedMailboxAddressSet.size > 0
+                      ? changedMailboxAddressSet.has(mailboxAddress)
+                      : Boolean(item?.changed),
+                  printed: Boolean(item?.printed),
+                  currentRequestIds: Array.isArray(item?.currentRequestIds)
+                    ? item.currentRequestIds
+                        .map((value: any) => String(value || "").trim())
+                        .filter(Boolean)
+                    : [],
+                  previousRequestIds: Array.isArray(item?.previousRequestIds)
+                    ? item.previousRequestIds
+                        .map((value: any) => String(value || "").trim())
+                        .filter(Boolean)
+                    : [],
+                },
+              ];
+            }),
+          )
+        : null;
+      if (nextMailboxChangeMeta) {
+        setMailboxChangeMeta((prev) => ({
+          ...prev,
+          ...nextMailboxChangeMeta,
+        }));
+      }
+
+      if (shippingOutputMode === "image") {
+        const candidatePayload =
+          (wblPrint as any)?.data || wblPrint || (data as any)?.label || data;
+        const printPayload = resolvePrintPayload(candidatePayload);
+
+        if (printPayload) {
+          await handleDownloadWaybillPdf(candidatePayload);
+          toast({
+            title: modifyOnly ? "운송장 재출력 완료" : "운송장 출력 완료",
+            description: `${targetAddresses.length}개 우편함의 라벨을 저장했습니다.`,
+          });
+          return;
+        }
+
+        if (Array.isArray((data as any)?.address_list)) {
+          await saveGeneratedWaybillPngs({
+            addressList: (data as any).address_list,
+            zplLabels: (data as any).zplLabels,
+          });
+          toast({
+            title: modifyOnly ? "운송장 재출력 완료" : "운송장 출력 완료",
+            description: `${targetAddresses.length}개 우편함의 라벨을 저장했습니다.`,
+          });
+          return;
+        }
+      }
+
+      if (wblPrint?.success) {
+        toast({
+          title: modifyOnly ? "운송장 재출력 완료" : "운송장 출력 완료",
+          description: `${targetAddresses.length}개 우편함의 라벨 출력이 완료되었습니다.`,
+        });
+        return;
+      }
+
+      if (
+        wblPrint?.skipped &&
+        (wblPrint?.reason === "wbl_print_server_not_configured" ||
+          wblPrint?.reason === "no_wbl_print_server_base")
+      ) {
+        await triggerLocalPrint(data);
+        toast({
+          title: modifyOnly ? "운송장 재출력 완료" : "운송장 출력 완료",
+          description: `${targetAddresses.length}개 우편함의 라벨 출력이 완료되었습니다.`,
+        });
+        return;
+      }
+
+      if (wblPrint?.skipped && wblPrint?.reason === "print_payload_not_found") {
+        toast({
+          title: "출력 데이터 없음",
+          description:
+            "한진 운송장 응답에 PDF(URL/Base64) 데이터가 포함되지 않아 자동 출력이 불가능합니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (wblPrint && wblPrint?.success === false) {
+        toast({
+          title: "운송장 출력 실패",
+          description:
+            wblPrint?.message ||
+            wblPrint?.reason ||
+            "운송장 출력에 실패했습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      await triggerLocalPrint(data);
+      toast({
+        title: modifyOnly ? "운송장 재출력 완료" : "운송장 출력 완료",
+        description: `${targetAddresses.length}개 우편함의 라벨 출력이 완료되었습니다.`,
+      });
+    } catch (error) {
+      console.error("운송장 출력 실패:", error);
+      console.error("[shipping][print] error", {
+        targetAddresses,
+        modifyOnly,
+        error,
+      });
+      const failedFromMsgKey = resolveFailedMailboxesFromError(error);
+      const failedTargets = failedFromMsgKey.addresses.length
+        ? failedFromMsgKey.addresses
+        : targetAddresses;
+      setFailedMailboxes((prev) => {
+        const next = new Set(prev);
+        failedTargets.forEach((addr) => next.add(addr));
+        return next;
+      });
+      if (onMailboxError) {
+        if (failedFromMsgKey.messages.length) {
+          failedFromMsgKey.messages.forEach((item) => {
+            onMailboxError(item.address, item.message);
+          });
+        } else {
+          const message = resolveHanjinFailureMessage(error);
+          failedTargets.forEach((addr) => onMailboxError(addr, message));
+        }
+      }
+      toast({
+        title: modifyOnly ? "운송장 재출력 실패" : "운송장 출력 실패",
+        description: resolveHanjinFailureMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setIsRequestingPickup(false);
+      setActiveHeaderAction(null);
     }
   };
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -312,6 +571,15 @@ export const MailboxGrid = ({
     [selectedOccupiedAddresses, pickupRequestedMailboxes],
   );
 
+  const selectedPrintedAddresses = useMemo(
+    () =>
+      selectedOccupiedAddresses.filter((addr) => {
+        const status = pickupRequestedMailboxes.get(addr);
+        return status === "printed";
+      }),
+    [selectedOccupiedAddresses, pickupRequestedMailboxes],
+  );
+
   const selectedRequestedOrOptimisticAddresses = selectedRequestedAddresses;
 
   const selectedMailboxRequests = useMemo(() => {
@@ -357,13 +625,19 @@ export const MailboxGrid = ({
     });
   }, [selectedMailboxRequests, selectedRequestedOrOptimisticAddresses]);
 
-  const hasModifiedRequestedSelection = useMemo(
-    () =>
-      selectedRequestedMailboxChanges.some((item) => {
-        const backendMeta = mailboxChangeMeta[item.address];
-        return backendMeta ? backendMeta.changed : item.changed;
-      }),
-    [mailboxChangeMeta, selectedRequestedMailboxChanges],
+  const selectedPrintedMailboxChanges = useMemo(() => {
+    return selectedPrintedAddresses.map((address) => {
+      const backendMeta = mailboxChangeMeta[address];
+      return {
+        address,
+        changed: backendMeta ? backendMeta.changed : false,
+      };
+    });
+  }, [mailboxChangeMeta, selectedPrintedAddresses]);
+
+  const hasModifiedPrintedSelection = useMemo(
+    () => selectedPrintedMailboxChanges.some((item) => item.changed),
+    [selectedPrintedMailboxChanges],
   );
 
   const toggleMailboxSelection = (address: string) => {
@@ -373,6 +647,14 @@ export const MailboxGrid = ({
       else next.add(address);
       return next;
     });
+  };
+
+  const handleSelectAllMailboxes = () => {
+    setSelectedMailboxes(new Set(occupiedAddresses));
+  };
+
+  const handleClearSelectedMailboxes = () => {
+    setSelectedMailboxes(new Set());
   };
 
   const triggerLocalPrint = async (payload: any) => {
@@ -432,198 +714,30 @@ export const MailboxGrid = ({
     }
   };
 
-  const handlePickupWithLabel = async ({
-    modifyOnly = false,
-  }: {
-    modifyOnly?: boolean;
-  } = {}) => {
-    const targetAddresses = modifyOnly
-      ? selectedRequestedOrOptimisticAddresses
-      : selectedOccupiedAddresses;
-
-    if (targetAddresses.length === 0) {
-      toast({
-        title: "우편함 없음",
-        description: modifyOnly
-          ? "접수 내용 수정할 우편함을 선택해주세요."
-          : "택배 접수할 우편함을 선택해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsRequestingPickup(true);
-    try {
-      setFailedMailboxes((prev) => {
-        const next = new Set(prev);
-        targetAddresses.forEach((addr) => next.delete(addr));
-        return next;
-      });
-      const { data, wblPrint } = await callHanjinApiWithMeta({
-        path: "/api/requests/shipping/hanjin/pickup-and-print",
-        mailboxAddresses: targetAddresses,
-        wblPrintOptions: {
-          printer: printerProfile || undefined,
-          paperProfile,
-        },
-      });
-
-      const changedMailboxAddressSet = new Set(
-        Array.isArray((data as any)?.changedMailboxAddresses)
-          ? (data as any).changedMailboxAddresses
-              .map((value: any) => String(value || "").trim())
-              .filter(Boolean)
-          : [],
-      );
-      const nextMailboxChangeMeta = Array.isArray((data as any)?.mailboxChanges)
-        ? Object.fromEntries(
-            (data as any).mailboxChanges.map((item: any) => {
-              const mailboxAddress = String(item?.mailboxAddress || "").trim();
-              return [
-                mailboxAddress,
-                {
-                  changed:
-                    changedMailboxAddressSet.size > 0
-                      ? changedMailboxAddressSet.has(mailboxAddress)
-                      : Boolean(item?.changed),
-                  printed: Boolean(item?.printed),
-                  currentRequestIds: Array.isArray(item?.currentRequestIds)
-                    ? item.currentRequestIds
-                        .map((value: any) => String(value || "").trim())
-                        .filter(Boolean)
-                    : [],
-                  previousRequestIds: Array.isArray(item?.previousRequestIds)
-                    ? item.previousRequestIds
-                        .map((value: any) => String(value || "").trim())
-                        .filter(Boolean)
-                    : [],
-                },
-              ];
-            }),
-          )
-        : null;
-      if (nextMailboxChangeMeta) {
-        setMailboxChangeMeta((prev) => ({
-          ...prev,
-          ...nextMailboxChangeMeta,
-        }));
-      }
-
-      if (shippingOutputMode === "image") {
-        const candidatePayload =
-          (wblPrint as any)?.data ||
-          wblPrint ||
-          (data as any)?.label ||
-          (data as any);
-        const printPayload = resolvePrintPayload(candidatePayload);
-
-        if (printPayload) {
-          await handleDownloadWaybillPdf(candidatePayload);
-          toast({
-            title: modifyOnly ? "접수 내용 수정 완료" : "택배 접수 완료",
-            description: `${targetAddresses.length}개 우편함의 라벨 저장 후 접수가 완료되었습니다.`,
-          });
-          return;
-        }
-
-        if (Array.isArray((data as any)?.label?.address_list)) {
-          await saveGeneratedWaybillPngs({
-            addressList: (data as any).label.address_list,
-            zplLabels: (data as any).label.zplLabels,
-          });
-          toast({
-            title: modifyOnly ? "접수 내용 수정 완료" : "택배 접수 완료",
-            description: `${targetAddresses.length}개 우편함의 라벨 저장 후 접수가 완료되었습니다.`,
-          });
-          return;
-        }
-      }
-
-      if (wblPrint?.success) {
-        toast({
-          title: modifyOnly ? "접수 내용 수정 완료" : "택배 접수 완료",
-          description: `${targetAddresses.length}개 우편함의 라벨 출력 후 접수가 완료되었습니다.`,
-        });
-        return;
-      }
-
-      if (
-        wblPrint?.skipped &&
-        wblPrint?.reason === "wbl_print_server_not_configured"
-      ) {
-        await triggerLocalPrint((data as any)?.label || data);
-        toast({
-          title: modifyOnly ? "접수 내용 수정 완료" : "택배 접수 완료",
-          description: `${targetAddresses.length}개 우편함의 라벨 출력 후 접수가 완료되었습니다.`,
-        });
-        return;
-      }
-
-      if (wblPrint?.skipped && wblPrint?.reason === "print_payload_not_found") {
-        toast({
-          title: "출력 데이터 없음",
-          description:
-            "한진 운송장 응답에 PDF(URL/Base64) 데이터가 포함되지 않아 자동 출력이 불가능합니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      if (wblPrint && wblPrint?.success === false) {
-        toast({
-          title: "운송장 출력 실패",
-          description:
-            wblPrint?.message ||
-            wblPrint?.reason ||
-            "운송장 출력에 실패했습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      await triggerLocalPrint((data as any)?.label || data);
-      toast({
-        title: modifyOnly ? "접수 내용 수정 완료" : "택배 접수 완료",
-        description: `${targetAddresses.length}개 우편함의 라벨 출력 후 접수가 완료되었습니다.`,
-      });
-    } catch (error) {
-      console.error("택배 접수/라벨 처리 실패:", error);
-      const failedFromMsgKey = resolveFailedMailboxesFromError(error);
-      const failedTargets = failedFromMsgKey.addresses.length
-        ? failedFromMsgKey.addresses
-        : targetAddresses;
-      setFailedMailboxes((prev) => {
-        const next = new Set(prev);
-        failedTargets.forEach((addr) => next.add(addr));
-        return next;
-      });
-      if (onMailboxError) {
-        if (failedFromMsgKey.messages.length) {
-          failedFromMsgKey.messages.forEach((item) => {
-            onMailboxError(item.address, item.message);
-          });
-        } else {
-          const message = resolveHanjinFailureMessage(error);
-          failedTargets.forEach((addr) => onMailboxError(addr, message));
-        }
-      }
-      toast({
-        title: modifyOnly ? "접수 내용 수정 실패" : "택배 접수 실패",
-        description: resolveHanjinFailureMessage(error),
-        variant: "destructive",
-      });
-    } finally {
-      setIsRequestingPickup(false);
-    }
-  };
-
-  const handlePickupAction = async () => {
-    const requestedAddresses = selectedRequestedOrOptimisticAddresses;
+  const handlePickupAction = async (explicitTargetAddresses?: string[]) => {
+    const normalizedExplicitTargets = Array.isArray(explicitTargetAddresses)
+      ? explicitTargetAddresses.filter(Boolean)
+      : [];
+    const requestedAddresses = normalizedExplicitTargets.length
+      ? normalizedExplicitTargets.filter(
+          (addr) => pickupRequestedMailboxes.get(addr) === "accepted",
+        )
+      : selectedRequestedOrOptimisticAddresses;
     const hasRequestedPickup = requestedAddresses.length > 0;
+    const printedAddresses = normalizedExplicitTargets.length
+      ? normalizedExplicitTargets.filter(
+          (addr) => pickupRequestedMailboxes.get(addr) === "printed",
+        )
+      : selectedPrintedAddresses;
+    const hasPrintedSelection = printedAddresses.length > 0;
 
     const targetAddresses = hasRequestedPickup
       ? requestedAddresses
-      : selectedOccupiedAddresses;
+      : hasPrintedSelection
+        ? printedAddresses
+        : normalizedExplicitTargets.length
+          ? normalizedExplicitTargets
+          : selectedOccupiedAddresses;
 
     if (!targetAddresses.length) {
       toast({
@@ -635,6 +749,7 @@ export const MailboxGrid = ({
     }
 
     setIsRequestingPickup(true);
+    setActiveHeaderAction("pickup");
     try {
       if (!hasRequestedPickup) {
         await callHanjinApi({
@@ -677,58 +792,90 @@ export const MailboxGrid = ({
       });
     } finally {
       setIsRequestingPickup(false);
+      setActiveHeaderAction(null);
     }
   };
 
-  const canRequestPickup = selectedOccupiedAddresses.length > 0;
+  const canRequestPickup = selectedPrintedAddresses.length > 0;
 
-  const shouldShowModifyPickup =
+  const hasRequestedSelection =
     selectedRequestedOrOptimisticAddresses.length > 0;
-
-  const hasRequestedSelection = shouldShowModifyPickup;
-
-  const canModifyPickup = shouldShowModifyPickup;
-
-  const modifyTargetCount = selectedRequestedOrOptimisticAddresses.length;
 
   const canCancelPickup = selectedRequestedOrOptimisticAddresses.length > 0;
 
   const selectedRequestedCount = selectedRequestedAddresses.length;
 
-  const pickupPrimaryLabel = hasRequestedSelection
-    ? "↩️ 택배 취소"
-    : "🚚 라벨 출력 후 택배 접수";
+  const selectedPrintedCount = selectedPrintedAddresses.length;
 
-  const modifyPickupLabel = hasModifiedRequestedSelection
-    ? "🔄 내용 수정 후 재접수"
-    : "📝 내용 수정 후 재접수";
+  const hasPrintedSelection = selectedPrintedAddresses.length > 0;
+
+  const hasAnySelection = selectedOccupiedAddresses.length > 0;
+
+  const changedPrintedAddresses = selectedPrintedMailboxChanges
+    .filter((item) => item.changed)
+    .map((item) => item.address);
+
+  const shouldReprintChangedOnly =
+    hasPrintedSelection &&
+    hasModifiedPrintedSelection &&
+    changedPrintedAddresses.length > 0;
+
+  const pickupActionLabel = hasRequestedSelection
+    ? "↩️ 택배 취소"
+    : "🚚 택배 접수";
+
+  const pickupActionLoadingLabel = hasRequestedSelection
+    ? "취소 중..."
+    : "접수 중...";
+
+  const pickupActionDisabled = hasRequestedSelection
+    ? !canCancelPickup
+    : !canRequestPickup;
+
+  const actionButtons = [
+    {
+      label: "🖨️ 운송장 출력",
+      loading: activeHeaderAction === "print" && isRequestingPickup,
+      loadingLabel: "출력 중...",
+      disabled: !hasAnySelection,
+      variant: "blue" as const,
+      onClick: () => {
+        if (shouldReprintChangedOnly) {
+          void handlePrintOnly({
+            targetAddresses: changedPrintedAddresses,
+            modifyOnly: true,
+          });
+          return;
+        }
+        void handlePrintOnly();
+      },
+    },
+    {
+      label: pickupActionLabel,
+      loading: activeHeaderAction === "pickup" && isRequestingPickup,
+      loadingLabel: pickupActionLoadingLabel,
+      disabled: pickupActionDisabled,
+      variant: hasRequestedSelection ? ("rose" as const) : ("slate" as const),
+      onClick: () => {
+        void handlePickupAction();
+      },
+    },
+  ];
 
   return (
     <div className="w-full flex flex-col h-full relative">
       <MailboxStickyHeader>
         <MailboxActionHeader
           isRequestingPickup={isRequestingPickup}
-          hasRequestedSelection={hasRequestedSelection}
-          canCancelPickup={canCancelPickup}
-          canRequestPickup={canRequestPickup}
-          shouldShowModifyPickup={shouldShowModifyPickup}
-          canModifyPickup={canModifyPickup}
-          modifyTargetCount={modifyTargetCount}
-          pickupPrimaryLabel={pickupPrimaryLabel}
-          modifyPickupLabel={modifyPickupLabel}
+          actionButtons={actionButtons}
           selectedOccupiedCount={selectedOccupiedAddresses.length}
+          selectedPrintedCount={selectedPrintedCount}
           selectedRequestedCount={selectedRequestedCount}
           onOpenPrinterSettings={() => setPrinterModalOpen(true)}
-          onPrimaryAction={() => {
-            if (hasRequestedSelection) {
-              void handlePickupAction();
-              return;
-            }
-            void handlePickupWithLabel();
-          }}
-          onModifyAction={() =>
-            void handlePickupWithLabel({ modifyOnly: true })
-          }
+          onSelectAll={handleSelectAllMailboxes}
+          onClearSelection={handleClearSelectedMailboxes}
+          disableSelectAll={occupiedAddresses.length === 0}
+          disableClearSelection={selectedMailboxes.size === 0}
         />
 
         <MailboxPrintSettingsDialog
