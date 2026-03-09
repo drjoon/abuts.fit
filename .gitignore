@@ -14,6 +14,11 @@ logs
 .frontend_node_modules__eb_deploy_backup
 
 *.zip
+# seed credentials (local only)
+web/backend/scripts/db/seed/.essential-accounts.json
+web/backend/scripts/db/seed/.essential-accounts.config.json
+web/backend/scripts/db/seed/.bulk-accounts.config.json
+web/backend/scripts/db/seed/.bulk-accounts.json
 # cam
 docs
 # hi-link

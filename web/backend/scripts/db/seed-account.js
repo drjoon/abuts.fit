@@ -1,44 +1,69 @@
+import fs from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
 import { connectDb, disconnectDb } from "./_mongo.js";
-import { seedBulkAccounts, seedDefaultAccounts } from "./seed/accounts.js";
+import {
+  seedBulkAccounts,
+  seedDefaultAccounts,
+  seedEssentialAccounts,
+} from "./seed/accounts.js";
 
-function parseCountArg(name) {
-  const raw = process.argv.slice(2).find((arg) => arg.startsWith(`${name}=`));
-  if (!raw) return null;
-  const value = Number.parseInt(raw.slice(name.length + 1), 10);
-  if (!Number.isFinite(value) || value < 0) {
-    throw new Error(`Invalid ${name} count: ${raw}`);
-  }
-  return value;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const SEED_DIR = path.join(__dirname, "seed");
+const ESSENTIAL_OUTPUT_PATH = path.join(SEED_DIR, ".essential-accounts.json");
+const BULK_OUTPUT_PATH = path.join(SEED_DIR, ".bulk-accounts.json");
+
+async function persistJsonFile(filePath, payload, label) {
+  if (!payload) return;
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, JSON.stringify(payload, null, 2), {
+    mode: 0o600,
+  });
+  console.log(`[db] ${label} saved`, {
+    path: filePath,
+  });
 }
 
 async function run() {
   try {
     await connectDb();
 
-    const requestorCount = parseCountArg("r");
-    const salesmanCount = parseCountArg("s");
-
-    if (requestorCount == null && salesmanCount == null) {
-      const result = await seedDefaultAccounts();
-      console.log("[db] seed-account done", {
-        mode: "default",
-        emails: Object.values(result.users || {})
-          .map((user) => user?.email)
-          .filter(Boolean),
-      });
-      return;
+    const essentialResult = await seedEssentialAccounts();
+    if (essentialResult?.users?.length) {
+      await persistJsonFile(
+        ESSENTIAL_OUTPUT_PATH,
+        {
+          generatedAt: new Date().toISOString(),
+          users: essentialResult.users,
+        },
+        "essential account credentials",
+      );
     }
 
-    const result = await seedBulkAccounts({
-      requestorCount: requestorCount ?? 0,
-      salesmanCount: salesmanCount ?? 0,
+    const defaultResult = await seedDefaultAccounts();
+    console.log("[db] seed-account default users", {
+      emails: Object.values(defaultResult.users || {})
+        .map((user) => user?.email)
+        .filter(Boolean),
     });
 
-    console.log("[db] seed-account done", {
-      mode: "bulk",
-      requestorCount: result.requestors.length,
-      salesmanCount: result.salesmen.length,
-    });
+    const bulkResult = await seedBulkAccounts();
+    if (bulkResult) {
+      await persistJsonFile(
+        BULK_OUTPUT_PATH,
+        {
+          generatedAt: new Date().toISOString(),
+          requestors: bulkResult.requestors,
+          salesmen: bulkResult.salesmen,
+        },
+        "bulk account credentials",
+      );
+      console.log("[db] seed-account bulk users", {
+        requestorCount: bulkResult.requestors.length,
+        salesmanCount: bulkResult.salesmen.length,
+      });
+    }
   } finally {
     await disconnectDb();
   }

@@ -1,3 +1,7 @@
+import fs from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
+import crypto from "crypto";
 import CreditLedger from "../../../models/creditLedger.model.js";
 import User from "../../../models/user.model.js";
 import {
@@ -6,7 +10,6 @@ import {
   findOrCreateOrganization,
   findOrCreateUser,
   pick,
-  randInt,
   randomReferralCode,
 } from "./utils.js";
 
@@ -33,6 +36,103 @@ async function grantRequestorSeedCredit({
   });
 
   return true;
+}
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const PASSWORD_ALPHABET =
+  "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz0123456789!@#$%^&*()-_=+";
+const ESSENTIAL_ACCOUNTS_CONFIG_PATH = path.join(
+  __dirname,
+  ".essential-accounts.config.json",
+);
+const BULK_ACCOUNTS_CONFIG_PATH = path.join(
+  __dirname,
+  ".bulk-accounts.config.json",
+);
+
+function generateSecurePassword(length = 18) {
+  const bytes = crypto.randomBytes(length);
+  let out = "";
+  for (let i = 0; i < length; i += 1) {
+    out += PASSWORD_ALPHABET[bytes[i] % PASSWORD_ALPHABET.length];
+  }
+  return out;
+}
+
+async function readJsonConfig(filePath, label) {
+  try {
+    const raw = await fs.readFile(filePath, "utf8");
+    return JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `[seed] ${label} 파일(${filePath})을 읽을 수 없습니다: ${err.message}`,
+    );
+  }
+}
+
+function ensureArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function pickRandom(items) {
+  return items.length ? pick(items) : null;
+}
+
+async function ensureOrganizationFromSpec(spec, ownerId) {
+  if (!spec) return null;
+  const organization = await findOrCreateOrganization({
+    organizationType: spec.type,
+    name: spec.name,
+    ownerId,
+    memberIds: [],
+    extracted: spec.extracted || {},
+  });
+  return organization;
+}
+
+export async function seedEssentialAccounts() {
+  const config = await readJsonConfig(
+    ESSENTIAL_ACCOUNTS_CONFIG_PATH,
+    "필수 계정 설정",
+  );
+  const specs = ensureArray(config.accounts);
+  const createdUsers = [];
+
+  for (const spec of specs) {
+    const password = generateSecurePassword();
+    const user = await findOrCreateUser({
+      name: spec.name,
+      email: spec.email,
+      password,
+      role: spec.role,
+      phoneNumber: spec.phoneNumber,
+      approvedAt: NOW,
+      active: true,
+      ...(spec.roleSpecific || {}),
+    });
+
+    const organization = await ensureOrganizationFromSpec(
+      spec.organization,
+      user._id,
+    );
+    if (organization) {
+      await attachUserToOrganization(user._id, organization);
+    }
+
+    createdUsers.push({
+      label: spec.label,
+      name: spec.name,
+      email: spec.email,
+      phoneNumber: spec.phoneNumber,
+      role: spec.role,
+      organization: spec.organization?.name,
+      password,
+    });
+  }
+
+  return { users: createdUsers };
 }
 
 export async function seedDefaultAccounts() {
@@ -241,52 +341,41 @@ export async function seedDefaultAccounts() {
   };
 }
 
-export async function seedBulkAccounts({
-  requestorCount = 0,
-  salesmanCount = 0,
-  password = "Abc!1234",
-} = {}) {
+export async function seedBulkAccounts() {
+  const config = await readJsonConfig(
+    BULK_ACCOUNTS_CONFIG_PATH,
+    "벌크 계정 설정",
+  );
+  const requestorSpecs = ensureArray(config.requestors);
+  const salesmanSpecs = ensureArray(config.salesmen);
+
   const createdSalesmen = [];
-  const salesmanRoots = [];
-  const rootCount = Math.min(3, salesmanCount);
+  const salesmanOwners = [];
+  const organizationMap = new Map();
 
-  for (let i = 1; i <= salesmanCount; i += 1) {
-    const email = `s${String(i).padStart(3, "0")}@gmail.com`;
-    const existing = await User.findOne({ email });
-    if (existing) {
-      const savedExisting = {
-        id: existing._id,
-        email,
-        leaderId: existing.referralGroupLeaderId || existing._id,
-        parentId: existing.referredByUserId || null,
-      };
-      createdSalesmen.push(savedExisting);
-      if (i <= rootCount) salesmanRoots.push({ id: existing._id, email });
-      continue;
-    }
+  for (const spec of salesmanSpecs) {
+    const password = generateSecurePassword();
+    const isOwner = spec.salesmanRole === "owner";
+    const leaderCandidate = isOwner
+      ? null
+      : pickRandom(salesmanOwners.length ? salesmanOwners : createdSalesmen);
+    const parentCandidate = isOwner ? null : pickRandom(createdSalesmen);
 
-    let referredByUserId = null;
-    let referralGroupLeaderId = null;
-    const isRoot = i <= rootCount;
-    const isUnreferred = !isRoot && i !== 4 && Math.random() < 0.2;
+    const referredByUserId = parentCandidate?.id || leaderCandidate?.id || null;
+    const referralGroupLeaderId = isOwner
+      ? null
+      : leaderCandidate?.leaderId ||
+        leaderCandidate?.id ||
+        referredByUserId ||
+        null;
 
-    if (!isRoot && !isUnreferred) {
-      const root = salesmanRoots.length ? pick(salesmanRoots) : null;
-      const candidates = createdSalesmen.filter(
-        (s) => String(s.leaderId) === String(root?.id),
-      );
-      const pool = candidates.length ? candidates : createdSalesmen;
-      const parent = pool.length ? pick(pool) : null;
-      referredByUserId = parent?.id || null;
-      referralGroupLeaderId =
-        root?.id || parent?.leaderId || parent?.id || null;
-    }
-
-    const salesman = await User.create({
-      name: `데모 영업자${i}`,
-      email,
+    const user = await findOrCreateUser({
+      name: spec.name,
+      email: spec.email,
       password,
       role: "salesman",
+      salesmanRole: spec.salesmanRole,
+      phoneNumber: spec.phoneNumber,
       referralCode: randomReferralCode(4),
       referredByUserId,
       referralGroupLeaderId,
@@ -294,127 +383,131 @@ export async function seedBulkAccounts({
       active: true,
     });
 
-    const leaderId = referralGroupLeaderId || salesman._id;
+    if (isOwner) {
+      await User.updateOne(
+        { _id: user._id },
+        { $set: { referralGroupLeaderId: user._id } },
+      );
+    }
+
+    const organization = await ensureOrganizationFromSpec(
+      spec.organization,
+      user._id,
+    );
+    if (organization) {
+      await attachUserToOrganization(user._id, organization);
+      if (spec.organizationKey) {
+        organizationMap.set(spec.organizationKey, {
+          organization,
+          ownerId: user._id,
+        });
+      }
+    }
+
+    const effectiveLeaderId = isOwner
+      ? user._id
+      : referralGroupLeaderId || referredByUserId || user._id;
+
     const saved = {
-      id: salesman._id,
-      email,
-      leaderId,
-      parentId: referredByUserId,
+      id: user._id,
+      email: spec.email,
+      name: spec.name,
+      salesmanRole: spec.salesmanRole,
+      label: spec.label,
+      password,
+      leaderId: effectiveLeaderId,
     };
     createdSalesmen.push(saved);
-    if (i <= rootCount) salesmanRoots.push({ id: salesman._id, email });
+    if (isOwner) salesmanOwners.push(saved);
   }
 
-  const salesIntroParents = [
-    "s001@gmail.com",
-    "s001@gmail.com",
-    "s004@gmail.com",
-    "s004@gmail.com",
-    "s006@gmail.com",
-    "s006@gmail.com",
-    "s009@gmail.com",
-    "s009@gmail.com",
-  ];
-  const requestorIntroParents = [
-    "r001@gmail.com",
-    "r002@gmail.com",
-    "r003@gmail.com",
-    "r004@gmail.com",
-    "r001@gmail.com",
-    "r002@gmail.com",
-    "r003@gmail.com",
-    "r004@gmail.com",
-  ];
   const createdRequestors = [];
-
-  for (let i = 1; i <= requestorCount; i += 1) {
-    const email = `r${String(i).padStart(3, "0")}@gmail.com`;
-    const orgName = `org-${String(i).padStart(3, "0")}`;
-    const existing = await User.findOne({ email });
-    if (existing) {
-      createdRequestors.push({
-        id: existing._id,
-        email,
-        orgId: existing.organizationId,
-        leaderId: existing.referralGroupLeaderId || existing._id,
-      });
-      continue;
-    }
-
-    let parentId = null;
+  for (const spec of requestorSpecs) {
+    const password = generateSecurePassword();
+    const isOwner = spec.requestorRole === "owner";
+    let referredByUserId = null;
     let referralGroupLeaderId = null;
-    if (i <= salesIntroParents.length) {
-      const parentEmail = salesIntroParents[i - 1];
-      const parentSalesman = createdSalesmen.find(
-        (s) => s.email === parentEmail,
+
+    if (isOwner) {
+      const sponsor = pickRandom(
+        salesmanOwners.length ? salesmanOwners : createdSalesmen,
       );
-      if (parentSalesman) {
-        parentId = parentSalesman.id;
-        referralGroupLeaderId = parentSalesman.leaderId || parentSalesman.id;
-      }
-    } else if (i <= salesIntroParents.length + requestorIntroParents.length) {
-      const parentEmail =
-        requestorIntroParents[i - salesIntroParents.length - 1];
-      const parentRequestor = createdRequestors.find(
-        (r) => r.email === parentEmail,
+      referredByUserId = sponsor?.id || null;
+      referralGroupLeaderId = sponsor?.leaderId || sponsor?.id || null;
+    } else if (spec.organizationKey) {
+      const ownerEntry = createdRequestors.find(
+        (entry) =>
+          entry.organizationKey === spec.organizationKey &&
+          entry.requestorRole === "owner",
       );
-      if (parentRequestor) {
-        parentId = parentRequestor.id;
-        referralGroupLeaderId = parentRequestor.leaderId || parentRequestor.id;
+      if (ownerEntry) {
+        referredByUserId = ownerEntry.id;
+        referralGroupLeaderId = ownerEntry.leaderId || ownerEntry.id;
       }
     }
 
-    const approvedAt = new Date(NOW);
-    approvedAt.setDate(approvedAt.getDate() - randInt(0, 20));
-
-    const owner = await User.create({
-      name: `의뢰자 ${i}`,
-      email,
+    const user = await findOrCreateUser({
+      name: spec.name,
+      email: spec.email,
       password,
       role: "requestor",
-      requestorRole: "owner",
-      organization: orgName,
+      requestorRole: spec.requestorRole,
+      phoneNumber: spec.phoneNumber,
+      organization: spec.organization?.name,
       referralCode: randomReferralCode(),
-      referredByUserId: parentId,
+      referredByUserId,
       referralGroupLeaderId,
-      approvedAt,
+      approvedAt: NOW,
       active: true,
     });
 
-    const org = await findOrCreateOrganization({
-      organizationType: "requestor",
-      name: orgName,
-      ownerId: owner._id,
-      extracted: {
-        companyName: orgName,
-        representativeName: `의뢰자 ${i}`,
-        email,
-      },
-    });
+    let organization = null;
+    if (isOwner) {
+      organization = await ensureOrganizationFromSpec(
+        spec.organization,
+        user._id,
+      );
+      if (!organization) {
+        throw new Error(
+          `[seed] requestor owner ${spec.email} 에 대한 조직 정보가 필요합니다`,
+        );
+      }
+      await attachUserToOrganization(user._id, organization);
+      if (spec.organizationKey) {
+        organizationMap.set(spec.organizationKey, {
+          organization,
+          ownerId: user._id,
+        });
+      }
 
-    const effectiveLeaderId = referralGroupLeaderId || parentId || owner._id;
-    await User.updateOne(
-      { _id: owner._id },
-      {
-        $set: {
-          organizationId: org._id,
-          organization: org.name,
-          referralGroupLeaderId: effectiveLeaderId,
-        },
-      },
-    );
+      await grantRequestorSeedCredit({
+        organizationId: organization._id,
+        userId: user._id,
+        uniqueKey: `org:${String(organization._id)}`,
+      });
+    } else if (
+      spec.organizationKey &&
+      organizationMap.has(spec.organizationKey)
+    ) {
+      organization = organizationMap.get(spec.organizationKey).organization;
+      await attachUserToOrganization(user._id, organization);
+    }
+
+    const effectiveLeaderId =
+      referralGroupLeaderId ||
+      referredByUserId ||
+      user.referralGroupLeaderId ||
+      user._id;
 
     createdRequestors.push({
-      id: owner._id,
-      email,
-      orgId: org._id,
+      id: user._id,
+      email: spec.email,
+      name: spec.name,
+      label: spec.label,
+      requestorRole: spec.requestorRole,
+      password,
+      organizationKey: spec.organizationKey,
       leaderId: effectiveLeaderId,
-    });
-
-    await grantRequestorSeedCredit({
-      organizationId: org._id,
-      userId: owner._id,
-      uniqueKey: `org:${String(org._id)}`,
     });
   }
 
