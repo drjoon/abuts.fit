@@ -47,7 +47,10 @@ export const resolveRequestOrganizationName = (request) => {
   );
 };
 
-export async function ensureShippingPackageForPickup({ requests, actorUserId }) {
+export async function ensureShippingPackageForPickup({
+  requests,
+  actorUserId,
+}) {
   const list = Array.isArray(requests) ? requests.filter(Boolean) : [];
   if (!list.length) {
     throw new Error("발송 패키지를 생성할 의뢰가 없습니다.");
@@ -224,13 +227,14 @@ export async function buildShippingPackagesSummary(req) {
     });
   }
 
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
   const todayYmd = getTodayYmdInKst();
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - days);
+  const cutoffYmd = toKstYmd(cutoffDate);
 
   const packages = await ShippingPackage.find({
     organizationId: orgId,
-    createdAt: { $gte: cutoff },
+    shipDateYmd: { $gte: cutoffYmd },
   })
     .select({
       shipDateYmd: 1,
@@ -245,7 +249,83 @@ export async function buildShippingPackagesSummary(req) {
     .sort({ createdAt: -1 })
     .lean();
 
-  const todayPackages = packages.filter((p) => p.shipDateYmd === todayYmd);
+  const packagesByShipDate = new Map();
+  for (const pkg of packages) {
+    const shipDateYmd = String(pkg?.shipDateYmd || "").trim();
+    if (!shipDateYmd) {
+      continue;
+    }
+
+    const existing = packagesByShipDate.get(shipDateYmd);
+    if (!existing) {
+      packagesByShipDate.set(shipDateYmd, {
+        id: String(pkg?._id || ""),
+        shipDateYmd,
+        shippingFeeSupply: Number(pkg?.shippingFeeSupply || 0),
+        createdAt: pkg?.createdAt,
+        requests: Array.isArray(pkg?.requestIds) ? [...pkg.requestIds] : [],
+        sourcePackageIds: [String(pkg?._id || "")],
+      });
+      continue;
+    }
+
+    const existingRequestIds = new Set(
+      (Array.isArray(existing.requests) ? existing.requests : []).map((req) =>
+        String(req?._id || req?.id || req || "").trim(),
+      ),
+    );
+    const nextRequests = Array.isArray(pkg?.requestIds) ? pkg.requestIds : [];
+    for (const req of nextRequests) {
+      const reqId = String(req?._id || req?.id || req || "").trim();
+      if (!reqId || existingRequestIds.has(reqId)) {
+        continue;
+      }
+      existing.requests.push(req);
+      existingRequestIds.add(reqId);
+    }
+
+    existing.sourcePackageIds.push(String(pkg?._id || ""));
+    if (
+      new Date(pkg?.createdAt || 0).getTime() >
+      new Date(existing.createdAt || 0).getTime()
+    ) {
+      existing.createdAt = pkg?.createdAt;
+      existing.id = String(pkg?._id || existing.id || "");
+    }
+    existing.shippingFeeSupply = Math.max(
+      Number(existing.shippingFeeSupply || 0),
+      Number(pkg?.shippingFeeSupply || 0),
+    );
+  }
+
+  const mergedPackages = Array.from(packagesByShipDate.values()).sort(
+    (a, b) => {
+      return (
+        new Date(b.createdAt || 0).getTime() -
+        new Date(a.createdAt || 0).getTime()
+      );
+    },
+  );
+
+  for (const pkg of mergedPackages) {
+    if (
+      Array.isArray(pkg.sourcePackageIds) &&
+      pkg.sourcePackageIds.length > 1
+    ) {
+      console.warn(
+        "[buildShippingPackagesSummary] duplicate shipping packages collapsed",
+        {
+          organizationId: String(orgId),
+          shipDateYmd: pkg.shipDateYmd,
+          sourcePackageIds: pkg.sourcePackageIds,
+        },
+      );
+    }
+  }
+
+  const todayPackages = mergedPackages.filter(
+    (p) => p.shipDateYmd === todayYmd,
+  );
   return {
     today: {
       shipDateYmd: todayYmd,
@@ -257,15 +337,15 @@ export async function buildShippingPackagesSummary(req) {
     },
     lastNDays: {
       days,
-      packageCount: packages.length,
-      shippingFeeSupplyTotal: packages.reduce(
+      packageCount: mergedPackages.length,
+      shippingFeeSupplyTotal: mergedPackages.reduce(
         (acc, cur) => acc + Number(cur.shippingFeeSupply || 0),
         0,
       ),
     },
-    items: packages.map((p) => {
-      const requests = Array.isArray(p.requestIds)
-        ? p.requestIds.map((req) => ({
+    items: mergedPackages.map((p) => {
+      const requests = Array.isArray(p.requests)
+        ? p.requests.map((req) => ({
             id: String(req?._id || req),
             requestId: req?.requestId || "",
             title: req?.title || "",
@@ -299,7 +379,9 @@ export async function buildShippingEstimate(req) {
         : null;
 
   if (!mode || !["express", "normal"].includes(mode)) {
-    throw Object.assign(new Error("유효하지 않은 mode 입니다."), { statusCode: 400 });
+    throw Object.assign(new Error("유효하지 않은 mode 입니다."), {
+      statusCode: 400,
+    });
   }
 
   const todayYmd = getTodayYmdInKst();
@@ -310,7 +392,9 @@ export async function buildShippingEstimate(req) {
       const org = await RequestorOrganization.findById(orgId)
         .select({ "shippingPolicy.weeklyBatchDays": 1 })
         .lean();
-      requestorWeeklyBatchDays = Array.isArray(org?.shippingPolicy?.weeklyBatchDays)
+      requestorWeeklyBatchDays = Array.isArray(
+        org?.shippingPolicy?.weeklyBatchDays,
+      )
         ? org.shippingPolicy.weeklyBatchDays
         : [];
     }
@@ -325,7 +409,8 @@ export async function buildShippingEstimate(req) {
     );
   }
 
-  const { calculateInitialProductionSchedule } = await import("./production.utils.js");
+  const { calculateInitialProductionSchedule } =
+    await import("./production.utils.js");
   const schedule = await calculateInitialProductionSchedule({
     shippingMode: mode,
     maxDiameter,
@@ -340,13 +425,13 @@ export async function buildShippingEstimate(req) {
   if (pickupYmdRaw) {
     estimatedShipYmdRaw = pickupYmdRaw;
   } else {
-    const { getManufacturerLeadTimesUtil } = await import(
-      "../organizations/leadTime.controller.js"
-    );
+    const { getManufacturerLeadTimesUtil } =
+      await import("../organizations/leadTime.controller.js");
     const manufacturerSettings = await getManufacturerLeadTimesUtil();
     const leadTimes = manufacturerSettings?.leadTimes || {};
 
-    const d = typeof maxDiameter === "number" && !isNaN(maxDiameter) ? maxDiameter : 8;
+    const d =
+      typeof maxDiameter === "number" && !isNaN(maxDiameter) ? maxDiameter : 8;
     let diameterKey = "d8";
     if (d <= 6) diameterKey = "d6";
     else if (d <= 8) diameterKey = "d8";
@@ -354,7 +439,10 @@ export async function buildShippingEstimate(req) {
     else diameterKey = "d12";
 
     const leadDays = leadTimes[diameterKey]?.minBusinessDays ?? 1;
-    estimatedShipYmdRaw = await addKoreanBusinessDays({ startYmd: todayYmd, days: leadDays });
+    estimatedShipYmdRaw = await addKoreanBusinessDays({
+      startYmd: todayYmd,
+      days: leadDays,
+    });
   }
 
   return await normalizeKoreanBusinessDay({ ymd: estimatedShipYmdRaw });
@@ -453,7 +541,10 @@ export async function buildBulkShippingCandidates(req) {
 
     const leadDays = resolveNormalLeadDays(maxDiameter);
     const originalRaw = await addBiz({ startYmd: createdYmd, days: leadDays });
-    const nextRaw = await addBiz({ startYmd: clampStart(createdYmd), days: leadDays });
+    const nextRaw = await addBiz({
+      startYmd: clampStart(createdYmd),
+      days: leadDays,
+    });
     return {
       original: await normalize(originalRaw),
       next: await normalize(nextRaw),
@@ -474,7 +565,8 @@ export async function buildBulkShippingCandidates(req) {
 
   const mapItem = async (r) => {
     const ci = r.caseInfos || {};
-    const clinic = r.requestor?.organization || r.requestor?.name || req.user?.name || "";
+    const clinic =
+      r.requestor?.organization || r.requestor?.name || req.user?.name || "";
     const maxDiameter =
       typeof ci.maxDiameter === "number"
         ? `${ci.maxDiameter}mm`
@@ -536,7 +628,9 @@ export async function buildBulkShippingCandidates(req) {
     ),
     Promise.all(
       requests
-        .filter((r) => REQUEST_STAGE_GROUPS.waiting.includes(r.manufacturerStage))
+        .filter((r) =>
+          REQUEST_STAGE_GROUPS.waiting.includes(r.manufacturerStage),
+        )
         .map(mapItem),
     ),
   ]);
