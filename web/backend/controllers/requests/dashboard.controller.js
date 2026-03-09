@@ -486,141 +486,215 @@ export async function getMyDashboardSummary(req, res) {
     const dateFilter = buildDateFilter(period);
 
     // 집계 쿼리로 통계와 최근 의뢰를 병렬로 조회
-    const [deliveryLeadDays, statsResult, recentRequestsResult] =
-      await Promise.all([
-        getDeliveryEtaLeadDays(),
-        Request.aggregate([
-          {
-            $match: {
-              ...requestFilter,
-              ...dateFilter,
-              "caseInfos.implantBrand": { $exists: true, $ne: "" },
+    const [
+      deliveryLeadDays,
+      statsResult,
+      recentRequestsResult,
+      shippingPackageRows,
+    ] = await Promise.all([
+      getDeliveryEtaLeadDays(),
+      Request.aggregate([
+        {
+          $match: {
+            ...requestFilter,
+            ...dateFilter,
+            "caseInfos.implantBrand": { $exists: true, $ne: "" },
+          },
+        },
+        {
+          $addFields: {
+            normalizedStage: {
+              $let: {
+                vars: {
+                  stage: { $ifNull: ["$manufacturerStage", ""] },
+                },
+                in: {
+                  $switch: {
+                    branches: [
+                      {
+                        case: { $eq: ["$$stage", "취소"] },
+                        then: "cancel",
+                      },
+                      {
+                        case: {
+                          $in: ["$$stage", ["tracking", "추적관리"]],
+                        },
+                        then: "tracking",
+                      },
+                      {
+                        case: {
+                          $in: ["$$stage", ["shipping", "포장.발송"]],
+                        },
+                        then: "shipping",
+                      },
+                      {
+                        case: {
+                          $in: ["$$stage", ["packing", "세척.패킹"]],
+                        },
+                        then: "packing",
+                      },
+                      {
+                        case: {
+                          $in: ["$$stage", ["machining", "가공"]],
+                        },
+                        then: "machining",
+                      },
+                      {
+                        case: {
+                          $in: ["$$stage", ["cam", "CAM"]],
+                        },
+                        then: "cam",
+                      },
+                    ],
+                    default: "request",
+                  },
+                },
+              },
             },
           },
-          {
-            $addFields: {
-              normalizedStage: {
-                $let: {
-                  vars: {
-                    stage: { $ifNull: ["$manufacturerStage", ""] },
-                  },
-                  in: {
-                    $switch: {
-                      branches: [
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            canceledCount: {
+              $sum: {
+                $cond: [{ $eq: ["$manufacturerStage", "취소"] }, 1, 0],
+              },
+            },
+            trackingCount: {
+              $sum: {
+                $cond: [{ $eq: ["$normalizedStage", "tracking"] }, 1, 0],
+              },
+            },
+            requestCount: {
+              $sum: {
+                $cond: [{ $eq: ["$normalizedStage", "request"] }, 1, 0],
+              },
+            },
+            camCount: {
+              $sum: {
+                $cond: [{ $eq: ["$normalizedStage", "cam"] }, 1, 0],
+              },
+            },
+            machiningCount: {
+              $sum: {
+                $cond: [{ $eq: ["$normalizedStage", "machining"] }, 1, 0],
+              },
+            },
+            packingCount: {
+              $sum: {
+                $cond: [{ $eq: ["$normalizedStage", "packing"] }, 1, 0],
+              },
+            },
+            shippingCount: {
+              $sum: {
+                $cond: [{ $eq: ["$normalizedStage", "shipping"] }, 1, 0],
+              },
+            },
+          },
+        },
+      ]),
+      Request.find({
+        ...requestFilter,
+        "caseInfos.implantBrand": { $exists: true, $ne: "" },
+        manufacturerStage: { $ne: "취소" },
+      })
+        .select({
+          _id: 1,
+          requestId: 1,
+          title: 1,
+          manufacturerStage: 1,
+          createdAt: 1,
+          caseInfos: 1,
+          timeline: 1,
+          productionSchedule: 1,
+          shippingMode: 1,
+          finalShipping: 1,
+          originalShipping: 1,
+          deliveryInfoRef: 1,
+          price: 1,
+        })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .populate("requestor", "name organization")
+        .lean(),
+      Request.aggregate([
+        {
+          $match: {
+            ...requestFilter,
+            ...dateFilter,
+            "caseInfos.implantBrand": { $exists: true, $ne: "" },
+            manufacturerStage: { $ne: "취소" },
+          },
+        },
+        {
+          $project: {
+            manufacturerStage: 1,
+            shippingPackageId: 1,
+            shippingWorkflowCode: "$shippingWorkflow.code",
+          },
+        },
+        {
+          $addFields: {
+            stageBucket: {
+              $switch: {
+                branches: [
+                  {
+                    case: {
+                      $or: [
                         {
-                          case: { $eq: ["$$stage", "취소"] },
-                          then: "cancel",
+                          $in: ["$manufacturerStage", ["tracking", "추적관리"]],
                         },
                         {
-                          case: {
-                            $in: ["$$stage", ["tracking", "추적관리"]],
-                          },
-                          then: "tracking",
-                        },
-                        {
-                          case: {
-                            $in: ["$$stage", ["shipping", "포장.발송"]],
-                          },
-                          then: "shipping",
-                        },
-                        {
-                          case: {
-                            $in: ["$$stage", ["packing", "세척.패킹"]],
-                          },
-                          then: "packing",
-                        },
-                        {
-                          case: {
-                            $in: ["$$stage", ["machining", "가공"]],
-                          },
-                          then: "machining",
-                        },
-                        {
-                          case: {
-                            $in: ["$$stage", ["cam", "CAM"]],
-                          },
-                          then: "cam",
+                          $in: [
+                            "$shippingWorkflowCode",
+                            ["picked_up", "completed"],
+                          ],
                         },
                       ],
-                      default: "request",
                     },
+                    then: "tracking",
                   },
-                },
+                  {
+                    case: {
+                      $or: [
+                        {
+                          $in: [
+                            "$manufacturerStage",
+                            ["shipping", "포장.발송"],
+                          ],
+                        },
+                        {
+                          $in: [
+                            "$shippingWorkflowCode",
+                            ["printed", "accepted"],
+                          ],
+                        },
+                      ],
+                    },
+                    then: "shipping",
+                  },
+                ],
+                default: null,
               },
             },
           },
-          {
-            $group: {
-              _id: null,
-              total: { $sum: 1 },
-              canceledCount: {
-                $sum: {
-                  $cond: [{ $eq: ["$manufacturerStage", "취소"] }, 1, 0],
-                },
-              },
-              trackingCount: {
-                $sum: {
-                  $cond: [{ $eq: ["$normalizedStage", "tracking"] }, 1, 0],
-                },
-              },
-              requestCount: {
-                $sum: {
-                  $cond: [{ $eq: ["$normalizedStage", "request"] }, 1, 0],
-                },
-              },
-              camCount: {
-                $sum: {
-                  $cond: [{ $eq: ["$normalizedStage", "cam"] }, 1, 0],
-                },
-              },
-              machiningCount: {
-                $sum: {
-                  $cond: [{ $eq: ["$normalizedStage", "machining"] }, 1, 0],
-                },
-              },
-              packingCount: {
-                $sum: {
-                  $cond: [{ $eq: ["$normalizedStage", "packing"] }, 1, 0],
-                },
-              },
-              shippingCount: {
-                $sum: {
-                  $cond: [{ $eq: ["$normalizedStage", "shipping"] }, 1, 0],
-                },
-              },
-              trackingCount: {
-                $sum: {
-                  $cond: [{ $eq: ["$normalizedStage", "tracking"] }, 1, 0],
-                },
-              },
-            },
+        },
+        {
+          $match: {
+            stageBucket: { $in: ["shipping", "tracking"] },
           },
-        ]),
-        Request.find({
-          ...requestFilter,
-          "caseInfos.implantBrand": { $exists: true, $ne: "" },
-          manufacturerStage: { $ne: "취소" },
-        })
-          .select({
-            _id: 1,
-            requestId: 1,
-            title: 1,
-            manufacturerStage: 1,
-            createdAt: 1,
-            caseInfos: 1,
-            timeline: 1,
-            productionSchedule: 1,
-            shippingMode: 1,
-            finalShipping: 1,
-            originalShipping: 1,
-            deliveryInfoRef: 1,
-            price: 1,
-          })
-          .sort({ createdAt: -1 })
-          .limit(10)
-          .populate("requestor", "name organization")
-          .lean(),
-      ]);
+        },
+        {
+          $group: {
+            _id: "$stageBucket",
+            productCount: { $sum: 1 },
+            packageIds: { $addToSet: "$shippingPackageId" },
+          },
+        },
+      ]),
+    ]);
 
     const stats = statsResult[0] || {
       total: 0,
@@ -633,8 +707,37 @@ export async function getMyDashboardSummary(req, res) {
       shippingCount: 0,
     };
 
+    const shippingPackageStatsMap = new Map(
+      (Array.isArray(shippingPackageRows) ? shippingPackageRows : []).map(
+        (row) => {
+          const packageIds = Array.isArray(row?.packageIds)
+            ? row.packageIds
+                .map((value) => String(value || "").trim())
+                .filter(Boolean)
+            : [];
+          return [
+            String(row?._id || "").trim(),
+            {
+              productCount: Number(row?.productCount || 0),
+              packageCount: new Set(packageIds).size,
+            },
+          ];
+        },
+      ),
+    );
+
+    const shippingCounts = shippingPackageStatsMap.get("shipping") || {
+      productCount: Number(stats.shippingCount || 0),
+      packageCount: 0,
+    };
+    const trackingCounts = shippingPackageStatsMap.get("tracking") || {
+      productCount: Number(stats.trackingCount || 0),
+      packageCount: 0,
+    };
+
     // '포장.발송'은 shipping, '추적관리'는 tracking으로 분리.
-    const shippingTotal = stats.shippingCount;
+    const shippingTotal = shippingCounts.productCount;
+    const trackingTotal = trackingCounts.productCount;
 
     const totalActive =
       stats.requestCount +
@@ -642,7 +745,7 @@ export async function getMyDashboardSummary(req, res) {
         stats.machiningCount +
         stats.packingCount +
         shippingTotal +
-        stats.trackingCount || 1;
+        trackingTotal || 1;
 
     const manufacturingSummary = {
       totalActive,
@@ -652,7 +755,7 @@ export async function getMyDashboardSummary(req, res) {
         { key: "machining", label: "가공", count: stats.machiningCount },
         { key: "packing", label: "세척.패킹", count: stats.packingCount },
         { key: "shipping", label: "포장.발송", count: shippingTotal },
-        { key: "tracking", label: "추적관리", count: stats.trackingCount },
+        { key: "tracking", label: "추적관리", count: trackingTotal },
       ].map((s) => ({
         ...s,
         percent: totalActive ? Math.round((s.count / totalActive) * 100) : 0,
@@ -785,18 +888,20 @@ export async function getMyDashboardSummary(req, res) {
         inPacking: stats.packingCount,
         inPackingChange: "+0%",
         inShipping: shippingTotal,
+        inShippingBoxes: shippingCounts.packageCount,
         inShippingChange: "+0%",
-        inTracking: stats.trackingCount,
+        inTracking: trackingTotal,
+        inTrackingBoxes: trackingCounts.packageCount,
         inTrackingChange: "+0%",
         canceled: stats.canceledCount,
         canceledChange: "+0%",
-        tracking: stats.trackingCount,
-        doneOrCanceled: stats.trackingCount + stats.canceledCount,
+        tracking: trackingTotal,
+        doneOrCanceled: trackingTotal + stats.canceledCount,
         doneOrCanceledChange: "+0%",
       },
       manufacturingSummary,
       riskSummary,
-      recentRequests,
+      recentRequests: recentRequestsData,
     };
 
     if (debug) {

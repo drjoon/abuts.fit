@@ -559,12 +559,16 @@ export const RequestorDashboardPage = () => {
         { label: "CAM", value: "0", icon: Clock },
         { label: "가공", value: "0", icon: Clock },
         { label: "세척.패킹", value: "0", icon: Clock },
-        { label: "포장.발송", value: "0", icon: TrendingUp },
-        { label: "추적관리", value: "0", icon: TrendingUp },
+        { label: "포장.발송", value: "0개 / 0박스", icon: TrendingUp },
+        { label: "추적관리", value: "0개 / 0박스", icon: TrendingUp },
       ];
     }
 
     const s = summaryResponse.data.stats ?? {};
+    const shippingProductCount = Number(s.inShipping ?? 0);
+    const shippingBoxCount = Number(s.inShippingBoxes ?? 0);
+    const trackingProductCount = Number(s.inTracking ?? 0);
+    const trackingBoxCount = Number(s.inTrackingBoxes ?? 0);
     return [
       {
         label: "의뢰/취소",
@@ -596,13 +600,13 @@ export const RequestorDashboardPage = () => {
       },
       {
         label: "포장.발송",
-        value: String(s.inShipping ?? 0),
+        value: `${shippingProductCount}개 / ${shippingBoxCount}박스`,
         change: s.inShippingChange ?? "+0%",
         icon: TrendingUp,
       },
       {
         label: "추적관리",
-        value: String(s.inTracking ?? 0),
+        value: `${trackingProductCount}개 / ${trackingBoxCount}박스`,
         change: s.inTrackingChange ?? "+0%",
         icon: TrendingUp,
       },
