@@ -261,16 +261,16 @@ function formatBusinessNumber(input) {
 
 async function findOrganizationByAnchors({
   organizationType,
-  organizationId,
+  businessId,
   businessNumber,
   userId,
-  orgName,
+  businessName,
 }) {
   const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
 
-  if (organizationId) {
+  if (businessId) {
     const byId = await RequestorOrganization.findOne({
-      _id: organizationId,
+      _id: businessId,
       ...orgTypeFilter,
     });
     if (byId) return byId;
@@ -289,11 +289,11 @@ async function findOrganizationByAnchors({
     if (byMembership) return byMembership;
   }
 
-  const safeOrgName = String(orgName || "").trim();
-  if (safeOrgName) {
+  const safeBusinessName = String(businessName || "").trim();
+  if (safeBusinessName) {
     const matches = await RequestorOrganization.find({
       ...orgTypeFilter,
-      name: safeOrgName,
+      name: safeBusinessName,
       $or: [{ owner: userId }, { owners: userId }, { members: userId }],
     })
       .sort({ updatedAt: -1, createdAt: -1 })
@@ -615,10 +615,10 @@ export async function getMyOrganization(req, res) {
     ).trim();
     let org = await findOrganizationByAnchors({
       organizationType,
-      organizationId: freshOrganizationId,
+      businessId: freshOrganizationId,
       businessNumber: "",
       userId: req.user._id,
-      orgName: freshOrganizationName || orgName,
+      businessName: freshOrganizationName || orgName,
     });
     console.info("[Organization] getMyOrganization anchors", {
       userId: String(req.user._id),
@@ -950,10 +950,10 @@ export async function updateMyOrganization(req, res) {
     const nextNameProvided = hasOwn(req.body, "name");
     let org = await findOrganizationByAnchors({
       organizationType,
-      organizationId: effectiveOrganizationId,
+      businessId: effectiveOrganizationId,
       businessNumber: req.body?.businessNumber,
       userId: req.user._id,
-      orgName: effectiveOrganizationName,
+      businessName: effectiveOrganizationName,
     });
     const hasOrganization = Boolean(org?._id || effectiveOrganizationId);
     console.info("[Organization] updateMyOrganization anchors", {

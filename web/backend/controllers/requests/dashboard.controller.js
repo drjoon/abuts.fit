@@ -638,7 +638,6 @@ export async function getMyDashboardSummary(req, res) {
           $project: {
             manufacturerStage: 1,
             shippingPackageId: 1,
-            shippingWorkflowCode: "$shippingWorkflow.code",
           },
         },
         {
@@ -648,36 +647,13 @@ export async function getMyDashboardSummary(req, res) {
                 branches: [
                   {
                     case: {
-                      $or: [
-                        {
-                          $in: ["$manufacturerStage", ["tracking", "추적관리"]],
-                        },
-                        {
-                          $in: [
-                            "$shippingWorkflowCode",
-                            ["picked_up", "completed"],
-                          ],
-                        },
-                      ],
+                      $in: ["$manufacturerStage", ["tracking", "추적관리"]],
                     },
                     then: "tracking",
                   },
                   {
                     case: {
-                      $or: [
-                        {
-                          $in: [
-                            "$manufacturerStage",
-                            ["shipping", "포장.발송"],
-                          ],
-                        },
-                        {
-                          $in: [
-                            "$shippingWorkflowCode",
-                            ["printed", "accepted"],
-                          ],
-                        },
-                      ],
+                      $in: ["$manufacturerStage", ["shipping", "포장.발송"]],
                     },
                     then: "shipping",
                   },
@@ -753,6 +729,17 @@ export async function getMyDashboardSummary(req, res) {
       productCount: Number(stats.trackingCount || 0),
       packageCount: 0,
     };
+
+    console.info("[REQUESTOR_DASHBOARD_STAGE_COUNTS]", {
+      userId: req.user?._id ? String(req.user._id) : null,
+      requestFilter,
+      statsShippingCount: Number(stats.shippingCount || 0),
+      statsTrackingCount: Number(stats.trackingCount || 0),
+      shippingProductCount: Number(shippingCounts.productCount || 0),
+      shippingPackageCount: Number(shippingCounts.packageCount || 0),
+      trackingProductCount: Number(trackingCounts.productCount || 0),
+      trackingPackageCount: Number(trackingCounts.packageCount || 0),
+    });
 
     // '포장.발송'은 shipping, '추적관리'는 tracking으로 분리.
     const shippingTotal = Number(shippingCounts.productCount || 0);
