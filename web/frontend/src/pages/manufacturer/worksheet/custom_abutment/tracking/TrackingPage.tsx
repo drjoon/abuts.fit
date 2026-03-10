@@ -777,73 +777,25 @@ export const TrackingInquiryPage = () => {
   }, [baseFiltered]);
 
   useEffect(() => {
+    // 한 번만 실행 - 디버깅 로그 출력
     const only = baseFiltered.filter((r) => {
       const di = normalizeDeliveryInfo(r.deliveryInfoRef);
       return Boolean(di.trackingNumber || di.shippedAt || di.deliveredAt);
     });
 
     console.log(
-      "[DEBUG] shippingRows - baseFiltered count:",
+      "[DEBUG_ONCE] shippingRows - baseFiltered count:",
       baseFiltered.length,
     );
     console.log(
-      "[DEBUG] shippingRows - only (with tracking) count:",
+      "[DEBUG_ONCE] shippingRows - only (with tracking) count:",
       only.length,
     );
-
-    // 박스 단위로 그룹핑 (trackingNumber 기준)
-    const boxMap = new Map<string, ManufacturerRequest[]>();
-    for (const r of only) {
-      const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-      const trackingNumber =
-        String(di.trackingNumber || "").trim() ||
-        `no-tracking-${Math.random()}`;
-      console.log(
-        `[DEBUG] Request ${r.requestId} -> trackingNumber: "${trackingNumber}"`,
-      );
-      if (!boxMap.has(trackingNumber)) {
-        boxMap.set(trackingNumber, []);
-      }
-      boxMap.get(trackingNumber)!.push(r);
-    }
-
-    console.log("[DEBUG] boxMap size:", boxMap.size);
-    boxMap.forEach((requests, trackingNumber) => {
-      console.log(
-        `[DEBUG] Box "${trackingNumber}": ${requests.length} requests`,
-        requests.map((r) => r.requestId),
-      );
-    });
-
-    // 박스별 대표 정보 생성 (첫 번째 의뢰건 기준)
-    const boxes = Array.from(boxMap.entries()).map(
-      ([trackingNumber, requests]) => {
-        const firstRequest = requests[0];
-        const di = normalizeDeliveryInfo(firstRequest.deliveryInfoRef);
-        return {
-          trackingNumber,
-          carrier: di.carrier,
-          shippedAt: di.shippedAt,
-          deliveredAt: di.deliveredAt,
-          pickedUpAt: di.pickedUpAt,
-          tracking: di.tracking,
-          requestCount: requests.length,
-          requests,
-          // 박스 대표로 사용할 정보
-          _id: `box-${trackingNumber}`,
-          requestId: `[${requests.length}건] ${requests.map((r) => r.requestId).join(", ")}`,
-          deliveryInfoRef: di,
-          createdAt: firstRequest.createdAt,
-        };
-      },
-    );
-
-    console.log("[DEBUG] Final boxes count:", boxes.length);
 
     // 각 의뢰건의 deliveryInfoRef 상세 정보 출력
     only.forEach((r) => {
       const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-      console.log(`[DEBUG] Request ${r.requestId}:`, {
+      console.log(`[DEBUG_ONCE] Request ${r.requestId}:`, {
         trackingNumber: di.trackingNumber,
         carrier: di.carrier,
         shippedAt: di.shippedAt,
@@ -851,7 +803,7 @@ export const TrackingInquiryPage = () => {
         deliveredAt: di.deliveredAt,
       });
     });
-  }, [baseFiltered]);
+  }, []);
 
   const resolveCancelableMailboxAddresses = useCallback((): string[] => {
     const prePickupRows = shippingRows.filter((row) => {
@@ -993,9 +945,23 @@ export const TrackingInquiryPage = () => {
       return;
     }
 
-    const requestIds = shippingRows
-      .map((row) => String((row as any)?.requestId || "").trim())
-      .filter(Boolean);
+    // 박스 내 모든 의뢰건의 requestId 추출
+    const requestIds: string[] = [];
+    for (const box of shippingRows) {
+      const boxRequests = (box as any)?.requests || [];
+      for (const req of boxRequests) {
+        const rid = String(req?.requestId || "").trim();
+        if (rid) requestIds.push(rid);
+      }
+    }
+
+    if (!requestIds.length) {
+      toast({
+        title: "MOCK 집하 대상 없음",
+        description: "집하 처리할 의뢰건이 없습니다.",
+      });
+      return;
+    }
 
     setMockPickingUp(true);
     try {
@@ -1012,6 +978,32 @@ export const TrackingInquiryPage = () => {
         title: "MOCK 집하 완료",
         description: `${Number(body?.data?.pickedUpCount || 0)}건을 집하 완료로 반영했습니다.`,
       });
+
+      // 성공 후 데이터 새로고침 - 백엔드에서 저장된 trackingNumber를 로드
+      console.log("[DEBUG] MOCK 집하 성공 - 데이터 새로고침 시작");
+      pageRef.current = 1;
+      hasMoreRef.current = true;
+      const url = new URL("/api/requests/all", window.location.origin);
+      url.searchParams.set("page", String(pageRef.current));
+      url.searchParams.set("limit", String(PAGE_LIMIT));
+      url.searchParams.set("view", "worksheet");
+      url.searchParams.set("includeTotal", "0");
+      url.searchParams.set("includeDelivery", "1");
+      const res = await fetch(url.pathname + url.search, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const refreshBody: any = await res.json().catch(() => ({}));
+      if (res.ok && refreshBody?.success !== false) {
+        const list = Array.isArray(refreshBody?.data?.requests)
+          ? refreshBody.data.requests
+          : [];
+        setRequests(list);
+        console.log(
+          "[DEBUG] 데이터 새로고침 완료 - 새로운 의뢰건 수:",
+          list.length,
+        );
+      }
     } catch (error) {
       toast({
         title: "MOCK 집하 실패",
@@ -1022,7 +1014,7 @@ export const TrackingInquiryPage = () => {
     } finally {
       setMockPickingUp(false);
     }
-  }, [shippingRows, toast]);
+  }, [shippingRows, toast, token, PAGE_LIMIT]);
 
   const currentRows =
     tab === "process"
