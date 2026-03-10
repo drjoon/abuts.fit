@@ -1,5 +1,7 @@
 import CreditLedger from "../../models/creditLedger.model.js";
 import User from "../../models/user.model.js";
+import Request from "../../models/request.model.js";
+import RequestorOrganization from "../../models/requestorOrganization.model.js";
 
 function roundUpUnit(amount, unit) {
   const n = Number(amount);
@@ -8,8 +10,69 @@ function roundUpUnit(amount, unit) {
   return Math.ceil(n / u) * u;
 }
 
+async function resolveBusinessIdForCredit(req) {
+  const directBusinessId = req.user?.businessId;
+  if (directBusinessId) {
+    return String(directBusinessId);
+  }
+
+  const userId = req.user?._id;
+  if (!userId) {
+    return "";
+  }
+
+  const org = await RequestorOrganization.findOne({
+    $or: [
+      { owner: userId },
+      { owners: userId },
+      { members: userId },
+      {
+        "joinRequests.user": userId,
+        "joinRequests.status": "approved",
+      },
+    ],
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  if (org?._id) {
+    const resolved = String(org._id);
+    console.error(
+      "[CREDIT_BALANCE_SCOPE_FALLBACK] resolved from organization",
+      {
+        userId: String(userId),
+        resolvedBusinessId: resolved,
+        originalUserBusinessId: req.user?.businessId
+          ? String(req.user.businessId)
+          : null,
+      },
+    );
+    return resolved;
+  }
+
+  const requestWithBusiness = await Request.findOne({ requestor: userId })
+    .sort({ createdAt: -1, _id: -1 })
+    .select({ requestorBusinessId: 1, requestId: 1 })
+    .lean();
+
+  if (requestWithBusiness?.requestorBusinessId) {
+    const resolved = String(requestWithBusiness.requestorBusinessId);
+    console.error("[CREDIT_BALANCE_SCOPE_FALLBACK] resolved from request", {
+      userId: String(userId),
+      resolvedBusinessId: resolved,
+      requestId: String(requestWithBusiness.requestId || ""),
+      originalUserBusinessId: req.user?.businessId
+        ? String(req.user.businessId)
+        : null,
+    });
+    return resolved;
+  }
+
+  return "";
+}
+
 async function getCreditScope(req) {
-  const businessId = req.user?.businessId;
+  const businessId = await resolveBusinessIdForCredit(req);
   if (!businessId) {
     throw new Error("사업자 정보가 설정되지 않았습니다.");
   }
@@ -83,7 +146,7 @@ async function getBalanceBreakdown(scope) {
 }
 
 export async function getMyCreditBalance(req, res) {
-  const businessId = req.user?.businessId;
+  const businessId = await resolveBusinessIdForCredit(req);
   if (!businessId) {
     return res.status(403).json({
       success: false,
@@ -94,6 +157,14 @@ export async function getMyCreditBalance(req, res) {
   const scope = await getCreditScope(req);
   const { balance, paidBalance, bonusBalance } =
     await getBalanceBreakdown(scope);
+  console.error("[CREDIT_BALANCE_RESPONSE]", {
+    userId: req.user?._id ? String(req.user._id) : null,
+    userBusinessId: req.user?.businessId ? String(req.user.businessId) : null,
+    resolvedBusinessId: String(scope.businessId),
+    balance,
+    paidBalance,
+    bonusBalance,
+  });
   return res.json({
     success: true,
     data: { balance, paidBalance, bonusBalance },
@@ -101,7 +172,7 @@ export async function getMyCreditBalance(req, res) {
 }
 
 export async function getMyCreditSpendInsights(req, res) {
-  const businessId = req.user?.businessId;
+  const businessId = await resolveBusinessIdForCredit(req);
   if (!businessId) {
     return res.status(403).json({
       success: false,
@@ -111,6 +182,11 @@ export async function getMyCreditSpendInsights(req, res) {
 
   const scope = await getCreditScope(req);
   const ledgerQuery = buildLedgerQuery(scope);
+  console.error("[CREDIT_SPEND_INSIGHTS_SCOPE]", {
+    userId: req.user?._id ? String(req.user._id) : null,
+    userBusinessId: req.user?.businessId ? String(req.user.businessId) : null,
+    resolvedBusinessId: String(scope.businessId),
+  });
 
   const MIN = 500000;
   const MAX = 5000000;

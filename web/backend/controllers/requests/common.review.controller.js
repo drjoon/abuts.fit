@@ -984,6 +984,32 @@ export async function updateReviewStatusByStage(req, res) {
           request.requestorBusinessId = resolvedRequestorOrgId;
         }
 
+        {
+          const requestBusinessIdStr = request.requestorBusinessId
+            ? String(request.requestorBusinessId)
+            : "";
+          const requestorUserBusinessIdStr = request.requestor?.businessId
+            ? String(request.requestor.businessId)
+            : "";
+          if (
+            requestBusinessIdStr &&
+            requestorUserBusinessIdStr &&
+            requestBusinessIdStr !== requestorUserBusinessIdStr
+          ) {
+            console.error("[REQUEST_BUSINESS_MISMATCH_ON_REVIEW]", {
+              requestId: request.requestId,
+              requestMongoId: String(request._id),
+              effectiveStage,
+              status,
+              requestorBusinessId: requestBusinessIdStr,
+              requestorUserBusinessId: requestorUserBusinessIdStr,
+              requestorUserId: request.requestor?._id
+                ? String(request.requestor._id)
+                : null,
+            });
+          }
+        }
+
         if (effectiveStage === "request") {
           // 비동기 처리: 의뢰 승인 시점에 manufacturerStage/status 를 CAM으로 바꾸지 않는다.
           // Esprit(NC 생성) 완료 콜백(/api/bg/register-file, sourceStep=3-nc)에서 상태를 CAM으로 전환한다.

@@ -927,12 +927,25 @@ export async function updateMyOrganization(req, res) {
     const shippingPolicyProvided = hasOwn(req.body, "shippingPolicy");
 
     const freshUser = await User.findById(req.user._id)
-      .select({ organizationId: 1, organization: 1 })
+      .select({
+        businessId: 1,
+        business: 1,
+        organizationId: 1,
+        organization: 1,
+      })
       .lean();
     const effectiveOrganizationId =
-      freshUser?.organizationId || req.user.organizationId || null;
+      freshUser?.businessId ||
+      req.user.businessId ||
+      freshUser?.organizationId ||
+      req.user.organizationId ||
+      null;
     const effectiveOrganizationName = String(
-      freshUser?.organization || req.user.organization || "",
+      freshUser?.business ||
+        req.user.business ||
+        freshUser?.organization ||
+        req.user.organization ||
+        "",
     ).trim();
     const nextNameProvided = hasOwn(req.body, "name");
     let org = await findOrganizationByAnchors({
@@ -946,8 +959,11 @@ export async function updateMyOrganization(req, res) {
     console.info("[Organization] updateMyOrganization anchors", {
       userId: String(req.user._id),
       organizationType,
+      tokenBusinessId: String(req.user.businessId || ""),
+      freshBusinessId: String(freshUser?.businessId || ""),
       tokenOrganizationId: String(req.user.organizationId || ""),
       effectiveOrganizationId: String(effectiveOrganizationId || ""),
+      tokenBusinessName: String(req.user.business || ""),
       tokenOrganizationName: String(req.user.organization || ""),
       effectiveOrganizationName,
       resolvedOrganizationId: String(org?._id || ""),
@@ -1072,6 +1088,12 @@ export async function updateMyOrganization(req, res) {
         ? await normalizeOrganizationAddressFields({ address, zipCode })
         : null;
 
+    const originalBusinessId =
+      freshUser?.businessId ||
+      req.user.businessId ||
+      freshUser?.organizationId ||
+      req.user.organizationId ||
+      null;
     let attachToOrg = null;
     if (businessNumber && isBusinessNumberChanging) {
       const existingOrgByBusinessNumber = await RequestorOrganization.findOne({
@@ -1291,6 +1313,17 @@ export async function updateMyOrganization(req, res) {
     }
 
     if (!hasOrganization && attachToOrg) {
+      const priorLedgerCount = originalBusinessId
+        ? await CreditLedger.countDocuments({ businessId: originalBusinessId })
+        : 0;
+      console.error("[ORGANIZATION_ATTACH_SWITCH]", {
+        userId: String(req.user._id),
+        originalBusinessId: originalBusinessId
+          ? String(originalBusinessId)
+          : null,
+        nextBusinessId: String(attachToOrg._id),
+        priorLedgerCount,
+      });
       await User.findByIdAndUpdate(
         req.user._id,
         {
@@ -1387,12 +1420,26 @@ export async function updateMyOrganization(req, res) {
           { new: true },
         );
 
-        const granted = await grantWelcomeBonusIfEligible({
+        const priorLedgerCount = originalBusinessId
+          ? await CreditLedger.countDocuments({
+              businessId: originalBusinessId,
+            })
+          : 0;
+        console.error("[ORGANIZATION_CREATED_AND_ATTACHED]", {
+          userId: String(req.user._id),
+          originalBusinessId: originalBusinessId
+            ? String(originalBusinessId)
+            : null,
+          createdBusinessId: String(created._id),
+          priorLedgerCount,
+          businessNumber,
+        });
+
+        const welcomeBonusAmount = await grantWelcomeBonusIfEligible({
           organizationId: created._id,
           userId: req.user._id,
         });
-
-        const salesmanGranted = await grantSalesmanReferralBonusIfEligible({
+        await grantSalesmanReferralBonusIfEligible({
           organizationId: created._id,
           userId: req.user._id,
         });
@@ -1402,38 +1449,26 @@ export async function updateMyOrganization(req, res) {
           data: {
             created: true,
             organizationId: created._id,
-            welcomeBonusGranted: Boolean(granted),
-            welcomeBonusAmount: granted || 0,
-            salesmanReferralBonusGranted: Boolean(salesmanGranted),
-            salesmanReferralBonusAmount: salesmanGranted || 0,
-            verification: verificationResult
-              ? {
-                  verified: !!verificationResult.verified,
-                  provider: verificationResult.provider || "hometax",
-                  message: verificationResult.message || "",
-                  checkedAt: new Date(),
-                }
-              : undefined,
+            organizationName: created.name,
+            verification: created.verification || null,
+            welcomeBonusGranted: !!welcomeBonusAmount,
+            welcomeBonusAmount: Number(welcomeBonusAmount || 0),
           },
         });
       } catch (e) {
         if (isDuplicateKeyError(e)) {
-          return res.status(409).json({
-            success: false,
-            reason: "duplicate_business_number",
-            message:
-              "이미 등록된 사업자등록번호입니다. 기존 사업자에 가입 요청을 진행해주세요.",
-          });
+          const msg = String(e?.message || "");
+          if (msg.includes("extracted.businessNumber")) {
+            return res.status(409).json({
+              success: false,
+              reason: "duplicate_business_number",
+              message:
+                "이미 등록된 사업자등록번호입니다. 기존 사업자에 가입 요청을 진행해주세요.",
+            });
+          }
         }
         throw e;
       }
-    }
-
-    if (Object.keys(extractedPatch).length > 0) {
-      patch.extracted = {
-        ...(org.extracted ? org.extracted.toObject?.() || org.extracted : {}),
-        ...extractedPatch,
-      };
     }
 
     if (verificationResult) {
@@ -1443,6 +1478,27 @@ export async function updateMyOrganization(req, res) {
         message: verificationResult.message || "",
         checkedAt: new Date(),
       };
+    }
+
+    if (
+      originalBusinessId &&
+      org?._id &&
+      String(originalBusinessId) !== String(org._id)
+    ) {
+      const priorLedgerCount = await CreditLedger.countDocuments({
+        businessId: originalBusinessId,
+      });
+      const nextLedgerCount = await CreditLedger.countDocuments({
+        businessId: org._id,
+      });
+      console.error("[ORGANIZATION_UPDATE_BUSINESS_SWITCH]", {
+        userId: String(req.user._id),
+        originalBusinessId: String(originalBusinessId),
+        resolvedOrganizationId: String(org._id),
+        priorLedgerCount,
+        nextLedgerCount,
+        businessNumber,
+      });
     }
 
     if (
