@@ -114,7 +114,8 @@ export const getStatusBadge = (status: string, manufacturerStage?: string) => {
     case "배송중":
       return <Badge variant="default">발송</Badge>;
     case "완료":
-      return <Badge variant="secondary">완료</Badge>;
+    case "추적관리":
+      return <Badge variant="secondary">추적관리</Badge>;
     case "취소":
       return <Badge variant="destructive">취소</Badge>;
     default:

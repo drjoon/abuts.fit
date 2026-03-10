@@ -111,7 +111,7 @@ async function runMonthlySnapshot() {
         {
           $match: {
             requestor: { $in: relevantUserIds },
-            "caseInfos.reviewByStage.shipping.status": "APPROVED",
+            manufacturerStage: "추적관리",
             createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
           },
         },
@@ -136,7 +136,7 @@ async function runMonthlySnapshot() {
         {
           $match: {
             requestorBusinessId: { $in: requestorLeaderBusinessObjectIds },
-            "caseInfos.reviewByStage.shipping.status": "APPROVED",
+            manufacturerStage: "추적관리",
             createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
           },
         },

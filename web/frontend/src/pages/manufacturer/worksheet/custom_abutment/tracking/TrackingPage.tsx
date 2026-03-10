@@ -46,8 +46,12 @@ const isDone = (req: ManufacturerRequest) => {
   const stage = String(req.manufacturerStage || "").trim();
   const di = (req.deliveryInfoRef || null) as any;
   const deliveredAt = di?.deliveredAt ? new Date(di.deliveredAt) : null;
-  const shippedAt = di?.shippedAt ? new Date(di.shippedAt) : null;
-  return stage === "추적관리" || Boolean(deliveredAt || shippedAt);
+  const pickedUpAt = di?.pickedUpAt ? new Date(di.pickedUpAt) : null;
+  const pickupCode = String(di?.tracking?.lastStatusCode || "").trim();
+  return (
+    stage === "추적관리" ||
+    Boolean(deliveredAt || pickedUpAt || pickupCode === "11")
+  );
 };
 
 const normalizeDeliveryInfo = (ref?: string | DeliveryInfoSummary) => {
@@ -107,6 +111,7 @@ export const TrackingInquiryPage = () => {
   const [loading, setLoading] = useState(false);
   const [syncingTracking, setSyncingTracking] = useState(false);
   const [cancellingAll, setCancellingAll] = useState(false);
+  const [mockPickingUp, setMockPickingUp] = useState(false);
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
   // Network pagination per stage (tracking)
   const PAGE_LIMIT = 30;
@@ -481,12 +486,15 @@ export const TrackingInquiryPage = () => {
         .map((r) => {
           const di = normalizeDeliveryInfo(r.deliveryInfoRef);
           const shippedAt = di.shippedAt ? String(di.shippedAt) : "";
+          const pickedUpAt = di.pickedUpAt ? String(di.pickedUpAt) : "";
           const deliveredAt = di.deliveredAt ? String(di.deliveredAt) : "";
           const status = deliveredAt
-            ? "완료"
-            : shippedAt || di.trackingNumber
-              ? "배송중"
-              : "-";
+            ? "배송완료"
+            : pickedUpAt
+              ? "집하완료"
+              : shippedAt || di.trackingNumber
+                ? "배송중"
+                : "-";
           return `<tr>
             <td>${r.requestId || ""}</td>
             <td>${di.carrier || ""}</td>
@@ -860,6 +868,50 @@ export const TrackingInquiryPage = () => {
     }
   }, [shippingRows, toast]);
 
+  const handleMockPickupComplete = useCallback(async () => {
+    if (!shippingRows.length) {
+      toast({
+        title: "MOCK 집하 대상 없음",
+        description: "집하 처리할 배송건이 없습니다.",
+      });
+      return;
+    }
+
+    const mailboxAddresses = Array.from(
+      new Set(
+        shippingRows
+          .map((row) => String((row as any)?.mailboxAddress || "").trim())
+          .filter(Boolean),
+      ),
+    );
+
+    setMockPickingUp(true);
+    try {
+      const response = await request<any>({
+        path: "/api/requests/shipping/hanjin/mock-pickup-complete",
+        method: "POST",
+        jsonBody: { mailboxAddresses },
+      });
+      const body = response.data as any;
+      if (!response.ok || !body?.success) {
+        throw new Error(body?.message || "MOCK 집하 처리에 실패했습니다.");
+      }
+      toast({
+        title: "MOCK 집하 완료",
+        description: `${Number(body?.data?.pickedUpCount || 0)}건을 집하 완료로 반영했습니다.`,
+      });
+    } catch (error) {
+      toast({
+        title: "MOCK 집하 실패",
+        description:
+          error instanceof Error ? error.message : "MOCK 집하에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setMockPickingUp(false);
+    }
+  }, [shippingRows, toast]);
+
   const currentRows =
     tab === "process"
       ? processRows
@@ -944,6 +996,17 @@ export const TrackingInquiryPage = () => {
               />
             </div>
             <div className="flex items-center gap-2">
+              {tab === "shipping" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="px-4"
+                  onClick={handleMockPickupComplete}
+                  disabled={mockPickingUp || !shippingRows.length}
+                >
+                  {mockPickingUp ? "MOCK 집하 중..." : "MOCK 집하"}
+                </Button>
+              )}
               {tab === "shipping" && (
                 <Button
                   variant="outline"

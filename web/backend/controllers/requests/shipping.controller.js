@@ -14,9 +14,106 @@ import {
   applyTrackingRowsToRequests,
   extractTrackingRows,
   HANJIN_CLIENT_ID,
+  hasPickupCompleted,
   resolveTrackingSyncTargets,
 } from "./shipping.Tracking.helpers.js";
 import { startHanjinTrackingPoll } from "./shipping.TrackingPoller.js";
+import DeliveryInfo from "../../models/deliveryInfo.model.js";
+
+/**
+ * MOCK 집하 완료 시뮬레이션 (Hanjin status code 11)
+ * @route POST /api/requests/shipping/hanjin/mock-pickup-complete
+ */
+export async function mockHanjinPickupCompleted(req, res) {
+  try {
+    const { requestIds, trackingNumbers, mailboxAddresses } = req.body || {};
+    let targetRequests = await resolveTrackingSyncTargets({
+      requestIds,
+      trackingNumbers,
+    });
+
+    const mailboxList = Array.isArray(mailboxAddresses)
+      ? mailboxAddresses
+          .map((value) => String(value || "").trim())
+          .filter(Boolean)
+      : [];
+
+    if (mailboxList.length) {
+      const mailboxRequests = await Request.find({
+        mailboxAddress: { $in: mailboxList },
+        manufacturerStage: "포장.발송",
+      })
+        .populate("requestor", "name business phoneNumber address")
+        .populate("requestorBusinessId", "name extracted")
+        .populate("deliveryInfoRef");
+
+      const merged = new Map();
+      [...targetRequests, ...mailboxRequests].forEach((requestDoc) => {
+        const key = String(
+          requestDoc?.requestId || requestDoc?._id || "",
+        ).trim();
+        if (key) merged.set(key, requestDoc);
+      });
+      targetRequests = Array.from(merged.values());
+    }
+
+    if (!targetRequests.length) {
+      return res.status(404).json({
+        success: false,
+        message: "MOCK 집하 처리할 배송건을 찾을 수 없습니다.",
+      });
+    }
+
+    const now = new Date();
+    const rowMap = new Map();
+
+    for (const requestDoc of targetRequests) {
+      let deliveryInfo = requestDoc.deliveryInfoRef;
+      if (!deliveryInfo && requestDoc.deliveryInfoRef) {
+        deliveryInfo = await DeliveryInfo.findById(requestDoc.deliveryInfoRef);
+      }
+      const trackingNumber = String(deliveryInfo?.trackingNumber || "").trim();
+      if (!trackingNumber) continue;
+
+      rowMap.set(trackingNumber, {
+        wblNo: trackingNumber,
+        wrkList: [
+          {
+            statusCode: "11",
+            statusName: "집하완료",
+            statusDate: now.toISOString(),
+            agencyName: "MOCK",
+            description: "수동 MOCK 집하",
+          },
+        ],
+      });
+    }
+
+    const synced = await applyTrackingRowsToRequests({
+      requestDocs: targetRequests,
+      rowMap,
+      actorUserId: req.user?._id || null,
+      source: "hanjin-tracking-mock-pickup",
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        synced,
+        pickedUpCount: synced.filter((item) =>
+          hasPickupCompleted(item?.statusCode),
+        ).length,
+      },
+    });
+  } catch (error) {
+    console.error("Error in mockHanjinPickupCompleted:", error);
+    return res.status(500).json({
+      success: false,
+      message: "MOCK 집하 처리 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
 
 /**
  * 우편함 전체 롤백 (포장.발송 → 세척.패킹)

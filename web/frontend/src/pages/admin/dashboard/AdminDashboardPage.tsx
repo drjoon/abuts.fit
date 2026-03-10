@@ -274,9 +274,9 @@ export const AdminDashboardPage = () => {
 
     const byStatus = requestStats.byStatus || {};
     const totalRequests = requestStats.total ?? 0;
-    const completed = byStatus["완료"] ?? 0;
+    const tracking = byStatus["추적관리"] ?? 0;
     const canceled = byStatus["취소"] ?? 0;
-    const inProgress = Math.max(totalRequests - completed - canceled, 0);
+    const inProgress = Math.max(totalRequests - tracking - canceled, 0);
 
     const systemUptime = "99.9%";
 
@@ -295,8 +295,8 @@ export const AdminDashboardPage = () => {
           icon: FileText,
         },
         {
-          label: "완료",
-          value: String(completed),
+          label: "추적관리",
+          value: String(tracking),
           change: "+0%",
           icon: CheckCircle,
         },

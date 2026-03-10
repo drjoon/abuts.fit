@@ -125,6 +125,7 @@ export const ExpandedRequestCard = ({
           </Badge>
         );
       case "완료":
+      case "추적관리":
         return <Badge variant="secondary">추적관리</Badge>;
       case "취소":
         return (

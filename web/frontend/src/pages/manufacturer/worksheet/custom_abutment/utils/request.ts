@@ -103,6 +103,7 @@ export const deriveStageForFilter = (req: ManufacturerRequest) => {
       case "배송중":
         return "포장.발송";
       case "완료":
+      case "배송완료":
         return "추적관리";
       default:
         return saved;

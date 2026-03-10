@@ -164,9 +164,10 @@ export const RequestorRiskSummaryCard = ({
           </Badge>
         );
       case "완료":
+      case "추적관리":
         return (
           <Badge variant="secondary" className={STAGE_BADGE_BASE}>
-            완료
+            추적관리
           </Badge>
         );
       case "취소":

@@ -402,7 +402,7 @@ export async function getSalesmanDashboard(req, res) {
       {
         $match: {
           requestorBusinessId: { $in: orgObjectIds },
-          "caseInfos.reviewByStage.shipping.status": "APPROVED",
+          manufacturerStage: "추적관리",
           createdAt: { $gte: start, $lt: end },
         },
       },

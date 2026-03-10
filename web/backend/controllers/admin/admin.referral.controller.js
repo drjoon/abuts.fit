@@ -116,7 +116,7 @@ export async function getReferralGroups(req, res) {
           {
             $match: {
               requestor: { $in: relevantUserIds },
-              "caseInfos.reviewByStage.shipping.status": "APPROVED",
+              manufacturerStage: "추적관리",
               createdAt: { $gte: periodStart, $lte: periodEnd },
             },
           },
@@ -151,7 +151,7 @@ export async function getReferralGroups(req, res) {
           {
             $match: {
               requestorBusinessId: { $in: requestorLeaderBusinessObjectIds },
-              "caseInfos.reviewByStage.shipping.status": "APPROVED",
+              manufacturerStage: "추적관리",
               createdAt: { $gte: periodStart, $lte: periodEnd },
             },
           },
@@ -443,7 +443,7 @@ export async function recalcReferralSnapshot() {
         {
           $match: {
             requestor: { $in: relevantUserIds },
-            "caseInfos.reviewByStage.shipping.status": "APPROVED",
+            manufacturerStage: "추적관리",
             createdAt: { $gte: start, $lte: end },
           },
         },
@@ -464,7 +464,7 @@ export async function recalcReferralSnapshot() {
         {
           $match: {
             requestorBusinessId: { $in: requestorLeaderBusinessObjectIds },
-            "caseInfos.reviewByStage.shipping.status": "APPROVED",
+            manufacturerStage: "추적관리",
             createdAt: { $gte: start, $lte: end },
           },
         },

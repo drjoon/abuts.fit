@@ -79,13 +79,7 @@ type ShippingItemApi = {
   patient?: string;
   tooth?: string;
   diameter?: string;
-  stageKey?:
-    | "request"
-    | "cam"
-    | "production"
-    | "shipping"
-    | "completed"
-    | "cancel";
+  stageKey?: "request" | "cam" | "production" | "shipping" | "cancel";
   stageLabel?: string;
   shippingMode?: "normal" | "express";
   requestedShipDate?: string;

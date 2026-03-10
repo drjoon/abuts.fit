@@ -204,6 +204,13 @@ router.post(
   requestController.syncHanjinTracking,
 );
 
+router.post(
+  "/shipping/hanjin/mock-pickup-complete",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.mockHanjinPickupCompleted,
+);
+
 // 패킹 라벨 프린터 목록 조회 (pack-server 프록시)
 router.get(
   "/packing/printers",

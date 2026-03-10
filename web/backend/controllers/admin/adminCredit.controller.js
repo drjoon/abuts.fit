@@ -236,7 +236,7 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
           {
             $match: {
               requestorBusinessId: { $in: allOrgIds },
-              "caseInfos.reviewByStage.shipping.status": "APPROVED",
+              manufacturerStage: "추적관리",
               createdAt: { $gte: range.start, $lte: range.end },
             },
           },
@@ -1194,7 +1194,7 @@ export async function adminGetSalesmanCredits(req, res) {
             {
               $match: {
                 requestorBusinessId: { $in: allOrgIds },
-                "caseInfos.reviewByStage.shipping.status": "APPROVED",
+                manufacturerStage: "추적관리",
                 ...(Object.keys(revenueCreatedAtMatch).length
                   ? { createdAt: revenueCreatedAtMatch }
                   : {}),

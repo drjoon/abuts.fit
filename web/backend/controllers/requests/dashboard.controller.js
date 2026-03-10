@@ -331,7 +331,7 @@ export async function getMyReferralDirectMembers(req, res) {
             {
               $match: {
                 requestorBusinessId: { $in: orgObjectIds },
-                "caseInfos.reviewByStage.shipping.status": "APPROVED",
+                manufacturerStage: "추적관리",
                 createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
               },
             },
@@ -434,7 +434,7 @@ export async function getMyReferralDirectMembers(req, res) {
             {
               $match: {
                 requestorBusinessId: { $in: orgObjectIds },
-                "caseInfos.reviewByStage.shipping.status": "APPROVED",
+                manufacturerStage: "추적관리",
                 createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
               },
             },
@@ -1049,15 +1049,15 @@ export async function getDashboardRiskSummary(req, res) {
     for (const r of requests) {
       if (!r) continue;
 
-      const shippedAt = r.deliveryInfoRef?.shippedAt
-        ? new Date(r.deliveryInfoRef.shippedAt)
+      const pickedUpAt = r.deliveryInfoRef?.pickedUpAt
+        ? new Date(r.deliveryInfoRef.pickedUpAt)
         : null;
       const deliveredAt = r.deliveryInfoRef?.deliveredAt
         ? new Date(r.deliveryInfoRef.deliveredAt)
         : null;
       const isDone =
-        r?.caseInfos?.reviewByStage?.shipping?.status === "APPROVED" ||
-        Boolean(deliveredAt || shippedAt);
+        String(r?.manufacturerStage || "").trim() === "추적관리" ||
+        Boolean(deliveredAt || pickedUpAt);
       if (isDone) continue;
 
       const stage = String(r.manufacturerStage || "").trim();

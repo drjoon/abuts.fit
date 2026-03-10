@@ -234,7 +234,7 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
           {
             $match: {
               requestorBusinessId: { $in: orgIdsAll },
-              "caseInfos.reviewByStage.shipping.status": "APPROVED",
+              manufacturerStage: "추적관리",
               createdAt: { $gte: rangeStartUtc, $lte: rangeEndUtc },
             },
           },

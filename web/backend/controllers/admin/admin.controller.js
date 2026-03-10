@@ -3,6 +3,7 @@ import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
+import CreditLedger from "../../models/creditLedger.model.js";
 import {
   getReferralGroups,
   getReferralGroupTree,
@@ -28,7 +29,7 @@ export async function getPricingStats(req, res) {
     const { start, end } = getDateRangeFromQuery(req);
     const match = {
       createdAt: { $gte: start, $lte: end },
-      "caseInfos.reviewByStage.shipping.status": "APPROVED",
+      manufacturerStage: "추적관리",
     };
 
     const rows = await Request.aggregate([
@@ -85,14 +86,20 @@ export async function getPricingStats(req, res) {
     const totalBaseAmount = Number(summary.totalBaseAmount || 0);
     const totalDiscountAmount = Number(summary.totalDiscountAmount || 0);
 
-    const shippingRows = await ShippingPackage.aggregate([
-      { $match: { createdAt: { $gte: start, $lte: end } } },
+    const shippingRows = await CreditLedger.aggregate([
+      {
+        $match: {
+          type: "SPEND",
+          refType: "SHIPPING_PACKAGE",
+          createdAt: { $gte: start, $lte: end },
+        },
+      },
       {
         $group: {
           _id: null,
           packageCount: { $sum: 1 },
           totalShippingFeeSupply: {
-            $sum: { $ifNull: ["$shippingFeeSupply", 0] },
+            $sum: { $abs: { $ifNull: ["$amount", 0] } },
           },
         },
       },
@@ -103,13 +110,9 @@ export async function getPricingStats(req, res) {
     const rawTotalShippingFeeSupply = Number(
       shipSummary.totalShippingFeeSupply || 0,
     );
-    const DEFAULT_SHIPPING_FEE_SUPPLY = 3500;
-    const totalShippingFeeSupply =
-      rawPackageCount > 0
-        ? rawTotalShippingFeeSupply
-        : totalOrders * DEFAULT_SHIPPING_FEE_SUPPLY;
-    const avgShippingFeeSupply = totalOrders
-      ? Math.round(totalShippingFeeSupply / totalOrders)
+    const totalShippingFeeSupply = rawTotalShippingFeeSupply;
+    const avgShippingFeeSupply = rawPackageCount
+      ? Math.round(totalShippingFeeSupply / rawPackageCount)
       : 0;
 
     const referralRows = await Request.aggregate([
@@ -277,26 +280,31 @@ export async function getSecurityStats(req, res) {
     const last30 = new Date(now);
     last30.setDate(now.getDate() - 30);
 
-    const [alertsDetected, blockedAttempts, severityCounts, statusCounts, totalEvents] =
-      await Promise.all([
-        ActivityLog.countDocuments({
-          createdAt: { $gte: last30, $lte: now },
-          severity: { $in: ["high", "critical"] },
-        }),
-        ActivityLog.countDocuments({
-          status: "blocked",
-          createdAt: { $gte: last30, $lte: now },
-        }),
-        ActivityLog.aggregate([
-          { $match: { createdAt: { $gte: last30, $lte: now } } },
-          { $group: { _id: "$severity", count: { $sum: 1 } } },
-        ]),
-        ActivityLog.aggregate([
-          { $match: { createdAt: { $gte: last30, $lte: now } } },
-          { $group: { _id: "$status", count: { $sum: 1 } } },
-        ]),
-        ActivityLog.countDocuments({ createdAt: { $gte: last30, $lte: now } }),
-      ]);
+    const [
+      alertsDetected,
+      blockedAttempts,
+      severityCounts,
+      statusCounts,
+      totalEvents,
+    ] = await Promise.all([
+      ActivityLog.countDocuments({
+        createdAt: { $gte: last30, $lte: now },
+        severity: { $in: ["high", "critical"] },
+      }),
+      ActivityLog.countDocuments({
+        status: "blocked",
+        createdAt: { $gte: last30, $lte: now },
+      }),
+      ActivityLog.aggregate([
+        { $match: { createdAt: { $gte: last30, $lte: now } } },
+        { $group: { _id: "$severity", count: { $sum: 1 } } },
+      ]),
+      ActivityLog.aggregate([
+        { $match: { createdAt: { $gte: last30, $lte: now } } },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
+      ActivityLog.countDocuments({ createdAt: { $gte: last30, $lte: now } }),
+    ]);
 
     const severityMap = severityCounts.reduce((acc, cur) => {
       acc[cur._id || "unknown"] = cur.count;
