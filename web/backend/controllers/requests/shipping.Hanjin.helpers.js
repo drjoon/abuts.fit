@@ -223,6 +223,8 @@ const logMissingReceiverAddressDiagnostics = ({ request, mailbox, reason }) => {
     const requestor = request?.requestor || {};
     const requestorOrg = resolveRequestorOrganization(request);
     const extracted = requestorOrg?.extracted || {};
+    const normalizedBaseAddress = normalizeReceiverAddressForHanjin(request);
+    const normalizedDetailAddress = resolveReceiverDetailAddress(request);
     console.error("[hanjin][address] missing receiver address", {
       reason,
       mailbox: String(mailbox || "").trim() || null,
@@ -243,16 +245,20 @@ const logMissingReceiverAddressDiagnostics = ({ request, mailbox, reason }) => {
             requestor?.detailAddress ||
             "",
         ).trim() || null,
+      requestorRoadAddress:
+        String(requestor?.address?.roadAddress || "").trim() || null,
+      requestorDetailAddress:
+        String(requestor?.address?.detailAddress || "").trim() || null,
       requestorZip:
         String(
           requestor?.address?.postalCode ||
             requestor?.zipCode ||
-            requestor?.postalCode ||
+            requestor?.address?.zipCode ||
             "",
         ).trim() || null,
-      organizationAddress1:
+      organizationExtractedAddress:
         String(extracted?.address || extracted?.address1 || "").trim() || null,
-      organizationAddress2:
+      organizationExtractedDetailAddress:
         String(
           extracted?.addressDetail ||
             extracted?.detailAddress ||
