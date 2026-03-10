@@ -53,7 +53,7 @@ const sidebarItems = {
   requestor: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: FileText, label: "신규의뢰", href: "/dashboard/new-request" },
-    { icon: Users2, label: "리퍼럴그룹", href: "/dashboard/referral-groups" },
+    { icon: Users2, label: "소개그룹", href: "/dashboard/referral-groups" },
     { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
@@ -73,7 +73,7 @@ const sidebarItems = {
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Users, label: "사용자", href: "/dashboard/users" },
     { icon: Wallet, label: "크레딧", href: "/dashboard/credits" },
-    { icon: Users2, label: "리퍼럴그룹", href: "/dashboard/referral-groups" },
+    { icon: Users2, label: "소개그룹", href: "/dashboard/referral-groups" },
     {
       icon: FileText,
       label: "의뢰",

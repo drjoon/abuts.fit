@@ -42,7 +42,7 @@ export const RequestorPricingReferralPolicyCard = () => {
         const errorMsg =
           res.data?.message ||
           res.data?.error ||
-          "가격/리퍼럴 통계 조회에 실패했습니다.";
+          "가격/소개 통계 조회에 실패했습니다.";
         console.error("[RequestorPricingReferralPolicyCard] API Error:", {
           ok: res.ok,
           status: res.status,
@@ -81,7 +81,7 @@ export const RequestorPricingReferralPolicyCard = () => {
       <Card className="app-glass-card app-glass-card--lg">
         <CardHeader>
           <CardTitle className="text-base font-semibold">
-            가격 & 리퍼럴 정책
+            가격 & 소개 정책
           </CardTitle>
           <CardDescription className="text-sm text-destructive">
             {(error as Error)?.message || "정보를 불러오지 못했습니다."}
@@ -212,7 +212,7 @@ export const RequestorPricingReferralPolicyCard = () => {
                 </div>
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-md text-slate-600">
-                    직계 사업자 수(내 사업자 포함)
+                    직접 소개 사업자 수(내 사업자 포함)
                   </span>
                   <span className="text-lg font-semibold text-foreground">
                     {groupMemberCount}명
@@ -224,7 +224,7 @@ export const RequestorPricingReferralPolicyCard = () => {
             <div className="mt-2 space-y-1.5">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-md text-slate-600">
-                  사업자 주문 합계(내 사업자+직계 사업자)
+                  사업자 주문 합계(내 사업자+직접 소개 사업자)
                 </span>
                 <span className="text-lg font-semibold text-foreground">
                   {totalOrders.toLocaleString()}건

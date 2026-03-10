@@ -408,11 +408,11 @@ export const AdminDashboardPage = () => {
                 </CardContent>
               </Card>
 
-              {/* 카드3: 리퍼럴 및 크레딧 스냅샷 */}
+              {/* 카드3: 소개 및 크레딧 스냅샷 */}
               <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
-                    리퍼럴 및 크레딧 스냅샷
+                    소개 및 크레딧 스냅샷
                   </CardTitle>
                   <RefreshCw className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
@@ -594,7 +594,7 @@ export const AdminDashboardPage = () => {
       <ConfirmDialog
         open={recalcConfirmOpen}
         title="스냅샷 재계산"
-        description="전체 리퍼럴 스냅샷을 재계산합니다. 계속하시겠습니까?"
+        description="전체 소개 스냅샷을 재계산합니다. 계속하시겠습니까?"
         confirmLabel="재계산"
         cancelLabel="취소"
         onConfirm={async () => {

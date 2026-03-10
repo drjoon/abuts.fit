@@ -131,7 +131,9 @@ export default function ReferralGroupsPage() {
       .then((res) => {
         const body: any = res.data || {};
         if (!res.ok || !body?.success) {
-          throw new Error(body?.message || "직계 멤버 조회에 실패했습니다.");
+          throw new Error(
+            body?.message || "직접 소개 사업자 조회에 실패했습니다.",
+          );
         }
         setDirectMembers((body.data?.members || []) as DirectMemberRow[]);
       })
@@ -216,9 +218,9 @@ export default function ReferralGroupsPage() {
 
               <div className="grid gap-3 md:grid-cols-5">
                 <MetricCard
-                  title="직계 사업자 수(내 사업자 포함)"
+                  title="직접 소개 사업자 수(내 사업자 포함)"
                   value={`${requestorMembers.toLocaleString()}명`}
-                  subtitle="내 사업자 + 내가 직접 소개한 하위 사업자"
+                  subtitle="내 사업자 + 내가 직접 소개한 사업자"
                 />
                 <MetricCard
                   title="사업자 그룹 합산 (최근 30일)"
@@ -267,7 +269,7 @@ export default function ReferralGroupsPage() {
 
       <Card className="border-gray-200">
         <CardHeader>
-          <CardTitle className="text-base">직계 사업자</CardTitle>
+          <CardTitle className="text-base">직접 소개 사업자</CardTitle>
           <CardDescription>
             내가 속한 사업자와 내가 직접 소개한 사업자만 표시합니다.
           </CardDescription>
@@ -286,7 +288,7 @@ export default function ReferralGroupsPage() {
             </div>
           ) : directMembers.length === 0 ? (
             <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-              아직 직계 멤버가 없습니다.
+              아직 직접 소개 사업자가 없습니다.
             </div>
           ) : (
             <div className="grid gap-3 md:grid-cols-4">
