@@ -1332,21 +1332,20 @@ export const TrackingInquiryPage = () => {
 
                 const toggleExpanded = () => {
                   console.log(
-                    `[DEBUG] toggleExpanded called for boxId: ${boxId}`,
-                  );
-                  console.log(
-                    `[DEBUG] Current expandedBoxes:`,
-                    Array.from(expandedBoxes),
+                    `[DEBUG_CLICK] toggleExpanded called for boxId: ${boxId}, isExpanded: ${isExpanded}`,
                   );
                   const newSet = new Set(expandedBoxes);
                   if (newSet.has(boxId)) {
-                    console.log(`[DEBUG] Removing ${boxId} from expandedBoxes`);
                     newSet.delete(boxId);
+                    console.log(
+                      `[DEBUG_CLICK] Removed ${boxId}, new size: ${newSet.size}`,
+                    );
                   } else {
-                    console.log(`[DEBUG] Adding ${boxId} to expandedBoxes`);
                     newSet.add(boxId);
+                    console.log(
+                      `[DEBUG_CLICK] Added ${boxId}, new size: ${newSet.size}`,
+                    );
                   }
-                  console.log(`[DEBUG] New expandedBoxes:`, Array.from(newSet));
                   setExpandedBoxes(newSet);
                 };
 
