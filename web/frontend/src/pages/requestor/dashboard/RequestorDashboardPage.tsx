@@ -93,7 +93,7 @@ export const RequestorDashboardPage = () => {
       "requestor-dashboard-summary-page",
       period,
       String(user?.id || ""),
-      String((user as any)?.businessId || (user as any)?.organizationId || ""),
+      String((user as any)?.businessId || ""),
     ],
     [period, user],
   );
@@ -292,13 +292,9 @@ export const RequestorDashboardPage = () => {
       const eventOrgId = String(
         eventRequest?.requestorBusinessId ||
           eventRequest?.requestor?.businessId ||
-          eventRequest?.requestorOrganizationId ||
-          eventRequest?.requestor?.organizationId ||
           "",
       ).trim();
-      const myOrgId = String(
-        (user as any)?.businessId || (user as any)?.organizationId || "",
-      ).trim();
+      const myOrgId = String((user as any)?.businessId || "").trim();
       if (!eventOrgId || !myOrgId || eventOrgId !== myOrgId) return;
 
       if (type === "request:stage-changed") {

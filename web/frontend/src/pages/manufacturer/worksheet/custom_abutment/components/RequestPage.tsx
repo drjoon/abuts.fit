@@ -1182,6 +1182,8 @@ export const RequestPage = ({
       setRequests((prev) =>
         prev.map((req) => {
           const reqOrganization =
+            (req as any)?.requestorBusiness ||
+            (req as any)?.requestorBusinessId ||
             (req as any)?.requestorOrganization ||
             (req as any)?.requestorOrganizationId ||
             null;
@@ -1204,6 +1206,7 @@ export const RequestPage = ({
 
           return {
             ...req,
+            requestorBusiness: nextRequestorOrganization,
             requestorOrganization: nextRequestorOrganization,
           };
         }),

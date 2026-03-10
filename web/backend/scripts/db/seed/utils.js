@@ -185,8 +185,8 @@ export async function attachUserToOrganization(userId, organization) {
     { _id: userId },
     {
       $set: {
-        organizationId: organization._id,
-        organization: organization.name,
+        businessId: organization._id,
+        business: organization.name,
       },
     },
   );

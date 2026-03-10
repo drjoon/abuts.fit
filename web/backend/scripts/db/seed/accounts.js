@@ -26,7 +26,7 @@ async function grantRequestorSeedCredit({
   if (existing) return false;
 
   await CreditLedger.create({
-    organizationId,
+    businessId: organizationId,
     userId,
     type: "CHARGE",
     amount,

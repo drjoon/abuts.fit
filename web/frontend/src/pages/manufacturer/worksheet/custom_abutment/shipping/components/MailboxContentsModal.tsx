@@ -100,6 +100,8 @@ export const MailboxContentsModal = ({
 
   const primaryRequest = requests[0] || null;
   const requestorOrganization =
+    (primaryRequest as any)?.requestorBusiness ||
+    (primaryRequest as any)?.requestorBusinessId ||
     (primaryRequest as any)?.requestorOrganization ||
     (primaryRequest as any)?.requestorOrganizationId ||
     null;
