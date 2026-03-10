@@ -1269,43 +1269,39 @@ export const TrackingInquiryPage = () => {
                     className="rounded-lg border bg-white shadow-sm hover:shadow-md transition-shadow"
                   >
                     <div
-                      className="p-4 cursor-pointer"
-                      onClick={toggleExpanded}
+                      className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleExpanded();
+                      }}
                     >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded">
-                              {requestCount}건
-                            </span>
-                            <span
-                              className={`inline-block text-xs font-semibold px-2.5 py-0.5 rounded ${
-                                status === "배송완료"
-                                  ? "bg-green-100 text-green-800"
-                                  : status === "집하완료"
-                                    ? "bg-blue-100 text-blue-800"
-                                    : status === "배송중"
-                                      ? "bg-amber-100 text-amber-800"
-                                      : "bg-gray-100 text-gray-800"
-                              }`}
-                            >
-                              {status}
-                            </span>
-                          </div>
-                          <div className="text-sm text-gray-600 mb-2">
-                            <span className="font-medium">송장:</span>{" "}
-                            {di.trackingNumber || "-"}
-                          </div>
-                          <div className="text-sm text-gray-600">
-                            <span className="font-medium">의뢰:</span>{" "}
-                            {requestIds.join(", ") || "-"}
-                          </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3 flex-1">
+                          <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded whitespace-nowrap">
+                            {requestCount}건
+                          </span>
+                          <span
+                            className={`inline-block text-xs font-semibold px-2.5 py-0.5 rounded whitespace-nowrap ${
+                              status === "배송완료"
+                                ? "bg-green-100 text-green-800"
+                                : status === "집하완료"
+                                  ? "bg-blue-100 text-blue-800"
+                                  : status === "배송중"
+                                    ? "bg-amber-100 text-amber-800"
+                                    : "bg-gray-100 text-gray-800"
+                            }`}
+                          >
+                            {status}
+                          </span>
+                          <span className="text-sm text-gray-600">
+                            {formatDateTime(pickedUpAt) || "-"}
+                          </span>
                         </div>
-                        <div className="text-right">
-                          <div className="text-sm text-gray-500 mb-2">
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-gray-500">
                             {di.carrier || "-"}
-                          </div>
-                          <button className="text-gray-400 hover:text-gray-600">
+                          </span>
+                          <button className="text-gray-400 hover:text-gray-600 flex-shrink-0">
                             {isExpanded ? "▼" : "▶"}
                           </button>
                         </div>
