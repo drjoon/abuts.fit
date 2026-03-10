@@ -877,20 +877,16 @@ export const TrackingInquiryPage = () => {
       return;
     }
 
-    const mailboxAddresses = Array.from(
-      new Set(
-        shippingRows
-          .map((row) => String((row as any)?.mailboxAddress || "").trim())
-          .filter(Boolean),
-      ),
-    );
+    const requestIds = shippingRows
+      .map((row) => String((row as any)?.requestId || "").trim())
+      .filter(Boolean);
 
     setMockPickingUp(true);
     try {
       const response = await request<any>({
         path: "/api/requests/shipping/hanjin/mock-pickup-complete",
         method: "POST",
-        jsonBody: { mailboxAddresses },
+        jsonBody: { requestIds },
       });
       const body = response.data as any;
       if (!response.ok || !body?.success) {

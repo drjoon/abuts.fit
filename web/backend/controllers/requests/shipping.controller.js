@@ -16,9 +16,11 @@ import {
   HANJIN_CLIENT_ID,
   hasPickupCompleted,
   resolveTrackingSyncTargets,
+  emitDeliveryUpdated,
 } from "./shipping.Tracking.helpers.js";
 import { startHanjinTrackingPoll } from "./shipping.TrackingPoller.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
+import { chargeShippingFeeOnPickupComplete } from "./shipping.Requestor.helpers.js";
 
 /**
  * MOCK 집하 완료 시뮬레이션 (Hanjin status code 11)
@@ -26,36 +28,25 @@ import DeliveryInfo from "../../models/deliveryInfo.model.js";
  */
 export async function mockHanjinPickupCompleted(req, res) {
   try {
-    const { requestIds, trackingNumbers, mailboxAddresses } = req.body || {};
-    let targetRequests = await resolveTrackingSyncTargets({
-      requestIds,
-      trackingNumbers,
-    });
+    const { requestIds = [] } = req.body || {};
 
-    const mailboxList = Array.isArray(mailboxAddresses)
-      ? mailboxAddresses
-          .map((value) => String(value || "").trim())
-          .filter(Boolean)
+    const idList = Array.isArray(requestIds)
+      ? requestIds.map((id) => String(id || "").trim()).filter(Boolean)
       : [];
 
-    if (mailboxList.length) {
-      const mailboxRequests = await Request.find({
-        mailboxAddress: { $in: mailboxList },
-        manufacturerStage: "포장.발송",
-      })
-        .populate("requestor", "name business phoneNumber address")
-        .populate("requestorBusinessId", "name extracted")
-        .populate("deliveryInfoRef");
-
-      const merged = new Map();
-      [...targetRequests, ...mailboxRequests].forEach((requestDoc) => {
-        const key = String(
-          requestDoc?.requestId || requestDoc?._id || "",
-        ).trim();
-        if (key) merged.set(key, requestDoc);
+    if (!idList.length) {
+      return res.status(400).json({
+        success: false,
+        message: "requestIds가 필요합니다.",
       });
-      targetRequests = Array.from(merged.values());
     }
+
+    const targetRequests = await Request.find({
+      requestId: { $in: idList },
+    })
+      .populate("requestor", "name business phoneNumber address")
+      .populate("requestorBusinessId", "name extracted")
+      .populate("deliveryInfoRef");
 
     if (!targetRequests.length) {
       return res.status(404).json({
@@ -65,44 +56,85 @@ export async function mockHanjinPickupCompleted(req, res) {
     }
 
     const now = new Date();
-    const rowMap = new Map();
+    const pickedUpCount = [];
 
+    // 취소 처리와 동일한 방식으로 직접 처리
     for (const requestDoc of targetRequests) {
       let deliveryInfo = requestDoc.deliveryInfoRef;
-      if (!deliveryInfo && requestDoc.deliveryInfoRef) {
-        deliveryInfo = await DeliveryInfo.findById(requestDoc.deliveryInfoRef);
-      }
-      const trackingNumber = String(deliveryInfo?.trackingNumber || "").trim();
-      if (!trackingNumber) continue;
 
-      rowMap.set(trackingNumber, {
-        wblNo: trackingNumber,
-        wrkList: [
-          {
-            statusCode: "11",
-            statusName: "집하완료",
-            statusDate: now.toISOString(),
-            agencyName: "MOCK",
-            description: "수동 MOCK 집하",
-          },
-        ],
+      // deliveryInfo 로드
+      if (!deliveryInfo || typeof deliveryInfo === "string") {
+        const refId =
+          typeof deliveryInfo === "string" ? deliveryInfo : deliveryInfo?._id;
+        if (refId) {
+          deliveryInfo = await DeliveryInfo.findById(refId);
+        }
+      }
+
+      if (!deliveryInfo) {
+        console.log(
+          `[MOCK_PICKUP] SKIP: no deliveryInfo for ${requestDoc.requestId}`,
+        );
+        continue;
+      }
+
+      const trackingNumber = String(deliveryInfo?.trackingNumber || "").trim();
+      console.log(
+        `[MOCK_PICKUP] processing requestId=${requestDoc.requestId}, trackingNumber=${trackingNumber}`,
+      );
+
+      // deliveryInfo 업데이트 (code 11 = 집하완료)
+      deliveryInfo.tracking = deliveryInfo.tracking || {};
+      deliveryInfo.tracking.lastStatusCode = "11";
+      deliveryInfo.tracking.lastStatusText = "집하완료";
+      deliveryInfo.tracking.lastEventAt = now;
+      deliveryInfo.tracking.lastSyncedAt = now;
+      deliveryInfo.pickedUpAt = now;
+      await deliveryInfo.save();
+
+      // 배송비 차감
+      await chargeShippingFeeOnPickupComplete({
+        shippingPackageId: requestDoc.shippingPackageId,
+        actorUserId: req.user?._id || null,
       });
+
+      // request 업데이트
+      requestDoc.manufacturerStage = "추적관리";
+      requestDoc.status = "추적관리";
+      applyShippingWorkflowState(requestDoc, {
+        code: SHIPPING_WORKFLOW_CODES.PICKED_UP,
+        label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.PICKED_UP],
+        pickedUpAt: now,
+        trackingStatusCode: "11",
+        trackingStatusText: "집하완료",
+        source: "hanjin-tracking-mock-pickup",
+        updatedAt: now,
+      });
+      await requestDoc.save();
+
+      // 소켓 이벤트 발송
+      await emitDeliveryUpdated(requestDoc, {
+        source: "hanjin-tracking-mock-pickup",
+        shippingStatusLabel: "집하완료",
+      });
+
+      pickedUpCount.push({
+        requestId: requestDoc.requestId,
+        trackingNumber,
+        statusCode: "11",
+        statusText: "집하완료",
+      });
+
+      console.log(`[MOCK_PICKUP] saved requestId=${requestDoc.requestId}`);
     }
 
-    const synced = await applyTrackingRowsToRequests({
-      requestDocs: targetRequests,
-      rowMap,
-      actorUserId: req.user?._id || null,
-      source: "hanjin-tracking-mock-pickup",
-    });
+    console.log(`[MOCK_PICKUP] completed count=${pickedUpCount.length}`);
 
     return res.status(200).json({
       success: true,
       data: {
-        synced,
-        pickedUpCount: synced.filter((item) =>
-          hasPickupCompleted(item?.statusCode),
-        ).length,
+        pickedUpCount: pickedUpCount.length,
+        synced: pickedUpCount,
       },
     });
   } catch (error) {

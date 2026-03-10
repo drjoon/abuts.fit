@@ -143,7 +143,15 @@ export const applyTrackingRowsToRequests = async ({
     const deliveryInfo = requestDoc.deliveryInfoRef;
     const trackingNumber = String(deliveryInfo?.trackingNumber || "").trim();
     const row = rowMap instanceof Map ? rowMap.get(trackingNumber) : null;
-    if (!row || !deliveryInfo) continue;
+    console.log(
+      `[applyTrackingRows] requestId=${requestDoc.requestId}, trackingNumber=${trackingNumber}, hasRow=${!!row}, hasDeliveryInfo=${!!deliveryInfo}, source=${source}`,
+    );
+    if (!row || !deliveryInfo) {
+      console.log(
+        `[applyTrackingRows] SKIP: row=${!!row}, deliveryInfo=${!!deliveryInfo}`,
+      );
+      continue;
+    }
 
     const events = normalizeTrackingWorkRows(row?.wrkList);
     const last = events.length ? events[events.length - 1] : null;
