@@ -56,6 +56,14 @@ export async function ensureShippingPackageForPickup({
     throw new Error("발송 패키지를 생성할 의뢰가 없습니다.");
   }
 
+  const mailboxAddresses = Array.from(
+    new Set(
+      list
+        .map((request) => String(request?.mailboxAddress || "").trim())
+        .filter(Boolean),
+    ),
+  );
+
   const businessIds = Array.from(
     new Set(
       list
@@ -82,6 +90,11 @@ export async function ensureShippingPackageForPickup({
   if (businessIds.length > 1) {
     throw new Error(
       "우편함 묶음의 조직 정보가 일관되지 않아 발송 박스를 생성할 수 없습니다.",
+    );
+  }
+  if (mailboxAddresses.length !== 1) {
+    throw new Error(
+      "발송 패키지는 단일 우편함(mailboxAddress) 단위로만 생성할 수 있습니다.",
     );
   }
   if (!businessIds.length && organizationNames.length > 1) {
@@ -113,15 +126,17 @@ export async function ensureShippingPackageForPickup({
     businessId = new Types.ObjectId(String(orgDoc._id));
   }
   const shipDateYmd = getTodayYmdInKst();
+  const mailboxAddress = mailboxAddresses[0];
 
   let pkg = null;
   try {
     pkg = await ShippingPackage.findOneAndUpdate(
-      { businessId, shipDateYmd },
+      { businessId, shipDateYmd, mailboxAddress },
       {
         $setOnInsert: {
           businessId,
           shipDateYmd,
+          mailboxAddress,
           createdBy: actorUserId || null,
         },
         $addToSet: {
@@ -140,6 +155,7 @@ export async function ensureShippingPackageForPickup({
       pkg = await ShippingPackage.findOne({
         businessId,
         shipDateYmd,
+        mailboxAddress,
       });
       if (pkg?._id) {
         await ShippingPackage.updateOne(
@@ -172,7 +188,13 @@ export async function chargeShippingFeeOnPickupComplete({
   if (!pkgId || !Types.ObjectId.isValid(pkgId)) return false;
 
   const pkg = await ShippingPackage.findById(pkgId)
-    .select({ _id: 1, businessId: 1, shippingFeeSupply: 1, requestIds: 1 })
+    .select({
+      _id: 1,
+      businessId: 1,
+      mailboxAddress: 1,
+      shippingFeeSupply: 1,
+      requestIds: 1,
+    })
     .lean();
   if (!pkg?._id || !pkg.businessId) return false;
 
@@ -240,93 +262,95 @@ export async function buildShippingPackagesSummary(req) {
     shipDateYmd: { $gte: cutoffYmd },
   })
     .select({
+      _id: 1,
       shipDateYmd: 1,
+      mailboxAddress: 1,
       requestIds: 1,
       shippingFeeSupply: 1,
       createdAt: 1,
     })
-    .populate({
-      path: "requestIds",
-      select: "requestId title caseInfos manufacturerStage createdAt",
-    })
     .sort({ createdAt: -1 })
     .lean();
 
-  const packagesByShipDate = new Map();
-  for (const pkg of packages) {
-    const shipDateYmd = String(pkg?.shipDateYmd || "").trim();
-    if (!shipDateYmd) {
-      continue;
-    }
+  const todayPackageRequestIds = Array.from(
+    new Set(
+      (Array.isArray(packages) ? packages : [])
+        .filter((pkg) => String(pkg?.shipDateYmd || "").trim() === todayYmd)
+        .flatMap((pkg) =>
+          Array.isArray(pkg?.requestIds)
+            ? pkg.requestIds
+                .map((id) => String(id || "").trim())
+                .filter(Boolean)
+            : [],
+        ),
+    ),
+  );
 
-    const existing = packagesByShipDate.get(shipDateYmd);
-    if (!existing) {
-      packagesByShipDate.set(shipDateYmd, {
+  const todayRequestDocMap = todayPackageRequestIds.length
+    ? new Map(
+        (
+          await Request.find({
+            _id: {
+              $in: todayPackageRequestIds
+                .filter((id) => Types.ObjectId.isValid(id))
+                .map((id) => new Types.ObjectId(id)),
+            },
+          })
+            .select({
+              _id: 1,
+              requestId: 1,
+              title: 1,
+              caseInfos: 1,
+              manufacturerStage: 1,
+              timeline: 1,
+              createdAt: 1,
+            })
+            .lean()
+        ).map((req) => [String(req?._id || ""), req]),
+      )
+    : new Map();
+
+  const normalizedPackages = (Array.isArray(packages) ? packages : []).map(
+    (pkg) => {
+      const shipDateYmd = String(pkg?.shipDateYmd || "").trim();
+      const requests =
+        shipDateYmd === todayYmd && Array.isArray(pkg?.requestIds)
+          ? pkg.requestIds
+              .map((reqId) =>
+                todayRequestDocMap.get(String(reqId || "").trim()),
+              )
+              .filter(Boolean)
+              .map((req) => ({
+                id: String(req?._id || ""),
+                requestId: req?.requestId || "",
+                title: req?.title || "",
+                caseInfos: req?.caseInfos || {},
+                manufacturerStage: req?.manufacturerStage || "",
+                timeline: req?.timeline || {},
+                createdAt: req?.createdAt,
+              }))
+              .sort(
+                (a, b) =>
+                  new Date(b?.createdAt || 0).getTime() -
+                  new Date(a?.createdAt || 0).getTime(),
+              )
+          : [];
+
+      return {
         id: String(pkg?._id || ""),
         shipDateYmd,
+        mailboxAddress: String(pkg?.mailboxAddress || "").trim(),
+        requestCount: Array.isArray(pkg?.requestIds)
+          ? pkg.requestIds.length
+          : 0,
         shippingFeeSupply: Number(pkg?.shippingFeeSupply || 0),
         createdAt: pkg?.createdAt,
-        requests: Array.isArray(pkg?.requestIds) ? [...pkg.requestIds] : [],
-        sourcePackageIds: [String(pkg?._id || "")],
-      });
-      continue;
-    }
-
-    const existingRequestIds = new Set(
-      (Array.isArray(existing.requests) ? existing.requests : []).map((req) =>
-        String(req?._id || req?.id || req || "").trim(),
-      ),
-    );
-    const nextRequests = Array.isArray(pkg?.requestIds) ? pkg.requestIds : [];
-    for (const req of nextRequests) {
-      const reqId = String(req?._id || req?.id || req || "").trim();
-      if (!reqId || existingRequestIds.has(reqId)) {
-        continue;
-      }
-      existing.requests.push(req);
-      existingRequestIds.add(reqId);
-    }
-
-    existing.sourcePackageIds.push(String(pkg?._id || ""));
-    if (
-      new Date(pkg?.createdAt || 0).getTime() >
-      new Date(existing.createdAt || 0).getTime()
-    ) {
-      existing.createdAt = pkg?.createdAt;
-      existing.id = String(pkg?._id || existing.id || "");
-    }
-    existing.shippingFeeSupply = Math.max(
-      Number(existing.shippingFeeSupply || 0),
-      Number(pkg?.shippingFeeSupply || 0),
-    );
-  }
-
-  const mergedPackages = Array.from(packagesByShipDate.values()).sort(
-    (a, b) => {
-      return (
-        new Date(b.createdAt || 0).getTime() -
-        new Date(a.createdAt || 0).getTime()
-      );
+        requests,
+      };
     },
   );
 
-  for (const pkg of mergedPackages) {
-    if (
-      Array.isArray(pkg.sourcePackageIds) &&
-      pkg.sourcePackageIds.length > 1
-    ) {
-      console.warn(
-        "[buildShippingPackagesSummary] duplicate shipping packages collapsed",
-        {
-          businessId: String(orgId),
-          shipDateYmd: pkg.shipDateYmd,
-          sourcePackageIds: pkg.sourcePackageIds,
-        },
-      );
-    }
-  }
-
-  const todayPackages = mergedPackages.filter(
+  const todayPackages = normalizedPackages.filter(
     (p) => p.shipDateYmd === todayYmd,
   );
   return {
@@ -340,34 +364,13 @@ export async function buildShippingPackagesSummary(req) {
     },
     lastNDays: {
       days,
-      packageCount: mergedPackages.length,
-      shippingFeeSupplyTotal: mergedPackages.reduce(
+      packageCount: normalizedPackages.length,
+      shippingFeeSupplyTotal: normalizedPackages.reduce(
         (acc, cur) => acc + Number(cur.shippingFeeSupply || 0),
         0,
       ),
     },
-    items: mergedPackages.map((p) => {
-      const requests = Array.isArray(p.requests)
-        ? p.requests.map((req) => ({
-            id: String(req?._id || req),
-            requestId: req?.requestId || "",
-            title: req?.title || "",
-            caseInfos: req?.caseInfos || {},
-            manufacturerStage: req?.manufacturerStage || "",
-            timeline: req?.timeline || {},
-            createdAt: req?.createdAt,
-          }))
-        : [];
-
-      return {
-        id: String(p._id),
-        shipDateYmd: p.shipDateYmd,
-        requestCount: requests.length,
-        shippingFeeSupply: Number(p.shippingFeeSupply || 0),
-        createdAt: p.createdAt,
-        requests,
-      };
-    }),
+    items: normalizedPackages,
   };
 }
 

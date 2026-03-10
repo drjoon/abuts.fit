@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const shippingPackageSchema = new mongoose.Schema(
   {
-    organizationId: {
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "RequestorOrganization",
       required: true,
@@ -11,6 +11,12 @@ const shippingPackageSchema = new mongoose.Schema(
     shipDateYmd: {
       type: String, // YYYY-MM-DD (KST)
       required: true,
+      index: true,
+    },
+    mailboxAddress: {
+      type: String,
+      required: true,
+      trim: true,
       index: true,
     },
     requestIds: [
@@ -33,12 +39,12 @@ const shippingPackageSchema = new mongoose.Schema(
       default: null,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 shippingPackageSchema.index(
-  { organizationId: 1, shipDateYmd: 1 },
-  { unique: true }
+  { businessId: 1, shipDateYmd: 1, mailboxAddress: 1 },
+  { unique: true },
 );
 
 export default mongoose.model("ShippingPackage", shippingPackageSchema);

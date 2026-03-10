@@ -689,7 +689,20 @@ export async function getMyDashboardSummary(req, res) {
           $group: {
             _id: "$stageBucket",
             productCount: { $sum: 1 },
-            packageIds: { $addToSet: "$shippingPackageId" },
+            packageIds: {
+              $addToSet: {
+                $cond: [
+                  {
+                    $and: [
+                      { $ne: ["$shippingPackageId", null] },
+                      { $ne: ["$shippingPackageId", ""] },
+                    ],
+                  },
+                  "$shippingPackageId",
+                  "$$REMOVE",
+                ],
+              },
+            },
           },
         },
       ]),
@@ -735,8 +748,8 @@ export async function getMyDashboardSummary(req, res) {
     };
 
     // '포장.발송'은 shipping, '추적관리'는 tracking으로 분리.
-    const shippingTotal = shippingCounts.productCount;
-    const trackingTotal = trackingCounts.productCount;
+    const shippingTotal = Number(shippingCounts.productCount || 0);
+    const trackingTotal = Number(trackingCounts.productCount || 0);
 
     const totalActive =
       stats.requestCount +
@@ -1196,8 +1209,10 @@ export async function getMyPricingReferralStats(req, res) {
       });
     }
     const { start: lastMonthStart, end: lastMonthEnd } = range30;
+    const last30StartYmd = toKstYmd(lastMonthStart);
+    const todayYmd = getTodayYmdInKst();
 
-    const ymd = getTodayYmdInKst();
+    const ymd = todayYmd;
     if (!ymd) {
       return res.status(500).json({
         success: false,
@@ -1253,6 +1268,25 @@ export async function getMyPricingReferralStats(req, res) {
     let myLastMonthOrders = 0;
     let groupMemberIds = [];
 
+    const shippedBusinessRows = await ShippingPackage.find({
+      shipDateYmd: { $gte: last30StartYmd, $lte: todayYmd },
+    })
+      .select({ _id: 0, businessId: 1, requestIds: 1 })
+      .lean();
+
+    const shippingRequestCountByBusinessId = new Map();
+    for (const row of Array.isArray(shippedBusinessRows)
+      ? shippedBusinessRows
+      : []) {
+      const businessId = String(row?.businessId || "").trim();
+      if (!businessId) continue;
+      const count = Array.isArray(row?.requestIds) ? row.requestIds.length : 0;
+      shippingRequestCountByBusinessId.set(
+        businessId,
+        Number(shippingRequestCountByBusinessId.get(businessId) || 0) + count,
+      );
+    }
+
     if (role === "requestor") {
       let orgMemberObjectIds = [];
       const leaderBusinessId = String(leader?.businessId || "");
@@ -1303,22 +1337,14 @@ export async function getMyPricingReferralStats(req, res) {
       groupMemberCount = orgIds.length;
       groupMemberIds = orgObjectIds.map((id) => id.toString());
 
-      [freshGroupTotalOrders, myLastMonthOrders] = await Promise.all([
-        orgObjectIds.length
-          ? Request.countDocuments({
-              requestorBusinessId: { $in: orgObjectIds },
-              "caseInfos.reviewByStage.shipping.status": "APPROVED",
-              createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
-            })
-          : Promise.resolve(0),
-        leaderBusinessId && Types.ObjectId.isValid(leaderBusinessId)
-          ? Request.countDocuments({
-              requestorBusinessId: new Types.ObjectId(leaderBusinessId),
-              "caseInfos.reviewByStage.shipping.status": "APPROVED",
-              createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
-            })
-          : Promise.resolve(0),
-      ]);
+      freshGroupTotalOrders = orgIds.reduce(
+        (acc, id) =>
+          acc + Number(shippingRequestCountByBusinessId.get(String(id)) || 0),
+        0,
+      );
+      myLastMonthOrders = Number(
+        shippingRequestCountByBusinessId.get(String(leaderBusinessId)) || 0,
+      );
     } else {
       const directChildren = await User.find({
         referredByUserId: requestorId,
@@ -1340,13 +1366,17 @@ export async function getMyPricingReferralStats(req, res) {
         groupMemberIds.length
           ? Request.countDocuments({
               requestor: { $in: rawMemberIds },
-              "caseInfos.reviewByStage.shipping.status": "APPROVED",
+              manufacturerStage: {
+                $in: ["shipping", "포장.발송", "tracking", "추적관리"],
+              },
               createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
             })
           : Promise.resolve(0),
         Request.countDocuments({
           requestor: requestorId,
-          "caseInfos.reviewByStage.shipping.status": "APPROVED",
+          manufacturerStage: {
+            $in: ["shipping", "포장.발송", "tracking", "추적관리"],
+          },
           createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
         }),
       ]);
