@@ -41,6 +41,21 @@ export function useDraftMeta() {
     return `${DRAFT_META_KEY_PREFIX}${user.id}`;
   }, [user?.id]);
 
+  const clearStoredDraftIdentity = useCallback(() => {
+    const metaKey = getDraftMetaKey();
+    try {
+      localStorage.removeItem(DRAFT_ID_STORAGE_KEY);
+      if (metaKey) {
+        localStorage.removeItem(metaKey);
+      }
+    } catch (err) {
+      console.warn(
+        "[useDraftMeta] Failed to clear stored draft identity:",
+        err,
+      );
+    }
+  }, [getDraftMetaKey]);
+
   const getHeaders = useCallback(() => {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -174,6 +189,29 @@ export function useDraftMeta() {
     })();
   }, [token, user?.id, loadDraftMeta, createDraft, saveDraftMeta]);
 
+  const createFreshDraftState = useCallback(async () => {
+    if (!token || !user?.id) {
+      setDraftId(null);
+      setCaseInfosMap({ ...emptyMap });
+      setInitialDraftFiles([]);
+      return;
+    }
+
+    const newDraft = await createDraft();
+    if (newDraft) {
+      const nextMap = { ...emptyMap };
+      setDraftId(newDraft._id);
+      setCaseInfosMap(nextMap);
+      setInitialDraftFiles([]);
+      saveDraftMeta(newDraft._id, nextMap);
+      return;
+    }
+
+    setDraftId(null);
+    setCaseInfosMap({ ...emptyMap });
+    setInitialDraftFiles([]);
+  }, [token, user?.id, createDraft, saveDraftMeta]);
+
   const patchDraftImmediately = useCallback(
     async (map: Record<string, CaseInfos>) => {
       if (!draftId || !token) return;
@@ -202,6 +240,13 @@ export function useDraftMeta() {
             status: res.status,
             errData,
           });
+          if (res.status === 404) {
+            clearStoredDraftIdentity();
+            setDraftId(null);
+            draftIdRef.current = null;
+            void createFreshDraftState();
+            return;
+          }
           throw new Error(`Failed to update draft: ${res.status}`);
         }
 
@@ -210,7 +255,14 @@ export function useDraftMeta() {
         console.error("patchDraftImmediately error:", err);
       }
     },
-    [draftId, token, getHeaders, saveDraftMeta],
+    [
+      draftId,
+      token,
+      getHeaders,
+      saveDraftMeta,
+      clearStoredDraftIdentity,
+      createFreshDraftState,
+    ],
   );
 
   const updateCaseInfos = useCallback(
@@ -256,29 +308,6 @@ export function useDraftMeta() {
     },
     [saveDraftMeta],
   );
-
-  const createFreshDraftState = useCallback(async () => {
-    if (!token || !user?.id) {
-      setDraftId(null);
-      setCaseInfosMap({ ...emptyMap });
-      setInitialDraftFiles([]);
-      return;
-    }
-
-    const newDraft = await createDraft();
-    if (newDraft) {
-      const nextMap = { ...emptyMap };
-      setDraftId(newDraft._id);
-      setCaseInfosMap(nextMap);
-      setInitialDraftFiles([]);
-      saveDraftMeta(newDraft._id, nextMap);
-      return;
-    }
-
-    setDraftId(null);
-    setCaseInfosMap({ ...emptyMap });
-    setInitialDraftFiles([]);
-  }, [token, user?.id, createDraft, saveDraftMeta]);
 
   const deleteDraft = useCallback(async () => {
     try {

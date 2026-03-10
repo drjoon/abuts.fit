@@ -7,12 +7,18 @@ import {
   normalizeStartDate,
   isValidStartDate,
 } from "./validations";
-import { BusinessData, LicenseExtracted, MembershipStatus } from "./types";
+import {
+  BusinessData,
+  LicenseExtracted,
+  MembershipStatus,
+  FieldKey,
+} from "./types";
 
 interface HandleSaveParams {
   token: string;
   businessData: BusinessData;
   extracted: LicenseExtracted;
+  businessNumberLocked?: boolean;
   membership?: MembershipStatus;
   organizationType?: string;
   businessLicense?: {
@@ -32,6 +38,7 @@ interface HandleSaveParams {
   setBusinessData: (fn: (prev: BusinessData) => BusinessData) => void;
   navigate: (path: string) => void;
   nextPath: string;
+  onFocusFirstMissing?: (key: FieldKey) => void;
 }
 
 interface HandleSaveResult {
@@ -53,6 +60,7 @@ export const handleSave = async (
     token,
     businessData,
     extracted,
+    businessNumberLocked,
     membership,
     organizationType,
     businessLicense,
@@ -64,6 +72,7 @@ export const handleSave = async (
     setBusinessData,
     navigate,
     nextPath,
+    onFocusFirstMissing,
   } = params;
 
   try {
@@ -92,8 +101,6 @@ export const handleSave = async (
     const normalizedBusinessNumber = normalizeBusinessNumber(businessNumberRaw);
     const normalizedPhoneNumber = normalizePhoneNumber(phoneNumberRaw);
 
-    const allowPartialUpdate = membership === "owner";
-
     const requiredMissing =
       !companyName ||
       !repName ||
@@ -106,7 +113,7 @@ export const handleSave = async (
       !zipCode ||
       !startDate;
 
-    if (requiredMissing && !allowPartialUpdate) {
+    if (requiredMissing) {
       if (!auto) {
         const nextErrors: Record<string, boolean> = {
           companyName: !companyName,
@@ -121,6 +128,25 @@ export const handleSave = async (
           startDate: !startDate,
         };
         setErrors(nextErrors);
+        const fieldOrder: FieldKey[] = [
+          "repName",
+          "startDate",
+          "companyName",
+          "phone",
+          "bizNo",
+          "bizType",
+          "bizItem",
+          "email",
+          "address",
+          "zipCode",
+        ];
+        const firstMissing = fieldOrder.find((key) => {
+          if (key === "bizNo") return nextErrors.businessNumber;
+          return Boolean(nextErrors[key]);
+        });
+        if (firstMissing) {
+          onFocusFirstMissing?.(firstMissing);
+        }
         toast({
           title: "필수 항목을 입력해주세요",
           variant: "destructive",
@@ -232,6 +258,14 @@ export const handleSave = async (
       const body: any = res.data || {};
       const reason = String(body?.reason || "").trim();
       const serverMessage = String(body?.message || "").trim();
+      const isLockedNumberReason =
+        reason === "duplicate_business_number" ||
+        reason === "business_number_locked" ||
+        reason === "business_number_switch_requires_admin";
+      if (businessNumberLocked && isLockedNumberReason) {
+        setErrors((prev) => ({ ...prev, businessNumber: false }));
+        return { success: false };
+      }
       if (reason === "duplicate_business_number") {
         setErrors((prev) => ({ ...prev, businessNumber: true }));
         toast({
@@ -240,6 +274,30 @@ export const handleSave = async (
             serverMessage || "기존 사업자에 가입 요청을 진행해주세요.",
           variant: "destructive",
           duration: 4000,
+        });
+        return { success: false };
+      }
+      if (reason === "business_number_locked") {
+        setErrors((prev) => ({ ...prev, businessNumber: true }));
+        toast({
+          title: "사업자등록번호는 변경할 수 없습니다",
+          description:
+            serverMessage ||
+            "검증이 완료된 사업자는 사업자등록번호 변경이 불가합니다. 사업자 전환이 필요하면 관리자에게 요청해주세요.",
+          variant: "destructive",
+          duration: 4500,
+        });
+        return { success: false };
+      }
+      if (reason === "business_number_switch_requires_admin") {
+        setErrors((prev) => ({ ...prev, businessNumber: true }));
+        toast({
+          title: "사업자 전환은 관리자 승인 후 가능합니다",
+          description:
+            serverMessage ||
+            "현재 계정에 이미 연결된 사업자가 있어 번호로 다른 사업자로 전환할 수 없습니다. 관리자에게 사업자 전환을 요청해주세요.",
+          variant: "destructive",
+          duration: 4500,
         });
         return { success: false };
       }
@@ -296,10 +354,9 @@ export const handleSave = async (
       });
     } else if (!silent && !auto) {
       toast({
-        title: "설정이 저장되었습니다",
+        title: "저장 완료",
         description: "사업자 정보가 성공적으로 업데이트되었습니다.",
       });
-      navigate(nextPath || "/dashboard");
       return {
         success: true,
         welcomeBonusGranted,

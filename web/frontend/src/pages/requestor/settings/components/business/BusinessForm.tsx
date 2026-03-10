@@ -11,6 +11,7 @@ import {
   LicenseExtracted,
   LicenseStatus,
   MembershipStatus,
+  FieldKey,
 } from "./types";
 import {
   formatBusinessNumberInput,
@@ -75,7 +76,11 @@ interface BusinessFormProps {
   onSave: () => void; // 제출(서버 저장)
   onAutoSave?: () => void; // 블러/탭 시 로컬 draft 저장만
   autoOpenAddressSearchSignal?: number;
+  focusFirstMissingSignal?: number;
+  focusFieldKey?: FieldKey | null;
   renderActions?: (props: { disabled: boolean }) => React.ReactNode;
+  successNote?: string;
+  businessNumberLocked?: boolean;
 }
 
 export const BusinessForm = ({
@@ -92,7 +97,11 @@ export const BusinessForm = ({
   onSave,
   onAutoSave,
   autoOpenAddressSearchSignal,
+  focusFirstMissingSignal,
+  focusFieldKey,
   renderActions,
+  successNote,
+  businessNumberLocked = false,
 }: BusinessFormProps) => {
   const { toast } = useToast();
   const repNameRef = useRef<HTMLInputElement | null>(null);
@@ -107,20 +116,6 @@ export const BusinessForm = ({
   const addressDetailRef = useRef<HTMLInputElement | null>(null);
   const zipCodeRef = useRef<HTMLInputElement | null>(null);
   const submitRef = useRef<HTMLButtonElement | null>(null);
-
-  type FieldKey =
-    | "repName"
-    | "startDate"
-    | "companyName"
-    | "phone"
-    | "bizNo"
-    | "bizType"
-    | "bizItem"
-    | "email"
-    | "address"
-    | "addressDetail"
-    | "zipCode"
-    | "submit";
 
   const focusNextEmpty = (current: FieldKey) => {
     const fields: {
@@ -193,12 +188,32 @@ export const BusinessForm = ({
     next.current?.focus();
   };
 
+  const focusField = (field: FieldKey) => {
+    const refMap: Record<
+      FieldKey,
+      React.RefObject<HTMLInputElement | HTMLButtonElement | null>
+    > = {
+      repName: repNameRef,
+      startDate: startDateRef,
+      companyName: companyNameRef,
+      phone: phoneRef,
+      bizNo: bizNoRef,
+      bizType: bizTypeRef,
+      bizItem: bizItemRef,
+      email: emailRef,
+      address: addressRef,
+      addressDetail: addressDetailRef,
+      zipCode: zipCodeRef,
+      submit: submitRef,
+    };
+    refMap[field]?.current?.focus();
+  };
+
   const disabled =
     licenseDeleteLoading ||
     licenseStatus === "uploading" ||
     licenseStatus === "processing" ||
     (membership !== "owner" && membership !== "none");
-  const hasExtraAction = Boolean(renderActions);
 
   const [addressPromptActive, setAddressPromptActive] = useState(false);
 
@@ -278,12 +293,21 @@ export const BusinessForm = ({
   useEffect(() => {
     if (!autoOpenAddressSearchSignal) return;
     setAddressPromptActive(true);
-    toast({
-      title: "주소 확인이 필요합니다",
-      description:
-        "[주소 검색] 버튼을 눌러 도로명 주소와 우편번호를 선택해주세요.",
+    requestAnimationFrame(() => {
+      handleOpenAddressSearch({ silent: true });
     });
   }, [autoOpenAddressSearchSignal, toast]);
+
+  useEffect(() => {
+    if (!focusFirstMissingSignal) return;
+    requestAnimationFrame(() => {
+      if (focusFieldKey) {
+        focusField(focusFieldKey);
+        return;
+      }
+      focusNextEmpty("repName");
+    });
+  }, [focusFieldKey, focusFirstMissingSignal]);
 
   return (
     <div className="space-y-6">
@@ -459,12 +483,15 @@ export const BusinessForm = ({
               <Input
                 ref={bizNoRef}
                 id="bizNo"
+                disabled={businessNumberLocked || disabled}
                 className={cn(
-                  errors.businessNumber &&
+                  !businessNumberLocked &&
+                    errors.businessNumber &&
                     "border-destructive focus-visible:ring-destructive",
                 )}
                 value={businessData.businessNumber}
                 onChange={(e) => {
+                  if (businessNumberLocked) return;
                   const nextValue = formatBusinessNumberInput(e.target.value);
                   setBusinessData((prev) => ({
                     ...prev,
@@ -490,7 +517,7 @@ export const BusinessForm = ({
                   focusNext(bizTypeRef);
                 }}
                 onBlur={() => {
-                  if (disabled) return;
+                  if (disabled || businessNumberLocked) return;
                   onAutoSave?.();
                 }}
               />
@@ -752,15 +779,10 @@ export const BusinessForm = ({
 
       <div className="space-y-2">
         <GuideFocus className="rounded-xl p-1">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div
-              className={cn(
-                "md:col-span-3",
-                hasExtraAction && "flex justify-end",
-              )}
-            >
-              {renderActions ? renderActions({ disabled }) : null}
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {renderActions ? (
+              <div className="md:col-span-1">{renderActions({ disabled })}</div>
+            ) : null}
             <div className="md:col-span-1">
               <Button
                 type="button"
@@ -774,6 +796,11 @@ export const BusinessForm = ({
               >
                 검증 후 제출
               </Button>
+              {successNote && (
+                <p className="mt-2 text-center text-xs font-semibold text-sky-600">
+                  {successNote}
+                </p>
+              )}
             </div>
           </div>
         </GuideFocus>

@@ -285,7 +285,7 @@ async function findOrganizationByAnchors({
         { members: userId },
         { "joinRequests.user": userId },
       ],
-    }).sort({ createdAt: 1 });
+    }).sort({ updatedAt: -1, createdAt: -1 });
     if (byMembership) return byMembership;
   }
 
@@ -296,7 +296,7 @@ async function findOrganizationByAnchors({
       name: safeOrgName,
       $or: [{ owner: userId }, { owners: userId }, { members: userId }],
     })
-      .sort({ createdAt: 1 })
+      .sort({ updatedAt: -1, createdAt: -1 })
       .limit(1);
     if (Array.isArray(matches) && matches[0]) return matches[0];
   }
@@ -593,12 +593,30 @@ export async function getMyOrganization(req, res) {
     const { organizationType } = roleCheck;
     let orgName = "";
     orgName = String(req.user.organization || "").trim();
+    const freshUser = await User.findById(req.user._id)
+      .select({ organizationId: 1, organization: 1 })
+      .lean();
+    const freshOrganizationId =
+      freshUser?.organizationId || req.user.organizationId;
+    const freshOrganizationName = String(
+      freshUser?.organization || req.user.organization || "",
+    ).trim();
     let org = await findOrganizationByAnchors({
       organizationType,
-      organizationId: req.user.organizationId,
+      organizationId: freshOrganizationId,
       businessNumber: "",
       userId: req.user._id,
-      orgName,
+      orgName: freshOrganizationName || orgName,
+    });
+    console.info("[Organization] getMyOrganization anchors", {
+      userId: String(req.user._id),
+      organizationType,
+      tokenOrganizationId: String(req.user.organizationId || ""),
+      freshOrganizationId: String(freshOrganizationId || ""),
+      tokenOrganizationName: orgName,
+      freshOrganizationName,
+      resolvedOrganizationId: String(org?._id || ""),
+      resolvedOrganizationName: String(org?.name || ""),
     });
 
     if (
@@ -707,6 +725,28 @@ export async function getMyOrganization(req, res) {
 
     const shippingPolicy = org?.shippingPolicy || {};
     const safeShippingPolicy = { ...shippingPolicy };
+    console.info("[Organization] getMyOrganization response", {
+      userId: String(req.user._id),
+      organizationId: String(org?._id || ""),
+      membership,
+      name: String(org?.name || ""),
+      extracted: {
+        companyName: String(org?.extracted?.companyName || "").trim(),
+        businessNumber: String(org?.extracted?.businessNumber || "").trim(),
+        address: String(org?.extracted?.address || "").trim(),
+        addressDetail: String(org?.extracted?.addressDetail || "").trim(),
+        zipCode: String(org?.extracted?.zipCode || "").trim(),
+        phoneNumber: String(org?.extracted?.phoneNumber || "").trim(),
+        email: String(org?.extracted?.email || "").trim(),
+        representativeName: String(
+          org?.extracted?.representativeName || "",
+        ).trim(),
+        businessType: String(org?.extracted?.businessType || "").trim(),
+        businessItem: String(org?.extracted?.businessItem || "").trim(),
+        startDate: String(org?.extracted?.startDate || "").trim(),
+      },
+      businessVerified,
+    });
 
     return res.json({
       success: true,
@@ -859,14 +899,34 @@ export async function updateMyOrganization(req, res) {
     const startDateProvided = hasOwn(req.body, "startDate");
     const shippingPolicyProvided = hasOwn(req.body, "shippingPolicy");
 
-    const hasOrganization = !!req.user.organizationId;
+    const freshUser = await User.findById(req.user._id)
+      .select({ organizationId: 1, organization: 1 })
+      .lean();
+    const effectiveOrganizationId =
+      freshUser?.organizationId || req.user.organizationId || null;
+    const effectiveOrganizationName = String(
+      freshUser?.organization || req.user.organization || "",
+    ).trim();
     const nextNameProvided = hasOwn(req.body, "name");
     let org = await findOrganizationByAnchors({
       organizationType,
-      organizationId: req.user.organizationId,
+      organizationId: effectiveOrganizationId,
       businessNumber: req.body?.businessNumber,
       userId: req.user._id,
-      orgName: req.user.organization,
+      orgName: effectiveOrganizationName,
+    });
+    const hasOrganization = Boolean(org?._id || effectiveOrganizationId);
+    console.info("[Organization] updateMyOrganization anchors", {
+      userId: String(req.user._id),
+      organizationType,
+      tokenOrganizationId: String(req.user.organizationId || ""),
+      effectiveOrganizationId: String(effectiveOrganizationId || ""),
+      tokenOrganizationName: String(req.user.organization || ""),
+      effectiveOrganizationName,
+      resolvedOrganizationId: String(org?._id || ""),
+      resolvedOrganizationName: String(org?.name || ""),
+      payloadBusinessNumber: String(req.body?.businessNumber || ""),
+      payloadName: String(req.body?.name || ""),
     });
     if (hasOrganization) {
       const meId = String(req.user._id);
@@ -986,17 +1046,56 @@ export async function updateMyOrganization(req, res) {
         : null;
 
     let attachToOrg = null;
-    if (businessNumber) {
+    if (businessNumber && isBusinessNumberChanging) {
       const existingOrgByBusinessNumber = await RequestorOrganization.findOne({
         ...orgTypeFilter,
         "extracted.businessNumber": businessNumber,
       });
+      const meId = String(req.user._id);
+
+      if (existingOrgByBusinessNumber) {
+        const existingOwnerId = String(existingOrgByBusinessNumber.owner || "");
+        const existingIsOwner =
+          Array.isArray(existingOrgByBusinessNumber.owners) &&
+          existingOrgByBusinessNumber.owners.some((c) => String(c) === meId);
+        const existingIsMember =
+          Array.isArray(existingOrgByBusinessNumber.members) &&
+          existingOrgByBusinessNumber.members.some((m) => String(m) === meId);
+        const isMyExistingOrg =
+          existingOwnerId === meId || existingIsOwner || existingIsMember;
+
+        if (isMyExistingOrg) {
+          console.info(
+            "[Organization] updateMyOrganization same-business own org",
+            {
+              userId: meId,
+              currentResolvedOrgId: String(org?._id || ""),
+              existingOrgByBusinessNumberId: String(
+                existingOrgByBusinessNumber?._id || "",
+              ),
+              businessNumber,
+            },
+          );
+          attachToOrg = existingOrgByBusinessNumber;
+          org = existingOrgByBusinessNumber;
+        }
+      }
 
       if (
         existingOrgByBusinessNumber &&
+        !attachToOrg &&
         (!org || String(existingOrgByBusinessNumber._id) !== String(org._id))
       ) {
         if (hasOrganization) {
+          console.info("[Organization] updateMyOrganization conflict", {
+            reason: "business_number_switch_requires_admin",
+            userId: String(req.user._id),
+            resolvedOrganizationId: String(org?._id || ""),
+            existingOrgByBusinessNumberId: String(
+              existingOrgByBusinessNumber?._id || "",
+            ),
+            businessNumber,
+          });
           return res.status(409).json({
             success: false,
             reason: "business_number_switch_requires_admin",
@@ -1004,8 +1103,6 @@ export async function updateMyOrganization(req, res) {
               "기존 조직에 연결된 상태에서는 사업자등록번호로 다른 조직으로 전환할 수 없습니다. 관리자에게 사업자 전환을 요청해주세요.",
           });
         }
-
-        const meId = String(req.user._id);
         const ownerId = String(existingOrgByBusinessNumber.owner || "");
         const isOwner =
           Array.isArray(existingOrgByBusinessNumber.owners) &&
@@ -1015,9 +1112,23 @@ export async function updateMyOrganization(req, res) {
           existingOrgByBusinessNumber.members.some((m) => String(m) === meId);
 
         if (ownerId === meId || isOwner || isMember) {
+          console.info("[Organization] updateMyOrganization attachToOrg", {
+            userId: String(req.user._id),
+            attachToOrgId: String(existingOrgByBusinessNumber?._id || ""),
+            businessNumber,
+          });
           attachToOrg = existingOrgByBusinessNumber;
           org = existingOrgByBusinessNumber;
         } else {
+          console.info("[Organization] updateMyOrganization conflict", {
+            reason: "duplicate_business_number",
+            userId: String(req.user._id),
+            resolvedOrganizationId: String(org?._id || ""),
+            existingOrgByBusinessNumberId: String(
+              existingOrgByBusinessNumber?._id || "",
+            ),
+            businessNumber,
+          });
           return res.status(409).json({
             success: false,
             reason: "duplicate_business_number",
@@ -1040,6 +1151,7 @@ export async function updateMyOrganization(req, res) {
     }
 
     const extractedPatch = {};
+    if (nextNameProvided) extractedPatch.companyName = nextName;
     if (representativeNameProvided)
       extractedPatch.representativeName = representativeName;
     if (businessItemProvided) extractedPatch.businessItem = businessItem;
@@ -1069,32 +1181,38 @@ export async function updateMyOrganization(req, res) {
 
     if (shippingPolicyProvided) {
       const rawDays = req.body?.shippingPolicy?.weeklyBatchDays;
-      const normalizedDays = Array.isArray(rawDays)
-        ? rawDays
-            .map((day) => String(day).trim())
-            .filter((day) => ["mon", "tue", "wed", "thu", "fri"].includes(day))
-        : [];
-      patch["shippingPolicy.weeklyBatchDays"] = Array.from(
-        new Set(normalizedDays),
-      );
+      if (Array.isArray(rawDays)) {
+        const normalizedDays = rawDays
+          .map((day) => String(day).trim())
+          .filter((day) => ["mon", "tue", "wed", "thu", "fri"].includes(day));
+        patch["shippingPolicy.weeklyBatchDays"] = Array.from(
+          new Set(normalizedDays),
+        );
+      }
 
-      const clampLead = (v, fallback) => {
-        const n = Number(v);
-        if (!Number.isFinite(n) || n < 0) return fallback;
-        return Math.floor(n);
-      };
-      const rawLeadTimes = req.body?.shippingPolicy?.leadTimes || {};
-      const nextLeadTimes = {};
-      ["d6", "d8", "d10", "d12"].forEach((key) => {
-        const entry = rawLeadTimes?.[key] || {};
-        const min = clampLead(entry.minBusinessDays, 1);
-        const max = clampLead(entry.maxBusinessDays, Math.max(min, 1));
-        nextLeadTimes[key] = {
-          minBusinessDays: Math.min(min, max),
-          maxBusinessDays: Math.max(min, max),
+      if (
+        hasOwn(req.body?.shippingPolicy, "leadTimes") &&
+        req.body?.shippingPolicy?.leadTimes
+      ) {
+        const clampLead = (v, fallback) => {
+          const n = Number(v);
+          if (!Number.isFinite(n) || n < 0) return fallback;
+          return Math.floor(n);
         };
-      });
-      patch["shippingPolicy.leadTimes"] = nextLeadTimes;
+        const rawLeadTimes = req.body?.shippingPolicy?.leadTimes || {};
+        const nextLeadTimes = {};
+        ["d6", "d8", "d10", "d12"].forEach((key) => {
+          const entry = rawLeadTimes?.[key] || {};
+          const min = clampLead(entry.minBusinessDays, 1);
+          const max = clampLead(entry.maxBusinessDays, Math.max(min, 1));
+          nextLeadTimes[key] = {
+            minBusinessDays: Math.min(min, max),
+            maxBusinessDays: Math.max(min, max),
+          };
+        });
+        patch["shippingPolicy.leadTimes"] = nextLeadTimes;
+      }
+
       patch["shippingPolicy.updatedAt"] = new Date();
     }
 
@@ -1110,6 +1228,13 @@ export async function updateMyOrganization(req, res) {
         .select({ _id: 1 })
         .lean();
       if (dup) {
+        console.info("[Organization] updateMyOrganization conflict", {
+          reason: "duplicate_business_number_post_patch",
+          userId: String(req.user._id),
+          resolvedOrganizationId: String(org?._id || ""),
+          duplicateOrganizationId: String(dup?._id || ""),
+          businessNumber,
+        });
         return res.status(409).json({
           success: false,
           reason: "duplicate_business_number",
@@ -1200,6 +1325,7 @@ export async function updateMyOrganization(req, res) {
             ? { businessLicense }
             : {}),
           extracted: {
+            companyName: nextName,
             representativeName,
             businessItem,
             businessType,
@@ -1299,7 +1425,49 @@ export async function updateMyOrganization(req, res) {
       const update = {};
       if (Object.keys(patch).length > 0) update.$set = patch;
       if (Object.keys(unsetPatch).length > 0) update.$unset = unsetPatch;
+      console.info("[Organization] updateMyOrganization persist", {
+        userId: String(req.user._id),
+        organizationId: String(org?._id || ""),
+        patch,
+        extractedPatch,
+        unsetPatch,
+      });
       await RequestorOrganization.findByIdAndUpdate(org._id, update);
+      const persistedOrg = await RequestorOrganization.findById(org._id)
+        .select({ name: 1, extracted: 1, verification: 1 })
+        .lean();
+      console.info("[Organization] updateMyOrganization persisted result", {
+        organizationId: String(persistedOrg?._id || org?._id || ""),
+        name: String(persistedOrg?.name || ""),
+        extracted: {
+          companyName: String(
+            persistedOrg?.extracted?.companyName || "",
+          ).trim(),
+          businessNumber: String(
+            persistedOrg?.extracted?.businessNumber || "",
+          ).trim(),
+          address: String(persistedOrg?.extracted?.address || "").trim(),
+          addressDetail: String(
+            persistedOrg?.extracted?.addressDetail || "",
+          ).trim(),
+          zipCode: String(persistedOrg?.extracted?.zipCode || "").trim(),
+          phoneNumber: String(
+            persistedOrg?.extracted?.phoneNumber || "",
+          ).trim(),
+          email: String(persistedOrg?.extracted?.email || "").trim(),
+          representativeName: String(
+            persistedOrg?.extracted?.representativeName || "",
+          ).trim(),
+          businessType: String(
+            persistedOrg?.extracted?.businessType || "",
+          ).trim(),
+          businessItem: String(
+            persistedOrg?.extracted?.businessItem || "",
+          ).trim(),
+          startDate: String(persistedOrg?.extracted?.startDate || "").trim(),
+        },
+        businessVerified: Boolean(persistedOrg?.verification?.verified),
+      });
     } catch (e) {
       if (isDuplicateKeyError(e)) {
         const msg = String(e?.message || "");

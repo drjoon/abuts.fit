@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/shared/ui/cn";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
@@ -33,6 +34,7 @@ import {
   LicenseStatus,
   MembershipStatus,
 } from "@/shared/components/business/types";
+import type { FieldKey } from "./business/types";
 import {
   normalizeBusinessNumber,
   normalizePhoneNumber,
@@ -50,6 +52,7 @@ import {
 
 const SETUP_MODE_STORAGE_KEY = "business_tab_setup_mode";
 const BUSINESS_DRAFT_STORAGE_KEY = "business_tab_draft_v1";
+const BUSINESS_TAB_DEBUG_PREFIX = "[BusinessTab]";
 
 const getSetupModeStorageKey = (userId?: string | null) => {
   if (!userId) return null;
@@ -259,6 +262,8 @@ export const BusinessTab = ({
   const [licenseFileName, setLicenseFileName] = useState<string>("");
   const [licenseFileId, setLicenseFileId] = useState<string>("");
   const [licenseS3Key, setLicenseS3Key] = useState<string>("");
+  const [validationSucceeded, setValidationSucceeded] = useState(false);
+  const [cardHighlight, setCardHighlight] = useState(false);
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus>(
     userData?.companyName ? "missing" : "missing",
   );
@@ -268,6 +273,8 @@ export const BusinessTab = ({
   const licenseUploadRef = useRef<BusinessLicenseUploadHandle | null>(null);
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [verifiedResetConfirmOpen, setVerifiedResetConfirmOpen] =
+    useState(false);
   const latestDraftRef = useRef<{
     payload: BusinessDraftPayload | null;
     hasAnyLicense: boolean;
@@ -285,6 +292,10 @@ export const BusinessTab = ({
   const [errors, setErrors] = useState<Record<string, boolean>>({});
   const [autoOpenAddressSearchSignal, setAutoOpenAddressSearchSignal] =
     useState(0);
+  const [focusFirstMissingSignal, setFocusFirstMissingSignal] = useState(0);
+  const [focusFieldKey, setFocusFieldKey] = useState<FieldKey | null>(null);
+  const serverHydratedRef = useRef(false);
+  const suppressDraftWriteRef = useRef(false);
 
   const applyStoredDraft = useCallback((draft: BusinessDraftPayload) => {
     setBusinessData(normalizeBusinessData(draft.businessData));
@@ -299,6 +310,8 @@ export const BusinessTab = ({
   useEffect(() => {
     if (!authUserId) return;
     if (!allowLocalDraft) return;
+    if (membership !== "none") return;
+    if (serverHydratedRef.current) return;
     const draft = readStoredBusinessDraft(authUserId);
     if (!draft) return;
 
@@ -310,11 +323,17 @@ export const BusinessTab = ({
 
     if (licenseFileId || licenseS3Key || licenseFileName) return;
 
+    console.info(`${BUSINESS_TAB_DEBUG_PREFIX} applying stored draft`, {
+      authUserId,
+      updatedAt: draft.updatedAt,
+      licenseFileName: draft.licenseFileName,
+    });
     applyStoredDraft(draft);
   }, [
     applyStoredDraft,
     allowLocalDraft,
     authUserId,
+    membership,
     licenseFileId,
     licenseFileName,
     licenseS3Key,
@@ -357,7 +376,10 @@ export const BusinessTab = ({
         const body: any = res.data || {};
         const data = body.data || body;
         const next = (data?.membership || "none") as MembershipStatus;
+        serverHydratedRef.current = true;
         setMembership(next);
+        setValidationSucceeded(Boolean(data?.businessVerified));
+        setCardHighlight(false);
 
         if (
           suppressPrefillRef.current &&
@@ -373,57 +395,91 @@ export const BusinessTab = ({
           data?.business?.name || data?.organization?.name || "",
         ).trim();
         const ex = data?.extracted || {};
-        setBusinessData((prev) => {
-          const nextBusinessNumber = formatBusinessNumberInput(
+        console.info(
+          `${BUSINESS_TAB_DEBUG_PREFIX} server payload before hydration`,
+          {
+            membership: next,
+            organizationName: orgName,
+            extracted: {
+              companyName: String(ex?.companyName || "").trim(),
+              businessNumber: String(ex?.businessNumber || "").trim(),
+              address: String(ex?.address || "").trim(),
+              addressDetail: String(ex?.addressDetail || "").trim(),
+              zipCode: String(ex?.zipCode || "").trim(),
+              phoneNumber: String(ex?.phoneNumber || "").trim(),
+              email: String(ex?.email || "").trim(),
+              representativeName: String(ex?.representativeName || "").trim(),
+              businessType: String(ex?.businessType || "").trim(),
+              businessItem: String(ex?.businessItem || "").trim(),
+              startDate: String(ex?.startDate || "").trim(),
+            },
+          },
+        );
+        const nextBusinessData = normalizeBusinessData({
+          companyName: String(ex?.companyName || "").trim() || orgName,
+          businessNumber: formatBusinessNumberInput(
             String(ex?.businessNumber || "").trim(),
-          );
-          const nextPhone = formatPhoneNumberInput(
-            String(ex?.phoneNumber || "").trim(),
-          );
-          return {
-            ...prev,
-            companyName: companyNameTouched
-              ? prev.companyName
-              : orgName || prev.companyName,
-            businessNumber: nextBusinessNumber || prev.businessNumber,
-            address: String(ex?.address || "").trim() || prev.address,
-            addressDetail:
-              String(ex?.addressDetail || "").trim() || prev.addressDetail,
-            zipCode: String(ex?.zipCode || "").trim() || prev.zipCode,
-            phone: nextPhone || prev.phone,
-          };
+          ),
+          address: String(ex?.address || "").trim(),
+          addressDetail: String(ex?.addressDetail || "").trim(),
+          zipCode: String(ex?.zipCode || "").trim(),
+          phone: formatPhoneNumberInput(String(ex?.phoneNumber || "").trim()),
         });
+        setBusinessData(nextBusinessData);
         if (resetVersionRef.current !== loadVersion) return;
-        setExtracted((prev) => ({
-          ...prev,
-          representativeName:
-            String(ex?.representativeName || "").trim() ||
-            prev.representativeName,
-          email: String(ex?.email || "").trim() || prev.email,
-          businessType:
-            String(ex?.businessType || "").trim() || prev.businessType,
-          businessItem:
-            String(ex?.businessItem || "").trim() || prev.businessItem,
-          startDate: String(ex?.startDate || "").trim() || prev.startDate,
-        }));
+        setExtracted(
+          normalizeExtracted({
+            companyName: String(ex?.companyName || "").trim() || orgName,
+            businessNumber: String(ex?.businessNumber || "").trim(),
+            address: String(ex?.address || "").trim(),
+            addressDetail: String(ex?.addressDetail || "").trim(),
+            zipCode: String(ex?.zipCode || "").trim(),
+            phoneNumber: String(ex?.phoneNumber || "").trim(),
+            email: String(ex?.email || "").trim(),
+            representativeName: String(ex?.representativeName || "").trim(),
+            businessType: String(ex?.businessType || "").trim(),
+            businessItem: String(ex?.businessItem || "").trim(),
+            startDate: String(ex?.startDate || "").trim(),
+          }),
+        );
 
         const lic = data?.businessLicense || {};
         const licName = String(lic?.originalName || "").trim();
-        const licFileId = String(lic?.fileId || "").trim();
-        const licS3Key = String(lic?.s3Key || "").trim();
-        if (licName || licFileId || licS3Key) {
-          if (resetVersionRef.current !== loadVersion) return;
-          setLicenseFileName((prev) => licName || prev);
-          setLicenseFileId(licFileId);
-          setLicenseS3Key(licS3Key);
-          setLicenseStatus("ready");
-
-          writeStoredBusinessDraft(authUserId, null);
-        }
-
+        const nextLicenseFileId = String(lic?.fileId || "").trim();
+        const nextLicenseS3Key = String(lic?.s3Key || "").trim();
         if (resetVersionRef.current !== loadVersion) return;
-        setIsVerified(!!data?.businessVerified);
+        if (licName || nextLicenseFileId || nextLicenseS3Key) {
+          setLicenseFileName(licName);
+          setLicenseFileId(nextLicenseFileId);
+          setLicenseS3Key(nextLicenseS3Key);
+          setLicenseStatus(licName ? "ready" : "missing");
+          setIsVerified(!!data?.businessVerified);
+        } else {
+          setLicenseFileName("");
+          setLicenseFileId("");
+          setLicenseS3Key("");
+          setLicenseStatus("missing");
+          setIsVerified(false);
+        }
+        console.info(`${BUSINESS_TAB_DEBUG_PREFIX} hydrated from server`, {
+          membership: next,
+          organizationName: orgName,
+          extracted: {
+            companyName: String(ex?.companyName || "").trim(),
+            businessNumber: String(ex?.businessNumber || "").trim(),
+            address: String(ex?.address || "").trim(),
+            zipCode: String(ex?.zipCode || "").trim(),
+            phoneNumber: String(ex?.phoneNumber || "").trim(),
+          },
+          businessLicense: {
+            fileId: nextLicenseFileId,
+            s3Key: nextLicenseS3Key,
+            originalName: licName,
+          },
+          businessVerified: !!data?.businessVerified,
+        });
       } catch {
+        serverHydratedRef.current = true;
         setMembership("none");
       }
     };
@@ -435,6 +491,13 @@ export const BusinessTab = ({
     if (!authUserId) return;
     if (!allowLocalDraft) return;
     if (membership !== "none") {
+      console.info(
+        `${BUSINESS_TAB_DEBUG_PREFIX} clearing stored draft because membership is linked`,
+        {
+          authUserId,
+          membership,
+        },
+      );
       writeStoredBusinessDraft(authUserId, null);
     }
   }, [allowLocalDraft, authUserId, membership]);
@@ -472,6 +535,7 @@ export const BusinessTab = ({
   useEffect(() => {
     if (!authUserId) return;
     if (!allowLocalDraft) return;
+    if (suppressDraftWriteRef.current) return;
     const { hasAnyLicense: latestHasAnyLicense, hasAnyData: latestHasAnyData } =
       latestDraftRef.current;
     if (!latestHasAnyLicense && !latestHasAnyData) {
@@ -640,12 +704,31 @@ export const BusinessTab = ({
       await runDeleteLicense();
       return;
     }
+    if (validationSucceeded || isVerified) {
+      setVerifiedResetConfirmOpen(true);
+      return;
+    }
     setDeleteConfirmOpen(true);
+  };
+
+  const moveToInquiryPageForVerifiedBusiness = () => {
+    const subject = "사업자 정보 변경 요청";
+    const message = `안녕하세요.\n이미 검증 및 등록 완료된 사업자 정보 변경을 요청드립니다.\n\n사업자명: ${String(businessData.companyName || "").trim()}\n사업자등록번호: ${String(businessData.businessNumber || "").trim()}\n대표자명: ${String(extracted.representativeName || "").trim()}\n\n변경이 필요한 내용을 확인 후 처리 부탁드립니다.\n`;
+    navigate(
+      `/dashboard/inquiries?type=general&subject=${encodeURIComponent(subject)}&message=${encodeURIComponent(message)}&focus=message`,
+    );
   };
 
   const runDeleteLicense = async () => {
     resetVersionRef.current += 1;
+    suppressDraftWriteRef.current = true;
     if (membership === "none") {
+      latestDraftRef.current = {
+        payload: null,
+        hasAnyLicense: false,
+        hasAnyData: false,
+      };
+      serverHydratedRef.current = false;
       setLicenseFileName("");
       setLicenseFileId("");
       setLicenseS3Key("");
@@ -667,9 +750,18 @@ export const BusinessTab = ({
       if (authUserId) {
         writeStoredBusinessDraft(authUserId, null);
       }
+      requestAnimationFrame(() => {
+        suppressDraftWriteRef.current = false;
+      });
       return;
     }
 
+    latestDraftRef.current = {
+      payload: null,
+      hasAnyLicense: false,
+      hasAnyData: false,
+    };
+    serverHydratedRef.current = false;
     setLicenseFileName("");
     setLicenseFileId("");
     setLicenseS3Key("");
@@ -723,6 +815,9 @@ export const BusinessTab = ({
         await loginWithToken(token);
       }
     }
+    requestAnimationFrame(() => {
+      suppressDraftWriteRef.current = false;
+    });
   };
 
   const handleLeaveOrganization = async (businessId: string) => {
@@ -766,6 +861,11 @@ export const BusinessTab = ({
   const resetLocalBusinessState = useCallback(() => {
     resetVersionRef.current += 1;
     suppressPrefillRef.current = true;
+    suppressDraftWriteRef.current = true;
+    console.info(`${BUSINESS_TAB_DEBUG_PREFIX} resetLocalBusinessState`, {
+      authUserId,
+      allowLocalDraft,
+    });
     setLicenseFileName("");
     setLicenseFileId("");
     setLicenseS3Key("");
@@ -782,9 +882,18 @@ export const BusinessTab = ({
       phone: "",
     });
     setCompanyNameTouched(false);
+    latestDraftRef.current = {
+      payload: null,
+      hasAnyLicense: false,
+      hasAnyData: false,
+    };
+    serverHydratedRef.current = false;
     if (authUserId && allowLocalDraft) {
       writeStoredBusinessDraft(authUserId, null);
     }
+    requestAnimationFrame(() => {
+      suppressDraftWriteRef.current = false;
+    });
   }, [allowLocalDraft, authUserId]);
 
   const currentOrgName = useMemo(() => {
@@ -804,6 +913,16 @@ export const BusinessTab = ({
   }, [membership]);
 
   const handleSave = async () => {
+    console.info(`${BUSINESS_TAB_DEBUG_PREFIX} submitting business payload`, {
+      membership,
+      businessData,
+      extracted,
+      businessLicense: {
+        fileId: licenseFileId,
+        s3Key: licenseS3Key,
+        originalName: licenseFileName,
+      },
+    });
     const savingToast = toast({
       title: "저장 중...",
       description: "사업자 정보를 확인하고 있습니다.",
@@ -813,6 +932,7 @@ export const BusinessTab = ({
       token,
       businessData,
       extracted,
+      businessNumberLocked: validationSucceeded,
       membership,
       organizationType,
       businessLicense: {
@@ -828,9 +948,17 @@ export const BusinessTab = ({
       setBusinessData,
       navigate,
       nextPath: "",
+      onFocusFirstMissing: (key) => {
+        setFocusFieldKey(key);
+        setFocusFirstMissingSignal((v) => v + 1);
+      },
     });
     savingToast?.dismiss?.();
     if (success) {
+      toast({
+        title: "저장 완료",
+        description: "사업자 정보가 성공적으로 업데이트되었습니다.",
+      });
       setShowInquiryCta(false);
       await refreshMembership();
       if (token) {
@@ -840,6 +968,8 @@ export const BusinessTab = ({
       if (verification && typeof verification === "object") {
         setIsVerified(!!verification.verified);
       }
+      setValidationSucceeded(true);
+      setCardHighlight(true);
     }
     if (!success) {
       setShowInquiryCta(true);
@@ -1024,98 +1154,52 @@ export const BusinessTab = ({
           String(v || "").trim(),
         );
         const nextCompanyName = String(nextExtracted?.companyName || "").trim();
-        setExtracted((prev) => ({
-          ...prev,
-          companyName: nextCompanyName || prev.companyName,
-          businessNumber:
-            String(nextExtracted?.businessNumber || "").trim() ||
-            prev.businessNumber,
-          address: String(nextExtracted?.address || "").trim() || prev.address,
-          addressDetail:
-            String(nextExtracted?.addressDetail || "").trim() ||
-            prev.addressDetail,
-          zipCode: String(nextExtracted?.zipCode || "").trim() || prev.zipCode,
-          phoneNumber:
-            String(nextExtracted?.phoneNumber || "").trim() || prev.phoneNumber,
-          email: String(nextExtracted?.email || "").trim() || prev.email,
-          representativeName:
-            String(nextExtracted?.representativeName || "").trim() ||
-            prev.representativeName,
-          businessType:
-            String(nextExtracted?.businessType || "").trim() ||
-            prev.businessType,
-          businessItem:
-            String(nextExtracted?.businessItem || "").trim() ||
-            prev.businessItem,
-          startDate:
-            String(nextExtracted?.startDate || "").trim() || prev.startDate,
-        }));
-        setBusinessData((prev) => {
-          const aiBusinessNumber = formatBusinessNumberInput(
-            String(nextExtracted?.businessNumber || "").trim(),
-          );
-          const aiPhone = formatPhoneNumberInput(
-            String(nextExtracted?.phoneNumber || "").trim(),
-          );
-          return {
-            ...prev,
-            companyName: companyNameTouched
-              ? prev.companyName
-              : nextCompanyName || prev.companyName,
-            businessNumber: aiBusinessNumber || prev.businessNumber,
-            address: nextExtracted?.address?.trim() || prev.address,
-            addressDetail:
-              nextExtracted?.addressDetail?.trim() || prev.addressDetail,
-            zipCode:
-              String(nextExtracted?.zipCode || "").trim() || prev.zipCode,
-            phone: aiPhone || prev.phone,
-          };
+        setExtracted({
+          ...nextExtracted,
+          address: "",
+          addressDetail: "",
+          zipCode: "",
         });
+        setBusinessData((prev) => ({
+          ...prev,
+          companyName: companyNameTouched
+            ? prev.companyName
+            : nextCompanyName || "",
+          businessNumber: formatBusinessNumberInput(
+            String(nextExtracted?.businessNumber || "").trim(),
+          ),
+          address: "",
+          addressDetail: "",
+          zipCode: "",
+          phone: formatPhoneNumberInput(
+            String(nextExtracted?.phoneNumber || "").trim(),
+          ),
+        }));
         setIsVerified(!!data?.verification?.verified);
         setLicenseStatus("ready");
         processingToast.dismiss();
-
-        if (nextExtracted.address && !nextExtracted.zipCode) {
-          try {
-            const zipLookupRes = await request<any>({
-              path: "/api/organizations/postal-code-lookup",
-              method: "POST",
-              token,
-              headers: mockHeaders,
-              jsonBody: {
-                address: String(nextExtracted.address || "").trim(),
-              },
-            });
-            const zipLookupBody: any = zipLookupRes.data || {};
-            const zipLookupData = zipLookupBody?.data || zipLookupBody || {};
-            const lookedUpZipCode = String(zipLookupData?.zipCode || "").trim();
-            const lookedUpAddress = String(
-              zipLookupData?.formattedAddress || "",
-            ).trim();
-            if (zipLookupRes.ok && lookedUpZipCode) {
-              setExtracted((prev) => ({
-                ...prev,
-                address: lookedUpAddress || prev.address,
-                zipCode: lookedUpZipCode,
-              }));
-              setBusinessData((prev) => ({
-                ...prev,
-                address: lookedUpAddress || prev.address,
-                zipCode: lookedUpZipCode,
-              }));
-            } else {
-              setAutoOpenAddressSearchSignal((prev) => prev + 1);
-            }
-          } catch {
-            setAutoOpenAddressSearchSignal((prev) => prev + 1);
-            toast({
-              title: "주소는 인식됐지만 우편번호는 확인이 필요합니다",
-              description:
-                "주소 검색 창을 열었어요. 검색 결과를 선택하면 우편번호가 자동 입력됩니다.",
-              duration: 3500,
-            });
-          }
-        }
+        console.info(
+          `${BUSINESS_TAB_DEBUG_PREFIX} OCR parsed business license`,
+          {
+            extracted: {
+              companyName: nextCompanyName,
+              businessNumber: String(
+                nextExtracted?.businessNumber || "",
+              ).trim(),
+              address: String(nextExtracted?.address || "").trim(),
+              zipCode: String(nextExtracted?.zipCode || "").trim(),
+              phoneNumber: String(nextExtracted?.phoneNumber || "").trim(),
+            },
+            verification,
+          },
+        );
+        setAutoOpenAddressSearchSignal((prev) => prev + 1);
+        toast({
+          title: "주소 확인이 필요합니다",
+          description:
+            "주소와 우편번호를 비워두었어요. 주소 검색 창에서 도로명 주소를 선택해주세요.",
+          duration: 3500,
+        });
 
         if (
           String((verification as any)?.reason || "").trim() ===
@@ -1191,7 +1275,12 @@ export const BusinessTab = ({
       onFiles={handleLicenseFilesDrop}
       activeClassName="ring-2 ring-primary/30"
     >
-      <Card className="app-glass-card app-glass-card--lg">
+      <Card
+        className={cn(
+          "app-glass-card app-glass-card--lg transition-all duration-300",
+          cardHighlight && "ring-2 ring-sky-400/70 border-sky-300 bg-sky-50/30",
+        )}
+      >
         <CardHeader>
           <CardTitle className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -1354,7 +1443,15 @@ export const BusinessTab = ({
                       setErrors={setErrors}
                       setCompanyNameTouched={setCompanyNameTouched}
                       onSave={handleSave}
+                      successNote={
+                        validationSucceeded
+                          ? "사업자등록이 완료되었습니다"
+                          : undefined
+                      }
+                      businessNumberLocked={validationSucceeded}
                       autoOpenAddressSearchSignal={autoOpenAddressSearchSignal}
+                      focusFirstMissingSignal={focusFirstMissingSignal}
+                      focusFieldKey={focusFieldKey}
                       onAutoSave={() => {
                         if (!authUserId) return;
                         if (!allowLocalDraft) return;
@@ -1374,8 +1471,7 @@ export const BusinessTab = ({
                           <Button
                             type="button"
                             variant="destructive"
-                            size="sm"
-                            className="font-semibold"
+                            className="w-full font-semibold"
                             disabled={disabled || inquirySubmitting}
                             onClick={() => void submitBusinessInquiry()}
                           >
@@ -1434,23 +1530,42 @@ export const BusinessTab = ({
         </CardContent>
       </Card>
 
-      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+      <AlertDialog
+        open={deleteConfirmOpen || verifiedResetConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteConfirmOpen(false);
+            setVerifiedResetConfirmOpen(false);
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>정말 초기화할까요?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {verifiedResetConfirmOpen
+                ? "이미 검증 완료된 사업자입니다"
+                : "정말 초기화할까요?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              삭제하면 등록된 임직원 정보도 초기화됩니다. 그래도 진행할까요?
+              {verifiedResetConfirmOpen
+                ? "이미 검증 후 제출되어 등록 완료된 사업자 정보는 직접 초기화할 수 없습니다. 문의 페이지로 이동해 관리자에게 변경을 요청하시겠습니까?"
+                : "삭제하면 등록된 임직원 정보도 초기화됩니다. 그래도 진행할까요?"}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>취소</AlertDialogCancel>
             <AlertDialogAction
               onClick={async () => {
+                if (verifiedResetConfirmOpen) {
+                  setVerifiedResetConfirmOpen(false);
+                  moveToInquiryPageForVerifiedBusiness();
+                  return;
+                }
                 setDeleteConfirmOpen(false);
                 await runDeleteLicense();
               }}
             >
-              삭제
+              {verifiedResetConfirmOpen ? "문의로 이동" : "삭제"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

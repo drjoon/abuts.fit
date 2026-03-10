@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -48,6 +49,7 @@ type InquiryItem = {
 export const InquiriesPage = () => {
   const { toast } = useToast();
   const { user } = useAuthStore();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<InquiryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -59,6 +61,7 @@ export const InquiriesPage = () => {
   const [detailItem, setDetailItem] = useState<InquiryItem | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const formRef = useRef<HTMLDivElement | null>(null);
+  const messageRef = useRef<HTMLTextAreaElement | null>(null);
 
   const sortedItems = useMemo(
     () =>
@@ -160,6 +163,43 @@ export const InquiriesPage = () => {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    const presetSubject = String(searchParams.get("subject") || "").trim();
+    const presetMessage = String(searchParams.get("message") || "").trim();
+    const presetType = String(searchParams.get("type") || "").trim();
+    const shouldFocusMessage = searchParams.get("focus") === "message";
+
+    if (presetSubject) {
+      setSubject((prev) => prev || presetSubject);
+    }
+    if (presetMessage) {
+      setMessage((prev) => prev || presetMessage);
+    }
+    if (
+      presetType === "general" ||
+      presetType === "business_registration" ||
+      presetType === "user_registration" ||
+      presetType === "other"
+    ) {
+      setType((prev) => prev || (presetType as typeof type));
+    }
+
+    if (presetSubject || presetMessage || shouldFocusMessage) {
+      requestAnimationFrame(() => {
+        formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (shouldFocusMessage) {
+          messageRef.current?.focus();
+        }
+      });
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete("subject");
+      nextParams.delete("message");
+      nextParams.delete("type");
+      nextParams.delete("focus");
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams, type]);
 
   const handleSubmit = async () => {
     if (!message.trim()) {
@@ -264,6 +304,7 @@ export const InquiriesPage = () => {
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground">문의 내용</p>
               <Textarea
+                ref={messageRef}
                 rows={5}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}

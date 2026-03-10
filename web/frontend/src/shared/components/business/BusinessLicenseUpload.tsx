@@ -42,6 +42,10 @@ export const BusinessLicenseUpload = forwardRef<
     const hasExistingLicense = Boolean(licenseFileName);
     const canUploadNew = canEdit && !hasExistingLicense;
 
+    if (isVerified) {
+      return null;
+    }
+
     useImperativeHandle(
       ref,
       () => ({
@@ -113,8 +117,8 @@ export const BusinessLicenseUpload = forwardRef<
                 JPG, PNG 파일만 가능 (최대 10MB)
               </p>
             </div>
-            {licenseFileName && (
-              <div className="flex items-center justify-between gap-2 rounded-md border bg-slate-50 px-3 py-2">
+            {licenseFileName && !isVerified && (
+              <div className="flex w-fit max-w-xs items-center justify-between gap-2 rounded-md border bg-slate-50 px-3 py-2 mx-auto">
                 <div className="flex items-center gap-2">
                   {licenseStatus === "ready" && (
                     <ShieldCheck className="h-4 w-4 text-green-600" />

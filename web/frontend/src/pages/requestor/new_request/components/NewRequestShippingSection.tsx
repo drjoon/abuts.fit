@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useNavigate } from "react-router-dom";
 
 type Props = {
   caseInfos?: CaseInfos;
@@ -41,6 +42,7 @@ export function NewRequestShippingSection({
   const isDisabled = !!disabled;
   const { toast } = useToast();
   const { token } = useAuthStore();
+  const navigate = useNavigate();
   const [selectedDays, setSelectedDays] = useState<WeekDay[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -125,6 +127,23 @@ export function NewRequestShippingSection({
           duration: 2000,
         });
       } else {
+        const nextMessage = res.data?.message || "";
+        const missingBusinessInfo =
+          res.status === 400 &&
+          typeof nextMessage === "string" &&
+          nextMessage.includes("기공소");
+
+        if (missingBusinessInfo) {
+          toast({
+            title: "기공소 정보가 필요합니다",
+            description: "사업자 설정에서 기공소 정보를 모두 입력해주세요.",
+            variant: "destructive",
+            duration: 4000,
+          });
+          navigate("/dashboard/settings?tab=business", { replace: true });
+          return;
+        }
+
         toast({
           title: "업데이트 실패",
           description: res.data?.message || "다시 시도해주세요.",
