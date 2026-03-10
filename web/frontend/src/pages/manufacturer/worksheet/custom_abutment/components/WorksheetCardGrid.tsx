@@ -64,9 +64,13 @@ export const WorksheetCardGrid = ({
       ? Math.max(0, Math.floor(Number(secRaw)))
       : null;
     if (sec == null) return "";
-    const mm = String(Math.floor(sec / 60)).padStart(2, "0");
-    const ss = String(sec % 60).padStart(2, "0");
-    return `${mm}:${ss}`;
+    const hh = Math.floor(sec / 3600);
+    const mm = Math.floor((sec % 3600) / 60);
+    const ss = sec % 60;
+    if (hh > 0) {
+      return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+    }
+    return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
   };
 
   const getRealtimeToneClass = (tone?: string | null) => {
@@ -356,9 +360,11 @@ export const WorksheetCardGrid = ({
         const realtimeBadge = String(
           request.realtimeProgress?.badge || "",
         ).trim();
-        const realtimeElapsedLabel = formatElapsed(
-          request.realtimeProgress?.elapsedSeconds,
-        );
+        const isPackingLabelPrintFailure =
+          tabStage === "packing" && realtimeBadge === "패킹 라벨 출력 실패";
+        const realtimeElapsedLabel = isPackingLabelPrintFailure
+          ? ""
+          : formatElapsed(request.realtimeProgress?.elapsedSeconds);
         const realtimeToneClass = getRealtimeToneClass(
           request.realtimeProgress?.tone,
         );

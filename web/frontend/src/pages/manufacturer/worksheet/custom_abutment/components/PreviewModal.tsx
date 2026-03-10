@@ -554,24 +554,6 @@ export const PreviewModal = ({
         </DialogDescription>
 
         <div className="h-full flex flex-col gap-4 overflow-hidden">
-          {(realtimeBadge || realtimeElapsedLabel) && (
-            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 shrink-0">
-              {realtimeBadge ? (
-                <Badge
-                  variant="outline"
-                  className={`text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] ${realtimeToneClass}`}
-                >
-                  {realtimeBadge}
-                </Badge>
-              ) : null}
-              {realtimeElapsedLabel ? (
-                <span className="tabular-nums font-bold text-blue-600 text-sm">
-                  {realtimeElapsedLabel}
-                </span>
-              ) : null}
-            </div>
-          )}
-
           <div className="flex items-center justify-end gap-2 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 shrink-0">
             {fullLotLabel ? (
               <Badge

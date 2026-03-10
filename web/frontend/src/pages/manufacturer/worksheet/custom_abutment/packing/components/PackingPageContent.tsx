@@ -744,8 +744,8 @@ export const PackingPageContent = ({
         {isLoading && <WorksheetLoading />}
 
         <div className="flex-shrink-0 w-full sticky top-0 z-40 -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 my-2">
-          <div className="flex flex-col sm:flex-row gap-2 justify-center pt-4 pb-1 px-2">
-            <div className="flex items-center gap-2">
+          <div className="flex justify-center pt-4 pb-1 px-2">
+            <div className="flex flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
                 onClick={() => setPrinterModalOpen(true)}
@@ -754,8 +754,6 @@ export const PackingPageContent = ({
               >
                 <Settings className="h-4 w-4" />
               </button>
-            </div>
-            <div className="flex gap-2 justify-center">
               <button
                 onClick={handlePrintPackingLabels}
                 disabled={
@@ -771,17 +769,7 @@ export const PackingPageContent = ({
               >
                 {isPrintingPackingLabels ? "출력 중..." : "🏷️ 패킹 라벨 출력"}
               </button>
-            </div>
-          </div>
-        </div>
-
-        {isEmpty ? (
-          <div className="flex justify-center py-8">
-            <div className="text-gray-500">의뢰가 없습니다.</div>
-          </div>
-        ) : !isLoading ? (
-          <>
-            <div className="mb-3 flex flex-wrap items-center justify-center gap-1 text-center">
+              <div className="w-2" />
               <button
                 type="button"
                 onClick={handleSelectAllPackingRequests}
@@ -811,6 +799,15 @@ export const PackingPageContent = ({
                 {selectedPackingRequestIds.length}개
               </div>
             </div>
+          </div>
+        </div>
+
+        {isEmpty ? (
+          <div className="flex justify-center py-8">
+            <div className="text-gray-500">의뢰가 없습니다.</div>
+          </div>
+        ) : !isLoading ? (
+          <>
             <WorksheetCardGrid
               requests={paginatedRequests}
               selectedRequestIds={Array.from(
