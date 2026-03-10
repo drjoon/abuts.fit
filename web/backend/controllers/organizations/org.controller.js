@@ -601,12 +601,12 @@ export async function getMyOrganization(req, res) {
         organization: 1,
       })
       .lean();
-    const freshOrganizationId =
+    const freshBusinessId =
       freshUser?.businessId ||
       req.user.businessId ||
       freshUser?.organizationId ||
       req.user.organizationId;
-    const freshOrganizationName = String(
+    const freshBusinessName = String(
       freshUser?.business ||
         req.user.business ||
         freshUser?.organization ||
@@ -615,20 +615,22 @@ export async function getMyOrganization(req, res) {
     ).trim();
     let org = await findOrganizationByAnchors({
       organizationType,
-      businessId: freshOrganizationId,
+      businessId: freshBusinessId,
       businessNumber: "",
       userId: req.user._id,
-      businessName: freshOrganizationName || orgName,
+      businessName: freshBusinessName || orgName,
     });
     console.info("[Organization] getMyOrganization anchors", {
       userId: String(req.user._id),
       organizationType,
+      tokenBusinessId: String(req.user.businessId || ""),
       tokenOrganizationId: String(req.user.organizationId || ""),
-      freshOrganizationId: String(freshOrganizationId || ""),
+      freshBusinessId: String(freshBusinessId || ""),
+      tokenBusinessName: String(req.user.business || ""),
       tokenOrganizationName: orgName,
-      freshOrganizationName,
-      resolvedOrganizationId: String(org?._id || ""),
-      resolvedOrganizationName: String(org?.name || ""),
+      freshBusinessName,
+      resolvedBusinessId: String(org?._id || ""),
+      resolvedBusinessName: String(org?.name || ""),
     });
 
     if (
@@ -934,13 +936,13 @@ export async function updateMyOrganization(req, res) {
         organization: 1,
       })
       .lean();
-    const effectiveOrganizationId =
+    const effectiveBusinessId =
       freshUser?.businessId ||
       req.user.businessId ||
       freshUser?.organizationId ||
       req.user.organizationId ||
       null;
-    const effectiveOrganizationName = String(
+    const effectiveBusinessName = String(
       freshUser?.business ||
         req.user.business ||
         freshUser?.organization ||
@@ -950,24 +952,24 @@ export async function updateMyOrganization(req, res) {
     const nextNameProvided = hasOwn(req.body, "name");
     let org = await findOrganizationByAnchors({
       organizationType,
-      businessId: effectiveOrganizationId,
+      businessId: effectiveBusinessId,
       businessNumber: req.body?.businessNumber,
       userId: req.user._id,
-      businessName: effectiveOrganizationName,
+      businessName: effectiveBusinessName,
     });
-    const hasOrganization = Boolean(org?._id || effectiveOrganizationId);
+    const hasOrganization = Boolean(org?._id || effectiveBusinessId);
     console.info("[Organization] updateMyOrganization anchors", {
       userId: String(req.user._id),
       organizationType,
       tokenBusinessId: String(req.user.businessId || ""),
       freshBusinessId: String(freshUser?.businessId || ""),
       tokenOrganizationId: String(req.user.organizationId || ""),
-      effectiveOrganizationId: String(effectiveOrganizationId || ""),
+      effectiveBusinessId: String(effectiveBusinessId || ""),
       tokenBusinessName: String(req.user.business || ""),
       tokenOrganizationName: String(req.user.organization || ""),
-      effectiveOrganizationName,
-      resolvedOrganizationId: String(org?._id || ""),
-      resolvedOrganizationName: String(org?.name || ""),
+      effectiveBusinessName,
+      resolvedBusinessId: String(org?._id || ""),
+      resolvedBusinessName: String(org?.name || ""),
       payloadBusinessNumber: String(req.body?.businessNumber || ""),
       payloadName: String(req.body?.name || ""),
     });
