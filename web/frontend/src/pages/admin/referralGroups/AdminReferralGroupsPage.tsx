@@ -422,7 +422,7 @@ export default function AdminReferralGroupsPage() {
     return out;
   }, [treeData?.tree]);
 
-  // 수수료 패널: 직접리퍼럴(영업자가 직접 소개한 의뢰자) 목록
+  // 수수료 패널: 직접 소개(영업자가 직접 소개한 의뢰자) 목록
   // 트리 루트가 영업자인 경우, 루트의 직계 자식 중 의뢰자
   const directReferralRequestors = useMemo(() => {
     const root = treeData?.tree;
@@ -433,7 +433,7 @@ export default function AdminReferralGroupsPage() {
     );
   }, [treeData?.tree]);
 
-  // 수수료 패널: 간접리퍼럴(영업자가 소개한 하위 영업자들의 의뢰자) 목록
+  // 수수료 패널: 간접 소개(영업자가 소개한 하위 영업자들의 의뢰자) 목록
   // 루트의 직계 자식 중 영업자들의 직계 자식 중 의뢰자
   const indirectReferralRequestors = useMemo(() => {
     const root = treeData?.tree;
@@ -917,10 +917,10 @@ export default function AdminReferralGroupsPage() {
               </div>
             ) : (
               <>
-                {/* 직접리퍼럴 */}
+                {/* 직접 소개 */}
                 <div>
                   <div className="mb-2 flex items-center gap-2">
-                    <span className="text-sm font-semibold">직접리퍼럴</span>
+                    <span className="text-sm font-semibold">직접 소개</span>
                     <Badge className="bg-emerald-600 text-white hover:bg-emerald-600 text-[10px] px-1.5 py-0">
                       5%
                     </Badge>
@@ -982,10 +982,10 @@ export default function AdminReferralGroupsPage() {
                   )}
                 </div>
 
-                {/* 간접리퍼럴 */}
+                {/* 간접 소개 */}
                 <div>
                   <div className="mb-2 flex items-center gap-2">
-                    <span className="text-sm font-semibold">간접리퍼럴</span>
+                    <span className="text-sm font-semibold">간접 소개</span>
                     <Badge className="bg-blue-600 text-white hover:bg-blue-600 text-[10px] px-1.5 py-0">
                       2.5%
                     </Badge>

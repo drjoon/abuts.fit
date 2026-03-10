@@ -294,7 +294,7 @@ export async function getReferralGroups(req, res) {
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "리퍼럴 그룹 목록 조회 중 오류가 발생했습니다.",
+      message: "소개 그룹 목록 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -392,7 +392,7 @@ export async function getReferralGroupTree(req, res) {
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "리퍼럴 그룹 계층도 조회 중 오류가 발생했습니다.",
+      message: "소개 그룹 계층도 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

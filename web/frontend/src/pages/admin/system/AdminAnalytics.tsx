@@ -177,7 +177,7 @@ export const AdminAnalytics = () => {
                     <th className="py-2 pr-4">사용자</th>
                     <th className="py-2 pr-4">소속</th>
                     <th className="py-2 pr-4">주문</th>
-                    <th className="py-2 pr-4">리퍼럴 주문</th>
+                    <th className="py-2 pr-4">소개 주문</th>
                     <th className="py-2 pr-4">합산</th>
                     <th className="py-2 pr-4">매출</th>
                     <th className="py-2 pr-4">할인</th>

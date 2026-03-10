@@ -140,7 +140,7 @@ export const SalesmanDashboardPage = () => {
     return {
       key: String(o.organizationId || o.name || Math.random()),
       name: String(o.name || "의뢰자"),
-      referralLevel: o.referralLevel === "level1" ? "리퍼럴" : "내 소개",
+      referralLevel: o.referralLevel === "level1" ? "간접 소개" : "직접 소개",
       revenue: Number(o.monthRevenueAmount || 0),
       commission: Number(o.monthCommissionAmount || 0),
     };
@@ -182,7 +182,7 @@ export const SalesmanDashboardPage = () => {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <CardTitle className="text-sm font-semibold cursor-help flex items-center gap-1">
-                      <BadgeCheck className="h-4 w-4" />내 리퍼럴 코드
+                      <BadgeCheck className="h-4 w-4" />내 소개 코드
                     </CardTitle>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -225,7 +225,7 @@ export const SalesmanDashboardPage = () => {
                   </Button>
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  내 리퍼럴 코드로 가입한 영업자 수: {referralSalesmanCount}명
+                  내 소개 코드로 가입한 영업자 수: {referralSalesmanCount}명
                 </div>
               </CardContent>
             </Card>
@@ -254,9 +254,7 @@ export const SalesmanDashboardPage = () => {
                   <div className="font-semibold">{directOrgCount} 개소</div>
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="text-muted-foreground">
-                    리퍼럴 소개 의뢰자
-                  </div>
+                  <div className="text-muted-foreground">간접 소개 의뢰자</div>
                   <div className="font-semibold">{level1OrgCount} 개소</div>
                 </div>
               </CardContent>
@@ -291,16 +289,16 @@ export const SalesmanDashboardPage = () => {
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-sm">
                   <div className="text-muted-foreground">
-                    리퍼럴 수수료 (2.5%)
+                    간접 소개 수수료 (2.5%)
                   </div>
                   <div className="font-semibold">
                     {formatMoney(level1Commission)}원
                   </div>
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  직계 의뢰자 매출의 5%를 기본 수수료로 받고, 직계 1단계
-                  영업자가 벌어들인 본인 수수료(5%)의 50%(=2.5%)를 추가로
-                  받습니다.
+                  직접 소개한 의뢰자 매출의 5%를 기본 수수료로 받고, 내가 직접
+                  소개한 영업자가 다시 소개한 의뢰자 매출에 대해서는 2.5%의 간접
+                  소개 수수료를 추가로 받습니다.
                 </div>
               </CardContent>
             </Card>
@@ -332,7 +330,7 @@ export const SalesmanDashboardPage = () => {
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-sm">
                   <div className="text-muted-foreground">
-                    리퍼럴 수수료 (2.5%)
+                    간접 소개 수수료 (2.5%)
                   </div>
                   <div className="font-semibold">0원</div>
                 </div>
@@ -394,13 +392,13 @@ export const SalesmanDashboardPage = () => {
                 <Card className="app-glass-card app-glass-card--lg">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-semibold">
-                      리퍼럴 영업자 ({referralSalesmen.length}명)
+                      직접 소개한 영업자 ({referralSalesmen.length}명)
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     {referralSalesmen.length === 0 ? (
                       <div className="py-4 text-sm text-muted-foreground">
-                        리퍼럴 영업자가 없습니다.
+                        직접 소개한 영업자가 없습니다.
                       </div>
                     ) : (
                       <ul className="space-y-2">
@@ -415,7 +413,7 @@ export const SalesmanDashboardPage = () => {
                                 {salesman.name || "영업자"}
                               </div>
                               <div className="mt-0.5 pl-3 border-l text-xs text-muted-foreground">
-                                연결된 소개 영업자입니다.
+                                내가 직접 소개한 영업자입니다.
                               </div>
                             </div>
                           </li>

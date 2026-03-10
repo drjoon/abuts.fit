@@ -105,7 +105,7 @@ export default function ReferralGroupsPage() {
       .then((res) => {
         const body: any = res.data || {};
         if (!res.ok || !body?.success) {
-          throw new Error(body?.message || "리퍼럴 통계 조회에 실패했습니다.");
+          throw new Error(body?.message || "소개 통계 조회에 실패했습니다.");
         }
         setRequestorStats((body.data || {}) as RequestorReferralStats);
       })
@@ -183,7 +183,7 @@ export default function ReferralGroupsPage() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-sm">
                   <div className="text-muted-foreground">
-                    내 사업자 추천 링크
+                    내 사업자 소개 링크
                   </div>
                   <div className="font-mono text-sm break-all">
                     {referralLink || "-"}
@@ -218,6 +218,7 @@ export default function ReferralGroupsPage() {
                 <MetricCard
                   title="직계 사업자 수(내 사업자 포함)"
                   value={`${requestorMembers.toLocaleString()}명`}
+                  subtitle="내 사업자 + 내가 직접 소개한 하위 사업자"
                 />
                 <MetricCard
                   title="사업자 그룹 합산 (최근 30일)"
@@ -241,6 +242,7 @@ export default function ReferralGroupsPage() {
                       <br />
                       - 주문량 집계는 사용자 개인이 아니라 사업자 기준으로 매일
                       자정(00:00) 업데이트됩니다.
+                      <br />- 소개 정책은 의뢰자와 영업자에게만 적용됩니다.
                       <br />- 신규 가입 이벤트 기간 중에는 90일간 10,000원으로
                       고정됩니다.
                     </div>
@@ -267,7 +269,7 @@ export default function ReferralGroupsPage() {
         <CardHeader>
           <CardTitle className="text-base">직계 사업자</CardTitle>
           <CardDescription>
-            내가 속한 사업자와 내가 소개한 사업자만 표시합니다.
+            내가 속한 사업자와 내가 직접 소개한 사업자만 표시합니다.
           </CardDescription>
         </CardHeader>
         <CardContent>

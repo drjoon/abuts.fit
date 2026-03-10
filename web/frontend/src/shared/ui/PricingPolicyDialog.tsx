@@ -85,7 +85,7 @@ export const PricingPolicyDialog = ({ open, onOpenChange }: Props) => {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>가격 & 리퍼럴 정책 안내</DialogTitle>
+          <DialogTitle>가격 & 소개 정책 안내</DialogTitle>
           <DialogDescription asChild>
             <div className="space-y-4 pt-2 text-sm text-muted-foreground">
               <section className="space-y-1">
@@ -145,17 +145,19 @@ export const PricingPolicyDialog = ({ open, onOpenChange }: Props) => {
 
               <section className="space-y-1">
                 <h3 className="font-semibold text-foreground text-md">
-                  4. 리퍼럴 그룹 기반 주문량 합산
+                  4. 소개 그룹 기반 주문량 합산
                 </h3>
                 <p>
-                  할인 단가는 본인과 본인이 직접 추천한 기공소(직계 1단계)의
+                  할인 단가는 본인 사업자와 본인 사업자가 직접 소개한 기공소의
                   <b> 최근 30일 주문량</b>을 합산해 계산합니다.
                 </p>
                 <ul className="list-disc pl-4 space-y-0.5">
                   <li>
-                    예: A 기공소 → B 기공소(A의 리퍼럴) → C 기공소(B의 리퍼럴)인
-                    경우, <b>A는 A+B</b>, <b>B는 B+C</b> 주문량을 합산합니다.
+                    예: A 기공소가 B 기공소를 직접 소개하고, B 기공소가 C
+                    기공소를 직접 소개한 경우, <b>A는 A+B</b>, <b>B는 B+C</b>{" "}
+                    주문량을 합산합니다.
                   </li>
+                  <li>소개 정책은 의뢰자와 영업자 역할에만 적용합니다.</li>
                 </ul>
               </section>
 

@@ -35,6 +35,13 @@ const ymdToKstMidnight = (ymd) => {
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
+const getUniqueRequestIdCount = (requestIds) => {
+  if (!Array.isArray(requestIds) || requestIds.length === 0) return 0;
+  return new Set(
+    requestIds.map((value) => String(value || "").trim()).filter(Boolean),
+  ).size;
+};
+
 /**
  * 기간 파라미터에 따른 createdAt 필터 생성
  * 지원 값: 7d, 30d, 90d, lastMonth, thisMonth, all(기본값 30d)
@@ -1280,7 +1287,7 @@ export async function getMyPricingReferralStats(req, res) {
       : []) {
       const businessId = String(row?.businessId || "").trim();
       if (!businessId) continue;
-      const count = Array.isArray(row?.requestIds) ? row.requestIds.length : 0;
+      const count = getUniqueRequestIdCount(row?.requestIds);
       shippingRequestCountByBusinessId.set(
         businessId,
         Number(shippingRequestCountByBusinessId.get(businessId) || 0) + count,
