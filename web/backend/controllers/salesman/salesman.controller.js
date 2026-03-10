@@ -300,7 +300,7 @@ export async function getSalesmanDashboard(req, res) {
       role: "requestor",
       active: true,
     })
-      .select({ _id: 1, organizationId: 1 })
+      .select({ _id: 1, businessId: 1 })
       .lean();
 
     const referredSalesmen = await User.find({
@@ -327,30 +327,28 @@ export async function getSalesmanDashboard(req, res) {
             role: "requestor",
             active: true,
           })
-            .select({ _id: 1, organizationId: 1 })
+            .select({ _id: 1, businessId: 1 })
             .lean();
-
-    const directOrgIdSet = new Set(
-      (referredRequestors || [])
-        .map((u) => (u?.organizationId ? String(u.organizationId) : ""))
-        .filter(Boolean),
-    );
-    const level1OrgIdSet = new Set(
-      (level1Requestors || [])
-        .map((u) => (u?.organizationId ? String(u.organizationId) : ""))
-        .filter(Boolean)
-        .filter((id) => !directOrgIdSet.has(id)),
-    );
-
-    const organizationIds = Array.from(
-      new Set([...Array.from(directOrgIdSet), ...Array.from(level1OrgIdSet)]),
-    );
 
     const referralSalesmanCount = referredSalesmanObjectIds.length;
     const referralSalesmen = (referredSalesmen || []).map((u) => ({
       userId: String(u?._id || ""),
       name: String(u?.name || ""),
     }));
+
+    const directOrgIdSet = new Set(
+      (referredRequestors || [])
+        .map((u) => (u?.businessId ? String(u.businessId) : ""))
+        .filter(Boolean),
+    );
+    const level1OrgIdSet = new Set(
+      (level1Requestors || [])
+        .map((u) => (u?.businessId ? String(u.businessId) : ""))
+        .filter(Boolean),
+    );
+    const organizationIds = Array.from(
+      new Set([...directOrgIdSet, ...level1OrgIdSet]),
+    );
 
     if (organizationIds.length === 0) {
       const totalCommissionAmount = 0;
@@ -403,14 +401,14 @@ export async function getSalesmanDashboard(req, res) {
     const revenueRows = await Request.aggregate([
       {
         $match: {
-          requestorOrganizationId: { $in: orgObjectIds },
+          requestorBusinessId: { $in: orgObjectIds },
           "caseInfos.reviewByStage.shipping.status": "APPROVED",
           createdAt: { $gte: start, $lt: end },
         },
       },
       {
         $group: {
-          _id: "$requestorOrganizationId",
+          _id: "$requestorBusinessId",
           revenueAmount: {
             $sum: {
               $ifNull: ["$price.paidAmount", { $ifNull: ["$price.amount", 0] }],
@@ -445,7 +443,7 @@ export async function getSalesmanDashboard(req, res) {
         const commissionAmount = roundMoney(revenueAmount * rate);
 
         return {
-          organizationId: idStr,
+          businessId: idStr,
           name: orgNameById.get(idStr) || "",
           monthRevenueAmount: revenueAmount,
           monthOrderCount: orderCount,

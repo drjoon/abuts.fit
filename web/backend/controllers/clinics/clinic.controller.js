@@ -1,11 +1,23 @@
 import Clinic from "../../models/clinic.model.js";
-import ImplantPreset from "../../models/implantPreset.model.js";
+import ClinicImplantPreset from "../../models/clinicImplantPreset.model.js";
+
+function getBusinessId(req) {
+  return String(req.user?.businessId || "").trim();
+}
 
 // GET /api/clinics
 export async function getClinics(req, res) {
   try {
+    const businessId = getBusinessId(req);
+    if (!businessId) {
+      return res.status(403).json({
+        success: false,
+        message: "사업자 정보가 설정되지 않았습니다.",
+      });
+    }
+
     const clinics = await Clinic.find({
-      requestor: req.user._id,
+      businessId,
       isActive: true,
     })
       .sort({ name: 1 })
@@ -24,6 +36,14 @@ export async function getClinics(req, res) {
 // POST /api/clinics
 export async function createClinic(req, res) {
   try {
+    const businessId = getBusinessId(req);
+    if (!businessId) {
+      return res.status(403).json({
+        success: false,
+        message: "사업자 정보가 설정되지 않았습니다.",
+      });
+    }
+
     const { name, memo } = req.body || {};
 
     if (!name || !name.trim()) {
@@ -36,7 +56,7 @@ export async function createClinic(req, res) {
     const trimmed = name.trim();
 
     const exists = await Clinic.findOne({
-      requestor: req.user._id,
+      businessId,
       name: trimmed,
       isActive: true,
     });
@@ -49,7 +69,7 @@ export async function createClinic(req, res) {
     }
 
     const clinic = await Clinic.create({
-      requestor: req.user._id,
+      businessId,
       name: trimmed,
       memo: memo || "",
     });
@@ -67,12 +87,20 @@ export async function createClinic(req, res) {
 // PATCH /api/clinics/:id
 export async function updateClinic(req, res) {
   try {
+    const businessId = getBusinessId(req);
+    if (!businessId) {
+      return res.status(403).json({
+        success: false,
+        message: "사업자 정보가 설정되지 않았습니다.",
+      });
+    }
+
     const { id } = req.params;
     const { name, memo } = req.body || {};
 
     const clinic = await Clinic.findOne({
       _id: id,
-      requestor: req.user._id,
+      businessId,
     });
 
     if (!clinic || !clinic.isActive) {
@@ -86,7 +114,7 @@ export async function updateClinic(req, res) {
       const trimmed = name.trim();
       const exists = await Clinic.findOne({
         _id: { $ne: clinic._id },
-        requestor: req.user._id,
+        businessId,
         name: trimmed,
         isActive: true,
       });
@@ -118,11 +146,19 @@ export async function updateClinic(req, res) {
 // DELETE /api/clinics/:id
 export async function deleteClinic(req, res) {
   try {
+    const businessId = getBusinessId(req);
+    if (!businessId) {
+      return res.status(403).json({
+        success: false,
+        message: "사업자 정보가 설정되지 않았습니다.",
+      });
+    }
+
     const { id } = req.params;
 
     const clinic = await Clinic.findOne({
       _id: id,
-      requestor: req.user._id,
+      businessId,
     });
 
     if (!clinic || !clinic.isActive) {
@@ -136,10 +172,10 @@ export async function deleteClinic(req, res) {
     await clinic.save();
 
     // 연결된 프리셋도 비활성화 (soft delete 대신 전체 삭제해도 무방)
-    await ImplantPreset.updateMany(
-      { clinic: clinic._id },
-      { $set: { isDefault: false } },
-    );
+    await ClinicImplantPreset.deleteMany({
+      businessId,
+      clinicName: clinic.name,
+    });
 
     res.json({
       success: true,
@@ -157,11 +193,19 @@ export async function deleteClinic(req, res) {
 // GET /api/clinics/:clinicId/implant-presets
 export async function getImplantPresets(req, res) {
   try {
+    const businessId = getBusinessId(req);
+    if (!businessId) {
+      return res.status(403).json({
+        success: false,
+        message: "사업자 정보가 설정되지 않았습니다.",
+      });
+    }
+
     const { clinicId } = req.params;
 
     const clinic = await Clinic.findOne({
       _id: clinicId,
-      requestor: req.user._id,
+      businessId,
       isActive: true,
     });
 
@@ -172,8 +216,11 @@ export async function getImplantPresets(req, res) {
       });
     }
 
-    const presets = await ImplantPreset.find({ clinic: clinic._id })
-      .sort({ isDefault: -1, label: 1 })
+    const presets = await ClinicImplantPreset.find({
+      businessId,
+      clinicName: clinic.name,
+    })
+      .sort({ useCount: -1, lastUsedAt: -1, manufacturer: 1, brand: 1 })
       .lean();
 
     res.json({ success: true, data: presets });
@@ -189,13 +236,20 @@ export async function getImplantPresets(req, res) {
 // POST /api/clinics/:clinicId/implant-presets
 export async function createImplantPreset(req, res) {
   try {
+    const businessId = getBusinessId(req);
+    if (!businessId) {
+      return res.status(403).json({
+        success: false,
+        message: "사업자 정보가 설정되지 않았습니다.",
+      });
+    }
+
     const { clinicId } = req.params;
-    const { label, manufacturer, brand, family, type, isDefault } =
-      req.body || {};
+    const { manufacturer, brand, family, type } = req.body || {};
 
     const clinic = await Clinic.findOne({
       _id: clinicId,
-      requestor: req.user._id,
+      businessId,
       isActive: true,
     });
 
@@ -206,13 +260,6 @@ export async function createImplantPreset(req, res) {
       });
     }
 
-    if (!label || !label.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "프리셋 이름은 필수입니다.",
-      });
-    }
-
     if (!manufacturer || !brand || !family || !type) {
       return res.status(400).json({
         success: false,
@@ -220,34 +267,28 @@ export async function createImplantPreset(req, res) {
       });
     }
 
-    const trimmedLabel = label.trim();
-
-    const exists = await ImplantPreset.findOne({
-      clinic: clinic._id,
-      label: trimmedLabel,
-    });
-    if (exists) {
-      return res.status(409).json({
-        success: false,
-        message: "이미 동일한 이름의 프리셋이 존재합니다.",
-      });
-    }
-
-    if (isDefault) {
-      await ImplantPreset.updateMany(
-        { clinic: clinic._id },
-        { $set: { isDefault: false } },
-      );
-    }
-
-    const preset = await ImplantPreset.create({
-      clinic: clinic._id,
-      label: trimmedLabel,
+    const exists = await ClinicImplantPreset.findOne({
+      businessId,
+      clinicName: clinic.name,
       manufacturer,
       brand,
       family,
       type,
-      isDefault: Boolean(isDefault),
+    });
+    if (exists) {
+      return res.status(409).json({
+        success: false,
+        message: "이미 동일한 거래 치과 프리셋이 존재합니다.",
+      });
+    }
+
+    const preset = await ClinicImplantPreset.create({
+      businessId,
+      clinicName: clinic.name,
+      manufacturer,
+      brand,
+      family,
+      type,
     });
 
     res.status(201).json({ success: true, data: preset });
@@ -263,36 +304,27 @@ export async function createImplantPreset(req, res) {
 // PATCH /api/implant-presets/:presetId
 export async function updateImplantPreset(req, res) {
   try {
-    const { presetId } = req.params;
-    const { label, manufacturer, brand, family, type, isDefault } =
-      req.body || {};
+    const businessId = getBusinessId(req);
+    if (!businessId) {
+      return res.status(403).json({
+        success: false,
+        message: "사업자 정보가 설정되지 않았습니다.",
+      });
+    }
 
-    const preset = await ImplantPreset.findById(presetId).populate({
-      path: "clinic",
-      match: { requestor: req.user._id, isActive: true },
+    const { presetId } = req.params;
+    const { manufacturer, brand, family, type } = req.body || {};
+
+    const preset = await ClinicImplantPreset.findOne({
+      _id: presetId,
+      businessId,
     });
 
-    if (!preset || !preset.clinic) {
+    if (!preset) {
       return res.status(404).json({
         success: false,
         message: "임플란트 프리셋을 찾을 수 없습니다.",
       });
-    }
-
-    if (typeof label === "string" && label.trim()) {
-      const trimmed = label.trim();
-      const exists = await ImplantPreset.findOne({
-        _id: { $ne: preset._id },
-        clinic: preset.clinic._id,
-        label: trimmed,
-      });
-      if (exists) {
-        return res.status(409).json({
-          success: false,
-          message: "이미 동일한 이름의 프리셋이 존재합니다.",
-        });
-      }
-      preset.label = trimmed;
     }
 
     if (typeof manufacturer === "string" && manufacturer.trim()) {
@@ -306,16 +338,6 @@ export async function updateImplantPreset(req, res) {
     }
     if (typeof type === "string" && type.trim()) {
       preset.type = type.trim();
-    }
-
-    if (typeof isDefault === "boolean") {
-      if (isDefault) {
-        await ImplantPreset.updateMany(
-          { clinic: preset.clinic._id },
-          { $set: { isDefault: false } },
-        );
-      }
-      preset.isDefault = isDefault;
     }
 
     await preset.save();
@@ -333,14 +355,22 @@ export async function updateImplantPreset(req, res) {
 // DELETE /api/implant-presets/:presetId
 export async function deleteImplantPreset(req, res) {
   try {
+    const businessId = getBusinessId(req);
+    if (!businessId) {
+      return res.status(403).json({
+        success: false,
+        message: "사업자 정보가 설정되지 않았습니다.",
+      });
+    }
+
     const { presetId } = req.params;
 
-    const preset = await ImplantPreset.findById(presetId).populate({
-      path: "clinic",
-      match: { requestor: req.user._id, isActive: true },
+    const preset = await ClinicImplantPreset.findOne({
+      _id: presetId,
+      businessId,
     });
 
-    if (!preset || !preset.clinic) {
+    if (!preset) {
       return res.status(404).json({
         success: false,
         message: "임플란트 프리셋을 찾을 수 없습니다.",

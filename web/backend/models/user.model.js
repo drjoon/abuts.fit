@@ -80,11 +80,11 @@ const userSchema = new mongoose.Schema(
       attempts: { type: Number, default: 0 },
       pendingPhoneNumber: { type: String, trim: true, default: "" },
     },
-    organization: {
+    business: {
       type: String,
       trim: true,
     },
-    organizationId: {
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "RequestorOrganization",
       default: null,

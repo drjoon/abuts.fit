@@ -123,7 +123,7 @@ export async function recalcAllSnapshots(req, res) {
 
     const user = req.user;
     if (user?.role === "manufacturer") {
-      const manufacturerOrganization = String(user.organization || "").trim();
+      const manufacturerOrganization = String(user.business || "").trim();
       if (!manufacturerOrganization) {
         return res.status(400).json({
           success: false,

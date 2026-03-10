@@ -46,15 +46,17 @@ export async function adminOverrideWelcomeBonus(req, res) {
 
     const formatted = formatBusinessNumber(businessNumberDigits);
 
-    let organizationId = String(req.body?.organizationId || "").trim();
-    if (organizationId && !Types.ObjectId.isValid(organizationId)) {
+    let businessId = String(
+      req.body?.businessId || req.body?.organizationId || "",
+    ).trim();
+    if (businessId && !Types.ObjectId.isValid(businessId)) {
       return res.status(400).json({
         success: false,
-        message: "유효하지 않은 organizationId입니다.",
+        message: "유효하지 않은 businessId입니다.",
       });
     }
 
-    if (!organizationId) {
+    if (!businessId) {
       const org = await RequestorOrganization.findOne({
         "extracted.businessNumber": formatted,
       })
@@ -66,7 +68,7 @@ export async function adminOverrideWelcomeBonus(req, res) {
           message: "해당 사업자등록번호로 등록된 기공소를 찾을 수 없습니다.",
         });
       }
-      organizationId = String(org._id);
+      businessId = String(org._id);
     }
 
     const userIdRaw = String(req.body?.userId || "").trim();
@@ -77,7 +79,7 @@ export async function adminOverrideWelcomeBonus(req, res) {
       type: "WELCOME_BONUS",
       businessNumber: businessNumberDigits,
       amount,
-      organizationId,
+      organizationId: businessId,
       userId,
       isOverride: true,
       source: "admin",
@@ -90,12 +92,12 @@ export async function adminOverrideWelcomeBonus(req, res) {
       { uniqueKey },
       {
         $setOnInsert: {
-          organizationId,
+          businessId,
           userId,
           type: "BONUS",
           amount,
           refType: "WELCOME_BONUS",
-          refId: organizationId,
+          refId: businessId,
           uniqueKey,
         },
       },
@@ -119,7 +121,7 @@ export async function adminOverrideWelcomeBonus(req, res) {
     );
 
     await emitCreditBalanceUpdatedToOrganization({
-      organizationId,
+      organizationId: businessId,
       balanceDelta: amount,
       reason: "admin_welcome_bonus",
       refId: ledgerDoc?._id || grant._id,
@@ -129,7 +131,7 @@ export async function adminOverrideWelcomeBonus(req, res) {
       success: true,
       data: {
         bonusGrantId: grant._id,
-        organizationId,
+        businessId,
         businessNumber: businessNumberDigits,
         amount,
         creditLedgerId: ledgerDoc?._id || null,

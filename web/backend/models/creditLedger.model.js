@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const creditLedgerSchema = new mongoose.Schema(
   {
-    organizationId: {
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "RequestorOrganization",
       required: true,

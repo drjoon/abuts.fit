@@ -87,6 +87,7 @@ type ApiUser = {
   email?: string;
   originalEmail?: string | null;
   role?: string;
+  business?: string;
   organization?: string;
   active?: boolean;
   approvedAt?: string | null;
@@ -166,7 +167,7 @@ const toUiUser = (u: ApiUser): UiUserRow => {
     email,
     originalEmail,
     role: String(u.role || ""),
-    companyName: String(u.organization || ""),
+    companyName: String(u.business || u.organization || ""),
     status,
     joinDate: formatDate(u.createdAt),
     lastLogin: formatDate(u.lastLogin),

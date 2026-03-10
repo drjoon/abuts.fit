@@ -93,7 +93,7 @@ export const RequestorDashboardPage = () => {
       "requestor-dashboard-summary-page",
       period,
       String(user?.id || ""),
-      String((user as any)?.organizationId || ""),
+      String((user as any)?.businessId || (user as any)?.organizationId || ""),
     ],
     [period, user],
   );
@@ -290,11 +290,15 @@ export const RequestorDashboardPage = () => {
       const payload = evt?.data || {};
       const eventRequest = payload?.request;
       const eventOrgId = String(
-        eventRequest?.requestorOrganizationId ||
+        eventRequest?.requestorBusinessId ||
+          eventRequest?.requestor?.businessId ||
+          eventRequest?.requestorOrganizationId ||
           eventRequest?.requestor?.organizationId ||
           "",
       ).trim();
-      const myOrgId = String((user as any)?.organizationId || "").trim();
+      const myOrgId = String(
+        (user as any)?.businessId || (user as any)?.organizationId || "",
+      ).trim();
       if (!eventOrgId || !myOrgId || eventOrgId !== myOrgId) return;
 
       if (type === "request:stage-changed") {
@@ -463,7 +467,9 @@ export const RequestorDashboardPage = () => {
       clinicName:
         ci.clinicName ||
         request.clinicName ||
+        request.requestor?.business ||
         request.requestor?.organization ||
+        request.requestor?.companyName ||
         "",
       patientName: ci.patientName || request.patientName || "",
       teethText: ci.tooth || request.toothNumber || request.tooth || "",
@@ -478,7 +484,9 @@ export const RequestorDashboardPage = () => {
     setEditingClinicName(
       ci.clinicName ||
         request.clinicName ||
+        request.requestor?.business ||
         request.requestor?.organization ||
+        request.requestor?.companyName ||
         "",
     );
     setEditingPatientName(ci.patientName || request.patientName || "");

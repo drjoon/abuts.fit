@@ -121,7 +121,7 @@ async function completeSignup(req, res) {
     }
 
     user.role = "requestor";
-    user.organization = "";
+    user.business = "";
     user.approvedAt = new Date();
     user.active = true;
 
@@ -215,7 +215,7 @@ async function findOrCreateUserFromSocial({
       referralCode,
       approvedAt: new Date(),
       active: true,
-      organization: "",
+      business: "",
       phoneNumber: "",
       preferences: { language: "ko" },
       social: {
@@ -248,7 +248,7 @@ async function findOrCreateUserFromSocial({
     referralCode,
     approvedAt: new Date(),
     active: true,
-    organization: "",
+    business: "",
     phoneNumber: "",
     preferences: { language: "ko" },
     social: {

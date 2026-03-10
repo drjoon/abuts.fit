@@ -149,9 +149,9 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
     role: "requestor",
     active: true,
     referredByUserId: { $in: salesmanObjectIds },
-    organizationId: { $ne: null },
+    businessId: { $ne: null },
   })
-    .select({ _id: 1, referredByUserId: 1, organizationId: 1 })
+    .select({ _id: 1, referredByUserId: 1, businessId: 1 })
     .lean();
 
   // 직계1 영업자
@@ -175,9 +175,9 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
           role: "requestor",
           active: true,
           referredByUserId: { $in: childSalesmanObjectIds },
-          organizationId: { $ne: null },
+          businessId: { $ne: null },
         })
-          .select({ _id: 1, referredByUserId: 1, organizationId: 1 })
+          .select({ _id: 1, referredByUserId: 1, businessId: 1 })
           .lean();
 
   const leaderIdByChildSalesmanId = new Map(
@@ -190,7 +190,7 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
   const directOrgIdsBySalesmanId = new Map();
   for (const u of directRequestors || []) {
     const sid = String(u?.referredByUserId || "");
-    const orgId = u?.organizationId ? String(u.organizationId) : "";
+    const orgId = u?.businessId ? String(u.businessId) : "";
     if (!sid || !orgId) continue;
     const set = directOrgIdsBySalesmanId.get(sid) || new Set();
     set.add(orgId);
@@ -202,7 +202,7 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
   for (const u of level1Requestors || []) {
     const childSid = String(u?.referredByUserId || "");
     const leaderSid = String(leaderIdByChildSalesmanId.get(childSid) || "");
-    const orgId = u?.organizationId ? String(u.organizationId) : "";
+    const orgId = u?.businessId ? String(u.businessId) : "";
     if (!orgId) continue;
     if (leaderSid) {
       const set = level1OrgIdsBySalesmanId.get(leaderSid) || new Set();
@@ -233,14 +233,14 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
       : await Request.aggregate([
           {
             $match: {
-              requestorOrganizationId: { $in: orgIdsAll },
+              requestorBusinessId: { $in: orgIdsAll },
               "caseInfos.reviewByStage.shipping.status": "APPROVED",
               createdAt: { $gte: rangeStartUtc, $lte: rangeEndUtc },
             },
           },
           {
             $group: {
-              _id: "$requestorOrganizationId",
+              _id: "$requestorBusinessId",
               paidRevenueAmount: {
                 $sum: {
                   $ifNull: [

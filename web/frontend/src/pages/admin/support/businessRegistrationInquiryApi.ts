@@ -10,15 +10,18 @@ export type BusinessRegistrationInquiry = {
     name?: string;
     email?: string;
     role?: string;
+    business?: string;
     organization?: string;
   } | null;
   userSnapshot?: {
     name?: string;
     email?: string;
     role?: string;
+    business?: string;
     organization?: string;
   } | null;
   organizationType?: string | null;
+  businessId?: string | null;
   organizationId?: string | null;
   status?: "open" | "resolved";
   adminNote?: string;

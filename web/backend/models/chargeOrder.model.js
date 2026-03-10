@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const chargeOrderSchema = new mongoose.Schema(
   {
-    organizationId: {
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "RequestorOrganization",
       required: true,
@@ -65,7 +65,7 @@ const chargeOrderSchema = new mongoose.Schema(
     },
     note: { type: String, default: "" },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 chargeOrderSchema.index({

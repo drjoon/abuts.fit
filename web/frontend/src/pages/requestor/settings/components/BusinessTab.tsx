@@ -236,8 +236,7 @@ export const BusinessTab = ({
     address?: string;
   } | null>(null);
   const [myJoinRequests, setMyJoinRequests] = useState<
-    | { organizationId: string; organizationName: string; status: string }[]
-    | null
+    { businessId: string; organizationName: string; status: string }[] | null
   >(null);
   const [joinRequestsLoaded, setJoinRequestsLoaded] = useState(false);
   const [joinLoading, setJoinLoading] = useState(false);
@@ -370,7 +369,9 @@ export const BusinessTab = ({
         }
         suppressPrefillRef.current = false;
 
-        const orgName = String(data?.organization?.name || "").trim();
+        const orgName = String(
+          data?.business?.name || data?.organization?.name || "",
+        ).trim();
         const ex = data?.extracted || {};
         setBusinessData((prev) => {
           const nextBusinessNumber = formatBusinessNumberInput(
@@ -620,10 +621,10 @@ export const BusinessTab = ({
     setJoinRequestsLoaded(true);
   };
 
-  const handleCancelJoinRequest = async (organizationId: string) => {
+  const handleCancelJoinRequest = async (businessId: string) => {
     await handleJoinOrLeave({
       token,
-      organizationId,
+      organizationId: businessId,
       action: "cancel",
       organizationType,
       mockHeaders,
@@ -724,10 +725,10 @@ export const BusinessTab = ({
     }
   };
 
-  const handleLeaveOrganization = async (organizationId: string) => {
+  const handleLeaveOrganization = async (businessId: string) => {
     await handleJoinOrLeave({
       token,
-      organizationId,
+      organizationId: businessId,
       action: "leave",
       organizationType,
       mockHeaders,
@@ -787,7 +788,9 @@ export const BusinessTab = ({
   }, [allowLocalDraft, authUserId]);
 
   const currentOrgName = useMemo(() => {
-    const fromUser = String((user as any)?.organization || "").trim();
+    const fromUser = String(
+      (user as any)?.business || (user as any)?.organization || "",
+    ).trim();
     const fromState = String(businessData.companyName || "").trim();
     const fromProps = String(userData?.companyName || "").trim();
     return fromUser || fromState || fromProps;

@@ -172,7 +172,7 @@ export const AdminRequestMonitoring = () => {
       (requestor.name || "")
         .toLowerCase()
         .includes(searchQuery.toLowerCase()) ||
-      (requestor.organization || "")
+      (requestor.business || requestor.organization || "")
         .toLowerCase()
         .includes(searchQuery.toLowerCase());
 
@@ -409,7 +409,9 @@ export const AdminRequestMonitoring = () => {
                           <span className="flex items-center gap-1">
                             <User className="h-3 w-3" />
                             {request.requestor?.name} (
-                            {request.requestor?.organization})
+                            {request.requestor?.business ||
+                              request.requestor?.organization}
+                            )
                           </span>
                           {request.manufacturer &&
                             request.manufacturer !== "-" && (

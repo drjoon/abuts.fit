@@ -247,7 +247,7 @@ export async function createOrGetChatRoom(req, res) {
     // 권한 검증: Admin이 아닌 경우 Admin과만 채팅방 생성 가능
     if (currentUserRole !== "admin") {
       const otherParticipants = allParticipants.filter(
-        (id) => id !== currentUserId.toString()
+        (id) => id !== currentUserId.toString(),
       );
 
       const otherUsers = await User.find({
@@ -266,7 +266,7 @@ export async function createOrGetChatRoom(req, res) {
 
     // ObjectId로 변환
     const participantObjectIds = allParticipants.map(
-      (id) => new Types.ObjectId(id)
+      (id) => new Types.ObjectId(id),
     );
 
     // 기존 채팅방 찾기 (같은 참여자 조합)
@@ -347,7 +347,7 @@ export async function getChatMessages(req, res) {
     }
 
     const isParticipant = room.participants.some(
-      (p) => p.toString() === userId.toString()
+      (p) => p.toString() === userId.toString(),
     );
 
     if (!isParticipant && req.user.role !== "admin") {
@@ -381,7 +381,7 @@ export async function getChatMessages(req, res) {
             readAt: new Date(),
           },
         },
-      }
+      },
     );
 
     res.status(200).json({
@@ -442,7 +442,7 @@ export async function sendChatMessage(req, res) {
     }
 
     const isParticipant = room.participants.some(
-      (p) => p.toString() === userId.toString()
+      (p) => p.toString() === userId.toString(),
     );
 
     if (!isParticipant && userRole !== "admin") {
@@ -508,7 +508,7 @@ export async function updateChatRoomStatus(req, res) {
     const room = await ChatRoom.findByIdAndUpdate(
       roomId,
       { status },
-      { new: true }
+      { new: true },
     )
       .populate("participants", "name email role organization")
       .populate("relatedRequestId", "requestId title");
@@ -578,7 +578,7 @@ export async function getAllChatRooms(req, res) {
           totalMessages,
           lastMessage,
         };
-      })
+      }),
     );
 
     res.status(200).json({
@@ -625,7 +625,7 @@ export async function searchUsers(req, res) {
       $or: [
         { name: { $regex: query, $options: "i" } },
         { email: { $regex: query, $options: "i" } },
-        { organization: { $regex: query, $options: "i" } },
+        { business: { $regex: query, $options: "i" } },
       ],
     };
 

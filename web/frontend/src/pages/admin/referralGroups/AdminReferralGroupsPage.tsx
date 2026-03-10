@@ -113,7 +113,9 @@ type ApiTreeNode = {
   role?: "requestor" | "salesman";
   name?: string;
   email?: string;
+  business?: string;
   organization?: string;
+  businessId?: string;
   organizationId?: string;
   active?: boolean;
   createdAt?: string;
@@ -186,7 +188,11 @@ const TreeNode = ({
         <div className="flex items-center justify-between gap-2 rounded-md border border-transparent hover:border-border hover:bg-muted/40 px-2 py-1">
           <div className="min-w-0">
             <div className="truncate text-sm font-medium">
-              {node.organization || node.name || node.email || node._id}
+              {node.business ||
+                node.organization ||
+                node.name ||
+                node.email ||
+                node._id}
             </div>
             <div className="truncate text-xs text-muted-foreground">
               {node.email || ""}
@@ -306,7 +312,7 @@ export default function AdminReferralGroupsPage() {
       }
       if (!q) return true;
       const hay =
-        `${leader.organization || ""} ${leader.name || ""} ${leader.email || ""}`
+        `${leader.business || leader.organization || ""} ${leader.name || ""} ${leader.email || ""}`
           .trim()
           .toLowerCase();
       return hay.includes(q);

@@ -17,7 +17,7 @@ export interface User {
   companyName?: string;
   referralCode?: string;
   approvedAt?: string | null;
-  organizationId?: string | null;
+  businessId?: string | null;
   onboardingWizardCompleted?: boolean;
   salesmanPayoutAccount?: {
     bankName: string;
@@ -39,10 +39,14 @@ const normalizeApiUser = (u: any): User | null => {
     role: u.role as UserRole,
     profileImage:
       typeof u.profileImage === "string" ? u.profileImage : undefined,
-    companyName: String(u.organization || u.companyName || ""),
+    companyName: String(u.business || u.organization || u.companyName || ""),
     referralCode: String(u.referralCode || ""),
     approvedAt: u.approvedAt ? String(u.approvedAt) : null,
-    organizationId: u.organizationId ? String(u.organizationId) : null,
+    businessId: u.businessId
+      ? String(u.businessId)
+      : u.organizationId
+        ? String(u.organizationId)
+        : null,
     onboardingWizardCompleted: Boolean(u.onboardingWizardCompleted),
     salesmanPayoutAccount:
       u.role === "salesman"
@@ -184,10 +188,16 @@ export const useAuthStore = create<AuthState>((set, get) => {
           role: u.role as UserRole,
           profileImage:
             typeof u.profileImage === "string" ? u.profileImage : undefined,
-          companyName: String(u.organization || u.companyName || ""),
+          companyName: String(
+            u.business || u.organization || u.companyName || "",
+          ),
           referralCode: String(u.referralCode || ""),
           approvedAt: u.approvedAt ? String(u.approvedAt) : null,
-          organizationId: u.organizationId ? String(u.organizationId) : null,
+          businessId: u.businessId
+            ? String(u.businessId)
+            : u.organizationId
+              ? String(u.organizationId)
+              : null,
           onboardingWizardCompleted: Boolean(u.onboardingWizardCompleted),
         };
 

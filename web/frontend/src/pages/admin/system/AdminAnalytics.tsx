@@ -27,6 +27,7 @@ type PricingUserRow = {
     _id?: string;
     name?: string;
     email?: string;
+    business?: string;
     organization?: string;
     role?: string;
     createdAt?: string;
@@ -197,7 +198,7 @@ export const AdminAnalytics = () => {
                         ) : null}
                       </td>
                       <td className="py-2 pr-4">
-                        {r.user?.organization || "-"}
+                        {r.user?.business || r.user?.organization || "-"}
                       </td>
                       <td className="py-2 pr-4">
                         {(r.orders || 0).toLocaleString()}건

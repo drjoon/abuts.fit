@@ -80,7 +80,7 @@ export async function getOrganizationCreditBalanceBreakdown({
   organizationId,
   session,
 }) {
-  const rows = await CreditLedger.find({ organizationId })
+  const rows = await CreditLedger.find({ businessId: organizationId })
     .sort({ createdAt: 1, _id: 1 })
     .select({ type: 1, amount: 1 })
     .session(session || null)

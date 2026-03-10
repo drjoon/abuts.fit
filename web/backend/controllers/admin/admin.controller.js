@@ -147,8 +147,8 @@ export async function getReferralGroups(req, res) {
         requestorRole: 1,
         name: 1,
         email: 1,
-        organization: 1,
-        organizationId: 1,
+        business: 1,
+        businessId: 1,
         active: 1,
         createdAt: 1,
         approvedAt: 1,
@@ -175,12 +175,10 @@ export async function getReferralGroups(req, res) {
         },
         { $group: { _id: "$referredByUserId", count: { $sum: 1 } } },
       ]),
-      PricingReferralStatsSnapshot.find({
-        ownerUserId: { $in: leaderIds },
-        ymd,
-      })
+      PricingReferralStatsSnapshot.find({ ymd })
         .select({
-          ownerUserId: 1,
+          businessId: 1,
+          leaderUserId: 1,
           groupMemberCount: 1,
           groupTotalOrders: 1,
           computedAt: 1,
@@ -242,43 +240,53 @@ export async function getReferralGroups(req, res) {
         ])
       : [];
 
-    const requestorLeaderOrgIds = (leaders || [])
+    const requestorLeaderBusinessIds = (leaders || [])
       .filter((l) => String(l?.role || "") === "requestor")
-      .map((l) => String(l?.organizationId || ""))
+      .map((l) => String(l?.businessId || ""))
       .filter(Boolean);
-    const requestorLeaderOrgObjectIds = requestorLeaderOrgIds
+    const requestorLeaderBusinessObjectIds = requestorLeaderBusinessIds
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const requestorOrgRows = requestorLeaderOrgObjectIds.length
-      ? await Request.aggregate([
-          {
-            $match: {
-              requestorOrganizationId: { $in: requestorLeaderOrgObjectIds },
-              "caseInfos.reviewByStage.shipping.status": "APPROVED",
-              createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
-            },
-          },
-          {
-            $group: {
-              _id: "$requestorOrganizationId",
-              orderCount: { $sum: 1 },
-              revenueAmount: {
-                $sum: {
-                  $ifNull: [
-                    "$price.paidAmount",
-                    { $ifNull: ["$price.amount", 0] },
-                  ],
+    const [requestorBusinessRows, requestorBusinessSnapshots] =
+      await Promise.all([
+        requestorLeaderBusinessObjectIds.length
+          ? Request.aggregate([
+              {
+                $match: {
+                  requestorBusinessId: {
+                    $in: requestorLeaderBusinessObjectIds,
+                  },
+                  "caseInfos.reviewByStage.shipping.status": "APPROVED",
+                  createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
                 },
               },
-              bonusAmount: {
-                $sum: { $ifNull: ["$price.bonusAmount", 0] },
+              {
+                $group: {
+                  _id: "$requestorBusinessId",
+                  orderCount: { $sum: 1 },
+                  revenueAmount: {
+                    $sum: {
+                      $ifNull: [
+                        "$price.paidAmount",
+                        { $ifNull: ["$price.amount", 0] },
+                      ],
+                    },
+                  },
+                  bonusAmount: {
+                    $sum: { $ifNull: ["$price.bonusAmount", 0] },
+                  },
+                },
               },
-            },
-          },
-        ])
-      : [];
-    const requestorOrgStatsByOrgId = new Map(
-      (requestorOrgRows || []).map((r) => [
+            ])
+          : [],
+        Promise.resolve(
+          ((requestorBusinessSnapshots) => requestorBusinessSnapshots)(
+            (snapshots || []).filter((row) => String(row?.businessId || "")),
+          ),
+        ),
+      ]);
+    const requestorBusinessStatsByBusinessId = new Map(
+      (requestorBusinessRows || []).map((r) => [
         String(r._id),
         {
           orderCount: Number(r.orderCount || 0),
@@ -306,6 +314,12 @@ export async function getReferralGroups(req, res) {
         Number(r.bonusAmount || 0),
       ]),
     );
+    const requestorBusinessSnapshotByBusinessId = new Map(
+      (requestorBusinessSnapshots || []).map((row) => [
+        String(row?.businessId || ""),
+        row,
+      ]),
+    );
 
     const childIdsByLeaderId = new Map();
     for (const u of directChildren || []) {
@@ -325,26 +339,31 @@ export async function getReferralGroups(req, res) {
     const groups = leaders.map((leader) => {
       const directCount = directCountByLeaderId.get(String(leader._id)) || 0;
 
-      const snapshot = (snapshots || []).find(
-        (s) => String(s.ownerUserId) === String(leader._id),
-      );
+      const leaderBusinessId = String(leader?.businessId || "");
+      const snapshot =
+        (String(leader?.role || "") === "requestor" && leaderBusinessId
+          ? requestorBusinessSnapshotByBusinessId.get(leaderBusinessId)
+          : null) ||
+        (snapshots || []).find(
+          (s) => String(s.leaderUserId) === String(leader._id),
+        );
       const snapshotGroupMemberCount = Number(snapshot?.groupMemberCount || 0);
 
       const role = String(leader?.role || "");
       const fallbackChildIds = childIdsByLeaderId.get(String(leader._id)) || [];
 
-      // 의뢰자 그룹: 조직(organizationId) 기준 집계(조직당 bonus 50,000원 정책과 정합)
+      // 의뢰자 그룹: 사업자(businessId) 기준 집계
       let groupTotalOrders = 0;
       let groupRevenueAmount = 0;
       let groupBonusAmount = 0;
       if (role === "requestor") {
-        const orgIdStr = String(leader?.organizationId || "");
-        const orgStats = orgIdStr
-          ? requestorOrgStatsByOrgId.get(orgIdStr)
+        const businessIdStr = String(leader?.businessId || "");
+        const businessStats = businessIdStr
+          ? requestorBusinessStatsByBusinessId.get(businessIdStr)
           : null;
-        groupTotalOrders = Number(orgStats?.orderCount || 0);
-        groupRevenueAmount = Number(orgStats?.revenueAmount || 0);
-        groupBonusAmount = Number(orgStats?.bonusAmount || 0);
+        groupTotalOrders = Number(businessStats?.orderCount || 0);
+        groupRevenueAmount = Number(businessStats?.revenueAmount || 0);
+        groupBonusAmount = Number(businessStats?.bonusAmount || 0);
       } else {
         const fallbackOrders = fallbackChildIds.reduce((acc, cid) => {
           return acc + Number(ordersByUserId.get(String(cid)) || 0);
@@ -504,7 +523,7 @@ export async function getReferralGroups(req, res) {
           role: "requestor",
           active: true,
         })
-          .select({ _id: 1, referredByUserId: 1, organizationId: 1 })
+          .select({ _id: 1, referredByUserId: 1, businessId: 1 })
           .lean()
       : [];
 
@@ -532,35 +551,37 @@ export async function getReferralGroups(req, res) {
           role: "requestor",
           active: true,
         })
-          .select({ _id: 1, referredByUserId: 1, organizationId: 1 })
+          .select({ _id: 1, referredByUserId: 1, businessId: 1 })
           .lean()
       : [];
 
-    // 수수료/주문 집계는 조직 단위(organizationId)로 통일한다.
-    const commissionOrgIdStrings = [
+    // 수수료/주문 집계는 사업자 단위(businessId)로 통일한다.
+    const commissionBusinessIdStrings = [
       ...(directRequestors || [])
-        .map((u) => String(u?.organizationId || ""))
+        .map((u) => String(u?.businessId || ""))
         .filter(Boolean),
       ...(level1Requestors || [])
-        .map((u) => String(u?.organizationId || ""))
+        .map((u) => String(u?.businessId || ""))
         .filter(Boolean),
     ];
-    const commissionOrgObjectIds = Array.from(new Set(commissionOrgIdStrings))
+    const commissionBusinessObjectIds = Array.from(
+      new Set(commissionBusinessIdStrings),
+    )
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
 
-    const commissionOrgRows = commissionOrgObjectIds.length
+    const commissionOrgRows = commissionBusinessObjectIds.length
       ? await Request.aggregate([
           {
             $match: {
-              requestorOrganizationId: { $in: commissionOrgObjectIds },
+              requestorBusinessId: { $in: commissionBusinessObjectIds },
               "caseInfos.reviewByStage.shipping.status": "APPROVED",
               createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
             },
           },
           {
             $group: {
-              _id: "$requestorOrganizationId",
+              _id: "$requestorBusinessId",
               orderCount: { $sum: 1 },
               revenueAmount: {
                 $sum: {
@@ -591,7 +612,7 @@ export async function getReferralGroups(req, res) {
     const requestorOrgIdsBySalesmanLeaderId = new Map();
     for (const u of directRequestors || []) {
       const leaderId = String(u?.referredByUserId || "");
-      const orgId = String(u?.organizationId || "");
+      const orgId = String(u?.businessId || "");
       if (!leaderId || !orgId) continue;
       const arr = requestorOrgIdsBySalesmanLeaderId.get(leaderId) || [];
       arr.push(orgId);
@@ -614,7 +635,7 @@ export async function getReferralGroups(req, res) {
       const leaderId = String(
         leaderIdByReferredSalesmanId.get(refSalesmanId) || "",
       );
-      const orgId = String(u?.organizationId || "");
+      const orgId = String(u?.businessId || "");
       if (!orgId) continue;
       if (leaderId) {
         const arr = level1RequestorOrgIdsBySalesmanLeaderId.get(leaderId) || [];
@@ -925,8 +946,8 @@ async function getReferralGroupTree(req, res) {
         role: 1,
         name: 1,
         email: 1,
-        organization: 1,
-        organizationId: 1,
+        business: 1,
+        businessId: 1,
         active: 1,
         createdAt: 1,
         approvedAt: 1,
@@ -963,8 +984,8 @@ async function getReferralGroupTree(req, res) {
         role: 1,
         name: 1,
         email: 1,
-        organization: 1,
-        organizationId: 1,
+        business: 1,
+        businessId: 1,
         active: 1,
         createdAt: 1,
         approvedAt: 1,
@@ -1026,14 +1047,18 @@ async function getReferralGroupTree(req, res) {
     }
 
     const ymd = getTodayYmdInKst();
+    const leaderBusinessId = String(leader?.businessId || "");
+    const snapshotBusinessObjectId =
+      leaderBusinessId && Types.ObjectId.isValid(leaderBusinessId)
+        ? new Types.ObjectId(leaderBusinessId)
+        : new Types.ObjectId(String(leader._id));
     const snapshot = await PricingReferralStatsSnapshot.findOne({
-      $or: [
-        { ownerUserId: leader._id, ymd },
-        { groupLeaderId: leader._id, ymd, ownerUserId: null },
-      ],
+      businessId: snapshotBusinessObjectId,
+      ymd,
     })
       .select({
-        ownerUserId: 1,
+        businessId: 1,
+        leaderUserId: 1,
         groupMemberCount: 1,
         groupTotalOrders: 1,
         computedAt: 1,
@@ -1047,8 +1072,8 @@ async function getReferralGroupTree(req, res) {
       role: u.role,
       name: u.name,
       email: u.email,
-      organization: u.organization,
-      organizationId: u.organizationId,
+      business: u.business,
+      businessId: u.businessId,
       active: u.active,
       createdAt: u.createdAt,
       approvedAt: u.approvedAt,
@@ -1064,12 +1089,12 @@ async function getReferralGroupTree(req, res) {
 
     // 영업자 노드용 수수료 계산(지난달, 유료 매출 기준)
     const requestorNodes = nodes.filter(
-      (n) => String(n?.role || "") === "requestor" && n.organizationId,
+      (n) => String(n?.role || "") === "requestor" && n.businessId,
     );
     const orgIdsInGroup = Array.from(
       new Set(
         (requestorNodes || [])
-          .map((n) => String(n.organizationId || ""))
+          .map((n) => String(n.businessId || ""))
           .filter(Boolean),
       ),
     );
@@ -1081,14 +1106,14 @@ async function getReferralGroupTree(req, res) {
       ? await Request.aggregate([
           {
             $match: {
-              requestorOrganizationId: { $in: orgObjectIdsInGroup },
+              requestorBusinessId: { $in: orgObjectIdsInGroup },
               "caseInfos.reviewByStage.shipping.status": "APPROVED",
               createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
             },
           },
           {
             $group: {
-              _id: "$requestorOrganizationId",
+              _id: "$requestorBusinessId",
               revenueAmount: {
                 $sum: {
                   $ifNull: [
@@ -1124,7 +1149,7 @@ async function getReferralGroupTree(req, res) {
     // 의뢰자 노드: revenue 및 commissionAmount 설정
     for (const n of nodes) {
       if (String(n?.role || "") !== "requestor") continue;
-      const oid = String(n.organizationId || "");
+      const oid = String(n.businessId || "");
       if (!oid) continue;
       const rev = revenueByOrgIdInGroup.get(oid);
       if (!rev) continue;
@@ -1142,7 +1167,7 @@ async function getReferralGroupTree(req, res) {
       );
 
       const directRevenue = directRequestors.reduce((acc, r) => {
-        const oid = String(r.organizationId || "");
+        const oid = String(r.businessId || "");
         if (!oid) return acc;
         return acc + Number(revenueByOrgIdInGroup.get(oid)?.paid || 0);
       }, 0);
@@ -1275,9 +1300,9 @@ async function getReferralGroupTree(req, res) {
           const isOwner = idStr === String(leader._id);
           const isDirectChild = directChildIdSet.has(idStr);
           if (!isOwner && !isDirectChild) return false;
-          return String(n?.role || "") === "requestor" && n.organizationId;
+          return String(n?.role || "") === "requestor" && n.businessId;
         })
-        .map((n) => String(n.organizationId || ""))
+        .map((n) => String(n.businessId || ""))
         .filter(Boolean),
     );
     const computedTierPaidRevenue = Array.from(computedTierOrgIdSet).reduce(
@@ -1295,12 +1320,18 @@ async function getReferralGroupTree(req, res) {
     tree.tierBonusRevenue = Math.round(computedTierBonusRevenue);
 
     if (!snapshot) {
+      const tierSnapshotBusinessId =
+        String(leader?.role || "") === "requestor" &&
+        leaderBusinessId &&
+        Types.ObjectId.isValid(leaderBusinessId)
+          ? new Types.ObjectId(leaderBusinessId)
+          : new Types.ObjectId(String(leader._id));
       await PricingReferralStatsSnapshot.findOneAndUpdate(
-        { groupLeaderId: leader._id, ymd },
+        { businessId: tierSnapshotBusinessId, ymd },
         {
           $set: {
-            ownerUserId: leader._id,
-            groupLeaderId: leader._id,
+            businessId: tierSnapshotBusinessId,
+            leaderUserId: leader._id,
             groupMemberCount: computedTierMemberCount,
             groupTotalOrders: computedTierTotalOrders,
             computedAt: now,
@@ -1423,7 +1454,7 @@ export async function recalcReferralSnapshot() {
     $or: [{ role: "salesman" }, { role: "requestor", requestorRole: "owner" }],
     active: true,
   })
-    .select({ _id: 1, role: 1, organizationId: 1 })
+    .select({ _id: 1, role: 1, businessId: 1 })
     .lean();
 
   if (!leaders.length) {
@@ -1438,7 +1469,7 @@ export async function recalcReferralSnapshot() {
     role: { $in: ["requestor", "salesman"] },
     active: true,
   })
-    .select({ _id: 1, referredByUserId: 1, organizationId: 1, role: 1 })
+    .select({ _id: 1, referredByUserId: 1, businessId: 1, role: 1 })
     .lean();
 
   const childIdsByLeaderId = new Map();
@@ -1472,33 +1503,33 @@ export async function recalcReferralSnapshot() {
     requestRows.map((r) => [String(r._id), Number(r.orderCount || 0)]),
   );
 
-  const requestorLeaderOrgIds = leaders
-    .filter((l) => String(l.role) === "requestor" && l.organizationId)
-    .map((l) => String(l.organizationId));
-  const requestorLeaderOrgObjectIds = requestorLeaderOrgIds
+  const requestorLeaderBusinessIds = leaders
+    .filter((l) => String(l.role) === "requestor" && l.businessId)
+    .map((l) => String(l.businessId));
+  const requestorLeaderBusinessObjectIds = requestorLeaderBusinessIds
     .filter((id) => Types.ObjectId.isValid(id))
     .map((id) => new Types.ObjectId(id));
 
-  const orgOrderRows = requestorLeaderOrgObjectIds.length
+  const businessOrderRows = requestorLeaderBusinessObjectIds.length
     ? await Request.aggregate([
         {
           $match: {
-            requestorOrganizationId: { $in: requestorLeaderOrgObjectIds },
+            requestorBusinessId: { $in: requestorLeaderBusinessObjectIds },
             "caseInfos.reviewByStage.shipping.status": "APPROVED",
             createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
           },
         },
         {
           $group: {
-            _id: "$requestorOrganizationId",
+            _id: "$requestorBusinessId",
             orderCount: { $sum: 1 },
           },
         },
       ])
     : [];
 
-  const ordersByOrgId = new Map(
-    orgOrderRows.map((r) => [String(r._id), Number(r.orderCount || 0)]),
+  const ordersByBusinessId = new Map(
+    businessOrderRows.map((r) => [String(r._id), Number(r.orderCount || 0)]),
   );
 
   let upsertCount = 0;
@@ -1509,9 +1540,16 @@ export async function recalcReferralSnapshot() {
     const memberCount = 1 + children.length;
 
     let groupTotalOrders = 0;
+    let snapshotBusinessId = null;
     if (String(leader.role) === "requestor") {
-      const orgId = String(leader.organizationId || "");
-      groupTotalOrders = orgId ? ordersByOrgId.get(orgId) || 0 : 0;
+      const businessId = String(leader.businessId || "");
+      groupTotalOrders = businessId
+        ? ordersByBusinessId.get(businessId) || 0
+        : 0;
+      snapshotBusinessId =
+        businessId && Types.ObjectId.isValid(businessId)
+          ? new Types.ObjectId(businessId)
+          : null;
     } else {
       const leaderOrders = ordersByUserId.get(lid) || 0;
       const childOrders = children.reduce(
@@ -1519,21 +1557,24 @@ export async function recalcReferralSnapshot() {
         0,
       );
       groupTotalOrders = leaderOrders + childOrders;
+      snapshotBusinessId = new Types.ObjectId(String(leader._id));
     }
 
-    await PricingReferralStatsSnapshot.findOneAndUpdate(
-      { groupLeaderId: leader._id, ymd },
-      {
-        $set: {
-          ownerUserId: leader._id,
-          groupLeaderId: leader._id,
-          groupMemberCount: memberCount,
-          groupTotalOrders,
-          computedAt,
+    if (snapshotBusinessId) {
+      await PricingReferralStatsSnapshot.findOneAndUpdate(
+        { businessId: snapshotBusinessId, ymd },
+        {
+          $set: {
+            businessId: snapshotBusinessId,
+            leaderUserId: leader._id,
+            groupMemberCount: memberCount,
+            groupTotalOrders,
+            computedAt,
+          },
         },
-      },
-      { upsert: true, new: false },
-    );
+        { upsert: true, new: false },
+      );
+    }
     upsertCount++;
   }
 
@@ -1922,7 +1963,7 @@ export async function adminOverrideOrganizationVerification(req, res) {
     return res.json({
       success: true,
       data: {
-        organizationId: org._id,
+        businessId: org._id,
         verification: org.verification,
       },
     });
@@ -1998,7 +2039,7 @@ async function getPricingStatsByUser(req, res) {
       .map((r) => r._id)
       .filter((id) => Types.ObjectId.isValid(id));
     const users = await User.find({ _id: { $in: userIds } })
-      .select({ name: 1, email: 1, organization: 1, role: 1, createdAt: 1 })
+      .select({ name: 1, email: 1, business: 1, role: 1, createdAt: 1 })
       .lean();
     const userMap = new Map(users.map((u) => [u._id.toString(), u]));
 
@@ -2014,7 +2055,7 @@ async function getPricingStatsByUser(req, res) {
               _id: user._id,
               name: user.name,
               email: user.email,
-              organization: user.organization,
+              business: user.business,
               role: user.role,
               createdAt: user.createdAt,
             }
@@ -2067,7 +2108,7 @@ async function getAllUsers(req, res) {
         { name: { $regex: req.query.search, $options: "i" } },
         { email: { $regex: req.query.search, $options: "i" } },
         { originalEmail: { $regex: req.query.search, $options: "i" } },
-        { organization: { $regex: req.query.search, $options: "i" } },
+        { business: { $regex: req.query.search, $options: "i" } },
       ];
     }
 
@@ -2092,11 +2133,11 @@ async function getAllUsers(req, res) {
     const userIds = users
       .map((u) => u?._id)
       .filter((id) => Types.ObjectId.isValid(String(id)));
-    const organizationIds = users
-      .map((u) => u?.organizationId)
+    const businessIds = users
+      .map((u) => u?.businessId)
       .filter((id) => Types.ObjectId.isValid(String(id)));
-    const organizations = organizationIds.length
-      ? await RequestorOrganization.find({ _id: { $in: organizationIds } })
+    const businesses = businessIds.length
+      ? await RequestorOrganization.find({ _id: { $in: businessIds } })
           .select({
             name: 1,
             businessLicense: 1,
@@ -2105,8 +2146,8 @@ async function getAllUsers(req, res) {
           })
           .lean()
       : [];
-    const organizationMap = new Map(
-      organizations.map((org) => [String(org._id), org]),
+    const businessMap = new Map(
+      businesses.map((org) => [String(org._id), org]),
     );
 
     const requestCounts = await Request.aggregate([
@@ -2128,16 +2169,16 @@ async function getAllUsers(req, res) {
     );
 
     const usersWithStats = users.map((u) => {
-      const organization = organizationMap.get(String(u.organizationId || ""));
+      const businessInfo = businessMap.get(String(u.businessId || ""));
       const hasLicense =
-        Boolean(organization?.businessLicense?.s3Key) ||
-        Boolean(organization?.businessLicense?.fileId);
+        Boolean(businessInfo?.businessLicense?.s3Key) ||
+        Boolean(businessInfo?.businessLicense?.fileId);
       const unresolvedBusiness =
-        hasLicense && organization?.verification?.verified === false;
+        hasLicense && businessInfo?.verification?.verified === false;
       return {
         ...u,
         totalRequests: countMap.get(String(u._id)) || 0,
-        organizationInfo: organization || null,
+        businessInfo: businessInfo || null,
         unresolvedBusiness,
       };
     });
@@ -2173,7 +2214,7 @@ async function createUser(req, res) {
       .trim()
       .toLowerCase();
     const role = String(req.body?.role || "requestor").trim();
-    const organization = String(req.body?.organization || "").trim();
+    const business = String(req.body?.business || "").trim();
     const passwordRaw = String(req.body?.password || "");
     const autoActivate = Boolean(req.body?.autoActivate);
 
@@ -2210,7 +2251,7 @@ async function createUser(req, res) {
       email,
       password: tempPassword,
       role,
-      organization,
+      business,
       requestorRole: role === "requestor" ? "owner" : null,
       manufacturerRole: role === "manufacturer" ? "owner" : null,
       adminRole: role === "admin" ? "owner" : null,
@@ -2342,8 +2383,8 @@ async function getUserById(req, res) {
       });
     }
 
-    const organization = user?.organizationId
-      ? await RequestorOrganization.findById(user.organizationId)
+    const businessInfo = user?.businessId
+      ? await RequestorOrganization.findById(user.businessId)
           .select({
             name: 1,
             businessLicense: 1,
@@ -2353,16 +2394,16 @@ async function getUserById(req, res) {
           .lean()
       : null;
     const hasLicense =
-      Boolean(organization?.businessLicense?.s3Key) ||
-      Boolean(organization?.businessLicense?.fileId);
+      Boolean(businessInfo?.businessLicense?.s3Key) ||
+      Boolean(businessInfo?.businessLicense?.fileId);
     const unresolvedBusiness =
-      hasLicense && organization?.verification?.verified === false;
+      hasLicense && businessInfo?.verification?.verified === false;
 
     res.status(200).json({
       success: true,
       data: {
         ...user.toObject(),
-        organizationInfo: organization || null,
+        businessInfo: businessInfo || null,
         unresolvedBusiness,
       },
     });
@@ -2930,8 +2971,8 @@ async function getAllRequests(req, res) {
 
     // 의뢰 조회
     const requests = await Request.find(filter)
-      .populate("requestor", "name email organization")
-      .populate("manufacturer", "name email organization")
+      .populate("requestor", "name email business")
+      .populate("manufacturer", "name email business")
       .sort(sort)
       .skip(skip)
       .limit(limit);
@@ -2978,8 +3019,8 @@ async function getRequestById(req, res) {
 
     // 의뢰 조회
     const request = await Request.findById(requestId)
-      .populate("requestor", "name email organization")
-      .populate("manufacturer", "name email organization");
+      .populate("requestor", "name email business")
+      .populate("manufacturer", "name email business");
 
     if (!request) {
       return res.status(404).json({
@@ -3054,8 +3095,8 @@ async function updateRequestStatus(req, res) {
       },
       { new: true },
     )
-      .populate("requestor", "name email organization")
-      .populate("manufacturer", "name email organization");
+      .populate("requestor", "name email business")
+      .populate("manufacturer", "name email business");
 
     // statusHistory가 없으면 빈 배열 반환 보장
     const result = updatedRequest.toObject();
@@ -3122,8 +3163,8 @@ async function assignManufacturer(req, res) {
       },
       { new: true },
     )
-      .populate("requestor", "name email organization")
-      .populate("manufacturer", "name email organization");
+      .populate("requestor", "name email business")
+      .populate("manufacturer", "name email business");
 
     // statusHistory가 없으면 빈 배열 반환 보장
     const result = updatedRequest.toObject();

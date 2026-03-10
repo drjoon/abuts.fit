@@ -381,11 +381,10 @@ export async function rollbackRequestToCamByRequestId(requestId) {
   if (!rollbackStages.includes(stage)) return request;
 
   try {
-    const orgId =
-      request.requestorOrganizationId || request.requestor?.organizationId;
+    const orgId = request.requestorBusinessId || request.requestor?.businessId;
     if (orgId) {
       const spendRows = await CreditLedger.find({
-        organizationId: orgId,
+        businessId: orgId,
         type: "SPEND",
         refType: "REQUEST",
         refId: request._id,
@@ -394,7 +393,7 @@ export async function rollbackRequestToCamByRequestId(requestId) {
         .lean();
 
       const refundRows = await CreditLedger.find({
-        organizationId: orgId,
+        businessId: orgId,
         type: "REFUND",
         refType: "REQUEST",
         refId: request._id,
@@ -420,7 +419,7 @@ export async function rollbackRequestToCamByRequestId(requestId) {
           { uniqueKey: refundKey },
           {
             $setOnInsert: {
-              organizationId: orgId,
+              businessId: orgId,
               userId: null,
               type: "REFUND",
               amount: refundAmount,
@@ -448,9 +447,9 @@ export async function rollbackRequestToCamByRequestId(requestId) {
       const manufacturerId = request?.manufacturer;
       if (manufacturerId) {
         const m = await User.findById(manufacturerId)
-          .select({ organization: 1 })
+          .select({ business: 1 })
           .lean();
-        const manufacturerOrganization = String(m?.organization || "").trim();
+        const manufacturerOrganization = String(m?.business || "").trim();
         if (manufacturerOrganization) {
           const refundKey = `request:${String(request._id)}:manufacturer_refund_request`;
           await ManufacturerCreditLedger.updateOne(

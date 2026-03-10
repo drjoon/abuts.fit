@@ -39,9 +39,15 @@ type ChargeOrder = {
   isLocked: boolean;
   lockedAt?: string;
   lockedReason?: string;
-  organizationId?: {
+  businessId?: {
     _id: string;
     companyName: string;
+    name?: string;
+  };
+  organizationId?: {
+    _id: string;
+    companyName?: string;
+    name?: string;
   };
 };
 
@@ -288,9 +294,13 @@ export function AutoMatchVerificationTab() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {typeof order.organizationId === "object"
-                        ? order.organizationId?.companyName
-                        : "-"}
+                      {typeof order.businessId === "object"
+                        ? order.businessId?.companyName ||
+                          order.businessId?.name
+                        : typeof order.organizationId === "object"
+                          ? order.organizationId?.companyName ||
+                            order.organizationId?.name
+                          : "-"}
                     </TableCell>
                     <TableCell className="font-medium">
                       {order.depositorName}

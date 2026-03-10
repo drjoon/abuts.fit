@@ -22,7 +22,7 @@ export async function cloneRequestToDraft(req, res) {
     }
 
     const request = await Request.findById(requestId)
-      .populate("requestor", "organizationId")
+      .populate("requestor", "businessId")
       .lean();
     if (!request) {
       return res.status(404).json({

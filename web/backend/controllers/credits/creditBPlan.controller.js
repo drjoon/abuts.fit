@@ -53,11 +53,11 @@ function getDepositAccountInfo() {
 }
 
 export async function createChargeOrder(req, res) {
-  const organizationId = req.user?.organizationId;
+  const businessId = req.user?.businessId;
   const userId = req.user?._id;
   const userName = req.user?.name;
 
-  if (!organizationId) {
+  if (!businessId) {
     return res.status(403).json({
       success: false,
       message: "기공소 정보가 없습니다.",
@@ -74,7 +74,7 @@ export async function createChargeOrder(req, res) {
 
   const now = new Date();
   await ChargeOrder.deleteMany({
-    organizationId,
+    businessId,
     status: "PENDING",
     bankTransactionId: null,
     expiresAt: { $lte: now },
@@ -91,7 +91,7 @@ export async function createChargeOrder(req, res) {
 
   // 기존 대기 건이 있으면 재사용 (유효기간 연장/코드 재발급 방지)
   const existing = await ChargeOrder.findOne({
-    organizationId,
+    businessId,
     status: "PENDING",
     bankTransactionId: null,
     expiresAt: { $gt: now },
@@ -152,13 +152,13 @@ export async function createChargeOrder(req, res) {
   }
 
   // 기공소 코드(기존)와 별개로, 충전 요청마다 일회성 2자리 코드 발급
-  await ensureOrganizationDepositCode(organizationId); // 기존 보존 (타 기능 호환)
+  await ensureOrganizationDepositCode(businessId); // 기존 보존 (타 기능 호환)
   const { depositCode } = await generateChargeOrderDepositCode();
 
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
   const doc = await ChargeOrder.create({
-    organizationId,
+    businessId,
     userId,
     depositCode,
     depositorName: depositCode,
@@ -186,8 +186,8 @@ export async function createChargeOrder(req, res) {
 }
 
 export async function listMyChargeOrders(req, res) {
-  const organizationId = req.user?.organizationId;
-  if (!organizationId) {
+  const businessId = req.user?.businessId;
+  if (!businessId) {
     return res.status(403).json({
       success: false,
       message: "기공소 정보가 설정되지 않았습니다.",
@@ -196,13 +196,13 @@ export async function listMyChargeOrders(req, res) {
 
   const now = new Date();
   await ChargeOrder.deleteMany({
-    organizationId,
+    businessId,
     status: "PENDING",
     bankTransactionId: null,
     expiresAt: { $lte: now },
   });
 
-  const items = await ChargeOrder.find({ organizationId })
+  const items = await ChargeOrder.find({ businessId })
     .sort({ createdAt: -1, _id: -1 })
     .select({
       status: 1,
@@ -226,8 +226,8 @@ export async function listMyChargeOrders(req, res) {
 }
 
 export async function cancelMyChargeOrder(req, res) {
-  const organizationId = req.user?.organizationId;
-  if (!organizationId) {
+  const businessId = req.user?.businessId;
+  if (!businessId) {
     return res.status(403).json({
       success: false,
       message: "기공소 정보가 설정되지 않았습니다.",
@@ -243,7 +243,7 @@ export async function cancelMyChargeOrder(req, res) {
 
   const order = await ChargeOrder.findOne({
     _id: chargeOrderId,
-    organizationId,
+    businessId,
   })
     .select({ status: 1, bankTransactionId: 1 })
     .lean();
@@ -279,9 +279,9 @@ export async function cancelMyChargeOrder(req, res) {
 export async function requestTaxInvoice(req, res) {
   try {
     const userId = req.user?._id;
-    const organizationId = req.user?.organizationId;
+    const businessId = req.user?.businessId;
 
-    if (!organizationId) {
+    if (!businessId) {
       return res.status(403).json({
         success: false,
         message: "기공소 정보가 설정되지 않았습니다.",
@@ -298,7 +298,7 @@ export async function requestTaxInvoice(req, res) {
 
     const chargeOrder = await ChargeOrder.findOne({
       _id: chargeOrderId,
-      organizationId,
+      businessId,
     });
 
     if (!chargeOrder) {
@@ -327,7 +327,7 @@ export async function requestTaxInvoice(req, res) {
       });
     }
 
-    const organization = await RequestorOrganization.findById(organizationId);
+    const organization = await RequestorOrganization.findById(businessId);
     if (!organization) {
       return res.status(404).json({
         success: false,
@@ -351,7 +351,7 @@ export async function requestTaxInvoice(req, res) {
 
     const draft = await TaxInvoiceDraft.create({
       chargeOrderId,
-      organizationId,
+      businessId,
       userId,
       status: "PENDING_APPROVAL",
       supplyAmount: chargeOrder.supplyAmount || 0,
@@ -374,9 +374,9 @@ export async function requestTaxInvoice(req, res) {
 export async function listMyTaxInvoices(req, res) {
   try {
     const userId = req.user?._id;
-    const organizationId = req.user?.organizationId;
+    const businessId = req.user?.businessId;
 
-    if (!organizationId) {
+    if (!businessId) {
       return res.status(403).json({
         success: false,
         message: "기공소 정보가 설정되지 않았습니다.",
@@ -386,7 +386,7 @@ export async function listMyTaxInvoices(req, res) {
     const { status, page = 1, limit = 20 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const query = { organizationId };
+    const query = { businessId };
     if (status) {
       query.status = status;
     }
@@ -421,10 +421,10 @@ export async function listMyTaxInvoices(req, res) {
 
 export async function getMyTaxInvoice(req, res) {
   try {
-    const organizationId = req.user?.organizationId;
+    const businessId = req.user?.businessId;
     const { id } = req.params;
 
-    if (!organizationId) {
+    if (!businessId) {
       return res.status(403).json({
         success: false,
         message: "기공소 정보가 설정되지 않았습니다.",
@@ -433,7 +433,7 @@ export async function getMyTaxInvoice(req, res) {
 
     const draft = await TaxInvoiceDraft.findOne({
       _id: id,
-      organizationId,
+      businessId,
     }).lean();
 
     if (!draft) {

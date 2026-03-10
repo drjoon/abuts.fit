@@ -82,7 +82,9 @@ export const AdminBusinessRegistrationInquiryPage = () => {
       return (
         item.subject?.toLowerCase().includes(query) ||
         item.message?.toLowerCase().includes(query) ||
-        user.organization?.toLowerCase().includes(query) ||
+        (user.business || user.organization || "")
+          .toLowerCase()
+          .includes(query) ||
         user.name?.toLowerCase().includes(query) ||
         user.email?.toLowerCase().includes(query)
       );
@@ -188,7 +190,7 @@ export const AdminBusinessRegistrationInquiryPage = () => {
         status: statusLabelMap[item.status || "open"] || "",
         subject: item.subject || "",
         message: item.message || "",
-        organization: user.organization || "",
+        organization: user.business || user.organization || "",
         name: user.name || "",
         email: user.email || "",
       };
@@ -392,7 +394,9 @@ export const AdminBusinessRegistrationInquiryPage = () => {
                       </TableCell>
                       <TableCell>{formatDate(item.createdAt)}</TableCell>
                       <TableCell>{typeLabel}</TableCell>
-                      <TableCell>{user.organization || "-"}</TableCell>
+                      <TableCell>
+                        {user.business || user.organization || "-"}
+                      </TableCell>
                       <TableCell>{user.name || "-"}</TableCell>
                       <TableCell>{item.subject || "-"}</TableCell>
                       <TableCell>
@@ -451,7 +455,9 @@ export const AdminBusinessRegistrationInquiryPage = () => {
                   <div className="grid grid-cols-[120px_1fr] gap-2">
                     <span className="text-slate-500">사업장</span>
                     <span>
-                      {selected.user?.organization ||
+                      {selected.user?.business ||
+                        selected.user?.organization ||
+                        selected.userSnapshot?.business ||
                         selected.userSnapshot?.organization ||
                         "-"}
                     </span>

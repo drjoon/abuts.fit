@@ -43,7 +43,7 @@ const isStrongPassword = (password) => {
 };
 
 async function getOrganizationCreditBalanceBreakdown(organizationId) {
-  const rows = await CreditLedger.find({ organizationId })
+  const rows = await CreditLedger.find({ businessId: organizationId })
     .sort({ createdAt: 1, _id: 1 })
     .select({ type: 1, amount: 1 })
     .lean();
@@ -341,7 +341,7 @@ async function register(req, res) {
       }
 
       const refUser = await User.findById(referredByUserId)
-        .select({ _id: 1, role: 1, active: 1, organizationId: 1 })
+        .select({ _id: 1, role: 1, active: 1, businessId: 1 })
         .lean();
 
       if (!refUser || refUser.active === false) {
@@ -358,14 +358,14 @@ async function register(req, res) {
         });
       }
 
-      if (refUser.role === "requestor" && refUser.organizationId) {
-        const org = await RequestorOrganization.findById(refUser.organizationId)
+      if (refUser.role === "requestor" && refUser.businessId) {
+        const org = await RequestorOrganization.findById(refUser.businessId)
           .select({ owner: 1, name: 1 })
           .lean();
         if (!org) {
           return res.status(400).json({
             success: false,
-            message: "추천인의 조직을 찾을 수 없습니다.",
+            message: "추천인의 사업자를 찾을 수 없습니다.",
           });
         }
         referredByObjectId = new Types.ObjectId(org.owner);
@@ -384,7 +384,7 @@ async function register(req, res) {
       }
 
       const refUser = await User.findOne({ email: refEmail })
-        .select({ _id: 1, role: 1, active: 1, organizationId: 1 })
+        .select({ _id: 1, role: 1, active: 1, businessId: 1 })
         .lean();
 
       if (!refUser || refUser.active === false) {
@@ -401,8 +401,8 @@ async function register(req, res) {
         });
       }
 
-      if (refUser.role === "requestor" && refUser.organizationId) {
-        const org = await RequestorOrganization.findById(refUser.organizationId)
+      if (refUser.role === "requestor" && refUser.businessId) {
+        const org = await RequestorOrganization.findById(refUser.businessId)
           .select({ owner: 1 })
           .lean();
         referredByObjectId = new Types.ObjectId(org?.owner || refUser._id);
@@ -419,7 +419,7 @@ async function register(req, res) {
       }
 
       const refUser = await User.findOne({ referralCode: code })
-        .select({ _id: 1, role: 1, active: 1, organizationId: 1 })
+        .select({ _id: 1, role: 1, active: 1, businessId: 1 })
         .lean();
 
       if (!refUser || refUser.active === false) {
@@ -436,8 +436,8 @@ async function register(req, res) {
         });
       }
 
-      if (refUser.role === "requestor" && refUser.organizationId) {
-        const org = await RequestorOrganization.findById(refUser.organizationId)
+      if (refUser.role === "requestor" && refUser.businessId) {
+        const org = await RequestorOrganization.findById(refUser.businessId)
           .select({ owner: 1 })
           .lean();
         referredByObjectId = new Types.ObjectId(org?.owner || refUser._id);
@@ -483,21 +483,20 @@ async function register(req, res) {
 
     const effectiveOrganization = "";
 
-    // 그룹 리더 결정: 리퍼럴로 가입하면 추천인의 그룹 리더를 상속
-    // 의뢰자 추천인의 경우(대표/직원 이메일 모두), 보상은 조직 단위로 귀속되도록 조직 owner를 그룹 리더로 사용
+    // 레거시 user 기반 referralGroupLeaderId 결정:
+    // 실제 canonical 집계 단위는 business이지만, 기존 사용자 필드 호환을 위해
+    // requestor 추천인의 경우 같은 business를 대표하는 기존 leader 값을 상속한다.
     let referralGroupLeaderId = null;
     if (referredByObjectId) {
       const referrer = await User.findById(referredByObjectId)
-        .select({ role: 1, referralGroupLeaderId: 1, organizationId: 1 })
+        .select({ role: 1, referralGroupLeaderId: 1, businessId: 1 })
         .lean();
 
       if (
         String(referrer?.role || "") === "requestor" &&
-        referrer?.organizationId
+        referrer?.businessId
       ) {
-        const org = await RequestorOrganization.findById(
-          referrer.organizationId,
-        )
+        const org = await RequestorOrganization.findById(referrer.businessId)
           .select({ owner: 1 })
           .lean();
         referralGroupLeaderId =
@@ -616,7 +615,7 @@ async function validateReferral(req, res) {
     if (isEmail) {
       const refEmail = raw.toLowerCase();
       refUser = await User.findOne({ email: refEmail })
-        .select({ _id: 1, role: 1, active: 1, name: 1, organizationId: 1 })
+        .select({ _id: 1, role: 1, active: 1, name: 1, businessId: 1 })
         .lean();
     } else if (/^[0-9a-fA-F]{24}$/.test(raw)) {
       if (!Types.ObjectId.isValid(raw)) {
@@ -626,12 +625,12 @@ async function validateReferral(req, res) {
         });
       }
       refUser = await User.findById(raw)
-        .select({ _id: 1, role: 1, active: 1, name: 1, organizationId: 1 })
+        .select({ _id: 1, role: 1, active: 1, name: 1, businessId: 1 })
         .lean();
     } else {
       const code = raw.toUpperCase();
       refUser = await User.findOne({ referralCode: code })
-        .select({ _id: 1, role: 1, active: 1, name: 1, organizationId: 1 })
+        .select({ _id: 1, role: 1, active: 1, name: 1, businessId: 1 })
         .lean();
     }
 
@@ -649,8 +648,8 @@ async function validateReferral(req, res) {
       });
     }
 
-    if (refUser.role === "requestor" && refUser.organizationId) {
-      const org = await RequestorOrganization.findById(refUser.organizationId)
+    if (refUser.role === "requestor" && refUser.businessId) {
+      const org = await RequestorOrganization.findById(refUser.businessId)
         .select({ owner: 1, name: 1 })
         .lean();
       if (org?.owner) {
@@ -1143,10 +1142,11 @@ async function withdraw(req, res) {
 
     const user = await User.findById(userId)
       .select({
+        name: 1,
         email: 1,
         originalEmail: 1,
         role: 1,
-        organizationId: 1,
+        businessId: 1,
       })
       .lean();
 
@@ -1158,21 +1158,21 @@ async function withdraw(req, res) {
     }
 
     let isRequestorOwner = false;
-    let organizationId = user.organizationId || null;
-    if (user.role === "requestor" && organizationId) {
-      const organization = await RequestorOrganization.findById(organizationId)
+    let businessId = user.businessId || null;
+    if (user.role === "requestor" && businessId) {
+      const organization = await RequestorOrganization.findById(businessId)
         .select({ owner: 1 })
         .lean();
       if (!organization) {
-        organizationId = null;
+        businessId = null;
       } else {
         isRequestorOwner = String(organization.owner) === String(userId);
       }
     }
 
-    if (user.role === "requestor" && isRequestorOwner && organizationId) {
+    if (user.role === "requestor" && isRequestorOwner && businessId) {
       const { paidBalance } =
-        await getOrganizationCreditBalanceBreakdown(organizationId);
+        await getOrganizationCreditBalanceBreakdown(businessId);
       if (paidBalance > 0) {
         return res.status(400).json({
           success: false,

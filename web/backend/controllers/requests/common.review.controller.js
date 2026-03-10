@@ -60,11 +60,11 @@ function revertManufacturerStageByReviewStage(request, stage) {
 
 async function ensureRequestCreditSpendOnMachiningEnter({
   request,
-  organizationId,
+  businessId,
   actorUserId,
   session,
 }) {
-  if (!request || !organizationId) return;
+  if (!request || !businessId) return;
 
   const uniqueKey = `request:${String(request._id)}:machining_spend`;
   const existingSpend = await CreditLedger.findOne({ uniqueKey })
@@ -92,7 +92,7 @@ async function ensureRequestCreditSpendOnMachiningEnter({
         (
           await computePriceForRequest({
             requestorId: request?.requestor,
-            requestorOrgId: organizationId,
+            requestorOrgId: businessId,
             clinicName: request?.caseInfos?.clinicName || "",
             patientName: request?.caseInfos?.patientName || "",
             tooth: request?.caseInfos?.tooth || "",
@@ -113,7 +113,7 @@ async function ensureRequestCreditSpendOnMachiningEnter({
     { uniqueKey },
     {
       $setOnInsert: {
-        organizationId,
+        businessId,
         userId: actorUserId || null,
         type: "SPEND",
         amount: -resolvedAmount,
@@ -129,11 +129,11 @@ async function ensureRequestCreditSpendOnMachiningEnter({
     requestId: request?.requestId,
     requestMongoId: String(request?._id || ""),
     amount: resolvedAmount,
-    organizationId: String(organizationId),
+    businessId: String(businessId),
   });
 
   await emitCreditBalanceUpdatedToOrganization({
-    organizationId,
+    organizationId: businessId,
     balanceDelta: -resolvedAmount,
     reason: "machining_spend",
     refId: request?._id,
@@ -934,7 +934,7 @@ export async function updateReviewStatusByStage(req, res) {
 
     await session.withTransaction(async () => {
       const request = await Request.findById(id)
-        .populate("requestor", "organization organizationId")
+        .populate("requestor", "business businessId")
         .session(session);
       if (!request) {
         const err = new Error("의뢰를 찾을 수 없습니다.");
@@ -963,12 +963,12 @@ export async function updateReviewStatusByStage(req, res) {
       // 승인 시 다음 공정으로 전환, 미승인(PENDING) 시 현재 단계로 되돌림
       if (status === "APPROVED") {
         const resolvedRequestorOrgId = (() => {
-          const direct = request.requestorOrganizationId;
+          const direct = request.requestorBusinessId;
           if (direct) return direct;
           const fallbackId =
-            request.requestor?.organizationId ||
-            request.requestor?.organization?._id ||
-            request.requestor?.organization;
+            request.requestor?.businessId ||
+            request.requestor?.business?._id ||
+            request.requestor?.business;
           if (!fallbackId) return null;
           const fallbackStr = String(fallbackId);
           if (!Types.ObjectId.isValid(fallbackStr)) return null;
@@ -981,8 +981,8 @@ export async function updateReviewStatusByStage(req, res) {
           request?.caseInfos?.newSystemRequest?.requested &&
           request?.caseInfos?.newSystemRequest?.free;
 
-        if (!request.requestorOrganizationId && resolvedRequestorOrgId) {
-          request.requestorOrganizationId = resolvedRequestorOrgId;
+        if (!request.requestorBusinessId && resolvedRequestorOrgId) {
+          request.requestorBusinessId = resolvedRequestorOrgId;
         }
 
         if (effectiveStage === "request") {
@@ -1133,7 +1133,7 @@ export async function updateReviewStatusByStage(req, res) {
           if (resolvedRequestorOrgId && !isNewSystemFree) {
             await ensureRequestCreditSpendOnMachiningEnter({
               request,
-              organizationId: resolvedRequestorOrgId,
+              businessId: resolvedRequestorOrgId,
               actorUserId: req.user?._id || null,
               session,
             });

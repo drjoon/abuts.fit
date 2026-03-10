@@ -20,7 +20,6 @@ export const RequestorPricingReferralPolicyCard = () => {
   const { user, token } = useAuthStore();
   const { toast } = useToast();
 
-  const userId = (user as any)?._id || (user as any)?.id || "";
   const referralCode = String((user as any)?.referralCode || "")
     .trim()
     .toUpperCase();
@@ -181,7 +180,7 @@ export const RequestorPricingReferralPolicyCard = () => {
                 onClick={handleCopyReferralLink}
                 disabled={!referralLink}
               >
-                내 추천 링크 복사
+                내 사업자 추천 링크 복사
               </Button>
               <Button
                 type="button"
@@ -195,7 +194,8 @@ export const RequestorPricingReferralPolicyCard = () => {
             </div>
           </div>
           <CardDescription className="space-y-1 text-xs text-slate-600 pt-2">
-            최근 30일 집계는 <b>포장.발송</b> 기준입니다.
+            최근 30일 집계는 <b>내 사업자 기준 포장.발송</b> 건을 포함해
+            계산합니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-2 pb-4 gap-3 text-xs text-foreground">
@@ -204,7 +204,7 @@ export const RequestorPricingReferralPolicyCard = () => {
               <div className="flex-1 space-y-1">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-md text-slate-600">
-                    내 주문 (최근 30일)
+                    내 사업자 주문 (최근 30일)
                   </span>
                   <span className="text-lg font-semibold text-foreground">
                     {myLast30DaysOrders.toLocaleString()}건
@@ -212,7 +212,7 @@ export const RequestorPricingReferralPolicyCard = () => {
                 </div>
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-md text-slate-600">
-                    직계 멤버 수(나 포함)
+                    직계 사업자 수(내 사업자 포함)
                   </span>
                   <span className="text-lg font-semibold text-foreground">
                     {groupMemberCount}명
@@ -224,7 +224,7 @@ export const RequestorPricingReferralPolicyCard = () => {
             <div className="mt-2 space-y-1.5">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-md text-slate-600">
-                  주문 합계(나+직계)
+                  사업자 주문 합계(내 사업자+직계 사업자)
                 </span>
                 <span className="text-lg font-semibold text-foreground">
                   {totalOrders.toLocaleString()}건

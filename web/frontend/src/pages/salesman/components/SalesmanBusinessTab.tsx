@@ -36,7 +36,9 @@ export const SalesmanBusinessTab = () => {
         if (!res.ok || !mounted) return;
         const body: any = res.data || {};
         const data = body.data || body;
-        const nextOrg = String(data?.organization || "").trim();
+        const nextOrg = String(
+          data?.business || data?.organization || "",
+        ).trim();
         setOrganization(nextOrg);
         lastSavedRef.current = nextOrg;
       } finally {
@@ -78,7 +80,7 @@ export const SalesmanBusinessTab = () => {
         token,
         headers: mockHeaders,
         jsonBody: {
-          organization: nextOrg,
+          business: nextOrg,
         },
       });
       if (!res.ok) {

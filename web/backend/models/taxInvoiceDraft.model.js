@@ -8,7 +8,7 @@ const TaxInvoiceDraftSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
-    organizationId: {
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "RequestorOrganization",
       required: true,
@@ -46,7 +46,7 @@ const TaxInvoiceDraftSchema = new mongoose.Schema(
     approvedAt: { type: Date, default: null },
     sentAt: { type: Date, default: null },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 TaxInvoiceDraftSchema.index({ status: 1, updatedAt: -1 });
@@ -54,7 +54,7 @@ TaxInvoiceDraftSchema.index({ status: 1, updatedAt: -1 });
 const TaxInvoiceDraft = mongoose.model(
   "TaxInvoiceDraft",
   TaxInvoiceDraftSchema,
-  "TaxInvoiceDraft"
+  "TaxInvoiceDraft",
 );
 
 export default TaxInvoiceDraft;

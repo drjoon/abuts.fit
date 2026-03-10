@@ -119,8 +119,8 @@ export const resolveTrackingSyncTargets = async ({
   }
 
   const requests = await Request.find(query)
-    .populate("requestor", "name organization phoneNumber address")
-    .populate("requestorOrganizationId", "name extracted")
+    .populate("requestor", "name business phoneNumber address")
+    .populate("requestorBusinessId", "name extracted")
     .populate("deliveryInfoRef");
 
   return requests.filter((requestDoc) => {

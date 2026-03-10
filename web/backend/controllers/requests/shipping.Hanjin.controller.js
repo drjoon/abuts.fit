@@ -366,8 +366,8 @@ async function finalizeMailboxPickupResult({
   const updatedDocs = await Request.find({
     _id: { $in: requestDocs.map((request) => request._id) },
   })
-    .populate("requestor", "name organization phoneNumber address")
-    .populate("requestorOrganizationId", "name extracted")
+    .populate("requestor", "name business phoneNumber address")
+    .populate("requestorBusinessId", "name extracted")
     .populate("deliveryInfoRef");
 
   for (const doc of updatedDocs) {
@@ -447,8 +447,8 @@ async function markMailboxWorkflowError({
     mailboxAddress: { $in: list },
     manufacturerStage: "포장.발송",
   })
-    .populate("requestor", "name organization phoneNumber address")
-    .populate("requestorOrganizationId", "name extracted")
+    .populate("requestor", "name business phoneNumber address")
+    .populate("requestorBusinessId", "name extracted")
     .populate("deliveryInfoRef");
 
   for (const requestDoc of requestDocs) {
@@ -604,8 +604,8 @@ export async function printHanjinLabels(req, res) {
       mailboxAddress: { $in: normalizedMailboxAddresses },
       manufacturerStage: "포장.발송",
     })
-      .populate("requestor", "name organization phoneNumber address")
-      .populate("requestorOrganizationId", "name extracted")
+      .populate("requestor", "name business phoneNumber address")
+      .populate("requestorBusinessId", "name extracted")
       .populate("deliveryInfoRef");
 
     for (const doc of updatedDocs) {
@@ -804,8 +804,8 @@ export async function cancelHanjinPickup(req, res) {
         mailboxAddress: mailbox,
         manufacturerStage: "포장.발송",
       })
-        .populate("requestor", "name organization phoneNumber address")
-        .populate("requestorOrganizationId", "name extracted")
+        .populate("requestor", "name business phoneNumber address")
+        .populate("requestorBusinessId", "name extracted")
         .populate("deliveryInfoRef");
 
       console.log("[hanjin][pickup-cancel][debug] before update", {
@@ -883,8 +883,8 @@ export async function cancelHanjinPickup(req, res) {
       const updatedDocs = await Request.find({
         _id: { $in: requestDocs.map((request) => request._id) },
       })
-        .populate("requestor", "name organization phoneNumber address")
-        .populate("requestorOrganizationId", "name extracted")
+        .populate("requestor", "name business phoneNumber address")
+        .populate("requestorBusinessId", "name extracted")
         .populate("deliveryInfoRef");
 
       console.log("[hanjin][pickup-cancel][debug] reloaded docs before emit", {

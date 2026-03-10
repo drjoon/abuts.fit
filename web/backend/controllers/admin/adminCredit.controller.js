@@ -142,9 +142,9 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
     role: "requestor",
     referredByUserId: { $in: salesmanIds },
     active: true,
-    organizationId: { $ne: null },
+    businessId: { $ne: null },
   })
-    .select({ _id: 1, referredByUserId: 1, organizationId: 1 })
+    .select({ _id: 1, referredByUserId: 1, businessId: 1 })
     .lean();
 
   const childSalesmen = await User.find({
@@ -168,9 +168,9 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
           role: "requestor",
           referredByUserId: { $in: childSalesmanIds },
           active: true,
-          organizationId: { $ne: null },
+          businessId: { $ne: null },
         })
-          .select({ _id: 1, referredByUserId: 1, organizationId: 1 })
+          .select({ _id: 1, referredByUserId: 1, businessId: 1 })
           .lean();
 
   const leaderIdByChildSalesmanId = new Map(
@@ -182,7 +182,7 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
   const directOrgIdsBySalesmanId = new Map();
   for (const u of directRequestors || []) {
     const sid = String(u?.referredByUserId || "");
-    const orgId = u?.organizationId ? String(u.organizationId) : "";
+    const orgId = u?.businessId ? String(u.businessId) : "";
     if (!sid || !orgId) continue;
     const set = directOrgIdsBySalesmanId.get(sid) || new Set();
     set.add(orgId);
@@ -194,7 +194,7 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
   for (const u of level1Requestors || []) {
     const childSid = String(u?.referredByUserId || "");
     const leaderSid = String(leaderIdByChildSalesmanId.get(childSid) || "");
-    const orgId = u?.organizationId ? String(u.organizationId) : "";
+    const orgId = u?.businessId ? String(u.businessId) : "";
     if (!orgId) continue;
 
     if (leaderSid) {
@@ -235,14 +235,14 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
       : await Request.aggregate([
           {
             $match: {
-              requestorOrganizationId: { $in: allOrgIds },
+              requestorBusinessId: { $in: allOrgIds },
               "caseInfos.reviewByStage.shipping.status": "APPROVED",
               createdAt: { $gte: range.start, $lte: range.end },
             },
           },
           {
             $group: {
-              _id: "$requestorOrganizationId",
+              _id: "$requestorBusinessId",
               revenueAmount: {
                 $sum: {
                   $ifNull: [
@@ -458,7 +458,7 @@ export async function adminGetOrganizationLedger(req, res) {
         message: "조직 ID가 올바르지 않습니다.",
       });
     }
-    const organizationId = new Types.ObjectId(orgIdRaw);
+    const businessId = new Types.ObjectId(orgIdRaw);
 
     const typeRaw = String(req.query.type || "")
       .trim()
@@ -472,7 +472,7 @@ export async function adminGetOrganizationLedger(req, res) {
       Math.max(1, Number(req.query.pageSize || 50) || 50),
     );
 
-    const match = { organizationId };
+    const match = { businessId };
 
     if (
       typeRaw &&
@@ -526,7 +526,7 @@ export async function adminGetOrganizationLedger(req, res) {
 
     // running balance: 전체 잔액 계산 (필터 무관)
     const allLedgerRows = await CreditLedger.aggregate([
-      { $match: { organizationId } },
+      { $match: { businessId } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
     let totalBalance = Number(allLedgerRows[0]?.total || 0);
@@ -898,7 +898,7 @@ export async function adminGetCreditStats(req, res) {
     const statsRows = await CreditLedger.aggregate([
       {
         $group: {
-          _id: "$organizationId",
+          _id: "$businessId",
           chargedPaid: {
             $sum: {
               $cond: [
@@ -1104,9 +1104,9 @@ export async function adminGetSalesmanCredits(req, res) {
       role: "requestor",
       referredByUserId: { $in: salesmanIds },
       active: true,
-      organizationId: { $ne: null },
+      businessId: { $ne: null },
     })
-      .select({ _id: 1, referredByUserId: 1, organizationId: 1 })
+      .select({ _id: 1, referredByUserId: 1, businessId: 1 })
       .lean();
 
     const childSalesmen = await User.find({
@@ -1130,9 +1130,9 @@ export async function adminGetSalesmanCredits(req, res) {
             role: "requestor",
             referredByUserId: { $in: childSalesmanIds },
             active: true,
-            organizationId: { $ne: null },
+            businessId: { $ne: null },
           })
-            .select({ _id: 1, referredByUserId: 1, organizationId: 1 })
+            .select({ _id: 1, referredByUserId: 1, businessId: 1 })
             .lean();
 
     const leaderIdByChildSalesmanId = new Map(
@@ -1145,7 +1145,7 @@ export async function adminGetSalesmanCredits(req, res) {
     const directOrgIdsBySalesmanId = new Map();
     for (const u of directRequestors || []) {
       const sid = String(u?.referredByUserId || "");
-      const orgId = u?.organizationId ? String(u.organizationId) : "";
+      const orgId = u?.businessId ? String(u.businessId) : "";
       if (!sid || !orgId) continue;
       const set = directOrgIdsBySalesmanId.get(sid) || new Set();
       set.add(orgId);
@@ -1156,7 +1156,7 @@ export async function adminGetSalesmanCredits(req, res) {
     for (const u of level1Requestors || []) {
       const childSid = String(u?.referredByUserId || "");
       const leaderSid = String(leaderIdByChildSalesmanId.get(childSid) || "");
-      const orgId = u?.organizationId ? String(u.organizationId) : "";
+      const orgId = u?.businessId ? String(u.businessId) : "";
       if (!leaderSid || !orgId) continue;
       const set = level1OrgIdsBySalesmanId.get(leaderSid) || new Set();
       set.add(orgId);
@@ -1193,7 +1193,7 @@ export async function adminGetSalesmanCredits(req, res) {
         : await Request.aggregate([
             {
               $match: {
-                requestorOrganizationId: { $in: allOrgIds },
+                requestorBusinessId: { $in: allOrgIds },
                 "caseInfos.reviewByStage.shipping.status": "APPROVED",
                 ...(Object.keys(revenueCreatedAtMatch).length
                   ? { createdAt: revenueCreatedAtMatch }
@@ -1202,7 +1202,7 @@ export async function adminGetSalesmanCredits(req, res) {
             },
             {
               $group: {
-                _id: "$requestorOrganizationId",
+                _id: "$requestorBusinessId",
                 revenueAmount: {
                   $sum: {
                     $ifNull: [
@@ -1567,10 +1567,10 @@ export async function adminGetOrganizationCredits(req, res) {
     const orgIds = orgs.map((o) => o._id);
 
     const ledgerData = await CreditLedger.aggregate([
-      { $match: { organizationId: { $in: orgIds } } },
+      { $match: { businessId: { $in: orgIds } } },
       {
         $group: {
-          _id: "$organizationId",
+          _id: "$businessId",
           chargedPaid: {
             $sum: {
               $cond: [
@@ -1713,7 +1713,7 @@ export async function adminGetOrganizationCreditDetail(req, res) {
       });
     }
 
-    const ledgers = await CreditLedger.find({ organizationId: orgId })
+    const ledgers = await CreditLedger.find({ businessId: orgId })
       .sort({ createdAt: -1 })
       .limit(100)
       .lean();
@@ -1755,7 +1755,7 @@ export async function adminGetOrganizationCreditDetail(req, res) {
     return res.json({
       success: true,
       data: {
-        organization: org,
+        business: org,
         balance: Math.max(0, paid + bonus),
         paidBalance: Math.max(0, paid),
         bonusBalance: Math.max(0, bonus),

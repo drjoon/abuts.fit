@@ -49,12 +49,12 @@ export async function parseBusinessLicense(req, res) {
     if (!roleCheck) return;
     const { organizationType } = roleCheck;
 
-    const hasOrganization = !!req.user.organizationId;
+    const hasOrganization = !!req.user.businessId;
     let org = null;
     if (hasOrganization) {
       const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
       org = await Organization.findOne({
-        _id: req.user.organizationId,
+        _id: req.user.businessId,
         ...orgTypeFilter,
       })
         .select({ owner: 1, owners: 1 })
@@ -126,7 +126,7 @@ export async function parseBusinessLicense(req, res) {
       };
 
       if (hasOrganization && org?._id) {
-        await Organization.findByIdAndUpdate(req.user.organizationId, {
+        await Organization.findByIdAndUpdate(req.user.businessId, {
           $set: {
             businessLicense: {
               fileId: fileId || null,
@@ -338,7 +338,7 @@ export async function parseBusinessLicense(req, res) {
 
     if (hasOrganization && org?._id) {
       try {
-        await Organization.findByIdAndUpdate(req.user.organizationId, {
+        await Organization.findByIdAndUpdate(req.user.businessId, {
           $set: normalizedBusinessNumber ? setWithBusinessNumber : baseSet,
         });
       } catch (e) {
@@ -350,7 +350,7 @@ export async function parseBusinessLicense(req, res) {
               "사업자등록번호가 이미 등록되어 있어 자동 저장을 건너뛰었습니다. 사업자등록번호를 확인하거나, 기존 기공소에 가입 요청을 진행해주세요.",
           };
 
-          await Organization.findByIdAndUpdate(req.user.organizationId, {
+          await Organization.findByIdAndUpdate(req.user.businessId, {
             $set: {
               ...baseSet,
               verification: {

@@ -2,9 +2,9 @@ import mongoose from "mongoose";
 
 const clinicImplantPresetSchema = new mongoose.Schema(
   {
-    requestor: {
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "RequestorOrganization",
       required: true,
       index: true,
     },
@@ -25,7 +25,7 @@ const clinicImplantPresetSchema = new mongoose.Schema(
 
 clinicImplantPresetSchema.index(
   {
-    requestor: 1,
+    businessId: 1,
     clinicName: 1,
     manufacturer: 1,
     brand: 1,

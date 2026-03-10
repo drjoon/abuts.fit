@@ -30,6 +30,7 @@ type DirectMemberRow = {
   _id: string;
   name?: string;
   email?: string;
+  business?: string;
   organization?: string;
   active?: boolean;
   createdAt?: string;
@@ -181,7 +182,9 @@ export default function ReferralGroupsPage() {
             <div className="space-y-4 text-right">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-sm">
-                  <div className="text-muted-foreground">내 추천 링크</div>
+                  <div className="text-muted-foreground">
+                    내 사업자 추천 링크
+                  </div>
                   <div className="font-mono text-sm break-all">
                     {referralLink || "-"}
 
@@ -213,15 +216,15 @@ export default function ReferralGroupsPage() {
 
               <div className="grid gap-3 md:grid-cols-5">
                 <MetricCard
-                  title="직계 멤버 수(나 포함)"
+                  title="직계 사업자 수(내 사업자 포함)"
                   value={`${requestorMembers.toLocaleString()}명`}
                 />
                 <MetricCard
-                  title="그룹 합산 (최근 30일)"
+                  title="사업자 그룹 합산 (최근 30일)"
                   value={`${requestorGroupOrders.toLocaleString()}건`}
                   subtitle={
                     requestorGroupOrders > 0
-                      ? `내 주문: ${requestorOrders.toLocaleString()}건`
+                      ? `내 사업자 주문: ${requestorOrders.toLocaleString()}건`
                       : undefined
                   }
                 />
@@ -234,9 +237,10 @@ export default function ReferralGroupsPage() {
                 <div className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4 md:col-span-2 flex flex-col justify-between gap-2">
                   <div>
                     <div className="text-xs text-muted-foreground">
-                      - 최근 30일 완료 주문량 기준으로 단가가 적용됩니다.
+                      - 최근 30일 사업자 주문량 기준으로 단가가 적용됩니다.
                       <br />
-                      - 주문량 집계는 매일 자정(00:00) 업데이트됩니다.
+                      - 주문량 집계는 사용자 개인이 아니라 사업자 기준으로 매일
+                      자정(00:00) 업데이트됩니다.
                       <br />- 신규 가입 이벤트 기간 중에는 90일간 10,000원으로
                       고정됩니다.
                     </div>
@@ -261,7 +265,7 @@ export default function ReferralGroupsPage() {
 
       <Card className="border-gray-200">
         <CardHeader>
-          <CardTitle className="text-base">직계 멤버</CardTitle>
+          <CardTitle className="text-base">직계 사업자</CardTitle>
           <CardDescription>
             내가 속한 사업자와 내가 소개한 사업자만 표시합니다.
           </CardDescription>
@@ -286,7 +290,7 @@ export default function ReferralGroupsPage() {
             <div className="grid gap-3 md:grid-cols-4">
               {directMembers.map((m) => {
                 const label = String(
-                  m.organization || m.name || m.email || "-",
+                  m.business || m.organization || m.name || m.email || "-",
                 );
                 const last30 = Number(m.last30DaysOrders || 0);
                 return (

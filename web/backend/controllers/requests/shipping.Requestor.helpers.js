@@ -35,12 +35,12 @@ const resolveExpressShipLeadDays = () => 1;
 
 export const resolveRequestOrganizationName = (request) => {
   const requestor = request?.requestor || {};
-  const requestorOrg = request?.requestorOrganizationId || {};
+  const requestorOrg = request?.requestorBusinessId || {};
   const extracted = requestorOrg?.extracted || {};
   return (
     requestorOrg?.name ||
     extracted?.companyName ||
-    requestor?.organization ||
+    requestor?.business ||
     request?.caseInfos?.clinicName ||
     requestor?.name ||
     ""
@@ -56,11 +56,11 @@ export async function ensureShippingPackageForPickup({
     throw new Error("발송 패키지를 생성할 의뢰가 없습니다.");
   }
 
-  const organizationIds = Array.from(
+  const businessIds = Array.from(
     new Set(
       list
         .map((request) => {
-          const rawOrg = request?.requestorOrganizationId;
+          const rawOrg = request?.requestorBusinessId;
           const value =
             rawOrg && typeof rawOrg === "object"
               ? String(rawOrg?._id || rawOrg?.id || "").trim()
@@ -79,20 +79,20 @@ export async function ensureShippingPackageForPickup({
     ),
   );
 
-  if (organizationIds.length > 1) {
+  if (businessIds.length > 1) {
     throw new Error(
       "우편함 묶음의 조직 정보가 일관되지 않아 발송 박스를 생성할 수 없습니다.",
     );
   }
-  if (!organizationIds.length && organizationNames.length > 1) {
+  if (!businessIds.length && organizationNames.length > 1) {
     throw new Error(
       "우편함 묶음의 조직명 정보가 일관되지 않아 발송 박스를 생성할 수 없습니다.",
     );
   }
 
-  let organizationId = null;
-  if (organizationIds.length === 1) {
-    organizationId = new Types.ObjectId(organizationIds[0]);
+  let businessId = null;
+  if (businessIds.length === 1) {
+    businessId = new Types.ObjectId(businessIds[0]);
   } else {
     const fallbackName = organizationNames[0] || "";
     if (!fallbackName) {
@@ -110,17 +110,17 @@ export async function ensureShippingPackageForPickup({
         "우편함 묶음의 조직 정보를 확인할 수 없어 발송 박스를 생성할 수 없습니다.",
       );
     }
-    organizationId = new Types.ObjectId(String(orgDoc._id));
+    businessId = new Types.ObjectId(String(orgDoc._id));
   }
   const shipDateYmd = getTodayYmdInKst();
 
   let pkg = null;
   try {
     pkg = await ShippingPackage.findOneAndUpdate(
-      { organizationId, shipDateYmd },
+      { businessId, shipDateYmd },
       {
         $setOnInsert: {
-          organizationId,
+          businessId,
           shipDateYmd,
           createdBy: actorUserId || null,
         },
@@ -137,7 +137,10 @@ export async function ensureShippingPackageForPickup({
   } catch (error) {
     const message = String(error?.message || "");
     if (error?.code === 11000 || message.includes("E11000")) {
-      pkg = await ShippingPackage.findOne({ organizationId, shipDateYmd });
+      pkg = await ShippingPackage.findOne({
+        businessId,
+        shipDateYmd,
+      });
       if (pkg?._id) {
         await ShippingPackage.updateOne(
           { _id: pkg._id },
@@ -169,9 +172,9 @@ export async function chargeShippingFeeOnPickupComplete({
   if (!pkgId || !Types.ObjectId.isValid(pkgId)) return false;
 
   const pkg = await ShippingPackage.findById(pkgId)
-    .select({ _id: 1, organizationId: 1, shippingFeeSupply: 1, requestIds: 1 })
+    .select({ _id: 1, businessId: 1, shippingFeeSupply: 1, requestIds: 1 })
     .lean();
-  if (!pkg?._id || !pkg.organizationId) return false;
+  if (!pkg?._id || !pkg.businessId) return false;
 
   const fee = Number(pkg.shippingFeeSupply || 0);
   if (!Number.isFinite(fee) || fee <= 0) return false;
@@ -181,7 +184,7 @@ export async function chargeShippingFeeOnPickupComplete({
     { uniqueKey },
     {
       $setOnInsert: {
-        organizationId: pkg.organizationId,
+        businessId: pkg.businessId,
         userId: actorUserId || null,
         type: "SPEND",
         amount: -fee,
@@ -196,7 +199,7 @@ export async function chargeShippingFeeOnPickupComplete({
   if (!chargeResult?.upsertedCount) return false;
 
   await emitCreditBalanceUpdatedToOrganization({
-    organizationId: pkg.organizationId,
+    organizationId: pkg.businessId,
     balanceDelta: -fee,
     reason: "shipping_fee_spend",
     refId: pkg._id,
@@ -233,7 +236,7 @@ export async function buildShippingPackagesSummary(req) {
   const cutoffYmd = toKstYmd(cutoffDate);
 
   const packages = await ShippingPackage.find({
-    organizationId: orgId,
+    businessId: orgId,
     shipDateYmd: { $gte: cutoffYmd },
   })
     .select({
@@ -315,7 +318,7 @@ export async function buildShippingPackagesSummary(req) {
       console.warn(
         "[buildShippingPackagesSummary] duplicate shipping packages collapsed",
         {
-          organizationId: String(orgId),
+          businessId: String(orgId),
           shipDateYmd: pkg.shipDateYmd,
           sourcePackageIds: pkg.sourcePackageIds,
         },
@@ -566,7 +569,11 @@ export async function buildBulkShippingCandidates(req) {
   const mapItem = async (r) => {
     const ci = r.caseInfos || {};
     const clinic =
-      r.requestor?.organization || r.requestor?.name || req.user?.name || "";
+      r.requestor?.business ||
+      r.requestor?.organization ||
+      r.requestor?.name ||
+      req.user?.name ||
+      "";
     const maxDiameter =
       typeof ci.maxDiameter === "number"
         ? `${ci.maxDiameter}mm`

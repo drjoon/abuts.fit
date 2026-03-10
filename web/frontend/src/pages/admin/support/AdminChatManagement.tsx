@@ -135,7 +135,10 @@ export const AdminChatManagement = () => {
         room.relatedRequestId?.title || room.title || room.roomType || "";
       const requestId = room.relatedRequestId?.requestId || "";
       const participantsText = (room.participants || [])
-        .map((p) => `${p.name} ${p.organization || ""} ${p.email}`)
+        .map(
+          (p: any) =>
+            `${p.name} ${p.business || p.organization || ""} ${p.email}`,
+        )
         .join(" ");
 
       return `${title} ${requestId} ${participantsText}`
@@ -336,8 +339,6 @@ export const AdminChatManagement = () => {
     }
   };
 
-  
-
   return (
     <div className="flex flex-col h-full min-h-0 bg-gradient-subtle p-6">
       <div className="max-w-7xl w-full mx-auto space-y-6 flex flex-col flex-1 min-h-0">
@@ -479,9 +480,11 @@ export const AdminChatManagement = () => {
                   <div className="text-xs text-muted-foreground truncate">
                     {(activeChat.participants || [])
                       .map(
-                        (p) =>
+                        (p: any) =>
                           `${p.name}${
-                            p.organization ? `(${p.organization})` : ""
+                            p.business || p.organization
+                              ? `(${p.business || p.organization})`
+                              : ""
                           }`,
                       )
                       .join(" · ")}

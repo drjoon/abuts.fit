@@ -40,8 +40,8 @@ export async function requestJoinOrganization(req, res) {
     }
 
     if (
-      req.user.organizationId &&
-      String(req.user.organizationId) !== String(org._id)
+      req.user.businessId &&
+      String(req.user.businessId) !== String(org._id)
     ) {
       return res.status(409).json({
         success: false,
@@ -154,10 +154,10 @@ export async function cancelJoinRequest(req, res) {
 
     await org.save();
 
-    const currentOrgName = String(req.user.organization || "").trim();
+    const currentOrgName = String(req.user.business || "").trim();
     if (currentOrgName && currentOrgName === String(org.name || "").trim()) {
       await User.findByIdAndUpdate(req.user._id, {
-        $set: { organization: "", organizationId: null },
+        $set: { business: "", businessId: null },
       });
     }
 
@@ -233,9 +233,9 @@ export async function leaveOrganization(req, res) {
 
     await org.save();
 
-    if (String(req.user.organizationId || "") === String(org._id)) {
+    if (String(req.user.businessId || "") === String(org._id)) {
       await User.findByIdAndUpdate(req.user._id, {
-        $set: { organizationId: null, organization: "" },
+        $set: { businessId: null, business: "" },
       });
     }
 

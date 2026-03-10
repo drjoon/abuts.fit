@@ -2,13 +2,13 @@ import { Button } from "@/components/ui/button";
 
 interface JoinRequestsSectionProps {
   myJoinRequests: {
-    organizationId: string;
+    businessId: string;
     organizationName: string;
     status: string;
   }[];
   cancelLoadingOrgId: string;
-  onCancelJoinRequest: (organizationId: string) => void;
-  onLeaveOrganization: (organizationId: string) => void;
+  onCancelJoinRequest: (businessId: string) => void;
+  onLeaveOrganization: (businessId: string) => void;
 }
 
 export const JoinRequestsSection = ({
@@ -34,7 +34,7 @@ export const JoinRequestsSection = ({
       <div className="space-y-2">
         {myJoinRequests.map((r) => (
           <div
-            key={`${r.organizationId}-${r.status}`}
+            key={`${r.businessId}-${r.status}`}
             className="flex items-center justify-between gap-3"
           >
             <div className="text-sm">
@@ -45,10 +45,10 @@ export const JoinRequestsSection = ({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => onCancelJoinRequest(String(r.organizationId))}
-                disabled={cancelLoadingOrgId === r.organizationId}
+                onClick={() => onCancelJoinRequest(String(r.businessId))}
+                disabled={cancelLoadingOrgId === r.businessId}
               >
-                {cancelLoadingOrgId === r.organizationId
+                {cancelLoadingOrgId === r.businessId
                   ? "취소 중..."
                   : "신청 취소"}
               </Button>
@@ -59,10 +59,10 @@ export const JoinRequestsSection = ({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => onLeaveOrganization(String(r.organizationId))}
-                disabled={cancelLoadingOrgId === r.organizationId}
+                onClick={() => onLeaveOrganization(String(r.businessId))}
+                disabled={cancelLoadingOrgId === r.businessId}
               >
-                {cancelLoadingOrgId === r.organizationId
+                {cancelLoadingOrgId === r.businessId
                   ? "취소 중..."
                   : "소속 해제"}
               </Button>

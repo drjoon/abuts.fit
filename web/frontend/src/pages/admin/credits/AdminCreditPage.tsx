@@ -201,6 +201,7 @@ type ChargeOrder = {
   expiresAt?: string;
   matchedAt?: string;
   createdAt?: string;
+  businessId?: string;
   organizationId?: string;
   adminApprovalStatus?: "PENDING" | "APPROVED" | "REJECTED";
   adminApprovalNote?: string;

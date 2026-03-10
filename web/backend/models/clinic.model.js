@@ -2,9 +2,9 @@ import mongoose from "mongoose";
 
 const clinicSchema = new mongoose.Schema(
   {
-    requestor: {
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "RequestorOrganization",
       required: true,
       index: true,
     },
@@ -24,10 +24,10 @@ const clinicSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
-clinicSchema.index({ requestor: 1, name: 1 }, { unique: true });
+clinicSchema.index({ businessId: 1, name: 1 }, { unique: true });
 
 const Clinic = mongoose.model("Clinic", clinicSchema);
 

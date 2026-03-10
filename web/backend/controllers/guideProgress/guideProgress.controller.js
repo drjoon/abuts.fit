@@ -130,11 +130,11 @@ export async function getGuideProgress(req, res) {
             profileImage: 1,
             phoneVerifiedAt: 1,
             phoneVerification: 1,
-            organizationId: 1,
+            businessId: 1,
           })
           .lean(),
-        req.user.organizationId
-          ? RequestorOrganization.findById(req.user.organizationId)
+        req.user.businessId
+          ? RequestorOrganization.findById(req.user.businessId)
               .select({ name: 1, extracted: 1, businessLicense: 1 })
               .lean()
           : Promise.resolve(null),

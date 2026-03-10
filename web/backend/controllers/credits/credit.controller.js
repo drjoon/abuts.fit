@@ -9,12 +9,12 @@ function roundUpUnit(amount, unit) {
 }
 
 async function getCreditScope(req) {
-  const organizationId = req.user?.organizationId;
-  if (!organizationId) {
-    throw new Error("기공소 정보가 설정되지 않았습니다.");
+  const businessId = req.user?.businessId;
+  if (!businessId) {
+    throw new Error("사업자 정보가 설정되지 않았습니다.");
   }
 
-  const members = await User.find({ organizationId }).select({ _id: 1 }).lean();
+  const members = await User.find({ businessId }).select({ _id: 1 }).lean();
   const userIds = (members || []).map((m) => m?._id).filter(Boolean);
   if (
     req.user?._id &&
@@ -23,11 +23,11 @@ async function getCreditScope(req) {
     userIds.push(req.user._id);
   }
 
-  return { organizationId, userIds };
+  return { businessId, userIds };
 }
 
 function buildLedgerQuery(scope) {
-  return { organizationId: scope.organizationId };
+  return { businessId: scope.businessId };
 }
 
 async function getBalanceBreakdown(scope) {
@@ -83,11 +83,11 @@ async function getBalanceBreakdown(scope) {
 }
 
 export async function getMyCreditBalance(req, res) {
-  const organizationId = req.user?.organizationId;
-  if (!organizationId) {
+  const businessId = req.user?.businessId;
+  if (!businessId) {
     return res.status(403).json({
       success: false,
-      message: "기공소 정보가 설정되지 않았습니다.",
+      message: "사업자 정보가 설정되지 않았습니다.",
     });
   }
 
@@ -101,11 +101,11 @@ export async function getMyCreditBalance(req, res) {
 }
 
 export async function getMyCreditSpendInsights(req, res) {
-  const organizationId = req.user?.organizationId;
-  if (!organizationId) {
+  const businessId = req.user?.businessId;
+  if (!businessId) {
     return res.status(403).json({
       success: false,
-      message: "기공소 정보가 설정되지 않았습니다.",
+      message: "사업자 정보가 설정되지 않았습니다.",
     });
   }
 

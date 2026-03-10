@@ -242,7 +242,7 @@ export async function createRequestsFromDraft(req, res) {
         const priceStart = Date.now();
         let computedPrice = await computePriceForRequest({
           requestorId: req.user._id,
-          requestorOrgId: req.user?.organizationId,
+          requestorOrgId: req.user?.businessId,
           clinicName,
           patientName,
           tooth,
@@ -343,8 +343,8 @@ export async function createRequestsFromDraft(req, res) {
       });
     }
 
-    const organizationId = req.user?.organizationId;
-    if (!organizationId || !Types.ObjectId.isValid(String(organizationId))) {
+    const businessId = req.user?.businessId;
+    if (!businessId || !Types.ObjectId.isValid(String(businessId))) {
       return res.status(403).json({
         success: false,
         message:
@@ -623,7 +623,7 @@ export async function createRequestsFromDraft(req, res) {
             if (!dup || !existingRequestId) continue;
 
             const existingDoc = await Request.findById(existingRequestId)
-              .populate("requestor", "_id organizationId")
+              .populate("requestor", "_id businessId")
               .session(session);
             if (!existingDoc) {
               const err = new Error("기존 의뢰를 찾을 수 없습니다.");
@@ -681,11 +681,11 @@ export async function createRequestsFromDraft(req, res) {
               .select({
                 _id: 1,
                 requestor: 1,
-                requestorOrganizationId: 1,
+                requestorBusinessId: 1,
                 manufacturerStage: 1,
                 "caseInfos.reviewByStage.shipping.status": 1,
               })
-              .populate("requestor", "_id organizationId")
+              .populate("requestor", "_id businessId")
               .session(session);
             if (!existingDoc) {
               const err = new Error("기존 의뢰를 찾을 수 없습니다.");
@@ -702,7 +702,7 @@ export async function createRequestsFromDraft(req, res) {
         }
 
         const { balance } = await getOrganizationCreditBalanceBreakdown({
-          organizationId,
+          organizationId: businessId,
           session,
         });
         console.log("[createRequestsFromDraft] credit check", {
@@ -740,9 +740,9 @@ export async function createRequestsFromDraft(req, res) {
           const newRequest = {
             requestId,
             requestor: req.user._id,
-            requestorOrganizationId:
-              req.user?.role === "requestor" && req.user?.organizationId
-                ? req.user.organizationId
+            requestorBusinessId:
+              req.user?.role === "requestor" && req.user?.businessId
+                ? req.user.businessId
                 : null,
             price: item.computedPrice,
             shippingMode,

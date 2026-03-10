@@ -144,7 +144,7 @@ export function applyShippingWorkflowState(requestLike, patch = {}) {
 }
 
 export function getRequestorOrgId(req) {
-  const raw = req?.user?.organizationId;
+  const raw = req?.user?.businessId;
   return raw ? String(raw) : "";
 }
 
@@ -152,7 +152,7 @@ export function buildRequestorOrgFilter(req) {
   if (req?.user?.role !== "requestor") return {};
   const orgId = getRequestorOrgId(req);
   if (orgId && Types.ObjectId.isValid(orgId)) {
-    return { requestorOrganizationId: new Types.ObjectId(orgId) };
+    return { requestorBusinessId: new Types.ObjectId(orgId) };
   }
   return { requestor: req.user._id };
 }
@@ -185,7 +185,7 @@ export async function buildRequestorOrgScopeFilter(req) {
 
   return {
     $or: [
-      { requestorOrganizationId: orgObjectId },
+      { requestorBusinessId: orgObjectId },
       { requestor: { $in: memberObjectIds } },
     ],
   };
@@ -265,8 +265,8 @@ export async function canAccessRequestAsRequestor(req, requestDoc) {
 
   const myId = String(req.user._id);
   const myOrgId = getRequestorOrgId(req);
-  const reqOrgId = requestDoc.requestorOrganizationId
-    ? String(requestDoc.requestorOrganizationId)
+  const reqOrgId = requestDoc.requestorBusinessId
+    ? String(requestDoc.requestorBusinessId)
     : "";
 
   // 1. 의뢰 생성자가 본인인 경우 항상 접근 가능
@@ -285,9 +285,9 @@ export async function canAccessRequestAsRequestor(req, requestDoc) {
     return false;
   }
 
-  // 의뢰의 조직 ID 확인 (직접 저장된 것 또는 requestor.organizationId)
-  const populatedReqUserOrgId = populatedReqUser?.organizationId
-    ? String(populatedReqUser.organizationId)
+  // 의뢰의 사업자 ID 확인 (직접 저장된 것 또는 requestor.businessId)
+  const populatedReqUserOrgId = populatedReqUser?.businessId
+    ? String(populatedReqUser.businessId)
     : "";
   const targetOrgId = reqOrgId || populatedReqUserOrgId;
 
@@ -463,7 +463,7 @@ export async function normalizeRequestForResponse(requestDoc) {
   const ci = obj.caseInfos || {};
   obj.caseInfos = await normalizeCaseInfosImplantFields(ci, false);
   normalizeProductionScheduleDiameter(obj);
-  const requestorOrgRaw = obj?.requestorOrganizationId;
+  const requestorOrgRaw = obj?.requestorBusinessId;
   const requestorOrgId = (() => {
     if (!requestorOrgRaw) return "";
     if (
@@ -615,7 +615,7 @@ export async function computePriceForRequest({
 
   const scopeFilter =
     requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))
-      ? { requestorOrganizationId: new Types.ObjectId(String(requestorOrgId)) }
+      ? { requestorBusinessId: new Types.ObjectId(String(requestorOrgId)) }
       : { requestor: requestorId };
 
   const BASE_UNIT_PRICE = 15000;
@@ -831,9 +831,11 @@ export async function getReferralGroupLeaderId(userIdObj, userLean) {
 
   if (!user) return userId;
 
-  // 의뢰자 조직 단위 보상: 조직이 있으면 조직 owner를 그룹 리더로 사용
-  if (user?.organizationId) {
-    const orgIdStr = String(user.organizationId);
+  // 레거시 user 기반 리더 필드 호환:
+  // canonical 집계 단위는 business이지만, 기존 referralGroupLeaderId 체계와의 호환을 위해
+  // requestor가 사업자에 속해 있으면 해당 business를 대표하던 기존 leader 값을 우선 사용한다.
+  if (user?.businessId) {
+    const orgIdStr = String(user.businessId);
     if (Types.ObjectId.isValid(orgIdStr)) {
       const org = await RequestorOrganization.findById(orgIdStr)
         .select({ owner: 1 })

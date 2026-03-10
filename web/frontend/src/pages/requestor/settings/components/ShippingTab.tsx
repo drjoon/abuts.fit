@@ -77,6 +77,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
         }
         const businessNumberRaw = String(
           data?.extracted?.businessNumber ||
+            data?.business?.businessNumber ||
             data?.organization?.businessNumber ||
             data?.businessNumber ||
             "",

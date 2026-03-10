@@ -72,7 +72,7 @@ async function runMonthlySnapshot() {
     $or: [{ role: "salesman" }, { role: "requestor", requestorRole: "owner" }],
     active: true,
   })
-    .select({ _id: 1, role: 1, organizationId: 1 })
+    .select({ _id: 1, role: 1, businessId: 1 })
     .lean();
 
   if (!leaders.length) {
@@ -88,7 +88,7 @@ async function runMonthlySnapshot() {
     role: { $in: ["requestor", "salesman"] },
     active: true,
   })
-    .select({ _id: 1, referredByUserId: 1, organizationId: 1, role: 1 })
+    .select({ _id: 1, referredByUserId: 1, businessId: 1, role: 1 })
     .lean();
 
   const childIdsByLeaderId = new Map();
@@ -124,30 +124,30 @@ async function runMonthlySnapshot() {
   );
 
   // 의뢰자 조직 기준 집계 (requestor leader용)
-  const requestorLeaderOrgIds = leaders
-    .filter((l) => String(l.role) === "requestor" && l.organizationId)
-    .map((l) => String(l.organizationId));
-  const requestorLeaderOrgObjectIds = requestorLeaderOrgIds
+  const requestorLeaderBusinessIds = leaders
+    .filter((l) => String(l.role) === "requestor" && l.businessId)
+    .map((l) => String(l.businessId));
+  const requestorLeaderBusinessObjectIds = requestorLeaderBusinessIds
     .filter((id) => Types.ObjectId.isValid(id))
     .map((id) => new Types.ObjectId(id));
 
-  const orgOrderRows = requestorLeaderOrgObjectIds.length
+  const businessOrderRows = requestorLeaderBusinessObjectIds.length
     ? await Request.aggregate([
         {
           $match: {
-            requestorOrganizationId: { $in: requestorLeaderOrgObjectIds },
+            requestorBusinessId: { $in: requestorLeaderBusinessObjectIds },
             "caseInfos.reviewByStage.shipping.status": "APPROVED",
             createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
           },
         },
         {
-          $group: { _id: "$requestorOrganizationId", orderCount: { $sum: 1 } },
+          $group: { _id: "$requestorBusinessId", orderCount: { $sum: 1 } },
         },
       ])
     : [];
 
-  const ordersByOrgId = new Map(
-    orgOrderRows.map((r) => [String(r._id), Number(r.orderCount || 0)]),
+  const ordersByBusinessId = new Map(
+    businessOrderRows.map((r) => [String(r._id), Number(r.orderCount || 0)]),
   );
 
   let upsertCount = 0;
@@ -157,9 +157,16 @@ async function runMonthlySnapshot() {
     const memberCount = 1 + children.length;
 
     let groupTotalOrders = 0;
+    let snapshotBusinessId = null;
     if (String(leader.role) === "requestor") {
-      const orgId = String(leader.organizationId || "");
-      groupTotalOrders = orgId ? ordersByOrgId.get(orgId) || 0 : 0;
+      const businessId = String(leader.businessId || "");
+      snapshotBusinessId =
+        businessId && Types.ObjectId.isValid(businessId)
+          ? new Types.ObjectId(businessId)
+          : null;
+      groupTotalOrders = businessId
+        ? ordersByBusinessId.get(businessId) || 0
+        : 0;
     } else {
       const leaderOrders = ordersByUserId.get(lid) || 0;
       const childOrders = children.reduce(
@@ -167,14 +174,15 @@ async function runMonthlySnapshot() {
         0,
       );
       groupTotalOrders = leaderOrders + childOrders;
+      snapshotBusinessId = new Types.ObjectId(leader._id);
     }
 
     await PricingReferralStatsSnapshot.findOneAndUpdate(
-      { groupLeaderId: leader._id, ymd },
+      { businessId: snapshotBusinessId, ymd },
       {
         $set: {
-          ownerUserId: leader._id,
-          groupLeaderId: leader._id,
+          businessId: snapshotBusinessId,
+          leaderUserId: leader._id,
           groupMemberCount: memberCount,
           groupTotalOrders,
           computedAt: new Date(),

@@ -658,12 +658,12 @@ export const getS3DownloadUrl = asyncHandler(async (req, res) => {
   }
 
   // Check if user is organization owner and file belongs to their organization
-  if (req.user?.organizationId) {
+  if (req.user?.businessId) {
     const RequestorOrganization = (
       await import("../../models/requestorOrganization.model.js")
     ).default;
     const org = await RequestorOrganization.findById(
-      req.user.organizationId,
+      req.user.businessId,
     ).select("businessLicense");
 
     if (org?.businessLicense?.s3Key === key) {

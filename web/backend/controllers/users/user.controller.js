@@ -340,7 +340,7 @@ async function updateProfile(req, res) {
     delete updateData.active;
     delete updateData.createdAt;
     delete updateData.updatedAt;
-    delete updateData.organizationId;
+    delete updateData.businessId;
 
     if (
       Object.prototype.hasOwnProperty.call(updateData, "salesmanPayoutAccount")
@@ -423,10 +423,10 @@ async function updateProfile(req, res) {
     if (
       Object.prototype.hasOwnProperty.call(updateData, "organization") &&
       req.user?.role === "requestor" &&
-      req.user?.organizationId
+      req.user?.businessId
     ) {
       const nextName = String(updateData.organization || "").trim();
-      const org = await RequestorOrganization.findById(req.user.organizationId);
+      const org = await RequestorOrganization.findById(req.user.businessId);
       if (!org || String(org.owner) !== String(req.user._id)) {
         delete updateData.organization;
       } else {
@@ -446,12 +446,13 @@ async function updateProfile(req, res) {
           await org.save();
 
           await User.updateMany(
-            { organizationId: org._id },
-            { $set: { organization: nextName } },
+            { businessId: org._id },
+            { $set: { business: nextName } },
           );
         }
 
-        updateData.organization = nextName || org.name;
+        updateData.business = nextName || org.name;
+        delete updateData.organization;
       }
     }
 

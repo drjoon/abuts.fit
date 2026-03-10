@@ -143,8 +143,8 @@ const resolveMailboxCode = (request) =>
 const resolveRequestorOrganization = (request) => {
   const candidates = [
     request?.requestorOrganization,
-    request?.requestorOrganizationId,
-    request?.requestor?.organizationInfo,
+    request?.requestorBusinessId,
+    request?.requestor?.businessInfo,
   ];
   return (
     candidates.find(
@@ -160,7 +160,7 @@ const resolveRequestOrganizationName = (request) => {
   return (
     requestorOrg?.name ||
     extracted?.companyName ||
-    requestor?.organization ||
+    requestor?.business ||
     request?.caseInfos?.clinicName ||
     requestor?.name ||
     ""
@@ -404,11 +404,8 @@ export const findPackingStageRequestsByMailboxes = async (
   });
 
   if (options.populateRequestor !== false) {
-    query = query.populate(
-      "requestor",
-      "name organization phoneNumber address",
-    );
-    query = query.populate("requestorOrganizationId", "name extracted");
+    query = query.populate("requestor", "name business phoneNumber address");
+    query = query.populate("requestorBusinessId", "name extracted");
   }
 
   if (options.select && typeof options.select === "object") {

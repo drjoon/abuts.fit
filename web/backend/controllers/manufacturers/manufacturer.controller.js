@@ -27,7 +27,7 @@ export async function getManufacturerCreditLedger(req, res) {
       });
     }
 
-    const manufacturerOrganization = String(user.organization || "").trim();
+    const manufacturerOrganization = String(user.business || "").trim();
     if (!manufacturerOrganization) {
       return res.status(400).json({
         success: false,
@@ -103,7 +103,7 @@ export async function getManufacturerDailySettlementSnapshotStatus(req, res) {
       });
     }
 
-    const manufacturerOrganization = String(user.organization || "").trim();
+    const manufacturerOrganization = String(user.business || "").trim();
     if (!manufacturerOrganization) {
       return res.status(400).json({
         success: false,
@@ -162,7 +162,7 @@ export async function triggerManufacturerDailySettlementSnapshotRecalc(
       });
     }
 
-    const manufacturerOrganization = String(user.organization || "").trim();
+    const manufacturerOrganization = String(user.business || "").trim();
     if (!manufacturerOrganization) {
       return res.status(400).json({
         success: false,
@@ -284,7 +284,7 @@ export async function getManufacturerDailySettlementSnapshots(req, res) {
       });
     }
 
-    const manufacturerOrganization = String(user.organization || "").trim();
+    const manufacturerOrganization = String(user.business || "").trim();
     if (!manufacturerOrganization) {
       return res.status(400).json({
         success: false,

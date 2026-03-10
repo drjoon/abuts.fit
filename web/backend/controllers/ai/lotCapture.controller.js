@@ -248,7 +248,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   if (!request.mailboxAddress) {
     try {
       const requestorOrgId =
-        request.requestorOrganizationId || request.requestor?.organizationId;
+        request.requestorBusinessId || request.requestor?.businessId;
       request.mailboxAddress =
         await allocateVirtualMailboxAddress(requestorOrgId);
     } catch (err) {

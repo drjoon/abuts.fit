@@ -60,12 +60,12 @@ function withBridgeHeaders(extra = {}) {
 async function ensureRequestCancelRefund({ request, actorUserId }) {
   if (!request?._id) return;
 
-  const organizationId =
-    request.requestorOrganizationId || request.requestor?.organizationId;
-  if (!organizationId) return;
+  const businessId =
+    request.requestorBusinessId || request.requestor?.businessId;
+  if (!businessId) return;
 
   const spendRows = await CreditLedger.find({
-    organizationId,
+    businessId,
     type: "SPEND",
     refType: "REQUEST",
     refId: request._id,
@@ -74,7 +74,7 @@ async function ensureRequestCancelRefund({ request, actorUserId }) {
     .lean();
 
   const refundRows = await CreditLedger.find({
-    organizationId,
+    businessId,
     type: "REFUND",
     refType: "REQUEST",
     refId: request._id,
@@ -101,7 +101,7 @@ async function ensureRequestCancelRefund({ request, actorUserId }) {
     { uniqueKey },
     {
       $setOnInsert: {
-        organizationId,
+        businessId,
         userId: actorUserId || null,
         type: "REFUND",
         amount: refundAmount,
@@ -115,7 +115,7 @@ async function ensureRequestCancelRefund({ request, actorUserId }) {
 
   if (result?.upsertedCount) {
     await emitCreditBalanceUpdatedToOrganization({
-      organizationId,
+      organizationId: businessId,
       balanceDelta: refundAmount,
       reason: "request_cancel_refund",
       refId: request._id,
@@ -272,7 +272,7 @@ export async function getAllRequests(req, res) {
       "mailboxAddress",
       "shippingLabelPrinted",
       "shippingWorkflow",
-      "requestorOrganizationId",
+      "requestorBusinessId",
       "referenceIds",
       "caseInfos.clinicName",
       "caseInfos.patientName",
@@ -304,8 +304,8 @@ export async function getAllRequests(req, res) {
     if (view !== "full") {
       query = query
         .select(worksheetSelect)
-        .populate("requestor", "name organization")
-        .populate("requestorOrganizationId", "name extracted");
+        .populate("requestor", "name business")
+        .populate("requestorBusinessId", "name extracted");
       if (includeDelivery) {
         // 배송 정보가 필요한 경우에만 최소 필드로 populate
         query = query.populate(
@@ -317,9 +317,9 @@ export async function getAllRequests(req, res) {
     } else {
       query = query
         .select("-messages")
-        .populate("requestor", "name email organization phoneNumber address")
+        .populate("requestor", "name email business phoneNumber address")
         .populate("deliveryInfoRef")
-        .populate("requestorOrganizationId", "name extracted");
+        .populate("requestorBusinessId", "name extracted");
     }
 
     const rawRequests = await query.lean();
@@ -402,7 +402,7 @@ export async function getMyRequests(req, res) {
     // 의뢰 조회
     const rawRequests = await Request.find(filter)
       .select("-messages -statusHistory") // 상세 내역 조회 시 불필요한 큰 필드 제외
-      .populate("requestor", "name email organization organizationId")
+      .populate("requestor", "name email business businessId")
       .sort(sort)
       .skip(skip)
       .limit(limit)
@@ -449,10 +449,7 @@ export async function getRequestById(req, res) {
     // 의뢰 조회
     const request = await Request.findById(requestId)
       .select("-messages")
-      .populate(
-        "requestor",
-        "name email phoneNumber organization organizationId role",
-      );
+      .populate("requestor", "name email phoneNumber business businessId role");
 
     if (!request) {
       return res.status(404).json({
@@ -504,7 +501,7 @@ export async function updateRequest(req, res) {
     // 의뢰 조회
     const request = await Request.findById(requestId)
       .select("-messages")
-      .populate("requestor", "organizationId");
+      .populate("requestor", "businessId");
 
     if (!request) {
       return res.status(404).json({
@@ -648,7 +645,7 @@ export async function updateRequestStatus(req, res) {
     // 의뢰 조회
     const request = await Request.findById(requestId).populate(
       "requestor",
-      "organizationId",
+      "businessId",
     );
 
     if (!request) {
@@ -735,7 +732,7 @@ export async function deleteRequest(req, res) {
     // 의뢰 조회
     const request = await Request.findById(requestId).populate(
       "requestor",
-      "organizationId",
+      "businessId",
     );
 
     if (!request) {

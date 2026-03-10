@@ -43,8 +43,8 @@ function parseBonusGrantIdFromUniqueKey(uniqueKey) {
 }
 
 export async function listMyCreditLedger(req, res) {
-  const organizationId = req.user?.organizationId;
-  if (!organizationId) {
+  const businessId = req.user?.businessId;
+  if (!businessId) {
     return res.status(403).json({
       success: false,
       message: "기공소 정보가 설정되지 않았습니다.",
@@ -64,7 +64,7 @@ export async function listMyCreditLedger(req, res) {
   );
 
   const match = {
-    organizationId: new mongoose.Types.ObjectId(String(organizationId)),
+    businessId: new mongoose.Types.ObjectId(String(businessId)),
   };
 
   if (
@@ -133,9 +133,9 @@ export async function listMyCreditLedger(req, res) {
   }
 
   // running balance: 전체 잔액 계산 (필터 무관)
-  const orgId = new mongoose.Types.ObjectId(String(organizationId));
+  const orgId = new mongoose.Types.ObjectId(String(businessId));
   const allLedgerRows = await CreditLedger.aggregate([
-    { $match: { organizationId: orgId } },
+    { $match: { businessId: orgId } },
     { $group: { _id: "$type", total: { $sum: "$amount" } } },
   ]);
   let totalBalance = 0;

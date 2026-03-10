@@ -7,6 +7,7 @@ const buildUserSnapshot = (user) => ({
   name: String(user?.name || ""),
   email: String(user?.email || ""),
   role: String(user?.role || ""),
+  business: String(user?.business || ""),
   organization: String(user?.organization || ""),
 });
 
@@ -93,7 +94,7 @@ export async function createInquiry(req, res) {
 
     const inquiry = await BusinessRegistrationInquiry.create({
       user: req.user._id,
-      organizationId: req.user?.organizationId || null,
+      organizationId: req.user?.businessId || null,
       organizationType: req.user?.role || null,
       userSnapshot: buildUserSnapshot(req.user),
       type: normalizedType,
@@ -167,7 +168,7 @@ export async function createBusinessRegistrationInquiry(req, res) {
 
     const inquiry = await BusinessRegistrationInquiry.create({
       user: req.user._id,
-      organizationId: req.user?.organizationId || null,
+      organizationId: req.user?.businessId || null,
       organizationType: resolvedType,
       userSnapshot,
       type: "business_registration",
