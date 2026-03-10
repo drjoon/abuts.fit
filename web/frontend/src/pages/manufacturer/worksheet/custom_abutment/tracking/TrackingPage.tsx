@@ -729,6 +729,15 @@ export const TrackingInquiryPage = () => {
       return Boolean(di.trackingNumber || di.shippedAt || di.deliveredAt);
     });
 
+    console.log(
+      "[DEBUG] shippingRows - baseFiltered count:",
+      baseFiltered.length,
+    );
+    console.log(
+      "[DEBUG] shippingRows - only (with tracking) count:",
+      only.length,
+    );
+
     // 박스 단위로 그룹핑 (trackingNumber 기준)
     const boxMap = new Map<string, ManufacturerRequest[]>();
     for (const r of only) {
@@ -736,11 +745,22 @@ export const TrackingInquiryPage = () => {
       const trackingNumber =
         String(di.trackingNumber || "").trim() ||
         `no-tracking-${Math.random()}`;
+      console.log(
+        `[DEBUG] Request ${r.requestId} -> trackingNumber: "${trackingNumber}"`,
+      );
       if (!boxMap.has(trackingNumber)) {
         boxMap.set(trackingNumber, []);
       }
       boxMap.get(trackingNumber)!.push(r);
     }
+
+    console.log("[DEBUG] boxMap size:", boxMap.size);
+    boxMap.forEach((requests, trackingNumber) => {
+      console.log(
+        `[DEBUG] Box "${trackingNumber}": ${requests.length} requests`,
+        requests.map((r) => r.requestId),
+      );
+    });
 
     // 박스별 대표 정보 생성 (첫 번째 의뢰건 기준)
     const boxes = Array.from(boxMap.entries()).map(
@@ -764,6 +784,8 @@ export const TrackingInquiryPage = () => {
         };
       },
     );
+
+    console.log("[DEBUG] Final boxes count:", boxes.length);
 
     return boxes.slice().sort((a, b) => {
       const aTime = new Date(
@@ -1254,12 +1276,22 @@ export const TrackingInquiryPage = () => {
                 const isExpanded = expandedBoxes.has(boxId);
 
                 const toggleExpanded = () => {
+                  console.log(
+                    `[DEBUG] toggleExpanded called for boxId: ${boxId}`,
+                  );
+                  console.log(
+                    `[DEBUG] Current expandedBoxes:`,
+                    Array.from(expandedBoxes),
+                  );
                   const newSet = new Set(expandedBoxes);
                   if (newSet.has(boxId)) {
+                    console.log(`[DEBUG] Removing ${boxId} from expandedBoxes`);
                     newSet.delete(boxId);
                   } else {
+                    console.log(`[DEBUG] Adding ${boxId} to expandedBoxes`);
                     newSet.add(boxId);
                   }
+                  console.log(`[DEBUG] New expandedBoxes:`, Array.from(newSet));
                   setExpandedBoxes(newSet);
                 };
 
