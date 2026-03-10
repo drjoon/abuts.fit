@@ -15,7 +15,7 @@ export interface SharedOrganizationDraft {
   phoneNumber: string;
   email: string;
   address: string;
-  selectedOrganizationId: string;
+  selectedBusinessId: string;
   searchKeyword: string;
 }
 

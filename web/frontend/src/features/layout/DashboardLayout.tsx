@@ -254,7 +254,7 @@ export const DashboardLayout = () => {
       setCreditBalance(null);
       return;
     }
-    if (!user.organizationId) {
+    if (!(user as any).businessId) {
       setCreditBalance(null);
       return;
     }
@@ -299,16 +299,24 @@ export const DashboardLayout = () => {
     if (!token) return;
     if (!user) return;
     if (user.role !== "requestor") return;
-    if (!user.organizationId) return;
+    if (!(user as any).businessId) return;
 
     const unsubscribe = onAppEvent((evt) => {
       const type = String(evt?.type || "").trim();
       const payload = evt?.data || {};
       if (type !== "credit:balance-updated") return;
 
-      const eventOrgId = String(payload?.organizationId || "").trim();
-      const myOrgId = String(user.organizationId || "").trim();
-      if (!eventOrgId || !myOrgId || eventOrgId !== myOrgId) return;
+      const eventBusinessId = String(
+        payload?.businessId || payload?.organizationId || "",
+      ).trim();
+      const myBusinessId = String((user as any)?.businessId || "").trim();
+      if (
+        !eventBusinessId ||
+        !myBusinessId ||
+        eventBusinessId !== myBusinessId
+      ) {
+        return;
+      }
 
       const delta = Number(payload?.balanceDelta || 0);
       if (!Number.isFinite(delta) || delta === 0) {
@@ -346,7 +354,7 @@ export const DashboardLayout = () => {
     if (!token) return;
     if (!user) return;
     if (user.role !== "requestor") return;
-    if (!user.organizationId) return;
+    if (!(user as any).businessId) return;
 
     // 크레딧 안내는 신규 의뢰 흐름에서만 노출한다.
     // (설정/대시보드 등에서 자동 토스트가 뜨며 흐름을 방해하는 문제 방지)

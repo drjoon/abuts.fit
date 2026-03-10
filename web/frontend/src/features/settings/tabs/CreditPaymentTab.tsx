@@ -462,7 +462,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
       return;
     }
 
-    if (!user?.organizationId) {
+    if (!(user as any)?.businessId) {
       toast({
         title: "사업자 정보가 없습니다",
         description: "사업자 탭에서 사업자 정보를 먼저 등록해주세요.",

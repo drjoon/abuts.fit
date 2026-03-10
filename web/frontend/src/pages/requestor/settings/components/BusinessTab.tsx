@@ -624,7 +624,7 @@ export const BusinessTab = ({
   const handleCancelJoinRequest = async (businessId: string) => {
     await handleJoinOrLeave({
       token,
-      organizationId: businessId,
+      businessId,
       action: "cancel",
       organizationType,
       mockHeaders,
@@ -728,7 +728,7 @@ export const BusinessTab = ({
   const handleLeaveOrganization = async (businessId: string) => {
     await handleJoinOrLeave({
       token,
-      organizationId: businessId,
+      businessId,
       action: "leave",
       organizationType,
       mockHeaders,
@@ -742,7 +742,7 @@ export const BusinessTab = ({
   const handleJoinRequest = async () => {
     await handleJoinRequestImpl({
       token,
-      selectedOrgId: selectedOrg?._id,
+      selectedBusinessId: selectedOrg?._id,
       organizationType,
       mockHeaders,
       toast,

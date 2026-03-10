@@ -135,10 +135,7 @@ export const AdminChatManagement = () => {
         room.relatedRequestId?.title || room.title || room.roomType || "";
       const requestId = room.relatedRequestId?.requestId || "";
       const participantsText = (room.participants || [])
-        .map(
-          (p: any) =>
-            `${p.name} ${p.business || p.organization || ""} ${p.email}`,
-        )
+        .map((p: any) => `${p.name} ${p.business || ""} ${p.email}`)
         .join(" ");
 
       return `${title} ${requestId} ${participantsText}`
@@ -481,11 +478,7 @@ export const AdminChatManagement = () => {
                     {(activeChat.participants || [])
                       .map(
                         (p: any) =>
-                          `${p.name}${
-                            p.business || p.organization
-                              ? `(${p.business || p.organization})`
-                              : ""
-                          }`,
+                          `${p.name}${p.business ? `(${p.business})` : ""}`,
                       )
                       .join(" · ")}
                   </div>

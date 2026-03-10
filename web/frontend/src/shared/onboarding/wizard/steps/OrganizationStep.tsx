@@ -216,7 +216,7 @@ export const OrganizationStep = ({
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<OrganizationResult[]>([]);
   const [joinLoading, setJoinLoading] = useState(false);
-  const [selectedOrgId, setSelectedOrgId] = useState<string>("");
+  const [selectedBusinessId, setSelectedBusinessId] = useState<string>("");
   const [completed, setCompleted] = useState(Boolean(defaultCompleted));
   const ownerFieldRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [memberError, setMemberError] = useState("");
@@ -738,7 +738,7 @@ export const OrganizationStep = ({
       toast({ title: "로그인이 필요합니다", variant: "destructive" });
       return false;
     }
-    if (!selectedOrgId) {
+    if (!selectedBusinessId) {
       const message = search.trim()
         ? "사업자를 선택해주세요"
         : "검색어를 입력해주세요";
@@ -753,7 +753,7 @@ export const OrganizationStep = ({
         method: "POST",
         token,
         jsonBody: {
-          organizationId: selectedOrgId,
+          businessId: selectedBusinessId,
           organizationType,
         },
       });
@@ -1081,7 +1081,7 @@ export const OrganizationStep = ({
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
-              setSelectedOrgId("");
+              setSelectedBusinessId("");
               if (memberError) setMemberError("");
             }}
             onKeyDown={(event) => {
@@ -1103,13 +1103,13 @@ export const OrganizationStep = ({
           ]
             .filter(Boolean)
             .join(" · ");
-          const active = selectedOrgId === org._id;
+          const active = selectedBusinessId === org._id;
           return (
             <button
               key={org._id}
               type="button"
               onClick={() => {
-                setSelectedOrgId(org._id);
+                setSelectedBusinessId(org._id);
                 if (memberError) setMemberError("");
               }}
               className={cn(

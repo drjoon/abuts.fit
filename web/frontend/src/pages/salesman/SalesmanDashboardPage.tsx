@@ -37,7 +37,8 @@ type ApiDashboard = {
     paidNetCommissionAmount?: number;
   };
   organizations: Array<{
-    organizationId: string;
+    businessId?: string;
+    organizationId?: string;
     name: string;
     monthRevenueAmount: number;
     monthOrderCount: number;
@@ -138,7 +139,7 @@ export const SalesmanDashboardPage = () => {
 
   const creditRows = (data?.organizations || []).map((o) => {
     return {
-      key: String(o.organizationId || o.name || Math.random()),
+      key: String(o.businessId || o.organizationId || o.name || Math.random()),
       name: String(o.name || "의뢰자"),
       referralLevel: o.referralLevel === "level1" ? "간접 소개" : "직접 소개",
       revenue: Number(o.monthRevenueAmount || 0),
@@ -363,7 +364,9 @@ export const SalesmanDashboardPage = () => {
                       <ul className="space-y-2">
                         {directList.map((org) => (
                           <li
-                            key={org.organizationId}
+                            key={
+                              org.businessId || org.organizationId || org.name
+                            }
                             className="flex items-start gap-2"
                           >
                             <div className="mt-1 h-2 w-2 rounded-full bg-indigo-500" />

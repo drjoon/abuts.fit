@@ -4,13 +4,18 @@ import { Types } from "mongoose";
 import { resolveOwnedOrg, resolvePrimaryOwnedOrg } from "./utils.js";
 import { assertOrganizationRole } from "./organizationRole.util.js";
 
+function readUserBusinessId(user) {
+  return String(user?.businessId || "").trim();
+}
+
 export async function getPendingJoinRequestsForOwner(req, res) {
   try {
     const roleCheck = assertOrganizationRole(req, res);
     if (!roleCheck) return;
     const { organizationType } = roleCheck;
 
-    if (!req.user.organizationId) {
+    const myBusinessId = readUserBusinessId(req.user);
+    if (!myBusinessId) {
       return res.status(403).json({
         success: false,
         message: "기공소 정보가 설정되지 않았습니다.",
@@ -18,7 +23,7 @@ export async function getPendingJoinRequestsForOwner(req, res) {
     }
 
     const org = await RequestorOrganization.findOne({
-      _id: req.user.organizationId,
+      _id: myBusinessId,
       organizationType,
       $or: [{ owner: req.user._id }, { owners: req.user._id }],
     })
@@ -43,7 +48,9 @@ export async function getPendingJoinRequestsForOwner(req, res) {
     return res.json({
       success: true,
       data: {
+        businessId: org._id,
         organizationId: org._id,
+        businessName: org.name,
         organizationName: org.name,
         joinRequests: pending,
       },
@@ -107,7 +114,9 @@ export async function getRepresentatives(req, res) {
     return res.json({
       success: true,
       data: {
+        businessId: String(full?._id || org._id),
         organizationId: String(full?._id || org._id),
+        businessName: String(full?.name || ""),
         organizationName: String(full?.name || ""),
         representatives,
       },
@@ -182,8 +191,8 @@ export async function addOwner(req, res) {
       });
     }
 
-    const existingOrgId = String(targetUser.organizationId || "");
-    if (existingOrgId && existingOrgId !== String(org._id)) {
+    const existingBusinessId = String(targetUser.businessId || "");
+    if (existingBusinessId && existingBusinessId !== String(org._id)) {
       return res.status(409).json({
         success: false,
         message: "이미 다른 기공소에 소속되어 있습니다.",
@@ -208,8 +217,8 @@ export async function addOwner(req, res) {
 
     await User.findByIdAndUpdate(targetId, {
       $set: {
-        organizationId: org._id,
-        organization: org.name,
+        businessId: org._id,
+        business: org.name,
       },
     });
 
@@ -276,7 +285,8 @@ export async function getMyStaffMembers(req, res) {
     if (!roleCheck) return;
     const { organizationType } = roleCheck;
 
-    if (!req.user.organizationId) {
+    const myBusinessId = readUserBusinessId(req.user);
+    if (!myBusinessId) {
       return res.status(403).json({
         success: false,
         message: "기공소 정보가 설정되지 않았습니다.",
@@ -284,7 +294,7 @@ export async function getMyStaffMembers(req, res) {
     }
 
     const org = await RequestorOrganization.findOne({
-      _id: req.user.organizationId,
+      _id: myBusinessId,
       organizationType,
       $or: [{ owner: req.user._id }, { owners: req.user._id }],
     })
@@ -335,7 +345,9 @@ export async function getMyStaffMembers(req, res) {
     return res.json({
       success: true,
       data: {
+        businessId: String(org._id),
         organizationId: String(org._id),
+        businessName: String(org.name),
         organizationName: String(org.name),
         staff,
       },
@@ -410,7 +422,7 @@ export async function removeStaffMember(req, res) {
     await org.save();
 
     await User.findByIdAndUpdate(userId, {
-      $set: { organizationId: null, organization: "" },
+      $set: { businessId: null, business: "" },
     });
 
     return res.json({ success: true, data: { removed: true } });
@@ -490,8 +502,8 @@ export async function approveJoinRequest(req, res) {
 
     await User.findByIdAndUpdate(userId, {
       $set: {
-        organization: org.name,
-        organizationId: org._id,
+        business: org.name,
+        businessId: org._id,
       },
     });
 

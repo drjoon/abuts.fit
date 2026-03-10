@@ -167,7 +167,7 @@ const toUiUser = (u: ApiUser): UiUserRow => {
     email,
     originalEmail,
     role: String(u.role || ""),
-    companyName: String(u.business || u.organization || ""),
+    companyName: String(u.business || ""),
     status,
     joinDate: formatDate(u.createdAt),
     lastLogin: formatDate(u.lastLogin),

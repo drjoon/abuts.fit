@@ -1171,13 +1171,13 @@ export const RequestPage = ({
 
   const handleMailboxAddressSaved = useCallback(
     (payload: {
-      organizationId: string;
+      businessId: string;
       address: string;
       addressDetail: string;
       zipCode: string;
     }) => {
-      const organizationId = String(payload.organizationId || "").trim();
-      if (!organizationId) return;
+      const businessId = String(payload.businessId || "").trim();
+      if (!businessId) return;
 
       setRequests((prev) =>
         prev.map((req) => {
@@ -1190,7 +1190,7 @@ export const RequestPage = ({
           const reqOrganizationId = String(
             reqOrganization?._id || reqOrganization || "",
           ).trim();
-          if (reqOrganizationId !== organizationId) return req;
+          if (reqOrganizationId !== businessId) return req;
 
           const nextRequestorOrganization = reqOrganization
             ? {

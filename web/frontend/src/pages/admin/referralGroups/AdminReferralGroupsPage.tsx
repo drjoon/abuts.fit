@@ -188,11 +188,7 @@ const TreeNode = ({
         <div className="flex items-center justify-between gap-2 rounded-md border border-transparent hover:border-border hover:bg-muted/40 px-2 py-1">
           <div className="min-w-0">
             <div className="truncate text-sm font-medium">
-              {node.business ||
-                node.organization ||
-                node.name ||
-                node.email ||
-                node._id}
+              {node.business || node.name || node.email || node._id}
             </div>
             <div className="truncate text-xs text-muted-foreground">
               {node.email || ""}
@@ -312,7 +308,7 @@ export default function AdminReferralGroupsPage() {
       }
       if (!q) return true;
       const hay =
-        `${leader.business || leader.organization || ""} ${leader.name || ""} ${leader.email || ""}`
+        `${leader.business || ""} ${leader.name || ""} ${leader.email || ""}`
           .trim()
           .toLowerCase();
       return hay.includes(q);
@@ -778,13 +774,13 @@ export default function AdminReferralGroupsPage() {
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0">
                           <div className="truncate text-sm font-semibold">
-                            {leader.organization ||
+                            {leader.business ||
                               leader.name ||
                               leader.email ||
                               leader._id}
                           </div>
                           <div className="truncate text-xs text-muted-foreground">
-                            {leader.email || ""}
+                            소개자 {leader.name || "-"}
                           </div>
                           <div className="mt-1 text-[11px] text-muted-foreground">
                             {orders.toLocaleString()}건 ·{" "}
@@ -950,7 +946,7 @@ export default function AdminReferralGroupsPage() {
                             onClick={() => setSelectedNode(r)}
                           >
                             <div className="truncate text-sm font-medium">
-                              {r.organization || r.name || r.email || r._id}
+                              {r.business || r.name || r.email || r._id}
                             </div>
                             <div className="text-[11px] text-muted-foreground">
                               유료 {paidOrders.toLocaleString()}건
@@ -1021,13 +1017,13 @@ export default function AdminReferralGroupsPage() {
                             >
                               <div className="text-[10px] text-muted-foreground/70 mb-0.5">
                                 경유:{" "}
-                                {via.organization ||
+                                {via.business ||
                                   via.name ||
                                   via.email ||
                                   via._id}
                               </div>
                               <div className="truncate text-sm font-medium">
-                                {r.organization || r.name || r.email || r._id}
+                                {r.business || r.name || r.email || r._id}
                               </div>
                               <div className="text-[11px] text-muted-foreground">
                                 유료 {paidOrders.toLocaleString()}건
@@ -1073,7 +1069,7 @@ export default function AdminReferralGroupsPage() {
           <DialogHeader>
             <DialogTitle>계정 정보</DialogTitle>
             <DialogDescription>
-              {selectedNode?.organization ||
+              {selectedNode?.business ||
                 selectedNode?.name ||
                 selectedNode?.email ||
                 ""}

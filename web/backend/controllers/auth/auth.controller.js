@@ -42,8 +42,8 @@ const isStrongPassword = (password) => {
   return true;
 };
 
-async function getOrganizationCreditBalanceBreakdown(organizationId) {
-  const rows = await CreditLedger.find({ businessId: organizationId })
+async function getBusinessCreditBalanceBreakdown(businessId) {
+  const rows = await CreditLedger.find({ businessId })
     .sort({ createdAt: 1, _id: 1 })
     .select({ type: 1, amount: 1 })
     .lean();
@@ -1172,7 +1172,7 @@ async function withdraw(req, res) {
 
     if (user.role === "requestor" && isRequestorOwner && businessId) {
       const { paidBalance } =
-        await getOrganizationCreditBalanceBreakdown(businessId);
+        await getBusinessCreditBalanceBreakdown(businessId);
       if (paidBalance > 0) {
         return res.status(400).json({
           success: false,

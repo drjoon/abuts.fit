@@ -14,7 +14,7 @@ import {
 } from "./utils.js";
 
 async function grantRequestorSeedCredit({
-  organizationId,
+  businessId,
   userId,
   uniqueKey,
   amount = 500000,
@@ -26,7 +26,7 @@ async function grantRequestorSeedCredit({
   if (existing) return false;
 
   await CreditLedger.create({
-    businessId: organizationId,
+    businessId,
     userId,
     type: "CHARGE",
     amount,
@@ -80,16 +80,16 @@ function pickRandom(items) {
   return items.length ? pick(items) : null;
 }
 
-async function ensureOrganizationFromSpec(spec, ownerId) {
+async function ensureBusinessFromSpec(spec, ownerId) {
   if (!spec) return null;
-  const organization = await findOrCreateOrganization({
+  const business = await findOrCreateOrganization({
     organizationType: spec.type,
     name: spec.name,
     ownerId,
     memberIds: [],
     extracted: spec.extracted || {},
   });
-  return organization;
+  return business;
 }
 
 export async function seedEssentialAccounts() {
@@ -113,12 +113,9 @@ export async function seedEssentialAccounts() {
       ...(spec.roleSpecific || {}),
     });
 
-    const organization = await ensureOrganizationFromSpec(
-      spec.organization,
-      user._id,
-    );
-    if (organization) {
-      await attachUserToOrganization(user._id, organization);
+    const business = await ensureBusinessFromSpec(spec.organization, user._id);
+    if (business) {
+      await attachUserToOrganization(user._id, business);
     }
 
     createdUsers.push({
@@ -127,7 +124,7 @@ export async function seedEssentialAccounts() {
       email: spec.email,
       phoneNumber: spec.phoneNumber,
       role: spec.role,
-      organization: spec.organization?.name,
+      business: spec.organization?.name,
       password,
     });
   }
@@ -154,7 +151,7 @@ export async function seedDefaultAccounts() {
     role: "requestor",
     requestorRole: "owner",
     phoneNumber: "01000000001",
-    organization: "데모기공소",
+    business: "데모기공소",
     referralCode: "seed_requestor_owner",
     approvedAt: NOW,
     active: true,
@@ -167,7 +164,7 @@ export async function seedDefaultAccounts() {
     role: "requestor",
     requestorRole: "staff",
     phoneNumber: "01000000002",
-    organization: "데모기공소",
+    business: "데모기공소",
     referralCode: "seed_requestor_staff",
     approvedAt: NOW,
     active: true,
@@ -192,7 +189,7 @@ export async function seedDefaultAccounts() {
   await attachUserToOrganization(requestorOwner._id, requestorOrg);
   await attachUserToOrganization(requestorStaff._id, requestorOrg);
   await grantRequestorSeedCredit({
-    organizationId: requestorOrg._id,
+    businessId: requestorOrg._id,
     userId: requestorOwner._id,
     uniqueKey: `org:${String(requestorOrg._id)}`,
   });
@@ -204,7 +201,7 @@ export async function seedDefaultAccounts() {
     role: "manufacturer",
     manufacturerRole: "owner",
     phoneNumber: "01000000003",
-    organization: "애크로덴트",
+    business: "애크로덴트",
     referralCode: "seed_manufacturer_owner",
     approvedAt: NOW,
     active: true,
@@ -217,7 +214,7 @@ export async function seedDefaultAccounts() {
     role: "manufacturer",
     manufacturerRole: "staff",
     phoneNumber: "01000000005",
-    organization: "애크로덴트",
+    business: "애크로덴트",
     referralCode: "seed_manufacturer_staff",
     approvedAt: NOW,
     active: true,
@@ -247,7 +244,7 @@ export async function seedDefaultAccounts() {
     role: "admin",
     adminRole: "owner",
     phoneNumber: "01000000004",
-    organization: "어벗츠핏",
+    business: "어벗츠핏",
     referralCode: "seed_admin_owner",
     approvedAt: NOW,
     active: true,
@@ -260,7 +257,7 @@ export async function seedDefaultAccounts() {
     role: "admin",
     adminRole: "staff",
     phoneNumber: "01000000006",
-    organization: "어벗츠핏",
+    business: "어벗츠핏",
     referralCode: "seed_admin_staff",
     approvedAt: NOW,
     active: true,
@@ -289,7 +286,7 @@ export async function seedDefaultAccounts() {
     password: passwords.salesmanOwner,
     role: "salesman",
     phoneNumber: "01000000007",
-    organization: "데모영업팀",
+    business: "데모영업팀",
     referralCode: "seed_salesman_owner",
     approvedAt: NOW,
     active: true,
@@ -301,7 +298,7 @@ export async function seedDefaultAccounts() {
     password: passwords.salesmanStaff,
     role: "salesman",
     phoneNumber: "01000000008",
-    organization: "데모영업팀",
+    business: "데모영업팀",
     referralCode: "seed_salesman_staff",
     approvedAt: NOW,
     active: true,
@@ -351,7 +348,7 @@ export async function seedBulkAccounts() {
 
   const createdSalesmen = [];
   const salesmanOwners = [];
-  const organizationMap = new Map();
+  const businessMap = new Map();
 
   for (const spec of salesmanSpecs) {
     const password = generateSecurePassword();
@@ -390,15 +387,12 @@ export async function seedBulkAccounts() {
       );
     }
 
-    const organization = await ensureOrganizationFromSpec(
-      spec.organization,
-      user._id,
-    );
-    if (organization) {
-      await attachUserToOrganization(user._id, organization);
+    const business = await ensureBusinessFromSpec(spec.organization, user._id);
+    if (business) {
+      await attachUserToOrganization(user._id, business);
       if (spec.organizationKey) {
-        organizationMap.set(spec.organizationKey, {
-          organization,
+        businessMap.set(spec.organizationKey, {
+          business,
           ownerId: user._id,
         });
       }
@@ -453,7 +447,7 @@ export async function seedBulkAccounts() {
       role: "requestor",
       requestorRole: spec.requestorRole,
       phoneNumber: spec.phoneNumber,
-      organization: spec.organization?.name,
+      business: spec.organization?.name,
       referralCode: randomReferralCode(),
       referredByUserId,
       referralGroupLeaderId,
@@ -461,36 +455,30 @@ export async function seedBulkAccounts() {
       active: true,
     });
 
-    let organization = null;
+    let business = null;
     if (isOwner) {
-      organization = await ensureOrganizationFromSpec(
-        spec.organization,
-        user._id,
-      );
-      if (!organization) {
+      business = await ensureBusinessFromSpec(spec.organization, user._id);
+      if (!business) {
         throw new Error(
-          `[seed] requestor owner ${spec.email} 에 대한 조직 정보가 필요합니다`,
+          `[seed] requestor owner ${spec.email} 에 대한 사업자 정보가 필요합니다`,
         );
       }
-      await attachUserToOrganization(user._id, organization);
+      await attachUserToOrganization(user._id, business);
       if (spec.organizationKey) {
-        organizationMap.set(spec.organizationKey, {
-          organization,
+        businessMap.set(spec.organizationKey, {
+          business,
           ownerId: user._id,
         });
       }
 
       await grantRequestorSeedCredit({
-        organizationId: organization._id,
+        businessId: business._id,
         userId: user._id,
-        uniqueKey: `org:${String(organization._id)}`,
+        uniqueKey: `org:${String(business._id)}`,
       });
-    } else if (
-      spec.organizationKey &&
-      organizationMap.has(spec.organizationKey)
-    ) {
-      organization = organizationMap.get(spec.organizationKey).organization;
-      await attachUserToOrganization(user._id, organization);
+    } else if (spec.organizationKey && businessMap.has(spec.organizationKey)) {
+      business = businessMap.get(spec.organizationKey).business;
+      await attachUserToOrganization(user._id, business);
     }
 
     const effectiveLeaderId =

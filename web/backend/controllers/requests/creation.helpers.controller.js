@@ -76,11 +76,11 @@ export async function uploadS3ToRhinoServer(s3Url, fileName) {
   }
 }
 
-export async function getOrganizationCreditBalanceBreakdown({
-  organizationId,
+export async function getBusinessCreditBalanceBreakdown({
+  businessId,
   session,
 }) {
-  const rows = await CreditLedger.find({ businessId: organizationId })
+  const rows = await CreditLedger.find({ businessId })
     .sort({ createdAt: 1, _id: 1 })
     .select({ type: 1, amount: 1 })
     .session(session || null)

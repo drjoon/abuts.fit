@@ -406,7 +406,7 @@ export const handleDeleteLicense = async (
 
 interface HandleJoinOrLeaveParams {
   token: string;
-  organizationId: string;
+  businessId: string;
   action: "cancel" | "leave";
   organizationType?: string;
   mockHeaders?: Record<string, string>;
@@ -419,7 +419,7 @@ interface HandleJoinOrLeaveParams {
 export const handleJoinOrLeave = async (params: HandleJoinOrLeaveParams) => {
   const {
     token,
-    organizationId,
+    businessId,
     action,
     organizationType,
     mockHeaders,
@@ -438,12 +438,12 @@ export const handleJoinOrLeave = async (params: HandleJoinOrLeaveParams) => {
       });
       return;
     }
-    const orgId = String(organizationId || "").trim();
-    if (!orgId) return;
+    const normalizedBusinessId = String(businessId || "").trim();
+    if (!normalizedBusinessId) return;
 
-    setCancelLoadingOrgId(orgId);
+    setCancelLoadingOrgId(normalizedBusinessId);
     const res = await request<any>({
-      path: `/api/organizations/join-requests/${orgId}/${action}`,
+      path: `/api/organizations/join-requests/${normalizedBusinessId}/${action}`,
       method: "POST",
       token,
       headers: mockHeaders ?? undefined,
@@ -474,7 +474,7 @@ export const handleJoinOrLeave = async (params: HandleJoinOrLeaveParams) => {
 
 interface HandleJoinRequestParams {
   token: string;
-  selectedOrgId: string | undefined;
+  selectedBusinessId: string | undefined;
   organizationType?: string;
   mockHeaders?: Record<string, string>;
   toast: (options: any) => void;
@@ -489,7 +489,7 @@ interface HandleJoinRequestParams {
 export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
   const {
     token,
-    selectedOrgId,
+    selectedBusinessId,
     organizationType,
     mockHeaders,
     toast,
@@ -510,7 +510,7 @@ export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
       });
       return;
     }
-    if (!selectedOrgId) {
+    if (!selectedBusinessId) {
       toast({
         title: "사업자를 선택해주세요",
         variant: "destructive",
@@ -525,7 +525,7 @@ export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
       method: "POST",
       token,
       headers: mockHeaders ?? undefined,
-      jsonBody: { organizationId: selectedOrgId, organizationType },
+      jsonBody: { businessId: selectedBusinessId, organizationType },
     });
 
     if (!res.ok) {

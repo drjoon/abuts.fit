@@ -357,15 +357,17 @@ export async function updateRequestorOrganizationShippingAddress(req, res) {
       });
     }
 
-    const organizationId = String(req.body?.organizationId || "").trim();
+    const businessId = String(
+      req.body?.businessId || req.body?.organizationId || "",
+    ).trim();
     const address = String(req.body?.address || "").trim();
     const addressDetail = String(req.body?.addressDetail || "").trim();
     const zipCode = String(req.body?.zipCode || "").trim();
 
-    if (!organizationId) {
+    if (!businessId) {
       return res.status(400).json({
         success: false,
-        message: "organizationId가 필요합니다.",
+        message: "businessId 또는 organizationId가 필요합니다.",
       });
     }
 
@@ -389,7 +391,7 @@ export async function updateRequestorOrganizationShippingAddress(req, res) {
     });
 
     const org = await RequestorOrganization.findOne({
-      _id: organizationId,
+      _id: businessId,
       ...buildOrganizationTypeFilter("requestor"),
     });
 
@@ -416,6 +418,7 @@ export async function updateRequestorOrganizationShippingAddress(req, res) {
     return res.status(200).json({
       success: true,
       data: {
+        businessId: String(org._id),
         organizationId: String(org._id),
         address: nextExtracted.address || "",
         addressDetail: nextExtracted.addressDetail || "",

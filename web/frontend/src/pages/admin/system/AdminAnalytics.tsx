@@ -197,9 +197,7 @@ export const AdminAnalytics = () => {
                           </div>
                         ) : null}
                       </td>
-                      <td className="py-2 pr-4">
-                        {r.user?.business || r.user?.organization || "-"}
-                      </td>
+                      <td className="py-2 pr-4">{r.user?.business || "-"}</td>
                       <td className="py-2 pr-4">
                         {(r.orders || 0).toLocaleString()}건
                       </td>

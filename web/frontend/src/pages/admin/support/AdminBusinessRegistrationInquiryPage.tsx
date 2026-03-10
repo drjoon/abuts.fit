@@ -82,7 +82,7 @@ export const AdminBusinessRegistrationInquiryPage = () => {
       return (
         item.subject?.toLowerCase().includes(query) ||
         item.message?.toLowerCase().includes(query) ||
-        (user.business || user.organization || "")
+        String(user.business || "")
           .toLowerCase()
           .includes(query) ||
         user.name?.toLowerCase().includes(query) ||
@@ -190,7 +190,7 @@ export const AdminBusinessRegistrationInquiryPage = () => {
         status: statusLabelMap[item.status || "open"] || "",
         subject: item.subject || "",
         message: item.message || "",
-        organization: user.business || user.organization || "",
+        organization: user.business || "",
         name: user.name || "",
         email: user.email || "",
       };
@@ -394,9 +394,7 @@ export const AdminBusinessRegistrationInquiryPage = () => {
                       </TableCell>
                       <TableCell>{formatDate(item.createdAt)}</TableCell>
                       <TableCell>{typeLabel}</TableCell>
-                      <TableCell>
-                        {user.business || user.organization || "-"}
-                      </TableCell>
+                      <TableCell>{user.business || "-"}</TableCell>
                       <TableCell>{user.name || "-"}</TableCell>
                       <TableCell>{item.subject || "-"}</TableCell>
                       <TableCell>
@@ -456,9 +454,7 @@ export const AdminBusinessRegistrationInquiryPage = () => {
                     <span className="text-slate-500">사업장</span>
                     <span>
                       {selected.user?.business ||
-                        selected.user?.organization ||
                         selected.userSnapshot?.business ||
-                        selected.userSnapshot?.organization ||
                         "-"}
                     </span>
                   </div>

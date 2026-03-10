@@ -23,7 +23,7 @@ import {
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import {
   buildStandardStlFileName,
-  getOrganizationCreditBalanceBreakdown,
+  getBusinessCreditBalanceBreakdown,
   isDuplicateKeyError,
   uploadS3ToRhinoServer,
 } from "./creation.helpers.controller.js";
@@ -701,8 +701,8 @@ export async function createRequestsFromDraft(req, res) {
           }
         }
 
-        const { balance } = await getOrganizationCreditBalanceBreakdown({
-          organizationId: businessId,
+        const { balance } = await getBusinessCreditBalanceBreakdown({
+          businessId,
           session,
         });
         console.log("[createRequestsFromDraft] credit check", {

@@ -6,6 +6,10 @@ import {
   buildOrganizationTypeFilter,
 } from "./organizationRole.util.js";
 
+function readBusinessId(value) {
+  return String(value || "").trim();
+}
+
 export async function requestJoinOrganization(req, res) {
   try {
     const roleCheck = assertOrganizationRole(req, res);
@@ -13,23 +17,25 @@ export async function requestJoinOrganization(req, res) {
     const { organizationType } = roleCheck;
     const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
 
-    const organizationId = String(req.body?.organizationId || "").trim();
-    if (!organizationId) {
+    const businessId = readBusinessId(
+      req.body?.businessId || req.body?.organizationId,
+    );
+    if (!businessId) {
       return res.status(400).json({
         success: false,
-        message: "organizationId가 필요합니다.",
+        message: "businessId 또는 organizationId가 필요합니다.",
       });
     }
 
-    if (!Types.ObjectId.isValid(organizationId)) {
+    if (!Types.ObjectId.isValid(businessId)) {
       return res.status(400).json({
         success: false,
-        message: "유효하지 않은 organizationId입니다.",
+        message: "유효하지 않은 businessId 또는 organizationId입니다.",
       });
     }
 
     const org = await RequestorOrganization.findOne({
-      _id: organizationId,
+      _id: businessId,
       ...orgTypeFilter,
     });
     if (!org) {
@@ -98,16 +104,18 @@ export async function cancelJoinRequest(req, res) {
     const { organizationType } = roleCheck;
     const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
 
-    const organizationId = String(req.params.organizationId || "").trim();
-    if (!Types.ObjectId.isValid(organizationId)) {
+    const businessId = readBusinessId(
+      req.params.businessId || req.params.organizationId,
+    );
+    if (!Types.ObjectId.isValid(businessId)) {
       return res.status(400).json({
         success: false,
-        message: "유효하지 않은 organizationId입니다.",
+        message: "유효하지 않은 businessId 또는 organizationId입니다.",
       });
     }
 
     const org = await RequestorOrganization.findOne({
-      _id: organizationId,
+      _id: businessId,
       ...orgTypeFilter,
     });
     if (!org) {
@@ -178,16 +186,18 @@ export async function leaveOrganization(req, res) {
     const { organizationType } = roleCheck;
     const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
 
-    const organizationId = String(req.params.organizationId || "").trim();
-    if (!Types.ObjectId.isValid(organizationId)) {
+    const businessId = readBusinessId(
+      req.params.businessId || req.params.organizationId,
+    );
+    if (!Types.ObjectId.isValid(businessId)) {
       return res.status(400).json({
         success: false,
-        message: "유효하지 않은 organizationId입니다.",
+        message: "유효하지 않은 businessId 또는 organizationId입니다.",
       });
     }
 
     const org = await RequestorOrganization.findOne({
-      _id: organizationId,
+      _id: businessId,
       ...orgTypeFilter,
     });
     if (!org) {
@@ -271,7 +281,9 @@ export async function getMyJoinRequests(req, res) {
         );
         if (!jr) return null;
         return {
+          businessId: org._id,
           organizationId: org._id,
+          businessName: org.name,
           organizationName: org.name,
           status: jr.status,
           createdAt: jr.createdAt,

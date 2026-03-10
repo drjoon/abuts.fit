@@ -63,7 +63,7 @@ type MailboxContentsModalProps = {
   onRollbackAll?: (requests: ManufacturerRequest[]) => void;
   isRollingBackAll?: boolean;
   onAddressSaved?: (payload: {
-    organizationId: string;
+    businessId: string;
     address: string;
     addressDetail: string;
     zipCode: string;
@@ -105,7 +105,7 @@ export const MailboxContentsModal = ({
     (primaryRequest as any)?.requestorOrganization ||
     (primaryRequest as any)?.requestorOrganizationId ||
     null;
-  const organizationId = String(
+  const businessId = String(
     requestorOrganization?._id || requestorOrganization || "",
   ).trim();
   const initialAddress = String(
@@ -209,7 +209,7 @@ export const MailboxContentsModal = ({
       });
       return;
     }
-    if (!organizationId) {
+    if (!businessId) {
       toast({
         title: "조직 정보를 찾을 수 없습니다",
         variant: "destructive",
@@ -235,7 +235,7 @@ export const MailboxContentsModal = ({
         method: "PUT",
         token,
         jsonBody: {
-          organizationId,
+          businessId,
           address: nextAddress,
           addressDetail: nextAddressDetail,
           zipCode: nextZipCode,
@@ -247,7 +247,7 @@ export const MailboxContentsModal = ({
         );
       }
       onAddressSaved?.({
-        organizationId,
+        businessId,
         address: String(res.data?.data?.address || nextAddress).trim(),
         addressDetail: String(
           res.data?.data?.addressDetail || nextAddressDetail,
@@ -318,7 +318,7 @@ export const MailboxContentsModal = ({
             {errorMessage}
           </div>
         ) : null}
-        {errorMessage && organizationId ? (
+        {errorMessage && businessId ? (
           <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div>

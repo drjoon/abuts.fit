@@ -172,7 +172,7 @@ export const AdminRequestMonitoring = () => {
       (requestor.name || "")
         .toLowerCase()
         .includes(searchQuery.toLowerCase()) ||
-      (requestor.business || requestor.organization || "")
+      (requestor.business || "")
         .toLowerCase()
         .includes(searchQuery.toLowerCase());
 
