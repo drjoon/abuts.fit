@@ -4,6 +4,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -312,6 +313,10 @@ export const MailboxContentsModal = ({
               ) : null}
             </span>
           </DialogTitle>
+          <DialogDescription className="text-sm text-slate-500">
+            우편함 주소와 연관된 의뢰 목록, 라벨/택배 출력에 필요한 상태를
+            확인하고 배송지 정보를 수정할 수 있습니다.
+          </DialogDescription>
         </DialogHeader>
         {errorMessage ? (
           <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">

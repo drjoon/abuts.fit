@@ -118,11 +118,11 @@ export let ACTIVE_FILENAME_RULES: FilenameRule[] = [...DEFAULT_FILENAME_RULES];
  */
 export async function loadRulesFromBackend(): Promise<void> {
   try {
-    const response = await fetch("/api/filename-rules");
+    const response = await fetch("/api/filename-rules", { cache: "no-store" });
     if (!response.ok) {
       console.warn(
         "[filenameRules] Failed to load rules from backend:",
-        response.status
+        response.status,
       );
       return;
     }
@@ -160,7 +160,7 @@ export function updateFilenameRules(newRules: FilenameRule[]): void {
 export function findMatchingRule(filename: string): FilenameRule | null {
   // 신뢰도가 높은 순서로 정렬
   const sortedRules = [...ACTIVE_FILENAME_RULES].sort(
-    (a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)
+    (a, b) => (b.confidence ?? 0) - (a.confidence ?? 0),
   );
 
   for (const rule of sortedRules) {

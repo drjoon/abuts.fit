@@ -230,6 +230,45 @@ export async function chargeShippingFeeOnPickupComplete({
   return true;
 }
 
+async function resolveRequestorBusinessId(req) {
+  const businessId = getRequestorOrgId(req);
+  if (businessId && Types.ObjectId.isValid(businessId)) {
+    return businessId;
+  }
+
+  const userId = req?.user?._id;
+  if (!userId) return "";
+
+  const org = await RequestorOrganization.findOne({
+    $or: [
+      { owner: userId },
+      { owners: userId },
+      { members: userId },
+      {
+        "joinRequests.user": userId,
+        "joinRequests.status": "approved",
+      },
+    ],
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  if (org?._id) {
+    return String(org._id);
+  }
+
+  const requestWithOrg = await Request.findOne({ requestor: userId })
+    .select({ requestorBusinessId: 1 })
+    .lean();
+
+  const fallbackId = requestWithOrg?.requestorBusinessId;
+  if (fallbackId && Types.ObjectId.isValid(fallbackId)) {
+    return String(fallbackId);
+  }
+
+  return "";
+}
+
 export async function buildShippingPackagesSummary(req) {
   const daysRaw = req.query.days;
   const days =
@@ -245,7 +284,7 @@ export async function buildShippingPackagesSummary(req) {
     });
   }
 
-  const orgId = getRequestorOrgId(req);
+  const orgId = await resolveRequestorBusinessId(req);
   if (!orgId) {
     throw Object.assign(new Error("조직 정보가 필요합니다."), {
       statusCode: 400,
@@ -258,7 +297,7 @@ export async function buildShippingPackagesSummary(req) {
   const cutoffYmd = toKstYmd(cutoffDate);
 
   const packages = await ShippingPackage.find({
-    businessId: orgId,
+    businessId: new Types.ObjectId(orgId),
     shipDateYmd: { $gte: cutoffYmd },
   })
     .select({
