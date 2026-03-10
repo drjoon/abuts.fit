@@ -729,6 +729,59 @@ export const TrackingInquiryPage = () => {
       return Boolean(di.trackingNumber || di.shippedAt || di.deliveredAt);
     });
 
+    // 박스 단위로 그룹핑 (trackingNumber 기준)
+    const boxMap = new Map<string, ManufacturerRequest[]>();
+    for (const r of only) {
+      const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+      const trackingNumber =
+        String(di.trackingNumber || "").trim() ||
+        `no-tracking-${Math.random()}`;
+      if (!boxMap.has(trackingNumber)) {
+        boxMap.set(trackingNumber, []);
+      }
+      boxMap.get(trackingNumber)!.push(r);
+    }
+
+    // 박스별 대표 정보 생성 (첫 번째 의뢰건 기준)
+    const boxes = Array.from(boxMap.entries()).map(
+      ([trackingNumber, requests]) => {
+        const firstRequest = requests[0];
+        const di = normalizeDeliveryInfo(firstRequest.deliveryInfoRef);
+        return {
+          trackingNumber,
+          carrier: di.carrier,
+          shippedAt: di.shippedAt,
+          deliveredAt: di.deliveredAt,
+          pickedUpAt: di.pickedUpAt,
+          tracking: di.tracking,
+          requestCount: requests.length,
+          requests,
+          // 박스 대표로 사용할 정보
+          _id: `box-${trackingNumber}`,
+          requestId: `[${requests.length}건] ${requests.map((r) => r.requestId).join(", ")}`,
+          deliveryInfoRef: di,
+          createdAt: firstRequest.createdAt,
+        };
+      },
+    );
+
+    return boxes.slice().sort((a, b) => {
+      const aTime = new Date(
+        a.deliveredAt || a.shippedAt || a.createdAt || 0,
+      ).getTime();
+      const bTime = new Date(
+        b.deliveredAt || b.shippedAt || b.createdAt || 0,
+      ).getTime();
+      return bTime - aTime;
+    });
+  }, [baseFiltered]);
+
+  useEffect(() => {
+    const only = baseFiltered.filter((r) => {
+      const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+      return Boolean(di.trackingNumber || di.shippedAt || di.deliveredAt);
+    });
+
     console.log(
       "[DEBUG] shippingRows - baseFiltered count:",
       baseFiltered.length,
@@ -787,14 +840,16 @@ export const TrackingInquiryPage = () => {
 
     console.log("[DEBUG] Final boxes count:", boxes.length);
 
-    return boxes.slice().sort((a, b) => {
-      const aTime = new Date(
-        a.deliveredAt || a.shippedAt || a.createdAt || 0,
-      ).getTime();
-      const bTime = new Date(
-        b.deliveredAt || b.shippedAt || b.createdAt || 0,
-      ).getTime();
-      return bTime - aTime;
+    // 각 의뢰건의 deliveryInfoRef 상세 정보 출력
+    only.forEach((r) => {
+      const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+      console.log(`[DEBUG] Request ${r.requestId}:`, {
+        trackingNumber: di.trackingNumber,
+        carrier: di.carrier,
+        shippedAt: di.shippedAt,
+        pickedUpAt: di.pickedUpAt,
+        deliveredAt: di.deliveredAt,
+      });
     });
   }, [baseFiltered]);
 

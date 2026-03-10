@@ -58,6 +58,20 @@ export async function mockHanjinPickupCompleted(req, res) {
     const now = new Date();
     const pickedUpCount = [];
 
+    // 같은 박스의 의뢰건들을 그룹핑 (shippingPackageId 기준)
+    const boxMap = new Map();
+    for (const requestDoc of targetRequests) {
+      const packageId = String(requestDoc.shippingPackageId || "");
+      if (!boxMap.has(packageId)) {
+        boxMap.set(packageId, []);
+      }
+      boxMap.get(packageId).push(requestDoc);
+    }
+
+    console.log(
+      `[MOCK_PICKUP] Found ${boxMap.size} boxes with ${targetRequests.length} requests`,
+    );
+
     // 취소 처리와 동일한 방식으로 직접 처리
     for (const requestDoc of targetRequests) {
       let deliveryInfo = requestDoc.deliveryInfoRef;
@@ -78,12 +92,23 @@ export async function mockHanjinPickupCompleted(req, res) {
         continue;
       }
 
-      const trackingNumber = String(deliveryInfo?.trackingNumber || "").trim();
+      let trackingNumber = String(deliveryInfo?.trackingNumber || "").trim();
+
+      // trackingNumber가 없으면 shippingPackageId 기반으로 생성
+      if (!trackingNumber) {
+        const packageId = String(requestDoc.shippingPackageId || "");
+        trackingNumber = `MOCK-${packageId}-${now.getTime()}`;
+        console.log(
+          `[MOCK_PICKUP] Generated trackingNumber for ${requestDoc.requestId}: ${trackingNumber}`,
+        );
+      }
+
       console.log(
         `[MOCK_PICKUP] processing requestId=${requestDoc.requestId}, trackingNumber=${trackingNumber}`,
       );
 
       // deliveryInfo 업데이트 (code 11 = 집하완료)
+      deliveryInfo.trackingNumber = trackingNumber;
       deliveryInfo.tracking = deliveryInfo.tracking || {};
       deliveryInfo.tracking.lastStatusCode = "11";
       deliveryInfo.tracking.lastStatusText = "집하완료";
