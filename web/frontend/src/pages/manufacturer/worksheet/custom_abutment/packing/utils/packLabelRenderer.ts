@@ -222,11 +222,10 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   const COMPANY_NAME = "(주)애크로덴트";
   const COMPANY_ADDR = "경남 김해시 전하로85번길 5(나동, 흥동)";
   const COMPANY_TEL_FAX = "T 055-314-4607  F 055-901-0241";
-  const ABUTS_COMPANY_NAME = "어벗츠 주식회사";
-  const ABUTS_SALES_PERMIT = "판매업허가 제####호";
-  const ABUTS_ADDR = "경상남도 김해시 흥동 전하로 85번길 5";
-  const ABUTS_TEL = "T 1588-3948";
-  const ABUTS_WEB = "https://abuts.fit";
+  const MANUFACTURER_LABEL = "제조업자";
+  const MANUFACTURER_QR_LABEL = "제조번호 QR";
+  const MANUAL_QR_LABEL = "사용자매뉴얼 QR";
+  const MANUAL_QR_TEXT = "사용자매뉴얼 : 우측 하단 QR Code 참조";
 
   const drawBox = (x: number, y: number, w: number, h: number) => {
     ctx.strokeStyle = "black";
@@ -286,11 +285,12 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
     JSON.stringify({
       lotNumber: opts.lotNumber || "-",
       manufacturingDate: dateOnly(opts.manufacturingDate),
+      requestId: opts.requestId || "-",
     }),
     {
       errorCorrectionLevel: "M",
       margin: 0,
-      width: Math.max(1, Math.round(80 * scale)),
+      width: Math.max(1, Math.round(64 * scale)),
     },
   );
   const qr1Img = new Image();
@@ -304,11 +304,12 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
     JSON.stringify({
       lotNumber: opts.lotNumber || "-",
       manufacturingDate: dateOnly(opts.manufacturingDate),
+      requestId: opts.requestId || "-",
     }),
     {
       errorCorrectionLevel: "M",
       margin: 0,
-      width: Math.max(1, Math.round(70 * scale)),
+      width: Math.max(1, Math.round(60 * scale)),
     },
   );
   const qr2Img = new Image();
@@ -318,14 +319,11 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
     qr2Img.src = qr2DataUrl;
   });
 
-  const qr3DataUrl = await QRCode.toDataURL(
-    JSON.stringify({ company: ABUTS_COMPANY_NAME, web: ABUTS_WEB }),
-    {
-      errorCorrectionLevel: "M",
-      margin: 0,
-      width: Math.max(1, Math.round(70 * scale)),
-    },
-  );
+  const qr3DataUrl = await QRCode.toDataURL("https://abuts.fit/manual", {
+    errorCorrectionLevel: "M",
+    margin: 0,
+    width: Math.max(1, Math.round(60 * scale)),
+  });
   const qr3Img = new Image();
   await new Promise<void>((resolve, reject) => {
     qr3Img.onload = () => resolve();
@@ -384,55 +382,63 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   fillTextCentered(`제조번호: ${opts.lotNumber || "-"}`, 42, 299, 436, 12);
 
   const detailsY = 326;
-  const detailsH = 88;
-  const leftW = 320;
-  const rightW = 116;
+  const detailsH = 112;
+  const leftW = 436;
   const leftX = 42;
-  const rightX = leftX + leftW;
 
   drawBox(leftX, detailsY, leftW, detailsH);
-  drawBox(rightX, detailsY, rightW, detailsH);
-  const midX = leftX + 160;
-  drawVLine(midX, detailsY, detailsH);
-  drawHLine(leftX, detailsY + 22, leftW);
-  drawHLine(leftX, detailsY + 44, leftW);
-  drawHLine(leftX, detailsY + 66, leftW);
+  drawHLine(leftX, detailsY + 24, leftW);
+  drawHLine(leftX, detailsY + 46, leftW);
+  drawHLine(leftX, detailsY + 68, leftW);
+  drawHLine(leftX, detailsY + 90, leftW);
 
-  ctx.font = "13px Arial";
-  ctx.fillText(`품명: ${PRODUCT_NAME}`, leftX + 8, detailsY + 6);
-  ctx.fillText("비멸균 의료기기", midX + 8, detailsY + 6);
-  ctx.fillText(`모델명: ${MODEL_NAME}`, leftX + 8, detailsY + 28);
-  ctx.fillText(`품목허가: ${LICENSE_NO}`, midX + 8, detailsY + 28);
-  ctx.fillText("사용기한: 해당없음", leftX + 8, detailsY + 50);
-  ctx.fillText("사용방법: 사용자 매뉴얼", midX + 8, detailsY + 50);
-  ctx.fillText("포장단위: 1 SET", leftX + 8, detailsY + 72);
-  ctx.fillText("주의사항: 매뉴얼 참조", midX + 8, detailsY + 72);
+  ctx.font = "bold 14px Arial";
+  ctx.fillText(`품    명 : ${PRODUCT_NAME}`, leftX + 8, detailsY + 5);
+  const badgeText = "비멸균 의료기기";
+  const badgeX = 334;
+  const badgeY = detailsY + 3;
+  const badgeW = 96;
+  const badgeH = 18;
+  ctx.strokeRect(badgeX, badgeY, badgeW, badgeH);
+  ctx.font = "bold 12px Arial";
+  fillTextCenteredInBox(badgeText, badgeX, badgeY, badgeW, badgeH, 4);
 
+  ctx.font = "14px Arial";
+  ctx.fillText(`모 델 명 : ${MODEL_NAME}`, leftX + 8, detailsY + 27);
+  ctx.fillText(`품목허가 : ${LICENSE_NO}`, leftX + 220, detailsY + 27);
+  ctx.fillText("사용기한 : 해당없음", leftX + 8, detailsY + 49);
+  ctx.fillText("포장단위 : 1SET", leftX + 220, detailsY + 49);
+  ctx.fillText(`제조번호 : ${opts.lotNumber || "-"}`, leftX + 8, detailsY + 71);
+  ctx.fillText(
+    `제조일자 : ${dateOnly(opts.manufacturingDate)}`,
+    leftX + 220,
+    detailsY + 71,
+  );
+  ctx.fillText("사용방법 : 사용자매뉴얼 참조", leftX + 8, detailsY + 93);
+  ctx.fillText("주의사항 : 사용자매뉴얼 참조", leftX + 220, detailsY + 93);
+
+  drawBox(42, 444, 436, 96);
+  ctx.font = "bold 15px Arial";
+  ctx.fillText(`${MANUFACTURER_LABEL} : ${COMPANY_NAME}`, 50, 452);
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(qr1Img, rightX + 18, detailsY + 4, 80, 80);
+  ctx.drawImage(qr1Img, 356, 454, 52, 52);
+  ctx.drawImage(qr2Img, 416, 454, 52, 52);
   ctx.imageSmoothingEnabled = true;
+  ctx.font = "11px Arial";
+  ctx.fillText(`제조업허가 : ${LICENSE_NO}`, 50, 472);
+  ctx.fillText(COMPANY_ADDR, 50, 486);
+  ctx.fillText(COMPANY_TEL_FAX, 50, 500);
+  ctx.fillText(MANUFACTURER_QR_LABEL, 360, 510);
+  ctx.fillText("식별정보 QR", 420, 510);
 
-  drawBox(42, 424, 436, 76);
-  ctx.font = "16px Arial";
-  ctx.fillText(COMPANY_NAME, 50, 432);
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(qr2Img, 370, 434, 56, 56);
-  ctx.imageSmoothingEnabled = true;
+  drawBox(42, 544, 436, 36);
   ctx.font = "12px Arial";
-  ctx.fillText(`제조업허가: ${LICENSE_NO}`, 50, 452);
-  ctx.fillText(COMPANY_ADDR, 50, 466);
-  ctx.fillText(COMPANY_TEL_FAX, 50, 480);
-
-  drawBox(42, 504, 436, 76);
-  ctx.font = "16px Arial";
-  ctx.fillText(ABUTS_COMPANY_NAME, 50, 512);
+  ctx.fillText(MANUAL_QR_TEXT, 50, 555);
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(qr3Img, 370, 514, 56, 56);
+  ctx.drawImage(qr3Img, 418, 548, 28, 28);
   ctx.imageSmoothingEnabled = true;
-  ctx.font = "12px Arial";
-  ctx.fillText(ABUTS_SALES_PERMIT, 50, 532);
-  ctx.fillText(ABUTS_ADDR, 50, 546);
-  ctx.fillText(`${ABUTS_TEL} / ${ABUTS_WEB}`, 50, 560);
+  ctx.font = "10px Arial";
+  ctx.fillText(MANUAL_QR_LABEL, 338, 557);
 
   return canvas;
 };
