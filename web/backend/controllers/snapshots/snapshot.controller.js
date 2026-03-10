@@ -6,7 +6,7 @@ import {
   getTodayMidnightUtcInKst,
 } from "../../utils/krBusinessDays.js";
 import { recalcAdminSalesmanCreditsOverviewSnapshot } from "../admin/adminCredit.controller.js";
-import { recalcReferralSnapshot } from "../admin/admin.controller.js";
+import { recalcReferralSnapshot } from "../admin/admin.referral.controller.js";
 
 function kstYmdToUtcRange(ymd) {
   const dt = new Date(`${ymd}T00:00:00.000+09:00`);

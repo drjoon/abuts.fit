@@ -13,7 +13,7 @@ import {
 import {
   logSecurityEvent,
   logAuthFailure,
-} from "../../controllers/admin/admin.controller.js";
+} from "../../controllers/admin/admin.shared.controller.js";
 import { sendEmail } from "../../utils/email.util.js";
 import { getFrontendBaseUrl } from "../../utils/url.util.js";
 

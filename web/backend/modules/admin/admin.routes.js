@@ -1,9 +1,45 @@
 import { Router } from "express";
 const router = Router();
-import adminController, {
+
+import {
   triggerReferralSnapshotRecalc,
   getReferralSnapshotStatus,
+  getReferralGroups,
+  getReferralGroupTree,
+  getPricingStats,
+  getPricingStatsByUser,
+  getSecurityStats,
 } from "../../controllers/admin/admin.controller.js";
+import {
+  getAllUsers,
+  createUser,
+  getUserById,
+  updateUser,
+  deleteUser,
+  toggleUserActive,
+  changeUserRole,
+  approveUser,
+  rejectUser,
+} from "../../controllers/admin/admin.users.controller.js";
+import {
+  getAllRequests,
+  getRequestById,
+  updateRequestStatus,
+  assignManufacturer,
+} from "../../controllers/admin/admin.requests.controller.js";
+import { getDashboardStats } from "../../controllers/admin/admin.dashboard.controller.js";
+import {
+  getSystemLogs,
+  getActivityLogs,
+  getSecurityLogs,
+} from "../../controllers/admin/admin.logs.controller.js";
+import {
+  getSystemSettings,
+  updateSystemSettings,
+  getSecuritySettings,
+  updateSecuritySettings,
+} from "../../controllers/admin/admin.settings.controller.js";
+import { getAllFiles } from "../../controllers/admin/admin.files.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import {
   adminListBankTransactions,
@@ -47,7 +83,7 @@ import {
   adminGetTaxInvoiceStatus,
   adminCancelIssuedTaxInvoice,
 } from "../../controllers/admin/adminTaxInvoice.controller.js";
-import { adminOverrideOrganizationVerification } from "../../controllers/admin/admin.controller.js";
+import { adminOverrideOrganizationVerification } from "../../controllers/admin/admin.organization.controller.js";
 import {
   adminSendSms,
   adminListSms,
@@ -69,29 +105,30 @@ import {
   adminGetBusinessRegistrationInquiry,
   adminResolveBusinessRegistrationInquiry,
 } from "../../controllers/support/support.controller.js";
+
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용
 router.use(authenticate);
 router.use(authorize(["admin"]));
 
 // 사용자 관리
-router.get("/users", adminController.getAllUsers);
-router.post("/users", adminController.createUser);
-router.get("/users/:id", adminController.getUserById);
-router.put("/users/:id", adminController.updateUser);
-router.delete("/users/:id", adminController.deleteUser);
-router.patch("/users/:id/toggle-active", adminController.toggleUserActive);
-router.patch("/users/:id/change-role", adminController.changeUserRole);
-router.post("/users/:id/approve", adminController.approveUser);
-router.post("/users/:id/reject", adminController.rejectUser);
+router.get("/users", getAllUsers);
+router.post("/users", createUser);
+router.get("/users/:id", getUserById);
+router.put("/users/:id", updateUser);
+router.delete("/users/:id", deleteUser);
+router.patch("/users/:id/toggle-active", toggleUserActive);
+router.patch("/users/:id/change-role", changeUserRole);
+router.post("/users/:id/approve", approveUser);
+router.post("/users/:id/reject", rejectUser);
 
 // 의뢰 관리
-router.get("/requests", adminController.getAllRequests);
-router.get("/requests/:id", adminController.getRequestById);
-router.patch("/requests/:id/status", adminController.updateRequestStatus);
-router.patch("/requests/:id/assign", adminController.assignManufacturer);
+router.get("/requests", getAllRequests);
+router.get("/requests/:id", getRequestById);
+router.patch("/requests/:id/status", updateRequestStatus);
+router.patch("/requests/:id/assign", assignManufacturer);
 
 // 대시보드 통계
-router.get("/dashboard", adminController.getDashboardStats);
+router.get("/dashboard", getDashboardStats);
 
 // 사업자등록 문의
 router.get(
@@ -159,12 +196,12 @@ router.post(
 );
 
 // 가격/리퍼럴 정책 통계
-router.get("/pricing-stats", adminController.getPricingStats);
-router.get("/pricing-stats/users", adminController.getPricingStatsByUser);
+router.get("/pricing-stats", getPricingStats);
+router.get("/pricing-stats/users", getPricingStatsByUser);
 
 // 리퍼럴 그룹
-router.get("/referral-groups", adminController.getReferralGroups);
-router.get("/referral-groups/:leaderId", adminController.getReferralGroupTree);
+router.get("/referral-groups", getReferralGroups);
+router.get("/referral-groups/:leaderId", getReferralGroupTree);
 
 // 리퍼럴 스냅샷
 router.get("/referral-snapshot/status", getReferralSnapshotStatus);
@@ -175,52 +212,24 @@ router.post(
 );
 
 // 시스템 로그
-router.get("/logs", adminController.getSystemLogs);
+router.get("/logs", getSystemLogs);
 
 // 활동 로그
-router.get(
-  "/activity-logs",
-  authorize(["admin"]),
-  adminController.getActivityLogs,
-);
+router.get("/activity-logs", authorize(["admin"]), getActivityLogs);
 
 // 시스템 설정
-router.get(
-  "/settings",
-  authorize(["admin"]),
-  adminController.getSystemSettings,
-);
-router.put(
-  "/settings",
-  authorize(["admin"]),
-  adminController.updateSystemSettings,
-);
+router.get("/settings", authorize(["admin"]), getSystemSettings);
+router.put("/settings", authorize(["admin"]), updateSystemSettings);
 
 // 보안 설정
-router.get(
-  "/security-settings",
-  authorize(["admin"]),
-  adminController.getSecuritySettings,
-);
-router.put(
-  "/security-settings",
-  authorize(["admin"]),
-  adminController.updateSecuritySettings,
-);
+router.get("/security-settings", authorize(["admin"]), getSecuritySettings);
+router.put("/security-settings", authorize(["admin"]), updateSecuritySettings);
 
 // 보안 통계
-router.get(
-  "/security-stats",
-  authorize(["admin"]),
-  adminController.getSecurityStats,
-);
+router.get("/security-stats", authorize(["admin"]), getSecurityStats);
 
 // 보안 로그
-router.get(
-  "/security-logs",
-  authorize(["admin"]),
-  adminController.getSecurityLogs,
-);
+router.get("/security-logs", authorize(["admin"]), getSecurityLogs);
 
 // 메일 관리
 router.get("/mails", adminListMails);
