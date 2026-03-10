@@ -701,16 +701,35 @@ export async function createRequestsFromDraft(req, res) {
           }
         }
 
-        const { balance } = await getBusinessCreditBalanceBreakdown({
-          businessId,
-          session,
-        });
+        const { balance, paidBalance, bonusBalance } =
+          await getBusinessCreditBalanceBreakdown({
+            businessId,
+            session,
+          });
         console.log("[createRequestsFromDraft] credit check", {
           t: Date.now() - startTime,
           balance,
+          paidBalance,
+          bonusBalance,
           required: totalSpendSupply,
         });
 
+        // 최소 잔액 검증: 유/무료 크레딧 합계 1만원 미만이면 신규의뢰 차단
+        const MIN_CREDIT_FOR_REQUEST = 10000;
+        if (balance < MIN_CREDIT_FOR_REQUEST) {
+          const err = new Error(
+            `최소 의뢰 비용 ${MIN_CREDIT_FOR_REQUEST.toLocaleString()}원 이상의 크레딧이 필요합니다.`,
+          );
+          err.statusCode = 402;
+          err.payload = {
+            balance,
+            required: MIN_CREDIT_FOR_REQUEST,
+            reason: "insufficient_minimum_credit",
+          };
+          throw err;
+        }
+
+        // 의뢰 비용 검증
         if (balance < totalSpendSupply) {
           const err = new Error("크레딧이 부족합니다.");
           err.statusCode = 402;

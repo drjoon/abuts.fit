@@ -305,14 +305,29 @@ export default function AdminCreditPage() {
     useState<FreeCreditAmount>(30000);
   const [bonusReason, setBonusReason] = useState("");
   const [grantingBonus, setGrantingBonus] = useState(false);
+  const [grantCreditType, setGrantCreditType] = useState<
+    "general" | "shipping"
+  >("general");
   const [bonusGrantRows, setBonusGrantRows] = useState<BonusGrantHistoryRow[]>(
     [],
   );
   const [loadingBonusGrantRows, setLoadingBonusGrantRows] = useState(false);
   const [bonusGrantSearch, setBonusGrantSearch] = useState("");
   const [freeCreditMenu, setFreeCreditMenu] = useState<
-    "grant" | "grant-cancel" | "grant-history" | "usage-history"
+    | "grant"
+    | "grant-cancel"
+    | "grant-history"
+    | "usage-history"
+    | "shipping-credit"
   >("grant");
+  const [
+    selectedShippingCreditBusinessId,
+    setSelectedShippingCreditBusinessId,
+  ] = useState("");
+  const [selectedShippingCreditAmount, setSelectedShippingCreditAmount] =
+    useState(3500);
+  const [shippingCreditReason, setShippingCreditReason] = useState("");
+  const [grantingShippingCredit, setGrantingShippingCredit] = useState(false);
   const [selectedCancelGrantId, setSelectedCancelGrantId] = useState("");
   const [cancelGrantReason, setCancelGrantReason] = useState("");
   const [cancelingGrant, setCancelingGrant] = useState(false);
@@ -696,6 +711,87 @@ export default function AdminCreditPage() {
       });
     } finally {
       setGrantingBonus(false);
+    }
+  };
+
+  const handleGrantShippingCredit = async () => {
+    if (!token) return;
+
+    const businessId = String(selectedShippingCreditBusinessId || "").trim();
+    const reason = String(shippingCreditReason || "").trim();
+
+    if (!businessId) {
+      toast({
+        title: "지급 대상 선택 필요",
+        description: "배송비 무료 크레딧을 지급할 사업자를 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!reason) {
+      toast({
+        title: "지급 이유 입력 필요",
+        description: "배송비 무료 크레딧 지급 이유를 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const targetOrg = organizations.find(
+      (org) => String(org._id) === businessId,
+    );
+    const businessNumber = String(targetOrg?.businessNumber || "").trim();
+    if (!businessNumber) {
+      toast({
+        title: "사업자등록번호 없음",
+        description: "선택한 사업자의 사업자등록번호를 확인할 수 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setGrantingShippingCredit(true);
+    try {
+      const res = await request<any>({
+        path: "/api/admin/bonus-grants/free-shipping-credit/grant",
+        method: "POST",
+        token,
+        jsonBody: {
+          businessId,
+          businessNumber,
+          amount: selectedShippingCreditAmount,
+          reason,
+        },
+      });
+
+      if (!res.ok) {
+        const message =
+          String((res.data as any)?.message || "").trim() ||
+          "배송비 무료 크레딧 지급에 실패했습니다.";
+        throw new Error(message);
+      }
+
+      toast({
+        title: "배송비 무료 크레딧 지급 완료",
+        description: `${selectedShippingCreditAmount.toLocaleString()}원이 지급되었습니다.`,
+      });
+
+      setShippingCreditReason("");
+      setSelectedShippingCreditAmount(3500);
+      setSelectedShippingCreditBusinessId("");
+
+      setOrgSkip(0);
+      setOrgHasMore(true);
+      await Promise.all([loadStats(), loadOrganizations({ reset: true })]);
+    } catch (error: any) {
+      toast({
+        title: "배송비 무료 크레딧 지급 실패",
+        description: error?.message || "다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setGrantingShippingCredit(false);
     }
   };
 
@@ -1618,102 +1714,282 @@ export default function AdminCreditPage() {
 
                 <CardContent>
                   {freeCreditMenu === "grant" ? (
-                    <div className="grid gap-4 xl:grid-cols-[minmax(460px,1.15fr)_minmax(360px,0.85fr)]">
-                      <div className="flex flex-col gap-4 rounded-xl border border-primary/30 bg-primary/5 p-5 shadow-sm">
+                    <div className="space-y-4">
+                      <div className="grid gap-3 lg:grid-cols-2">
                         <div className="space-y-2">
-                          <Label>무료 크레딧 금액</Label>
+                          <Label htmlFor="grant-business" className="text-sm">
+                            대상 사업자
+                          </Label>
+                          <div className="relative">
+                            <select
+                              id="grant-business"
+                              className="h-11 w-full appearance-none rounded-lg border border-input bg-background px-3 pr-10 text-sm"
+                              value={
+                                grantCreditType === "general"
+                                  ? selectedBonusBusinessId
+                                  : selectedShippingCreditBusinessId
+                              }
+                              onChange={(e) => {
+                                if (grantCreditType === "general") {
+                                  setSelectedBonusBusinessId(e.target.value);
+                                } else {
+                                  setSelectedShippingCreditBusinessId(
+                                    e.target.value,
+                                  );
+                                }
+                              }}
+                            >
+                              <option value="">사업자 선택</option>
+                              {[...organizations]
+                                .sort((a, b) =>
+                                  String(a.name || "").localeCompare(
+                                    String(b.name || ""),
+                                    "ko",
+                                  ),
+                                )
+                                .map((org) => (
+                                  <option key={org._id} value={org._id}>
+                                    {org.name} (
+                                    {org.businessNumber || "사업자번호 없음"})
+                                  </option>
+                                ))}
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">
+                              <span className="text-xs">▼</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>크레딧 종류</Label>
                           <div className="grid grid-cols-2 gap-3">
-                            {[30000, 50000].map((amount) => (
-                              <Button
-                                key={amount}
-                                type="button"
-                                className="h-12 w-full"
-                                variant={
-                                  selectedBonusAmount === amount
-                                    ? "default"
-                                    : "outline"
-                                }
-                                onClick={() =>
-                                  setSelectedBonusAmount(
-                                    amount as FreeCreditAmount,
-                                  )
-                                }
-                              >
-                                {amount.toLocaleString()}원
-                              </Button>
-                            ))}
+                            <Button
+                              type="button"
+                              className="h-11"
+                              variant={
+                                grantCreditType === "general"
+                                  ? "default"
+                                  : "outline"
+                              }
+                              onClick={() => {
+                                setGrantCreditType("general");
+                                setBonusReason("");
+                                setSelectedBonusAmount(30000);
+                              }}
+                            >
+                              일반 무료 크레딧
+                            </Button>
+                            <Button
+                              type="button"
+                              className="h-11"
+                              variant={
+                                grantCreditType === "shipping"
+                                  ? "default"
+                                  : "outline"
+                              }
+                              onClick={() => {
+                                setGrantCreditType("shipping");
+                                setShippingCreditReason("");
+                                setSelectedShippingCreditAmount(3500);
+                              }}
+                            >
+                              배송비 무료 크레딧
+                            </Button>
                           </div>
                         </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="free-credit-reason">충전 이유</Label>
-                          <Input
-                            id="free-credit-reason"
-                            className="h-12 bg-background"
-                            value={bonusReason}
-                            onChange={(e) => setBonusReason(e.target.value)}
-                            placeholder="예: CS 보상, 수동 보정, 운영 정책 지급"
-                          />
-                          <div className="rounded-lg bg-background/70 p-3 text-xs text-muted-foreground ring-1 ring-primary/10">
-                            지급 사유는 최소 1자 이상 입력해야 하며, 내부 운영
-                            로그에 기록됩니다.
-                          </div>
-                        </div>
-
-                        <Button
-                          className="h-12 justify-center"
-                          onClick={handleGrantFreeCredit}
-                          disabled={grantingBonus || !selectedBonusBusinessId}
-                        >
-                          {grantingBonus ? "지급 중..." : "무료 크레딧 지급"}
-                        </Button>
                       </div>
 
-                      <div className="flex flex-col gap-4">
-                        <div className="rounded-xl border border-border/60 bg-muted/20 p-5">
-                          <div className="text-sm font-medium">지급 요약</div>
-                          <div className="mt-3 space-y-2 text-sm">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-muted-foreground">
-                                선택 사업자
-                              </span>
-                              <span className="text-right font-medium">
-                                {selectedBonusOrganization?.name || "미선택"}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-muted-foreground">
-                                사업자번호
-                              </span>
-                              <span className="font-mono">
-                                {selectedBonusOrganization?.businessNumber ||
-                                  "-"}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-muted-foreground">
-                                지급 금액
-                              </span>
-                              <span className="font-semibold text-primary">
-                                {selectedBonusAmount.toLocaleString()}원
-                              </span>
+                      <div className="grid gap-4 xl:grid-cols-[minmax(460px,1.15fr)_minmax(360px,0.85fr)]">
+                        <div className="flex flex-col gap-4 rounded-xl border border-primary/30 bg-primary/5 p-5 shadow-sm">
+                          <div className="space-y-2">
+                            <Label>
+                              {grantCreditType === "general"
+                                ? "일반 무료 크레딧 금액"
+                                : "배송비 무료 크레딧 금액"}
+                            </Label>
+                            <div className="grid grid-cols-5 gap-2">
+                              {(grantCreditType === "general"
+                                ? [30000, 50000]
+                                : [3500, 7000, 10500, 14000, 17500]
+                              ).map((amount) => (
+                                <Button
+                                  key={amount}
+                                  type="button"
+                                  className="h-12 w-full"
+                                  variant={
+                                    grantCreditType === "general"
+                                      ? selectedBonusAmount === amount
+                                        ? "default"
+                                        : "outline"
+                                      : selectedShippingCreditAmount === amount
+                                        ? "default"
+                                        : "outline"
+                                  }
+                                  onClick={() => {
+                                    if (grantCreditType === "general") {
+                                      setSelectedBonusAmount(
+                                        amount as FreeCreditAmount,
+                                      );
+                                    } else {
+                                      setSelectedShippingCreditAmount(amount);
+                                    }
+                                  }}
+                                >
+                                  {amount.toLocaleString()}원
+                                </Button>
+                              ))}
                             </div>
                           </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="free-credit-reason">
+                              {grantCreditType === "general"
+                                ? "충전 이유"
+                                : "지급 이유"}
+                            </Label>
+                            <Input
+                              id="free-credit-reason"
+                              className="h-12 bg-background"
+                              value={
+                                grantCreditType === "general"
+                                  ? bonusReason
+                                  : shippingCreditReason
+                              }
+                              onChange={(e) => {
+                                if (grantCreditType === "general") {
+                                  setBonusReason(e.target.value);
+                                } else {
+                                  setShippingCreditReason(e.target.value);
+                                }
+                              }}
+                              placeholder={
+                                grantCreditType === "general"
+                                  ? "예: CS 보상, 수동 보정, 운영 정책 지급"
+                                  : "예: 배송비 예외 처리, 운영 정책"
+                              }
+                            />
+                            <div className="rounded-lg bg-background/70 p-3 text-xs text-muted-foreground ring-1 ring-primary/10">
+                              {grantCreditType === "general"
+                                ? "지급 사유는 최소 1자 이상 입력해야 하며, 내부 운영 로그에 기록됩니다."
+                                : "배송비 무료 크레딧은 배송비 결제 시에만 사용되며, 의뢰 비용으로는 사용할 수 없습니다."}
+                            </div>
+                          </div>
+
+                          <Button
+                            className="h-12 justify-center"
+                            onClick={
+                              grantCreditType === "general"
+                                ? handleGrantFreeCredit
+                                : handleGrantShippingCredit
+                            }
+                            disabled={
+                              grantCreditType === "general"
+                                ? grantingBonus || !selectedBonusBusinessId
+                                : grantingShippingCredit ||
+                                  !selectedShippingCreditBusinessId
+                            }
+                          >
+                            {grantCreditType === "general"
+                              ? grantingBonus
+                                ? "지급 중..."
+                                : "무료 크레딧 지급"
+                              : grantingShippingCredit
+                                ? "지급 중..."
+                                : "배송비 무료 크레딧 지급"}
+                          </Button>
                         </div>
 
-                        <div className="rounded-xl border border-primary/20 bg-primary/5 p-5">
-                          <div className="text-sm font-medium">지급 안내</div>
-                          <div className="mt-3 space-y-2 text-sm text-muted-foreground">
-                            <div>
-                              선택한 사업자에 즉시 무료 크레딧이 반영됩니다.
+                        <div className="flex flex-col gap-4">
+                          <div className="rounded-xl border border-border/60 bg-muted/20 p-5">
+                            <div className="text-sm font-medium">지급 요약</div>
+                            <div className="mt-3 space-y-2 text-sm">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-muted-foreground">
+                                  선택 사업자
+                                </span>
+                                <span className="text-right font-medium">
+                                  {grantCreditType === "general"
+                                    ? selectedBonusOrganization?.name ||
+                                      "미선택"
+                                    : organizations.find(
+                                        (org) =>
+                                          String(org._id) ===
+                                          selectedShippingCreditBusinessId,
+                                      )?.name || "미선택"}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-muted-foreground">
+                                  사업자번호
+                                </span>
+                                <span className="font-mono">
+                                  {grantCreditType === "general"
+                                    ? selectedBonusOrganization?.businessNumber ||
+                                      "-"
+                                    : organizations.find(
+                                        (org) =>
+                                          String(org._id) ===
+                                          selectedShippingCreditBusinessId,
+                                      )?.businessNumber || "-"}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-muted-foreground">
+                                  지급 금액
+                                </span>
+                                <span
+                                  className={`font-semibold ${
+                                    grantCreditType === "general"
+                                      ? "text-primary"
+                                      : "text-amber-600"
+                                  }`}
+                                >
+                                  {grantCreditType === "general"
+                                    ? selectedBonusAmount.toLocaleString()
+                                    : selectedShippingCreditAmount.toLocaleString()}
+                                  원
+                                </span>
+                              </div>
                             </div>
-                            <div>
-                              지급 사유는 운영 로그와 지급 내역에 함께
-                              기록됩니다.
-                            </div>
-                            <div>
-                              내역 메뉴에서 지급 기록과 사용 기록을 바로 확인할
-                              수 있습니다.
+                          </div>
+
+                          <div
+                            className={`rounded-xl border p-5 ${
+                              grantCreditType === "general"
+                                ? "border-primary/20 bg-primary/5"
+                                : "border-amber-200/30 bg-amber-50/50"
+                            }`}
+                          >
+                            <div className="text-sm font-medium">지급 안내</div>
+                            <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                              {grantCreditType === "general" ? (
+                                <>
+                                  <div>
+                                    선택한 사업자에 즉시 무료 크레딧이
+                                    반영됩니다.
+                                  </div>
+                                  <div>
+                                    지급 사유는 운영 로그와 지급 내역에 함께
+                                    기록됩니다.
+                                  </div>
+                                  <div>
+                                    내역 메뉴에서 지급 기록과 사용 기록을 바로
+                                    확인할 수 있습니다.
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div>
+                                    배송비 무료 크레딧은 배송비 결제 시에만
+                                    사용됩니다.
+                                  </div>
+                                  <div>
+                                    의뢰 비용이나 다른 수수료로는 사용할 수
+                                    없습니다.
+                                  </div>
+                                  <div>지급 사유는 운영 로그에 기록됩니다.</div>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1981,6 +2257,164 @@ export default function AdminCreditPage() {
                         </Table>
                       </div>
                     )
+                  ) : freeCreditMenu === "shipping-credit" ? (
+                    <div className="space-y-4">
+                      <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+                        <div className="space-y-2">
+                          <Label
+                            htmlFor="shipping-credit-business"
+                            className="text-sm"
+                          >
+                            대상 사업자
+                          </Label>
+                          <div className="relative">
+                            <select
+                              id="shipping-credit-business"
+                              className="h-11 w-full appearance-none rounded-lg border border-input bg-background px-3 pr-10 text-sm"
+                              value={selectedShippingCreditBusinessId}
+                              onChange={(e) =>
+                                setSelectedShippingCreditBusinessId(
+                                  e.target.value,
+                                )
+                              }
+                            >
+                              <option value="">사업자 선택</option>
+                              {[...organizations]
+                                .sort((a, b) =>
+                                  String(a.name || "").localeCompare(
+                                    String(b.name || ""),
+                                    "ko",
+                                  ),
+                                )
+                                .map((org) => (
+                                  <option key={org._id} value={org._id}>
+                                    {org.name} (
+                                    {org.businessNumber || "사업자번호 없음"})
+                                  </option>
+                                ))}
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">
+                              <span className="text-xs">▼</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 xl:grid-cols-[minmax(460px,1.15fr)_minmax(360px,0.85fr)]">
+                        <div className="flex flex-col gap-4 rounded-xl border border-amber-200/50 bg-amber-50/50 p-5 shadow-sm">
+                          <div className="space-y-2">
+                            <Label>배송비 무료 크레딧 금액</Label>
+                            <div className="grid grid-cols-3 gap-3">
+                              {[3500, 7000, 10500].map((amount) => (
+                                <Button
+                                  key={amount}
+                                  type="button"
+                                  className="h-12 w-full"
+                                  variant={
+                                    selectedShippingCreditAmount === amount
+                                      ? "default"
+                                      : "outline"
+                                  }
+                                  onClick={() =>
+                                    setSelectedShippingCreditAmount(amount)
+                                  }
+                                >
+                                  {amount.toLocaleString()}원
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="shipping-credit-reason">
+                              지급 이유
+                            </Label>
+                            <Input
+                              id="shipping-credit-reason"
+                              className="h-12 bg-background"
+                              value={shippingCreditReason}
+                              onChange={(e) =>
+                                setShippingCreditReason(e.target.value)
+                              }
+                              placeholder="예: 배송비 예외 처리, 운영 정책"
+                            />
+                            <div className="rounded-lg bg-background/70 p-3 text-xs text-muted-foreground ring-1 ring-amber-200/30">
+                              배송비 무료 크레딧은 배송비 결제 시에만 사용되며,
+                              의뢰 비용으로는 사용할 수 없습니다.
+                            </div>
+                          </div>
+
+                          <Button
+                            className="h-12 justify-center"
+                            onClick={handleGrantShippingCredit}
+                            disabled={
+                              grantingShippingCredit ||
+                              !selectedShippingCreditBusinessId
+                            }
+                          >
+                            {grantingShippingCredit
+                              ? "지급 중..."
+                              : "배송비 무료 크레딧 지급"}
+                          </Button>
+                        </div>
+
+                        <div className="flex flex-col gap-4">
+                          <div className="rounded-xl border border-border/60 bg-muted/20 p-5">
+                            <div className="text-sm font-medium">지급 요약</div>
+                            <div className="mt-3 space-y-2 text-sm">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-muted-foreground">
+                                  선택 사업자
+                                </span>
+                                <span className="text-right font-medium">
+                                  {organizations.find(
+                                    (org) =>
+                                      String(org._id) ===
+                                      selectedShippingCreditBusinessId,
+                                  )?.name || "미선택"}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-muted-foreground">
+                                  사업자번호
+                                </span>
+                                <span className="font-mono">
+                                  {organizations.find(
+                                    (org) =>
+                                      String(org._id) ===
+                                      selectedShippingCreditBusinessId,
+                                  )?.businessNumber || "-"}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-muted-foreground">
+                                  지급 금액
+                                </span>
+                                <span className="font-semibold text-amber-600">
+                                  {selectedShippingCreditAmount.toLocaleString()}
+                                  원
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="rounded-xl border border-amber-200/30 bg-amber-50/50 p-5">
+                            <div className="text-sm font-medium">지급 안내</div>
+                            <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                              <div>
+                                배송비 무료 크레딧은 배송비 결제 시에만
+                                사용됩니다.
+                              </div>
+                              <div>
+                                의뢰 비용이나 다른 수수료로는 사용할 수
+                                없습니다.
+                              </div>
+                              <div>지급 사유는 운영 로그에 기록됩니다.</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   ) : filteredFreeCreditUsageRows.length === 0 ? (
                     <div className="py-8 text-center text-sm text-muted-foreground">
                       무료 크레딧 사용 내역이 없습니다.

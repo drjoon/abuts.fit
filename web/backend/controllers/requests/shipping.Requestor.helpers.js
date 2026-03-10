@@ -183,6 +183,7 @@ export async function ensureShippingPackageForPickup({
 export async function chargeShippingFeeOnPickupComplete({
   shippingPackageId,
   actorUserId,
+  allowFreeShippingCredit = false,
 }) {
   const pkgId = String(shippingPackageId || "").trim();
   if (!pkgId || !Types.ObjectId.isValid(pkgId)) return false;
@@ -200,6 +201,19 @@ export async function chargeShippingFeeOnPickupComplete({
 
   const fee = Number(pkg.shippingFeeSupply || 0);
   if (!Number.isFinite(fee) || fee <= 0) return false;
+
+  // 배송비 무료 크레딧 예외 허용 여부 확인
+  if (!allowFreeShippingCredit) {
+    // 유료 크레딧 기준으로만 배송비 결제 가능
+    const { paidBalance } = await getBusinessCreditBalanceBreakdown({
+      businessId: pkg.businessId,
+    });
+
+    if (paidBalance < fee) {
+      // 유료 크레딧 부족 시 배송비 결제 불가
+      return false;
+    }
+  }
 
   const uniqueKey = `shippingPackage:${String(pkg._id)}:shipping_fee`;
   const chargeResult = await CreditLedger.updateOne(

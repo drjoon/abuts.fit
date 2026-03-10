@@ -57,6 +57,7 @@ import {
   adminCancelBonusGrant,
   adminListBonusGrants,
   adminOverrideWelcomeBonus,
+  adminGrantFreeShippingCredit,
 } from "../../controllers/admin/adminBonusGrant.controller.js";
 import {
   adminListMails,
@@ -253,6 +254,11 @@ router.post(
   "/bonus-grants/welcome-bonus/override",
   authorize(["admin"], { adminRoles: ["owner"] }),
   adminOverrideWelcomeBonus,
+);
+router.post(
+  "/bonus-grants/free-shipping-credit/grant",
+  authorize(["admin"], { adminRoles: ["owner"] }),
+  adminGrantFreeShippingCredit,
 );
 router.post(
   "/bonus-grants/:id/cancel",

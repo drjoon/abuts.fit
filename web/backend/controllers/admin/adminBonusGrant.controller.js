@@ -5,6 +5,7 @@ import CreditLedger from "../../models/creditLedger.model.js";
 import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
 
 const DEFAULT_WELCOME_BONUS_AMOUNT = 30000;
+const DEFAULT_FREE_SHIPPING_CREDIT_AMOUNT = 3500;
 
 function normalizeBusinessNumberDigits(input) {
   const digits = String(input || "").replace(/\D/g, "");
@@ -331,6 +332,134 @@ export async function adminCancelBonusGrant(req, res) {
     return res.status(500).json({
       success: false,
       message: "보너스 지급 취소 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function adminGrantFreeShippingCredit(req, res) {
+  try {
+    const businessNumberDigits = normalizeBusinessNumberDigits(
+      req.body?.businessNumber,
+    );
+    if (!businessNumberDigits) {
+      return res.status(400).json({
+        success: false,
+        message: "유효한 사업자등록번호(10자리)를 입력해주세요.",
+      });
+    }
+
+    const reason = String(req.body?.reason || "").trim();
+    if (!reason) {
+      return res.status(400).json({
+        success: false,
+        message: "배송비 무료 크레딧 지급 사유(reason)를 입력해주세요.",
+      });
+    }
+
+    const amountRaw = req.body?.amount;
+    const amount =
+      typeof amountRaw === "number" && !Number.isNaN(amountRaw)
+        ? Math.max(0, Math.floor(amountRaw))
+        : DEFAULT_FREE_SHIPPING_CREDIT_AMOUNT;
+
+    const formatted = formatBusinessNumber(businessNumberDigits);
+
+    let businessId = String(
+      req.body?.businessId || req.body?.organizationId || "",
+    ).trim();
+    if (businessId && !Types.ObjectId.isValid(businessId)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 businessId입니다.",
+      });
+    }
+
+    if (!businessId) {
+      const org = await RequestorOrganization.findOne({
+        "extracted.businessNumber": formatted,
+      })
+        .select({ _id: 1 })
+        .lean();
+      if (!org?._id) {
+        return res.status(404).json({
+          success: false,
+          message: "해당 사업자등록번호로 등록된 기공소를 찾을 수 없습니다.",
+        });
+      }
+      businessId = String(org._id);
+    }
+
+    const userIdRaw = String(req.body?.userId || "").trim();
+    const userId =
+      userIdRaw && Types.ObjectId.isValid(userIdRaw) ? userIdRaw : null;
+
+    const grant = await BonusGrant.create({
+      type: "FREE_SHIPPING_CREDIT",
+      businessNumber: businessNumberDigits,
+      amount,
+      organizationId: businessId,
+      userId,
+      isOverride: true,
+      source: "admin",
+      overrideReason: reason,
+      grantedByUserId: req.user?._id || null,
+    });
+
+    const uniqueKey = `bonus_grant:${String(grant._id)}`;
+    const result = await CreditLedger.updateOne(
+      { uniqueKey },
+      {
+        $setOnInsert: {
+          businessId,
+          userId,
+          type: "BONUS",
+          amount,
+          refType: "FREE_SHIPPING_CREDIT",
+          refId: businessId,
+          uniqueKey,
+        },
+      },
+      { upsert: true },
+    );
+
+    if (!result?.upsertedCount) {
+      return res.status(409).json({
+        success: false,
+        message: "이미 처리된 지급 건입니다.",
+      });
+    }
+
+    const ledgerDoc = await CreditLedger.findOne({ uniqueKey })
+      .select({ _id: 1 })
+      .lean();
+
+    await BonusGrant.updateOne(
+      { _id: grant._id },
+      { $set: { creditLedgerId: ledgerDoc?._id || null } },
+    );
+
+    await emitCreditBalanceUpdatedToOrganization({
+      organizationId: businessId,
+      balanceDelta: amount,
+      reason: "admin_free_shipping_credit",
+      refId: ledgerDoc?._id || grant._id,
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        bonusGrantId: grant._id,
+        businessId,
+        businessNumber: businessNumberDigits,
+        amount,
+        creditLedgerId: ledgerDoc?._id || null,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "배송비 무료 크레딧 지급 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
