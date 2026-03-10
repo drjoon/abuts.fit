@@ -18,11 +18,6 @@ const LoginPage = lazy(() =>
 const SignupPage = lazy(() =>
   import("./pages/auth/SignupPage").then((m) => ({ default: m.SignupPage })),
 );
-const SignupWithReferralPage = lazy(() =>
-  import("./pages/auth/SignupWithReferralPage").then((m) => ({
-    default: m.SignupWithReferralPage,
-  })),
-);
 const ReferralLinkPage = lazy(() =>
   import("./pages/public/ReferralLinkPage").then((m) => ({
     default: m.ReferralLinkPage,
@@ -221,10 +216,6 @@ const App = () => {
                 <Route path="/" element={<Index />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/signup" element={<SignupPage />} />
-                <Route
-                  path="/signup/referral"
-                  element={<SignupWithReferralPage />}
-                />
                 <Route path="/refer" element={<ReferralLinkPage />} />
                 <Route path="/signup/staff" element={<SignupStaffPage />} />
                 <Route

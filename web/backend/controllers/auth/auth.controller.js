@@ -602,7 +602,11 @@ async function register(req, res) {
 async function validateReferral(req, res) {
   try {
     const raw = String(req.body?.value || "").trim();
+    console.log("[validateReferral] Full req.body:", JSON.stringify(req.body));
+    console.log("[validateReferral] raw value:", raw);
+    console.log("[validateReferral] raw length:", raw.length);
     if (!raw) {
+      console.log("[validateReferral] Returning 400: empty value");
       return res.status(400).json({
         success: false,
         message: "추천인 이메일 또는 코드를 입력해주세요.",
@@ -612,12 +616,16 @@ async function validateReferral(req, res) {
     let refUser = null;
     let orgName = "";
     const isEmail = /@/.test(raw);
+    console.log("[validateReferral] isEmail:", isEmail);
+
     if (isEmail) {
       const refEmail = raw.toLowerCase();
+      console.log("[validateReferral] Searching by email:", refEmail);
       refUser = await User.findOne({ email: refEmail })
         .select({ _id: 1, role: 1, active: 1, name: 1, businessId: 1 })
         .lean();
     } else if (/^[0-9a-fA-F]{24}$/.test(raw)) {
+      console.log("[validateReferral] Searching by ObjectId");
       if (!Types.ObjectId.isValid(raw)) {
         return res.status(400).json({
           success: false,
@@ -629,12 +637,21 @@ async function validateReferral(req, res) {
         .lean();
     } else {
       const code = raw.toUpperCase();
-      refUser = await User.findOne({ referralCode: code })
+      console.log("[validateReferral] Searching by referralCode:", code);
+      // 대소문자 구분 없이 검색
+      refUser = await User.findOne({
+        referralCode: { $regex: `^${raw}$`, $options: "i" },
+      })
         .select({ _id: 1, role: 1, active: 1, name: 1, businessId: 1 })
         .lean();
+      console.log("[validateReferral] Found refUser:", refUser);
     }
 
     if (!refUser || refUser.active === false) {
+      console.log(
+        "[validateReferral] User not found or inactive. refUser:",
+        refUser,
+      );
       return res.status(400).json({
         success: false,
         message: "추천인을 찾을 수 없습니다.",
@@ -669,7 +686,7 @@ async function validateReferral(req, res) {
         id: refUser._id,
         name: refUser.name || "",
         role: refUser.role,
-        organizationName: orgName,
+        businessName: orgName,
       },
     });
   } catch (error) {

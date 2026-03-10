@@ -25,16 +25,9 @@ export const SignupPage = () => {
 
   const referralCode = useMemo(() => {
     const ref = searchParams.get("ref");
-    return ref && ref.trim().length > 0 ? ref.trim() : undefined;
+    const code = ref && ref.trim().length > 0 ? ref.trim() : undefined;
+    return code;
   }, [searchParams]);
-
-  useEffect(() => {
-    if (referralCode) {
-      navigate(`/signup/referral?ref=${encodeURIComponent(referralCode)}`, {
-        replace: true,
-      });
-    }
-  }, [referralCode, navigate]);
 
   const { token, user, loginWithToken, logout } = useAuthStore();
   const [formData, setFormData] = useState({
@@ -86,6 +79,11 @@ export const SignupPage = () => {
     provider: string;
     providerUserId: string;
   } | null>(null);
+  const [referrerInfo, setReferrerInfo] = useState<{
+    name?: string;
+    business?: string;
+  } | null>(null);
+  const [loadingReferrer, setLoadingReferrer] = useState(false);
 
   const markSetupWizardRequired = useCallback(
     (role?: string | null) => {
@@ -160,6 +158,43 @@ export const SignupPage = () => {
     if (wizardStep === 4) return "이메일 인증";
     return "완료";
   }, [isSocialNewMode, isWizardMode, wizardStep]);
+
+  // referralCode를 refInput에 설정
+  useEffect(() => {
+    if (typeof referralCode !== "string") return;
+    if (refInput.trim().length > 0) return;
+    setRefInput(referralCode);
+  }, [referralCode, refInput]);
+
+  // 소개자 정보 조회
+  useEffect(() => {
+    if (typeof referralCode !== "string") {
+      setReferrerInfo(null);
+      return;
+    }
+
+    setLoadingReferrer(true);
+    request<any>({
+      path: "/api/auth/referral/validate",
+      method: "POST",
+      jsonBody: { value: referralCode },
+    })
+      .then((res) => {
+        const body: any = res.data || {};
+        if (res.ok && body?.success && body?.data) {
+          setReferrerInfo({
+            name: body.data.name,
+            business: body.data.businessName,
+          });
+        } else {
+          setReferrerInfo(null);
+        }
+      })
+      .catch(() => {
+        setReferrerInfo(null);
+      })
+      .finally(() => setLoadingReferrer(false));
+  }, [referralCode]);
 
   // LocalStorage에서 폼 데이터 및 이메일 인증 정보 복구
   useEffect(() => {
@@ -811,23 +846,40 @@ export const SignupPage = () => {
               <span className="h-1 w-1 rounded-full bg-emerald-300" />
               <span>abuts.fit</span>
             </div>
-            <div className="space-y-4">
-              <h1 className="text-3xl font-semibold leading-tight text-white md:text-4xl">
-                하나의 로그인으로 제조 · 배송까지
-              </h1>
-              <p className="text-base text-white/80">
-                제작 현황, 스케줄, 실시간 트래킹을 모두 한 화면에서 제어하세요.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-white/15 bg-white/5 p-6 backdrop-blur">
-              <p className="text-xs uppercase tracking-[0.4em] text-white/60">
-                realtime sync
-              </p>
-              <p className="text-4xl font-semibold text-white">98.7%</p>
-              <p className="text-sm text-white/70">
-                동기화 성공률 · 운영팀 SLA 기준
-              </p>
-            </div>
+            {referrerInfo ? (
+              <div className="space-y-4">
+                <h1 className="text-3xl font-semibold leading-tight text-white md:text-4xl">
+                  소개받아 가입하신 것을 환영합니다
+                </h1>
+                <p className="text-base text-white/80">
+                  <span className="font-semibold text-emerald-300">
+                    {referrerInfo.business || referrerInfo.name || "소개자"}
+                  </span>
+                  에서 소개받으셨군요!
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <h1 className="text-3xl font-semibold leading-tight text-white md:text-4xl">
+                  하나의 로그인으로 제조 · 배송까지
+                </h1>
+                <p className="text-base text-white/80">
+                  제작 현황, 스케줄, 실시간 트래킹을 모두 한 화면에서
+                  제어하세요.
+                </p>
+              </div>
+            )}
+            {!referrerInfo && (
+              <div className="rounded-2xl border border-white/15 bg-white/5 p-6 backdrop-blur">
+                <p className="text-xs uppercase tracking-[0.4em] text-white/60">
+                  realtime sync
+                </p>
+                <p className="text-4xl font-semibold text-white">98.7%</p>
+                <p className="text-sm text-white/70">
+                  동기화 성공률 · 운영팀 SLA 기준
+                </p>
+              </div>
+            )}
           </section>
         )}
 
