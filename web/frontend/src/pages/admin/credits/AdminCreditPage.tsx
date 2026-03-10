@@ -83,6 +83,9 @@ const formatShortCode = (value: string) => {
   return s || "-";
 };
 
+const normalizeDigits = (value: string) =>
+  String(value || "").replace(/\D/g, "");
+
 const creditTypeLabel = (t: AdminCreditLedgerType) => {
   if (t === "CHARGE") return "충전";
   if (t === "BONUS") return "보너스";
@@ -221,6 +224,21 @@ type BankTransaction = {
   matchedAt?: string;
 };
 
+type FreeCreditAmount = 30000 | 50000;
+
+type BonusGrantHistoryRow = {
+  _id: string;
+  businessNumber: string;
+  amount: number;
+  source?: string;
+  overrideReason?: string;
+  isOverride?: boolean;
+  createdAt?: string;
+  canceledAt?: string | null;
+  cancelReason?: string;
+  hasSpent?: boolean;
+};
+
 export default function AdminCreditPage() {
   const { token } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
@@ -282,6 +300,27 @@ export default function AdminCreditPage() {
   const TX_PAGE_SIZE = 50;
 
   const [txTab, setTxTab] = useState<"auto" | "manual">("auto");
+  const [selectedBonusBusinessId, setSelectedBonusBusinessId] = useState("");
+  const [selectedBonusAmount, setSelectedBonusAmount] =
+    useState<FreeCreditAmount>(30000);
+  const [bonusReason, setBonusReason] = useState("");
+  const [grantingBonus, setGrantingBonus] = useState(false);
+  const [bonusGrantRows, setBonusGrantRows] = useState<BonusGrantHistoryRow[]>(
+    [],
+  );
+  const [loadingBonusGrantRows, setLoadingBonusGrantRows] = useState(false);
+  const [bonusGrantSearch, setBonusGrantSearch] = useState("");
+  const [freeCreditMenu, setFreeCreditMenu] = useState<
+    "grant" | "grant-cancel" | "grant-history" | "usage-history"
+  >("grant");
+  const [selectedCancelGrantId, setSelectedCancelGrantId] = useState("");
+  const [cancelGrantReason, setCancelGrantReason] = useState("");
+  const [cancelingGrant, setCancelingGrant] = useState(false);
+  const [cancelStartDate, setCancelStartDate] = useState("");
+  const [cancelEndDate, setCancelEndDate] = useState("");
+  const [cancelSkip, setCancelSkip] = useState(0);
+  const [cancelHasMore, setCancelHasMore] = useState(true);
+  const cancelTableRef = useRef<HTMLDivElement | null>(null);
 
   const [selectedTx, setSelectedTx] = useState<BankTransaction | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<ChargeOrder | null>(null);
@@ -576,6 +615,247 @@ export default function AdminCreditPage() {
     }
   };
 
+  const handleGrantFreeCredit = async () => {
+    if (!token) return;
+
+    const businessId = String(selectedBonusBusinessId || "").trim();
+    const reason = String(bonusReason || "").trim();
+
+    if (!businessId) {
+      toast({
+        title: "지급 대상 선택 필요",
+        description: "무료 크레딧을 지급할 사업자를 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!reason) {
+      toast({
+        title: "지급 이유 입력 필요",
+        description: "무료 크레딧 지급 이유를 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const targetOrg = organizations.find(
+      (org) => String(org._id) === businessId,
+    );
+    const businessNumber = String(targetOrg?.businessNumber || "").trim();
+    if (!businessNumber) {
+      toast({
+        title: "사업자등록번호 없음",
+        description: "선택한 사업자의 사업자등록번호를 확인할 수 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setGrantingBonus(true);
+    try {
+      const res = await request<any>({
+        path: "/api/admin/bonus-grants/welcome-bonus/override",
+        method: "POST",
+        token,
+        jsonBody: {
+          businessId,
+          businessNumber,
+          amount: selectedBonusAmount,
+          reason,
+        },
+      });
+
+      if (!res.ok) {
+        const message =
+          String((res.data as any)?.message || "").trim() ||
+          "무료 크레딧 지급에 실패했습니다.";
+        throw new Error(message);
+      }
+
+      toast({
+        title: "무료 크레딧 지급 완료",
+        description: `${selectedBonusAmount.toLocaleString()}원이 지급되었습니다.`,
+      });
+
+      setBonusReason("");
+      setSelectedBonusAmount(30000);
+
+      setOrgSkip(0);
+      setOrgHasMore(true);
+      await Promise.all([
+        loadStats(),
+        loadOrganizations({ reset: true }),
+        loadBonusGrantHistory(),
+      ]);
+    } catch (error: any) {
+      toast({
+        title: "무료 크레딧 지급 실패",
+        description: error?.message || "다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setGrantingBonus(false);
+    }
+  };
+
+  const loadBonusGrantHistory = async () => {
+    if (!token) return;
+
+    setLoadingBonusGrantRows(true);
+    try {
+      const res = await request<{
+        success: boolean;
+        data?: { rows: BonusGrantHistoryRow[] };
+        message?: string;
+      }>({
+        path: "/api/admin/bonus-grants?type=WELCOME_BONUS",
+        method: "GET",
+        token,
+      });
+
+      if (!res.ok || !res.data?.success) {
+        throw new Error(
+          String(res.data?.message || "").trim() ||
+            "무료 크레딧 지급 내역을 불러오는데 실패했습니다.",
+        );
+      }
+
+      setBonusGrantRows(
+        Array.isArray(res.data?.data?.rows) ? res.data.data.rows : [],
+      );
+    } catch (error: any) {
+      setBonusGrantRows([]);
+      toast({
+        title: "무료 크레딧 지급 내역 조회 실패",
+        description: error?.message || "다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingBonusGrantRows(false);
+    }
+  };
+
+  const handleCancelFreeCredit = async () => {
+    if (!token) return;
+
+    const grantId = String(selectedCancelGrantId || "").trim();
+    const reason = String(cancelGrantReason || "").trim();
+
+    if (!grantId) {
+      toast({
+        title: "취소 대상 선택 필요",
+        description: "취소할 지급 내역을 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!reason) {
+      toast({
+        title: "취소 사유 입력 필요",
+        description: "무료 크레딧 지급 취소 사유를 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const selectedGrant = bonusGrantRows.find((r) => String(r._id) === grantId);
+    if (selectedGrant?.hasSpent) {
+      toast({
+        title: "주의: 사용된 크레딧 취소",
+        description:
+          "이 지급건의 크레딧이 일부 사용되었습니다. 취소 시 잔액이 마이너스가 될 수 있습니다.",
+        variant: "default",
+      });
+    }
+
+    setCancelingGrant(true);
+    try {
+      const res = await request<any>({
+        path: `/api/admin/bonus-grants/${grantId}/cancel`,
+        method: "POST",
+        token,
+        jsonBody: { reason },
+      });
+
+      if (!res.ok) {
+        throw new Error(
+          String((res.data as any)?.message || "").trim() ||
+            "무료 크레딧 지급 취소에 실패했습니다.",
+        );
+      }
+
+      toast({
+        title: "지급 취소 완료",
+        description: "무료 크레딧 지급이 취소되었습니다.",
+      });
+
+      setSelectedCancelGrantId("");
+      setCancelGrantReason("");
+      setCancelSkip(0);
+
+      await Promise.all([
+        loadStats(),
+        loadOrganizations({ reset: true }),
+        loadBonusGrantHistory(),
+      ]);
+    } catch (error: any) {
+      toast({
+        title: "지급 취소 실패",
+        description: error?.message || "다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setCancelingGrant(false);
+    }
+  };
+
+  const loadMoreCancelGrants = async () => {
+    if (!token || !cancelHasMore || loadingBonusGrantRows) return;
+
+    setLoadingBonusGrantRows(true);
+    try {
+      const params = new URLSearchParams({
+        type: "WELCOME_BONUS",
+        skip: String(cancelSkip + 20),
+        limit: "20",
+      });
+
+      if (cancelStartDate) {
+        params.append("startDate", cancelStartDate);
+      }
+      if (cancelEndDate) {
+        params.append("endDate", cancelEndDate);
+      }
+
+      const res = await request<any>({
+        path: `/api/admin/bonus-grants?${params.toString()}`,
+        method: "GET",
+        token,
+      });
+
+      if (!res.ok || !res.data?.success) {
+        throw new Error("더 이상 조회할 지급 내역이 없습니다.");
+      }
+
+      const newRows = Array.isArray(res.data?.data?.rows)
+        ? res.data.data.rows
+        : [];
+      setBonusGrantRows((prev) => [...prev, ...newRows]);
+      setCancelSkip((prev) => prev + 20);
+      setCancelHasMore(res.data?.data?.hasMore ?? false);
+    } catch (error: any) {
+      toast({
+        title: "더 이상 조회할 내역이 없습니다",
+        description: error?.message || "다시 시도해주세요.",
+        variant: "default",
+      });
+    } finally {
+      setLoadingBonusGrantRows(false);
+    }
+  };
+
   useEffect(() => {
     loadStats();
     setOrgSkip(0);
@@ -590,6 +870,7 @@ export default function AdminCreditPage() {
     loadChargeOrders(orderStatusFilter, { reset: true });
     loadBankTransactions(txStatusFilter, { reset: true });
     loadSalesmen({ reset: true });
+    loadBonusGrantHistory();
   }, [token]);
 
   useEffect(() => {
@@ -745,6 +1026,84 @@ export default function AdminCreditPage() {
       ),
     };
   }, [salesmanOverview, salesmen]);
+
+  const selectedBonusOrganization = useMemo(
+    () =>
+      organizations.find(
+        (org) => String(org._id) === selectedBonusBusinessId,
+      ) || null,
+    [organizations, selectedBonusBusinessId],
+  );
+
+  const filteredBonusGrantRows = useMemo(() => {
+    const selectedBusinessNumberDigits = normalizeDigits(
+      String(selectedBonusOrganization?.businessNumber || ""),
+    );
+    const search = String(bonusGrantSearch || "")
+      .trim()
+      .toLowerCase();
+
+    return bonusGrantRows.filter((row) => {
+      if (selectedBonusBusinessId) {
+        if (!selectedBusinessNumberDigits) return false;
+        const rowBusinessNumberDigits = normalizeDigits(
+          String(row.businessNumber || ""),
+        );
+        if (rowBusinessNumberDigits !== selectedBusinessNumberDigits) {
+          return false;
+        }
+      }
+
+      if (!search) return true;
+
+      const sourceLabel = row.source === "admin" ? "관리자 지급" : "자동 지급";
+      const haystack = [
+        String(row.businessNumber || ""),
+        normalizeDigits(String(row.businessNumber || "")),
+        String(row.overrideReason || ""),
+        sourceLabel,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(search);
+    });
+  }, [
+    bonusGrantRows,
+    selectedBonusBusinessId,
+    selectedBonusOrganization,
+    bonusGrantSearch,
+  ]);
+
+  const filteredFreeCreditUsageRows = useMemo(() => {
+    const search = String(bonusGrantSearch || "")
+      .trim()
+      .toLowerCase();
+    return organizations
+      .filter((org) => {
+        if (
+          selectedBonusBusinessId &&
+          String(org._id) !== selectedBonusBusinessId
+        ) {
+          return false;
+        }
+        if (!search) return true;
+        const haystack = [
+          String(org.name || ""),
+          String(org.companyName || ""),
+          String(org.businessNumber || ""),
+          normalizeDigits(String(org.businessNumber || "")),
+        ]
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(search);
+      })
+      .filter((org) => Number(org.spentBonusAmount || 0) > 0)
+      .sort(
+        (a, b) =>
+          Number(b.spentBonusAmount || 0) - Number(a.spentBonusAmount || 0),
+      );
+  }, [organizations, selectedBonusBusinessId, bonusGrantSearch]);
 
   const [orgLedgerPeriod, setOrgLedgerPeriod] = useState<
     "7d" | "30d" | "90d" | "thisMonth" | "lastMonth"
@@ -959,6 +1318,7 @@ export default function AdminCreditPage() {
           <Tabs defaultValue="organizations" className="space-y-4">
             <TabsList>
               <TabsTrigger value="organizations">조직별 크레딧</TabsTrigger>
+              <TabsTrigger value="free-credit">무료 크레딧</TabsTrigger>
               <TabsTrigger value="verification">자동 매칭 검증</TabsTrigger>
               <TabsTrigger value="orders">충전 주문</TabsTrigger>
               <TabsTrigger value="transactions">입금 내역</TabsTrigger>
@@ -1121,6 +1481,562 @@ export default function AdminCreditPage() {
                           불러오는 중...
                         </div>
                       )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="free-credit" className="space-y-4">
+              <Card>
+                <CardHeader className="space-y-4">
+                  <div className="space-y-4">
+                    <div className="flex flex-col gap-2">
+                      <CardTitle>무료 크레딧</CardTitle>
+                      <CardDescription>
+                        대상 사업자를 선택하고 지급, 지급 내역, 사용 내역을
+                        메뉴별로 확인합니다.
+                      </CardDescription>
+                    </div>
+
+                    <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="free-credit-business"
+                          className="text-sm"
+                        >
+                          대상 사업자
+                        </Label>
+                        <div className="relative">
+                          <select
+                            id="free-credit-business"
+                            className="h-11 w-full appearance-none rounded-lg border border-input bg-background px-3 pr-10 text-sm"
+                            value={selectedBonusBusinessId}
+                            onChange={(e) =>
+                              setSelectedBonusBusinessId(e.target.value)
+                            }
+                          >
+                            <option value="">전체 사업자</option>
+                            {[...organizations]
+                              .sort((a, b) =>
+                                String(a.name || "").localeCompare(
+                                  String(b.name || ""),
+                                  "ko",
+                                ),
+                              )
+                              .map((org) => (
+                                <option key={org._id} value={org._id}>
+                                  {org.name} (
+                                  {org.businessNumber || "사업자번호 없음"})
+                                </option>
+                              ))}
+                          </select>
+                          <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">
+                            <span className="text-xs">▼</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="free-credit-search" className="text-sm">
+                          검색
+                        </Label>
+                        <Input
+                          id="free-credit-search"
+                          className="h-11"
+                          value={bonusGrantSearch}
+                          onChange={(e) => setBonusGrantSearch(e.target.value)}
+                          placeholder="사업자번호, 사유, 구분"
+                        />
+                      </div>
+
+                      <div className="flex items-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-11 px-4"
+                          onClick={loadBonusGrantHistory}
+                          disabled={loadingBonusGrantRows}
+                        >
+                          {loadingBonusGrantRows
+                            ? "새로고침 중..."
+                            : "새로고침"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 border-t pt-4">
+                    <Button
+                      type="button"
+                      variant={
+                        freeCreditMenu === "grant" ? "default" : "outline"
+                      }
+                      onClick={() => setFreeCreditMenu("grant")}
+                      size="sm"
+                    >
+                      지급
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={
+                        freeCreditMenu === "grant-cancel"
+                          ? "default"
+                          : "outline"
+                      }
+                      onClick={() => setFreeCreditMenu("grant-cancel")}
+                      size="sm"
+                    >
+                      지급 취소
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={
+                        freeCreditMenu === "grant-history"
+                          ? "default"
+                          : "outline"
+                      }
+                      onClick={() => setFreeCreditMenu("grant-history")}
+                      size="sm"
+                    >
+                      지급 내역
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={
+                        freeCreditMenu === "usage-history"
+                          ? "default"
+                          : "outline"
+                      }
+                      onClick={() => setFreeCreditMenu("usage-history")}
+                      size="sm"
+                    >
+                      사용 내역
+                    </Button>
+                  </div>
+                </CardHeader>
+
+                <CardContent>
+                  {freeCreditMenu === "grant" ? (
+                    <div className="grid gap-4 xl:grid-cols-[minmax(460px,1.15fr)_minmax(360px,0.85fr)]">
+                      <div className="flex flex-col gap-4 rounded-xl border border-primary/30 bg-primary/5 p-5 shadow-sm">
+                        <div className="space-y-2">
+                          <Label>무료 크레딧 금액</Label>
+                          <div className="grid grid-cols-2 gap-3">
+                            {[30000, 50000].map((amount) => (
+                              <Button
+                                key={amount}
+                                type="button"
+                                className="h-12 w-full"
+                                variant={
+                                  selectedBonusAmount === amount
+                                    ? "default"
+                                    : "outline"
+                                }
+                                onClick={() =>
+                                  setSelectedBonusAmount(
+                                    amount as FreeCreditAmount,
+                                  )
+                                }
+                              >
+                                {amount.toLocaleString()}원
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="free-credit-reason">충전 이유</Label>
+                          <Input
+                            id="free-credit-reason"
+                            className="h-12 bg-background"
+                            value={bonusReason}
+                            onChange={(e) => setBonusReason(e.target.value)}
+                            placeholder="예: CS 보상, 수동 보정, 운영 정책 지급"
+                          />
+                          <div className="rounded-lg bg-background/70 p-3 text-xs text-muted-foreground ring-1 ring-primary/10">
+                            지급 사유는 최소 1자 이상 입력해야 하며, 내부 운영
+                            로그에 기록됩니다.
+                          </div>
+                        </div>
+
+                        <Button
+                          className="h-12 justify-center"
+                          onClick={handleGrantFreeCredit}
+                          disabled={grantingBonus || !selectedBonusBusinessId}
+                        >
+                          {grantingBonus ? "지급 중..." : "무료 크레딧 지급"}
+                        </Button>
+                      </div>
+
+                      <div className="flex flex-col gap-4">
+                        <div className="rounded-xl border border-border/60 bg-muted/20 p-5">
+                          <div className="text-sm font-medium">지급 요약</div>
+                          <div className="mt-3 space-y-2 text-sm">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground">
+                                선택 사업자
+                              </span>
+                              <span className="text-right font-medium">
+                                {selectedBonusOrganization?.name || "미선택"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground">
+                                사업자번호
+                              </span>
+                              <span className="font-mono">
+                                {selectedBonusOrganization?.businessNumber ||
+                                  "-"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground">
+                                지급 금액
+                              </span>
+                              <span className="font-semibold text-primary">
+                                {selectedBonusAmount.toLocaleString()}원
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-primary/20 bg-primary/5 p-5">
+                          <div className="text-sm font-medium">지급 안내</div>
+                          <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                            <div>
+                              선택한 사업자에 즉시 무료 크레딧이 반영됩니다.
+                            </div>
+                            <div>
+                              지급 사유는 운영 로그와 지급 내역에 함께
+                              기록됩니다.
+                            </div>
+                            <div>
+                              내역 메뉴에서 지급 기록과 사용 기록을 바로 확인할
+                              수 있습니다.
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : freeCreditMenu === "grant-cancel" ? (
+                    <div className="grid gap-4 xl:grid-cols-[minmax(460px,1.15fr)_minmax(360px,0.85fr)]">
+                      <div className="rounded-xl border border-border/60 bg-muted/20 p-5">
+                        <div className="text-sm font-medium">
+                          취소 가능 지급 내역
+                        </div>
+
+                        <div className="mt-4 space-y-3">
+                          <div className="grid gap-2 grid-cols-2">
+                            <div className="space-y-1">
+                              <Label
+                                htmlFor="cancel-start-date"
+                                className="text-xs"
+                              >
+                                시작일
+                              </Label>
+                              <Input
+                                id="cancel-start-date"
+                                type="date"
+                                className="h-10 text-sm"
+                                value={cancelStartDate}
+                                onChange={(e) => {
+                                  setCancelStartDate(e.target.value);
+                                  setCancelSkip(0);
+                                  setBonusGrantRows([]);
+                                  setCancelHasMore(true);
+                                }}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label
+                                htmlFor="cancel-end-date"
+                                className="text-xs"
+                              >
+                                종료일
+                              </Label>
+                              <Input
+                                id="cancel-end-date"
+                                type="date"
+                                className="h-10 text-sm"
+                                value={cancelEndDate}
+                                onChange={(e) => {
+                                  setCancelEndDate(e.target.value);
+                                  setCancelSkip(0);
+                                  setBonusGrantRows([]);
+                                  setCancelHasMore(true);
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div
+                          className="mt-4 overflow-x-auto max-h-[400px] overflow-y-auto"
+                          ref={cancelTableRef}
+                        >
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-[80px]">선택</TableHead>
+                                <TableHead>지급일시</TableHead>
+                                <TableHead>사업자번호</TableHead>
+                                <TableHead className="text-right">
+                                  금액
+                                </TableHead>
+                                <TableHead className="w-[60px]">상태</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {filteredBonusGrantRows
+                                .filter((row) => !row.canceledAt)
+                                .map((row) => (
+                                  <TableRow
+                                    key={row._id}
+                                    className={`cursor-pointer ${
+                                      selectedCancelGrantId === String(row._id)
+                                        ? "bg-primary/10"
+                                        : ""
+                                    }`}
+                                    onClick={() =>
+                                      setSelectedCancelGrantId(String(row._id))
+                                    }
+                                  >
+                                    <TableCell>
+                                      <input
+                                        type="radio"
+                                        name="cancel-grant"
+                                        checked={
+                                          selectedCancelGrantId ===
+                                          String(row._id)
+                                        }
+                                        onChange={() =>
+                                          setSelectedCancelGrantId(
+                                            String(row._id),
+                                          )
+                                        }
+                                      />
+                                    </TableCell>
+                                    <TableCell className="text-sm">
+                                      {formatDate(row.createdAt)}
+                                    </TableCell>
+                                    <TableCell className="font-mono text-sm">
+                                      {row.businessNumber || "-"}
+                                    </TableCell>
+                                    <TableCell className="text-right font-medium">
+                                      {Number(row.amount || 0).toLocaleString()}
+                                      원
+                                    </TableCell>
+                                    <TableCell className="text-xs">
+                                      {row.hasSpent ? (
+                                        <span className="text-amber-600 font-medium">
+                                          사용됨
+                                        </span>
+                                      ) : (
+                                        <span className="text-muted-foreground">
+                                          미사용
+                                        </span>
+                                      )}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+
+                        {cancelHasMore && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-4 w-full h-10"
+                            onClick={loadMoreCancelGrants}
+                            disabled={loadingBonusGrantRows}
+                          >
+                            {loadingBonusGrantRows
+                              ? "더 불러오는 중..."
+                              : "더 이전 내역 보기"}
+                          </Button>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="cancel-reason" className="text-sm">
+                            취소 사유
+                          </Label>
+                          <Input
+                            id="cancel-reason"
+                            className="h-11"
+                            value={cancelGrantReason}
+                            onChange={(e) =>
+                              setCancelGrantReason(e.target.value)
+                            }
+                            placeholder="예: 중복 지급, 사용자 요청, 오류 수정"
+                          />
+                        </div>
+
+                        <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
+                          <div className="text-xs font-medium">선택 정보</div>
+                          <div className="mt-3 space-y-2 text-xs">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground">
+                                선택 건
+                              </span>
+                              <span className="font-mono">
+                                {selectedCancelGrantId ? "1건" : "미선택"}
+                              </span>
+                            </div>
+                            {selectedCancelGrantId && (
+                              <>
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-muted-foreground">
+                                    취소 금액
+                                  </span>
+                                  <span className="font-semibold text-primary">
+                                    {Number(
+                                      bonusGrantRows.find(
+                                        (r) =>
+                                          String(r._id) ===
+                                          selectedCancelGrantId,
+                                      )?.amount || 0,
+                                    ).toLocaleString()}
+                                    원
+                                  </span>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <Button
+                          className="h-11 justify-center"
+                          onClick={handleCancelFreeCredit}
+                          disabled={
+                            cancelingGrant ||
+                            !selectedCancelGrantId ||
+                            !cancelGrantReason.trim()
+                          }
+                        >
+                          {cancelingGrant ? "취소 중..." : "지급 취소"}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : freeCreditMenu === "grant-history" ? (
+                    loadingBonusGrantRows ? (
+                      <div className="py-8 text-center text-sm text-muted-foreground">
+                        불러오는 중...
+                      </div>
+                    ) : filteredBonusGrantRows.length === 0 ? (
+                      <div className="py-8 text-center text-sm text-muted-foreground">
+                        무료 크레딧 지급 내역이 없습니다.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>지급일시</TableHead>
+                              <TableHead>사업자번호</TableHead>
+                              <TableHead className="text-right">금액</TableHead>
+                              <TableHead className="w-[140px] whitespace-nowrap">
+                                구분
+                              </TableHead>
+                              <TableHead className="w-[320px] whitespace-nowrap">
+                                사유
+                              </TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {filteredBonusGrantRows.map((row) => (
+                              <TableRow key={row._id}>
+                                <TableCell>
+                                  {formatDate(row.createdAt)}
+                                </TableCell>
+                                <TableCell className="font-mono">
+                                  {row.businessNumber || "-"}
+                                </TableCell>
+                                <TableCell className="text-right font-medium">
+                                  {Number(row.amount || 0).toLocaleString()}원
+                                </TableCell>
+                                <TableCell className="whitespace-nowrap">
+                                  <Badge
+                                    variant={
+                                      row.isOverride || row.source === "admin"
+                                        ? "default"
+                                        : "outline"
+                                    }
+                                  >
+                                    {row.source === "admin"
+                                      ? "관리자 지급"
+                                      : "자동 지급"}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="w-[320px] whitespace-nowrap text-sm">
+                                  {String(row.overrideReason || "").trim() ||
+                                    "-"}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )
+                  ) : filteredFreeCreditUsageRows.length === 0 ? (
+                    <div className="py-8 text-center text-sm text-muted-foreground">
+                      무료 크레딧 사용 내역이 없습니다.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>사업자명</TableHead>
+                            <TableHead>사업자번호</TableHead>
+                            <TableHead className="text-right">
+                              사용크레딧(무료)
+                            </TableHead>
+                            <TableHead className="text-right">
+                              잔여크레딧(무료)
+                            </TableHead>
+                            <TableHead className="text-right">
+                              충전크레딧(무료)
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredFreeCreditUsageRows.map((org) => (
+                            <TableRow key={org._id}>
+                              <TableCell>
+                                <div className="font-medium">
+                                  {org.name || "-"}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {org.companyName || "-"}
+                                </div>
+                              </TableCell>
+                              <TableCell className="font-mono">
+                                {org.businessNumber || "-"}
+                              </TableCell>
+                              <TableCell className="text-right font-medium">
+                                {Number(
+                                  org.spentBonusAmount || 0,
+                                ).toLocaleString()}
+                                원
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {Number(org.bonusBalance || 0).toLocaleString()}
+                                원
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {Number(
+                                  org.chargedBonusAmount || 0,
+                                ).toLocaleString()}
+                                원
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
                     </div>
                   )}
                 </CardContent>

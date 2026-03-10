@@ -152,22 +152,185 @@ export async function adminListBonusGrants(req, res) {
     const businessNumberDigits = normalizeBusinessNumberDigits(
       req.query?.businessNumber,
     );
+    const skip = Math.max(0, parseInt(req.query?.skip || "0", 10));
+    const limit = Math.max(
+      1,
+      Math.min(100, parseInt(req.query?.limit || "20", 10)),
+    );
+
+    const startDate = req.query?.startDate
+      ? new Date(String(req.query.startDate))
+      : null;
+    const endDate = req.query?.endDate
+      ? new Date(String(req.query.endDate))
+      : null;
 
     const q = { type };
     if (businessNumberDigits) {
       q.businessNumber = businessNumberDigits;
     }
 
+    if (startDate && endDate) {
+      q.createdAt = {
+        $gte: startDate,
+        $lte: new Date(endDate.getTime() + 86400000),
+      };
+    }
+
     const rows = await BonusGrant.find(q)
       .sort({ createdAt: -1 })
-      .limit(200)
+      .skip(skip)
+      .limit(limit)
       .lean();
 
-    return res.json({ success: true, data: { rows } });
+    const total = await BonusGrant.countDocuments(q);
+
+    const rowsWithSpent = await Promise.all(
+      rows.map(async (row) => {
+        const spentLedger = await CreditLedger.findOne({
+          businessId: row.organizationId,
+          type: "SPEND",
+          createdAt: { $gte: row.createdAt },
+        })
+          .select({ amount: 1 })
+          .lean();
+
+        return {
+          ...row,
+          hasSpent: !!spentLedger,
+        };
+      }),
+    );
+
+    return res.json({
+      success: true,
+      data: {
+        rows: rowsWithSpent,
+        total,
+        skip,
+        limit,
+        hasMore: skip + limit < total,
+      },
+    });
   } catch (error) {
     return res.status(500).json({
       success: false,
       message: "보너스 지급 내역 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function adminCancelBonusGrant(req, res) {
+  try {
+    const grantId = String(req.params?.id || "").trim();
+    if (!Types.ObjectId.isValid(grantId)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 bonusGrantId입니다.",
+      });
+    }
+
+    const cancelReason = String(req.body?.reason || "").trim();
+    if (!cancelReason) {
+      return res.status(400).json({
+        success: false,
+        message: "지급 취소 사유(reason)를 입력해주세요.",
+      });
+    }
+
+    const grant = await BonusGrant.findById(grantId).lean();
+    if (!grant?._id) {
+      return res.status(404).json({
+        success: false,
+        message: "지급 내역을 찾을 수 없습니다.",
+      });
+    }
+
+    if (grant.canceledAt) {
+      return res.status(409).json({
+        success: false,
+        message: "이미 취소된 지급 건입니다.",
+      });
+    }
+
+    const businessId = String(grant.organizationId || "").trim();
+    if (!businessId || !Types.ObjectId.isValid(businessId)) {
+      return res.status(400).json({
+        success: false,
+        message: "지급 건의 businessId가 올바르지 않습니다.",
+      });
+    }
+
+    const amount = Number(grant.amount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "취소할 금액이 올바르지 않습니다.",
+      });
+    }
+
+    const uniqueKey = `bonus_grant_cancel:${String(grant._id)}`;
+    const result = await CreditLedger.updateOne(
+      { uniqueKey },
+      {
+        $setOnInsert: {
+          businessId,
+          userId: grant.userId || null,
+          type: "ADJUST",
+          amount: -amount,
+          refType: "WELCOME_BONUS_CANCEL",
+          refId: grant._id,
+          uniqueKey,
+        },
+      },
+      { upsert: true },
+    );
+
+    if (!result?.upsertedCount) {
+      return res.status(409).json({
+        success: false,
+        message: "이미 취소 처리된 지급 건입니다.",
+      });
+    }
+
+    const cancelLedgerDoc = await CreditLedger.findOne({ uniqueKey })
+      .select({ _id: 1 })
+      .lean();
+
+    const canceledAt = new Date();
+
+    await BonusGrant.updateOne(
+      { _id: grant._id },
+      {
+        $set: {
+          canceledAt,
+          canceledByUserId: req.user?._id || null,
+          cancelReason,
+          cancelCreditLedgerId: cancelLedgerDoc?._id || null,
+        },
+      },
+    );
+
+    await emitCreditBalanceUpdatedToOrganization({
+      organizationId: businessId,
+      balanceDelta: -amount,
+      reason: "admin_welcome_bonus_cancel",
+      refId: cancelLedgerDoc?._id || grant._id,
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        bonusGrantId: grant._id,
+        cancelCreditLedgerId: cancelLedgerDoc?._id || null,
+        canceledAt,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "보너스 지급 취소 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

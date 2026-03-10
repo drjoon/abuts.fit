@@ -46,8 +46,26 @@ const bonusGrantSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    canceledAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    canceledByUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
+    cancelReason: { type: String, default: "" },
+    cancelCreditLedgerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "CreditLedger",
+      default: null,
+      index: true,
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 bonusGrantSchema.index(
@@ -58,7 +76,7 @@ bonusGrantSchema.index(
       isOverride: false,
       businessNumber: { $type: "string", $gt: "" },
     },
-  }
+  },
 );
 
 const BonusGrant = mongoose.model("BonusGrant", bonusGrantSchema);

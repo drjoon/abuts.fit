@@ -54,6 +54,7 @@ import {
   adminRejectChargeOrder,
 } from "../../controllers/admin/adminCreditBPlan.controller.js";
 import {
+  adminCancelBonusGrant,
   adminListBonusGrants,
   adminOverrideWelcomeBonus,
 } from "../../controllers/admin/adminBonusGrant.controller.js";
@@ -252,6 +253,11 @@ router.post(
   "/bonus-grants/welcome-bonus/override",
   authorize(["admin"], { adminRoles: ["owner"] }),
   adminOverrideWelcomeBonus,
+);
+router.post(
+  "/bonus-grants/:id/cancel",
+  authorize(["admin"], { adminRoles: ["owner"] }),
+  adminCancelBonusGrant,
 );
 
 // 세금계산서(드래프트) 관리
