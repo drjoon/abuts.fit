@@ -18,7 +18,7 @@ export async function getPendingJoinRequestsForOwner(req, res) {
     if (!myBusinessId) {
       return res.status(403).json({
         success: false,
-        message: "기공소 정보가 설정되지 않았습니다.",
+        message: "사업자 정보가 설정되지 않았습니다.",
       });
     }
 
@@ -37,7 +37,7 @@ export async function getPendingJoinRequestsForOwner(req, res) {
     if (!org) {
       return res.status(404).json({
         success: false,
-        message: "기공소를 찾을 수 없습니다.",
+        message: "사업자를 찾을 수 없습니다.",
       });
     }
 
@@ -289,7 +289,7 @@ export async function getMyStaffMembers(req, res) {
     if (!myBusinessId) {
       return res.status(403).json({
         success: false,
-        message: "기공소 정보가 설정되지 않았습니다.",
+        message: "사업자 정보가 설정되지 않았습니다.",
       });
     }
 
@@ -327,6 +327,25 @@ export async function getMyStaffMembers(req, res) {
     const ownerIds = Array.isArray(org.owners)
       ? org.owners.map((c) => String((c && c._id) || c || ""))
       : [];
+    const representatives = [];
+    if (ownerId) {
+      representatives.push({
+        _id: ownerId,
+        name: String((org.owner && org.owner.name) || ""),
+        email: String((org.owner && org.owner.email) || ""),
+      });
+    }
+    if (Array.isArray(org.owners)) {
+      org.owners.forEach((c) => {
+        const id = String((c && c._id) || c || "");
+        if (!id) return;
+        representatives.push({
+          _id: id,
+          name: String((c && c.name) || ""),
+          email: String((c && c.email) || ""),
+        });
+      });
+    }
     const members = Array.isArray(org.members) ? org.members : [];
     const staff = members
       .filter((m) => {
@@ -349,6 +368,7 @@ export async function getMyStaffMembers(req, res) {
         organizationId: String(org._id),
         businessName: String(org.name),
         organizationName: String(org.name),
+        representatives,
         staff,
       },
     });

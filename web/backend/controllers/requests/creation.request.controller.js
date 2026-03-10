@@ -35,7 +35,7 @@ export async function createRequest(req, res) {
         return res.status(403).json({
           success: false,
           message:
-            "기공소 소속 정보가 필요합니다. 설정 > 기공소에서 소속을 먼저 확인해주세요.",
+            "사업자 소속 정보가 필요합니다. 설정 > 사업자에서 소속을 먼저 확인해주세요.",
         });
       }
 
@@ -51,7 +51,7 @@ export async function createRequest(req, res) {
               return res.status(403).json({
                 success: false,
                 message:
-                  "기공소 소속 정보가 필요합니다. 설정 > 기공소에서 소속을 먼저 확인해주세요.",
+                  "사업자 소속 정보가 필요합니다. 설정 > 사업자에서 소속을 먼저 확인해주세요.",
               });
             }
 
@@ -279,7 +279,7 @@ export async function createRequest(req, res) {
               return res.status(403).json({
                 success: false,
                 message:
-                  "기공소 소속 정보가 필요합니다. 설정 > 기공소에서 소속을 먼저 확인해주세요.",
+                  "사업자 소속 정보가 필요합니다. 설정 > 사업자에서 소속을 먼저 확인해주세요.",
               });
             }
 
@@ -759,7 +759,7 @@ export async function createRequestsBulk(req, res) {
         return res.status(403).json({
           success: false,
           message:
-            "기공소 소속 정보가 필요합니다. 설정 > 기공소에서 소속을 먼저 확인해주세요.",
+            "사업자 소속 정보가 필요합니다. 설정 > 사업자에서 소속을 먼저 확인해주세요.",
         });
       }
       const lockStatus = await checkCreditLock(orgId);

@@ -592,14 +592,26 @@ export async function getMyOrganization(req, res) {
     if (!roleCheck) return;
     const { organizationType } = roleCheck;
     let orgName = "";
-    orgName = String(req.user.organization || "").trim();
+    orgName = String(req.user.business || req.user.organization || "").trim();
     const freshUser = await User.findById(req.user._id)
-      .select({ organizationId: 1, organization: 1 })
+      .select({
+        businessId: 1,
+        business: 1,
+        organizationId: 1,
+        organization: 1,
+      })
       .lean();
     const freshOrganizationId =
-      freshUser?.organizationId || req.user.organizationId;
+      freshUser?.businessId ||
+      req.user.businessId ||
+      freshUser?.organizationId ||
+      req.user.organizationId;
     const freshOrganizationName = String(
-      freshUser?.organization || req.user.organization || "",
+      freshUser?.business ||
+        req.user.business ||
+        freshUser?.organization ||
+        req.user.organization ||
+        "",
     ).trim();
     let org = await findOrganizationByAnchors({
       organizationType,
@@ -634,13 +646,18 @@ export async function getMyOrganization(req, res) {
           joinRequests: [],
         });
         await User.findByIdAndUpdate(req.user._id, {
-          $set: { organizationId: org._id, organization: org.name },
+          $set: {
+            businessId: org._id,
+            business: org.name,
+            organizationId: org._id,
+            organization: org.name,
+          },
         });
       } catch (error) {
-        return res.status(500).json({
+        return res.status(403).json({
           success: false,
-          message: "내 기공소 생성 중 오류가 발생했습니다.",
-          error: error?.message || String(error),
+          message: "내 사업자 생성 중 오류가 발생했습니다.",
+          error: error.message,
         });
       }
     }
@@ -683,12 +700,17 @@ export async function getMyOrganization(req, res) {
     }
 
     if (
-      req.user.organizationId &&
+      (req.user.businessId || req.user.organizationId) &&
       membership !== "owner" &&
       membership !== "member"
     ) {
       await User.findByIdAndUpdate(req.user._id, {
-        $set: { organizationId: null, organization: "" },
+        $set: {
+          businessId: null,
+          business: "",
+          organizationId: null,
+          organization: "",
+        },
       });
       return res.json({
         success: true,
@@ -705,11 +727,16 @@ export async function getMyOrganization(req, res) {
     }
 
     if (
-      !req.user.organizationId &&
+      !(req.user.businessId || req.user.organizationId) &&
       (membership === "owner" || membership === "member")
     ) {
       await User.findByIdAndUpdate(req.user._id, {
-        $set: { organizationId: org._id },
+        $set: {
+          businessId: org._id,
+          business: org.name,
+          organizationId: org._id,
+          organization: org.name,
+        },
       });
     }
 
@@ -764,7 +791,7 @@ export async function getMyOrganization(req, res) {
     res.set("x-abuts-handler", "requestorOrganization.getMyOrganization");
     return res.status(500).json({
       success: false,
-      message: "내 기공소 조회 중 오류가 발생했습니다.",
+      message: "내 사업자 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -1268,6 +1295,8 @@ export async function updateMyOrganization(req, res) {
         req.user._id,
         {
           $set: {
+            businessId: attachToOrg._id,
+            business: attachToOrg.name,
             organizationId: attachToOrg._id,
             organization: attachToOrg.name,
           },
@@ -1309,7 +1338,7 @@ export async function updateMyOrganization(req, res) {
       if (requiredMissing) {
         return res.status(400).json({
           success: false,
-          message: "기공소 정보를 모두 입력해주세요.",
+          message: "사업자 정보를 모두 입력해주세요.",
         });
       }
 
@@ -1349,6 +1378,8 @@ export async function updateMyOrganization(req, res) {
           req.user._id,
           {
             $set: {
+              businessId: created._id,
+              business: created.name,
               organizationId: created._id,
               organization: created.name,
             },
@@ -1391,7 +1422,7 @@ export async function updateMyOrganization(req, res) {
             success: false,
             reason: "duplicate_business_number",
             message:
-              "이미 등록된 사업자등록번호입니다. 기존 기공소에 가입 요청을 진행해주세요.",
+              "이미 등록된 사업자등록번호입니다. 기존 사업자에 가입 요청을 진행해주세요.",
           });
         }
         throw e;
@@ -1476,17 +1507,37 @@ export async function updateMyOrganization(req, res) {
             success: false,
             reason: "duplicate_business_number",
             message:
-              "이미 등록된 사업자등록번호입니다. 기존 기공소에 가입 요청을 진행해주세요.",
+              "이미 등록된 사업자등록번호입니다. 기존 사업자에 가입 요청을 진행해주세요.",
           });
         }
       }
       throw e;
     }
 
-    if (nextName && String(req.user.organization || "") !== nextName) {
+    if (
+      nextName &&
+      String(req.user.business || req.user.organization || "") !== nextName
+    ) {
       await User.updateMany(
-        { organizationId: org._id },
-        { $set: { organization: nextName } },
+        { $or: [{ businessId: org._id }, { organizationId: org._id }] },
+        {
+          $set: {
+            business: nextName,
+            organization: nextName,
+          },
+        },
+      );
+    } else {
+      await User.updateMany(
+        { $or: [{ businessId: org._id }, { organizationId: org._id }] },
+        {
+          $set: {
+            businessId: org._id,
+            business: String(org?.name || nextName || "").trim(),
+            organizationId: org._id,
+            organization: String(org?.name || nextName || "").trim(),
+          },
+        },
       );
     }
 
@@ -1521,7 +1572,7 @@ export async function updateMyOrganization(req, res) {
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "기공소 정보 저장 중 오류가 발생했습니다.",
+      message: "사업자 정보 저장 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -1601,8 +1652,15 @@ export async function clearMyBusinessLicense(req, res) {
     });
 
     await User.updateMany(
-      { organizationId: org._id },
-      { $set: { organizationId: null, organization: "" } },
+      { $or: [{ businessId: org._id }, { organizationId: org._id }] },
+      {
+        $set: {
+          businessId: null,
+          business: "",
+          organizationId: null,
+          organization: "",
+        },
+      },
     );
     await RequestorOrganization.findByIdAndDelete(org._id);
 
