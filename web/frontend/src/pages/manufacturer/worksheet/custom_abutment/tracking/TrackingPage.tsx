@@ -475,6 +475,7 @@ export const TrackingInquiryPage = () => {
     } else {
       title = "택배/배송 내역";
       headers = [
+        "의뢰건수",
         "의뢰ID",
         "택배사",
         "송장번호",
@@ -483,8 +484,8 @@ export const TrackingInquiryPage = () => {
         "상태",
       ];
       rowsHtml = shippingRows
-        .map((r) => {
-          const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+        .map((box) => {
+          const di = normalizeDeliveryInfo(box.deliveryInfoRef);
           const shippedAt = di.shippedAt ? String(di.shippedAt) : "";
           const pickedUpAt = di.pickedUpAt ? String(di.pickedUpAt) : "";
           const deliveredAt = di.deliveredAt ? String(di.deliveredAt) : "";
@@ -495,8 +496,15 @@ export const TrackingInquiryPage = () => {
               : shippedAt || di.trackingNumber
                 ? "배송중"
                 : "-";
+          const requestCount = (box as any)?.requestCount || 1;
+          const requests = (box as any)?.requests || [];
+          const requestIds = requests
+            .map((r: any) => String(r?.requestId || "").trim())
+            .filter(Boolean)
+            .join(", ");
           return `<tr>
-            <td>${r.requestId || ""}</td>
+            <td>${requestCount}건</td>
+            <td>${requestIds || ""}</td>
             <td>${di.carrier || ""}</td>
             <td>${di.trackingNumber || ""}</td>
             <td>${formatDateTime(shippedAt)}</td>
@@ -570,12 +578,17 @@ export const TrackingInquiryPage = () => {
     const csvRows: string[] = [];
     csvRows.push(header.map(escapeCsv).join(","));
 
-    for (const r of rows) {
-      const ci: any = r.caseInfos || {};
-      const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+    for (const box of rows) {
+      const di = normalizeDeliveryInfo(box.deliveryInfoRef);
+      // 박스의 첫 번째 의뢰건에서 정보 추출
+      const firstRequest = (box as any)?.requests?.[0];
+      const ci: any = firstRequest?.caseInfos || {};
       const name =
-        ci.clinicName || r.requestor?.organization || r.requestor?.name || "";
-      const phone = (ci as any)?.phone || r.requestor?.phone || "";
+        ci.clinicName ||
+        firstRequest?.requestor?.organization ||
+        firstRequest?.requestor?.name ||
+        "";
+      const phone = (ci as any)?.phone || firstRequest?.requestor?.phone || "";
       const addr = (ci as any)?.address || "";
       const cols = [
         name,
@@ -584,7 +597,7 @@ export const TrackingInquiryPage = () => {
         phone,
         addr,
         "",
-        "1",
+        String(box.requestCount || 1),
         "의료기기",
         "",
         "신용",
@@ -714,14 +727,49 @@ export const TrackingInquiryPage = () => {
       const di = normalizeDeliveryInfo(r.deliveryInfoRef);
       return Boolean(di.trackingNumber || di.shippedAt || di.deliveredAt);
     });
-    return only.slice().sort((a, b) => {
-      const da = normalizeDeliveryInfo(a.deliveryInfoRef);
-      const db = normalizeDeliveryInfo(b.deliveryInfoRef);
+
+    // 박스 단위로 그룹핑 (trackingNumber 기준)
+    const boxMap = new Map<string, ManufacturerRequest[]>();
+    for (const r of only) {
+      const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+      const trackingNumber =
+        String(di.trackingNumber || "").trim() ||
+        `no-tracking-${Math.random()}`;
+      if (!boxMap.has(trackingNumber)) {
+        boxMap.set(trackingNumber, []);
+      }
+      boxMap.get(trackingNumber)!.push(r);
+    }
+
+    // 박스별 대표 정보 생성 (첫 번째 의뢰건 기준)
+    const boxes = Array.from(boxMap.entries()).map(
+      ([trackingNumber, requests]) => {
+        const firstRequest = requests[0];
+        const di = normalizeDeliveryInfo(firstRequest.deliveryInfoRef);
+        return {
+          trackingNumber,
+          carrier: di.carrier,
+          shippedAt: di.shippedAt,
+          deliveredAt: di.deliveredAt,
+          pickedUpAt: di.pickedUpAt,
+          tracking: di.tracking,
+          requestCount: requests.length,
+          requests,
+          // 박스 대표로 사용할 정보
+          _id: `box-${trackingNumber}`,
+          requestId: `[${requests.length}건] ${requests.map((r) => r.requestId).join(", ")}`,
+          deliveryInfoRef: di,
+          createdAt: firstRequest.createdAt,
+        };
+      },
+    );
+
+    return boxes.slice().sort((a, b) => {
       const aTime = new Date(
-        da.deliveredAt || da.shippedAt || a.createdAt || 0,
+        a.deliveredAt || a.shippedAt || a.createdAt || 0,
       ).getTime();
       const bTime = new Date(
-        db.deliveredAt || db.shippedAt || b.createdAt || 0,
+        b.deliveredAt || b.shippedAt || b.createdAt || 0,
       ).getTime();
       return bTime - aTime;
     });
@@ -745,25 +793,15 @@ export const TrackingInquiryPage = () => {
 
     return Array.from(
       new Set(
-        prePickupRows.flatMap((row) => {
-          const di = normalizeDeliveryInfo(row.deliveryInfoRef);
-          const directMailbox = String(row.mailboxAddress || "").trim();
-          if (directMailbox) return [directMailbox];
-
+        prePickupRows.flatMap((box) => {
+          const di = normalizeDeliveryInfo(box.deliveryInfoRef);
           const trackingNumber = String(di.trackingNumber || "").trim();
           if (!trackingNumber) return [];
 
-          return prePickupRows
-            .filter((candidate) => {
-              const candidateDi = normalizeDeliveryInfo(
-                candidate.deliveryInfoRef,
-              );
-              return (
-                String(candidateDi.trackingNumber || "").trim() ===
-                trackingNumber
-              );
-            })
-            .map((candidate) => String(candidate.mailboxAddress || "").trim())
+          // 박스의 의뢰건들에서 mailboxAddress 추출
+          const requests = (box as any)?.requests || [];
+          return requests
+            .map((req: any) => String(req?.mailboxAddress || "").trim())
             .filter(Boolean);
         }),
       ),
@@ -1201,6 +1239,7 @@ export const TrackingInquiryPage = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>의뢰건수</TableHead>
                     <TableHead>의뢰ID</TableHead>
                     <TableHead>택배사</TableHead>
                     <TableHead>송장번호</TableHead>
@@ -1210,17 +1249,26 @@ export const TrackingInquiryPage = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {shippingRows.slice(0, visibleCount).map((r) => {
-                    const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+                  {shippingRows.slice(0, visibleCount).map((box) => {
+                    const di = normalizeDeliveryInfo(box.deliveryInfoRef);
                     const shippedAt = di.shippedAt ? String(di.shippedAt) : "";
                     const deliveredAt = di.deliveredAt
                       ? String(di.deliveredAt)
                       : "";
-                    const status = getShippingStatus(r);
+                    const status = getShippingStatus(box);
+                    const requestCount = (box as any)?.requestCount || 1;
+                    const requests = (box as any)?.requests || [];
+                    const requestIds = requests
+                      .map((r: any) => String(r?.requestId || "").trim())
+                      .filter(Boolean)
+                      .join(", ");
                     return (
-                      <TableRow key={String(r._id || r.requestId)}>
-                        <TableCell className="font-medium">
-                          {r.requestId || "-"}
+                      <TableRow key={String(box._id || box.trackingNumber)}>
+                        <TableCell className="font-medium text-center">
+                          {requestCount}건
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {requestIds || "-"}
                         </TableCell>
                         <TableCell>{di.carrier || "-"}</TableCell>
                         <TableCell>{di.trackingNumber || "-"}</TableCell>
@@ -1233,7 +1281,7 @@ export const TrackingInquiryPage = () => {
                   {!loading && shippingRows.length === 0 && (
                     <TableRow>
                       <TableCell
-                        colSpan={6}
+                        colSpan={7}
                         className="text-center text-muted-foreground"
                       >
                         조회 결과가 없습니다.
