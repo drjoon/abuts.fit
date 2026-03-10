@@ -20,6 +20,22 @@ import { SignupSocialWizardStep1 } from "./signup/SignupSocialWizardStep1";
 import { SignupWizardAccountStep } from "./signup/SignupWizardAccountStep";
 
 export const SignupPage = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const referralCode = useMemo(() => {
+    const ref = searchParams.get("ref");
+    return ref && ref.trim().length > 0 ? ref.trim() : undefined;
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (referralCode) {
+      navigate(`/signup/referral?ref=${encodeURIComponent(referralCode)}`, {
+        replace: true,
+      });
+    }
+  }, [referralCode, navigate]);
+
   const { token, user, loginWithToken, logout } = useAuthStore();
   const [formData, setFormData] = useState({
     name: "",
@@ -49,9 +65,7 @@ export const SignupPage = () => {
   const [lastEmailVerificationSentAt, setLastEmailVerificationSentAt] =
     useState<Date | null>(null);
   const [showSetupConfirm, setShowSetupConfirm] = useState(false);
-  const navigate = useNavigate();
   const { toast } = useToast();
-  const [searchParams] = useSearchParams();
   const [signupSessionId] = useState(() => {
     const existing = sessionStorage.getItem("signupSessionId");
     if (existing) return existing;
@@ -88,27 +102,15 @@ export const SignupPage = () => {
     navigate("/dashboard/wizard?mode=account", { replace: true });
   }, [navigate]);
 
-  const referredByReferralCode = useMemo(() => {
-    const ref = searchParams.get("ref");
-    return ref && ref.trim().length > 0 ? ref.trim() : undefined;
-  }, [searchParams]);
-
-  const resolvedRefForSignup = useMemo(() => {
-    const v = String(refInput || "").trim();
-    if (v) return v;
-    return referredByReferralCode;
-  }, [refInput, referredByReferralCode]);
-
   const oauthStartUrl = useCallback(
     (provider: "google" | "kakao") => {
       const qs = new URLSearchParams({
         intent: "signup",
         role: signupRole,
-        ...(resolvedRefForSignup ? { ref: resolvedRefForSignup } : {}),
       });
       return `/api/auth/oauth/${provider}/start?${qs.toString()}`;
     },
-    [resolvedRefForSignup, signupRole],
+    [signupRole],
   );
 
   const goSocialSignup = useCallback(
@@ -116,14 +118,9 @@ export const SignupPage = () => {
       sessionStorage.setItem("oauthIntent", "signup");
       sessionStorage.setItem("oauthReturnTo", "/signup");
       sessionStorage.setItem("oauthSignupRole", signupRole);
-      if (resolvedRefForSignup) {
-        sessionStorage.setItem("oauthSignupRef", resolvedRefForSignup);
-      } else {
-        sessionStorage.removeItem("oauthSignupRef");
-      }
       window.location.href = oauthStartUrl(provider);
     },
-    [oauthStartUrl, resolvedRefForSignup, signupRole],
+    [oauthStartUrl, signupRole],
   );
 
   useEffect(() => {
@@ -140,20 +137,11 @@ export const SignupPage = () => {
     }
   }, [isSocialNewMode, searchParams]);
 
-  const shouldAskReferralInput = !referredByReferralCode && !isSocialNewMode;
-
-  const shouldShowReferralStepForSocial = true;
-
-  const socialHasReferralStep = false;
-  const socialInfoStepIndex: 1 | 2 = 1;
-
   const cardTitle = useMemo(() => {
     if (isWizardMode) {
       switch (wizardStep) {
         case 1:
           return "회원 가입";
-        case 2:
-          return "추천인 (선택)";
         case 3:
           return "계정 정보";
         case 4:
@@ -164,9 +152,6 @@ export const SignupPage = () => {
     }
 
     if (isSocialNewMode) {
-      if (socialHasReferralStep && wizardStep === 1) {
-        return "추천인 (선택)";
-      }
       return "기본 정보";
     }
 
@@ -174,50 +159,7 @@ export const SignupPage = () => {
     if (wizardStep === 3) return "계정 정보";
     if (wizardStep === 4) return "이메일 인증";
     return "완료";
-  }, [
-    isSocialNewMode,
-    isWizardMode,
-    socialHasReferralStep,
-    socialInfoStepIndex,
-    wizardStep,
-  ]);
-
-  useEffect(() => {
-    if (!isWizardMode) return;
-    if (wizardStep !== 2) return;
-    if (pendingSocialProvider) return;
-    if (shouldAskReferralInput) return;
-    setWizardStep(3);
-  }, [isWizardMode, pendingSocialProvider, shouldAskReferralInput, wizardStep]);
-
-  useEffect(() => {
-    if (typeof referredByReferralCode !== "string") return;
-    if (refInput.trim().length > 0) return;
-    setRefInput(referredByReferralCode);
-  }, [referredByReferralCode, refInput]);
-
-  const referredByUserId = useMemo(() => {
-    const v = String(refInput || "").trim();
-    if (!v) return undefined;
-    const isObjectId = /^[0-9a-fA-F]{24}$/.test(v);
-    return isObjectId ? v : undefined;
-  }, [refInput]);
-
-  const referredByEmail = useMemo(() => {
-    const v = String(refInput || "").trim();
-    if (!v) return undefined;
-    if (/^[0-9a-fA-F]{24}$/.test(v)) return undefined;
-    return /@/.test(v) ? v.toLowerCase() : undefined;
-  }, [refInput]);
-
-  const referredByCode = useMemo(() => {
-    const v = String(refInput || "").trim();
-    if (!v) return undefined;
-    const isObjectId = /^[0-9a-fA-F]{24}$/.test(v);
-    if (isObjectId) return undefined;
-    if (/@/.test(v)) return undefined;
-    return v;
-  }, [refInput]);
+  }, [isSocialNewMode, isWizardMode, wizardStep]);
 
   // LocalStorage에서 폼 데이터 및 이메일 인증 정보 복구
   useEffect(() => {
@@ -540,11 +482,6 @@ export const SignupPage = () => {
             role: signupRole,
             socialProvider: socialInfo.provider,
             socialProviderUserId: socialInfo.providerUserId,
-            ...(referredByUserId ? { referredByUserId } : {}),
-            ...(referredByEmail ? { referredByEmail } : {}),
-            ...(referredByCode
-              ? { referredByReferralCode: referredByCode }
-              : {}),
           },
         });
 
@@ -611,25 +548,15 @@ export const SignupPage = () => {
         return;
       }
 
-      const payload: any = {
-        name: formData.name,
-        email: formData.email,
-        password: formData.password,
-        role: signupRole,
-      };
-
-      if (referredByUserId) {
-        payload.referredByUserId = referredByUserId;
-      } else if (referredByEmail) {
-        payload.referredByEmail = referredByEmail;
-      } else if (referredByCode) {
-        payload.referredByReferralCode = referredByCode;
-      }
-
       const res = await request<any>({
         path: "/api/auth/register",
         method: "POST",
-        jsonBody: payload,
+        jsonBody: {
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+          role: signupRole,
+        },
       });
 
       const data: any = res.data || {};
@@ -675,9 +602,6 @@ export const SignupPage = () => {
     isSocialNewMode,
     loginWithToken,
     navigate,
-    referredByCode,
-    referredByEmail,
-    referredByUserId,
     signupRole,
     socialInfo,
     token,
@@ -961,93 +885,18 @@ export const SignupPage = () => {
                         kakaoUrl={oauthStartUrl("kakao")}
                         onGoogleClick={() => {
                           setSelectedMethod(null);
-                          if (shouldShowReferralStepForSocial) {
-                            setPendingSocialProvider("google");
-                            setWizardStep(2);
-                            return;
-                          }
                           goSocialSignup("google");
                         }}
                         onKakaoClick={() => {
                           setSelectedMethod(null);
-                          if (shouldShowReferralStepForSocial) {
-                            setPendingSocialProvider("kakao");
-                            setWizardStep(2);
-                            return;
-                          }
                           goSocialSignup("kakao");
                         }}
                         onEmailClick={() => {
                           setSelectedMethod("email");
                           setPendingSocialProvider(null);
-                          if (shouldAskReferralInput) {
-                            setWizardStep(2);
-                            return;
-                          }
                           setWizardStep(3);
                         }}
                       />
-                    </div>
-                  )}
-
-                  {wizardStep === 2 && (
-                    <div className="space-y-8">
-                      <input
-                        value={refInput}
-                        onChange={(e) => setRefInput(e.target.value)}
-                        onKeyDown={handleReferralInputKeyDown}
-                        placeholder="추천인 이메일 또는 코드"
-                        className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-md text-white placeholder:text-white/40"
-                      />
-
-                      {!pendingSocialProvider && (
-                        <div className="grid grid-cols-2 gap-3">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-11 w-full border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
-                            onClick={() => setWizardStep(1)}
-                          >
-                            이전
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="hero"
-                            className="h-11 w-full"
-                            onClick={handleReferralNext}
-                          >
-                            {refInput.trim().length > 0
-                              ? "입력하기"
-                              : "건너뛰기"}
-                          </Button>
-                        </div>
-                      )}
-
-                      {pendingSocialProvider && (
-                        <div className="grid grid-cols-2 gap-3">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-11 w-full border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
-                            onClick={() => {
-                              setPendingSocialProvider(null);
-                              setWizardStep(1);
-                            }}
-                          >
-                            이전
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="hero"
-                            className="h-11 w-full"
-                            onClick={() =>
-                              goSocialSignup(pendingSocialProvider)
-                            }
-                          >
-                            다음
-                          </Button>
-                        </div>
-                      )}
                     </div>
                   )}
 
@@ -1058,9 +907,7 @@ export const SignupPage = () => {
                       focusField={accountFocusField}
                       isLoading={isLoading}
                       onFormChange={handleChange}
-                      onPrevious={() =>
-                        setWizardStep(shouldAskReferralInput ? 2 : 1)
-                      }
+                      onPrevious={() => setWizardStep(1)}
                       onNext={handleGoEmailStep}
                     />
                   )}
@@ -1085,24 +932,16 @@ export const SignupPage = () => {
                 </>
               ) : (
                 <>
-                  {wizardStep === socialInfoStepIndex && (
+                  {wizardStep === 1 && (
                     <SignupSocialWizardStep1
                       formData={formData}
                       socialInfo={socialInfo}
                       isLoading={isLoading}
                       onFormChange={handleChange}
-                      onPrevious={() => {
-                        if (socialHasReferralStep) {
-                          setWizardStep(1);
-                        } else {
-                          navigate("/login");
-                        }
-                      }}
+                      onPrevious={() => navigate("/login")}
                       onNext={submitSignup}
                     />
                   )}
-
-                  {/* 소셜 가입은 이메일 인증 단계를 건너뛰고 바로 가입 처리 */}
                 </>
               )}
 

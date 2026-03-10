@@ -18,6 +18,16 @@ const LoginPage = lazy(() =>
 const SignupPage = lazy(() =>
   import("./pages/auth/SignupPage").then((m) => ({ default: m.SignupPage })),
 );
+const SignupWithReferralPage = lazy(() =>
+  import("./pages/auth/SignupWithReferralPage").then((m) => ({
+    default: m.SignupWithReferralPage,
+  })),
+);
+const ReferralLinkPage = lazy(() =>
+  import("./pages/public/ReferralLinkPage").then((m) => ({
+    default: m.ReferralLinkPage,
+  })),
+);
 const SignupStaffPage = lazy(() =>
   import("./pages/auth/SignupStaffPage").then((m) => ({
     default: m.SignupStaffPage,
@@ -177,7 +187,8 @@ const ReferralGroupsRoute = () => {
 
   if (!user) return <Navigate to="/dashboard" replace />;
   if (user.role === "admin") return <AdminReferralGroupsPage />;
-  if (user.role === "requestor") return <ReferralGroupsPage />;
+  if (user.role === "requestor" || user.role === "salesman")
+    return <ReferralGroupsPage />;
   return <Navigate to="/dashboard" replace />;
 };
 
@@ -210,6 +221,11 @@ const App = () => {
                 <Route path="/" element={<Index />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/signup" element={<SignupPage />} />
+                <Route
+                  path="/signup/referral"
+                  element={<SignupWithReferralPage />}
+                />
+                <Route path="/refer" element={<ReferralLinkPage />} />
                 <Route path="/signup/staff" element={<SignupStaffPage />} />
                 <Route
                   path="/forgot-password"
@@ -327,7 +343,9 @@ const App = () => {
                   <Route
                     path="referral-groups"
                     element={
-                      <RoleProtectedRoute roles={["admin", "requestor"]}>
+                      <RoleProtectedRoute
+                        roles={["admin", "requestor", "salesman"]}
+                      >
                         <ReferralGroupsRoute />
                       </RoleProtectedRoute>
                     }

@@ -45,6 +45,7 @@ import {
   Printer,
   Search,
   Sparkles,
+  Share2,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { onAppEvent } from "@/shared/realtime/socket";
@@ -53,12 +54,13 @@ const sidebarItems = {
   requestor: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: FileText, label: "신규의뢰", href: "/dashboard/new-request" },
-    { icon: Users2, label: "소개그룹", href: "/dashboard/referral-groups" },
+    { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
     { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   salesman: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
+    { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
     { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
