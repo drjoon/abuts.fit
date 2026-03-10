@@ -113,6 +113,7 @@ export const TrackingInquiryPage = () => {
   const [cancellingAll, setCancellingAll] = useState(false);
   const [mockPickingUp, setMockPickingUp] = useState(false);
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
+  const [expandedBoxes, setExpandedBoxes] = useState<Set<string>>(new Set());
   // Network pagination per stage (tracking)
   const PAGE_LIMIT = 30;
   const pageRef = useRef(1);
@@ -1234,62 +1235,157 @@ export const TrackingInquiryPage = () => {
           >
             <div
               ref={setScrollContainer}
-              className="rounded-md border bg-background overflow-auto flex-1 min-h-0"
+              className="space-y-3 overflow-auto flex-1 min-h-0 pr-3"
             >
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>의뢰건수</TableHead>
-                    <TableHead>의뢰ID</TableHead>
-                    <TableHead>택배사</TableHead>
-                    <TableHead>송장번호</TableHead>
-                    <TableHead>접수(발송)</TableHead>
-                    <TableHead>배송완료</TableHead>
-                    <TableHead>상태</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {shippingRows.slice(0, visibleCount).map((box) => {
-                    const di = normalizeDeliveryInfo(box.deliveryInfoRef);
-                    const shippedAt = di.shippedAt ? String(di.shippedAt) : "";
-                    const deliveredAt = di.deliveredAt
-                      ? String(di.deliveredAt)
-                      : "";
-                    const status = getShippingStatus(box);
-                    const requestCount = (box as any)?.requestCount || 1;
-                    const requests = (box as any)?.requests || [];
-                    const requestIds = requests
-                      .map((r: any) => String(r?.requestId || "").trim())
-                      .filter(Boolean)
-                      .join(", ");
-                    return (
-                      <TableRow key={String(box._id || box.trackingNumber)}>
-                        <TableCell className="font-medium text-center">
-                          {requestCount}건
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {requestIds || "-"}
-                        </TableCell>
-                        <TableCell>{di.carrier || "-"}</TableCell>
-                        <TableCell>{di.trackingNumber || "-"}</TableCell>
-                        <TableCell>{formatDateTime(shippedAt)}</TableCell>
-                        <TableCell>{formatDateTime(deliveredAt)}</TableCell>
-                        <TableCell>{status}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                  {!loading && shippingRows.length === 0 && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={7}
-                        className="text-center text-muted-foreground"
-                      >
-                        조회 결과가 없습니다.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+              {shippingRows.slice(0, visibleCount).map((box) => {
+                const di = normalizeDeliveryInfo(box.deliveryInfoRef);
+                const shippedAt = di.shippedAt ? String(di.shippedAt) : "";
+                const deliveredAt = di.deliveredAt
+                  ? String(di.deliveredAt)
+                  : "";
+                const pickedUpAt = di.pickedUpAt ? String(di.pickedUpAt) : "";
+                const status = getShippingStatus(box);
+                const requestCount = (box as any)?.requestCount || 1;
+                const requests = (box as any)?.requests || [];
+                const requestIds = requests
+                  .map((r: any) => String(r?.requestId || "").trim())
+                  .filter(Boolean);
+                const boxId = String(box._id || box.trackingNumber);
+                const isExpanded = expandedBoxes.has(boxId);
+
+                const toggleExpanded = () => {
+                  const newSet = new Set(expandedBoxes);
+                  if (newSet.has(boxId)) {
+                    newSet.delete(boxId);
+                  } else {
+                    newSet.add(boxId);
+                  }
+                  setExpandedBoxes(newSet);
+                };
+
+                return (
+                  <div
+                    key={boxId}
+                    className="rounded-lg border bg-white shadow-sm hover:shadow-md transition-shadow"
+                  >
+                    <div
+                      className="p-4 cursor-pointer"
+                      onClick={toggleExpanded}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded">
+                              {requestCount}건
+                            </span>
+                            <span
+                              className={`inline-block text-xs font-semibold px-2.5 py-0.5 rounded ${
+                                status === "배송완료"
+                                  ? "bg-green-100 text-green-800"
+                                  : status === "집하완료"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : status === "배송중"
+                                      ? "bg-amber-100 text-amber-800"
+                                      : "bg-gray-100 text-gray-800"
+                              }`}
+                            >
+                              {status}
+                            </span>
+                          </div>
+                          <div className="text-sm text-gray-600 mb-2">
+                            <span className="font-medium">송장:</span>{" "}
+                            {di.trackingNumber || "-"}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            <span className="font-medium">의뢰:</span>{" "}
+                            {requestIds.join(", ") || "-"}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm text-gray-500 mb-2">
+                            {di.carrier || "-"}
+                          </div>
+                          <button className="text-gray-400 hover:text-gray-600">
+                            {isExpanded ? "▼" : "▶"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="border-t bg-gray-50 p-4 space-y-3">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1">
+                              접수(발송)
+                            </div>
+                            <div className="text-sm font-medium">
+                              {formatDateTime(shippedAt) || "-"}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1">
+                              집하완료
+                            </div>
+                            <div className="text-sm font-medium">
+                              {formatDateTime(pickedUpAt) || "-"}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1">
+                              배송완료
+                            </div>
+                            <div className="text-sm font-medium">
+                              {formatDateTime(deliveredAt) || "-"}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1">
+                              추적상태
+                            </div>
+                            <div className="text-sm font-medium">
+                              {di.tracking?.lastStatusText || "-"}
+                            </div>
+                          </div>
+                        </div>
+
+                        {requests.length > 0 && (
+                          <div>
+                            <div className="text-xs text-gray-500 mb-2 font-medium">
+                              포함된 의뢰
+                            </div>
+                            <div className="space-y-1">
+                              {requests.map((req: any) => {
+                                const ci: any = req.caseInfos || {};
+                                return (
+                                  <div
+                                    key={String(req._id || req.requestId)}
+                                    className="text-sm bg-white p-2 rounded border border-gray-200"
+                                  >
+                                    <div className="font-medium">
+                                      {req.requestId || "-"}
+                                    </div>
+                                    <div className="text-xs text-gray-600">
+                                      {ci.patientName || "-"} /{" "}
+                                      {ci.tooth || "-"}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {!loading && shippingRows.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  조회 결과가 없습니다.
+                </div>
+              )}
             </div>
           </TabsContent>
         </Tabs>
