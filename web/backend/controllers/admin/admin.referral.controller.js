@@ -232,9 +232,22 @@ export async function getReferralGroups(req, res) {
         const businessStats = leaderBusinessId
           ? requestorBusinessStatsByBusinessId.get(leaderBusinessId)
           : null;
-        groupTotalOrders = Number(businessStats?.orderCount || 0);
-        groupRevenueAmount = Number(businessStats?.revenueAmount || 0);
-        groupBonusAmount = Number(businessStats?.bonusAmount || 0);
+        const userStats = ordersByUserId.get(String(leader._id))
+          ? {
+              orderCount: ordersByUserId.get(String(leader._id)) || 0,
+              revenueAmount: revenueByUserId.get(String(leader._id)) || 0,
+              bonusAmount: bonusByUserId.get(String(leader._id)) || 0,
+            }
+          : null;
+        groupTotalOrders =
+          Number(businessStats?.orderCount || 0) +
+          Number(userStats?.orderCount || 0);
+        groupRevenueAmount =
+          Number(businessStats?.revenueAmount || 0) +
+          Number(userStats?.revenueAmount || 0);
+        groupBonusAmount =
+          Number(businessStats?.bonusAmount || 0) +
+          Number(userStats?.bonusAmount || 0);
       } else {
         const fallbackOrders = fallbackChildIds.reduce(
           (acc, cid) => acc + Number(ordersByUserId.get(String(cid)) || 0),
@@ -485,9 +498,11 @@ export async function recalcReferralSnapshot() {
     let snapshotBusinessId = null;
     if (String(leader.role) === "requestor") {
       const businessId = String(leader.businessId || "");
-      groupTotalOrders = businessId
+      const businessOrders = businessId
         ? ordersByBusinessId.get(businessId) || 0
         : 0;
+      const userOrders = ordersByUserId.get(lid) || 0;
+      groupTotalOrders = businessOrders + userOrders;
       snapshotBusinessId =
         businessId && Types.ObjectId.isValid(businessId)
           ? new Types.ObjectId(businessId)
