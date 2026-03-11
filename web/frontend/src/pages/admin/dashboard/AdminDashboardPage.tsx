@@ -270,6 +270,11 @@ export const AdminDashboardPage = () => {
     const requestStats = adminDashboardResponse.data.requestStats || {};
     const systemAlerts = adminDashboardResponse.data.systemAlerts || [];
 
+    console.log("[AdminDashboardPage] adminDashboardResponse:", {
+      requestStats,
+      dateRange: requestStats.range,
+    });
+
     const totalUsers = userStats.total ?? 0;
 
     const byStatus = requestStats.byStatus || {};
@@ -281,6 +286,15 @@ export const AdminDashboardPage = () => {
     const shipping = byStatus["발송"] ?? 0;
     const tracking = byStatus["추적관리"] ?? 0;
     const canceled = byStatus["취소"] ?? 0;
+
+    console.log("[AdminDashboardPage] Parsed stats:", {
+      receive,
+      cam,
+      machining,
+      shipping,
+      tracking,
+      canceled,
+    });
 
     const systemUptime = "99.9%";
 

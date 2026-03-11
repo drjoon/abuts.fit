@@ -114,6 +114,11 @@ export async function getDashboardStats(req, res) {
       },
     };
 
+    console.log("[getDashboardStats] Response data:", {
+      requestStats: dashboardData.requests,
+      dateRange: { start, end },
+    });
+
     res.status(200).json({
       success: true,
       data: {
