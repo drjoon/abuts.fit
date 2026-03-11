@@ -37,7 +37,6 @@ export async function getAllRequests(req, res) {
       sort.createdAt = -1;
     }
 
-    console.log("[getAllRequests] Filter:", filter);
     const requests = await Request.find(filter)
       .populate("requestor", "name email business")
       .populate("manufacturer", "name email business")
@@ -45,15 +44,6 @@ export async function getAllRequests(req, res) {
       .skip(skip)
       .limit(limit);
     const total = await Request.countDocuments(filter);
-
-    console.log(
-      "[getAllRequests] Total requests:",
-      total,
-      "Page:",
-      page,
-      "Limit:",
-      limit,
-    );
 
     res.status(200).json({
       success: true,

@@ -6,39 +6,6 @@ import {
   getMongoHealth,
 } from "./admin.shared.controller.js";
 
-export async function debugDashboardData(req, res) {
-  try {
-    const totalRequests = await Request.countDocuments();
-    const totalUsers = await User.countDocuments();
-    const sampleRequests = await Request.find().limit(3).lean();
-    const sampleUsers = await User.find({ role: "requestor" }).limit(3).lean();
-
-    res.status(200).json({
-      success: true,
-      data: {
-        totalRequests,
-        totalUsers,
-        sampleRequests: sampleRequests.map((r) => ({
-          _id: r._id,
-          manufacturerStage: r.manufacturerStage,
-          createdAt: r.createdAt,
-        })),
-        sampleUsers: sampleUsers.map((u) => ({
-          _id: u._id,
-          name: u.name,
-          role: u.role,
-        })),
-      },
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "디버그 데이터 조회 실패",
-      error: error.message,
-    });
-  }
-}
-
 export async function getDashboardStats(req, res) {
   try {
     const systemAlerts = [];
@@ -74,18 +41,6 @@ export async function getDashboardStats(req, res) {
     });
 
     const { start, end } = getDateRangeFromQuery(req);
-    console.log("[getDashboardStats] Date range:", { start, end });
-
-    // 전체 의뢰 수 확인
-    const totalRequestsInDb = await Request.countDocuments();
-    console.log("[getDashboardStats] Total requests in DB:", totalRequestsInDb);
-
-    // 날짜 범위 내 의뢰 수 확인
-    const requestsInRange = await Request.countDocuments({
-      createdAt: { $gte: start, $lte: end },
-    });
-    console.log("[getDashboardStats] Requests in date range:", requestsInRange);
-
     const allRequestsForStats = await Request.find({
       createdAt: { $gte: start, $lte: end },
     })
@@ -94,19 +49,6 @@ export async function getDashboardStats(req, res) {
         "caseInfos.reviewByStage.shipping.status": 1,
       })
       .lean();
-
-    console.log(
-      "[getDashboardStats] Total requests found:",
-      allRequestsForStats.length,
-    );
-    console.log(
-      "[getDashboardStats] Sample requests:",
-      allRequestsForStats.slice(0, 3).map((r) => ({
-        _id: r._id,
-        manufacturerStage: r.manufacturerStage,
-        createdAt: r.createdAt,
-      })),
-    );
 
     const normalizeStage = (r) => {
       const stage = String(r.manufacturerStage || "");

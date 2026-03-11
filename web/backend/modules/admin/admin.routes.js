@@ -27,10 +27,7 @@ import {
   updateRequestStatus,
   assignManufacturer,
 } from "../../controllers/admin/admin.requests.controller.js";
-import {
-  getDashboardStats,
-  debugDashboardData,
-} from "../../controllers/admin/admin.dashboard.controller.js";
+import { getDashboardStats } from "../../controllers/admin/admin.dashboard.controller.js";
 import {
   getSystemLogs,
   getActivityLogs,
@@ -133,7 +130,6 @@ router.patch("/requests/:id/status", updateRequestStatus);
 router.patch("/requests/:id/assign", assignManufacturer);
 
 // 대시보드 통계
-router.get("/dashboard/debug", debugDashboardData);
 router.get("/dashboard", getDashboardStats);
 
 // 사업자등록 문의
