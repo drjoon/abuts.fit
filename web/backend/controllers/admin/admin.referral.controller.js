@@ -7,6 +7,7 @@ import {
   getLast30DaysRangeUtc,
 } from "../requests/utils.js";
 import { getTodayYmdInKst } from "../../utils/krBusinessDays.js";
+import { computeVolumeEffectiveUnitPrice } from "./admin.shared.controller.js";
 
 const ADMIN_REFERRAL_CACHE_TTL_MS = 60 * 60 * 1000;
 const adminReferralCache = new Map();
@@ -232,22 +233,9 @@ export async function getReferralGroups(req, res) {
         const businessStats = leaderBusinessId
           ? requestorBusinessStatsByBusinessId.get(leaderBusinessId)
           : null;
-        const userStats = ordersByUserId.get(String(leader._id))
-          ? {
-              orderCount: ordersByUserId.get(String(leader._id)) || 0,
-              revenueAmount: revenueByUserId.get(String(leader._id)) || 0,
-              bonusAmount: bonusByUserId.get(String(leader._id)) || 0,
-            }
-          : null;
-        groupTotalOrders =
-          Number(businessStats?.orderCount || 0) +
-          Number(userStats?.orderCount || 0);
-        groupRevenueAmount =
-          Number(businessStats?.revenueAmount || 0) +
-          Number(userStats?.revenueAmount || 0);
-        groupBonusAmount =
-          Number(businessStats?.bonusAmount || 0) +
-          Number(userStats?.bonusAmount || 0);
+        groupTotalOrders = Number(businessStats?.orderCount || 0);
+        groupRevenueAmount = Number(businessStats?.revenueAmount || 0);
+        groupBonusAmount = Number(businessStats?.bonusAmount || 0);
       } else {
         const fallbackOrders = fallbackChildIds.reduce(
           (acc, cid) => acc + Number(ordersByUserId.get(String(cid)) || 0),
@@ -271,6 +259,11 @@ export async function getReferralGroups(req, res) {
           );
       }
 
+      const effectiveUnitPrice =
+        computeVolumeEffectiveUnitPrice(groupTotalOrders);
+      const commissionAmount =
+        role === "salesman" ? Math.round(groupRevenueAmount * 0.05) : 0;
+
       return {
         leader,
         memberCount: directCount + 1,
@@ -278,9 +271,57 @@ export async function getReferralGroups(req, res) {
         groupTotalOrders,
         groupRevenueAmount,
         groupBonusAmount,
+        effectiveUnitPrice,
+        commissionAmount,
         snapshotComputedAt: snapshot?.computedAt || null,
       };
     });
+
+    const requestorGroups = groups.filter(
+      (g) => String(g?.leader?.role || "") === "requestor",
+    );
+    const salesmanGroups = groups.filter(
+      (g) => String(g?.leader?.role || "") === "salesman",
+    );
+
+    const requestorGroupCount = requestorGroups.length;
+    const salesmanGroupCount = salesmanGroups.length;
+    const requestorTotalAccounts = requestorGroups.reduce(
+      (acc, g) => acc + Number(g.groupMemberCount || g.memberCount || 0),
+      0,
+    );
+    const salesmanTotalAccounts = salesmanGroups.reduce(
+      (acc, g) => acc + Number(g.groupMemberCount || g.memberCount || 0),
+      0,
+    );
+    const requestorTotalRevenueAmount = requestorGroups.reduce(
+      (acc, g) => acc + Number(g.groupRevenueAmount || 0),
+      0,
+    );
+    const requestorTotalBonusAmount = requestorGroups.reduce(
+      (acc, g) => acc + Number(g.groupBonusAmount || 0),
+      0,
+    );
+    const requestorTotalOrders = requestorGroups.reduce(
+      (acc, g) => acc + Number(g.groupTotalOrders || 0),
+      0,
+    );
+    const salesmanTotalReferredRevenueAmount = salesmanGroups.reduce(
+      (acc, g) => acc + Number(g.groupRevenueAmount || 0),
+      0,
+    );
+    const salesmanTotalReferredBonusAmount = salesmanGroups.reduce(
+      (acc, g) => acc + Number(g.groupBonusAmount || 0),
+      0,
+    );
+    const salesmanTotalReferralOrders = salesmanGroups.reduce(
+      (acc, g) => acc + Number(g.groupTotalOrders || 0),
+      0,
+    );
+    const salesmanTotalCommissionAmount = salesmanGroups.reduce(
+      (acc, g) => acc + Number(g.commissionAmount || 0),
+      0,
+    );
 
     const payload = {
       success: true,
@@ -296,6 +337,41 @@ export async function getReferralGroups(req, res) {
             (acc, g) => acc + Number(g.groupTotalOrders || 0),
             0,
           ),
+          avgEffectiveUnitPrice: requestorGroupCount
+            ? Math.round(
+                requestorGroups.reduce(
+                  (acc, g) => acc + Number(g.effectiveUnitPrice || 0),
+                  0,
+                ) / requestorGroupCount,
+              )
+            : 0,
+          requestor: {
+            groupCount: requestorGroupCount,
+            avgAccountsPerGroup: requestorGroupCount
+              ? Math.round(requestorTotalAccounts / requestorGroupCount)
+              : 0,
+            netNewGroups: 0,
+            avgRevenuePerGroup: requestorGroupCount
+              ? Math.round(requestorTotalRevenueAmount / requestorGroupCount)
+              : 0,
+            totalRevenueAmount: requestorTotalRevenueAmount,
+            totalBonusAmount: requestorTotalBonusAmount,
+            totalOrders: requestorTotalOrders,
+          },
+          salesman: {
+            groupCount: salesmanGroupCount,
+            avgAccountsPerGroup: salesmanGroupCount
+              ? Math.round(salesmanTotalAccounts / salesmanGroupCount)
+              : 0,
+            netNewGroups: 0,
+            avgCommissionPerGroup: salesmanGroupCount
+              ? Math.round(salesmanTotalCommissionAmount / salesmanGroupCount)
+              : 0,
+            totalCommissionAmount: salesmanTotalCommissionAmount,
+            totalReferredRevenueAmount: salesmanTotalReferredRevenueAmount,
+            totalReferredBonusAmount: salesmanTotalReferredBonusAmount,
+            totalReferralOrders: salesmanTotalReferralOrders,
+          },
         },
         groups,
       },
@@ -378,8 +454,101 @@ export async function getReferralGroupTree(req, res) {
       })
       .lean();
 
+    const memberBusinessIds = Array.from(
+      new Set(
+        (members || [])
+          .map((u) => String(u?.businessId || ""))
+          .filter((id) => id && Types.ObjectId.isValid(id)),
+      ),
+    ).map((id) => new Types.ObjectId(id));
+
+    const range30 = getLast30DaysRangeUtc();
+    const start = range30?.start;
+    const end = range30?.end;
+
+    const businessStatsRows =
+      memberBusinessIds.length && start && end
+        ? await Request.aggregate([
+            {
+              $match: {
+                requestorBusinessId: { $in: memberBusinessIds },
+                manufacturerStage: "추적관리",
+                createdAt: { $gte: start, $lte: end },
+              },
+            },
+            {
+              $group: {
+                _id: "$requestorBusinessId",
+                lastMonthOrders: { $sum: 1 },
+                lastMonthPaidOrders: {
+                  $sum: {
+                    $cond: [
+                      { $gt: [{ $ifNull: ["$price.paidAmount", 0] }, 0] },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+                lastMonthBonusOrders: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $gt: [{ $ifNull: ["$price.bonusAmount", 0] }, 0] },
+                          { $eq: [{ $ifNull: ["$price.paidAmount", 0] }, 0] },
+                        ],
+                      },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+                lastMonthPaidRevenue: {
+                  $sum: { $ifNull: ["$price.paidAmount", 0] },
+                },
+                lastMonthBonusRevenue: {
+                  $sum: { $ifNull: ["$price.bonusAmount", 0] },
+                },
+              },
+            },
+          ])
+        : [];
+
+    const businessStatsByBusinessId = new Map(
+      businessStatsRows.map((row) => [
+        String(row._id),
+        {
+          lastMonthOrders: Number(row.lastMonthOrders || 0),
+          lastMonthPaidOrders: Number(row.lastMonthPaidOrders || 0),
+          lastMonthBonusOrders: Number(row.lastMonthBonusOrders || 0),
+          lastMonthPaidRevenue: Number(row.lastMonthPaidRevenue || 0),
+          lastMonthBonusRevenue: Number(row.lastMonthBonusRevenue || 0),
+        },
+      ]),
+    );
+
     const nodes = members.map((u) => ({
       ...u,
+      lastMonthOrders: Number(
+        businessStatsByBusinessId.get(String(u?.businessId || ""))
+          ?.lastMonthOrders || 0,
+      ),
+      lastMonthPaidOrders: Number(
+        businessStatsByBusinessId.get(String(u?.businessId || ""))
+          ?.lastMonthPaidOrders || 0,
+      ),
+      lastMonthBonusOrders: Number(
+        businessStatsByBusinessId.get(String(u?.businessId || ""))
+          ?.lastMonthBonusOrders || 0,
+      ),
+      lastMonthPaidRevenue: Number(
+        businessStatsByBusinessId.get(String(u?.businessId || ""))
+          ?.lastMonthPaidRevenue || 0,
+      ),
+      lastMonthBonusRevenue: Number(
+        businessStatsByBusinessId.get(String(u?.businessId || ""))
+          ?.lastMonthBonusRevenue || 0,
+      ),
       referredByUserId: u.referredByUserId || null,
       children: [],
     }));
@@ -392,12 +561,46 @@ export async function getReferralGroupTree(req, res) {
       nodeById.get(parentId).children.push(node);
     }
 
+    const rootNode = nodeById.get(String(leader._id)) || {
+      ...leader,
+      children: [],
+    };
+    if (String(rootNode.role || "") === "salesman") {
+      const directChildren = Array.isArray(rootNode.children)
+        ? rootNode.children
+        : [];
+      let directCommissionAmount = 0;
+      let level1CommissionAmount = 0;
+      for (const child of directChildren) {
+        if (String(child?.role || "") === "requestor") {
+          directCommissionAmount += Math.round(
+            Number(child?.lastMonthPaidRevenue || 0) * 0.05,
+          );
+        } else if (String(child?.role || "") === "salesman") {
+          const grandChildren = Array.isArray(child?.children)
+            ? child.children
+            : [];
+          for (const grandChild of grandChildren) {
+            if (String(grandChild?.role || "") !== "requestor") continue;
+            level1CommissionAmount += Math.round(
+              Number(grandChild?.lastMonthPaidRevenue || 0) * 0.025,
+            );
+          }
+        }
+      }
+      rootNode.directCommissionAmount = directCommissionAmount;
+      rootNode.level1CommissionAmount = level1CommissionAmount;
+      rootNode.commissionAmount =
+        Number(directCommissionAmount || 0) +
+        Number(level1CommissionAmount || 0);
+    }
+
     const payload = {
       success: true,
       data: {
         leader,
         memberCount: nodes.length,
-        tree: nodeById.get(String(leader._id)) || { ...leader, children: [] },
+        tree: rootNode,
       },
     };
     if (!refresh) setAdminReferralCache(cacheKey, payload);
@@ -498,11 +701,9 @@ export async function recalcReferralSnapshot() {
     let snapshotBusinessId = null;
     if (String(leader.role) === "requestor") {
       const businessId = String(leader.businessId || "");
-      const businessOrders = businessId
+      groupTotalOrders = businessId
         ? ordersByBusinessId.get(businessId) || 0
         : 0;
-      const userOrders = ordersByUserId.get(lid) || 0;
-      groupTotalOrders = businessOrders + userOrders;
       snapshotBusinessId =
         businessId && Types.ObjectId.isValid(businessId)
           ? new Types.ObjectId(businessId)
