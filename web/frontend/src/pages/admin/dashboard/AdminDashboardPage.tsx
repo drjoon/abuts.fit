@@ -274,35 +274,39 @@ export const AdminDashboardPage = () => {
 
     const byStatus = requestStats.byStatus || {};
     const totalRequests = requestStats.total ?? 0;
+
+    const receive = byStatus["의뢰"] ?? 0;
+    const cam = byStatus["CAM"] ?? 0;
+    const machining = byStatus["생산"] ?? 0;
+    const shipping = byStatus["발송"] ?? 0;
     const tracking = byStatus["추적관리"] ?? 0;
     const canceled = byStatus["취소"] ?? 0;
-    const inProgress = Math.max(totalRequests - tracking - canceled, 0);
 
     const systemUptime = "99.9%";
 
     data = {
       stats: [
         {
-          label: "전체 의뢰자",
-          value: String(totalUsers),
+          label: "의뢰/CAM",
+          value: `${receive}/${cam}`,
           change: "+0%",
           icon: Users,
         },
         {
-          label: "진행",
-          value: String(inProgress),
+          label: "가공",
+          value: String(machining),
           change: "+0%",
           icon: FileText,
         },
         {
-          label: "추적관리",
-          value: String(tracking),
+          label: "세척.패킹",
+          value: String(shipping),
           change: "+0%",
           icon: CheckCircle,
         },
         {
-          label: "취소",
-          value: String(canceled),
+          label: "포장.발송/추적관리",
+          value: `${shipping}/${tracking}`,
           change: "+0%",
           icon: AlertCircle,
         },

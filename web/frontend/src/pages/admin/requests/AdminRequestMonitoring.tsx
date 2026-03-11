@@ -156,7 +156,7 @@ export const AdminRequestMonitoring = () => {
       }
     };
     void fetchStats();
-  }, [token]);
+  }, [token, setRequestStats]);
 
   const filteredRequests = requests.filter((request) => {
     const caseInfos = request.caseInfos || {};
