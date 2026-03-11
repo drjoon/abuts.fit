@@ -729,7 +729,7 @@ export const PreviewModal = ({
                   <div className="flex-1 min-h-0 rounded-md border border-slate-200 overflow-hidden">
                     <StlPreviewViewer
                       file={leftViewer}
-                      showOverlay={false}
+                      showOverlay={true}
                       finishLinePoints={finishLinePoints}
                     />
                   </div>
@@ -874,7 +874,7 @@ export const PreviewModal = ({
                   <div className="flex-1 min-h-0 rounded-md border border-slate-200 overflow-hidden">
                     <StlPreviewViewer
                       file={rightViewer}
-                      showOverlay={false}
+                      showOverlay={true}
                       finishLinePoints={finishLinePoints}
                     />
                   </div>

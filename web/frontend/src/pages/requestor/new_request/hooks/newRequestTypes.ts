@@ -39,6 +39,8 @@ export type CaseInfos = {
   implantType?: string;
   maxDiameter?: number;
   connectionDiameter?: number;
+  totalLength?: number;
+  taperAngle?: number;
   workType?: string; // "abutment" | "crown" | "prosthesis"
   shippingMode?: "normal" | "express";
   requestedShipDate?: string; // ISO date string or YYYY-MM-DD

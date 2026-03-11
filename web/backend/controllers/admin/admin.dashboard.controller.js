@@ -46,7 +46,7 @@ export async function getDashboardStats(req, res) {
     })
       .select({
         manufacturerStage: 1,
-        "caseInfos.reviewByStage.shipping.status": 1,
+        shippingPackageId: 1,
       })
       .lean();
 
@@ -72,19 +72,23 @@ export async function getDashboardStats(req, res) {
       추적관리박스: 0,
       취소: 0,
     };
+    const shippingPackageIds = new Set();
+    const trackingPackageIds = new Set();
     allRequestsForStats.forEach((r) => {
       const s = normalizeStage(r);
       if (requestStatsByStatus[s] != null) requestStatsByStatus[s] += 1;
 
-      // 박스 수 계산
+      const shippingPackageId = String(r.shippingPackageId || "").trim();
+      if (!shippingPackageId) return;
+
       if (s === "포장.발송") {
-        const boxCount = r.caseInfos?.reviewByStage?.shipping?.status ? 1 : 0;
-        requestStatsByStatus["포장.발송박스"] += boxCount;
+        shippingPackageIds.add(shippingPackageId);
       } else if (s === "추적관리") {
-        const boxCount = r.caseInfos?.reviewByStage?.shipping?.status ? 1 : 0;
-        requestStatsByStatus["추적관리박스"] += boxCount;
+        trackingPackageIds.add(shippingPackageId);
       }
     });
+    requestStatsByStatus["포장.발송박스"] = shippingPackageIds.size;
+    requestStatsByStatus["추적관리박스"] = trackingPackageIds.size;
 
     const totalRequests = allRequestsForStats.length;
     const recentRequests = await Request.find()

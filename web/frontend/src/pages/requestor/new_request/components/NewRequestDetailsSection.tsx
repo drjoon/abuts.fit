@@ -751,32 +751,40 @@ export function NewRequestDetailsSection({
       </div>
 
       <Dialog open={isDetailOpen} onOpenChange={handleDialogOpenChange}>
-        <DialogContent className="w-[calc(100vw-1rem)] sm:w-[1050px] lg:w-[900px] max-w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:w-[1180px] lg:w-[980px] max-w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">
               STL 확인 및 정보 입력
             </DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-1 lg:grid-cols-[45%_55%] gap-4 items-stretch sm:pr-2">
+          <div className="grid grid-cols-1 lg:grid-cols-[52%_48%] gap-4 items-stretch sm:pr-2">
             <div className="app-glass-card app-glass-card--lg h-full flex flex-col">
               <div className="app-glass-card-content flex-1">
                 {detailFile ? (
                   <StlPreviewViewer
                     file={detailFile}
-                    showOverlay={true}
+                    showOverlay={false}
                     className="min-h-[240px] h-[240px] md:h-[280px]"
                     onDiameterComputed={(
                       _filename,
                       maxDiameter,
                       connectionDiameter,
+                      totalLength,
+                      taperAngle,
                     ) => {
                       const roundedMax =
                         Math.round((maxDiameter ?? 0) * 10) / 10;
                       const roundedConn =
                         Math.round((connectionDiameter ?? 0) * 10) / 10;
+                      const roundedLength =
+                        Math.round((totalLength ?? 0) * 10) / 10;
+                      const roundedAngle =
+                        Math.round((taperAngle ?? 0) * 10) / 10;
                       setDetailCaseInfos({
                         maxDiameter: roundedMax,
                         connectionDiameter: roundedConn,
+                        totalLength: roundedLength,
+                        taperAngle: roundedAngle,
                       });
                     }}
                   />
@@ -928,12 +936,7 @@ export function NewRequestDetailsSection({
                       variant="ghost"
                       className="text-slate-500"
                       onClick={() => {
-                        const moved = moveToNextDetail({
-                          onlyUnverified: true,
-                        });
-                        if (!moved) {
-                          setIsDetailOpen(false);
-                        }
+                        moveToNextDetail(); // 옵션 없이 호출하여 항상 다음 파일로 이동. 모달은 닫지 않음.
                       }}
                       disabled={!files.length}
                     >

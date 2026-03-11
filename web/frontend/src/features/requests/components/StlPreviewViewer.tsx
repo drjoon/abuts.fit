@@ -3,6 +3,9 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { Line2 } from "three/examples/jsm/lines/Line2.js";
+import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { cn } from "@/shared/ui/cn";
 
 type Props = {
@@ -11,6 +14,8 @@ type Props = {
     filename: string,
     maxDiameter: number,
     connectionDiameter: number,
+    totalLength: number,
+    taperAngle: number,
   ) => void;
   showOverlay?: boolean;
   finishLinePoints?: number[][] | null;
@@ -30,6 +35,8 @@ export function StlPreviewViewer({
   const [connectionDiameterState, setConnectionDiameterState] = useState<
     number | null
   >(null);
+  const [totalLengthState, setTotalLengthState] = useState<number | null>(null);
+  const [taperAngleState, setTaperAngleState] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -42,6 +49,8 @@ export function StlPreviewViewer({
     setError(null);
     setMaxDiameterState(null);
     setConnectionDiameterState(null);
+    setTotalLengthState(null);
+    setTaperAngleState(null);
 
     const height = containerRef.current.clientHeight || 300;
     let width = containerRef.current.clientWidth || 300;
@@ -83,6 +92,11 @@ export function StlPreviewViewer({
     let mesh: THREE.Mesh | null = null;
     let geometry: THREE.BufferGeometry | null = null;
     let finishLine: THREE.Object3D | null = null;
+    let taperAxisGuide: Line2 | THREE.Line | null = null;
+    let taperMeasureGuide: Line2 | THREE.Line | null = null;
+    let taperAngleArcGuide: THREE.Line | null = null;
+    const multiDirectionLines: (Line2 | THREE.Line)[] = [];
+    const multiDirectionSprites: THREE.Sprite[] = [];
 
     let cancelled = false;
     (async () => {
@@ -93,7 +107,11 @@ export function StlPreviewViewer({
         geometry = loader.parse(buffer);
         geometry = mergeVertices(geometry, 1e-5);
         geometry.computeBoundingBox();
-        geometry.computeBoundingSphere();
+        geometry.computeVertexNormals();
+
+        const bbox = geometry.boundingBox!;
+        const center = new THREE.Vector3();
+        bbox.getCenter(center);
 
         const material = new THREE.MeshStandardMaterial({
           color: 0x5b9dff,
@@ -102,7 +120,6 @@ export function StlPreviewViewer({
         });
         mesh = new THREE.Mesh(geometry, material);
 
-        const bbox = geometry.boundingBox;
         const position = geometry.getAttribute("position");
         const index = geometry.getIndex();
         if (!bbox || !position) {
@@ -110,7 +127,7 @@ export function StlPreviewViewer({
           return;
         }
 
-        // 최대 직경(전체) + 커넥션 직경(z=0) 계산
+        // 최대 직경(전체) + 커넥션 직경(원본 좌표계 z=0 단면) 계산
         let maxR = 0;
         for (let i = 0; i < position.count; i++) {
           const x = position.getX(i);
@@ -120,6 +137,7 @@ export function StlPreviewViewer({
         }
 
         let connectionMaxR = 0;
+        const sliceTolerance = 1e-4;
         const addIntersection = (
           x1: number,
           y1: number,
@@ -140,31 +158,422 @@ export function StlPreviewViewer({
           if (r > connectionMaxR) connectionMaxR = r;
         };
 
-        for (let i = 0; i + 2 < position.count; i += 3) {
-          const x0 = position.getX(i);
-          const y0 = position.getY(i);
-          const z0 = position.getZ(i);
+        const readVertex = (vertexIndex: number) => ({
+          x: position.getX(vertexIndex),
+          y: position.getY(vertexIndex),
+          z: position.getZ(vertexIndex),
+        });
 
-          const x1 = position.getX(i + 1);
-          const y1 = position.getY(i + 1);
-          const z1 = position.getZ(i + 1);
+        const triangleCount = index
+          ? Math.floor(index.count / 3)
+          : Math.floor(position.count / 3);
 
-          const x2 = position.getX(i + 2);
-          const y2 = position.getY(i + 2);
-          const z2 = position.getZ(i + 2);
+        for (let tri = 0; tri < triangleCount; tri++) {
+          const i0 = index ? index.getX(tri * 3) : tri * 3;
+          const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
+          const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
 
-          addIntersection(x0, y0, z0, x1, y1, z1);
-          addIntersection(x1, y1, z1, x2, y2, z2);
-          addIntersection(x2, y2, z2, x0, y0, z0);
+          const v0 = readVertex(i0);
+          const v1 = readVertex(i1);
+          const v2 = readVertex(i2);
+
+          if (Math.abs(v0.z) <= sliceTolerance) {
+            const r = Math.sqrt(v0.x * v0.x + v0.y * v0.y);
+            if (r > connectionMaxR) connectionMaxR = r;
+          }
+          if (Math.abs(v1.z) <= sliceTolerance) {
+            const r = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
+            if (r > connectionMaxR) connectionMaxR = r;
+          }
+          if (Math.abs(v2.z) <= sliceTolerance) {
+            const r = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
+            if (r > connectionMaxR) connectionMaxR = r;
+          }
+
+          addIntersection(v0.x, v0.y, v0.z, v1.x, v1.y, v1.z);
+          addIntersection(v1.x, v1.y, v1.z, v2.x, v2.y, v2.z);
+          addIntersection(v2.x, v2.y, v2.z, v0.x, v0.y, v0.z);
         }
 
         const maxDiameter = maxR * 2;
         const connectionDiameter =
           connectionMaxR > 0 ? connectionMaxR * 2 : maxDiameter;
 
+        // LLL(전체길이): Z축 범위
+        const totalLength = bbox.max.z - bbox.min.z;
+
+        let taperAngle = 0;
+        let taperGuide: {
+          zStart: number;
+          zEnd: number;
+          slope: number;
+          intercept: number;
+          multiDirectionGuides?: Array<{
+            angle: number; // 0-360도
+            slope: number;
+            intercept: number;
+            taperAngle: number; // 부호가 있는 각도 (+ 또는 -)
+            rSquared: number; // 선형성 검증 (R²)
+            surfacePoints: Array<{ x: number; y: number; z: number }>; // 실제 표면 포인트들
+          }>;
+        } | null = null;
+        const finishLineZs = Array.isArray(finishLinePoints)
+          ? finishLinePoints
+              .filter((p) => Array.isArray(p) && p.length >= 3)
+              .map((p) => Number(p[2]))
+              .filter((z) => Number.isFinite(z))
+          : [];
+        const finishLineTopZ =
+          finishLineZs.length > 0 ? Math.max(...finishLineZs) : null;
+
+        // 마진을 제외한 중간 영역으로 재조정 (finishLineTopZ ~ z_max 사이의 40%~60% 구간, 중앙 20%)
+        let postStartZ = bbox.min.z + totalLength * 0.6;
+        let postEndZ = bbox.max.z - totalLength * 0.8;
+
+        if (finishLineTopZ != null) {
+          const availableHeight = bbox.max.z - finishLineTopZ;
+          // 마진 곡면 제외 (하단 40%), 상단 플랫 제외 (상단 40%)
+          postStartZ = finishLineTopZ + availableHeight * 0.4;
+          postEndZ = bbox.max.z - availableHeight * 0.4;
+        }
+
+        const postHeight = postEndZ - postStartZ;
+
+        if (postHeight > 0.3) {
+          const sliceCount = 40;
+          const samples: Array<{ z: number; radius: number }> = [];
+
+          for (let s = 0; s <= sliceCount; s++) {
+            const targetZ = postStartZ + (postHeight * s) / sliceCount;
+            const tolerance = postHeight / (sliceCount * 4);
+            let maxRadiusAtSlice = 0;
+
+            for (let tri = 0; tri < triangleCount; tri++) {
+              const i0 = index ? index.getX(tri * 3) : tri * 3;
+              const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
+              const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
+              const v0 = readVertex(i0);
+              const v1 = readVertex(i1);
+              const v2 = readVertex(i2);
+
+              const checkVertex = (v: { x: number; y: number; z: number }) => {
+                if (Math.abs(v.z - targetZ) <= tolerance) {
+                  const r = Math.sqrt(v.x * v.x + v.y * v.y);
+                  if (r > maxRadiusAtSlice) maxRadiusAtSlice = r;
+                }
+              };
+
+              checkVertex(v0);
+              checkVertex(v1);
+              checkVertex(v2);
+
+              const intersectEdge = (
+                a: { x: number; y: number; z: number },
+                b: { x: number; y: number; z: number },
+              ) => {
+                if (
+                  (a.z < targetZ && b.z < targetZ) ||
+                  (a.z > targetZ && b.z > targetZ)
+                )
+                  return;
+                if (Math.abs(a.z - b.z) < 1e-9) return;
+                const t = (targetZ - a.z) / (b.z - a.z);
+                if (t < 0 || t > 1) return;
+                const ix = a.x + t * (b.x - a.x);
+                const iy = a.y + t * (b.y - a.y);
+                const r = Math.sqrt(ix * ix + iy * iy);
+                if (r > maxRadiusAtSlice) maxRadiusAtSlice = r;
+              };
+
+              intersectEdge(v0, v1);
+              intersectEdge(v1, v2);
+              intersectEdge(v2, v0);
+            }
+
+            if (maxRadiusAtSlice > 0) {
+              samples.push({ z: targetZ, radius: maxRadiusAtSlice });
+            }
+          }
+
+          if (samples.length >= 6) {
+            const ransacIterations = 50;
+            let bestInliers: typeof samples = [];
+            let bestScore = 0;
+
+            for (let iter = 0; iter < ransacIterations; iter++) {
+              const idx1 = Math.floor(Math.random() * samples.length);
+              let idx2 = Math.floor(Math.random() * samples.length);
+              while (idx2 === idx1) {
+                idx2 = Math.floor(Math.random() * samples.length);
+              }
+              const p1 = samples[idx1];
+              const p2 = samples[idx2];
+              if (Math.abs(p2.z - p1.z) < 0.1) continue;
+
+              const slope = (p2.radius - p1.radius) / (p2.z - p1.z);
+              const intercept = p1.radius - slope * p1.z;
+
+              const inliers: typeof samples = [];
+              const threshold = 0.08;
+              for (const sample of samples) {
+                const predicted = slope * sample.z + intercept;
+                const error = Math.abs(sample.radius - predicted);
+                if (error < threshold) {
+                  inliers.push(sample);
+                }
+              }
+
+              const score = inliers.length;
+              if (score > bestScore) {
+                bestScore = score;
+                bestInliers = inliers;
+              }
+            }
+
+            if (bestInliers.length >= 6) {
+              const n = bestInliers.length;
+              const sumZ = bestInliers.reduce((acc, cur) => acc + cur.z, 0);
+              const sumR = bestInliers.reduce(
+                (acc, cur) => acc + cur.radius,
+                0,
+              );
+              const meanZ = sumZ / n;
+              const meanR = sumR / n;
+              let numerator = 0;
+              let denominator = 0;
+              for (const sample of bestInliers) {
+                const dz = sample.z - meanZ;
+                numerator += dz * (sample.radius - meanR);
+                denominator += dz * dz;
+              }
+              if (denominator > 1e-8) {
+                const slope = numerator / denominator;
+                const intercept = meanR - slope * meanZ;
+                taperAngle = Math.abs(Math.atan(slope) * (180 / Math.PI));
+                const sortedInliers = [...bestInliers].sort(
+                  (a, b) => a.z - b.z,
+                );
+                const guideStart = sortedInliers[0];
+                const guideEnd = sortedInliers[sortedInliers.length - 1];
+                if (guideStart && guideEnd) {
+                  const multiDirectionGuides: (typeof taperGuide)["multiDirectionGuides"] =
+                    [];
+
+                  // 12개 방향 (0°, 30°, 60°, 90°, 120°, 150°, 180°, 210°, 240°, 270°, 300°, 330°)
+                  const angles = [
+                    0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330,
+                  ];
+                  for (let dirIdx = 0; dirIdx < angles.length; dirIdx++) {
+                    const dirAngleDeg = angles[dirIdx];
+                    const dirAngle = dirAngleDeg * (Math.PI / 180);
+                    const dirX = Math.cos(dirAngle);
+                    const dirY = Math.sin(dirAngle);
+
+                    const dirSamples: Array<{ z: number; radius: number }> = [];
+                    const surfacePoints: Array<{
+                      x: number;
+                      y: number;
+                      z: number;
+                    }> = [];
+
+                    // 각 방향에서 반지름 프로파일 및 표면 포인트 추출
+                    for (let s = 0; s <= sliceCount; s++) {
+                      const targetZ =
+                        postStartZ + (postHeight * s) / sliceCount;
+                      const tolerance = postHeight / (sliceCount * 4);
+                      let maxRadiusInDir = -Infinity;
+                      let bestSurfacePoint: {
+                        x: number;
+                        y: number;
+                        z: number;
+                      } | null = null;
+
+                      for (let tri = 0; tri < triangleCount; tri++) {
+                        const i0 = index ? index.getX(tri * 3) : tri * 3;
+                        const i1 = index
+                          ? index.getX(tri * 3 + 1)
+                          : tri * 3 + 1;
+                        const i2 = index
+                          ? index.getX(tri * 3 + 2)
+                          : tri * 3 + 2;
+                        const v0 = readVertex(i0);
+                        const v1 = readVertex(i1);
+                        const v2 = readVertex(i2);
+
+                        const checkVertexDir = (v: {
+                          x: number;
+                          y: number;
+                          z: number;
+                        }) => {
+                          if (Math.abs(v.z - targetZ) <= tolerance) {
+                            const cx = v.x - center.x;
+                            const cy = v.y - center.y;
+                            const proj = cx * dirX + cy * dirY;
+                            if (proj > maxRadiusInDir) {
+                              maxRadiusInDir = proj;
+                              bestSurfacePoint = { x: v.x, y: v.y, z: v.z };
+                            }
+                          }
+                        };
+
+                        checkVertexDir(v0);
+                        checkVertexDir(v1);
+                        checkVertexDir(v2);
+
+                        const intersectEdgeDir = (
+                          a: { x: number; y: number; z: number },
+                          b: { x: number; y: number; z: number },
+                        ) => {
+                          if (
+                            (a.z < targetZ && b.z < targetZ) ||
+                            (a.z > targetZ && b.z > targetZ)
+                          )
+                            return;
+                          if (Math.abs(a.z - b.z) < 1e-9) return;
+                          const t = (targetZ - a.z) / (b.z - a.z);
+                          if (t < 0 || t > 1) return;
+                          const ix = a.x + t * (b.x - a.x);
+                          const iy = a.y + t * (b.y - a.y);
+                          const cx = ix - center.x;
+                          const cy = iy - center.y;
+                          const proj = cx * dirX + cy * dirY;
+                          if (proj > maxRadiusInDir) {
+                            maxRadiusInDir = proj;
+                            bestSurfacePoint = { x: ix, y: iy, z: targetZ };
+                          }
+                        };
+
+                        intersectEdgeDir(v0, v1);
+                        intersectEdgeDir(v1, v2);
+                        intersectEdgeDir(v2, v0);
+                      }
+
+                      if (maxRadiusInDir > -10 && bestSurfacePoint) {
+                        dirSamples.push({ z: targetZ, radius: maxRadiusInDir });
+                        surfacePoints.push(bestSurfacePoint);
+                      }
+                    }
+
+                    // 각 방향의 회귀선 계산
+                    if (dirSamples.length >= 6) {
+                      const dirN = dirSamples.length;
+                      const dirSumZ = dirSamples.reduce(
+                        (acc, cur) => acc + cur.z,
+                        0,
+                      );
+                      const dirSumR = dirSamples.reduce(
+                        (acc, cur) => acc + cur.radius,
+                        0,
+                      );
+                      const dirMeanZ = dirSumZ / dirN;
+                      const dirMeanR = dirSumR / dirN;
+
+                      let dirNum = 0;
+                      let dirDenom = 0;
+                      for (const sample of dirSamples) {
+                        const dz = sample.z - dirMeanZ;
+                        dirNum += dz * (sample.radius - dirMeanR);
+                        dirDenom += dz * dz;
+                      }
+
+                      if (dirDenom > 1e-8) {
+                        const dirSlope = dirNum / dirDenom;
+                        const dirIntercept = dirMeanR - dirSlope * dirMeanZ;
+
+                        // 선형성 검증 (R² 계산)
+                        let ssRes = 0;
+                        let ssTot = 0;
+                        for (const sample of dirSamples) {
+                          const predicted = dirSlope * sample.z + dirIntercept;
+                          const residual = sample.radius - predicted;
+                          ssRes += residual * residual;
+                          const totalDev = sample.radius - dirMeanR;
+                          ssTot += totalDev * totalDev;
+                        }
+                        const rSquared = ssTot > 1e-8 ? 1 - ssRes / ssTot : 0;
+
+                        // R² > 0.92인 경우만 유효한 직선으로 간주 (더 엄격한 선형성 검증)
+                        if (rSquared > 0.92) {
+                          // 부호가 있는 각도 계산 (기울기 방향 유지)
+                          const dirTaperAngleSigned =
+                            Math.atan(dirSlope) * (180 / Math.PI);
+
+                          multiDirectionGuides.push({
+                            angle: dirAngleDeg,
+                            slope: dirSlope,
+                            intercept: dirIntercept,
+                            taperAngle: dirTaperAngleSigned,
+                            rSquared,
+                            surfacePoints,
+                          });
+                        }
+                      }
+                    }
+                  }
+
+                  taperGuide = {
+                    zStart: guideStart.z,
+                    zEnd: guideEnd.z,
+                    slope,
+                    intercept,
+                    multiDirectionGuides:
+                      multiDirectionGuides.length > 0
+                        ? multiDirectionGuides
+                        : undefined,
+                  };
+
+                  // 180도 반대편 각도 쌍의 진짜 기울기 계산 (6그룹)
+                  if (multiDirectionGuides.length >= 6) {
+                    const pairedAverages: number[] = [];
+
+                    // 0-150도 범위의 6개 각도에 대해 180도 반대편과 쌍을 만듦
+                    for (let baseAngle = 0; baseAngle < 180; baseAngle += 30) {
+                      const oppositeAngle = baseAngle + 180;
+
+                      const baseGuide = multiDirectionGuides.find(
+                        (g) => g.angle === baseAngle,
+                      );
+                      const oppositeGuide = multiDirectionGuides.find(
+                        (g) => g.angle === oppositeAngle,
+                      );
+
+                      // 두 방향 모두 유효한 경우에만 진짜 기울기 계산
+                      if (baseGuide && oppositeGuide) {
+                        // 포스트는 기본적으로 양쪽으로 테이퍼(약 2~5도)가 들어가 있음
+                        // 예: 기울기가 0도일 때, 양쪽 측정값은 둘 다 +3도일 수 있음
+                        // 기울기가 생기면 한쪽은 +3도 + 기울기(a), 반대쪽은 +3도 - 기울기(a)가 됨
+                        // 따라서 두 각도의 차이를 반으로 나누면 진짜 기울어진 각도(a)를 구할 수 있음
+                        // 한쪽 편을 기준으로 기울기 방향이 반대이므로:
+                        // 진짜 기울기 = (base각도 - opposite각도) / 2
+
+                        // 두 값의 절댓값을 사용하여 원래 테이퍼 각도 제거 후 순수 기울기 도출
+                        // 방향성을 고려하기 위해 원래 각도의 부호를 유지하면서 계산
+                        const trueTilt =
+                          (baseGuide.taperAngle - oppositeGuide.taperAngle) / 2;
+                        pairedAverages.push(Math.abs(trueTilt));
+
+                        // 시각적 렌더링을 위해 각 가이드에 계산된 진짜 기울기를 저장
+                        baseGuide.taperAngle = trueTilt;
+                        oppositeGuide.taperAngle = -trueTilt;
+                      }
+                    }
+
+                    if (pairedAverages.length > 0) {
+                      // 가장 큰 진짜 기울기를 선택
+                      taperAngle = Math.max(...pairedAverages);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
         if (showOverlay) {
           setMaxDiameterState(Math.round(maxDiameter * 10) / 10);
           setConnectionDiameterState(Math.round(connectionDiameter * 10) / 10);
+          setTotalLengthState(Math.round(totalLength * 10) / 10);
+          setTaperAngleState(Math.round(taperAngle * 10) / 10);
         }
 
         if (onDiameterComputedRef.current) {
@@ -172,13 +581,148 @@ export function StlPreviewViewer({
             file.name,
             maxDiameter,
             connectionDiameter,
+            totalLength,
+            taperAngle,
           );
         }
 
-        const center = new THREE.Vector3();
-        bbox.getCenter(center);
         mesh.position.sub(center);
         scene.add(mesh);
+
+        // showOverlay가 true일 때(제조사 페이지 등)는 모든 가이드를,
+        // false일 때(의뢰자 페이지)는 AAA 값과 관련된 가이드만 그립니다.
+        if (taperGuide) {
+          const guideHeight = Math.max(taperGuide.zEnd - taperGuide.zStart, 1);
+          // 측정선 위치: 피니시라인~포스트최상단의 10~20% 구간 (피니시라인에 가깝게)
+          const extendedStartZ = taperGuide.zStart - guideHeight * 0.9;
+          const extendedEndZ = taperGuide.zEnd + guideHeight * 1;
+          const zStartCentered = extendedStartZ - center.z;
+          const zEndCentered = extendedEndZ - center.z;
+
+          // 의뢰자 페이지(showOverlay=false)에서는 중심축을 숨김
+          // 제조사 페이지에서도 녹색 중심축 표시 제거
+
+          // 12개 방향 측정선 렌더링 (180도 쌍은 동일 색상 사용)
+          if (
+            taperGuide.multiDirectionGuides &&
+            taperGuide.multiDirectionGuides.length > 0
+          ) {
+            // 6개 기본 색상 정의 (0~150도 용)
+            const baseColors = [
+              0xff0000, // 0도/180도: 빨강
+              0xffa500, // 30도/210도: 주황
+              0xffff00, // 60도/240도: 노랑
+              0x00ff00, // 90도/270도: 초록
+              0x0099ff, // 120도/300도: 파랑
+              0x9933ff, // 150도/330도: 보라
+            ];
+
+            // 가장 큰 진짜 기울기(AAA)를 가진 쌍의 각도 찾기
+            let maxTiltAngle = -1;
+            let maxTiltValue = -1;
+            for (let baseAngle = 0; baseAngle < 180; baseAngle += 30) {
+              const oppositeAngle = baseAngle + 180;
+              const baseGuide = taperGuide.multiDirectionGuides.find(
+                (g) => g.angle === baseAngle,
+              );
+              const oppositeGuide = taperGuide.multiDirectionGuides.find(
+                (g) => g.angle === oppositeAngle,
+              );
+
+              if (baseGuide && oppositeGuide) {
+                // 부호 상관없이 원래 계산된 진짜 기울기의 절댓값으로 비교
+                const tilt = Math.abs(baseGuide.taperAngle);
+                if (tilt > maxTiltValue) {
+                  maxTiltValue = tilt;
+                  maxTiltAngle = baseAngle;
+                }
+              }
+            }
+
+            taperGuide.multiDirectionGuides.forEach((guide) => {
+              if (!guide.surfacePoints || guide.surfacePoints.length < 2)
+                return;
+
+              const isMaxPair = guide.angle % 180 === maxTiltAngle % 180;
+              const colorIdx = (guide.angle / 30) % 6;
+
+              // // 의뢰자 페이지(showOverlay=false)일 경우 최대 기울기(AAA) 쌍이 아니면 렌더링하지 않음
+              // if (!showOverlay && !isMaxPair) return;
+
+              // 최대 기울기 쌍만 유채색, 나머지는 회색 계열(농도 다르게)로 렌더링
+              const color = isMaxPair
+                ? baseColors[colorIdx]
+                : // 농도를 다르게 하기 위해 인덱스별로 회색 값 조정 (0x666666 부터 0xcccccc 까지)
+                  0x666666 + colorIdx * 0x111111;
+
+              // 실제 표면 포인트들을 중심 좌표계로 변환
+              const centeredPoints = guide.surfacePoints.map((p) => ({
+                x: p.x - center.x,
+                y: p.y - center.y,
+                z: p.z - center.z,
+              }));
+
+              // 측정선 - Line2로 굵게 (실제 표면 포인트들 연결)
+              const positions: number[] = [];
+              centeredPoints.forEach((p) => {
+                positions.push(p.x, p.y, p.z);
+              });
+
+              const lineGeom = new LineGeometry();
+              lineGeom.setPositions(positions);
+              // 최대 기울기 쌍은 더 굵게 (linewidth: 5), 나머지는 원래 굵기 (linewidth: 2 - 기존 3에서 키움)
+              const lineMat = new LineMaterial({
+                color: color,
+                linewidth: isMaxPair ? 5 : 2,
+                transparent: true,
+                opacity: 0.9,
+              });
+              lineMat.resolution.set(window.innerWidth, window.innerHeight);
+              const line = new Line2(lineGeom, lineMat);
+              line.renderOrder = 11;
+              line.computeLineDistances();
+              scene.add(line);
+              multiDirectionLines.push(line);
+
+              // 시작점과 끝점 (각도 호 및 텍스트 위치용)
+              // const startPos = centeredPoints[0];
+              const endPos = centeredPoints[centeredPoints.length - 1];
+
+              // 제조사 페이지에서만 각도 텍스트 표시 (의뢰자 페이지에서는 표시하지 않음)
+              if (showOverlay) {
+                const canvas = document.createElement("canvas");
+                canvas.width = 256;
+                canvas.height = 64;
+                const ctx = canvas.getContext("2d");
+                if (ctx) {
+                  ctx.fillStyle = "#" + color.toString(16).padStart(6, "0");
+                  // 폰트 크기: 40px
+                  ctx.font = "bold 40px Arial";
+                  ctx.fillText(
+                    `${Math.abs(guide.taperAngle).toFixed(1)}°`,
+                    10,
+                    40,
+                  );
+                }
+                const texture = new THREE.CanvasTexture(canvas);
+                const spriteMat = new THREE.SpriteMaterial({ map: texture });
+                const sprite = new THREE.Sprite(spriteMat);
+
+                // 표면 외측으로 오프셋 (방향 벡터로 1.2배 확장)
+                const textOffsetFactor = 1.2;
+                const textPosX = endPos.x * textOffsetFactor;
+                const textPosY = endPos.y * textOffsetFactor;
+                sprite.position.set(textPosX, textPosY, endPos.z);
+                // 개별 텍스트 크기 조절: 2배 (AAA 3.0, 나머지 2.0)
+                const textScale = isMaxPair ? 3.0 : 2.0;
+                sprite.scale.set(textScale, textScale * 0.25, 1);
+                sprite.renderOrder = 12;
+                scene.add(sprite);
+                multiDirectionSprites.push(sprite);
+              }
+            });
+          }
+        }
 
         const hasFinishLine = Array.isArray(finishLinePoints);
         if (!hasFinishLine || finishLinePoints!.length < 2) {
@@ -245,8 +789,23 @@ export function StlPreviewViewer({
 
         const sphere = geometry.boundingSphere;
         const radius = sphere ? sphere.radius : maxR || 40;
-        const dist = radius * 1.5;
-        camera.position.set(dist, -dist, dist * 1.1);
+
+        // 모델의 실제 높이(totalLength)와 반경을 고려하여 카메라 거리 계산
+        // 세로로 긴 모델이 화면 밖으로 벗어나지 않도록 bounding box의 크기를 반영
+        const modelHeight = bbox.max.z - bbox.min.z;
+        const modelWidth = Math.max(
+          bbox.max.x - bbox.min.x,
+          bbox.max.y - bbox.min.y,
+        );
+        const maxDimension = Math.max(modelHeight, modelWidth);
+
+        // 카메라 거리: 모델의 가장 긴 변에 비례하게 설정하되, 기존 반경 로직과 조합
+        const dist = Math.max(radius * 2.5, maxDimension * 1.5);
+
+        // 카메라 위치 조정: 세로로 긴 모델일 경우 상하가 꽉 차도록 Y, Z축을 조정
+        // dist 값을 키워서 모델 전체가 한눈에 들어오도록 줌아웃 (기존보다 더 멀리서 보게)
+        const cameraDist = dist * (showOverlay ? 1.0 : 1.2); // 의뢰자 페이지(showOverlay=false)에서는 조금 더 멀리서
+        camera.position.set(cameraDist, -cameraDist, cameraDist * 0.9);
         camera.lookAt(0, 0, 0);
       } catch (e) {
         console.error("[StlPreviewViewer] failed to load STL", e);
@@ -313,6 +872,60 @@ export function StlPreviewViewer({
           }
         }
       }
+      if (taperAxisGuide) {
+        scene.remove(taperAxisGuide);
+        taperAxisGuide.geometry?.dispose?.();
+        const mat = taperAxisGuide.material;
+        if (Array.isArray(mat)) {
+          mat.forEach((mm) => mm.dispose());
+        } else {
+          mat.dispose();
+        }
+      }
+      if (taperMeasureGuide) {
+        scene.remove(taperMeasureGuide);
+        taperMeasureGuide.geometry?.dispose?.();
+        const mat = taperMeasureGuide.material;
+        if (Array.isArray(mat)) {
+          mat.forEach((mm) => mm.dispose());
+        } else {
+          mat.dispose();
+        }
+      }
+      if (taperAngleArcGuide) {
+        scene.remove(taperAngleArcGuide);
+        taperAngleArcGuide.geometry?.dispose?.();
+        const mat = taperAngleArcGuide.material;
+        if (Array.isArray(mat)) {
+          mat.forEach((mm) => mm.dispose());
+        } else {
+          mat.dispose();
+        }
+      }
+      multiDirectionLines.forEach((line) => {
+        scene.remove(line);
+        if (line instanceof Line2) {
+          line.geometry?.dispose?.();
+          (line.material as LineMaterial).dispose();
+        } else if (line instanceof THREE.Line) {
+          line.geometry?.dispose?.();
+          const mat = line.material;
+          if (Array.isArray(mat)) {
+            mat.forEach((mm) => mm.dispose());
+          } else {
+            mat.dispose();
+          }
+        }
+      });
+      multiDirectionLines.length = 0;
+      multiDirectionSprites.forEach((sprite) => {
+        scene.remove(sprite);
+        if (sprite.material instanceof THREE.SpriteMaterial) {
+          sprite.material.map?.dispose?.();
+          sprite.material.dispose();
+        }
+      });
+      multiDirectionSprites.length = 0;
       if (geometry) {
         geometry.dispose();
       }
@@ -337,27 +950,39 @@ export function StlPreviewViewer({
           {error}
         </div>
       )}
-      {showOverlay &&
-        (maxDiameterState !== null || connectionDiameterState !== null) && (
-          <div className="pointer-events-none absolute bottom-2 right-2 flex flex-col items-end gap-1 rounded-md bg-white/85 px-2 py-1 text-[12px] md:text-[13px] text-muted-foreground shadow-sm">
-            {maxDiameterState !== null && (
-              <span>
-                최대 직경:{" "}
-                <span className="font-semibold text-foreground">
-                  {maxDiameterState.toFixed(1)} mm
-                </span>
-              </span>
-            )}
-            {connectionDiameterState !== null && (
-              <span>
-                커넥션 직경:{" "}
-                <span className="font-semibold text-foreground">
-                  {connectionDiameterState.toFixed(1)} mm
-                </span>
-              </span>
-            )}
+      {showOverlay && (
+        <div className="pointer-events-none absolute bottom-2 left-2 flex flex-col items-start gap-1 rounded-md bg-white/85 px-2 py-1 text-[11px] md:text-[12px] font-medium text-slate-800 shadow-sm border border-slate-200 z-10">
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500">최대 직경 (DDD):</span>
+            <span>
+              {maxDiameterState > 0 ? maxDiameterState.toFixed(1) : "-"} mm
+            </span>
           </div>
-        )}
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500">커넥션 직경:</span>
+            <span>
+              {connectionDiameterState > 0
+                ? connectionDiameterState.toFixed(1)
+                : "-"}
+              mm
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500">전체 길이 (LLL):</span>
+            <span>
+              {totalLengthState > 0 ? totalLengthState.toFixed(1) : "-"} mm
+            </span>
+          </div>
+          {showOverlay && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-500">테이퍼 각도 (AAA):</span>
+              <span>
+                {taperAngleState > 0 ? taperAngleState.toFixed(1) : "-"}°
+              </span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
