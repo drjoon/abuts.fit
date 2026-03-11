@@ -48,7 +48,9 @@ export function inferCurrentMaterialDiameter(machine) {
 }
 
 export function inferRequestDiameterGroup(reqItem) {
-  const groupRaw = String(reqItem?.productionSchedule?.diameterGroup || "").trim();
+  const groupRaw = String(
+    reqItem?.productionSchedule?.diameterGroup || "",
+  ).trim();
   if (groupRaw) return normalizeDiameterGroupValue(groupRaw);
   const diameter = Number(reqItem?.productionSchedule?.diameter);
   return inferDiameterGroupFromValue(diameter);
@@ -63,11 +65,29 @@ export function isMachiningInProgress(reqItem) {
     .toUpperCase();
   if (status === "RUNNING" || status === "PROCESSING") return true;
 
-  const startedAt = record?.startedAt ? new Date(record.startedAt).getTime() : 0;
+  const startedAt = record?.startedAt
+    ? new Date(record.startedAt).getTime()
+    : 0;
   const completedAt = record?.completedAt
     ? new Date(record.completedAt).getTime()
     : 0;
   return startedAt > 0 && completedAt <= 0;
+}
+
+export function isMachiningCompleted(reqItem) {
+  const record = reqItem?.productionSchedule?.machiningRecord;
+  if (!record) return false;
+
+  const status = String(record?.status || "")
+    .trim()
+    .toUpperCase();
+  if (status === "COMPLETED" || status === "SUCCESS" || status === "DONE")
+    return true;
+
+  const completedAt = record?.completedAt
+    ? new Date(record.completedAt).getTime()
+    : 0;
+  return completedAt > 0;
 }
 
 export function getMachiningLoadWeight(reqItem) {
@@ -85,13 +105,19 @@ export async function buildMachineQueueLoadMap(machineIds) {
     manufacturerStage: { $in: MACHINING_ASSIGN_STAGE_SET },
     "productionSchedule.assignedMachine": { $in: ids },
   }).select(
-    "productionSchedule.assignedMachine productionSchedule.machiningQty",
+    "productionSchedule.assignedMachine productionSchedule.machiningQty productionSchedule.machiningRecord",
   );
 
   const loadMap = new Map(ids.map((id) => [id, 0]));
   for (const reqItem of assigned) {
-    const machineId = String(reqItem?.productionSchedule?.assignedMachine || "").trim();
+    const machineId = String(
+      reqItem?.productionSchedule?.assignedMachine || "",
+    ).trim();
     if (!machineId || !loadMap.has(machineId)) continue;
+
+    // 가공이 완료된 건은 큐 부하에서 제외 (장비의 진행 대기 큐가 아님)
+    if (isMachiningCompleted(reqItem)) continue;
+
     loadMap.set(
       machineId,
       (loadMap.get(machineId) || 0) + getMachiningLoadWeight(reqItem),

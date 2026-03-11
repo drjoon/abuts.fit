@@ -11,6 +11,7 @@ import {
   inferMaterialDiameterGroup,
   inferRequestDiameterGroup,
   isMachiningInProgress,
+  isMachiningCompleted,
   getMachiningLoadWeight,
 } from "./distribution.utils.js";
 
@@ -218,14 +219,19 @@ export async function reassignProductionQueues(req, res) {
           reqItem?.assignedMachine ||
           "",
       ).trim();
-      const isLocked = isMachiningInProgress(reqItem);
+      const isLocked =
+        isMachiningInProgress(reqItem) || isMachiningCompleted(reqItem);
+      const isCompleted = isMachiningCompleted(reqItem);
 
       if (isLocked && lockedMachineId && candidates.includes(lockedMachineId)) {
-        const load = getMachiningLoadWeight(reqItem);
-        queueCounts.set(
-          lockedMachineId,
-          (queueCounts.get(lockedMachineId) || 0) + load,
-        );
+        // 이미 진행 중이거나 완료된 건은 부하에 포함시키지 않거나 진행중인 것만 포함시킴
+        if (!isCompleted) {
+          const load = getMachiningLoadWeight(reqItem);
+          queueCounts.set(
+            lockedMachineId,
+            (queueCounts.get(lockedMachineId) || 0) + load,
+          );
+        }
 
         if (!assignmentsByMachine.has(lockedMachineId)) {
           assignmentsByMachine.set(lockedMachineId, []);
