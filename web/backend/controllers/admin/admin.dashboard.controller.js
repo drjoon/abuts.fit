@@ -43,6 +43,16 @@ export async function getDashboardStats(req, res) {
     const { start, end } = getDateRangeFromQuery(req);
     console.log("[getDashboardStats] Date range:", { start, end });
 
+    // 전체 의뢰 수 확인
+    const totalRequestsInDb = await Request.countDocuments();
+    console.log("[getDashboardStats] Total requests in DB:", totalRequestsInDb);
+
+    // 날짜 범위 내 의뢰 수 확인
+    const requestsInRange = await Request.countDocuments({
+      createdAt: { $gte: start, $lte: end },
+    });
+    console.log("[getDashboardStats] Requests in date range:", requestsInRange);
+
     const allRequestsForStats = await Request.find({
       createdAt: { $gte: start, $lte: end },
     })
