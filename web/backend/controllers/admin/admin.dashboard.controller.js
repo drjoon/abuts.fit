@@ -83,19 +83,6 @@ export async function getDashboardStats(req, res) {
       if (requestStatsByStatus[s] != null) requestStatsByStatus[s] += 1;
     });
 
-    console.log(
-      "[getDashboardStats] Final requestStatsByStatus:",
-      requestStatsByStatus,
-    );
-    console.log(
-      "[getDashboardStats] Sample requests with stages:",
-      allRequestsForStats.slice(0, 5).map((r) => ({
-        _id: r._id,
-        manufacturerStage: r.manufacturerStage,
-        normalizedStage: normalizeStage(r),
-      })),
-    );
-
     const totalRequests = allRequestsForStats.length;
     const recentRequests = await Request.find()
       .sort({ createdAt: -1 })

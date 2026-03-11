@@ -204,8 +204,6 @@ export const AdminRequestMonitoring = () => {
 
   const totalCount = requestStats.total ?? 0;
   const byStatus = requestStats.byStatus || {};
-  console.log("[AdminRequestMonitoring] byStatus from backend:", byStatus);
-
   const receiveCount = byStatus["의뢰"] || 0;
   const camCount = byStatus["CAM"] || 0;
   const machiningCount = byStatus["생산"] || 0;
@@ -213,16 +211,6 @@ export const AdminRequestMonitoring = () => {
   const shippingCount = byStatus["발송"] || 0;
   const trackingCount = byStatus["추적관리"] || 0;
   const canceledCount = byStatus["취소"] || 0;
-
-  console.log("[AdminRequestMonitoring] Counts:", {
-    receiveCount,
-    camCount,
-    machiningCount,
-    packagingCount,
-    shippingCount,
-    trackingCount,
-    canceledCount,
-  });
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-gradient-subtle p-6">
