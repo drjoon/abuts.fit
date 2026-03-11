@@ -148,8 +148,17 @@ export const AdminRequestMonitoring = () => {
           method: "GET",
           token,
         });
+        console.log("[AdminRequestMonitoring] Dashboard response:", res);
+        console.log(
+          "[AdminRequestMonitoring] requestStats:",
+          res.data?.data?.requestStats,
+        );
         if (res.ok && res.data?.success) {
           setRequestStats(res.data.data?.requestStats || {});
+          console.log(
+            "[AdminRequestMonitoring] Set requestStats:",
+            res.data.data?.requestStats,
+          );
         }
       } catch (error) {
         console.error("Failed to fetch request stats:", error);

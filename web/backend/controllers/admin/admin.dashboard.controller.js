@@ -35,18 +35,45 @@ export async function getDashboardStats(req, res) {
     });
 
     const totalUsers = await User.countDocuments({ role: "requestor" });
-    const activeUsers = await User.countDocuments({ role: "requestor", active: true });
+    const activeUsers = await User.countDocuments({
+      role: "requestor",
+      active: true,
+    });
 
     const { start, end } = getDateRangeFromQuery(req);
-    const allRequestsForStats = await Request.find({ createdAt: { $gte: start, $lte: end } })
-      .select({ manufacturerStage: 1, "caseInfos.reviewByStage.shipping.status": 1 })
+    console.log("[getDashboardStats] Date range:", { start, end });
+
+    const allRequestsForStats = await Request.find({
+      createdAt: { $gte: start, $lte: end },
+    })
+      .select({
+        manufacturerStage: 1,
+        "caseInfos.reviewByStage.shipping.status": 1,
+      })
       .lean();
+
+    console.log(
+      "[getDashboardStats] Total requests found:",
+      allRequestsForStats.length,
+    );
+    console.log(
+      "[getDashboardStats] Sample requests:",
+      allRequestsForStats.slice(0, 3).map((r) => ({
+        _id: r._id,
+        manufacturerStage: r.manufacturerStage,
+        createdAt: r.createdAt,
+      })),
+    );
 
     const normalizeStage = (r) => {
       const stage = String(r.manufacturerStage || "");
       if (stage === "취소") return "취소";
-      if (["shipping", "tracking", "발송", "추적관리"].includes(stage)) return "발송";
-      if (["machining", "packing", "production", "생산", "가공"].includes(stage)) return "생산";
+      if (["shipping", "tracking", "발송", "추적관리"].includes(stage))
+        return "발송";
+      if (
+        ["machining", "packing", "production", "생산", "가공"].includes(stage)
+      )
+        return "생산";
       if (["cam", "CAM"].includes(stage)) return "CAM";
       return "의뢰";
     };
@@ -57,6 +84,10 @@ export async function getDashboardStats(req, res) {
       if (requestStatsByStatus[s] != null) requestStatsByStatus[s] += 1;
     });
 
+    console.log(
+      "[getDashboardStats] Request stats by status:",
+      requestStatsByStatus,
+    );
     const totalRequests = allRequestsForStats.length;
     const recentRequests = await Request.find()
       .sort({ createdAt: -1 })
