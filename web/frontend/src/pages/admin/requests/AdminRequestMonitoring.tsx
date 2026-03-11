@@ -211,7 +211,7 @@ export const AdminRequestMonitoring = () => {
   const machiningCount = byStatus["생산"] || 0;
   const packagingCount = byStatus["생산"] || 0;
   const shippingCount = byStatus["발송"] || 0;
-  const trackingCount = byStatus["발송"] || 0;
+  const trackingCount = byStatus["추적관리"] || 0;
   const canceledCount = byStatus["취소"] || 0;
 
   console.log("[AdminRequestMonitoring] Counts:", {

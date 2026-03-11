@@ -53,17 +53,31 @@ export async function getDashboardStats(req, res) {
     const normalizeStage = (r) => {
       const stage = String(r.manufacturerStage || "");
       if (stage === "취소") return "취소";
-      if (["shipping", "tracking", "발송", "추적관리"].includes(stage))
-        return "발송";
+      if (["shipping", "발송", "포장.발송"].includes(stage)) return "발송";
+      if (["tracking", "추적관리"].includes(stage)) return "추적관리";
       if (
-        ["machining", "packing", "production", "생산", "가공"].includes(stage)
+        [
+          "machining",
+          "packing",
+          "production",
+          "생산",
+          "가공",
+          "세척.패킹",
+        ].includes(stage)
       )
         return "생산";
       if (["cam", "CAM"].includes(stage)) return "CAM";
       return "의뢰";
     };
 
-    const requestStatsByStatus = { 의뢰: 0, CAM: 0, 생산: 0, 발송: 0, 취소: 0 };
+    const requestStatsByStatus = {
+      의뢰: 0,
+      CAM: 0,
+      생산: 0,
+      발송: 0,
+      추적관리: 0,
+      취소: 0,
+    };
     allRequestsForStats.forEach((r) => {
       const s = normalizeStage(r);
       if (requestStatsByStatus[s] != null) requestStatsByStatus[s] += 1;
