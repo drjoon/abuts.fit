@@ -270,11 +270,6 @@ export const AdminDashboardPage = () => {
     const requestStats = adminDashboardResponse.data.requestStats || {};
     const systemAlerts = adminDashboardResponse.data.systemAlerts || [];
 
-    console.log("[AdminDashboardPage] adminDashboardResponse:", {
-      requestStats,
-      dateRange: requestStats.range,
-    });
-
     const totalUsers = userStats.total ?? 0;
 
     const byStatus = requestStats.byStatus || {};
@@ -282,19 +277,13 @@ export const AdminDashboardPage = () => {
 
     const receive = byStatus["의뢰"] ?? 0;
     const cam = byStatus["CAM"] ?? 0;
-    const machining = byStatus["생산"] ?? 0;
-    const shipping = byStatus["발송"] ?? 0;
+    const machining = byStatus["가공"] ?? 0;
+    const packing = byStatus["세척.패킹"] ?? 0;
+    const shipping = byStatus["포장.발송"] ?? 0;
+    const shippingBoxes = byStatus["포장.발송박스"] ?? 0;
     const tracking = byStatus["추적관리"] ?? 0;
+    const trackingBoxes = byStatus["추적관리박스"] ?? 0;
     const canceled = byStatus["취소"] ?? 0;
-
-    console.log("[AdminDashboardPage] Parsed stats:", {
-      receive,
-      cam,
-      machining,
-      shipping,
-      tracking,
-      canceled,
-    });
 
     const systemUptime = "99.9%";
 
@@ -314,13 +303,19 @@ export const AdminDashboardPage = () => {
         },
         {
           label: "세척.패킹",
-          value: String(shipping),
+          value: String(packing),
           change: "+0%",
           icon: CheckCircle,
         },
         {
-          label: "포장.발송/추적관리",
-          value: `${shipping}/${tracking}`,
+          label: "포장.발송",
+          value: `${shipping}건/${shippingBoxes}박스`,
+          change: "+0%",
+          icon: AlertCircle,
+        },
+        {
+          label: "추적관리",
+          value: `${tracking}건/${trackingBoxes}박스`,
           change: "+0%",
           icon: AlertCircle,
         },

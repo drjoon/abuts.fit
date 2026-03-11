@@ -41,9 +41,6 @@ export async function getDashboardStats(req, res) {
     });
 
     const { start, end } = getDateRangeFromQuery(req);
-    console.log("[getDashboardStats] Query params:", req.query);
-    console.log("[getDashboardStats] Date range:", { start, end });
-
     const allRequestsForStats = await Request.find({
       createdAt: { $gte: start, $lte: end },
     })
@@ -53,27 +50,13 @@ export async function getDashboardStats(req, res) {
       })
       .lean();
 
-    console.log(
-      "[getDashboardStats] Total requests in range:",
-      allRequestsForStats.length,
-    );
-
     const normalizeStage = (r) => {
       const stage = String(r.manufacturerStage || "");
       if (stage === "취소") return "취소";
-      if (["shipping", "발송", "포장.발송"].includes(stage)) return "발송";
       if (["tracking", "추적관리"].includes(stage)) return "추적관리";
-      if (
-        [
-          "machining",
-          "packing",
-          "production",
-          "생산",
-          "가공",
-          "세척.패킹",
-        ].includes(stage)
-      )
-        return "생산";
+      if (["shipping", "포장.발송"].includes(stage)) return "포장.발송";
+      if (["packing", "세척.패킹"].includes(stage)) return "세척.패킹";
+      if (["machining", "가공"].includes(stage)) return "가공";
       if (["cam", "CAM"].includes(stage)) return "CAM";
       return "의뢰";
     };
@@ -81,14 +64,26 @@ export async function getDashboardStats(req, res) {
     const requestStatsByStatus = {
       의뢰: 0,
       CAM: 0,
-      생산: 0,
-      발송: 0,
+      가공: 0,
+      "세척.패킹": 0,
+      "포장.발송": 0,
+      "포장.발송박스": 0,
       추적관리: 0,
+      추적관리박스: 0,
       취소: 0,
     };
     allRequestsForStats.forEach((r) => {
       const s = normalizeStage(r);
       if (requestStatsByStatus[s] != null) requestStatsByStatus[s] += 1;
+
+      // 박스 수 계산
+      if (s === "포장.발송") {
+        const boxCount = r.caseInfos?.reviewByStage?.shipping?.status ? 1 : 0;
+        requestStatsByStatus["포장.발송박스"] += boxCount;
+      } else if (s === "추적관리") {
+        const boxCount = r.caseInfos?.reviewByStage?.shipping?.status ? 1 : 0;
+        requestStatsByStatus["추적관리박스"] += boxCount;
+      }
     });
 
     const totalRequests = allRequestsForStats.length;
@@ -121,11 +116,6 @@ export async function getDashboardStats(req, res) {
         totalSize: totalFileSize.length > 0 ? totalFileSize[0].totalSize : 0,
       },
     };
-
-    console.log("[getDashboardStats] Response data:", {
-      requestStats: dashboardData.requests,
-      dateRange: { start, end },
-    });
 
     res.status(200).json({
       success: true,

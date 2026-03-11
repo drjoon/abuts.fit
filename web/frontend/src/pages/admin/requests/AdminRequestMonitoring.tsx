@@ -206,9 +206,9 @@ export const AdminRequestMonitoring = () => {
   const byStatus = requestStats.byStatus || {};
   const receiveCount = byStatus["의뢰"] || 0;
   const camCount = byStatus["CAM"] || 0;
-  const machiningCount = byStatus["생산"] || 0;
-  const packagingCount = byStatus["생산"] || 0;
-  const shippingCount = byStatus["발송"] || 0;
+  const machiningCount = byStatus["가공"] || 0;
+  const packagingCount = byStatus["세척.패킹"] || 0;
+  const shippingCount = byStatus["포장.발송"] || 0;
   const trackingCount = byStatus["추적관리"] || 0;
   const canceledCount = byStatus["취소"] || 0;
 
