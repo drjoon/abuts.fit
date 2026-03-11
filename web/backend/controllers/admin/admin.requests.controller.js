@@ -37,6 +37,7 @@ export async function getAllRequests(req, res) {
       sort.createdAt = -1;
     }
 
+    console.log("[getAllRequests] Filter:", filter);
     const requests = await Request.find(filter)
       .populate("requestor", "name email business")
       .populate("manufacturer", "name email business")
@@ -44,6 +45,15 @@ export async function getAllRequests(req, res) {
       .skip(skip)
       .limit(limit);
     const total = await Request.countDocuments(filter);
+
+    console.log(
+      "[getAllRequests] Total requests:",
+      total,
+      "Page:",
+      page,
+      "Limit:",
+      limit,
+    );
 
     res.status(200).json({
       success: true,
@@ -70,13 +80,17 @@ export async function getRequestById(req, res) {
   try {
     const requestId = req.params.id;
     if (!Types.ObjectId.isValid(requestId)) {
-      return res.status(400).json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
     }
     const request = await Request.findById(requestId)
       .populate("requestor", "name email business")
       .populate("manufacturer", "name email business");
     if (!request) {
-      return res.status(404).json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
     }
     res.status(200).json({ success: true, data: request });
   } catch (error) {
@@ -93,17 +107,23 @@ export async function updateRequestStatus(req, res) {
     const requestId = req.params.id;
     const { status, statusNote } = req.body;
     if (!Types.ObjectId.isValid(requestId)) {
-      return res.status(400).json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
     }
 
     const validStatuses = ["의뢰", "CAM", "생산", "발송", "완료", "취소"];
     if (!validStatuses.includes(status)) {
-      return res.status(400).json({ success: false, message: "유효하지 않은 상태입니다." });
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 상태입니다." });
     }
 
     const request = await Request.findById(requestId);
     if (!request) {
-      return res.status(404).json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
     }
 
     const statusHistory = {
@@ -149,7 +169,9 @@ export async function assignManufacturer(req, res) {
       !Types.ObjectId.isValid(requestId) ||
       !Types.ObjectId.isValid(manufacturerId)
     ) {
-      return res.status(400).json({ success: false, message: "유효하지 않은 ID입니다." });
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 ID입니다." });
     }
 
     const manufacturer = await User.findById(manufacturerId);
@@ -162,7 +184,9 @@ export async function assignManufacturer(req, res) {
 
     const request = await Request.findById(requestId);
     if (!request) {
-      return res.status(404).json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
     }
 
     const updatedRequest = await Request.findByIdAndUpdate(

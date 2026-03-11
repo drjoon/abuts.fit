@@ -6,6 +6,39 @@ import {
   getMongoHealth,
 } from "./admin.shared.controller.js";
 
+export async function debugDashboardData(req, res) {
+  try {
+    const totalRequests = await Request.countDocuments();
+    const totalUsers = await User.countDocuments();
+    const sampleRequests = await Request.find().limit(3).lean();
+    const sampleUsers = await User.find({ role: "requestor" }).limit(3).lean();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalRequests,
+        totalUsers,
+        sampleRequests: sampleRequests.map((r) => ({
+          _id: r._id,
+          manufacturerStage: r.manufacturerStage,
+          createdAt: r.createdAt,
+        })),
+        sampleUsers: sampleUsers.map((u) => ({
+          _id: u._id,
+          name: u.name,
+          role: u.role,
+        })),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "디버그 데이터 조회 실패",
+      error: error.message,
+    });
+  }
+}
+
 export async function getDashboardStats(req, res) {
   try {
     const systemAlerts = [];
