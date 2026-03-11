@@ -41,6 +41,9 @@ export async function getDashboardStats(req, res) {
     });
 
     const { start, end } = getDateRangeFromQuery(req);
+    console.log("[getDashboardStats] Query params:", req.query);
+    console.log("[getDashboardStats] Date range:", { start, end });
+
     const allRequestsForStats = await Request.find({
       createdAt: { $gte: start, $lte: end },
     })
@@ -49,6 +52,11 @@ export async function getDashboardStats(req, res) {
         "caseInfos.reviewByStage.shipping.status": 1,
       })
       .lean();
+
+    console.log(
+      "[getDashboardStats] Total requests in range:",
+      allRequestsForStats.length,
+    );
 
     const normalizeStage = (r) => {
       const stage = String(r.manufacturerStage || "");
