@@ -4,7 +4,7 @@ const bonusGrantSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ["WELCOME_BONUS"],
+      enum: ["WELCOME_BONUS", "FREE_SHIPPING_CREDIT"],
       required: true,
       index: true,
     },
@@ -14,7 +14,7 @@ const bonusGrantSchema = new mongoose.Schema(
       index: true,
     },
     amount: { type: Number, required: true },
-    organizationId: {
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "RequestorOrganization",
       required: true,

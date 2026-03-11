@@ -474,7 +474,7 @@ async function grantWelcomeBonusIfEligible({ organizationId, userId }) {
         type: "WELCOME_BONUS",
         businessNumber,
         amount: WELCOME_BONUS_AMOUNT,
-        organizationId,
+        businessId: organizationId,
         userId: userId || null,
         isOverride: false,
         source: "auto",
@@ -504,7 +504,7 @@ async function grantWelcomeBonusIfEligible({ organizationId, userId }) {
     { uniqueKey },
     {
       $setOnInsert: {
-        organizationId,
+        businessId: organizationId,
         userId: userId || null,
         type: "BONUS",
         amount: WELCOME_BONUS_AMOUNT,

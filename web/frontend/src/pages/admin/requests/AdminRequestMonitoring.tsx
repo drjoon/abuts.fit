@@ -409,9 +409,7 @@ export const AdminRequestMonitoring = () => {
                           <span className="flex items-center gap-1">
                             <User className="h-3 w-3" />
                             {request.requestor?.name} (
-                            {request.requestor?.business ||
-                              request.requestor?.organization}
-                            )
+                            {request.requestor?.business})
                           </span>
                           {request.manufacturer &&
                             request.manufacturer !== "-" && (

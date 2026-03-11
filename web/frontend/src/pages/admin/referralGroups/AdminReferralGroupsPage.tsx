@@ -35,7 +35,7 @@ type ApiGroupLeader = {
   role?: "requestor" | "salesman";
   name?: string;
   email?: string;
-  organization?: string;
+  business?: string;
   active?: boolean;
   createdAt?: string;
 };
@@ -114,9 +114,7 @@ type ApiTreeNode = {
   name?: string;
   email?: string;
   business?: string;
-  organization?: string;
   businessId?: string;
-  organizationId?: string;
   active?: boolean;
   createdAt?: string;
   approvedAt?: string;

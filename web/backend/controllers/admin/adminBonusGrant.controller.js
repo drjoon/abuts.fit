@@ -80,7 +80,7 @@ export async function adminOverrideWelcomeBonus(req, res) {
       type: "WELCOME_BONUS",
       businessNumber: businessNumberDigits,
       amount,
-      organizationId: businessId,
+      businessId: businessId,
       userId,
       isOverride: true,
       source: "admin",
@@ -255,7 +255,7 @@ export async function adminCancelBonusGrant(req, res) {
       });
     }
 
-    const businessId = String(grant.organizationId || "").trim();
+    const businessId = String(grant.businessId || "").trim();
     if (!businessId || !Types.ObjectId.isValid(businessId)) {
       return res.status(400).json({
         success: false,
@@ -398,7 +398,7 @@ export async function adminGrantFreeShippingCredit(req, res) {
       type: "FREE_SHIPPING_CREDIT",
       businessNumber: businessNumberDigits,
       amount,
-      organizationId: businessId,
+      businessId: businessId,
       userId,
       isOverride: true,
       source: "admin",
