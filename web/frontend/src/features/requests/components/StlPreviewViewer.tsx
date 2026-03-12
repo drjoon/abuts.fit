@@ -107,8 +107,8 @@ export function StlPreviewViewer({
     let geometry: THREE.BufferGeometry | null = null;
     let finishLine: THREE.Object3D | null = null;
     let taperAxisGuide: Line2 | THREE.Line | null = null;
-    let taperMeasureGuide: Line2 | THREE.Line | null = null;
-    let taperAngleArcGuide: THREE.Line | null = null;
+    const taperMeasureGuide: Line2 | THREE.Line | null = null;
+    const taperAngleArcGuide: THREE.Line | null = null;
     const multiDirectionLines: (Line2 | THREE.Line)[] = [];
     const multiDirectionSprites: THREE.Sprite[] = [];
 
@@ -673,24 +673,34 @@ export function StlPreviewViewer({
             ).normalize()
           : new THREE.Vector3(0, 0, 1);
 
-        // FrontPoint: 상단 40% 영역에서 외곽 가장자리의 최저점
-        const upperThreshold = bbox.max.z - totalLength * 0.4;
-        const minRadius = Math.max(0.8, (maxDiameter || 4) * 0.1);
+        // FrontPoint 로직 재설계 (Raycasting 개념 도입):
+        // 경사축(tiltDir) 방향으로 가장 높은 곳에 있는 수직 평면을 "Top",
+        // 그 외측의 수평/측면을 "Side"로 정의하여 교점(모서리) 중 최저점을 찾습니다.
 
-        console.log(
-          "[FrontPoint] upperThreshold:",
-          upperThreshold,
-          "minRadius:",
-          minRadius,
-          "maxDiameter:",
-          maxDiameter,
-        );
+        // 1. 경사축 방향으로 가장 높은 투영(Projection) 값 찾기
+        let maxProj = -Infinity;
+        for (let tri = 0; tri < triangleCount; tri++) {
+          for (let j = 0; j < 3; j++) {
+            const idx = index ? index.getX(tri * 3 + j) : tri * 3 + j;
+            const v = readVertex(idx);
+            const proj = v.x * tiltDir.x + v.y * tiltDir.y + v.z * tiltDir.z;
+            if (proj > maxProj) maxProj = proj;
+          }
+        }
 
-        let bestFrontPoint: { x: number; y: number; z: number } | null = null;
-        let minZFront = Infinity;
-        const processedVertices = new Set<number>();
+        // 포스트 탑은 최상단으로부터 약 2mm 이내에 존재한다고 가정 (피니시라인 완벽 배제)
+        const topProjThreshold = maxProj - Math.min(2.0, totalLength * 0.2);
 
-        // 상단 40% 영역의 모든 꼭짓점 중에서 외곽(minRadius 이상)이면서 Z가 가장 낮은 점 찾기
+        // 좌표 기반 공간 해싱 (Unindexed Geometry 대비)
+        const vertexFaceTypes = new Map<
+          string,
+          { v: { x: number; y: number; z: number }; types: Set<string> }
+        >();
+
+        const getVertexHash = (v: { x: number; y: number; z: number }) => {
+          return `${v.x.toFixed(4)},${v.y.toFixed(4)},${v.z.toFixed(4)}`;
+        };
+
         for (let tri = 0; tri < triangleCount; tri++) {
           const i0 = index ? index.getX(tri * 3) : tri * 3;
           const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
@@ -700,31 +710,75 @@ export function StlPreviewViewer({
           const v1 = readVertex(i1);
           const v2 = readVertex(i2);
 
-          const avgZ = (v0.z + v1.z + v2.z) / 3;
-          if (avgZ > upperThreshold) {
-            // 이 삼각형의 세 꼭짓점을 모두 검사
-            for (const idx of [i0, i1, i2]) {
-              if (processedVertices.has(idx)) continue;
-              processedVertices.add(idx);
+          const avgProj =
+            ((v0.x + v1.x + v2.x) * tiltDir.x +
+              (v0.y + v1.y + v2.y) * tiltDir.y +
+              (v0.z + v1.z + v2.z) * tiltDir.z) /
+            3;
 
-              const v = readVertex(idx);
-              const dx = v.x - center.x;
-              const dy = v.y - center.y;
-              const distToAxis = Math.sqrt(dx * dx + dy * dy);
+          // 포스트 탑 근처의 면들만 검사 (마진/피니시라인 부위 원천 배제)
+          if (avgProj > topProjThreshold - 2.0) {
+            const vec0 = new THREE.Vector3(v0.x, v0.y, v0.z);
+            const vec1 = new THREE.Vector3(v1.x, v1.y, v1.z);
+            const vec2 = new THREE.Vector3(v2.x, v2.y, v2.z);
+            const normal = new THREE.Vector3()
+              .subVectors(vec1, vec0)
+              .cross(new THREE.Vector3().subVectors(vec2, vec0))
+              .normalize();
 
-              // 외곽 점(minRadius 이상)이면서 Z가 가장 낮은 점
-              if (distToAxis > minRadius && v.z < minZFront) {
-                minZFront = v.z;
-                bestFrontPoint = v;
+            // 경사축과 이루는 각도로 Top / Side 분류
+            let faceType = "none";
+            // 0.5 (약 60도) 기준: 평평한 상단은 1.0에 가깝고, 테이퍼진 측면은 0.1 근처입니다.
+            if (normal.dot(tiltDir) > 0.5) {
+              if (avgProj > topProjThreshold) {
+                faceType = "top"; // 최상단 영역의 수직(위쪽) 방향 면
+              }
+            } else {
+              faceType = "side"; // 수평(측면) 방향 면
+            }
+
+            if (faceType !== "none") {
+              for (const vertex of [v0, v1, v2]) {
+                const hash = getVertexHash(vertex);
+                if (!vertexFaceTypes.has(hash)) {
+                  vertexFaceTypes.set(hash, { v: vertex, types: new Set() });
+                }
+                vertexFaceTypes.get(hash)!.types.add(faceType);
               }
             }
           }
         }
 
+        let bestFrontPoint: { x: number; y: number; z: number } | null = null;
+        let minZFront = Infinity;
+
+        // "포스트 탑과 사이드월 사이의 모서리 중 최저점"
+        // 나사 구멍 안쪽 모서리를 배제하기 위해 최소 반경 필터 적용
+        const minRadius = Math.max(1.0, (maxDiameter || 4) * 0.15);
+        let edgePointCount = 0;
+
+        for (const { v, types } of vertexFaceTypes.values()) {
+          if (types.has("top") && types.has("side")) {
+            edgePointCount++;
+
+            const dx = v.x - center.x;
+            const dy = v.y - center.y;
+            const distToAxis = Math.sqrt(dx * dx + dy * dy);
+
+            // 외곽에 위치하면서, 가장 Z좌표가 낮은 점 탐색
+            if (distToAxis > minRadius && v.z < minZFront) {
+              minZFront = v.z;
+              bestFrontPoint = v;
+            }
+          }
+        }
+
         console.log(
-          "[FrontPoint] 검색 결과:",
+          "[FrontPoint] 모서리 후보 점 개수:",
+          edgePointCount,
+          "검색 결과:",
           bestFrontPoint
-            ? `found at z=${bestFrontPoint.z}, distToAxis=${Math.sqrt((bestFrontPoint.x - center.x) ** 2 + (bestFrontPoint.y - center.y) ** 2).toFixed(2)}`
+            ? `found at z=${bestFrontPoint.z}, distToAxis=${Math.sqrt((bestFrontPoint?.x || 0 - center.x) ** 2 + (bestFrontPoint?.y || 0 - center.y) ** 2).toFixed(2)}`
             : "not found",
         );
 
@@ -804,9 +858,9 @@ export function StlPreviewViewer({
         // Draw FrontPoint (green dot)
         let frontPointMesh: THREE.Mesh | null = null;
         if (frontPoint && showOverlay) {
-          // 사이즈를 기존 0.08에서 0.03으로 축소
+          // 사이즈를 기존 0.08에서 0.02으로 축소
           const dotGeometry = new THREE.SphereGeometry(
-            maxDiameter * 0.03,
+            maxDiameter * 0.02,
             32,
             32,
           );
@@ -1230,7 +1284,7 @@ export function StlPreviewViewer({
             )}
             {frontPointState && (
               <div className="flex items-center gap-1.5">
-                <span className="text-slate-500">FrontPoint:</span>
+                <span className="text-slate-500">프론트 포인트:</span>
                 <span>
                   [
                   {frontPointState.x !== undefined && frontPointState.x !== null
