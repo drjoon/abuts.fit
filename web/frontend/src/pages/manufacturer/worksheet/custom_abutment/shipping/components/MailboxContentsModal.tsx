@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
+import { generateModelNumber } from "@/utils/modelNumber";
 import { ArrowLeft, Loader2, MapPinned, Search } from "lucide-react";
 import type { ManufacturerRequest } from "../../utils/request";
 
@@ -436,9 +437,25 @@ export const MailboxContentsModal = ({
                   </Button>
                 )}
                 {getLotShortCode(req) && (
-                  <Badge className="text-[11px] bg-slate-900 text-white border border-slate-900">
-                    {getLotShortCode(req)}
-                  </Badge>
+                  <div className="flex flex-col items-end gap-1">
+                    <Badge className="text-[11px] bg-slate-900 text-white border border-slate-900">
+                      {getLotShortCode(req)}
+                    </Badge>
+                    {generateModelNumber(
+                      req.caseInfos as any,
+                      req.lotNumber?.value,
+                    ) && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] px-1.5 py-0 bg-slate-50 text-slate-600 border border-slate-200 font-semibold leading-[1.2]"
+                      >
+                        {generateModelNumber(
+                          req.caseInfos as any,
+                          req.lotNumber?.value,
+                        )}
+                      </Badge>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="flex items-start gap-3 pr-10">

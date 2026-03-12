@@ -9,6 +9,7 @@ import {
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { generateModelNumber } from "@/utils/modelNumber";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
@@ -559,7 +560,7 @@ export const PackingPageContent = ({
       if (!options?.silentSuccess) {
         toast({
           title: "패킹 라벨 출력 완료",
-          description: `${req.requestId || fullLotNumber} 라벨을 출력했습니다.`,
+          description: `${req.requestId || fullLotNumber} (${generateModelNumber((req as any)?.caseInfos, fullLotNumber) || ""}) 라벨을 출력했습니다.`,
         });
       }
     },

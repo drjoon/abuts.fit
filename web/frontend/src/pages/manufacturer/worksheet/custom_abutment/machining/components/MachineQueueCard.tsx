@@ -405,6 +405,7 @@ export const MachineQueueCard = ({
                       lotShortCode={getLotShortCode(
                         effectiveLastCompleted as any,
                       )}
+                      caseInfos={(effectiveLastCompleted as any)?.caseInfos}
                       className="text-[15px] leading-tight"
                     />
                   ) : (
@@ -499,6 +500,7 @@ export const MachineQueueCard = ({
                       tooth={(currentSlot as any)?.tooth}
                       requestId={currentSlot?.requestId}
                       lotShortCode={getLotShortCode(currentSlot)}
+                      caseInfos={(currentSlot as any)?.caseInfos}
                       className="text-[15px]"
                     />
                   ) : (
@@ -605,6 +607,7 @@ export const MachineQueueCard = ({
                       tooth={(nextSlot as any)?.tooth}
                       requestId={nextSlot?.requestId}
                       lotShortCode={getLotShortCode(nextSlot)}
+                      caseInfos={(nextSlot as any)?.caseInfos}
                       className="text-[15px]"
                     />
                   ) : (

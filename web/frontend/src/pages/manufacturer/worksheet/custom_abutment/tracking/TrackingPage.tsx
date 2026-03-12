@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
+import { generateModelNumber } from "@/utils/modelNumber";
 import { request } from "@/shared/api/apiClient";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -73,9 +74,16 @@ const normalizeLotNumberLabel = (req: ManufacturerRequest) => {
   if (!raw) return "-";
   const cleaned = raw.replace(/^CA(P)?/i, "").trim();
   if (!cleaned) return "-";
-  if (cleaned.includes("-")) return cleaned;
-  if (cleaned.length > 6) return `${cleaned.slice(0, 6)}-${cleaned.slice(6)}`;
-  return cleaned;
+  let formatted = cleaned;
+  if (!cleaned.includes("-") && cleaned.length > 6) {
+    formatted = `${cleaned.slice(0, 6)}-${cleaned.slice(6)}`;
+  }
+
+  const modelNum = generateModelNumber((req as any)?.caseInfos, formatted);
+  if (modelNum) {
+    return `${formatted} (${modelNum})`;
+  }
+  return formatted;
 };
 
 const formatDateTime = (d?: string) => {

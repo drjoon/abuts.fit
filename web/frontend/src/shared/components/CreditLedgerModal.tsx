@@ -26,6 +26,7 @@ import { useNavigate } from "react-router-dom";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { generateModelNumber } from "@/utils/modelNumber";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { cn } from "@/shared/ui/cn";
 import {
@@ -622,6 +623,18 @@ export const CreditLedgerModal = ({
                 <span className="text-slate-600">로트번호</span>
                 <span className="font-medium text-right">
                   {selectedDetailLotNumber}
+                  {selectedDetailLedgerRow &&
+                    generateModelNumber(
+                      (selectedDetailLedgerRow as any)?.caseInfos,
+                      selectedDetailLedgerRow?.lotNumber?.value,
+                    ) && (
+                      <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-50 text-slate-600 border border-slate-200 leading-[1.2]">
+                        {generateModelNumber(
+                          (selectedDetailLedgerRow as any)?.caseInfos,
+                          selectedDetailLedgerRow?.lotNumber?.value,
+                        )}
+                      </span>
+                    )}
                 </span>
               </div>
             </div>

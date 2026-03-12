@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { formatImplantDisplay } from "@/utils/implant";
+import { generateModelNumber } from "@/utils/modelNumber";
 import {
   type ManufacturerRequest,
   computeStageLabel,
@@ -525,9 +526,16 @@ export const WorksheetCardGrid = ({
                   <div className="flex items-center gap-2">
                     {stageBadge}
                     {shouldShowFullLot && (
-                      <Badge variant="outline" className={lotBadgeClass}>
-                        {lotCodeSource}
-                      </Badge>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className={lotBadgeClass}>
+                          {lotCodeSource}
+                        </Badge>
+                        {generateModelNumber(caseInfos, lotCodeSource) && (
+                          <Badge variant="outline" className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-slate-200 bg-slate-50 text-slate-600">
+                            {generateModelNumber(caseInfos, lotCodeSource)}
+                          </Badge>
+                        )}
+                      </div>
                     )}
                     {isNewSystemRequest && (
                       <Badge

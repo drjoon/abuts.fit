@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
+import { generateModelNumber } from "@/utils/modelNumber";
 import {
   type ManufacturerRequest,
   type ReviewStageKey,
@@ -556,12 +557,22 @@ export const PreviewModal = ({
         <div className="h-full flex flex-col gap-4 overflow-hidden">
           <div className="flex items-center justify-end gap-2 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 shrink-0">
             {fullLotLabel ? (
-              <Badge
-                variant="outline"
-                className="mr-1 text-[11px] px-2 py-0.5 font-semibold bg-violet-50 text-violet-700 border-violet-200"
-              >
-                {fullLotLabel}
-              </Badge>
+              <div className="flex items-center gap-1.5 mr-1">
+                <Badge
+                  variant="outline"
+                  className="text-[11px] px-2 py-0.5 font-semibold bg-violet-50 text-violet-700 border-violet-200"
+                >
+                  {fullLotLabel}
+                </Badge>
+                {generateModelNumber(activeReq?.caseInfos, fullLotLabel) && (
+                  <Badge
+                    variant="outline"
+                    className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-slate-200 bg-slate-50 text-slate-600"
+                  >
+                    {generateModelNumber(activeReq?.caseInfos, fullLotLabel)}
+                  </Badge>
+                )}
+              </div>
             ) : null}
             {!isRequestStage && (
               <button

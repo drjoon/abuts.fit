@@ -1,3 +1,4 @@
+import { generateModelNumber } from "@/utils/modelNumber";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Thermometer,
@@ -607,9 +608,16 @@ export const MachineCard = (props: MachineCardProps) => {
                   {requestId}
                 </span>
                 {lotBadge && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200">
-                    {lotBadge}
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+                      {lotBadge}
+                    </span>
+                    {generateModelNumber(requestInfo?.caseInfos, String(lotRaw || "")) && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-50 text-slate-600 border border-slate-200">
+                        {generateModelNumber(requestInfo?.caseInfos, String(lotRaw || ""))}
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -625,9 +633,16 @@ export const MachineCard = (props: MachineCardProps) => {
                 <span className="text-slate-400">/</span>
                 <span>{tooth}</span>
                 {lotBadge && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200">
-                    {lotBadge}
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+                      {lotBadge}
+                    </span>
+                    {generateModelNumber(requestInfo?.caseInfos, String(lotRaw || "")) && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-50 text-slate-600 border border-slate-200">
+                        {generateModelNumber(requestInfo?.caseInfos, String(lotRaw || ""))}
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

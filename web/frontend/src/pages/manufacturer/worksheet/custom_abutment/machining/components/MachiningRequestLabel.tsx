@@ -1,6 +1,8 @@
+import { generateModelNumber } from "@/utils/modelNumber";
 import React from "react";
 
 type Props = {
+  caseInfos?: any;
   organization?: string | null;
   clinicName?: string | null;
   patientName?: string | null;
@@ -18,6 +20,7 @@ export const MachiningRequestLabel = ({
   requestId,
   lotShortCode,
   className,
+  caseInfos,
 }: Props) => {
   const org = String(organization || "").trim();
   const clinic = String(clinicName || "").trim();
@@ -47,9 +50,16 @@ export const MachiningRequestLabel = ({
           <span className="truncate">-</span>
         )}
         {shortLot ? (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-slate-900 text-white border border-slate-900">
-            {shortLot}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-slate-900 text-white border border-slate-900">
+              {shortLot}
+            </span>
+            {generateModelNumber(caseInfos, lotShortCode) && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-50 text-slate-600 border border-slate-200">
+                {generateModelNumber(caseInfos, lotShortCode)}
+              </span>
+            )}
+          </div>
         ) : null}
       </div>
 
@@ -67,9 +77,16 @@ export const MachiningRequestLabel = ({
           <span className="truncate">-</span>
         )}
         {shortLot ? (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-slate-900 text-white border border-slate-900">
-            {shortLot}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-slate-900 text-white border border-slate-900">
+              {shortLot}
+            </span>
+            {generateModelNumber(caseInfos, lotShortCode) && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-50 text-slate-600 border border-slate-200">
+                {generateModelNumber(caseInfos, lotShortCode)}
+              </span>
+            )}
+          </div>
         ) : null}
       </div>
     </div>
