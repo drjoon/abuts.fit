@@ -7,9 +7,11 @@ import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { cn } from "@/shared/ui/cn";
+import { useStlMetadata } from "../hooks/useStlMetadata";
 
 type Props = {
   file: File;
+  requestId?: string;
   onDiameterComputed?: (
     filename: string,
     maxDiameter: number,
@@ -26,11 +28,13 @@ type Props = {
 
 export function StlPreviewViewer({
   file,
+  requestId,
   onDiameterComputed,
   showOverlay = true,
   finishLinePoints,
   className,
 }: Props) {
+  const { metadata: cachedMetadata, cached } = useStlMetadata(requestId);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const onDiameterComputedRef = useRef(onDiameterComputed);
   const [maxDiameterState, setMaxDiameterState] = useState<number | null>(null);
@@ -59,12 +63,47 @@ export function StlPreviewViewer({
     if (!containerRef.current) return;
 
     setError(null);
-    setMaxDiameterState(null);
-    setConnectionDiameterState(null);
-    setTotalLengthState(null);
-    setTaperAngleState(null);
-    setTiltAxisVectorState(null);
-    setFrontPointState(null);
+
+    // 백엔드 캐시가 있으면 우선 사용
+    if (cached && cachedMetadata) {
+      if (cachedMetadata.maxDiameter)
+        setMaxDiameterState(cachedMetadata.maxDiameter);
+      if (cachedMetadata.connectionDiameter)
+        setConnectionDiameterState(cachedMetadata.connectionDiameter);
+      if (cachedMetadata.totalLength)
+        setTotalLengthState(cachedMetadata.totalLength);
+      if (cachedMetadata.taperAngle !== undefined)
+        setTaperAngleState(cachedMetadata.taperAngle);
+      if (cachedMetadata.tiltAxisVector)
+        setTiltAxisVectorState(cachedMetadata.tiltAxisVector);
+      if (cachedMetadata.frontPoint)
+        setFrontPointState(cachedMetadata.frontPoint);
+
+      // 콜백 호출
+      if (
+        onDiameterComputedRef.current &&
+        cachedMetadata.maxDiameter &&
+        cachedMetadata.connectionDiameter &&
+        cachedMetadata.totalLength
+      ) {
+        onDiameterComputedRef.current(
+          file.name,
+          cachedMetadata.maxDiameter,
+          cachedMetadata.connectionDiameter,
+          cachedMetadata.totalLength,
+          cachedMetadata.taperAngle || 0,
+          cachedMetadata.tiltAxisVector,
+          cachedMetadata.frontPoint,
+        );
+      }
+    } else {
+      setMaxDiameterState(null);
+      setConnectionDiameterState(null);
+      setTotalLengthState(null);
+      setTaperAngleState(null);
+      setTiltAxisVectorState(null);
+      setFrontPointState(null);
+    }
 
     const height = containerRef.current.clientHeight || 300;
     let width = containerRef.current.clientWidth || 300;

@@ -1,0 +1,12 @@
+{
+  "name": "stl-metadata-calculator",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "STL metadata calculator using Three.js",
+  "scripts": {
+    "calculate": "node index.js"
+  },
+  "dependencies": {
+    "three": "^0.160.0"
+  }
+}

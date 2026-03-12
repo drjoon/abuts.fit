@@ -99,4 +99,27 @@ router.get(
   bgController.getBridgeSettings,
 );
 
+// STL 메타데이터 등록 (rhino-server -> backend)
+router.post(
+  "/register-stl-metadata",
+  requireBridgeIpAllowlist,
+  requireBgWorkerSecret,
+  bgController.registerStlMetadata,
+);
+
+// STL 메타데이터 조회 (frontend -> backend)
+router.get(
+  "/stl-metadata/:requestId",
+  authenticate,
+  bgController.getStlMetadata,
+);
+
+// STL 메타데이터 재생성 요청 (frontend -> backend -> rhino-server)
+router.post(
+  "/recalculate-stl-metadata/:requestId",
+  authenticate,
+  authorize("manufacturer", "admin"),
+  bgController.recalculateStlMetadata,
+);
+
 export default router;

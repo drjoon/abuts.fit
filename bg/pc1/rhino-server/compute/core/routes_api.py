@@ -13,6 +13,7 @@ from . import state
 from .logger import log
 from .processing import process_single_stl
 from .rhino_runner import run_rhino_python
+from .stl_metadata import calculate_and_register_metadata
 
 
 router = APIRouter()
@@ -164,3 +165,87 @@ async def store_fillhole(req: StoreFillHoleRequest):
         media_type="application/sla",
         headers={"Cache-Control": "no-store"},
     )
+
+
+class RecalculateMetadataRequest(BaseModel):
+    requestId: str
+
+
+@router.post("/recalculate-metadata")
+async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks: BackgroundTasks):
+    """
+    프론트엔드에서 메타데이터 재계산 요청 시 호출
+    """
+    try:
+        import os
+        import requests
+        
+        # 백엔드에서 원본 STL 파일 경로 및 finish line 조회
+        backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api").rstrip("/")
+        
+        # Request 메타 정보 조회
+        meta_url = f"{backend_url}/bg/request-meta"
+        headers = {}
+        secret = os.getenv("RHINO_SHARED_SECRET") or os.getenv("BRIDGE_SHARED_SECRET", "")
+        if secret:
+            headers["X-Bridge-Secret"] = secret
+        
+        meta_resp = requests.get(
+            meta_url,
+            params={"requestId": req.requestId},
+            headers=headers,
+            timeout=10,
+        )
+        
+        if meta_resp.status_code != 200:
+            log(f"[recalculate-metadata] Failed to get request meta: {meta_resp.status_code}")
+            raise HTTPException(status_code=404, detail="Request not found")
+        
+        meta_data = meta_resp.json().get("data", {})
+        cam_file = meta_data.get("caseInfos", {}).get("camFile", {})
+        file_path = cam_file.get("filePath")
+        finish_line = meta_data.get("caseInfos", {}).get("finishLine", {})
+        finish_line_points = finish_line.get("points")
+        
+        if not file_path:
+            raise HTTPException(status_code=400, detail="STL file path not found in request")
+        
+        if not finish_line_points:
+            raise HTTPException(status_code=400, detail="Finish line not found in request")
+        
+        # 로컬 STL 파일 경로 확인 (filled.stl 우선)
+        safe_name = settings.sanitize_filename(Path(file_path).name)
+        stl_path = settings.STORE_OUT_DIR / safe_name
+        
+        if not stl_path.exists():
+            # 원본 파일 확인
+            original_name = safe_name.replace(".filled.stl", ".stl")
+            stl_path = settings.STORE_IN_DIR / original_name
+            
+            if not stl_path.exists():
+                raise HTTPException(status_code=404, detail=f"STL file not found: {file_path}")
+        
+        # 백그라운드에서 메타데이터 계산 및 등록
+        def _calculate():
+            calculate_and_register_metadata(
+                stl_path,
+                req.requestId,
+                None,  # requestMongoId는 백엔드에서 찾음
+                finish_line_points,
+            )
+        
+        background_tasks.add_task(_calculate)
+        
+        log(f"[recalculate-metadata] Started for {req.requestId}")
+        
+        return {
+            "ok": True,
+            "message": "Metadata recalculation started",
+            "requestId": req.requestId,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        log(f"[recalculate-metadata] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -193,6 +193,9 @@ export const registerFinishLine = asyncHandler(async (req, res) => {
   request.caseInfos.finishLine = safeFinishLine;
   await request.save();
 
+  // Note: Rhino-server가 STL 처리 시 자동으로 finish line과 메타데이터를 계산하여 등록함
+  // 별도로 트리거할 필요 없음
+
   return res
     .status(200)
     .json(
@@ -1372,4 +1375,159 @@ export const getFileProcessingStatus = asyncHandler(async (req, res) => {
         "Unsupported sourceStep",
       ),
     );
+});
+
+// STL 메타데이터 등록 (rhino-server에서 호출)
+export const registerStlMetadata = asyncHandler(async (req, res) => {
+  const {
+    requestId,
+    requestMongoId,
+    maxDiameter,
+    connectionDiameter,
+    totalLength,
+    taperAngle,
+    tiltAxisVector,
+    frontPoint,
+    taperGuide,
+  } = req.body;
+
+  if (!requestId && !requestMongoId) {
+    throw new ApiError(400, "requestId or requestMongoId required");
+  }
+
+  const query = requestMongoId ? { _id: requestMongoId } : { requestId };
+  const request = await Request.findOne(query);
+
+  if (!request) {
+    throw new ApiError(404, "Request not found");
+  }
+
+  // caseInfos에 메타데이터 저장
+  request.caseInfos = request.caseInfos || {};
+  request.caseInfos.maxDiameter = maxDiameter;
+  request.caseInfos.connectionDiameter = connectionDiameter;
+  request.caseInfos.totalLength = totalLength;
+  request.caseInfos.taperAngle = taperAngle;
+  request.caseInfos.tiltAxisVector = tiltAxisVector;
+  request.caseInfos.frontPoint = frontPoint;
+
+  // taperGuide는 필요시 별도 필드로 저장 (선택적)
+  if (taperGuide) {
+    request.caseInfos.taperGuide = taperGuide;
+  }
+
+  await request.save();
+
+  console.log(
+    `[registerStlMetadata] requestId=${request.requestId} ` +
+      `maxDiameter=${maxDiameter?.toFixed(2)}mm ` +
+      `connectionDiameter=${connectionDiameter?.toFixed(2)}mm ` +
+      `totalLength=${totalLength?.toFixed(2)}mm ` +
+      `taperAngle=${taperAngle?.toFixed(2)}°`,
+  );
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        requestId: request.requestId,
+        metadata: {
+          maxDiameter,
+          connectionDiameter,
+          totalLength,
+          taperAngle,
+          tiltAxisVector,
+          frontPoint,
+        },
+      },
+      "STL metadata registered",
+    ),
+  );
+});
+
+// STL 메타데이터 조회 (프론트에서 호출)
+export const getStlMetadata = asyncHandler(async (req, res) => {
+  const { requestId } = req.params;
+
+  const request = await Request.findOne({ requestId });
+
+  if (!request) {
+    throw new ApiError(404, "Request not found");
+  }
+
+  const metadata = {
+    maxDiameter: request.caseInfos?.maxDiameter,
+    connectionDiameter: request.caseInfos?.connectionDiameter,
+    totalLength: request.caseInfos?.totalLength,
+    taperAngle: request.caseInfos?.taperAngle,
+    tiltAxisVector: request.caseInfos?.tiltAxisVector,
+    frontPoint: request.caseInfos?.frontPoint,
+    taperGuide: request.caseInfos?.taperGuide,
+  };
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        requestId: request.requestId,
+        metadata,
+        cached: !!(metadata.maxDiameter && metadata.connectionDiameter),
+      },
+      "STL metadata",
+    ),
+  );
+});
+
+// STL 메타데이터 재계산 요청 (제조사/관리자가 프론트에서 호출)
+export const recalculateStlMetadata = asyncHandler(async (req, res) => {
+  const { requestId } = req.params;
+
+  const request = await Request.findOne({ requestId });
+
+  if (!request) {
+    throw new ApiError(404, "Request not found");
+  }
+
+  // Rhino-server에 재계산 요청
+  const rhinoBaseUrl = process.env.RHINO_COMPUTE_BASE_URL;
+  if (!rhinoBaseUrl) {
+    throw new ApiError(500, "RHINO_COMPUTE_BASE_URL not configured");
+  }
+
+  try {
+    const axios = (await import("axios")).default;
+    const response = await axios.post(
+      `${rhinoBaseUrl}/recalculate-metadata`,
+      {
+        requestId: request.requestId,
+        requestMongoId: request._id.toString(),
+      },
+      {
+        headers: withBridgeHeaders(),
+        timeout: 30000,
+      },
+    );
+
+    console.log(
+      `[recalculateStlMetadata] requestId=${requestId} triggered rhino-server recalculation`,
+    );
+
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          requestId,
+          status: "recalculating",
+          message: "Metadata recalculation triggered",
+        },
+        "Recalculation started",
+      ),
+    );
+  } catch (error) {
+    console.error(`[recalculateStlMetadata] Error:`, error.message);
+    throw new ApiError(
+      500,
+      `Failed to trigger recalculation: ${error.message}`,
+    );
+  }
 });
