@@ -1,11 +1,4 @@
-import {
-  useMemo,
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-  type ReactNode,
-} from "react";
+import { useMemo, useEffect, useCallback, type ReactNode } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Button } from "@/components/ui/button";
@@ -43,14 +36,16 @@ import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_ab
 import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
 import { useStageDropHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useStageDropHandlers";
 import { useWorksheetRealtimeStatus } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus";
+import { useRequestPageState } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestPageState";
+import { useMailboxManagement } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useMailboxManagement";
+import { useRequestCardHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestCardHandlers";
+import { useCardActions } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useCardActions";
+import { useRequestFiltering } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFiltering";
+import { useRequestNavigation } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestNavigation";
+import { usePackingSelection } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePackingSelection";
+import { useMailboxSync } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useMailboxSync";
+import { useDiameterQueue } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useDiameterQueue";
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
-
-type PreviewFiles = {
-  original?: File | null;
-  cam?: File | null;
-  title?: string;
-  request?: ManufacturerRequest | null;
-};
 
 export const RequestPage = ({
   showQueueBar = true,
@@ -70,52 +65,9 @@ export const RequestPage = ({
     (searchParams.get("stage") || "request") === "machining";
   const tabStage = String(searchParams.get("stage") || "request").trim();
 
-  const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [receiveQueueModalOpen, setReceiveQueueModalOpen] = useState(false);
-  const [receiveSelectedBucket, setReceiveSelectedBucket] =
-    useState<DiameterBucketKey | null>(null);
-  const [downloading, setDownloading] = useState<Record<string, boolean>>({});
-  const [uploading, setUploading] = useState<Record<string, boolean>>({});
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewFiles, setPreviewFiles] = useState<PreviewFiles>({});
-  const [reviewSaving, setReviewSaving] = useState(false);
-  const [previewNcText, setPreviewNcText] = useState<string>("");
-  const [previewNcName, setPreviewNcName] = useState<string>("");
-  const [previewStageUrl, setPreviewStageUrl] = useState<string>("");
-  const [previewStageName, setPreviewStageName] = useState<string>("");
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmTitle, setConfirmTitle] = useState("");
-  const [confirmDescription, setConfirmDescription] = useState<ReactNode>("");
-  const [confirmAction, setConfirmAction] = useState<
-    (() => void | Promise<void>) | null
-  >(null);
-  const [deletingCam, setDeletingCam] = useState<Record<string, boolean>>({});
-  const [deletingNc, setDeletingNc] = useState<Record<string, boolean>>({});
-  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
-    {},
-  );
-  const [visibleCount, setVisibleCount] = useState(12);
-  const visibleCountRef = useRef(12);
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const totalCountRef = useRef(0);
-  const userScrolledRef = useRef(false);
   const PAGE_LIMIT = 12;
-  const [mailboxModalOpen, setMailboxModalOpen] = useState(false);
-  const [mailboxModalAddress, setMailboxModalAddress] = useState("");
-  const [mailboxModalRequests, setMailboxModalRequests] = useState<
-    ManufacturerRequest[]
-  >([]);
-  const [mailboxErrorByAddress, setMailboxErrorByAddress] = useState<
-    Record<string, string>
-  >({});
-  const [isRollingBackAll, setIsRollingBackAll] = useState(false);
-  const [selectedPackingRequestIds, setSelectedPackingRequestIds] = useState<
-    string[]
-  >([]);
-  const didInitPackingSelectionRef = useRef(false);
+
+  const pageState = useRequestPageState();
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -132,16 +84,12 @@ export const RequestPage = ({
 
   const { toast } = useToast();
 
-  // Use refs for pagination state to avoid circular dependency with usePagination hook
-  const pageRefForCore = useRef(1);
-  const hasMoreRefForCore = useRef(true);
-
   const fetchRequestsCore = useCallback(
     async (silent = false, append = false) => {
       if (!token) return null;
 
       try {
-        if (!silent) setIsLoading(true);
+        if (!silent) pageState.setIsLoading(true);
         const basePath =
           user?.role === "admin"
             ? "/api/admin/requests"
@@ -173,8 +121,10 @@ export const RequestPage = ({
 
         const path = (() => {
           const url = new URL(basePath, window.location.origin);
-          // Always include page & limit to encourage backend pagination
-          url.searchParams.set("page", String(pageRefForCore.current));
+          url.searchParams.set(
+            "page",
+            String(pageState.pageRefForCore.current),
+          );
           url.searchParams.set("limit", String(PAGE_LIMIT));
           url.searchParams.set("view", "worksheet");
           url.searchParams.set("includeTotal", "0");
@@ -191,13 +141,12 @@ export const RequestPage = ({
           return url.pathname + url.search;
         })();
 
-        // 캐시를 무시하고 항상 최신 데이터를 조회 (NC 파일 업데이트 반영용)
         const res = await fetch(path, {
           method: "GET",
           headers: {
             Authorization: `Bearer ${token}`,
           },
-          cache: "no-store", // 브라우저 캐시 무시
+          cache: "no-store",
         });
 
         if (!res.ok) {
@@ -218,8 +167,7 @@ export const RequestPage = ({
             : [];
         if (data?.success && Array.isArray(list)) {
           if (append) {
-            setRequests((prev) => {
-              // dedupe by _id
+            pageState.setRequests((prev) => {
               const map = new Map<string, any>();
               for (const r of prev)
                 map.set(
@@ -241,15 +189,14 @@ export const RequestPage = ({
               );
             });
           } else {
-            setRequests((prev) =>
+            pageState.setRequests((prev) =>
               mergeTransientRealtimeProgress(
                 prev,
                 list as ManufacturerRequest[],
               ),
             );
           }
-          // if received less than limit, no more pages
-          hasMoreRefForCore.current = list.length >= PAGE_LIMIT;
+          pageState.hasMoreRefForCore.current = list.length >= PAGE_LIMIT;
         }
 
         return list as ManufacturerRequest[];
@@ -264,13 +211,21 @@ export const RequestPage = ({
         }
         return null;
       } finally {
-        if (!silent) setIsLoading(false);
+        if (!silent) pageState.setIsLoading(false);
       }
     },
-    [token, user?.role, toast, tabStage, isCamStage, isMachiningStage],
+    [
+      token,
+      user?.role,
+      toast,
+      tabStage,
+      isCamStage,
+      isMachiningStage,
+      showCompleted,
+      pageState,
+    ],
   );
 
-  // Initialize pagination hooks after fetchRequestsCore is defined
   const { pageRef, hasMoreRef, fetchNextPage, resetPagination } = usePagination(
     fetchRequestsCore,
     PAGE_LIMIT,
@@ -286,14 +241,19 @@ export const RequestPage = ({
 
   const refreshRequests = useCallback(
     async (silent = false) => {
-      return await fetchRequests(silent);
+      resetPagination();
+      return await fetchRequestsCore(silent, false);
     },
-    [fetchRequests],
+    [fetchRequestsCore, resetPagination],
   );
 
   const reloadRequests = useCallback(async () => {
     await refreshRequests();
   }, [refreshRequests]);
+
+  const mailboxState = useMailboxManagement(token, async () => {
+    await fetchRequests();
+  });
 
   const matchesCurrentPage = useCallback(
     (req: ManufacturerRequest) => {
@@ -343,11 +303,10 @@ export const RequestPage = ({
     [filterRequests, isCamStage, isMachiningStage, showCompleted, tabStage],
   );
 
-  // Sync pagination refs
   useEffect(() => {
-    pageRefForCore.current = pageRef.current;
-    hasMoreRefForCore.current = hasMoreRef.current;
-  }, [pageRef, hasMoreRef]);
+    pageState.pageRefForCore.current = pageRef.current;
+    pageState.hasMoreRefForCore.current = hasMoreRef.current;
+  }, [pageRef, hasMoreRef, pageState]);
 
   const { handleOpenPreview } = usePreviewLoader({
     token,
@@ -355,13 +314,13 @@ export const RequestPage = ({
     isMachiningStage,
     tabStage,
     decodeNcText,
-    setPreviewLoading,
-    setPreviewNcText,
-    setPreviewNcName,
-    setPreviewStageUrl,
-    setPreviewStageName,
-    setPreviewFiles,
-    setPreviewOpen,
+    setPreviewLoading: pageState.setPreviewLoading,
+    setPreviewNcText: pageState.setPreviewNcText,
+    setPreviewNcName: pageState.setPreviewNcName,
+    setPreviewStageUrl: pageState.setPreviewStageUrl,
+    setPreviewStageName: pageState.setPreviewStageName,
+    setPreviewFiles: pageState.setPreviewFiles,
+    setPreviewOpen: pageState.setPreviewOpen,
   });
 
   const {
@@ -382,33 +341,33 @@ export const RequestPage = ({
     isCamStage,
     isMachiningStage,
     fetchRequests: reloadRequests,
-    setRequests,
+    setRequests: pageState.setRequests,
     matchesCurrentPage,
-    setDownloading,
-    setUploading,
-    setDeletingCam,
-    setDeletingNc,
-    setReviewSaving,
-    setPreviewOpen,
-    setPreviewFiles,
-    setPreviewNcText,
-    setPreviewNcName,
-    setPreviewStageUrl,
-    setPreviewStageName,
-    setPreviewLoading,
+    setDownloading: pageState.setDownloading,
+    setUploading: pageState.setUploading,
+    setDeletingCam: pageState.setDeletingCam,
+    setDeletingNc: pageState.setDeletingNc,
+    setReviewSaving: pageState.setReviewSaving,
+    setPreviewOpen: pageState.setPreviewOpen,
+    setPreviewFiles: pageState.setPreviewFiles,
+    setPreviewNcText: pageState.setPreviewNcText,
+    setPreviewNcName: pageState.setPreviewNcName,
+    setPreviewStageUrl: pageState.setPreviewStageUrl,
+    setPreviewStageName: pageState.setPreviewStageName,
+    setPreviewLoading: pageState.setPreviewLoading,
     setSearchParams,
-    setUploadProgress,
+    setUploadProgress: pageState.setUploadProgress,
     decodeNcText,
   });
 
   const { realtimeBaseRef } = useWorksheetRealtimeStatus({
     enabled: true,
     token,
-    setRequests,
+    setRequests: pageState.setRequests,
     fetchRequests,
     fetchRequestsCore,
-    previewOpen,
-    previewFiles,
+    previewOpen: pageState.previewOpen,
+    previewFiles: pageState.previewFiles,
     handleOpenPreview,
     removeOnMachiningComplete: true,
     matchesCurrentPage,
@@ -424,7 +383,7 @@ export const RequestPage = ({
     isMachiningStage,
     isCamStage,
     token,
-    requests,
+    requests: pageState.requests,
     handleUploadStageFile,
     handleUploadCam,
   });
@@ -458,126 +417,16 @@ export const RequestPage = ({
     [handleUploadByStage, tabStage],
   );
 
-  const handleCardRollback = useCallback(
-    async (req: ManufacturerRequest) => {
-      if (!req?._id) return;
-
-      const stage = deriveStageForFilter(req);
-
-      // 항상 "현재 카드 단계"에서 직전 단계로 롤백
-      if (stage === "가공") {
-        return handleDeleteStageFile({
-          req,
-          stage: "machining",
-          rollbackOnly: true,
-        });
-      }
-
-      if (stage === "CAM") {
-        return handleDeleteNc(req, {
-          nextStage: "request",
-          rollbackOnly: true,
-          navigate: false,
-        });
-      }
-
-      if (stage === "세척.포장" || stage === "세척.패킹") {
-        return handleDeleteStageFile({
-          req,
-          stage: "packing",
-          rollbackOnly: true,
-        });
-      }
-
-      if (stage === "발송" || stage === "포장.발송") {
-        // 포장.발송 단계 롤백: 세척.패킹 단계로 되돌리기
-        return handleUpdateReviewStatus({
-          req,
-          status: "PENDING",
-          stageOverride: "shipping",
-        });
-      }
-
-      if (stage === "추적관리") {
-        return handleUpdateReviewStatus({
-          req,
-          status: "PENDING",
-          stageOverride: "shipping",
-        });
-      }
-
-      if (tabStage === "machining") {
-        return handleDeleteStageFile({
-          req,
-          stage: "machining",
-          rollbackOnly: true,
-        });
-      }
-
-      if (tabStage === "cam") {
-        return handleDeleteNc(req, {
-          nextStage: "request",
-          rollbackOnly: true,
-          navigate: false,
-        });
-      }
-
-      if (tabStage === "shipping") {
-        // 포장.발송 탭에서 롤백: 세척.패킹 단계로 되돌리기
-        return handleUpdateReviewStatus({
-          req,
-          status: "PENDING",
-          stageOverride: "shipping",
-        });
-      }
-
-      // CAM/의뢰 탭에서의 기본 롤백: CAM 파일 삭제
-      return handleDeleteNc(req, {
-        nextStage: "request",
-        rollbackOnly: true,
-        navigate: false,
-      });
-    },
-    [handleDeleteStageFile, handleDeleteNc, handleUpdateReviewStatus, tabStage],
-  );
-
-  const handleCardApprove = useCallback(
-    (req: ManufacturerRequest) => {
-      if (!req?._id) return;
-      const stageKey = getReviewStageKeyByTab({
-        stage: tabStage,
-        isCamStage,
-        isMachiningStage,
-      });
-      if (stageKey === "request") {
-        realtimeBaseRef.current[String(req.requestId || "").trim()] =
-          Date.now();
-        setRequests((prev) =>
-          prev.map((item) => {
-            if (
-              String(item.requestId || "").trim() !==
-              String(req.requestId || "").trim()
-            ) {
-              return item;
-            }
-            return item;
-          }),
-        );
-      }
-      void handleUpdateReviewStatus({
-        req,
-        status: "APPROVED",
-        stageOverride: stageKey,
-      });
-    },
-    [
-      tabStage,
-      isCamStage,
-      isMachiningStage,
+  const { handleCardRollback, handleCardApprove } = useCardActions(
+    tabStage,
+    isCamStage,
+    isMachiningStage,
+    {
+      handleDeleteStageFile,
+      handleDeleteNc,
       handleUpdateReviewStatus,
-      realtimeBaseRef,
-      setRequests,
-    ],
+    },
+    realtimeBaseRef,
   );
 
   const enableCardRollback =
@@ -595,82 +444,20 @@ export const RequestPage = ({
     tabStage === "tracking" ||
     tabStage === "request";
 
-  const handleDownloadOriginal = useCallback(
-    async (req: ManufacturerRequest) => {
-      if (!token) return;
-      setDownloading((prev) => ({ ...prev, [req._id]: true }));
-      try {
-        const endpoint = isMachiningStage
-          ? `/api/requests/${req._id}/nc-file-url`
-          : isCamStage
-            ? `/api/requests/${req._id}/cam-file-url`
-            : `/api/requests/${req._id}/original-file-url`;
-
-        const res = await fetch(endpoint, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        if (!res.ok) {
-          throw new Error("download url failed");
-        }
-        const data = await res.json();
-        const url = data?.data?.url;
-        if (!url) throw new Error("download url missing");
-
-        const fetchAndSave = async (signedUrl: string, filename: string) => {
-          const r = await fetch(signedUrl);
-          if (!r.ok) throw new Error("download failed");
-          const blob = await r.blob();
-
-          const nameWithExt = filename.includes(".")
-            ? filename
-            : `${filename}.stl`;
-          const link = document.createElement("a");
-          link.href = URL.createObjectURL(blob);
-          link.download = nameWithExt;
-          link.click();
-          URL.revokeObjectURL(link.href);
-        };
-
-        const fileName =
-          isMachiningStage || isCamStage
-            ? req.caseInfos?.camFile?.filePath ||
-              req.caseInfos?.camFile?.fileName ||
-              req.caseInfos?.camFile?.originalName ||
-              req.caseInfos?.file?.filePath ||
-              req.caseInfos?.file?.originalName ||
-              "download.stl"
-            : req.caseInfos?.file?.filePath ||
-              req.caseInfos?.file?.originalName ||
-              "download.stl";
-
-        await fetchAndSave(url, fileName);
-
-        toast({
-          title: "다운로드 시작",
-          description: "파일을 내려받고 있습니다.",
-          duration: 2000,
-        });
-      } catch (error) {
-        toast({
-          title: "다운로드 실패",
-          description: "파일을 내려받을 수 없습니다.",
-          variant: "destructive",
-          duration: 3000,
-        });
-      } finally {
-        setDownloading((prev) => ({ ...prev, [req._id]: false }));
-      }
-    },
-    [token, isMachiningStage, isCamStage, toast],
+  const { handleDownloadOriginal } = useRequestCardHandlers(
+    token,
+    isMachiningStage,
+    isCamStage,
   );
 
-  useEffect(() => {
-    void fetchRequests();
-  }, [fetchRequests, tabStage]);
+  const setPreviewOpen = pageState.setPreviewOpen;
 
-  const searchLower = worksheetSearch.toLowerCase();
+  useEffect(() => {
+    pageState.pageRefForCore.current = 1;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void fetchRequestsCore(false, false);
+  }, [tabStage]);
+
   const currentStageForTab = isMachiningStage
     ? "가공"
     : isCamStage
@@ -682,24 +469,19 @@ export const RequestPage = ({
           : "의뢰";
   const currentStageOrder = stageOrder[currentStageForTab] ?? 0;
 
-  const filteredBase = useMemo(() => {
-    if (!Array.isArray(requests)) return [];
-    return filterRequestsByStage(
-      requests,
+  const { filteredBase, filteredAndSorted, getFilteredAndSortedRequests } =
+    useRequestFiltering(
+      pageState.requests,
       tabStage,
       showCompleted,
       currentStageOrder,
+      worksheetSearch,
       filterRequests,
     );
-  }, [currentStageOrder, filterRequests, requests, showCompleted, tabStage]);
-
-  const filteredAndSorted = useMemo(() => {
-    return filterAndSortRequests(filteredBase, searchLower);
-  }, [filteredBase, searchLower]);
 
   useEffect(() => {
-    if (!Object.keys(mailboxErrorByAddress).length) return;
-    setMailboxErrorByAddress((prev) => {
+    if (!Object.keys(mailboxState.mailboxErrorByAddress).length) return;
+    mailboxState.setMailboxErrorByAddress((prev) => {
       const next = { ...prev };
       for (const address of Object.keys(prev)) {
         const mailboxRequests = filteredAndSorted.filter(
@@ -718,58 +500,7 @@ export const RequestPage = ({
       }
       return next;
     });
-  }, [filteredAndSorted, mailboxErrorByAddress]);
-
-  const getFilteredAndSortedRequests = useCallback(
-    (sourceRequests: ManufacturerRequest[]) => {
-      const base = filterRequestsByStage(
-        sourceRequests,
-        tabStage,
-        showCompleted,
-        currentStageOrder,
-        filterRequests,
-      );
-      return filterAndSortRequests(base, searchLower);
-    },
-    [currentStageOrder, filterRequests, searchLower, showCompleted, tabStage],
-  );
-
-  const getFilteredAndSortedRequestsOld = useCallback(
-    (sourceRequests: ManufacturerRequest[]) => {
-      const base = filterRequestsByStage(
-        sourceRequests,
-        tabStage,
-        showCompleted,
-        currentStageOrder,
-        filterRequests,
-      );
-      return base
-        .filter((request) => {
-          const caseInfos = request.caseInfos || {};
-          const text = (
-            (request.referenceIds?.join(",") || "") +
-            (request.requestor?.organization || "") +
-            (request.requestor?.name || "") +
-            (caseInfos.clinicName || "") +
-            (request.description || "") +
-            (caseInfos.tooth || "") +
-            (caseInfos.connectionDiameter || "") +
-            (caseInfos.implantManufacturer || "") +
-            (caseInfos.implantBrand || "") +
-            (caseInfos.implantFamily || "") +
-            (caseInfos.implantType || "")
-          ).toLowerCase();
-          return text.includes(searchLower);
-        })
-        .sort((a, b) => {
-          const aScore = a.shippingPriority?.score ?? 0;
-          const bScore = b.shippingPriority?.score ?? 0;
-          if (aScore !== bScore) return bScore - aScore;
-          return new Date(a.createdAt) < new Date(b.createdAt) ? 1 : -1;
-        });
-    },
-    [currentStageOrder, filterRequests, searchLower, showCompleted, tabStage],
-  );
+  }, [filteredAndSorted, mailboxState.mailboxErrorByAddress, mailboxState]);
 
   const DEBUG = (() => {
     try {
@@ -803,34 +534,9 @@ export const RequestPage = ({
       }
       return m;
     };
-
-    // summary logs
-    console.group("[WorksheetDebug][RequestPage]");
-    console.log("tabStage", tabStage, "showCompleted", showCompleted);
-    console.log("search", worksheetSearch);
-    console.log("raw requests", requests.length);
-    console.log("stage distribution (raw)", dist(requests, stageOf));
-    console.log("diameter buckets (raw)", dist(requests, bucketOf));
-    console.log("after base stage filter", filteredBase.length);
-    console.log(
-      "stage distribution (base)",
-      dist(filteredBase as any, stageOf),
-    );
-    console.log("after search/sort", filteredAndSorted.length);
-    console.log(
-      "visibleCount",
-      visibleCountRef.current,
-      "totalCount",
-      totalCountRef.current,
-      "hasMore",
-      hasMoreRef.current,
-      "page",
-      pageRef.current,
-    );
-    console.groupEnd();
   }, [
     DEBUG,
-    requests,
+    pageState.requests,
     filteredBase,
     filteredAndSorted,
     showCompleted,
@@ -838,309 +544,43 @@ export const RequestPage = ({
     tabStage,
   ]);
 
-  const handleOpenNextRequest = useCallback(
-    async (currentReqId: string) => {
-      const currentIndex = filteredAndSorted.findIndex(
-        (r) => r._id === currentReqId,
-      );
-
-      const preferredNextId =
-        currentIndex >= 0
-          ? filteredAndSorted[currentIndex + 1]?._id || null
-          : null;
-
-      if (!preferredNextId) {
-        setPreviewOpen(false);
-        return;
-      }
-
-      const refreshed = await refreshRequests(true);
-      const latestList = Array.isArray(refreshed)
-        ? getFilteredAndSortedRequests(refreshed as ManufacturerRequest[])
-        : getFilteredAndSortedRequests(requests);
-
-      const nextReq = latestList.find((r) => r._id === preferredNextId);
-
-      if (!nextReq) {
-        setPreviewOpen(false);
-        return;
-      }
-
-      await handleOpenPreview(nextReq as ManufacturerRequest);
-    },
-    [
-      filteredAndSorted,
-      getFilteredAndSortedRequests,
-      handleOpenPreview,
-      refreshRequests,
-      requests,
-      setPreviewOpen,
-    ],
+  const { handleOpenNextRequest } = useRequestNavigation(
+    filteredAndSorted,
+    getFilteredAndSortedRequests,
+    handleOpenPreview,
+    refreshRequests,
+    pageState,
   );
 
   useEffect(() => {
-    visibleCountRef.current = 12;
-    setVisibleCount(12);
-  }, [worksheetSearch, showCompleted, tabStage]);
-
-  const onScrollRef = useRef<(() => void) | null>(null);
-
-  const setScrollContainer = useCallback((node: HTMLDivElement | null) => {
-    const prev = scrollContainerRef.current;
-    if (prev && onScrollRef.current) {
-      prev.removeEventListener("scroll", onScrollRef.current as any);
-      onScrollRef.current = null;
-    }
-    scrollContainerRef.current = node;
-    if (!node) return;
-
-    const onScroll = () => {
-      userScrolledRef.current = true;
-    };
-    onScrollRef.current = onScroll;
-    node.addEventListener("scroll", onScroll, { passive: true });
-  }, []);
+    pageState.visibleCountRef.current = 12;
+    pageState.setVisibleCount(12);
+  }, [worksheetSearch, showCompleted, tabStage, pageState]);
 
   useInfiniteScroll(
-    sentinelRef,
-    visibleCount,
+    pageState.sentinelRef,
+    pageState.visibleCount,
     filteredAndSorted.length,
     hasMoreRef.current,
     fetchNextPage,
-    setVisibleCount,
-    userScrolledRef,
+    pageState.setVisibleCount,
+    pageState.userScrolledRef,
   );
 
-  totalCountRef.current = filteredAndSorted.length;
-  const paginatedRequests = filteredAndSorted.slice(0, visibleCount);
+  pageState.totalCountRef.current = filteredAndSorted.length;
+  const paginatedRequests = filteredAndSorted.slice(0, pageState.visibleCount);
 
-  useEffect(() => {
-    if (tabStage !== "packing") return;
-    setSelectedPackingRequestIds((prev) => {
-      const validIds = new Set(
-        filteredAndSorted.map((req) => String(req._id || "")).filter(Boolean),
-      );
-      const next = prev.filter((id) => validIds.has(id));
-      if (!didInitPackingSelectionRef.current) {
-        didInitPackingSelectionRef.current = true;
-        return Array.from(validIds);
-      }
-      return next;
-    });
-  }, [filteredAndSorted, tabStage]);
+  const {
+    handleTogglePackingRequest,
+    handleSelectAllPackingRequests,
+    handleClearPackingRequests,
+  } = usePackingSelection(tabStage, filteredAndSorted, pageState);
 
-  const handleTogglePackingRequest = useCallback((req: ManufacturerRequest) => {
-    const id = String(req._id || "").trim();
-    if (!id) return;
-    setSelectedPackingRequestIds((prev) =>
-      prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id],
-    );
-  }, []);
+  useMailboxSync(pageState, mailboxState);
 
-  const handleSelectAllPackingRequests = useCallback(() => {
-    setSelectedPackingRequestIds(
-      filteredAndSorted.map((req) => String(req._id || "")).filter(Boolean),
-    );
-  }, [filteredAndSorted]);
+  const diameterQueueForReceive = useDiameterQueue(filteredAndSorted);
 
-  const handleClearPackingRequests = useCallback(() => {
-    setSelectedPackingRequestIds([]);
-  }, []);
-
-  const handleRegisterShipment = useCallback(
-    async (address: string, reqs: ManufacturerRequest[]) => {
-      if (!reqs.length) return;
-      setMailboxModalAddress(address);
-      setMailboxModalRequests(reqs);
-      setIsRollingBackAll(false);
-      setMailboxModalOpen(true);
-    },
-    [],
-  );
-
-  const handleShipmentModalClose = useCallback(() => {
-    setMailboxModalOpen(false);
-    setMailboxModalAddress("");
-    setMailboxModalRequests([]);
-    setIsRollingBackAll(false);
-  }, []);
-
-  const handleMailboxAddressSaved = useCallback(
-    (payload: {
-      businessId: string;
-      address: string;
-      addressDetail: string;
-      zipCode: string;
-    }) => {
-      const businessId = String(payload.businessId || "").trim();
-      if (!businessId) return;
-
-      setRequests((prev) =>
-        prev.map((req) => {
-          const reqOrganization =
-            (req as any)?.requestorBusiness ||
-            (req as any)?.requestorBusinessId ||
-            (req as any)?.requestorOrganization ||
-            (req as any)?.requestorOrganizationId ||
-            null;
-          const reqOrganizationId = String(
-            reqOrganization?._id || reqOrganization || "",
-          ).trim();
-          if (reqOrganizationId !== businessId) return req;
-
-          const nextRequestorOrganization = reqOrganization
-            ? {
-                ...reqOrganization,
-                extracted: {
-                  ...(reqOrganization?.extracted || {}),
-                  address: payload.address,
-                  addressDetail: payload.addressDetail,
-                  zipCode: payload.zipCode,
-                },
-              }
-            : reqOrganization;
-
-          return {
-            ...req,
-            requestorBusiness: nextRequestorOrganization,
-            requestorOrganization: nextRequestorOrganization,
-          };
-        }),
-      );
-
-      setMailboxErrorByAddress((prev) => {
-        const next = { ...prev };
-        delete next[mailboxModalAddress];
-        return next;
-      });
-    },
-    [mailboxModalAddress],
-  );
-
-  useEffect(() => {
-    if (!mailboxModalOpen || !mailboxModalAddress) return;
-    const next = requests.filter(
-      (req) => req.mailboxAddress === mailboxModalAddress,
-    );
-    setMailboxModalRequests(next);
-  }, [requests, mailboxModalOpen, mailboxModalAddress]);
-
-  useEffect(() => {
-    if (!mailboxModalOpen) return;
-    if (mailboxModalRequests.length > 0) return;
-    handleShipmentModalClose();
-  }, [mailboxModalRequests.length, mailboxModalOpen, handleShipmentModalClose]);
-
-  const handleRollbackAllInMailbox = useCallback(async () => {
-    if (
-      !mailboxModalRequests.length ||
-      isRollingBackAll ||
-      !mailboxModalAddress ||
-      !token
-    )
-      return;
-    setIsRollingBackAll(true);
-    try {
-      const res = await fetch("/api/requests/shipping/mailbox-rollback", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          mailboxAddress: mailboxModalAddress,
-          requestIds: mailboxModalRequests
-            .map((req) => req._id)
-            .filter(Boolean),
-        }),
-      });
-
-      if (!res.ok) {
-        let message = "전체 롤백에 실패했습니다.";
-        try {
-          const body = await res.json().catch(() => null);
-          if (body?.message) message = body.message;
-        } catch {
-          // ignore
-        }
-        throw new Error(message);
-      }
-
-      await fetchRequests();
-      toast({
-        title: "박스 전체 롤백 완료",
-        description: "우편함 롤백을 완료했습니다.",
-        duration: 3000,
-      });
-    } finally {
-      setIsRollingBackAll(false);
-    }
-  }, [
-    fetchRequests,
-    isRollingBackAll,
-    mailboxModalAddress,
-    mailboxModalRequests,
-    toast,
-    token,
-  ]);
-
-  const diameterQueueForReceive = useMemo(() => {
-    const labels: DiameterBucketKey[] = ["6", "8", "10", "12"];
-    const counts = labels.map(() => 0);
-    const buckets: Record<DiameterBucketKey, WorksheetQueueItem[]> = {
-      "6": [],
-      "8": [],
-      "10": [],
-      "12": [],
-    };
-
-    for (const req of filteredAndSorted) {
-      const caseInfos = req.caseInfos || {};
-      const bucketIndex = getDiameterBucketIndex(caseInfos.maxDiameter);
-      const item: WorksheetQueueItem = {
-        id: req._id,
-        client: req.requestor?.organization || req.requestor?.name || "",
-        patient: caseInfos.patientName || "",
-        tooth: caseInfos.tooth || "",
-        connectionDiameter:
-          typeof caseInfos.connectionDiameter === "number" &&
-          Number.isFinite(caseInfos.connectionDiameter)
-            ? caseInfos.connectionDiameter
-            : null,
-        maxDiameter:
-          typeof caseInfos.maxDiameter === "number" &&
-          Number.isFinite(caseInfos.maxDiameter)
-            ? caseInfos.maxDiameter
-            : null,
-        camDiameter:
-          typeof req.productionSchedule?.diameter === "number" &&
-          Number.isFinite(req.productionSchedule.diameter)
-            ? req.productionSchedule.diameter
-            : null,
-        programText: req.description,
-        qty: 1, // 기본 1개로 가정
-      };
-
-      if (bucketIndex === 0) {
-        counts[0]++;
-        buckets["6"].push(item);
-      } else if (bucketIndex === 1) {
-        counts[1]++;
-        buckets["8"].push(item);
-      } else if (bucketIndex === 2) {
-        counts[2]++;
-        buckets["10"].push(item);
-      } else {
-        counts[3]++;
-        buckets["12"].push(item);
-      }
-    }
-
-    const total = counts.reduce((sum, c) => sum + c, 0);
-    return { labels, counts, total, buckets };
-  }, [filteredAndSorted]);
-
-  if (isLoading) {
+  if (pageState.isLoading) {
     return <WorksheetLoading />;
   }
 
@@ -1153,8 +593,8 @@ export const RequestPage = ({
       onDragLeave={handlePageDragLeave}
       className="relative w-full h-full text-gray-800 flex flex-col items-stretch"
       onWheelCapture={() => {
-        userScrolledRef.current = true;
-        const node = scrollContainerRef.current;
+        pageState.userScrolledRef.current = true;
+        const node = pageState.scrollContainerRef.current;
         if (
           node &&
           node.scrollHeight <= node.clientHeight + 20 &&
@@ -1164,16 +604,15 @@ export const RequestPage = ({
         }
       }}
       onScrollCapture={() => {
-        userScrolledRef.current = true;
+        pageState.userScrolledRef.current = true;
       }}
     >
       <div
         className="flex-1 overflow-y-auto"
-        ref={setScrollContainer}
+        ref={pageState.setScrollContainer}
         data-worksheet-scroll="1"
         onScroll={() => {
-          userScrolledRef.current = true;
-          onScrollRef.current?.();
+          pageState.userScrolledRef.current = true;
         }}
       >
         {isCamStage && isDraggingOver && (
@@ -1209,14 +648,14 @@ export const RequestPage = ({
                     (r) => r.mailboxAddress || isPrePickupShippingVisible(r),
                   )}
                   onBoxClick={(address, reqs) =>
-                    handleRegisterShipment(address, reqs)
+                    mailboxState.handleRegisterShipment(address, reqs)
                   }
                   onMailboxError={(address, message) => {
                     const key = String(address || "").trim();
                     if (!key) return;
                     const normalized = String(message || "").trim();
                     if (!normalized) return;
-                    setMailboxErrorByAddress((prev) => ({
+                    mailboxState.setMailboxErrorByAddress((prev) => ({
                       ...prev,
                       [key]: normalized,
                     }));
@@ -1245,12 +684,12 @@ export const RequestPage = ({
                       variant="outline"
                       size="sm"
                       onClick={handleClearPackingRequests}
-                      disabled={!selectedPackingRequestIds.length}
+                      disabled={!pageState.selectedPackingRequestIds.length}
                     >
                       전체 해제
                     </Button>
                     <div className="text-xs text-slate-500">
-                      선택 {selectedPackingRequestIds.length} / 전체{" "}
+                      선택 {pageState.selectedPackingRequestIds.length} / 전체{" "}
                       {filteredAndSorted.length}
                     </div>
                   </div>
@@ -1258,7 +697,9 @@ export const RequestPage = ({
                 <WorksheetCardGrid
                   requests={paginatedRequests}
                   selectedRequestIds={
-                    tabStage === "packing" ? selectedPackingRequestIds : []
+                    tabStage === "packing"
+                      ? pageState.selectedPackingRequestIds
+                      : []
                   }
                   onToggleSelected={
                     tabStage === "packing"
@@ -1274,22 +715,22 @@ export const RequestPage = ({
                   }
                   onApprove={enableCardApprove ? handleCardApprove : undefined}
                   onUploadNc={handleUploadNc}
-                  uploadProgress={uploadProgress}
-                  uploading={uploading}
-                  deletingCam={deletingCam}
-                  deletingNc={deletingNc}
+                  uploadProgress={pageState.uploadProgress}
+                  uploading={pageState.uploading}
+                  deletingCam={pageState.deletingCam}
+                  deletingNc={pageState.deletingNc}
                   isCamStage={isCamStage}
                   isMachiningStage={isMachiningStage}
-                  downloading={downloading}
+                  downloading={pageState.downloading}
                   currentStageOrder={currentStageOrder}
                   tabStage={tabStage}
                 />
 
                 <div
-                  ref={sentinelRef}
+                  ref={pageState.sentinelRef}
                   className="py-4 text-center text-gray-500"
                 >
-                  {visibleCount >= filteredAndSorted.length
+                  {pageState.visibleCount >= filteredAndSorted.length
                     ? "모든 의뢰를 표시했습니다."
                     : "스크롤하여 더보기"}
                 </div>
@@ -1300,40 +741,46 @@ export const RequestPage = ({
       </div>
 
       <WorksheetDiameterQueueModal
-        open={receiveQueueModalOpen}
-        onOpenChange={setReceiveQueueModalOpen}
+        open={pageState.receiveQueueModalOpen}
+        onOpenChange={pageState.setReceiveQueueModalOpen}
         processLabel={`커스텀어벗 > ${currentStageForTab}`}
         queues={diameterQueueForReceive.buckets}
-        selectedBucket={receiveSelectedBucket}
-        onSelectBucket={setReceiveSelectedBucket}
+        selectedBucket={pageState.receiveSelectedBucket}
+        onSelectBucket={pageState.setReceiveSelectedBucket}
       />
 
       <MailboxContentsModal
-        open={mailboxModalOpen}
-        onOpenChange={handleShipmentModalClose}
-        address={mailboxModalAddress}
-        requests={mailboxModalRequests}
-        errorMessage={mailboxErrorByAddress[mailboxModalAddress] || ""}
+        open={mailboxState.mailboxModalOpen}
+        onOpenChange={mailboxState.handleShipmentModalClose}
+        address={mailboxState.mailboxModalAddress}
+        requests={mailboxState.mailboxModalRequests}
+        errorMessage={
+          mailboxState.mailboxErrorByAddress[
+            mailboxState.mailboxModalAddress
+          ] || ""
+        }
         token={token}
         onRollback={handleCardRollback}
         onRollbackAll={
-          mailboxModalRequests.length ? handleRollbackAllInMailbox : undefined
+          mailboxState.mailboxModalRequests.length
+            ? mailboxState.handleRollbackAllInMailbox
+            : undefined
         }
-        isRollingBackAll={isRollingBackAll}
-        onAddressSaved={handleMailboxAddressSaved}
+        isRollingBackAll={mailboxState.isRollingBackAll}
+        onAddressSaved={mailboxState.handleMailboxAddressSaved}
       />
 
       <PreviewModal
-        open={previewOpen}
-        onOpenChange={setPreviewOpen}
-        previewLoading={previewLoading}
-        previewFiles={previewFiles}
-        previewNcText={previewNcText}
-        previewNcName={previewNcName}
-        previewStageUrl={previewStageUrl}
-        previewStageName={previewStageName}
-        uploading={uploading}
-        reviewSaving={reviewSaving}
+        open={pageState.previewOpen}
+        onOpenChange={pageState.setPreviewOpen}
+        previewLoading={pageState.previewLoading}
+        previewFiles={pageState.previewFiles}
+        previewNcText={pageState.previewNcText}
+        previewNcName={pageState.previewNcName}
+        previewStageUrl={pageState.previewStageUrl}
+        previewStageName={pageState.previewStageName}
+        uploading={pageState.uploading}
+        reviewSaving={pageState.reviewSaving}
         stage={tabStage}
         isCamStage={isCamStage}
         isMachiningStage={isMachiningStage}
@@ -1349,25 +796,24 @@ export const RequestPage = ({
         onDownloadNcFile={handleDownloadNcFile}
         onDownloadStageFile={handleDownloadStageFile}
         setSearchParams={setSearchParams}
-        setConfirmTitle={setConfirmTitle}
-        setConfirmDescription={setConfirmDescription}
-        setConfirmAction={setConfirmAction}
-        setConfirmOpen={setConfirmOpen}
+        setConfirmTitle={pageState.setConfirmTitle}
+        setConfirmDescription={pageState.setConfirmDescription}
+        setConfirmAction={pageState.setConfirmAction}
+        setConfirmOpen={pageState.setConfirmOpen}
         onOpenNextRequest={handleOpenNextRequest}
       />
 
       <ConfirmDialog
-        open={confirmOpen}
-        title={confirmTitle}
-        description={confirmDescription}
+        open={pageState.confirmOpen}
+        title={pageState.confirmTitle}
+        description={pageState.confirmDescription}
         confirmLabel="확인"
         cancelLabel="취소"
         onConfirm={async () => {
-          if (!confirmAction) return;
-          const action = confirmAction;
-          // 즉시 상태 초기화하여 중복 실행 및 UI 깜빡임 방지
-          setConfirmOpen(false);
-          setConfirmAction(null);
+          if (!pageState.confirmAction) return;
+          const action = pageState.confirmAction;
+          pageState.setConfirmOpen(false);
+          pageState.setConfirmAction(null);
 
           try {
             await action();
@@ -1376,8 +822,8 @@ export const RequestPage = ({
           }
         }}
         onCancel={() => {
-          setConfirmOpen(false);
-          setConfirmAction(null);
+          pageState.setConfirmOpen(false);
+          pageState.setConfirmAction(null);
         }}
       />
     </div>
