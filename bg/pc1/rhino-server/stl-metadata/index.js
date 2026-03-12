@@ -1,19 +1,21 @@
 /**
  * STL 메타데이터 계산 서비스
  * Three.js를 사용하여 STL 파일의 메타데이터(직경, 길이, 각도 등)를 계산
- * 
+ *
  * Usage: node index.js <stl-file-path> [finish-line-points-json]
  */
 
-import * as fs from 'fs';
-import * as THREE from 'three';
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import * as fs from "fs";
+import * as THREE from "three";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 // CLI 인자 파싱
 const args = process.argv.slice(2);
 if (args.length < 1) {
-  console.error('Usage: node index.js <stl-file-path> [finish-line-points-json]');
+  console.error(
+    "Usage: node index.js <stl-file-path> [finish-line-points-json]",
+  );
   process.exit(1);
 }
 
@@ -32,7 +34,7 @@ if (finishLinePointsJson) {
   try {
     finishLinePoints = JSON.parse(finishLinePointsJson);
   } catch (e) {
-    console.error('Invalid finish line points JSON:', e.message);
+    console.error("Invalid finish line points JSON:", e.message);
     process.exit(1);
   }
 }
@@ -43,18 +45,18 @@ if (finishLinePointsJson) {
 async function calculateStlMetadata(filePath, finishLinePoints) {
   const buffer = fs.readFileSync(filePath);
   const loader = new STLLoader();
-  
+
   let geometry = loader.parse(buffer.buffer);
   geometry = mergeVertices(geometry, 1e-5);
   geometry.computeBoundingBox();
   geometry.computeVertexNormals();
 
   const bbox = geometry.boundingBox;
-  const position = geometry.getAttribute('position');
+  const position = geometry.getAttribute("position");
   const index = geometry.getIndex();
 
   if (!bbox || !position) {
-    throw new Error('Invalid STL geometry');
+    throw new Error("Invalid STL geometry");
   }
 
   // 1. 최대 직경 계산 (전체)
@@ -123,7 +125,8 @@ async function calculateStlMetadata(filePath, finishLinePoints) {
     addIntersection(v2.x, v2.y, v2.z, v0.x, v0.y, v0.z);
   }
 
-  const connectionDiameter = connectionMaxR > 0 ? connectionMaxR * 2 : maxDiameter;
+  const connectionDiameter =
+    connectionMaxR > 0 ? connectionMaxR * 2 : maxDiameter;
 
   // 3. 전체 길이 (Z축 범위)
   const totalLength = bbox.max.z - bbox.min.z;
@@ -139,9 +142,9 @@ async function calculateStlMetadata(filePath, finishLinePoints) {
       position,
       index,
       finishLinePoints,
-      bbox
+      bbox,
     );
-    
+
     if (result) {
       taperAngle = result.taperAngle;
       tiltAxisVector = result.tiltAxisVector;
@@ -170,197 +173,387 @@ async function calculateStlMetadata(filePath, finishLinePoints) {
  */
 function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
   // Finish line Z 좌표 계산
-  const finishLineZs = finishLinePoints.map(p => p[2]);
-  const finishLineZ = finishLineZs.reduce((a, b) => a + b, 0) / finishLineZs.length;
+  const finishLineZs = finishLinePoints
+    .filter((p) => Array.isArray(p) && p.length >= 3)
+    .map((p) => Number(p[2]))
+    .filter((z) => Number.isFinite(z));
 
-  // Front point 계산 (finish line 포인트들의 중심)
-  const frontPoint = {
-    x: finishLinePoints.reduce((sum, p) => sum + p[0], 0) / finishLinePoints.length,
-    y: finishLinePoints.reduce((sum, p) => sum + p[1], 0) / finishLinePoints.length,
-    z: finishLineZ,
-  };
+  if (finishLineZs.length === 0) {
+    return null;
+  }
 
-  // 사용 가능한 높이 계산
-  const availableHeight = bbox.max.z - finishLineZ;
+  const finishLineTopZ = Math.max(...finishLineZs);
+  const availableHeight = bbox.max.z - finishLineTopZ;
+
   if (availableHeight <= 0) {
     return null;
   }
 
-  // 다방향 테이퍼 계산 (8방향)
-  const directions = [];
-  const angleStep = 360 / 8;
-
-  for (let i = 0; i < 8; i++) {
-    const angleDeg = i * angleStep;
-    const angleRad = (angleDeg * Math.PI) / 180;
-    const dx = Math.cos(angleRad);
-    const dy = Math.sin(angleRad);
-
-    const directionResult = calculateDirectionalTaper(
-      position,
-      index,
-      frontPoint,
-      finishLineZ,
-      availableHeight,
-      dx,
-      dy
-    );
-
-    if (directionResult) {
-      directions.push({
-        angle: angleDeg,
-        ...directionResult,
-      });
-    }
-  }
-
-  if (directions.length === 0) {
-    return null;
-  }
-
-  // 평균 테이퍼 각도 계산
-  const avgTaperAngle = directions.reduce((sum, d) => sum + d.taperAngle, 0) / directions.length;
-
-  // Tilt axis vector 계산 (가장 큰 각도 차이 방향)
-  const maxTaperDir = directions.reduce((max, d) => 
-    Math.abs(d.taperAngle) > Math.abs(max.taperAngle) ? d : max
-  );
-
-  const tiltAxisVector = {
-    x: Math.cos((maxTaperDir.angle * Math.PI) / 180),
-    y: Math.sin((maxTaperDir.angle * Math.PI) / 180),
-    z: 0,
+  // 기하 중심 계산 (Z축 중심)
+  const center = {
+    x: (bbox.min.x + bbox.max.x) / 2,
+    y: (bbox.min.y + bbox.max.y) / 2,
+    z: (bbox.min.z + bbox.max.z) / 2,
   };
-
-  return {
-    taperAngle: avgTaperAngle,
-    tiltAxisVector,
-    frontPoint,
-    taperGuide: {
-      zStart: finishLineZ,
-      zEnd: bbox.max.z,
-      multiDirectionGuides: directions,
-    },
-  };
-}
-
-/**
- * 특정 방향의 테이퍼 계산
- */
-function calculateDirectionalTaper(position, index, frontPoint, finishLineZ, availableHeight, dx, dy) {
-  const samples = [];
-  const zStep = availableHeight / 20; // 20 샘플
-
-  for (let i = 1; i <= 20; i++) {
-    const sampleZ = finishLineZ + i * zStep;
-    const maxR = findMaxRadiusAtZ(position, index, sampleZ, dx, dy);
-    
-    if (maxR > 0) {
-      samples.push({ z: sampleZ, r: maxR });
-    }
-  }
-
-  if (samples.length < 3) {
-    return null;
-  }
-
-  // 선형 회귀
-  const n = samples.length;
-  const sumZ = samples.reduce((sum, s) => sum + s.z, 0);
-  const sumR = samples.reduce((sum, s) => sum + s.r, 0);
-  const sumZZ = samples.reduce((sum, s) => sum + s.z * s.z, 0);
-  const sumZR = samples.reduce((sum, s) => sum + s.z * s.r, 0);
-
-  const slope = (n * sumZR - sumZ * sumR) / (n * sumZZ - sumZ * sumZ);
-  const intercept = (sumR - slope * sumZ) / n;
-
-  // R² 계산
-  const meanR = sumR / n;
-  const ssTot = samples.reduce((sum, s) => sum + Math.pow(s.r - meanR, 2), 0);
-  const ssRes = samples.reduce((sum, s) => {
-    const predicted = slope * s.z + intercept;
-    return sum + Math.pow(s.r - predicted, 2);
-  }, 0);
-  const rSquared = 1 - ssRes / ssTot;
-
-  // 테이퍼 각도 계산 (라디안 -> 도)
-  const taperAngle = Math.atan(slope) * (180 / Math.PI);
-
-  return {
-    slope,
-    intercept,
-    taperAngle,
-    rSquared,
-    surfacePoints: samples.map(s => ({
-      x: frontPoint.x + dx * s.r,
-      y: frontPoint.y + dy * s.r,
-      z: s.z,
-    })),
-  };
-}
-
-/**
- * 특정 Z 높이에서 특정 방향의 최대 반경 찾기
- */
-function findMaxRadiusAtZ(position, index, targetZ, dx, dy) {
-  const tolerance = 0.5; // Z 높이 허용 오차
-  let maxR = 0;
 
   const triangleCount = index
     ? Math.floor(index.count / 3)
     : Math.floor(position.count / 3);
+
+  const readVertex = (vertexIndex) => ({
+    x: position.getX(vertexIndex),
+    y: position.getY(vertexIndex),
+    z: position.getZ(vertexIndex),
+  });
+
+  // 1. Taper 계산 (12방향)
+  const directions = [];
+  const angles = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
+
+  for (const angleDeg of angles) {
+    const angleRad = (angleDeg * Math.PI) / 180;
+    const dx = Math.cos(angleRad);
+    const dy = Math.sin(angleRad);
+
+    // 각 방향의 finish line Z 찾기
+    let dirFinishLineZ = finishLineTopZ;
+    if (finishLinePoints.length > 0) {
+      let minAngleDiff = Infinity;
+      for (const p of finishLinePoints) {
+        if (!Array.isArray(p) || p.length < 3) continue;
+        const cx = Number(p[0]) - center.x;
+        const cy = Number(p[1]) - center.y;
+        let ptAngle = Math.atan2(cy, cx) * (180 / Math.PI);
+        if (ptAngle < 0) ptAngle += 360;
+
+        let angleDiff = Math.abs(ptAngle - angleDeg);
+        if (angleDiff > 180) angleDiff = 360 - angleDiff;
+        if (angleDiff < minAngleDiff) {
+          minAngleDiff = angleDiff;
+          dirFinishLineZ = Number(p[2]);
+        }
+      }
+    }
+
+    const dirAvailableHeight = bbox.max.z - dirFinishLineZ;
+    const dirPostStartZ = dirFinishLineZ + dirAvailableHeight * 0.3;
+    const dirPostEndZ = dirFinishLineZ + dirAvailableHeight * 0.4;
+    const dirPostHeight = dirPostEndZ - dirPostStartZ;
+
+    if (dirPostHeight > 0.1) {
+      const dirSamples = [];
+      const sliceCount = 40;
+
+      for (let s = 0; s <= sliceCount; s++) {
+        const targetZ = dirPostStartZ + (dirPostHeight * s) / sliceCount;
+        const tolerance = dirPostHeight / (sliceCount * 4);
+        let maxRadiusInDir = -Infinity;
+
+        for (let tri = 0; tri < triangleCount; tri++) {
+          const i0 = index ? index.getX(tri * 3) : tri * 3;
+          const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
+          const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
+          const v0 = readVertex(i0);
+          const v1 = readVertex(i1);
+          const v2 = readVertex(i2);
+
+          // 정점 체크
+          [v0, v1, v2].forEach((v) => {
+            if (Math.abs(v.z - targetZ) <= tolerance) {
+              const cx = v.x - center.x;
+              const cy = v.y - center.y;
+              const proj = cx * dx + cy * dy;
+              if (proj > maxRadiusInDir) {
+                maxRadiusInDir = proj;
+              }
+            }
+          });
+
+          // 엣지 교차점 체크
+          const intersectEdgeDir = (a, b) => {
+            if (
+              (a.z < targetZ && b.z < targetZ) ||
+              (a.z > targetZ && b.z > targetZ)
+            )
+              return;
+            if (Math.abs(a.z - b.z) < 1e-9) return;
+            const t = (targetZ - a.z) / (b.z - a.z);
+            if (t < 0 || t > 1) return;
+            const ix = a.x + t * (b.x - a.x);
+            const iy = a.y + t * (b.y - a.y);
+            const cx = ix - center.x;
+            const cy = iy - center.y;
+            const proj = cx * dx + cy * dy;
+            if (proj > maxRadiusInDir) {
+              maxRadiusInDir = proj;
+            }
+          };
+
+          intersectEdgeDir(v0, v1);
+          intersectEdgeDir(v1, v2);
+          intersectEdgeDir(v2, v0);
+        }
+
+        if (maxRadiusInDir > -10) {
+          dirSamples.push({ z: targetZ, radius: maxRadiusInDir });
+        }
+      }
+
+      // 회귀선 계산
+      if (dirSamples.length >= 6) {
+        const dirN = dirSamples.length;
+        const dirSumZ = dirSamples.reduce((acc, cur) => acc + cur.z, 0);
+        const dirSumR = dirSamples.reduce((acc, cur) => acc + cur.radius, 0);
+        const dirMeanZ = dirSumZ / dirN;
+        const dirMeanR = dirSumR / dirN;
+
+        let dirNum = 0;
+        let dirDenom = 0;
+        for (const sample of dirSamples) {
+          const dz = sample.z - dirMeanZ;
+          dirNum += dz * (sample.radius - dirMeanR);
+          dirDenom += dz * dz;
+        }
+
+        if (dirDenom > 1e-8) {
+          const dirSlope = dirNum / dirDenom;
+          const dirIntercept = dirMeanR - dirSlope * dirMeanZ;
+
+          // R² 계산
+          let ssRes = 0;
+          let ssTot = 0;
+          for (const sample of dirSamples) {
+            const predicted = dirSlope * sample.z + dirIntercept;
+            const residual = sample.radius - predicted;
+            ssRes += residual * residual;
+            const totalDev = sample.radius - dirMeanR;
+            ssTot += totalDev * totalDev;
+          }
+          const rSquared = ssTot > 1e-8 ? 1 - ssRes / ssTot : 0;
+
+          if (rSquared > 0.92) {
+            const dirTaperAngleSigned = Math.atan(dirSlope) * (180 / Math.PI);
+            directions.push({
+              angle: angleDeg,
+              slope: dirSlope,
+              intercept: dirIntercept,
+              taperAngle: dirTaperAngleSigned,
+              rSquared,
+              dirFinishLineZ,
+              dirAvailableHeight,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  if (directions.length < 6) {
+    return null;
+  }
+
+  // 2. Tilt axis vector 계산 (180도 쌍 분석)
+  let taperAngle = 0;
+  let tiltAxisVector = null;
+
+  const pairedAverages = [];
+  for (let baseAngle = 0; baseAngle < 180; baseAngle += 30) {
+    const oppositeAngle = baseAngle + 180;
+    const baseGuide = directions.find((g) => g.angle === baseAngle);
+    const oppositeGuide = directions.find((g) => g.angle === oppositeAngle);
+
+    if (baseGuide && oppositeGuide) {
+      const trueTilt = (baseGuide.taperAngle - oppositeGuide.taperAngle) / 2;
+      pairedAverages.push(Math.abs(trueTilt));
+      baseGuide.taperAngle = trueTilt;
+      oppositeGuide.taperAngle = -trueTilt;
+    }
+  }
+
+  if (pairedAverages.length > 0) {
+    taperAngle = Math.max(...pairedAverages);
+
+    let localMaxTiltValue = -1;
+    let localMaxTiltAngle = -1;
+    let bestTrueTilt = 0;
+    for (let baseAngle = 0; baseAngle < 180; baseAngle += 30) {
+      const oppositeAngle = baseAngle + 180;
+      const baseGuide = directions.find((g) => g.angle === baseAngle);
+      const oppositeGuide = directions.find((g) => g.angle === oppositeAngle);
+      if (baseGuide && oppositeGuide) {
+        const tilt = Math.abs(baseGuide.taperAngle);
+        if (tilt > localMaxTiltValue) {
+          localMaxTiltValue = tilt;
+          localMaxTiltAngle = baseAngle;
+          bestTrueTilt = baseGuide.taperAngle;
+        }
+      }
+    }
+
+    if (localMaxTiltAngle !== -1) {
+      const rad = localMaxTiltAngle * (Math.PI / 180);
+      const tiltRad = Math.abs(bestTrueTilt) * (Math.PI / 180);
+      const directionAngle = bestTrueTilt >= 0 ? rad : rad + Math.PI;
+
+      tiltAxisVector = {
+        x: Math.sin(tiltRad) * Math.cos(directionAngle),
+        y: Math.sin(tiltRad) * Math.sin(directionAngle),
+        z: Math.cos(tiltRad),
+      };
+    }
+  }
+
+  // 3. FrontPoint 계산 (프론트 로직: Top/Side 교점 중 최저 Z)
+  if (!tiltAxisVector) {
+    tiltAxisVector = { x: 0, y: 0, z: 1 };
+  }
+
+  // tiltDir 정규화
+  const tiltDirLen = Math.sqrt(
+    tiltAxisVector.x * tiltAxisVector.x +
+      tiltAxisVector.y * tiltAxisVector.y +
+      tiltAxisVector.z * tiltAxisVector.z,
+  );
+  const tiltDir = {
+    x: tiltAxisVector.x / tiltDirLen,
+    y: tiltAxisVector.y / tiltDirLen,
+    z: tiltAxisVector.z / tiltDirLen,
+  };
+
+  // 경사축 방향으로 가장 높은 투영값 찾기
+  let maxProj = -Infinity;
+  for (let tri = 0; tri < triangleCount; tri++) {
+    for (let j = 0; j < 3; j++) {
+      const idx = index ? index.getX(tri * 3 + j) : tri * 3 + j;
+      const v = readVertex(idx);
+      const proj = v.x * tiltDir.x + v.y * tiltDir.y + v.z * tiltDir.z;
+      if (proj > maxProj) maxProj = proj;
+    }
+  }
+
+  const totalLength = bbox.max.z - bbox.min.z;
+  const topProjThreshold = maxProj - Math.min(2.0, totalLength * 0.2);
+
+  // 정점 분류 (Top/Side)
+  const vertexFaceTypes = new Map();
+  const getVertexHash = (v) =>
+    `${v.x.toFixed(4)},${v.y.toFixed(4)},${v.z.toFixed(4)}`;
 
   for (let tri = 0; tri < triangleCount; tri++) {
     const i0 = index ? index.getX(tri * 3) : tri * 3;
     const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
     const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
 
-    const v0 = {
-      x: position.getX(i0),
-      y: position.getY(i0),
-      z: position.getZ(i0),
-    };
-    const v1 = {
-      x: position.getX(i1),
-      y: position.getY(i1),
-      z: position.getZ(i1),
-    };
-    const v2 = {
-      x: position.getX(i2),
-      y: position.getY(i2),
-      z: position.getZ(i2),
-    };
+    const v0 = readVertex(i0);
+    const v1 = readVertex(i1);
+    const v2 = readVertex(i2);
 
-    // 삼각형이 목표 Z 높이와 교차하는지 확인
-    const minZ = Math.min(v0.z, v1.z, v2.z);
-    const maxZ = Math.max(v0.z, v1.z, v2.z);
+    const avgProj =
+      ((v0.x + v1.x + v2.x) * tiltDir.x +
+        (v0.y + v1.y + v2.y) * tiltDir.y +
+        (v0.z + v1.z + v2.z) * tiltDir.z) /
+      3;
 
-    if (targetZ < minZ - tolerance || targetZ > maxZ + tolerance) {
-      continue;
-    }
-
-    // 각 정점에서 방향으로의 투영 거리 계산
-    [v0, v1, v2].forEach(v => {
-      if (Math.abs(v.z - targetZ) <= tolerance) {
-        const projectedR = dx * v.x + dy * v.y;
-        if (projectedR > maxR) maxR = projectedR;
+    if (avgProj > topProjThreshold - 2.0) {
+      // 법선 계산
+      const e1 = { x: v1.x - v0.x, y: v1.y - v0.y, z: v1.z - v0.z };
+      const e2 = { x: v2.x - v0.x, y: v2.y - v0.y, z: v2.z - v0.z };
+      const normal = {
+        x: e1.y * e2.z - e1.z * e2.y,
+        y: e1.z * e2.x - e1.x * e2.z,
+        z: e1.x * e2.y - e1.y * e2.x,
+      };
+      const normalLen = Math.sqrt(
+        normal.x * normal.x + normal.y * normal.y + normal.z * normal.z,
+      );
+      if (normalLen > 1e-9) {
+        normal.x /= normalLen;
+        normal.y /= normalLen;
+        normal.z /= normalLen;
       }
-    });
+
+      let faceType = "none";
+      const dotProduct =
+        normal.x * tiltDir.x + normal.y * tiltDir.y + normal.z * tiltDir.z;
+      if (dotProduct > 0.5) {
+        if (avgProj > topProjThreshold) {
+          faceType = "top";
+        }
+      } else {
+        faceType = "side";
+      }
+
+      if (faceType !== "none") {
+        for (const vertex of [v0, v1, v2]) {
+          const hash = getVertexHash(vertex);
+          if (!vertexFaceTypes.has(hash)) {
+            vertexFaceTypes.set(hash, { v: vertex, types: new Set() });
+          }
+          vertexFaceTypes.get(hash).types.add(faceType);
+        }
+      }
+    }
   }
 
-  return maxR;
+  // 최대 직경 계산 (전체 기하)
+  let maxR = 0;
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i);
+    const y = position.getY(i);
+    const r = Math.sqrt(x * x + y * y);
+    if (r > maxR) maxR = r;
+  }
+  const maxDiameter = maxR * 2;
+
+  // Top/Side 교점 중 최저 Z 찾기
+  let bestFrontPoint = null;
+  let minZFront = Infinity;
+  const minRadius = Math.max(1.0, maxDiameter * 0.15);
+
+  for (const { v, types } of vertexFaceTypes.values()) {
+    if (types.has("top") && types.has("side")) {
+      const dx = v.x - center.x;
+      const dy = v.y - center.y;
+      const distToAxis = Math.sqrt(dx * dx + dy * dy);
+
+      if (distToAxis > minRadius && v.z < minZFront) {
+        minZFront = v.z;
+        bestFrontPoint = v;
+      }
+    }
+  }
+
+  let frontPoint = null;
+  if (bestFrontPoint) {
+    frontPoint = {
+      x: Math.round(bestFrontPoint.x * 100) / 100,
+      y: Math.round(bestFrontPoint.y * 100) / 100,
+      z: Math.round(bestFrontPoint.z * 100) / 100,
+    };
+  }
+
+  return {
+    taperAngle,
+    tiltAxisVector,
+    frontPoint,
+    taperGuide: {
+      zStart: finishLineTopZ,
+      zEnd: bbox.max.z,
+      multiDirectionGuides: directions,
+    },
+  };
 }
 
 // 메인 실행
 (async () => {
   try {
     const metadata = await calculateStlMetadata(stlFilePath, finishLinePoints);
-    
+
     // JSON 출력 (표준 출력)
     console.log(JSON.stringify(metadata, null, 2));
     process.exit(0);
   } catch (error) {
-    console.error('Error calculating STL metadata:', error.message);
+    console.error("Error calculating STL metadata:", error.message);
     process.exit(1);
   }
 })();

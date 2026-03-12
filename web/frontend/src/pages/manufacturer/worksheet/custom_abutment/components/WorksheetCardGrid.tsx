@@ -99,7 +99,7 @@ export const WorksheetCardGrid = ({
       };
       const newSystemData = caseInfos.newSystemRequest;
       const isNewSystemRequest = !!newSystemData?.requested;
-       
+
       console.log("[WorksheetCardGrid] case", {
         requestId: request.requestId,
         patientName: caseInfos.patientName,
@@ -531,7 +531,10 @@ export const WorksheetCardGrid = ({
                           {lotCodeSource}
                         </Badge>
                         {generateModelNumber(caseInfos, lotCodeSource) && (
-                          <Badge variant="outline" className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-slate-200 bg-slate-50 text-slate-600">
+                          <Badge
+                            variant="outline"
+                            className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-slate-200 bg-slate-50 text-slate-600"
+                          >
                             {generateModelNumber(caseInfos, lotCodeSource)}
                           </Badge>
                         )}
@@ -547,21 +550,6 @@ export const WorksheetCardGrid = ({
                     )}
                   </div>
                 </div>
-                {request.referenceIds && request.referenceIds.length > 0 && (
-                  <div className="mb-1">
-                    {(() => {
-                      const first = request.referenceIds![0];
-                      const extraCount = request.referenceIds!.length - 1;
-                      const label =
-                        extraCount > 0 ? `${first} 외 ${extraCount}건` : first;
-                      return (
-                        <span className="inline-flex items-center px-3 py-1 rounded text-[15px] font-medium bg-purple-50 text-purple-700 border border-purple-100">
-                          Ref: {label}
-                        </span>
-                      );
-                    })()}
-                  </div>
-                )}
                 {(() => {
                   if (!realtimeBadge && !realtimeElapsedLabel) return null;
                   return (
