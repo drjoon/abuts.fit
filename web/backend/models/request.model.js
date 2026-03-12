@@ -63,6 +63,8 @@ const requestSchema = new mongoose.Schema(
       implantType: String, // e.g. Hex, Non-hex (type)
       maxDiameter: Number,
       connectionDiameter: Number,
+      totalLength: Number,
+      taperAngle: Number,
       newSystemRequest: {
         requested: { type: Boolean, default: false },
         manufacturer: String,

@@ -41,6 +41,8 @@ const draftCaseSchema = new mongoose.Schema(
         implantType: String,
         maxDiameter: Number,
         connectionDiameter: Number,
+        totalLength: Number,
+        taperAngle: Number,
         newSystemRequest: {
           requested: { type: Boolean, default: false },
           manufacturer: String,

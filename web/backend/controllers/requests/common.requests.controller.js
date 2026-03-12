@@ -288,6 +288,8 @@ export async function getAllRequests(req, res) {
       "caseInfos.implantType",
       "caseInfos.maxDiameter",
       "caseInfos.connectionDiameter",
+      "caseInfos.totalLength",
+      "caseInfos.taperAngle",
       "caseInfos.camDiameter",
       "productionSchedule.diameter",
       "productionSchedule.diameterGroup",

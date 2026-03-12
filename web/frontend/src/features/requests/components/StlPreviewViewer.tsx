@@ -215,6 +215,8 @@ export function StlPreviewViewer({
             taperAngle: number; // 부호가 있는 각도 (+ 또는 -)
             rSquared: number; // 선형성 검증 (R²)
             surfacePoints: Array<{ x: number; y: number; z: number }>; // 실제 표면 포인트들
+            dirFinishLineZ?: number;
+            dirAvailableHeight?: number;
           }>;
         } | null = null;
         const finishLineZs = Array.isArray(finishLinePoints)
@@ -369,6 +371,37 @@ export function StlPreviewViewer({
                     const dirX = Math.cos(dirAngle);
                     const dirY = Math.sin(dirAngle);
 
+                    let dirFinishLineZ =
+                      finishLineTopZ ?? bbox.min.z + totalLength * 0.2;
+                    if (
+                      finishLineZs.length > 0 &&
+                      Array.isArray(finishLinePoints)
+                    ) {
+                      let minAngleDiff = Infinity;
+                      for (const p of finishLinePoints) {
+                        if (!Array.isArray(p) || p.length < 3) continue;
+                        const cx = Number(p[0]) - center.x;
+                        const cy = Number(p[1]) - center.y;
+                        let ptAngle = Math.atan2(cy, cx) * (180 / Math.PI);
+                        if (ptAngle < 0) ptAngle += 360;
+
+                        let angleDiff = Math.abs(ptAngle - dirAngleDeg);
+                        if (angleDiff > 180) angleDiff = 360 - angleDiff;
+                        if (angleDiff < minAngleDiff) {
+                          minAngleDiff = angleDiff;
+                          dirFinishLineZ = Number(p[2]);
+                        }
+                      }
+                    }
+
+                    const dirAvailableHeight = bbox.max.z - dirFinishLineZ;
+                    // 각 방향의 피니시라인에서 30%~40% 구간
+                    const dirPostStartZ =
+                      dirFinishLineZ + dirAvailableHeight * 0.3;
+                    const dirPostEndZ =
+                      dirFinishLineZ + dirAvailableHeight * 0.4;
+                    const dirPostHeight = dirPostEndZ - dirPostStartZ;
+
                     const dirSamples: Array<{ z: number; radius: number }> = [];
                     const surfacePoints: Array<{
                       x: number;
@@ -376,83 +409,88 @@ export function StlPreviewViewer({
                       z: number;
                     }> = [];
 
-                    // 각 방향에서 반지름 프로파일 및 표면 포인트 추출
-                    for (let s = 0; s <= sliceCount; s++) {
-                      const targetZ =
-                        postStartZ + (postHeight * s) / sliceCount;
-                      const tolerance = postHeight / (sliceCount * 4);
-                      let maxRadiusInDir = -Infinity;
-                      let bestSurfacePoint: {
-                        x: number;
-                        y: number;
-                        z: number;
-                      } | null = null;
-
-                      for (let tri = 0; tri < triangleCount; tri++) {
-                        const i0 = index ? index.getX(tri * 3) : tri * 3;
-                        const i1 = index
-                          ? index.getX(tri * 3 + 1)
-                          : tri * 3 + 1;
-                        const i2 = index
-                          ? index.getX(tri * 3 + 2)
-                          : tri * 3 + 2;
-                        const v0 = readVertex(i0);
-                        const v1 = readVertex(i1);
-                        const v2 = readVertex(i2);
-
-                        const checkVertexDir = (v: {
+                    if (dirPostHeight > 0.1) {
+                      // 각 방향에서 반지름 프로파일 및 표면 포인트 추출
+                      for (let s = 0; s <= sliceCount; s++) {
+                        const targetZ =
+                          dirPostStartZ + (dirPostHeight * s) / sliceCount;
+                        const tolerance = dirPostHeight / (sliceCount * 4);
+                        let maxRadiusInDir = -Infinity;
+                        let bestSurfacePoint: {
                           x: number;
                           y: number;
                           z: number;
-                        }) => {
-                          if (Math.abs(v.z - targetZ) <= tolerance) {
-                            const cx = v.x - center.x;
-                            const cy = v.y - center.y;
+                        } | null = null;
+
+                        for (let tri = 0; tri < triangleCount; tri++) {
+                          const i0 = index ? index.getX(tri * 3) : tri * 3;
+                          const i1 = index
+                            ? index.getX(tri * 3 + 1)
+                            : tri * 3 + 1;
+                          const i2 = index
+                            ? index.getX(tri * 3 + 2)
+                            : tri * 3 + 2;
+                          const v0 = readVertex(i0);
+                          const v1 = readVertex(i1);
+                          const v2 = readVertex(i2);
+
+                          const checkVertexDir = (v: {
+                            x: number;
+                            y: number;
+                            z: number;
+                          }) => {
+                            if (Math.abs(v.z - targetZ) <= tolerance) {
+                              const cx = v.x - center.x;
+                              const cy = v.y - center.y;
+                              const proj = cx * dirX + cy * dirY;
+                              if (proj > maxRadiusInDir) {
+                                maxRadiusInDir = proj;
+                                bestSurfacePoint = { x: v.x, y: v.y, z: v.z };
+                              }
+                            }
+                          };
+
+                          checkVertexDir(v0);
+                          checkVertexDir(v1);
+                          checkVertexDir(v2);
+
+                          const intersectEdgeDir = (
+                            a: { x: number; y: number; z: number },
+                            b: { x: number; y: number; z: number },
+                          ) => {
+                            if (
+                              (a.z < targetZ && b.z < targetZ) ||
+                              (a.z > targetZ && b.z > targetZ)
+                            )
+                              return;
+                            if (Math.abs(a.z - b.z) < 1e-9) return;
+                            const t = (targetZ - a.z) / (b.z - a.z);
+                            if (t < 0 || t > 1) return;
+                            const ix = a.x + t * (b.x - a.x);
+                            const iy = a.y + t * (b.y - a.y);
+                            const cx = ix - center.x;
+                            const cy = iy - center.y;
                             const proj = cx * dirX + cy * dirY;
                             if (proj > maxRadiusInDir) {
                               maxRadiusInDir = proj;
-                              bestSurfacePoint = { x: v.x, y: v.y, z: v.z };
+                              bestSurfacePoint = { x: ix, y: iy, z: targetZ };
                             }
-                          }
-                        };
+                          };
 
-                        checkVertexDir(v0);
-                        checkVertexDir(v1);
-                        checkVertexDir(v2);
+                          intersectEdgeDir(v0, v1);
+                          intersectEdgeDir(v1, v2);
+                          intersectEdgeDir(v2, v0);
+                        }
 
-                        const intersectEdgeDir = (
-                          a: { x: number; y: number; z: number },
-                          b: { x: number; y: number; z: number },
-                        ) => {
-                          if (
-                            (a.z < targetZ && b.z < targetZ) ||
-                            (a.z > targetZ && b.z > targetZ)
-                          )
-                            return;
-                          if (Math.abs(a.z - b.z) < 1e-9) return;
-                          const t = (targetZ - a.z) / (b.z - a.z);
-                          if (t < 0 || t > 1) return;
-                          const ix = a.x + t * (b.x - a.x);
-                          const iy = a.y + t * (b.y - a.y);
-                          const cx = ix - center.x;
-                          const cy = iy - center.y;
-                          const proj = cx * dirX + cy * dirY;
-                          if (proj > maxRadiusInDir) {
-                            maxRadiusInDir = proj;
-                            bestSurfacePoint = { x: ix, y: iy, z: targetZ };
-                          }
-                        };
-
-                        intersectEdgeDir(v0, v1);
-                        intersectEdgeDir(v1, v2);
-                        intersectEdgeDir(v2, v0);
+                        if (maxRadiusInDir > -10 && bestSurfacePoint) {
+                          dirSamples.push({
+                            z: targetZ,
+                            radius: maxRadiusInDir,
+                          });
+                          surfacePoints.push(bestSurfacePoint);
+                        }
                       }
-
-                      if (maxRadiusInDir > -10 && bestSurfacePoint) {
-                        dirSamples.push({ z: targetZ, radius: maxRadiusInDir });
-                        surfacePoints.push(bestSurfacePoint);
-                      }
-                    }
+                    } // end if dirPostHeight > 0.1
 
                     // 각 방향의 회귀선 계산
                     if (dirSamples.length >= 6) {
@@ -505,6 +543,8 @@ export function StlPreviewViewer({
                             taperAngle: dirTaperAngleSigned,
                             rSquared,
                             surfacePoints,
+                            dirFinishLineZ,
+                            dirAvailableHeight,
                           });
                         }
                       }

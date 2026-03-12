@@ -63,6 +63,8 @@ export async function cloneRequestToDraft(req, res) {
       implantType: normalizedCi.implantType,
       maxDiameter: ci.maxDiameter,
       connectionDiameter: ci.connectionDiameter,
+      totalLength: ci.totalLength,
+      taperAngle: ci.taperAngle,
       workType: ci.workType,
       shippingMode: request.shippingMode || "normal",
       requestedShipDate: request.requestedShipDate,

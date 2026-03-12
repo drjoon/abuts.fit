@@ -159,6 +159,8 @@ export const useNewRequestSubmitV2 = ({
             implantType: base.implantType,
             maxDiameter: base.maxDiameter,
             connectionDiameter: base.connectionDiameter,
+            totalLength: base.totalLength,
+            taperAngle: base.taperAngle,
             workType: base.workType,
             shippingMode: base.shippingMode,
             requestedShipDate: base.requestedShipDate,

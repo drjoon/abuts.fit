@@ -29,6 +29,8 @@ export interface CaseInfos {
   implantType?: string;
   maxDiameter?: number;
   connectionDiameter?: number;
+  totalLength?: number;
+  taperAngle?: number;
   shippingMode?: string;
   requestedShipDate?: string;
   workType?: string;

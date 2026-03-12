@@ -704,6 +704,10 @@ export const useNewRequestPage = (existingRequestId?: string) => {
                 typeof ci.connectionDiameter === "number"
                   ? ci.connectionDiameter
                   : undefined,
+              totalLength:
+                typeof ci.totalLength === "number" ? ci.totalLength : undefined,
+              taperAngle:
+                typeof ci.taperAngle === "number" ? ci.taperAngle : undefined,
               workType:
                 typeof ci.workType === "string" ? ci.workType : "abutment",
               shippingMode:
