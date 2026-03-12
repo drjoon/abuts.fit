@@ -574,6 +574,9 @@ export async function createRequest(req, res) {
     const shippingMode = bodyRest.shippingMode || "normal";
     const requestedAt = new Date();
 
+    // 의뢰 본문에서 caManufacturer 필드를 받거나, 기본값 사용
+    const caManufacturerFromBody = bodyRest.caManufacturer;
+
     const newRequest = new Request({
       ...bodyRest,
       caseInfos: normalizedCaseInfos,
@@ -582,7 +585,19 @@ export async function createRequest(req, res) {
         req.user?.role === "requestor" && req.user?.businessId
           ? req.user.businessId
           : null,
+      caManufacturer:
+        req.user?.role === "manufacturer"
+          ? req.user._id
+          : caManufacturerFromBody || undefined,
       price: computedPrice,
+    });
+
+    console.log("[CreateRequest] New request created:", {
+      requestId: newRequest.requestId,
+      userRole: req.user?.role,
+      userId: req.user?._id,
+      caManufacturer: newRequest.caManufacturer,
+      manufacturerStage: newRequest.manufacturerStage,
     });
 
     // 원본 배송 옵션 저장

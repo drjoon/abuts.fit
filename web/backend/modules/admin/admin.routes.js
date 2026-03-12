@@ -291,4 +291,75 @@ router.get("/sms/history", adminListSms);
 router.post("/messages/send", adminSendKakaoOrSms);
 router.get("/kakao/templates", adminListKakaoTemplates);
 
+// 마이그레이션: Machine manufacturer -> manufacturerBusinessId
+router.post(
+  "/migrations/machine-manufacturer",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const Machine = (await import("../../models/machine.model.js")).default;
+      const User = (await import("../../models/user.model.js")).default;
+
+      // 기존 manufacturer 필드가 있는 모든 Machine 문서 조회
+      const machines = await Machine.find({
+        manufacturer: { $exists: true, $ne: null },
+      });
+      console.log(
+        `[Migration] Found ${machines.length} machines with manufacturer field`,
+      );
+
+      let updated = 0;
+      let errors = 0;
+
+      for (const machine of machines) {
+        try {
+          const manufacturerId = machine.manufacturer;
+
+          // User에서 business 정보 조회
+          const user = await User.findById(manufacturerId)
+            .select("business")
+            .lean();
+
+          if (user && user.business) {
+            // manufacturerBusinessId 설정 및 manufacturer 필드 제거
+            await Machine.findByIdAndUpdate(machine._id, {
+              $set: { manufacturerBusinessId: user.business },
+              $unset: { manufacturer: "" },
+            });
+            updated++;
+            console.log(
+              `[Migration] ✓ Updated machine ${machine.uid}: ${manufacturerId} -> ${user.business}`,
+            );
+          } else {
+            console.warn(
+              `[Migration] ⚠ User ${manufacturerId} not found or has no business for machine ${machine.uid}`,
+            );
+            errors++;
+          }
+        } catch (e) {
+          console.error(
+            `[Migration] ✗ Error migrating machine ${machine.uid}:`,
+            e.message,
+          );
+          errors++;
+        }
+      }
+
+      res.json({
+        success: true,
+        message: `Migration complete: ${updated} updated, ${errors} errors`,
+        data: { updated, errors, total: machines.length },
+      });
+    } catch (error) {
+      console.error("Migration failed:", error);
+      res.status(500).json({
+        success: false,
+        message: "Migration failed",
+        error: error.message,
+      });
+    }
+  },
+);
+
 export default router;

@@ -42,7 +42,11 @@ export async function getMachines(req, res) {
     const query = {};
     // 개발 단계에서는 인증 미들웨어를 끈 상태일 수 있으므로 req.user 존재 여부를 체크
     if (req.user && req.user.role === "manufacturer") {
-      query.manufacturer = req.user._id;
+      // 마이그레이션 전환기: manufacturerBusinessId 또는 manufacturer 필드 모두 확인
+      query.$or = [
+        { manufacturerBusinessId: req.user.business },
+        { manufacturer: req.user._id },
+      ];
     }
     const machines = await Machine.find(query).sort({ createdAt: -1 });
     res.json({ success: true, data: machines });
@@ -517,8 +521,8 @@ export async function upsertMachine(req, res) {
         allowAutoMachining,
         existing?.allowAutoMachining ?? false,
       ),
-      // 개발 단계에서는 인증이 없을 수 있으므로 manufacturer는 선택적으로 저장
-      ...(req.user && { manufacturer: req.user._id }),
+      // 개발 단계에서는 인증이 없을 수 있으므로 manufacturerBusinessId는 선택적으로 저장
+      ...(req.user && { manufacturerBusinessId: req.user.business }),
     };
 
     // uid가 같은 기존 레코드가 있으면 그것을 업데이트하고, 없으면 새로 생성한다.
@@ -552,7 +556,7 @@ export async function deleteMachine(req, res) {
     const baseCondition = { uid };
     const query =
       req.user && req.user.role === "manufacturer"
-        ? { ...baseCondition, manufacturer: req.user._id }
+        ? { ...baseCondition, manufacturerBusinessId: req.user.business }
         : baseCondition;
 
     const result = await Machine.findOneAndDelete(query);

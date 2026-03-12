@@ -93,47 +93,20 @@ export async function getAssignedDashboardSummary(req, res) {
 
     const dateFilter = buildDateFilter(period);
 
-    const machineIds = await (async () => {
-      if (role === "admin") {
-        const list = await Machine.find({})
-          .select({ uid: 1 })
-          .lean()
-          .catch(() => []);
-        return (Array.isArray(list) ? list : [])
-          .map((m) => String(m?.uid || "").trim())
-          .filter(Boolean);
-      }
-
-      const list = await Machine.find({ manufacturer: req.user._id })
-        .select({ uid: 1 })
-        .lean()
-        .catch(() => []);
-      return (Array.isArray(list) ? list : [])
-        .map((m) => String(m?.uid || "").trim())
-        .filter(Boolean);
-    })();
-
-    if (!machineIds.length) {
-      return res.status(200).json({
-        success: true,
-        data: {
-          total: 0,
-          canceledCount: 0,
-          trackingCount: 0,
-          requestCount: 0,
-          camCount: 0,
-          machiningCount: 0,
-          packingCount: 0,
-          shippingCount: 0,
-        },
-      });
-    }
-
+    // 제조사 대시보드: 해당 제조사에게 할당된 의뢰건을 조회
     const baseFilter = {
       manufacturerStage: { $ne: "취소" },
       "caseInfos.implantBrand": { $exists: true, $ne: "" },
-      "productionSchedule.assignedMachine": { $in: machineIds },
     };
+
+    // 제조사 역할일 때: 해당 제조사에게 할당된 의뢰건만 필터링
+    if (role === "manufacturer") {
+      baseFilter.caManufacturer = req.user._id;
+      console.log("[Dashboard] Manufacturer filter:", {
+        userId: req.user._id,
+        filter: baseFilter,
+      });
+    }
 
     const [statsResult] = await Request.aggregate([
       {
@@ -1021,9 +994,9 @@ export async function getDashboardRiskSummary(req, res) {
               baseFilter,
               {
                 $or: [
-                  { manufacturer: req.user._id },
-                  { manufacturer: null },
-                  { manufacturer: { $exists: false } },
+                  { caManufacturer: req.user._id },
+                  { caManufacturer: null },
+                  { caManufacturer: { $exists: false } },
                 ],
               },
             ],
@@ -1038,7 +1011,7 @@ export async function getDashboardRiskSummary(req, res) {
 
     const requests = await Request.find(filter)
       .populate("requestor", "name organization")
-      .populate("manufacturer", "name organization")
+      .populate("caManufacturer", "name organization")
       .populate("deliveryInfoRef")
       .lean();
 

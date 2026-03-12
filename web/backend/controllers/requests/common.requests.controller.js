@@ -240,9 +240,9 @@ export async function getAllRequests(req, res) {
           // assigned to me OR unassigned/null/missing
           {
             $or: [
-              { manufacturer: req.user._id },
-              { manufacturer: null },
-              { manufacturer: { $exists: false } },
+              { caManufacturer: req.user._id },
+              { caManufacturer: null },
+              { caManufacturer: { $exists: false } },
             ],
           },
         ],

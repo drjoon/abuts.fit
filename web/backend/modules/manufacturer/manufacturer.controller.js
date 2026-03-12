@@ -10,7 +10,7 @@ export async function getManagementStatus(req, res) {
       });
     }
 
-    const manufacturerOrganization = String(user.organization || "").trim();
+    const manufacturerOrganization = String(user.business || "").trim();
     if (!manufacturerOrganization) {
       return res.status(400).json({
         success: false,
@@ -36,7 +36,10 @@ export async function getManagementStatus(req, res) {
     );
     const machinesStatus = {
       hasIssue: machineIssues.length > 0,
-      status: machineIssues.length > 0 ? `${machineIssues.length}대 알람` : "이상 없음",
+      status:
+        machineIssues.length > 0
+          ? `${machineIssues.length}대 알람`
+          : "이상 없음",
     };
 
     // 소재, 공구, 제품 관리는 기본값으로 설정

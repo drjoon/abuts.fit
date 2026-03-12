@@ -562,8 +562,8 @@ export const deleteFile = asyncHandler(async (req, res) => {
     file.relatedRequest.requestor.toString() === req.user._id.toString();
   const isManufacturer =
     file.relatedRequest &&
-    file.relatedRequest.manufacturer &&
-    file.relatedRequest.manufacturer.toString() === req.user._id.toString();
+    file.relatedRequest.caManufacturer &&
+    file.relatedRequest.caManufacturer.toString() === req.user._id.toString();
   const isUploader = file.uploadedBy.toString() === req.user._id.toString();
 
   if (

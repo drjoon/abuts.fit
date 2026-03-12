@@ -48,7 +48,7 @@ const requestSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    manufacturer: {
+    caManufacturer: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
@@ -623,11 +623,11 @@ requestSchema.index({
   createdAt: -1,
 });
 
-// 제조사 대시보드 조회를 위한 인덱스
+// CA 제조사 대시보드 조회를 위한 인덱스
+// 쿼리: caManufacturer + manufacturerStage + implantBrand 필터
 requestSchema.index({
-  manufacturer: 1,
+  caManufacturer: 1,
   manufacturerStage: 1,
-  "caseInfos.implantBrand": 1,
   createdAt: -1,
 });
 

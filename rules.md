@@ -25,8 +25,13 @@
 
 - `requestor`: 의뢰 생성/조회
 - `salesman`: 영업/소개/조직 연결 관리
-- `manufacturer`: 제조 공정 처리
+- `manufacturer`: 제조 공정 처리 (CA 제조사, 즉 CAM/가공을 담당하는 회사)
 - `admin`: 운영/지원/관리
+
+### 2.2.1 필드 명칭 구분
+
+- **`implantManufacturer`**: 임플란트 브랜드 (OSSTEM, Straumann 등) - caseInfos 내 저장
+- **`caManufacturer`**: 우리 웹앱의 `manufacturer` role 사용자 (CAM/가공 담당 회사) - Request 문서의 최상위 필드
 
 ### 2.3 조직 규칙
 

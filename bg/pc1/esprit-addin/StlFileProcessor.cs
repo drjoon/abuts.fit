@@ -2185,48 +2185,32 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
                 // FaceHole -> index 4
-                if (string.IsNullOrWhiteSpace(FaceHoleProcessFilePath) || !File.Exists(FaceHoleProcessFilePath))
+                // 백엔드에서 받은 PRC 파일명으로 항상 덮어쓴다 (이전 요청의 값을 유지하지 않음)
+                if (prcPaths.Length > 4)
                 {
-                    throw new InvalidOperationException($"백엔드 FaceHole PRC 누락 - index=4, path={FaceHoleProcessFilePath}");
-                }
-                if (prcPaths.Length > 4 && string.IsNullOrWhiteSpace(prcPaths[4]))
-                {
+                    string oldValue = prcPaths[4];
                     prcPaths[4] = FaceHoleProcessFilePath;
-                    AppLogger.Log($"DentalAddin.EnsureFaceConnectionFromBackend: PRC[4] 채움 - {FaceHoleProcessFilePath}");
+                    AppLogger.Log($"DentalAddin.EnsureFaceConnectionFromBackend: PRC[4] 백엔드값으로 갱신 - {oldValue} -> {FaceHoleProcessFilePath}");
                 }
-                else if (prcPaths.Length > 4)
+                if (prcNames.Length > 4)
                 {
-                    AppLogger.Log($"DentalAddin.EnsureFaceConnectionFromBackend: PRC[4] 기존값 유지 - {prcPaths[4]}");
-                }
-                if (prcNames.Length > 4 && string.IsNullOrWhiteSpace(prcNames[4]))
-                {
+                    string oldValue = prcNames[4];
                     prcNames[4] = Path.GetFileName(FaceHoleProcessFilePath);
-                }
-                else if (prcNames.Length > 4)
-                {
-                    AppLogger.Log($"DentalAddin.EnsureFaceConnectionFromBackend: PRC[4] Name 기존값 유지 - {prcNames[4]}");
+                    AppLogger.Log($"DentalAddin.EnsureFaceConnectionFromBackend: PRC[4] Name 백엔드값으로 갱신 - {oldValue} -> {prcNames[4]}");
                 }
                 // Connection -> index 8
-                if (string.IsNullOrWhiteSpace(ConnectionMachiningProcessFilePath) || !File.Exists(ConnectionMachiningProcessFilePath))
+                // 백엔드에서 받은 PRC 파일명으로 항상 덮어쓴다 (이전 요청의 값을 유지하지 않음)
+                if (prcPaths.Length > 8)
                 {
-                    throw new InvalidOperationException($"백엔드 Connection PRC 누락 - index=8, path={ConnectionMachiningProcessFilePath}");
-                }
-                if (prcPaths.Length > 8 && string.IsNullOrWhiteSpace(prcPaths[8]))
-                {
+                    string oldValue = prcPaths[8];
                     prcPaths[8] = ConnectionMachiningProcessFilePath;
-                    AppLogger.Log($"DentalAddin.EnsureFaceConnectionFromBackend: PRC[8] 채움 - {ConnectionMachiningProcessFilePath}");
+                    AppLogger.Log($"DentalAddin.EnsureFaceConnectionFromBackend: PRC[8] 백엔드값으로 갱신 - {oldValue} -> {ConnectionMachiningProcessFilePath}");
                 }
-                else if (prcPaths.Length > 8)
+                if (prcNames.Length > 8)
                 {
-                    AppLogger.Log($"DentalAddin.EnsureFaceConnectionFromBackend: PRC[8] 기존값 유지 - {prcPaths[8]}");
-                }
-                if (prcNames.Length > 8 && string.IsNullOrWhiteSpace(prcNames[8]))
-                {
+                    string oldValue = prcNames[8];
                     prcNames[8] = Path.GetFileName(ConnectionMachiningProcessFilePath);
-                }
-                else if (prcNames.Length > 8)
-                {
-                    AppLogger.Log($"DentalAddin.EnsureFaceConnectionFromBackend: PRC[8] Name 기존값 유지 - {prcNames[8]}");
+                    AppLogger.Log($"DentalAddin.EnsureFaceConnectionFromBackend: PRC[8] Name 백엔드값으로 갱신 - {oldValue} -> {prcNames[8]}");
                 }
             }
             catch (Exception ex)

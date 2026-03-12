@@ -95,7 +95,7 @@ export async function getDashboardStats(req, res) {
       .sort({ createdAt: -1 })
       .limit(5)
       .populate("requestor", "name email")
-      .populate("manufacturer", "name email");
+      .populate("caManufacturer", "name email");
 
     const totalFiles = await File.countDocuments();
     const totalFileSize = await File.aggregate([

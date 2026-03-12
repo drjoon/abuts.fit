@@ -13,9 +13,9 @@ const machineSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    manufacturer: {
+    manufacturerBusinessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "RequestorOrganization",
       required: false,
     },
     name: {

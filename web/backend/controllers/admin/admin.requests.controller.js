@@ -39,7 +39,7 @@ export async function getAllRequests(req, res) {
 
     const requests = await Request.find(filter)
       .populate("requestor", "name email business")
-      .populate("manufacturer", "name email business")
+      .populate("caManufacturer", "name email business")
       .sort(sort)
       .skip(skip)
       .limit(limit);
@@ -76,7 +76,7 @@ export async function getRequestById(req, res) {
     }
     const request = await Request.findById(requestId)
       .populate("requestor", "name email business")
-      .populate("manufacturer", "name email business");
+      .populate("caManufacturer", "name email business");
     if (!request) {
       return res
         .status(404)
@@ -132,7 +132,7 @@ export async function updateRequestStatus(req, res) {
       { new: true },
     )
       .populate("requestor", "name email business")
-      .populate("manufacturer", "name email business");
+      .populate("caManufacturer", "name email business");
 
     const result = updatedRequest.toObject();
     if (!result.statusHistory) result.statusHistory = [];
@@ -182,13 +182,13 @@ export async function assignManufacturer(req, res) {
     const updatedRequest = await Request.findByIdAndUpdate(
       requestId,
       {
-        manufacturer: manufacturerId,
+        caManufacturer: manufacturerId,
         assignedAt: new Date(),
       },
       { new: true },
     )
       .populate("requestor", "name email business")
-      .populate("manufacturer", "name email business");
+      .populate("caManufacturer", "name email business");
 
     const result = updatedRequest.toObject();
     if (!result.statusHistory) result.statusHistory = [];
@@ -198,7 +198,7 @@ export async function assignManufacturer(req, res) {
       message: "제조사가 성공적으로 할당되었습니다.",
       data: {
         ...result,
-        manufacturer: result.manufacturer?._id || result.manufacturer,
+        caManufacturer: result.caManufacturer?._id || result.caManufacturer,
       },
     });
   } catch (error) {
