@@ -364,6 +364,16 @@ async def process_single_stl(p: Path, force_reprocess: bool = False):
                     prefixed_input,
                     {"requestId": req_id, "metadata": metadata},
                 )
+                # CAM 완료 통지: 프론트에서 웹소켓으로 받아 경과시간 표시 및 다음 공정 진행
+                notify_runtime_status(
+                    {"requestId": req_id},
+                    source="rhino-server",
+                    stage="request",
+                    status="completed",
+                    label="Filled STL 생성 완료",
+                    tone="green",
+                    metadata={"fileName": p.name, "outputName": out_name},
+                )
         except Exception as e:
             log(f"Auto-processing failed for {p.name}: {e}")
             notify_runtime_status(
