@@ -30,8 +30,17 @@
 
 ### 2.2.1 필드 명칭 구분
 
-- **`implantManufacturer`**: 임플란트 브랜드 (OSSTEM, Straumann 등) - caseInfos 내 저장
-- **`caManufacturer`**: 우리 웹앱의 `manufacturer` role 사용자 (CAM/가공 담당 회사) - Request 문서의 최상위 필드
+- **`implantManufacturer`**: 임플란트 브랜드 (OSSTEM, Straumann 등)
+  - Request.caseInfos 내 저장
+  - Connection, Preset 등에서도 `manufacturer` 필드는 임플란트 제조사를 의미
+  - 프론트엔드 UI에서 "임플란트 제조사", "임플란트 브랜드" 등으로 표시
+- **`caManufacturer`**: 우리 웹앱의 `manufacturer` role 사용자 (CAM/가공 담당 회사)
+  - Request 문서의 최상위 필드
+  - User.\_id 참조 (ObjectId)
+  - 백엔드에서 `populate("caManufacturer", "name email business")` 형태로 사용
+  - 프론트엔드에서 `request.caManufacturer` 또는 `req.caManufacturer`로 접근
+
+**중요**: 기존 코드에서 `Request.manufacturer`, `populate("manufacturer")`, `request.manufacturer` 등을 발견하면 `caManufacturer`로 변경해야 합니다. 단, Connection/Preset의 `manufacturer` 필드는 임플란트 제조사이므로 변경하지 않습니다.
 
 ### 2.3 조직 규칙
 

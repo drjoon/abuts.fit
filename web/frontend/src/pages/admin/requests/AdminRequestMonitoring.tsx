@@ -411,11 +411,11 @@ export const AdminRequestMonitoring = () => {
                             {request.requestor?.name} (
                             {request.requestor?.business})
                           </span>
-                          {request.manufacturer &&
-                            request.manufacturer !== "-" && (
+                          {request.caManufacturer &&
+                            request.caManufacturer !== "-" && (
                               <span className="flex items-center gap-1">
                                 <Building2 className="h-3 w-3" />
-                                {request.manufacturer}
+                                {request.caManufacturer}
                               </span>
                             )}
                         </div>
