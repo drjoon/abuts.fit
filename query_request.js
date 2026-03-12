@@ -1,10 +1,15 @@
+require("dotenv").config({ path: ".env.local" });
 const mongoose = require("mongoose");
-const MONGODB_URI = "mongodb+srv://drjoon:REDACTED@cluster0.jihfv0j.mongodb.net/abuts_fit_test?retryWrites=true&w=majority";
+const MONGODB_URI = process.env.MONGODB_URI;
 
 async function run() {
   try {
     await mongoose.connect(MONGODB_URI);
-    const Request = mongoose.model("Request", require("./web/backend/models/request.model.js").schema || mongoose.Schema({}, { strict: false, collection: "requests" }));
+    const Request = mongoose.model(
+      "Request",
+      require("./web/backend/models/request.model.js").schema ||
+        mongoose.Schema({}, { strict: false, collection: "requests" }),
+    );
     const doc = await Request.findOne({ "lotNumber.value": "CA260312-AAE" });
     if (doc) {
       console.log("Found request:", doc.requestId);
