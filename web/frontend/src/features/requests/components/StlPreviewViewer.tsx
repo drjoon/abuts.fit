@@ -1186,65 +1186,70 @@ export function StlPreviewViewer({
         </div>
       )}
       {showOverlay && (
-        <div className="pointer-events-none absolute bottom-2 left-2 flex flex-col items-start gap-1 rounded-md bg-white/85 px-2 py-1 text-[11px] md:text-[12px] font-medium text-slate-800 shadow-sm border border-slate-200 z-10">
-          <div className="flex items-center gap-1.5">
-            <span className="text-slate-500">최대 직경 (DDD):</span>
-            <span>
-              {maxDiameterState > 0 ? maxDiameterState.toFixed(1) : "-"} mm
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-slate-500">커넥션 직경:</span>
-            <span>
-              {connectionDiameterState > 0
-                ? connectionDiameterState.toFixed(1)
-                : "-"}{" "}
-              mm
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-slate-500">전체 길이 (LLL):</span>
-            <span>
-              {totalLengthState > 0 ? totalLengthState.toFixed(1) : "-"} mm
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-slate-500">테이퍼 각도 (AAA):</span>
-            <span>
-              {taperAngleState > 0 ? taperAngleState.toFixed(1) : "-"}°
-            </span>
-          </div>
-          {tiltAxisVectorState && (
+        <>
+          <div className="pointer-events-none absolute bottom-2 left-2 flex flex-col items-start gap-1 rounded-md bg-white/85 px-2 py-1 text-[11px] md:text-[12px] font-medium text-slate-800 shadow-sm border border-slate-200 z-10">
             <div className="flex items-center gap-1.5">
-              <span className="text-slate-500">경사축 벡터:</span>
+              <span className="text-slate-500">테이퍼 각도 (AAA):</span>
               <span>
-                [{tiltAxisVectorState.x.toFixed(2)},{" "}
-                {tiltAxisVectorState.y.toFixed(2)},{" "}
-                {tiltAxisVectorState.z.toFixed(2)}]
+                {taperAngleState > 0 ? taperAngleState.toFixed(1) : "-"}°
               </span>
             </div>
-          )}
-          {frontPointState && (
             <div className="flex items-center gap-1.5">
-              <span className="text-slate-500">FrontPoint:</span>
+              <span className="text-slate-500">최대 직경 (DDD):</span>
               <span>
-                [
-                {frontPointState.x !== undefined && frontPointState.x !== null
-                  ? frontPointState.x.toFixed(2)
-                  : "-"}
-                ,{" "}
-                {frontPointState.y !== undefined && frontPointState.y !== null
-                  ? frontPointState.y.toFixed(2)
-                  : "-"}
-                ,{" "}
-                {frontPointState.z !== undefined && frontPointState.z !== null
-                  ? frontPointState.z.toFixed(2)
-                  : "-"}
-                ]
+                {maxDiameterState > 0 ? maxDiameterState.toFixed(1) : "-"} mm
               </span>
             </div>
-          )}
-        </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-500">전체 길이 (LLL):</span>
+              <span>
+                {totalLengthState > 0 ? totalLengthState.toFixed(1) : "-"} mm
+              </span>
+            </div>
+          </div>
+
+          <div className="pointer-events-none absolute bottom-2 right-2 flex flex-col items-start gap-1 rounded-md bg-white/85 px-2 py-1 text-[11px] md:text-[12px] font-medium text-slate-800 shadow-sm border border-slate-200 z-10">
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-500">커넥션 직경:</span>
+              <span>
+                {connectionDiameterState > 0
+                  ? connectionDiameterState.toFixed(1)
+                  : "-"}{" "}
+                mm
+              </span>
+            </div>
+            {tiltAxisVectorState && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-500">경사축 벡터:</span>
+                <span>
+                  [{tiltAxisVectorState.x.toFixed(2)},{" "}
+                  {tiltAxisVectorState.y.toFixed(2)},{" "}
+                  {tiltAxisVectorState.z.toFixed(2)}]
+                </span>
+              </div>
+            )}
+            {frontPointState && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-500">FrontPoint:</span>
+                <span>
+                  [
+                  {frontPointState.x !== undefined && frontPointState.x !== null
+                    ? frontPointState.x.toFixed(2)
+                    : "-"}
+                  ,{" "}
+                  {frontPointState.y !== undefined && frontPointState.y !== null
+                    ? frontPointState.y.toFixed(2)
+                    : "-"}
+                  ,{" "}
+                  {frontPointState.z !== undefined && frontPointState.z !== null
+                    ? frontPointState.z.toFixed(2)
+                    : "-"}
+                  ]
+                </span>
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
