@@ -673,11 +673,24 @@ export function StlPreviewViewer({
             ).normalize()
           : new THREE.Vector3(0, 0, 1);
 
-        const topIndices = new Set<number>();
-        const sideIndices = new Set<number>();
-        // 포스트 탑 부분을 찾기 위해 상단 40% 영역만 탐색
+        // FrontPoint: 상단 40% 영역에서 외곽 가장자리의 최저점
         const upperThreshold = bbox.max.z - totalLength * 0.4;
+        const minRadius = Math.max(0.8, (maxDiameter || 4) * 0.1);
 
+        console.log(
+          "[FrontPoint] upperThreshold:",
+          upperThreshold,
+          "minRadius:",
+          minRadius,
+          "maxDiameter:",
+          maxDiameter,
+        );
+
+        let bestFrontPoint: { x: number; y: number; z: number } | null = null;
+        let minZFront = Infinity;
+        const processedVertices = new Set<number>();
+
+        // 상단 40% 영역의 모든 꼭짓점 중에서 외곽(minRadius 이상)이면서 Z가 가장 낮은 점 찾기
         for (let tri = 0; tri < triangleCount; tri++) {
           const i0 = index ? index.getX(tri * 3) : tri * 3;
           const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
@@ -689,47 +702,31 @@ export function StlPreviewViewer({
 
           const avgZ = (v0.z + v1.z + v2.z) / 3;
           if (avgZ > upperThreshold) {
-            const vec0 = new THREE.Vector3(v0.x, v0.y, v0.z);
-            const vec1 = new THREE.Vector3(v1.x, v1.y, v1.z);
-            const vec2 = new THREE.Vector3(v2.x, v2.y, v2.z);
-            const normal = new THREE.Vector3()
-              .subVectors(vec1, vec0)
-              .cross(new THREE.Vector3().subVectors(vec2, vec0))
-              .normalize();
+            // 이 삼각형의 세 꼭짓점을 모두 검사
+            for (const idx of [i0, i1, i2]) {
+              if (processedVertices.has(idx)) continue;
+              processedVertices.add(idx);
 
-            // 경사축(tiltDir)과 이루는 각도가 좁은(코사인 값이 큰) 면은 Top, 아니면 Side
-            if (normal.dot(tiltDir) > 0.5) {
-              topIndices.add(i0);
-              topIndices.add(i1);
-              topIndices.add(i2);
-            } else {
-              sideIndices.add(i0);
-              sideIndices.add(i1);
-              sideIndices.add(i2);
+              const v = readVertex(idx);
+              const dx = v.x - center.x;
+              const dy = v.y - center.y;
+              const distToAxis = Math.sqrt(dx * dx + dy * dy);
+
+              // 외곽 점(minRadius 이상)이면서 Z가 가장 낮은 점
+              if (distToAxis > minRadius && v.z < minZFront) {
+                minZFront = v.z;
+                bestFrontPoint = v;
+              }
             }
           }
         }
 
-        let bestFrontPoint: { x: number; y: number; z: number } | null = null;
-        let minZFront = Infinity;
-
-        // "포스트 탑과 사이드월 사이의 모서리 중 최저점"
-        // 탑(top) 면과 사이드(side) 면이 만나는 꼭짓점(인덱스가 양쪽 Set에 모두 있는 경우) 중에서 Z가 가장 낮은 점 찾기
-        for (const idx of topIndices) {
-          if (sideIndices.has(idx)) {
-            const v = readVertex(idx);
-            // 외곽을 확실히 구별하기 위해 중심에서 일정 거리 이상 떨어진 점만 선택 (나사 구멍 안쪽 배제)
-            const dx = v.x - center.x;
-            const dy = v.y - center.y;
-            const distToAxis = Math.sqrt(dx * dx + dy * dy);
-
-            const minRadius = Math.max(1.0, (maxDiameter || 4) * 0.15);
-            if (distToAxis > minRadius && v.z < minZFront) {
-              minZFront = v.z;
-              bestFrontPoint = v;
-            }
-          }
-        }
+        console.log(
+          "[FrontPoint] 검색 결과:",
+          bestFrontPoint
+            ? `found at z=${bestFrontPoint.z}, distToAxis=${Math.sqrt((bestFrontPoint.x - center.x) ** 2 + (bestFrontPoint.y - center.y) ** 2).toFixed(2)}`
+            : "not found",
+        );
 
         if (bestFrontPoint) {
           frontPoint = {
@@ -737,6 +734,9 @@ export function StlPreviewViewer({
             y: Math.round(bestFrontPoint.y * 100) / 100,
             z: Math.round(bestFrontPoint.z * 100) / 100,
           };
+          console.log("[FrontPoint] Final frontPoint:", frontPoint);
+        } else {
+          console.log("[FrontPoint] Failed to find FrontPoint");
         }
 
         setMaxDiameterState(Math.round(maxDiameter * 10) / 10);

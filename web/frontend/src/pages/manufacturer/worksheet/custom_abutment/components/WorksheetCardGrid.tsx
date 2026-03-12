@@ -99,7 +99,7 @@ export const WorksheetCardGrid = ({
       };
       const newSystemData = caseInfos.newSystemRequest;
       const isNewSystemRequest = !!newSystemData?.requested;
-      // eslint-disable-next-line no-console
+       
       console.log("[WorksheetCardGrid] case", {
         requestId: request.requestId,
         patientName: caseInfos.patientName,

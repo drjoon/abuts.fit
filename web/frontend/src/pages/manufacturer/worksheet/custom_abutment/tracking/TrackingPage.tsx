@@ -823,7 +823,7 @@ export const TrackingInquiryPage = () => {
       );
       return (
         hasPickupReservation &&
-        !Boolean(di.deliveredAt) &&
+        !di.deliveredAt &&
         status !== "예약취소" &&
         (!Number.isFinite(statusCode) || statusCode < 11)
       );

@@ -221,7 +221,7 @@ export const useBridgeStore = (options?: BridgeStoreOptions) => {
           const reader = new FileReader();
           reader.onload = async () => {
             try {
-              let content = String(reader.result ?? "");
+              const content = String(reader.result ?? "");
               let targetName = file.name;
 
               // 현재 경로 기준으로 동일한 파일명이 이미 존재하면, 외부 UI(ConfirmDialog)를 통해

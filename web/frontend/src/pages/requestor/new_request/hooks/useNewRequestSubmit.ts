@@ -199,7 +199,7 @@ export const useNewRequestSubmit = ({
       const bulkCreateWithRetry = async () => {
         const maxRetries = 3;
         let attempt = 0;
-        let lastErr: any = null;
+        const lastErr: any = null;
         while (attempt <= maxRetries) {
           const res = await fetch(`${API_BASE_URL}/requests/bulk`, {
             method: "POST",

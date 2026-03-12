@@ -259,7 +259,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     setSelectedSupply(
       selectedPlan === "3m" ? threeMonthsSupply : oneMonthSupply,
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [selectedPlan, oneMonthSupply, threeMonthsSupply]);
 
   const totalAmount = useMemo(

@@ -199,7 +199,7 @@ export const CompletedMachiningRecordsModal = ({
         if (!hasMoreRef.current) return;
         if (inFlightRef.current) return;
         if (Date.now() < cooldownUntilRef.current) return;
-        if (!!errorRef.current) return;
+        if (errorRef.current) return;
         void fetchPage();
       },
       { root: null, threshold: 1 },

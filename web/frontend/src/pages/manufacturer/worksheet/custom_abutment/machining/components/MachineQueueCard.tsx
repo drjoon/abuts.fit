@@ -445,7 +445,7 @@ export const MachineQueueCard = ({
                 <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
                   <div className="min-w-0">
                     {MACHINING_SECTION_LABELS.nowPlaying}
-                    {!!elapsedLabel ? (
+                    {elapsedLabel ? (
                       <span className="ml-2 text-blue-600 font-extrabold">
                         {elapsedLabel}
                       </span>

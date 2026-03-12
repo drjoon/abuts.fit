@@ -43,7 +43,7 @@ export const useCncToolPanels = ({
   const openToolOffsetEditor = (initialToolNum?: number) => {
     if (!workUid) return;
 
-    let toolNum = initialToolNum ?? 1;
+    const toolNum = initialToolNum ?? 1;
     let geoX = 0;
     let geoY = 0;
     let geoZ = 0;
