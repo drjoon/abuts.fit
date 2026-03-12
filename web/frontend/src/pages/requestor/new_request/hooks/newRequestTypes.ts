@@ -41,6 +41,8 @@ export type CaseInfos = {
   connectionDiameter?: number;
   totalLength?: number;
   taperAngle?: number;
+  tiltAxisVector?: { x: number; y: number; z: number };
+  frontPoint?: { x: number; y: number; z: number };
   workType?: string; // "abutment" | "crown" | "prosthesis"
   shippingMode?: "normal" | "express";
   requestedShipDate?: string; // ISO date string or YYYY-MM-DD

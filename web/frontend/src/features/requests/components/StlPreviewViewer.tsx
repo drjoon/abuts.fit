@@ -16,6 +16,8 @@ type Props = {
     connectionDiameter: number,
     totalLength: number,
     taperAngle: number,
+    tiltAxisVector?: { x: number; y: number; z: number } | null,
+    frontPoint?: { x: number; y: number; z: number } | null,
   ) => void;
   showOverlay?: boolean;
   finishLinePoints?: number[][] | null;
@@ -37,6 +39,16 @@ export function StlPreviewViewer({
   >(null);
   const [totalLengthState, setTotalLengthState] = useState<number | null>(null);
   const [taperAngleState, setTaperAngleState] = useState<number | null>(null);
+  const [tiltAxisVectorState, setTiltAxisVectorState] = useState<{
+    x: number;
+    y: number;
+    z: number;
+  } | null>(null);
+  const [frontPointState, setFrontPointState] = useState<{
+    x: number;
+    y: number;
+    z: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -51,6 +63,8 @@ export function StlPreviewViewer({
     setConnectionDiameterState(null);
     setTotalLengthState(null);
     setTaperAngleState(null);
+    setTiltAxisVectorState(null);
+    setFrontPointState(null);
 
     const height = containerRef.current.clientHeight || 300;
     let width = containerRef.current.clientWidth || 300;
@@ -203,6 +217,8 @@ export function StlPreviewViewer({
         const totalLength = bbox.max.z - bbox.min.z;
 
         let taperAngle = 0;
+        let tiltAxisVector: { x: number; y: number; z: number } | null = null;
+        let frontPoint: { x: number; y: number; z: number } | null = null;
         let taperGuide: {
           zStart: number;
           zEnd: number;
@@ -601,6 +617,46 @@ export function StlPreviewViewer({
                     if (pairedAverages.length > 0) {
                       // 가장 큰 진짜 기울기를 선택
                       taperAngle = Math.max(...pairedAverages);
+
+                      // Calculate tiltAxisVector
+                      let localMaxTiltAngle = -1;
+                      let localMaxTiltValue = -1;
+                      let bestTrueTilt = 0;
+                      for (
+                        let baseAngle = 0;
+                        baseAngle < 180;
+                        baseAngle += 30
+                      ) {
+                        const oppositeAngle = baseAngle + 180;
+                        const baseGuide = multiDirectionGuides.find(
+                          (g) => g.angle === baseAngle,
+                        );
+                        const oppositeGuide = multiDirectionGuides.find(
+                          (g) => g.angle === oppositeAngle,
+                        );
+                        if (baseGuide && oppositeGuide) {
+                          const tilt = Math.abs(baseGuide.taperAngle);
+                          if (tilt > localMaxTiltValue) {
+                            localMaxTiltValue = tilt;
+                            localMaxTiltAngle = baseAngle;
+                            bestTrueTilt = baseGuide.taperAngle;
+                          }
+                        }
+                      }
+
+                      if (localMaxTiltAngle !== -1) {
+                        const rad = localMaxTiltAngle * (Math.PI / 180);
+                        const tiltRad =
+                          Math.abs(bestTrueTilt) * (Math.PI / 180);
+                        const directionAngle =
+                          bestTrueTilt >= 0 ? rad : rad + Math.PI;
+
+                        tiltAxisVector = {
+                          x: Math.sin(tiltRad) * Math.cos(directionAngle),
+                          y: Math.sin(tiltRad) * Math.sin(directionAngle),
+                          z: Math.cos(tiltRad),
+                        };
+                      }
                     }
                   }
                 }
@@ -609,12 +665,86 @@ export function StlPreviewViewer({
           }
         }
 
-        if (showOverlay) {
-          setMaxDiameterState(Math.round(maxDiameter * 10) / 10);
-          setConnectionDiameterState(Math.round(connectionDiameter * 10) / 10);
-          setTotalLengthState(Math.round(totalLength * 10) / 10);
-          setTaperAngleState(Math.round(taperAngle * 10) / 10);
+        const tiltDir = tiltAxisVector
+          ? new THREE.Vector3(
+              tiltAxisVector.x,
+              tiltAxisVector.y,
+              tiltAxisVector.z,
+            ).normalize()
+          : new THREE.Vector3(0, 0, 1);
+
+        const topIndices = new Set<number>();
+        const sideIndices = new Set<number>();
+        // 포스트 탑 부분을 찾기 위해 상단 40% 영역만 탐색
+        const upperThreshold = bbox.max.z - totalLength * 0.4;
+
+        for (let tri = 0; tri < triangleCount; tri++) {
+          const i0 = index ? index.getX(tri * 3) : tri * 3;
+          const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
+          const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
+
+          const v0 = readVertex(i0);
+          const v1 = readVertex(i1);
+          const v2 = readVertex(i2);
+
+          const avgZ = (v0.z + v1.z + v2.z) / 3;
+          if (avgZ > upperThreshold) {
+            const vec0 = new THREE.Vector3(v0.x, v0.y, v0.z);
+            const vec1 = new THREE.Vector3(v1.x, v1.y, v1.z);
+            const vec2 = new THREE.Vector3(v2.x, v2.y, v2.z);
+            const normal = new THREE.Vector3()
+              .subVectors(vec1, vec0)
+              .cross(new THREE.Vector3().subVectors(vec2, vec0))
+              .normalize();
+
+            // 경사축(tiltDir)과 이루는 각도가 좁은(코사인 값이 큰) 면은 Top, 아니면 Side
+            if (normal.dot(tiltDir) > 0.5) {
+              topIndices.add(i0);
+              topIndices.add(i1);
+              topIndices.add(i2);
+            } else {
+              sideIndices.add(i0);
+              sideIndices.add(i1);
+              sideIndices.add(i2);
+            }
+          }
         }
+
+        let bestFrontPoint: { x: number; y: number; z: number } | null = null;
+        let minZFront = Infinity;
+
+        // "포스트 탑과 사이드월 사이의 모서리 중 최저점"
+        // 탑(top) 면과 사이드(side) 면이 만나는 꼭짓점(인덱스가 양쪽 Set에 모두 있는 경우) 중에서 Z가 가장 낮은 점 찾기
+        for (const idx of topIndices) {
+          if (sideIndices.has(idx)) {
+            const v = readVertex(idx);
+            // 외곽을 확실히 구별하기 위해 중심에서 일정 거리 이상 떨어진 점만 선택 (나사 구멍 안쪽 배제)
+            const dx = v.x - center.x;
+            const dy = v.y - center.y;
+            const distToAxis = Math.sqrt(dx * dx + dy * dy);
+
+            const minRadius = Math.max(1.0, (maxDiameter || 4) * 0.15);
+            if (distToAxis > minRadius && v.z < minZFront) {
+              minZFront = v.z;
+              bestFrontPoint = v;
+            }
+          }
+        }
+
+        if (bestFrontPoint) {
+          frontPoint = {
+            x: Math.round(bestFrontPoint.x * 100) / 100,
+            y: Math.round(bestFrontPoint.y * 100) / 100,
+            z: Math.round(bestFrontPoint.z * 100) / 100,
+          };
+        }
+
+        setMaxDiameterState(Math.round(maxDiameter * 10) / 10);
+        setConnectionDiameterState(Math.round(connectionDiameter * 10) / 10);
+        setTotalLengthState(Math.round(totalLength * 10) / 10);
+        setTaperAngleState(Math.round(taperAngle * 10) / 10);
+        setTiltAxisVectorState(tiltAxisVector);
+        setFrontPointState(frontPoint);
 
         if (onDiameterComputedRef.current) {
           onDiameterComputedRef.current(
@@ -623,11 +753,76 @@ export function StlPreviewViewer({
             connectionDiameter,
             totalLength,
             taperAngle,
+            tiltAxisVector,
+            frontPoint,
           );
         }
 
         mesh.position.sub(center);
         scene.add(mesh);
+
+        // Draw tilt axis (dotted line passing through origin)
+        if (tiltAxisVector && showOverlay) {
+          const axisLength = totalLength * 1.5;
+          const originCentered = new THREE.Vector3(
+            -center.x,
+            -center.y,
+            -center.z,
+          );
+          const dir = new THREE.Vector3(
+            tiltAxisVector.x,
+            tiltAxisVector.y,
+            tiltAxisVector.z,
+          ).normalize();
+
+          const p1 = originCentered
+            .clone()
+            .add(dir.clone().multiplyScalar(axisLength));
+          const p2 = originCentered
+            .clone()
+            .add(dir.clone().multiplyScalar(-axisLength * 0.2)); // extend a bit below origin
+
+          const axisGeom = new LineGeometry();
+          axisGeom.setPositions([p2.x, p2.y, p2.z, p1.x, p1.y, p1.z]);
+          const axisMat = new LineMaterial({
+            color: 0x66cc66, // 눈에 잘 띄는 연두색
+            linewidth: 5,
+            dashed: true,
+            dashScale: 2,
+            dashSize: 2,
+            gapSize: 1,
+            transparent: true,
+            opacity: 0.9,
+          });
+          axisMat.resolution.set(window.innerWidth, window.innerHeight);
+          taperAxisGuide = new Line2(axisGeom, axisMat);
+          taperAxisGuide.computeLineDistances();
+          taperAxisGuide.renderOrder = 13;
+          scene.add(taperAxisGuide);
+        }
+
+        // Draw FrontPoint (green dot)
+        let frontPointMesh: THREE.Mesh | null = null;
+        if (frontPoint && showOverlay) {
+          // 사이즈를 기존 0.08에서 0.03으로 축소
+          const dotGeometry = new THREE.SphereGeometry(
+            maxDiameter * 0.03,
+            32,
+            32,
+          );
+          const dotMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+          frontPointMesh = new THREE.Mesh(dotGeometry, dotMaterial);
+          frontPointMesh.position.set(
+            frontPoint.x - center.x,
+            frontPoint.y - center.y,
+            frontPoint.z - center.z,
+          );
+          frontPointMesh.renderOrder = 999;
+          // depth test disable so it is always drawn on top of the STL
+          dotMaterial.depthTest = false;
+          dotMaterial.depthWrite = false;
+          scene.add(frontPointMesh);
+        }
 
         // showOverlay가 true일 때(제조사 페이지 등)는 모든 가이드를,
         // false일 때(의뢰자 페이지)는 AAA 값과 관련된 가이드만 그립니다.
@@ -1003,7 +1198,7 @@ export function StlPreviewViewer({
             <span>
               {connectionDiameterState > 0
                 ? connectionDiameterState.toFixed(1)
-                : "-"}
+                : "-"}{" "}
               mm
             </span>
           </div>
@@ -1013,11 +1208,39 @@ export function StlPreviewViewer({
               {totalLengthState > 0 ? totalLengthState.toFixed(1) : "-"} mm
             </span>
           </div>
-          {showOverlay && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500">테이퍼 각도 (AAA):</span>
+            <span>
+              {taperAngleState > 0 ? taperAngleState.toFixed(1) : "-"}°
+            </span>
+          </div>
+          {tiltAxisVectorState && (
             <div className="flex items-center gap-1.5">
-              <span className="text-slate-500">테이퍼 각도 (AAA):</span>
+              <span className="text-slate-500">경사축 벡터:</span>
               <span>
-                {taperAngleState > 0 ? taperAngleState.toFixed(1) : "-"}°
+                [{tiltAxisVectorState.x.toFixed(2)},{" "}
+                {tiltAxisVectorState.y.toFixed(2)},{" "}
+                {tiltAxisVectorState.z.toFixed(2)}]
+              </span>
+            </div>
+          )}
+          {frontPointState && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-500">FrontPoint:</span>
+              <span>
+                [
+                {frontPointState.x !== undefined && frontPointState.x !== null
+                  ? frontPointState.x.toFixed(2)
+                  : "-"}
+                ,{" "}
+                {frontPointState.y !== undefined && frontPointState.y !== null
+                  ? frontPointState.y.toFixed(2)
+                  : "-"}
+                ,{" "}
+                {frontPointState.z !== undefined && frontPointState.z !== null
+                  ? frontPointState.z.toFixed(2)
+                  : "-"}
+                ]
               </span>
             </div>
           )}

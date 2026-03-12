@@ -771,6 +771,8 @@ export function NewRequestDetailsSection({
                       connectionDiameter,
                       totalLength,
                       taperAngle,
+                      tiltAxisVector,
+                      frontPoint,
                     ) => {
                       const roundedMax =
                         Math.round((maxDiameter ?? 0) * 10) / 10;
@@ -785,6 +787,8 @@ export function NewRequestDetailsSection({
                         connectionDiameter: roundedConn,
                         totalLength: roundedLength,
                         taperAngle: roundedAngle,
+                        tiltAxisVector: tiltAxisVector || undefined,
+                        frontPoint: frontPoint || undefined,
                       });
                     }}
                   />

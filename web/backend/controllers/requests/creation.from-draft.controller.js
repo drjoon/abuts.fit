@@ -290,6 +290,12 @@ export async function createRequestsFromDraft(req, res) {
         const caseInfosWithFile = ci?.file
           ? {
               ...normalizedCi,
+              maxDiameter: ci.maxDiameter,
+              connectionDiameter: ci.connectionDiameter,
+              totalLength: ci.totalLength,
+              taperAngle: ci.taperAngle,
+              tiltAxisVector: ci.tiltAxisVector,
+              frontPoint: ci.frontPoint,
               newSystemRequest,
               file: {
                 originalName: ci.file.originalName,
@@ -301,6 +307,12 @@ export async function createRequestsFromDraft(req, res) {
             }
           : {
               ...normalizedCi,
+              maxDiameter: ci.maxDiameter,
+              connectionDiameter: ci.connectionDiameter,
+              totalLength: ci.totalLength,
+              taperAngle: ci.taperAngle,
+              tiltAxisVector: ci.tiltAxisVector,
+              frontPoint: ci.frontPoint,
               newSystemRequest,
             };
 

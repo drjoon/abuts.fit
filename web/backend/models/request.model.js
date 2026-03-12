@@ -65,6 +65,16 @@ const requestSchema = new mongoose.Schema(
       connectionDiameter: Number,
       totalLength: Number,
       taperAngle: Number,
+      tiltAxisVector: {
+        x: Number,
+        y: Number,
+        z: Number,
+      },
+      frontPoint: {
+        x: Number,
+        y: Number,
+        z: Number,
+      },
       newSystemRequest: {
         requested: { type: Boolean, default: false },
         manufacturer: String,
