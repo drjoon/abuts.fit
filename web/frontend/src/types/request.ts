@@ -232,6 +232,8 @@ export interface RequestBase {
     queuePosition?: number;
     diameter?: number;
     diameterGroup?: string;
+    actualCamStart?: string | Date;
+    actualCamComplete?: string | Date;
     actualMachiningComplete?: string | Date;
   };
 

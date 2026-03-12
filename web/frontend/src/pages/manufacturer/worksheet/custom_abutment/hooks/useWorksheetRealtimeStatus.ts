@@ -87,10 +87,22 @@ export function useWorksheetRealtimeStatus({
       setRequests((prev) =>
         prev.map((req) => {
           const rid = String(req?.requestId || "").trim();
-          const base = realtimeBaseRef.current[rid];
-          if (!rid || typeof base !== "number") return req;
+          if (!rid) return req;
+
+          let base = realtimeBaseRef.current[rid];
           const current = req.realtimeProgress || {};
-          if (!current?.badge) return req;
+
+          // 서버에서 startedAt을 내려주었으나 로컬 ref에 없는 경우 (리프레시 시 복원)
+          if (typeof base !== "number" && current?.startedAt) {
+            const parsed = new Date(current.startedAt).getTime();
+            if (Number.isFinite(parsed)) {
+              base = parsed;
+              realtimeBaseRef.current[rid] = base;
+            }
+          }
+
+          if (typeof base !== "number" || !current?.badge) return req;
+
           return {
             ...req,
             realtimeProgress: {

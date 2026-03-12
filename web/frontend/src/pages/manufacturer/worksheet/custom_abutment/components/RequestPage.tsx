@@ -87,13 +87,52 @@ const mergeTransientRealtimeProgress = (
       (mongoId ? prevByKey.get(`mongoId:${mongoId}`) : null) ||
       null;
 
-    if (!prev?.realtimeProgress || req?.realtimeProgress) {
+    let restoredProgress = req.realtimeProgress;
+
+    // 리프레시 직후 등 prev가 없고 req.realtimeProgress도 없을 때 DB 값을 기반으로 복원
+    if (!restoredProgress && !prev?.realtimeProgress) {
+      const stage = String(req.manufacturerStage || "").trim();
+      const actualCamStart = req.productionSchedule?.actualCamStart;
+      const actualCamComplete = req.productionSchedule?.actualCamComplete;
+      const hasNcFile = !!(req.caseInfos as any)?.ncFile?.fileName;
+
+      if (actualCamStart) {
+        console.log(
+          `[RESTORE_CAM] requestId: ${requestId}, stage: ${stage}, actualCamStart: ${actualCamStart}, actualCamComplete: ${actualCamComplete}, hasNcFile: ${hasNcFile}`,
+        );
+      }
+
+      const isCamProcessing =
+        !!actualCamStart &&
+        (!actualCamComplete ||
+          new Date(actualCamStart).getTime() >
+            new Date(actualCamComplete).getTime());
+
+      if (stage === "의뢰" && isCamProcessing && !hasNcFile) {
+        const startedAt = actualCamStart as string;
+        restoredProgress = {
+          badge: "CAM 생성중",
+          tone: "indigo",
+          startedAt,
+          elapsedSeconds: Math.max(
+            0,
+            Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000),
+          ),
+        };
+        console.log(
+          `[RESTORE_CAM] Restored progress for ${requestId}:`,
+          restoredProgress,
+        );
+      }
+    }
+
+    if (!prev?.realtimeProgress && !restoredProgress) {
       return req;
     }
 
     return {
       ...req,
-      realtimeProgress: prev.realtimeProgress,
+      realtimeProgress: prev?.realtimeProgress || restoredProgress,
     };
   });
 };

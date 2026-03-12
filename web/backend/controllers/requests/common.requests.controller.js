@@ -293,6 +293,8 @@ export async function getAllRequests(req, res) {
       "caseInfos.camDiameter",
       "productionSchedule.diameter",
       "productionSchedule.diameterGroup",
+      "productionSchedule.actualCamStart",
+      "productionSchedule.actualCamComplete",
       "productionSchedule.actualMachiningComplete",
       "productionSchedule.scheduledShipPickup",
       "timeline.estimatedShipYmd",
