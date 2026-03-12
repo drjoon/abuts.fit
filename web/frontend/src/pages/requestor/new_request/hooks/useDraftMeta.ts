@@ -31,6 +31,8 @@ export function useDraftMeta() {
   );
   const [error, setError] = useState<string | null>(null);
   const draftIdRef = useRef<string | null>(null);
+  const patchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastPatchMapRef = useRef<Record<string, CaseInfos> | null>(null);
 
   useEffect(() => {
     draftIdRef.current = draftId;
@@ -265,6 +267,23 @@ export function useDraftMeta() {
     ],
   );
 
+  // Debounced patch: 500ms 동안 변경이 없으면 한 번만 API 호출
+  const patchDraftDebounced = useCallback(
+    (map: Record<string, CaseInfos>) => {
+      // 이전 patch 타이머 취소
+      if (patchTimeoutRef.current) {
+        clearTimeout(patchTimeoutRef.current);
+      }
+
+      // 새 타이머 설정 (500ms 후 실행)
+      patchTimeoutRef.current = setTimeout(() => {
+        lastPatchMapRef.current = map;
+        void patchDraftImmediately(map);
+      }, 500);
+    },
+    [patchDraftImmediately],
+  );
+
   const updateCaseInfos = useCallback(
     (fileKey: string, newCaseInfos: Partial<CaseInfos>) => {
       setCaseInfosMap((prevMap) => {
@@ -285,12 +304,13 @@ export function useDraftMeta() {
           saveDraftMeta(draftIdRef.current, nextMap);
         }
 
-        void patchDraftImmediately(nextMap);
+        // Debounced patch: 500ms 동안 변경이 없으면 한 번만 API 호출
+        patchDraftDebounced(nextMap);
 
         return nextMap;
       });
     },
-    [patchDraftImmediately, saveDraftMeta],
+    [patchDraftDebounced, saveDraftMeta],
   );
 
   const removeCaseInfos = useCallback(
@@ -327,6 +347,15 @@ export function useDraftMeta() {
   const resetDraft = useCallback(async () => {
     await createFreshDraftState();
   }, [createFreshDraftState]);
+
+  // Cleanup: 컴포넌트 언마운트 시 pending patch 취소
+  useEffect(() => {
+    return () => {
+      if (patchTimeoutRef.current) {
+        clearTimeout(patchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return {
     draftId,

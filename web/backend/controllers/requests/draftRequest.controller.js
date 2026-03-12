@@ -138,7 +138,9 @@ export const updateDraft = asyncHandler(async (req, res) => {
 
       const normalizedCaseInfos = await Promise.all(
         newCaseInfos.map(async (ci) => {
-          const normalized = await normalizeCaseInfosImplantFields(ci);
+          // Draft 부분 업데이트 시에는 strict: false로 임플란트 필드 검증 스킵
+          // (사용자가 아직 정보를 입력하지 않은 상태에서도 저장 가능)
+          const normalized = await normalizeCaseInfosImplantFields(ci, false);
           return {
             ...ci,
             ...normalized,
@@ -238,12 +240,16 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
     clinicName,
     patientName,
     tooth,
-    ...(await normalizeCaseInfosImplantFields({
-      implantManufacturer,
-      implantBrand,
-      implantFamily,
-      implantType,
-    })),
+    // 파일 추가 시에도 strict: false로 부분 데이터 저장 허용
+    ...(await normalizeCaseInfosImplantFields(
+      {
+        implantManufacturer,
+        implantBrand,
+        implantFamily,
+        implantType,
+      },
+      false,
+    )),
     maxDiameter,
     connectionDiameter,
     totalLength,
@@ -337,12 +343,16 @@ export const addFilesToDraftBulk = asyncHandler(async (req, res) => {
         s3Key,
       };
 
-      const normalizedImplant = await normalizeCaseInfosImplantFields({
-        implantManufacturer,
-        implantBrand,
-        implantFamily,
-        implantType,
-      });
+      // 파일 bulk 추가 시에도 strict: false로 부분 데이터 저장 허용
+      const normalizedImplant = await normalizeCaseInfosImplantFields(
+        {
+          implantManufacturer,
+          implantBrand,
+          implantFamily,
+          implantType,
+        },
+        false,
+      );
 
       return {
         file: fileSubdoc,
