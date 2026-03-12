@@ -355,6 +355,8 @@ async def process_single_stl(p: Path, force_reprocess: bool = False):
                             log(f"[process_single_stl] STL metadata calculated and registered for {req_id}")
                     except Exception as e:
                         log(f"[process_single_stl] Failed to calculate STL metadata: {e}")
+            else:
+                log(f"[process_single_stl] Skipping STL metadata calculation: no finish line for {req_id}")
             
             if force_fill:
                 log("Force-fill 테스트 모드: presigned 업로드와 백엔드 통지를 생략합니다.")

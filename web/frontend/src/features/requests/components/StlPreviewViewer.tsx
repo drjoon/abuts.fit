@@ -59,25 +59,24 @@ export function StlPreviewViewer({
     onDiameterComputedRef.current = onDiameterComputed;
   }, [onDiameterComputed]);
 
+  // 백엔드 캐시된 메타데이터 동기화
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (cachedMetadata && cachedMetadata.maxDiameter) {
+      // 이미 상태에 값이 있으면 업데이트하지 않음 (중복 렌더링 방지)
+      if (maxDiameterState === cachedMetadata.maxDiameter) {
+        return;
+      }
 
-    setError(null);
-
-    // 백엔드 캐시가 있으면 우선 사용
-    if (cached && cachedMetadata) {
-      if (cachedMetadata.maxDiameter)
-        setMaxDiameterState(cachedMetadata.maxDiameter);
-      if (cachedMetadata.connectionDiameter)
-        setConnectionDiameterState(cachedMetadata.connectionDiameter);
-      if (cachedMetadata.totalLength)
-        setTotalLengthState(cachedMetadata.totalLength);
-      if (cachedMetadata.taperAngle !== undefined)
-        setTaperAngleState(cachedMetadata.taperAngle);
-      if (cachedMetadata.tiltAxisVector)
-        setTiltAxisVectorState(cachedMetadata.tiltAxisVector);
-      if (cachedMetadata.frontPoint)
-        setFrontPointState(cachedMetadata.frontPoint);
+      setMaxDiameterState(cachedMetadata.maxDiameter);
+      setConnectionDiameterState(cachedMetadata.connectionDiameter || null);
+      setTotalLengthState(cachedMetadata.totalLength || null);
+      setTaperAngleState(
+        cachedMetadata.taperAngle !== undefined
+          ? cachedMetadata.taperAngle
+          : null,
+      );
+      setTiltAxisVectorState(cachedMetadata.tiltAxisVector || null);
+      setFrontPointState(cachedMetadata.frontPoint || null);
 
       // 콜백 호출
       if (
@@ -96,14 +95,14 @@ export function StlPreviewViewer({
           cachedMetadata.frontPoint,
         );
       }
-    } else {
-      setMaxDiameterState(null);
-      setConnectionDiameterState(null);
-      setTotalLengthState(null);
-      setTaperAngleState(null);
-      setTiltAxisVectorState(null);
-      setFrontPointState(null);
     }
+  }, [cachedMetadata?.maxDiameter]);
+
+  // STL 렌더링 및 finish line 시각화
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    setError(null);
 
     const height = containerRef.current.clientHeight || 300;
     let width = containerRef.current.clientWidth || 300;
@@ -821,36 +820,8 @@ export function StlPreviewViewer({
             : "not found",
         );
 
-        if (bestFrontPoint) {
-          frontPoint = {
-            x: Math.round(bestFrontPoint.x * 100) / 100,
-            y: Math.round(bestFrontPoint.y * 100) / 100,
-            z: Math.round(bestFrontPoint.z * 100) / 100,
-          };
-          console.log("[FrontPoint] Final frontPoint:", frontPoint);
-        } else {
-          console.log("[FrontPoint] Failed to find FrontPoint");
-        }
-
-        setMaxDiameterState(Math.round(maxDiameter * 10) / 10);
-        setConnectionDiameterState(Math.round(connectionDiameter * 10) / 10);
-        setTotalLengthState(Math.round(totalLength * 10) / 10);
-        setTaperAngleState(Math.round(taperAngle * 10) / 10);
-        setTiltAxisVectorState(tiltAxisVector);
-        setFrontPointState(frontPoint);
-
-        if (onDiameterComputedRef.current) {
-          onDiameterComputedRef.current(
-            file.name,
-            maxDiameter,
-            connectionDiameter,
-            totalLength,
-            taperAngle,
-            tiltAxisVector,
-            frontPoint,
-          );
-        }
-
+        // 메타데이터는 백엔드 캐시에서만 사용 (프론트 계산 제거)
+        // STL 메시 추가
         mesh.position.sub(center);
         scene.add(mesh);
 

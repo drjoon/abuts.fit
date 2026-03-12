@@ -36,7 +36,12 @@ export async function apiFetch<T = any>(
 ): Promise<ApiResponse<T>> {
   const { path, method = "GET", token, jsonBody, headers, ...rest } = options;
 
-  const url = path.startsWith("http") ? path : path;
+  // path가 절대 URL이면 그대로 사용, 아니면 /api 접두사 추가
+  const url = path.startsWith("http")
+    ? path
+    : path.startsWith("/api")
+      ? path
+      : `/api${path}`;
 
   const finalHeaders: HeadersInit = {
     ...(headers || {}),

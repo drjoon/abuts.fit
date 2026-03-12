@@ -331,7 +331,69 @@
 - 현재 canonical 필드에서 `system`은 Brand, `family`는 Family 의미로 취급합니다.
 - Family를 다시 System이라고 부르는 문구는 만들지 않습니다.
 
-## 9. 운영 메모
+## 9. BG 서비스 배포 및 STL 메타데이터 처리
+
+### 9.1 배포 구조
+
+- **개발 환경**: macOS (Windsurf IDE)
+- **운영 환경**: 원격 Windows PC (3대)
+  - PC1: rhino-server, esprit-addin, bridge-server
+  - PC2: lot-server, pack-server
+  - PC3: wbls-server
+
+### 9.2 STL 메타데이터 처리 흐름
+
+**초기 처리 (CAM 파일 생성 시)**:
+
+```
+rhino-server (Python)
+  ↓
+1) Finish line 계산 (Python 코드)
+  ↓
+2) subprocess로 Node.js 호출 (stl-metadata/index.js)
+  ↓
+3) Node.js에서 메타데이터 계산
+   - maxDiameter (최대 직경)
+   - connectionDiameter (커넥션 직경)
+   - totalLength (전체 길이)
+   - taperAngle (테이퍼 각도)
+   - tiltAxisVector (경사축 벡터)
+   - frontPoint (프론트 포인트)
+  ↓
+4) 백엔드에 등록
+   - /bg/register-file (CAM 파일)
+   - /bg/register-finish-line (finish line)
+   - /bg/register-stl-metadata (메타데이터)
+```
+
+**재계산 (프론트 "메타데이터 재계산" 버튼)**:
+
+```
+프론트: POST /bg/recalculate-stl-metadata/{requestId}
+  ↓
+백엔드: rhino-server에 재계산 요청
+  ↓
+rhino-server (Python)
+  ↓
+1) 백엔드에서 CAM 파일 경로 및 finish line 조회
+  ↓
+2) subprocess로 Node.js 호출
+  ↓
+3) 메타데이터 계산
+  ↓
+4) 백엔드에 등록 (/bg/register-stl-metadata)
+```
+
+**구현 규칙**:
+
+- **Finish line은 메타데이터 계산에 필수입니다.** finish line이 없으면 메타데이터 계산을 실행하지 않습니다.
+- finish line이 있을 때만 다음 메타데이터를 계산합니다:
+  - maxDiameter, connectionDiameter, totalLength (기본)
+  - taperAngle, tiltAxisVector, frontPoint (finish line 기반)
+- 재계산 API 호출 시 finish line이 없으면 400 에러를 반환합니다.
+- 초기 처리 시 finish line이 없으면 메타데이터 계산을 건너뜁니다.
+
+## 10. 운영 메모
 
 - 하위 `rules.md`는 루트 규칙을 반복 작성하지 않습니다.
 - 구현 세부, 트러블슈팅, 서비스별 로컬 설정만 남깁니다.

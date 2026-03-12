@@ -1449,9 +1449,12 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
 export const getStlMetadata = asyncHandler(async (req, res) => {
   const { requestId } = req.params;
 
+  console.log(`[getStlMetadata] Called with requestId=${requestId}`);
+
   const request = await Request.findOne({ requestId });
 
   if (!request) {
+    console.log(`[getStlMetadata] Request not found: ${requestId}`);
     throw new ApiError(404, "Request not found");
   }
 
@@ -1464,6 +1467,15 @@ export const getStlMetadata = asyncHandler(async (req, res) => {
     frontPoint: request.caseInfos?.frontPoint,
     taperGuide: request.caseInfos?.taperGuide,
   };
+
+  console.log(
+    `[getStlMetadata] requestId=${requestId} ` +
+      `cached=${!!(metadata.maxDiameter && metadata.connectionDiameter)} ` +
+      `maxDiameter=${metadata.maxDiameter} ` +
+      `connectionDiameter=${metadata.connectionDiameter} ` +
+      `totalLength=${metadata.totalLength} ` +
+      `taperAngle=${metadata.taperAngle}`,
+  );
 
   return res.status(200).json(
     new ApiResponse(
