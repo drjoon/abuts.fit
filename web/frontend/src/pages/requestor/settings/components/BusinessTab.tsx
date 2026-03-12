@@ -1058,16 +1058,6 @@ export const BusinessTab = ({
         return;
       }
 
-      if (licenseFileName) {
-        toast({
-          title: "이미 업로드되어 있습니다",
-          description:
-            "사업자등록증을 재업로드하려면 먼저 삭제하거나 [초기화]를 진행해주세요.",
-          duration: 3000,
-        });
-        return;
-      }
-
       const canUploadLicense =
         membership === "owner" ||
         (membership === "none" && setupMode === "license");
@@ -1154,11 +1144,22 @@ export const BusinessTab = ({
           String(v || "").trim(),
         );
         const nextCompanyName = String(nextExtracted?.companyName || "").trim();
+        // 주소 필드만 초기화하되, OCR에서 인식된 startDate가 없으면 기존 값 보존
+        const nextStartDate =
+          String(nextExtracted?.startDate || "").trim() || extracted.startDate;
+        console.info(`${BUSINESS_TAB_DEBUG_PREFIX} OCR startDate debug`, {
+          "nextExtracted.startDate": String(
+            nextExtracted?.startDate || "",
+          ).trim(),
+          "extracted.startDate": extracted.startDate,
+          "nextStartDate (final)": nextStartDate,
+        });
         setExtracted({
           ...nextExtracted,
           address: "",
           addressDetail: "",
           zipCode: "",
+          startDate: nextStartDate,
         });
         setBusinessData((prev) => ({
           ...prev,
@@ -1189,6 +1190,7 @@ export const BusinessTab = ({
               address: String(nextExtracted?.address || "").trim(),
               zipCode: String(nextExtracted?.zipCode || "").trim(),
               phoneNumber: String(nextExtracted?.phoneNumber || "").trim(),
+              startDate: nextStartDate,
             },
             verification,
           },
@@ -1258,15 +1260,6 @@ export const BusinessTab = ({
   const handleLicenseFilesDrop = (selectedFiles: File[]) => {
     const file = selectedFiles?.[0];
     if (!file) return;
-    if (licenseFileName) {
-      toast({
-        title: "이미 업로드되어 있습니다",
-        description:
-          "사업자등록증을 재업로드하려면 먼저 삭제하거나 [초기화]를 진행해주세요.",
-        duration: 3000,
-      });
-      return;
-    }
     void handleFileUpload(file);
   };
 
@@ -1421,6 +1414,7 @@ export const BusinessTab = ({
                       membership={membership}
                       licenseStatus={licenseStatus}
                       isVerified={isVerified}
+                      validationSucceeded={validationSucceeded}
                       licenseFileName={licenseFileName}
                       licenseDeleteLoading={licenseDeleteLoading}
                       onFileUpload={handleFileUpload}
@@ -1448,7 +1442,10 @@ export const BusinessTab = ({
                           ? "사업자등록이 완료되었습니다"
                           : undefined
                       }
-                      businessNumberLocked={validationSucceeded}
+                      businessNumberLocked={
+                        validationSucceeded &&
+                        Boolean(businessData.businessNumber)
+                      }
                       autoOpenAddressSearchSignal={autoOpenAddressSearchSignal}
                       focusFirstMissingSignal={focusFirstMissingSignal}
                       focusFieldKey={focusFieldKey}

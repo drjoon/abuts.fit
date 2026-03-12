@@ -9,6 +9,7 @@ interface BusinessLicenseUploadProps {
   membership: MembershipStatus;
   licenseStatus: LicenseStatus;
   isVerified: boolean;
+  validationSucceeded?: boolean; // 사업자등록번호 검증 완료 여부
   licenseFileName: string;
   licenseDeleteLoading: boolean;
   onFileUpload: (file: File) => void;
@@ -28,6 +29,7 @@ export const BusinessLicenseUpload = forwardRef<
       membership,
       licenseStatus,
       isVerified,
+      validationSucceeded,
       licenseFileName,
       licenseDeleteLoading,
       onFileUpload,
@@ -40,11 +42,8 @@ export const BusinessLicenseUpload = forwardRef<
     const uploadButtonRef = useRef<HTMLButtonElement | null>(null);
     const canEdit = membership === "owner" || membership === "none";
     const hasExistingLicense = Boolean(licenseFileName);
-    const canUploadNew = canEdit && !hasExistingLicense;
-
-    if (isVerified) {
-      return null;
-    }
+    // 항상 업로드 가능 (검증 후에도 재업로드 가능)
+    const canUploadNew = canEdit;
 
     useImperativeHandle(
       ref,
@@ -82,15 +81,6 @@ export const BusinessLicenseUpload = forwardRef<
                   ) {
                     return;
                   }
-                  if (!canUploadNew) {
-                    toast({
-                      title: "이미 업로드되어 있습니다",
-                      description:
-                        "사업자등록증을 재업로드하려면 먼저 삭제하거나 [초기화]를 진행해주세요.",
-                      duration: 3000,
-                    });
-                    return;
-                  }
                   licenseInputRef.current?.click();
                 }}
               >
@@ -106,7 +96,7 @@ export const BusinessLicenseUpload = forwardRef<
                 type="file"
                 className="hidden"
                 accept=".jpg,.jpeg,.png"
-                disabled={!canEdit || !canUploadNew}
+                disabled={!canEdit}
                 onChange={(e) => {
                   const f = e.target.files?.[0];
                   if (f) onFileUpload(f);
@@ -117,7 +107,7 @@ export const BusinessLicenseUpload = forwardRef<
                 JPG, PNG 파일만 가능 (최대 10MB)
               </p>
             </div>
-            {licenseFileName && !isVerified && (
+            {licenseFileName && (
               <div className="flex w-fit max-w-xs items-center justify-between gap-2 rounded-md border bg-slate-50 px-3 py-2 mx-auto">
                 <div className="flex items-center gap-2">
                   {licenseStatus === "ready" && (

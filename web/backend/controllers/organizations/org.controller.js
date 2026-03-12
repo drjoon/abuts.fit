@@ -1482,25 +1482,8 @@ export async function updateMyOrganization(req, res) {
       };
     }
 
-    if (
-      originalBusinessId &&
-      org?._id &&
-      String(originalBusinessId) !== String(org._id)
-    ) {
-      const priorLedgerCount = await CreditLedger.countDocuments({
-        businessId: originalBusinessId,
-      });
-      const nextLedgerCount = await CreditLedger.countDocuments({
-        businessId: org._id,
-      });
-      console.error("[ORGANIZATION_UPDATE_BUSINESS_SWITCH]", {
-        userId: String(req.user._id),
-        originalBusinessId: String(originalBusinessId),
-        resolvedOrganizationId: String(org._id),
-        priorLedgerCount,
-        nextLedgerCount,
-        businessNumber,
-      });
+    for (const [k, v] of Object.entries(extractedPatch)) {
+      patch[`extracted.${k}`] = v;
     }
 
     if (

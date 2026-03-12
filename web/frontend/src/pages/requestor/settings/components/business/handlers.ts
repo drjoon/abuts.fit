@@ -219,45 +219,58 @@ export const handleSave = async (
       return { success: false };
     }
 
+    const requestPayload = {
+      organizationType,
+      name: companyName,
+      representativeName: repName,
+      phoneNumber: normalizedPhoneNumber,
+      businessNumber: normalizedBusinessNumber,
+      businessType,
+      businessItem,
+      email: taxEmail,
+      address,
+      addressDetail,
+      zipCode,
+      startDate,
+      ...(businessLicense &&
+      (String(businessLicense?.s3Key || "").trim() ||
+        String(businessLicense?.fileId || "").trim() ||
+        String(businessLicense?.originalName || "").trim())
+        ? {
+            businessLicense: {
+              fileId: String(businessLicense?.fileId || "").trim() || null,
+              s3Key: String(businessLicense?.s3Key || "").trim(),
+              originalName: String(businessLicense?.originalName || "").trim(),
+            },
+          }
+        : {}),
+    };
+
+    console.info("[handleSave] API request payload", requestPayload);
+
     const res = await request<any>({
       path: "/api/organizations/me",
       method: "PUT",
       token,
       headers: mockHeaders ?? undefined,
-      jsonBody: {
-        organizationType,
-        name: companyName,
-        representativeName: repName,
-        phoneNumber: normalizedPhoneNumber,
-        businessNumber: normalizedBusinessNumber,
-        businessType,
-        businessItem,
-        email: taxEmail,
-        address,
-        addressDetail,
-        zipCode,
-        startDate,
-        ...(businessLicense &&
-        (String(businessLicense?.s3Key || "").trim() ||
-          String(businessLicense?.fileId || "").trim() ||
-          String(businessLicense?.originalName || "").trim())
-          ? {
-              businessLicense: {
-                fileId: String(businessLicense?.fileId || "").trim() || null,
-                s3Key: String(businessLicense?.s3Key || "").trim(),
-                originalName: String(
-                  businessLicense?.originalName || "",
-                ).trim(),
-              },
-            }
-          : {}),
-      },
+      jsonBody: requestPayload,
+    });
+
+    console.info("[handleSave] API response", {
+      ok: res.ok,
+      status: res.status,
+      data: res.data,
     });
 
     if (!res.ok) {
       const body: any = res.data || {};
       const reason = String(body?.reason || "").trim();
       const serverMessage = String(body?.message || "").trim();
+      console.error("[handleSave] API error details", {
+        reason,
+        serverMessage,
+        fullBody: body,
+      });
       const isLockedNumberReason =
         reason === "duplicate_business_number" ||
         reason === "business_number_locked" ||
@@ -425,10 +438,6 @@ export const handleDeleteLicense = async (
         duration: 3000,
       });
       return false;
-    }
-
-    if (!licenseFileName && !licenseS3Key && !licenseFileId) {
-      return true;
     }
 
     setLicenseDeleteLoading(true);
