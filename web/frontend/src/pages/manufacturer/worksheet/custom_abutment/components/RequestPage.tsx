@@ -2,16 +2,12 @@ import {
   useMemo,
   useState,
   useEffect,
-  useLayoutEffect,
   useCallback,
   useRef,
-  type DragEvent,
-  type ChangeEvent,
   type ReactNode,
 } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { type DiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 import {
@@ -20,29 +16,24 @@ import {
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
 import { useToast } from "@/shared/hooks/use-toast";
-import { toKstYmd } from "@/shared/date/kst";
-import { Badge } from "@/components/ui/badge";
-import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
-import { Dialog } from "@/components/ui/dialog";
-import {
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import { DialogClose } from "@radix-ui/react-dialog";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import {
   type ManufacturerRequest,
-  type ReviewStageKey,
-  getReviewStageKeyByTab,
-  getReviewLabel,
-  getReviewBadgeClassName,
   deriveStageForFilter,
   stageOrder,
-  getAcceptByStage,
   getDiameterBucketIndex,
+  getReviewStageKeyByTab,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import {
+  filterRequestsByStage,
+  filterAndSortRequests,
+  mergeTransientRealtimeProgress,
+  isPrePickupShippingVisible,
+} from "@/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering";
+import {
+  usePagination,
+  useInfiniteScroll,
+} from "@/pages/manufacturer/worksheet/custom_abutment/utils/requestPagination";
 import { MailboxGrid } from "../shipping/components/MailboxGrid";
 import { MailboxContentsModal } from "../shipping/components/MailboxContentsModal";
 import { WorksheetCardGrid } from "./WorksheetCardGrid";
@@ -54,87 +45,11 @@ import { useStageDropHandlers } from "@/pages/manufacturer/worksheet/custom_abut
 import { useWorksheetRealtimeStatus } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus";
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
 
-type FilePreviewInfo = {
-  originalName: string;
-  url: string;
-};
-
 type PreviewFiles = {
   original?: File | null;
   cam?: File | null;
   title?: string;
   request?: ManufacturerRequest | null;
-};
-
-const mergeTransientRealtimeProgress = (
-  prevRequests: ManufacturerRequest[],
-  nextRequests: ManufacturerRequest[],
-): ManufacturerRequest[] => {
-  const prevByKey = new Map<string, ManufacturerRequest>();
-
-  for (const req of prevRequests) {
-    const requestId = String(req?.requestId || "").trim();
-    const mongoId = String(req?._id || "").trim();
-    if (requestId) prevByKey.set(`requestId:${requestId}`, req);
-    if (mongoId) prevByKey.set(`mongoId:${mongoId}`, req);
-  }
-
-  return nextRequests.map((req) => {
-    const requestId = String(req?.requestId || "").trim();
-    const mongoId = String(req?._id || "").trim();
-    const prev =
-      (requestId ? prevByKey.get(`requestId:${requestId}`) : null) ||
-      (mongoId ? prevByKey.get(`mongoId:${mongoId}`) : null) ||
-      null;
-
-    let restoredProgress = req.realtimeProgress;
-
-    // 리프레시 직후 등 prev가 없고 req.realtimeProgress도 없을 때 DB 값을 기반으로 복원
-    if (!restoredProgress && !prev?.realtimeProgress) {
-      const stage = String(req.manufacturerStage || "").trim();
-      const actualCamStart = req.productionSchedule?.actualCamStart;
-      const actualCamComplete = req.productionSchedule?.actualCamComplete;
-      const hasNcFile = !!(req.caseInfos as any)?.ncFile?.fileName;
-
-      if (actualCamStart) {
-        console.log(
-          `[RESTORE_CAM] requestId: ${requestId}, stage: ${stage}, actualCamStart: ${actualCamStart}, actualCamComplete: ${actualCamComplete}, hasNcFile: ${hasNcFile}`,
-        );
-      }
-
-      const isCamProcessing =
-        !!actualCamStart &&
-        (!actualCamComplete ||
-          new Date(actualCamStart).getTime() >
-            new Date(actualCamComplete).getTime());
-
-      if (stage === "의뢰" && isCamProcessing && !hasNcFile) {
-        const startedAt = actualCamStart as string;
-        restoredProgress = {
-          badge: "CAM 생성중",
-          tone: "indigo",
-          startedAt,
-          elapsedSeconds: Math.max(
-            0,
-            Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000),
-          ),
-        };
-        console.log(
-          `[RESTORE_CAM] Restored progress for ${requestId}:`,
-          restoredProgress,
-        );
-      }
-    }
-
-    if (!prev?.realtimeProgress && !restoredProgress) {
-      return req;
-    }
-
-    return {
-      ...req,
-      realtimeProgress: prev?.realtimeProgress || restoredProgress,
-    };
-  });
 };
 
 export const RequestPage = ({
@@ -185,17 +100,9 @@ export const RequestPage = ({
   const visibleCountRef = useRef(12);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const ioRef = useRef<IntersectionObserver | null>(null);
   const totalCountRef = useRef(0);
   const userScrolledRef = useRef(false);
-  // Network pagination page size for worksheet
   const PAGE_LIMIT = 12;
-  const pageRef = useRef(1);
-  const hasMoreRef = useRef(true);
-  const isFetchingPageRef = useRef(false);
-  const lastFetchTimeRef = useRef(0);
-  const bootstrapLoadsRef = useRef(0);
-  const maxBootstrapLoads = 5;
   const [mailboxModalOpen, setMailboxModalOpen] = useState(false);
   const [mailboxModalAddress, setMailboxModalAddress] = useState("");
   const [mailboxModalRequests, setMailboxModalRequests] = useState<
@@ -217,27 +124,17 @@ export const RequestPage = ({
     try {
       const eucKrDecoder = new TextDecoder("euc-kr", { fatal: false });
       return eucKrDecoder.decode(buffer);
-    } catch {
+    } catch (error) {
+      console.error("Error decoding NC text:", error);
       return utf8Text;
     }
   }, []);
 
   const { toast } = useToast();
 
-  const { handleOpenPreview } = usePreviewLoader({
-    token,
-    isCamStage,
-    isMachiningStage,
-    tabStage,
-    decodeNcText,
-    setPreviewLoading,
-    setPreviewNcText,
-    setPreviewNcName,
-    setPreviewStageUrl,
-    setPreviewStageName,
-    setPreviewFiles,
-    setPreviewOpen,
-  });
+  // Use refs for pagination state to avoid circular dependency with usePagination hook
+  const pageRefForCore = useRef(1);
+  const hasMoreRefForCore = useRef(true);
 
   const fetchRequestsCore = useCallback(
     async (silent = false, append = false) => {
@@ -277,7 +174,7 @@ export const RequestPage = ({
         const path = (() => {
           const url = new URL(basePath, window.location.origin);
           // Always include page & limit to encourage backend pagination
-          url.searchParams.set("page", String(pageRef.current));
+          url.searchParams.set("page", String(pageRefForCore.current));
           url.searchParams.set("limit", String(PAGE_LIMIT));
           url.searchParams.set("view", "worksheet");
           url.searchParams.set("includeTotal", "0");
@@ -352,7 +249,7 @@ export const RequestPage = ({
             );
           }
           // if received less than limit, no more pages
-          hasMoreRef.current = list.length >= PAGE_LIMIT;
+          hasMoreRefForCore.current = list.length >= PAGE_LIMIT;
         }
 
         return list as ManufacturerRequest[];
@@ -373,14 +270,18 @@ export const RequestPage = ({
     [token, user?.role, toast, tabStage, isCamStage, isMachiningStage],
   );
 
+  // Initialize pagination hooks after fetchRequestsCore is defined
+  const { pageRef, hasMoreRef, fetchNextPage, resetPagination } = usePagination(
+    fetchRequestsCore,
+    PAGE_LIMIT,
+  );
+
   const fetchRequests = useCallback(
     async (silent = false) => {
-      // reset paging
-      pageRef.current = 1;
-      hasMoreRef.current = true;
+      resetPagination();
       return await fetchRequestsCore(silent, false);
     },
-    [fetchRequestsCore],
+    [fetchRequestsCore, resetPagination],
   );
 
   const refreshRequests = useCallback(
@@ -442,29 +343,26 @@ export const RequestPage = ({
     [filterRequests, isCamStage, isMachiningStage, showCompleted, tabStage],
   );
 
-  const fetchNextPage = useCallback(async () => {
-    if (isFetchingPageRef.current) return;
-    if (!hasMoreRef.current) return;
+  // Sync pagination refs
+  useEffect(() => {
+    pageRefForCore.current = pageRef.current;
+    hasMoreRefForCore.current = hasMoreRef.current;
+  }, [pageRef, hasMoreRef]);
 
-    // Throttle: enforce minimum 500ms between fetches to avoid 429 rate limit
-    const now = Date.now();
-    const timeSinceLastFetch = now - lastFetchTimeRef.current;
-    if (timeSinceLastFetch < 500) {
-      console.log(
-        "[RequestPage] Throttling fetchNextPage, too soon since last fetch",
-      );
-      return;
-    }
-
-    isFetchingPageRef.current = true;
-    lastFetchTimeRef.current = now;
-    try {
-      pageRef.current += 1;
-      await fetchRequestsCore(true, true);
-    } finally {
-      isFetchingPageRef.current = false;
-    }
-  }, [fetchRequestsCore]);
+  const { handleOpenPreview } = usePreviewLoader({
+    token,
+    isCamStage,
+    isMachiningStage,
+    tabStage,
+    decodeNcText,
+    setPreviewLoading,
+    setPreviewNcText,
+    setPreviewNcName,
+    setPreviewStageUrl,
+    setPreviewStageName,
+    setPreviewFiles,
+    setPreviewOpen,
+  });
 
   const {
     handleDownloadOriginalStl,
@@ -784,109 +682,19 @@ export const RequestPage = ({
           : "의뢰";
   const currentStageOrder = stageOrder[currentStageForTab] ?? 0;
 
-  const isPrePickupShippingVisible = (req: ManufacturerRequest) => {
-    const stage = String(req.manufacturerStage || "").trim();
-    const di =
-      req.deliveryInfoRef && typeof req.deliveryInfoRef === "object"
-        ? (req.deliveryInfoRef as any)
-        : null;
-    const statusCode = Number(di?.tracking?.lastStatusCode || 0);
-    const isCanceled =
-      String(di?.tracking?.lastStatusText || "").trim() === "예약취소";
-    const hasPickupReservation = Boolean(
-      di?.trackingNumber || di?.shippedAt || di?.tracking?.lastStatusText,
-    );
-    return (
-      stage === "추적관리" &&
-      hasPickupReservation &&
-      !di?.deliveredAt &&
-      !isCanceled &&
-      (!Number.isFinite(statusCode) || statusCode < 11)
-    );
-  };
-
   const filteredBase = useMemo(() => {
     if (!Array.isArray(requests)) return [];
-
-    if (showCompleted) {
-      // 발송 탭: showCompleted가 켜져도 "접수전"은 포함
-      if (tabStage === "shipping") {
-        return requests.filter((req) => {
-          if (isPrePickupShippingVisible(req)) return true;
-          if (!filterRequests) return true;
-          try {
-            return filterRequests(req);
-          } catch {
-            return false;
-          }
-        });
-      }
-      return requests.filter((req) => {
-        const stage = deriveStageForFilter(req);
-        const order = stageOrder[stage] ?? 0;
-        return order >= currentStageOrder;
-      });
-    }
-
-    if (tabStage === "shipping") {
-      return requests.filter((req) => {
-        if (isPrePickupShippingVisible(req)) return true;
-        try {
-          return filterRequests ? filterRequests(req) : true;
-        } catch {
-          return false;
-        }
-      });
-    }
-
-    const base = filterRequests
-      ? requests.filter((req) => {
-          try {
-            return filterRequests(req);
-          } catch {
-            return false;
-          }
-        })
-      : requests;
-
-    // 단계별 필터가 있으면 추가 필터 없이 그 결과 사용
-    if (filterRequests) return base;
-
-    // 기본(의뢰/CAM) 탭에서는 생산(가공후) 단계 이상은 제외
-    return base.filter((req) => {
-      const stage = deriveStageForFilter(req);
-      const order = stageOrder[stage] ?? 0;
-      // 현재 탭보다 높은 단계의 의뢰는 숨김 (단, showCompleted가 꺼져있을 때)
-      return order <= currentStageOrder;
-    });
+    return filterRequestsByStage(
+      requests,
+      tabStage,
+      showCompleted,
+      currentStageOrder,
+      filterRequests,
+    );
   }, [currentStageOrder, filterRequests, requests, showCompleted, tabStage]);
 
   const filteredAndSorted = useMemo(() => {
-    return filteredBase
-      .filter((request) => {
-        const caseInfos = request.caseInfos || {};
-        const text = (
-          (request.referenceIds?.join(",") || "") +
-          (request.requestor?.organization || "") +
-          (request.requestor?.name || "") +
-          (caseInfos.clinicName || "") +
-          (caseInfos.patientName || "") +
-          (request.description || "") +
-          (caseInfos.tooth || "") +
-          (caseInfos.connectionDiameter || "") +
-          (caseInfos.implantManufacturer || "") +
-          (caseInfos.implantBrand || "") +
-          (caseInfos.implantFamily || "") +
-          (caseInfos.implantType || "")
-        ).toLowerCase();
-        return text.includes(searchLower);
-      })
-      .sort((a, b) => {
-        const aScore = a.shippingPriority?.score ?? 0;
-        const bScore = b.shippingPriority?.score ?? 0;
-        if (aScore !== bScore) return bScore - aScore;
-        return new Date(a.createdAt) < new Date(b.createdAt) ? 1 : -1;
-      });
+    return filterAndSortRequests(filteredBase, searchLower);
   }, [filteredBase, searchLower]);
 
   useEffect(() => {
@@ -914,56 +722,27 @@ export const RequestPage = ({
 
   const getFilteredAndSortedRequests = useCallback(
     (sourceRequests: ManufacturerRequest[]) => {
-      const base = (() => {
-        if (showCompleted) {
-          if (tabStage === "shipping") {
-            return sourceRequests.filter((req) => {
-              if (isPrePickupShippingVisible(req)) return true;
-              if (!filterRequests) return true;
-              try {
-                return filterRequests(req);
-              } catch {
-                return false;
-              }
-            });
-          }
-          return sourceRequests.filter((req) => {
-            const stage = deriveStageForFilter(req);
-            const order = stageOrder[stage] ?? 0;
-            return order >= currentStageOrder;
-          });
-        }
+      const base = filterRequestsByStage(
+        sourceRequests,
+        tabStage,
+        showCompleted,
+        currentStageOrder,
+        filterRequests,
+      );
+      return filterAndSortRequests(base, searchLower);
+    },
+    [currentStageOrder, filterRequests, searchLower, showCompleted, tabStage],
+  );
 
-        if (tabStage === "shipping") {
-          return sourceRequests.filter((req) => {
-            if (isPrePickupShippingVisible(req)) return true;
-            try {
-              return filterRequests ? filterRequests(req) : true;
-            } catch {
-              return false;
-            }
-          });
-        }
-
-        const filtered = filterRequests
-          ? sourceRequests.filter((req) => {
-              try {
-                return filterRequests(req);
-              } catch {
-                return false;
-              }
-            })
-          : sourceRequests;
-
-        if (filterRequests) return filtered;
-
-        return filtered.filter((req) => {
-          const stage = deriveStageForFilter(req);
-          const order = stageOrder[stage] ?? 0;
-          return order <= currentStageOrder;
-        });
-      })();
-
+  const getFilteredAndSortedRequestsOld = useCallback(
+    (sourceRequests: ManufacturerRequest[]) => {
+      const base = filterRequestsByStage(
+        sourceRequests,
+        tabStage,
+        showCompleted,
+        currentStageOrder,
+        filterRequests,
+      );
       return base
         .filter((request) => {
           const caseInfos = request.caseInfos || {};
@@ -972,7 +751,6 @@ export const RequestPage = ({
             (request.requestor?.organization || "") +
             (request.requestor?.name || "") +
             (caseInfos.clinicName || "") +
-            (caseInfos.patientName || "") +
             (request.description || "") +
             (caseInfos.tooth || "") +
             (caseInfos.connectionDiameter || "") +
@@ -1123,36 +901,15 @@ export const RequestPage = ({
     node.addEventListener("scroll", onScroll, { passive: true });
   }, []);
 
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0].isIntersecting) return;
-        if (!userScrolledRef.current) return;
-        if (
-          visibleCount >= filteredAndSorted.length - 3 &&
-          hasMoreRef.current
-        ) {
-          void fetchNextPage();
-        }
-        if (visibleCount < filteredAndSorted.length) {
-          setVisibleCount((prev) => prev + 9);
-        }
-      },
-      { threshold: 0.2 },
-    );
-
-    const target = sentinelRef.current;
-    if (target) {
-      observer.observe(target);
-    }
-
-    return () => {
-      if (target) {
-        observer.unobserve(target);
-      }
-      observer.disconnect();
-    };
-  }, [visibleCount, filteredAndSorted.length, fetchNextPage]);
+  useInfiniteScroll(
+    sentinelRef,
+    visibleCount,
+    filteredAndSorted.length,
+    hasMoreRef.current,
+    fetchNextPage,
+    setVisibleCount,
+    userScrolledRef,
+  );
 
   totalCountRef.current = filteredAndSorted.length;
   const paginatedRequests = filteredAndSorted.slice(0, visibleCount);

@@ -10,7 +10,7 @@ import {
   ensureReviewByStageDefaults,
 } from "./utils.js";
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
-import { triggerEspritForNc } from "./common.review.controller.js";
+import { triggerEspritForNc } from "./common.review.esprit.js";
 import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
 
 const BRIDGE_BASE = process.env.BRIDGE_BASE;
