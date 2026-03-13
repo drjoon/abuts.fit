@@ -15,7 +15,18 @@ _env_storage_root = os.getenv("BG_STORAGE_ROOT", "").strip()
 if _env_storage_root:
     BG_STORAGE_ROOT = Path(_env_storage_root)
 else:
-    BG_STORAGE_ROOT = APP_ROOT.parent.parent / "storage"
+    # 실행 경로 기반 자동 감지: rhino-server/compute 상위의 storage 폴더 찾기
+    # 경로: C:\Users\user\abuts.fit\bg\rhino-server\compute\ 또는
+    #       C:\Users\user\abuts.fit\bg\pc1\rhino-server\compute\
+    current = APP_ROOT.parent  # rhino-server
+    while current != current.parent:  # 루트까지 올라가기
+        if (current / "storage").exists():
+            BG_STORAGE_ROOT = current / "storage"
+            break
+        current = current.parent
+    else:
+        # storage 폴더를 찾지 못하면 기본값 사용
+        BG_STORAGE_ROOT = APP_ROOT.parent.parent / "storage"
 
 STORE_IN_DIR = BG_STORAGE_ROOT / "1-stl"
 STORE_OUT_DIR = BG_STORAGE_ROOT / "2-filled"
