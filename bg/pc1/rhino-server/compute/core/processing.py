@@ -20,7 +20,7 @@ def save_cached_metadata(_: Path, __: dict) -> None:
     return
 def notify_runtime_status(item: dict | None, *, source: str, stage: str, status: str, label: str, tone: str | None = None, clear: bool = False, metadata: dict | None = None) -> None:
     try:
-        backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api").rstrip("/")
+        backend_url = os.getenv("BACKEND_BASE", "").rstrip("/")
         if not backend_url:
             return
         request_id = None
@@ -51,7 +51,10 @@ def notify_runtime_status(item: dict | None, *, source: str, stage: str, status:
         log(f"runtime-status notify failed: {e}")
 def upload_via_presign(out_path: Path, original_name: str, item: dict) -> bool:
     try:
-        backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api").rstrip("/")
+        backend_url = os.getenv("BACKEND_BASE", "").rstrip("/")
+        if not backend_url:
+            log("BACKEND_BASE not configured")
+            return False
         presign_url = f"{backend_url}/bg/presign-upload"
         req_id = item.get("requestId") or settings.extract_request_id_from_name(original_name)
         file_name = out_path.name
@@ -117,9 +120,9 @@ def upload_via_presign(out_path: Path, original_name: str, item: dict) -> bool:
         return False
 def fetch_pending_stl_list() -> list[dict]:
     import os
-    backend = os.getenv("BACKEND_URL", "").rstrip("/")
+    backend = os.getenv("BACKEND_BASE", "").rstrip("/")
     if not backend:
-        log("pending-stl skipped: BACKEND_URL not set")
+        log("pending-stl skipped: BACKEND_BASE not set")
         return []
     url = f"{backend}/bg/pending-stl"
     try:
@@ -146,7 +149,7 @@ def _compose_input_filename(file_name: str, _: str | None) -> str:
     return settings.sanitize_filename(Path(file_name).name)
 def download_original_to_input(item: dict) -> bool:
     import os
-    backend = os.getenv("BACKEND_URL", "").rstrip("/")
+    backend = os.getenv("BACKEND_BASE", "").rstrip("/")
     if not backend:
         return False
     file_name = item.get("filePath")
@@ -177,12 +180,11 @@ def backend_should_process_source_step(source_step: str, file_name: str) -> bool
         recover_always = os.getenv("RHINO_RECOVER_ALWAYS", "").lower() in ("1", "true", "yes")
         if recover_always:
             return True
-        backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
+        backend_url = os.getenv("BACKEND_BASE", "")
+        if not backend_url:
+            return False
         base = backend_url.rstrip("/")
-        if base.endswith("/api"):
-            url = f"{base}/bg/file-status"
-        else:
-            url = f"{base}/api/bg/file-status"
+        url = f"{base}/bg/file-status"
         res = requests.get(
             url,
             params={"sourceStep": source_step, "filePath": file_name, "force": "true"},
