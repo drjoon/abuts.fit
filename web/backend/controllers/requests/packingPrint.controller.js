@@ -13,10 +13,10 @@ const PACK_PRINT_SERVER_TIMEOUT_MS = Number(
 );
 
 const PACK_PAPER_DEFAULT = String(
-  process.env.PACK_PAPER_DEFAULT || "PACK_80x65",
+  process.env.PACK_PAPER_DEFAULT || "PACK_65x80",
 ).trim();
 const PACK_PAPER_OPTIONS = String(
-  process.env.PACK_PAPER_OPTIONS || "PACK_80x65",
+  process.env.PACK_PAPER_OPTIONS || "PACK_65x80",
 )
   .split(",")
   .map((v) => String(v || "").trim())
@@ -54,10 +54,10 @@ export async function getPackPrintSettings(req, res) {
   const paperDefault = PACK_PAPER_DEFAULT || null;
   const paperOptions = PACK_PAPER_OPTIONS;
 
-  // Current supported profile: PACK_80x65 (portrait 65 x 80mm)
+  // Current supported profile: PACK_65x80 (landscape 80 x 65mm)
   const mm =
-    paperDefault === "PACK_80x65" || paperOptions.includes("PACK_80x65")
-      ? { w: 65, h: 80 }
+    paperDefault === "PACK_65x80" || paperOptions.includes("PACK_65x80")
+      ? { w: 80, h: 65 }
       : null;
 
   const dots = mm ? { pw: mmToDots(mm.w, dpi), ll: mmToDots(mm.h, dpi) } : null;
@@ -323,9 +323,9 @@ export async function printPackPackingLabel(req, res) {
         : 203;
     payload.dpi = dpi;
 
-    if (payload.paperProfile === "PACK_80x65") {
-      payload.zplPW = mmToDots(65, dpi);
-      payload.zplLL = mmToDots(80, dpi);
+    if (payload.paperProfile === "PACK_65x80") {
+      payload.zplPW = mmToDots(80, dpi);
+      payload.zplLL = mmToDots(65, dpi);
     }
 
     const {

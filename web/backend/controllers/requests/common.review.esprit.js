@@ -102,15 +102,21 @@ export async function triggerEspritForNc({ request, force = false }) {
       WorkType: request?.caseInfos?.workType || "",
       LotNumber: request?.lotNumber?.value || "",
     };
+    const headers = withEspritHeaders({ "Content-Type": "application/json" });
     console.log("[ESPRIT] POST / payload", {
       RequestId: payload.RequestId,
       MaxDiameter: payload.MaxDiameter,
       MaterialDiameter: payload.MaterialDiameter,
       MaterialDiameterGroup: payload.MaterialDiameterGroup,
     });
+    console.log("[ESPRIT] request headers", {
+      url: espritUrl,
+      headers: Object.keys(headers),
+      hasXEspritSecret: !!headers["X-Esprit-Secret"],
+    });
     resp = await fetch(espritUrl, {
       method: "POST",
-      headers: withEspritHeaders({ "Content-Type": "application/json" }),
+      headers,
       body: JSON.stringify(payload),
       signal: controller.signal,
     });

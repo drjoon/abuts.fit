@@ -241,10 +241,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             if (!string.IsNullOrEmpty(sharedSecret))
             {
-                var provided = (request.Headers["X-Bridge-Secret"] ?? string.Empty).Trim();
+                var provided = (request.Headers["X-Esprit-Secret"] ?? string.Empty).Trim();
                 if (!string.Equals(provided, sharedSecret, StringComparison.Ordinal))
                 {
-                    AppLogger.Log("[HTTP Server] Unauthorized: invalid X-Bridge-Secret");
+                    AppLogger.Log("[HTTP Server] Unauthorized: invalid X-Esprit-Secret");
                     response.StatusCode = (int)HttpStatusCode.Unauthorized;
                     byte[] buffer = Encoding.UTF8.GetBytes("{\"ok\": false, \"message\": \"unauthorized\"}");
                     response.OutputStream.Write(buffer, 0, buffer.Length);

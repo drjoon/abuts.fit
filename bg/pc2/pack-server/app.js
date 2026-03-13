@@ -90,7 +90,17 @@ const isIpAllowed = (req) => {
 
 const requireIpAllowed = (req, res) => {
   if (isIpAllowed(req)) return true;
-  log("blocked:ip", { ip: getClientIp(req) });
+  const clientIp = getClientIp(req);
+  const xForwardedFor = req.headers["x-forwarded-for"] || "";
+  const remoteAddress = req.socket?.remoteAddress || "";
+  log("blocked:ip", {
+    clientIp,
+    xForwardedFor,
+    remoteAddress,
+    allowedIps: ALLOW_IPS,
+    method: req.method,
+    path: req.url,
+  });
   jsonResponse(res, 403, {
     success: false,
     message: "Forbidden (IP not allowed)",

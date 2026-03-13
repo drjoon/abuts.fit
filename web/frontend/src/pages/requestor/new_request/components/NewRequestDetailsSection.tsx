@@ -223,7 +223,7 @@ export function NewRequestDetailsSection({
 
   const newSystemInfoCopy = useMemo(
     () =>
-      '"신규 임플란트 의뢰"로 무상처리되며, 개발을 위해 랩 아날로그 샘플을 보내주시길 요청드립니다.',
+      "개발을 위해 랩 아날로그와 기성 어벗먼트 샘플을 보내주세요. 무료 크레딧을 충전해드립니다.",
     [],
   );
   const normalizeKeyPart = (s: string) => {

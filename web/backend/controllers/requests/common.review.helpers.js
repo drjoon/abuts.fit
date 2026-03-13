@@ -153,7 +153,7 @@ export function withEspritHeaders(extra = {}) {
   const ESPRIT_SHARED_SECRET = process.env.ESPRIT_SHARED_SECRET;
   const base = {};
   if (ESPRIT_SHARED_SECRET) {
-    base["X-Bridge-Secret"] = ESPRIT_SHARED_SECRET;
+    base["X-Esprit-Secret"] = ESPRIT_SHARED_SECRET;
   }
   return { ...base, ...extra };
 }
