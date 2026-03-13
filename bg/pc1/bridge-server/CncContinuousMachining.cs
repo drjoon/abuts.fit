@@ -657,16 +657,13 @@ Console.WriteLine("[CncMachining] detected start machine={0} jobId={1} slot=O{2}
 machineId, state.CurrentJob?.id, state.CurrentSlot);
 _ = Task.Run(() => NotifyMachiningStarted(state.CurrentJob, machineId));
 
-// 실제 가공 중에도 5초마다 tick을 보내 경과시간을 프론트에 전달한다.
+// 실제 가공 중 5초마다 RUNNING tick을 보내 경과시간을 프론트에 전달한다.
+// STARTED tick은 start ready 시점에 이미 전송되었으므로 여기서는 RUNNING만 전송한다.
 var job = state.CurrentJob;
 _ = Task.Run(async () =>
 {
     try
     {
-        // 시작 시점에 STARTED tick 전송
-        await Task.Delay(100);
-        _ = Task.Run(() => NotifyMachiningTick(job, machineId, "STARTED", null));
-        
         while (true)
         {
             await Task.Delay(TimeSpan.FromSeconds(5));
@@ -990,6 +987,14 @@ state.SawBusy = false;
     }
 Console.WriteLine("[CncMachining] start ready machine={0} slot=O{1}",
 machineId, state.CurrentSlot);
+
+// 실제 가공 모드에서도 AwaitingStart 상태에서 tick 루프를 시작한다.
+// busy 감지 전까지는 STARTED tick만 보내고, busy 감지 후 RUNNING tick을 보낸다.
+if (!Config.MockCncMachining)
+{
+    _ = Task.Run(() => NotifyMachiningTick(job, machineId, "STARTED", null));
+}
+
 return true;
 }
 catch (Exception ex)

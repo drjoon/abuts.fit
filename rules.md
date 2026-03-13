@@ -261,6 +261,8 @@
 
 ### 6.4 브리지/CNC 제어
 
+#### 6.4.1 기본 원칙
+
 - 브리지 제어는 백엔드 DB 저장이 먼저입니다.
 - Frontend는 bridge에 직접 연결하지 않습니다.
 - CNC 제어와 브리지 호출은 기본적으로 **1회만 시도**합니다.
@@ -270,6 +272,97 @@
 - 더미 가공은 `enabled=true` 이고 현재 분에 일치하는 스케줄이 있을 때만 실행합니다.
 - 스케줄 시각의 더미 가공은 성공/실패와 무관하게 **해당 분에 1회만 시도**하고 자동 재시도하지 않습니다.
 - 브리지가 `mock` 모드면 실제 장비 제어 없이도 더미 가공 요청에 성공 응답을 반환해야 합니다.
+
+#### 6.4.2 SSOT 및 데이터 흐름
+
+**브리지 재시동 시:**
+
+- `InitialSyncFromBackendOnce()` 실행으로 백엔드 스냅샷 조회
+- `GET /cnc-machines/bridge/queue-snapshot/:machineId` 호출
+- 백엔드 응답으로 메모리 큐 전체 교체
+- 초기화는 1회만, 이후는 백엔드 push(`/api/bridge/queue/:machineId/replace`)로 동기화
+
+**프론트 세팅값 저장:**
+
+- `Machine` 모델(MongoDB)에 저장: `allowAutoMachining`, `allowJobStart`, `allowProgramDelete`, `allowRequestAssign`
+- 변경 시 백엔드 DB 즉시 업데이트 → `invalidateBridgeFlagsCache(machineId)` 호출 → 웹소켓으로 프론트 통보
+
+**플래그 캐시 무효화:**
+
+- 브리지는 플래그를 5초간 캐시 (성능 최적화)
+- 백엔드에서 플래그 변경 시 즉시 `POST /api/cnc/invalidate-flags-cache` 호출
+- 브리지가 캐시 무효화 → 다음 조회 시 최신값 반영
+
+#### 6.4.3 브리지→백엔드 통보
+
+**메시지 전달 경로:**
+
+- `POST /cnc-machines/bridge/machining/tick/:machineId` - 실시간 상태 (STARTED/RUNNING/ALARM/COMPLETED)
+- `POST /cnc-machines/bridge/machining/start/:machineId` - 가공 시작
+- `POST /cnc-machines/bridge/machining/complete/:machineId` - 가공 완료
+- `POST /cnc-machines/bridge/machining/fail/:machineId` - 가공 실패
+
+**브리지 함수:**
+
+- `NotifyMachiningTick(job, machineId, phase, message)` - tick 전송 (경과시간 포함)
+- `NotifyMachiningStarted(job, machineId)` - 시작 통보
+- `NotifyMachiningCompleted(job, machineId)` - 완료 통보
+- `NotifyMachiningFailed(job, machineId, error, alarms)` - 실패 통보 (알람 정보 포함)
+
+#### 6.4.4 백엔드→프론트 웹소켓 이벤트
+
+- `cnc-machining-tick` - 모든 상태 변경 (경과시간, phase, percent 포함)
+- `cnc-machining-alarm` - 알람 발생 시 전용 이벤트 (즉시 UI 알림)
+- `cnc-machining-started` - 가공 시작
+- `cnc-machining-completed` - 가공 완료
+- `cnc-machining-canceled` - 가공 취소
+- `cnc-machine-settings-changed` - 설정 변경 (allowAutoMachining 등)
+
+#### 6.4.5 브리지 폴링 및 상태 감지
+
+**폴링 주기:** 3초 (`Timer` 기반 `Tick()` 함수)
+
+**감지 항목:**
+
+- **Busy 신호:** `TryGetMachineBusy()` - 가공 중/정지 상태
+- **알람:** `TryGetMachineAlarms()` - 알람 발생 시 즉시 실패 통보
+- **생산 수량:** `TryGetProductCount()` - 카운트 증가로 완료 확인
+
+**상태별 통보:**
+
+- **가공 중:** 1초마다 RUNNING tick 전송 (경과시간 로그 포함)
+- **알람 감지:** `NotifyMachiningFailed()` + ALARM tick 전송 → 가공 즉시 중단
+- **완료 감지:** `NotifyMachiningCompleted()` + COMPLETED tick 전송
+- **Busy=0 감지:** 완료 후보로 판단, 생산 수량 확인
+
+**완료 감지 조건:**
+
+1. Busy=1을 한번이라도 봤고 (SawBusy=true)
+2. 이후 Busy=0이 되고
+3. 생산 수량이 이전보다 증가
+
+**Fallback:** Busy=0 후 1분 경과 또는 시작 후 60분 경과 시 강제 완료
+
+#### 6.4.6 파일 완료 시 자동 다음 작업
+
+**완료 처리 흐름:**
+
+1. 브리지가 완료 감지 → `NotifyMachiningCompleted()` 호출
+2. 백엔드 `recordMachiningCompleteForBridge()` 처리
+3. DB 큐에서 완료 작업 제거
+4. `triggerNextAutoMachiningAfterComplete()` 자동 호출
+5. 대기 중인 다음 작업을 브리지 `/api/bridge/process-file`로 전송
+6. 대기 작업 없으면 `allowAutoMachining` 자동 OFF + 브리지 캐시 무효화
+
+#### 6.4.7 안전성 보장
+
+- ✅ 브리지는 하이링크 DLL로 CNC 장비 제어 (실제 하드웨어 연동)
+- ✅ 모든 상태 변경은 백엔드(SSOT)에 즉시 통보
+- ✅ 백엔드가 다음 작업 지시 권한 보유
+- ✅ 알람 발생 시 즉시 중단 및 통보
+- ✅ 플래그 변경 시 캐시 즉시 무효화
+- ✅ 재시동 시 백엔드 스냅샷으로 초기화
+- ✅ 자동 재시도 없음 (명시적 제어만 허용)
 
 ### 6.5 채팅
 
