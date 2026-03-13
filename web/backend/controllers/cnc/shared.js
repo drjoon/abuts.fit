@@ -28,6 +28,33 @@ export const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
 
 let warnedMissingBridgeSecret = false;
 
+/**
+ * bridge-server의 플래그 캐시를 무효화한다.
+ * allowAutoMachining 등 플래그 변경 시 호출하여 즉시 반영되도록 한다.
+ */
+export async function invalidateBridgeFlagsCache(machineId) {
+  if (!machineId) return;
+  try {
+    const url = `${BRIDGE_BASE}/api/cnc/invalidate-flags-cache?machines=${encodeURIComponent(machineId)}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: withBridgeHeaders(),
+    });
+    if (!response.ok) {
+      console.warn(
+        `[invalidateBridgeFlagsCache] failed for ${machineId}: ${response.status}`,
+      );
+    } else {
+      console.log(`[invalidateBridgeFlagsCache] success for ${machineId}`);
+    }
+  } catch (err) {
+    console.warn(
+      `[invalidateBridgeFlagsCache] error for ${machineId}:`,
+      err.message,
+    );
+  }
+}
+
 export const toNumberOrNull = (v) => {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? n : null;

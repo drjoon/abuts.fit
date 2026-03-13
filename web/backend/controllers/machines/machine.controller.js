@@ -15,6 +15,7 @@ import Request from "../../models/request.model.js";
 import {
   fetchBridgeQueueFromBridge,
   saveBridgeQueueSnapshot,
+  invalidateBridgeFlagsCache,
 } from "../../controllers/cnc/shared.js";
 
 function withBridgeHeaders(extra = {}) {
@@ -534,6 +535,15 @@ export async function upsertMachine(req, res) {
 
     // 브리지 서버 등록 및 동기화 과정을 제거하고 백엔드 DB 업데이트만 수행합니다.
     // 브리지 서버가 재기동될 때 백엔드 스냅샷을 기준으로 초기화됩니다.
+
+    // allowAutoMachining 플래그가 변경되었으면 bridge-server 캐시 무효화
+    const nextAuto = update.allowAutoMachining === true;
+    if (prevAuto !== nextAuto) {
+      console.log(
+        `[machine.controller] allowAutoMachining changed for ${finalUid}: ${prevAuto} -> ${nextAuto}, invalidating cache`,
+      );
+      invalidateBridgeFlagsCache(finalUid).catch(() => {});
+    }
 
     return res.json({
       success: true,

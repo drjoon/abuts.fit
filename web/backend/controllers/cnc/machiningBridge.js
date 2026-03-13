@@ -15,6 +15,7 @@ import {
   withBridgeHeaders,
   fetchBridgeQueueFromBridge,
   saveBridgeQueueSnapshot,
+  invalidateBridgeFlagsCache,
 } from "./shared.js";
 import { allocateVirtualMailboxAddress } from "../requests/mailbox.utils.js";
 
@@ -442,6 +443,8 @@ export async function triggerNextAutoMachiningAfterComplete({
               allowRequestAssign: updatedMachine.allowRequestAssign,
             },
           });
+          // bridge-server 캐시 무효화 (연속 가공 시 즉시 반영)
+          invalidateBridgeFlagsCache(updatedMachine.uid).catch(() => {});
         } catch {
           // ignore
         }
@@ -823,6 +826,7 @@ export async function recordMachiningTickForBridge(req, res) {
     const percent = Number.isFinite(Number(percentRaw))
       ? Math.max(0, Math.min(100, Number(percentRaw)))
       : null;
+    const message = req.body?.message ? String(req.body.message).trim() : "";
 
     console.log(
       "[bridge:machining:tick] incoming",
@@ -833,6 +837,7 @@ export async function recordMachiningTickForBridge(req, res) {
         bridgePath: bridgePathRaw,
         phase,
         percent,
+        message,
       }),
     );
 
@@ -1005,6 +1010,7 @@ export async function recordMachiningTickForBridge(req, res) {
             jobId: jobId || null,
             phase: phase || null,
             percent: percent == null ? null : percent,
+            message: message || null,
             startedAt,
             lastTickAt: now,
             elapsedSeconds,
@@ -1044,6 +1050,7 @@ export async function recordMachiningTickForBridge(req, res) {
         requestId: requestId || "",
         phase: phase || null,
         percent,
+        message: message || null,
         startedAt,
         elapsedSeconds,
         tickAt: now,
@@ -1052,6 +1059,25 @@ export async function recordMachiningTickForBridge(req, res) {
         io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-tick", payload);
       }
       io.emit("cnc-machining-tick", payload);
+
+      // ALARM 상태일 때 별도 이벤트 발행
+      if (phaseUpper === "ALARM") {
+        console.log(
+          `[bridge:machining:tick] ALARM detected, emitting cnc-machining-alarm event`,
+          {
+            machineId: mid,
+            requestId: requestId || null,
+            message,
+          },
+        );
+        io.emit("cnc-machining-alarm", {
+          machineId: mid,
+          jobId: jobId || null,
+          requestId: requestId || null,
+          message: message || null,
+          alarmAt: now,
+        });
+      }
     } catch {
       // ignore
     }

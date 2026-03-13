@@ -244,6 +244,19 @@ private static Task<bool> DetectMachiningCompletion(string machineId, MachineSta
 private static readonly Dictionary<string, MachineFlags> MachineFlagsCache = new Dictionary<string, MachineFlags>(StringComparer.OrdinalIgnoreCase);
 private const int MACHINE_FLAGS_CACHE_SEC = 5;
 private const int BACKEND_SYNC_INTERVAL_SEC = 10;
+
+/// <summary>
+/// 특정 장비의 플래그 캐시를 무효화한다. 백엔드에서 플래그 변경 시 호출.
+/// </summary>
+public static void InvalidateMachineFlagsCache(string machineId)
+{
+    if (string.IsNullOrEmpty(machineId)) return;
+    lock (StateLock)
+    {
+        MachineFlagsCache.Remove(machineId);
+    }
+    Console.WriteLine("[CncMachining] flags cache invalidated machine={0}", machineId);
+}
 // 고정 슬롯 번호
 private const int SLOT_A = 4000;
 private static int GetJobPriority(CncJobItem job)
@@ -581,6 +594,9 @@ lock (StateLock)
 {
 state.LastMachiningCompleteJobId = jobId;
 }
+// COMPLETED tick 전송 (프론트 실시간 업데이트용)
+_ = Task.Run(() => NotifyMachiningTick(state.CurrentJob, machineId, "COMPLETED", null));
+// 완료 통보 (백엔드 DB 업데이트용)
 _ = Task.Run(() => NotifyMachiningCompleted(state.CurrentJob, machineId));
 }
 }
@@ -640,6 +656,68 @@ state.SawBusy = true;
 Console.WriteLine("[CncMachining] detected start machine={0} jobId={1} slot=O{2}",
 machineId, state.CurrentJob?.id, state.CurrentSlot);
 _ = Task.Run(() => NotifyMachiningStarted(state.CurrentJob, machineId));
+
+// 실제 가공 중에도 5초마다 tick을 보내 경과시간을 프론트에 전달한다.
+var job = state.CurrentJob;
+_ = Task.Run(async () =>
+{
+    try
+    {
+        // 시작 시점에 STARTED tick 전송
+        await Task.Delay(100);
+        _ = Task.Run(() => NotifyMachiningTick(job, machineId, "STARTED", null));
+        
+        while (true)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5));
+            
+            bool running = false;
+            string currentJobId = null;
+            lock (StateLock)
+            {
+                if (MachineStates.TryGetValue(machineId, out var s))
+                {
+                    running = s.IsRunning;
+                    currentJobId = s.CurrentJob?.id;
+                }
+            }
+
+            if (!running || currentJobId != job?.id)
+            {
+                break;
+            }
+
+            // 알람 체크
+            if (TryGetMachineAlarms(machineId, out var alarms, out var alarmErr) && alarms.Count > 0)
+            {
+                var alarmList = string.Join(", ", alarms.Select(a => $"type={a.GetType().GetProperty("type")?.GetValue(a)}/no={a.GetType().GetProperty("no")?.GetValue(a)}"));
+                Console.WriteLine("[CncMachining] ALARM detected machine={0} jobId={1} alarms={2}", machineId, job?.id, alarmList);
+                _ = Task.Run(() => NotifyMachiningTick(job, machineId, "ALARM", alarmList));
+                break;
+            }
+
+            try
+            {
+                DateTime startedAt = DateTime.MinValue;
+                lock (StateLock)
+                {
+                    if (MachineStates.TryGetValue(machineId, out var s))
+                    {
+                        startedAt = s.StartedAtUtc;
+                    }
+                }
+                var elapsed = DateTime.UtcNow - startedAt;
+                Console.WriteLine("[CncMachining] RUNNING machine={0} jobId={1} elapsed={2:F0}s", machineId, job?.id, elapsed.TotalSeconds);
+                _ = Task.Run(() => NotifyMachiningTick(job, machineId, "RUNNING", null));
+            }
+            catch { }
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("[CncMachining] tick loop error machine={0} err={1}", machineId, ex.Message);
+    }
+});
 }
 }
 return;
@@ -890,6 +968,8 @@ state.SawBusy = false;
     var flags = await GetMachineFlagsFromBackend(machineId);
     var allowRemoteStart = flags != null && flags.AllowJobStart;
     var allowAutoStart = flags != null && flags.AllowAutoMachining;
+    Console.WriteLine("[CncMachining] flags check machine={0} jobId={1} allowRemoteStart={2} allowAutoStart={3} flagsNull={4}", 
+        machineId, job?.id, allowRemoteStart, allowAutoStart, flags == null);
     if (allowRemoteStart && allowAutoStart)
     {
         if (!TryStartSignal(machineId, out var startErr))
@@ -903,6 +983,10 @@ state.SawBusy = false;
     else if (!allowRemoteStart)
     {
         Console.WriteLine("[CncMachining] auto-start blocked (allowRemoteStart=false) machine={0} jobId={1}", machineId, job?.id);
+    }
+    else if (!allowAutoStart)
+    {
+        Console.WriteLine("[CncMachining] auto-start blocked (allowAutoStart=false) machine={0} jobId={1}", machineId, job?.id);
     }
 Console.WriteLine("[CncMachining] start ready machine={0} slot=O{1}",
 machineId, state.CurrentSlot);
@@ -1675,7 +1759,7 @@ Console.WriteLine("[CncMachining] NotifyMachiningStarted error: backend={0} err=
 }
 }
 
-private static async Task NotifyMachiningTick(CncJobItem job, string machineId, string phase, int? percent)
+private static async Task NotifyMachiningTick(CncJobItem job, string machineId, string phase, string message = null)
 {
 try
 {
@@ -1703,7 +1787,8 @@ try
         s3Key = job?.s3Key,
         s3Bucket = job?.s3Bucket,
         phase = phase,
-        percent = percent,
+        percent = (int?)null,
+        message = message,
         startedAt = startedAt,
         elapsedSeconds = elapsedSeconds,
         tickAt = DateTime.UtcNow,

@@ -444,5 +444,27 @@ namespace HiLinkBridgeWebApi48.Controllers
 
             return Request.CreateResponse(HttpStatusCode.Accepted, new { success = true, results });
         }
+
+        // POST /api/cnc/invalidate-flags-cache?machines=M3,M4
+        [HttpPost]
+        [Route("invalidate-flags-cache")]
+        public HttpResponseMessage InvalidateFlagsCache(string machines)
+        {
+            if (string.IsNullOrWhiteSpace(machines))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machines parameter is required" });
+            }
+
+            var machineIds = BridgeShared.ParseMachineIds(machines);
+            var results = new List<object>();
+
+            foreach (var machineId in machineIds)
+            {
+                CncMachining.InvalidateMachineFlagsCache(machineId);
+                results.Add(new { machineId, success = true, message = "Flags cache invalidated" });
+            }
+
+            return Request.CreateResponse(HttpStatusCode.OK, new { success = true, results });
+        }
     }
 }
