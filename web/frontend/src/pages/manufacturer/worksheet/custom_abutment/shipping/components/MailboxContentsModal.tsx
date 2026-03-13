@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { generateModelNumber } from "@/utils/modelNumber";
+import { getDeadlineInfo } from "../../utils/deadline";
 import { ArrowLeft, Loader2, MapPinned, Search } from "lucide-react";
 import type { ManufacturerRequest } from "../../utils/request";
 
@@ -416,68 +417,66 @@ export const MailboxContentsModal = ({
           </div>
         ) : null}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {requests.map((req) => (
-            <div
-              key={req._id}
-              className="relative p-4 border border-slate-200 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors flex flex-col gap-3"
-            >
-              <div className="absolute top-3 right-3 flex flex-col items-end gap-2">
-                {onRollback && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs gap-1"
-                    disabled={isRollingBackAll}
-                    onClick={() => {
-                      void onRollback(req);
-                    }}
-                  >
-                    <ArrowLeft className="h-3 w-3" />
-                  </Button>
-                )}
-                {getLotShortCode(req) && (
-                  <div className="flex flex-col items-end gap-1">
+          {requests.map((req) => {
+            const deadlineInfo = getDeadlineInfo(
+              req.createdAt,
+              req.timeline?.estimatedShipYmd,
+            );
+            return (
+              <div
+                key={req._id}
+                className="relative p-4 border border-slate-200 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors flex flex-col gap-3"
+              >
+                <div className="absolute top-3 right-3 flex flex-col items-end gap-2">
+                  {onRollback && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs gap-1"
+                      disabled={isRollingBackAll}
+                      onClick={() => {
+                        void onRollback(req);
+                      }}
+                    >
+                      <ArrowLeft className="h-3 w-3" />
+                    </Button>
+                  )}
+                  {getLotShortCode(req) && (
                     <Badge className="text-[11px] bg-slate-900 text-white border border-slate-900">
                       {getLotShortCode(req)}
                     </Badge>
-                    {generateModelNumber(
-                      req.caseInfos as any,
-                      req.lotNumber?.value,
-                    ) && (
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] px-1.5 py-0 bg-slate-50 text-slate-600 border border-slate-200 font-semibold leading-[1.2]"
-                      >
-                        {generateModelNumber(
-                          req.caseInfos as any,
-                          req.lotNumber?.value,
-                        )}
-                      </Badge>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="flex items-start gap-3 pr-10">
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm text-slate-900">
-                    {req.requestId}
-                  </div>
-                  <div className="text-xs text-slate-600 mt-1 space-y-0.5">
-                    <div>
-                      {req.caseInfos?.clinicName || "-"} /{" "}
-                      {req.caseInfos?.patientName || "미지정"} /{" "}
-                      {req.caseInfos?.tooth || "-"}
+                  )}
+                  {deadlineInfo && (
+                    <Badge
+                      variant="outline"
+                      className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border ${deadlineInfo.badgeClass}`}
+                    >
+                      {deadlineInfo.displayText}
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-start gap-3 pr-10">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-sm text-slate-900">
+                      {req.requestId}
                     </div>
-                    {getLotShortCode(req) && (
-                      <div>LOT: {getLotShortCode(req)}</div>
-                    )}
-                    {getImplantInfo(req) && <div>{getImplantInfo(req)}</div>}
+                    <div className="text-xs text-slate-600 mt-1 space-y-0.5">
+                      <div>
+                        {req.caseInfos?.clinicName || "-"} /{" "}
+                        {req.caseInfos?.patientName || "미지정"} /{" "}
+                        {req.caseInfos?.tooth || "-"}
+                      </div>
+                      {getLotShortCode(req) && (
+                        <div>LOT: {getLotShortCode(req)}</div>
+                      )}
+                      {getImplantInfo(req) && <div>{getImplantInfo(req)}</div>}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </DialogContent>
     </Dialog>

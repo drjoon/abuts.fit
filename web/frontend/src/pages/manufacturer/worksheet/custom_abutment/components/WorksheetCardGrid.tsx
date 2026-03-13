@@ -510,6 +510,7 @@ export const WorksheetCardGrid = ({
             </div>
             {deadlineInfo && (
               <div className="absolute right-2 bottom-2 z-20">
+                {stageBadge}
                 <Badge
                   variant="outline"
                   className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border ${deadlineInfo.badgeClass}`}
@@ -542,7 +543,6 @@ export const WorksheetCardGrid = ({
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    {stageBadge}
                     {shouldShowFullLot && (
                       <div className="flex items-center gap-1.5">
                         <Badge variant="outline" className={lotBadgeClass}>
@@ -692,7 +692,7 @@ export const WorksheetCardGrid = ({
                   e.stopPropagation();
                   handleToggleSelected(e);
                 }}
-                className={`absolute right-3 bottom-3 z-20 h-7 w-7 rounded-full border flex items-center justify-center text-sm font-semibold transition ${
+                className={`absolute right-3 top-1/2 -translate-y-1/2 z-20 h-7 w-7 rounded-full border flex items-center justify-center text-sm font-semibold transition ${
                   isSelected
                     ? "bg-blue-500 border-blue-500 text-white"
                     : "bg-white border-slate-300 text-slate-500"
