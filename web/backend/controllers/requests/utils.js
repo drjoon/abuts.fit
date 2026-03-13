@@ -332,12 +332,12 @@ export async function getDeliveryEtaLeadDays() {
     const manufacturerSettings = await getManufacturerLeadTimesUtil();
     const leadTimes = manufacturerSettings?.leadTimes || {};
 
-    // Convert {d6: {min, max}, ...} to {d6: max, d8: max, ...} for backward compatibility
+    // Convert {d6: {min, max}, ...} to {d6: min, d8: min, ...} for backward compatibility
     const result = {};
     ["d6", "d8", "d10", "d12"].forEach((key) => {
       const entry = leadTimes?.[key];
       result[key] =
-        entry?.maxBusinessDays ?? DEFAULT_DELIVERY_ETA_LEAD_DAYS[key];
+        entry?.minBusinessDays ?? DEFAULT_DELIVERY_ETA_LEAD_DAYS[key];
     });
     return result;
   } catch (error) {

@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { formatImplantDisplay } from "@/utils/implant";
 import { generateModelNumber } from "@/utils/modelNumber";
+import { getDeadlineInfo } from "../utils/deadline";
 import {
   type ManufacturerRequest,
   computeStageLabel,
@@ -380,8 +381,13 @@ export const WorksheetCardGrid = ({
 
         const sp = request.shippingPriority;
         const urgency = String(sp?.level || "").trim();
+        const deadlineInfo = getDeadlineInfo(
+          request.createdAt,
+          request.timeline?.estimatedShipYmd,
+        );
         const urgencyClass = (() => {
           if (isCompletedForCurrentStage) return "";
+          if (deadlineInfo) return deadlineInfo.borderClass;
           if (urgency === "danger") {
             return "border-rose-500 border-2";
           }
@@ -452,7 +458,9 @@ export const WorksheetCardGrid = ({
                 ? "border-blue-500 bg-blue-50/40"
                 : isCompletedForCurrentStage
                   ? "border-emerald-500 bg-emerald-50/30"
-                  : "border-slate-200"
+                  : deadlineInfo
+                    ? deadlineInfo.borderClass
+                    : "border-slate-200"
             } ${onToggleSelected ? "cursor-pointer" : ""}`}
             role={onToggleSelected ? "button" : undefined}
             aria-pressed={onToggleSelected ? isSelected : undefined}
@@ -500,6 +508,16 @@ export const WorksheetCardGrid = ({
                 </button>
               )}
             </div>
+            {deadlineInfo && (
+              <div className="absolute right-2 bottom-2 z-20">
+                <Badge
+                  variant="outline"
+                  className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border ${deadlineInfo.badgeClass}`}
+                >
+                  {deadlineInfo.displayText}
+                </Badge>
+              </div>
+            )}
             {isUploading && progress !== undefined && (
               <div className="absolute inset-0 z-10 bg-white/80 flex flex-col items-center justify-center p-4 rounded-xl">
                 <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-2">
