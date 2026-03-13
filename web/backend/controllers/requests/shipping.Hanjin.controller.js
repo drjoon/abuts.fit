@@ -280,6 +280,7 @@ async function finalizeMailboxPickupShipment({
   requests,
   pickupData,
   actorUserId,
+  isDuplicate = false,
 }) {
   const list = Array.isArray(requests) ? requests.filter(Boolean) : [];
   if (!list.length) return [];
@@ -288,28 +289,46 @@ async function finalizeMailboxPickupShipment({
     requests: list,
     actorUserId,
   });
-  const trackingNumber = extractTrackingNumberFromPickupData(pickupData);
+  // 중복 에러인 경우 trackingNumber 추출 안 함 (아직 실제 접수가 아니므로)
+  const trackingNumber = isDuplicate
+    ? null
+    : extractTrackingNumberFromPickupData(pickupData);
   const actualShipPickup = new Date();
   const updatedIds = [];
 
   for (const request of list) {
+    // 이미 accepted 상태인 경우 스킵
+    const currentCode = String(request?.shippingWorkflow?.code || "").trim();
+    if (currentCode === "accepted" || currentCode === "picked_up") {
+      console.log(
+        "[hanjin][pickup] request already in accepted/picked_up state, skipping",
+        {
+          requestId: request.requestId,
+          currentCode,
+        },
+      );
+      updatedIds.push(String(request.requestId || "").trim());
+      continue;
+    }
+
     let deliveryInfo = null;
     if (request.deliveryInfoRef) {
       deliveryInfo = await DeliveryInfo.findById(request.deliveryInfoRef);
     }
 
     if (!deliveryInfo) {
+      // 택배 접수 시에는 trackingNumber를 설정하지 않음
+      // 실제 집하 완료(statusCode 11) 시에만 설정되어야 함
       deliveryInfo = await DeliveryInfo.create({
         request: request._id,
-        trackingNumber: trackingNumber || undefined,
+        trackingNumber: undefined,
         carrier: "hanjin",
         shippedAt: actualShipPickup,
       });
       request.deliveryInfoRef = deliveryInfo._id;
     } else {
-      if (trackingNumber) {
-        deliveryInfo.trackingNumber = trackingNumber;
-      }
+      // 기존 deliveryInfo가 있어도 trackingNumber는 설정하지 않음
+      // (이미 설정되어 있다면 유지, 없다면 그대로 두기)
       deliveryInfo.carrier = "hanjin";
       if (!deliveryInfo.shippedAt) {
         deliveryInfo.shippedAt = actualShipPickup;
@@ -352,16 +371,19 @@ async function finalizeMailboxPickupResult({
   group,
   pickupData,
   actorUserId,
+  isDuplicate = false,
 }) {
   const requestDocs = await Request.find({
     _id: { $in: group.map((request) => request._id) },
     manufacturerStage: "포장.발송",
   });
 
+  // 중복 에러인 경우에도 상태를 accepted로 설정 (이미 한진에 등록됨)
   const updatedIds = await finalizeMailboxPickupShipment({
     requests: requestDocs,
     pickupData,
     actorUserId,
+    isDuplicate,
   });
 
   const updatedDocs = await Request.find({
@@ -383,6 +405,7 @@ async function finalizeMailboxPickupResult({
     success: true,
     data: pickupData,
     updatedIds,
+    isDuplicate,
   };
 }
 
@@ -394,6 +417,30 @@ async function executeSingleMailboxPickup({
   callHanjinWithFallback,
   actorUserId,
 }) {
+  // 이미 접수된 우편함인지 확인 (shippingWorkflow.code === 'accepted' 또는 'picked_up')
+  const alreadyAccepted = group.some((req) => {
+    const code = String(req?.shippingWorkflow?.code || "").trim();
+    return code === "accepted" || code === "picked_up";
+  });
+
+  if (alreadyAccepted) {
+    console.log(
+      "[hanjin][pickup] mailbox already accepted, skipping hanjin api call",
+      {
+        mailbox,
+        requestCount: group.length,
+      },
+    );
+    // 이미 접수된 경우 finalizeMailboxPickupResult 호출하지 않고 바로 반환
+    return {
+      mailbox,
+      success: true,
+      skipped: true,
+      reason: "already_accepted",
+      message: "이미 접수된 우편함입니다.",
+    };
+  }
+
   const orderBody = buildHanjinInsertOrderBody({ mailbox, requests: group });
 
   console.log("[hanjin][pickup] mailbox order body", {
@@ -407,7 +454,7 @@ async function executeSingleMailboxPickup({
   let data = await callHanjinWithFallback({ data: orderBody });
   if (isDuplicateOrderError(data)) {
     console.warn(
-      "[hanjin][pickup] duplicate order detected, cancel then retry",
+      "[hanjin][pickup] duplicate order detected, treating as already accepted",
       {
         mailbox,
         resultCode: data?.resultCode,
@@ -416,18 +463,15 @@ async function executeSingleMailboxPickup({
         custOrdNo: data?.custOrdNo || orderBody.custOrdNo,
       },
     );
-    const cancelHanjinWithFallback = buildCancelCaller();
-    const cancelBody = {
-      custEdiCd: orderBody.custEdiCd,
-      custOrdNo: String(data?.custOrdNo || orderBody.custOrdNo || "").trim(),
-    };
-    const cancelData = await cancelHanjinWithFallback({ data: cancelBody });
-    console.log("[hanjin][pickup] duplicate cancel completed", {
+    // 중복 에러 = 이미 한진에 등록됨 = 이미 접수됨
+    // 상태를 accepted로 업데이트하고 반환
+    return finalizeMailboxPickupResult({
       mailbox,
-      cancelBody,
-      cancelData,
+      group,
+      pickupData: data,
+      actorUserId,
+      isDuplicate: true,
     });
-    data = await callHanjinWithFallback({ data: orderBody });
   }
   return finalizeMailboxPickupResult({
     mailbox,
@@ -1100,6 +1144,28 @@ export async function requestHanjinPickupAndPrint(req, res) {
     const flowStartedAtMs = Date.now();
     const flowStartedAt = nowIso();
 
+    // 1단계: 택배 접수 (wblNo 획득)
+    const pickupStartedAtMs = Date.now();
+    const pickupStartedAt = nowIso();
+
+    console.log("[hanjin][pickup-and-print] pickup step starting", {
+      mailboxAddresses,
+    });
+
+    const pickupStep = await executeIntegratedCapturedStep({
+      res,
+      controllerFn: requestHanjinPickup,
+      reqLike: req,
+      fallbackMessage: "한진 택배 접수에 실패했습니다.",
+    });
+    if (!pickupStep.ok) {
+      return pickupStep.response;
+    }
+
+    const pickupFinishedAtMs = Date.now();
+    const pickupFinishedAt = nowIso();
+
+    // 2단계: 운송장 출력 (wblNo 포함)
     const printStartedAtMs = Date.now();
     const printStartedAt = nowIso();
 
@@ -1157,22 +1223,6 @@ export async function requestHanjinPickupAndPrint(req, res) {
 
     const printFinishedAtMs = Date.now();
     const printFinishedAt = nowIso();
-
-    const pickupStartedAtMs = Date.now();
-    const pickupStartedAt = nowIso();
-
-    const pickupStep = await executeIntegratedCapturedStep({
-      res,
-      controllerFn: requestHanjinPickup,
-      reqLike: req,
-      fallbackMessage: "한진 택배 접수에 실패했습니다.",
-    });
-    if (!pickupStep.ok) {
-      return pickupStep.response;
-    }
-
-    const pickupFinishedAtMs = Date.now();
-    const pickupFinishedAt = nowIso();
 
     const flowFinishedAtMs = Date.now();
     const flowFinishedAt = nowIso();
