@@ -842,6 +842,16 @@ export const MailboxGrid = ({
 
   const actionButtons = [
     {
+      label: pickupActionLabel,
+      loading: activeHeaderAction === "pickup" && isRequestingPickup,
+      loadingLabel: pickupActionLoadingLabel,
+      disabled: pickupActionDisabled,
+      variant: hasAcceptedMailbox ? ("rose" as const) : ("slate" as const),
+      onClick: () => {
+        void handlePickupAction();
+      },
+    },
+    {
       label: printActionLabel,
       loading: activeHeaderAction === "print" && isRequestingPickup,
       loadingLabel: "출력 중...",
@@ -858,16 +868,6 @@ export const MailboxGrid = ({
           return;
         }
         void handlePrintOnly();
-      },
-    },
-    {
-      label: pickupActionLabel,
-      loading: activeHeaderAction === "pickup" && isRequestingPickup,
-      loadingLabel: pickupActionLoadingLabel,
-      disabled: pickupActionDisabled,
-      variant: hasAcceptedMailbox ? ("rose" as const) : ("slate" as const),
-      onClick: () => {
-        void handlePickupAction();
       },
     },
   ];

@@ -24,6 +24,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
   const { toast } = useToast();
   const storageKey = `${STORAGE_KEY_PREFIX}${userData?.email || "guest"}`;
   const lastSavedRef = useRef<string>("");
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const { token, user } = useAuthStore();
 
