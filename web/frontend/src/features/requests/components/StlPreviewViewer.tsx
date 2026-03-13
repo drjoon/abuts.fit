@@ -1276,22 +1276,25 @@ export function StlPreviewViewer({
             <div className="flex items-center gap-1.5">
               <span className="text-slate-500">커넥션 직경:</span>
               <span>
-                {connectionDiameterState > 0
+                {connectionDiameterState !== null && connectionDiameterState > 0
                   ? connectionDiameterState.toFixed(1)
                   : "-"}{" "}
                 mm
               </span>
             </div>
-            {tiltAxisVectorState && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-500">경사축 벡터:</span>
-                <span>
-                  [{tiltAxisVectorState.x.toFixed(2)},{" "}
-                  {tiltAxisVectorState.y.toFixed(2)},{" "}
-                  {tiltAxisVectorState.z.toFixed(2)}]
-                </span>
-              </div>
-            )}
+            {tiltAxisVectorState &&
+              tiltAxisVectorState.x !== undefined &&
+              tiltAxisVectorState.y !== undefined &&
+              tiltAxisVectorState.z !== undefined && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-500">경사축 벡터:</span>
+                  <span>
+                    [{tiltAxisVectorState.x.toFixed(2)},{" "}
+                    {tiltAxisVectorState.y.toFixed(2)},{" "}
+                    {tiltAxisVectorState.z.toFixed(2)}]
+                  </span>
+                </div>
+              )}
             {frontPointState && (
               <div className="flex items-center gap-1.5">
                 <span className="text-slate-500">프론트 포인트:</span>
