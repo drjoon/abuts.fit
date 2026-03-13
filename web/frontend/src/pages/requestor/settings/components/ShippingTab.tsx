@@ -154,33 +154,55 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
 
   useEffect(() => {
     if (!token || !policyLoaded) return;
-    const normalized = normalizeWeeklyBatchDays(weeklyBatchDays);
-    const payloadKey = JSON.stringify(normalized);
-    if (payloadKey === lastSavedRef.current) return;
-    lastSavedRef.current = payloadKey;
-    void (async () => {
-      const res = await request({
-        path: `/api/organizations/me?organizationType=${encodeURIComponent(
-          organizationType,
-        )}`,
-        method: "PUT",
-        token,
-        jsonBody: {
-          organizationType,
-          shippingPolicy: {
-            weeklyBatchDays: normalized,
+
+    // Clear previous debounce timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // Set new debounce timer (200ms)
+    debounceTimerRef.current = setTimeout(async () => {
+      const normalized = normalizeWeeklyBatchDays(weeklyBatchDays);
+      const payloadKey = JSON.stringify(normalized);
+      if (payloadKey === lastSavedRef.current) return;
+      lastSavedRef.current = payloadKey;
+
+      try {
+        const res = await request({
+          path: `/api/organizations/me?organizationType=${encodeURIComponent(
+            organizationType,
+          )}`,
+          method: "PATCH",
+          token,
+          jsonBody: {
+            shippingPolicy: {
+              weeklyBatchDays: normalized,
+            },
           },
-        },
-      });
-      if (!res.ok) {
+        });
+        if (!res.ok) {
+          lastSavedRef.current = "";
+          toast({
+            title: "배송 설정 저장 실패",
+            description: res.data?.message || "잠시 후 다시 시도해주세요.",
+            variant: "destructive",
+          });
+        }
+      } catch (err) {
         lastSavedRef.current = "";
         toast({
           title: "배송 설정 저장 실패",
-          description: res.data?.message || "잠시 후 다시 시도해주세요.",
+          description: "네트워크 오류가 발생했습니다.",
           variant: "destructive",
         });
       }
-    })();
+    }, 500);
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
   }, [organizationType, policyLoaded, toast, token, weeklyBatchDays]);
 
   const dayLabels: Record<string, string> = {

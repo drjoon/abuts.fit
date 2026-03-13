@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
 import { formatImplantDisplay } from "@/utils/implant";
+import { formatDateOnly } from "@/utils/dateFormat";
 
 export type RiskSummary = {
   delayedCount?: number;
@@ -54,15 +55,6 @@ export const RequestorRiskSummaryCard = ({
   }
 
   const summary = riskSummary || {};
-
-  const formatEta = (raw?: string | null) => {
-    if (!raw) return null;
-    const s = String(raw);
-    if (s.length < 10) return null;
-    const d = new Date(`${s.slice(0, 10)}T00:00:00+09:00`);
-    if (Number.isNaN(d.getTime())) return null;
-    return d.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
-  };
 
   const STAGE_BADGE_BASE =
     "text-[10px] h-4 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
@@ -262,7 +254,7 @@ export const RequestorRiskSummaryCard = ({
                     {item.nextEstimatedShipYmd && (
                       <span className="text-[11px] text-slate-500">
                         다음 예정일:{" "}
-                        {formatEta(item.nextEstimatedShipYmd) ?? "확인 중"}
+                        {formatDateOnly(item.nextEstimatedShipYmd, "확인 중")}
                       </span>
                     )}
                     <span className="truncate">{item.manufacturer || "-"}</span>

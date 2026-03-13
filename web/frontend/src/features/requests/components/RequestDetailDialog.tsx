@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatImplantDisplay } from "@/utils/implant";
+import { formatDateWithDay } from "@/utils/dateFormat";
 
 export type RequestDetailDialogCaseInfos = {
   clinicName?: string;
@@ -62,17 +63,6 @@ const formatTimestamp = (value?: string) => {
   try {
     const date = new Date(value);
     return date.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
-  } catch {
-    return value;
-  }
-};
-
-const formatDate = (value?: string) => {
-  if (!value) return "-";
-  try {
-    const d = new Date(`${String(value).slice(0, 10)}T00:00:00+09:00`);
-    if (Number.isNaN(d.getTime())) return value;
-    return d.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
   } catch {
     return value;
   }
@@ -191,7 +181,7 @@ export const RequestDetailDialog = ({
             {estimatedShipYmd && (
               <div className="grid grid-cols-[90px_1fr] gap-3 items-center text-blue-700 font-medium">
                 <span>발송 예정일</span>
-                <span>{formatDate(estimatedShipYmd)}</span>
+                <span>{formatDateWithDay(estimatedShipYmd)}</span>
               </div>
             )}
             {priceAmount != null && (

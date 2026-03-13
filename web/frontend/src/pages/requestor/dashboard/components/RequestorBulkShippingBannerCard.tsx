@@ -18,6 +18,7 @@ import { ArrowRightLeft } from "lucide-react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { formatDateWithDay, formatDateOnly } from "@/utils/dateFormat";
 
 type Props = {
   onOpenBulkModal: () => void;
@@ -373,19 +374,11 @@ export const RequestorBulkShippingBannerCard = ({
   };
 
   const formatEta = (raw?: string | null) => {
-    if (!raw) return "확인 중";
-    const s = String(raw);
-    if (s.length < 10) return "확인 중";
-    const d = new Date(`${s.slice(0, 10)}T00:00:00+09:00`);
-    if (Number.isNaN(d.getTime())) return "확인 중";
-    return d.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
+    return formatDateWithDay(raw, "확인 중");
   };
 
   const formatShipDate = (raw?: string | null) => {
-    if (!raw) return "-";
-    const d = new Date(raw);
-    if (Number.isNaN(d.getTime())) return "-";
-    return d.toLocaleDateString("ko-KR");
+    return formatDateOnly(raw);
   };
 
   const bulkGroups = (() => {

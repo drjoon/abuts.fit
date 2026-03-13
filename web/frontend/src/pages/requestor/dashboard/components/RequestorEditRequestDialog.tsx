@@ -5,7 +5,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useCallback, useEffect, useRef } from "react";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { request } from "@/shared/api/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
+import { useToast } from "@/shared/hooks/use-toast";
+import { formatDateWithDay } from "@/utils/dateFormat";
 
 export type EditingRequestState = {
   id: string;
@@ -123,20 +131,6 @@ export const RequestorEditRequestDialog = ({
     }
   }, [computeKey, editingRequest?.id, scheduleSave]);
 
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return "-";
-    try {
-      const date = new Date(dateStr);
-      return date.toLocaleDateString("ko-KR", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      });
-    } catch {
-      return "-";
-    }
-  };
-
   return (
     <Dialog
       open={!!editingRequest}
@@ -156,11 +150,11 @@ export const RequestorEditRequestDialog = ({
             </div>
             <div className="flex justify-between">
               <span className="font-medium">의뢰일:</span>
-              <span>{formatDate(editingRequest?.createdAt)}</span>
+              <span>{formatDateWithDay(editingRequest?.createdAt)}</span>
             </div>
             <div className="flex justify-between">
               <span className="font-medium">발송 예정일:</span>
-              <span>{formatDate(editingRequest?.estimatedShipYmd)}</span>
+              <span>{formatDateWithDay(editingRequest?.estimatedShipYmd)}</span>
             </div>
           </div>
           <div className="space-y-6">

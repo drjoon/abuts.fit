@@ -12,6 +12,7 @@ import { usePresetStorage } from "@/pages/requestor/new_request/hooks/usePresetS
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
 import { getNormalizedStageLabel } from "@/utils/stage";
 import { formatImplantDisplay } from "@/utils/implant";
+import { formatDateWithDay, formatDateOnly } from "@/utils/dateFormat";
 
 const EDITABLE_STATUSES = new Set(["의뢰", "CAM"]);
 
@@ -423,8 +424,7 @@ export const RequestorRecentRequestsCard = ({
                       <div className="flex items-center justify-between gap-4 mb-2">
                         {renderStageBadge(item)}
                         <span className="text-xs text-muted-foreground">
-                          {item.createdAt &&
-                            new Date(item.createdAt).toLocaleDateString()}
+                          {item.createdAt && formatDateOnly(item.createdAt)}
                         </span>
                       </div>
                       {item.caseInfos?.clinicName && (
@@ -485,9 +485,7 @@ export const RequestorRecentRequestsCard = ({
                   </div>
                   <div className="text-[10px] text-slate-600 mt-0.5 flex items-center gap-2">
                     <span>
-                      의뢰:{" "}
-                      {item.createdAt &&
-                        new Date(item.createdAt).toLocaleDateString()}
+                      의뢰: {item.createdAt && formatDateOnly(item.createdAt)}
                     </span>
                     {priceAmount != null && (
                       <span>
@@ -499,19 +497,15 @@ export const RequestorRecentRequestsCard = ({
                         item.timeline?.estimatedShipYmd ||
                         item.estimatedShipYmd;
                       if (!eta) return null;
-                      const etaDate = String(eta);
                       return (
                         <span className="text-blue-600 font-medium">
-                          발송 예정: {etaDate}
+                          발송 예정: {formatDateWithDay(eta)}
                         </span>
                       );
                     })()}
                     {item.deliveryInfoRef?.deliveredAt && (
                       <span className="text-green-600 font-medium">
-                        완료:{" "}
-                        {new Date(
-                          item.deliveryInfoRef.deliveredAt,
-                        ).toLocaleDateString()}
+                        완료: {formatDateOnly(item.deliveryInfoRef.deliveredAt)}
                       </span>
                     )}
                   </div>
