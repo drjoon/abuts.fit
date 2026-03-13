@@ -42,6 +42,12 @@ pricingReferralStatsSnapshotSchema.index(
   { unique: true },
 );
 
+// 레거시 groupLeaderId_1_ymd_1 인덱스 제거 (마이그레이션 완료)
+pricingReferralStatsSnapshotSchema.index(
+  { groupLeaderId: 1, ymd: 1 },
+  { sparse: true },
+);
+
 const PricingReferralStatsSnapshot = mongoose.model(
   "PricingReferralStatsSnapshot",
   pricingReferralStatsSnapshotSchema,

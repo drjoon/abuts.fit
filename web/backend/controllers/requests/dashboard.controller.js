@@ -1353,20 +1353,43 @@ export async function getMyPricingReferralStats(req, res) {
 
     const totalLastMonthOrders = freshGroupTotalOrders;
 
+    // businessId 기반으로만 upsert (null 방지)
     if (snapshotBusinessObjectId) {
-      await PricingReferralStatsSnapshot.findOneAndUpdate(
-        { businessId: snapshotBusinessObjectId, ymd },
-        {
-          $set: {
-            businessId: snapshotBusinessObjectId,
-            leaderUserId: groupLeaderId,
-            groupMemberCount,
-            groupTotalOrders: totalLastMonthOrders,
-            computedAt: now,
+      try {
+        await PricingReferralStatsSnapshot.findOneAndUpdate(
+          { businessId: snapshotBusinessObjectId, ymd },
+          {
+            $set: {
+              businessId: snapshotBusinessObjectId,
+              leaderUserId: groupLeaderId,
+              groupMemberCount,
+              groupTotalOrders: totalLastMonthOrders,
+              computedAt: now,
+            },
           },
-        },
-        { upsert: true, new: true },
-      );
+          { upsert: true, new: true },
+        );
+      } catch (upsertError) {
+        // 중복 키 에러 발생 시 기존 문서 업데이트로 재시도
+        if (upsertError.code === 11000) {
+          console.warn(
+            `[PricingReferralStats] Duplicate key on upsert, retrying with update: businessId=${snapshotBusinessObjectId}, ymd=${ymd}`,
+          );
+          await PricingReferralStatsSnapshot.updateOne(
+            { businessId: snapshotBusinessObjectId, ymd },
+            {
+              $set: {
+                leaderUserId: groupLeaderId,
+                groupMemberCount,
+                groupTotalOrders: totalLastMonthOrders,
+                computedAt: now,
+              },
+            },
+          );
+        } else {
+          throw upsertError;
+        }
+      }
     }
 
     const totalOrders = totalLastMonthOrders;
