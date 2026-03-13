@@ -14,11 +14,16 @@ export type LicenseExtracted = {
 
 export type BusinessData = {
   companyName: string;
+  owner: string;
   businessNumber: string;
-  address: string;
-  addressDetail: string;
-  zipCode: string;
   phone: string;
+  email: string;
+  businessType: string;
+  businessItem: string;
+  address: string;
+  zipCode: string;
+  addressDetail: string;
+  startDate: string;
 };
 
 export type LicenseStatus =

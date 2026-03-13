@@ -10,7 +10,7 @@ import { cn } from "@/shared/ui/cn";
 import { ProfileStep } from "./steps/ProfileStep";
 import { PhoneStep } from "./steps/PhoneStep";
 import { RoleStep } from "./steps/RoleStep";
-import { OrganizationStep } from "./steps/OrganizationStep";
+import { BusinessStep } from "./steps/BusinessStep";
 
 interface SettingsWizardProps {
   mode: "account" | "organization";
@@ -143,6 +143,11 @@ export const SettingsWizard = ({
   const nextActionRef = useRef<(() => Promise<boolean>) | null>(null);
   const [nextLoading, setNextLoading] = useState(false);
   const [stepBusy, setStepBusy] = useState(false);
+  const [validationState, setValidationState] = useState<{
+    passed: boolean;
+    validating: boolean;
+  }>({ passed: false, validating: false });
+  const validateActionRef = useRef<(() => void) | null>(null);
 
   const handleLogout = useCallback(() => {
     logout();
@@ -158,6 +163,21 @@ export const SettingsWizard = ({
 
   const registerStepBusyState = useCallback((busy: boolean) => {
     setStepBusy(busy);
+  }, []);
+
+  const registerValidationState = useCallback(
+    (state: { passed: boolean; validating: boolean }) => {
+      setValidationState(state);
+    },
+    [],
+  );
+
+  const registerValidateAction = useCallback((action: (() => void) | null) => {
+    validateActionRef.current = action;
+  }, []);
+
+  const handleValidate = useCallback(() => {
+    validateActionRef.current?.();
   }, []);
 
   useEffect(() => {
@@ -306,7 +326,16 @@ export const SettingsWizard = ({
     if (currentIndex <= 0) return;
     const prevStep = STEP_ORDER[currentIndex - 1];
     setCurrentStep(prevStep);
+    // organization 단계를 떠날 때 검증 상태 리셋
+    if (currentStep === "organization") {
+      setValidationState({ passed: false, validating: false });
+    }
   }, [currentStep]);
+
+  // 역할 변경 시 검증 상태 리셋
+  useEffect(() => {
+    setValidationState({ passed: false, validating: false });
+  }, [selectedRole]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -364,7 +393,7 @@ export const SettingsWizard = ({
       case "role":
         return "max-w-md";
       case "organization":
-        return "max-w-lg";
+        return "max-w-2xl";
       default:
         return "max-w-xl";
     }
@@ -418,13 +447,15 @@ export const SettingsWizard = ({
               />
             )}
             {currentStep === "organization" && (
-              <OrganizationStep
+              <BusinessStep
                 role={selectedRole}
                 organizationType={organizationType}
                 defaultCompleted={stepCompleted.organization}
                 onComplete={() => handleStepComplete("organization")}
                 registerGoNextAction={registerGoNextAction}
                 registerBusyState={registerStepBusyState}
+                registerValidationState={registerValidationState}
+                registerValidateAction={registerValidateAction}
               />
             )}
 
@@ -436,7 +467,9 @@ export const SettingsWizard = ({
                   <Button
                     variant="outline"
                     onClick={handlePrev}
-                    disabled={nextLoading || stepBusy}
+                    disabled={
+                      nextLoading || stepBusy || validationState.validating
+                    }
                     className="w-20 h-11"
                   >
                     이전
@@ -444,24 +477,29 @@ export const SettingsWizard = ({
                 ) : (
                   <div />
                 )}
-                {(currentStep === "profile" ||
-                  currentStep === "phone" ||
-                  currentStep === "role" ||
-                  currentStep === "organization") && (
-                  <Button
-                    onClick={() => {
-                      void handleNext();
-                    }}
-                    disabled={
-                      nextLoading ||
-                      stepBusy ||
-                      (currentStep === "role" && !selectedRole)
-                    }
-                    className="w-20 h-11"
-                  >
-                    {nextLoading ? "저장 중..." : "다음"}
-                  </Button>
-                )}
+                <div className="flex gap-3">
+                  {(currentStep === "profile" ||
+                    currentStep === "phone" ||
+                    currentStep === "role" ||
+                    currentStep === "organization") && (
+                    <Button
+                      onClick={() => {
+                        void handleNext();
+                      }}
+                      disabled={
+                        nextLoading ||
+                        stepBusy ||
+                        (currentStep === "role" && !selectedRole) ||
+                        (currentStep === "organization" &&
+                          selectedRole === "owner" &&
+                          !validationState.passed)
+                      }
+                      className="w-20 h-11"
+                    >
+                      {nextLoading ? "저장 중..." : "다음"}
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
           </CardContent>

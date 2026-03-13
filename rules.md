@@ -40,7 +40,7 @@
 ### 2.2 역할
 
 - `requestor`: 의뢰 생성/조회
-- `salesman`: 영업/소개/조직 연결 관리
+- `salesman`: 영업/소개/사업자 연결 관리
 - `manufacturer`: 제조 공정 처리 (CA 제조사, 즉 CAM/가공을 담당하는 회사)
 - `admin`: 운영/지원/관리
 
@@ -58,14 +58,14 @@
 
 **중요**: 기존 코드에서 `Request.manufacturer`, `populate("manufacturer")`, `request.manufacturer` 등을 발견하면 `caManufacturer`로 변경해야 합니다. 단, Connection/Preset의 `manufacturer` 필드는 임플란트 제조사이므로 변경하지 않습니다.
 
-### 2.3 조직 규칙
+### 2.3 사업자 규칙
 
-- 조직 단위 데이터는 개인이 아니라 **조직 SSOT**로 관리합니다.
-- 의뢰 조회 범위는 기본적으로 **내 조직 + 허용된 하위 범위** 기준입니다.
+- 사업자 단위 데이터는 개인이 아니라 **사업자 SSOT**로 관리합니다.
+- 의뢰 조회 범위는 기본적으로 **내 사업자 + 허용된 하위 범위** 기준입니다.
 - 직계 멤버 집계는 사업자 단위로 계산합니다.
-- requestor/salesman/manufacturer 등 role별 조직의 내부 식별자는 Mongo `_id` 이지만, **사업자 조직 anchor는 `organizationType + normalizedBusinessNumber`** 입니다.
-- 조직 이름(`name`), 대표자명, 주소는 수정 가능하지만 **조직 anchor로 사용하지 않습니다.** 이름 변경 때문에 새 조직을 만들면 안 됩니다.
-- 사업자등록번호가 없는 조직은 임시 조직일 수 있지만, 사업자등록번호가 확정되면 **기존 조직 재사용/attach** 를 우선하고 중복 새 조직 생성을 피합니다.
+- requestor/salesman/manufacturer 등 role별 사업자의 내부 식별자는 Mongo `_id` 이지만, **사업자 anchor는 `organizationType + normalizedBusinessNumber`** 입니다.
+- 사업자 이름(`name`), 대표자명, 주소는 수정 가능하지만 **사업자 anchor로 사용하지 않습니다.** 이름 변경 때문에 새 사업자를 만들면 안 됩니다.
+- 사업자등록번호가 없는 사업자는 임시 사업자일 수 있지만, 사업자등록번호가 확정되면 **기존 사업자 재사용/attach** 를 우선하고 중복 새 사업자 생성을 피합니다.
 - **검증 완료된 사업자**의 사업자등록번호는 일반 설정 수정으로 직접 바꾸지 않습니다. 필요 시 관리자 승인 기반의 별도 사업자 전환 절차를 사용합니다.
 - 도메인 용어와 핵심 식별 필드는 `organization`이 아니라 **`business`(사업자)** 를 사용합니다. 1차 전환 이후 식별 필드는 `organizationId` 대신 **`businessId`** 를 기준으로 정리합니다.
 - request 문서의 사업자 귀속 필드는 `requestorOrganizationId`가 아니라 **`requestorBusinessId`** 를 기준으로 사용합니다.
@@ -73,6 +73,18 @@
 - requestor 역할에서 대표/직원 구분은 권한 모델일 뿐이며, 금액/집계/추천 보상/우편함/배송비 귀속 기준을 개인 사용자로 분기하지 않습니다.
 - business owner는 사업자를 생성/검증 요청하는 사용자 역할일 뿐, 사업자 생성 이후 관련 데이터의 canonical 귀속 주체는 **owner가 아니라 business 엔터티 자체**입니다.
 - 개인 사용자 기준 처리가 필요한 경우는 인증/세션/알림 수신 주체처럼 **사용자 자체가 엔터티인 기능**으로 한정합니다.
+
+### 2.3.1 사업자 대표 가입 및 businessId 생성
+
+- **사업자 대표(owner)가 가입할 때** 다음 흐름을 따릅니다:
+  1. 사용자가 개인 계정 생성 (User 엔터티)
+  2. 온보딩 또는 설정에서 사업자등록증 업로드 및 검증
+  3. 검증 완료 시 독립적인 **Business 엔터티 생성** (`businessId` 할당)
+  4. 대표 사용자는 해당 Business에 owner 권한으로 귀속
+  5. 이후 가입하는 직원들도 같은 Business에 member 권한으로 귀속
+- **businessId는 사업자등록번호 검증 완료 시점에 생성**되며, 이후 모든 데이터(의뢰, 크레딧, 배송 등)는 businessId 기준으로 귀속됩니다.
+- 사업자 대표와 직원은 모두 같은 Business 엔터티에 속하며, 개인 사용자 ID가 아니라 **businessId**를 기준으로 집계합니다.
+- 온보딩과 설정 메뉴의 사업자등록 UI는 동일한 BusinessForm 컴포넌트를 공유하여 일관성을 유지합니다.
 
 ## 3. SSOT와 데이터 흐름
 

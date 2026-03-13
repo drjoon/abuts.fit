@@ -16,87 +16,85 @@ import {
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
 
-interface OrganizationSearchSectionProps {
-  orgSearch: string;
-  setOrgSearch: (value: string) => void;
-  orgSearchResults: {
+interface BusinessSearchSectionProps {
+  businessSearch: string;
+  setBusinessSearch: (value: string) => void;
+  businessSearchResults: {
     _id: string;
     name: string;
     representativeName?: string;
     businessNumber?: string;
     address?: string;
   }[];
-  selectedOrg: {
+  selectedBusiness: {
     _id: string;
     name: string;
     representativeName?: string;
     businessNumber?: string;
     address?: string;
   } | null;
-  setSelectedOrg: (org: any) => void;
-  orgOpen: boolean;
-  setOrgOpen: (open: boolean) => void;
+  setSelectedBusiness: (business: any) => void;
+  businessOpen: boolean;
+  setBusinessOpen: (open: boolean) => void;
   joinLoading: boolean;
   onJoinRequest: () => void;
 }
 
-export const OrganizationSearchSection = ({
-  orgSearch,
-  setOrgSearch,
-  orgSearchResults,
-  selectedOrg,
-  setSelectedOrg,
-  orgOpen,
-  setOrgOpen,
+export const BusinessSearchSection = ({
+  businessSearch,
+  setBusinessSearch,
+  businessSearchResults,
+  selectedBusiness,
+  setSelectedBusiness,
+  businessOpen,
+  setBusinessOpen,
   joinLoading,
   onJoinRequest,
-}: OrganizationSearchSectionProps) => {
-  const getOrgLabel = (o: { name: string; businessNumber?: string }) => {
-    const name = String(o?.name || "").trim();
-    const bn = String(o?.businessNumber || "").trim();
+}: BusinessSearchSectionProps) => {
+  const getBusinessLabel = (b: { name: string; businessNumber?: string }) => {
+    const name = String(b?.name || "").trim();
+    const bn = String(b?.businessNumber || "").trim();
     return bn ? `${name} (${bn})` : name;
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div className="md:col-span-2 space-y-2">
-        <Label>사업자 선택</Label>
-        <Popover open={orgOpen} onOpenChange={setOrgOpen}>
+    <div className="space-y-5">
+      <div className="flex gap-2 justify-center">
+        <Popover open={businessOpen} onOpenChange={setBusinessOpen}>
           <PopoverTrigger asChild>
             <Button
               type="button"
               variant="outline"
               role="combobox"
-              aria-expanded={orgOpen}
-              className="w-full justify-between"
+              aria-expanded={businessOpen}
               disabled={joinLoading}
             >
               <span className="truncate">
-                {selectedOrg
-                  ? getOrgLabel(selectedOrg)
+                {selectedBusiness
+                  ? getBusinessLabel(selectedBusiness)
                   : "사업자를 검색해서 선택하세요"}
               </span>
               <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-[520px] p-0" align="start">
+          <PopoverContent className="w-[420px] p-0">
             <Command>
               <CommandInput
                 placeholder="사업자명/대표자명/사업자번호/주소 검색..."
-                value={orgSearch}
+                value={businessSearch}
                 onValueChange={(v) => {
-                  setOrgSearch(v);
-                  setSelectedOrg(null);
+                  setBusinessSearch(v);
+                  setSelectedBusiness(null);
                 }}
               />
               <CommandList>
                 <CommandEmpty>검색 결과가 없습니다.</CommandEmpty>
                 <CommandGroup>
-                  {orgSearchResults.map((o) => {
-                    const selected = selectedOrg?._id === o._id;
-                    const rep = String(o.representativeName || "").trim();
-                    const bn = String(o.businessNumber || "").trim();
-                    const addr = String(o.address || "").trim();
+                  {businessSearchResults.map((b) => {
+                    const selected = selectedBusiness?._id === b._id;
+                    const rep = String(b.representativeName || "").trim();
+                    const bn = String(b.businessNumber || "").trim();
+                    const addr = String(b.address || "").trim();
                     const meta = [
                       rep ? `대표: ${rep}` : "",
                       bn ? `사업자: ${bn}` : "",
@@ -104,16 +102,16 @@ export const OrganizationSearchSection = ({
                     ]
                       .filter(Boolean)
                       .join(" · ");
-                    const searchValue = [o.name, rep, bn, addr]
+                    const searchValue = [b.name, rep, bn, addr]
                       .filter(Boolean)
                       .join(" ");
                     return (
                       <CommandItem
-                        key={o._id}
+                        key={b._id}
                         value={searchValue}
                         onSelect={() => {
-                          setSelectedOrg(o);
-                          setOrgOpen(false);
+                          setSelectedBusiness(b);
+                          setBusinessOpen(false);
                         }}
                       >
                         <Check
@@ -124,7 +122,7 @@ export const OrganizationSearchSection = ({
                         />
                         <div className="min-w-0">
                           <div className="text-sm truncate">
-                            {getOrgLabel(o)}
+                            {getBusinessLabel(b)}
                           </div>
                           {!!meta && (
                             <div className="text-xs text-muted-foreground truncate">
@@ -141,14 +139,26 @@ export const OrganizationSearchSection = ({
           </PopoverContent>
         </Popover>
       </div>
-      <div className="space-y-2">
-        <Label className="opacity-0">신청</Label>
+      <div className="flex gap-2 justify-center">
         <Button
           type="button"
           variant="outline"
-          className="w-full"
+          size="sm"
+          onClick={() => {
+            setBusinessSearch("");
+            setSelectedBusiness(null);
+            setBusinessOpen(false);
+          }}
+          disabled={joinLoading}
+        >
+          초기화
+        </Button>
+        <Button
+          type="button"
+          variant="default"
+          size="sm"
           onClick={onJoinRequest}
-          disabled={joinLoading || !selectedOrg?._id}
+          disabled={joinLoading || !selectedBusiness?._id}
         >
           {joinLoading ? "신청 중..." : "소속 신청"}
         </Button>

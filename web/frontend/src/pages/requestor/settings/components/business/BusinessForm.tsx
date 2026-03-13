@@ -81,6 +81,8 @@ interface BusinessFormProps {
   renderActions?: (props: { disabled: boolean }) => React.ReactNode;
   successNote?: string;
   businessNumberLocked?: boolean;
+  validationSucceeded?: boolean;
+  isVerified?: boolean;
 }
 
 export const BusinessForm = ({
@@ -102,8 +104,19 @@ export const BusinessForm = ({
   renderActions,
   successNote,
   businessNumberLocked = false,
+  validationSucceeded = false,
+  isVerified = false,
 }: BusinessFormProps) => {
   const { toast } = useToast();
+  const [isModified, setIsModified] = useState(false);
+
+  // validationSucceeded 또는 isVerified가 변경되면 isModified 초기화
+  useEffect(() => {
+    if (validationSucceeded || isVerified) {
+      setIsModified(false);
+    }
+  }, [validationSucceeded, isVerified]);
+
   const repNameRef = useRef<HTMLInputElement | null>(null);
   const startDateRef = useRef<HTMLInputElement | null>(null);
   const companyNameRef = useRef<HTMLInputElement | null>(null);
@@ -123,7 +136,11 @@ export const BusinessForm = ({
       ref: React.RefObject<HTMLInputElement | HTMLButtonElement | null>;
       value: string | undefined;
     }[] = [
-      { key: "repName", ref: repNameRef, value: extracted.representativeName },
+      {
+        key: "repName",
+        ref: repNameRef,
+        value: businessData.owner || extracted.representativeName,
+      },
       { key: "startDate", ref: startDateRef, value: extracted.startDate },
       {
         key: "companyName",
@@ -323,20 +340,24 @@ export const BusinessForm = ({
                   errors.representativeName &&
                     "border-destructive focus-visible:ring-destructive",
                 )}
-                value={extracted.representativeName || ""}
+                value={businessData.owner || extracted.representativeName || ""}
                 onChange={(e) => {
+                  setBusinessData((prev) => ({
+                    ...prev,
+                    owner: e.target.value,
+                  }));
                   setExtracted((prev) => ({
                     ...prev,
                     representativeName: e.target.value,
                   }));
-                  setErrors((prev) => ({
-                    ...prev,
-                    representativeName: false,
-                  }));
+                  setErrors((prev) => ({ ...prev, repName: false }));
+                  setIsModified(true);
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
-                  const v = String(extracted.representativeName || "").trim();
+                  const v = String(
+                    businessData.owner || extracted.representativeName || "",
+                  ).trim();
                   const isNav =
                     e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
                   if (isNav && v) {
@@ -376,6 +397,7 @@ export const BusinessForm = ({
                   ...prev,
                   startDate: invalid,
                 }));
+                setIsModified(true);
               }}
               onKeyDown={(e) => {
                 if ((e.nativeEvent as any)?.isComposing) return;
@@ -413,6 +435,7 @@ export const BusinessForm = ({
                   }));
                   setCompanyNameTouched(true);
                   setErrors((prev) => ({ ...prev, companyName: false }));
+                  setIsModified(true);
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
@@ -456,6 +479,7 @@ export const BusinessForm = ({
                     ...prev,
                     phone: invalid,
                   }));
+                  setIsModified(true);
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
@@ -503,6 +527,7 @@ export const BusinessForm = ({
                       ? !isValidBusinessNumber(nextValue)
                       : false,
                   }));
+                  setIsModified(true);
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
@@ -543,6 +568,7 @@ export const BusinessForm = ({
                     ...prev,
                     businessType: false,
                   }));
+                  setIsModified(true);
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
@@ -583,6 +609,7 @@ export const BusinessForm = ({
                     ...prev,
                     businessItem: false,
                   }));
+                  setIsModified(true);
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
@@ -623,6 +650,7 @@ export const BusinessForm = ({
                   }));
                   const invalid = !isValidEmail(e.target.value);
                   setErrors((prev) => ({ ...prev, email: invalid }));
+                  setIsModified(true);
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
@@ -648,161 +676,161 @@ export const BusinessForm = ({
             </GuideFocus>
           </div>
         </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="address">주소</Label>
+          <GuideFocus className="rounded-xl p-1">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="md:col-span-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  disabled={disabled}
+                  onClick={() => {
+                    void handleOpenAddressSearch();
+                  }}
+                >
+                  주소 검색
+                </Button>
+              </div>
+              <div className="md:col-span-1">
+                <Input
+                  id="address"
+                  ref={addressRef}
+                  className={cn(
+                    errors.address &&
+                      "border-destructive focus-visible:ring-destructive",
+                  )}
+                  value={businessData.address}
+                  placeholder="주소1 (정규화된 도로명 주소)"
+                  onChange={(e) => {
+                    setBusinessData((prev) => ({
+                      ...prev,
+                      address: e.target.value,
+                    }));
+                    setErrors((prev) => ({ ...prev, address: false }));
+                    setIsModified(true);
+                  }}
+                  onKeyDown={(e) => {
+                    if ((e.nativeEvent as any)?.isComposing) return;
+                    const v = String(businessData.address || "").trim();
+                    const isNav =
+                      e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
+                    if (isNav && v) {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        focusNext(addressDetailRef);
+                        return;
+                      }
+                      if (handleNav(e, "address")) return;
+                    }
+                  }}
+                  onBlur={() => {
+                    if (disabled) return;
+                    onAutoSave?.();
+                  }}
+                />
+              </div>
+              <div className="md:col-span-1">
+                <Input
+                  id="addressDetail"
+                  ref={addressDetailRef}
+                  value={businessData.addressDetail}
+                  placeholder="주소2 (동, 호수 등 상세주소)"
+                  onChange={(e) => {
+                    setBusinessData((prev) => ({
+                      ...prev,
+                      addressDetail: e.target.value,
+                    }));
+                    setIsModified(true);
+                  }}
+                  onKeyDown={(e) => {
+                    if ((e.nativeEvent as any)?.isComposing) return;
+                    const v = String(businessData.addressDetail || "").trim();
+                    const isNav =
+                      e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
+                    if (isNav && v) {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        focusNext(zipCodeRef);
+                        return;
+                      }
+                      if (handleNav(e, "addressDetail")) return;
+                    }
+                  }}
+                  onBlur={() => {
+                    if (disabled) return;
+                    onAutoSave?.();
+                  }}
+                />
+              </div>
+              <div className="md:col-span-1">
+                <Input
+                  id="zipCode"
+                  ref={zipCodeRef}
+                  className={cn(
+                    errors.zipCode &&
+                      "border-destructive focus-visible:ring-destructive",
+                  )}
+                  value={businessData.zipCode}
+                  placeholder="우편번호"
+                  onChange={(e) => {
+                    setBusinessData((prev) => ({
+                      ...prev,
+                      zipCode: e.target.value,
+                    }));
+                    setErrors((prev) => ({ ...prev, zipCode: false }));
+                    setIsModified(true);
+                  }}
+                  onKeyDown={(e) => {
+                    if ((e.nativeEvent as any)?.isComposing) return;
+                    const v = String(businessData.zipCode || "").trim();
+                    const isNav =
+                      e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
+                    if (isNav && v) {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        onSave();
+                        return;
+                      }
+                      if (handleNav(e, "zipCode")) return;
+                    }
+                  }}
+                  onBlur={() => {
+                    if (disabled) return;
+                    onAutoSave?.();
+                  }}
+                />
+              </div>
+            </div>
+          </GuideFocus>
+        </div>
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="address">주소</Label>
         <GuideFocus className="rounded-xl p-1">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div className="md:col-span-1">
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                disabled={disabled}
-                onClick={() => {
-                  void handleOpenAddressSearch();
-                }}
-              >
-                주소 검색
-              </Button>
-            </div>
-            <div className="md:col-span-1">
-              <Input
-                id="address"
-                ref={addressRef}
-                className={cn(
-                  errors.address &&
-                    "border-destructive focus-visible:ring-destructive",
-                )}
-                value={businessData.address}
-                placeholder="주소1 (정규화된 도로명 주소)"
-                onChange={(e) => {
-                  setBusinessData((prev) => ({
-                    ...prev,
-                    address: e.target.value,
-                  }));
-                  setErrors((prev) => ({ ...prev, address: false }));
-                }}
-                onKeyDown={(e) => {
-                  if ((e.nativeEvent as any)?.isComposing) return;
-                  const v = String(businessData.address || "").trim();
-                  const isNav =
-                    e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
-                  if (isNav && v) {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      focusNext(addressDetailRef);
-                      return;
-                    }
-                    if (handleNav(e, "address")) return;
-                  }
-                }}
-                onBlur={() => {
-                  if (disabled) return;
-                  onAutoSave?.();
-                }}
-              />
-            </div>
-            <div className="md:col-span-1">
-              <Input
-                id="addressDetail"
-                ref={addressDetailRef}
-                value={businessData.addressDetail}
-                placeholder="주소2 (동, 호수 등 상세주소)"
-                onChange={(e) => {
-                  setBusinessData((prev) => ({
-                    ...prev,
-                    addressDetail: e.target.value,
-                  }));
-                }}
-                onKeyDown={(e) => {
-                  if ((e.nativeEvent as any)?.isComposing) return;
-                  const v = String(businessData.addressDetail || "").trim();
-                  const isNav =
-                    e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
-                  if (isNav && v) {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      focusNext(zipCodeRef);
-                      return;
-                    }
-                    if (handleNav(e, "addressDetail")) return;
-                  }
-                }}
-                onBlur={() => {
-                  if (disabled) return;
-                  onAutoSave?.();
-                }}
-              />
-            </div>
-            <div className="md:col-span-1">
-              <Input
-                id="zipCode"
-                ref={zipCodeRef}
-                className={cn(
-                  errors.zipCode &&
-                    "border-destructive focus-visible:ring-destructive",
-                )}
-                value={businessData.zipCode}
-                placeholder="우편번호"
-                onChange={(e) => {
-                  setBusinessData((prev) => ({
-                    ...prev,
-                    zipCode: e.target.value,
-                  }));
-                  setErrors((prev) => ({ ...prev, zipCode: false }));
-                }}
-                onKeyDown={(e) => {
-                  if ((e.nativeEvent as any)?.isComposing) return;
-                  const v = String(businessData.zipCode || "").trim();
-                  const isNav =
-                    e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
-                  if (isNav && v) {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      onSave();
-                      return;
-                    }
-                    if (handleNav(e, "zipCode")) return;
-                  }
-                }}
-                onBlur={() => {
-                  if (disabled) return;
-                  onAutoSave?.();
-                }}
-              />
-            </div>
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="default"
+              disabled={
+                disabled || (!isModified && (validationSucceeded || isVerified))
+              }
+              ref={submitRef}
+              onClick={() => {
+                onSave();
+                setIsModified(false);
+              }}
+            >
+              검증 후 제출
+            </Button>
           </div>
-        </GuideFocus>
-      </div>
-
-      <div className="space-y-2">
-        <GuideFocus className="rounded-xl p-1">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {renderActions ? (
-              <div className="md:col-span-1">{renderActions({ disabled })}</div>
-            ) : null}
-            <div className="md:col-span-1">
-              <Button
-                type="button"
-                variant="default"
-                className="w-full"
-                disabled={disabled}
-                ref={submitRef}
-                onClick={() => {
-                  onSave();
-                }}
-              >
-                검증 후 제출
-              </Button>
-              {successNote && (
-                <p className="mt-2 text-center text-xs font-semibold text-sky-600">
-                  {successNote}
-                </p>
-              )}
-            </div>
-          </div>
+          {successNote && (
+            <p className="text-center text-xs font-semibold text-sky-600 flex justify-end mt-2">
+              {successNote}
+            </p>
+          )}
         </GuideFocus>
       </div>
     </div>

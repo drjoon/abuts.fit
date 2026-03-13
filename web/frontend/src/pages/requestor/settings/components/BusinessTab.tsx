@@ -25,7 +25,7 @@ import {
   type BusinessLicenseUploadHandle,
 } from "@/shared/components/business/BusinessLicenseUpload";
 import { BusinessForm } from "./business/BusinessForm";
-import { OrganizationSearchSection } from "./business/OrganizationSearchSection";
+import { BusinessSearchSection } from "./business/BusinessSearchSection";
 import { JoinRequestsSection } from "./business/JoinRequestsSection";
 import { BusinessMemberView } from "./business/BusinessMemberView";
 import {
@@ -116,11 +116,16 @@ const normalizeBusinessData = (
   value?: Partial<BusinessData> | null,
 ): BusinessData => ({
   companyName: String(value?.companyName || "").trim(),
+  owner: String(value?.owner || "").trim(),
   businessNumber: String(value?.businessNumber || "").trim(),
   address: String(value?.address || "").trim(),
   addressDetail: String(value?.addressDetail || "").trim(),
   zipCode: String(value?.zipCode || "").trim(),
   phone: String(value?.phone || "").trim(),
+  email: String(value?.email || "").trim(),
+  businessType: String(value?.businessType || "").trim(),
+  businessItem: String(value?.businessItem || "").trim(),
+  startDate: String(value?.startDate || "").trim(),
 });
 
 const normalizeExtracted = (
@@ -195,15 +200,20 @@ interface BusinessTabProps {
   userData: {
     companyName?: string;
     role?: string;
-    email?: string;
-    name?: string;
-  } | null;
-  organizationTypeOverride?: "requestor" | "manufacturer" | "salesman" | string;
+  };
+  organizationTypeOverride?: string;
+  selectedRole?: "owner" | "member" | null;
+  registerValidationState?: (state: {
+    passed: boolean;
+    validating: boolean;
+  }) => void;
 }
 
 export const BusinessTab = ({
   userData,
   organizationTypeOverride,
+  selectedRole,
+  registerValidationState,
 }: BusinessTabProps) => {
   const { toast } = useToast();
   const { token, user, loginWithToken } = useAuthStore();
@@ -221,8 +231,8 @@ export const BusinessTab = ({
   >(null);
   const [setupModeLocked, setSetupModeLocked] = useState(false);
 
-  const [orgSearch, setOrgSearch] = useState("");
-  const [orgSearchResults, setOrgSearchResults] = useState<
+  const [businessSearch, setBusinessSearch] = useState("");
+  const [businessSearchResults, setBusinessSearchResults] = useState<
     {
       _id: string;
       name: string;
@@ -231,7 +241,7 @@ export const BusinessTab = ({
       address?: string;
     }[]
   >([]);
-  const [selectedOrg, setSelectedOrg] = useState<{
+  const [selectedBusiness, setSelectedBusiness] = useState<{
     _id: string;
     name: string;
     representativeName?: string;
@@ -244,7 +254,7 @@ export const BusinessTab = ({
   const [joinRequestsLoaded, setJoinRequestsLoaded] = useState(false);
   const [joinLoading, setJoinLoading] = useState(false);
   const [cancelLoadingOrgId, setCancelLoadingOrgId] = useState<string>("");
-  const [orgOpen, setOrgOpen] = useState(false);
+  const [businessOpen, setBusinessOpen] = useState(false);
 
   const [licenseDeleteLoading, setLicenseDeleteLoading] = useState(false);
   const [inquirySubmitting, setInquirySubmitting] = useState(false);
@@ -566,14 +576,35 @@ export const BusinessTab = ({
   );
 
   useEffect(() => {
-    if (!authUserId) return;
-    if (!allowLocalDraft) return;
     if (membership !== "none") return;
     if (setupMode !== null) return;
+
+    // 역할이 선택된 경우 자동으로 setupMode 설정
+    if (selectedRole === "owner") {
+      updateSetupMode("license");
+      setSetupModeLocked(true);
+      return;
+    }
+    if (selectedRole === "member") {
+      updateSetupMode("search");
+      setSetupModeLocked(true);
+      return;
+    }
+
+    // 저장된 setupMode 복구
+    if (!authUserId) return;
+    if (!allowLocalDraft) return;
     const stored = readStoredSetupMode(authUserId);
     if (!stored) return;
     updateSetupMode(stored);
-  }, [allowLocalDraft, authUserId, membership, setupMode, updateSetupMode]);
+  }, [
+    allowLocalDraft,
+    authUserId,
+    membership,
+    setupMode,
+    updateSetupMode,
+    selectedRole,
+  ]);
 
   useEffect(() => {
     if (membership !== "none" && setupMode !== null) {
@@ -582,12 +613,22 @@ export const BusinessTab = ({
   }, [membership, setupMode, updateSetupMode]);
 
   useEffect(() => {
-    const q = orgSearch.trim();
+    // 온보딩 단계에서 신규 사업자 등록 완료 시 validationState 업데이트
+    if (selectedRole === "owner" && registerValidationState) {
+      registerValidationState({
+        passed: validationSucceeded || isVerified,
+        validating: false,
+      });
+    }
+  }, [validationSucceeded, isVerified, selectedRole, registerValidationState]);
+
+  useEffect(() => {
+    const q = businessSearch.trim();
     if (!token) return;
     if (membership !== "none") return;
     if (!q) {
-      setOrgSearchResults([]);
-      setSelectedOrg(null);
+      setBusinessSearchResults([]);
+      setSelectedBusiness(null);
       return;
     }
 
@@ -602,19 +643,19 @@ export const BusinessTab = ({
           headers: mockHeaders,
         });
         if (!res.ok) {
-          setOrgSearchResults([]);
+          setBusinessSearchResults([]);
           return;
         }
         const body: any = res.data || {};
         const data = body.data || body;
-        setOrgSearchResults(Array.isArray(data) ? data : []);
+        setBusinessSearchResults(Array.isArray(data) ? data : []);
       } catch {
-        setOrgSearchResults([]);
+        setBusinessSearchResults([]);
       }
     }, 250);
 
     return () => clearTimeout(t);
-  }, [membership, orgSearch, organizationType, token]);
+  }, [membership, businessSearch, organizationType, token]);
 
   useEffect(() => {
     const load = async () => {
@@ -701,13 +742,16 @@ export const BusinessTab = ({
 
   const handleDeleteLicense = async () => {
     if (membership === "none") {
+      // 온보딩 단계: 모달 없이 직접 초기화
       await runDeleteLicense();
       return;
     }
+    // 일반 사용 단계: 검증 완료된 사업자는 관리자에게 문의
     if (validationSucceeded || isVerified) {
       setVerifiedResetConfirmOpen(true);
       return;
     }
+    // 일반 사용 단계: 미검증 사업자는 확인 모달 표시
     setDeleteConfirmOpen(true);
   };
 
@@ -723,6 +767,23 @@ export const BusinessTab = ({
     resetVersionRef.current += 1;
     suppressDraftWriteRef.current = true;
     if (membership === "none") {
+      // 온보딩 단계: 사업자 엔터티 삭제
+      try {
+        if (token) {
+          await request<any>({
+            path: "/api/organizations/me",
+            method: "DELETE",
+            token,
+            headers: mockHeaders,
+          });
+        }
+      } catch (err) {
+        console.error(
+          "[BusinessTab] Failed to delete business entity during onboarding",
+          err,
+        );
+      }
+
       latestDraftRef.current = {
         payload: null,
         hasAnyLicense: false,
@@ -739,11 +800,16 @@ export const BusinessTab = ({
       setBusinessData((prev) => ({
         ...prev,
         companyName: "",
+        owner: "",
         businessNumber: "",
         address: "",
         addressDetail: "",
         zipCode: "",
         phone: "",
+        email: "",
+        businessType: "",
+        businessItem: "",
+        startDate: "",
       }));
       setCompanyNameTouched(false);
       updateSetupMode(null);
@@ -772,11 +838,16 @@ export const BusinessTab = ({
     setBusinessData((prev) => ({
       ...prev,
       companyName: "",
+      owner: "",
       businessNumber: "",
       address: "",
       addressDetail: "",
       zipCode: "",
       phone: "",
+      email: "",
+      businessType: "",
+      businessItem: "",
+      startDate: "",
     }));
     setCompanyNameTouched(false);
 
@@ -803,11 +874,16 @@ export const BusinessTab = ({
       }
       setBusinessData({
         companyName: "",
+        owner: "",
         businessNumber: "",
         address: "",
         addressDetail: "",
         zipCode: "",
         phone: "",
+        email: "",
+        businessType: "",
+        businessItem: "",
+        startDate: "",
       });
       setExtracted(createEmptyExtracted());
       await refreshMembership();
@@ -837,14 +913,14 @@ export const BusinessTab = ({
   const handleJoinRequest = async () => {
     await handleJoinRequestImpl({
       token,
-      selectedBusinessId: selectedOrg?._id,
+      selectedBusinessId: selectedBusiness?._id,
       organizationType,
       mockHeaders,
       toast,
       setJoinLoading,
-      setOrgSearch,
-      setOrgSearchResults,
-      setSelectedOrg,
+      setOrgSearch: setBusinessSearch,
+      setOrgSearchResults: setBusinessSearchResults,
+      setSelectedOrg: setSelectedBusiness,
       refreshMembership,
       refreshMyJoinRequests,
     });
@@ -875,11 +951,16 @@ export const BusinessTab = ({
     setErrors({});
     setBusinessData({
       companyName: "",
+      owner: "",
       businessNumber: "",
       address: "",
       addressDetail: "",
       zipCode: "",
       phone: "",
+      email: "",
+      businessType: "",
+      businessItem: "",
+      startDate: "",
     });
     setCompanyNameTouched(false);
     latestDraftRef.current = {
@@ -1166,6 +1247,7 @@ export const BusinessTab = ({
           companyName: companyNameTouched
             ? prev.companyName
             : nextCompanyName || "",
+          owner: String(nextExtracted?.representativeName || "").trim(),
           businessNumber: formatBusinessNumberInput(
             String(nextExtracted?.businessNumber || "").trim(),
           ),
@@ -1175,6 +1257,10 @@ export const BusinessTab = ({
           phone: formatPhoneNumberInput(
             String(nextExtracted?.phoneNumber || "").trim(),
           ),
+          email: String(nextExtracted?.email || "").trim(),
+          businessType: String(nextExtracted?.businessType || "").trim(),
+          businessItem: String(nextExtracted?.businessItem || "").trim(),
+          startDate: nextStartDate,
         }));
         setIsVerified(!!data?.verification?.verified);
         setLicenseStatus("ready");
@@ -1268,48 +1354,12 @@ export const BusinessTab = ({
       onFiles={handleLicenseFilesDrop}
       activeClassName="ring-2 ring-primary/30"
     >
-      <Card
-        className={cn(
-          "app-glass-card app-glass-card--lg transition-all duration-300",
-          cardHighlight && "ring-2 ring-sky-400/70 border-sky-300 bg-sky-50/30",
-        )}
-      >
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <p className="flex items-center gap-2">
-                <Building2 className="h-5 w-5" />
-                사업자 정보
-              </p>
-              <span className="ml-2 inline-flex items-center rounded-md border bg-white/60 px-2 py-0.5 text-xs text-foreground">
-                {roleBadge}
-              </span>
-            </div>
-
-            {membership === "owner" && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleDeleteLicense}
-                disabled={
-                  licenseDeleteLoading ||
-                  licenseStatus === "processing" ||
-                  licenseStatus === "uploading"
-                }
-              >
-                <RotateCcw className="mr-2 h-4 w-4" />
-                초기화
-              </Button>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {membership === "none" && !setupMode && showSelectionChoices && (
+      <div className="space-y-6">
+        {membership === "none" &&
+          !setupMode &&
+          showSelectionChoices &&
+          !setupModeLocked && (
             <div className="space-y-4">
-              <div className="app-surface app-surface--panel text-sm">
-                아래 두 가지 방법 중 하나를 선택해 사업자 소속을 설정해주세요.
-              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <button
                   type="button"
@@ -1324,9 +1374,6 @@ export const BusinessTab = ({
                   }}
                 >
                   <div className="text-sm font-medium">신규 사업자 등록</div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    사업자등록증을 업로드해서 사업자를 새로 등록합니다.
-                  </div>
                 </button>
                 <button
                   type="button"
@@ -1336,28 +1383,7 @@ export const BusinessTab = ({
                     updateSetupMode("search");
                   }}
                 >
-                  <div className="text-sm font-medium">
-                    기존 사업자 소속 신청
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    이미 등록된 사업자를 검색해 소속을 신청합니다.
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  className="app-surface app-surface--panel w-full text-left p-4 transition-colors hover:bg-white"
-                  onClick={() => {
-                    setSetupModeLocked(true);
-                    resetLocalBusinessState();
-                    updateSetupMode("manual");
-                  }}
-                >
-                  <div className="text-sm font-medium">
-                    직접 입력으로 신규 등록
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    사업자등록증 없이 직접 정보를 입력해 새로 등록합니다.
-                  </div>
+                  <div className="text-sm font-medium">기존 사업자 가입</div>
                 </button>
               </div>
 
@@ -1370,162 +1396,139 @@ export const BusinessTab = ({
             </div>
           )}
 
-          {membership === "none" && showJoinRequestSection && (
-            <JoinRequestsSection
-              myJoinRequests={myJoinRequests || []}
-              cancelLoadingOrgId={cancelLoadingOrgId}
-              onCancelJoinRequest={handleCancelJoinRequest}
-              onLeaveOrganization={handleLeaveOrganization}
-            />
-          )}
+        {membership === "none" && showJoinRequestSection && (
+          <JoinRequestsSection
+            myJoinRequests={myJoinRequests || []}
+            cancelLoadingOrgId={cancelLoadingOrgId}
+            onCancelJoinRequest={handleCancelJoinRequest}
+            onLeaveOrganization={handleLeaveOrganization}
+          />
+        )}
 
-          {(membership !== "none" || !!setupMode || showJoinRequestSection) && (
-            <div className="space-y-6">
-              {membership === "none" && showSelectionChoices && (
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-medium">
-                    {setupMode === "license"
-                      ? "신규 사업자 등록"
-                      : setupMode === "manual"
-                        ? "직접 입력으로 신규 등록"
-                        : "기존 사업자 소속 신청"}
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setSetupModeLocked(true);
-                      updateSetupMode(null);
+        {(membership !== "none" || !!setupMode || showJoinRequestSection) && (
+          <div className="space-y-6">
+            {(membership === "owner" ||
+              setupMode === "license" ||
+              setupMode === "manual") && (
+              <div className="space-y-6">
+                {setupMode !== "manual" && (
+                  <BusinessLicenseUpload
+                    ref={licenseUploadRef}
+                    membership={membership}
+                    licenseStatus={licenseStatus}
+                    isVerified={isVerified}
+                    validationSucceeded={validationSucceeded}
+                    licenseFileName={licenseFileName}
+                    licenseDeleteLoading={licenseDeleteLoading}
+                    onFileUpload={handleFileUpload}
+                    onDeleteLicense={handleDeleteLicense}
+                  />
+                )}
+
+                {(membership === "owner" ||
+                  licenseStatus !== "missing" ||
+                  setupMode === "manual") && (
+                  <BusinessForm
+                    businessData={businessData}
+                    extracted={extracted}
+                    errors={errors}
+                    licenseStatus={licenseStatus}
+                    membership={membership}
+                    licenseDeleteLoading={licenseDeleteLoading}
+                    setBusinessData={setBusinessData}
+                    setExtracted={setExtracted}
+                    setErrors={setErrors}
+                    setCompanyNameTouched={setCompanyNameTouched}
+                    onSave={handleSave}
+                    successNote={
+                      validationSucceeded
+                        ? "사업자등록이 완료되었습니다"
+                        : undefined
+                    }
+                    businessNumberLocked={
+                      validationSucceeded &&
+                      Boolean(businessData.businessNumber)
+                    }
+                    validationSucceeded={validationSucceeded}
+                    isVerified={isVerified}
+                    autoOpenAddressSearchSignal={autoOpenAddressSearchSignal}
+                    focusFirstMissingSignal={focusFirstMissingSignal}
+                    focusFieldKey={focusFieldKey}
+                    onAutoSave={() => {
+                      if (!authUserId) return;
+                      if (!allowLocalDraft) return;
+                      writeStoredBusinessDraft(authUserId, {
+                        businessData,
+                        extracted,
+                        licenseFileName,
+                        licenseFileId,
+                        licenseS3Key,
+                        licenseStatus,
+                        isVerified,
+                        updatedAt: Date.now(),
+                      });
                     }}
-                  >
-                    다른 방법 선택
-                  </Button>
-                </div>
-              )}
+                    renderActions={({ disabled }) =>
+                      showInquiryCta ? (
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          className="w-full font-semibold"
+                          disabled={disabled || inquirySubmitting}
+                          onClick={() => void submitBusinessInquiry()}
+                        >
+                          {inquirySubmitting
+                            ? "문의 접수 중..."
+                            : "관리자에게 문의"}
+                        </Button>
+                      ) : null
+                    }
+                  />
+                )}
+              </div>
+            )}
 
-              {(membership === "owner" ||
-                setupMode === "license" ||
-                setupMode === "manual") && (
-                <div className="space-y-6">
-                  {setupMode !== "manual" && (
-                    <BusinessLicenseUpload
-                      ref={licenseUploadRef}
-                      membership={membership}
-                      licenseStatus={licenseStatus}
-                      isVerified={isVerified}
-                      validationSucceeded={validationSucceeded}
-                      licenseFileName={licenseFileName}
-                      licenseDeleteLoading={licenseDeleteLoading}
-                      onFileUpload={handleFileUpload}
-                      onDeleteLicense={handleDeleteLicense}
-                    />
-                  )}
+            {(membership === "member" || membership === "pending") && (
+              <BusinessMemberView
+                currentOrgName={currentOrgName}
+                licenseStatus={licenseStatus}
+                isVerified={isVerified}
+                extracted={extracted}
+                businessData={businessData}
+              />
+            )}
 
-                  {(membership === "owner" ||
-                    licenseStatus !== "missing" ||
-                    setupMode === "manual") && (
-                    <BusinessForm
-                      businessData={businessData}
-                      extracted={extracted}
-                      errors={errors}
-                      licenseStatus={licenseStatus}
-                      membership={membership}
-                      licenseDeleteLoading={licenseDeleteLoading}
-                      setBusinessData={setBusinessData}
-                      setExtracted={setExtracted}
-                      setErrors={setErrors}
-                      setCompanyNameTouched={setCompanyNameTouched}
-                      onSave={handleSave}
-                      successNote={
-                        validationSucceeded
-                          ? "사업자등록이 완료되었습니다"
-                          : undefined
-                      }
-                      businessNumberLocked={
-                        validationSucceeded &&
-                        Boolean(businessData.businessNumber)
-                      }
-                      autoOpenAddressSearchSignal={autoOpenAddressSearchSignal}
-                      focusFirstMissingSignal={focusFirstMissingSignal}
-                      focusFieldKey={focusFieldKey}
-                      onAutoSave={() => {
-                        if (!authUserId) return;
-                        if (!allowLocalDraft) return;
-                        writeStoredBusinessDraft(authUserId, {
-                          businessData,
-                          extracted,
-                          licenseFileName,
-                          licenseFileId,
-                          licenseS3Key,
-                          licenseStatus,
-                          isVerified,
-                          updatedAt: Date.now(),
-                        });
-                      }}
-                      renderActions={({ disabled }) =>
-                        showInquiryCta ? (
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            className="w-full font-semibold"
-                            disabled={disabled || inquirySubmitting}
-                            onClick={() => void submitBusinessInquiry()}
-                          >
-                            {inquirySubmitting
-                              ? "문의 접수 중..."
-                              : "관리자에게 문의"}
-                          </Button>
-                        ) : null
-                      }
-                    />
-                  )}
-                </div>
-              )}
+            {(membership === "none"
+              ? setupMode === "search" && showSelectionChoices
+              : membership !== "owner") && (
+              <>
+                {membership === "none" && (
+                  <BusinessSearchSection
+                    businessSearch={businessSearch}
+                    setBusinessSearch={setBusinessSearch}
+                    businessSearchResults={businessSearchResults}
+                    selectedBusiness={selectedBusiness}
+                    setSelectedBusiness={setSelectedBusiness}
+                    businessOpen={businessOpen}
+                    setBusinessOpen={setBusinessOpen}
+                    joinLoading={joinLoading}
+                    onJoinRequest={handleJoinRequest}
+                  />
+                )}
 
-              {(membership === "member" || membership === "pending") && (
-                <BusinessMemberView
-                  currentOrgName={currentOrgName}
-                  licenseStatus={licenseStatus}
-                  isVerified={isVerified}
-                  extracted={extracted}
-                  businessData={businessData}
-                />
-              )}
-
-              {(membership === "none"
-                ? setupMode === "search" && showSelectionChoices
-                : membership !== "owner") && (
-                <div className="space-y-4">
-                  {membership === "none" && (
-                    <OrganizationSearchSection
-                      orgSearch={orgSearch}
-                      setOrgSearch={setOrgSearch}
-                      orgSearchResults={orgSearchResults}
-                      selectedOrg={selectedOrg}
-                      setSelectedOrg={setSelectedOrg}
-                      orgOpen={orgOpen}
-                      setOrgOpen={setOrgOpen}
-                      joinLoading={joinLoading}
-                      onJoinRequest={handleJoinRequest}
-                    />
-                  )}
-
-                  {Array.isArray(myJoinRequests) &&
-                    myJoinRequests.length > 0 && (
-                      <JoinRequestsSection
-                        myJoinRequests={myJoinRequests}
-                        cancelLoadingOrgId={cancelLoadingOrgId}
-                        onCancelJoinRequest={handleCancelJoinRequest}
-                        onLeaveOrganization={handleLeaveOrganization}
-                      />
-                    )}
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                {Array.isArray(myJoinRequests) && myJoinRequests.length > 0 && (
+                  <JoinRequestsSection
+                    myJoinRequests={myJoinRequests}
+                    cancelLoadingOrgId={cancelLoadingOrgId}
+                    onCancelJoinRequest={handleCancelJoinRequest}
+                    onLeaveOrganization={handleLeaveOrganization}
+                  />
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       <AlertDialog
         open={deleteConfirmOpen || verifiedResetConfirmOpen}

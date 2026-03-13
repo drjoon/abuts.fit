@@ -1,7 +1,8 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Upload, X, ShieldCheck } from "lucide-react";
+import { Upload, X, ShieldCheck, RotateCcw } from "lucide-react";
 import { GuideFocus } from "@/shared/ui/GuideFocus";
+import { Label } from "@/components/ui/label";
 import type { LicenseStatus, MembershipStatus } from "./types";
 import { useToast } from "@/shared/hooks/use-toast";
 
@@ -57,6 +58,25 @@ export const BusinessLicenseUpload = forwardRef<
 
     return (
       <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label>사업자 등록</Label>
+          {canEdit && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onDeleteLicense}
+              disabled={
+                licenseDeleteLoading ||
+                licenseStatus === "processing" ||
+                licenseStatus === "uploading"
+              }
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              초기화
+            </Button>
+          )}
+        </div>
         <GuideFocus
           stepId="requestor.business.licenseUpload"
           className="rounded-lg"
