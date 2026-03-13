@@ -18,6 +18,7 @@ import {
   buildHanjinPathCandidates,
   debugHanjinPrintPayload,
   executeHanjinLabelPrint,
+  executeHanjinOrderApiWithFallback,
   findPackingStageRequestsByMailboxes,
   getHanjinPathFallbacks,
   getWblPrintSettingsPayload,
@@ -599,9 +600,18 @@ export async function validateHanjinCustomerCheck(req, res) {
 
 export async function printHanjinLabels(req, res) {
   try {
+    console.log("[hanjin][print] printHanjinLabels called");
+
     const { mailboxAddresses, payload, wblPrintOptions } = req.body || {};
     const preResolved = req?.__resolvedHanjinPayload || null;
     const normalizedMailboxAddresses = resolveMailboxList(mailboxAddresses);
+
+    console.log("[hanjin][print] resolved params", {
+      mailboxAddresses,
+      wblPrintOptions,
+      preResolved: !!preResolved,
+    });
+
     const path = resolveHanjinPath(
       "HANJIN_PRINT_WBL_PATH",
       getHanjinPathFallbacks().HANJIN_PRINT_WBL_PATH,
@@ -652,6 +662,59 @@ export async function printHanjinLabels(req, res) {
         );
       },
     );
+
+    // 먼저 주문을 등록하여 운송장번호를 획득
+    console.log("[hanjin][print] registering orders before printing labels");
+
+    const pickupPathCandidates = buildHanjinPathCandidates(
+      resolveHanjinPath(
+        "HANJIN_PICKUP_REQUEST_PATH",
+        getHanjinPathFallbacks().HANJIN_PICKUP_REQUEST_PATH,
+      ),
+    );
+
+    const orderRegistrationResults = [];
+    for (const mailbox of normalizedMailboxAddresses) {
+      const mailboxRequests = printRequests.filter(
+        (r) => String(r?.mailboxAddress || "").trim() === mailbox,
+      );
+      if (!mailboxRequests.length) continue;
+
+      try {
+        const orderBody = buildHanjinInsertOrderBody({
+          mailbox,
+          requests: mailboxRequests,
+        });
+
+        const orderResult = await executeHanjinOrderApiWithFallback({
+          pathCandidates: pickupPathCandidates,
+          data: orderBody,
+          logPrefix: "[hanjin][print-pre-order]",
+        });
+
+        orderRegistrationResults.push({
+          mailbox,
+          success: true,
+          wblNo: orderResult?.wblNo,
+          custOrdNo: orderResult?.custOrdNo,
+        });
+      } catch (err) {
+        console.error("[hanjin][print-pre-order] failed", {
+          mailbox,
+          error: err.message,
+        });
+        orderRegistrationResults.push({
+          mailbox,
+          success: false,
+          error: err.message,
+        });
+      }
+    }
+
+    console.log("[hanjin][print] order registration results", {
+      total: orderRegistrationResults.length,
+      successful: orderRegistrationResults.filter((r) => r.success).length,
+    });
 
     const { labelData, wblPrint } = await executeHanjinLabelPrint({
       path,
@@ -1002,6 +1065,10 @@ export async function cancelHanjinPickup(req, res) {
 
 export async function requestHanjinPickupAndPrint(req, res) {
   try {
+    console.log("[hanjin][pickup-and-print] function called", {
+      timestamp: new Date().toISOString(),
+    });
+
     const body = req.body || {};
     const mailboxAddresses = resolveMailboxList(body.mailboxAddresses);
     if (!mailboxAddresses.length) {
@@ -1010,6 +1077,10 @@ export async function requestHanjinPickupAndPrint(req, res) {
         message: "mailboxAddresses가 필요합니다.",
       });
     }
+
+    console.log("[hanjin][pickup-and-print] preparing context", {
+      mailboxAddresses,
+    });
 
     const {
       changedMailboxAddressesBeforePrint,
@@ -1021,11 +1092,21 @@ export async function requestHanjinPickupAndPrint(req, res) {
         ? changedMailboxAddressesBeforePrint
         : mailboxAddresses;
 
+    console.log("[hanjin][pickup-and-print] context prepared", {
+      printTargetMailboxAddresses,
+      changedMailboxAddressesBeforePrint,
+    });
+
     const flowStartedAtMs = Date.now();
     const flowStartedAt = nowIso();
 
     const printStartedAtMs = Date.now();
     const printStartedAt = nowIso();
+
+    console.log("[hanjin][pickup-and-print] print step starting", {
+      printTargetMailboxAddresses,
+      wblPrintOptions: body.wblPrintOptions,
+    });
 
     const printReq = buildIntegratedPrintRequest({
       req,
@@ -1046,13 +1127,31 @@ export async function requestHanjinPickupAndPrint(req, res) {
         : [],
     };
 
+    console.log("[hanjin][pickup-and-print] print request prepared", {
+      hasResolvedPayload: !!printReq.__resolvedHanjinPayload,
+      requestsCount: printReq.__resolvedHanjinPayload?.requests?.length || 0,
+    });
+
     const printStep = await executeIntegratedCapturedStep({
       res,
       controllerFn: printHanjinLabels,
       reqLike: printReq,
       fallbackMessage: "운송장 출력에 실패했습니다.",
     });
+
+    console.log("[hanjin][pickup-and-print] print step completed", {
+      ok: printStep.ok,
+      status: printStep.response?.statusCode || printStep.response?.status,
+      body: printStep.body,
+      capturedBody: printStep.captured?.body,
+    });
+
     if (!printStep.ok) {
+      console.error("[hanjin][pickup-and-print] print step failed", {
+        body: printStep.body,
+        capturedBody: printStep.captured?.body,
+        capturedStatusCode: printStep.captured?.statusCode,
+      });
       return printStep.response;
     }
 

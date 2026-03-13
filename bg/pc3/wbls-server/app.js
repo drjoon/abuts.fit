@@ -404,6 +404,59 @@ const server = http.createServer(async (req, res) => {
         typeof payload.paperProfile === "string"
           ? payload.paperProfile.trim()
           : "";
+      const saveMode = payload.saveMode || "print";
+      const printMode = String(payload.printMode || "raw")
+        .trim()
+        .toLowerCase();
+
+      if (!zpl || typeof zpl !== "string") {
+        return jsonResponse(res, 400, {
+          success: false,
+          message: "zpl 문자열이 필요합니다.",
+        });
+      }
+
+      if (saveMode === "pdf") {
+        const tempPath = await writeTextToTemp(zpl, "zpl");
+        const pdfPath = path.join(
+          os.tmpdir(),
+          `hanjin-label-${Date.now()}-${Math.random().toString(16).slice(2)}.pdf`,
+        );
+
+        log("print-zpl:pdf-convert", { title });
+
+        try {
+          await new Promise((resolve, reject) => {
+            const args = [tempPath, "-o", pdfPath];
+            execFile("zpl2pdf", args, (err, stdout, stderr) => {
+              if (err) {
+                log("print-zpl:pdf-convert-failed", { message: err.message });
+                return reject(new Error(stderr || err.message));
+              }
+              resolve(stdout);
+            });
+          });
+
+          const pdfBuffer = await fs.promises.readFile(pdfPath);
+          const base64Pdf = pdfBuffer.toString("base64");
+
+          fs.unlink(tempPath, () => undefined);
+          fs.unlink(pdfPath, () => undefined);
+
+          log("print-zpl:pdf-done", { title });
+
+          return jsonResponse(res, 200, {
+            success: true,
+            saveMode: "pdf",
+            pdf: base64Pdf,
+            filename: `${title}-${Date.now()}.pdf`,
+          });
+        } catch (error) {
+          fs.unlink(tempPath, () => undefined);
+          fs.unlink(pdfPath, () => undefined);
+          throw error;
+        }
+      }
 
       if (!printer) {
         return jsonResponse(res, 400, {
@@ -413,31 +466,93 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      if (!zpl || typeof zpl !== "string") {
-        return jsonResponse(res, 400, {
-          success: false,
-          message: "zpl 문자열이 필요합니다.",
-        });
-      }
-
       const tempPath = await writeTextToTemp(zpl, "zpl");
 
-      log("print-zpl:queued", { printer, title });
+      log("print-zpl:queued", { printer, title, printMode });
 
       try {
-        await printFile({
-          filePath: tempPath,
-          printer,
-          title,
-          paperProfile,
-          raw: true,
-        });
-        log("print-zpl:done", { printer, title });
+        if (printMode === "pdf") {
+          const PDFDocument = require("pdfkit");
+          const bwipjs = require("bwip-js");
+
+          const pdfPath = path.join(
+            os.tmpdir(),
+            `hanjin-label-${Date.now()}-${Math.random().toString(16).slice(2)}.pdf`,
+          );
+
+          log("print-zpl:pdf-convert", { title });
+
+          try {
+            // PDF 문서 생성 (4x6 인치, 203 DPI)
+            const doc = new PDFDocument({
+              size: [288, 432],
+              margin: 0,
+            });
+
+            const stream = fs.createWriteStream(pdfPath);
+            doc.pipe(stream);
+
+            // ZPL에서 바코드 데이터 추출 (간단한 정규식)
+            const barcodeMatch = zpl.match(/\^FD(\d+)\^FS/);
+            const barcodeData = barcodeMatch
+              ? barcodeMatch[1]
+              : "0000000000000";
+
+            // 바코드 생성
+            const barcodeImg = await bwipjs.toBuffer({
+              bcid: "code128",
+              text: barcodeData,
+              scale: 2,
+              height: 10,
+              includetext: true,
+              textxalign: "center",
+            });
+
+            // PDF에 바코드 이미지 추가
+            doc.image(barcodeImg, 50, 100, { width: 200 });
+
+            // 텍스트 추가 (ZPL 텍스트 필드 추출)
+            doc.fontSize(24).text(barcodeData, 50, 50);
+            doc.fontSize(14).text("한진택배 1588-0011", 50, 320);
+
+            doc.end();
+
+            await new Promise((resolve, reject) => {
+              stream.on("finish", resolve);
+              stream.on("error", reject);
+            });
+
+            log("print-zpl:pdf-done", { title });
+
+            await printFile({
+              filePath: pdfPath,
+              printer,
+              title,
+              paperProfile,
+              raw: false,
+            });
+
+            fs.unlink(pdfPath, () => undefined);
+            log("print-zpl:done", { printer, title, printMode: "pdf" });
+          } catch (error) {
+            fs.unlink(pdfPath, () => undefined);
+            throw error;
+          }
+        } else {
+          await printFile({
+            filePath: tempPath,
+            printer,
+            title,
+            paperProfile,
+            raw: true,
+          });
+          log("print-zpl:done", { printer, title, printMode: "raw" });
+        }
       } finally {
         fs.unlink(tempPath, () => undefined);
       }
 
-      return jsonResponse(res, 200, { success: true });
+      return jsonResponse(res, 200, { success: true, printMode });
     } catch (error) {
       log("print-zpl:error", { message: error.message });
       return jsonResponse(res, 500, {

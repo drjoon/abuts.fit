@@ -237,7 +237,8 @@ export const MailboxGrid = ({
             wblPrintOptions: {
               printer: printerProfile || undefined,
               paperProfile,
-            },
+              shippingOutputMode,
+            } as any,
           })
         : await callHanjinApiWithMeta({
             path: "/api/requests/shipping/hanjin/print-labels",
@@ -245,7 +246,8 @@ export const MailboxGrid = ({
             wblPrintOptions: {
               printer: printerProfile || undefined,
               paperProfile,
-            },
+              shippingOutputMode,
+            } as any,
           });
       const { data, wblPrint } = response;
 

@@ -239,8 +239,28 @@ export const resolveCapturedSuccessBody = (
 };
 
 export const executeCapturedController = async (controllerFn, reqLike) => {
+  console.log("[captured-controller] executing", {
+    fnName: controllerFn?.name || "unknown",
+    hasReqLike: !!reqLike,
+  });
+
   const capture = createCapturedJsonResponder();
-  await controllerFn(reqLike, capture.responder);
+
+  try {
+    await controllerFn(reqLike, capture.responder);
+    console.log("[captured-controller] completed", {
+      fnName: controllerFn?.name || "unknown",
+      statusCode: capture.captured?.statusCode,
+      success: capture.captured?.body?.success,
+    });
+  } catch (error) {
+    console.error("[captured-controller] error", {
+      fnName: controllerFn?.name || "unknown",
+      error: error.message,
+    });
+    throw error;
+  }
+
   return capture.captured;
 };
 

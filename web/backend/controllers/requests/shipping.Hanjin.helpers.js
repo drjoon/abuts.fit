@@ -305,10 +305,36 @@ export const executeHanjinLabelPrint = async ({
   metaByMsgKey,
   wblPrintOptions,
 }) => {
+  console.log("[hanjin][print] executeHanjinLabelPrint called", {
+    path,
+    wblPrintOptions,
+  });
+
+  // 한진 API 응답에서 ZPL 라벨 데이터를 받기 위해 print-wbls API 호출
+  // payload는 address_list를 포함한 형식이어야 함
+  const printPath = path.replace("{client_id}", HANJIN_CLIENT_ID);
+
+  console.log("[hanjin][print] calling hanjin print api", {
+    path: printPath,
+    payloadAddressListLength: Array.isArray(payload?.address_list)
+      ? payload.address_list.length
+      : 0,
+  });
+
   const data = await hanjinService.requestPrintApi({
-    path: path.replace("{client_id}", HANJIN_CLIENT_ID),
+    path: printPath,
     method: "POST",
     data: payload,
+  });
+
+  console.log("[hanjin][print] hanjin api response", {
+    hasData: !!data,
+    dataKeys: data ? Object.keys(data) : null,
+    totalCnt: data?.total_cnt || data?.totalCnt,
+    errorCnt: data?.error_cnt || data?.errorCnt,
+    addressListLength: Array.isArray(data?.address_list)
+      ? data.address_list.length
+      : 0,
   });
 
   const errorCount = Number(data?.error_cnt || data?.errorCnt || 0);
@@ -323,7 +349,7 @@ export const executeHanjinLabelPrint = async ({
     const firstFailed = failedRows[0] || null;
     const message =
       String(
-        firstFailed?.result_msg ||
+        firstFailed?.result_message ||
           firstFailed?.resultMessage ||
           data?.resultMessage ||
           "한진 운송장 출력에 실패했습니다.",
@@ -339,11 +365,39 @@ export const executeHanjinLabelPrint = async ({
   }
 
   const labelData = buildResolvedLabelData({ data, metaByMsgKey });
+  console.log("[hanjin][print] labelData built", {
+    zplLabelsCount: labelData?.zplLabels?.length || 0,
+  });
+
   const shouldTriggerWblPrint =
     wblPrintOptions && typeof wblPrintOptions === "object";
+
+  // wblPrintOptions에서 출력 모드 감지
+  // shippingOutputMode: "image" (PDF 저장) 또는 "label" (실제 라벨 출력)
+  const shippingOutputMode = String(
+    wblPrintOptions?.shippingOutputMode || "label",
+  )
+    .trim()
+    .toLowerCase();
+  const outputMode = shippingOutputMode === "image" ? "pdf" : "print";
+  const printMode = String(wblPrintOptions?.printMode || "pdf")
+    .trim()
+    .toLowerCase();
+
+  console.log("[hanjin][print] output mode", {
+    wblPrintOptions,
+    shippingOutputMode,
+    outputMode,
+    shouldTriggerWblPrint,
+  });
+
   const wblPrint = shouldTriggerWblPrint
-    ? await triggerWblServerPrint(labelData, wblPrintOptions)
-    : { success: true, skipped: true, reason: "image_mode" };
+    ? await triggerWblServerPrint(labelData, {
+        ...wblPrintOptions,
+        outputMode,
+        printMode,
+      })
+    : { success: true, skipped: true, reason: "no_wbl_print_options" };
 
   return { labelData, wblPrint };
 };
@@ -643,14 +697,84 @@ const enrichHanjinAddressList = ({ addressList, metaByMsgKey }) =>
     };
   });
 
-const buildHanjinWblZplLabels = ({ addressList }) =>
-  (Array.isArray(addressList) ? addressList : [])
-    .filter(
-      (row) =>
-        String(row?.result_code || row?.resultCode || "OK").trim() === "OK",
-    )
-    .map((row) => String(row?.zpl || row?.ZPL || "").trim())
+const buildHanjinWblZplLabels = ({ addressList }) => {
+  const filtered = (Array.isArray(addressList) ? addressList : []).filter(
+    (row) =>
+      String(row?.result_code || row?.resultCode || "OK").trim() === "OK",
+  );
+
+  console.log("[hanjin][zpl] addressList sample:", {
+    totalRows: filtered.length,
+    firstRow: filtered[0] ? Object.keys(filtered[0]) : null,
+    firstRowData: JSON.stringify(filtered[0], null, 2),
+  });
+
+  const zplLabels = filtered
+    .map((row) => {
+      // 한진 API 응답 필드 추출
+      const wblNum = String(row?.wbl_num || "").trim();
+      const prtAdd = String(row?.prt_add || "").trim();
+      const receiverName = String(row?.receiver_name || "").trim();
+      const receiverPhone = String(row?.receiver_phone || "").trim();
+      const tmlNam = String(row?.tml_nam || "").trim();
+      const cenNam = String(row?.cen_nam || "").trim();
+      const sTemNam = String(row?.s_tml_nam || "").trim();
+      const domRgn = String(row?.dom_rgn || "").trim();
+      const domMid = String(row?.dom_mid || "").trim();
+      const grpRnk = String(row?.grp_rnk || "").trim();
+
+      if (!wblNum) {
+        console.log("[hanjin][zpl] missing wbl_num in row");
+        return "";
+      }
+
+      // 한진 운송장 ZPL 라벨 생성 (4x6 인치, 203 DPI)
+      // 가로 모드, 한글 지원 (XPrinter)
+      // 첨2 레이아웃 기준
+      const zpl = `^XA
+^MMT
+^CI28
+^PW1218
+^LL812
+^PON
+^LH0,0
+^FO20,20^A0N,28,28^FD운송장번호^FS
+^FO170,15^A0N,40,40^FD${wblNum}^FS
+^FO520,20^A0N,20,20^FDP.1  1/1^FS
+^FO920,20^A0N,18,18^FD한진택배 1588-0011^FS
+^FO20,80^A0N,110,110^FD${tmlNam}^FS
+^FO20,210^A0N,80,80^FD${domMid}^FS
+^FO20,300^A0N,70,70^FD${grpRnk}^FS
+^FO380,90^BY2,2,160^BCN^FD${wblNum}^FS
+^FO860,90^A0N,36,36^FD${domRgn}^FS
+^FO860,140^A0N,28,28^FD${sTemNam}^FS
+^FO860,175^A0N,28,28^FD${cenNam}^FS
+^FO980,90^BY3,3,320^BCN^FD${wblNum}^FS
+^FO20,450^A0N,24,24^FD${prtAdd}^FS
+^FO20,490^A0N,22,22^FD${receiverName}^FS
+^FO20,520^A0N,22,22^FD${receiverPhone}^FS
+^FO700,450^A0N,20,20^FD2026-03-13^FS
+^FO700,475^A0N,20,20^FDType:S^FS
+^FO20,610^A0N,20,20^FD비고  ${receiverName} / 1건^FS
+^FO700,640^BY2,2,80^BCN^FD${wblNum}^FS
+^XZ`;
+
+      console.log("[hanjin][zpl] generated zpl for wbl_num:", {
+        wblNum,
+        hasReceiverName: Boolean(receiverName),
+        hasReceiverPhone: Boolean(receiverPhone),
+        hasPrtAdd: Boolean(prtAdd),
+        hasTerminalInfo: Boolean(tmlNam && cenNam),
+      });
+
+      return zpl;
+    })
     .filter(Boolean);
+
+  console.log("[hanjin][zpl] generated labels:", { count: zplLabels.length });
+
+  return zplLabels;
+};
 
 async function triggerWblServerPrint(payload, options = null) {
   if (!WBL_PRINT_SERVER_BASE) {
@@ -664,6 +788,9 @@ async function triggerWblServerPrint(payload, options = null) {
   const printer = String(options?.printer || "").trim();
   const media = String(options?.paperProfile || options?.media || "").trim();
   const skipPrint = Boolean(options?.skipPrint);
+  const outputMode = String(options?.outputMode || "print")
+    .trim()
+    .toLowerCase();
 
   if (skipPrint) {
     return {
@@ -674,6 +801,76 @@ async function triggerWblServerPrint(payload, options = null) {
     };
   }
 
+  // PDF 저장 모드
+  if (outputMode === "pdf") {
+    if (!media) {
+      return {
+        success: false,
+        reason: "no_media_selected",
+        message: "용지 종류를 선택해주세요.",
+      };
+    }
+
+    if (!payload?.zplLabels?.length) {
+      return {
+        success: false,
+        reason: "no_zpl_labels",
+        message: "출력할 ZPL 라벨 데이터가 없습니다.",
+      };
+    }
+
+    try {
+      const pdfResults = [];
+      for (const zpl of payload.zplLabels) {
+        const headers = { "Content-Type": "application/json" };
+        if (WBL_PRINT_SHARED_SECRET) {
+          headers["x-wbl-secret"] = WBL_PRINT_SHARED_SECRET;
+        }
+
+        const response = await fetch(`${WBL_PRINT_SERVER_BASE}/print-zpl`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            zpl,
+            saveMode: "pdf",
+            paperProfile: media,
+            title: "Hanjin Waybill Label",
+          }),
+        });
+
+        const data = await response.json();
+        pdfResults.push({
+          success: response.ok,
+          status: response.status,
+          ...data,
+        });
+
+        if (!response.ok) {
+          return {
+            success: false,
+            reason: "zpl_pdf_failed",
+            message: data?.message || "ZPL PDF 변환에 실패했습니다.",
+            details: pdfResults,
+          };
+        }
+      }
+
+      return {
+        success: true,
+        outputMode: "pdf",
+        message: `${pdfResults.length}개의 라벨이 PDF로 저장되었습니다.`,
+        pdfs: pdfResults,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        reason: "zpl_pdf_error",
+        message: error.message || "PDF 변환 중 오류가 발생했습니다.",
+      };
+    }
+  }
+
+  // 프린터 출력 모드
   if (!printer) {
     return {
       success: false,
