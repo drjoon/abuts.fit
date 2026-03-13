@@ -71,12 +71,15 @@ const getClientIp = (req) => {
 const isIpAllowed = (req) => {
   if (!ALLOW_IPS.length || ALLOW_IPS.includes("*")) return true;
   const ip = getClientIp(req);
-  return ALLOW_IPS.includes(ip);
+  const allowed = ALLOW_IPS.includes(ip);
+  log("ip-check", { clientIp: ip, allowed, allowedIps: ALLOW_IPS });
+  return allowed;
 };
 
 const requireIpAllowed = (req, res) => {
   if (isIpAllowed(req)) return true;
-  log("blocked:ip", { ip: getClientIp(req) });
+  const ip = getClientIp(req);
+  log("blocked:ip", { clientIp: ip, allowedIps: ALLOW_IPS });
   jsonResponse(res, 403, {
     success: false,
     message: "Forbidden (IP not allowed)",
@@ -345,11 +348,19 @@ const printFile = ({ filePath, printer, title, paperProfile, raw = false }) =>
   });
 
 const server = http.createServer(async (req, res) => {
+  const clientIp = getClientIp(req);
+
   if (!req.url) {
     return jsonResponse(res, 400, { success: false, message: "Invalid URL" });
   }
 
-  log("request", { method: req.method, url: req.url });
+  log("request:incoming", {
+    method: req.method,
+    url: req.url,
+    clientIp,
+    xForwardedFor: req.headers["x-forwarded-for"],
+    remoteAddress: req.socket?.remoteAddress,
+  });
 
   if (req.method === "OPTIONS") {
     return jsonResponse(res, 204, { success: true });
@@ -439,6 +450,16 @@ const server = http.createServer(async (req, res) => {
   return jsonResponse(res, 404, { success: false, message: "Not Found" });
 });
 
-server.listen(PORT, () => {
-  console.log(`Print server running on http://localhost:${PORT}`);
+server.listen(PORT, "0.0.0.0", () => {
+  const address = server.address();
+  const host = address.address;
+  const actualPort = address.port;
+  console.log(`Print server running on http://0.0.0.0:${actualPort}`);
+  log("server:started", {
+    host,
+    port: actualPort,
+    url: `http://0.0.0.0:${actualPort}`,
+    allowedIps: ALLOW_IPS,
+    platform: process.platform,
+  });
 });

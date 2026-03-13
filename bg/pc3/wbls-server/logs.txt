@@ -1,0 +1,3 @@
+[wbls-server] 2026-03-13T06:04:03.397Z request {"method":"GET","url":"/printers"}
+[wbls-server] 2026-03-13T06:04:03.399Z ip-check {"clientIp":"127.0.0.1","allowed":true,"allowedIps":["127.0.0.1","118.217.235.170","13.203.56.190","100.77.68.21"]}
+[wbls-server] 2026-03-13T06:04:03.569Z printers {"count":1}
