@@ -293,9 +293,9 @@ const buildPackingLabelZpl = (payload) => {
     180,
   );
 
-  // Layout target: 80x65mm portrait @ 600DPI (세로 모드로 생성)
+  // Layout target: 80x65mm landscape @ 600DPI (가로 모드)
   // 80mm = 1890 dots, 65mm = 1535 dots @ 600DPI
-  // 이미지는 90도 회전해서 저장/출력
+  // 이미지 회전 후 가로 긴 형태로 표시됨
   return [
     "^XA",
     `^PW${pw || 1890}`,
@@ -303,74 +303,77 @@ const buildPackingLabelZpl = (payload) => {
     "^LH0,0",
     "^CI28",
 
-    // ===== Top header: mailbox / screw / lot suffix (3 columns) =====
-    `^FO${S(90)},${S(90)}^GB${S(1710)},${S(148)},${T}^FS`,
-    `^FO${S(660)},${S(90)}^GB${T},${S(148)},${T}^FS`,
-    `^FO${S(1230)},${S(90)}^GB${T},${S(148)},${T}^FS`,
-    `^FO${S(90)},${S(104)}^A0N,${F(118)},${F(118)}^FB${S(570)},1,0,C,0^FD${mailboxCode}^FS`,
-    `^FO${S(660)},${S(104)}^A0N,${F(118)},${F(118)}^FB${S(570)},1,0,C,0^FD${screwType}^FS`,
-    `^FO${S(1230)},${S(104)}^A0N,${F(118)},${F(118)}^FB${S(570)},1,0,C,0^FD${lotSuffix}^FS`,
+    // ===== TOP SECTION: Header with key info (mailbox, screw, lot) =====
+    // Top border
+    `^FO${S(90)},${S(90)}^GB${S(1710)},${S(130)},${T}^FS`,
+    // Vertical dividers
+    `^FO${S(660)},${S(90)}^GB${T},${S(130)},${T}^FS`,
+    `^FO${S(1230)},${S(90)}^GB${T},${S(130)},${T}^FS`,
+    // Header text (3 columns)
+    `^FO${S(100)},${S(100)}^A0N,${F(100)},${F(100)}^FB${S(550)},1,0,C,0^FD${mailboxCode}^FS`,
+    `^FO${S(670)},${S(100)}^A0N,${F(100)},${F(100)}^FB${S(550)},1,0,C,0^FD${screwType}^FS`,
+    `^FO${S(1240)},${S(100)}^A0N,${F(100)},${F(100)}^FB${S(550)},1,0,C,0^FD${lotSuffix}^FS`,
 
-    // ===== Lab name row =====
-    `^FO${S(90)},${S(248)}^GB${S(1710)},${S(118)},${T}^FS`,
-    `^FO${S(90)},${S(267)}^A0N,${F(82)},${F(82)}^FB${S(1710)},1,0,C,0^FD${labName}^FS`,
+    // ===== SECTION 2: Lab name (full width) =====
+    `^FO${S(90)},${S(230)}^GB${S(1710)},${S(100)},${T}^FS`,
+    `^FO${S(100)},${S(245)}^A0N,${F(70)},${F(70)}^FB${S(1690)},1,0,C,0^FD${labName}^FS`,
 
-    // ===== Clinic / Patient / Tooth =====
-    `^FO${S(90)},${S(378)}^GB${S(1710)},${S(95)},${T}^FS`,
-    `^FO${S(90)},${S(397)}^A0N,${F(59)},${F(59)}^FB${S(1710)},1,0,C,0^FD${clinicName} / ${patientName} / #${toothNumber}^FS`,
+    // ===== SECTION 3: Clinic / Patient / Tooth =====
+    `^FO${S(90)},${S(340)}^GB${S(1710)},${S(90)},${T}^FS`,
+    `^FO${S(100)},${S(352)}^A0N,${F(50)},${F(50)}^FB${S(1690)},1,0,C,0^FD${clinicName} / ${patientName} / #${toothNumber}^FS`,
 
-    // ===== Dates row =====
-    `^FO${S(90)},${S(485)}^GB${S(1710)},${S(83)},${T}^FS`,
-    `^FO${S(90)},${S(501)}^A0N,${F(53)},${F(53)}^FB${S(1710)},1,0,C,0^FD의뢰일: ${requestDate} / 제조일: ${manufacturingDate}^FS`,
+    // ===== SECTION 4: Dates (2 columns) =====
+    `^FO${S(90)},${S(440)}^GB${S(1710)},${S(85)},${T}^FS`,
+    `^FO${S(660)},${S(440)}^GB${T},${S(85)},${T}^FS`,
+    `^FO${S(100)},${S(450)}^A0N,${F(45)},${F(45)}^FB${S(550)},1,0,C,0^FD의뢰: ${requestDate}^FS`,
+    `^FO${S(670)},${S(450)}^A0N,${F(45)},${F(45)}^FB${S(1030)},1,0,C,0^FD제조: ${manufacturingDate}^FS`,
 
-    // ===== Implant info =====
-    `^FO${S(90)},${S(580)}^GB${S(1710)},${S(83)},${T}^FS`,
-    `^FO${S(90)},${S(596)}^A0N,${F(53)},${F(53)}^FB${S(1710)},1,0,C,0^FD${implantManufacturer} / ${implantSystem} / ${implantType}^FS`,
+    // ===== SECTION 5: Implant info (2 columns) =====
+    `^FO${S(90)},${S(535)}^GB${S(1710)},${S(85)},${T}^FS`,
+    `^FO${S(660)},${S(535)}^GB${T},${S(85)},${T}^FS`,
+    `^FO${S(100)},${S(545)}^A0N,${F(40)},${F(40)}^FB${S(550)},1,0,C,0^FD${implantManufacturer}^FS`,
+    `^FO${S(670)},${S(545)}^A0N,${F(40)},${F(40)}^FB${S(1030)},1,0,C,0^FD${implantSystem} / ${implantType}^FS`,
 
-    // ===== Lot number =====
-    `^FO${S(90)},${S(675)}^GB${S(1710)},${S(83)},${T}^FS`,
-    `^FO${S(90)},${S(691)}^A0N,${F(53)},${F(53)}^FB${S(1710)},1,0,C,0^FD제조번호: ${lotNumber}^FS`,
+    // ===== SECTION 6: Lot number =====
+    `^FO${S(90)},${S(630)}^GB${S(1710)},${S(80)},${T}^FS`,
+    `^FO${S(100)},${S(640)}^A0N,${F(45)},${F(45)}^FB${S(1690)},1,0,C,0^FD제조번호: ${lotNumber}^FS`,
 
-    // ===== Product details section (left) + QR (right) =====
-    `^FO${S(90)},${S(770)}^GB${S(1360)},${S(237)},${T}^FS`,
-    `^FO${S(1450)},${S(770)}^GB${S(350)},${S(237)},${T}^FS`,
-    // Grid dividers
-    `^FO${S(725)},${S(770)}^GB${T},${S(237)},${T}^FS`,
-    `^FO${S(90)},${S(829)}^GB${S(1360)},${T},${T}^FS`,
-    `^FO${S(90)},${S(888)}^GB${S(1360)},${T},${T}^FS`,
-    `^FO${S(90)},${S(947)}^GB${S(1360)},${T},${T}^FS`,
-    // Grid text
-    `^FO${S(104)},${S(784)}^A0N,${F(35)},${F(35)}^FD품명: ${PRODUCT_NAME}^FS`,
-    `^FO${S(740)},${S(784)}^A0N,${F(35)},${F(35)}^FD비멸균 의료기기^FS`,
-    `^FO${S(104)},${S(843)}^A0N,${F(35)},${F(35)}^FD모델명: ${MODEL_NAME}^FS`,
-    `^FO${S(740)},${S(843)}^A0N,${F(35)},${F(35)}^FD품목허가: ${LICENSE_NO}^FS`,
-    `^FO${S(104)},${S(902)}^A0N,${F(35)},${F(35)}^FD사용기한: 해당없음^FS`,
-    `^FO${S(740)},${S(902)}^A0N,${F(35)},${F(35)}^FD사용방법: 매뉴얼^FS`,
-    `^FO${S(104)},${S(961)}^A0N,${F(35)},${F(35)}^FD포장단위: 1 SET^FS`,
-    `^FO${S(740)},${S(961)}^A0N,${F(35)},${F(35)}^FD주의사항: 매뉴얼^FS`,
+    // ===== SECTION 7: Product details (left) + QR (right) =====
+    `^FO${S(90)},${S(720)}^GB${S(1350)},${S(200)},${T}^FS`,
+    `^FO${S(1450)},${S(720)}^GB${S(350)},${S(200)},${T}^FS`,
+    // Product grid dividers
+    `^FO${S(90)},${S(770)}^GB${S(1350)},${T},${T}^FS`,
+    `^FO${S(90)},${S(820)}^GB${S(1350)},${T},${T}^FS`,
+    `^FO${S(725)},${S(720)}^GB${T},${S(200)},${T}^FS`,
+    // Product details text
+    `^FO${S(100)},${S(730)}^A0N,${F(32)},${F(32)}^FD품명: ${PRODUCT_NAME}^FS`,
+    `^FO${S(740)},${S(730)}^A0N,${F(32)},${F(32)}^FD비멸균 의료기기^FS`,
+    `^FO${S(100)},${S(780)}^A0N,${F(32)},${F(32)}^FD모델: ${MODEL_NAME}^FS`,
+    `^FO${S(740)},${S(780)}^A0N,${F(32)},${F(32)}^FD허가: ${LICENSE_NO}^FS`,
+    `^FO${S(100)},${S(830)}^A0N,${F(32)},${F(32)}^FD사용기한: 해당없음^FS`,
+    `^FO${S(740)},${S(830)}^A0N,${F(32)},${F(32)}^FD포장단위: 1 SET^FS`,
     // QR code
-    `^FO${S(1510)},${S(784)}^BQN,2,${qrMag(8)}`,
+    `^FO${S(1510)},${S(740)}^BQN,2,${qrMag(7)}`,
     `^FDLA,${qrProductData || "-"}^FS`,
 
-    // ===== Manufacturer info (2 rows) =====
-    // Acrodent
-    `^FO${S(90)},${S(1019)}^GB${S(1360)},${S(201)},${T}^FS`,
-    `^FO${S(1450)},${S(1019)}^GB${S(350)},${S(201)},${T}^FS`,
-    `^FO${S(104)},${S(1036)}^A0N,${F(41)},${F(41)}^FD${COMPANY_NAME}^FS`,
-    `^FO${S(104)},${S(1089)}^A0N,${F(32)},${F(32)}^FD제조업허가: ${LICENSE_NO}^FS`,
-    `^FO${S(104)},${S(1131)}^A0N,${F(32)},${F(32)}^FD${COMPANY_ADDR}^FS`,
-    `^FO${S(104)},${S(1173)}^A0N,${F(32)},${F(32)}^FD${COMPANY_TEL_FAX}^FS`,
-    `^FO${S(1510)},${S(1036)}^BQN,2,${qrMag(6)}`,
+    // ===== SECTION 8: Manufacturer info (Acrodent) =====
+    `^FO${S(90)},${S(930)}^GB${S(1350)},${S(170)},${T}^FS`,
+    `^FO${S(1450)},${S(930)}^GB${S(350)},${S(170)},${T}^FS`,
+    `^FO${S(100)},${S(940)}^A0N,${F(35)},${F(35)}^FD${COMPANY_NAME}^FS`,
+    `^FO${S(100)},${S(980)}^A0N,${F(28)},${F(28)}^FD제조업허가: ${LICENSE_NO}^FS`,
+    `^FO${S(100)},${S(1015)}^A0N,${F(28)},${F(28)}^FD${COMPANY_ADDR}^FS`,
+    `^FO${S(100)},${S(1050)}^A0N,${F(28)},${F(28)}^FD${COMPANY_TEL_FAX}^FS`,
+    `^FO${S(1510)},${S(950)}^BQN,2,${qrMag(6)}`,
     `^FDLA,${qrLotData || "-"}^FS`,
 
-    // Abuts
-    `^FO${S(90)},${S(1232)}^GB${S(1360)},${S(219)},${T}^FS`,
-    `^FO${S(1450)},${S(1232)}^GB${S(350)},${S(219)},${T}^FS`,
-    `^FO${S(104)},${S(1249)}^A0N,${F(41)},${F(41)}^FD${ABUTS_COMPANY_NAME}^FS`,
-    `^FO${S(104)},${S(1302)}^A0N,${F(32)},${F(32)}^FD${ABUTS_SALES_PERMIT}^FS`,
-    `^FO${S(104)},${S(1344)}^A0N,${F(32)},${F(32)}^FD${ABUTS_ADDR}^FS`,
-    `^FO${S(104)},${S(1386)}^A0N,${F(32)},${F(32)}^FD${ABUTS_TEL} / ${ABUTS_WEB}^FS`,
-    `^FO${S(1510)},${S(1249)}^BQN,2,${qrMag(6)}`,
+    // ===== SECTION 9: Abuts info =====
+    `^FO${S(90)},${S(1110)}^GB${S(1350)},${S(170)},${T}^FS`,
+    `^FO${S(1450)},${S(1110)}^GB${S(350)},${S(170)},${T}^FS`,
+    `^FO${S(100)},${S(1120)}^A0N,${F(35)},${F(35)}^FD${ABUTS_COMPANY_NAME}^FS`,
+    `^FO${S(100)},${S(1160)}^A0N,${F(28)},${F(28)}^FD${ABUTS_SALES_PERMIT}^FS`,
+    `^FO${S(100)},${S(1195)}^A0N,${F(28)},${F(28)}^FD${ABUTS_ADDR}^FS`,
+    `^FO${S(100)},${S(1230)}^A0N,${F(28)},${F(28)}^FD${ABUTS_TEL} / ${ABUTS_WEB}^FS`,
+    `^FO${S(1510)},${S(1130)}^BQN,2,${qrMag(6)}`,
     `^FDLA,${qrAbutsData || "-"}^FS`,
 
     "^XZ",
