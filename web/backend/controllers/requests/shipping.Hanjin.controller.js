@@ -486,6 +486,55 @@ export async function getWblPrintSettings(req, res) {
   });
 }
 
+export async function getWblPrinters(req, res) {
+  try {
+    const WBL_PRINT_SERVER_BASE = String(
+      process.env.WBL_PRINT_SERVER_BASE || "",
+    ).trim();
+    const WBL_PRINT_SHARED_SECRET = String(
+      process.env.WBL_PRINT_SHARED_SECRET || "",
+    ).trim();
+
+    if (!WBL_PRINT_SERVER_BASE) {
+      return res.status(400).json({
+        success: false,
+        message: "WBL_PRINT_SERVER_BASE가 설정되지 않았습니다.",
+      });
+    }
+
+    const headers = { "Content-Type": "application/json" };
+    if (WBL_PRINT_SHARED_SECRET) {
+      headers["x-wbl-secret"] = WBL_PRINT_SHARED_SECRET;
+    }
+
+    const response = await fetch(`${WBL_PRINT_SERVER_BASE}/printers`, {
+      method: "GET",
+      headers,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data?.success) {
+      return res.status(response.status || 502).json({
+        success: false,
+        message: data?.message || "프린터 목록을 불러올 수 없습니다.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      printers: Array.isArray(data.printers) ? data.printers : [],
+      defaultPrinter: data.defaultPrinter || null,
+    });
+  } catch (error) {
+    console.error("Error in getWblPrinters:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "프린터 목록 조회 중 오류가 발생했습니다.",
+    });
+  }
+}
+
 export async function validateHanjinCustomerCheck(req, res) {
   try {
     ensureHanjinEnv();

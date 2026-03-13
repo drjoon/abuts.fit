@@ -663,7 +663,6 @@ async function triggerWblServerPrint(payload, options = null) {
 
   const printer = String(options?.printer || "").trim();
   const media = String(options?.paperProfile || options?.media || "").trim();
-  const quantity = Number(options?.quantity || 1);
   const skipPrint = Boolean(options?.skipPrint);
 
   if (skipPrint) {
@@ -700,19 +699,47 @@ async function triggerWblServerPrint(payload, options = null) {
   }
 
   try {
-    const response = await fetch(`${WBL_PRINT_SERVER_BASE}/print`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        printer,
-        media,
-        quantity,
-        labels: payload.zplLabels,
-        sharedSecret: WBL_PRINT_SHARED_SECRET,
-      }),
-    });
-    const data = await response.json();
-    return { success: response.ok, ...data };
+    // wbls-server의 /print-zpl 엔드포인트로 각 ZPL 라벨을 개별 인쇄
+    const results = [];
+    for (const zpl of payload.zplLabels) {
+      const headers = { "Content-Type": "application/json" };
+      if (WBL_PRINT_SHARED_SECRET) {
+        headers["x-wbl-secret"] = WBL_PRINT_SHARED_SECRET;
+      }
+
+      const response = await fetch(`${WBL_PRINT_SERVER_BASE}/print-zpl`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          zpl,
+          printer,
+          paperProfile: media,
+          title: "Hanjin Waybill Label",
+        }),
+      });
+
+      const data = await response.json();
+      results.push({
+        success: response.ok,
+        status: response.status,
+        ...data,
+      });
+
+      if (!response.ok) {
+        return {
+          success: false,
+          reason: "zpl_print_failed",
+          message: data?.message || "ZPL 라벨 인쇄에 실패했습니다.",
+          details: results,
+        };
+      }
+    }
+
+    return {
+      success: true,
+      message: `${results.length}개의 라벨이 인쇄되었습니다.`,
+      details: results,
+    };
   } catch (error) {
     return {
       success: false,

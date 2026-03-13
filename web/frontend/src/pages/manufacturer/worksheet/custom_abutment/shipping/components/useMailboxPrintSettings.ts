@@ -79,7 +79,7 @@ export function useMailboxPrintSettings() {
     setPrinterError(null);
     try {
       const response = await request<any>({
-        path: "/api/requests/packing/printers",
+        path: "/api/requests/shipping/wbl/printers",
         method: "GET",
       });
       const data = response.data as any;

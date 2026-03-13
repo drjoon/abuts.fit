@@ -249,6 +249,13 @@ router.get(
   requestController.getWblPrintSettings,
 );
 
+router.get(
+  "/shipping/wbl/printers",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.getWblPrinters,
+);
+
 // 의뢰 상세 조회 (권한 검증은 컨트롤러에서 처리)
 router.get("/:id", authenticate, requestController.getRequestById);
 

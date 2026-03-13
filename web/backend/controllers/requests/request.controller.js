@@ -62,6 +62,7 @@ export const {
   requestHanjinPickup,
   cancelHanjinPickup,
   getWblPrintSettings,
+  getWblPrinters,
   requestHanjinPickupAndPrint,
 } = shippingHanjinController;
 

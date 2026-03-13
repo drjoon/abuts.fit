@@ -50,7 +50,7 @@ export const MailboxPrintSettingsDialog = ({
         </DialogHeader>
         <div className="flex flex-col gap-4">
           <div className="text-sm text-slate-600 leading-relaxed">
-            운송장 출력은 로컬 프린터 서버(5777)의 CUPS 프린터 목록을 사용합니다.
+            운송장 출력은 로컬 프린터 서버의 CUPS 프린터 목록을 사용합니다.
           </div>
 
           <div className="flex flex-col gap-2">
