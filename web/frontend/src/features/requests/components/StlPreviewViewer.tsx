@@ -254,6 +254,24 @@ export function StlPreviewViewer({
         // LLL(전체길이): Z축 범위
         const totalLength = bbox.max.z - bbox.min.z;
 
+        // 프론트에서 계산한 최대직경을 콜백으로 전달 (리드타임 표시용)
+        if (onDiameterComputedRef.current && maxDiameter > 0) {
+          onDiameterComputedRef.current(
+            file.name,
+            maxDiameter,
+            connectionDiameter,
+            totalLength,
+            0, // taperAngle은 아직 계산 전
+            null,
+            null,
+          );
+        }
+
+        // 상태에도 저장 (UI 표시용)
+        setMaxDiameterState(maxDiameter);
+        setConnectionDiameterState(connectionDiameter);
+        setTotalLengthState(totalLength);
+
         let taperAngle = 0;
         let tiltAxisVector: { x: number; y: number; z: number } | null = null;
         let frontPoint: { x: number; y: number; z: number } | null = null;

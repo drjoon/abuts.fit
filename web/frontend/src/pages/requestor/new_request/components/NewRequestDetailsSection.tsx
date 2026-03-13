@@ -142,6 +142,9 @@ export function NewRequestDetailsSection({
 }: Props) {
   const { token } = useAuthStore();
   const [leadTimes, setLeadTimes] = useState<Record<string, any> | null>(null);
+  const [fileDiameters, setFileDiameters] = useState<Record<string, number>>(
+    {},
+  );
 
   useEffect(() => {
     const loadLeadTimes = async () => {
@@ -237,6 +240,39 @@ export function NewRequestDetailsSection({
   const toNormalizedFileKey = (file: File) => {
     return `${normalizeKeyPart(file.name)}:${file.size}`;
   };
+
+  // STL 프리뷰에서 계산한 최대직경을 저장 (리드타임 표시용)
+  const handleDiameterComputed = useCallback(
+    (
+      filename: string,
+      maxDiameter: number,
+      connectionDiameter: number,
+      totalLength: number,
+      taperAngle: number,
+      tiltAxisVector?: { x: number; y: number; z: number } | null,
+      frontPoint?: { x: number; y: number; z: number } | null,
+    ) => {
+      // 파일명으로 해당 파일을 찾아 최대직경 저장
+      const matchedFile = files.find((f) => f.name === filename);
+      if (matchedFile) {
+        const fileKey = toNormalizedFileKey(matchedFile);
+        setFileDiameters((prev) => ({
+          ...prev,
+          [fileKey]: maxDiameter,
+        }));
+        // caseInfosMap에도 저장하여 백엔드 제출 시 사용
+        updateCaseInfos(fileKey, {
+          maxDiameter,
+          connectionDiameter,
+          totalLength,
+          taperAngle,
+          tiltAxisVector,
+          frontPoint,
+        });
+      }
+    },
+    [files, updateCaseInfos, toNormalizedFileKey],
+  );
 
   const hasActiveSession = files.length > 0;
   const [detailIndex, setDetailIndex] = useState<number | null>(null);
@@ -690,16 +726,11 @@ export function NewRequestDetailsSection({
                     return "";
                   })();
 
+                  // STL 프리뷰에서 계산한 최대직경 우선 사용, 없으면 caseInfosMap에서 조회
+                  const computedDiameter = fileDiameters[fileKey];
                   const fileInfo = caseInfosMap?.[fileKey];
-                  const diameterValues = [
-                    fileInfo?.maxDiameter,
-                    fileInfo?.connectionDiameter,
-                  ]
-                    .map((v) => (v == null ? null : Number(v)))
-                    .filter((v) => Number.isFinite(v)) as number[];
-                  const diameter = diameterValues.length
-                    ? Math.max(...diameterValues)
-                    : null;
+                  const diameter =
+                    computedDiameter ?? fileInfo?.maxDiameter ?? null;
                   const estimatedShip = getEstimatedShipForDiameter
                     ? getEstimatedShipForDiameter(diameter)
                     : null;
@@ -765,32 +796,7 @@ export function NewRequestDetailsSection({
                     file={detailFile}
                     showOverlay={false}
                     className="min-h-[240px] h-[240px] md:h-[280px]"
-                    onDiameterComputed={(
-                      _filename,
-                      maxDiameter,
-                      connectionDiameter,
-                      totalLength,
-                      taperAngle,
-                      tiltAxisVector,
-                      frontPoint,
-                    ) => {
-                      const roundedMax =
-                        Math.round((maxDiameter ?? 0) * 10) / 10;
-                      const roundedConn =
-                        Math.round((connectionDiameter ?? 0) * 10) / 10;
-                      const roundedLength =
-                        Math.round((totalLength ?? 0) * 10) / 10;
-                      const roundedAngle =
-                        Math.round((taperAngle ?? 0) * 10) / 10;
-                      setDetailCaseInfos({
-                        maxDiameter: roundedMax,
-                        connectionDiameter: roundedConn,
-                        totalLength: roundedLength,
-                        taperAngle: roundedAngle,
-                        tiltAxisVector: tiltAxisVector || undefined,
-                        frontPoint: frontPoint || undefined,
-                      });
-                    }}
+                    onDiameterComputed={handleDiameterComputed}
                   />
                 ) : (
                   <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
