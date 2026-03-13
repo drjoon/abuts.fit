@@ -120,6 +120,8 @@ export async function chooseMachineForCamMachining({
   requireCeil = false,
   reservedMachineLoadMap = null,
   reservedQueuePositionMap = null,
+  reservedLastAssignmentMap = null,
+  session = null,
 }) {
   if (!request) throw new Error("request is required");
   const schedule = request.productionSchedule || {};
@@ -147,9 +149,13 @@ export async function chooseMachineForCamMachining({
     .map((m) => String(m?.machineId || "").trim())
     .filter(Boolean);
 
-  const machineFlags = await Machine.find({ uid: { $in: machineIds } })
+  // session을 전달하여 같은 트랜잭션 내 lastAssignmentAt 업데이트를 반영
+  const machineQuery = Machine.find({ uid: { $in: machineIds } })
     .select({ uid: 1, allowRequestAssign: 1, lastAssignmentAt: 1 })
     .lean();
+  const machineFlags = session
+    ? await machineQuery.session(session)
+    : await machineQuery;
   const machineFlagMap = new Map(
     machineFlags
       .map((m) => [String(m?.uid || "").trim(), m])
@@ -179,10 +185,14 @@ export async function chooseMachineForCamMachining({
       }
       const availableDia = materialDia;
       const machineMeta = machineFlagMap.get(machineId) || null;
+      // reservedLastAssignmentMap에 값이 있으면 우선 사용 (같은 배치 작업 내 배정 추적)
+      const lastAssignmentAt = reservedLastAssignmentMap?.has(machineId)
+        ? reservedLastAssignmentMap.get(machineId)
+        : machineMeta?.lastAssignmentAt || null;
       return {
         machineId,
         availableDia,
-        lastAssignmentAt: machineMeta?.lastAssignmentAt || null,
+        lastAssignmentAt,
       };
     })
     .filter(Boolean);
@@ -202,8 +212,10 @@ export async function chooseMachineForCamMachining({
     );
   }
 
+  // session을 전달하여 같은 트랜잭션 내 변경사항(방금 배정한 요청들)을 큐 계산에 포함
   const queueCountMap = await buildMachineQueueLoadMap(
     candidatesWithDia.map((c) => c.machineId),
+    session,
   );
 
   const ceilCandidates = candidatesWithDia.filter(
@@ -252,16 +264,24 @@ export async function chooseMachineForCamMachining({
       return { ...c, queue };
     })
     .sort((a, b) => {
+      // 1. 큐 길이 우선 (적은 것 우선)
       if (a.queue !== b.queue) return a.queue - b.queue;
+
+      // 2. 소재 직경 우선 (작은 것 우선, 낭비 최소화)
       if (a.availableDia !== b.availableDia)
         return a.availableDia - b.availableDia;
+
+      // 3. 최근 배정 시간 우선 (오래된 것 우선, 균등 분산)
+      // null인 경우 가장 우선 선택되도록 -Infinity 사용
       const aAssignedAt = a.lastAssignmentAt
         ? new Date(a.lastAssignmentAt).getTime()
-        : 0;
+        : -Infinity;
       const bAssignedAt = b.lastAssignmentAt
         ? new Date(b.lastAssignmentAt).getTime()
-        : 0;
+        : -Infinity;
       if (aAssignedAt !== bAssignedAt) return aAssignedAt - bAssignedAt;
+
+      // 4. 장비 ID 사전순 (최후 기준)
       return a.machineId.localeCompare(b.machineId);
     });
 
@@ -299,7 +319,11 @@ export async function chooseMachineForCamMachining({
 }
 
 // Ensure machine compatibility or throw error
-export async function ensureMachineCompatibilityOrThrow({ request, stageKey }) {
+export async function ensureMachineCompatibilityOrThrow({
+  request,
+  stageKey,
+  session = null,
+}) {
   const targetDiameterRaw = resolveTargetDiameter(request);
   const targetDiameter = Number(targetDiameterRaw);
   const targetDiameterGroup = inferDiameterGroupFromDiameter(targetDiameter);
@@ -323,6 +347,7 @@ export async function ensureMachineCompatibilityOrThrow({ request, stageKey }) {
     const selection = await chooseMachineForCamMachining({
       request,
       requireCeil: true,
+      session,
     });
     const meta = buildMachineCompatibilityMeta({
       stageKey,

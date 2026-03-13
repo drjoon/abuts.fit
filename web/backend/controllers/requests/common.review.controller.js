@@ -146,6 +146,7 @@ export async function deleteStageFile(req, res) {
               global.__rollbackPackingReservedMachineLoadMap,
             reservedQueuePositionMap:
               global.__rollbackPackingReservedQueuePositionMap,
+            session,
           });
           global.__rollbackPackingReservedMachineLoadMap.set(
             selected.machineId,
@@ -519,6 +520,7 @@ export async function updateReviewStatusByStage(req, res) {
           const selected = await ensureMachineCompatibilityOrThrow({
             request,
             stageKey: "cam",
+            session,
           });
           request.productionSchedule = request.productionSchedule || {};
           request.productionSchedule.assignedMachine = selected.machineId;

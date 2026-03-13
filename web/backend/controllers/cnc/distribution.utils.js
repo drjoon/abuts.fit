@@ -95,18 +95,21 @@ export function getMachiningLoadWeight(reqItem) {
   return Number.isFinite(qty) && qty > 0 ? qty : 1;
 }
 
-export async function buildMachineQueueLoadMap(machineIds) {
+export async function buildMachineQueueLoadMap(machineIds, session = null) {
   const ids = Array.isArray(machineIds)
     ? machineIds.map((id) => String(id || "").trim()).filter(Boolean)
     : [];
   if (!ids.length) return new Map();
 
-  const assigned = await Request.find({
+  // session을 전달하여 같은 트랜잭션 내 변경사항(방금 배정한 요청)을 큐 계산에 포함
+  const query = Request.find({
     manufacturerStage: { $in: MACHINING_ASSIGN_STAGE_SET },
     "productionSchedule.assignedMachine": { $in: ids },
   }).select(
     "productionSchedule.assignedMachine productionSchedule.machiningQty productionSchedule.machiningRecord",
   );
+
+  const assigned = session ? await query.session(session) : await query;
 
   const loadMap = new Map(ids.map((id) => [id, 0]));
   for (const reqItem of assigned) {
