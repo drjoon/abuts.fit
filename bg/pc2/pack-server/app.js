@@ -3,6 +3,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { execFile } = require("child_process");
+const fetch = require("node-fetch");
+const sharp = require("sharp");
 
 function loadLocalEnv() {
   const envPath = path.resolve(process.cwd(), "local.env");
@@ -28,6 +30,7 @@ const DEFAULT_PRINTER = process.env.PACK_PRINT_SERVER_DEFAULT_PRINTER || "";
 const SHARED_SECRET = String(
   process.env.PACK_PRINT_SERVER_SHARED_SECRET || "",
 ).trim();
+const PACK_LABEL_DPI = Number(process.env.PACK_LABEL_DPI || 600);
 const ALLOW_IPS = String(
   process.env.ALLOW_IPS || process.env.PACK_ALLOW_IPS || "",
 )
@@ -218,12 +221,12 @@ const resolvePackZplSize = (payload) => {
 
   const paperProfile = String(payload?.paperProfile || "").trim();
   const dpi = Number(payload?.dpi) || 203;
-  if (paperProfile === "PACK_80x65") {
-    // portrait layout (65 x 80mm)
-    return { pw: mmToDots(65, dpi), ll: mmToDots(80, dpi) };
+  if (paperProfile === "PACK_65x80") {
+    // landscape layout (80 x 65mm)
+    return { pw: mmToDots(80, dpi), ll: mmToDots(65, dpi) };
   }
 
-  return { pw: 812, ll: 520 };
+  return { pw: 640, ll: 520 };
 };
 
 const buildPackingLabelZpl = (payload) => {
@@ -253,11 +256,14 @@ const buildPackingLabelZpl = (payload) => {
   );
 
   const { pw, ll } = resolvePackZplSize(payload);
-  const dpi = Number(payload?.dpi) || 203;
-  const scale = dpi / 203;
+  const dpi = Number(payload?.dpi) || PACK_LABEL_DPI;
+  // PACK_LABEL_DPI 기준으로 모든 좌표 계산
+  // 80x65mm @ 600DPI = 1890x1535 dots
+  // 80x65mm @ 203DPI = 640x520 dots
+  const scale = dpi / PACK_LABEL_DPI;
   const S = (n) => Math.round(Number(n) * scale);
   const F = (n) => Math.max(1, Math.round(Number(n) * scale));
-  const T = Math.max(1, Math.round(2 * scale));
+  const T = Math.max(1, Math.round(6 * scale));
   const qrMag = (base) =>
     Math.min(10, Math.max(1, Math.round(Number(base) * scale)));
 
@@ -287,92 +293,173 @@ const buildPackingLabelZpl = (payload) => {
     180,
   );
 
-  // Layout target: 65x80mm portrait (approx 520x640 dots @203dpi)
-  // Margin: 42 dots left/right (2x)
-  // Content width: 436 dots (520 - 84)
-  // Re-centered vertically after final font scaling
+  // Layout target: 80x65mm portrait @ 600DPI (세로 모드로 생성)
+  // 80mm = 1890 dots, 65mm = 1535 dots @ 600DPI
+  // 이미지는 90도 회전해서 저장/출력
   return [
     "^XA",
-    `^PW${pw || 520}`,
-    `^LL${ll || 640}`,
+    `^PW${pw || 1890}`,
+    `^LL${ll || 1535}`,
     "^LH0,0",
     "^CI28",
 
-    // ===== PRIORITY 1: Top header (mailbox / screw / lot suffix) =====
-    `^FO${S(42)},${S(52)}^GB${S(436)},${S(58)},${T}^FS`,
-    `^FO${S(236)},${S(52)}^GB${T},${S(58)},${T}^FS`,
-    `^FO${S(333)},${S(52)}^GB${T},${S(58)},${T}^FS`,
-    `^FO${S(42)},${S(56)}^A0N,${F(58)},${F(58)}^FB${S(194)},1,0,C,0^FD${mailboxCode}^FS`,
-    `^FO${S(236)},${S(56)}^A0N,${F(58)},${F(58)}^FB${S(97)},1,0,C,0^FD${screwType}^FS`,
-    `^FO${S(333)},${S(56)}^A0N,${F(58)},${F(58)}^FB${S(145)},1,0,C,0^FD${lotSuffix}^FS`,
+    // ===== Top header: mailbox / screw / lot suffix (3 columns) =====
+    `^FO${S(90)},${S(90)}^GB${S(1710)},${S(148)},${T}^FS`,
+    `^FO${S(660)},${S(90)}^GB${T},${S(148)},${T}^FS`,
+    `^FO${S(1230)},${S(90)}^GB${T},${S(148)},${T}^FS`,
+    `^FO${S(90)},${S(104)}^A0N,${F(118)},${F(118)}^FB${S(570)},1,0,C,0^FD${mailboxCode}^FS`,
+    `^FO${S(660)},${S(104)}^A0N,${F(118)},${F(118)}^FB${S(570)},1,0,C,0^FD${screwType}^FS`,
+    `^FO${S(1230)},${S(104)}^A0N,${F(118)},${F(118)}^FB${S(570)},1,0,C,0^FD${lotSuffix}^FS`,
 
-    // ===== PRIORITY 1.5: Lab name (box height matches header) =====
-    `^FO${S(42)},${S(114)}^GB${S(436)},${S(58)},${T}^FS`,
-    `^FO${S(42)},${S(114)}^A0B,${F(40)},${F(40)}^FB${S(436)},1,0,C,0^FD${labName}^FS`,
+    // ===== Lab name row =====
+    `^FO${S(90)},${S(248)}^GB${S(1710)},${S(118)},${T}^FS`,
+    `^FO${S(90)},${S(267)}^A0N,${F(82)},${F(82)}^FB${S(1710)},1,0,C,0^FD${labName}^FS`,
 
-    // ===== PRIORITY 2: Middle section (clinic, dates, implant, lot) =====
-    // Row 1: Clinic / Patient / Tooth - 20% increase: 18pt -> 22pt
-    `^FO${S(42)},${S(182)}^GB${S(436)},${S(32)},${T}^FS`,
-    `^FO${S(42)},${S(191)}^A0N,${F(22)},${F(22)}^FB${S(436)},1,0,C,0^FD${clinicName} / ${patientName} / #${toothNumber}^FS`,
+    // ===== Clinic / Patient / Tooth =====
+    `^FO${S(90)},${S(378)}^GB${S(1710)},${S(95)},${T}^FS`,
+    `^FO${S(90)},${S(397)}^A0N,${F(59)},${F(59)}^FB${S(1710)},1,0,C,0^FD${clinicName} / ${patientName} / #${toothNumber}^FS`,
 
-    // Row 2: Request date / Manufacturing date
-    `^FO${S(42)},${S(218)}^GB${S(436)},${S(32)},${T}^FS`,
-    `^FO${S(42)},${S(227)}^A0N,${F(22)},${F(22)}^FB${S(436)},1,0,C,0^FD의뢰일: ${requestDate} / 제조일: ${manufacturingDate}^FS`,
+    // ===== Dates row =====
+    `^FO${S(90)},${S(485)}^GB${S(1710)},${S(83)},${T}^FS`,
+    `^FO${S(90)},${S(501)}^A0N,${F(53)},${F(53)}^FB${S(1710)},1,0,C,0^FD의뢰일: ${requestDate} / 제조일: ${manufacturingDate}^FS`,
 
-    // Row 3: Implant info
-    `^FO${S(42)},${S(254)}^GB${S(436)},${S(32)},${T}^FS`,
-    `^FO${S(42)},${S(263)}^A0N,${F(22)},${F(22)}^FB${S(436)},1,0,C,0^FD${implantManufacturer} / ${implantSystem} / ${implantType}^FS`,
+    // ===== Implant info =====
+    `^FO${S(90)},${S(580)}^GB${S(1710)},${S(83)},${T}^FS`,
+    `^FO${S(90)},${S(596)}^A0N,${F(53)},${F(53)}^FB${S(1710)},1,0,C,0^FD${implantManufacturer} / ${implantSystem} / ${implantType}^FS`,
 
-    // Row 4: Lot number
-    `^FO${S(42)},${S(290)}^GB${S(436)},${S(32)},${T}^FS`,
-    `^FO${S(42)},${S(299)}^A0N,${F(22)},${F(22)}^FB${S(436)},1,0,C,0^FD제조번호: ${lotNumber}^FS`,
+    // ===== Lot number =====
+    `^FO${S(90)},${S(675)}^GB${S(1710)},${S(83)},${T}^FS`,
+    `^FO${S(90)},${S(691)}^A0N,${F(53)},${F(53)}^FB${S(1710)},1,0,C,0^FD제조번호: ${lotNumber}^FS`,
 
-    // ===== PRIORITY 3: Product details + QR1 section =====
-    // Left: details grid (same sizing as before)
-    `^FO${S(42)},${S(326)}^GB${S(320)},${S(88)},${T}^FS`,
-    // Right: QR1 box
-    `^FO${S(362)},${S(326)}^GB${S(116)},${S(88)},${T}^FS`,
-    // Left grid dividers
-    `^FO${S(202)},${S(326)}^GB${T},${S(88)},${T}^FS`,
-    `^FO${S(42)},${S(348)}^GB${S(320)},${T},${T}^FS`,
-    `^FO${S(42)},${S(370)}^GB${S(320)},${T},${T}^FS`,
-    `^FO${S(42)},${S(392)}^GB${S(320)},${T},${T}^FS`,
-
-    // Left grid text
-    `^FO${S(50)},${S(332)}^A0N,${F(13)},${F(13)}^FD품명: ${PRODUCT_NAME}^FS`,
-    `^FO${S(210)},${S(332)}^A0N,${F(13)},${F(13)}^FD비멸균 의료기기^FS`,
-    `^FO${S(50)},${S(354)}^A0N,${F(13)},${F(13)}^FD모델명: ${MODEL_NAME}^FS`,
-    `^FO${S(50)},${S(376)}^A0N,${F(13)},${F(13)}^FD사용기한: 해당없음^FS`,
-    `^FO${S(50)},${S(398)}^A0N,${F(13)},${F(13)}^FD포장단위: 1 SET^FS`,
-    `^FO${S(210)},${S(354)}^A0N,${F(13)},${F(13)}^FD품목허가: ${LICENSE_NO}^FS`,
-    `^FO${S(210)},${S(376)}^A0N,${F(13)},${F(13)}^FD사용방법: 사용자 매뉴얼^FS`,
-    `^FO${S(210)},${S(398)}^A0N,${F(13)},${F(13)}^FD주의사항: 매뉴얼 참조^FS`,
-
-    // QR1 placed in right box
-    `^FO${S(380)},${S(330)}^BQN,2,${qrMag(3)}`,
+    // ===== Product details section (left) + QR (right) =====
+    `^FO${S(90)},${S(770)}^GB${S(1360)},${S(237)},${T}^FS`,
+    `^FO${S(1450)},${S(770)}^GB${S(350)},${S(237)},${T}^FS`,
+    // Grid dividers
+    `^FO${S(725)},${S(770)}^GB${T},${S(237)},${T}^FS`,
+    `^FO${S(90)},${S(829)}^GB${S(1360)},${T},${T}^FS`,
+    `^FO${S(90)},${S(888)}^GB${S(1360)},${T},${T}^FS`,
+    `^FO${S(90)},${S(947)}^GB${S(1360)},${T},${T}^FS`,
+    // Grid text
+    `^FO${S(104)},${S(784)}^A0N,${F(35)},${F(35)}^FD품명: ${PRODUCT_NAME}^FS`,
+    `^FO${S(740)},${S(784)}^A0N,${F(35)},${F(35)}^FD비멸균 의료기기^FS`,
+    `^FO${S(104)},${S(843)}^A0N,${F(35)},${F(35)}^FD모델명: ${MODEL_NAME}^FS`,
+    `^FO${S(740)},${S(843)}^A0N,${F(35)},${F(35)}^FD품목허가: ${LICENSE_NO}^FS`,
+    `^FO${S(104)},${S(902)}^A0N,${F(35)},${F(35)}^FD사용기한: 해당없음^FS`,
+    `^FO${S(740)},${S(902)}^A0N,${F(35)},${F(35)}^FD사용방법: 매뉴얼^FS`,
+    `^FO${S(104)},${S(961)}^A0N,${F(35)},${F(35)}^FD포장단위: 1 SET^FS`,
+    `^FO${S(740)},${S(961)}^A0N,${F(35)},${F(35)}^FD주의사항: 매뉴얼^FS`,
+    // QR code
+    `^FO${S(1510)},${S(784)}^BQN,2,${qrMag(8)}`,
     `^FDLA,${qrProductData || "-"}^FS`,
 
-    // ===== PRIORITY 3: Bottom manufacturer info + QR codes =====
-    // Acrodent box - 20% increase: 13pt -> 16pt, 10pt -> 12pt
-    `^FO${S(42)},${S(424)}^GB${S(436)},${S(76)},${T}^FS`,
-    `^FO${S(50)},${S(432)}^A0N,${F(16)},${F(16)}^FD${COMPANY_NAME}^FS`,
-    `^FO${S(370)},${S(434)}^BQN,2,${qrMag(2)}`,
+    // ===== Manufacturer info (2 rows) =====
+    // Acrodent
+    `^FO${S(90)},${S(1019)}^GB${S(1360)},${S(201)},${T}^FS`,
+    `^FO${S(1450)},${S(1019)}^GB${S(350)},${S(201)},${T}^FS`,
+    `^FO${S(104)},${S(1036)}^A0N,${F(41)},${F(41)}^FD${COMPANY_NAME}^FS`,
+    `^FO${S(104)},${S(1089)}^A0N,${F(32)},${F(32)}^FD제조업허가: ${LICENSE_NO}^FS`,
+    `^FO${S(104)},${S(1131)}^A0N,${F(32)},${F(32)}^FD${COMPANY_ADDR}^FS`,
+    `^FO${S(104)},${S(1173)}^A0N,${F(32)},${F(32)}^FD${COMPANY_TEL_FAX}^FS`,
+    `^FO${S(1510)},${S(1036)}^BQN,2,${qrMag(6)}`,
     `^FDLA,${qrLotData || "-"}^FS`,
-    `^FO${S(50)},${S(452)}^A0N,${F(12)},${F(12)}^FD제조업허가: ${LICENSE_NO}^FS`,
-    `^FO${S(50)},${S(466)}^A0N,${F(12)},${F(12)}^FD${COMPANY_ADDR}^FS`,
-    `^FO${S(50)},${S(480)}^A0N,${F(12)},${F(12)}^FD${COMPANY_TEL_FAX}^FS`,
 
-    // Abuts box
-    `^FO${S(42)},${S(504)}^GB${S(436)},${S(76)},${T}^FS`,
-    `^FO${S(50)},${S(512)}^A0N,${F(16)},${F(16)}^FD${ABUTS_COMPANY_NAME}^FS`,
-    `^FO${S(370)},${S(514)}^BQN,2,${qrMag(2)}`,
+    // Abuts
+    `^FO${S(90)},${S(1232)}^GB${S(1360)},${S(219)},${T}^FS`,
+    `^FO${S(1450)},${S(1232)}^GB${S(350)},${S(219)},${T}^FS`,
+    `^FO${S(104)},${S(1249)}^A0N,${F(41)},${F(41)}^FD${ABUTS_COMPANY_NAME}^FS`,
+    `^FO${S(104)},${S(1302)}^A0N,${F(32)},${F(32)}^FD${ABUTS_SALES_PERMIT}^FS`,
+    `^FO${S(104)},${S(1344)}^A0N,${F(32)},${F(32)}^FD${ABUTS_ADDR}^FS`,
+    `^FO${S(104)},${S(1386)}^A0N,${F(32)},${F(32)}^FD${ABUTS_TEL} / ${ABUTS_WEB}^FS`,
+    `^FO${S(1510)},${S(1249)}^BQN,2,${qrMag(6)}`,
     `^FDLA,${qrAbutsData || "-"}^FS`,
-    `^FO${S(50)},${S(532)}^A0N,${F(12)},${F(12)}^FD${ABUTS_SALES_PERMIT}^FS`,
-    `^FO${S(50)},${S(546)}^A0N,${F(12)},${F(12)}^FD${ABUTS_ADDR}^FS`,
-    `^FO${S(50)},${S(560)}^A0N,${F(12)},${F(12)}^FD${ABUTS_TEL} / ${ABUTS_WEB}^FS`,
 
     "^XZ",
   ].join("\n");
+};
+
+const convertZplToRotatedImage = async (zpl, dpi) => {
+  // Labelary API로 ZPL을 PNG 이미지로 변환
+  const labelaryUrl = `http://api.labelary.com/v1/printers/${dpi}dpi/labels/3.15x2.56/0/`;
+  const response = await fetch(labelaryUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: zpl,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Labelary API failed: ${response.status}`);
+  }
+
+  const imageBuffer = await response.buffer();
+
+  // sharp로 이미지를 90도 회전 (시계 반대 방향)
+  const rotatedBuffer = await sharp(imageBuffer).rotate(-90).toBuffer();
+
+  return rotatedBuffer;
+};
+
+const convertImageToZplGfa = async (imageBuffer, dpi) => {
+  // 이미지를 흑백 1-bit로 변환
+  const { data, info } = await sharp(imageBuffer)
+    .greyscale()
+    .threshold(128)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const width = info.width;
+  const height = info.height;
+  const bytesPerRow = Math.ceil(width / 8);
+
+  // GFA 헥스 데이터 생성
+  let hexData = "";
+  for (let y = 0; y < height; y++) {
+    let rowData = "";
+    for (let x = 0; x < bytesPerRow; x++) {
+      let byte = 0;
+      for (let bit = 0; bit < 8; bit++) {
+        const pixelX = x * 8 + bit;
+        if (pixelX < width) {
+          const pixelIndex = y * width + pixelX;
+          // 0 = 검은색 (출력), 255 = 흰색 (출력 안함)
+          if (data[pixelIndex] === 0) {
+            byte |= 1 << (7 - bit);
+          }
+        }
+      }
+      rowData += byte.toString(16).toUpperCase().padStart(2, "0");
+    }
+    hexData += rowData;
+  }
+
+  // ZPL GFA 명령 생성
+  const totalBytes = bytesPerRow * height;
+  const gfaCommand = `^GFA,${totalBytes},${totalBytes},${bytesPerRow},${hexData}`;
+
+  return { gfaCommand, width, height };
+};
+
+const buildRotatedZpl = async (originalZpl, dpi) => {
+  // 원본 ZPL을 이미지로 변환 후 90도 회전
+  const rotatedImageBuffer = await convertZplToRotatedImage(originalZpl, dpi);
+
+  // 회전된 이미지를 ZPL GFA로 변환
+  const { gfaCommand, width, height } = await convertImageToZplGfa(
+    rotatedImageBuffer,
+    dpi,
+  );
+
+  // 최종 ZPL 생성 (가로 모드)
+  const finalZpl = [
+    "^XA",
+    `^PW${width}`,
+    `^LL${height}`,
+    "^LH0,0",
+    "^FO0,0",
+    gfaCommand,
+    "^XZ",
+  ].join("\n");
+
+  return finalZpl;
 };
 
 const writeZplToTemp = async (zpl) => {
@@ -405,6 +492,11 @@ const printRawZpl = ({ filePath, printer, title, copies, paperProfile }) =>
         `$printerName = ${escapedPrinter}`,
         `$filePath = ${escapedFilePath}`,
         `$jobTitle = ${escapedJobTitle}`,
+        "# 프린터 설정: Landscape 모드 + 90도 회전",
+        "$printerSettings = New-Object System.Drawing.Printing.PrinterSettings",
+        "$printerSettings.PrinterName = $printerName",
+        "$pageSettings = New-Object System.Drawing.Printing.PageSettings",
+        "$pageSettings.Landscape = $true",
         'Add-Type -TypeDefinition @"',
         "using System;",
         "using System.Runtime.InteropServices;",
@@ -637,7 +729,15 @@ const server = http.createServer(async (req, res) => {
         typeof payload.paperProfile === "string"
           ? payload.paperProfile.trim()
           : "";
-      const zpl = buildPackingLabelZpl(payload);
+
+      // 원본 ZPL 생성 (세로 모드)
+      const originalZpl = buildPackingLabelZpl(payload);
+
+      // DPI 가져오기
+      const dpi = Number(payload?.dpi) || PACK_LABEL_DPI;
+
+      // ZPL을 이미지로 변환 후 90도 회전하여 최종 ZPL 생성
+      const zpl = await buildRotatedZpl(originalZpl, dpi);
 
       if (!printer) {
         return jsonResponse(res, 400, {
