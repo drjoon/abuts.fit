@@ -507,12 +507,28 @@ export async function getWblPrinters(req, res) {
       headers["x-wbl-secret"] = WBL_PRINT_SHARED_SECRET;
     }
 
+    console.log("getWblPrinters:request", {
+      url: `${WBL_PRINT_SERVER_BASE}/printers`,
+      headers,
+    });
+
     const response = await fetch(`${WBL_PRINT_SERVER_BASE}/printers`, {
       method: "GET",
       headers,
     });
 
+    console.log("getWblPrinters:response", {
+      status: response.status,
+      statusText: response.statusText,
+    });
+
     const data = await response.json();
+
+    console.log("getWblPrinters:data", {
+      success: data?.success,
+      message: data?.message,
+      printersCount: Array.isArray(data?.printers) ? data.printers.length : 0,
+    });
 
     if (!response.ok || !data?.success) {
       return res.status(response.status || 502).json({
