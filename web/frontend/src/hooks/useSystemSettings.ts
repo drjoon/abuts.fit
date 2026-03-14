@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/shared/api/apiClient";
-import { useAuthStore } from "@/store/useAuthStore";
 
 export interface CreditSettings {
   minCreditForRequest: number;
@@ -13,25 +12,25 @@ export interface SystemSettingsData {
 }
 
 export const useSystemSettings = () => {
-  const { token } = useAuthStore();
-
   return useQuery({
-    queryKey: ["system-settings"],
+    queryKey: ["credit-settings"],
     queryFn: async () => {
       const res = await apiFetch<any>({
-        path: "/api/admin/settings",
+        path: "/api/credits/settings",
         method: "GET",
-        token,
       });
       if (!res.ok) {
-        throw new Error("시스템 설정 조회 실패");
+        throw new Error("크레딧 설정 조회 실패");
       }
-      const body = res.data;
-      const data = body?.data || body;
-      return (data?.settings || {}) as SystemSettingsData;
+      // 응답 형식: { success: true, data: { creditSettings: {...} } }
+      const creditSettings = res.data?.data?.creditSettings || {
+        minCreditForRequest: 10000,
+        shippingFee: 3500,
+        defaultFreeShippingCredit: 3500,
+      };
+      return { creditSettings } as SystemSettingsData;
     },
     retry: false,
     staleTime: 5 * 60 * 1000,
-    enabled: !!token,
   });
 };

@@ -246,6 +246,31 @@ export async function getCreditSettings(req, res) {
   }
 }
 
+export async function getPublicCreditSettings(req, res) {
+  try {
+    const doc = await SystemSettings.findOne({ key: "global" }).lean();
+
+    const creditSettings = doc?.creditSettings || {};
+    res.status(200).json({
+      success: true,
+      data: {
+        creditSettings: {
+          minCreditForRequest: creditSettings.minCreditForRequest || 10000,
+          shippingFee: creditSettings.shippingFee || 3500,
+          defaultFreeShippingCredit:
+            creditSettings.defaultFreeShippingCredit || 3500,
+        },
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "크레딧 설정 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export async function updateCreditSettings(req, res) {
   try {
     const payload = req.body && typeof req.body === "object" ? req.body : {};

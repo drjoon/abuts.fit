@@ -19,6 +19,10 @@ import {
   sendVerificationCode,
   verifyCode,
 } from "../../controllers/auth/phoneVerification.controller.js";
+import { getPublicCreditSettings } from "../../controllers/admin/admin.settings.controller.js";
+
+// 공개 엔드포인트 (인증 불필요)
+router.get("/settings", getPublicCreditSettings);
 
 router.use(authenticate);
 

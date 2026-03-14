@@ -55,6 +55,8 @@ import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 type DashboardOutletContext = {
   creditBalance: number | null;
+  paidBalance: number | null;
+  bonusBalance: number | null;
   loadingCreditBalance: boolean;
 };
 
@@ -62,7 +64,7 @@ export const RequestorDashboardPage = () => {
   const { user, token } = useAuthStore();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { creditBalance, loadingCreditBalance } =
+  const { creditBalance, paidBalance, bonusBalance, loadingCreditBalance } =
     useOutletContext<DashboardOutletContext>();
   const { data: systemSettings } = useSystemSettings();
 
@@ -229,51 +231,66 @@ export const RequestorDashboardPage = () => {
     enabled: !!token,
   });
 
-  // 추적관리를 제외한 나머지 공정 단계의 의뢰건이 있는데 크레딧이 부족한지 확인
+  // 의뢰비 충전 경고
+  // 의뢰, CAM 단계에 의뢰건이 있으면서 크레딧이 부족한지 확인
+  // 의뢰 결제: 유료 크레딧 + 무료 크레딧 모두 사용 가능
   useEffect(() => {
     if (
       summaryResponse?.success &&
-      creditBalance !== null &&
+      paidBalance !== null &&
+      bonusBalance !== null &&
       systemSettings?.creditSettings
     ) {
       const stats = summaryResponse.data.stats ?? {};
       const minCredit =
         systemSettings.creditSettings.minCreditForRequest || 10000;
 
-      // 추적관리를 제외한 나머지 공정 단계 (의뢰, CAM, 가공, 세척.패킹, 포장.발송)
-      const totalInProgress =
-        (stats.inRequest || 0) +
-        (stats.inCam || 0) +
-        (stats.inProduction || 0) +
-        (stats.inPacking || 0) +
-        (stats.inShipping || 0);
+      // 의뢰, CAM 단계에 의뢰건이 있으면 경고
+      const inRequest = stats.totalRequests || 0;
+      const inCam = stats.inCam || 0;
+      const hasRequestOrCam = inRequest > 0 || inCam > 0;
 
-      if (totalInProgress > 0 && creditBalance < minCredit) {
+      // 의뢰 결제는 유료 + 무료 크레딧 합계로 판단
+      const availableForRequest = paidBalance + bonusBalance;
+
+      if (hasRequestOrCam && availableForRequest < minCredit) {
         setInsufficientCredit(true);
       } else {
         setInsufficientCredit(false);
       }
     }
-  }, [summaryResponse, creditBalance, systemSettings]);
+  }, [summaryResponse, paidBalance, bonusBalance, systemSettings]);
 
-  // 포장.발송 단계에 있는 건이 있는데 배송비 크레딧이 부족한지 확인
+  // 배송비 충전 경고
+  // 의뢰, CAM, 가공, 세척.패킹, 포장.발송 단계에 의뢰건이 있으면서
+  // 유료 크레딧이 배송비보다 적으면 경고
+  // 배송비 결제: 유료 크레딧만 사용 가능
   useEffect(() => {
     if (
       summaryResponse?.success &&
-      creditBalance !== null &&
+      paidBalance !== null &&
       systemSettings?.creditSettings
     ) {
       const stats = summaryResponse.data.stats ?? {};
-      const inShipping = stats.inShipping || 0;
       const shippingFee = systemSettings.creditSettings.shippingFee || 3500;
 
-      if (inShipping > 0 && creditBalance < shippingFee) {
+      // 의뢰, CAM, 가공, 세척.패킹, 포장.발송 단계의 의뢰건 합계
+      const inRequest = stats.totalRequests || 0;
+      const inCam = stats.inCam || 0;
+      const inProduction = stats.inProduction || 0;
+      const inPacking = stats.inPacking || 0;
+      const inShipping = stats.inShipping || 0;
+      const totalInProgress =
+        inRequest + inCam + inProduction + inPacking + inShipping;
+
+      // 유료 크레딧이 배송비보다 적으면 배송비 충전 경고
+      if (totalInProgress > 0 && paidBalance < shippingFee) {
         setInsufficientShippingCredit(true);
       } else {
         setInsufficientShippingCredit(false);
       }
     }
-  }, [summaryResponse, creditBalance, systemSettings]);
+  }, [summaryResponse, paidBalance, systemSettings]);
 
   const {
     data: bulkResponse,

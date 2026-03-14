@@ -144,6 +144,8 @@ export const DashboardLayout = () => {
   const location = useLocation();
   const { toast } = useToast();
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
+  const [paidBalance, setPaidBalance] = useState<number | null>(null);
+  const [bonusBalance, setBonusBalance] = useState<number | null>(null);
   const [loadingCreditBalance, setLoadingCreditBalance] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -254,10 +256,14 @@ export const DashboardLayout = () => {
     if (!user) return;
     if (user.role !== "requestor") {
       setCreditBalance(null);
+      setPaidBalance(null);
+      setBonusBalance(null);
       return;
     }
     if (!(user as any).businessId) {
       setCreditBalance(null);
+      setPaidBalance(null);
+      setBonusBalance(null);
       return;
     }
 
@@ -270,13 +276,19 @@ export const DashboardLayout = () => {
       });
       if (!res.ok) {
         setCreditBalance(null);
+        setPaidBalance(null);
+        setBonusBalance(null);
         return;
       }
       const body: any = res.data || {};
       const data = body.data || body;
       setCreditBalance(Number(data?.balance ?? 0));
+      setPaidBalance(Number(data?.paidBalance ?? 0));
+      setBonusBalance(Number(data?.bonusBalance ?? 0));
     } catch {
       setCreditBalance(null);
+      setPaidBalance(null);
+      setBonusBalance(null);
     } finally {
       setLoadingCreditBalance(false);
     }
@@ -331,7 +343,12 @@ export const DashboardLayout = () => {
           void fetchCreditBalance();
           return prev;
         }
-        return Number(prev) + delta;
+        const newBalance = Number(prev) + delta;
+        setPaidBalance((pb) => {
+          if (pb === null) return pb;
+          return Math.max(0, pb + delta);
+        });
+        return newBalance;
       });
     });
 
@@ -898,6 +915,8 @@ export const DashboardLayout = () => {
                           showCompleted,
                           setShowCompleted,
                           creditBalance,
+                          paidBalance,
+                          bonusBalance,
                           loadingCreditBalance,
                         }}
                       />

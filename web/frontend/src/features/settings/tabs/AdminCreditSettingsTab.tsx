@@ -2,7 +2,13 @@ import { useState, useEffect } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -22,7 +28,8 @@ export const AdminCreditSettingsTab = () => {
     shippingFee: 3500,
     defaultFreeShippingCredit: 3500,
   });
-  const [originalSettings, setOriginalSettings] = useState<CreditSettings>(settings);
+  const [originalSettings, setOriginalSettings] =
+    useState<CreditSettings>(settings);
 
   useEffect(() => {
     fetchSettings();
@@ -32,7 +39,7 @@ export const AdminCreditSettingsTab = () => {
     try {
       setLoading(true);
       const res = await apiFetch<any>({
-        path: "/api/admin/settings/credits",
+        path: "/api/credits/settings",
         method: "GET",
         token,
       });
@@ -105,9 +112,7 @@ export const AdminCreditSettingsTab = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="minCreditForRequest">
-              최소 크레딧 (원)
-            </Label>
+            <Label htmlFor="minCreditForRequest">최소 크레딧 (원)</Label>
             <Input
               id="minCreditForRequest"
               type="number"
@@ -152,7 +157,8 @@ export const AdminCreditSettingsTab = () => {
               disabled={loading}
             />
             <p className="text-sm text-slate-500">
-              택배 접수 시 차감되는 배송비입니다. 유료 크레딧으로만 결제 가능합니다.
+              택배 접수 시 차감되는 배송비입니다. 유료 크레딧으로만 결제
+              가능합니다.
             </p>
           </div>
 
@@ -168,7 +174,10 @@ export const AdminCreditSettingsTab = () => {
               onChange={(e) =>
                 setSettings({
                   ...settings,
-                  defaultFreeShippingCredit: Math.max(0, Number(e.target.value)),
+                  defaultFreeShippingCredit: Math.max(
+                    0,
+                    Number(e.target.value),
+                  ),
                 })
               }
               disabled={loading}
@@ -188,10 +197,7 @@ export const AdminCreditSettingsTab = () => {
         >
           취소
         </Button>
-        <Button
-          onClick={handleSave}
-          disabled={loading || !hasChanges}
-        >
+        <Button onClick={handleSave} disabled={loading || !hasChanges}>
           {loading ? "저장 중..." : "저장"}
         </Button>
       </div>
