@@ -16,6 +16,7 @@ import {
   getThisMonthStartYmdInKst,
 } from "../../utils/krBusinessDays.js";
 import AdminSalesmanCreditsOverviewSnapshot from "../../models/adminSalesmanCreditsOverviewSnapshot.model.js";
+import { buildSalesmanReferralAggregation } from "./adminCredit.salesmanAggregation.js";
 
 function normalizeNumber(n) {
   const v = Number(n || 0);
@@ -137,142 +138,11 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
   const balanceAmount = normalizeNumber(
     earnedAmount - paidOutAmount + adjustedAmount,
   );
-
-  const salesmanBusinessIds = (
-    await User.find({ _id: { $in: salesmanIds } })
-      .select({ businessId: 1 })
-      .lean()
-  )
-    .map((s) => s?.businessId)
-    .filter((id) => id && Types.ObjectId.isValid(String(id)));
-
-  const directRequestors = await User.find({
-    role: "requestor",
-    referredByBusinessId: { $in: salesmanBusinessIds },
-    active: true,
-    businessId: { $ne: null },
-  })
-    .select({ _id: 1, referredByBusinessId: 1, businessId: 1 })
-    .lean();
-
-  const childSalesmen = await User.find({
-    role: "salesman",
-    referredByBusinessId: { $in: salesmanBusinessIds },
-    active: true,
-  })
-    .select({ _id: 1, referredByBusinessId: 1, businessId: 1 })
-    .lean();
-
-  const childSalesmanBusinessIds = (childSalesmen || [])
-    .map((s) => s?.businessId)
-    .filter((id) => id && Types.ObjectId.isValid(String(id)));
-
-  const level1Requestors =
-    childSalesmanBusinessIds.length === 0
-      ? []
-      : await User.find({
-          role: "requestor",
-          referredByBusinessId: { $in: childSalesmanBusinessIds },
-          active: true,
-          businessId: { $ne: null },
-        })
-          .select({ _id: 1, referredByBusinessId: 1, businessId: 1 })
-          .lean();
-
-  const leaderBusinessIdByChildSalesmanBusinessId = new Map(
-    (childSalesmen || [])
-      .map((s) => [
-        String(s?.businessId || ""),
-        String(s?.referredByBusinessId || ""),
-      ])
-      .filter(([cid, pid]) => cid && pid),
-  );
-
-  const directOrgIdsBySalesmanBusinessId = new Map();
-  for (const u of directRequestors || []) {
-    const sBusinessId = String(u?.referredByBusinessId || "");
-    const orgId = u?.businessId ? String(u.businessId) : "";
-    if (!sBusinessId || !orgId) continue;
-    const set = directOrgIdsBySalesmanBusinessId.get(sBusinessId) || new Set();
-    set.add(orgId);
-    directOrgIdsBySalesmanBusinessId.set(sBusinessId, set);
-  }
-
-  const level1OrgIdsBySalesmanBusinessId = new Map();
-  for (const u of level1Requestors || []) {
-    const childSBusinessId = String(u?.referredByBusinessId || "");
-    const leaderSBusinessId = String(
-      leaderBusinessIdByChildSalesmanBusinessId.get(childSBusinessId) || "",
-    );
-    const orgId = u?.businessId ? String(u.businessId) : "";
-    if (!orgId || !leaderSBusinessId) continue;
-
-    const set =
-      level1OrgIdsBySalesmanBusinessId.get(leaderSBusinessId) || new Set();
-    set.add(orgId);
-    level1OrgIdsBySalesmanBusinessId.set(leaderSBusinessId, set);
-  }
-
-  const orgIdsBySalesmanBusinessId = new Map();
-  for (const [sBusinessId, set] of directOrgIdsBySalesmanBusinessId) {
-    const merged = orgIdsBySalesmanBusinessId.get(sBusinessId) || new Set();
-    for (const id of set) merged.add(id);
-    orgIdsBySalesmanBusinessId.set(sBusinessId, merged);
-  }
-  for (const [sBusinessId, set] of level1OrgIdsBySalesmanBusinessId) {
-    const merged = orgIdsBySalesmanBusinessId.get(sBusinessId) || new Set();
-    for (const id of set) merged.add(id);
-    orgIdsBySalesmanBusinessId.set(sBusinessId, merged);
-  }
-
-  const allOrgIds = Array.from(
-    new Set(
-      Array.from(orgIdsBySalesmanBusinessId.values()).flatMap((s) =>
-        Array.from(s),
-      ),
-    ),
-  )
-    .filter((id) => Types.ObjectId.isValid(id))
-    .map((id) => new Types.ObjectId(id));
-
-  const revenueRows =
-    allOrgIds.length === 0
-      ? []
-      : await Request.aggregate([
-          {
-            $match: {
-              businessId: { $in: allOrgIds },
-              manufacturerStage: "추적관리",
-              createdAt: { $gte: range.start, $lte: range.end },
-            },
-          },
-          {
-            $group: {
-              _id: "$businessId",
-              revenueAmount: {
-                $sum: {
-                  $ifNull: [
-                    "$price.paidAmount",
-                    { $ifNull: ["$price.amount", 0] },
-                  ],
-                },
-              },
-              bonusAmount: { $sum: { $ifNull: ["$price.bonusAmount", 0] } },
-              orderCount: { $sum: 1 },
-            },
-          },
-        ]);
-
-  const revenueByOrgId = new Map(
-    (revenueRows || []).map((r) => [
-      String(r._id),
-      {
-        revenueAmount: normalizeNumber(r.revenueAmount || 0),
-        bonusAmount: normalizeNumber(r.bonusAmount || 0),
-        orderCount: normalizeNumber(r.orderCount || 0),
-      },
-    ]),
-  );
+  const { directOrgIdsBySalesmanId, level1OrgIdsBySalesmanId, revenueByOrgId } =
+    await buildSalesmanReferralAggregation({
+      salesmanIds,
+      range,
+    });
 
   let paidRevenueAmount = 0;
   let bonusRevenueAmount = 0;
@@ -293,12 +163,9 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
   }
 
   let indirectAmount = 0;
-  for (const child of childSalesmen || []) {
-    const childSid = String(child?._id || "");
-    if (!childSid) continue;
-    const orgSet = requestorOrgIdsByChildSalesmanId.get(childSid) || new Set();
+  for (const orgSet of level1OrgIdsBySalesmanId.values()) {
     let rev = 0;
-    for (const oid of orgSet) {
+    for (const oid of orgSet || []) {
       rev += Number(revenueByOrgId.get(String(oid))?.revenueAmount || 0);
     }
     indirectAmount += rev * commissionRate * 0.5;
@@ -1106,180 +973,22 @@ export async function adminGetSalesmanCredits(req, res) {
       ledgerPeriodBySalesmanId.set(sid, prev);
     }
 
-    const salesmanBusinessIds2 = (
-      await User.find({ _id: { $in: salesmanIds } })
-        .select({ businessId: 1 })
-        .lean()
-    )
-      .map((s) => s?.businessId)
-      .filter((id) => id && Types.ObjectId.isValid(String(id)));
-
-    const directRequestors = await User.find({
-      role: "requestor",
-      referredByBusinessId: { $in: salesmanBusinessIds2 },
-      active: true,
-      businessId: { $ne: null },
-    })
-      .select({ _id: 1, referredByBusinessId: 1, businessId: 1 })
-      .lean();
-
-    const childSalesmen = await User.find({
-      role: "salesman",
-      referredByBusinessId: { $in: salesmanBusinessIds2 },
-      active: true,
-    })
-      .select({ _id: 1, referredByBusinessId: 1, businessId: 1 })
-      .lean();
-
-    const childSalesmanBusinessIds2 = (childSalesmen || [])
-      .map((s) => s?.businessId)
-      .filter((id) => id && Types.ObjectId.isValid(String(id)));
-
-    const level1Requestors =
-      childSalesmanBusinessIds2.length === 0
-        ? []
-        : await User.find({
-            role: "requestor",
-            referredByBusinessId: { $in: childSalesmanBusinessIds2 },
-            active: true,
-            businessId: { $ne: null },
-          })
-            .select({ _id: 1, referredByBusinessId: 1, businessId: 1 })
-            .lean();
-
-    const leaderBusinessIdByChildSalesmanBusinessId2 = new Map(
-      (childSalesmen || [])
-        .map((s) => [
-          String(s?.businessId || ""),
-          String(s?.referredByBusinessId || ""),
-        ])
-        .filter(([cid, pid]) => cid && pid),
-    );
-
-    // 직접 소개 사업자 (나의 수수료 5%)
-    const directOrgIdsBySalesmanBusinessId2 = new Map();
-    for (const u of directRequestors || []) {
-      const sBusinessId = String(u?.referredByBusinessId || "");
-      const orgId = u?.businessId ? String(u.businessId) : "";
-      if (!sBusinessId || !orgId) continue;
-      const set =
-        directOrgIdsBySalesmanBusinessId2.get(sBusinessId) || new Set();
-      set.add(orgId);
-      directOrgIdsBySalesmanBusinessId2.set(sBusinessId, set);
-    }
-    // 간접 소개 사업자 (직계1 수수료 2.5%)
-    const level1OrgIdsBySalesmanBusinessId2 = new Map();
-    for (const u of level1Requestors || []) {
-      const childSBusinessId = String(u?.referredByBusinessId || "");
-      const leaderSBusinessId = String(
-        leaderBusinessIdByChildSalesmanBusinessId2.get(childSBusinessId) || "",
-      );
-      const orgId = u?.businessId ? String(u.businessId) : "";
-      if (!leaderSBusinessId || !orgId) continue;
-      const set =
-        level1OrgIdsBySalesmanBusinessId2.get(leaderSBusinessId) || new Set();
-      set.add(orgId);
-      level1OrgIdsBySalesmanBusinessId2.set(leaderSBusinessId, set);
-    }
-    // 전체 사업자 (revenue 집계용)
-    const orgIdsBySalesmanBusinessId2 = new Map();
-    for (const [sBusinessId, set] of directOrgIdsBySalesmanBusinessId2) {
-      const merged = orgIdsBySalesmanBusinessId2.get(sBusinessId) || new Set();
-      for (const id of set) merged.add(id);
-      orgIdsBySalesmanBusinessId2.set(sBusinessId, merged);
-    }
-    for (const [sBusinessId, set] of level1OrgIdsBySalesmanBusinessId2) {
-      const merged = orgIdsBySalesmanBusinessId2.get(sBusinessId) || new Set();
-      for (const id of set) merged.add(id);
-      orgIdsBySalesmanBusinessId2.set(sBusinessId, merged);
-    }
-
-    const allOrgIds = Array.from(
-      new Set(
-        Array.from(orgIdsBySalesmanBusinessId2.values()).flatMap((s) =>
-          Array.from(s),
-        ),
-      ),
-    )
-      .filter((id) => Types.ObjectId.isValid(id))
-      .map((id) => new Types.ObjectId(id));
-
-    const revenueCreatedAtMatch = {};
-    if (periodCutoff) revenueCreatedAtMatch.$gte = periodCutoff;
-    if (periodEnd) revenueCreatedAtMatch.$lte = periodEnd;
-
-    const revenueRows =
-      allOrgIds.length === 0
-        ? []
-        : await Request.aggregate([
-            {
-              $match: {
-                businessId: { $in: allOrgIds },
-                manufacturerStage: "추적관리",
-                ...(Object.keys(revenueCreatedAtMatch).length
-                  ? { createdAt: revenueCreatedAtMatch }
-                  : {}),
-              },
-            },
-            {
-              $group: {
-                _id: "$businessId",
-                revenueAmount: {
-                  $sum: {
-                    $ifNull: [
-                      "$price.paidAmount",
-                      { $ifNull: ["$price.amount", 0] },
-                    ],
-                  },
-                },
-                bonusAmount: { $sum: { $ifNull: ["$price.bonusAmount", 0] } },
-                orderCount: { $sum: 1 },
-              },
-            },
-          ]);
-
-    const revenueByOrgId = new Map(
-      (revenueRows || []).map((r) => [
-        String(r._id),
-        {
-          revenueAmount: Number(r.revenueAmount || 0),
-          bonusAmount: Number(r.bonusAmount || 0),
-          orderCount: Number(r.orderCount || 0),
-        },
-      ]),
-    );
-
-    // 영업자별 소개한 영업자 수 집계
-    // referredByBusinessId 기준으로 집계 (business anchor)
-    const salesmanBusinessIdStrings = salesmanBusinessIds2.map((id) =>
-      String(id),
-    );
-    const referredSalesmanCountRows = await User.aggregate([
-      {
-        $match: {
-          role: "salesman",
-          active: true,
-          referredByBusinessId: { $ne: null },
-        },
-      },
-      {
-        $addFields: {
-          referredByKey: { $toString: "$referredByBusinessId" },
-        },
-      },
-      {
-        $match: {
-          referredByKey: { $in: salesmanBusinessIdStrings },
-        },
-      },
-      { $group: { _id: "$referredByKey", count: { $sum: 1 } } },
-    ]);
-    const referredSalesmanCountBySalesmanId = new Map(
-      (referredSalesmanCountRows || []).map((r) => [
-        String(r?._id || ""),
-        Number(r?.count || 0),
-      ]),
-    );
+    const range =
+      periodCutoff || periodEnd
+        ? {
+            start: periodCutoff || new Date(0),
+            end: periodEnd || new Date(),
+          }
+        : null;
+    const {
+      directOrgIdsBySalesmanId,
+      level1OrgIdsBySalesmanId,
+      referredSalesmanCountBySalesmanId,
+      revenueByOrgId,
+    } = await buildSalesmanReferralAggregation({
+      salesmanIds,
+      range,
+    });
 
     const items = salesmen.map((s) => {
       const sid = String(s._id);

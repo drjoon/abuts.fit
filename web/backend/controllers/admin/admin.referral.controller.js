@@ -8,8 +8,17 @@ import {
 } from "../requests/utils.js";
 import { getTodayYmdInKst } from "../../utils/krBusinessDays.js";
 import { computeVolumeEffectiveUnitPrice } from "./admin.shared.controller.js";
+import { buildReferralLeaderAggregation } from "./adminReferral.aggregation.js";
 
 const ADMIN_REFERRAL_CACHE_TTL_MS = 60 * 60 * 1000;
+const REFERRAL_LEADER_ROLE_FILTER = [
+  { role: "salesman" },
+  { role: "devops" },
+  { role: "requestor", requestorRole: "owner" },
+];
+const REFERRAL_TREE_ROLES = ["requestor", "salesman", "devops"];
+const REFERRAL_REVENUE_OWNER_ROLES = new Set(["requestor", "devops"]);
+const REFERRAL_COMMISSION_LEADER_ROLES = new Set(["salesman", "devops"]);
 const adminReferralCache = new Map();
 
 function getAdminReferralCache(key) {
@@ -24,6 +33,38 @@ function getAdminReferralCache(key) {
 
 function setAdminReferralCache(key, value) {
   adminReferralCache.set(key, { ts: Date.now(), value });
+}
+
+function normalizeReferralLeaders(leaders) {
+  const pickedByBusinessId = new Map();
+
+  for (const leader of leaders || []) {
+    const businessId = String(leader?.businessId || "").trim();
+    if (!businessId || !Types.ObjectId.isValid(businessId)) continue;
+
+    const current = pickedByBusinessId.get(businessId);
+    if (!current) {
+      pickedByBusinessId.set(businessId, leader);
+      continue;
+    }
+
+    const currentCreatedAt = current?.createdAt
+      ? new Date(current.createdAt).getTime()
+      : Number.POSITIVE_INFINITY;
+    const nextCreatedAt = leader?.createdAt
+      ? new Date(leader.createdAt).getTime()
+      : Number.POSITIVE_INFINITY;
+
+    if (nextCreatedAt < currentCreatedAt) {
+      pickedByBusinessId.set(businessId, leader);
+    }
+  }
+
+  return Array.from(pickedByBusinessId.values()).sort((a, b) => {
+    const aCreatedAt = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bCreatedAt = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return bCreatedAt - aCreatedAt;
+  });
 }
 
 export async function getReferralGroups(req, res) {
@@ -42,11 +83,8 @@ export async function getReferralGroups(req, res) {
       if (cached) return res.status(200).json(cached);
     }
 
-    const leaders = await User.find({
-      $or: [
-        { role: "salesman" },
-        { role: "requestor", requestorRole: "owner" },
-      ],
+    const rawLeaders = await User.find({
+      $or: REFERRAL_LEADER_ROLE_FILTER,
     })
       .select({
         _id: 1,
@@ -63,39 +101,22 @@ export async function getReferralGroups(req, res) {
       })
       .sort({ createdAt: -1 })
       .lean();
+    const leaders = normalizeReferralLeaders(rawLeaders);
 
-    const leaderBusinessIds = leaders
-      .map((l) => String(l?.businessId || ""))
-      .filter((id) => id && Types.ObjectId.isValid(id));
-    const leaderBusinessObjectIds = leaderBusinessIds.map(
-      (id) => new Types.ObjectId(id),
-    );
     if (!leaders.length) {
       return res.status(200).json({ success: true, data: { groups: [] } });
     }
 
     const ymd = getThisMonthStartYmdInKst();
-    const [directCounts, snapshots] = await Promise.all([
-      User.aggregate([
-        {
-          $match: {
-            referredByBusinessId: { $in: leaderBusinessObjectIds },
-            active: true,
-            role: { $in: ["requestor", "salesman"] },
-          },
-        },
-        { $group: { _id: "$referredByBusinessId", count: { $sum: 1 } } },
-      ]),
-      PricingReferralStatsSnapshot.find({ ymd })
-        .select({
-          businessId: 1,
-          leaderUserId: 1,
-          groupMemberCount: 1,
-          groupTotalOrders: 1,
-          computedAt: 1,
-        })
-        .lean(),
-    ]);
+    const snapshots = await PricingReferralStatsSnapshot.find({ ymd })
+      .select({
+        businessId: 1,
+        leaderUserId: 1,
+        groupMemberCount: 1,
+        groupTotalOrders: 1,
+        computedAt: 1,
+      })
+      .lean();
 
     const now = new Date();
     const defaultRange = getLast30DaysRangeUtc(now);
@@ -106,134 +127,23 @@ export async function getReferralGroups(req, res) {
     const periodEnd = endDateRaw
       ? new Date(endDateRaw)
       : (defaultRange?.end ?? now);
-
-    const directChildren = await User.find({
-      referredByBusinessId: { $in: leaderBusinessObjectIds },
-      role: { $in: ["requestor", "salesman"] },
-      active: true,
-    })
-      .select({ _id: 1, referredByBusinessId: 1, businessId: 1 })
-      .lean();
-
-    const relevantBusinessIds = Array.from(
-      new Set(
-        [...leaders, ...directChildren]
-          .map((u) => String(u?.businessId || ""))
-          .filter((id) => id && Types.ObjectId.isValid(id)),
-      ),
-    );
-    const relevantBusinessObjectIds = relevantBusinessIds.map(
-      (id) => new Types.ObjectId(id),
-    );
-    const requestRows = relevantBusinessObjectIds.length
-      ? await Request.aggregate([
-          {
-            $match: {
-              businessId: { $in: relevantBusinessObjectIds },
-              manufacturerStage: "추적관리",
-              createdAt: { $gte: periodStart, $lte: periodEnd },
-            },
-          },
-          {
-            $group: {
-              _id: "$businessId",
-              orderCount: { $sum: 1 },
-              revenueAmount: {
-                $sum: {
-                  $ifNull: [
-                    "$price.paidAmount",
-                    { $ifNull: ["$price.amount", 0] },
-                  ],
-                },
-              },
-              bonusAmount: { $sum: { $ifNull: ["$price.bonusAmount", 0] } },
-            },
-          },
-        ])
-      : [];
-
-    const requestorLeaderBusinessIds = leaders
-      .filter((l) => String(l?.role || "") === "requestor")
-      .map((l) => String(l?.businessId || ""))
-      .filter(Boolean);
-    const requestorLeaderBusinessObjectIds = requestorLeaderBusinessIds
-      .filter((id) => Types.ObjectId.isValid(id))
-      .map((id) => new Types.ObjectId(id));
-
-    const businessRows = requestorLeaderBusinessObjectIds.length
-      ? await Request.aggregate([
-          {
-            $match: {
-              businessId: { $in: requestorLeaderBusinessObjectIds },
-              manufacturerStage: "추적관리",
-              createdAt: { $gte: periodStart, $lte: periodEnd },
-            },
-          },
-          {
-            $group: {
-              _id: "$businessId",
-              orderCount: { $sum: 1 },
-              revenueAmount: {
-                $sum: {
-                  $ifNull: [
-                    "$price.paidAmount",
-                    { $ifNull: ["$price.amount", 0] },
-                  ],
-                },
-              },
-              bonusAmount: { $sum: { $ifNull: ["$price.bonusAmount", 0] } },
-            },
-          },
-        ])
-      : [];
-
-    const businessStatsByBusinessId = new Map(
-      businessRows.map((r) => [
-        String(r._id),
-        {
-          orderCount: Number(r.orderCount || 0),
-          revenueAmount: Number(r.revenueAmount || 0),
-          bonusAmount: Number(r.bonusAmount || 0),
-        },
-      ]),
-    );
-
-    const ordersByBusinessId = new Map(
-      requestRows.map((r) => [String(r._id), Number(r.orderCount || 0)]),
-    );
-    const revenueByBusinessId = new Map(
-      requestRows.map((r) => [String(r._id), Number(r.revenueAmount || 0)]),
-    );
-    const bonusByBusinessId = new Map(
-      requestRows.map((r) => [String(r._id), Number(r.bonusAmount || 0)]),
-    );
+    const {
+      directCountByLeaderBusinessId,
+      childBusinessIdsByLeaderBusinessId,
+      ordersByBusinessId,
+      revenueByBusinessId,
+      bonusByBusinessId,
+      requestorBusinessStatsByBusinessId,
+    } = await buildReferralLeaderAggregation({
+      leaders,
+      periodStart,
+      periodEnd,
+    });
     const businessSnapshotByBusinessId = new Map(
       snapshots
         .filter((row) => String(row?.businessId || ""))
         .map((row) => [String(row?.businessId || ""), row]),
     );
-
-    const childIdsByLeaderBusinessId = new Map();
-    const childBusinessIdsByLeaderBusinessId = new Map();
-    for (const u of directChildren) {
-      const leaderBusinessId = String(u?.referredByBusinessId || "");
-      if (!leaderBusinessId) continue;
-      const arr = childIdsByLeaderBusinessId.get(leaderBusinessId) || [];
-      arr.push(String(u._id));
-      childIdsByLeaderBusinessId.set(leaderBusinessId, arr);
-      const childBusinessId = String(u?.businessId || "");
-      if (childBusinessId && Types.ObjectId.isValid(childBusinessId)) {
-        const businessSet =
-          childBusinessIdsByLeaderBusinessId.get(leaderBusinessId) || new Set();
-        businessSet.add(childBusinessId);
-        childBusinessIdsByLeaderBusinessId.set(leaderBusinessId, businessSet);
-      }
-    }
-
-    const directCountByLeaderBusinessId = new Map();
-    for (const r of directCounts) {
-      directCountByLeaderBusinessId.set(String(r._id), Number(r.count || 0));
-    }
 
     const groups = leaders.map((leader) => {
       const leaderBusinessId = String(leader?.businessId || "");
@@ -251,9 +161,9 @@ export async function getReferralGroups(req, res) {
       let groupTotalOrders = 0;
       let groupRevenueAmount = 0;
       let groupBonusAmount = 0;
-      if (role === "requestor") {
+      if (REFERRAL_REVENUE_OWNER_ROLES.has(role)) {
         const businessStats = leaderBusinessId
-          ? businessStatsByBusinessId.get(leaderBusinessId)
+          ? requestorBusinessStatsByBusinessId.get(leaderBusinessId)
           : null;
         groupTotalOrders = Number(businessStats?.orderCount || 0);
         groupRevenueAmount = Number(businessStats?.revenueAmount || 0);
@@ -286,8 +196,9 @@ export async function getReferralGroups(req, res) {
 
       const effectiveUnitPrice =
         computeVolumeEffectiveUnitPrice(groupTotalOrders);
-      const commissionAmount =
-        role === "salesman" ? Math.round(groupRevenueAmount * 0.05) : 0;
+      const commissionAmount = REFERRAL_COMMISSION_LEADER_ROLES.has(role)
+        ? Math.round(groupRevenueAmount * 0.05)
+        : 0;
 
       return {
         leader,
@@ -302,11 +213,11 @@ export async function getReferralGroups(req, res) {
       };
     });
 
-    const requestorGroups = groups.filter(
-      (g) => String(g?.leader?.role || "") === "requestor",
+    const requestorGroups = groups.filter((g) =>
+      REFERRAL_REVENUE_OWNER_ROLES.has(String(g?.leader?.role || "")),
     );
-    const salesmanGroups = groups.filter(
-      (g) => String(g?.leader?.role || "") === "salesman",
+    const salesmanGroups = groups.filter((g) =>
+      REFERRAL_COMMISSION_LEADER_ROLES.has(String(g?.leader?.role || "")),
     );
 
     const requestorGroupCount = requestorGroups.length;
@@ -446,10 +357,7 @@ export async function getReferralGroupTree(req, res) {
       })
       .lean();
 
-    if (
-      !leader ||
-      !["requestor", "salesman"].includes(String(leader.role || ""))
-    ) {
+    if (!leader || !REFERRAL_TREE_ROLES.includes(String(leader.role || ""))) {
       return res
         .status(404)
         .json({ success: false, message: "리더를 찾을 수 없습니다." });
@@ -482,7 +390,7 @@ export async function getReferralGroupTree(req, res) {
       );
       const children = await User.find({
         referredByBusinessId: { $in: parentBusinessObjectIds },
-        role: { $in: ["requestor", "salesman"] },
+        role: { $in: REFERRAL_TREE_ROLES },
       })
         .select({
           _id: 1,
@@ -646,7 +554,7 @@ export async function getReferralGroupTree(req, res) {
       ...leader,
       children: [],
     };
-    if (String(rootNode.role || "") === "salesman") {
+    if (REFERRAL_COMMISSION_LEADER_ROLES.has(String(rootNode.role || ""))) {
       const directChildren = Array.isArray(rootNode.children)
         ? rootNode.children
         : [];
@@ -657,7 +565,9 @@ export async function getReferralGroupTree(req, res) {
           directCommissionAmount += Math.round(
             Number(child?.lastMonthPaidRevenue || 0) * 0.05,
           );
-        } else if (String(child?.role || "") === "salesman") {
+        } else if (
+          REFERRAL_COMMISSION_LEADER_ROLES.has(String(child?.role || ""))
+        ) {
           const grandChildren = Array.isArray(child?.children)
             ? child.children
             : [];
@@ -701,74 +611,28 @@ export async function recalcReferralSnapshot() {
   if (!ymd || !range30) return { success: false, message: "날짜 계산 실패" };
   const { start, end } = range30;
 
-  const leaders = await User.find({
-    $or: [{ role: "salesman" }, { role: "requestor", requestorRole: "owner" }],
+  const rawLeaders = await User.find({
+    $or: REFERRAL_LEADER_ROLE_FILTER,
     active: true,
   })
     .select({ _id: 1, role: 1, businessId: 1 })
     .lean();
+  const leaders = normalizeReferralLeaders(rawLeaders);
 
   if (!leaders.length) {
     adminReferralCache.clear();
     return { success: true, upsertCount: 0, ymd, computedAt: new Date() };
   }
 
-  const leaderBusinessIds = leaders
-    .map((l) => String(l?.businessId || ""))
-    .filter((id) => id && Types.ObjectId.isValid(id));
-  const leaderBusinessObjectIds = leaderBusinessIds.map(
-    (id) => new Types.ObjectId(id),
-  );
-  const directChildren = await User.find({
-    referredByBusinessId: { $in: leaderBusinessObjectIds },
-    role: { $in: ["requestor", "salesman"] },
-    active: true,
-  })
-    .select({ _id: 1, referredByBusinessId: 1, businessId: 1, role: 1 })
-    .lean();
-
-  const childIdsByLeaderBusinessId = new Map();
-  const childBusinessIdsByLeaderBusinessId = new Map();
-  for (const u of directChildren) {
-    const leaderBusinessId = String(u.referredByBusinessId || "");
-    if (!leaderBusinessId) continue;
-    const arr = childIdsByLeaderBusinessId.get(leaderBusinessId) || [];
-    arr.push(u);
-    childIdsByLeaderBusinessId.set(leaderBusinessId, arr);
-    const childBusinessId = String(u?.businessId || "");
-    if (childBusinessId && Types.ObjectId.isValid(childBusinessId)) {
-      const businessSet =
-        childBusinessIdsByLeaderBusinessId.get(leaderBusinessId) || new Set();
-      businessSet.add(childBusinessId);
-      childBusinessIdsByLeaderBusinessId.set(leaderBusinessId, businessSet);
-    }
-  }
-
-  const relevantBusinessIds = Array.from(
-    new Set(
-      [...leaders, ...directChildren]
-        .map((u) => String(u?.businessId || ""))
-        .filter((id) => id && Types.ObjectId.isValid(id)),
-    ),
-  );
-  const relevantBusinessObjectIds = relevantBusinessIds.map(
-    (id) => new Types.ObjectId(id),
-  );
-  const requestRows = relevantBusinessObjectIds.length
-    ? await Request.aggregate([
-        {
-          $match: {
-            businessId: { $in: relevantBusinessObjectIds },
-            manufacturerStage: "추적관리",
-            createdAt: { $gte: start, $lte: end },
-          },
-        },
-        { $group: { _id: "$businessId", orderCount: { $sum: 1 } } },
-      ])
-    : [];
-  const ordersByBusinessId = new Map(
-    requestRows.map((r) => [String(r._id), Number(r.orderCount || 0)]),
-  );
+  const {
+    childIdsByLeaderBusinessId,
+    childBusinessIdsByLeaderBusinessId,
+    ordersByBusinessId,
+  } = await buildReferralLeaderAggregation({
+    leaders,
+    periodStart: start,
+    periodEnd: end,
+  });
 
   let upsertCount = 0;
   const computedAt = new Date();

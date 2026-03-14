@@ -32,7 +32,7 @@ const PERIOD_LABEL: Record<string, string> = {
 
 type ApiGroupLeader = {
   _id: string;
-  role?: "requestor" | "salesman";
+  role?: "requestor" | "salesman" | "devops";
   name?: string;
   email?: string;
   business?: string;
@@ -94,6 +94,13 @@ const roleBadge = (role?: string) => {
       </Badge>
     );
   }
+  if (role === "devops") {
+    return (
+      <Badge className="bg-violet-600 text-white hover:bg-violet-600">
+        개발운영사
+      </Badge>
+    );
+  }
   return (
     <Badge className="bg-blue-600 text-white hover:bg-blue-600">의뢰자</Badge>
   );
@@ -110,7 +117,7 @@ const formatMoney = (n: number) => {
 
 type ApiTreeNode = {
   _id: string;
-  role?: "requestor" | "salesman";
+  role?: "requestor" | "salesman" | "devops";
   name?: string;
   email?: string;
   business?: string;
@@ -162,13 +169,6 @@ const TreeNode = ({
   onSelect: (node: ApiTreeNode) => void;
 }) => {
   const indent = depth * 16;
-  const lastMonthOrders = Number(node.lastMonthOrders || 0);
-  const commissionAmount = Number(node.commissionAmount || 0);
-  const directCommissionAmount = Number(node.directCommissionAmount ?? -1);
-  const level1CommissionAmount = Number(node.level1CommissionAmount ?? -1);
-  const hasCommissionBreakdown =
-    directCommissionAmount >= 0 && level1CommissionAmount >= 0;
-  const isSalesman = String(node.role || "") === "salesman";
 
   return (
     <div style={{ paddingLeft: indent }} className="relative">
@@ -211,7 +211,7 @@ export default function AdminReferralGroupsPage() {
   const isDev = import.meta.env.DEV;
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<
-    "all" | "requestor" | "salesman"
+    "all" | "requestor" | "salesman" | "devops" | "referrer"
   >("all");
   const [selectedLeaderId, setSelectedLeaderId] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<ApiTreeNode | null>(null);
@@ -291,6 +291,8 @@ export default function AdminReferralGroupsPage() {
     overview?.salesman?.totalReferredRevenueAmount,
     overview?.salesman?.totalCommissionAmount,
   ]);
+  const isCommissionLeader = (role?: string) =>
+    ["salesman", "devops"].includes(String(role || ""));
 
   // 데이터가 새로 바뀌면 기본 노출 개수 리셋
   useEffect(() => {
@@ -301,8 +303,13 @@ export default function AdminReferralGroupsPage() {
     const q = search.trim().toLowerCase();
     const base = groups.filter((g) => {
       const leader = g.leader || ({} as any);
-      if (roleFilter !== "all" && String(leader.role || "") !== roleFilter) {
-        return false;
+      if (roleFilter !== "all") {
+        const leaderRole = String(leader.role || "");
+        if (roleFilter === "referrer") {
+          if (!isCommissionLeader(leaderRole)) return false;
+        } else if (leaderRole !== roleFilter) {
+          return false;
+        }
       }
       if (!q) return true;
       const hay =
@@ -416,33 +423,33 @@ export default function AdminReferralGroupsPage() {
     return out;
   }, [treeData?.tree]);
 
-  // 수수료 패널: 직접 소개(영업자가 직접 소개한 의뢰자) 목록
-  // 트리 루트가 영업자인 경우, 루트의 직계 자식 중 의뢰자
+  // 수수료 패널: 직접 소개(소개자가 직접 소개한 의뢰자) 목록
+  // 트리 루트가 소개자인 경우, 루트의 직계 자식 중 의뢰자
   const directReferralRequestors = useMemo(() => {
     const root = treeData?.tree;
-    if (!root || String(root.role || "") !== "salesman")
+    if (!root || !isCommissionLeader(String(root.role || "")))
       return [] as ApiTreeNode[];
     return (root.children || []).filter(
       (c) => String(c?.role || "") === "requestor",
     );
   }, [treeData?.tree]);
 
-  // 수수료 패널: 간접 소개(영업자가 소개한 하위 영업자들의 의뢰자) 목록
-  // 루트의 직계 자식 중 영업자들의 직계 자식 중 의뢰자
+  // 수수료 패널: 간접 소개(소개자가 소개한 하위 소개자들의 의뢰자) 목록
+  // 루트의 직계 자식 중 소개자들의 직계 자식 중 의뢰자
   const indirectReferralRequestors = useMemo(() => {
     const root = treeData?.tree;
-    if (!root || String(root.role || "") !== "salesman")
+    if (!root || !isCommissionLeader(String(root.role || "")))
       return [] as Array<{ requestor: ApiTreeNode; via: ApiTreeNode }>;
     const result: Array<{ requestor: ApiTreeNode; via: ApiTreeNode }> = [];
-    const childSalesmen = (root.children || []).filter(
-      (c) => String(c?.role || "") === "salesman",
+    const childReferrers = (root.children || []).filter((c) =>
+      isCommissionLeader(String(c?.role || "")),
     );
-    for (const salesman of childSalesmen) {
-      const requestors = (salesman.children || []).filter(
+    for (const referrer of childReferrers) {
+      const requestors = (referrer.children || []).filter(
         (c) => String(c?.role || "") === "requestor",
       );
       for (const r of requestors) {
-        result.push({ requestor: r, via: salesman });
+        result.push({ requestor: r, via: referrer });
       }
     }
     return result;
@@ -587,8 +594,11 @@ export default function AdminReferralGroupsPage() {
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 flex-wrap">
-                <CardTitle className="text-base">영업자 그룹</CardTitle>
-                {roleBadge("salesman")}
+                <CardTitle className="text-base">소개자 그룹</CardTitle>
+                <div className="flex items-center gap-1">
+                  {roleBadge("salesman")}
+                  {roleBadge("devops")}
+                </div>
               </div>
             </div>
           </CardHeader>
@@ -728,6 +738,22 @@ export default function AdminReferralGroupsPage() {
               >
                 영업자
               </Button>
+              <Button
+                type="button"
+                variant={roleFilter === "devops" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setRoleFilter("devops")}
+              >
+                개발운영사
+              </Button>
+              <Button
+                type="button"
+                variant={roleFilter === "referrer" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setRoleFilter("referrer")}
+              >
+                소개자
+              </Button>
             </div>
 
             <Input
@@ -750,7 +776,9 @@ export default function AdminReferralGroupsPage() {
                   const leader = g.leader || ({} as any);
                   const isSelected =
                     String(leader._id) === String(effectiveLeaderId);
-                  const isSalesman = String(leader.role || "") === "salesman";
+                  const isReferrer = isCommissionLeader(
+                    String(leader.role || ""),
+                  );
                   const orders = Number(g.groupTotalOrders || 0);
                   const unit = Number(g.effectiveUnitPrice || 0);
                   const commission = Number(g.commissionAmount || 0);
@@ -782,10 +810,10 @@ export default function AdminReferralGroupsPage() {
                           </div>
                           <div className="mt-1 text-[11px] text-muted-foreground">
                             {orders.toLocaleString()}건 ·{" "}
-                            {isSalesman ? "수수료" : "단가"}{" "}
-                            {formatMoney(isSalesman ? commission : unit)}원
+                            {isReferrer ? "수수료" : "단가"}{" "}
+                            {formatMoney(isReferrer ? commission : unit)}원
                           </div>
-                          {isDev && !isSalesman ? (
+                          {isDev && !isReferrer ? (
                             <div className="mt-0.5 text-[10px] text-muted-foreground">
                               debug: applied={String(debugApplied)}
                             </div>
@@ -890,7 +918,7 @@ export default function AdminReferralGroupsPage() {
             <CardTitle className="text-base">수수료</CardTitle>
             {effectiveLeaderId &&
             treeData?.tree &&
-            String(treeData.tree.role || "") === "salesman" ? (
+            isCommissionLeader(String(treeData.tree.role || "")) ? (
               <CardDescription className="text-[11px]">
                 직접 5%: {formatMoney(directCommissionSum)}원 · 간접 2.5%:{" "}
                 {formatMoney(indirectCommissionSum)}원 · 합계:{" "}
@@ -905,9 +933,9 @@ export default function AdminReferralGroupsPage() {
               <div className="text-sm text-muted-foreground">
                 그룹을 선택해주세요.
               </div>
-            ) : String(treeData.tree.role || "") !== "salesman" ? (
+            ) : !isCommissionLeader(String(treeData.tree.role || "")) ? (
               <div className="text-sm text-muted-foreground">
-                영업자 그룹만 수수료가 표시됩니다.
+                소개자 그룹만 수수료가 표시됩니다.
               </div>
             ) : (
               <>

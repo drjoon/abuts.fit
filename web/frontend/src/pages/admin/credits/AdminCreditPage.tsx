@@ -439,8 +439,8 @@ export default function AdminCreditPage() {
       }
     } catch (error) {
       toast({
-        title: "영업자 크레딧 조회 실패",
-        description: "영업자 크레딧을 불러오는데 실패했습니다.",
+        title: "소개자 크레딧 조회 실패",
+        description: "소개자 크레딧을 불러오는데 실패했습니다.",
         variant: "destructive",
       });
     } finally {
@@ -1297,7 +1297,7 @@ export default function AdminCreditPage() {
               의뢰자
             </TabsTrigger>
             <TabsTrigger value="salesman" className="px-6 text-base">
-              영업자
+              소개자
             </TabsTrigger>
           </TabsList>
 
@@ -2984,7 +2984,7 @@ export default function AdminCreditPage() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
-                  총 영업자 수
+                  총 소개자 수
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -3081,7 +3081,7 @@ export default function AdminCreditPage() {
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <CardTitle>영업자 크레딧</CardTitle>
+                  <CardTitle>소개자 크레딧</CardTitle>
                 </div>
                 <div className="w-[170px]">
                   <select
@@ -3104,7 +3104,7 @@ export default function AdminCreditPage() {
                 </div>
               ) : salesmen.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  영업자 데이터가 없습니다.
+                  소개자 데이터가 없습니다.
                 </div>
               ) : (
                 <div
