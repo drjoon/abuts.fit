@@ -82,22 +82,31 @@ async function runMonthlySnapshot() {
 
   const leaderIds = leaders.map((l) => l._id).filter(Boolean);
 
+  // leader들의 businessId 조회
+  const leaderBusinessIds = (
+    await User.find({ _id: { $in: leaderIds } })
+      .select({ businessId: 1 })
+      .lean()
+  )
+    .map((u) => u?.businessId)
+    .filter((id) => id);
+
   // 직계 자식 조회 (그룹 멤버 수 계산용)
   const directChildren = await User.find({
-    referredByUserId: { $in: leaderIds },
+    referredByBusinessId: { $in: leaderBusinessIds },
     role: { $in: ["requestor", "salesman"] },
     active: true,
   })
-    .select({ _id: 1, referredByUserId: 1, businessId: 1, role: 1 })
+    .select({ _id: 1, referredByBusinessId: 1, businessId: 1, role: 1 })
     .lean();
 
-  const childIdsByLeaderId = new Map();
+  const childIdsByLeaderBusinessId = new Map();
   for (const u of directChildren) {
-    const lid = String(u.referredByUserId || "");
-    if (!lid) continue;
-    const arr = childIdsByLeaderId.get(lid) || [];
+    const lBusinessId = String(u.referredByBusinessId || "");
+    if (!lBusinessId) continue;
+    const arr = childIdsByLeaderBusinessId.get(lBusinessId) || [];
     arr.push(u);
-    childIdsByLeaderId.set(lid, arr);
+    childIdsByLeaderBusinessId.set(lBusinessId, arr);
   }
 
   // 지난달 완료 의뢰 집계 (requestor 기준)

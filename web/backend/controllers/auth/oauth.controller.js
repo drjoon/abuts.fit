@@ -409,6 +409,8 @@ async function googleCallback(req, res) {
       name: profile.name,
       provider: "google",
       providerUserId: String(profile.sub || ""),
+      ref: intentRef || "",
+      role: intentRole || "",
     });
 
     return redirectToFrontend(req, res, {
@@ -581,6 +583,8 @@ async function kakaoCallback(req, res) {
       name,
       provider: "kakao",
       providerUserId: String(profile.id || ""),
+      ref: intentRef || "",
+      role: intentRole || "",
     });
 
     return redirectToFrontend(req, res, {

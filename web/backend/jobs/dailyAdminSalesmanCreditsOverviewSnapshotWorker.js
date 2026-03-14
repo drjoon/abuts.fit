@@ -144,83 +144,100 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
     earnedAmount - paidOutAmount + adjustedAmount,
   );
 
+  // 영업자들의 businessId 조회
+  const salesmanBusinessIds = (
+    await User.find({ _id: { $in: salesmanObjectIds } })
+      .select({ businessId: 1 })
+      .lean()
+  )
+    .map((s) => s?.businessId)
+    .filter((id) => id && Types.ObjectId.isValid(String(id)));
+
   // 직접 소개 의뢰자: salesmen -> requestor
   const directRequestors = await User.find({
     role: "requestor",
     active: true,
-    referredByUserId: { $in: salesmanObjectIds },
+    referredByBusinessId: { $in: salesmanBusinessIds },
     businessId: { $ne: null },
   })
-    .select({ _id: 1, referredByUserId: 1, businessId: 1 })
+    .select({ _id: 1, referredByBusinessId: 1, businessId: 1 })
     .lean();
 
   // 직계1 영업자
   const childSalesmen = await User.find({
     role: "salesman",
     active: true,
-    referredByUserId: { $in: salesmanObjectIds },
+    referredByBusinessId: { $in: salesmanBusinessIds },
   })
-    .select({ _id: 1, referredByUserId: 1 })
+    .select({ _id: 1, referredByBusinessId: 1, businessId: 1 })
     .lean();
 
-  const childSalesmanObjectIds = (childSalesmen || [])
-    .map((s) => s?._id)
-    .filter(Boolean);
+  const childSalesmanBusinessIds = (childSalesmen || [])
+    .map((s) => s?.businessId)
+    .filter((id) => id && Types.ObjectId.isValid(String(id)));
 
   // 직계1 영업자가 소개한 의뢰자
   const level1Requestors =
-    childSalesmanObjectIds.length === 0
+    childSalesmanBusinessIds.length === 0
       ? []
       : await User.find({
           role: "requestor",
           active: true,
-          referredByUserId: { $in: childSalesmanObjectIds },
+          referredByBusinessId: { $in: childSalesmanBusinessIds },
           businessId: { $ne: null },
         })
-          .select({ _id: 1, referredByUserId: 1, businessId: 1 })
+          .select({ _id: 1, referredByBusinessId: 1, businessId: 1 })
           .lean();
 
-  const leaderIdByChildSalesmanId = new Map(
+  const leaderBusinessIdByChildSalesmanBusinessId = new Map(
     (childSalesmen || [])
-      .map((s) => [String(s?._id || ""), String(s?.referredByUserId || "")])
+      .map((s) => [
+        String(s?.businessId || ""),
+        String(s?.referredByBusinessId || ""),
+      ])
       .filter(([cid, pid]) => cid && pid),
   );
 
   // 수수료/매출 집계는 조직 단위
-  const directOrgIdsBySalesmanId = new Map();
+  const directOrgIdsBySalesmanBusinessId = new Map();
   for (const u of directRequestors || []) {
-    const sid = String(u?.referredByUserId || "");
+    const sBusinessId = String(u?.referredByBusinessId || "");
     const orgId = u?.businessId ? String(u.businessId) : "";
-    if (!sid || !orgId) continue;
-    const set = directOrgIdsBySalesmanId.get(sid) || new Set();
+    if (!sBusinessId || !orgId) continue;
+    const set = directOrgIdsBySalesmanBusinessId.get(sBusinessId) || new Set();
     set.add(orgId);
-    directOrgIdsBySalesmanId.set(sid, set);
+    directOrgIdsBySalesmanBusinessId.set(sBusinessId, set);
   }
 
-  const level1OrgIdsBySalesmanId = new Map();
-  const requestorOrgIdsByChildSalesmanId = new Map();
+  const level1OrgIdsBySalesmanBusinessId = new Map();
+  const requestorOrgIdsByChildSalesmanBusinessId = new Map();
   for (const u of level1Requestors || []) {
-    const childSid = String(u?.referredByUserId || "");
-    const leaderSid = String(leaderIdByChildSalesmanId.get(childSid) || "");
+    const childSBusinessId = String(u?.referredByBusinessId || "");
+    const leaderSBusinessId = String(
+      leaderBusinessIdByChildSalesmanBusinessId.get(childSBusinessId) || "",
+    );
     const orgId = u?.businessId ? String(u.businessId) : "";
     if (!orgId) continue;
-    if (leaderSid) {
-      const set = level1OrgIdsBySalesmanId.get(leaderSid) || new Set();
+    if (leaderSBusinessId) {
+      const set =
+        level1OrgIdsBySalesmanBusinessId.get(leaderSBusinessId) || new Set();
       set.add(orgId);
-      level1OrgIdsBySalesmanId.set(leaderSid, set);
+      level1OrgIdsBySalesmanBusinessId.set(leaderSBusinessId, set);
     }
-    if (childSid) {
-      const set2 = requestorOrgIdsByChildSalesmanId.get(childSid) || new Set();
+    if (childSBusinessId) {
+      const set2 =
+        requestorOrgIdsByChildSalesmanBusinessId.get(childSBusinessId) ||
+        new Set();
       set2.add(orgId);
-      requestorOrgIdsByChildSalesmanId.set(childSid, set2);
+      requestorOrgIdsByChildSalesmanBusinessId.set(childSBusinessId, set2);
     }
   }
 
   const orgIdsAll = Array.from(
     new Set(
       [
-        ...directOrgIdsBySalesmanId.values(),
-        ...level1OrgIdsBySalesmanId.values(),
+        ...directOrgIdsBySalesmanBusinessId.values(),
+        ...level1OrgIdsBySalesmanBusinessId.values(),
       ].flatMap((s) => Array.from(s)),
     ),
   )
@@ -281,7 +298,10 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
 
   // 전체 수수료(유료 매출 기준) - 직접(5%) + 간접(2.5%)
   let directCommissionTotal = 0;
-  for (const [sid, orgSet] of directOrgIdsBySalesmanId.entries()) {
+  for (const [
+    sBusinessId,
+    orgSet,
+  ] of directOrgIdsBySalesmanBusinessId.entries()) {
     let paid = 0;
     for (const oid of orgSet) {
       paid += Number(revenueByOrgId.get(String(oid))?.paid || 0);
@@ -292,11 +312,13 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
   // 간접: 자식 영업자의 direct 커미션 합 * 50%
   let indirectCommissionTotal = 0;
   for (const child of childSalesmen || []) {
-    const childSid = String(child?._id || "");
-    const parentSid = String(child?.referredByUserId || "");
-    if (!childSid || !parentSid) continue;
+    const childSBusinessId = String(child?.businessId || "");
+    const parentSBusinessId = String(child?.referredByBusinessId || "");
+    if (!childSBusinessId || !parentSBusinessId) continue;
 
-    const orgSet = requestorOrgIdsByChildSalesmanId.get(childSid) || new Set();
+    const orgSet =
+      requestorOrgIdsByChildSalesmanBusinessId.get(childSBusinessId) ||
+      new Set();
     let paid = 0;
     for (const oid of orgSet) {
       paid += Number(revenueByOrgId.get(String(oid))?.paid || 0);

@@ -3,7 +3,11 @@ import SignupVerification from "../../models/signupVerification.model.js";
 import GuideProgress from "../../models/guideProgress.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
-import { generateToken, generateRefreshToken } from "../../utils/jwt.util.js";
+import {
+  generateToken,
+  generateRefreshToken,
+  verifyToken,
+} from "../../utils/jwt.util.js";
 import { Types } from "mongoose";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
@@ -35,6 +39,79 @@ const ensureUniqueReferralCode = async (length) => {
   }
   throw new Error("Failed to create referralCode after 200 attempts");
 };
+
+const REFERRAL_ALLOWED_ROLES = new Set(["requestor", "salesman", "devops"]);
+
+async function resolveReferrerBusinessId({
+  referredByUserId,
+  referredByEmail,
+  referredByReferralCode,
+  socialToken,
+}) {
+  if (referredByUserId) {
+    throw new Error(
+      "referredByUserId는 레거시 필드입니다. referredByReferralCode 또는 referredByEmail을 사용하세요.",
+    );
+  }
+
+  let resolvedReferralCode = String(referredByReferralCode || "")
+    .trim()
+    .toUpperCase();
+  let resolvedReferralEmail = String(referredByEmail || "")
+    .trim()
+    .toLowerCase();
+
+  if (!resolvedReferralCode && !resolvedReferralEmail && socialToken) {
+    const decoded = verifyToken(String(socialToken || "").trim());
+    if (decoded?.type === "social_signup") {
+      resolvedReferralCode = String(decoded.ref || "")
+        .trim()
+        .toUpperCase();
+      resolvedReferralEmail = String(decoded.referredByEmail || "")
+        .trim()
+        .toLowerCase();
+    }
+  }
+
+  if (!resolvedReferralCode && !resolvedReferralEmail) {
+    return null;
+  }
+
+  let refUser = null;
+  if (resolvedReferralEmail) {
+    refUser = await User.findOne({ email: resolvedReferralEmail })
+      .select({ _id: 1, role: 1, active: 1, businessId: 1 })
+      .lean();
+  } else if (resolvedReferralCode) {
+    refUser = await User.findOne({ referralCode: resolvedReferralCode })
+      .select({ _id: 1, role: 1, active: 1, businessId: 1 })
+      .lean();
+  }
+
+  if (!refUser || refUser.active === false) {
+    throw new Error("추천인을 찾을 수 없습니다.");
+  }
+
+  if (!REFERRAL_ALLOWED_ROLES.has(String(refUser.role || ""))) {
+    throw new Error("추천인은 의뢰자/영업자/개발운영사 계정만 가능합니다.");
+  }
+
+  const refBusinessId = String(refUser.businessId || "").trim();
+  if (!Types.ObjectId.isValid(refBusinessId)) {
+    throw new Error(
+      "추천인 사업자 정보가 없습니다. 사업자 등록 후 다시 시도해주세요.",
+    );
+  }
+
+  const businessExists = await RequestorOrganization.exists({
+    _id: new Types.ObjectId(refBusinessId),
+  });
+  if (!businessExists) {
+    throw new Error("추천인 사업자를 찾을 수 없습니다.");
+  }
+
+  return new Types.ObjectId(refBusinessId);
+}
 
 const isStrongPassword = (password) => {
   const p = String(password || "");
@@ -301,6 +378,7 @@ async function register(req, res) {
       referredByReferralCode,
       socialProvider,
       socialProviderUserId,
+      socialToken,
     } = req.body;
 
     const normalizedEmail = String(email || "")
@@ -332,119 +410,19 @@ async function register(req, res) {
       });
     }
 
-    let referredByObjectId = null;
-    if (referredByUserId) {
-      if (!Types.ObjectId.isValid(referredByUserId)) {
-        return res.status(400).json({
-          success: false,
-          message: "유효하지 않은 추천인 ID입니다.",
-        });
-      }
-
-      const refUser = await User.findById(referredByUserId)
-        .select({ _id: 1, role: 1, active: 1, businessId: 1 })
-        .lean();
-
-      if (!refUser || refUser.active === false) {
-        return res.status(400).json({
-          success: false,
-          message: "추천인을 찾을 수 없습니다.",
-        });
-      }
-
-      if (refUser.role !== "requestor" && refUser.role !== "salesman") {
-        return res.status(400).json({
-          success: false,
-          message: "추천인은 의뢰자 또는 영업자 계정만 가능합니다.",
-        });
-      }
-
-      if (refUser.role === "requestor" && refUser.businessId) {
-        const org = await RequestorOrganization.findById(refUser.businessId)
-          .select({ owner: 1, name: 1 })
-          .lean();
-        if (!org) {
-          return res.status(400).json({
-            success: false,
-            message: "추천인의 사업자를 찾을 수 없습니다.",
-          });
-        }
-        referredByObjectId = new Types.ObjectId(org.owner);
-      } else {
-        referredByObjectId = new Types.ObjectId(referredByUserId);
-      }
-    } else if (referredByEmail) {
-      const refEmail = String(referredByEmail || "")
-        .trim()
-        .toLowerCase();
-      if (!refEmail) {
-        return res.status(400).json({
-          success: false,
-          message: "유효하지 않은 추천인 이메일입니다.",
-        });
-      }
-
-      const refUser = await User.findOne({ email: refEmail })
-        .select({ _id: 1, role: 1, active: 1, businessId: 1 })
-        .lean();
-
-      if (!refUser || refUser.active === false) {
-        return res.status(400).json({
-          success: false,
-          message: "추천인을 찾을 수 없습니다.",
-        });
-      }
-
-      if (refUser.role !== "requestor" && refUser.role !== "salesman") {
-        return res.status(400).json({
-          success: false,
-          message: "추천인은 의뢰자 또는 영업자 계정만 가능합니다.",
-        });
-      }
-
-      if (refUser.role === "requestor" && refUser.businessId) {
-        const org = await RequestorOrganization.findById(refUser.businessId)
-          .select({ owner: 1 })
-          .lean();
-        referredByObjectId = new Types.ObjectId(org?.owner || refUser._id);
-      } else {
-        referredByObjectId = new Types.ObjectId(refUser._id);
-      }
-    } else if (referredByReferralCode) {
-      const code = String(referredByReferralCode).trim().toUpperCase();
-      if (!code) {
-        return res.status(400).json({
-          success: false,
-          message: "유효하지 않은 추천 코드입니다.",
-        });
-      }
-
-      const refUser = await User.findOne({ referralCode: code })
-        .select({ _id: 1, role: 1, active: 1, businessId: 1 })
-        .lean();
-
-      if (!refUser || refUser.active === false) {
-        return res.status(400).json({
-          success: false,
-          message: "추천인을 찾을 수 없습니다.",
-        });
-      }
-
-      if (refUser.role !== "requestor" && refUser.role !== "salesman") {
-        return res.status(400).json({
-          success: false,
-          message: "추천인은 의뢰자 또는 영업자 계정만 가능합니다.",
-        });
-      }
-
-      if (refUser.role === "requestor" && refUser.businessId) {
-        const org = await RequestorOrganization.findById(refUser.businessId)
-          .select({ owner: 1 })
-          .lean();
-        referredByObjectId = new Types.ObjectId(org?.owner || refUser._id);
-      } else {
-        referredByObjectId = new Types.ObjectId(refUser._id);
-      }
+    let referredByBusinessId = null;
+    try {
+      referredByBusinessId = await resolveReferrerBusinessId({
+        referredByUserId,
+        referredByEmail,
+        referredByReferralCode,
+        socialToken,
+      });
+    } catch (refError) {
+      return res.status(400).json({
+        success: false,
+        message: refError?.message || "추천인 정보가 올바르지 않습니다.",
+      });
     }
 
     const normalizedRole = String(role || "requestor").trim();
@@ -486,30 +464,6 @@ async function register(req, res) {
 
     const effectiveOrganization = "";
 
-    // 레거시 user 기반 referralGroupLeaderId 결정:
-    // 실제 canonical 집계 단위는 business이지만, 기존 사용자 필드 호환을 위해
-    // requestor 추천인의 경우 같은 business를 대표하는 기존 leader 값을 상속한다.
-    let referralGroupLeaderId = null;
-    if (referredByObjectId) {
-      const referrer = await User.findById(referredByObjectId)
-        .select({ role: 1, referralGroupLeaderId: 1, businessId: 1 })
-        .lean();
-
-      if (
-        String(referrer?.role || "") === "requestor" &&
-        referrer?.businessId
-      ) {
-        const org = await RequestorOrganization.findById(referrer.businessId)
-          .select({ owner: 1 })
-          .lean();
-        referralGroupLeaderId =
-          org?.owner || referrer?.referralGroupLeaderId || referredByObjectId;
-      } else {
-        referralGroupLeaderId =
-          referrer?.referralGroupLeaderId || referredByObjectId;
-      }
-    }
-
     // 사용자 생성
     const isInstantApprove =
       normalizedRole === "requestor" ||
@@ -526,8 +480,7 @@ async function register(req, res) {
       adminRole: normalizedRole === "admin" ? "owner" : null,
       organization: effectiveOrganization,
       referralCode,
-      referredByUserId: referredByObjectId,
-      referralGroupLeaderId,
+      referredByBusinessId,
       onboardingWizardCompleted: false,
       approvedAt: isInstantApprove ? new Date() : null,
       active: isInstantApprove,
@@ -607,11 +560,7 @@ async function register(req, res) {
 async function validateReferral(req, res) {
   try {
     const raw = String(req.body?.value || "").trim();
-    console.log("[validateReferral] Full req.body:", JSON.stringify(req.body));
-    console.log("[validateReferral] raw value:", raw);
-    console.log("[validateReferral] raw length:", raw.length);
     if (!raw) {
-      console.log("[validateReferral] Returning 400: empty value");
       return res.status(400).json({
         success: false,
         message: "추천인 이메일 또는 코드를 입력해주세요.",
@@ -621,69 +570,46 @@ async function validateReferral(req, res) {
     let refUser = null;
     let orgName = "";
     const isEmail = /@/.test(raw);
-    console.log("[validateReferral] isEmail:", isEmail);
 
     if (isEmail) {
       const refEmail = raw.toLowerCase();
-      console.log("[validateReferral] Searching by email:", refEmail);
       refUser = await User.findOne({ email: refEmail })
         .select({ _id: 1, role: 1, active: 1, name: 1, businessId: 1 })
         .lean();
-    } else if (/^[0-9a-fA-F]{24}$/.test(raw)) {
-      console.log("[validateReferral] Searching by ObjectId");
-      if (!Types.ObjectId.isValid(raw)) {
-        return res.status(400).json({
-          success: false,
-          message: "유효하지 않은 추천인 ID입니다.",
-        });
-      }
-      refUser = await User.findById(raw)
-        .select({ _id: 1, role: 1, active: 1, name: 1, businessId: 1 })
-        .lean();
     } else {
-      const code = raw.toUpperCase();
-      console.log("[validateReferral] Searching by referralCode:", code);
-      // 대소문자 구분 없이 검색
       refUser = await User.findOne({
         referralCode: { $regex: `^${raw}$`, $options: "i" },
       })
         .select({ _id: 1, role: 1, active: 1, name: 1, businessId: 1 })
         .lean();
-      console.log("[validateReferral] Found refUser:", refUser);
     }
 
     if (!refUser || refUser.active === false) {
-      console.log(
-        "[validateReferral] User not found or inactive. refUser:",
-        refUser,
-      );
       return res.status(400).json({
         success: false,
         message: "추천인을 찾을 수 없습니다.",
       });
     }
 
-    if (refUser.role !== "requestor" && refUser.role !== "salesman") {
+    if (!REFERRAL_ALLOWED_ROLES.has(String(refUser.role || ""))) {
       return res.status(400).json({
         success: false,
-        message: "추천인은 의뢰자 또는 영업자 계정만 가능합니다.",
+        message: "추천인은 의뢰자/영업자/개발운영사 계정만 가능합니다.",
       });
     }
 
-    if (refUser.role === "requestor" && refUser.businessId) {
-      const org = await RequestorOrganization.findById(refUser.businessId)
-        .select({ owner: 1, name: 1 })
-        .lean();
-      if (org?.owner) {
-        const owner = await User.findById(org.owner)
-          .select({ _id: 1, role: 1, active: 1, name: 1 })
-          .lean();
-        if (owner && owner.active !== false) {
-          refUser = owner;
-        }
-      }
-      orgName = org?.name || "";
+    const refBusinessId = String(refUser.businessId || "").trim();
+    if (!Types.ObjectId.isValid(refBusinessId)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "추천인 사업자 정보가 없습니다. 사업자 등록 후 다시 시도해주세요.",
+      });
     }
+    const org = await RequestorOrganization.findById(refBusinessId)
+      .select({ name: 1 })
+      .lean();
+    orgName = org?.name || "";
 
     return res.status(200).json({
       success: true,

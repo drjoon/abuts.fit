@@ -517,6 +517,7 @@ export const SignupPage = () => {
             role: signupRole,
             socialProvider: socialInfo.provider,
             socialProviderUserId: socialInfo.providerUserId,
+            socialToken: sessionStorage.getItem("socialToken") || undefined,
           },
         });
 

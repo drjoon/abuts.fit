@@ -295,8 +295,16 @@ export async function getSalesmanDashboard(req, res) {
 
     const { start, end } = getPeriodRangeUtc(period);
 
+    const myBusinessId = me?.businessId;
+    if (!myBusinessId) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자 정보가 없습니다.",
+      });
+    }
+
     const referredRequestors = await User.find({
-      referredByUserId: me._id,
+      referredByBusinessId: myBusinessId,
       role: "requestor",
       active: true,
     })
@@ -304,33 +312,29 @@ export async function getSalesmanDashboard(req, res) {
       .lean();
 
     const referredSalesmen = await User.find({
-      referredByUserId: me._id,
+      referredByBusinessId: myBusinessId,
       role: "salesman",
       active: true,
     })
-      .select({ _id: 1, name: 1 })
+      .select({ _id: 1, name: 1, businessId: 1 })
       .lean();
 
-    const referredSalesmanIds = (referredSalesmen || [])
-      .map((u) => String(u?._id || ""))
-      .filter(Boolean);
-
-    const referredSalesmanObjectIds = referredSalesmanIds
-      .filter((id) => Types.ObjectId.isValid(id))
-      .map((id) => new Types.ObjectId(id));
+    const referredSalesmanBusinessIds = (referredSalesmen || [])
+      .map((u) => u?.businessId)
+      .filter((id) => id && Types.ObjectId.isValid(String(id)));
 
     const level1Requestors =
-      referredSalesmanObjectIds.length === 0
+      referredSalesmanBusinessIds.length === 0
         ? []
         : await User.find({
-            referredByUserId: { $in: referredSalesmanObjectIds },
+            referredByBusinessId: { $in: referredSalesmanBusinessIds },
             role: "requestor",
             active: true,
           })
             .select({ _id: 1, businessId: 1 })
             .lean();
 
-    const referralSalesmanCount = referredSalesmanObjectIds.length;
+    const referralSalesmanCount = referredSalesmanBusinessIds.length;
     const referralSalesmen = (referredSalesmen || []).map((u) => ({
       userId: String(u?._id || ""),
       name: String(u?.name || ""),

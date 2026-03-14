@@ -392,6 +392,7 @@ export const SignupStaffPage = () => {
           role,
           socialProvider: socialInfo.provider,
           socialProviderUserId: socialInfo.providerUserId,
+          socialToken: sessionStorage.getItem("socialToken") || undefined,
         };
         const res = await request<any>({
           path: "/api/auth/register",
@@ -495,7 +496,6 @@ export const SignupStaffPage = () => {
       </div>
       <div className="space-y-3 text-left">
         <div className="grid gap-2 sm:grid-cols-3">
-          
           <button
             type="button"
             onClick={() => goSocialSignup("google")}

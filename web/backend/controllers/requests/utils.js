@@ -708,23 +708,32 @@ export async function computePriceForRequest({
     createdAt: { $gte: last30Cutoff },
   });
 
-  // 추천인 합산: 내가 추천한(=referredByUserId가 나인) 유저들의 최근 30일 주문량을 합산
-  const referredUsers = await User.find({
-    referredByUserId: requestorId,
-    active: true,
-  })
-    .select({ _id: 1 })
-    .lean();
+  // 추천인 합산: 내 business를 referredByBusinessId로 가진 사용자들의 최근 30일 주문량을 합산
+  const myBusinessId =
+    requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))
+      ? new Types.ObjectId(String(requestorOrgId))
+      : null;
 
-  const referredUserIds = referredUsers.map((u) => u._id).filter(Boolean);
+  let referralLast30DaysOrders = 0;
+  if (myBusinessId) {
+    const referredUsers = await User.find({
+      referredByBusinessId: myBusinessId,
+      active: true,
+      role: "requestor",
+    })
+      .select({ _id: 1 })
+      .lean();
 
-  const referralLast30DaysOrders = referredUserIds.length
-    ? await Request.countDocuments({
-        requestor: { $in: referredUserIds },
-        manufacturerStage: { $ne: "취소" },
-        createdAt: { $gte: last30Cutoff },
-      })
-    : 0;
+    const referredUserIds = referredUsers.map((u) => u._id).filter(Boolean);
+
+    referralLast30DaysOrders = referredUserIds.length
+      ? await Request.countDocuments({
+          requestor: { $in: referredUserIds },
+          manufacturerStage: { $ne: "취소" },
+          createdAt: { $gte: last30Cutoff },
+        })
+      : 0;
+  }
   const totalOrders = last30DaysOrders + referralLast30DaysOrders;
   const discountAmount = Math.min(
     totalOrders * DISCOUNT_PER_ORDER,
@@ -783,87 +792,15 @@ export function applyStatusMapping(request, status) {
  * @returns {Promise<ObjectId[]>} 그룹 내 모든 멤버 ID (본인 포함)
  */
 export async function getReferralGroupMembers(userId) {
-  if (!userId) return [];
-
-  const userIdStr = String(userId);
-  if (!Types.ObjectId.isValid(userIdStr)) return [];
-  const userIdObj = new Types.ObjectId(userIdStr);
-
-  // 1) 현재 사용자 조회
-  const user = await User.findById(userIdObj)
-    .select({ referralGroupLeaderId: 1, referredByUserId: 1, createdAt: 1 })
-    .lean();
-
-  if (!user) return [];
-
-  const groupLeaderId = await getReferralGroupLeaderId(userIdObj, user);
-
-  // 3) 그룹 리더 기준으로 모든 멤버 조회
-  // 레거시 호환: referralGroupLeaderId가 있는 멤버 + referredByUserId로 직접 연결된 멤버
-  const groupMembers = await User.find({
-    $or: [
-      { _id: groupLeaderId },
-      { referralGroupLeaderId: { $eq: groupLeaderId } },
-      {
-        referredByUserId: groupLeaderId,
-        referralGroupLeaderId: { $exists: false },
-      }, // 레거시: 직접 추천
-    ],
-    active: true,
-  })
-    .select({ _id: 1 })
-    .lean();
-
-  return groupMembers.map((m) => m._id);
+  throw new Error(
+    "getReferralGroupMembers는 레거시 user 리퍼럴 필드에 의존하므로 제거되었습니다. business anchor(referredByBusinessId) 기준 로직을 사용하세요.",
+  );
 }
 
 export async function getReferralGroupLeaderId(userIdObj, userLean) {
-  if (!userIdObj) return null;
-
-  const userId =
-    typeof userIdObj === "string" ? new Types.ObjectId(userIdObj) : userIdObj;
-
-  const user = userLean
-    ? userLean
-    : await User.findById(userId)
-        .select({ referralGroupLeaderId: 1, referredByUserId: 1 })
-        .lean();
-
-  if (!user) return userId;
-
-  // 레거시 user 기반 리더 필드 호환:
-  // canonical 집계 단위는 business이지만, 기존 referralGroupLeaderId 체계와의 호환을 위해
-  // requestor가 사업자에 속해 있으면 해당 business를 대표하던 기존 leader 값을 우선 사용한다.
-  if (user?.businessId) {
-    const orgIdStr = String(user.businessId);
-    if (Types.ObjectId.isValid(orgIdStr)) {
-      const org = await RequestorOrganization.findById(orgIdStr)
-        .select({ owner: 1 })
-        .lean();
-      const ownerId = org?.owner ? String(org.owner) : "";
-      if (ownerId && Types.ObjectId.isValid(ownerId)) {
-        return new Types.ObjectId(ownerId);
-      }
-    }
-  }
-
-  let groupLeaderId = user.referralGroupLeaderId;
-
-  if (!groupLeaderId && user.referredByUserId) {
-    const referrer = await User.findById(user.referredByUserId)
-      .select({ referralGroupLeaderId: 1 })
-      .lean();
-
-    groupLeaderId = referrer?.referralGroupLeaderId || user.referredByUserId;
-  }
-
-  groupLeaderId = groupLeaderId || userId;
-
-  const groupLeaderIdStr = String(groupLeaderId);
-  if (!Types.ObjectId.isValid(groupLeaderIdStr)) {
-    return userId;
-  }
-  return new Types.ObjectId(groupLeaderIdStr);
+  throw new Error(
+    "getReferralGroupLeaderId는 레거시 user 리퍼럴 필드에 의존하므로 제거되었습니다. business anchor(referredByBusinessId) 기준 로직을 사용하세요.",
+  );
 }
 
 /**
@@ -873,34 +810,7 @@ export async function getReferralGroupLeaderId(userIdObj, userLean) {
  * @param {ObjectId|string} deletedUserId - 삭제되는 사용자 ID
  */
 export async function handleReferralGroupLeaderChange(deletedUserId) {
-  if (!deletedUserId) return;
-
-  const deletedUserIdObj = new Types.ObjectId(String(deletedUserId));
-
-  // 1) 삭제되는 사용자가 누군가의 리더인지 확인
-  const groupMembers = await User.find({
-    referralGroupLeaderId: deletedUserIdObj,
-    active: true,
-  })
-    .select({ _id: 1, createdAt: 1 })
-    .sort({ createdAt: 1 })
-    .lean();
-
-  if (groupMembers.length === 0) {
-    // 그룹 멤버가 없으면 처리할 것 없음
-    return;
-  }
-
-  // 2) 가장 오래된 멤버를 새로운 리더로 지정
-  const newLeaderId = groupMembers[0]._id;
-
-  // 3) 모든 그룹 멤버의 리더를 새로운 리더로 변경
-  await User.updateMany(
-    { referralGroupLeaderId: deletedUserIdObj },
-    { referralGroupLeaderId: newLeaderId },
-  );
-
-  console.log(
-    `[Referral Group] Leader changed: ${deletedUserIdObj} -> ${newLeaderId}`,
+  throw new Error(
+    "handleReferralGroupLeaderChange는 레거시 user 리퍼럴 필드에 의존하므로 제거되었습니다. business anchor(referredByBusinessId) 기반으로 재구현하세요.",
   );
 }

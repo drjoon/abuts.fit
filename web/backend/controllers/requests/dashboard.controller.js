@@ -16,7 +16,6 @@ import {
   getThisMonthStartYmdInKst,
   getLast30DaysRangeUtc,
   normalizeKoreanBusinessDay,
-  getReferralGroupLeaderId,
 } from "./utils.js";
 import { computeShippingPriority } from "./shippingPriority.utils.js";
 
@@ -40,6 +39,30 @@ const getUniqueRequestIdCount = (requestIds) => {
   return new Set(
     requestIds.map((value) => String(value || "").trim()).filter(Boolean),
   ).size;
+};
+
+const findReferredRequestorUsersByReferrerBusinessId = async (businessId) => {
+  const businessIdStr = String(businessId || "").trim();
+  if (!Types.ObjectId.isValid(businessIdStr)) return [];
+  const businessObjectId = new Types.ObjectId(businessIdStr);
+
+  return User.find({
+    active: true,
+    role: "requestor",
+    businessId: { $exists: true, $ne: null },
+    referredByBusinessId: businessObjectId,
+  })
+    .select({
+      _id: 1,
+      name: 1,
+      email: 1,
+      business: 1,
+      businessId: 1,
+      createdAt: 1,
+      approvedAt: 1,
+    })
+    .sort({ createdAt: -1 })
+    .lean();
 };
 
 /**
@@ -241,8 +264,8 @@ export async function getAssignedDashboardSummary(req, res) {
  */
 export async function getMyReferralDirectMembers(req, res) {
   try {
-    const requesterUserId = req.user?._id;
-    if (!requesterUserId) {
+    const requestorUserId = req.user?._id;
+    if (!requestorUserId) {
       return res.status(400).json({
         success: false,
         message: "사용자 ID가 없습니다.",
@@ -254,9 +277,7 @@ export async function getMyReferralDirectMembers(req, res) {
       range30?.start ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const lastMonthEnd = range30?.end ?? new Date();
 
-    const groupLeaderId = await getReferralGroupLeaderId(requesterUserId);
-
-    const leader = await User.findById(groupLeaderId)
+    const requestor = await User.findById(requestorUserId)
       .select({
         businessId: 1,
         role: 1,
@@ -273,12 +294,17 @@ export async function getMyReferralDirectMembers(req, res) {
     const ordersByUserId = new Map();
     let members = [];
 
-    const role = String(leader?.role || req.user?.role || "requestor");
+    const role = String(requestor?.role || req.user?.role || "requestor");
 
     if (role === "salesman") {
+      const refBusinessId = String(requestor?.businessId || "").trim();
+      const refBusinessFilter =
+        refBusinessId && Types.ObjectId.isValid(refBusinessId)
+          ? { referredByBusinessId: new Types.ObjectId(refBusinessId) }
+          : { _id: null };
       const [directRequestors, directSalesmen] = await Promise.all([
         User.find({
-          referredByUserId: requesterUserId,
+          ...refBusinessFilter,
           active: true,
           role: "requestor",
         })
@@ -293,7 +319,7 @@ export async function getMyReferralDirectMembers(req, res) {
           .sort({ createdAt: -1 })
           .lean(),
         User.find({
-          referredByUserId: requesterUserId,
+          ...refBusinessFilter,
           active: true,
           role: "salesman",
         })
@@ -360,56 +386,15 @@ export async function getMyReferralDirectMembers(req, res) {
 
       members = [...orgMembers, ...salesmanMembers];
     } else {
-      const orgMemberIds = [];
-      if (leader?.businessId) {
-        const org = await RequestorOrganization.findById(leader.businessId)
-          .select({ owner: 1, owners: 1, members: 1 })
-          .lean();
+      const leaderOrgId = String(requestor?.businessId || "");
+      const referredRequestors =
+        await findReferredRequestorUsersByReferrerBusinessId(leaderOrgId);
 
-        const ownerId = String(org?.owner || "");
-        const ownerIds = Array.isArray(org?.owners)
-          ? org.owners.map(String)
-          : [];
-        const memberIds = Array.isArray(org?.members)
-          ? org.members.map(String)
-          : [];
-        orgMemberIds.push(ownerId, ...ownerIds, ...memberIds);
-      }
-
-      const orgMemberObjectIds = Array.from(new Set(orgMemberIds))
-        .filter((id) => Types.ObjectId.isValid(id))
-        .map((id) => new Types.ObjectId(id));
-
-      const referredRequestors = await User.find({
-        referredByUserId:
-          orgMemberObjectIds.length > 0
-            ? { $in: orgMemberObjectIds }
-            : requesterUserId,
-        active: true,
-        role: "requestor",
-        businessId: { $exists: true, $ne: null },
-      })
-        .select({
-          _id: 1,
-          name: 1,
-          email: 1,
-          business: 1,
-          businessId: 1,
-          createdAt: 1,
-          approvedAt: 1,
-        })
-        .sort({ createdAt: -1 })
-        .lean();
-
-      const leaderOrgId = String(leader?.businessId || "");
       const orgIds = Array.from(
         new Set(
-          [
-            leaderOrgId,
-            ...(referredRequestors || []).map((u) =>
-              String(u.businessId || ""),
-            ),
-          ].filter(Boolean),
+          (referredRequestors || [])
+            .map((u) => String(u.businessId || ""))
+            .filter((bid) => bid && bid !== leaderOrgId),
         ),
       );
 
@@ -1208,10 +1193,10 @@ export async function getMyPricingReferralStats(req, res) {
       });
     }
 
-    const groupLeaderId = await getReferralGroupLeaderId(requestorId);
     const me = await User.findById(requestorId)
       .select({
         businessId: 1,
+        role: 1,
         createdAt: 1,
         updatedAt: 1,
         active: 1,
@@ -1246,11 +1231,7 @@ export async function getMyPricingReferralStats(req, res) {
     const cachedGroupMemberCount = cachedSnapshot?.groupMemberCount;
     const cachedGroupTotalOrders = cachedSnapshot?.groupTotalOrders;
 
-    const leader = await User.findById(groupLeaderId)
-      .select({ businessId: 1, role: 1 })
-      .lean();
-
-    const role = String(leader?.role || req.user?.role || "requestor");
+    const role = String(me?.role || req.user?.role || "requestor");
     let groupMemberCount = 0;
     let freshGroupTotalOrders = 0;
     let myLastMonthOrders = 0;
@@ -1276,37 +1257,9 @@ export async function getMyPricingReferralStats(req, res) {
     }
 
     if (role === "requestor") {
-      let orgMemberObjectIds = [];
-      const leaderBusinessId = String(leader?.businessId || "");
-      if (leader?.businessId) {
-        const org = await RequestorOrganization.findById(leader.businessId)
-          .select({ owner: 1, owners: 1, members: 1 })
-          .lean();
-
-        const ownerId = String(org?.owner || "");
-        const ownerIds = Array.isArray(org?.owners)
-          ? org.owners.map(String)
-          : [];
-        const memberIds = Array.isArray(org?.members)
-          ? org.members.map(String)
-          : [];
-        const allIds = [ownerId, ...ownerIds, ...memberIds]
-          .map(String)
-          .filter((id) => Types.ObjectId.isValid(id));
-        orgMemberObjectIds = allIds.map((id) => new Types.ObjectId(id));
-      }
-
-      const referredRequestors = await User.find({
-        referredByUserId:
-          orgMemberObjectIds.length > 0
-            ? { $in: orgMemberObjectIds }
-            : requestorId,
-        active: true,
-        role: "requestor",
-        businessId: { $exists: true, $ne: null },
-      })
-        .select({ businessId: 1 })
-        .lean();
+      const leaderBusinessId = String(me?.businessId || "");
+      const referredRequestors =
+        await findReferredRequestorUsersByReferrerBusinessId(leaderBusinessId);
 
       const orgIds = Array.from(
         new Set(
@@ -1334,13 +1287,17 @@ export async function getMyPricingReferralStats(req, res) {
         shippingRequestCountByBusinessId.get(String(leaderBusinessId)) || 0,
       );
     } else {
-      const directChildren = await User.find({
-        referredByUserId: requestorId,
-        active: true,
-        role: { $in: ["requestor", "salesman"] },
-      })
-        .select({ _id: 1 })
-        .lean();
+      const refBusinessId = String(me?.businessId || "").trim();
+      const directChildren =
+        refBusinessId && Types.ObjectId.isValid(refBusinessId)
+          ? await User.find({
+              referredByBusinessId: new Types.ObjectId(refBusinessId),
+              active: true,
+              role: { $in: ["requestor", "salesman"] },
+            })
+              .select({ _id: 1 })
+              .lean()
+          : [];
 
       const baseMemberIds = [requestorId];
       const rawMemberIds = [
@@ -1382,7 +1339,7 @@ export async function getMyPricingReferralStats(req, res) {
           {
             $set: {
               businessId: snapshotBusinessObjectId,
-              leaderUserId: groupLeaderId,
+              leaderUserId: requestorId,
               groupMemberCount,
               groupTotalOrders: totalLastMonthOrders,
               computedAt: now,
@@ -1400,7 +1357,7 @@ export async function getMyPricingReferralStats(req, res) {
             { businessId: snapshotBusinessObjectId, ymd },
             {
               $set: {
-                leaderUserId: groupLeaderId,
+                leaderUserId: requestorId,
                 groupMemberCount,
                 groupTotalOrders: totalLastMonthOrders,
                 computedAt: now,

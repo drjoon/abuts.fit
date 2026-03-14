@@ -268,13 +268,6 @@ export const SignupWithReferralPage = () => {
     setRefInput(referredByReferralCode);
   }, [referredByReferralCode, refInput]);
 
-  const referredByUserId = useMemo(() => {
-    const v = String(refInput || "").trim();
-    if (!v) return undefined;
-    const isObjectId = /^[0-9a-fA-F]{24}$/.test(v);
-    return isObjectId ? v : undefined;
-  }, [refInput]);
-
   const referredByEmail = useMemo(() => {
     const v = String(refInput || "").trim();
     if (!v) return undefined;
@@ -527,7 +520,7 @@ export const SignupWithReferralPage = () => {
             role: signupRole,
             socialProvider: socialInfo.provider,
             socialProviderUserId: socialInfo.providerUserId,
-            ...(referredByUserId ? { referredByUserId } : {}),
+            socialToken: sessionStorage.getItem("socialToken") || undefined,
             ...(referredByEmail ? { referredByEmail } : {}),
             ...(referredByCode
               ? { referredByReferralCode: referredByCode }
@@ -575,7 +568,6 @@ export const SignupWithReferralPage = () => {
           email: formData.email,
           password: formData.password,
           role: signupRole,
-          ...(referredByUserId ? { referredByUserId } : {}),
           ...(referredByEmail ? { referredByEmail } : {}),
           ...(referredByCode ? { referredByReferralCode: referredByCode } : {}),
         },
@@ -628,7 +620,6 @@ export const SignupWithReferralPage = () => {
     socialInfo,
     formData,
     signupRole,
-    referredByUserId,
     referredByEmail,
     referredByCode,
     loginWithToken,

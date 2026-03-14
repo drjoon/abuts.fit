@@ -491,81 +491,106 @@ export const syncHanjinTrackingPayload = async ({
         const requestor = await User.findById(
           new Types.ObjectId(requestorIdRaw),
         )
-          .select({ _id: 1, role: 1, referredByUserId: 1 })
+          .select({ _id: 1, role: 1, referredByBusinessId: 1 })
           .lean();
 
-        const directSalesmanIdRaw = requestor?.referredByUserId
-          ? String(requestor.referredByUserId)
+        const referredByBusinessIdRaw = requestor?.referredByBusinessId
+          ? String(requestor.referredByBusinessId)
           : "";
 
+        let directSalesman = null;
         if (
-          directSalesmanIdRaw &&
-          Types.ObjectId.isValid(directSalesmanIdRaw)
+          referredByBusinessIdRaw &&
+          Types.ObjectId.isValid(referredByBusinessIdRaw)
         ) {
-          const directSalesman = await User.findById(
-            new Types.ObjectId(directSalesmanIdRaw),
+          const referrerBusiness = await RequestorOrganization.findById(
+            new Types.ObjectId(referredByBusinessIdRaw),
           )
-            .select({ _id: 1, role: 1, referredByUserId: 1 })
+            .select({ owner: 1 })
             .lean();
 
+          if (referrerBusiness?.owner) {
+            const referrerOwner = await User.findById(referrerBusiness.owner)
+              .select({ _id: 1, role: 1, referredByBusinessId: 1 })
+              .lean();
+
+            if (
+              referrerOwner &&
+              String(referrerOwner.role || "") === "salesman"
+            ) {
+              directSalesman = referrerOwner;
+            }
+          }
+        }
+
+        if (directSalesman) {
+          const directEarn = Math.round(paidAmount * 0.05);
+          if (directEarn > 0) {
+            const uniqueKey = `request:${String(request._id)}:salesmanEarn:direct:${String(directSalesman._id)}`;
+            await SalesmanLedger.updateOne(
+              { uniqueKey },
+              {
+                $setOnInsert: {
+                  salesmanId: directSalesman._id,
+                  type: "EARN",
+                  amount: directEarn,
+                  refType: "REQUEST_DIRECT",
+                  refId: request._id,
+                  uniqueKey,
+                },
+              },
+              { upsert: true },
+            );
+          }
+
+          const directSalesmanBusinessIdRaw =
+            directSalesman?.referredByBusinessId
+              ? String(directSalesman.referredByBusinessId)
+              : "";
+
+          let parentSalesman = null;
           if (
-            directSalesman &&
-            String(directSalesman.role || "") === "salesman"
+            directSalesmanBusinessIdRaw &&
+            Types.ObjectId.isValid(directSalesmanBusinessIdRaw)
           ) {
-            const directEarn = Math.round(paidAmount * 0.05);
-            if (directEarn > 0) {
-              const uniqueKey = `request:${String(request._id)}:salesmanEarn:direct:${String(directSalesman._id)}`;
+            const parentBusiness = await RequestorOrganization.findById(
+              new Types.ObjectId(directSalesmanBusinessIdRaw),
+            )
+              .select({ owner: 1 })
+              .lean();
+
+            if (parentBusiness?.owner) {
+              const parentOwner = await User.findById(parentBusiness.owner)
+                .select({ _id: 1, role: 1 })
+                .lean();
+
+              if (
+                parentOwner &&
+                String(parentOwner.role || "") === "salesman"
+              ) {
+                parentSalesman = parentOwner;
+              }
+            }
+          }
+
+          if (parentSalesman) {
+            const level1Earn = Math.round(paidAmount * 0.025);
+            if (level1Earn > 0) {
+              const uniqueKey = `request:${String(request._id)}:salesmanEarn:level1:${String(parentSalesman._id)}`;
               await SalesmanLedger.updateOne(
                 { uniqueKey },
                 {
                   $setOnInsert: {
-                    salesmanId: directSalesman._id,
+                    salesmanId: parentSalesman._id,
                     type: "EARN",
-                    amount: directEarn,
-                    refType: "REQUEST_DIRECT",
+                    amount: level1Earn,
+                    refType: "REQUEST_LEVEL1",
                     refId: request._id,
                     uniqueKey,
                   },
                 },
                 { upsert: true },
               );
-            }
-
-            const parentSalesmanIdRaw = directSalesman?.referredByUserId
-              ? String(directSalesman.referredByUserId)
-              : "";
-            if (
-              parentSalesmanIdRaw &&
-              Types.ObjectId.isValid(parentSalesmanIdRaw)
-            ) {
-              const parentSalesman = await User.findById(
-                new Types.ObjectId(parentSalesmanIdRaw),
-              )
-                .select({ _id: 1, role: 1 })
-                .lean();
-              if (
-                parentSalesman &&
-                String(parentSalesman.role || "") === "salesman"
-              ) {
-                const level1Earn = Math.round(paidAmount * 0.025);
-                if (level1Earn > 0) {
-                  const uniqueKey = `request:${String(request._id)}:salesmanEarn:level1:${String(parentSalesman._id)}`;
-                  await SalesmanLedger.updateOne(
-                    { uniqueKey },
-                    {
-                      $setOnInsert: {
-                        salesmanId: parentSalesman._id,
-                        type: "EARN",
-                        amount: level1Earn,
-                        refType: "REQUEST_LEVEL1",
-                        refId: request._id,
-                        uniqueKey,
-                      },
-                    },
-                    { upsert: true },
-                  );
-                }
-              }
             }
           }
         }

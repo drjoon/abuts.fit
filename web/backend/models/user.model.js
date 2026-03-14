@@ -51,15 +51,9 @@ const userSchema = new mongoose.Schema(
       sparse: true,
       index: true,
     },
-    referredByUserId: {
+    referredByBusinessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-      index: true,
-    },
-    referralGroupLeaderId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "RequestorOrganization",
       default: null,
       index: true,
     },
