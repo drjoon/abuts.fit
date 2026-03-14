@@ -82,7 +82,7 @@ export const PrivacyPage = () => {
                         개인정보를 처리·보유합니다.
                       </p>
                       <ul className="list-disc list-inside space-y-1 ml-4">
-                        <li>회원가입 및 관리: 회원 탈퇴 시까지</li>
+                        <li>회원가입 및 관리: 계정 해지 시까지</li>
                         <li>서비스 제공: 서비스 이용 종료 시까지</li>
                         <li>전자상거래법에 따른 거래기록: 5년</li>
                         <li>소비자 불만 또는 분쟁처리: 3년</li>

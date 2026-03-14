@@ -259,12 +259,12 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
 
       if (!withdrawRes.ok) {
         const body: any = withdrawRes.data || {};
-        throw new Error(body?.message || "해지 처리에 실패했습니다.");
+        throw new Error(body?.message || "계정 해지 처리에 실패했습니다.");
       }
 
       toast({
-        title: "해지 완료",
-        description: "해지가 완료되었습니다.",
+        title: "계정 해지 완료",
+        description: "계정 해지가 완료되었습니다.",
         duration: 3000,
       });
 
@@ -274,8 +274,8 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
       }, 500);
     } catch (e: any) {
       toast({
-        title: "해지 처리 실패",
-        description: String(e?.message || "해지 처리에 실패했습니다."),
+        title: "계정 해지 처리 실패",
+        description: String(e?.message || "계정 해지 처리에 실패했습니다."),
         variant: "destructive",
       });
     } finally {
@@ -750,7 +750,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
               disabled={withdrawing}
             >
               <UserX className="h-4 w-4" />
-              {withdrawing ? "처리 중..." : "해지 신청"}
+              {withdrawing ? "처리 중..." : "계정 해지"}
             </Button>
           </CardTitle>
         </CardHeader>
@@ -1164,7 +1164,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
 
           <MultiActionDialog
             open={withdrawDialogOpen}
-            title="정말 해지하시겠어요?"
+            title="정말 계정을 해지하시겠어요?"
             description={
               (user as any)?.position === "principal" ? (
                 <div className="space-y-2">
@@ -1174,7 +1174,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                   </div>
                 </div>
               ) : (
-                <div>해지하시겠습니까?</div>
+                <div>계정을 해지하시겠습니까?</div>
               )
             }
             onClose={() => setWithdrawDialogOpen(false)}
@@ -1186,7 +1186,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                 disabled: withdrawing,
               },
               {
-                label: "해지 신청",
+                label: "계정 해지",
                 variant: "danger",
                 onClick: handleWithdraw,
                 disabled: withdrawing,

@@ -2,6 +2,7 @@ import User from "../../models/user.model.js";
 import SignupVerification from "../../models/signupVerification.model.js";
 import GuideProgress from "../../models/guideProgress.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import CreditLedger from "../../models/creditLedger.model.js";
 import { generateToken, generateRefreshToken } from "../../utils/jwt.util.js";
 import { Types } from "mongoose";
 import crypto from "crypto";
@@ -1187,16 +1188,43 @@ async function withdraw(req, res) {
       }
     }
 
+    let paidBalance = 0;
     if (user.role === "requestor" && isRequestorOwner && businessId) {
-      const { paidBalance } =
-        await getBusinessCreditBalanceBreakdown(businessId);
+      const breakdown = await getBusinessCreditBalanceBreakdown(businessId);
+      paidBalance = Number(breakdown?.paidBalance || 0);
       if (paidBalance > 0) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "잔여 유료 크레딧이 있는 상태에서는 계정을 해지할 수 없습니다. 고객센터를 통해 환불 처리 후 해지해주세요.",
-          data: { paidBalance },
-        });
+        const refundAccountRaw = req.body?.refundReceiveAccount || {};
+        const bank = String(refundAccountRaw?.bank || "").trim();
+        const accountNumber = String(
+          refundAccountRaw?.accountNumber || "",
+        ).trim();
+        const holderName = String(refundAccountRaw?.holderName || "").trim();
+
+        if (!bank || !accountNumber || !holderName) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "잔여 유료 크레딧 환불을 위해 은행/계좌번호/예금주가 필요합니다.",
+            data: { paidBalance },
+          });
+        }
+
+        const uniqueKey = `account_withdraw_refund:${String(businessId)}:${String(userId)}`;
+        await CreditLedger.updateOne(
+          { uniqueKey },
+          {
+            $setOnInsert: {
+              businessId,
+              userId,
+              type: "ADJUST",
+              amount: -paidBalance,
+              refType: "ACCOUNT_WITHDRAW",
+              refId: userId,
+              uniqueKey,
+            },
+          },
+          { upsert: true },
+        );
       }
     }
 
@@ -1224,7 +1252,7 @@ async function withdraw(req, res) {
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "탈퇴 처리 중 오류가 발생했습니다.",
+      message: "계정 해지 처리 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
