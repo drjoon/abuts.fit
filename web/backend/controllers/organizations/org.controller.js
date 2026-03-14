@@ -19,8 +19,6 @@ import {
 } from "./organizationRole.util.js";
 import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
 
-const SALESMAN_REFERRAL_BONUS_AMOUNT = 50000;
-
 function extractPostalCodeFromGeocodingResult(result) {
   const components = Array.isArray(result?.address_components)
     ? result.address_components
@@ -743,48 +741,8 @@ async function grantSalesmanReferralBonusIfEligible({
   organizationId,
   userId,
 }) {
-  if (!organizationId) return null;
-  if (!userId) return null;
-
-  const user = await User.findById(userId)
-    .select({ referredByUserId: 1 })
-    .lean();
-  const referrerId = user?.referredByUserId;
-  if (!referrerId) return null;
-
-  const referrer = await User.findById(referrerId)
-    .select({ role: 1, active: 1 })
-    .lean();
-  if (!referrer || referrer.active === false) return null;
-  if (referrer.role !== "salesman") return null;
-
-  const uniqueKey = `salesman_referral_bonus:org:${String(organizationId)}`;
-  const result = await CreditLedger.updateOne(
-    { uniqueKey },
-    {
-      $setOnInsert: {
-        organizationId,
-        userId,
-        type: "BONUS",
-        amount: SALESMAN_REFERRAL_BONUS_AMOUNT,
-        refType: "SALESMAN_REFERRAL_BONUS",
-        refId: organizationId,
-        uniqueKey,
-      },
-    },
-    { upsert: true },
-  );
-
-  if (!result?.upsertedCount) return null;
-
-  await emitCreditBalanceUpdatedToOrganization({
-    organizationId,
-    balanceDelta: SALESMAN_REFERRAL_BONUS_AMOUNT,
-    reason: "salesman_referral_bonus",
-    refId: organizationId,
-  });
-
-  return SALESMAN_REFERRAL_BONUS_AMOUNT;
+  // 정책 변경: 영업자에게는 정액 보너스를 지급하지 않고 매출 비율 정산으로 대체
+  return null;
 }
 
 export async function getMyOrganization(req, res) {
