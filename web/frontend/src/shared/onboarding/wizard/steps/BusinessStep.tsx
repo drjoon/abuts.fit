@@ -43,6 +43,8 @@ export const BusinessStep = ({
       userData={userData}
       organizationTypeOverride={organizationType}
       selectedRole={role}
+      registerValidationState={registerValidationState}
+      isOnboarding={true}
     />
   );
 };

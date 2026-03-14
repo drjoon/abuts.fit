@@ -198,8 +198,8 @@ const writeStoredBusinessDraft = (
 
 interface BusinessTabProps {
   userData: {
-    companyName?: string;
-    role?: string;
+    companyName: string;
+    role: string;
   };
   organizationTypeOverride?: string;
   selectedRole?: "owner" | "member" | null;
@@ -207,6 +207,7 @@ interface BusinessTabProps {
     passed: boolean;
     validating: boolean;
   }) => void;
+  isOnboarding?: boolean;
 }
 
 export const BusinessTab = ({
@@ -214,6 +215,7 @@ export const BusinessTab = ({
   organizationTypeOverride,
   selectedRole,
   registerValidationState,
+  isOnboarding = false,
 }: BusinessTabProps) => {
   const { toast } = useToast();
   const { token, user, loginWithToken } = useAuthStore();
@@ -741,8 +743,34 @@ export const BusinessTab = ({
   };
 
   const handleDeleteLicense = async () => {
-    if (membership === "none") {
-      // 온보딩 단계: 모달 없이 직접 초기화
+    if (isOnboarding || membership === "none") {
+      // 온보딩 단계: owner 확인 후 초기화
+      try {
+        if (token && user?.id) {
+          const response = await request<{ owner?: string }>({
+            path: "/api/organizations/me",
+            method: "GET",
+            token,
+            headers: mockHeaders,
+          });
+
+          // owner 확인: 현재 로그인한 사용자와 organization의 owner가 일치하는지 확인
+          if (response?.data?.owner && response.data.owner !== user.id) {
+            toast({
+              title: "초기화 불가",
+              description:
+                "이 사업자등록증은 다른 계정으로 등록되었습니다. 초기화할 수 없습니다.",
+              variant: "destructive",
+            });
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("[BusinessTab] Failed to verify organization owner", err);
+        // 조직이 없는 경우는 초기화 진행
+      }
+
+      // 모달 없이 직접 초기화
       await runDeleteLicense();
       return;
     }
@@ -795,6 +823,7 @@ export const BusinessTab = ({
       setLicenseS3Key("");
       setLicenseStatus("missing");
       setIsVerified(false);
+      setValidationSucceeded(false);
       setExtracted(createEmptyExtracted());
       setErrors({});
       setBusinessData((prev) => ({
@@ -833,6 +862,7 @@ export const BusinessTab = ({
     setLicenseS3Key("");
     setLicenseStatus("missing");
     setIsVerified(false);
+    setValidationSucceeded(false);
     setExtracted(createEmptyExtracted());
     setErrors({});
     setBusinessData((prev) => ({
@@ -1242,15 +1272,57 @@ export const BusinessTab = ({
           zipCode: "",
           startDate: nextStartDate,
         });
+        const extractedBusinessNumber = String(
+          nextExtracted?.businessNumber || "",
+        ).trim();
+        const formattedBusinessNumber = formatBusinessNumberInput(
+          extractedBusinessNumber,
+        );
+
+        // 사업자등록번호 중복 확인
+        if (extractedBusinessNumber) {
+          try {
+            const duplicateCheckResponse = await request<any>({
+              path: "/api/organizations/check-business-number",
+              method: "POST",
+              token,
+              headers: mockHeaders,
+              jsonBody: {
+                businessNumber: formattedBusinessNumber,
+              },
+            });
+
+            if (
+              !duplicateCheckResponse.ok &&
+              duplicateCheckResponse.data?.reason ===
+                "duplicate_business_number"
+            ) {
+              toast({
+                title: "이미 등록된 사업자등록번호입니다",
+                description: "다른 계정에서 이미 등록된 사업자등록번호입니다.",
+                variant: "destructive",
+                duration: 5000,
+              });
+              setLicenseStatus("ready");
+              processingToast.dismiss();
+              return;
+            }
+          } catch (err) {
+            console.error(
+              "[BusinessTab] Failed to check business number duplicate",
+              err,
+            );
+            // 중복 확인 실패 시에도 계속 진행
+          }
+        }
+
         setBusinessData((prev) => ({
           ...prev,
           companyName: companyNameTouched
             ? prev.companyName
             : nextCompanyName || "",
           owner: String(nextExtracted?.representativeName || "").trim(),
-          businessNumber: formatBusinessNumberInput(
-            String(nextExtracted?.businessNumber || "").trim(),
-          ),
+          businessNumber: formattedBusinessNumber,
           address: "",
           addressDetail: "",
           zipCode: "",

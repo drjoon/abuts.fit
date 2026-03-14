@@ -317,8 +317,11 @@ export const SettingsWizard = ({
     const currentIndex = STEP_ORDER.indexOf(currentStep);
     if (currentIndex < STEP_ORDER.length - 1) {
       setCurrentStep(STEP_ORDER[currentIndex + 1]);
+    } else if (currentIndex === STEP_ORDER.length - 1) {
+      // 마지막 단계 완료: 대시보드로 이동
+      onWizardComplete();
     }
-  }, [currentStep, selectedRole]);
+  }, [currentStep, selectedRole, onWizardComplete]);
 
   const handlePrev = useCallback(() => {
     if (!currentStep) return;
