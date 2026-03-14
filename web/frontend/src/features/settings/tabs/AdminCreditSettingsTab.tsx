@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { CREDIT_SETTINGS_DEFAULTS } from "@/hooks/useSystemSettings";
 import {
   Card,
   CardContent,
@@ -16,6 +17,7 @@ import { Button } from "@/components/ui/button";
 interface CreditSettings {
   minCreditForRequest: number;
   shippingFee: number;
+  defaultWelcomeBonusCredit: number;
   defaultFreeShippingCredit: number;
 }
 
@@ -24,9 +26,7 @@ export const AdminCreditSettingsTab = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [settings, setSettings] = useState<CreditSettings>({
-    minCreditForRequest: 10000,
-    shippingFee: 3500,
-    defaultFreeShippingCredit: 3500,
+    ...CREDIT_SETTINGS_DEFAULTS,
   });
   const [originalSettings, setOriginalSettings] =
     useState<CreditSettings>(settings);
@@ -48,9 +48,27 @@ export const AdminCreditSettingsTab = () => {
         throw new Error("설정 조회 실패");
       }
 
-      const data = res.data?.data?.creditSettings || settings;
-      setSettings(data);
-      setOriginalSettings(data);
+      const data = res.data?.data?.creditSettings || CREDIT_SETTINGS_DEFAULTS;
+      const normalized: CreditSettings = {
+        minCreditForRequest: Number(
+          data.minCreditForRequest ??
+            CREDIT_SETTINGS_DEFAULTS.minCreditForRequest,
+        ),
+        shippingFee: Number(
+          data.shippingFee ?? CREDIT_SETTINGS_DEFAULTS.shippingFee,
+        ),
+        defaultWelcomeBonusCredit: Number(
+          data.defaultWelcomeBonusCredit ??
+            CREDIT_SETTINGS_DEFAULTS.defaultWelcomeBonusCredit,
+        ),
+        defaultFreeShippingCredit: Number(
+          data.defaultFreeShippingCredit ??
+            CREDIT_SETTINGS_DEFAULTS.defaultFreeShippingCredit,
+        ),
+      };
+
+      setSettings(normalized);
+      setOriginalSettings(normalized);
     } catch (error) {
       toast({
         title: "설정 조회 실패",
@@ -105,86 +123,96 @@ export const AdminCreditSettingsTab = () => {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>신규의뢰 크레딧 설정</CardTitle>
-          <CardDescription>
-            신규의뢰 생성 시 필요한 최소 크레딧 금액을 설정합니다.
-          </CardDescription>
+          <CardTitle>최소 요구 크레딧</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="minCreditForRequest">최소 크레딧 (원)</Label>
-            <Input
-              id="minCreditForRequest"
-              type="number"
-              min="0"
-              value={settings.minCreditForRequest}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  minCreditForRequest: Math.max(0, Number(e.target.value)),
-                })
-              }
-              disabled={loading}
-            />
-            <p className="text-sm text-slate-500">
-              신규의뢰 생성 시 유/무료 크레딧 합계가 이 금액 이상이어야 합니다.
-            </p>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="minCreditForRequest">
+                신규의뢰 최소 크레딧 (원)
+              </Label>
+              <Input
+                id="minCreditForRequest"
+                type="number"
+                min="0"
+                value={settings.minCreditForRequest}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    minCreditForRequest: Math.max(0, Number(e.target.value)),
+                  })
+                }
+                disabled={loading}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="shippingFee">배송비 (원)</Label>
+              <Input
+                id="shippingFee"
+                type="number"
+                min="0"
+                value={settings.shippingFee}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    shippingFee: Math.max(0, Number(e.target.value)),
+                  })
+                }
+                disabled={loading}
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>배송비 설정</CardTitle>
-          <CardDescription>
-            배송비 및 배송비 무료 크레딧 기본값을 설정합니다.
-          </CardDescription>
+          <CardTitle>가입 시 지급 무료 크레딧</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="shippingFee">배송비 (원)</Label>
-            <Input
-              id="shippingFee"
-              type="number"
-              min="0"
-              value={settings.shippingFee}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  shippingFee: Math.max(0, Number(e.target.value)),
-                })
-              }
-              disabled={loading}
-            />
-            <p className="text-sm text-slate-500">
-              택배 접수 시 차감되는 배송비입니다. 유료 크레딧으로만 결제
-              가능합니다.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="defaultFreeShippingCredit">
-              기본 배송비 무료 크레딧 (원)
-            </Label>
-            <Input
-              id="defaultFreeShippingCredit"
-              type="number"
-              min="0"
-              value={settings.defaultFreeShippingCredit}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  defaultFreeShippingCredit: Math.max(
-                    0,
-                    Number(e.target.value),
-                  ),
-                })
-              }
-              disabled={loading}
-            />
-            <p className="text-sm text-slate-500">
-              신규 가입 시 지급되는 배송비 무료 크레딧 기본값입니다.
-            </p>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="defaultWelcomeBonusCredit">
+                의뢰비 무료 크레딧 (원)
+              </Label>
+              <Input
+                id="defaultWelcomeBonusCredit"
+                type="number"
+                min="0"
+                value={settings.defaultWelcomeBonusCredit}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    defaultWelcomeBonusCredit: Math.max(
+                      0,
+                      Number(e.target.value),
+                    ),
+                  })
+                }
+                disabled={loading}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="defaultFreeShippingCredit">
+                배송비 무료 크레딧 (원)
+              </Label>
+              <Input
+                id="defaultFreeShippingCredit"
+                type="number"
+                min="0"
+                value={settings.defaultFreeShippingCredit}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    defaultFreeShippingCredit: Math.max(
+                      0,
+                      Number(e.target.value),
+                    ),
+                  })
+                }
+                disabled={loading}
+              />
+            </div>
           </div>
         </CardContent>
       </Card>

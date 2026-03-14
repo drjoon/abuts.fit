@@ -16,7 +16,8 @@ const systemSettingsSchema = new mongoose.Schema(
     creditSettings: {
       minCreditForRequest: { type: Number, default: 10000 },
       shippingFee: { type: Number, default: 3500 },
-      defaultFreeShippingCredit: { type: Number, default: 3500 },
+      defaultWelcomeBonusCredit: { type: Number, default: 30000 },
+      defaultFreeShippingCredit: { type: Number, default: 7000 },
     },
     securitySettings: {
       twoFactorAuth: { type: Boolean, default: true },

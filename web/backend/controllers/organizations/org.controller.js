@@ -4,6 +4,11 @@ import s3Utils from "../../utils/s3.utils.js";
 import File from "../../models/file.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import BonusGrant from "../../models/bonusGrant.model.js";
+import SystemSettings from "../../models/systemSettings.model.js";
+import {
+  CREDIT_SETTINGS_SCHEMA_DEFAULTS,
+  loadCreditSettingsDefaults,
+} from "../../utils/creditSettingsDefaults.js";
 import { verifyBusinessNumber } from "../../services/hometax.service.js";
 import { DEFAULT_DELIVERY_ETA_LEAD_DAYS } from "../requests/utils.js";
 import {
@@ -14,7 +19,6 @@ import {
 } from "./organizationRole.util.js";
 import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
 
-const WELCOME_BONUS_AMOUNT = 30000;
 const SALESMAN_REFERRAL_BONUS_AMOUNT = 50000;
 
 function extractPostalCodeFromGeocodingResult(result) {
@@ -549,22 +553,29 @@ async function grantWelcomeBonusIfEligible({ organizationId, userId }) {
     businessNumber,
     isOverride: false,
   })
-    .select({ _id: 1, creditLedgerId: 1 })
+    .select({ _id: 1, creditLedgerId: 1, amount: 1 })
     .lean();
 
   if (!grant) {
     try {
+      const defaults = await loadCreditSettingsDefaults();
       const created = await BonusGrant.create({
         type: "WELCOME_BONUS",
         businessNumber,
-        amount: WELCOME_BONUS_AMOUNT,
+        amount:
+          Number(defaults.defaultWelcomeBonusCredit ?? 0) ||
+          CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultWelcomeBonusCredit,
         businessId: organizationId,
         userId: userId || null,
         isOverride: false,
         source: "auto",
         grantedByUserId: null,
       });
-      grant = { _id: created._id, creditLedgerId: created.creditLedgerId };
+      grant = {
+        _id: created._id,
+        creditLedgerId: created.creditLedgerId,
+        amount: created.amount,
+      };
     } catch (e) {
       if (isDuplicateKeyErrorForMongo(e)) {
         grant = await BonusGrant.findOne({
@@ -572,7 +583,7 @@ async function grantWelcomeBonusIfEligible({ organizationId, userId }) {
           businessNumber,
           isOverride: false,
         })
-          .select({ _id: 1, creditLedgerId: 1 })
+          .select({ _id: 1, creditLedgerId: 1, amount: 1 })
           .lean();
       } else {
         throw e;
@@ -611,14 +622,121 @@ async function grantWelcomeBonusIfEligible({ organizationId, userId }) {
     { $set: { creditLedgerId: ledgerDoc?._id || null } },
   );
 
+  const amount =
+    Number(grant?.amount || 0) ||
+    CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultWelcomeBonusCredit;
+
   await emitCreditBalanceUpdatedToOrganization({
     organizationId,
-    balanceDelta: WELCOME_BONUS_AMOUNT,
+    balanceDelta: amount,
     reason: "welcome_bonus",
     refId: ledgerDoc?._id || grant._id,
   });
 
-  return WELCOME_BONUS_AMOUNT;
+  return amount;
+}
+
+async function grantFreeShippingCreditIfEligible({ organizationId, userId }) {
+  if (!organizationId) return null;
+
+  const org = await RequestorOrganization.findById(organizationId)
+    .select({ organizationType: 1, extracted: 1 })
+    .lean();
+  if (!org) return null;
+  if (String(org.organizationType || "") !== "requestor") return null;
+
+  const businessNumber = normalizeBusinessNumberDigits(
+    org?.extracted?.businessNumber,
+  );
+  if (!businessNumber) return null;
+
+  let grant = await BonusGrant.findOne({
+    type: "FREE_SHIPPING_CREDIT",
+    businessNumber,
+    isOverride: false,
+  })
+    .select({ _id: 1, creditLedgerId: 1, amount: 1 })
+    .lean();
+
+  if (!grant) {
+    try {
+      const defaults = await loadCreditSettingsDefaults();
+      const amount =
+        Number(defaults.defaultFreeShippingCredit ?? 0) ||
+        CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultFreeShippingCredit;
+      const created = await BonusGrant.create({
+        type: "FREE_SHIPPING_CREDIT",
+        businessNumber,
+        amount,
+        businessId: organizationId,
+        userId: userId || null,
+        isOverride: false,
+        source: "auto",
+        grantedByUserId: null,
+      });
+      grant = {
+        _id: created._id,
+        creditLedgerId: created.creditLedgerId,
+        amount,
+      };
+    } catch (e) {
+      if (isDuplicateKeyErrorForMongo(e)) {
+        grant = await BonusGrant.findOne({
+          type: "FREE_SHIPPING_CREDIT",
+          businessNumber,
+          isOverride: false,
+        })
+          .select({ _id: 1, creditLedgerId: 1, amount: 1 })
+          .lean();
+      } else {
+        throw e;
+      }
+    }
+  }
+
+  if (!grant?._id) return null;
+  if (grant?.creditLedgerId) return grant.amount || null;
+
+  const defaults = await loadCreditSettingsDefaults();
+  const amount =
+    Number(grant?.amount || defaults.defaultFreeShippingCredit || 0) ||
+    CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultFreeShippingCredit;
+  const uniqueKey = `bonus_grant:${String(grant._id)}`;
+  const result = await CreditLedger.updateOne(
+    { uniqueKey },
+    {
+      $setOnInsert: {
+        businessId: organizationId,
+        userId: userId || null,
+        type: "BONUS",
+        amount,
+        refType: "FREE_SHIPPING_CREDIT",
+        refId: organizationId,
+        uniqueKey,
+      },
+    },
+    { upsert: true },
+  );
+
+  if (!result?.upsertedCount) return amount;
+
+  const ledgerDoc = await CreditLedger.findOne({ uniqueKey })
+    .select({ _id: 1 })
+    .lean();
+
+  await BonusGrant.updateOne(
+    { _id: grant._id },
+    { $set: { creditLedgerId: ledgerDoc?._id || null } },
+  );
+
+  await emitCreditBalanceUpdatedToOrganization({
+    organizationId,
+    balanceDelta: amount,
+    reason: "free_shipping_credit",
+    refId: ledgerDoc?._id || grant._id,
+  });
+
+  return amount;
 }
 
 async function grantSalesmanReferralBonusIfEligible({
@@ -1525,6 +1643,11 @@ export async function updateMyOrganization(req, res) {
           organizationId: created._id,
           userId: req.user._id,
         });
+        const freeShippingCreditAmount =
+          await grantFreeShippingCreditIfEligible({
+            organizationId: created._id,
+            userId: req.user._id,
+          });
         await grantSalesmanReferralBonusIfEligible({
           organizationId: created._id,
           userId: req.user._id,
@@ -1539,6 +1662,8 @@ export async function updateMyOrganization(req, res) {
             verification: created.verification || null,
             welcomeBonusGranted: !!welcomeBonusAmount,
             welcomeBonusAmount: Number(welcomeBonusAmount || 0),
+            freeShippingCreditGranted: !!freeShippingCreditAmount,
+            freeShippingCreditAmount: Number(freeShippingCreditAmount || 0),
           },
         });
       } catch (e) {
@@ -1671,6 +1796,11 @@ export async function updateMyOrganization(req, res) {
       userId: req.user._id,
     });
 
+    const freeShippingGranted = await grantFreeShippingCreditIfEligible({
+      organizationId: org._id,
+      userId: req.user._id,
+    });
+
     const salesmanGranted = await grantSalesmanReferralBonusIfEligible({
       organizationId: org._id,
       userId: req.user._id,
@@ -1682,6 +1812,8 @@ export async function updateMyOrganization(req, res) {
         updated: true,
         welcomeBonusGranted: Boolean(granted),
         welcomeBonusAmount: granted || 0,
+        freeShippingCreditGranted: Boolean(freeShippingGranted),
+        freeShippingCreditAmount: freeShippingGranted || 0,
         salesmanReferralBonusGranted: Boolean(salesmanGranted),
         salesmanReferralBonusAmount: salesmanGranted || 0,
         verification: verificationResult

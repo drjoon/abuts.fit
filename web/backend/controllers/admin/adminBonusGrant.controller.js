@@ -3,9 +3,10 @@ import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import BonusGrant from "../../models/bonusGrant.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
-
-const DEFAULT_WELCOME_BONUS_AMOUNT = 30000;
-const DEFAULT_FREE_SHIPPING_CREDIT_AMOUNT = 3500;
+import {
+  CREDIT_SETTINGS_SCHEMA_DEFAULTS,
+  loadCreditSettingsDefaults,
+} from "../../utils/creditSettingsDefaults.js";
 
 function normalizeBusinessNumberDigits(input) {
   const digits = String(input || "").replace(/\D/g, "");
@@ -39,11 +40,13 @@ export async function adminOverrideWelcomeBonus(req, res) {
       });
     }
 
+    const defaults = await loadCreditSettingsDefaults();
     const amountRaw = req.body?.amount;
     const amount =
       typeof amountRaw === "number" && !Number.isNaN(amountRaw)
         ? Math.max(0, Math.floor(amountRaw))
-        : DEFAULT_WELCOME_BONUS_AMOUNT;
+        : Number(defaults.defaultWelcomeBonusCredit ?? 0) ||
+          CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultWelcomeBonusCredit;
 
     const formatted = formatBusinessNumber(businessNumberDigits);
 
@@ -357,11 +360,13 @@ export async function adminGrantFreeShippingCredit(req, res) {
       });
     }
 
+    const defaults = await loadCreditSettingsDefaults();
     const amountRaw = req.body?.amount;
     const amount =
       typeof amountRaw === "number" && !Number.isNaN(amountRaw)
         ? Math.max(0, Math.floor(amountRaw))
-        : DEFAULT_FREE_SHIPPING_CREDIT_AMOUNT;
+        : Number(defaults.defaultFreeShippingCredit ?? 0) ||
+          CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultFreeShippingCredit;
 
     const formatted = formatBusinessNumber(businessNumberDigits);
 

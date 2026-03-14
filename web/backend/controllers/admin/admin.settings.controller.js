@@ -3,12 +3,29 @@ import {
   DEFAULT_DELIVERY_ETA_LEAD_DAYS,
   getDeliveryEtaLeadDays,
 } from "./admin.shared.controller.js";
+const CREDIT_SETTINGS_DEFAULTS = (() => {
+  const pickDefault = (path) =>
+    Number(SystemSettings.schema.path(path)?.options?.default ?? 0) || 0;
+  return {
+    minCreditForRequest: pickDefault("creditSettings.minCreditForRequest"),
+    shippingFee: pickDefault("creditSettings.shippingFee"),
+    defaultWelcomeBonusCredit: pickDefault(
+      "creditSettings.defaultWelcomeBonusCredit",
+    ),
+    defaultFreeShippingCredit: pickDefault(
+      "creditSettings.defaultFreeShippingCredit",
+    ),
+  };
+})();
 
 export async function getSystemSettings(req, res) {
   try {
     const leadDays = await getDeliveryEtaLeadDays();
     const doc = await SystemSettings.findOne({ key: "global" }).lean();
-    const creditSettings = doc?.creditSettings || {};
+    const creditSettings = {
+      ...CREDIT_SETTINGS_DEFAULTS,
+      ...(doc?.creditSettings || {}),
+    };
 
     const settings = {
       fileUpload: {
@@ -38,12 +55,7 @@ export async function getSystemSettings(req, res) {
         refreshTokenExpiration: "7d",
       },
       deliveryEtaLeadDays: leadDays,
-      creditSettings: {
-        minCreditForRequest: creditSettings.minCreditForRequest || 10000,
-        shippingFee: creditSettings.shippingFee || 3500,
-        defaultFreeShippingCredit:
-          creditSettings.defaultFreeShippingCredit || 3500,
-      },
+      creditSettings,
     };
 
     res.status(200).json({ success: true, data: { settings } });
@@ -225,16 +237,14 @@ export async function getCreditSettings(req, res) {
       { new: true, upsert: true, setDefaultsOnInsert: true },
     ).lean();
 
-    const creditSettings = doc?.creditSettings || {};
+    const creditSettings = {
+      ...CREDIT_SETTINGS_DEFAULTS,
+      ...(doc?.creditSettings || {}),
+    };
     res.status(200).json({
       success: true,
       data: {
-        creditSettings: {
-          minCreditForRequest: creditSettings.minCreditForRequest || 10000,
-          shippingFee: creditSettings.shippingFee || 3500,
-          defaultFreeShippingCredit:
-            creditSettings.defaultFreeShippingCredit || 3500,
-        },
+        creditSettings,
       },
     });
   } catch (error) {
@@ -250,16 +260,14 @@ export async function getPublicCreditSettings(req, res) {
   try {
     const doc = await SystemSettings.findOne({ key: "global" }).lean();
 
-    const creditSettings = doc?.creditSettings || {};
+    const creditSettings = {
+      ...CREDIT_SETTINGS_DEFAULTS,
+      ...(doc?.creditSettings || {}),
+    };
     res.status(200).json({
       success: true,
       data: {
-        creditSettings: {
-          minCreditForRequest: creditSettings.minCreditForRequest || 10000,
-          shippingFee: creditSettings.shippingFee || 3500,
-          defaultFreeShippingCredit:
-            creditSettings.defaultFreeShippingCredit || 3500,
-        },
+        creditSettings,
       },
     });
   } catch (error) {
@@ -277,6 +285,7 @@ export async function updateCreditSettings(req, res) {
     const allowedKeys = [
       "minCreditForRequest",
       "shippingFee",
+      "defaultWelcomeBonusCredit",
       "defaultFreeShippingCredit",
     ];
 
@@ -300,17 +309,15 @@ export async function updateCreditSettings(req, res) {
       { new: true, upsert: true, setDefaultsOnInsert: true },
     ).lean();
 
-    const creditSettings = doc?.creditSettings || {};
+    const creditSettings = {
+      ...CREDIT_SETTINGS_DEFAULTS,
+      ...(doc?.creditSettings || {}),
+    };
     res.status(200).json({
       success: true,
       message: "크레딧 설정이 업데이트되었습니다.",
       data: {
-        creditSettings: {
-          minCreditForRequest: creditSettings.minCreditForRequest || 10000,
-          shippingFee: creditSettings.shippingFee || 3500,
-          defaultFreeShippingCredit:
-            creditSettings.defaultFreeShippingCredit || 3500,
-        },
+        creditSettings,
       },
     });
   } catch (error) {
