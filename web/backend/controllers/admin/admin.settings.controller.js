@@ -7,6 +7,9 @@ import {
 export async function getSystemSettings(req, res) {
   try {
     const leadDays = await getDeliveryEtaLeadDays();
+    const doc = await SystemSettings.findOne({ key: "global" }).lean();
+    const creditSettings = doc?.creditSettings || {};
+
     const settings = {
       fileUpload: {
         maxFileSize: 50 * 1024 * 1024,
@@ -35,6 +38,12 @@ export async function getSystemSettings(req, res) {
         refreshTokenExpiration: "7d",
       },
       deliveryEtaLeadDays: leadDays,
+      creditSettings: {
+        minCreditForRequest: creditSettings.minCreditForRequest || 10000,
+        shippingFee: creditSettings.shippingFee || 3500,
+        defaultFreeShippingCredit:
+          creditSettings.defaultFreeShippingCredit || 3500,
+      },
     };
 
     res.status(200).json({ success: true, data: { settings } });
@@ -93,7 +102,9 @@ export async function updateSystemSettings(req, res) {
       { key: "global" },
       {
         $setOnInsert: { key: "global" },
-        ...(rawLeadDays ? { $set: { deliveryEtaLeadDays: mergedLeadDays } } : {}),
+        ...(rawLeadDays
+          ? { $set: { deliveryEtaLeadDays: mergedLeadDays } }
+          : {}),
       },
       { new: true, upsert: true, setDefaultsOnInsert: true },
     ).lean();
@@ -161,10 +172,20 @@ export async function updateSecuritySettings(req, res) {
     const sanitized = {};
     allowedKeys.forEach((k) => {
       if (payload[k] === undefined) return;
-      if (["autoLogout", "maxLoginAttempts", "passwordExpiry", "apiRateLimit"].includes(k)) {
+      if (
+        [
+          "autoLogout",
+          "maxLoginAttempts",
+          "passwordExpiry",
+          "apiRateLimit",
+        ].includes(k)
+      ) {
         const num = Number(payload[k]);
         if (!Number.isNaN(num)) sanitized[k] = num;
-      } else if (typeof payload[k] === "boolean" || typeof payload[k] === "string") {
+      } else if (
+        typeof payload[k] === "boolean" ||
+        typeof payload[k] === "string"
+      ) {
         sanitized[k] = payload[k];
       }
     });
@@ -191,6 +212,86 @@ export async function updateSecuritySettings(req, res) {
     res.status(500).json({
       success: false,
       message: "보안 설정 업데이트 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function getCreditSettings(req, res) {
+  try {
+    const doc = await SystemSettings.findOneAndUpdate(
+      { key: "global" },
+      { $setOnInsert: { key: "global" } },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    ).lean();
+
+    const creditSettings = doc?.creditSettings || {};
+    res.status(200).json({
+      success: true,
+      data: {
+        creditSettings: {
+          minCreditForRequest: creditSettings.minCreditForRequest || 10000,
+          shippingFee: creditSettings.shippingFee || 3500,
+          defaultFreeShippingCredit:
+            creditSettings.defaultFreeShippingCredit || 3500,
+        },
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "크레딧 설정 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function updateCreditSettings(req, res) {
+  try {
+    const payload = req.body && typeof req.body === "object" ? req.body : {};
+    const allowedKeys = [
+      "minCreditForRequest",
+      "shippingFee",
+      "defaultFreeShippingCredit",
+    ];
+
+    const sanitized = {};
+    allowedKeys.forEach((k) => {
+      if (payload[k] === undefined) return;
+      const num = Number(payload[k]);
+      if (!Number.isNaN(num) && num >= 0) {
+        sanitized[k] = num;
+      }
+    });
+
+    const doc = await SystemSettings.findOneAndUpdate(
+      { key: "global" },
+      {
+        $setOnInsert: { key: "global" },
+        ...(Object.keys(sanitized).length > 0
+          ? { $set: { creditSettings: sanitized } }
+          : {}),
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    ).lean();
+
+    const creditSettings = doc?.creditSettings || {};
+    res.status(200).json({
+      success: true,
+      message: "크레딧 설정이 업데이트되었습니다.",
+      data: {
+        creditSettings: {
+          minCreditForRequest: creditSettings.minCreditForRequest || 10000,
+          shippingFee: creditSettings.shippingFee || 3500,
+          defaultFreeShippingCredit:
+            creditSettings.defaultFreeShippingCredit || 3500,
+        },
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "크레딧 설정 업데이트 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

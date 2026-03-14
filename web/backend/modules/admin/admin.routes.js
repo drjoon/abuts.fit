@@ -38,6 +38,8 @@ import {
   updateSystemSettings,
   getSecuritySettings,
   updateSecuritySettings,
+  getCreditSettings,
+  updateCreditSettings,
 } from "../../controllers/admin/admin.settings.controller.js";
 import { getAllFiles } from "../../controllers/admin/admin.files.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
@@ -222,6 +224,10 @@ router.get("/activity-logs", authorize(["admin"]), getActivityLogs);
 // 시스템 설정
 router.get("/settings", authorize(["admin"]), getSystemSettings);
 router.put("/settings", authorize(["admin"]), updateSystemSettings);
+
+// 크레딧 설정
+router.get("/settings/credits", authorize(["admin"]), getCreditSettings);
+router.patch("/settings/credits", authorize(["admin"]), updateCreditSettings);
 
 // 보안 설정
 router.get("/security-settings", authorize(["admin"]), getSecuritySettings);

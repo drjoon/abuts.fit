@@ -8,9 +8,10 @@ import {
 import { AccountTab } from "@/features/settings/tabs/AccountTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
-import { User, Users, Bell } from "lucide-react";
+import { User, Users, Bell, CreditCard } from "lucide-react";
+import { AdminCreditSettingsTab } from "@/features/settings/tabs/AdminCreditSettingsTab";
 
-type TabKey = "account" | "staff" | "notifications";
+type TabKey = "account" | "staff" | "notifications" | "payment";
 
 export const AdminSettingsPage = () => {
   const { user } = useAuthStore();
@@ -36,8 +37,14 @@ export const AdminSettingsPage = () => {
         icon: Bell,
         content: <NotificationsTab />,
       },
+      {
+        key: "payment",
+        label: "결제",
+        icon: CreditCard,
+        content: <AdminCreditSettingsTab />,
+      },
     ],
-    [user]
+    [user],
   );
 
   const tabFromUrl =

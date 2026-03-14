@@ -13,6 +13,11 @@ const systemSettingsSchema = new mongoose.Schema(
       d10: { type: Number, default: 4 },
       d12: { type: Number, default: 4 },
     },
+    creditSettings: {
+      minCreditForRequest: { type: Number, default: 10000 },
+      shippingFee: { type: Number, default: 3500 },
+      defaultFreeShippingCredit: { type: Number, default: 3500 },
+    },
     securitySettings: {
       twoFactorAuth: { type: Boolean, default: true },
       loginNotifications: { type: Boolean, default: true },

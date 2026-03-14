@@ -51,6 +51,7 @@ import {
 } from "@/features/requests/components/RequestDetailDialog";
 import { getNormalizedStage, getNormalizedStageLabel } from "@/utils/stage";
 import { onAppEvent } from "@/shared/realtime/socket";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 type DashboardOutletContext = {
   creditBalance: number | null;
@@ -63,6 +64,7 @@ export const RequestorDashboardPage = () => {
   const { toast } = useToast();
   const { creditBalance, loadingCreditBalance } =
     useOutletContext<DashboardOutletContext>();
+  const { data: systemSettings } = useSystemSettings();
 
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
   const [creditLedgerOpen, setCreditLedgerOpen] = useState(false);
@@ -194,6 +196,8 @@ export const RequestorDashboardPage = () => {
   }, [infiniteData, statsModalLabel]);
 
   const [insufficientCredit, setInsufficientCredit] = useState(false);
+  const [insufficientShippingCredit, setInsufficientShippingCredit] =
+    useState(false);
 
   const {
     data: summaryResponse,
@@ -225,23 +229,51 @@ export const RequestorDashboardPage = () => {
     enabled: !!token,
   });
 
-  // [추가] CAM 승인 대기 중인 건이 있는데 크레딧이 부족한지 확인
+  // 추적관리를 제외한 나머지 공정 단계의 의뢰건이 있는데 크레딧이 부족한지 확인
   useEffect(() => {
-    if (summaryResponse?.success && creditBalance !== null) {
+    if (
+      summaryResponse?.success &&
+      creditBalance !== null &&
+      systemSettings?.creditSettings
+    ) {
       const stats = summaryResponse.data.stats ?? {};
-      const inCam = stats.inCam || 0;
+      const minCredit =
+        systemSettings.creditSettings.minCreditForRequest || 10000;
 
-      // CAM 단계에 있는 건이 하나라도 있고, 잔액이 0 이하거나 매우 낮은 경우 하이라이트
-      // (정확한 금액 비교는 각 의뢰의 가격을 합산해야 하지만, 여기선 "CAM 단계 존재 & 부족 알림" 수준으로 처리)
-      // 사용자 요청: "크레딧이 부족해서 CAM 승인건인데 생산을 시작하지 못하는 경우"
-      // 백엔드에서 402 에러를 받은 이력이 있거나, 현재 잔액이 부족한 상태를 UI에서 표현
-      if (inCam > 0 && creditBalance < 10000) {
+      // 추적관리를 제외한 나머지 공정 단계 (의뢰, CAM, 가공, 세척.패킹, 포장.발송)
+      const totalInProgress =
+        (stats.inRequest || 0) +
+        (stats.inCam || 0) +
+        (stats.inProduction || 0) +
+        (stats.inPacking || 0) +
+        (stats.inShipping || 0);
+
+      if (totalInProgress > 0 && creditBalance < minCredit) {
         setInsufficientCredit(true);
       } else {
         setInsufficientCredit(false);
       }
     }
-  }, [summaryResponse, creditBalance]);
+  }, [summaryResponse, creditBalance, systemSettings]);
+
+  // 포장.발송 단계에 있는 건이 있는데 배송비 크레딧이 부족한지 확인
+  useEffect(() => {
+    if (
+      summaryResponse?.success &&
+      creditBalance !== null &&
+      systemSettings?.creditSettings
+    ) {
+      const stats = summaryResponse.data.stats ?? {};
+      const inShipping = stats.inShipping || 0;
+      const shippingFee = systemSettings.creditSettings.shippingFee || 3500;
+
+      if (inShipping > 0 && creditBalance < shippingFee) {
+        setInsufficientShippingCredit(true);
+      } else {
+        setInsufficientShippingCredit(false);
+      }
+    }
+  }, [summaryResponse, creditBalance, systemSettings]);
 
   const {
     data: bulkResponse,
@@ -627,20 +659,30 @@ export const RequestorDashboardPage = () => {
     <div>
       <DashboardShell
         title={`안녕하세요, ${user.name}님!`}
-        subtitle="의뢰 현황을 확인하세요."
+        subtitle={
+          insufficientShippingCredit
+            ? "배송비 크레딧 부족. 충전해주세요"
+            : "의뢰 현황을 확인하세요."
+        }
         headerRight={
           <div className="flex flex-wrap items-center gap-2">
             <PeriodFilter value={period} onChange={setPeriod} />
             {canOpenCreditLedger && (
               <TooltipProvider>
-                <Tooltip open={insufficientCredit}>
+                <Tooltip
+                  open={insufficientCredit || insufficientShippingCredit}
+                >
                   <TooltipTrigger asChild>
                     <Button
                       type="button"
-                      variant={insufficientCredit ? "destructive" : "outline"}
+                      variant={
+                        insufficientCredit || insufficientShippingCredit
+                          ? "destructive"
+                          : "outline"
+                      }
                       size="sm"
                       className={`h-8 transition-all ${
-                        insufficientCredit
+                        insufficientCredit || insufficientShippingCredit
                           ? "ring-2 ring-destructive ring-offset-2 animate-pulse"
                           : ""
                       }`}
@@ -657,7 +699,11 @@ export const RequestorDashboardPage = () => {
                     side="bottom"
                     className="bg-destructive text-destructive-foreground"
                   >
-                    <p>크레딧을 추가 충전하시면 생산이 진행됩니다</p>
+                    <p>
+                      {insufficientShippingCredit
+                        ? "배송비 크레딧이 부족합니다. 충전해주세요"
+                        : "크레딧을 추가 충전하시면 생산이 진행됩니다"}
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
