@@ -115,6 +115,7 @@ export const BusinessTab = ({
     useState(0);
   const [focusFirstMissingSignal, setFocusFirstMissingSignal] = useState(0);
   const [focusFieldKey, setFocusFieldKey] = useState<FieldKey | null>(null);
+  const renderStateLogRef = useRef<string>("");
 
   const licenseUploadRef = useRef<BusinessLicenseUploadHandle | null>(null);
 
@@ -205,6 +206,34 @@ export const BusinessTab = ({
     businessDataMgmt.isVerified,
     selectedRole,
     registerValidationState,
+  ]);
+
+  useEffect(() => {
+    const showBusinessForm =
+      membershipMgmt.membership === "owner" ||
+      businessDataMgmt.licenseStatus === "ready" ||
+      setupMode === "manual";
+    const signature = JSON.stringify({
+      membership: membershipMgmt.membership,
+      setupMode,
+      licenseStatus: businessDataMgmt.licenseStatus,
+      showBusinessForm,
+      licenseFileName: businessDataMgmt.licenseFileName,
+    });
+    if (renderStateLogRef.current === signature) return;
+    renderStateLogRef.current = signature;
+    console.info("[business-tab] render gate state", {
+      membership: membershipMgmt.membership,
+      setupMode,
+      licenseStatus: businessDataMgmt.licenseStatus,
+      showBusinessForm,
+      licenseFileName: businessDataMgmt.licenseFileName,
+    });
+  }, [
+    membershipMgmt.membership,
+    setupMode,
+    businessDataMgmt.licenseStatus,
+    businessDataMgmt.licenseFileName,
   ]);
 
   const updateSetupMode = useCallback(

@@ -15,7 +15,10 @@ import {
   createEmptyExtracted,
   BusinessDraftPayload,
 } from "./businessStorage";
-import { formatBusinessNumberInput, formatPhoneNumberInput } from "./validations";
+import {
+  formatBusinessNumberInput,
+  formatPhoneNumberInput,
+} from "./validations";
 
 interface UseBusinessDataManagementProps {
   token?: string;
@@ -32,9 +35,8 @@ export const useBusinessDataManagement = (
   const [businessData, setBusinessData] = useState<BusinessData>(() =>
     normalizeBusinessData(),
   );
-  const [extracted, setExtracted] = useState<LicenseExtracted>(
-    createEmptyExtracted,
-  );
+  const [extracted, setExtracted] =
+    useState<LicenseExtracted>(createEmptyExtracted);
   const [licenseFileName, setLicenseFileName] = useState<string>("");
   const [licenseFileId, setLicenseFileId] = useState<string>("");
   const [licenseS3Key, setLicenseS3Key] = useState<string>("");
@@ -53,6 +55,17 @@ export const useBusinessDataManagement = (
     hasAnyLicense: boolean;
     hasAnyData: boolean;
   }>({ payload: null, hasAnyLicense: false, hasAnyData: false });
+  const latestLicenseStateRef = useRef<{
+    fileName: string;
+    fileId: string;
+    s3Key: string;
+    status: LicenseStatus;
+  }>({
+    fileName: "",
+    fileId: "",
+    s3Key: "",
+    status: "missing",
+  });
 
   const applyStoredDraft = useCallback((draft: BusinessDraftPayload) => {
     setBusinessData(normalizeBusinessData(draft.businessData));
@@ -117,10 +130,7 @@ export const useBusinessDataManagement = (
         serverHydratedRef.current = true;
         setValidationSucceeded(Boolean(data?.businessVerified));
 
-        if (
-          suppressPrefillRef.current &&
-          licenseStatus === "missing"
-        ) {
+        if (suppressPrefillRef.current && licenseStatus === "missing") {
           suppressPrefillRef.current = false;
           return;
         }
@@ -166,10 +176,32 @@ export const useBusinessDataManagement = (
         const licName = String(lic?.originalName || "").trim();
         const nextLicenseFileId = String(lic?.fileId || "").trim();
         const nextLicenseS3Key = String(lic?.s3Key || "").trim();
+        const hasServerLicense =
+          Boolean(licName) ||
+          Boolean(nextLicenseFileId) ||
+          Boolean(nextLicenseS3Key);
+        const localLicense = latestLicenseStateRef.current;
+        const hasLocalLicense =
+          Boolean(String(localLicense.fileName || "").trim()) ||
+          Boolean(String(localLicense.fileId || "").trim()) ||
+          Boolean(String(localLicense.s3Key || "").trim());
 
         if (resetVersionRef.current !== loadVersion) return;
 
-        if (licName || nextLicenseFileId || nextLicenseS3Key) {
+        if (next === "none" && !hasServerLicense && hasLocalLicense) {
+          console.info(
+            "[business-data] skip server hydrate license overwrite",
+            {
+              organizationType: props.organizationType,
+              membership: next,
+              localLicenseStatus: localLicense.status,
+              localFileName: localLicense.fileName,
+            },
+          );
+          return;
+        }
+
+        if (hasServerLicense) {
           setLicenseFileName(licName);
           setLicenseFileId(nextLicenseFileId);
           setLicenseS3Key(nextLicenseS3Key);
@@ -188,7 +220,16 @@ export const useBusinessDataManagement = (
     };
 
     load();
-  }, [props.token, props.organizationType, licenseStatus]);
+  }, [props.token, props.organizationType]);
+
+  useEffect(() => {
+    latestLicenseStateRef.current = {
+      fileName: licenseFileName,
+      fileId: licenseFileId,
+      s3Key: licenseS3Key,
+      status: licenseStatus,
+    };
+  }, [licenseFileId, licenseFileName, licenseS3Key, licenseStatus]);
 
   // 멤버십 변경 시 draft 정리
   useEffect(() => {

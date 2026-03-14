@@ -159,6 +159,13 @@ export const useFileUpload = (
             extractedBusinessNumber,
           );
 
+          console.info("[business-upload] parse result", {
+            hasAnyExtracted,
+            hasBusinessNumber: Boolean(extractedBusinessNumber),
+            verified: Boolean(data?.verification?.verified),
+            statusCode: res.status,
+          });
+
           processingToast.dismiss();
 
           // 1. 먼저 모든 검증 수행 (데이터 업데이트 전)
@@ -183,15 +190,40 @@ export const useFileUpload = (
 
           // 빈 인식 결과 체크
           if (!hasAnyExtracted) {
-            handlers.onLicenseStatusChange("error");
             const msg = String(verification?.message || "").trim();
+            handlers.onExtractedChange({
+              ...createEmptyExtracted(),
+              startDate: props.extracted.startDate,
+            });
+            handlers.onBusinessDataChange({
+              ...props.businessData,
+              companyName: props.companyNameTouched
+                ? props.businessData.companyName
+                : "",
+              owner: "",
+              businessNumber: formattedBusinessNumber,
+              address: "",
+              addressDetail: "",
+              zipCode: "",
+              phone: "",
+              email: "",
+              businessType: "",
+              businessItem: "",
+              startDate: "",
+            });
+            handlers.onIsVerifiedChange(false);
+            handlers.onLicenseStatusChange("ready");
+            console.info("[business-upload] fallback to manual form", {
+              reason: "empty_extracted",
+              businessNumber: formattedBusinessNumber,
+            });
             toast({
-              title: "자동 인식 결과가 비어있습니다",
+              title: "자동 인식 결과가 비어 있습니다",
               description:
                 msg ||
-                "이미지가 흐리거나 각도가 틀어져서 인식이 어려울 수 있어요. 정면/선명하게 다시 업로드해보세요.",
+                "이미지가 흐리거나 각도가 틀어져 인식하지 못했습니다. 이어서 수동으로 입력해주세요.",
               variant: "destructive",
-              duration: 4000,
+              duration: 4500,
             });
             return;
           }
