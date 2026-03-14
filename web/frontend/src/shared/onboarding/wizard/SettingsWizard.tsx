@@ -13,15 +13,15 @@ import { RoleStep } from "./steps/RoleStep";
 import { BusinessStep } from "./steps/BusinessStep";
 
 interface SettingsWizardProps {
-  mode: "account" | "organization";
+  mode: "account" | "business";
   user: any;
-  onRequestModeChange: (mode: "account" | "organization") => void;
+  onRequestModeChange: (mode: "account" | "business") => void;
   onWizardComplete: () => void;
 }
 
-export type WizardStepId = "profile" | "phone" | "role" | "organization";
+export type WizardStepId = "profile" | "phone" | "role" | "business";
 
-const STEP_ORDER: WizardStepId[] = ["profile", "phone", "role", "organization"];
+const STEP_ORDER: WizardStepId[] = ["profile", "phone", "role", "business"];
 
 type GuideProgressStep = {
   stepId: string;
@@ -40,7 +40,7 @@ const STEP_GUIDE_IDS: Record<WizardStepId, string> = {
   profile: "wizard.profile",
   phone: "wizard.phone",
   role: "wizard.role",
-  organization: "wizard.organization",
+  business: "wizard.business",
 };
 
 const GUIDE_TO_STEP = Object.entries(STEP_GUIDE_IDS).reduce(
@@ -55,7 +55,7 @@ const createStepCompletionState = (): Record<WizardStepId, boolean> => ({
   profile: false,
   phone: false,
   role: false,
-  organization: false,
+  business: false,
 });
 
 export const SettingsWizard = ({
@@ -67,7 +67,7 @@ export const SettingsWizard = ({
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token);
   const logout = useAuthStore((s) => s.logout);
-  const organizationType = useMemo(() => {
+  const businessType = useMemo(() => {
     const role = String(user?.role || "requestor").trim();
     if (["salesman", "manufacturer", "requestor"].includes(role)) {
       return role;
@@ -89,28 +89,35 @@ export const SettingsWizard = ({
     );
   }, [token, user]);
   const roleStorageKey = useMemo(() => {
-    return `onboarding:wizard-role:${organizationType}:${mode}:${storageIdentity}`;
-  }, [organizationType, mode, storageIdentity]);
+    return `onboarding:wizard-role:${businessType}:${mode}:${storageIdentity}`;
+  }, [businessType, mode, storageIdentity]);
   const legacyRoleStorageKey = useMemo(() => {
-    return `onboarding:wizard-role:${organizationType}:${storageIdentity}`;
-  }, [organizationType, storageIdentity]);
+    return `onboarding:wizard-role:${businessType}:${storageIdentity}`;
+  }, [businessType, storageIdentity]);
   const fallbackRoleStorageKey = useMemo(() => {
-    return `onboarding:wizard-role:${organizationType}:${mode}`;
-  }, [organizationType, mode]);
+    return `onboarding:wizard-role:${businessType}:${mode}`;
+  }, [businessType, mode]);
+  const legacyBusinessRoleStorageKey = useMemo(() => {
+    return `onboarding:wizard-role:${businessType}:organization:${storageIdentity}`;
+  }, [businessType, storageIdentity]);
   const stepStorageKey = useMemo(() => {
-    return `onboarding:wizard-step:${organizationType}:${mode}:${storageIdentity}`;
-  }, [organizationType, mode, storageIdentity]);
+    return `onboarding:wizard-step:${businessType}:${mode}:${storageIdentity}`;
+  }, [businessType, mode, storageIdentity]);
   const legacyStepStorageKey = useMemo(() => {
-    return `onboarding:wizard-step:${organizationType}:${storageIdentity}`;
-  }, [organizationType, storageIdentity]);
+    return `onboarding:wizard-step:${businessType}:${storageIdentity}`;
+  }, [businessType, storageIdentity]);
   const fallbackStepStorageKey = useMemo(() => {
-    return `onboarding:wizard-step:${organizationType}:${mode}`;
-  }, [organizationType, mode]);
+    return `onboarding:wizard-step:${businessType}:${mode}`;
+  }, [businessType, mode]);
+  const legacyBusinessStepStorageKey = useMemo(() => {
+    return `onboarding:wizard-step:${businessType}:organization:${storageIdentity}`;
+  }, [businessType, storageIdentity]);
   const readStoredStep = useCallback(() => {
     if (typeof window === "undefined") return null;
     const raw =
       window.localStorage.getItem(stepStorageKey) ||
       window.localStorage.getItem(legacyStepStorageKey) ||
+      window.localStorage.getItem(legacyBusinessStepStorageKey) ||
       window.localStorage.getItem(fallbackStepStorageKey) ||
       "";
     const resolved = STEP_ORDER.includes(raw as WizardStepId)
@@ -120,8 +127,17 @@ export const SettingsWizard = ({
       window.localStorage.setItem(stepStorageKey, resolved);
       window.localStorage.removeItem(legacyStepStorageKey);
     }
+    if (raw === window.localStorage.getItem(legacyBusinessStepStorageKey)) {
+      window.localStorage.setItem(stepStorageKey, raw);
+      window.localStorage.removeItem(legacyBusinessStepStorageKey);
+    }
     return resolved;
-  }, [fallbackStepStorageKey, legacyStepStorageKey, stepStorageKey]);
+  }, [
+    fallbackStepStorageKey,
+    legacyBusinessStepStorageKey,
+    legacyStepStorageKey,
+    stepStorageKey,
+  ]);
   const [progress, setProgress] = useState<BackendGuideProgress | null>(null);
   const [loading, setLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState<WizardStepId | null>(null);
@@ -131,6 +147,7 @@ export const SettingsWizard = ({
       const storedRole =
         window.localStorage.getItem(roleStorageKey) ||
         window.localStorage.getItem(legacyRoleStorageKey) ||
+        window.localStorage.getItem(legacyBusinessRoleStorageKey) ||
         window.localStorage.getItem(fallbackRoleStorageKey);
       return storedRole === "owner" || storedRole === "member"
         ? storedRole
@@ -240,7 +257,7 @@ export const SettingsWizard = ({
       if (storedStep && !nextCompleted[storedStep]) return storedStep;
       const firstIncomplete = STEP_ORDER.find((step) => !nextCompleted[step]);
       if (firstIncomplete) return firstIncomplete;
-      return prev ?? "organization";
+      return prev ?? "business";
     });
   }, [progress?.steps, readStoredStep]);
 
@@ -298,7 +315,7 @@ export const SettingsWizard = ({
     if (
       currentStep === "profile" ||
       currentStep === "phone" ||
-      currentStep === "organization"
+      currentStep === "business"
     ) {
       const action = nextActionRef.current;
       if (action) {
@@ -329,8 +346,8 @@ export const SettingsWizard = ({
     if (currentIndex <= 0) return;
     const prevStep = STEP_ORDER[currentIndex - 1];
     setCurrentStep(prevStep);
-    // organization 단계를 떠날 때 검증 상태 리셋
-    if (currentStep === "organization") {
+    // 사업자 단계 떠날 때 검증 상태 리셋
+    if (currentStep === "business") {
       setValidationState({ passed: false, validating: false });
     }
   }, [currentStep]);
@@ -367,7 +384,7 @@ export const SettingsWizard = ({
       return { ...prev, [step]: true };
     });
     void markGuideStep(step, true);
-    if (options?.autoAdvance && step !== "organization") {
+    if (options?.autoAdvance && step !== "business") {
       void handleNext();
     }
   };
@@ -380,7 +397,7 @@ export const SettingsWizard = ({
         return "휴대전화 인증";
       case "role":
         return "역할 선택";
-      case "organization":
+      case "business":
         return selectedRole === "owner" ? "사업자 등록" : "사업자 가입";
       default:
         return "";
@@ -395,7 +412,7 @@ export const SettingsWizard = ({
         return "max-w-md";
       case "role":
         return "max-w-md";
-      case "organization":
+      case "business":
         return "max-w-2xl";
       default:
         return "max-w-xl";
@@ -449,12 +466,12 @@ export const SettingsWizard = ({
                 onComplete={() => handleStepComplete("role")}
               />
             )}
-            {currentStep === "organization" && (
+            {currentStep === "business" && (
               <BusinessStep
                 role={selectedRole}
-                organizationType={organizationType}
-                defaultCompleted={stepCompleted.organization}
-                onComplete={() => handleStepComplete("organization")}
+                businessType={businessType}
+                defaultCompleted={stepCompleted.business}
+                onComplete={() => handleStepComplete("business")}
                 registerGoNextAction={registerGoNextAction}
                 registerBusyState={registerStepBusyState}
                 registerValidationState={registerValidationState}
@@ -484,7 +501,7 @@ export const SettingsWizard = ({
                   {(currentStep === "profile" ||
                     currentStep === "phone" ||
                     currentStep === "role" ||
-                    currentStep === "organization") && (
+                    currentStep === "business") && (
                     <Button
                       onClick={() => {
                         void handleNext();
@@ -493,7 +510,7 @@ export const SettingsWizard = ({
                         nextLoading ||
                         stepBusy ||
                         (currentStep === "role" && !selectedRole) ||
-                        (currentStep === "organization" &&
+                        (currentStep === "business" &&
                           selectedRole === "owner" &&
                           !validationState.passed)
                       }

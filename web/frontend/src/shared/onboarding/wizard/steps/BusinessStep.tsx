@@ -4,7 +4,7 @@ import { BusinessTab } from "@/pages/requestor/settings/components/BusinessTab";
 
 interface BusinessStepProps {
   role: "owner" | "member" | null;
-  organizationType: string;
+  businessType: string;
   defaultCompleted?: boolean;
   onComplete?: () => void;
   registerGoNextAction?: (action: (() => Promise<boolean>) | null) => void;
@@ -18,7 +18,7 @@ interface BusinessStepProps {
 
 export const BusinessStep = ({
   role,
-  organizationType,
+  businessType,
   defaultCompleted,
   onComplete,
   registerGoNextAction,
@@ -41,7 +41,7 @@ export const BusinessStep = ({
   return (
     <BusinessTab
       userData={userData}
-      organizationTypeOverride={organizationType}
+      organizationTypeOverride={businessType}
       selectedRole={role}
       registerValidationState={registerValidationState}
       isOnboarding={true}

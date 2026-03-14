@@ -158,76 +158,11 @@ export const useFileUpload = (
             extractedBusinessNumber,
           );
 
-          // 사업자등록번호 중복 확인
-          if (extractedBusinessNumber) {
-            try {
-              const duplicateCheckResponse = await request<any>({
-                path: "/api/organizations/check-business-number",
-                method: "POST",
-                token: props.token,
-                jsonBody: {
-                  businessNumber: formattedBusinessNumber,
-                },
-              });
-
-              if (
-                !duplicateCheckResponse.ok &&
-                duplicateCheckResponse.data?.reason ===
-                  "duplicate_business_number"
-              ) {
-                processingToast.dismiss();
-                handlers.onLicenseFileNameChange("");
-                handlers.onLicenseFileIdChange("");
-                handlers.onLicenseS3KeyChange("");
-                handlers.onLicenseStatusChange("missing");
-                toast({
-                  title: "이미 가입된 사업자등록번호입니다",
-                  description:
-                    "이 사업자등록번호는 다른 계정에서 이미 등록되었습니다. 기존 사업자에 가입 요청을 진행해주세요.",
-                  variant: "destructive",
-                  duration: 5000,
-                });
-                return;
-              }
-            } catch (err) {
-              console.error(
-                "[useFileUpload] Failed to check business number duplicate",
-                err,
-              );
-            }
-          }
-
-          handlers.onExtractedChange({
-            ...nextExtracted,
-            address: "",
-            addressDetail: "",
-            zipCode: "",
-            startDate: nextStartDate,
-          });
-
-          handlers.onBusinessDataChange({
-            ...props.businessData,
-            companyName: props.companyNameTouched
-              ? props.businessData.companyName
-              : nextCompanyName || "",
-            owner: String(nextExtracted?.representativeName || "").trim(),
-            businessNumber: formattedBusinessNumber,
-            address: "",
-            addressDetail: "",
-            zipCode: "",
-            phone: formatPhoneNumberInput(
-              String(nextExtracted?.phoneNumber || "").trim(),
-            ),
-            email: String(nextExtracted?.email || "").trim(),
-            businessType: String(nextExtracted?.businessType || "").trim(),
-            businessItem: String(nextExtracted?.businessItem || "").trim(),
-            startDate: nextStartDate,
-          });
-
-          handlers.onIsVerifiedChange(!!data?.verification?.verified);
           processingToast.dismiss();
 
-          // 중복 사업자등록번호 체크
+          // 1. 먼저 모든 검증 수행 (데이터 업데이트 전)
+
+          // 중복 사업자등록번호 체크 (백엔드 verification)
           if (
             String((verification as any)?.reason || "").trim() ===
             "duplicate_business_number"
@@ -260,7 +195,73 @@ export const useFileUpload = (
             return;
           }
 
-          // 모든 검증 통과 시에만 ready로 변경
+          // 사업자등록번호 중복 확인 (프론트엔드 API 호출)
+          if (extractedBusinessNumber) {
+            try {
+              const duplicateCheckResponse = await request<any>({
+                path: "/api/organizations/check-business-number",
+                method: "POST",
+                token: props.token,
+                jsonBody: {
+                  businessNumber: formattedBusinessNumber,
+                },
+              });
+
+              if (
+                !duplicateCheckResponse.ok &&
+                duplicateCheckResponse.data?.reason ===
+                  "duplicate_business_number"
+              ) {
+                handlers.onLicenseFileNameChange("");
+                handlers.onLicenseFileIdChange("");
+                handlers.onLicenseS3KeyChange("");
+                handlers.onLicenseStatusChange("missing");
+                toast({
+                  title: "이미 가입된 사업자등록번호입니다",
+                  description:
+                    "이 사업자등록번호는 다른 계정에서 이미 등록되었습니다. 기존 사업자에 가입 요청을 진행해주세요.",
+                  variant: "destructive",
+                  duration: 5000,
+                });
+                return;
+              }
+            } catch (err) {
+              console.error(
+                "[useFileUpload] Failed to check business number duplicate",
+                err,
+              );
+            }
+          }
+
+          // 2. 모든 검증 통과 → 데이터 업데이트 및 입력 폼으로 전환
+          handlers.onExtractedChange({
+            ...nextExtracted,
+            address: "",
+            addressDetail: "",
+            zipCode: "",
+            startDate: nextStartDate,
+          });
+
+          handlers.onBusinessDataChange({
+            ...props.businessData,
+            companyName: props.companyNameTouched
+              ? props.businessData.companyName
+              : nextCompanyName || "",
+            owner: String(nextExtracted?.representativeName || "").trim(),
+            businessNumber: formattedBusinessNumber,
+            address: "",
+            addressDetail: "",
+            zipCode: "",
+            phone: formatPhoneNumberInput(
+              String(nextExtracted?.phoneNumber || "").trim(),
+            ),
+            email: String(nextExtracted?.email || "").trim(),
+            businessType: String(nextExtracted?.businessType || "").trim(),
+            businessItem: String(nextExtracted?.businessItem || "").trim(),
+            startDate: nextStartDate,
+          });
+
+          handlers.onIsVerifiedChange(!!data?.verification?.verified);
           handlers.onLicenseStatusChange("ready");
 
           handlers.onAutoOpenAddressSearch();

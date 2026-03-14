@@ -104,12 +104,12 @@ export const SharedOnboardingWizardPage = () => {
     });
   }, [navigate, progress?.finishedAt]);
 
-  const mode = useMemo<"account" | "organization">(() => {
+  const mode = useMemo<"account" | "business">(() => {
     const raw = String(searchParams.get("mode") || "").trim();
-    return raw === "organization" ? "organization" : "account";
+    return raw === "business" ? "business" : "account";
   }, [searchParams]);
 
-  const handleModeChange = (next: "account" | "organization") => {
+  const handleModeChange = (next: "account" | "business") => {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set("mode", next);
     setSearchParams(nextParams, { replace: true });
