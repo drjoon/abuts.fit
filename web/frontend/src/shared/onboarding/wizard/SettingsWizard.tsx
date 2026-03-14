@@ -168,8 +168,15 @@ export const SettingsWizard = ({
 
   const handleLogout = useCallback(() => {
     logout();
-    navigate("/");
-  }, [logout, navigate]);
+    try {
+      localStorage.removeItem("abuts_auth_token");
+      localStorage.removeItem("abuts_auth_refresh_token");
+      localStorage.removeItem("abuts_auth_user");
+    } catch {
+      // ignore
+    }
+    window.location.replace("/login");
+  }, [logout]);
 
   const registerGoNextAction = useCallback(
     (action: (() => Promise<boolean>) | null) => {

@@ -174,7 +174,7 @@ export const DashboardLayout = () => {
 
   useEffect(() => {
     if (!token) return;
-    if (!user) return;
+    if (!user || !user.id) return;
     if (!shouldForceOnboarding) return;
     if (isWizardRoute) return;
     if (onboardingCompleted) return;

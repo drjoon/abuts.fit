@@ -27,8 +27,14 @@ export const useSocket = () => {
       };
     }
 
+    // 토큰이 사라지면 즉시 소켓을 끊어 connect_error를 방지한다.
+    if (!token && socketInitialized.current) {
+      disconnectSocket();
+      socketInitialized.current = false;
+    }
+
     return () => {
-      if (!token && socketInitialized.current) {
+      if (socketInitialized.current && !token) {
         disconnectSocket();
         socketInitialized.current = false;
       }

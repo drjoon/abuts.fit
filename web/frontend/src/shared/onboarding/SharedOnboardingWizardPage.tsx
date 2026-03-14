@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { apiFetch } from "@/shared/api/apiClient";
 import { onAppEvent } from "@/shared/realtime/socket";
@@ -17,6 +17,17 @@ export const SharedOnboardingWizardPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [progress, setProgress] = useState<BackendGuideProgress | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!token) {
+      navigate("/login", { replace: true });
+    }
+  }, [navigate, token]);
+
+  // 토큰이 사라진 상태에서 위자드 경로에 머무를 때 빈 화면이 되지 않도록 즉시 로그인으로 이동
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -76,6 +87,10 @@ export const SharedOnboardingWizardPage = () => {
   const markWizardCompleted = async () => {
     if (!token) return;
     if (!user) return;
+    setUser({
+      ...user,
+      onboardingWizardCompleted: true,
+    });
     try {
       const res = await apiFetch<any>({
         path: "/api/users/profile",
