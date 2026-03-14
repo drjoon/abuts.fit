@@ -1,6 +1,6 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import {
   normalizeCaseInfosImplantFields,
   computePriceForRequest,
@@ -21,7 +21,7 @@ import {
 } from "./creation.helpers.controller.js";
 import { getRequestorOrgId } from "./utils.js";
 import { calculateInitialProductionSchedule } from "./production.utils.js";
-import { getManufacturerLeadTimesUtil } from "../organizations/leadTime.controller.js";
+import { getManufacturerLeadTimesUtil } from "../businesses/leadTime.controller.js";
 
 /**
  * 새 의뢰 생성
@@ -77,7 +77,7 @@ export async function createRequest(req, res) {
           try {
             const orgId = getRequestorOrgId(req);
             if (orgId && Types.ObjectId.isValid(orgId)) {
-              const org = await RequestorOrganization.findById(orgId)
+              const org = await Business.findById(orgId)
                 .select({ "shippingPolicy.weeklyBatchDays": 1 })
                 .lean();
               requestorWeeklyBatchDays = Array.isArray(
@@ -93,7 +93,7 @@ export async function createRequest(req, res) {
           // 제조사 리드타임 한 번만 로드
           const { getManufacturerLeadTimesUtil } =
             await import("./production.utils.js").then(
-              () => import("../organizations/leadTime.controller.js"),
+              () => import("../businesses/leadTime.controller.js"),
             );
           const manufacturerSettings = await getManufacturerLeadTimesUtil();
           const leadTimes = manufacturerSettings?.leadTimes || {};
@@ -179,7 +179,7 @@ export async function createRequest(req, res) {
               ...rest,
               caseInfos: normalizedCaseInfos,
               requestor: req.user._id,
-              requestorBusinessId:
+              businessId:
                 req.user?.role === "requestor" && req.user?.businessId
                   ? req.user.businessId
                   : null,
@@ -306,7 +306,7 @@ export async function createRequest(req, res) {
           try {
             const orgId = getRequestorOrgId(req);
             if (orgId && Types.ObjectId.isValid(orgId)) {
-              const org = await RequestorOrganization.findById(orgId)
+              const org = await Business.findById(orgId)
                 .select({ "shippingPolicy.weeklyBatchDays": 1 })
                 .lean();
               requestorWeeklyBatchDays = Array.isArray(
@@ -322,7 +322,7 @@ export async function createRequest(req, res) {
           // 제조사 리드타임도 한 번만 로드
           const { getManufacturerLeadTimesUtil } =
             await import("./production.utils.js").then(
-              () => import("../organizations/leadTime.controller.js"),
+              () => import("../businesses/leadTime.controller.js"),
             );
           const manufacturerSettings = await getManufacturerLeadTimesUtil();
           const leadTimes = manufacturerSettings?.leadTimes || {};
@@ -413,7 +413,7 @@ export async function createRequest(req, res) {
               ...rest,
               caseInfos: normalizedCaseInfos,
               requestor: req.user._id,
-              requestorBusinessId:
+              businessId:
                 req.user?.role === "requestor" && req.user?.businessId
                   ? req.user.businessId
                   : null,
@@ -581,7 +581,7 @@ export async function createRequest(req, res) {
       ...bodyRest,
       caseInfos: normalizedCaseInfos,
       requestor: req.user._id,
-      requestorBusinessId:
+      businessId:
         req.user?.role === "requestor" && req.user?.businessId
           ? req.user.businessId
           : null,
@@ -623,7 +623,7 @@ export async function createRequest(req, res) {
     try {
       const orgId = getRequestorOrgId(req);
       if (orgId && Types.ObjectId.isValid(orgId)) {
-        const org = await RequestorOrganization.findById(orgId)
+        const org = await Business.findById(orgId)
           .select({ "shippingPolicy.weeklyBatchDays": 1 })
           .lean();
         requestorWeeklyBatchDays = Array.isArray(
@@ -666,7 +666,7 @@ export async function createRequest(req, res) {
       // Use manufacturer lead times based on diameter
       const { getManufacturerLeadTimesUtil } =
         await import("./production.utils.js").then(
-          () => import("../organizations/leadTime.controller.js"),
+          () => import("../businesses/leadTime.controller.js"),
         );
       const manufacturerSettings = await getManufacturerLeadTimesUtil();
       const leadTimes = manufacturerSettings?.leadTimes || {};
@@ -799,7 +799,7 @@ export async function createRequestsBulk(req, res) {
     try {
       const orgId = getRequestorOrgId(req);
       if (orgId && Types.ObjectId.isValid(orgId)) {
-        const org = await RequestorOrganization.findById(orgId)
+        const org = await Business.findById(orgId)
           .select({ "shippingPolicy.weeklyBatchDays": 1 })
           .lean();
         requestorWeeklyBatchDays = Array.isArray(
@@ -1103,7 +1103,7 @@ export async function createRequestsBulk(req, res) {
                 _id: 1,
                 requestId: 1,
                 requestor: 1,
-                requestorBusinessId: 1,
+                businessId: 1,
                 manufacturerStage: 1,
               })
               .populate("requestor", "_id businessId");
@@ -1165,7 +1165,7 @@ export async function createRequestsBulk(req, res) {
             ...rest,
             caseInfos: normalizedCaseInfos,
             requestor: req.user._id,
-            requestorBusinessId:
+            businessId:
               req.user?.role === "requestor" && req.user?.businessId
                 ? req.user.businessId
                 : null,

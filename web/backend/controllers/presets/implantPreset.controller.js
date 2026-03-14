@@ -93,7 +93,7 @@ export async function getImplantPresets(req, res) {
       ? await Request.aggregate([
           {
             $match: {
-              requestorBusinessId: businessId,
+              businessId: businessId,
               connection: { $ne: null },
             },
           },

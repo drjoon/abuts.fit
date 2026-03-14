@@ -1224,7 +1224,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
         if (!request.mailboxAddress) {
           try {
             const requestorOrgId =
-              request.requestorBusinessId ||
+              request.businessId ||
               request.requestor?.businessId ||
               request.requestor?.business?._id;
             request.mailboxAddress =

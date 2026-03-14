@@ -53,7 +53,7 @@ const userSchema = new mongoose.Schema(
     },
     referredByBusinessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "RequestorOrganization",
+      ref: "Business",
       default: null,
       index: true,
     },
@@ -80,7 +80,7 @@ const userSchema = new mongoose.Schema(
     },
     businessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "RequestorOrganization",
+      ref: "Business",
       default: null,
       index: true,
     },

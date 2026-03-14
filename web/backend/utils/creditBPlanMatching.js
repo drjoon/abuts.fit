@@ -3,8 +3,8 @@ import ChargeOrder from "../models/chargeOrder.model.js";
 import BankTransaction from "../models/bankTransaction.model.js";
 import CreditLedger from "../models/creditLedger.model.js";
 import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
-import RequestorOrganization from "../models/requestorOrganization.model.js";
-import { emitCreditBalanceUpdatedToOrganization } from "./creditRealtime.js";
+import Business from "../models/business.model.js";
+import { emitCreditBalanceUpdatedToBusiness } from "./creditRealtime.js";
 
 export function extractDepositCodeFromText(text) {
   const raw = String(text || "");
@@ -213,8 +213,8 @@ async function matchTxWithOrder({ tx, order }) {
       );
 
       if (creditLedgerResult?.upsertedCount) {
-        await emitCreditBalanceUpdatedToOrganization({
-          organizationId: order.organizationId,
+        await emitCreditBalanceUpdatedToBusiness({
+          businessId: order.organizationId,
           balanceDelta: Number(order.supplyAmount),
           reason: "bplan_auto_charge",
           refId: order._id,
@@ -228,7 +228,7 @@ async function matchTxWithOrder({ tx, order }) {
         { session },
       );
       if (!existingDraft) {
-        const org = await RequestorOrganization.findById(order.organizationId)
+        const org = await Business.findById(order.organizationId)
           .select({
             "extracted.businessNumber": 1,
             "extracted.companyName": 1,

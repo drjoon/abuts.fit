@@ -145,13 +145,13 @@ async function runDailySnapshot(ymd, range) {
     ? await Request.aggregate([
         {
           $match: {
-            requestorBusinessId: { $in: requestorLeaderBusinessObjectIds },
+            businessId: { $in: requestorLeaderBusinessObjectIds },
             manufacturerStage: "추적관리",
             createdAt: { $gte: rangeStart, $lte: rangeEnd },
           },
         },
         {
-          $group: { _id: "$requestorBusinessId", orderCount: { $sum: 1 } },
+          $group: { _id: "$businessId", orderCount: { $sum: 1 } },
         },
       ])
     : [];

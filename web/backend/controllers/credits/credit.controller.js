@@ -1,7 +1,7 @@
 import CreditLedger from "../../models/creditLedger.model.js";
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 
 function roundUpUnit(amount, unit) {
   const n = Number(amount);
@@ -21,7 +21,7 @@ async function resolveBusinessIdForCredit(req) {
     return "";
   }
 
-  const org = await RequestorOrganization.findOne({
+  const business = await Business.findOne({
     $or: [
       { owner: userId },
       { owners: userId },
@@ -35,28 +35,25 @@ async function resolveBusinessIdForCredit(req) {
     .select({ _id: 1 })
     .lean();
 
-  if (org?._id) {
-    const resolved = String(org._id);
-    console.error(
-      "[CREDIT_BALANCE_SCOPE_FALLBACK] resolved from organization",
-      {
-        userId: String(userId),
-        resolvedBusinessId: resolved,
-        originalUserBusinessId: req.user?.businessId
-          ? String(req.user.businessId)
-          : null,
-      },
-    );
+  if (business?._id) {
+    const resolved = String(business._id);
+    console.error("[CREDIT_BALANCE_SCOPE_FALLBACK] resolved from business", {
+      userId: String(userId),
+      resolvedBusinessId: resolved,
+      originalUserBusinessId: req.user?.businessId
+        ? String(req.user.businessId)
+        : null,
+    });
     return resolved;
   }
 
   const requestWithBusiness = await Request.findOne({ requestor: userId })
     .sort({ createdAt: -1, _id: -1 })
-    .select({ requestorBusinessId: 1, requestId: 1 })
+    .select({ businessId: 1, requestId: 1 })
     .lean();
 
-  if (requestWithBusiness?.requestorBusinessId) {
-    const resolved = String(requestWithBusiness.requestorBusinessId);
+  if (requestWithBusiness?.businessId) {
+    const resolved = String(requestWithBusiness.businessId);
     console.error("[CREDIT_BALANCE_SCOPE_FALLBACK] resolved from request", {
       userId: String(userId),
       resolvedBusinessId: resolved,

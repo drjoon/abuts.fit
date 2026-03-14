@@ -1,4 +1,4 @@
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 
 export async function adminOverrideOrganizationVerification(req, res) {
   try {
@@ -6,7 +6,7 @@ export async function adminOverrideOrganizationVerification(req, res) {
     const verified = Boolean(req.body?.verified);
     const message = String(req.body?.message || "").trim();
 
-    const org = await RequestorOrganization.findById(orgId);
+    const org = await Business.findById(orgId);
     if (!org) {
       return res.status(404).json({
         success: false,

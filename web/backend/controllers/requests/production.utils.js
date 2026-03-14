@@ -180,7 +180,7 @@ export async function calculateInitialProductionSchedule({
 
   try {
     const { getManufacturerLeadTimesUtil } =
-      await import("../organizations/leadTime.controller.js");
+      await import("../businesses/leadTime.controller.js");
     const manufacturerSettings = await getManufacturerLeadTimesUtil();
     manufacturerLeadTimes = manufacturerSettings?.leadTimes || null;
 

@@ -140,25 +140,21 @@ const normalizeHanjinZip = (value) => {
 const resolveMailboxCode = (request) =>
   String(request?.mailboxAddress || request?.mailbox || "").trim();
 
-const resolveRequestorOrganization = (request) => {
+const resolveBusinessOrganization = (request) => {
   const candidates = [
-    request?.requestorOrganization,
-    request?.requestorBusinessId,
+    request?.business,
+    request?.businessId,
     request?.requestor?.businessInfo,
   ];
-  return (
-    candidates.find(
-      (candidate) => candidate && typeof candidate === "object",
-    ) || {}
-  );
+  return candidates.find((c) => c && typeof c === "object" && c._id) || null;
 };
 
 const resolveRequestOrganizationName = (request) => {
   const requestor = request?.requestor || {};
-  const requestorOrg = resolveRequestorOrganization(request);
-  const extracted = requestorOrg?.extracted || {};
+  const business = resolveBusinessOrganization(request);
+  const extracted = business?.extracted || {};
   return (
-    requestorOrg?.name ||
+    business?.name ||
     extracted?.companyName ||
     requestor?.business ||
     request?.caseInfos?.clinicName ||
@@ -169,8 +165,8 @@ const resolveRequestOrganizationName = (request) => {
 
 const resolveReceiverZipSource = (request) => {
   const requestor = request?.requestor || {};
-  const requestorOrg = resolveRequestorOrganization(request);
-  const extracted = requestorOrg?.extracted || {};
+  const business = resolveBusinessOrganization(request);
+  const extracted = business?.extracted || {};
   return (
     requestor?.address?.postalCode ||
     requestor?.zipCode ||
@@ -183,8 +179,8 @@ const resolveReceiverZipSource = (request) => {
 
 const normalizeReceiverAddressForHanjin = (request) => {
   const requestor = request?.requestor || {};
-  const requestorOrg = resolveRequestorOrganization(request);
-  const extracted = requestorOrg?.extracted || {};
+  const business = resolveBusinessOrganization(request);
+  const extracted = business?.extracted || {};
   const addressCandidates = [
     requestor?.addressText,
     requestor?.address?.roadAddress,
@@ -202,8 +198,8 @@ const normalizeReceiverAddressForHanjin = (request) => {
 
 const resolveReceiverDetailAddress = (request) => {
   const requestor = request?.requestor || {};
-  const requestorOrg = resolveRequestorOrganization(request);
-  const extracted = requestorOrg?.extracted || {};
+  const business = resolveBusinessOrganization(request);
+  const extracted = business?.extracted || {};
   const candidates = [
     requestor?.address?.detailAddress,
     requestor?.address?.address2,
@@ -221,8 +217,8 @@ const resolveReceiverDetailAddress = (request) => {
 const logMissingReceiverAddressDiagnostics = ({ request, mailbox, reason }) => {
   try {
     const requestor = request?.requestor || {};
-    const requestorOrg = resolveRequestorOrganization(request);
-    const extracted = requestorOrg?.extracted || {};
+    const business = resolveBusinessOrganization(request);
+    const extracted = business?.extracted || {};
     const normalizedBaseAddress = normalizeReceiverAddressForHanjin(request);
     const normalizedDetailAddress = resolveReceiverDetailAddress(request);
     console.error("[hanjin][address] missing receiver address", {
@@ -231,8 +227,7 @@ const logMissingReceiverAddressDiagnostics = ({ request, mailbox, reason }) => {
       requestId: String(request?.requestId || "").trim() || null,
       requestMongoId: String(request?._id || "").trim() || null,
       organizationName:
-        String(requestorOrg?.name || extracted?.companyName || "").trim() ||
-        null,
+        String(business?.name || extracted?.companyName || "").trim() || null,
       requestorAddressText: String(requestor?.addressText || "").trim() || null,
       requestorAddress1:
         String(
@@ -465,7 +460,7 @@ export const findPackingStageRequestsByMailboxes = async (
 
   if (options.populateRequestor !== false) {
     query = query.populate("requestor", "name business phoneNumber address");
-    query = query.populate("requestorBusinessId", "name extracted");
+    query = query.populate("businessId", "name extracted");
   }
 
   if (options.select && typeof options.select === "object") {
@@ -597,8 +592,8 @@ const buildHanjinDraftPayload = (requests) => {
     ([mailbox, group]) => {
       const first = group[0] || {};
       const requestor = first.requestor || {};
-      const requestorOrg = resolveRequestorOrganization(first);
-      const extracted = requestorOrg.extracted || {};
+      const business = resolveBusinessOrganization(first);
+      const extracted = business?.extracted || {};
       const organizationName = resolveRequestOrganizationName(first);
       const addressText = normalizeReceiverAddressForHanjin(first);
       const receiverZip = normalizeHanjinZip(resolveReceiverZipSource(first));

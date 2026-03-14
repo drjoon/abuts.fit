@@ -1,8 +1,8 @@
 import Counter from "../models/counter.model.js";
-import RequestorOrganization from "../models/requestorOrganization.model.js";
+import Business from "../models/business.model.js";
 import ChargeOrder from "../models/chargeOrder.model.js";
 
-const ORG_DEPOSIT_CODE_COUNTER_KEY = "requestorOrganization.depositCode.v2";
+const BUSINESS_DEPOSIT_CODE_COUNTER_KEY = "business.depositCode.v2";
 const CHARGE_ORDER_DEPOSIT_CODE_COUNTER_KEY = "chargeOrder.depositCode.v2";
 
 function formatDepositCode(n) {
@@ -23,7 +23,7 @@ async function getNextSequence({ key, startAt }) {
       $setOnInsert: { key },
       $inc: { seq: 1 },
     },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
+    { new: true, upsert: true, setDefaultsOnInsert: true },
   ).lean();
 
   const seq = Number(doc?.seq || 0);
@@ -38,7 +38,7 @@ export async function ensureOrganizationDepositCode(organizationId) {
     throw new Error("organizationId가 필요합니다.");
   }
 
-  const org = await RequestorOrganization.findById(organizationId)
+  const org = await Business.findById(organizationId)
     .select({ depositCode: 1 })
     .lean();
 
@@ -49,7 +49,7 @@ export async function ensureOrganizationDepositCode(organizationId) {
 
   for (let i = 0; i < 5; i += 1) {
     const next = await getNextSequence({
-      key: ORG_DEPOSIT_CODE_COUNTER_KEY,
+      key: BUSINESS_DEPOSIT_CODE_COUNTER_KEY,
       startAt: 1,
     });
     if (next > 99) {
@@ -60,12 +60,12 @@ export async function ensureOrganizationDepositCode(organizationId) {
 
     let result;
     try {
-      result = await RequestorOrganization.updateOne(
+      result = await Business.updateOne(
         {
           _id: organizationId,
           $or: [{ depositCode: "" }, { depositCode: null }],
         },
-        { $set: { depositCode } }
+        { $set: { depositCode } },
       );
     } catch (err) {
       if (err && err.code === 11000) {
@@ -78,7 +78,7 @@ export async function ensureOrganizationDepositCode(organizationId) {
       return { depositCode, created: true };
     }
 
-    const after = await RequestorOrganization.findById(organizationId)
+    const after = await Business.findById(organizationId)
       .select({ depositCode: 1 })
       .lean();
     const afterCode = String(after?.depositCode || "").trim();

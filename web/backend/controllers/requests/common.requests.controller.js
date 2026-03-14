@@ -6,7 +6,7 @@ import Machine from "../../models/machine.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import User from "../../models/user.model.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
@@ -30,7 +30,7 @@ import s3Utils, {
   deleteFileFromS3,
   getSignedUrl as getSignedUrlForS3Key,
 } from "../../utils/s3.utils.js";
-import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
+import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -59,8 +59,7 @@ function withBridgeHeaders(extra = {}) {
 async function ensureRequestCancelRefund({ request, actorUserId }) {
   if (!request?._id) return;
 
-  const businessId =
-    request.requestorBusinessId || request.requestor?.businessId;
+  const businessId = request.businessId || request.requestor?.businessId;
   if (!businessId) return;
 
   const spendRows = await CreditLedger.find({
@@ -113,8 +112,8 @@ async function ensureRequestCancelRefund({ request, actorUserId }) {
   );
 
   if (result?.upsertedCount) {
-    await emitCreditBalanceUpdatedToOrganization({
-      organizationId: businessId,
+    await emitCreditBalanceUpdatedToBusiness({
+      businessId,
       balanceDelta: refundAmount,
       reason: "request_cancel_refund",
       refId: request._id,
@@ -271,7 +270,7 @@ export async function getAllRequests(req, res) {
       "mailboxAddress",
       "shippingLabelPrinted",
       "shippingWorkflow",
-      "requestorBusinessId",
+      "businessId",
       "referenceIds",
       "caseInfos.clinicName",
       "caseInfos.patientName",
@@ -308,7 +307,7 @@ export async function getAllRequests(req, res) {
       query = query
         .select(worksheetSelect)
         .populate("requestor", "name business")
-        .populate("requestorBusinessId", "name extracted");
+        .populate("businessId", "name extracted");
       if (includeDelivery) {
         // 배송 정보가 필요한 경우에만 최소 필드로 populate
         query = query.populate(
@@ -316,13 +315,13 @@ export async function getAllRequests(req, res) {
           "shippedAt pickedUpAt deliveredAt carrier trackingNumber updatedAt tracking",
         );
       }
-      // requestorOrganizationId는 카드 뷰에서 미사용이므로 populate 생략
+      // businessId는 이미 populate되므로 추가 작업 불필요
     } else {
       query = query
         .select("-messages")
         .populate("requestor", "name email business phoneNumber address")
         .populate("deliveryInfoRef")
-        .populate("requestorBusinessId", "name extracted");
+        .populate("businessId", "name extracted");
     }
 
     const rawRequests = await query.lean();

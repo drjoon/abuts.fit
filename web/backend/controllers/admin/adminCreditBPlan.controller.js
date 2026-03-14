@@ -4,9 +4,9 @@ import BankTransaction from "../../models/bankTransaction.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import TaxInvoiceDraft from "../../models/taxInvoiceDraft.model.js";
 import AdminAuditLog from "../../models/adminAuditLog.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
-import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
+import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import {
   upsertBankTransaction,
   autoMatchBankTransactionsOnce,
@@ -477,8 +477,8 @@ export async function adminManualMatch(req, res) {
       );
 
       if (creditLedgerResult?.upsertedCount) {
-        await emitCreditBalanceUpdatedToOrganization({
-          organizationId: order.businessId,
+        await emitCreditBalanceUpdatedToBusiness({
+          businessId: order.businessId,
           balanceDelta: Number(order.supplyAmount),
           reason: "bplan_admin_charge",
           refId: order._id,
@@ -491,7 +491,7 @@ export async function adminManualMatch(req, res) {
         { session },
       );
       if (!existingDraft) {
-        const org = await RequestorOrganization.findById(order.businessId)
+        const org = await Business.findById(order.businessId)
           .select({
             "extracted.businessNumber": 1,
             "extracted.companyName": 1,

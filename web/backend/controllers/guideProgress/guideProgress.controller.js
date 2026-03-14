@@ -1,6 +1,6 @@
 import GuideProgress from "../../models/guideProgress.model.js";
 import User from "../../models/user.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import { emitAppEventToUser } from "../../socket.js";
 
 const GUIDE_PROGRESS_EVENT = "guide-progress:updated";
@@ -134,7 +134,7 @@ export async function getGuideProgress(req, res) {
           })
           .lean(),
         req.user.businessId
-          ? RequestorOrganization.findById(req.user.businessId)
+          ? Business.findById(req.user.businessId)
               .select({ name: 1, extracted: 1, businessLicense: 1 })
               .lean()
           : Promise.resolve(null),

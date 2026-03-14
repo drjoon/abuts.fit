@@ -1,7 +1,7 @@
 import { randomBytes } from "crypto";
 import { uploadFileToS3 } from "../../utils/s3.utils.js";
 import BusinessRegistrationInquiry from "../../models/businessRegistrationInquiry.model.js";
-import { resolveOrganizationType } from "../organizations/organizationRole.util.js";
+import { resolveBusinessType } from "../businesses/businessRole.util.js";
 
 const buildUserSnapshot = (user) => ({
   name: String(user?.name || ""),
@@ -156,7 +156,8 @@ export async function createBusinessRegistrationInquiry(req, res) {
   try {
     const { reason, ownerForm, license, organizationType, errorMessage } =
       req.body || {};
-    const resolvedType = resolveOrganizationType(req.user, organizationType);
+    const userType = resolveBusinessType(req.user, null);
+    const resolvedType = resolveBusinessType(req.user, organizationType);
     if (!resolvedType) {
       return res.status(403).json({
         success: false,

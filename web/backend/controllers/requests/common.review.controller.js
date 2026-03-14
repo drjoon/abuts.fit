@@ -314,7 +314,7 @@ export async function updateReviewStatusByStage(req, res) {
       // 승인 시 다음 공정으로 전환, 미승인(PENDING) 시 현재 단계로 되돌림
       if (status === "APPROVED") {
         const resolvedRequestorOrgId = (() => {
-          const direct = request.requestorBusinessId;
+          const direct = request.businessId;
           if (direct) return direct;
           const fallbackId =
             request.requestor?.businessId ||
@@ -332,13 +332,13 @@ export async function updateReviewStatusByStage(req, res) {
           request?.caseInfos?.newSystemRequest?.requested &&
           request?.caseInfos?.newSystemRequest?.free;
 
-        if (!request.requestorBusinessId && resolvedRequestorOrgId) {
-          request.requestorBusinessId = resolvedRequestorOrgId;
+        if (!request.businessId && resolvedRequestorOrgId) {
+          request.businessId = resolvedRequestorOrgId;
         }
 
         {
-          const requestBusinessIdStr = request.requestorBusinessId
-            ? String(request.requestorBusinessId)
+          const requestBusinessIdStr = request.businessId
+            ? String(request.businessId)
             : "";
           const requestorUserBusinessIdStr = request.requestor?.businessId
             ? String(request.requestor.businessId)
@@ -353,7 +353,7 @@ export async function updateReviewStatusByStage(req, res) {
               requestMongoId: String(request._id),
               effectiveStage,
               status,
-              requestorBusinessId: requestBusinessIdStr,
+              businessId: requestBusinessIdStr,
               requestorUserBusinessId: requestorUserBusinessIdStr,
               requestorUserId: request.requestor?._id
                 ? String(request.requestor._id)

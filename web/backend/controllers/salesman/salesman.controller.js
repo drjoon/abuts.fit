@@ -1,5 +1,5 @@
 import Request from "../../models/request.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import User from "../../models/user.model.js";
 import SalesmanLedger from "../../models/salesmanLedger.model.js";
 import { Types } from "mongoose";
@@ -388,7 +388,7 @@ export async function getSalesmanDashboard(req, res) {
       });
     }
 
-    const orgDocs = await RequestorOrganization.find({
+    const orgDocs = await Business.find({
       _id: { $in: organizationIds },
     })
       .select({ _id: 1, name: 1, extracted: 1, verification: 1 })
@@ -405,14 +405,14 @@ export async function getSalesmanDashboard(req, res) {
     const revenueRows = await Request.aggregate([
       {
         $match: {
-          requestorBusinessId: { $in: orgObjectIds },
+          businessId: { $in: orgObjectIds },
           manufacturerStage: "추적관리",
           createdAt: { $gte: start, $lt: end },
         },
       },
       {
         $group: {
-          _id: "$requestorBusinessId",
+          _id: "$businessId",
           revenueAmount: {
             $sum: {
               $ifNull: ["$price.paidAmount", { $ifNull: ["$price.amount", 0] }],

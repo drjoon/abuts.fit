@@ -84,7 +84,7 @@ async function progressStages() {
       if (!req.mailboxAddress) {
         try {
           const requestorOrgId =
-            req.requestorBusinessId || req.requestor?.businessId;
+            req.businessId || req.requestor?.businessId;
           req.mailboxAddress =
             await allocateVirtualMailboxAddress(requestorOrgId);
         } catch (error) {

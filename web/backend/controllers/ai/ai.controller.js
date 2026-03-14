@@ -1,10 +1,10 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
-import Organization from "../../models/organization.model.js";
+import Organization from "../../models/business.model.js";
 import {
-  assertOrganizationRole,
-  buildOrganizationTypeFilter,
-} from "../organizations/organizationRole.util.js";
+  assertBusinessRole,
+  buildBusinessTypeFilter,
+} from "../businesses/businessRole.util.js";
 import s3Utils, { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
 
 // 지연 초기화: dotenv 로드 후 첫 호출 시 초기화
@@ -45,14 +45,14 @@ export async function parseBusinessLicense(req, res) {
       });
     }
 
-    const roleCheck = assertOrganizationRole(req, res);
+    const roleCheck = assertBusinessRole(req, res);
     if (!roleCheck) return;
-    const { organizationType } = roleCheck;
+    const { businessType } = roleCheck;
 
     const hasOrganization = !!req.user.businessId;
     let org = null;
     if (hasOrganization) {
-      const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
+      const orgTypeFilter = buildBusinessTypeFilter(businessType);
       org = await Organization.findOne({
         _id: req.user.businessId,
         ...orgTypeFilter,

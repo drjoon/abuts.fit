@@ -390,7 +390,7 @@ async function finalizeMailboxPickupResult({
     _id: { $in: requestDocs.map((request) => request._id) },
   })
     .populate("requestor", "name business phoneNumber address")
-    .populate("requestorBusinessId", "name extracted")
+    .populate("businessId", "name extracted")
     .populate("deliveryInfoRef");
 
   for (const doc of updatedDocs) {
@@ -493,7 +493,7 @@ async function markMailboxWorkflowError({
     manufacturerStage: "포장.발송",
   })
     .populate("requestor", "name business phoneNumber address")
-    .populate("requestorBusinessId", "name extracted")
+    .populate("businessId", "name extracted")
     .populate("deliveryInfoRef");
 
   for (const requestDoc of requestDocs) {
@@ -777,7 +777,7 @@ export async function printHanjinLabels(req, res) {
       manufacturerStage: "포장.발송",
     })
       .populate("requestor", "name business phoneNumber address")
-      .populate("requestorBusinessId", "name extracted")
+      .populate("businessId", "name extracted")
       .populate("deliveryInfoRef");
 
     for (const doc of updatedDocs) {
@@ -977,7 +977,7 @@ export async function cancelHanjinPickup(req, res) {
         manufacturerStage: "포장.발송",
       })
         .populate("requestor", "name business phoneNumber address")
-        .populate("requestorBusinessId", "name extracted")
+        .populate("businessId", "name extracted")
         .populate("deliveryInfoRef");
 
       console.log("[hanjin][pickup-cancel][debug] before update", {
@@ -1056,7 +1056,7 @@ export async function cancelHanjinPickup(req, res) {
         _id: { $in: requestDocs.map((request) => request._id) },
       })
         .populate("requestor", "name business phoneNumber address")
-        .populate("requestorBusinessId", "name extracted")
+        .populate("businessId", "name extracted")
         .populate("deliveryInfoRef");
 
       console.log("[hanjin][pickup-cancel][debug] reloaded docs before emit", {

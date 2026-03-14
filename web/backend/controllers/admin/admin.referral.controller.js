@@ -129,14 +129,14 @@ export async function getReferralGroups(req, res) {
       ? await Request.aggregate([
           {
             $match: {
-              requestorBusinessId: { $in: relevantBusinessObjectIds },
+              businessId: { $in: relevantBusinessObjectIds },
               manufacturerStage: "추적관리",
               createdAt: { $gte: periodStart, $lte: periodEnd },
             },
           },
           {
             $group: {
-              _id: "$requestorBusinessId",
+              _id: "$businessId",
               orderCount: { $sum: 1 },
               revenueAmount: {
                 $sum: {
@@ -160,18 +160,18 @@ export async function getReferralGroups(req, res) {
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
 
-    const requestorBusinessRows = requestorLeaderBusinessObjectIds.length
+    const businessRows = requestorLeaderBusinessObjectIds.length
       ? await Request.aggregate([
           {
             $match: {
-              requestorBusinessId: { $in: requestorLeaderBusinessObjectIds },
+              businessId: { $in: requestorLeaderBusinessObjectIds },
               manufacturerStage: "추적관리",
               createdAt: { $gte: periodStart, $lte: periodEnd },
             },
           },
           {
             $group: {
-              _id: "$requestorBusinessId",
+              _id: "$businessId",
               orderCount: { $sum: 1 },
               revenueAmount: {
                 $sum: {
@@ -187,8 +187,8 @@ export async function getReferralGroups(req, res) {
         ])
       : [];
 
-    const requestorBusinessStatsByBusinessId = new Map(
-      requestorBusinessRows.map((r) => [
+    const businessStatsByBusinessId = new Map(
+      businessRows.map((r) => [
         String(r._id),
         {
           orderCount: Number(r.orderCount || 0),
@@ -207,7 +207,7 @@ export async function getReferralGroups(req, res) {
     const bonusByBusinessId = new Map(
       requestRows.map((r) => [String(r._id), Number(r.bonusAmount || 0)]),
     );
-    const requestorBusinessSnapshotByBusinessId = new Map(
+    const businessSnapshotByBusinessId = new Map(
       snapshots
         .filter((row) => String(row?.businessId || ""))
         .map((row) => [String(row?.businessId || ""), row]),
@@ -240,7 +240,7 @@ export async function getReferralGroups(req, res) {
       const directCount =
         directCountByLeaderBusinessId.get(leaderBusinessId) || 0;
       const snapshot = leaderBusinessId
-        ? requestorBusinessSnapshotByBusinessId.get(leaderBusinessId)
+        ? businessSnapshotByBusinessId.get(leaderBusinessId)
         : null;
       const snapshotGroupMemberCount = Number(snapshot?.groupMemberCount || 0);
       const role = String(leader?.role || "");
@@ -253,7 +253,7 @@ export async function getReferralGroups(req, res) {
       let groupBonusAmount = 0;
       if (role === "requestor") {
         const businessStats = leaderBusinessId
-          ? requestorBusinessStatsByBusinessId.get(leaderBusinessId)
+          ? businessStatsByBusinessId.get(leaderBusinessId)
           : null;
         groupTotalOrders = Number(businessStats?.orderCount || 0);
         groupRevenueAmount = Number(businessStats?.revenueAmount || 0);
@@ -532,14 +532,14 @@ export async function getReferralGroupTree(req, res) {
         ? await Request.aggregate([
             {
               $match: {
-                requestorBusinessId: { $in: memberBusinessIds },
+                businessId: { $in: memberBusinessIds },
                 manufacturerStage: "추적관리",
                 createdAt: { $gte: start, $lte: end },
               },
             },
             {
               $group: {
-                _id: "$requestorBusinessId",
+                _id: "$businessId",
                 lastMonthOrders: { $sum: 1 },
                 lastMonthPaidOrders: {
                   $sum: {
@@ -758,12 +758,12 @@ export async function recalcReferralSnapshot() {
     ? await Request.aggregate([
         {
           $match: {
-            requestorBusinessId: { $in: relevantBusinessObjectIds },
+            businessId: { $in: relevantBusinessObjectIds },
             manufacturerStage: "추적관리",
             createdAt: { $gte: start, $lte: end },
           },
         },
-        { $group: { _id: "$requestorBusinessId", orderCount: { $sum: 1 } } },
+        { $group: { _id: "$businessId", orderCount: { $sum: 1 } } },
       ])
     : [];
   const ordersByBusinessId = new Map(

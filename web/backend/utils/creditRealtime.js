@@ -1,30 +1,30 @@
-import RequestorOrganization from "../models/requestorOrganization.model.js";
+import Business from "../models/business.model.js";
 import { emitAppEventToUser } from "../socket.js";
 
-export async function emitCreditBalanceUpdatedToOrganization({
-  organizationId,
+export async function emitCreditBalanceUpdatedToBusiness({
+  businessId,
   balanceDelta,
   reason,
   refId,
 }) {
-  const orgId = String(organizationId || "").trim();
-  if (!orgId) return;
+  const id = String(businessId || "").trim();
+  if (!id) return;
 
   const delta = Number(balanceDelta || 0);
   if (!Number.isFinite(delta) || delta === 0) return;
 
-  const org = await RequestorOrganization.findById(orgId)
+  const business = await Business.findById(id)
     .select({ owner: 1, owners: 1, members: 1 })
     .lean()
     .catch(() => null);
-  if (!org) return;
+  if (!business) return;
 
   const targetUserIds = Array.from(
     new Set(
       [
-        org.owner,
-        ...(Array.isArray(org.owners) ? org.owners : []),
-        ...(Array.isArray(org.members) ? org.members : []),
+        business.owner,
+        ...(Array.isArray(business.owners) ? business.owners : []),
+        ...(Array.isArray(business.members) ? business.members : []),
       ]
         .map((id) => String(id || "").trim())
         .filter(Boolean),
@@ -33,7 +33,7 @@ export async function emitCreditBalanceUpdatedToOrganization({
 
   for (const userId of targetUserIds) {
     emitAppEventToUser(userId, "credit:balance-updated", {
-      organizationId: orgId,
+      businessId: id,
       balanceDelta: delta,
       reason: String(reason || "").trim() || null,
       refId: refId ? String(refId) : null,

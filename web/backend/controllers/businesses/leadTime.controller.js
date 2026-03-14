@@ -1,4 +1,4 @@
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 
 const DEFAULT_LEAD_TIMES = {
   d6: { minBusinessDays: 1, maxBusinessDays: 2 },
@@ -8,14 +8,14 @@ const DEFAULT_LEAD_TIMES = {
 };
 
 /**
- * GET /api/organizations/manufacturer-lead-times
+ * GET /api/businesses/manufacturer-lead-times
  * 제조사가 설정한 배송 리드타임을 조회 (모든 역할 접근 가능)
  */
 export async function getManufacturerLeadTimes(req, res) {
   try {
     res.set("x-abuts-handler", "leadTime.getManufacturerLeadTimes");
 
-    const latestManufacturer = await RequestorOrganization.findOne({
+    const latestManufacturer = await Business.findOne({
       organizationType: "manufacturer",
       "shippingPolicy.leadTimes": { $exists: true },
     })
@@ -75,7 +75,7 @@ export async function getManufacturerLeadTimes(req, res) {
  */
 export async function getManufacturerLeadTimesUtil() {
   try {
-    const latestManufacturer = await RequestorOrganization.findOne({
+    const latestManufacturer = await Business.findOne({
       organizationType: "manufacturer",
       "shippingPolicy.leadTimes": { $exists: true },
     })

@@ -250,14 +250,14 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
       : await Request.aggregate([
           {
             $match: {
-              requestorBusinessId: { $in: orgIdsAll },
+              businessId: { $in: orgIdsAll },
               manufacturerStage: "추적관리",
               createdAt: { $gte: rangeStartUtc, $lte: rangeEndUtc },
             },
           },
           {
             $group: {
-              _id: "$requestorBusinessId",
+              _id: "$businessId",
               paidRevenueAmount: {
                 $sum: {
                   $ifNull: [

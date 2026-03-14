@@ -1,6 +1,6 @@
 import User from "../../models/user.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import crypto from "crypto";
 import { messageService } from "../../utils/popbill.util.js";
 import { Types } from "mongoose";
@@ -426,12 +426,12 @@ async function updateProfile(req, res) {
       req.user?.businessId
     ) {
       const nextName = String(updateData.organization || "").trim();
-      const org = await RequestorOrganization.findById(req.user.businessId);
+      const org = await Business.findById(req.user.businessId);
       if (!org || String(org.owner) !== String(req.user._id)) {
         delete updateData.organization;
       } else {
         if (nextName && nextName !== org.name) {
-          const exists = await RequestorOrganization.findOne({
+          const exists = await Business.findOne({
             _id: { $ne: org._id },
             name: nextName,
           }).select({ _id: 1 });

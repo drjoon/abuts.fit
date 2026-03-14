@@ -17,7 +17,7 @@ import {
   getAllProductionQueues,
   recalculateQueueOnMaterialChange,
 } from "../../controllers/requests/production.utils.js";
-import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
+import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 
 export const CAM_RETRY_BATCH_LIMIT = Number(
   process.env.CAM_RETRY_BATCH_LIMIT || 30,
@@ -408,7 +408,7 @@ export async function rollbackRequestToCamByRequestId(requestId) {
   if (!rollbackStages.includes(stage)) return request;
 
   try {
-    const orgId = request.requestorBusinessId || request.requestor?.businessId;
+    const orgId = request.businessId || request.requestor?.businessId;
     if (orgId) {
       const spendRows = await CreditLedger.find({
         businessId: orgId,
@@ -459,8 +459,8 @@ export async function rollbackRequestToCamByRequestId(requestId) {
         );
 
         if (result?.upsertedCount) {
-          await emitCreditBalanceUpdatedToOrganization({
-            organizationId: orgId,
+          await emitCreditBalanceUpdatedToBusiness({
+            businessId: orgId,
             balanceDelta: refundAmount,
             reason: "cam_approve_refund",
             refId: request._id,

@@ -1,8 +1,8 @@
 import { Types } from "mongoose";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import BonusGrant from "../../models/bonusGrant.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
-import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
+import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import {
   CREDIT_SETTINGS_SCHEMA_DEFAULTS,
   loadCreditSettingsDefaults,
@@ -61,7 +61,7 @@ export async function adminOverrideWelcomeBonus(req, res) {
     }
 
     if (!businessId) {
-      const org = await RequestorOrganization.findOne({
+      const org = await Business.findOne({
         "extracted.businessNumber": formatted,
       })
         .select({ _id: 1 })
@@ -124,8 +124,8 @@ export async function adminOverrideWelcomeBonus(req, res) {
       { $set: { creditLedgerId: ledgerDoc?._id || null } },
     );
 
-    await emitCreditBalanceUpdatedToOrganization({
-      organizationId: businessId,
+    await emitCreditBalanceUpdatedToBusiness({
+      businessId,
       balanceDelta: amount,
       reason: "admin_welcome_bonus",
       refId: ledgerDoc?._id || grant._id,
@@ -192,7 +192,7 @@ export async function adminListBonusGrants(req, res) {
     const rowsWithSpent = await Promise.all(
       rows.map(async (row) => {
         const spentLedger = await CreditLedger.findOne({
-          businessId: row.organizationId,
+          businessId: row.businessId,
           type: "SPEND",
           createdAt: { $gte: row.createdAt },
         })
@@ -316,8 +316,8 @@ export async function adminCancelBonusGrant(req, res) {
       },
     );
 
-    await emitCreditBalanceUpdatedToOrganization({
-      organizationId: businessId,
+    await emitCreditBalanceUpdatedToBusiness({
+      businessId,
       balanceDelta: -amount,
       reason: "admin_welcome_bonus_cancel",
       refId: cancelLedgerDoc?._id || grant._id,
@@ -381,7 +381,7 @@ export async function adminGrantFreeShippingCredit(req, res) {
     }
 
     if (!businessId) {
-      const org = await RequestorOrganization.findOne({
+      const org = await Business.findOne({
         "extracted.businessNumber": formatted,
       })
         .select({ _id: 1 })
@@ -444,8 +444,8 @@ export async function adminGrantFreeShippingCredit(req, res) {
       { $set: { creditLedgerId: ledgerDoc?._id || null } },
     );
 
-    await emitCreditBalanceUpdatedToOrganization({
-      organizationId: businessId,
+    await emitCreditBalanceUpdatedToBusiness({
+      businessId,
       balanceDelta: amount,
       reason: "admin_free_shipping_credit",
       refId: ledgerDoc?._id || grant._id,

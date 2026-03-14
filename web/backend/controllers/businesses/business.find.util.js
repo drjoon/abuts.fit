@@ -1,26 +1,26 @@
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
-import { buildOrganizationTypeFilter } from "./organizationRole.util.js";
+import Business from "../../models/business.model.js";
+import { buildBusinessTypeFilter } from "./businessRole.util.js";
 
-export async function findOrganizationByAnchors({
-  organizationType,
+export async function findBusinessByAnchors({
+  businessType,
   businessId,
   businessNumber,
   userId,
   businessName,
 }) {
-  const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
+  const typeFilter = buildBusinessTypeFilter(businessType);
 
   if (businessId) {
-    const byId = await RequestorOrganization.findOne({
+    const byId = await Business.findOne({
       _id: businessId,
-      ...orgTypeFilter,
+      ...typeFilter,
     });
     if (byId) return byId;
   }
 
   if (userId) {
-    const byMembership = await RequestorOrganization.findOne({
-      ...orgTypeFilter,
+    const byMembership = await Business.findOne({
+      ...typeFilter,
       $or: [
         { owner: userId },
         { owners: userId },
@@ -33,8 +33,8 @@ export async function findOrganizationByAnchors({
 
   const safeBusinessName = String(businessName || "").trim();
   if (safeBusinessName) {
-    const matches = await RequestorOrganization.find({
-      ...orgTypeFilter,
+    const matches = await Business.find({
+      ...typeFilter,
       name: safeBusinessName,
       $or: [{ owner: userId }, { owners: userId }, { members: userId }],
     })
@@ -45,8 +45,8 @@ export async function findOrganizationByAnchors({
 
   const normalizedBusinessNumber = String(businessNumber || "").trim();
   if (normalizedBusinessNumber) {
-    const byBusinessNumber = await RequestorOrganization.findOne({
-      ...orgTypeFilter,
+    const byBusinessNumber = await Business.findOne({
+      ...typeFilter,
       "extracted.businessNumber": normalizedBusinessNumber,
     });
     if (byBusinessNumber) return byBusinessNumber;

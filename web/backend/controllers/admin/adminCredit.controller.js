@@ -3,7 +3,7 @@ import BonusGrant from "../../models/bonusGrant.model.js";
 import ChargeOrder from "../../models/chargeOrder.model.js";
 import BankTransaction from "../../models/bankTransaction.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import User from "../../models/user.model.js";
 import SalesmanLedger from "../../models/salesmanLedger.model.js";
@@ -241,14 +241,14 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
       : await Request.aggregate([
           {
             $match: {
-              requestorBusinessId: { $in: allOrgIds },
+              businessId: { $in: allOrgIds },
               manufacturerStage: "추적관리",
               createdAt: { $gte: range.start, $lte: range.end },
             },
           },
           {
             $group: {
-              _id: "$requestorBusinessId",
+              _id: "$businessId",
               revenueAmount: {
                 $sum: {
                   $ifNull: [
@@ -455,13 +455,13 @@ export async function adminGetSalesmanCreditsOverview(req, res) {
   }
 }
 
-export async function adminGetOrganizationLedger(req, res) {
+export async function adminGetBusinessLedger(req, res) {
   try {
     const orgIdRaw = String(req.params.id || "");
     if (!Types.ObjectId.isValid(orgIdRaw)) {
       return res.status(400).json({
         success: false,
-        message: "조직 ID가 올바르지 않습니다.",
+        message: "사업자 ID가 올바르지 않습니다.",
       });
     }
     const businessId = new Types.ObjectId(orgIdRaw);
@@ -762,10 +762,10 @@ export async function adminGetOrganizationLedger(req, res) {
       data: { items: enrichedItems, total, page, pageSize },
     });
   } catch (error) {
-    console.error("adminGetOrganizationLedger error:", error);
+    console.error("adminGetBusinessLedger error:", error);
     return res.status(500).json({
       success: false,
-      message: "조직 크레딧 원장 조회에 실패했습니다.",
+      message: "사업자 크레딧 원장 조회에 실패했습니다.",
     });
   }
 }
@@ -870,7 +870,7 @@ export async function adminGetCreditStats(req, res) {
       newBankTransactions,
       matchedBankTransactions,
     ] = await Promise.all([
-      RequestorOrganization.countDocuments(),
+      Business.countDocuments(),
       ChargeOrder.countDocuments(),
       BankTransaction.countDocuments(),
       ChargeOrder.countDocuments({ status: "PENDING" }),
@@ -1156,7 +1156,7 @@ export async function adminGetSalesmanCredits(req, res) {
         .filter(([cid, pid]) => cid && pid),
     );
 
-    // 직접 소개 조직 (나의 수수료 5%)
+    // 직접 소개 사업자 (나의 수수료 5%)
     const directOrgIdsBySalesmanBusinessId2 = new Map();
     for (const u of directRequestors || []) {
       const sBusinessId = String(u?.referredByBusinessId || "");
@@ -1167,7 +1167,7 @@ export async function adminGetSalesmanCredits(req, res) {
       set.add(orgId);
       directOrgIdsBySalesmanBusinessId2.set(sBusinessId, set);
     }
-    // 직계1 소개 조직 (직계1 수수료 2.5%)
+    // 간접 소개 사업자 (직계1 수수료 2.5%)
     const level1OrgIdsBySalesmanBusinessId2 = new Map();
     for (const u of level1Requestors || []) {
       const childSBusinessId = String(u?.referredByBusinessId || "");
@@ -1181,7 +1181,7 @@ export async function adminGetSalesmanCredits(req, res) {
       set.add(orgId);
       level1OrgIdsBySalesmanBusinessId2.set(leaderSBusinessId, set);
     }
-    // 전체 조직 (revenue 집계용)
+    // 전체 사업자 (revenue 집계용)
     const orgIdsBySalesmanBusinessId2 = new Map();
     for (const [sBusinessId, set] of directOrgIdsBySalesmanBusinessId2) {
       const merged = orgIdsBySalesmanBusinessId2.get(sBusinessId) || new Set();
@@ -1214,7 +1214,7 @@ export async function adminGetSalesmanCredits(req, res) {
         : await Request.aggregate([
             {
               $match: {
-                requestorBusinessId: { $in: allOrgIds },
+                businessId: { $in: allOrgIds },
                 manufacturerStage: "추적관리",
                 ...(Object.keys(revenueCreatedAtMatch).length
                   ? { createdAt: revenueCreatedAtMatch }
@@ -1223,7 +1223,7 @@ export async function adminGetSalesmanCredits(req, res) {
             },
             {
               $group: {
-                _id: "$requestorBusinessId",
+                _id: "$businessId",
                 revenueAmount: {
                   $sum: {
                     $ifNull: [
@@ -1551,12 +1551,12 @@ export async function adminGetSalesmanLedger(req, res) {
   }
 }
 
-export async function adminGetOrganizationCredits(req, res) {
+export async function adminGetBusinessCredits(req, res) {
   try {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const skip = Math.max(Number(req.query.skip) || 0, 0);
 
-    const orgs = await RequestorOrganization.find()
+    const orgs = await Business.find()
       .select({ name: 1, owner: 1, extracted: 1 })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -1702,7 +1702,7 @@ export async function adminGetOrganizationCredits(req, res) {
       };
     });
 
-    const total = await RequestorOrganization.countDocuments();
+    const total = await Business.countDocuments();
 
     return res.json({
       success: true,
@@ -1714,25 +1714,25 @@ export async function adminGetOrganizationCredits(req, res) {
       },
     });
   } catch (error) {
-    console.error("adminGetOrganizationCredits error:", error);
+    console.error("adminGetBusinessCredits error:", error);
     return res.status(500).json({
       success: false,
-      message: "조직별 크레딧 조회에 실패했습니다.",
+      message: "사업자별 크레딧 조회에 실패했습니다.",
     });
   }
 }
 
-export async function adminGetOrganizationCreditDetail(req, res) {
+export async function adminGetBusinessCreditDetail(req, res) {
   try {
     const orgId = req.params.id;
-    const org = await RequestorOrganization.findById(orgId)
+    const org = await Business.findById(orgId)
       .select({ name: 1, extracted: 1 })
       .lean();
 
     if (!org) {
       return res.status(404).json({
         success: false,
-        message: "조직을 찾을 수 없습니다.",
+        message: "사업자를 찾을 수 없습니다.",
       });
     }
 
@@ -1787,10 +1787,10 @@ export async function adminGetOrganizationCreditDetail(req, res) {
       },
     });
   } catch (error) {
-    console.error("adminGetOrganizationCreditDetail error:", error);
+    console.error("adminGetBusinessCreditDetail error:", error);
     return res.status(500).json({
       success: false,
-      message: "조직 크레딧 상세 조회에 실패했습니다.",
+      message: "사업자 크레딧 상세 조회에 실패했습니다.",
     });
   }
 }

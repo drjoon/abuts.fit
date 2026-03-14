@@ -2,7 +2,7 @@ import { Types } from "mongoose";
 import CreditLedger from "../../models/creditLedger.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import { applyStatusMapping, computePriceForRequest } from "./utils.js";
-import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
+import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 
 // Revert manufacturer stage based on review stage
 export function revertManufacturerStageByReviewStage(request, stage) {
@@ -96,8 +96,8 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     businessId: String(businessId),
   });
 
-  await emitCreditBalanceUpdatedToOrganization({
-    organizationId: businessId,
+  await emitCreditBalanceUpdatedToBusiness({
+    businessId,
     balanceDelta: -resolvedAmount,
     reason: "machining_spend",
     refId: request?._id,

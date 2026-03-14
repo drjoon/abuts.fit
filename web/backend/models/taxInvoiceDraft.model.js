@@ -10,7 +10,7 @@ const TaxInvoiceDraftSchema = new mongoose.Schema(
     },
     businessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "RequestorOrganization",
+      ref: "Business",
       required: true,
     },
     status: {

@@ -1,7 +1,7 @@
 import User from "../../models/user.model.js";
 import SignupVerification from "../../models/signupVerification.model.js";
 import GuideProgress from "../../models/guideProgress.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import {
   generateToken,
@@ -103,7 +103,7 @@ async function resolveReferrerBusinessId({
     );
   }
 
-  const businessExists = await RequestorOrganization.exists({
+  const businessExists = await Business.exists({
     _id: new Types.ObjectId(refBusinessId),
   });
   if (!businessExists) {
@@ -606,7 +606,7 @@ async function validateReferral(req, res) {
           "추천인 사업자 정보가 없습니다. 사업자 등록 후 다시 시도해주세요.",
       });
     }
-    const org = await RequestorOrganization.findById(refBusinessId)
+    const org = await Business.findById(refBusinessId)
       .select({ name: 1 })
       .lean();
     orgName = org?.name || "";
@@ -1108,7 +1108,7 @@ async function withdraw(req, res) {
     let isRequestorOwner = false;
     let businessId = user.businessId || null;
     if (user.role === "requestor" && businessId) {
-      const organization = await RequestorOrganization.findById(businessId)
+      const organization = await Business.findById(businessId)
         .select({ owner: 1 })
         .lean();
       if (!organization) {

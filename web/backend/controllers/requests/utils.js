@@ -1,7 +1,7 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import LotCounter from "../../models/lotCounter.model.js";
 import {
@@ -152,7 +152,7 @@ export function buildRequestorOrgFilter(req) {
   if (req?.user?.role !== "requestor") return {};
   const orgId = getRequestorOrgId(req);
   if (orgId && Types.ObjectId.isValid(orgId)) {
-    return { requestorBusinessId: new Types.ObjectId(orgId) };
+    return { businessId: new Types.ObjectId(orgId) };
   }
   return { requestor: req.user._id };
 }
@@ -165,7 +165,7 @@ export async function buildRequestorOrgScopeFilter(req) {
     return { requestor: req.user._id };
   }
 
-  const org = await RequestorOrganization.findById(orgId)
+  const org = await Business.findById(orgId)
     .select({ owner: 1, owners: 1, members: 1 })
     .lean();
 
@@ -184,10 +184,7 @@ export async function buildRequestorOrgScopeFilter(req) {
   const orgObjectId = new Types.ObjectId(orgId);
 
   return {
-    $or: [
-      { requestorBusinessId: orgObjectId },
-      { requestor: { $in: memberObjectIds } },
-    ],
+    $or: [{ businessId: orgObjectId }, { requestor: { $in: memberObjectIds } }],
   };
 }
 
@@ -265,9 +262,7 @@ export async function canAccessRequestAsRequestor(req, requestDoc) {
 
   const myId = String(req.user._id);
   const myOrgId = getRequestorOrgId(req);
-  const reqOrgId = requestDoc.requestorBusinessId
-    ? String(requestDoc.requestorBusinessId)
-    : "";
+  const reqOrgId = requestDoc.businessId ? String(requestDoc.businessId) : "";
 
   // 1. 의뢰 생성자가 본인인 경우 항상 접근 가능
   const populatedReqUser = requestDoc.requestor || null;
@@ -328,7 +323,7 @@ export async function calculateExpressShipYmd({ maxDiameter, baseYmd }) {
 export async function getDeliveryEtaLeadDays() {
   try {
     const { getManufacturerLeadTimesUtil } =
-      await import("../organizations/leadTime.controller.js");
+      await import("../businesses/leadTime.controller.js");
     const manufacturerSettings = await getManufacturerLeadTimesUtil();
     const leadTimes = manufacturerSettings?.leadTimes || {};
 
@@ -463,7 +458,7 @@ export async function normalizeRequestForResponse(requestDoc) {
   const ci = obj.caseInfos || {};
   obj.caseInfos = await normalizeCaseInfosImplantFields(ci, false);
   normalizeProductionScheduleDiameter(obj);
-  const requestorOrgRaw = obj?.requestorBusinessId;
+  const requestorOrgRaw = obj?.businessId;
   const requestorOrgId = (() => {
     if (!requestorOrgRaw) return "";
     if (
@@ -476,7 +471,7 @@ export async function normalizeRequestForResponse(requestDoc) {
     return String(requestorOrgRaw);
   })();
   if (requestorOrgId && Types.ObjectId.isValid(requestorOrgId)) {
-    const requestorOrgDoc = await RequestorOrganization.findById(requestorOrgId)
+    const requestorOrgDoc = await Business.findById(requestorOrgId)
       .select({ name: 1, extracted: 1 })
       .lean();
     if (requestorOrgDoc) {
@@ -493,7 +488,7 @@ export async function normalizeRequestForResponse(requestDoc) {
         typeof extracted?.companyName === "string"
           ? extracted.companyName.trim()
           : "";
-      obj.requestorOrganization = {
+      obj.business = {
         _id: requestorOrgId,
         name: orgName || companyName || undefined,
         extracted,
@@ -615,7 +610,7 @@ export async function computePriceForRequest({
 
   const scopeFilter =
     requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))
-      ? { requestorBusinessId: new Types.ObjectId(String(requestorOrgId)) }
+      ? { businessId: new Types.ObjectId(String(requestorOrgId)) }
       : { requestor: requestorId };
 
   const BASE_UNIT_PRICE = 15000;
@@ -661,7 +656,7 @@ export async function computePriceForRequest({
   // updatedAt은 운영 중 자주 갱신될 수 있어 기준일로 사용하지 않는다.
   const baseDate = await (async () => {
     if (requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))) {
-      const org = await RequestorOrganization.findById(String(requestorOrgId))
+      const org = await Business.findById(String(requestorOrgId))
         .select({ owner: 1 })
         .lean();
       const ownerId = org?.owner ? String(org.owner) : "";

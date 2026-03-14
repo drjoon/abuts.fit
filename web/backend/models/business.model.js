@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const requestorOrganizationSchema = new mongoose.Schema(
+const businessSchema = new mongoose.Schema(
   {
     organizationType: {
       type: String,
@@ -126,27 +126,24 @@ const requestorOrganizationSchema = new mongoose.Schema(
   },
 );
 
-requestorOrganizationSchema.index({ owner: 1, name: 1 });
-requestorOrganizationSchema.index({ organizationType: 1, name: 1 });
-requestorOrganizationSchema.index(
+businessSchema.index({ owner: 1, name: 1 });
+businessSchema.index({ organizationType: 1, name: 1 });
+businessSchema.index(
   { "extracted.businessNumber": 1 },
   { unique: true, sparse: true },
 );
-requestorOrganizationSchema.index(
+businessSchema.index(
   { depositCode: 1 },
   {
     unique: true,
     partialFilterExpression: { depositCode: { $type: "string", $gt: "" } },
   },
 );
-requestorOrganizationSchema.index({
+businessSchema.index({
   "joinRequests.user": 1,
   "joinRequests.status": 1,
 });
 
-const RequestorOrganization = mongoose.model(
-  "RequestorOrganization",
-  requestorOrganizationSchema,
-);
+const Business = mongoose.model("Business", businessSchema);
 
-export default RequestorOrganization;
+export default Business;

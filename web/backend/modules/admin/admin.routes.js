@@ -96,9 +96,9 @@ import {
 } from "../../controllers/admin/adminSms.controller.js";
 import {
   adminGetCreditStats,
-  adminGetOrganizationLedger,
-  adminGetOrganizationCredits,
-  adminGetOrganizationCreditDetail,
+  adminGetBusinessLedger,
+  adminGetBusinessCredits,
+  adminGetBusinessCreditDetail,
   adminGetSalesmanCreditsOverview,
   adminGetSalesmanCredits,
   adminGetSalesmanLedger,
@@ -150,9 +150,9 @@ router.patch(
 
 // 크레딧 관리
 router.get("/credits/stats", adminGetCreditStats);
-router.get("/credits/organizations", adminGetOrganizationCredits);
-router.get("/credits/organizations/:id", adminGetOrganizationCreditDetail);
-router.get("/credits/organizations/:id/ledger", adminGetOrganizationLedger);
+router.get("/credits/businesses", adminGetBusinessCredits);
+router.get("/credits/businesses/:id", adminGetBusinessCreditDetail);
+router.get("/credits/businesses/:id/ledger", adminGetBusinessLedger);
 router.get("/credits/salesmen/overview", adminGetSalesmanCreditsOverview);
 router.get("/credits/salesmen", adminGetSalesmanCredits);
 router.get("/credits/salesmen/:id/ledger", adminGetSalesmanLedger);

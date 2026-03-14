@@ -1,7 +1,7 @@
 import { Types } from "mongoose";
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import { generateRandomPassword } from "./admin.shared.controller.js";
 
 export async function getAllUsers(req, res) {
@@ -45,7 +45,7 @@ export async function getAllUsers(req, res) {
       .map((u) => u?.businessId)
       .filter((id) => Types.ObjectId.isValid(String(id)));
     const businesses = businessIds.length
-      ? await RequestorOrganization.find({ _id: { $in: businessIds } })
+      ? await Business.find({ _id: { $in: businessIds } })
           .select({
             name: 1,
             businessLicense: 1,
@@ -268,7 +268,7 @@ export async function getUserById(req, res) {
         .json({ success: false, message: "사용자를 찾을 수 없습니다." });
     }
     const businessInfo = user?.businessId
-      ? await RequestorOrganization.findById(user.businessId)
+      ? await Business.findById(user.businessId)
           .select({
             name: 1,
             businessLicense: 1,

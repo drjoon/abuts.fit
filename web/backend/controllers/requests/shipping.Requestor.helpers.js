@@ -1,5 +1,5 @@
 import Request from "../../models/request.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import { Types } from "mongoose";
@@ -17,7 +17,7 @@ import {
   normalizeRequestStage,
   normalizeRequestStageLabel,
 } from "./utils.js";
-import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
+import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import { getBusinessCreditBalanceBreakdown } from "./creation.helpers.controller.js";
 
 const __cache = new Map();
@@ -36,7 +36,7 @@ const resolveExpressShipLeadDays = () => 1;
 
 export const resolveRequestOrganizationName = (request) => {
   const requestor = request?.requestor || {};
-  const requestorOrg = request?.requestorBusinessId || {};
+  const requestorOrg = request?.businessId || {};
   const extracted = requestorOrg?.extracted || {};
   return (
     requestorOrg?.name ||
@@ -69,7 +69,7 @@ export async function ensureShippingPackageForPickup({
     new Set(
       list
         .map((request) => {
-          const rawOrg = request?.requestorBusinessId;
+          const rawOrg = request?.businessId;
           const value =
             rawOrg && typeof rawOrg === "object"
               ? String(rawOrg?._id || rawOrg?.id || "").trim()
@@ -114,7 +114,7 @@ export async function ensureShippingPackageForPickup({
         "우편함 묶음의 조직 정보를 확인할 수 없어 발송 박스를 생성할 수 없습니다.",
       );
     }
-    const orgDoc = await RequestorOrganization.findOne({
+    const orgDoc = await Business.findOne({
       $or: [{ name: fallbackName }, { "extracted.companyName": fallbackName }],
     })
       .select({ _id: 1 })
@@ -235,8 +235,8 @@ export async function chargeShippingFeeOnPickupComplete({
 
   if (!chargeResult?.upsertedCount) return false;
 
-  await emitCreditBalanceUpdatedToOrganization({
-    organizationId: pkg.businessId,
+  await emitCreditBalanceUpdatedToBusiness({
+    businessId: pkg.businessId,
     balanceDelta: -fee,
     reason: "shipping_fee_spend",
     refId: pkg._id,
@@ -245,7 +245,7 @@ export async function chargeShippingFeeOnPickupComplete({
   return true;
 }
 
-async function resolveRequestorBusinessId(req) {
+async function resolveBusinessId(req) {
   const businessId = getRequestorOrgId(req);
   if (businessId && Types.ObjectId.isValid(businessId)) {
     return businessId;
@@ -254,7 +254,7 @@ async function resolveRequestorBusinessId(req) {
   const userId = req?.user?._id;
   if (!userId) return "";
 
-  const org = await RequestorOrganization.findOne({
+  const org = await Business.findOne({
     $or: [
       { owner: userId },
       { owners: userId },
@@ -273,10 +273,10 @@ async function resolveRequestorBusinessId(req) {
   }
 
   const requestWithOrg = await Request.findOne({ requestor: userId })
-    .select({ requestorBusinessId: 1 })
+    .select({ businessId: 1 })
     .lean();
 
-  const fallbackId = requestWithOrg?.requestorBusinessId;
+  const fallbackId = requestWithOrg?.businessId;
   if (fallbackId && Types.ObjectId.isValid(fallbackId)) {
     return String(fallbackId);
   }
@@ -299,7 +299,7 @@ export async function buildShippingPackagesSummary(req) {
     });
   }
 
-  const orgId = await resolveRequestorBusinessId(req);
+  const orgId = await resolveBusinessId(req);
   if (!orgId) {
     throw Object.assign(new Error("조직 정보가 필요합니다."), {
       statusCode: 400,
@@ -449,7 +449,7 @@ export async function buildShippingEstimate(req) {
   try {
     const orgId = getRequestorOrgId(req);
     if (orgId && Types.ObjectId.isValid(orgId)) {
-      const org = await RequestorOrganization.findById(orgId)
+      const org = await Business.findById(orgId)
         .select({ "shippingPolicy.weeklyBatchDays": 1 })
         .lean();
       requestorWeeklyBatchDays = Array.isArray(
@@ -486,7 +486,7 @@ export async function buildShippingEstimate(req) {
     estimatedShipYmdRaw = pickupYmdRaw;
   } else {
     const { getManufacturerLeadTimesUtil } =
-      await import("../organizations/leadTime.controller.js");
+      await import("../businesses/leadTime.controller.js");
     const manufacturerSettings = await getManufacturerLeadTimesUtil();
     const leadTimes = manufacturerSettings?.leadTimes || {};
 

@@ -1,5 +1,5 @@
 import Request from "../../models/request.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import { Types } from "mongoose";
 import {
@@ -61,7 +61,7 @@ export async function updateMyShippingMode(req, res) {
           try {
             const orgId = getRequestorOrgId({ user: req.requestor });
             if (orgId && Types.ObjectId.isValid(orgId)) {
-              const org = await RequestorOrganization.findById(orgId)
+              const org = await Business.findById(orgId)
                 .select({ "shippingPolicy.weeklyBatchDays": 1 })
                 .lean();
               weeklyBatchDaysForSchedule = Array.isArray(

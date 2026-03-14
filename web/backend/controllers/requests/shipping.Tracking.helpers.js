@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import User from "../../models/user.model.js";
+import Business from "../../models/business.model.js";
 import SalesmanLedger from "../../models/salesmanLedger.model.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import {
@@ -120,7 +121,7 @@ export const resolveTrackingSyncTargets = async ({
 
   const requests = await Request.find(query)
     .populate("requestor", "name business phoneNumber address")
-    .populate("requestorBusinessId", "name extracted")
+    .populate("businessId", "name extracted")
     .populate("deliveryInfoRef");
 
   return requests.filter((requestDoc) => {
@@ -503,7 +504,7 @@ export const syncHanjinTrackingPayload = async ({
           referredByBusinessIdRaw &&
           Types.ObjectId.isValid(referredByBusinessIdRaw)
         ) {
-          const referrerBusiness = await RequestorOrganization.findById(
+          const referrerBusiness = await Business.findById(
             new Types.ObjectId(referredByBusinessIdRaw),
           )
             .select({ owner: 1 })
@@ -553,7 +554,7 @@ export const syncHanjinTrackingPayload = async ({
             directSalesmanBusinessIdRaw &&
             Types.ObjectId.isValid(directSalesmanBusinessIdRaw)
           ) {
-            const parentBusiness = await RequestorOrganization.findById(
+            const parentBusiness = await Business.findById(
               new Types.ObjectId(directSalesmanBusinessIdRaw),
             )
               .select({ owner: 1 })

@@ -27,7 +27,9 @@ export function buildAddressCandidates(address) {
     .replace(/\s+/g, " ")
     .trim();
 
-  return [...new Set([raw, withoutParen, beforeComma, beforeDongHo].filter(Boolean))];
+  return [
+    ...new Set([raw, withoutParen, beforeComma, beforeDongHo].filter(Boolean)),
+  ];
 }
 
 function decodeXmlText(value) {
@@ -103,7 +105,8 @@ async function requestEpostPostalLookup(address) {
   }
 
   const items = extractXmlItemList(xml);
-  const first = items.find((item) => String(item.zipNo || "").trim()) || items[0];
+  const first =
+    items.find((item) => String(item.zipNo || "").trim()) || items[0];
 
   return {
     postalCode: String(first?.zipNo || "").trim(),
@@ -183,14 +186,16 @@ export async function lookupPostalCodeByAddress(address) {
 
   return {
     postalCode: "",
-    formattedAddress: String(lastData?.results?.[0]?.formatted_address || "").trim(),
+    formattedAddress: String(
+      lastData?.results?.[0]?.formatted_address || "",
+    ).trim(),
     matchedAddress: candidates[0] || "",
     provider: "",
     raw: lastData,
   };
 }
 
-export async function normalizeOrganizationAddressFields({ address, zipCode }) {
+export async function normalizeBusinessAddressFields({ address, zipCode }) {
   const rawAddress = String(address || "").trim();
   const rawZipCode = String(zipCode || "").trim();
   if (!rawAddress) {
@@ -204,7 +209,9 @@ export async function normalizeOrganizationAddressFields({ address, zipCode }) {
 
   try {
     const lookup = await lookupPostalCodeByAddress(rawAddress);
-    const normalizedAddress = String(lookup?.formattedAddress || rawAddress).trim();
+    const normalizedAddress = String(
+      lookup?.formattedAddress || rawAddress,
+    ).trim();
     const normalizedZipCode = String(lookup?.postalCode || rawZipCode).trim();
 
     return {

@@ -9,7 +9,7 @@ import { existsSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import mongoose, { connect } from "mongoose";
-import RequestorOrganization from "./models/requestorOrganization.model.js";
+import Business from "./models/business.model.js";
 import ChargeOrder from "./models/chargeOrder.model.js";
 import BankTransaction from "./models/bankTransaction.model.js";
 import Counter from "./models/counter.model.js";
@@ -93,7 +93,7 @@ const dbReady = connect(mongoUri)
       }
 
       const targets = [
-        ["RequestorOrganization", RequestorOrganization],
+        ["Business", Business],
         ["ChargeOrder", ChargeOrder],
         ["BankTransaction", BankTransaction],
         ["TaxInvoiceDraft", TaxInvoiceDraft],
@@ -215,7 +215,7 @@ import fileRoutes from "./modules/files/file.routes.js";
 import aiRoutes from "./modules/ai/ai.routes.js";
 import parseLogRoutes from "./modules/parselogs/parseLog.routes.js";
 import filenameRuleRoutes from "./modules/filenameRules/filenameRule.routes.js";
-import requestorOrganizationRoutes from "./modules/organizations/requestorOrganization.routes.js";
+import businessRoutes from "./modules/businesses/business.routes.js";
 import guideProgressRoutes from "./modules/guideProgress/guideProgress.routes.js";
 import rhinoRoutes from "./modules/rhino/rhino.routes.js";
 import bgRoutes from "./modules/bg/bg.routes.js";
@@ -244,8 +244,7 @@ app.use("/api/files", fileRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/parse-logs", parseLogRoutes);
 app.use("/api/filename-rules", filenameRuleRoutes);
-app.use("/api/requestor-organizations", requestorOrganizationRoutes);
-app.use("/api/organizations", requestorOrganizationRoutes);
+app.use("/api/businesses", businessRoutes);
 app.use("/api/guide-progress", guideProgressRoutes);
 app.use("/api/rhino", rhinoRoutes);
 app.use("/api/bg", bgRoutes);

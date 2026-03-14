@@ -32,7 +32,7 @@ export async function allocateVirtualMailboxAddress(requestorOrgId) {
     manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
     mailboxAddress: { $ne: null },
   })
-    .select("mailboxAddress requestor requestorBusinessId")
+    .select("mailboxAddress requestor businessId")
     .populate("requestor", "business")
     .lean();
 
@@ -46,7 +46,7 @@ export async function allocateVirtualMailboxAddress(requestorOrgId) {
 
     for (const r of activeRequests) {
       const orgId =
-        r.requestorBusinessId?.toString() ||
+        r.businessId?.toString() ||
         r.requestor?.business?._id?.toString() ||
         r.requestor?.business?.toString();
 

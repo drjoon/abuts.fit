@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import mongoose from "mongoose";
 import User from "../../../models/user.model.js";
-import RequestorOrganization from "../../../models/requestorOrganization.model.js";
+import Business from "../../../models/business.model.js";
 
 export const NOW = new Date();
 
@@ -139,13 +139,13 @@ export async function findOrCreateOrganization({
   memberIds = [],
   extracted = {},
 }) {
-  let organization = await RequestorOrganization.findOne({
+  let organization = await Business.findOne({
     organizationType,
     name,
   });
 
   if (!organization) {
-    organization = await RequestorOrganization.create({
+    organization = await Business.create({
       organizationType,
       name,
       owner: ownerId,
@@ -157,7 +157,7 @@ export async function findOrCreateOrganization({
   } else {
     const nextMembers = [ownerId, ...memberIds].filter(Boolean);
     const nextOwners = [ownerId].filter(Boolean);
-    await RequestorOrganization.updateOne(
+    await Business.updateOne(
       { _id: organization._id },
       {
         $set: {
@@ -174,7 +174,7 @@ export async function findOrCreateOrganization({
         },
       },
     );
-    organization = await RequestorOrganization.findById(organization._id);
+    organization = await Business.findById(organization._id);
   }
 
   return organization;

@@ -144,13 +144,13 @@ async function runMonthlySnapshot() {
     ? await Request.aggregate([
         {
           $match: {
-            requestorBusinessId: { $in: requestorLeaderBusinessObjectIds },
+            businessId: { $in: requestorLeaderBusinessObjectIds },
             manufacturerStage: "추적관리",
             createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
           },
         },
         {
-          $group: { _id: "$requestorBusinessId", orderCount: { $sum: 1 } },
+          $group: { _id: "$businessId", orderCount: { $sum: 1 } },
         },
       ])
     : [];

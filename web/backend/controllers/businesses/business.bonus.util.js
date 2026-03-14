@@ -1,21 +1,21 @@
 import BonusGrant from "../../models/bonusGrant.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import { CREDIT_SETTINGS_SCHEMA_DEFAULTS, loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
-import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
-import { formatBusinessNumber, isDuplicateKeyError } from "./org.validation.util.js";
+import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
+import { formatBusinessNumber, isDuplicateKeyError } from "./business.validation.util.js";
 
-async function upsertBonusLedger({ organizationId, userId, amount, refType, refId }) {
+async function upsertBonusLedger({ businessId, userId, amount, refType, refId }) {
   const uniqueKey = `bonus_grant:${String(refId)}`;
   const result = await CreditLedger.updateOne(
     { uniqueKey },
     {
       $setOnInsert: {
-        businessId: organizationId,
+        businessId,
         userId: userId || null,
         type: "BONUS",
         amount,
         refType,
-        refId: organizationId,
+        refId: businessId,
         uniqueKey,
       },
     },
@@ -27,7 +27,7 @@ async function upsertBonusLedger({ organizationId, userId, amount, refType, refI
   return ledgerDoc?._id || null;
 }
 
-async function ensureBonusGrant({ organizationId, userId, type, businessNumber, amount }) {
+async function ensureBonusGrant({ businessId, userId, type, businessNumber, amount }) {
   let grant = await BonusGrant.findOne({
     type,
     businessNumber,
@@ -42,7 +42,7 @@ async function ensureBonusGrant({ organizationId, userId, type, businessNumber, 
         type,
         businessNumber,
         amount,
-        businessId: organizationId,
+        businessId,
         userId: userId || null,
         isOverride: false,
         source: "auto",
@@ -55,7 +55,11 @@ async function ensureBonusGrant({ organizationId, userId, type, businessNumber, 
       };
     } catch (e) {
       if (isDuplicateKeyError(e)) {
-        grant = await BonusGrant.findOne({ type, businessNumber, isOverride: false })
+        grant = await BonusGrant.findOne({
+          type,
+          businessNumber,
+          isOverride: false,
+        })
           .select({ _id: 1, creditLedgerId: 1, amount: 1 })
           .lean();
       } else {
@@ -67,17 +71,20 @@ async function ensureBonusGrant({ organizationId, userId, type, businessNumber, 
   return grant;
 }
 
-export async function grantWelcomeBonusIfEligible({ organizationId, userId }) {
-  if (!organizationId) return null;
+export async function grantWelcomeBonusIfEligible({ businessId, userId }) {
+  if (!businessId) return null;
   const businessNumber = formatBusinessNumber(userId?.businessNumber || null);
-  const org = await BonusGrant.db.model("RequestorOrganization")
-    .findById(organizationId)
+  const business = await BonusGrant.db
+    .model("Business")
+    .findById(businessId)
     .select({ organizationType: 1, extracted: 1 })
     .lean();
-  if (!org) return null;
-  if (String(org.organizationType || "") !== "requestor") return null;
+  if (!business) return null;
+  if (String(business.organizationType || "") !== "requestor") return null;
 
-  const normalizedBusinessNumber = formatBusinessNumber(org?.extracted?.businessNumber);
+  const normalizedBusinessNumber = formatBusinessNumber(
+    business?.extracted?.businessNumber,
+  );
   if (!normalizedBusinessNumber) return null;
 
   const defaults = await loadCreditSettingsDefaults();
@@ -86,7 +93,7 @@ export async function grantWelcomeBonusIfEligible({ organizationId, userId }) {
     CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultWelcomeBonusCredit;
 
   const grant = await ensureBonusGrant({
-    organizationId,
+    businessId,
     userId,
     type: "WELCOME_BONUS",
     businessNumber: normalizedBusinessNumber,
@@ -96,7 +103,7 @@ export async function grantWelcomeBonusIfEligible({ organizationId, userId }) {
   if (!grant?._id || grant.creditLedgerId) return grant?.amount || null;
 
   const ledgerId = await upsertBonusLedger({
-    organizationId,
+    businessId,
     userId,
     amount,
     refType: "WELCOME_BONUS",
@@ -109,8 +116,8 @@ export async function grantWelcomeBonusIfEligible({ organizationId, userId }) {
     { $set: { creditLedgerId: ledgerId } },
   );
 
-  await emitCreditBalanceUpdatedToOrganization({
-    organizationId,
+  await emitCreditBalanceUpdatedToBusiness({
+    businessId,
     balanceDelta: amount,
     reason: "welcome_bonus",
     refId: ledgerId,
@@ -119,16 +126,19 @@ export async function grantWelcomeBonusIfEligible({ organizationId, userId }) {
   return amount;
 }
 
-export async function grantFreeShippingCreditIfEligible({ organizationId, userId }) {
-  if (!organizationId) return null;
-  const org = await BonusGrant.db.model("RequestorOrganization")
-    .findById(organizationId)
+export async function grantFreeShippingCreditIfEligible({ businessId, userId }) {
+  if (!businessId) return null;
+  const business = await BonusGrant.db
+    .model("Business")
+    .findById(businessId)
     .select({ organizationType: 1, extracted: 1 })
     .lean();
-  if (!org) return null;
-  if (String(org.organizationType || "") !== "requestor") return null;
+  if (!business) return null;
+  if (String(business.organizationType || "") !== "requestor") return null;
 
-  const normalizedBusinessNumber = formatBusinessNumber(org?.extracted?.businessNumber);
+  const normalizedBusinessNumber = formatBusinessNumber(
+    business?.extracted?.businessNumber,
+  );
   if (!normalizedBusinessNumber) return null;
 
   const defaults = await loadCreditSettingsDefaults();
@@ -137,7 +147,7 @@ export async function grantFreeShippingCreditIfEligible({ organizationId, userId
     CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultFreeShippingCredit;
 
   const grant = await ensureBonusGrant({
-    organizationId,
+    businessId,
     userId,
     type: "FREE_SHIPPING_CREDIT",
     businessNumber: normalizedBusinessNumber,
@@ -148,7 +158,7 @@ export async function grantFreeShippingCreditIfEligible({ organizationId, userId
   if (grant.creditLedgerId) return grant.amount || amount;
 
   const ledgerId = await upsertBonusLedger({
-    organizationId,
+    businessId,
     userId,
     amount,
     refType: "FREE_SHIPPING_CREDIT",
@@ -161,8 +171,8 @@ export async function grantFreeShippingCreditIfEligible({ organizationId, userId
     { $set: { creditLedgerId: ledgerId } },
   );
 
-  await emitCreditBalanceUpdatedToOrganization({
-    organizationId,
+  await emitCreditBalanceUpdatedToBusiness({
+    businessId,
     balanceDelta: amount,
     reason: "free_shipping_credit",
     refId: ledgerId,

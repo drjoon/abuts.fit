@@ -1,7 +1,7 @@
 import mongoose, { Types } from "mongoose";
 import crypto from "crypto";
 import Request from "../../models/request.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import DraftRequest from "../../models/draftRequest.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import {
@@ -693,7 +693,7 @@ export async function createRequestsFromDraft(req, res) {
               .select({
                 _id: 1,
                 requestor: 1,
-                requestorBusinessId: 1,
+                businessId: 1,
                 manufacturerStage: 1,
                 "caseInfos.reviewByStage.shipping.status": 1,
               })
@@ -771,7 +771,7 @@ export async function createRequestsFromDraft(req, res) {
           const newRequest = {
             requestId,
             requestor: req.user._id,
-            requestorBusinessId:
+            businessId:
               req.user?.role === "requestor" && req.user?.businessId
                 ? req.user.businessId
                 : null,
@@ -797,7 +797,7 @@ export async function createRequestsFromDraft(req, res) {
           try {
             const orgId = getRequestorOrgId(req);
             if (orgId && Types.ObjectId.isValid(orgId)) {
-              const org = await RequestorOrganization.findById(orgId)
+              const org = await Business.findById(orgId)
                 .select({ "shippingPolicy.weeklyBatchDays": 1 })
                 .lean();
               requestorWeeklyBatchDays = Array.isArray(
@@ -841,7 +841,7 @@ export async function createRequestsFromDraft(req, res) {
           } else {
             // Use manufacturer lead times based on diameter
             const { getManufacturerLeadTimesUtil } =
-              await import("../organizations/leadTime.controller.js");
+              await import("../businesses/leadTime.controller.js");
             const manufacturerSettings = await getManufacturerLeadTimesUtil();
             const leadTimes = manufacturerSettings?.leadTimes || {};
 

@@ -82,7 +82,7 @@ export async function formatEtaLabelFromNow(days) {
 export async function getDeliveryEtaLeadDays() {
   try {
     const { getManufacturerLeadTimesUtil } =
-      await import("../organizations/leadTime.controller.js");
+      await import("../businesses/leadTime.controller.js");
     const manufacturerSettings = await getManufacturerLeadTimesUtil();
     const leadTimes = manufacturerSettings?.leadTimes || {};
     const result = {};

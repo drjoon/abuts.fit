@@ -11,7 +11,7 @@ import {
 } from "./utils.js";
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
 import { triggerEspritForNc } from "./common.review.esprit.js";
-import { emitCreditBalanceUpdatedToOrganization } from "../../utils/creditRealtime.js";
+import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 
 const BRIDGE_BASE = process.env.BRIDGE_BASE;
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
@@ -549,7 +549,7 @@ export async function deleteNcFileAndRollbackCam(req, res) {
       request.manufacturerStage = "CAM";
 
       const businessId =
-        request.requestorBusinessId || request.requestor?.businessId;
+        request.businessId || request.requestor?.businessId;
       if (businessId) {
         const spendRows = await CreditLedger.find({
           businessId,
@@ -585,8 +585,8 @@ export async function deleteNcFileAndRollbackCam(req, res) {
           );
 
           if (result?.upsertedCount) {
-            await emitCreditBalanceUpdatedToOrganization({
-              organizationId: businessId,
+            await emitCreditBalanceUpdatedToBusiness({
+              businessId,
               balanceDelta: refundAmount,
               reason: "rollback_cam_refund",
               refId: request._id,

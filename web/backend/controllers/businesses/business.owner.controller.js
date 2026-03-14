@@ -1,8 +1,8 @@
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import User from "../../models/user.model.js";
 import { Types } from "mongoose";
-import { resolveOwnedOrg, resolvePrimaryOwnedOrg } from "./utils.js";
-import { assertOrganizationRole } from "./organizationRole.util.js";
+import { resolveOwnedBusiness, resolvePrimaryOwnedBusiness } from "./business.utils.js";
+import { assertBusinessRole } from "./businessRole.util.js";
 
 function readUserBusinessId(user) {
   return String(user?.businessId || "").trim();
@@ -10,9 +10,9 @@ function readUserBusinessId(user) {
 
 export async function getPendingJoinRequestsForOwner(req, res) {
   try {
-    const roleCheck = assertOrganizationRole(req, res);
+    const roleCheck = assertBusinessRole(req, res);
     if (!roleCheck) return;
-    const { organizationType } = roleCheck;
+    const { businessType } = roleCheck;
 
     const myBusinessId = readUserBusinessId(req.user);
     if (!myBusinessId) {
@@ -22,9 +22,9 @@ export async function getPendingJoinRequestsForOwner(req, res) {
       });
     }
 
-    const org = await RequestorOrganization.findOne({
+    const business = await Business.findOne({
       _id: myBusinessId,
-      organizationType,
+      organizationType: businessType,
       $or: [{ owner: req.user._id }, { owners: req.user._id }],
     })
       .populate({
@@ -34,24 +34,22 @@ export async function getPendingJoinRequestsForOwner(req, res) {
       })
       .lean();
 
-    if (!org) {
+    if (!business) {
       return res.status(404).json({
         success: false,
         message: "사업자를 찾을 수 없습니다.",
       });
     }
 
-    const pending = (org.joinRequests || []).filter(
+    const pending = (business.joinRequests || []).filter(
       (r) => r?.status === "pending" && r?.user,
     );
 
     return res.json({
       success: true,
       data: {
-        businessId: org._id,
-        organizationId: org._id,
-        businessName: org.name,
-        organizationName: org.name,
+        businessId: business._id,
+        businessName: business.name,
         joinRequests: pending,
       },
     });
@@ -66,19 +64,19 @@ export async function getPendingJoinRequestsForOwner(req, res) {
 
 export async function getRepresentatives(req, res) {
   try {
-    const roleCheck = assertOrganizationRole(req, res);
+    const roleCheck = assertBusinessRole(req, res);
     if (!roleCheck) return;
-    const { organizationType } = roleCheck;
+    const { businessType } = roleCheck;
 
-    const org = await resolveOwnedOrg(req, organizationType);
-    if (!org) {
+    const business = await resolveOwnedBusiness(req, businessType);
+    if (!business) {
       return res.status(403).json({
         success: false,
         message: "대표자 계정만 조회할 수 있습니다.",
       });
     }
 
-    const full = await RequestorOrganization.findById(org._id)
+    const full = await Business.findById(business._id)
       .populate({
         path: "owner",
         select: "name email",
@@ -114,10 +112,8 @@ export async function getRepresentatives(req, res) {
     return res.json({
       success: true,
       data: {
-        businessId: String(full?._id || org._id),
-        organizationId: String(full?._id || org._id),
+        businessId: String(full?._id || business._id),
         businessName: String(full?.name || ""),
-        organizationName: String(full?.name || ""),
         representatives,
       },
     });
@@ -132,12 +128,12 @@ export async function getRepresentatives(req, res) {
 
 export async function addOwner(req, res) {
   try {
-    const roleCheck = assertOrganizationRole(req, res);
+    const roleCheck = assertBusinessRole(req, res);
     if (!roleCheck) return;
-    const { organizationType } = roleCheck;
+    const { businessType } = roleCheck;
 
-    const org = await resolvePrimaryOwnedOrg(req, organizationType);
-    if (!org) {
+    const business = await resolvePrimaryOwnedBusiness(req, businessType);
+    if (!business) {
       return res.status(403).json({
         success: false,
         message: "주대표 계정만 공동대표를 추가할 수 있습니다.",
@@ -166,7 +162,7 @@ export async function addOwner(req, res) {
       });
     }
 
-    if (String(targetUser.role) !== organizationType) {
+    if (String(targetUser.role) !== businessType) {
       return res.status(400).json({
         success: false,
         message: "같은 역할의 계정만 공동대표로 추가할 수 있습니다.",
@@ -174,7 +170,7 @@ export async function addOwner(req, res) {
     }
 
     const targetId = String(targetUser._id);
-    if (String(org.owner) === targetId) {
+    if (String(business.owner) === targetId) {
       return res.status(409).json({
         success: false,
         message: "이미 주대표입니다.",
@@ -182,8 +178,8 @@ export async function addOwner(req, res) {
     }
 
     if (
-      Array.isArray(org.owners) &&
-      org.owners.some((c) => String(c) === targetId)
+      Array.isArray(business.owners) &&
+      business.owners.some((c) => String(c) === targetId)
     ) {
       return res.status(409).json({
         success: false,
@@ -192,33 +188,33 @@ export async function addOwner(req, res) {
     }
 
     const existingBusinessId = String(targetUser.businessId || "");
-    if (existingBusinessId && existingBusinessId !== String(org._id)) {
+    if (existingBusinessId && existingBusinessId !== String(business._id)) {
       return res.status(409).json({
         success: false,
-        message: "이미 다른 기공소에 소속되어 있습니다.",
+        message: "이미 다른 사업자에 소속되어 있습니다.",
       });
     }
 
-    if (!Array.isArray(org.owners)) org.owners = [];
-    org.owners.push(new Types.ObjectId(targetId));
+    if (!Array.isArray(business.owners)) business.owners = [];
+    business.owners.push(new Types.ObjectId(targetId));
 
-    if (!Array.isArray(org.members)) org.members = [];
-    if (!org.members.some((m) => String(m) === targetId)) {
-      org.members.push(new Types.ObjectId(targetId));
+    if (!Array.isArray(business.members)) business.members = [];
+    if (!business.members.some((m) => String(m) === targetId)) {
+      business.members.push(new Types.ObjectId(targetId));
     }
 
-    if (Array.isArray(org.joinRequests)) {
-      org.joinRequests = org.joinRequests.filter(
+    if (Array.isArray(business.joinRequests)) {
+      business.joinRequests = business.joinRequests.filter(
         (r) => String(r?.user) !== targetId,
       );
     }
 
-    await org.save();
+    await business.save();
 
     await User.findByIdAndUpdate(targetId, {
       $set: {
-        businessId: org._id,
-        business: org.name,
+        businessId: business._id,
+        business: business.name,
       },
     });
 
@@ -234,12 +230,12 @@ export async function addOwner(req, res) {
 
 export async function removeOwner(req, res) {
   try {
-    const roleCheck = assertOrganizationRole(req, res);
+    const roleCheck = assertBusinessRole(req, res);
     if (!roleCheck) return;
-    const { organizationType } = roleCheck;
+    const { businessType } = roleCheck;
 
-    const org = await resolvePrimaryOwnedOrg(req, organizationType);
-    if (!org) {
+    const business = await resolvePrimaryOwnedBusiness(req, businessType);
+    if (!business) {
       return res.status(403).json({
         success: false,
         message: "주대표 계정만 공동대표를 삭제할 수 있습니다.",
@@ -254,12 +250,12 @@ export async function removeOwner(req, res) {
       });
     }
 
-    const before = Array.isArray(org.owners) ? org.owners.length : 0;
-    org.owners = Array.isArray(org.owners)
-      ? org.owners.filter((c) => String(c) !== String(userId))
+    const before = Array.isArray(business.owners) ? business.owners.length : 0;
+    business.owners = Array.isArray(business.owners)
+      ? business.owners.filter((c) => String(c) !== String(userId))
       : [];
 
-    const after = org.owners.length;
+    const after = business.owners.length;
     if (before === after) {
       return res.status(404).json({
         success: false,
@@ -267,7 +263,7 @@ export async function removeOwner(req, res) {
       });
     }
 
-    await org.save();
+    await business.save();
 
     return res.json({ success: true, data: { removed: true } });
   } catch (error) {
@@ -281,9 +277,9 @@ export async function removeOwner(req, res) {
 
 export async function getMyStaffMembers(req, res) {
   try {
-    const roleCheck = assertOrganizationRole(req, res);
+    const roleCheck = assertBusinessRole(req, res);
     if (!roleCheck) return;
-    const { organizationType } = roleCheck;
+    const { businessType } = roleCheck;
 
     const myBusinessId = readUserBusinessId(req.user);
     if (!myBusinessId) {
@@ -293,9 +289,9 @@ export async function getMyStaffMembers(req, res) {
       });
     }
 
-    const org = await RequestorOrganization.findOne({
+    const business = await Business.findOne({
       _id: myBusinessId,
-      organizationType,
+      organizationType: businessType,
       $or: [{ owner: req.user._id }, { owners: req.user._id }],
     })
       .populate({
@@ -316,27 +312,27 @@ export async function getMyStaffMembers(req, res) {
       .select({ name: 1, owner: 1, owners: 1, members: 1 })
       .lean();
 
-    if (!org) {
+    if (!business) {
       return res.status(403).json({
         success: false,
         message: "대표자 계정만 조회할 수 있습니다.",
       });
     }
 
-    const ownerId = String((org.owner && org.owner._id) || org.owner || "");
-    const ownerIds = Array.isArray(org.owners)
-      ? org.owners.map((c) => String((c && c._id) || c || ""))
+    const ownerId = String((business.owner && business.owner._id) || business.owner || "");
+    const ownerIds = Array.isArray(business.owners)
+      ? business.owners.map((c) => String((c && c._id) || c || ""))
       : [];
     const representatives = [];
     if (ownerId) {
       representatives.push({
         _id: ownerId,
-        name: String((org.owner && org.owner.name) || ""),
-        email: String((org.owner && org.owner.email) || ""),
+        name: String((business.owner && business.owner.name) || ""),
+        email: String((business.owner && business.owner.email) || ""),
       });
     }
-    if (Array.isArray(org.owners)) {
-      org.owners.forEach((c) => {
+    if (Array.isArray(business.owners)) {
+      business.owners.forEach((c) => {
         const id = String((c && c._id) || c || "");
         if (!id) return;
         representatives.push({
@@ -346,30 +342,29 @@ export async function getMyStaffMembers(req, res) {
         });
       });
     }
-    const members = Array.isArray(org.members) ? org.members : [];
-    const staff = members
-      .filter((m) => {
+
+    const allRepIds = new Set([ownerId, ...ownerIds].filter(Boolean));
+
+    const staffMembers = [];
+    if (Array.isArray(business.members)) {
+      business.members.forEach((m) => {
         const id = String((m && m._id) || m || "");
-        if (!id) return false;
-        if (id === ownerId) return false;
-        if (ownerIds.includes(id)) return false;
-        return true;
-      })
-      .map((m) => ({
-        _id: String((m && m._id) || m || ""),
-        name: String((m && m.name) || ""),
-        email: String((m && m.email) || ""),
-      }));
+        if (!id || allRepIds.has(id)) return;
+        staffMembers.push({
+          _id: id,
+          name: String((m && m.name) || ""),
+          email: String((m && m.email) || ""),
+        });
+      });
+    }
 
     return res.json({
       success: true,
       data: {
-        businessId: String(org._id),
-        organizationId: String(org._id),
-        businessName: String(org.name),
-        organizationName: String(org.name),
+        businessId: String(business._id),
+        businessName: String(business.name || ""),
         representatives,
-        staff,
+        staffMembers,
       },
     });
   } catch (error) {
@@ -381,153 +376,56 @@ export async function getMyStaffMembers(req, res) {
   }
 }
 
-export async function removeStaffMember(req, res) {
-  try {
-    const roleCheck = assertOrganizationRole(req, res);
-    if (!roleCheck) return;
-    const { organizationType } = roleCheck;
-
-    const userId = String(req.params.userId || "").trim();
-    if (!Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({
-        success: false,
-        message: "유효하지 않은 사용자 ID입니다.",
-      });
-    }
-
-    const org = await resolveOwnedOrg(req, organizationType);
-    if (!org) {
-      return res.status(403).json({
-        success: false,
-        message: "대표자 계정만 삭제할 수 있습니다.",
-      });
-    }
-
-    if (String(org.owner) === String(userId)) {
-      return res.status(409).json({
-        success: false,
-        message: "대표자는 삭제할 수 없습니다.",
-      });
-    }
-
-    if (
-      Array.isArray(org.owners) &&
-      org.owners.some((c) => String((c && c._id) || c) === String(userId))
-    ) {
-      return res.status(409).json({
-        success: false,
-        message: "공동대표는 삭제할 수 없습니다.",
-      });
-    }
-
-    const before = Array.isArray(org.members) ? org.members.length : 0;
-    org.members = Array.isArray(org.members)
-      ? org.members.filter((m) => String(m) !== String(userId))
-      : [];
-
-    if (Array.isArray(org.joinRequests)) {
-      org.joinRequests = org.joinRequests.filter(
-        (r) => String(r?.user) !== String(userId),
-      );
-    }
-
-    const after = org.members.length;
-    if (before === after) {
-      return res.status(404).json({
-        success: false,
-        message: "직원을 찾을 수 없습니다.",
-      });
-    }
-
-    await org.save();
-
-    await User.findByIdAndUpdate(userId, {
-      $set: { businessId: null, business: "" },
-    });
-
-    return res.json({ success: true, data: { removed: true } });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "직원 삭제 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
-
 export async function approveJoinRequest(req, res) {
   try {
-    const roleCheck = assertOrganizationRole(req, res);
+    const roleCheck = assertBusinessRole(req, res);
     if (!roleCheck) return;
-    const { organizationType } = roleCheck;
+    const { businessType } = roleCheck;
 
-    const userId = String(req.params.userId || "").trim();
-    if (!Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({
-        success: false,
-        message: "유효하지 않은 사용자 ID입니다.",
-      });
-    }
-
-    const org = await resolveOwnedOrg(req, organizationType);
-    if (!org) {
+    const business = await resolveOwnedBusiness(req, businessType);
+    if (!business) {
       return res.status(403).json({
         success: false,
         message: "대표자 계정만 승인할 수 있습니다.",
       });
     }
 
-    const requestedRole = String(req.body?.role || "staff")
-      .trim()
-      .toLowerCase();
-    if (!["staff", "representative"].includes(requestedRole)) {
+    const userId = String(req.params.userId || "").trim();
+    if (!Types.ObjectId.isValid(userId)) {
       return res.status(400).json({
         success: false,
-        message: "role은 representative 또는 staff여야 합니다.",
+        message: "유효하지 않은 사용자 ID입니다.",
       });
     }
 
-    const jr = (org.joinRequests || []).find(
-      (r) => String(r?.user) === String(userId),
+    const joinRequest = (business.joinRequests || []).find(
+      (r) => String(r?.user) === userId && r?.status === "pending",
     );
-    if (!jr) {
+
+    if (!joinRequest) {
       return res.status(404).json({
         success: false,
-        message: "소속 신청을 찾을 수 없습니다.",
+        message: "대기 중인 소속 신청을 찾을 수 없습니다.",
       });
     }
 
-    jr.status = "approved";
-    jr.approvedRole = requestedRole;
+    joinRequest.status = "approved";
 
-    const userObjectId = new Types.ObjectId(userId);
-
-    if (requestedRole === "representative") {
-      if (!Array.isArray(org.owners)) org.owners = [];
-      if (
-        !org.owners.some((c) => String((c && c._id) || c) === String(userId))
-      ) {
-        org.owners.push(userObjectId);
-      }
-      if (Array.isArray(org.members)) {
-        org.members = org.members.filter((m) => String(m) !== String(userId));
-      }
-    } else {
-      if (!Array.isArray(org.members)) org.members = [];
-      if (!org.members.some((m) => String(m) === String(userId))) {
-        org.members.push(userObjectId);
-      }
+    if (!Array.isArray(business.members)) business.members = [];
+    if (!business.members.some((m) => String(m) === userId)) {
+      business.members.push(new Types.ObjectId(userId));
     }
-    await org.save();
+
+    await business.save();
 
     await User.findByIdAndUpdate(userId, {
       $set: {
-        business: org.name,
-        businessId: org._id,
+        businessId: business._id,
+        business: business.name,
       },
     });
 
-    return res.json({ success: true, data: { status: "approved" } });
+    return res.json({ success: true, data: { approved: true } });
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -539,9 +437,17 @@ export async function approveJoinRequest(req, res) {
 
 export async function rejectJoinRequest(req, res) {
   try {
-    const roleCheck = assertOrganizationRole(req, res);
+    const roleCheck = assertBusinessRole(req, res);
     if (!roleCheck) return;
-    const { organizationType } = roleCheck;
+    const { businessType } = roleCheck;
+
+    const business = await resolveOwnedBusiness(req, businessType);
+    if (!business) {
+      return res.status(403).json({
+        success: false,
+        message: "대표자 계정만 거절할 수 있습니다.",
+      });
+    }
 
     const userId = String(req.params.userId || "").trim();
     if (!Types.ObjectId.isValid(userId)) {
@@ -551,32 +457,93 @@ export async function rejectJoinRequest(req, res) {
       });
     }
 
-    const org = await resolveOwnedOrg(req, organizationType);
-    if (!org) {
-      return res.status(403).json({
-        success: false,
-        message: "대표자 계정만 거절할 수 있습니다.",
-      });
-    }
-
-    const jr = (org.joinRequests || []).find(
-      (r) => String(r?.user) === String(userId),
+    const joinRequest = (business.joinRequests || []).find(
+      (r) => String(r?.user) === userId && r?.status === "pending",
     );
-    if (!jr) {
+
+    if (!joinRequest) {
       return res.status(404).json({
         success: false,
-        message: "소속 신청을 찾을 수 없습니다.",
+        message: "대기 중인 소속 신청을 찾을 수 없습니다.",
       });
     }
 
-    jr.status = "rejected";
-    await org.save();
+    joinRequest.status = "rejected";
+    await business.save();
 
-    return res.json({ success: true, data: { status: "rejected" } });
+    return res.json({ success: true, data: { rejected: true } });
   } catch (error) {
     return res.status(500).json({
       success: false,
       message: "소속 신청 거절 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function removeMember(req, res) {
+  try {
+    const roleCheck = assertBusinessRole(req, res);
+    if (!roleCheck) return;
+    const { businessType } = roleCheck;
+
+    const business = await resolveOwnedBusiness(req, businessType);
+    if (!business) {
+      return res.status(403).json({
+        success: false,
+        message: "대표자 계정만 직원을 삭제할 수 있습니다.",
+      });
+    }
+
+    const userId = String(req.params.userId || "").trim();
+    if (!Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 사용자 ID입니다.",
+      });
+    }
+
+    if (String(business.owner) === userId) {
+      return res.status(409).json({
+        success: false,
+        message: "주대표는 삭제할 수 없습니다.",
+      });
+    }
+
+    const isOwner =
+      Array.isArray(business.owners) &&
+      business.owners.some((c) => String(c) === userId);
+    if (isOwner) {
+      return res.status(409).json({
+        success: false,
+        message: "공동대표는 삭제할 수 없습니다. 먼저 공동대표에서 제외해주세요.",
+      });
+    }
+
+    const before = Array.isArray(business.members) ? business.members.length : 0;
+    business.members = Array.isArray(business.members)
+      ? business.members.filter((m) => String(m) !== userId)
+      : [];
+
+    const after = business.members.length;
+    if (before === after) {
+      return res.status(404).json({
+        success: false,
+        message: "직원을 찾을 수 없습니다.",
+      });
+    }
+
+    await business.save();
+
+    await User.findByIdAndUpdate(userId, {
+      $set: { businessId: null, business: "" },
+    });
+
+    return res.json({ success: true, data: { removed: true } });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "직원 삭제 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

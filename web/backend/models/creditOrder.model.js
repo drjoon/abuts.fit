@@ -4,7 +4,7 @@ const creditOrderSchema = new mongoose.Schema(
   {
     organizationId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "RequestorOrganization",
+      ref: "Business",
       required: true,
       index: true,
     },

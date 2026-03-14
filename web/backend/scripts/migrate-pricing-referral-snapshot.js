@@ -8,7 +8,7 @@
 import mongoose from 'mongoose';
 import '../bootstrap/env.js';
 import User from '../models/user.model.js';
-import RequestorOrganization from '../models/requestorOrganization.model.js';
+import Business from '../models/business.model.js';
 import PricingReferralStatsSnapshot from '../models/pricingReferralStatsSnapshot.model.js';
 
 const mongoUri = process.env.MONGODB_URI;

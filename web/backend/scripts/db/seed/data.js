@@ -124,7 +124,7 @@ export async function seedRequestData({ count = 50 } = {}) {
     const requestDoc = {
       _id: requestObjectId,
       requestId,
-      requestorBusinessId: owner.businessId,
+      businessId: owner.businessId,
       requestor: owner._id,
       manufacturer: null,
       caseInfos: {
@@ -234,7 +234,7 @@ export async function seedRequestData({ count = 50 } = {}) {
         shipDate.getDate() - Math.min(lastNDays, pkgIndex + randInt(0, 3)),
       );
       const packageId = createObjectId();
-      const businessId = chunk[0]?.requestorBusinessId || orgKey;
+      const businessId = chunk[0]?.businessId || orgKey;
       const userId = chunk[0]?.requestor;
       shippingPackageDocs.push({
         _id: packageId,

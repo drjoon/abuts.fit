@@ -1,11 +1,13 @@
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import User from "../../models/user.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import { verifyBusinessNumber } from "../../services/hometax.service.js";
-import { assertOrganizationRole, buildOrganizationTypeFilter } from "./organizationRole.util.js";
+import {
+  assertBusinessRole,
+  buildBusinessTypeFilter,
+} from "./businessRole.util.js";
 import {
   normalizeBusinessNumber,
-  normalizeBusinessNumberDigits,
   normalizePhoneNumber,
   isValidEmail,
   isValidAddress,
@@ -13,21 +15,20 @@ import {
   hasOwnKey,
   isDuplicateKeyError,
   formatBusinessNumber,
-} from "./org.validation.util.js";
-import { normalizeOrganizationAddressFields } from "./org.address.util.js";
-import { findOrganizationByAnchors } from "./org.find.util.js";
+} from "./business.validation.util.js";
+import { normalizeBusinessAddressFields } from "./business.address.util.js";
+import { findBusinessByAnchors } from "./business.find.util.js";
 import {
   grantWelcomeBonusIfEligible,
   grantFreeShippingCreditIfEligible,
-  grantSalesmanReferralBonusIfEligible,
-} from "./org.bonus.util.js";
+} from "./business.bonus.util.js";
 
-export async function updateMyOrganization(req, res) {
+export async function updateMyBusiness(req, res) {
   try {
-    const roleCheck = assertOrganizationRole(req, res);
+    const roleCheck = assertBusinessRole(req, res);
     if (!roleCheck) return;
-    const { organizationType } = roleCheck;
-    const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
+    const { businessType } = roleCheck;
+    const typeFilter = buildBusinessTypeFilter(businessType);
 
     const nextName = String(req.body?.name || "").trim();
 
@@ -35,7 +36,7 @@ export async function updateMyOrganization(req, res) {
     const businessItemProvided = hasOwnKey(req.body, "businessItem");
     const phoneNumberProvided = hasOwnKey(req.body, "phoneNumber");
     const businessNumberProvided = hasOwnKey(req.body, "businessNumber");
-    const businessTypeProvided = hasOwnKey(req.body, "businessType");
+    const businessTypeFieldProvided = hasOwnKey(req.body, "businessType");
     const emailProvided = hasOwnKey(req.body, "email");
     const addressProvided = hasOwnKey(req.body, "address");
     const addressDetailProvided = hasOwnKey(req.body, "addressDetail");
@@ -44,63 +45,51 @@ export async function updateMyOrganization(req, res) {
     const shippingPolicyProvided = hasOwnKey(req.body, "shippingPolicy");
 
     const freshUser = await User.findById(req.user._id)
-      .select({
-        businessId: 1,
-        business: 1,
-        organizationId: 1,
-        organization: 1,
-      })
+      .select({ businessId: 1, business: 1 })
       .lean();
-    const effectiveBusinessId =
-      freshUser?.businessId ||
-      req.user.businessId ||
-      freshUser?.organizationId ||
-      req.user.organizationId ||
-      null;
+    const effectiveBusinessId = freshUser?.businessId || req.user.businessId || null;
     const effectiveBusinessName = String(
-      freshUser?.business ||
-        req.user.business ||
-        freshUser?.organization ||
-        req.user.organization ||
-        "",
+      freshUser?.business || req.user.business || "",
     ).trim();
+    
     const nextNameProvided = hasOwnKey(req.body, "name");
-    let org = await findOrganizationByAnchors({
-      organizationType,
+    let business = await findBusinessByAnchors({
+      businessType,
       businessId: effectiveBusinessId,
       businessNumber: req.body?.businessNumber,
       userId: req.user._id,
       businessName: effectiveBusinessName,
     });
-    const hasOrganization = Boolean(org?._id || effectiveBusinessId);
-    console.info("[Organization] updateMyOrganization anchors", {
+    
+    const hasBusiness = Boolean(business?._id || effectiveBusinessId);
+    console.info("[Business] updateMyBusiness anchors", {
       userId: String(req.user._id),
-      organizationType,
+      businessType,
       tokenBusinessId: String(req.user.businessId || ""),
       freshBusinessId: String(freshUser?.businessId || ""),
-      tokenOrganizationId: String(req.user.organizationId || ""),
       effectiveBusinessId: String(effectiveBusinessId || ""),
       tokenBusinessName: String(req.user.business || ""),
-      tokenOrganizationName: String(req.user.organization || ""),
       effectiveBusinessName,
-      resolvedBusinessId: String(org?._id || ""),
-      resolvedBusinessName: String(org?.name || ""),
+      resolvedBusinessId: String(business?._id || ""),
+      resolvedBusinessName: String(business?.name || ""),
       payloadBusinessNumber: String(req.body?.businessNumber || ""),
       payloadName: String(req.body?.name || ""),
     });
-    if (hasOrganization) {
+
+    if (hasBusiness) {
       const meId = String(req.user._id);
       const canEdit =
-        org &&
-        (String(org.owner) === meId ||
-          (Array.isArray(org.owners) && org.owners.some((c) => String(c) === meId)));
+        business &&
+        (String(business.owner) === meId ||
+          (Array.isArray(business.owners) &&
+            business.owners.some((c) => String(c) === meId)));
       const nonShippingProvided =
         hasOwnKey(req.body, "name") ||
         representativeNameProvided ||
         businessItemProvided ||
         phoneNumberProvided ||
         businessNumberProvided ||
-        businessTypeProvided ||
+        businessTypeFieldProvided ||
         emailProvided ||
         addressProvided ||
         addressDetailProvided ||
@@ -119,7 +108,7 @@ export async function updateMyOrganization(req, res) {
     const businessItem = String(req.body?.businessItem || "").trim();
     const phoneNumberRaw = String(req.body?.phoneNumber || "").trim();
     const businessNumberRaw = String(req.body?.businessNumber || "").trim();
-    const businessType = String(req.body?.businessType || "").trim();
+    const businessTypeField = String(req.body?.businessType || "").trim();
     const email = String(req.body?.email || "").trim();
     const address = String(req.body?.address || "").trim();
     const addressDetail = String(req.body?.addressDetail || "").trim();
@@ -139,10 +128,14 @@ export async function updateMyOrganization(req, res) {
 
     const phoneNumber = phoneNumberRaw ? normalizePhoneNumber(phoneNumberRaw) : "";
     const businessNumber = businessNumberRaw ? normalizeBusinessNumber(businessNumberRaw) : "";
-    const currentBusinessNumber = formatBusinessNumber(org?.extracted?.businessNumber || "");
+    const currentBusinessNumber = formatBusinessNumber(
+      business?.extracted?.businessNumber || "",
+    );
     const isBusinessNumberChanging =
-      businessNumberProvided && Boolean(businessNumber) && currentBusinessNumber !== businessNumber;
-    const isVerifiedOrganization = Boolean(org?.verification?.verified);
+      businessNumberProvided &&
+      Boolean(businessNumber) &&
+      currentBusinessNumber !== businessNumber;
+    const isVerifiedBusiness = Boolean(business?.verification?.verified);
 
     if (phoneNumberRaw && !phoneNumber) {
       return res.status(400).json({
@@ -158,7 +151,7 @@ export async function updateMyOrganization(req, res) {
       });
     }
 
-    if (isVerifiedOrganization && isBusinessNumberChanging) {
+    if (isVerifiedBusiness && isBusinessNumberChanging) {
       return res.status(400).json({
         success: false,
         reason: "business_number_locked",
@@ -190,104 +183,90 @@ export async function updateMyOrganization(req, res) {
 
     const normalizedAddressFields =
       addressProvided || zipCodeProvided
-        ? await normalizeOrganizationAddressFields({ address, zipCode })
+        ? await normalizeBusinessAddressFields({ address, zipCode })
         : null;
 
-    const originalBusinessId =
-      freshUser?.businessId ||
-      req.user.businessId ||
-      freshUser?.organizationId ||
-      req.user.organizationId ||
-      null;
-    let attachToOrg = null;
+    const originalBusinessId = freshUser?.businessId || req.user.businessId || null;
+    let attachToBusiness = null;
     if (businessNumber && isBusinessNumberChanging) {
-      const existingOrgByBusinessNumber = await RequestorOrganization.findOne({
-        ...orgTypeFilter,
+      const existingBusinessByNumber = await Business.findOne({
+        ...typeFilter,
         "extracted.businessNumber": businessNumber,
       });
       const meId = String(req.user._id);
 
-      if (existingOrgByBusinessNumber) {
-        const existingOwnerId = String(existingOrgByBusinessNumber.owner || "");
+      if (existingBusinessByNumber) {
+        const existingOwnerId = String(existingBusinessByNumber.owner || "");
         const existingIsOwner =
-          Array.isArray(existingOrgByBusinessNumber.owners) &&
-          existingOrgByBusinessNumber.owners.some((c) => String(c) === meId);
+          Array.isArray(existingBusinessByNumber.owners) &&
+          existingBusinessByNumber.owners.some((c) => String(c) === meId);
         const existingIsMember =
-          Array.isArray(existingOrgByBusinessNumber.members) &&
-          existingOrgByBusinessNumber.members.some((m) => String(m) === meId);
-        const isMyExistingOrg =
+          Array.isArray(existingBusinessByNumber.members) &&
+          existingBusinessByNumber.members.some((m) => String(m) === meId);
+        const isMyExistingBusiness =
           existingOwnerId === meId || existingIsOwner || existingIsMember;
 
-        if (isMyExistingOrg) {
-          console.info(
-            "[Organization] updateMyOrganization same-business own org",
-            {
-              userId: meId,
-              currentResolvedOrgId: String(org?._id || ""),
-              existingOrgByBusinessNumberId: String(
-                existingOrgByBusinessNumber?._id || "",
-              ),
-              businessNumber,
-            },
-          );
-          attachToOrg = existingOrgByBusinessNumber;
-          org = existingOrgByBusinessNumber;
+        if (isMyExistingBusiness) {
+          console.info("[Business] updateMyBusiness same-business own business", {
+            userId: meId,
+            currentResolvedBusinessId: String(business?._id || ""),
+            existingBusinessByNumberId: String(existingBusinessByNumber?._id || ""),
+            businessNumber,
+          });
+          attachToBusiness = existingBusinessByNumber;
+          business = existingBusinessByNumber;
         }
       }
 
       if (
-        existingOrgByBusinessNumber &&
-        !attachToOrg &&
-        (!org || String(existingOrgByBusinessNumber._id) !== String(org._id))
+        existingBusinessByNumber &&
+        !attachToBusiness &&
+        (!business || String(existingBusinessByNumber._id) !== String(business._id))
       ) {
-        if (hasOrganization) {
-          console.info("[Organization] updateMyOrganization conflict", {
+        if (hasBusiness) {
+          console.info("[Business] updateMyBusiness conflict", {
             reason: "business_number_switch_requires_admin",
             userId: String(req.user._id),
-            resolvedOrganizationId: String(org?._id || ""),
-            existingOrgByBusinessNumberId: String(
-              existingOrgByBusinessNumber?._id || "",
-            ),
+            resolvedBusinessId: String(business?._id || ""),
+            existingBusinessByNumberId: String(existingBusinessByNumber?._id || ""),
             businessNumber,
           });
           return res.status(409).json({
             success: false,
             reason: "business_number_switch_requires_admin",
             message:
-              "기존 조직에 연결된 상태에서는 사업자등록번호로 다른 조직으로 전환할 수 없습니다. 관리자에게 사업자 전환을 요청해주세요.",
+              "기존 사업자에 연결된 상태에서는 사업자등록번호로 다른 사업자로 전환할 수 없습니다. 관리자에게 사업자 전환을 요청해주세요.",
           });
         }
-        const ownerId = String(existingOrgByBusinessNumber.owner || "");
+        const ownerId = String(existingBusinessByNumber.owner || "");
         const isOwner =
-          Array.isArray(existingOrgByBusinessNumber.owners) &&
-          existingOrgByBusinessNumber.owners.some((c) => String(c) === meId);
+          Array.isArray(existingBusinessByNumber.owners) &&
+          existingBusinessByNumber.owners.some((c) => String(c) === meId);
         const isMember =
-          Array.isArray(existingOrgByBusinessNumber.members) &&
-          existingOrgByBusinessNumber.members.some((m) => String(m) === meId);
+          Array.isArray(existingBusinessByNumber.members) &&
+          existingBusinessByNumber.members.some((m) => String(m) === meId);
 
         if (ownerId === meId || isOwner || isMember) {
-          console.info("[Organization] updateMyOrganization attachToOrg", {
+          console.info("[Business] updateMyBusiness attachToBusiness", {
             userId: String(req.user._id),
-            attachToOrgId: String(existingOrgByBusinessNumber?._id || ""),
+            attachToBusinessId: String(existingBusinessByNumber?._id || ""),
             businessNumber,
           });
-          attachToOrg = existingOrgByBusinessNumber;
-          org = existingOrgByBusinessNumber;
+          attachToBusiness = existingBusinessByNumber;
+          business = existingBusinessByNumber;
         } else {
-          console.info("[Organization] updateMyOrganization conflict", {
+          console.info("[Business] updateMyBusiness conflict", {
             reason: "duplicate_business_number",
             userId: String(req.user._id),
-            resolvedOrganizationId: String(org?._id || ""),
-            existingOrgByBusinessNumberId: String(
-              existingOrgByBusinessNumber?._id || "",
-            ),
+            resolvedBusinessId: String(business?._id || ""),
+            existingBusinessByNumberId: String(existingBusinessByNumber?._id || ""),
             businessNumber,
           });
           return res.status(409).json({
             success: false,
             reason: "duplicate_business_number",
             message:
-              "이미 등록된 사업자등록번호입니다. 기존 조직에 가입 요청을 진행해주세요.",
+              "이미 등록된 사업자등록번호입니다. 기존 사업자에 가입 요청을 진행해주세요.",
           });
         }
       }
@@ -306,15 +285,19 @@ export async function updateMyOrganization(req, res) {
     if (representativeNameProvided) extractedPatch.representativeName = representativeName;
     if (businessItemProvided) extractedPatch.businessItem = businessItem;
     if (phoneNumberProvided) extractedPatch.phoneNumber = phoneNumber;
-    if (businessTypeProvided) extractedPatch.businessType = businessType;
+    if (businessTypeFieldProvided) extractedPatch.businessType = businessTypeField;
     if (emailProvided) extractedPatch.email = email;
     if (addressProvided)
       extractedPatch.address =
-        normalizedAddressFields?.address != null ? normalizedAddressFields.address : address;
+        normalizedAddressFields?.address != null
+          ? normalizedAddressFields.address
+          : address;
     if (addressDetailProvided) extractedPatch.addressDetail = addressDetail;
     if (zipCodeProvided)
       extractedPatch.zipCode =
-        normalizedAddressFields?.zipCode != null ? normalizedAddressFields.zipCode : zipCode;
+        normalizedAddressFields?.zipCode != null
+          ? normalizedAddressFields.zipCode
+          : zipCode;
     if (startDateProvided) extractedPatch.startDate = startDate;
 
     if (businessNumberProvided) {
@@ -334,7 +317,10 @@ export async function updateMyOrganization(req, res) {
         patch["shippingPolicy.weeklyBatchDays"] = Array.from(new Set(normalizedDays));
       }
 
-      if (hasOwnKey(req.body?.shippingPolicy, "leadTimes") && req.body?.shippingPolicy?.leadTimes) {
+      if (
+        hasOwnKey(req.body?.shippingPolicy, "leadTimes") &&
+        req.body?.shippingPolicy?.leadTimes
+      ) {
         const clampLead = (v, fallback) => {
           const n = Number(v);
           if (!Number.isFinite(n) || n < 0) return fallback;
@@ -357,29 +343,30 @@ export async function updateMyOrganization(req, res) {
       patch["shippingPolicy.updatedAt"] = new Date();
     }
 
-    if (businessNumber && !attachToOrg) {
+    if (businessNumber && !attachToBusiness) {
       const query = {
         "extracted.businessNumber": businessNumber,
-        ...orgTypeFilter,
+        ...typeFilter,
       };
-      if (org?._id) {
-        query._id = { $ne: org._id };
+      if (business?._id) {
+        query._id = { $ne: business._id };
       }
-      const dup = await RequestorOrganization.findOne(query)
+      const dup = await Business.findOne(query)
         .select({ _id: 1 })
         .lean();
       if (dup) {
-        console.info("[Organization] updateMyOrganization conflict", {
+        console.info("[Business] updateMyBusiness conflict", {
           reason: "duplicate_business_number_post_patch",
           userId: String(req.user._id),
-          resolvedOrganizationId: String(org?._id || ""),
-          duplicateOrganizationId: String(dup?._id || ""),
+          resolvedBusinessId: String(business?._id || ""),
+          duplicateBusinessId: String(dup?._id || ""),
           businessNumber,
         });
         return res.status(409).json({
           success: false,
           reason: "duplicate_business_number",
-          message: "이미 등록된 사업자등록번호입니다. 기존 기공소에 가입 요청을 진행해주세요.",
+          message:
+            "이미 등록된 사업자등록번호입니다. 기존 사업자에 가입 요청을 진행해주세요.",
         });
       }
     }
@@ -388,7 +375,7 @@ export async function updateMyOrganization(req, res) {
     if (businessNumber) {
       verificationResult = await verifyBusinessNumber({
         businessNumber,
-        companyName: nextName || org?.name || "",
+        companyName: nextName || business?.name || "",
         representativeName,
         startDate,
       });
@@ -403,24 +390,22 @@ export async function updateMyOrganization(req, res) {
       }
     }
 
-    if (!hasOrganization && attachToOrg) {
+    if (!hasBusiness && attachToBusiness) {
       const priorLedgerCount = originalBusinessId
         ? await CreditLedger.countDocuments({ businessId: originalBusinessId })
         : 0;
-      console.error("[ORGANIZATION_ATTACH_SWITCH]", {
+      console.error("[BUSINESS_ATTACH_SWITCH]", {
         userId: String(req.user._id),
         originalBusinessId: originalBusinessId ? String(originalBusinessId) : null,
-        nextBusinessId: String(attachToOrg._id),
+        nextBusinessId: String(attachToBusiness._id),
         priorLedgerCount,
       });
       await User.findByIdAndUpdate(
         req.user._id,
         {
           $set: {
-            businessId: attachToOrg._id,
-            business: attachToOrg.name,
-            organizationId: attachToOrg._id,
-            organization: attachToOrg.name,
+            businessId: attachToBusiness._id,
+            business: attachToBusiness.name,
           },
         },
         { new: true },
@@ -428,10 +413,10 @@ export async function updateMyOrganization(req, res) {
 
       const meId = String(req.user._id);
       const isMember =
-        Array.isArray(attachToOrg.members) &&
-        attachToOrg.members.some((m) => String(m) === meId);
-      if (!isMember && String(attachToOrg.owner || "") !== meId) {
-        await RequestorOrganization.findByIdAndUpdate(attachToOrg._id, {
+        Array.isArray(attachToBusiness.members) &&
+        attachToBusiness.members.some((m) => String(m) === meId);
+      if (!isMember && String(attachToBusiness.owner || "") !== meId) {
+        await Business.findByIdAndUpdate(attachToBusiness._id, {
           $addToSet: { members: req.user._id },
         });
       }
@@ -440,17 +425,17 @@ export async function updateMyOrganization(req, res) {
         success: true,
         data: {
           attached: true,
-          organizationId: attachToOrg._id,
-          organizationName: attachToOrg.name,
+          businessId: attachToBusiness._id,
+          businessName: attachToBusiness.name,
         },
       });
     }
 
-    if (!hasOrganization && !attachToOrg) {
+    if (!hasBusiness && !attachToBusiness) {
       const requiredMissing =
         !nextName ||
         !representativeName ||
-        !businessType ||
+        !businessTypeField ||
         !businessItem ||
         !address ||
         !email ||
@@ -465,8 +450,8 @@ export async function updateMyOrganization(req, res) {
       }
 
       try {
-        const created = await RequestorOrganization.create({
-          organizationType,
+        const created = await Business.create({
+          organizationType: businessType,
           name: nextName,
           owner: req.user._id,
           owners: [],
@@ -478,7 +463,7 @@ export async function updateMyOrganization(req, res) {
             companyName: nextName,
             representativeName,
             businessItem,
-            businessType,
+            businessType: businessTypeField,
             address,
             email,
             phoneNumber,
@@ -501,19 +486,15 @@ export async function updateMyOrganization(req, res) {
             $set: {
               businessId: created._id,
               business: created.name,
-              organizationId: created._id,
-              organization: created.name,
             },
           },
           { new: true },
         );
 
         const priorLedgerCount = originalBusinessId
-          ? await CreditLedger.countDocuments({
-              businessId: originalBusinessId,
-            })
+          ? await CreditLedger.countDocuments({ businessId: originalBusinessId })
           : 0;
-        console.error("[ORGANIZATION_CREATED_AND_ATTACHED]", {
+        console.error("[BUSINESS_CREATED_AND_ATTACHED]", {
           userId: String(req.user._id),
           originalBusinessId: originalBusinessId ? String(originalBusinessId) : null,
           createdBusinessId: String(created._id),
@@ -522,15 +503,11 @@ export async function updateMyOrganization(req, res) {
         });
 
         const welcomeBonusAmount = await grantWelcomeBonusIfEligible({
-          organizationId: created._id,
+          businessId: created._id,
           userId: req.user._id,
         });
         const freeShippingCreditAmount = await grantFreeShippingCreditIfEligible({
-          organizationId: created._id,
-          userId: req.user._id,
-        });
-        await grantSalesmanReferralBonusIfEligible({
-          organizationId: created._id,
+          businessId: created._id,
           userId: req.user._id,
         });
 
@@ -538,8 +515,8 @@ export async function updateMyOrganization(req, res) {
           success: true,
           data: {
             created: true,
-            organizationId: created._id,
-            organizationName: created.name,
+            businessId: created._id,
+            businessName: created.name,
             verification: created.verification || null,
             welcomeBonusGranted: !!welcomeBonusAmount,
             welcomeBonusAmount: Number(welcomeBonusAmount || 0),
@@ -554,7 +531,8 @@ export async function updateMyOrganization(req, res) {
             return res.status(409).json({
               success: false,
               reason: "duplicate_business_number",
-              message: "이미 등록된 사업자등록번호입니다. 기존 사업자에 가입 요청을 진행해주세요.",
+              message:
+                "이미 등록된 사업자등록번호입니다. 기존 사업자에 가입 요청을 진행해주세요.",
             });
           }
         }
@@ -583,36 +561,36 @@ export async function updateMyOrganization(req, res) {
       const update = {};
       if (Object.keys(patch).length > 0) update.$set = patch;
       if (Object.keys(unsetPatch).length > 0) update.$unset = unsetPatch;
-      console.info("[Organization] updateMyOrganization persist", {
+      console.info("[Business] updateMyBusiness persist", {
         userId: String(req.user._id),
-        organizationId: String(org?._id || ""),
+        businessId: String(business?._id || ""),
         patch,
         extractedPatch,
         unsetPatch,
       });
-      await RequestorOrganization.findByIdAndUpdate(org._id, update);
-      const persistedOrg = await RequestorOrganization.findById(org._id)
+      await Business.findByIdAndUpdate(business._id, update);
+      const persistedBusiness = await Business.findById(business._id)
         .select({ name: 1, extracted: 1, verification: 1 })
         .lean();
-      console.info("[Organization] updateMyOrganization persisted result", {
-        organizationId: String(persistedOrg?._id || org?._id || ""),
-        name: String(persistedOrg?.name || ""),
+      console.info("[Business] updateMyBusiness persisted result", {
+        businessId: String(persistedBusiness?._id || business?._id || ""),
+        name: String(persistedBusiness?.name || ""),
         extracted: {
-          companyName: String(persistedOrg?.extracted?.companyName || "").trim(),
-          businessNumber: String(persistedOrg?.extracted?.businessNumber || "").trim(),
-          address: String(persistedOrg?.extracted?.address || "").trim(),
-          addressDetail: String(persistedOrg?.extracted?.addressDetail || "").trim(),
-          zipCode: String(persistedOrg?.extracted?.zipCode || "").trim(),
-          phoneNumber: String(persistedOrg?.extracted?.phoneNumber || "").trim(),
-          email: String(persistedOrg?.extracted?.email || "").trim(),
+          companyName: String(persistedBusiness?.extracted?.companyName || "").trim(),
+          businessNumber: String(persistedBusiness?.extracted?.businessNumber || "").trim(),
+          address: String(persistedBusiness?.extracted?.address || "").trim(),
+          addressDetail: String(persistedBusiness?.extracted?.addressDetail || "").trim(),
+          zipCode: String(persistedBusiness?.extracted?.zipCode || "").trim(),
+          phoneNumber: String(persistedBusiness?.extracted?.phoneNumber || "").trim(),
+          email: String(persistedBusiness?.extracted?.email || "").trim(),
           representativeName: String(
-            persistedOrg?.extracted?.representativeName || "",
+            persistedBusiness?.extracted?.representativeName || "",
           ).trim(),
-          businessType: String(persistedOrg?.extracted?.businessType || "").trim(),
-          businessItem: String(persistedOrg?.extracted?.businessItem || "").trim(),
-          startDate: String(persistedOrg?.extracted?.startDate || "").trim(),
+          businessType: String(persistedBusiness?.extracted?.businessType || "").trim(),
+          businessItem: String(persistedBusiness?.extracted?.businessItem || "").trim(),
+          startDate: String(persistedBusiness?.extracted?.startDate || "").trim(),
         },
-        businessVerified: Boolean(persistedOrg?.verification?.verified),
+        businessVerified: Boolean(persistedBusiness?.verification?.verified),
       });
     } catch (e) {
       if (isDuplicateKeyError(e)) {
@@ -621,52 +599,42 @@ export async function updateMyOrganization(req, res) {
           return res.status(409).json({
             success: false,
             reason: "duplicate_business_number",
-            message: "이미 등록된 사업자등록번호입니다. 기존 사업자에 가입 요청을 진행해주세요.",
+            message:
+              "이미 등록된 사업자등록번호입니다. 기존 사업자에 가입 요청을 진행해주세요.",
           });
         }
       }
       throw e;
     }
 
-    if (
-      nextName &&
-      String(req.user.business || req.user.organization || "") !== nextName
-    ) {
+    if (nextName && String(req.user.business || "") !== nextName) {
       await User.updateMany(
-        { $or: [{ businessId: org._id }, { organizationId: org._id }] },
+        { businessId: business._id },
         {
           $set: {
             business: nextName,
-            organization: nextName,
           },
         },
       );
     } else {
       await User.updateMany(
-        { $or: [{ businessId: org._id }, { organizationId: org._id }] },
+        { businessId: business._id },
         {
           $set: {
-            businessId: org._id,
-            business: String(org?.name || nextName || "").trim(),
-            organizationId: org._id,
-            organization: String(org?.name || nextName || "").trim(),
+            businessId: business._id,
+            business: String(business?.name || nextName || "").trim(),
           },
         },
       );
     }
 
     const granted = await grantWelcomeBonusIfEligible({
-      organizationId: org._id,
+      businessId: business._id,
       userId: req.user._id,
     });
 
     const freeShippingGranted = await grantFreeShippingCreditIfEligible({
-      organizationId: org._id,
-      userId: req.user._id,
-    });
-
-    const salesmanGranted = await grantSalesmanReferralBonusIfEligible({
-      organizationId: org._id,
+      businessId: business._id,
       userId: req.user._id,
     });
 
@@ -678,8 +646,6 @@ export async function updateMyOrganization(req, res) {
         welcomeBonusAmount: granted || 0,
         freeShippingCreditGranted: Boolean(freeShippingGranted),
         freeShippingCreditAmount: freeShippingGranted || 0,
-        salesmanReferralBonusGranted: Boolean(salesmanGranted),
-        salesmanReferralBonusAmount: salesmanGranted || 0,
         verification: verificationResult
           ? {
               verified: !!verificationResult.verified,

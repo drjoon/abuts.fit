@@ -9,7 +9,7 @@ const businessRegistrationInquirySchema = new mongoose.Schema(
     },
     organizationId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "RequestorOrganization",
+      ref: "Business",
       default: null,
     },
     organizationType: {

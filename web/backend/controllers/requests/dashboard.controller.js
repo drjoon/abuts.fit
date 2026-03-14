@@ -2,7 +2,7 @@ import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import PricingReferralStatsSnapshot from "../../models/pricingReferralStatsSnapshot.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import Machine from "../../models/machine.model.js";
 import { Types } from "mongoose";
 import {
@@ -340,7 +340,7 @@ export async function getMyReferralDirectMembers(req, res) {
         .filter((id) => Types.ObjectId.isValid(id))
         .map((id) => new Types.ObjectId(id));
       const orgs = orgObjectIds.length
-        ? await RequestorOrganization.find({ _id: { $in: orgObjectIds } })
+        ? await Business.find({ _id: { $in: orgObjectIds } })
             .select({ name: 1, extracted: 1, createdAt: 1 })
             .lean()
         : [];
@@ -350,12 +350,12 @@ export async function getMyReferralDirectMembers(req, res) {
         ? await Request.aggregate([
             {
               $match: {
-                requestorBusinessId: { $in: orgObjectIds },
+                businessId: { $in: orgObjectIds },
                 manufacturerStage: "추적관리",
                 createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
               },
             },
-            { $group: { _id: "$requestorBusinessId", count: { $sum: 1 } } },
+            { $group: { _id: "$businessId", count: { $sum: 1 } } },
           ])
         : [];
       orderRows.forEach((r) =>
@@ -402,7 +402,7 @@ export async function getMyReferralDirectMembers(req, res) {
         .filter((id) => Types.ObjectId.isValid(id))
         .map((id) => new Types.ObjectId(id));
       const orgs = orgObjectIds.length
-        ? await RequestorOrganization.find({ _id: { $in: orgObjectIds } })
+        ? await Business.find({ _id: { $in: orgObjectIds } })
             .select({ name: 1, extracted: 1, createdAt: 1 })
             .lean()
         : [];
@@ -412,12 +412,12 @@ export async function getMyReferralDirectMembers(req, res) {
         ? await Request.aggregate([
             {
               $match: {
-                requestorBusinessId: { $in: orgObjectIds },
+                businessId: { $in: orgObjectIds },
                 manufacturerStage: "추적관리",
                 createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
               },
             },
-            { $group: { _id: "$requestorBusinessId", count: { $sum: 1 } } },
+            { $group: { _id: "$businessId", count: { $sum: 1 } } },
           ])
         : [];
       orderRows.forEach((r) =>

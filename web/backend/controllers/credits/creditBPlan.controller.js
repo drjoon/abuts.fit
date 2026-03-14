@@ -1,6 +1,6 @@
 import ChargeOrder from "../../models/chargeOrder.model.js";
 import TaxInvoiceDraft from "../../models/taxInvoiceDraft.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Business from "../../models/business.model.js";
 import {
   ensureOrganizationDepositCode,
   generateChargeOrderDepositCode,
@@ -327,16 +327,16 @@ export async function requestTaxInvoice(req, res) {
       });
     }
 
-    const organization = await RequestorOrganization.findById(businessId);
-    if (!organization) {
+    const business = await Business.findById(businessId);
+    if (!business) {
       return res.status(404).json({
         success: false,
         message:
-          "조직 정보를 찾을 수 없습니다. 사업자 정보를 먼저 등록해주세요.",
+          "사업자 정보를 찾을 수 없습니다. 사업자 정보를 먼저 등록해주세요.",
       });
     }
 
-    const extracted = organization.extracted || {};
+    const extracted = business.extracted || {};
     const buyer = {
       bizNo: extracted.businessNumber || "",
       corpName: extracted.companyName || "",
