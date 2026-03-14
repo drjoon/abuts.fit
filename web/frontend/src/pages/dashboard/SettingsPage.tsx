@@ -3,6 +3,7 @@ import { AdminSettingsPage } from "../admin/settings/SettingsPage";
 import { ManufacturerSettingsPage } from "../manufacturer/settings/SettingsPage";
 import { RequestorSettingsPage } from "../requestor/settings/SettingsPage";
 import { SalesmanSettingsPage } from "../salesman/SalesmanSettingsPage";
+import { DevopsSettingsPage } from "../devops/DevopsSettingsPage";
 
 export const SettingsPage = () => {
   const { user } = useAuthStore();
@@ -17,6 +18,10 @@ export const SettingsPage = () => {
 
   if (user?.role === "salesman") {
     return <SalesmanSettingsPage />;
+  }
+
+  if (user?.role === "devops") {
+    return <DevopsSettingsPage />;
   }
 
   if (user?.role === "requestor") {

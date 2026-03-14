@@ -64,6 +64,11 @@ const sidebarItems = {
     { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
+  devops: [
+    { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
+    { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
+    { icon: Settings, label: "설정", href: "/dashboard/settings" },
+  ],
   manufacturer: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: ClipboardList, label: "작업", href: "/dashboard/worksheet" },
@@ -113,6 +118,8 @@ const getRoleLabel = (role: string) => {
       return "의뢰자";
     case "salesman":
       return "영업자";
+    case "devops":
+      return "개발운영사";
     case "manufacturer":
       return "제조사";
     case "admin":
@@ -127,6 +134,8 @@ const getRoleBadgeVariant = (role: string) => {
     case "requestor":
       return "default";
     case "salesman":
+      return "secondary";
+    case "devops":
       return "secondary";
     case "manufacturer":
       return "secondary";
@@ -159,7 +168,9 @@ export const DashboardLayout = () => {
   const onboardingCompleted = Boolean(user?.onboardingWizardCompleted);
   const shouldForceOnboarding =
     user?.role !== undefined &&
-    ["requestor", "salesman", "manufacturer", "admin"].includes(user.role);
+    ["requestor", "salesman", "manufacturer", "admin", "devops"].includes(
+      user.role,
+    );
 
   useEffect(() => {
     if (!token) return;

@@ -447,20 +447,22 @@ async function register(req, res) {
       }
     }
 
-    const normalizedRole = role || "requestor";
+    const normalizedRole = String(role || "requestor").trim();
 
-    const referralCode =
-      normalizedRole === "requestor"
-        ? await ensureUniqueReferralCode(5)
-        : normalizedRole === "salesman"
-          ? await ensureUniqueReferralCode(4)
-          : await ensureUniqueReferralCode(5);
+    let referralCodeLength = 5;
+    if (normalizedRole === "salesman") {
+      referralCodeLength = 4;
+    } else if (normalizedRole === "devops") {
+      referralCodeLength = 5;
+    }
+    const referralCode = await ensureUniqueReferralCode(referralCodeLength);
 
     if (
       normalizedRole !== "requestor" &&
       normalizedRole !== "manufacturer" &&
       normalizedRole !== "admin" &&
-      normalizedRole !== "salesman"
+      normalizedRole !== "salesman" &&
+      normalizedRole !== "devops"
     ) {
       return res.status(400).json({
         success: false,
@@ -510,7 +512,9 @@ async function register(req, res) {
 
     // 사용자 생성
     const isInstantApprove =
-      normalizedRole === "requestor" || normalizedRole === "salesman";
+      normalizedRole === "requestor" ||
+      normalizedRole === "salesman" ||
+      normalizedRole === "devops";
 
     const userDoc = {
       name,

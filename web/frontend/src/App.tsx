@@ -61,6 +61,11 @@ const SettingsPage = lazy(() =>
     default: m.SettingsPage,
   })),
 );
+const DevopsSettingsPage = lazy(() =>
+  import("./pages/devops/DevopsSettingsPage").then((m) => ({
+    default: m.DevopsSettingsPage,
+  })),
+);
 const SharedOnboardingWizardPage = lazy(() =>
   import("./shared/onboarding/SharedOnboardingWizardPage").then((m) => ({
     default: m.SharedOnboardingWizardPage,
@@ -164,7 +169,7 @@ const RoleProtectedRoute = ({
   roles,
   children,
 }: {
-  roles: ("requestor" | "manufacturer" | "admin" | "salesman")[];
+  roles: ("requestor" | "manufacturer" | "admin" | "salesman" | "devops")[];
   children: React.ReactNode;
 }) => {
   const { isAuthenticated, user } = useAuthStore();
@@ -367,6 +372,14 @@ const App = () => {
                     }
                   />
                   <Route path="settings" element={<SettingsPage />} />
+                  <Route
+                    path="settings/devops"
+                    element={
+                      <RoleProtectedRoute roles={["devops", "admin"]}>
+                        <DevopsSettingsPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
                 </Route>
                 <Route path="*" element={<NotFound />} />
               </Routes>

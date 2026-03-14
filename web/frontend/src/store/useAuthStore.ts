@@ -5,7 +5,12 @@ const AUTH_TOKEN_KEY = "abuts_auth_token";
 const AUTH_REFRESH_TOKEN_KEY = "abuts_auth_refresh_token";
 const AUTH_USER_KEY = "abuts_auth_user";
 
-export type UserRole = "requestor" | "manufacturer" | "admin" | "salesman";
+export type UserRole =
+  | "requestor"
+  | "manufacturer"
+  | "admin"
+  | "salesman"
+  | "devops";
 
 export interface User {
   id: string;
@@ -45,7 +50,7 @@ const normalizeApiUser = (u: any): User | null => {
     businessId: u.businessId ? String(u.businessId) : null,
     onboardingWizardCompleted: Boolean(u.onboardingWizardCompleted),
     salesmanPayoutAccount:
-      u.role === "salesman"
+      u.role === "salesman" || u.role === "devops"
         ? {
             bankName: String(pa?.bankName || ""),
             accountNumber: String(pa?.accountNumber || ""),

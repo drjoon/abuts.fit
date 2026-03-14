@@ -346,7 +346,7 @@ async function updateProfile(req, res) {
       Object.prototype.hasOwnProperty.call(updateData, "salesmanPayoutAccount")
     ) {
       const role = String(req.user?.role || "");
-      if (role !== "salesman") {
+      if (role !== "salesman" && role !== "devops") {
         delete updateData.salesmanPayoutAccount;
       } else {
         const raw = updateData.salesmanPayoutAccount;

@@ -4,7 +4,7 @@ const requestorOrganizationSchema = new mongoose.Schema(
   {
     organizationType: {
       type: String,
-      enum: ["requestor", "salesman", "manufacturer"],
+      enum: ["requestor", "salesman", "manufacturer", "devops"],
       default: "requestor",
       index: true,
     },

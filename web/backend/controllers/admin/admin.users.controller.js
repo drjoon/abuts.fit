@@ -54,7 +54,9 @@ export async function getAllUsers(req, res) {
           })
           .lean()
       : [];
-    const businessMap = new Map(businesses.map((org) => [String(org._id), org]));
+    const businessMap = new Map(
+      businesses.map((org) => [String(org._id), org]),
+    );
 
     const requestCounts = await Request.aggregate([
       {
@@ -114,24 +116,38 @@ export async function getAllUsers(req, res) {
 export async function createUser(req, res) {
   try {
     const name = String(req.body?.name || "").trim() || "사용자";
-    const email = String(req.body?.email || "").trim().toLowerCase();
+    const email = String(req.body?.email || "")
+      .trim()
+      .toLowerCase();
     const role = String(req.body?.role || "requestor").trim();
     const business = String(req.body?.business || "").trim();
     const passwordRaw = String(req.body?.password || "");
     const autoActivate = Boolean(req.body?.autoActivate);
 
     if (!email) {
-      return res.status(400).json({ success: false, message: "이메일은 필수입니다." });
+      return res
+        .status(400)
+        .json({ success: false, message: "이메일은 필수입니다." });
     }
 
-    const validRoles = ["requestor", "manufacturer", "admin", "salesman"];
+    const validRoles = [
+      "requestor",
+      "manufacturer",
+      "admin",
+      "salesman",
+      "devops",
+    ];
     if (!validRoles.includes(role)) {
-      return res.status(400).json({ success: false, message: "유효하지 않은 역할입니다." });
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 역할입니다." });
     }
 
     const existing = await User.findOne({ email }).select({ _id: 1 }).lean();
     if (existing?._id) {
-      return res.status(409).json({ success: false, message: "이미 존재하는 이메일입니다." });
+      return res
+        .status(409)
+        .json({ success: false, message: "이미 존재하는 이메일입니다." });
     }
 
     const tempPassword = passwordRaw || generateRandomPassword();
@@ -173,18 +189,26 @@ export async function approveUser(req, res) {
   try {
     const userId = req.params.id;
     if (!Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
     }
     const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({ success: false, message: "사용자를 찾을 수 없습니다." });
+      return res
+        .status(404)
+        .json({ success: false, message: "사용자를 찾을 수 없습니다." });
     }
     if (!user.approvedAt) user.approvedAt = new Date();
     user.active = true;
     await user.save();
     return res.status(200).json({
       success: true,
-      data: { userId: user._id, approvedAt: user.approvedAt, active: user.active },
+      data: {
+        userId: user._id,
+        approvedAt: user.approvedAt,
+        active: user.active,
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -199,18 +223,26 @@ export async function rejectUser(req, res) {
   try {
     const userId = req.params.id;
     if (!Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
     }
     const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({ success: false, message: "사용자를 찾을 수 없습니다." });
+      return res
+        .status(404)
+        .json({ success: false, message: "사용자를 찾을 수 없습니다." });
     }
     user.active = false;
     user.approvedAt = null;
     await user.save();
     return res.status(200).json({
       success: true,
-      data: { userId: user._id, approvedAt: user.approvedAt, active: user.active },
+      data: {
+        userId: user._id,
+        approvedAt: user.approvedAt,
+        active: user.active,
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -225,15 +257,24 @@ export async function getUserById(req, res) {
   try {
     const userId = req.params.id;
     if (!Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
     }
     const user = await User.findById(userId).select("-password");
     if (!user) {
-      return res.status(404).json({ success: false, message: "사용자를 찾을 수 없습니다." });
+      return res
+        .status(404)
+        .json({ success: false, message: "사용자를 찾을 수 없습니다." });
     }
     const businessInfo = user?.businessId
       ? await RequestorOrganization.findById(user.businessId)
-          .select({ name: 1, businessLicense: 1, extracted: 1, verification: 1 })
+          .select({
+            name: 1,
+            businessLicense: 1,
+            extracted: 1,
+            verification: 1,
+          })
           .lean()
       : null;
     const hasLicense =
@@ -243,7 +284,11 @@ export async function getUserById(req, res) {
       hasLicense && businessInfo?.verification?.verified === false;
     res.status(200).json({
       success: true,
-      data: { ...user.toObject(), businessInfo: businessInfo || null, unresolvedBusiness },
+      data: {
+        ...user.toObject(),
+        businessInfo: businessInfo || null,
+        unresolvedBusiness,
+      },
     });
   } catch (error) {
     res.status(500).json({
@@ -259,7 +304,9 @@ export async function updateUser(req, res) {
     const userId = req.params.id;
     const updateData = req.body;
     if (!Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
     }
     delete updateData.password;
     delete updateData.email;
@@ -282,7 +329,9 @@ export async function updateUser(req, res) {
       { new: true, runValidators: true },
     ).select("-password");
     if (!updatedUser) {
-      return res.status(404).json({ success: false, message: "사용자를 찾을 수 없습니다." });
+      return res
+        .status(404)
+        .json({ success: false, message: "사용자를 찾을 수 없습니다." });
     }
     res.status(200).json({
       success: true,
@@ -302,14 +351,23 @@ export async function toggleUserActive(req, res) {
   try {
     const userId = req.params.id;
     if (!Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
     }
     const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({ success: false, message: "사용자를 찾을 수 없습니다." });
+      return res
+        .status(404)
+        .json({ success: false, message: "사용자를 찾을 수 없습니다." });
     }
     if (user._id.equals(req.user._id)) {
-      return res.status(400).json({ success: false, message: "자기 자신을 비활성화할 수 없습니다." });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "자기 자신을 비활성화할 수 없습니다.",
+        });
     }
     user.active = !user.active;
     if (user.active && !user.approvedAt) user.approvedAt = new Date();
@@ -338,25 +396,40 @@ export async function changeUserRole(req, res) {
       adminRole = null,
     } = req.body || {};
     if (!Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
     }
     const validRoles = ["requestor", "manufacturer", "admin", "salesman"];
     if (!validRoles.includes(role)) {
-      return res.status(400).json({ success: false, message: "유효하지 않은 역할입니다." });
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 역할입니다." });
     }
     const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({ success: false, message: "사용자를 찾을 수 없습니다." });
+      return res
+        .status(404)
+        .json({ success: false, message: "사용자를 찾을 수 없습니다." });
     }
     const isSelf = user._id.equals(req.user._id);
     if (isSelf && role !== user.role) {
-      return res.status(400).json({ success: false, message: "자기 자신의 역할을 변경할 수 없습니다." });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "자기 자신의 역할을 변경할 수 없습니다.",
+        });
     }
     if (isSelf) {
       if (
         (user.role === "admin" && adminRole && adminRole !== user.adminRole) ||
-        (user.role === "manufacturer" && manufacturerRole && manufacturerRole !== user.manufacturerRole) ||
-        (user.role === "requestor" && requestorRole && requestorRole !== user.requestorRole)
+        (user.role === "manufacturer" &&
+          manufacturerRole &&
+          manufacturerRole !== user.manufacturerRole) ||
+        (user.role === "requestor" &&
+          requestorRole &&
+          requestorRole !== user.requestorRole)
       ) {
         return res.status(400).json({
           success: false,
@@ -372,6 +445,10 @@ export async function changeUserRole(req, res) {
     } else if (role === "manufacturer") {
       user.manufacturerRole = manufacturerRole || "owner";
       user.adminRole = null;
+      user.requestorRole = null;
+    } else if (role === "devops") {
+      user.adminRole = null;
+      user.manufacturerRole = null;
       user.requestorRole = null;
     } else {
       user.requestorRole = requestorRole || "owner";
@@ -398,10 +475,14 @@ export async function deleteUser(req, res) {
     const userId = req.params.id;
     const adminId = req.user.id;
     if (!Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
     }
     if (userId.toString() === adminId.toString()) {
-      return res.status(400).json({ success: false, message: "자기 자신을 삭제할 수 없습니다." });
+      return res
+        .status(400)
+        .json({ success: false, message: "자기 자신을 삭제할 수 없습니다." });
     }
     const deletedUser = await User.findByIdAndUpdate(
       userId,
@@ -409,9 +490,12 @@ export async function deleteUser(req, res) {
       { new: true },
     );
     if (!deletedUser) {
-      return res.status(404).json({ success: false, message: "사용자를 찾을 수 없습니다." });
+      return res
+        .status(404)
+        .json({ success: false, message: "사용자를 찾을 수 없습니다." });
     }
-    const { handleReferralGroupLeaderChange } = await import("../request/utils.js");
+    const { handleReferralGroupLeaderChange } =
+      await import("../request/utils.js");
     await handleReferralGroupLeaderChange(userId);
     await User.findByIdAndDelete(userId);
     res.status(200).json({

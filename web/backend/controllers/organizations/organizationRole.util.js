@@ -2,6 +2,7 @@ export const ORGANIZATION_ALLOWED_ROLES = [
   "requestor",
   "salesman",
   "manufacturer",
+  "devops",
 ];
 
 export const ORGANIZATION_ALLOWED_ROLE_SET = new Set(

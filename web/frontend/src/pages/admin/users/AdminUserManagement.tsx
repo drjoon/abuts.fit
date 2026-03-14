@@ -57,6 +57,8 @@ const getRoleLabel = (role: string) => {
       return "어벗츠.핏";
     case "salesman":
       return "영업자";
+    case "devops":
+      return "개발운영사";
     default:
       return "사용자";
   }
@@ -67,6 +69,8 @@ const getRoleBadgeVariant = (role: string) => {
     case "requestor":
       return "default";
     case "salesman":
+      return "secondary";
+    case "devops":
       return "secondary";
     case "manufacturer":
       return "secondary";
@@ -495,6 +499,7 @@ export const AdminUserManagement = () => {
     (u) => u.role === "requestor",
   ).length;
   const totalSalesman = sourceUsers.filter((u) => u.role === "salesman").length;
+  const totalDevops = sourceUsers.filter((u) => u.role === "devops").length;
   const totalManufacturer = sourceUsers.filter(
     (u) => u.role === "manufacturer",
   ).length;
@@ -547,6 +552,21 @@ export const AdminUserManagement = () => {
                   <p className="text-sm text-muted-foreground">영업자</p>
                   <p className="text-2xl font-bold">
                     {totalSalesman.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-sky-100 rounded-lg">
+                  <Shield className="h-4 w-4 text-sky-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">개발운영사</p>
+                  <p className="text-2xl font-bold">
+                    {totalDevops.toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -666,6 +686,13 @@ export const AdminUserManagement = () => {
               size="sm"
             >
               영업자
+            </Button>
+            <Button
+              variant={selectedRole === "devops" ? "default" : "outline"}
+              onClick={() => setSelectedRole("devops")}
+              size="sm"
+            >
+              개발운영사
             </Button>
             <Button
               variant={selectedRole === "manufacturer" ? "default" : "outline"}
@@ -1045,6 +1072,7 @@ export const AdminUserManagement = () => {
                     <SelectContent>
                       <SelectItem value="requestor">의뢰자</SelectItem>
                       <SelectItem value="salesman">영업자</SelectItem>
+                      <SelectItem value="devops">개발운영사</SelectItem>
                       <SelectItem value="manufacturer">제조사</SelectItem>
                       <SelectItem value="admin">관리자</SelectItem>
                     </SelectContent>

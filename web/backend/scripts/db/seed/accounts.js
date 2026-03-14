@@ -142,6 +142,8 @@ export async function seedDefaultAccounts() {
     adminStaff: "As!4mJ#7tK@9pW3$",
     salesmanOwner: "So!8qL#3mV@6pK2$",
     salesmanStaff: "Ss!7wN#4cX@5rT1$",
+    devopsOwner: "Do!6vP#9xS@4nZ1$",
+    devopsStaff: "Ds!5mQ#7kV@3rB2$",
   };
 
   const requestorOwner = await findOrCreateUser({
@@ -323,6 +325,48 @@ export async function seedDefaultAccounts() {
   await attachUserToOrganization(salesmanOwner._id, salesmanOrg);
   await attachUserToOrganization(salesmanStaff._id, salesmanOrg);
 
+  const devopsOwner = await findOrCreateUser({
+    name: "데모 개발운영사 대표",
+    email: "devops.owner@demo.abuts.fit",
+    password: passwords.devopsOwner,
+    role: "devops",
+    phoneNumber: "01000000009",
+    business: "메이븐 주식회사",
+    referralCode: "seed_devops_owner",
+    approvedAt: NOW,
+    active: true,
+  });
+
+  const devopsStaff = await findOrCreateUser({
+    name: "데모 개발운영사 직원",
+    email: "devops.staff@demo.abuts.fit",
+    password: passwords.devopsStaff,
+    role: "devops",
+    phoneNumber: "01000000010",
+    business: "메이븐 주식회사",
+    referralCode: "seed_devops_staff",
+    approvedAt: NOW,
+    active: true,
+    referredByUserId: devopsOwner._id,
+  });
+
+  const devopsOrg = await findOrCreateOrganization({
+    organizationType: "devops",
+    name: "메이븐 주식회사",
+    ownerId: devopsOwner._id,
+    memberIds: [devopsStaff._id],
+    extracted: {
+      companyName: "메이븐 주식회사",
+      representativeName: "데모 개발운영사 대표",
+      businessNumber: "555-55-55555",
+      phoneNumber: "02-0000-0009",
+      email: "devops.owner@demo.abuts.fit",
+      address: "서울특별시 강남구 테헤란로 2",
+    },
+  });
+  await attachUserToOrganization(devopsOwner._id, devopsOrg);
+  await attachUserToOrganization(devopsStaff._id, devopsOrg);
+
   return {
     passwords,
     users: {
@@ -334,6 +378,8 @@ export async function seedDefaultAccounts() {
       adminStaff,
       salesmanOwner,
       salesmanStaff,
+      devopsOwner,
+      devopsStaff,
     },
   };
 }

@@ -18,25 +18,25 @@ router.get(
 // 조직 정보 수정
 router.put(
   "/me",
-  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
   requestorOrganizationController.updateMyOrganization,
 );
 
 router.patch(
   "/me",
-  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
   requestorOrganizationController.updateMyOrganization,
 );
 
 router.post(
   "/postal-code-lookup",
-  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
   requestorOrganizationController.lookupPostalCode,
 );
 
 router.post(
   "/check-business-number",
-  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
   requestorOrganizationController.checkBusinessNumberDuplicate,
 );
 
@@ -54,17 +54,17 @@ router.delete(
 // 대표(owners) 관리
 router.get(
   "/owners",
-  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
   requestorOrganizationController.getRepresentatives,
 );
 router.post(
   "/owners",
-  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
   requestorOrganizationController.addOwner,
 );
 router.delete(
   "/owners/:userId",
-  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
   requestorOrganizationController.removeOwner,
 );
 
@@ -91,27 +91,27 @@ router.get(
 // 직원 관리 (가입 승인/거절/목록/삭제)
 router.get(
   "/join-requests/pending",
-  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
   requestorOrganizationController.getPendingJoinRequestsForOwner,
 );
 router.get(
   "/staff",
-  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
   requestorOrganizationController.getMyStaffMembers,
 );
 router.delete(
   "/staff/:userId",
-  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
   requestorOrganizationController.removeStaffMember,
 );
 router.post(
   "/join-requests/:userId/approve",
-  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
   requestorOrganizationController.approveJoinRequest,
 );
 router.post(
   "/join-requests/:userId/reject",
-  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
   requestorOrganizationController.rejectJoinRequest,
 );
 
