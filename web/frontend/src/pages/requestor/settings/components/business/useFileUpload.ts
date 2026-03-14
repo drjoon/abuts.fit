@@ -91,7 +91,8 @@ export const useFileUpload = (
         if (!canUploadLicense) {
           toast({
             title: "대표 계정만 업로드할 수 있어요",
-            description: "사업자등록증 업로드/수정은 대표 계정에서만 가능합니다.",
+            description:
+              "사업자등록증 업로드/수정은 대표 계정에서만 가능합니다.",
             variant: "destructive",
             duration: 3000,
           });
@@ -111,7 +112,6 @@ export const useFileUpload = (
         handlers.onLicenseFileIdChange(first._id);
         handlers.onLicenseS3KeyChange(first.key || "");
         handlers.onLicenseStatusChange("processing");
-        handlers.onAutoOpenAddressSearch();
 
         const processingStartedAt = Date.now();
         const processingToast = toast({
@@ -145,15 +145,18 @@ export const useFileUpload = (
           const hasAnyExtracted = Object.values(nextExtracted || {}).some((v) =>
             String(v || "").trim(),
           );
-          const nextCompanyName = String(nextExtracted?.companyName || "").trim();
+          const nextCompanyName = String(
+            nextExtracted?.companyName || "",
+          ).trim();
           const nextStartDate =
             String(nextExtracted?.startDate || "").trim() ||
             props.extracted.startDate;
           const extractedBusinessNumber = String(
             nextExtracted?.businessNumber || "",
           ).trim();
-          const formattedBusinessNumber =
-            formatBusinessNumberInput(extractedBusinessNumber);
+          const formattedBusinessNumber = formatBusinessNumberInput(
+            extractedBusinessNumber,
+          );
 
           // 사업자등록번호 중복 확인
           if (extractedBusinessNumber) {
@@ -178,9 +181,9 @@ export const useFileUpload = (
                 handlers.onLicenseS3KeyChange("");
                 handlers.onLicenseStatusChange("missing");
                 toast({
-                  title: "이미 등록된 사업자등록번호입니다",
+                  title: "이미 가입된 사업자등록번호입니다",
                   description:
-                    "다른 계정에서 이미 등록된 사업자등록번호입니다.",
+                    "이 사업자등록번호는 다른 계정에서 이미 등록되었습니다. 기존 사업자에 가입 요청을 진행해주세요.",
                   variant: "destructive",
                   duration: 5000,
                 });
@@ -222,26 +225,29 @@ export const useFileUpload = (
           });
 
           handlers.onIsVerifiedChange(!!data?.verification?.verified);
-          handlers.onLicenseStatusChange("ready");
           processingToast.dismiss();
 
+          // 중복 사업자등록번호 체크
           if (
             String((verification as any)?.reason || "").trim() ===
             "duplicate_business_number"
           ) {
+            handlers.onLicenseStatusChange("error");
             const msg = String((verification as any)?.message || "").trim();
             toast({
-              title: "이미 등록된 사업자등록증입니다",
+              title: "이미 가입된 사업자등록번호입니다",
               description:
                 msg ||
-                "사업자등록번호가 이미 등록되어 있어 자동 등록을 진행할 수 없습니다.",
+                "이 사업자등록번호는 이미 등록되어 있습니다. 기존 사업자에 가입 요청을 진행해주세요.",
               variant: "destructive",
               duration: 4500,
             });
             return;
           }
 
+          // 빈 인식 결과 체크
           if (!hasAnyExtracted) {
+            handlers.onLicenseStatusChange("error");
             const msg = String(verification?.message || "").trim();
             toast({
               title: "자동 인식 결과가 비어있습니다",
@@ -254,6 +260,9 @@ export const useFileUpload = (
             return;
           }
 
+          // 모든 검증 통과 시에만 ready로 변경
+          handlers.onLicenseStatusChange("ready");
+
           handlers.onAutoOpenAddressSearch();
           toast({
             title: "주소 확인이 필요합니다",
@@ -265,18 +274,28 @@ export const useFileUpload = (
         }
 
         processingToast.dismiss();
+        // AI 인식 실패 시 파일 정보 유지 (업로드 화면 유지)
         handlers.onLicenseStatusChange("error");
+
         const msg = String((res.data as any)?.message || "").trim();
         const isBadRequest = res.status === 400;
+        const isRateLimited = res.status === 429;
+
         toast({
-          title: isBadRequest ? "파일 확인 필요" : "분석 실패",
+          title: isRateLimited
+            ? "AI 인식 서비스 할당량 초과"
+            : isBadRequest
+              ? "파일 확인 필요"
+              : "분석 실패",
           description:
             msg ||
-            (isBadRequest
-              ? "업로드된 파일을 확인할 수 없습니다. 초기화 후 다시 업로드해주세요."
-              : "자동 인식에 실패했습니다. 아래 정보를 직접 입력해서 저장할 수 있어요."),
+            (isRateLimited
+              ? "AI 인식 서비스 할당량이 초과되었습니다. 잠시 후 다시 시도해주세요."
+              : isBadRequest
+                ? "업로드된 파일을 확인할 수 없습니다. 초기화 후 다시 업로드해주세요."
+                : "자동 인식에 실패했습니다. 초기화 후 다시 업로드해주세요."),
           variant: "destructive",
-          duration: 4000,
+          duration: 5000,
         });
       } catch {
         handlers.onLicenseStatusChange("error");

@@ -195,7 +195,8 @@ export const BusinessTab = ({
   useEffect(() => {
     if (selectedRole === "owner" && registerValidationState) {
       registerValidationState({
-        passed: businessDataMgmt.validationSucceeded || businessDataMgmt.isVerified,
+        passed:
+          businessDataMgmt.validationSucceeded || businessDataMgmt.isVerified,
         validating: false,
       });
     }
@@ -292,26 +293,39 @@ export const BusinessTab = ({
           reason: "사업자 설정 문의",
           errorMessage: "",
           ownerForm: {
-            companyName: String(businessDataMgmt.businessData.companyName || "").trim(),
+            companyName: String(
+              businessDataMgmt.businessData.companyName || "",
+            ).trim(),
             representativeName: String(
               businessDataMgmt.extracted.representativeName || "",
             ).trim(),
-            businessNumber: String(businessDataMgmt.businessData.businessNumber || "").replace(
+            businessNumber: String(
+              businessDataMgmt.businessData.businessNumber || "",
+            ).replace(/\D/g, ""),
+            phone: String(businessDataMgmt.businessData.phone || "").replace(
               /\D/g,
               "",
             ),
-            phone: String(businessDataMgmt.businessData.phone || "").replace(/\D/g, ""),
             email: String(businessDataMgmt.extracted.email || "").trim(),
-            businessType: String(businessDataMgmt.extracted.businessType || "").trim(),
-            businessItem: String(businessDataMgmt.extracted.businessItem || "").trim(),
+            businessType: String(
+              businessDataMgmt.extracted.businessType || "",
+            ).trim(),
+            businessItem: String(
+              businessDataMgmt.extracted.businessItem || "",
+            ).trim(),
             address: String(businessDataMgmt.businessData.address || "").trim(),
-            addressDetail: String(businessDataMgmt.businessData.addressDetail || "").trim(),
-            startDate: String(businessDataMgmt.extracted.startDate || "").replace(/\D/g, ""),
+            addressDetail: String(
+              businessDataMgmt.businessData.addressDetail || "",
+            ).trim(),
+            startDate: String(
+              businessDataMgmt.extracted.startDate || "",
+            ).replace(/\D/g, ""),
           },
           license: {
             fileId: String(businessDataMgmt.licenseFileId || "").trim() || null,
             s3Key: String(businessDataMgmt.licenseS3Key || "").trim() || null,
-            originalName: String(businessDataMgmt.licenseFileName || "").trim() || null,
+            originalName:
+              String(businessDataMgmt.licenseFileName || "").trim() || null,
           },
         },
       });
@@ -484,7 +498,9 @@ export const BusinessTab = ({
     const fromUser = String(
       (user as any)?.business || (user as any)?.organization || "",
     ).trim();
-    const fromState = String(businessDataMgmt.businessData.companyName || "").trim();
+    const fromState = String(
+      businessDataMgmt.businessData.companyName || "",
+    ).trim();
     const fromProps = String(userData?.companyName || "").trim();
     return fromUser || fromState || fromProps;
   }, [businessDataMgmt.businessData.companyName, user, userData?.companyName]);
@@ -561,7 +577,9 @@ export const BusinessTab = ({
           />
         )}
 
-        {(membershipMgmt.membership !== "none" || !!setupMode || showJoinRequestSection) && (
+        {(membershipMgmt.membership !== "none" ||
+          !!setupMode ||
+          showJoinRequestSection) && (
           <div className="space-y-6">
             {(membershipMgmt.membership === "owner" ||
               setupMode === "license" ||
@@ -582,7 +600,7 @@ export const BusinessTab = ({
                 )}
 
                 {(membershipMgmt.membership === "owner" ||
-                  businessDataMgmt.licenseStatus !== "missing" ||
+                  businessDataMgmt.licenseStatus === "ready" ||
                   setupMode === "manual") && (
                   <BusinessForm
                     businessData={businessDataMgmt.businessData}
@@ -594,7 +612,9 @@ export const BusinessTab = ({
                     setBusinessData={businessDataMgmt.setBusinessData}
                     setExtracted={businessDataMgmt.setExtracted}
                     setErrors={businessDataMgmt.setErrors}
-                    setCompanyNameTouched={businessDataMgmt.setCompanyNameTouched}
+                    setCompanyNameTouched={
+                      businessDataMgmt.setCompanyNameTouched
+                    }
                     onSave={handleSave}
                     successNote={
                       businessDataMgmt.validationSucceeded
@@ -643,7 +663,8 @@ export const BusinessTab = ({
               </div>
             )}
 
-            {(membershipMgmt.membership === "member" || membershipMgmt.membership === "pending") && (
+            {(membershipMgmt.membership === "member" ||
+              membershipMgmt.membership === "pending") && (
               <BusinessMemberView
                 currentOrgName={currentOrgName}
                 licenseStatus={businessDataMgmt.licenseStatus}

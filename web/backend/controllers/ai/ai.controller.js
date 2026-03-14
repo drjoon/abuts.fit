@@ -399,6 +399,17 @@ export async function parseBusinessLicense(req, res) {
     });
   } catch (error) {
     console.error("[AI] parseBusinessLicense error", error);
+
+    // Gemini API 할당량 초과 에러
+    if (error?.status === 429 || error?.errorDetails) {
+      return res.status(429).json({
+        success: false,
+        message:
+          "AI 인식 서비스 할당량이 초과되었습니다. 잠시 후 다시 시도해주세요.",
+        error: error.message,
+      });
+    }
+
     return res.status(500).json({
       success: false,
       message: "사업자등록증 처리 중 오류가 발생했습니다.",
