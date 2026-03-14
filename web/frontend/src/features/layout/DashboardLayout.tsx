@@ -173,6 +173,27 @@ export const DashboardLayout = () => {
     );
 
   useEffect(() => {
+    console.log("[dashboard-layout] gate", {
+      path: location.pathname + location.search,
+      hasToken: Boolean(token),
+      userId: user?.id || null,
+      isWizardRoute,
+      onboardingCompleted,
+      shouldForceOnboarding,
+      bootstrappedOnce,
+    });
+  }, [
+    bootstrappedOnce,
+    isWizardRoute,
+    location.pathname,
+    location.search,
+    onboardingCompleted,
+    shouldForceOnboarding,
+    token,
+    user?.id,
+  ]);
+
+  useEffect(() => {
     if (!token) return;
     if (!user || !user.id) return;
     if (!shouldForceOnboarding) return;

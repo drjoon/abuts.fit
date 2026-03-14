@@ -167,6 +167,11 @@ export const SettingsWizard = ({
   const validateActionRef = useRef<(() => void) | null>(null);
 
   const handleLogout = useCallback(() => {
+    console.log("[wizard-logout] click", {
+      path: window.location.pathname + window.location.search,
+      hasToken: Boolean(token),
+      userId: user?._id || user?.id || null,
+    });
     logout();
     try {
       localStorage.removeItem("abuts_auth_token");
@@ -175,8 +180,14 @@ export const SettingsWizard = ({
     } catch {
       // ignore
     }
-    window.location.replace("/login");
-  }, [logout]);
+    const nextUrl = `${window.location.origin}/login`;
+    console.log("[wizard-logout] redirect", {
+      nextUrl,
+      tokenAfterRemove: localStorage.getItem("abuts_auth_token"),
+      userAfterRemove: localStorage.getItem("abuts_auth_user"),
+    });
+    window.location.href = nextUrl;
+  }, [logout, token, user]);
 
   const registerGoNextAction = useCallback(
     (action: (() => Promise<boolean>) | null) => {
@@ -535,6 +546,7 @@ export const SettingsWizard = ({
           <Button
             variant="ghost"
             className="text-slate-500 hover:text-slate-900"
+            type="button"
             onClick={() => navigate("/")}
           >
             홈으로 돌아가기
@@ -542,6 +554,7 @@ export const SettingsWizard = ({
           <Button
             variant="ghost"
             className="text-slate-500 hover:text-slate-900"
+            type="button"
             onClick={handleLogout}
           >
             로그아웃

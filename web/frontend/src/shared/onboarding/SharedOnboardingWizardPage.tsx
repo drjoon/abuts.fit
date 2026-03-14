@@ -13,21 +13,21 @@ type BackendGuideProgress = {
 
 export const SharedOnboardingWizardPage = () => {
   const { user, token, setUser } = useAuthStore();
+  const resolvedUserId = user?.id || null;
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [progress, setProgress] = useState<BackendGuideProgress | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!token) {
-      navigate("/login", { replace: true });
-    }
-  }, [navigate, token]);
-
-  // 토큰이 사라진 상태에서 위자드 경로에 머무를 때 빈 화면이 되지 않도록 즉시 로그인으로 이동
-  if (!token) {
-    return <Navigate to="/login" replace />;
-  }
+    console.log("[wizard-page] render-state", {
+      path: window.location.pathname + window.location.search,
+      hasToken: Boolean(token),
+      userId: resolvedUserId,
+      loading,
+      hasProgress: Boolean(progress),
+    });
+  }, [loading, progress, resolvedUserId, token]);
 
   useEffect(() => {
     if (!user) return;
@@ -135,6 +135,13 @@ export const SharedOnboardingWizardPage = () => {
       navigate("/dashboard", { replace: true });
     });
   };
+
+  if (!token) {
+    console.log("[wizard-page] return navigate /login", {
+      path: window.location.pathname + window.location.search,
+    });
+    return <Navigate to="/login" replace />;
+  }
 
   if (loading || !progress) {
     return (
