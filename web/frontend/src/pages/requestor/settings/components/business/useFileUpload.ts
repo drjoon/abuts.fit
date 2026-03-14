@@ -1,0 +1,299 @@
+import { useCallback, useState } from "react";
+import { request } from "@/shared/api/apiClient";
+import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
+import { useToast } from "@/shared/hooks/use-toast";
+import {
+  LicenseExtracted,
+  BusinessData,
+  LicenseStatus,
+} from "@/shared/components/business/types";
+import {
+  normalizeExtracted,
+  normalizeBusinessData,
+  createEmptyExtracted,
+} from "./businessStorage";
+import {
+  formatBusinessNumberInput,
+  formatPhoneNumberInput,
+} from "./validations";
+
+interface FileUploadHandlers {
+  onExtractedChange: (extracted: LicenseExtracted) => void;
+  onBusinessDataChange: (data: BusinessData) => void;
+  onLicenseFileNameChange: (name: string) => void;
+  onLicenseFileIdChange: (id: string) => void;
+  onLicenseS3KeyChange: (key: string) => void;
+  onLicenseStatusChange: (status: LicenseStatus) => void;
+  onIsVerifiedChange: (verified: boolean) => void;
+  onAutoOpenAddressSearch: () => void;
+}
+
+interface UseFileUploadProps {
+  token?: string;
+  membership: "none" | "owner" | "member" | "pending";
+  setupMode: "license" | "search" | "manual" | null;
+  extracted: LicenseExtracted;
+  businessData: BusinessData;
+  companyNameTouched: boolean;
+}
+
+export const useFileUpload = (
+  props: UseFileUploadProps,
+  handlers: FileUploadHandlers,
+) => {
+  const { toast } = useToast();
+  const { uploadFilesWithToast } = useUploadWithProgressToast({
+    token: props.token,
+  });
+  const [licenseDeleteLoading, setLicenseDeleteLoading] = useState(false);
+
+  const handleFileUpload = useCallback(
+    async (file: File) => {
+      try {
+        if (!props.token) {
+          toast({
+            title: "로그인이 필요합니다",
+            description: "사업자등록증 업로드는 로그인 후 이용할 수 있습니다.",
+            variant: "destructive",
+            duration: 3000,
+          });
+          return;
+        }
+
+        const canUploadLicense =
+          props.membership === "owner" ||
+          (props.membership === "none" && props.setupMode === "license");
+
+        const maxBytes = 10 * 1024 * 1024;
+        const allowedMimeTypes = new Set(["image/jpeg", "image/png"]);
+
+        if (!allowedMimeTypes.has(file.type)) {
+          toast({
+            title: "이미지 파일만 업로드할 수 있어요",
+            description: "JPG 또는 PNG 파일을 선택해주세요.",
+            variant: "destructive",
+            duration: 3000,
+          });
+          return;
+        }
+
+        if (file.size > maxBytes) {
+          toast({
+            title: "파일이 너무 큽니다",
+            description:
+              "사업자등록증 이미지는 최대 10MB까지 업로드할 수 있어요.",
+            variant: "destructive",
+            duration: 3000,
+          });
+          return;
+        }
+
+        if (!canUploadLicense) {
+          toast({
+            title: "대표 계정만 업로드할 수 있어요",
+            description: "사업자등록증 업로드/수정은 대표 계정에서만 가능합니다.",
+            variant: "destructive",
+            duration: 3000,
+          });
+          return;
+        }
+
+        handlers.onLicenseStatusChange("uploading");
+        const uploaded = await uploadFilesWithToast([file]);
+        const first = uploaded?.[0];
+
+        if (!first?._id) {
+          handlers.onLicenseStatusChange("error");
+          return;
+        }
+
+        handlers.onLicenseFileNameChange(first.originalName);
+        handlers.onLicenseFileIdChange(first._id);
+        handlers.onLicenseS3KeyChange(first.key || "");
+        handlers.onLicenseStatusChange("processing");
+        handlers.onAutoOpenAddressSearch();
+
+        const processingStartedAt = Date.now();
+        const processingToast = toast({
+          title: "AI 인식 중",
+          description:
+            "사업자등록증을 인식하고 있어요. 약 10초 정도 걸릴 수 있어요.",
+          duration: 60000,
+        });
+
+        const res = await request<any>({
+          path: "/api/ai/parse-business-license",
+          method: "POST",
+          token: props.token,
+          jsonBody: {
+            fileId: first._id,
+            s3Key: first.key,
+            originalName: first.originalName,
+          },
+        });
+
+        if (res.ok) {
+          const waitMs = Math.max(0, 4500 - (Date.now() - processingStartedAt));
+          if (waitMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, waitMs));
+          }
+
+          const body: any = res.data || {};
+          const data = body.data || body;
+          const nextExtracted = normalizeExtracted(data?.extracted || {});
+          const verification = data?.verification;
+          const hasAnyExtracted = Object.values(nextExtracted || {}).some((v) =>
+            String(v || "").trim(),
+          );
+          const nextCompanyName = String(nextExtracted?.companyName || "").trim();
+          const nextStartDate =
+            String(nextExtracted?.startDate || "").trim() ||
+            props.extracted.startDate;
+          const extractedBusinessNumber = String(
+            nextExtracted?.businessNumber || "",
+          ).trim();
+          const formattedBusinessNumber =
+            formatBusinessNumberInput(extractedBusinessNumber);
+
+          // 사업자등록번호 중복 확인
+          if (extractedBusinessNumber) {
+            try {
+              const duplicateCheckResponse = await request<any>({
+                path: "/api/organizations/check-business-number",
+                method: "POST",
+                token: props.token,
+                jsonBody: {
+                  businessNumber: formattedBusinessNumber,
+                },
+              });
+
+              if (
+                !duplicateCheckResponse.ok &&
+                duplicateCheckResponse.data?.reason ===
+                  "duplicate_business_number"
+              ) {
+                processingToast.dismiss();
+                handlers.onLicenseFileNameChange("");
+                handlers.onLicenseFileIdChange("");
+                handlers.onLicenseS3KeyChange("");
+                handlers.onLicenseStatusChange("missing");
+                toast({
+                  title: "이미 등록된 사업자등록번호입니다",
+                  description:
+                    "다른 계정에서 이미 등록된 사업자등록번호입니다.",
+                  variant: "destructive",
+                  duration: 5000,
+                });
+                return;
+              }
+            } catch (err) {
+              console.error(
+                "[useFileUpload] Failed to check business number duplicate",
+                err,
+              );
+            }
+          }
+
+          handlers.onExtractedChange({
+            ...nextExtracted,
+            address: "",
+            addressDetail: "",
+            zipCode: "",
+            startDate: nextStartDate,
+          });
+
+          handlers.onBusinessDataChange({
+            ...props.businessData,
+            companyName: props.companyNameTouched
+              ? props.businessData.companyName
+              : nextCompanyName || "",
+            owner: String(nextExtracted?.representativeName || "").trim(),
+            businessNumber: formattedBusinessNumber,
+            address: "",
+            addressDetail: "",
+            zipCode: "",
+            phone: formatPhoneNumberInput(
+              String(nextExtracted?.phoneNumber || "").trim(),
+            ),
+            email: String(nextExtracted?.email || "").trim(),
+            businessType: String(nextExtracted?.businessType || "").trim(),
+            businessItem: String(nextExtracted?.businessItem || "").trim(),
+            startDate: nextStartDate,
+          });
+
+          handlers.onIsVerifiedChange(!!data?.verification?.verified);
+          handlers.onLicenseStatusChange("ready");
+          processingToast.dismiss();
+
+          if (
+            String((verification as any)?.reason || "").trim() ===
+            "duplicate_business_number"
+          ) {
+            const msg = String((verification as any)?.message || "").trim();
+            toast({
+              title: "이미 등록된 사업자등록증입니다",
+              description:
+                msg ||
+                "사업자등록번호가 이미 등록되어 있어 자동 등록을 진행할 수 없습니다.",
+              variant: "destructive",
+              duration: 4500,
+            });
+            return;
+          }
+
+          if (!hasAnyExtracted) {
+            const msg = String(verification?.message || "").trim();
+            toast({
+              title: "자동 인식 결과가 비어있습니다",
+              description:
+                msg ||
+                "이미지가 흐리거나 각도가 틀어져서 인식이 어려울 수 있어요. 정면/선명하게 다시 업로드해보세요.",
+              variant: "destructive",
+              duration: 4000,
+            });
+            return;
+          }
+
+          handlers.onAutoOpenAddressSearch();
+          toast({
+            title: "주소 확인이 필요합니다",
+            description:
+              "주소와 우편번호를 비워두었어요. 주소 검색 창에서 도로명 주소를 선택해주세요.",
+            duration: 3500,
+          });
+          return;
+        }
+
+        processingToast.dismiss();
+        handlers.onLicenseStatusChange("error");
+        const msg = String((res.data as any)?.message || "").trim();
+        const isBadRequest = res.status === 400;
+        toast({
+          title: isBadRequest ? "파일 확인 필요" : "분석 실패",
+          description:
+            msg ||
+            (isBadRequest
+              ? "업로드된 파일을 확인할 수 없습니다. 초기화 후 다시 업로드해주세요."
+              : "자동 인식에 실패했습니다. 아래 정보를 직접 입력해서 저장할 수 있어요."),
+          variant: "destructive",
+          duration: 4000,
+        });
+      } catch {
+        handlers.onLicenseStatusChange("error");
+        toast({
+          title: "업로드 실패",
+          description: "사업자등록증 업로드에 실패했습니다.",
+          variant: "destructive",
+          duration: 3000,
+        });
+      }
+    },
+    [props, handlers, toast, uploadFilesWithToast],
+  );
+
+  return {
+    handleFileUpload,
+    licenseDeleteLoading,
+    setLicenseDeleteLoading,
+  };
+};

@@ -665,7 +665,7 @@ export const NewRequestPage = () => {
                   setHighlightUnverifiedArrows(true);
                   toast({
                     title: "확인 필요",
-                    description: `모든 파일 카드가 확인되어야 합니다.`,
+                    description: `카드를 클릭해서 환자/임플란트 정보를 입력해주세요.`,
                     duration: 5000,
                   });
                   setTimeout(() => setHighlightUnverifiedArrows(false), 10000);
