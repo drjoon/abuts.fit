@@ -313,6 +313,90 @@ async function findOrganizationByAnchors({
   return null;
 }
 
+export async function checkBusinessNumberDuplicate(req, res) {
+  try {
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
+    const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
+
+    const businessNumberRaw = String(req.body?.businessNumber || "").trim();
+    if (!businessNumberRaw) {
+      return res.status(400).json({
+        success: false,
+        message: "businessNumber가 필요합니다.",
+      });
+    }
+
+    const normalizeBusinessNumber = (input) => {
+      const digits = String(input || "").replace(/\D/g, "");
+      if (digits.length !== 10) return "";
+      return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
+    };
+
+    const businessNumber = normalizeBusinessNumber(businessNumberRaw);
+    if (!businessNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자등록번호 형식이 올바르지 않습니다.",
+      });
+    }
+
+    // 현재 사용자의 organization 조회
+    const freshUser = await User.findById(req.user._id)
+      .select({
+        businessId: 1,
+        business: 1,
+        organizationId: 1,
+        organization: 1,
+      })
+      .lean();
+    const effectiveBusinessId =
+      freshUser?.businessId ||
+      req.user.businessId ||
+      freshUser?.organizationId ||
+      req.user.organizationId ||
+      null;
+
+    // 같은 사업자등록번호를 가진 다른 organization 확인
+    const existingOrg = await RequestorOrganization.findOne({
+      ...orgTypeFilter,
+      "extracted.businessNumber": businessNumber,
+      ...(effectiveBusinessId ? { _id: { $ne: effectiveBusinessId } } : {}),
+    })
+      .select({ _id: 1, owner: 1 })
+      .lean();
+
+    if (existingOrg) {
+      const meId = String(req.user._id);
+      const existingOwnerId = String(existingOrg.owner || "");
+
+      // 현재 사용자가 소유한 organization이 아니면 중복
+      if (existingOwnerId !== meId) {
+        return res.status(409).json({
+          success: false,
+          reason: "duplicate_business_number",
+          message:
+            "이미 등록된 사업자등록번호입니다. 기존 조직에 가입 요청을 진행해주세요.",
+        });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        duplicate: false,
+      },
+    });
+  } catch (error) {
+    return res.status(error?.statusCode || 500).json({
+      success: false,
+      message: "사업자등록번호 중복 확인 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export async function lookupPostalCode(req, res) {
   try {
     const address = String(

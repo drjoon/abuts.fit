@@ -20,10 +20,6 @@ export const BusinessMemberView = ({
 }: BusinessMemberViewProps) => {
   return (
     <div className="space-y-4">
-      <div className="app-surface app-surface--panel text-sm">
-        현재 소속됨{currentOrgName ? `: ${currentOrgName}` : ""}
-      </div>
-
       <div className="app-surface app-surface--panel text-xs text-muted-foreground">
         사업자 정보는 대표자만 수정할 수 있어요. 여기서는 확인만 가능합니다.
       </div>

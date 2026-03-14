@@ -34,6 +34,12 @@ router.post(
   requestorOrganizationController.lookupPostalCode,
 );
 
+router.post(
+  "/check-business-number",
+  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  requestorOrganizationController.checkBusinessNumberDuplicate,
+);
+
 router.put(
   "/requestor-shipping-address",
   authorize(["manufacturer", "admin"]),

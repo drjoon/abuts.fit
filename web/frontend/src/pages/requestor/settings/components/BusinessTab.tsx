@@ -1220,6 +1220,8 @@ export const BusinessTab = ({
       setLicenseStatus("uploaded");
 
       setLicenseStatus("processing");
+      // 주소 검색 신호 초기화 (이전 업로드 상태 제거)
+      setAutoOpenAddressSearchSignal(0);
       const processingStartedAt = Date.now();
       const processingToast = toast({
         title: "AI 인식 중",
@@ -1265,13 +1267,6 @@ export const BusinessTab = ({
           "extracted.startDate": extracted.startDate,
           "nextStartDate (final)": nextStartDate,
         });
-        setExtracted({
-          ...nextExtracted,
-          address: "",
-          addressDetail: "",
-          zipCode: "",
-          startDate: nextStartDate,
-        });
         const extractedBusinessNumber = String(
           nextExtracted?.businessNumber || "",
         ).trim();
@@ -1297,14 +1292,18 @@ export const BusinessTab = ({
               duplicateCheckResponse.data?.reason ===
                 "duplicate_business_number"
             ) {
+              // 중복 검사 실패 → 업로드 상태 초기화 + 업로드 화면으로 복귀
+              processingToast.dismiss();
+              setLicenseFileName("");
+              setLicenseFileId("");
+              setLicenseS3Key("");
+              setLicenseStatus("missing");
               toast({
                 title: "이미 등록된 사업자등록번호입니다",
                 description: "다른 계정에서 이미 등록된 사업자등록번호입니다.",
                 variant: "destructive",
                 duration: 5000,
               });
-              setLicenseStatus("ready");
-              processingToast.dismiss();
               return;
             }
           } catch (err) {
@@ -1316,6 +1315,14 @@ export const BusinessTab = ({
           }
         }
 
+        // 중복 검사 통과 후 데이터 설정
+        setExtracted({
+          ...nextExtracted,
+          address: "",
+          addressDetail: "",
+          zipCode: "",
+          startDate: nextStartDate,
+        });
         setBusinessData((prev) => ({
           ...prev,
           companyName: companyNameTouched
@@ -1336,7 +1343,6 @@ export const BusinessTab = ({
         }));
         setIsVerified(!!data?.verification?.verified);
         setLicenseStatus("ready");
-        processingToast.dismiss();
         console.info(
           `${BUSINESS_TAB_DEBUG_PREFIX} OCR parsed business license`,
           {
@@ -1353,13 +1359,9 @@ export const BusinessTab = ({
             verification,
           },
         );
-        setAutoOpenAddressSearchSignal((prev) => prev + 1);
-        toast({
-          title: "주소 확인이 필요합니다",
-          description:
-            "주소와 우편번호를 비워두었어요. 주소 검색 창에서 도로명 주소를 선택해주세요.",
-          duration: 3500,
-        });
+
+        // 중복 검사 완료 후 처리 토스트 종료
+        processingToast.dismiss();
 
         if (
           String((verification as any)?.reason || "").trim() ===
@@ -1374,6 +1376,7 @@ export const BusinessTab = ({
             variant: "destructive",
             duration: 4500,
           });
+          return;
         }
 
         if (!hasAnyExtracted) {
@@ -1386,10 +1389,21 @@ export const BusinessTab = ({
             variant: "destructive",
             duration: 4000,
           });
+          return;
         }
+
+        // 성공 경로: 주소 검색 신호 발생
+        setAutoOpenAddressSearchSignal((prev) => prev + 1);
+        toast({
+          title: "주소 확인이 필요합니다",
+          description:
+            "주소와 우편번호를 비워두었어요. 주소 검색 창에서 도로명 주소를 선택해주세요.",
+          duration: 3500,
+        });
         return;
       }
 
+      // AI 인식 실패 → 토스트 종료 + 에러 표시
       processingToast.dismiss();
       setLicenseStatus("error");
       const msg = String((res.data as any)?.message || "").trim();
