@@ -50,7 +50,7 @@ export const ManufacturerShippingTab = ({ userData }: ShippingTabProps) => {
   const [policyLoaded, setPolicyLoaded] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const organizationType = useMemo(() => {
+  const businessType = useMemo(() => {
     const role = String(user?.role || userData?.role || "manufacturer").trim();
     return role || "manufacturer";
   }, [user?.role, userData?.role]);
@@ -101,8 +101,8 @@ export const ManufacturerShippingTab = ({ userData }: ShippingTabProps) => {
 
       try {
         const res = await request<any>({
-          path: `/api/businesses/me?organizationType=${encodeURIComponent(
-            organizationType,
+          path: `/api/businesses/me?businessType=${encodeURIComponent(
+            businessType,
           )}`,
           method: "GET",
           token,
@@ -127,7 +127,7 @@ export const ManufacturerShippingTab = ({ userData }: ShippingTabProps) => {
     };
 
     void load();
-  }, [organizationType, storageKey, token]);
+  }, [businessType, storageKey, token]);
 
   useEffect(() => {
     if (token) return;
@@ -146,13 +146,13 @@ export const ManufacturerShippingTab = ({ userData }: ShippingTabProps) => {
     const payloadKey = JSON.stringify(leadTimes);
     try {
       const res = await request({
-        path: `/api/businesses/me?organizationType=${encodeURIComponent(
-          organizationType,
+        path: `/api/businesses/me?businessType=${encodeURIComponent(
+          businessType,
         )}`,
         method: "PUT",
         token,
         jsonBody: {
-          organizationType,
+          businessType,
           shippingPolicy: {
             leadTimes,
           },

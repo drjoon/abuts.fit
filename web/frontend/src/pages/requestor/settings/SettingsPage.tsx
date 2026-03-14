@@ -40,7 +40,7 @@ export const RequestorSettingsPage = () => {
     return {} as Record<string, string>;
   }, []);
 
-  const organizationType = useMemo(() => {
+  const businessType = useMemo(() => {
     const role = String(user?.role || "requestor").trim();
     return role || "requestor";
   }, [user?.role]);
@@ -57,8 +57,8 @@ export const RequestorSettingsPage = () => {
       setLoadingMembership(true);
       try {
         const res = await request<any>({
-          path: `/api/businesses/me?organizationType=${encodeURIComponent(
-            organizationType,
+          path: `/api/businesses/me?businessType=${encodeURIComponent(
+            businessType,
           )}`,
           method: "GET",
           token,
@@ -86,7 +86,7 @@ export const RequestorSettingsPage = () => {
     };
 
     void load();
-  }, [organizationType, token]);
+  }, [businessType, token]);
 
   const tabs: SettingsTabDef[] = useMemo(() => {
     const base: SettingsTabDef[] = [

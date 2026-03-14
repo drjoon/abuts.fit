@@ -11,7 +11,7 @@ interface BusinessSearchResult {
 
 interface UseBusinessSearchProps {
   token?: string;
-  organizationType: string;
+  businessType: string;
   membership: "none" | "owner" | "member" | "pending";
 }
 
@@ -39,7 +39,7 @@ export const useBusinessSearch = (props: UseBusinessSearchProps) => {
         const res = await request<any>({
           path: `/api/businesses/search?q=${encodeURIComponent(
             q,
-          )}&organizationType=${encodeURIComponent(props.organizationType)}`,
+          )}&businessType=${encodeURIComponent(props.businessType)}`,
           method: "GET",
           token: props.token,
         });
@@ -58,7 +58,7 @@ export const useBusinessSearch = (props: UseBusinessSearchProps) => {
     }, 250);
 
     return () => clearTimeout(t);
-  }, [props.membership, businessSearch, props.organizationType, props.token]);
+  }, [props.membership, businessSearch, props.businessType, props.token]);
 
   const resetSearch = useCallback(() => {
     setBusinessSearch("");

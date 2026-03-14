@@ -111,7 +111,7 @@ export function useBulkShippingPolicy(email?: string | null) {
   const [policy, setPolicy] = useState<ShippingPolicyResult>(() =>
     getLocalShippingPolicy(email),
   );
-  const organizationType = useMemo(() => {
+  const businessType = useMemo(() => {
     const role = String(user?.role || "requestor").trim();
     return role || "requestor";
   }, [user?.role]);
@@ -127,8 +127,8 @@ export function useBulkShippingPolicy(email?: string | null) {
     const run = async () => {
       try {
         const res = await apiFetch<any>({
-          path: `/api/businesses/me?organizationType=${encodeURIComponent(
-            organizationType,
+          path: `/api/businesses/me?businessType=${encodeURIComponent(
+            businessType,
           )}`,
           method: "GET",
           token,
@@ -155,7 +155,7 @@ export function useBulkShippingPolicy(email?: string | null) {
     return () => {
       cancelled = true;
     };
-  }, [organizationType, token, user?.role]);
+  }, [businessType, token, user?.role]);
 
   return policy;
 }

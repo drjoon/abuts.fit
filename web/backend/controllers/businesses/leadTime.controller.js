@@ -16,7 +16,7 @@ export async function getManufacturerLeadTimes(req, res) {
     res.set("x-abuts-handler", "leadTime.getManufacturerLeadTimes");
 
     const latestManufacturer = await Business.findOne({
-      organizationType: "manufacturer",
+      businessType: "manufacturer",
       "shippingPolicy.leadTimes": { $exists: true },
     })
       .sort({ "shippingPolicy.updatedAt": -1, updatedAt: -1 })
@@ -76,7 +76,7 @@ export async function getManufacturerLeadTimes(req, res) {
 export async function getManufacturerLeadTimesUtil() {
   try {
     const latestManufacturer = await Business.findOne({
-      organizationType: "manufacturer",
+      businessType: "manufacturer",
       "shippingPolicy.leadTimes": { $exists: true },
     })
       .sort({ "shippingPolicy.updatedAt": -1, updatedAt: -1 })

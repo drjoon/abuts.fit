@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const businessSchema = new mongoose.Schema(
   {
-    organizationType: {
+    businessType: {
       type: String,
       enum: ["requestor", "salesman", "manufacturer", "devops"],
       default: "requestor",
@@ -127,7 +127,7 @@ const businessSchema = new mongoose.Schema(
 );
 
 businessSchema.index({ owner: 1, name: 1 });
-businessSchema.index({ organizationType: 1, name: 1 });
+businessSchema.index({ businessType: 1, name: 1 });
 businessSchema.index(
   { "extracted.businessNumber": 1 },
   { unique: true, sparse: true },

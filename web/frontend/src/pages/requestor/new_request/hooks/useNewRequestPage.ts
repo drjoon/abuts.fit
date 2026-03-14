@@ -54,7 +54,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     return `${NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX}${userId}`;
   }, [user?.id]);
 
-  const organizationType = useMemo(() => {
+  const businessType = useMemo(() => {
     const role = String(user?.role || "requestor").trim();
     return role || "requestor";
   }, [user?.role]);
@@ -534,8 +534,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       let hasBusinessNumber = false;
       try {
         const orgRes = await request<any>({
-          path: `/api/businesses/me?organizationType=${encodeURIComponent(
-            organizationType,
+          path: `/api/businesses/me?businessType=${encodeURIComponent(
+            businessType,
           )}`,
           method: "GET",
           token,

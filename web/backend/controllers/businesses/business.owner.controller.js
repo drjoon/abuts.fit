@@ -1,7 +1,10 @@
 import Business from "../../models/business.model.js";
 import User from "../../models/user.model.js";
 import { Types } from "mongoose";
-import { resolveOwnedBusiness, resolvePrimaryOwnedBusiness } from "./business.utils.js";
+import {
+  resolveOwnedBusiness,
+  resolvePrimaryOwnedBusiness,
+} from "./business.utils.js";
 import { assertBusinessRole } from "./businessRole.util.js";
 
 function readUserBusinessId(user) {
@@ -24,7 +27,7 @@ export async function getPendingJoinRequestsForOwner(req, res) {
 
     const business = await Business.findOne({
       _id: myBusinessId,
-      organizationType: businessType,
+      ...buildBusinessTypeFilter(businessType),
       $or: [{ owner: req.user._id }, { owners: req.user._id }],
     })
       .populate({
@@ -291,7 +294,7 @@ export async function getMyStaffMembers(req, res) {
 
     const business = await Business.findOne({
       _id: myBusinessId,
-      organizationType: businessType,
+      ...buildBusinessTypeFilter(businessType),
       $or: [{ owner: req.user._id }, { owners: req.user._id }],
     })
       .populate({
@@ -319,7 +322,9 @@ export async function getMyStaffMembers(req, res) {
       });
     }
 
-    const ownerId = String((business.owner && business.owner._id) || business.owner || "");
+    const ownerId = String(
+      (business.owner && business.owner._id) || business.owner || "",
+    );
     const ownerIds = Array.isArray(business.owners)
       ? business.owners.map((c) => String((c && c._id) || c || ""))
       : [];
@@ -516,11 +521,14 @@ export async function removeMember(req, res) {
     if (isOwner) {
       return res.status(409).json({
         success: false,
-        message: "공동대표는 삭제할 수 없습니다. 먼저 공동대표에서 제외해주세요.",
+        message:
+          "공동대표는 삭제할 수 없습니다. 먼저 공동대표에서 제외해주세요.",
       });
     }
 
-    const before = Array.isArray(business.members) ? business.members.length : 0;
+    const before = Array.isArray(business.members)
+      ? business.members.length
+      : 0;
     business.members = Array.isArray(business.members)
       ? business.members.filter((m) => String(m) !== userId)
       : [];

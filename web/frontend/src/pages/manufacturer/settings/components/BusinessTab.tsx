@@ -13,7 +13,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   return (
     <SharedBusinessTab
       userData={userData}
-      organizationTypeOverride="manufacturer"
+      businessTypeOverride="manufacturer"
     />
   );
 };

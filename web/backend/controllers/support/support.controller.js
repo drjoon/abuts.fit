@@ -95,7 +95,7 @@ export async function createInquiry(req, res) {
     const inquiry = await BusinessRegistrationInquiry.create({
       user: req.user._id,
       organizationId: req.user?.businessId || null,
-      organizationType: req.user?.role || null,
+      businessType: req.user?.role || null,
       userSnapshot: buildUserSnapshot(req.user),
       type: normalizedType,
       subject: trimmedSubject,
@@ -154,10 +154,10 @@ export async function listMyInquiries(req, res) {
  */
 export async function createBusinessRegistrationInquiry(req, res) {
   try {
-    const { reason, ownerForm, license, organizationType, errorMessage } =
+    const { reason, ownerForm, license, businessType, errorMessage } =
       req.body || {};
     const userType = resolveBusinessType(req.user, null);
-    const resolvedType = resolveBusinessType(req.user, organizationType);
+    const resolvedType = resolveBusinessType(req.user, businessType);
     if (!resolvedType) {
       return res.status(403).json({
         success: false,
@@ -170,7 +170,7 @@ export async function createBusinessRegistrationInquiry(req, res) {
     const inquiry = await BusinessRegistrationInquiry.create({
       user: req.user._id,
       organizationId: req.user?.businessId || null,
-      organizationType: resolvedType,
+      businessType: resolvedType,
       userSnapshot,
       type: "business_registration",
       subject: "사업자등록 문의",

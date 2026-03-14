@@ -20,7 +20,7 @@ interface HandleSaveParams {
   extracted: LicenseExtracted;
   businessNumberLocked?: boolean;
   membership?: MembershipStatus;
-  organizationType?: string;
+  businessType?: string;
   businessLicense?: {
     fileId?: string;
     s3Key?: string;
@@ -62,7 +62,7 @@ export const handleSave = async (
     extracted,
     businessNumberLocked,
     membership,
-    organizationType,
+    businessType,
     businessLicense,
     mockHeaders,
     toast,
@@ -220,12 +220,11 @@ export const handleSave = async (
     }
 
     const requestPayload = {
-      organizationType,
+      businessType,
       name: companyName,
       representativeName: repName,
       phoneNumber: normalizedPhoneNumber,
       businessNumber: normalizedBusinessNumber,
-      businessType,
       businessItem,
       email: taxEmail,
       address,
@@ -400,7 +399,7 @@ interface HandleDeleteLicenseParams {
   licenseFileName: string;
   licenseS3Key: string;
   licenseFileId: string;
-  organizationType?: string;
+  businessType?: string;
   mockHeaders?: Record<string, string>;
   toast: (options: any) => void;
   setLicenseDeleteLoading: (loading: boolean) => void;
@@ -415,7 +414,7 @@ export const handleDeleteLicense = async (
     licenseFileName,
     licenseS3Key,
     licenseFileId,
-    organizationType,
+    businessType,
     mockHeaders,
     toast,
     setLicenseDeleteLoading,
@@ -446,7 +445,7 @@ export const handleDeleteLicense = async (
       method: "DELETE",
       token,
       headers: mockHeaders ?? undefined,
-      jsonBody: { organizationType },
+      jsonBody: { businessType },
     });
 
     if (!res.ok) {
@@ -474,7 +473,7 @@ interface HandleJoinOrLeaveParams {
   token: string;
   businessId: string;
   action: "cancel" | "leave";
-  organizationType?: string;
+  businessType?: string;
   mockHeaders?: Record<string, string>;
   toast: (options: any) => void;
   setCancelLoadingBusinessId: (id: string) => void;
@@ -487,7 +486,7 @@ export const handleJoinOrLeave = async (params: HandleJoinOrLeaveParams) => {
     token,
     businessId,
     action,
-    organizationType,
+    businessType,
     mockHeaders,
     toast,
     setCancelLoadingBusinessId,
@@ -513,7 +512,7 @@ export const handleJoinOrLeave = async (params: HandleJoinOrLeaveParams) => {
       method: "POST",
       token,
       headers: mockHeaders ?? undefined,
-      jsonBody: { organizationType },
+      jsonBody: { businessType },
     });
 
     if (!res.ok) {
@@ -541,7 +540,7 @@ export const handleJoinOrLeave = async (params: HandleJoinOrLeaveParams) => {
 interface HandleJoinRequestParams {
   token: string;
   selectedBusinessId: string | undefined;
-  organizationType?: string;
+  businessType?: string;
   mockHeaders?: Record<string, string>;
   toast: (options: any) => void;
   setJoinLoading: (loading: boolean) => void;
@@ -556,7 +555,7 @@ export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
   const {
     token,
     selectedBusinessId,
-    organizationType,
+    businessType,
     mockHeaders,
     toast,
     setJoinLoading,
@@ -591,7 +590,7 @@ export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
       method: "POST",
       token,
       headers: mockHeaders ?? undefined,
-      jsonBody: { businessId: selectedBusinessId, organizationType },
+      jsonBody: { businessId: selectedBusinessId, businessType },
     });
 
     if (!res.ok) {

@@ -1,10 +1,22 @@
 import BonusGrant from "../../models/bonusGrant.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
-import { CREDIT_SETTINGS_SCHEMA_DEFAULTS, loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
+import {
+  CREDIT_SETTINGS_SCHEMA_DEFAULTS,
+  loadCreditSettingsDefaults,
+} from "../../utils/creditSettingsDefaults.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
-import { formatBusinessNumber, isDuplicateKeyError } from "./business.validation.util.js";
+import {
+  formatBusinessNumber,
+  isDuplicateKeyError,
+} from "./business.validation.util.js";
 
-async function upsertBonusLedger({ businessId, userId, amount, refType, refId }) {
+async function upsertBonusLedger({
+  businessId,
+  userId,
+  amount,
+  refType,
+  refId,
+}) {
   const uniqueKey = `bonus_grant:${String(refId)}`;
   const result = await CreditLedger.updateOne(
     { uniqueKey },
@@ -23,11 +35,19 @@ async function upsertBonusLedger({ businessId, userId, amount, refType, refId })
   );
 
   if (!result?.upsertedCount) return null;
-  const ledgerDoc = await CreditLedger.findOne({ uniqueKey }).select({ _id: 1 }).lean();
+  const ledgerDoc = await CreditLedger.findOne({ uniqueKey })
+    .select({ _id: 1 })
+    .lean();
   return ledgerDoc?._id || null;
 }
 
-async function ensureBonusGrant({ businessId, userId, type, businessNumber, amount }) {
+async function ensureBonusGrant({
+  businessId,
+  userId,
+  type,
+  businessNumber,
+  amount,
+}) {
   let grant = await BonusGrant.findOne({
     type,
     businessNumber,
@@ -77,10 +97,10 @@ export async function grantWelcomeBonusIfEligible({ businessId, userId }) {
   const business = await BonusGrant.db
     .model("Business")
     .findById(businessId)
-    .select({ organizationType: 1, extracted: 1 })
+    .select({ businessType: 1, extracted: 1 })
     .lean();
   if (!business) return null;
-  if (String(business.organizationType || "") !== "requestor") return null;
+  if (String(business.businessType || "") !== "requestor") return null;
 
   const normalizedBusinessNumber = formatBusinessNumber(
     business?.extracted?.businessNumber,
@@ -126,15 +146,18 @@ export async function grantWelcomeBonusIfEligible({ businessId, userId }) {
   return amount;
 }
 
-export async function grantFreeShippingCreditIfEligible({ businessId, userId }) {
+export async function grantFreeShippingCreditIfEligible({
+  businessId,
+  userId,
+}) {
   if (!businessId) return null;
   const business = await BonusGrant.db
     .model("Business")
     .findById(businessId)
-    .select({ organizationType: 1, extracted: 1 })
+    .select({ businessType: 1, extracted: 1 })
     .lean();
   if (!business) return null;
-  if (String(business.organizationType || "") !== "requestor") return null;
+  if (String(business.businessType || "") !== "requestor") return null;
 
   const normalizedBusinessNumber = formatBusinessNumber(
     business?.extracted?.businessNumber,

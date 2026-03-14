@@ -23,7 +23,7 @@ import {
 interface UseBusinessDataManagementProps {
   token?: string;
   authUserId: string | null;
-  organizationType: string;
+  businessType: string;
   membership: MembershipStatus;
   allowLocalDraft: boolean;
 }
@@ -113,8 +113,8 @@ export const useBusinessDataManagement = (
       try {
         if (!props.token) return;
         const res = await request<any>({
-          path: `/api/businesses/me?organizationType=${encodeURIComponent(
-            props.organizationType,
+          path: `/api/businesses/me?businessType=${encodeURIComponent(
+            props.businessType,
           )}`,
           method: "GET",
           token: props.token,
@@ -192,7 +192,7 @@ export const useBusinessDataManagement = (
           console.info(
             "[business-data] skip server hydrate license overwrite",
             {
-              organizationType: props.organizationType,
+              businessType: props.businessType,
               membership: next,
               localLicenseStatus: localLicense.status,
               localFileName: localLicense.fileName,
@@ -220,7 +220,7 @@ export const useBusinessDataManagement = (
     };
 
     load();
-  }, [props.token, props.organizationType]);
+  }, [props.token, props.businessType]);
 
   useEffect(() => {
     latestLicenseStateRef.current = {

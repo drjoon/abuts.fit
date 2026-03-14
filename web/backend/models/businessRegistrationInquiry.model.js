@@ -12,7 +12,7 @@ const businessRegistrationInquirySchema = new mongoose.Schema(
       ref: "Business",
       default: null,
     },
-    organizationType: {
+    businessType: {
       type: String,
       enum: ["requestor", "salesman", "manufacturer"],
       default: null,

@@ -57,12 +57,16 @@ export const buildBusinessTypeFilter = (businessType) => {
   if (businessType === "requestor") {
     return {
       $or: [
-        { organizationType: "requestor" },
-        { organizationType: { $exists: false } },
-        { organizationType: "" },
-        { organizationType: null },
+        { businessType: "requestor" },
+        {
+          $or: [
+            { businessType: { $exists: false } },
+            { businessType: "" },
+            { businessType: null },
+          ],
+        },
       ],
     };
   }
-  return { organizationType: businessType };
+  return { businessType };
 };

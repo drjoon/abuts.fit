@@ -32,7 +32,10 @@ export async function updateMyBusiness(req, res) {
 
     const nextName = String(req.body?.name || "").trim();
 
-    const representativeNameProvided = hasOwnKey(req.body, "representativeName");
+    const representativeNameProvided = hasOwnKey(
+      req.body,
+      "representativeName",
+    );
     const businessItemProvided = hasOwnKey(req.body, "businessItem");
     const phoneNumberProvided = hasOwnKey(req.body, "phoneNumber");
     const businessNumberProvided = hasOwnKey(req.body, "businessNumber");
@@ -47,11 +50,12 @@ export async function updateMyBusiness(req, res) {
     const freshUser = await User.findById(req.user._id)
       .select({ businessId: 1, business: 1 })
       .lean();
-    const effectiveBusinessId = freshUser?.businessId || req.user.businessId || null;
+    const effectiveBusinessId =
+      freshUser?.businessId || req.user.businessId || null;
     const effectiveBusinessName = String(
       freshUser?.business || req.user.business || "",
     ).trim();
-    
+
     const nextNameProvided = hasOwnKey(req.body, "name");
     let business = await findBusinessByAnchors({
       businessType,
@@ -60,7 +64,7 @@ export async function updateMyBusiness(req, res) {
       userId: req.user._id,
       businessName: effectiveBusinessName,
     });
-    
+
     const hasBusiness = Boolean(business?._id || effectiveBusinessId);
     console.info("[Business] updateMyBusiness anchors", {
       userId: String(req.user._id),
@@ -104,7 +108,9 @@ export async function updateMyBusiness(req, res) {
       }
     }
 
-    const representativeName = String(req.body?.representativeName || "").trim();
+    const representativeName = String(
+      req.body?.representativeName || "",
+    ).trim();
     const businessItem = String(req.body?.businessItem || "").trim();
     const phoneNumberRaw = String(req.body?.phoneNumber || "").trim();
     const businessNumberRaw = String(req.body?.businessNumber || "").trim();
@@ -126,8 +132,12 @@ export async function updateMyBusiness(req, res) {
         }
       : null;
 
-    const phoneNumber = phoneNumberRaw ? normalizePhoneNumber(phoneNumberRaw) : "";
-    const businessNumber = businessNumberRaw ? normalizeBusinessNumber(businessNumberRaw) : "";
+    const phoneNumber = phoneNumberRaw
+      ? normalizePhoneNumber(phoneNumberRaw)
+      : "";
+    const businessNumber = businessNumberRaw
+      ? normalizeBusinessNumber(businessNumberRaw)
+      : "";
     const currentBusinessNumber = formatBusinessNumber(
       business?.extracted?.businessNumber || "",
     );
@@ -186,7 +196,8 @@ export async function updateMyBusiness(req, res) {
         ? await normalizeBusinessAddressFields({ address, zipCode })
         : null;
 
-    const originalBusinessId = freshUser?.businessId || req.user.businessId || null;
+    const originalBusinessId =
+      freshUser?.businessId || req.user.businessId || null;
     let attachToBusiness = null;
     if (businessNumber && isBusinessNumberChanging) {
       const existingBusinessByNumber = await Business.findOne({
@@ -207,12 +218,17 @@ export async function updateMyBusiness(req, res) {
           existingOwnerId === meId || existingIsOwner || existingIsMember;
 
         if (isMyExistingBusiness) {
-          console.info("[Business] updateMyBusiness same-business own business", {
-            userId: meId,
-            currentResolvedBusinessId: String(business?._id || ""),
-            existingBusinessByNumberId: String(existingBusinessByNumber?._id || ""),
-            businessNumber,
-          });
+          console.info(
+            "[Business] updateMyBusiness same-business own business",
+            {
+              userId: meId,
+              currentResolvedBusinessId: String(business?._id || ""),
+              existingBusinessByNumberId: String(
+                existingBusinessByNumber?._id || "",
+              ),
+              businessNumber,
+            },
+          );
           attachToBusiness = existingBusinessByNumber;
           business = existingBusinessByNumber;
         }
@@ -221,14 +237,17 @@ export async function updateMyBusiness(req, res) {
       if (
         existingBusinessByNumber &&
         !attachToBusiness &&
-        (!business || String(existingBusinessByNumber._id) !== String(business._id))
+        (!business ||
+          String(existingBusinessByNumber._id) !== String(business._id))
       ) {
         if (hasBusiness) {
           console.info("[Business] updateMyBusiness conflict", {
             reason: "business_number_switch_requires_admin",
             userId: String(req.user._id),
             resolvedBusinessId: String(business?._id || ""),
-            existingBusinessByNumberId: String(existingBusinessByNumber?._id || ""),
+            existingBusinessByNumberId: String(
+              existingBusinessByNumber?._id || "",
+            ),
             businessNumber,
           });
           return res.status(409).json({
@@ -259,7 +278,9 @@ export async function updateMyBusiness(req, res) {
             reason: "duplicate_business_number",
             userId: String(req.user._id),
             resolvedBusinessId: String(business?._id || ""),
-            existingBusinessByNumberId: String(existingBusinessByNumber?._id || ""),
+            existingBusinessByNumberId: String(
+              existingBusinessByNumber?._id || "",
+            ),
             businessNumber,
           });
           return res.status(409).json({
@@ -276,16 +297,21 @@ export async function updateMyBusiness(req, res) {
     const unsetPatch = {};
     if (nextNameProvided && nextName) patch.name = nextName;
 
-    if (businessLicense && (businessLicense.s3Key || businessLicense.originalName)) {
+    if (
+      businessLicense &&
+      (businessLicense.s3Key || businessLicense.originalName)
+    ) {
       patch.businessLicense = businessLicense;
     }
 
     const extractedPatch = {};
     if (nextNameProvided) extractedPatch.companyName = nextName;
-    if (representativeNameProvided) extractedPatch.representativeName = representativeName;
+    if (representativeNameProvided)
+      extractedPatch.representativeName = representativeName;
     if (businessItemProvided) extractedPatch.businessItem = businessItem;
     if (phoneNumberProvided) extractedPatch.phoneNumber = phoneNumber;
-    if (businessTypeFieldProvided) extractedPatch.businessType = businessTypeField;
+    if (businessTypeFieldProvided)
+      extractedPatch.businessType = businessTypeField;
     if (emailProvided) extractedPatch.email = email;
     if (addressProvided)
       extractedPatch.address =
@@ -314,7 +340,9 @@ export async function updateMyBusiness(req, res) {
         const normalizedDays = rawDays
           .map((day) => String(day).trim())
           .filter((day) => ["mon", "tue", "wed", "thu", "fri"].includes(day));
-        patch["shippingPolicy.weeklyBatchDays"] = Array.from(new Set(normalizedDays));
+        patch["shippingPolicy.weeklyBatchDays"] = Array.from(
+          new Set(normalizedDays),
+        );
       }
 
       if (
@@ -351,9 +379,7 @@ export async function updateMyBusiness(req, res) {
       if (business?._id) {
         query._id = { $ne: business._id };
       }
-      const dup = await Business.findOne(query)
-        .select({ _id: 1 })
-        .lean();
+      const dup = await Business.findOne(query).select({ _id: 1 }).lean();
       if (dup) {
         console.info("[Business] updateMyBusiness conflict", {
           reason: "duplicate_business_number_post_patch",
@@ -396,7 +422,9 @@ export async function updateMyBusiness(req, res) {
         : 0;
       console.error("[BUSINESS_ATTACH_SWITCH]", {
         userId: String(req.user._id),
-        originalBusinessId: originalBusinessId ? String(originalBusinessId) : null,
+        originalBusinessId: originalBusinessId
+          ? String(originalBusinessId)
+          : null,
         nextBusinessId: String(attachToBusiness._id),
         priorLedgerCount,
       });
@@ -451,12 +479,13 @@ export async function updateMyBusiness(req, res) {
 
       try {
         const created = await Business.create({
-          organizationType: businessType,
+          businessType,
           name: nextName,
           owner: req.user._id,
           owners: [],
           members: [req.user._id],
-          ...(businessLicense && (businessLicense.s3Key || businessLicense.originalName)
+          ...(businessLicense &&
+          (businessLicense.s3Key || businessLicense.originalName)
             ? { businessLicense }
             : {}),
           extracted: {
@@ -492,11 +521,15 @@ export async function updateMyBusiness(req, res) {
         );
 
         const priorLedgerCount = originalBusinessId
-          ? await CreditLedger.countDocuments({ businessId: originalBusinessId })
+          ? await CreditLedger.countDocuments({
+              businessId: originalBusinessId,
+            })
           : 0;
         console.error("[BUSINESS_CREATED_AND_ATTACHED]", {
           userId: String(req.user._id),
-          originalBusinessId: originalBusinessId ? String(originalBusinessId) : null,
+          originalBusinessId: originalBusinessId
+            ? String(originalBusinessId)
+            : null,
           createdBusinessId: String(created._id),
           priorLedgerCount,
           businessNumber,
@@ -506,10 +539,11 @@ export async function updateMyBusiness(req, res) {
           businessId: created._id,
           userId: req.user._id,
         });
-        const freeShippingCreditAmount = await grantFreeShippingCreditIfEligible({
-          businessId: created._id,
-          userId: req.user._id,
-        });
+        const freeShippingCreditAmount =
+          await grantFreeShippingCreditIfEligible({
+            businessId: created._id,
+            userId: req.user._id,
+          });
 
         return res.json({
           success: true,
@@ -553,7 +587,10 @@ export async function updateMyBusiness(req, res) {
       patch[`extracted.${k}`] = v;
     }
 
-    if (Object.keys(patch).length === 0 && Object.keys(unsetPatch).length === 0) {
+    if (
+      Object.keys(patch).length === 0 &&
+      Object.keys(unsetPatch).length === 0
+    ) {
       return res.json({ success: true, data: { updated: false } });
     }
 
@@ -576,19 +613,33 @@ export async function updateMyBusiness(req, res) {
         businessId: String(persistedBusiness?._id || business?._id || ""),
         name: String(persistedBusiness?.name || ""),
         extracted: {
-          companyName: String(persistedBusiness?.extracted?.companyName || "").trim(),
-          businessNumber: String(persistedBusiness?.extracted?.businessNumber || "").trim(),
+          companyName: String(
+            persistedBusiness?.extracted?.companyName || "",
+          ).trim(),
+          businessNumber: String(
+            persistedBusiness?.extracted?.businessNumber || "",
+          ).trim(),
           address: String(persistedBusiness?.extracted?.address || "").trim(),
-          addressDetail: String(persistedBusiness?.extracted?.addressDetail || "").trim(),
+          addressDetail: String(
+            persistedBusiness?.extracted?.addressDetail || "",
+          ).trim(),
           zipCode: String(persistedBusiness?.extracted?.zipCode || "").trim(),
-          phoneNumber: String(persistedBusiness?.extracted?.phoneNumber || "").trim(),
+          phoneNumber: String(
+            persistedBusiness?.extracted?.phoneNumber || "",
+          ).trim(),
           email: String(persistedBusiness?.extracted?.email || "").trim(),
           representativeName: String(
             persistedBusiness?.extracted?.representativeName || "",
           ).trim(),
-          businessType: String(persistedBusiness?.extracted?.businessType || "").trim(),
-          businessItem: String(persistedBusiness?.extracted?.businessItem || "").trim(),
-          startDate: String(persistedBusiness?.extracted?.startDate || "").trim(),
+          businessType: String(
+            persistedBusiness?.extracted?.businessType || "",
+          ).trim(),
+          businessItem: String(
+            persistedBusiness?.extracted?.businessItem || "",
+          ).trim(),
+          startDate: String(
+            persistedBusiness?.extracted?.startDate || "",
+          ).trim(),
         },
         businessVerified: Boolean(persistedBusiness?.verification?.verified),
       });

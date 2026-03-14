@@ -50,7 +50,7 @@ interface BusinessTabProps {
     companyName?: string;
     role?: string;
   } | null;
-  organizationTypeOverride?: string;
+  businessTypeOverride?: string;
   selectedRole?: "owner" | "member" | null;
   registerValidationState?: (state: {
     passed: boolean;
@@ -61,7 +61,7 @@ interface BusinessTabProps {
 
 export const BusinessTab = ({
   userData,
-  organizationTypeOverride,
+  businessTypeOverride,
   selectedRole,
   registerValidationState,
   isOnboarding = false,
@@ -75,30 +75,30 @@ export const BusinessTab = ({
   const allowLocalDraft = !String(searchParams.get("wizard") || "").trim();
 
   const authUserId = user?.id ? String(user.id) : null;
-  const organizationType = useMemo(() => {
-    if (organizationTypeOverride) return organizationTypeOverride;
+  const businessType = useMemo(() => {
+    if (businessTypeOverride) return businessTypeOverride;
     const role = String(user?.role || userData?.role || "requestor").trim();
     return role || "requestor";
-  }, [organizationTypeOverride, user?.role, userData?.role]);
+  }, [businessTypeOverride, user?.role, userData?.role]);
 
   // 커스텀 훅으로 상태 관리 분리
   const businessDataMgmt = useBusinessDataManagement({
     token,
     authUserId,
-    organizationType,
+    businessType,
     membership: "none",
     allowLocalDraft,
   });
 
   const businessSearch = useBusinessSearch({
     token,
-    organizationType,
+    businessType,
     membership: "none",
   });
 
   const membershipMgmt = useMembershipManagement({
     token,
-    organizationType,
+    businessType,
   });
 
   const [setupMode, setSetupMode] = useState<
@@ -259,7 +259,7 @@ export const BusinessTab = ({
       extracted: businessDataMgmt.extracted,
       businessNumberLocked: businessDataMgmt.validationSucceeded,
       membership: membershipMgmt.membership,
-      organizationType,
+      businessType,
       businessLicense: {
         fileId: businessDataMgmt.licenseFileId,
         s3Key: businessDataMgmt.licenseS3Key,
@@ -318,7 +318,7 @@ export const BusinessTab = ({
         method: "POST",
         token,
         jsonBody: {
-          organizationType,
+          businessType,
           reason: "사업자 설정 문의",
           errorMessage: "",
           ownerForm: {
@@ -452,7 +452,7 @@ export const BusinessTab = ({
       licenseFileName: businessDataMgmt.licenseFileName,
       licenseS3Key: businessDataMgmt.licenseS3Key,
       licenseFileId: businessDataMgmt.licenseFileId,
-      organizationType,
+      businessType,
       mockHeaders: {},
       toast,
       setLicenseDeleteLoading,
@@ -484,7 +484,7 @@ export const BusinessTab = ({
       token,
       businessId,
       action: "cancel",
-      organizationType,
+      businessType,
       mockHeaders: {},
       toast,
       setCancelLoadingBusinessId: membershipMgmt.setCancelLoadingBusinessId,
@@ -498,7 +498,7 @@ export const BusinessTab = ({
       token,
       businessId,
       action: "leave",
-      organizationType,
+      businessType,
       mockHeaders: {},
       toast,
       setCancelLoadingBusinessId: membershipMgmt.setCancelLoadingBusinessId,
@@ -511,7 +511,7 @@ export const BusinessTab = ({
     await handleJoinRequestImpl({
       token,
       selectedBusinessId: businessSearch.selectedBusiness?._id,
-      organizationType,
+      businessType,
       mockHeaders: {},
       toast,
       setJoinLoading: membershipMgmt.setJoinLoading,

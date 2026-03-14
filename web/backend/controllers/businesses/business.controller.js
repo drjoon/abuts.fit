@@ -251,7 +251,7 @@ export async function getMyBusiness(req, res) {
     ) {
       try {
         business = await Business.create({
-          organizationType: businessType,
+          businessType,
           name: businessName,
           owner: req.user._id,
           owners: [],
@@ -470,7 +470,7 @@ export async function clearMyBusinessLicense(req, res) {
     const roleCheck = assertBusinessRole(req, res);
     if (!roleCheck) return;
     const { businessType } = roleCheck;
-    const typeFilter = { organizationType: businessType };
+    const typeFilter = buildBusinessTypeFilter(businessType);
 
     if (!req.user.businessId) {
       return res.status(200).json({

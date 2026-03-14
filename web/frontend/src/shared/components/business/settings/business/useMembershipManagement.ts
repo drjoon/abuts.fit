@@ -11,7 +11,7 @@ interface JoinRequest {
 
 interface UseMembershipManagementProps {
   token?: string;
-  organizationType: string;
+  businessType: string;
 }
 
 export const useMembershipManagement = (
@@ -33,8 +33,8 @@ export const useMembershipManagement = (
       try {
         if (!props.token) return;
         const res = await request<any>({
-          path: `/api/businesses/me?organizationType=${encodeURIComponent(
-            props.organizationType,
+          path: `/api/businesses/me?businessType=${encodeURIComponent(
+            props.businessType,
           )}`,
           method: "GET",
           token: props.token,
@@ -57,7 +57,7 @@ export const useMembershipManagement = (
     };
 
     load();
-  }, [props.token, props.organizationType]);
+  }, [props.token, props.businessType]);
 
   // 가입 신청 로드
   useEffect(() => {
@@ -77,8 +77,8 @@ export const useMembershipManagement = (
 
         setJoinRequestsLoaded(false);
         const res = await request<any>({
-          path: `/api/businesses/join-requests/me?organizationType=${encodeURIComponent(
-            props.organizationType,
+          path: `/api/businesses/join-requests/me?businessType=${encodeURIComponent(
+            props.businessType,
           )}`,
           method: "GET",
           token: props.token,
@@ -97,14 +97,14 @@ export const useMembershipManagement = (
     };
 
     load();
-  }, [membership, props.organizationType, props.token]);
+  }, [membership, props.businessType, props.token]);
 
   const refreshMembership = useCallback(async () => {
     if (!props.token) return;
     try {
       const res = await request<any>({
-        path: `/api/businesses/me?organizationType=${encodeURIComponent(
-          props.organizationType,
+        path: `/api/businesses/me?businessType=${encodeURIComponent(
+          props.businessType,
         )}`,
         method: "GET",
         token: props.token,
@@ -116,10 +116,8 @@ export const useMembershipManagement = (
       const data = body.data || body;
       const next = (data?.membership || "none") as MembershipStatus;
       setMembership(next);
-    } catch {
-      // ignore
-    }
-  }, [props.token, props.organizationType]);
+    } catch {}
+  }, [props.token, props.businessType]);
 
   const refreshMyJoinRequests = useCallback(async () => {
     if (!props.token) return;
@@ -127,8 +125,8 @@ export const useMembershipManagement = (
     setJoinRequestsLoaded(false);
     try {
       const res = await request<any>({
-        path: `/api/businesses/join-requests/me?organizationType=${encodeURIComponent(
-          props.organizationType,
+        path: `/api/businesses/join-requests/me?businessType=${encodeURIComponent(
+          props.businessType,
         )}`,
         method: "GET",
         token: props.token,
@@ -144,7 +142,7 @@ export const useMembershipManagement = (
     } finally {
       setJoinRequestsLoaded(true);
     }
-  }, [props.token, props.organizationType]);
+  }, [props.token, props.businessType]);
 
   return {
     membership,

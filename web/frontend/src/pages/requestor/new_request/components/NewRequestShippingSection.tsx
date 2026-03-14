@@ -75,7 +75,7 @@ export function NewRequestShippingSection({
       if (!token) return;
       try {
         const res = await apiFetch<any>({
-          path: "/api/businesses/me?organizationType=requestor",
+          path: "/api/businesses/me?businessType=requestor",
           method: "GET",
           token,
         });
@@ -109,7 +109,7 @@ export function NewRequestShippingSection({
     setIsUpdating(true);
     try {
       const res = await apiFetch<any>({
-        path: "/api/businesses/me?organizationType=requestor",
+        path: "/api/businesses/me?businessType=requestor",
         method: "PATCH",
         token,
         jsonBody: {

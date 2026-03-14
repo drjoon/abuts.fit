@@ -32,7 +32,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
     getRandomWeekday(),
   ]);
 
-  const organizationType = useMemo(() => {
+  const businessType = useMemo(() => {
     const role = String(user?.role || userData?.role || "requestor").trim();
     return role || "requestor";
   }, [user?.role, userData?.role]);
@@ -56,8 +56,8 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
       }
       try {
         const res = await request<any>({
-          path: `/api/businesses/me?organizationType=${encodeURIComponent(
-            organizationType,
+          path: `/api/businesses/me?businessType=${encodeURIComponent(
+            businessType,
           )}`,
           method: "GET",
           token,
@@ -107,7 +107,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
     };
 
     void load();
-  }, [organizationType, token]);
+  }, [businessType, token]);
 
   useEffect(() => {
     if (token) return;
@@ -169,8 +169,8 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
 
       try {
         const res = await request({
-          path: `/api/businesses/me?organizationType=${encodeURIComponent(
-            organizationType,
+          path: `/api/businesses/me?businessType=${encodeURIComponent(
+            businessType,
           )}`,
           method: "PATCH",
           token,
@@ -203,7 +203,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
         clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [organizationType, policyLoaded, toast, token, weeklyBatchDays]);
+  }, [businessType, policyLoaded, toast, token, weeklyBatchDays]);
 
   const dayLabels: Record<string, string> = {
     mon: "월",
