@@ -840,7 +840,7 @@ export const SignupPage = () => {
         className={`relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col justify-center gap-12 px-4 py-16 ${showHeroSection ? "lg:flex-row lg:items-center" : "items-center"}`}
       >
         {showHeroSection && (
-          <section className="w-full space-y-6 text-center lg:w-1/2 lg:flex-1 lg:text-left">
+          <section className="w-full space-y-6 text-center lg:w-1/2 lg:flex-1 lg:text-center">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
               <span>secure access</span>
               <span className="h-1 w-1 rounded-full bg-emerald-300" />
@@ -849,14 +849,14 @@ export const SignupPage = () => {
             {referrerInfo ? (
               <div className="space-y-4">
                 <h1 className="text-3xl font-semibold leading-tight text-white md:text-4xl">
-                  소개받아 가입하신 것을 환영합니다
+                  환영합니다.
                 </h1>
-                <p className="text-base text-white/80">
+                <h2 className="text-base text-white/80">
                   <span className="font-semibold text-emerald-300">
                     {referrerInfo.business || referrerInfo.name || "소개자"}
                   </span>
                   에서 소개받으셨군요!
-                </p>
+                </h2>
               </div>
             ) : (
               <div className="space-y-4">

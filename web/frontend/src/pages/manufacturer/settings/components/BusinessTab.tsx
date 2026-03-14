@@ -1,4 +1,4 @@
-import { BusinessTab as SharedBusinessTab } from "@/pages/requestor/settings/components/BusinessTab";
+import { BusinessTab as SharedBusinessTab } from "@/shared/components/business/settings/BusinessTab";
 
 interface BusinessTabProps {
   userData: {

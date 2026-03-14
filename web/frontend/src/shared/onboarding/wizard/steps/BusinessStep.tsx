@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
-import { BusinessTab } from "@/pages/requestor/settings/components/BusinessTab";
+import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 
 interface BusinessStepProps {
   role: "owner" | "member" | null;

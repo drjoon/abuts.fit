@@ -19,18 +19,18 @@ import {
   BusinessLicenseUpload,
   type BusinessLicenseUploadHandle,
 } from "@/shared/components/business/BusinessLicenseUpload";
-import { BusinessForm } from "./business/BusinessForm";
-import { BusinessSearchSection } from "./business/BusinessSearchSection";
-import { JoinRequestsSection } from "./business/JoinRequestsSection";
-import { BusinessMemberView } from "./business/BusinessMemberView";
+import { BusinessForm } from "@/shared/components/business/settings/business/BusinessForm";
+import { BusinessSearchSection } from "@/shared/components/business/settings/business/BusinessSearchSection";
+import { JoinRequestsSection } from "@/shared/components/business/settings/business/JoinRequestsSection";
+import { BusinessMemberView } from "@/shared/components/business/settings/business/BusinessMemberView";
 import { MembershipStatus } from "@/shared/components/business/types";
-import type { FieldKey } from "./business/types";
+import type { FieldKey } from "@/shared/components/business/settings/business/types";
 import {
   handleSave as handleSaveImpl,
   handleDeleteLicense as handleDeleteLicenseImpl,
   handleJoinOrLeave,
   handleJoinRequest as handleJoinRequestImpl,
-} from "./business/handlers";
+} from "@/shared/components/business/settings/business/handlers";
 import {
   readStoredSetupMode,
   writeStoredSetupMode,
@@ -39,17 +39,17 @@ import {
   createEmptyExtracted,
   normalizeBusinessData,
   normalizeExtracted,
-} from "./business/businessStorage";
-import { useBusinessDataManagement } from "./business/useBusinessDataManagement";
-import { useBusinessSearch } from "./business/useBusinessSearch";
-import { useMembershipManagement } from "./business/useMembershipManagement";
-import { useFileUpload } from "./business/useFileUpload";
+} from "@/shared/components/business/settings/business/businessStorage";
+import { useBusinessDataManagement } from "@/shared/components/business/settings/business/useBusinessDataManagement";
+import { useBusinessSearch } from "@/shared/components/business/settings/business/useBusinessSearch";
+import { useMembershipManagement } from "@/shared/components/business/settings/business/useMembershipManagement";
+import { useFileUpload } from "@/shared/components/business/settings/business/useFileUpload";
 
 interface BusinessTabProps {
-  userData: {
-    companyName: string;
-    role: string;
-  };
+  userData?: {
+    companyName?: string;
+    role?: string;
+  } | null;
   organizationTypeOverride?: string;
   selectedRole?: "owner" | "member" | null;
   registerValidationState?: (state: {
