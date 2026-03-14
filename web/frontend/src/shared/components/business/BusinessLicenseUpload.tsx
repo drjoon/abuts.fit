@@ -59,17 +59,13 @@ export const BusinessLicenseUpload = forwardRef<
     return (
       <div className="space-y-3">
         <div className="flex items-center justify-end">
-          {canEdit && (
+          {licenseStatus === "ready" && (
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={onDeleteLicense}
-              disabled={
-                licenseDeleteLoading ||
-                licenseStatus === "processing" ||
-                licenseStatus === "uploading"
-              }
+              disabled={licenseDeleteLoading}
             >
               <RotateCcw className="mr-2 h-4 w-4" />
               초기화
@@ -122,30 +118,27 @@ export const BusinessLicenseUpload = forwardRef<
               JPG, PNG 파일만 가능 (최대 10MB)
             </p>
           </div>
-          {licenseFileName && (
-            <div className="flex w-fit max-w-xs items-center justify-between gap-2 rounded-md border bg-slate-50 px-3 py-2 mx-auto">
-              <div className="flex items-center gap-2">
-                {licenseStatus === "ready" && (
-                  <ShieldCheck className="h-4 w-4 text-green-600" />
-                )}
-                <p className="text-xs text-slate-700">{licenseFileName}</p>
+          {licenseFileName &&
+            licenseStatus !== "uploading" &&
+            licenseStatus !== "processing" && (
+              <div className="flex w-fit max-w-xs items-center justify-between gap-2 rounded-md border bg-slate-50 px-3 py-2 mx-auto">
+                <div className="flex items-center gap-2">
+                  {licenseStatus === "ready" && (
+                    <ShieldCheck className="h-4 w-4 text-green-600" />
+                  )}
+                  <p className="text-xs text-slate-700">{licenseFileName}</p>
+                </div>
+                <button
+                  type="button"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 disabled:opacity-50"
+                  onClick={onDeleteLicense}
+                  disabled={licenseDeleteLoading || !canEdit}
+                  aria-label="사업자등록증 삭제"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 disabled:opacity-50"
-                onClick={onDeleteLicense}
-                disabled={
-                  licenseDeleteLoading ||
-                  licenseStatus === "uploading" ||
-                  licenseStatus === "processing" ||
-                  !canEdit
-                }
-                aria-label="사업자등록증 삭제"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          )}
+            )}
         </div>
       </div>
     );

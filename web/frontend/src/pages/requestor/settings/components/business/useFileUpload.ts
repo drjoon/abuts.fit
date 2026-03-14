@@ -108,10 +108,11 @@ export const useFileUpload = (
           return;
         }
 
+        // 상태를 먼저 변경하여 리렌더링 최소화
+        handlers.onLicenseStatusChange("processing");
         handlers.onLicenseFileNameChange(first.originalName);
         handlers.onLicenseFileIdChange(first._id);
         handlers.onLicenseS3KeyChange(first.key || "");
-        handlers.onLicenseStatusChange("processing");
 
         const processingStartedAt = Date.now();
         const processingToast = toast({
