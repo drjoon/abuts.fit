@@ -56,7 +56,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
       }
       try {
         const res = await request<any>({
-          path: `/api/organizations/me?organizationType=${encodeURIComponent(
+          path: `/api/businesses/me?organizationType=${encodeURIComponent(
             organizationType,
           )}`,
           method: "GET",
@@ -169,7 +169,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
 
       try {
         const res = await request({
-          path: `/api/organizations/me?organizationType=${encodeURIComponent(
+          path: `/api/businesses/me?organizationType=${encodeURIComponent(
             organizationType,
           )}`,
           method: "PATCH",

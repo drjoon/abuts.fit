@@ -95,12 +95,17 @@ export async function triggerEspritForNc({ request, force = false }) {
       ImplantBrand: request?.caseInfos?.implantBrand || "",
       ImplantFamily: request?.caseInfos?.implantFamily || "",
       ImplantType: request?.caseInfos?.implantType || "",
-      MaxDiameter: Number(request?.caseInfos?.maxDiameter || 0),
-      ConnectionDiameter: Number(request?.caseInfos?.connectionDiameter || 0),
       MaterialDiameter: Number(matDia || 0),
       MaterialDiameterGroup: String(matGroup || ""),
       WorkType: request?.caseInfos?.workType || "",
       LotNumber: request?.lotNumber?.value || "",
+      // STL 프리뷰 온레이용 메타데이터도 add-in으로 전달 (rhino-server 계산 후 백엔드에 저장된 값)
+      MaxDiameter: Number(request?.caseInfos?.maxDiameter || 0),
+      ConnectionDiameter: Number(request?.caseInfos?.connectionDiameter || 0),
+      TotalLength: Number(request?.caseInfos?.totalLength || 0),
+      TaperAngle: Number(request?.caseInfos?.taperAngle || 0),
+      TiltAxisVector: request?.caseInfos?.tiltAxisVector || null,
+      FrontPoint: request?.caseInfos?.frontPoint || null,
     };
     const headers = withEspritHeaders({ "Content-Type": "application/json" });
     console.log("[ESPRIT] POST / payload", {

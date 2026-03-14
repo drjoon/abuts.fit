@@ -127,7 +127,7 @@ export function useBulkShippingPolicy(email?: string | null) {
     const run = async () => {
       try {
         const res = await apiFetch<any>({
-          path: `/api/organizations/me?organizationType=${encodeURIComponent(
+          path: `/api/businesses/me?organizationType=${encodeURIComponent(
             organizationType,
           )}`,
           method: "GET",

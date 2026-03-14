@@ -232,7 +232,7 @@ export const useFileUpload = (
           if (extractedBusinessNumber) {
             try {
               const duplicateCheckResponse = await request<any>({
-                path: "/api/organizations/check-business-number",
+                path: "/api/businesses/check-business-number",
                 method: "POST",
                 token: props.token,
                 jsonBody: {
@@ -253,6 +253,23 @@ export const useFileUpload = (
                   title: "이미 가입된 사업자등록번호입니다",
                   description:
                     "이 사업자등록번호는 다른 계정에서 이미 등록되었습니다. 기존 사업자에 가입 요청을 진행해주세요.",
+                  variant: "destructive",
+                  duration: 5000,
+                });
+                return;
+              }
+              if (
+                !duplicateCheckResponse.ok &&
+                duplicateCheckResponse.status === 400
+              ) {
+                const message = String(
+                  duplicateCheckResponse.data?.message || "",
+                ).trim();
+                handlers.onLicenseStatusChange("error");
+                toast({
+                  title: "사업자등록번호를 확인해주세요",
+                  description:
+                    message || "사업자등록번호 형식이 올바르지 않습니다.",
                   variant: "destructive",
                   duration: 5000,
                 });

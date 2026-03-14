@@ -249,7 +249,7 @@ export const handleSave = async (
     console.info("[handleSave] API request payload", requestPayload);
 
     const res = await request<any>({
-      path: "/api/organizations/me",
+      path: "/api/businesses/me",
       method: "PUT",
       token,
       headers: mockHeaders ?? undefined,
@@ -442,7 +442,7 @@ export const handleDeleteLicense = async (
 
     setLicenseDeleteLoading(true);
     const res = await request<any>({
-      path: "/api/organizations/me/business-license",
+      path: "/api/businesses/me/business-license",
       method: "DELETE",
       token,
       headers: mockHeaders ?? undefined,
@@ -477,7 +477,7 @@ interface HandleJoinOrLeaveParams {
   organizationType?: string;
   mockHeaders?: Record<string, string>;
   toast: (options: any) => void;
-  setCancelLoadingOrgId: (id: string) => void;
+  setCancelLoadingBusinessId: (id: string) => void;
   refreshMyJoinRequests: () => Promise<void>;
   refreshMembership: () => Promise<void>;
 }
@@ -490,7 +490,7 @@ export const handleJoinOrLeave = async (params: HandleJoinOrLeaveParams) => {
     organizationType,
     mockHeaders,
     toast,
-    setCancelLoadingOrgId,
+    setCancelLoadingBusinessId,
     refreshMyJoinRequests,
     refreshMembership,
   } = params;
@@ -507,9 +507,9 @@ export const handleJoinOrLeave = async (params: HandleJoinOrLeaveParams) => {
     const normalizedBusinessId = String(businessId || "").trim();
     if (!normalizedBusinessId) return;
 
-    setCancelLoadingOrgId(normalizedBusinessId);
+    setCancelLoadingBusinessId(normalizedBusinessId);
     const res = await request<any>({
-      path: `/api/organizations/join-requests/${normalizedBusinessId}/${action}`,
+      path: `/api/businesses/join-requests/${normalizedBusinessId}/${action}`,
       method: "POST",
       token,
       headers: mockHeaders ?? undefined,
@@ -534,7 +534,7 @@ export const handleJoinOrLeave = async (params: HandleJoinOrLeaveParams) => {
     await refreshMyJoinRequests();
     await refreshMembership();
   } finally {
-    setCancelLoadingOrgId("");
+    setCancelLoadingBusinessId("");
   }
 };
 
@@ -545,9 +545,9 @@ interface HandleJoinRequestParams {
   mockHeaders?: Record<string, string>;
   toast: (options: any) => void;
   setJoinLoading: (loading: boolean) => void;
-  setOrgSearch: (search: string) => void;
-  setOrgSearchResults: (results: any[]) => void;
-  setSelectedOrg: (org: any) => void;
+  setBusinessSearch: (search: string) => void;
+  setBusinessSearchResults: (results: any[]) => void;
+  setSelectedBusiness: (business: any) => void;
   refreshMembership: () => Promise<void>;
   refreshMyJoinRequests: () => Promise<void>;
 }
@@ -560,9 +560,9 @@ export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
     mockHeaders,
     toast,
     setJoinLoading,
-    setOrgSearch,
-    setOrgSearchResults,
-    setSelectedOrg,
+    setBusinessSearch,
+    setBusinessSearchResults,
+    setSelectedBusiness,
     refreshMembership,
     refreshMyJoinRequests,
   } = params;
@@ -587,7 +587,7 @@ export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
 
     setJoinLoading(true);
     const res = await request<any>({
-      path: "/api/organizations/join-requests",
+      path: "/api/businesses/join-requests",
       method: "POST",
       token,
       headers: mockHeaders ?? undefined,
@@ -606,9 +606,9 @@ export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
     }
 
     toast({ title: "소속 신청이 접수되었습니다" });
-    setOrgSearch("");
-    setOrgSearchResults([]);
-    setSelectedOrg(null);
+    setBusinessSearch("");
+    setBusinessSearchResults([]);
+    setSelectedBusiness(null);
     await refreshMembership();
     await refreshMyJoinRequests();
   } catch {

@@ -234,7 +234,7 @@ export const MailboxContentsModal = ({
     setIsSavingAddress(true);
     try {
       const res = await request<any>({
-        path: "/api/organizations/requestor-shipping-address",
+        path: "/api/businesses/business-shipping-address",
         method: "PUT",
         token,
         jsonBody: {

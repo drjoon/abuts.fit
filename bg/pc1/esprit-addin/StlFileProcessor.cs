@@ -215,6 +215,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private double? _capturedStockDiameter;
         private string _backendLotNumber;
         private string _backendSerialCode;
+        private string _backendRequestId;
+        private string _backendImplantLabel;
         public string FaceHoleProcessFilePath { get; set; }
         public string ConnectionMachiningProcessFilePath { get; set; }
         public double DefaultFrontLimitX { get; set; } = -8;
@@ -246,13 +248,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             RemoveLayerIfExists(document, StlImportLayerName);
             double effectiveFrontLimit = frontLimitX ?? DefaultFrontLimitX;
             double effectiveBackLimit = backLimitX ?? DefaultBackLimitX;
-            AppLogger.Log($"StlFileProcessor: LimitX 적용 - Front:{effectiveFrontLimit}, Back:{effectiveBackLimit}");
+            AppLogger.Log($"StlFileProcessor: LimitX 적용 - Front:{effectiveFrontLimit:F4}, Back:{effectiveBackLimit:F4}");
             string requestId = null;
             RequestMetaCaseInfos requestMeta = null;
             double? finishLineTopZ = null;
             double? stlBoundingTopZ = null;
             _backendLotNumber = null;
             _backendSerialCode = null;
+            _backendRequestId = null;
+            _backendImplantLabel = null;
             try
             {
                 requestId = ExtractRequestIdFromStlPath(stlPath);
@@ -262,8 +266,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     requestMeta = requestMetaResponse?.caseInfos;
                     finishLineTopZ = TryGetFinishLineTopZ(requestMetaResponse);
                     _backendSerialCode = requestMetaResponse?.serialCode;
+                    _backendRequestId = requestId;
                     if (requestMeta != null)
                     {
+                        _backendImplantLabel = FormatImplantLabel(requestMeta);
                         if (!string.IsNullOrWhiteSpace(requestMeta.lotNumber))
                         {
                             _backendLotNumber = requestMeta.lotNumber.Trim();
@@ -407,11 +413,30 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _capturedStockDiameter = null;
             _backendLotNumber = null;
             _backendSerialCode = null;
+            _backendRequestId = null;
+            _backendImplantLabel = null;
             FaceHoleProcessFilePath = null;
             ConnectionMachiningProcessFilePath = null;
             lotNumber = "ACR";
             exTab = null;
             ResetDentalAddinMoveModuleState();
+        }
+        private static string FormatImplantLabel(RequestMetaCaseInfos requestMeta)
+        {
+            if (requestMeta == null)
+            {
+                return "<null>";
+            }
+            string manufacturer = requestMeta.implantManufacturer ?? string.Empty;
+            string system = requestMeta.implantSystem ?? string.Empty;
+            string type = requestMeta.implantType ?? string.Empty;
+            return $"{manufacturer}/{system}/{type}";
+        }
+        private string FormatBackendContext(RequestMetaCaseInfos requestMeta = null)
+        {
+            string requestId = _backendRequestId ?? "<null>";
+            string implant = requestMeta != null ? FormatImplantLabel(requestMeta) : (_backendImplantLabel ?? "<null>");
+            return $"requestId={requestId}, implant={implant}";
         }
         private bool ApplyBackendPrcNames(RequestMetaCaseInfos requestMeta)
         {
@@ -419,16 +444,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             string connectionName = requestMeta?.connectionPrcFileName?.Trim();
             if (string.IsNullOrWhiteSpace(faceName) || string.IsNullOrWhiteSpace(connectionName))
             {
-                AppLogger.Log($"StlFileProcessor.ApplyBackendPrcNames: 백엔드 PRC 파일명 누락 - faceHolePrcFileName={faceName}, connectionPrcFileName={connectionName}");
-                return false;
+                string context = FormatBackendContext(requestMeta);
+                AppLogger.Log($"StlFileProcessor.ApplyBackendPrcNames: 백엔드 PRC 파일명 누락 - {context}, faceHolePrcFileName={faceName}, connectionPrcFileName={connectionName}");
+                throw new InvalidOperationException($"Backend PRC file name is missing ({context})");
             }
             if (!TryResolveBackendPrcPath("1_Face Hole", faceName, out string facePath))
             {
-                return false;
+                string context = FormatBackendContext(requestMeta);
+                throw new InvalidOperationException($"FaceHole PRC resolve failed ({context}) - fileName={faceName}");
             }
             if (!TryResolveBackendPrcPath("2_Connection", connectionName, out string connectionPath))
             {
-                return false;
+                string context = FormatBackendContext(requestMeta);
+                throw new InvalidOperationException($"Connection PRC resolve failed ({context}) - fileName={connectionName}");
             }
             FaceHoleProcessFilePath = facePath;
             ConnectionMachiningProcessFilePath = connectionPath;
@@ -1656,6 +1684,22 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             SetStaticField(mainModuleType, "PrcFileName", prcNames);
             SetStaticField(mainModuleType, "NumCombobox", numCombobox);
             EnsurePrcBaseDefaults(prcDirectory, prcPaths, prcNames);
+            if (prcPaths != null && prcPaths.Length > 4)
+            {
+                prcPaths[4] = null;
+            }
+            if (prcNames != null && prcNames.Length > 4)
+            {
+                prcNames[4] = null;
+            }
+            if (prcPaths != null && prcPaths.Length > 8)
+            {
+                prcPaths[8] = null;
+            }
+            if (prcNames != null && prcNames.Length > 8)
+            {
+                prcNames[8] = null;
+            }
             EnsureFaceConnectionFromBackend(prcPaths, prcNames);
             EnsureCompositeDefaults(prcDirectory, prcPaths, prcNames);
             ApplyEnvOverrides(prcPaths);
@@ -2183,6 +2227,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 if (prcPaths == null || prcNames == null)
                 {
                     return;
+                }
+
+                if (string.IsNullOrWhiteSpace(FaceHoleProcessFilePath) || string.IsNullOrWhiteSpace(ConnectionMachiningProcessFilePath))
+                {
+                    AppLogger.Log($"DentalAddin.EnsureFaceConnectionFromBackend: 백엔드 PRC 누락으로 중단 - FaceHoleProcessFilePath={FaceHoleProcessFilePath}, ConnectionMachiningProcessFilePath={ConnectionMachiningProcessFilePath}");
+                    throw new InvalidOperationException("Backend PRC file path is missing");
                 }
                 // FaceHole -> index 4
                 // 백엔드에서 받은 PRC 파일명으로 항상 덮어쓴다 (이전 요청의 값을 유지하지 않음)

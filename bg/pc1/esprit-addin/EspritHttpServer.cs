@@ -27,12 +27,25 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         [DataMember] public string ImplantManufacturer { get; set; }
         [DataMember] public string ImplantSystem { get; set; }
         [DataMember] public string ImplantType { get; set; }
-        [DataMember] public double MaxDiameter { get; set; }
-        [DataMember] public double ConnectionDiameter { get; set; }
         [DataMember] public double MaterialDiameter { get; set; }
         [DataMember] public string MaterialDiameterGroup { get; set; }
         [DataMember] public string WorkType { get; set; }
         [DataMember] public string LotNumber { get; set; }
+        // STL 프리뷰 온레이(길이/각도/축/프론트 포인트) 표시용 메타데이터
+        [DataMember] public double MaxDiameter { get; set; }
+        [DataMember] public double ConnectionDiameter { get; set; }
+        [DataMember] public double TotalLength { get; set; }
+        [DataMember] public double TaperAngle { get; set; }
+        [DataMember] public Vector3Dto TiltAxisVector { get; set; }
+        [DataMember] public Vector3Dto FrontPoint { get; set; }
+    }
+
+    [DataContract]
+    public class Vector3Dto
+    {
+        [DataMember] public double x { get; set; }
+        [DataMember] public double y { get; set; }
+        [DataMember] public double z { get; set; }
     }
     internal class EspritHttpServer : IDisposable
     {
@@ -454,12 +467,24 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             AppLogger.Log($"[NC Processing] Starting CAM processing: RequestId={req.RequestId}, Clinic={req.ClinicName}, Patient={req.PatientName}, Tooth={req.Tooth}");
             AppLogger.Log($"[NC Processing] Implant: {req.ImplantManufacturer}/{req.ImplantSystem}/{req.ImplantType}, MaxDia={req.MaxDiameter}, ConnDia={req.ConnectionDiameter}");
             AppLogger.Log($"[NC Processing] WorkType={req.WorkType}, LotNumber={req.LotNumber}");
+            var tiltVectorLabel = req.TiltAxisVector != null
+                ? $"({req.TiltAxisVector.x:F4}, {req.TiltAxisVector.y:F4}, {req.TiltAxisVector.z:F4})"
+                : "<null>";
+            var frontPointLabel = req.FrontPoint != null
+                ? $"({req.FrontPoint.x:F4}, {req.FrontPoint.y:F4}, {req.FrontPoint.z:F4})"
+                : "<null>";
+            AppLogger.Log($"[NC Processing] STL metadata: TotalLength={req.TotalLength:F4}, TaperAngle={req.TaperAngle:F4}, TiltAxis={tiltVectorLabel}, FrontPoint={frontPointLabel}");
+            double? frontLimitX = req.FrontPoint != null ? -req.FrontPoint.x : (double?)null;
             var processor = new StlFileProcessor(_espApp)
             {
                 lotNumber = req.LotNumber ?? "ACR"
             };
+            if (frontLimitX.HasValue)
+            {
+                processor.DefaultFrontLimitX = frontLimitX.Value;
+            }
             AppLogger.Log("[NC Processing] Invoking StlFileProcessor.Process()...");
-            processor.Process(stlPath, null, null, req.MaterialDiameter);
+            processor.Process(stlPath, frontLimitX, null, req.MaterialDiameter);
             AppLogger.Log($"[NC Processing] CAM processing completed successfully: {req.RequestId}");
         }
         private async Task ProcessQueueLoop(CancellationToken token)

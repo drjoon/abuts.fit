@@ -553,7 +553,7 @@ export const RequestorBulkShippingBannerCard = ({
     setIsLeadTimeLoading(true);
     try {
       const res = await apiFetch<any>({
-        path: "/api/organizations/manufacturer-lead-times",
+        path: "/api/businesses/manufacturer-lead-times",
         method: "GET",
       });
       if (!res.ok) {

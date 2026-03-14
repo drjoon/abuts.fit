@@ -4,7 +4,7 @@ import { ShieldCheck } from "lucide-react";
 import { BusinessData, LicenseExtracted, LicenseStatus } from "./types";
 
 interface BusinessMemberViewProps {
-  currentOrgName: string;
+  currentBusinessName: string;
   licenseStatus: LicenseStatus;
   isVerified: boolean;
   extracted: LicenseExtracted;
@@ -12,7 +12,7 @@ interface BusinessMemberViewProps {
 }
 
 export const BusinessMemberView = ({
-  currentOrgName,
+  currentBusinessName,
   licenseStatus,
   isVerified,
   extracted,

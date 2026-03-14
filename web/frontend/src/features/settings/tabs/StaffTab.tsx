@@ -68,7 +68,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
   const refreshMembership = useCallback(async () => {
     if (!token) return;
     const res = await request<any>({
-      path: `/api/organizations/me?organizationType=${encodeURIComponent(
+      path: `/api/businesses/me?organizationType=${encodeURIComponent(
         organizationType,
       )}`,
       method: "GET",
@@ -89,7 +89,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
   const refreshRepresentatives = useCallback(async () => {
     if (!token) return;
     const res = await request<any>({
-      path: `/api/organizations/owners?organizationType=${encodeURIComponent(
+      path: `/api/businesses/owners?organizationType=${encodeURIComponent(
         organizationType,
       )}`,
       method: "GET",
@@ -121,7 +121,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
   const refreshStaff = useCallback(async () => {
     if (!token) return;
     const res = await request<any>({
-      path: `/api/organizations/staff?organizationType=${encodeURIComponent(
+      path: `/api/businesses/staff?organizationType=${encodeURIComponent(
         organizationType,
       )}`,
       method: "GET",
@@ -140,7 +140,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
   const refreshPending = useCallback(async () => {
     if (!token) return;
     const res = await request<any>({
-      path: `/api/organizations/join-requests/pending?organizationType=${encodeURIComponent(
+      path: `/api/businesses/join-requests/pending?organizationType=${encodeURIComponent(
         organizationType,
       )}`,
       method: "GET",
@@ -195,7 +195,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
 
       setActionUserId(id);
       const res = await request<any>({
-        path: `/api/organizations/staff/${id}?organizationType=${encodeURIComponent(
+        path: `/api/businesses/staff/${id}?organizationType=${encodeURIComponent(
           organizationType,
         )}`,
         method: "DELETE",
@@ -231,7 +231,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
 
       setActionUserId(id);
       const res = await request<any>({
-        path: `/api/organizations/join-requests/${id}/approve`,
+        path: `/api/businesses/join-requests/${id}/approve`,
         method: "POST",
         token,
         headers: mockHeaders,
@@ -274,7 +274,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
 
       setActionUserId(id);
       const res = await request<any>({
-        path: `/api/organizations/join-requests/${id}/reject`,
+        path: `/api/businesses/join-requests/${id}/reject`,
         method: "POST",
         token,
         headers: mockHeaders,

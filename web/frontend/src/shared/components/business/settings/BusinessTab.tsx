@@ -391,7 +391,7 @@ export const BusinessTab = ({
       try {
         if (token && user?.id) {
           const response = await request<{ owner?: string }>({
-            path: "/api/organizations/me",
+            path: "/api/businesses/me",
             method: "GET",
             token,
           });
@@ -430,7 +430,7 @@ export const BusinessTab = ({
       try {
         if (token) {
           await request<any>({
-            path: "/api/organizations/me",
+            path: "/api/businesses/me",
             method: "DELETE",
             token,
           });
@@ -487,7 +487,7 @@ export const BusinessTab = ({
       organizationType,
       mockHeaders: {},
       toast,
-      setCancelLoadingOrgId: membershipMgmt.setCancelLoadingOrgId,
+      setCancelLoadingBusinessId: membershipMgmt.setCancelLoadingBusinessId,
       refreshMyJoinRequests: membershipMgmt.refreshMyJoinRequests,
       refreshMembership: membershipMgmt.refreshMembership,
     });
@@ -501,7 +501,7 @@ export const BusinessTab = ({
       organizationType,
       mockHeaders: {},
       toast,
-      setCancelLoadingOrgId: membershipMgmt.setCancelLoadingOrgId,
+      setCancelLoadingBusinessId: membershipMgmt.setCancelLoadingBusinessId,
       refreshMyJoinRequests: membershipMgmt.refreshMyJoinRequests,
       refreshMembership: membershipMgmt.refreshMembership,
     });
@@ -515,15 +515,15 @@ export const BusinessTab = ({
       mockHeaders: {},
       toast,
       setJoinLoading: membershipMgmt.setJoinLoading,
-      setOrgSearch: businessSearch.setBusinessSearch,
-      setOrgSearchResults: businessSearch.setBusinessSearchResults,
-      setSelectedOrg: businessSearch.setSelectedBusiness,
+      setBusinessSearch: businessSearch.setBusinessSearch,
+      setBusinessSearchResults: businessSearch.setBusinessSearchResults,
+      setSelectedBusiness: businessSearch.setSelectedBusiness,
       refreshMembership: membershipMgmt.refreshMembership,
       refreshMyJoinRequests: membershipMgmt.refreshMyJoinRequests,
     });
   };
 
-  const currentOrgName = useMemo(() => {
+  const currentBusinessName = useMemo(() => {
     const fromUser = String(
       (user as any)?.business || (user as any)?.organization || "",
     ).trim();
@@ -590,7 +590,7 @@ export const BusinessTab = ({
 
               <JoinRequestsSection
                 myJoinRequests={membershipMgmt.myJoinRequests}
-                cancelLoadingOrgId={membershipMgmt.cancelLoadingOrgId}
+                cancelLoadingBusinessId={membershipMgmt.cancelLoadingBusinessId}
                 onCancelJoinRequest={handleCancelJoinRequest}
                 onLeaveOrganization={handleLeaveOrganization}
               />
@@ -600,7 +600,7 @@ export const BusinessTab = ({
         {membershipMgmt.membership === "none" && showJoinRequestSection && (
           <JoinRequestsSection
             myJoinRequests={membershipMgmt.myJoinRequests || []}
-            cancelLoadingOrgId={membershipMgmt.cancelLoadingOrgId}
+            cancelLoadingBusinessId={membershipMgmt.cancelLoadingBusinessId}
             onCancelJoinRequest={handleCancelJoinRequest}
             onLeaveOrganization={handleLeaveOrganization}
           />
@@ -695,7 +695,7 @@ export const BusinessTab = ({
             {(membershipMgmt.membership === "member" ||
               membershipMgmt.membership === "pending") && (
               <BusinessMemberView
-                currentOrgName={currentOrgName}
+                currentBusinessName={currentBusinessName}
                 licenseStatus={businessDataMgmt.licenseStatus}
                 isVerified={businessDataMgmt.isVerified}
                 extracted={businessDataMgmt.extracted}
@@ -725,7 +725,9 @@ export const BusinessTab = ({
                   membershipMgmt.myJoinRequests.length > 0 && (
                     <JoinRequestsSection
                       myJoinRequests={membershipMgmt.myJoinRequests}
-                      cancelLoadingOrgId={membershipMgmt.cancelLoadingOrgId}
+                      cancelLoadingBusinessId={
+                        membershipMgmt.cancelLoadingBusinessId
+                      }
                       onCancelJoinRequest={handleCancelJoinRequest}
                       onLeaveOrganization={handleLeaveOrganization}
                     />

@@ -675,7 +675,7 @@ export const NewRequestPage = () => {
                 (async () => {
                   try {
                     const res = await apiFetch<any>({
-                      path: "/api/requestor-organizations/me",
+                      path: "/api/businesses/me?organizationType=requestor",
                       method: "GET",
                     });
                     const days: string[] = Array.isArray(

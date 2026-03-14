@@ -76,7 +76,7 @@ export const useNewRequestSubmit = ({
 
       try {
         const precheckRes = await fetch(
-          `${API_BASE_URL}/requestor-organizations/me`,
+          `${API_BASE_URL}/businesses/me?organizationType=requestor`,
           {
             method: "GET",
             headers: getHeaders(),

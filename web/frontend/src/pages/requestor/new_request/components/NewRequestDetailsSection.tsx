@@ -151,7 +151,7 @@ export function NewRequestDetailsSection({
       if (!token) return;
       try {
         const leadRes = await apiFetch<any>({
-          path: "/api/organizations/manufacturer-lead-times",
+          path: "/api/businesses/manufacturer-lead-times",
           method: "GET",
           token,
         });

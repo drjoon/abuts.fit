@@ -37,7 +37,7 @@ export const useBusinessSearch = (props: UseBusinessSearchProps) => {
     const t = setTimeout(async () => {
       try {
         const res = await request<any>({
-          path: `/api/organizations/search?q=${encodeURIComponent(
+          path: `/api/businesses/search?q=${encodeURIComponent(
             q,
           )}&organizationType=${encodeURIComponent(props.organizationType)}`,
           method: "GET",

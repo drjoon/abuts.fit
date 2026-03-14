@@ -37,7 +37,7 @@ export const PricingPolicyDialog = ({ open, onOpenChange }: Props) => {
     const load = async () => {
       try {
         const res = await request<any>({
-          path: `/api/requestor-organizations/manufacturer-lead-times`,
+          path: `/api/businesses/manufacturer-lead-times`,
           method: "GET",
           token,
         });

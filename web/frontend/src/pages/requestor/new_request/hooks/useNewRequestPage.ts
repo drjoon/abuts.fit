@@ -534,7 +534,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       let hasBusinessNumber = false;
       try {
         const orgRes = await request<any>({
-          path: `/api/organizations/me?organizationType=${encodeURIComponent(
+          path: `/api/businesses/me?organizationType=${encodeURIComponent(
             organizationType,
           )}`,
           method: "GET",

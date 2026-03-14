@@ -3,17 +3,17 @@ import { Button } from "@/components/ui/button";
 interface JoinRequestsSectionProps {
   myJoinRequests: {
     businessId: string;
-    organizationName: string;
+    businessName: string;
     status: string;
   }[];
-  cancelLoadingOrgId: string;
+  cancelLoadingBusinessId: string;
   onCancelJoinRequest: (businessId: string) => void;
   onLeaveOrganization: (businessId: string) => void;
 }
 
 export const JoinRequestsSection = ({
   myJoinRequests,
-  cancelLoadingOrgId,
+  cancelLoadingBusinessId,
   onCancelJoinRequest,
   onLeaveOrganization,
 }: JoinRequestsSectionProps) => {
@@ -38,7 +38,7 @@ export const JoinRequestsSection = ({
             className="flex items-center justify-between gap-3"
           >
             <div className="text-sm">
-              {r.organizationName} - {getJoinStatusLabel(r.status)}
+              {r.businessName} - {getJoinStatusLabel(r.status)}
             </div>
             {String(r.status) === "pending" && (
               <Button
@@ -46,9 +46,9 @@ export const JoinRequestsSection = ({
                 variant="outline"
                 size="sm"
                 onClick={() => onCancelJoinRequest(String(r.businessId))}
-                disabled={cancelLoadingOrgId === r.businessId}
+                disabled={cancelLoadingBusinessId === r.businessId}
               >
-                {cancelLoadingOrgId === r.businessId
+                {cancelLoadingBusinessId === r.businessId
                   ? "취소 중..."
                   : "신청 취소"}
               </Button>
@@ -60,9 +60,9 @@ export const JoinRequestsSection = ({
                 variant="outline"
                 size="sm"
                 onClick={() => onLeaveOrganization(String(r.businessId))}
-                disabled={cancelLoadingOrgId === r.businessId}
+                disabled={cancelLoadingBusinessId === r.businessId}
               >
-                {cancelLoadingOrgId === r.businessId
+                {cancelLoadingBusinessId === r.businessId
                   ? "취소 중..."
                   : "소속 해제"}
               </Button>

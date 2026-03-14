@@ -5,7 +5,7 @@ import { MembershipStatus } from "@/shared/components/business/types";
 
 interface JoinRequest {
   businessId: string;
-  organizationName: string;
+  businessName: string;
   status: string;
 }
 
@@ -24,7 +24,8 @@ export const useMembershipManagement = (
   );
   const [joinRequestsLoaded, setJoinRequestsLoaded] = useState(false);
   const [joinLoading, setJoinLoading] = useState(false);
-  const [cancelLoadingOrgId, setCancelLoadingOrgId] = useState<string>("");
+  const [cancelLoadingBusinessId, setCancelLoadingBusinessId] =
+    useState<string>("");
 
   // 멤버십 로드
   useEffect(() => {
@@ -32,7 +33,7 @@ export const useMembershipManagement = (
       try {
         if (!props.token) return;
         const res = await request<any>({
-          path: `/api/organizations/me?organizationType=${encodeURIComponent(
+          path: `/api/businesses/me?organizationType=${encodeURIComponent(
             props.organizationType,
           )}`,
           method: "GET",
@@ -76,7 +77,7 @@ export const useMembershipManagement = (
 
         setJoinRequestsLoaded(false);
         const res = await request<any>({
-          path: `/api/organizations/join-requests/me?organizationType=${encodeURIComponent(
+          path: `/api/businesses/join-requests/me?organizationType=${encodeURIComponent(
             props.organizationType,
           )}`,
           method: "GET",
@@ -102,7 +103,7 @@ export const useMembershipManagement = (
     if (!props.token) return;
     try {
       const res = await request<any>({
-        path: `/api/organizations/me?organizationType=${encodeURIComponent(
+        path: `/api/businesses/me?organizationType=${encodeURIComponent(
           props.organizationType,
         )}`,
         method: "GET",
@@ -126,7 +127,7 @@ export const useMembershipManagement = (
     setJoinRequestsLoaded(false);
     try {
       const res = await request<any>({
-        path: `/api/organizations/join-requests/me?organizationType=${encodeURIComponent(
+        path: `/api/businesses/join-requests/me?organizationType=${encodeURIComponent(
           props.organizationType,
         )}`,
         method: "GET",
@@ -154,8 +155,8 @@ export const useMembershipManagement = (
     setJoinRequestsLoaded,
     joinLoading,
     setJoinLoading,
-    cancelLoadingOrgId,
-    setCancelLoadingOrgId,
+    cancelLoadingBusinessId,
+    setCancelLoadingBusinessId,
     refreshMembership,
     refreshMyJoinRequests,
   };
