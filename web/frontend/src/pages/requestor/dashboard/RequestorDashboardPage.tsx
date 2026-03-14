@@ -11,7 +11,14 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { DashboardShellSkeleton } from "@/shared/ui/dashboard/DashboardShellSkeleton";
-import { Clock, CheckCircle, TrendingUp, FileText } from "lucide-react";
+import {
+  CheckCircle,
+  Factory,
+  FileText,
+  Package,
+  Boxes,
+  Wrench,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
@@ -609,11 +616,11 @@ export const RequestorDashboardPage = () => {
     if (!summaryResponse?.success) {
       return [
         { label: "의뢰/취소", value: "0 / 0", icon: FileText },
-        { label: "CAM", value: "0", icon: Clock },
-        { label: "가공", value: "0", icon: Clock },
-        { label: "세척.패킹", value: "0", icon: Clock },
-        { label: "포장.발송", value: "0건/0박스", icon: TrendingUp },
-        { label: "추적관리", value: "0건/0박스", icon: TrendingUp },
+        { label: "CAM", value: "0", icon: Wrench },
+        { label: "가공", value: "0", icon: Factory },
+        { label: "세척.패킹", value: "0", icon: Boxes },
+        { label: "포장.발송", value: "0건/0박스", icon: Package },
+        { label: "추적관리", value: "0건/0박스", icon: CheckCircle },
       ];
     }
 
@@ -637,31 +644,31 @@ export const RequestorDashboardPage = () => {
         label: "CAM",
         value: String(s.inCam ?? 0),
         change: s.inCamChange ?? "+0%",
-        icon: Clock,
+        icon: Wrench,
       },
       {
         label: "가공",
         value: String(s.inProduction ?? 0),
         change: s.inProductionChange ?? "+0%",
-        icon: Clock,
+        icon: Factory,
       },
       {
         label: "세척.패킹",
         value: String(s.inPacking ?? 0),
         change: s.inPackingChange ?? "+0%",
-        icon: Clock,
+        icon: Boxes,
       },
       {
         label: "포장.발송",
         value: `${shippingProductCount}건/${shippingBoxCount}박스`,
         change: s.inShippingChange ?? "+0%",
-        icon: TrendingUp,
+        icon: Package,
       },
       {
         label: "추적관리",
         value: `${trackingProductCount}건/${trackingBoxCount}박스`,
         change: s.inTrackingChange ?? "+0%",
-        icon: TrendingUp,
+        icon: CheckCircle,
       },
     ];
   })();

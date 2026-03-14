@@ -1,5 +1,5 @@
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Card,
   CardContent,
@@ -30,6 +30,7 @@ import {
   Wrench,
   Factory,
   PackageCheck,
+  Package,
 } from "lucide-react";
 
 export const ManufacturerDashboardPage = () => {
@@ -57,6 +58,23 @@ export const ManufacturerDashboardPage = () => {
     retry: false,
   });
 
+  const { data: assignedSummaryResponse } = useQuery({
+    queryKey: ["manufacturer-dashboard-assigned-summary", period],
+    enabled: Boolean(token),
+    queryFn: async () => {
+      const res = await apiFetch<any>({
+        path: `/api/requests/assigned/dashboard-summary?period=${period}`,
+        method: "GET",
+        token,
+      });
+      if (!res.ok) {
+        throw new Error("제조사 대시보드 요약 조회에 실패했습니다.");
+      }
+      return res.data;
+    },
+    retry: false,
+  });
+
   const { data: managementStatusResponse } = useQuery({
     queryKey: ["manufacturer-dashboard-management-status"],
     enabled: Boolean(token),
@@ -78,45 +96,66 @@ export const ManufacturerDashboardPage = () => {
     ? (riskSummaryResponse.data?.riskSummary ?? null)
     : null;
 
+  const assignedSummary = assignedSummaryResponse?.success
+    ? (assignedSummaryResponse.data ?? {})
+    : {};
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[Dashboard] manufacturer risk summary", riskSummaryResponse);
+      console.log(
+        "[Dashboard] manufacturer assigned summary",
+        assignedSummaryResponse,
+      );
+    }
+  }, [riskSummaryResponse, assignedSummaryResponse]);
+
   const managementStatus = managementStatusResponse?.success
     ? (managementStatusResponse.data?.status ?? {})
     : {};
 
-  const stats = [
+  const stageStats = [
     {
-      key: "in-progress",
-      label: "진행중",
-      value: "0",
+      key: "request-cancel",
+      label: "의뢰/취소",
+      value: `${assignedSummary.requestCount ?? 0}/${assignedSummary.canceledCount ?? 0}`,
       icon: FileText,
-      change: "",
+      hint: "의뢰 건수 / 취소 건수",
     },
     {
-      key: "risk",
-      label: "지연 위험",
-      value: String(riskSummary?.delayedCount ?? 0),
-      icon: AlertTriangle,
-      change: "",
+      key: "cam",
+      label: "CAM",
+      value: String(assignedSummary.camCount ?? 0),
+      icon: Wrench,
+      hint: "CAM 단계",
     },
     {
-      key: "warning",
-      label: "주의 대상",
-      value: String(riskSummary?.warningCount ?? 0),
-      icon: Clock,
-      change: "",
-    },
-    {
-      key: "on-time",
-      label: "정시율",
-      value: `${riskSummary?.onTimeRate ?? 100}%`,
-      icon: CheckCircle,
-      change: "",
-    },
-    {
-      key: "machines",
-      label: "가동 장비",
-      value: "2대",
+      key: "machining",
+      label: "가공",
+      value: String(assignedSummary.machiningCount ?? 0),
       icon: Factory,
-      change: "M3, M4",
+      hint: "가공 단계",
+    },
+    {
+      key: "packing",
+      label: "세척·패킹",
+      value: String(assignedSummary.packingCount ?? 0),
+      icon: Boxes,
+      hint: "세척·패킹 단계",
+    },
+    {
+      key: "shipping",
+      label: "포장·발송",
+      value: String(assignedSummary.shippingCount ?? 0),
+      icon: Package,
+      hint: "포장·발송 단계",
+    },
+    {
+      key: "tracking",
+      label: "추적관리",
+      value: String(assignedSummary.trackingCount ?? 0),
+      icon: CheckCircle,
+      hint: "집하/배송 추적",
     },
   ];
 
@@ -221,13 +260,10 @@ export const ManufacturerDashboardPage = () => {
         }
         stats={
           <>
-            {stats.map((stat, index) => (
+            {stageStats.map((stat) => (
               <Card
-                key={index}
-                onClick={() => {
-                  if (stat.key === "risk") setRiskModalOpen(true);
-                }}
-                className="app-glass-card app-glass-card--lg cursor-pointer"
+                key={stat.key}
+                className="app-glass-card app-glass-card--lg"
               >
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
@@ -237,10 +273,8 @@ export const ManufacturerDashboardPage = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{stat.value}</div>
-                  {stat.change && (
-                    <p className="text-xs text-muted-foreground">
-                      {stat.change}
-                    </p>
+                  {stat.hint && (
+                    <p className="text-xs text-muted-foreground">{stat.hint}</p>
                   )}
                 </CardContent>
               </Card>

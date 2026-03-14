@@ -215,7 +215,7 @@ export const RequestorPricingReferralPolicyCard = () => {
                     직접 소개 사업자 수(내 사업자 포함)
                   </span>
                   <span className="text-lg font-semibold text-foreground">
-                    {groupMemberCount}명
+                    {groupMemberCount}개소
                   </span>
                 </div>
               </div>

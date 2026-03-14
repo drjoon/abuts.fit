@@ -101,10 +101,16 @@ export async function getAssignedDashboardSummary(req, res) {
 
     // 제조사 역할일 때: 해당 제조사에게 할당된 의뢰건만 필터링
     if (role === "manufacturer") {
-      baseFilter.caManufacturer = req.user._id;
+      baseFilter.$or = [
+        { caManufacturer: req.user._id },
+        { caManufacturer: null },
+        { caManufacturer: { $exists: false } },
+      ];
       console.log("[Dashboard] Manufacturer filter:", {
         userId: req.user._id,
         filter: baseFilter,
+        period,
+        dateFilter,
       });
     }
 
@@ -191,6 +197,21 @@ export async function getAssignedDashboardSummary(req, res) {
         },
       },
     ]);
+
+    console.log("[Dashboard] Assigned summary result", {
+      period,
+      dateFilter,
+      baseFilter,
+      totals: {
+        total: Number(statsResult?.total ?? 0) || 0,
+        tracking: Number(statsResult?.trackingCount ?? 0) || 0,
+        shipping: Number(statsResult?.shippingCount ?? 0) || 0,
+        packing: Number(statsResult?.packingCount ?? 0) || 0,
+        machining: Number(statsResult?.machiningCount ?? 0) || 0,
+        cam: Number(statsResult?.camCount ?? 0) || 0,
+        request: Number(statsResult?.requestCount ?? 0) || 0,
+      },
+    });
 
     return res.status(200).json({
       success: true,
