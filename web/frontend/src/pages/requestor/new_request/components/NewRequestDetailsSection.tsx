@@ -479,6 +479,18 @@ export function NewRequestDetailsSection({
     if (!fileCaseInfos?.tooth) {
       missingFields.push("치아번호");
     }
+    if (!fileCaseInfos?.implantManufacturer) {
+      missingFields.push("임플란트 제조사");
+    }
+    if (!fileCaseInfos?.implantBrand) {
+      missingFields.push("임플란트 브랜드");
+    }
+    if (!fileCaseInfos?.implantFamily) {
+      missingFields.push("Family");
+    }
+    if (!fileCaseInfos?.implantType) {
+      missingFields.push("Type");
+    }
 
     if (missingFields.length > 0) {
       toast({

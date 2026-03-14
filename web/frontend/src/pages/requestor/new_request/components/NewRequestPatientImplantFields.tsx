@@ -390,42 +390,35 @@ export function NewRequestPatientImplantFields({
                   value={currentManufacturer}
                   onValueChange={(value) => {
                     if (implantDisabled) return;
+                    // Manufacturer 선택 시 Brand만 초기화, Family/Type은 유지
                     const firstForManufacturer = connectionOptions.find(
                       (c) => c.manufacturer === value,
                     );
                     const nextBrand = firstForManufacturer?.brand || "";
-                    const nextFamily = firstForManufacturer?.family || "";
-                    const nextType = firstForManufacturer?.type || "Hex";
                     if (implantSelectSource === "caseInfos") {
                       setCaseInfos({
                         implantManufacturer: value,
                         implantBrand: nextBrand,
-                        implantFamily: nextFamily,
-                        implantType: nextType,
                       });
                       syncSelectedConnection(
                         value,
                         nextBrand,
-                        nextFamily,
-                        nextType,
+                        currentFamily,
+                        currentType,
                       );
                       return;
                     }
                     setImplantManufacturer(value);
                     setImplantBrand(nextBrand);
-                    setImplantFamily(nextFamily);
-                    setImplantType(nextType);
                     syncSelectedConnection(
                       value,
                       nextBrand,
-                      nextFamily,
-                      nextType,
+                      currentFamily,
+                      currentType,
                     );
                     setCaseInfos({
                       implantManufacturer: value,
                       implantBrand: nextBrand,
-                      implantFamily: nextFamily,
-                      implantType: nextType,
                     });
                   }}
                 >
@@ -447,40 +440,28 @@ export function NewRequestPatientImplantFields({
                   value={currentBrand}
                   onValueChange={(value) => {
                     if (implantDisabled) return;
-                    const first = connectionOptions.find(
-                      (c) =>
-                        c.manufacturer === currentManufacturer &&
-                        c.brand === value,
-                    );
-                    const nextFamily = first?.family || "";
-                    const nextType = first?.type || "Hex";
+                    // Brand 선택 시 Family/Type은 유지
                     if (implantSelectSource === "caseInfos") {
                       setCaseInfos({
                         implantBrand: value,
-                        implantFamily: nextFamily,
-                        implantType: nextType,
                       });
                       syncSelectedConnection(
                         currentManufacturer,
                         value,
-                        nextFamily,
-                        nextType,
+                        currentFamily,
+                        currentType,
                       );
                       return;
                     }
                     setImplantBrand(value);
-                    setImplantFamily(nextFamily);
-                    setImplantType(nextType);
                     syncSelectedConnection(
                       currentManufacturer,
                       value,
-                      nextFamily,
-                      nextType,
+                      currentFamily,
+                      currentType,
                     );
                     setCaseInfos({
                       implantBrand: value,
-                      implantFamily: nextFamily,
-                      implantType: nextType,
                     });
                   }}
                   disabled={implantDisabled || !currentManufacturer}
@@ -505,37 +486,28 @@ export function NewRequestPatientImplantFields({
                   value={currentFamily}
                   onValueChange={(value) => {
                     if (implantDisabled) return;
-                    const first = connectionOptions.find(
-                      (c) =>
-                        c.manufacturer === currentManufacturer &&
-                        c.brand === currentBrand &&
-                        c.family === value,
-                    );
-                    const nextType = first?.type || "Hex";
+                    // Family 선택 시 Type은 유지
                     if (implantSelectSource === "caseInfos") {
                       setCaseInfos({
                         implantFamily: value,
-                        implantType: nextType,
                       });
                       syncSelectedConnection(
                         currentManufacturer,
                         currentBrand,
                         value,
-                        nextType,
+                        currentType,
                       );
                       return;
                     }
                     setImplantFamily(value);
-                    setImplantType(nextType);
                     syncSelectedConnection(
                       currentManufacturer,
                       currentBrand,
                       value,
-                      nextType,
+                      currentType,
                     );
                     setCaseInfos({
                       implantFamily: value,
-                      implantType: nextType,
                     });
                   }}
                   disabled={implantDisabled || !currentBrand}

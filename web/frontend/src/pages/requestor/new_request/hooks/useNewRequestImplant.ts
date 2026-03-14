@@ -94,9 +94,10 @@ export const useNewRequestImplant = ({
     loadImplantPresets();
   }, [token]);
 
-  // clinicName / connections 에 따라 기본 임플란트 선택
+  // clinicName 입력 시 Family(Regular)와 Type(Hex)만 초기값으로 설정
+  // Manufacturer와 Brand는 사용자가 선택하도록 함
   useEffect(() => {
-    // 이미 임플란트 정보가 구체적으로 설정되어 있다면 덮어쓰지 않는다.
+    // 이미 모든 임플란트 정보가 설정되어 있다면 덮어쓰지 않는다.
     if (implantManufacturer && implantBrand && implantFamily && implantType) {
       return;
     }
@@ -104,73 +105,32 @@ export const useNewRequestImplant = ({
     const applyDefaults = async () => {
       try {
         if (!clinicName) {
+          // clinicName이 없으면 모든 필드를 초기화 (비활성화)
+          if (
+            implantManufacturer ||
+            implantBrand ||
+            implantFamily ||
+            implantType
+          ) {
+            setImplantManufacturer("");
+            setImplantBrand("");
+            setImplantFamily("");
+            setImplantType("");
+            setSelectedConnectionId(null);
+          }
           return;
         }
 
-        const list = connections;
+        // clinicName이 입력되면 Family와 Type만 초기값으로 설정
+        // Manufacturer와 Brand는 사용자가 선택하도록 함
+        const nextFamily = "Regular";
+        const nextType = "Hex";
 
-        const preferred = list.find(
-          (c) =>
-            c.family === "Regular" && c.type === "Hex" && c.isActive !== false,
-        ) as
-          | {
-              manufacturer?: string;
-              brand?: string;
-              family?: string;
-              type?: string;
-            }
-          | undefined;
-
-        const fallbackFirst = list[0] as
-          | {
-              manufacturer?: string;
-              brand?: string;
-              family?: string;
-              type?: string;
-            }
-          | undefined;
-
-        const baseManufacturer =
-          preferred?.manufacturer || fallbackFirst?.manufacturer || "";
-        const baseBrand = preferred?.brand || fallbackFirst?.brand || "";
-        const baseFamily =
-          preferred?.family || fallbackFirst?.family || "Regular";
-        const baseType = preferred?.type || fallbackFirst?.type || "Hex";
-
-        if (!baseManufacturer || !baseBrand || !baseFamily || !baseType) {
-          return;
-        }
-
-        const nextManufacturer = baseManufacturer;
-        const nextBrand = baseBrand;
-        const nextFamily = baseFamily;
-        const nextType = baseType;
-
-        setImplantManufacturer(nextManufacturer);
-        setImplantBrand(nextBrand);
         setImplantFamily(nextFamily);
         setImplantType(nextType);
 
-        if (list.length > 0) {
-          const found = list.find(
-            (c) =>
-              c.manufacturer === nextManufacturer &&
-              c.brand === nextBrand &&
-              c.family === nextFamily &&
-              c.type === nextType,
-          );
-          setSelectedConnectionId(found?._id ? String(found._id) : null);
-        }
-
-        // 기본 임플란트가 설정되었을 때 caseInfos에도 반영
-        if (onDefaultImplantChange) {
-          onDefaultImplantChange({
-            implantManufacturer: nextManufacturer,
-            implantBrand: nextBrand,
-            implantFamily: nextFamily,
-            implantType: nextType,
-          });
-        }
+        // Manufacturer와 Brand는 설정하지 않음 (사용자 선택 대기)
+        // 이미 설정되어 있다면 유지
       } catch {}
     };
 
