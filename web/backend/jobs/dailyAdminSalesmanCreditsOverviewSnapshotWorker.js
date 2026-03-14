@@ -24,6 +24,7 @@ import {
 } from "../utils/krBusinessDays.js";
 
 const PERIOD_KEY = "30d";
+const REFERRAL_LEADER_ROLES = ["salesman", "devops"];
 
 function normalizeNumber(n) {
   const v = Number(n || 0);
@@ -73,7 +74,10 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
 
   const commissionRate = 0.05;
 
-  const salesmen = await User.find({ role: "salesman", active: true })
+  const salesmen = await User.find({
+    role: { $in: REFERRAL_LEADER_ROLES },
+    active: true,
+  })
     .select({ _id: 1 })
     .lean();
   const salesmanObjectIds = (salesmen || []).map((s) => s?._id).filter(Boolean);
@@ -165,7 +169,7 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
 
   // 직계1 영업자
   const childSalesmen = await User.find({
-    role: "salesman",
+    role: { $in: REFERRAL_LEADER_ROLES },
     active: true,
     referredByBusinessId: { $in: salesmanBusinessIds },
   })

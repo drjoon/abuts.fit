@@ -18,6 +18,8 @@ import {
 import AdminSalesmanCreditsOverviewSnapshot from "../../models/adminSalesmanCreditsOverviewSnapshot.model.js";
 import { buildSalesmanReferralAggregation } from "./adminCredit.salesmanAggregation.js";
 
+const REFERRAL_LEADER_ROLES = ["salesman", "devops"];
+
 function normalizeNumber(n) {
   const v = Number(n || 0);
   if (!Number.isFinite(v)) return 0;
@@ -203,7 +205,10 @@ export async function recalcAdminSalesmanCreditsOverviewSnapshot({
   const ymd = getTodayYmdInKst();
   if (!ymd) return null;
 
-  const salesmen = await User.find({ role: "salesman", active: true })
+  const salesmen = await User.find({
+    role: { $in: REFERRAL_LEADER_ROLES },
+    active: true,
+  })
     .select({ _id: 1 })
     .lean();
   const salesmanIds = (salesmen || [])
@@ -892,7 +897,9 @@ export async function adminGetSalesmanCredits(req, res) {
       ? new Date(endDateRaw)
       : (defaultRange?.end ?? null);
 
-    const salesmen = await User.find({ role: "salesman" })
+    const salesmen = await User.find({
+      role: { $in: REFERRAL_LEADER_ROLES },
+    })
       .select({ _id: 1, name: 1, email: 1, referralCode: 1, active: 1 })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -1083,7 +1090,9 @@ export async function adminGetSalesmanCredits(req, res) {
       };
     });
 
-    const total = await User.countDocuments({ role: "salesman" });
+    const total = await User.countDocuments({
+      role: { $in: REFERRAL_LEADER_ROLES },
+    });
     return res.json({ success: true, data: { items, total, skip, limit } });
   } catch (error) {
     console.error("adminGetSalesmanCredits error:", error);

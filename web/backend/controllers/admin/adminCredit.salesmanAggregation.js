@@ -2,6 +2,8 @@ import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import { Types } from "mongoose";
 
+const REFERRAL_LEADER_ROLES = ["salesman", "devops"];
+
 function normalizeObjectIdString(value) {
   const id = String(value || "").trim();
   return id && Types.ObjectId.isValid(id) ? id : "";
@@ -84,7 +86,7 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
       .select({ _id: 1, referredByBusinessId: 1, businessId: 1 })
       .lean(),
     User.find({
-      role: "salesman",
+      role: { $in: REFERRAL_LEADER_ROLES },
       referredByBusinessId: { $in: salesmanBusinessObjectIds },
       active: true,
     })
@@ -116,7 +118,8 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
     if (parentSalesmanId) {
       referredSalesmanCountBySalesmanId.set(
         parentSalesmanId,
-        Number(referredSalesmanCountBySalesmanId.get(parentSalesmanId) || 0) + 1,
+        Number(referredSalesmanCountBySalesmanId.get(parentSalesmanId) || 0) +
+          1,
       );
     }
   }
@@ -136,7 +139,9 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
 
   const directOrgIdsBySalesmanId = new Map();
   for (const user of directRequestors || []) {
-    const parentBusinessId = normalizeObjectIdString(user?.referredByBusinessId);
+    const parentBusinessId = normalizeObjectIdString(
+      user?.referredByBusinessId,
+    );
     const salesmanId = salesmanIdByBusinessId.get(parentBusinessId) || "";
     const businessId = normalizeObjectIdString(user?.businessId);
     addToSetMap(directOrgIdsBySalesmanId, salesmanId, businessId);
@@ -189,7 +194,10 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
             _id: "$businessId",
             revenueAmount: {
               $sum: {
-                $ifNull: ["$price.paidAmount", { $ifNull: ["$price.amount", 0] }],
+                $ifNull: [
+                  "$price.paidAmount",
+                  { $ifNull: ["$price.amount", 0] },
+                ],
               },
             },
             bonusAmount: { $sum: { $ifNull: ["$price.bonusAmount", 0] } },

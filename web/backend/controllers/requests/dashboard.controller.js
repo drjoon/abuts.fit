@@ -296,7 +296,7 @@ export async function getMyReferralDirectMembers(req, res) {
 
     const role = String(requestor?.role || req.user?.role || "requestor");
 
-    if (role === "salesman") {
+    if (role === "salesman" || role === "devops") {
       const refBusinessId = String(requestor?.businessId || "").trim();
       const refBusinessFilter =
         refBusinessId && Types.ObjectId.isValid(refBusinessId)
@@ -321,7 +321,7 @@ export async function getMyReferralDirectMembers(req, res) {
         User.find({
           ...refBusinessFilter,
           active: true,
-          role: "salesman",
+          role: { $in: ["salesman", "devops"] },
         })
           .select({ _id: 1, name: 1, email: 1, business: 1, createdAt: 1 })
           .sort({ createdAt: -1 })
@@ -1293,7 +1293,7 @@ export async function getMyPricingReferralStats(req, res) {
           ? await User.find({
               referredByBusinessId: new Types.ObjectId(refBusinessId),
               active: true,
-              role: { $in: ["requestor", "salesman"] },
+              role: { $in: ["requestor", "salesman", "devops"] },
             })
               .select({ _id: 1 })
               .lean()

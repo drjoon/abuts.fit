@@ -68,9 +68,13 @@ async function runDailySnapshot(ymd, range) {
 
   const { start: rangeStart, end: rangeEnd } = range;
 
-  // 모든 그룹 리더(영업자 + 의뢰자 owner) 조회
+  // 모든 그룹 리더(영업자/개발운영사 + 의뢰자 owner) 조회
   const leaders = await User.find({
-    $or: [{ role: "salesman" }, { role: "requestor", requestorRole: "owner" }],
+    $or: [
+      { role: "salesman" },
+      { role: "devops" },
+      { role: "requestor", requestorRole: "owner" },
+    ],
     active: true,
   })
     .select({ _id: 1, role: 1, businessId: 1 })
@@ -95,7 +99,7 @@ async function runDailySnapshot(ymd, range) {
   // 직계 자식 조회 (그룹 멤버 수 계산용)
   const directChildren = await User.find({
     referredByBusinessId: { $in: leaderBusinessIds },
-    role: { $in: ["requestor", "salesman"] },
+    role: { $in: ["requestor", "salesman", "devops"] },
     active: true,
   })
     .select({ _id: 1, referredByBusinessId: 1, businessId: 1, role: 1 })
