@@ -42,6 +42,37 @@ const ensureUniqueReferralCode = async (length) => {
 
 const REFERRAL_ALLOWED_ROLES = new Set(["requestor", "salesman", "devops"]);
 
+async function resolveDefaultDevopsReferrerBusinessId() {
+  const defaultDevopsUser = await User.findOne({
+    role: "devops",
+    active: true,
+    businessId: { $ne: null },
+  })
+    .select({ _id: 1, businessId: 1, createdAt: 1 })
+    .sort({ createdAt: 1, _id: 1 })
+    .lean();
+
+  if (!defaultDevopsUser) {
+    throw new Error(
+      "기본 소개 개발운영사 계정을 찾을 수 없습니다. 개발운영사 사업자를 먼저 준비해주세요.",
+    );
+  }
+
+  const businessId = String(defaultDevopsUser.businessId || "").trim();
+  if (!Types.ObjectId.isValid(businessId)) {
+    throw new Error("기본 소개 개발운영사 사업자 정보가 올바르지 않습니다.");
+  }
+
+  const businessExists = await Business.exists({
+    _id: new Types.ObjectId(businessId),
+  });
+  if (!businessExists) {
+    throw new Error("기본 소개 개발운영사 사업자를 찾을 수 없습니다.");
+  }
+
+  return new Types.ObjectId(businessId);
+}
+
 async function resolveReferrerBusinessId({
   referredByUserId,
   referredByEmail,
@@ -74,7 +105,7 @@ async function resolveReferrerBusinessId({
   }
 
   if (!resolvedReferralCode && !resolvedReferralEmail) {
-    return null;
+    return resolveDefaultDevopsReferrerBusinessId();
   }
 
   let refUser = null;
