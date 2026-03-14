@@ -98,7 +98,7 @@ export const useNewRequestImplant = ({
   // Manufacturer와 Brand는 사용자가 선택하도록 함
   useEffect(() => {
     // 이미 모든 임플란트 정보가 설정되어 있다면 덮어쓰지 않는다.
-    if (implantManufacturer && implantBrand && implantFamily && implantType) {
+    if (implantFamily && implantType) {
       return;
     }
 
@@ -128,6 +128,15 @@ export const useNewRequestImplant = ({
 
         setImplantFamily(nextFamily);
         setImplantType(nextType);
+
+        if (onDefaultImplantChange) {
+          onDefaultImplantChange({
+            implantManufacturer,
+            implantBrand,
+            implantFamily: nextFamily,
+            implantType: nextType,
+          });
+        }
 
         // Manufacturer와 Brand는 설정하지 않음 (사용자 선택 대기)
         // 이미 설정되어 있다면 유지
