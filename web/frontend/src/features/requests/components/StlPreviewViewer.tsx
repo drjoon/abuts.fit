@@ -883,9 +883,11 @@ export function StlPreviewViewer({
           scene.add(taperAxisGuide);
         }
 
+        const resolvedFrontPoint = frontPointState ?? frontPoint;
+
         // Draw FrontPoint (green dot)
         let frontPointMesh: THREE.Mesh | null = null;
-        if (frontPoint && showOverlay) {
+        if (resolvedFrontPoint && showOverlay) {
           // 사이즈를 기존 0.08에서 0.02으로 축소
           const dotGeometry = new THREE.SphereGeometry(
             maxDiameter * 0.02,
@@ -895,9 +897,9 @@ export function StlPreviewViewer({
           const dotMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
           frontPointMesh = new THREE.Mesh(dotGeometry, dotMaterial);
           frontPointMesh.position.set(
-            frontPoint.x - center.x,
-            frontPoint.y - center.y,
-            frontPoint.z - center.z,
+            resolvedFrontPoint.x - center.x,
+            resolvedFrontPoint.y - center.y,
+            resolvedFrontPoint.z - center.z,
           );
           frontPointMesh.renderOrder = 999;
           // depth test disable so it is always drawn on top of the STL
@@ -1252,7 +1254,14 @@ export function StlPreviewViewer({
         containerRef.current.innerHTML = "";
       }
     };
-  }, [file, showOverlay, finishLinePoints]);
+  }, [
+    file,
+    showOverlay,
+    finishLinePoints,
+    frontPointState?.x,
+    frontPointState?.y,
+    frontPointState?.z,
+  ]);
 
   return (
     <div
