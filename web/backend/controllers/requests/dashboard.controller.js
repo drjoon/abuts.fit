@@ -412,24 +412,28 @@ export async function getMyReferralDirectMembers(req, res) {
 
       members = [...orgMembers, ...salesmanMembers];
     } else {
-      const leaderAnchorId = String(requestor?.businessAnchorId || "");
+      const leaderAnchorId = String(requestor?.businessAnchorId || "").trim();
       const referredRequestors =
         await findReferredRequestorUsersByReferrerAnchorId(leaderAnchorId);
 
-      const orgRows = Array.from(
-        new Map(
-          (referredRequestors || [])
-            .map((u) => {
-              const businessAnchorId = String(u?.businessAnchorId || "").trim();
-              if (!businessAnchorId) return null;
-              return [
-                businessAnchorId,
-                { orgKey: businessAnchorId, businessAnchorId },
-              ];
-            })
-            .filter(Boolean),
-        ).values(),
-      );
+      // 내 사업자 + 내가 직접 소개한 사업자를 모두 포함
+      const orgPairs = [];
+      if (leaderAnchorId) {
+        orgPairs.push([
+          leaderAnchorId,
+          { orgKey: leaderAnchorId, businessAnchorId: leaderAnchorId },
+        ]);
+      }
+      (referredRequestors || []).forEach((u) => {
+        const businessAnchorId = String(u?.businessAnchorId || "").trim();
+        if (!businessAnchorId) return;
+        orgPairs.push([
+          businessAnchorId,
+          { orgKey: businessAnchorId, businessAnchorId },
+        ]);
+      });
+
+      const orgRows = Array.from(new Map(orgPairs).values());
 
       const orgAnchorIds = orgRows
         .map((row) => row.businessAnchorId)

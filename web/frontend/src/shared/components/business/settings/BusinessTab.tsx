@@ -44,6 +44,7 @@ import { useBusinessDataManagement } from "@/shared/components/business/settings
 import { useBusinessSearch } from "@/shared/components/business/settings/business/useBusinessSearch";
 import { useMembershipManagement } from "@/shared/components/business/settings/business/useMembershipManagement";
 import { useFileUpload } from "@/shared/components/business/settings/business/useFileUpload";
+import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 
 interface BusinessTabProps {
   userData?: {
