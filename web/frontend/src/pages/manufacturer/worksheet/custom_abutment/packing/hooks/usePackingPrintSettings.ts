@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 
-export const usePackingPrintSettings = ({ token }: { token?: string | null }) => {
+export const usePackingPrintSettings = ({
+  token,
+}: {
+  token?: string | null;
+}) => {
   const [printerProfile, setPrinterProfile] = useState("");
   const [paperProfile, setPaperProfile] = useState("PACK_80x65");
   const [paperOptions, setPaperOptions] = useState<string[]>(["PACK_80x65"]);
@@ -10,20 +14,27 @@ export const usePackingPrintSettings = ({ token }: { token?: string | null }) =>
   const [printerLoading, setPrinterLoading] = useState(false);
   const [printerError, setPrinterError] = useState<string | null>(null);
   const [printerModalOpen, setPrinterModalOpen] = useState(false);
-  const [packOutputMode, setPackOutputMode] = useState<"image" | "label">("image");
-  const [packLabelDpi, setPackLabelDpi] = useState(203);
-  const [packLabelDots, setPackLabelDots] = useState<{ pw: number; ll: number }>({
-    pw: 520,
-    ll: 640,
+  const [packOutputMode, setPackOutputMode] = useState<"image" | "label">(
+    "image",
+  );
+  const [packLabelDpi, setPackLabelDpi] = useState(600);
+  const [packLabelDots, setPackLabelDots] = useState<{
+    pw: number;
+    ll: number;
+  }>({
+    pw: 640,
+    ll: 520,
   });
   const [packLabelDesignDots, setPackLabelDesignDots] = useState<{
     pw: number;
     ll: number;
     dpi: number;
-  }>({ pw: 520, ll: 640, dpi: 203 });
+  }>({ pw: 640, ll: 520, dpi: 203 });
 
   useEffect(() => {
-    const storedProfile = localStorage.getItem("worksheet:pack:printer:profile");
+    const storedProfile = localStorage.getItem(
+      "worksheet:pack:printer:profile",
+    );
     if (storedProfile) setPrinterProfile(storedProfile);
     const storedPaper = localStorage.getItem("worksheet:pack:paper:profile");
     if (storedPaper === "PACK_80x65") {
