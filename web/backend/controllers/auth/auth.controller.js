@@ -177,7 +177,9 @@ async function resolveReferrerTargets({
       })
       .lean();
   } else if (resolvedReferralCode) {
-    refUser = await User.findOne({ referralCode: resolvedReferralCode })
+    refUser = await User.findOne({
+      referralCode: { $regex: `^${resolvedReferralCode}$`, $options: "i" },
+    })
       .select({
         _id: 1,
         role: 1,
