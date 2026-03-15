@@ -8,6 +8,15 @@ import {
   loadCreditSettingsDefaults,
 } from "../../utils/creditSettingsDefaults.js";
 
+const isRequestorBusiness = (businessDoc) => {
+  const businessType = String(
+    businessDoc?.businessType || businessDoc?.extracted?.businessType || "",
+  )
+    .trim()
+    .toLowerCase();
+  return businessType === "requestor";
+};
+
 function normalizeBusinessNumberDigits(input) {
   const digits = String(input || "").replace(/\D/g, "");
   if (digits.length !== 10) return "";
@@ -63,7 +72,7 @@ export async function adminOverrideWelcomeBonus(req, res) {
       const org = await Business.findOne({
         "extracted.businessNumber": formatted,
       })
-        .select({ _id: 1, businessAnchorId: 1 })
+        .select({ _id: 1, businessAnchorId: 1, businessType: 1, extracted: 1 })
         .lean();
       if (!org?._id) {
         return res.status(404).json({
@@ -71,12 +80,24 @@ export async function adminOverrideWelcomeBonus(req, res) {
           message: "해당 사업자등록번호로 등록된 기공소를 찾을 수 없습니다.",
         });
       }
+      if (!isRequestorBusiness(org)) {
+        return res.status(400).json({
+          success: false,
+          message: "의뢰자 사업자에게만 무료 크레딧을 지급할 수 있습니다.",
+        });
+      }
       businessId = String(org._id);
       businessAnchorId = org?.businessAnchorId || null;
     } else {
       const org = await Business.findById(businessId)
-        .select({ businessAnchorId: 1 })
+        .select({ businessAnchorId: 1, businessType: 1, extracted: 1 })
         .lean();
+      if (!isRequestorBusiness(org)) {
+        return res.status(400).json({
+          success: false,
+          message: "의뢰자 사업자에게만 무료 크레딧을 지급할 수 있습니다.",
+        });
+      }
       businessAnchorId = org?.businessAnchorId || null;
     }
 
@@ -435,7 +456,7 @@ export async function adminGrantFreeShippingCredit(req, res) {
       const org = await Business.findOne({
         "extracted.businessNumber": formatted,
       })
-        .select({ _id: 1, businessAnchorId: 1 })
+        .select({ _id: 1, businessAnchorId: 1, businessType: 1, extracted: 1 })
         .lean();
       if (!org?._id) {
         return res.status(404).json({
@@ -443,12 +464,26 @@ export async function adminGrantFreeShippingCredit(req, res) {
           message: "해당 사업자등록번호로 등록된 기공소를 찾을 수 없습니다.",
         });
       }
+      if (!isRequestorBusiness(org)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "의뢰자 사업자에게만 배송비 무료 크레딧을 지급할 수 있습니다.",
+        });
+      }
       businessId = String(org._id);
       businessAnchorId = org?.businessAnchorId || null;
     } else {
       const org = await Business.findById(businessId)
-        .select({ businessAnchorId: 1 })
+        .select({ businessAnchorId: 1, businessType: 1, extracted: 1 })
         .lean();
+      if (!isRequestorBusiness(org)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "의뢰자 사업자에게만 배송비 무료 크레딧을 지급할 수 있습니다.",
+        });
+      }
       businessAnchorId = org?.businessAnchorId || null;
     }
 
