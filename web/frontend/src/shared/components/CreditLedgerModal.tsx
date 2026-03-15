@@ -6,6 +6,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -66,6 +67,17 @@ type CreditLedgerItem = {
     lotNumber?: {
       value?: string;
     } | null;
+  } | null;
+  caseInfos?: {
+    clinicName?: string;
+    patientName?: string;
+    tooth?: string;
+    implantManufacturer?: string;
+    implantBrand?: string;
+    implantFamily?: string;
+    implantType?: string;
+    maxDiameter?: number | null;
+    connectionDiameter?: number | null;
   } | null;
 };
 
@@ -168,25 +180,30 @@ const renderTransactionDetail = ({
   const shortCode = safeRef || formatShortCode(String(item.uniqueKey || ""));
 
   if (refType === "REQUEST") {
+    const manufacturerStage =
+      item.manufacturerStage || requestSummary?.manufacturerStage || "의뢰";
+
     return (
       <>
-        <span className="text-[11px] text-muted-foreground">
-          {refTypeLabel(refType)}
-        </span>
-        <span className="pt-1 font-mono text-xs font-semibold text-slate-900">
-          {shortCode}
-        </span>
-        <span className="pt-1 text-[11px] text-slate-700">
-          {requestSummary?.clinicName || item.clinicName || "-"} /{" "}
-          {requestSummary?.patientName || item.patientName || "-"} /{" "}
-          {requestSummary?.tooth || item.tooth || "-"}
-        </span>
-        <div className="pt-1">
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+            {manufacturerStage}
+          </Badge>
+          <span className="font-mono text-xs font-semibold text-slate-900">
+            {shortCode}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-[11px] text-slate-700">
+          <span>
+            {requestSummary?.clinicName || item.clinicName || "-"} /{" "}
+            {requestSummary?.patientName || item.patientName || "-"} /{" "}
+            {requestSummary?.tooth || item.tooth || "-"}
+          </span>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="h-6 px-2 text-[11px]"
+            className="h-5 px-1.5 text-[10px]"
             onClick={onOpenRequestDetail}
           >
             자세히 보기
@@ -213,16 +230,12 @@ const renderTransactionDetail = ({
   }
 
   if (refType === "WELCOME_BONUS") {
+    const reason = (item.bonusReason || "가입 축하 크레딧").trim();
     return (
       <>
-        <span className="text-[11px] text-muted-foreground">
-          {refTypeLabel(refType)}
-        </span>
+        <span className="text-[11px] text-slate-700">{reason}</span>
         <span className="pt-1 font-mono text-xs font-semibold text-slate-900">
           {shortCode}
-        </span>
-        <span className="pt-1 text-[11px] text-slate-700">
-          {item.bonusReason || "보너스 지급"}
         </span>
       </>
     );
@@ -375,23 +388,29 @@ export const CreditLedgerModal = ({
       item.manufacturerStage || item.refRequestSummary?.manufacturerStage || "",
     createdAt: item.createdAt,
     caseInfos: {
-      clinicName: item.clinicName || item.refRequestSummary?.clinicName || "",
+      clinicName:
+        item.caseInfos?.clinicName ||
+        item.clinicName ||
+        item.refRequestSummary?.clinicName ||
+        "",
       patientName:
-        item.patientName || item.refRequestSummary?.patientName || "",
-      tooth: item.tooth || item.refRequestSummary?.tooth || "",
+        item.caseInfos?.patientName ||
+        item.patientName ||
+        item.refRequestSummary?.patientName ||
+        "",
+      tooth:
+        item.caseInfos?.tooth ||
+        item.tooth ||
+        item.refRequestSummary?.tooth ||
+        "",
+      implantManufacturer: item.caseInfos?.implantManufacturer || "",
+      implantBrand: item.caseInfos?.implantBrand || "",
+      implantFamily: item.caseInfos?.implantFamily || "",
+      implantType: item.caseInfos?.implantType || "",
+      maxDiameter: item.caseInfos?.maxDiameter ?? null,
+      connectionDiameter: item.caseInfos?.connectionDiameter ?? null,
     },
   });
-
-  const selectedDetailLedgerRow = selectedDetail
-    ? rows.find(
-        (item) =>
-          (item.refRequestId || item.refRequestSummary?.requestId || "") ===
-          (selectedDetail.requestId || ""),
-      ) || null
-    : null;
-
-  const selectedDetailLotNumber =
-    selectedDetailLedgerRow?.lotNumber?.value || "-";
 
   return (
     <>
@@ -596,48 +615,7 @@ export const CreditLedgerModal = ({
           if (!next) setSelectedDetail(null);
         }}
         request={selectedDetail}
-        additionalContent={
-          selectedDetail ? (
-            <div className="rounded-lg border border-slate-200 p-3 space-y-2 text-sm">
-              <div className="grid grid-cols-[90px_1fr] gap-3 items-center">
-                <span className="text-slate-600">치과명</span>
-                <span className="font-medium text-right">
-                  {selectedDetail.caseInfos?.clinicName || "-"}
-                </span>
-              </div>
-              <div className="grid grid-cols-[90px_1fr] gap-3 items-center">
-                <span className="text-slate-600">환자명</span>
-                <span className="font-medium text-right">
-                  {selectedDetail.caseInfos?.patientName || "-"}
-                </span>
-              </div>
-              <div className="grid grid-cols-[90px_1fr] gap-3 items-center">
-                <span className="text-slate-600">치아번호</span>
-                <span className="font-medium text-right">
-                  {selectedDetail.caseInfos?.tooth || "-"}
-                </span>
-              </div>
-              <div className="grid grid-cols-[90px_1fr] gap-3 items-center">
-                <span className="text-slate-600">로트번호</span>
-                <span className="font-medium text-right">
-                  {selectedDetailLotNumber}
-                  {selectedDetailLedgerRow &&
-                    generateModelNumber(
-                      (selectedDetailLedgerRow as any)?.caseInfos,
-                      selectedDetailLedgerRow?.lotNumber?.value,
-                    ) && (
-                      <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-50 text-slate-600 border border-slate-200 leading-[1.2]">
-                        {generateModelNumber(
-                          (selectedDetailLedgerRow as any)?.caseInfos,
-                          selectedDetailLedgerRow?.lotNumber?.value,
-                        )}
-                      </span>
-                    )}
-                </span>
-              </div>
-            </div>
-          ) : null
-        }
+        rows={rows}
       />
     </>
   );

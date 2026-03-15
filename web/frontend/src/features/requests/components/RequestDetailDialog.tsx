@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { formatImplantDisplay } from "@/utils/implant";
 import { formatDateWithDay } from "@/utils/dateFormat";
+import { generateModelNumber } from "@/utils/modelNumber";
 
 export type RequestDetailDialogCaseInfos = {
   clinicName?: string;
@@ -28,6 +29,9 @@ export type RequestDetailDialogRequest = {
   manufacturerStage?: string;
   requestId?: string;
   createdAt?: string;
+  lotNumber?: {
+    value?: string | null;
+  } | null;
   timeline?: {
     estimatedShipYmd?: string;
   };
@@ -48,10 +52,22 @@ export type RequestDetailDialogRequest = {
   };
 };
 
+type RequestDetailDialogAssociatedRow = {
+  refRequestId?: string;
+  refRequestSummary?: {
+    requestId?: string;
+  } | null;
+  lotNumber?: {
+    value?: string | null;
+  } | null;
+  caseInfos?: RequestDetailDialogCaseInfos | null;
+};
+
 type RequestDetailDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   request?: RequestDetailDialogRequest | null;
+  rows?: RequestDetailDialogAssociatedRow[];
   description?: ReactNode;
   additionalContent?: ReactNode;
   extraBadge?: ReactNode;
@@ -117,6 +133,7 @@ export const RequestDetailDialog = ({
   open,
   onOpenChange,
   request,
+  rows = [],
   description,
   additionalContent,
   extraBadge,
@@ -124,6 +141,10 @@ export const RequestDetailDialog = ({
 }: RequestDetailDialogProps) => {
   const caseInfos = request?.caseInfos || {};
   const implantDisplay = formatImplantDisplay(caseInfos);
+  const lotNumberValue = request?.lotNumber?.value || "";
+  const modelNumberLabel = lotNumberValue
+    ? generateModelNumber(caseInfos, lotNumberValue)
+    : "";
 
   const maxDiameter = caseInfos.maxDiameter;
   const connectionDiameter = caseInfos.connectionDiameter;
@@ -136,6 +157,17 @@ export const RequestDetailDialog = ({
   const priceRule = request?.price?.rule;
   const isRemakeFixed = priceRule === "remake_fixed_10000";
 
+  const selectedDetailLedgerRow = request
+    ? rows.find(
+        (item) =>
+          (item?.refRequestId || item?.refRequestSummary?.requestId || "") ===
+          (request.requestId || ""),
+      ) || null
+    : null;
+
+  const selectedDetailLotNumber =
+    selectedDetailLedgerRow?.lotNumber?.value || "-";
+
   return (
     <Dialog
       open={open}
@@ -143,7 +175,7 @@ export const RequestDetailDialog = ({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="w-full sm:w-[48%] max-w-[560px] max-h-[80vh] overflow-y-auto">
+      <DialogContent className="sm:w-[48%] max-w-[460px] max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -168,16 +200,6 @@ export const RequestDetailDialog = ({
         </DialogHeader>
         <DialogDescription asChild>
           <div className="space-y-4 text-sm text-foreground">
-            <div className="grid grid-cols-[90px_1fr] gap-3 items-center">
-              <span className="text-slate-600">의뢰번호</span>
-              <span className="font-medium">{request?.requestId || "-"}</span>
-            </div>
-            <div className="grid grid-cols-[90px_1fr] gap-3 items-center">
-              <span className="text-slate-600">의뢰일</span>
-              <span className="font-medium">
-                {formatTimestamp(request?.createdAt)}
-              </span>
-            </div>
             {estimatedShipYmd && (
               <div className="grid grid-cols-[90px_1fr] gap-3 items-center text-blue-700 font-medium">
                 <span>발송 예정일</span>
@@ -221,8 +243,48 @@ export const RequestDetailDialog = ({
                 </span>
               </div>
             )}
-            {additionalContent}
             <div className="rounded-lg border border-slate-200 p-3 space-y-3">
+              {additionalContent && (
+                <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2 text-sm text-slate-700">
+                  {additionalContent}
+                </div>
+              )}
+              <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="text-xs text-slate-600">로트번호</div>
+                  <div className="font-mono text-sm text-slate-900">
+                    <span className="font-medium text-right">
+                      {selectedDetailLotNumber}
+                    </span>
+                  </div>
+                  {modelNumberLabel && (
+                    <div className="text-right">
+                      <div className="text-xs text-slate-600 mb-1">
+                        모델번호
+                      </div>
+                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                        {modelNumberLabel}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="text-xs text-slate-600">의뢰번호</div>
+                  <div className="font-mono text-sm text-slate-900">
+                    {request?.requestId || "-"}
+                  </div>
+                </div>
+              </div>
+              <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="text-xs text-slate-600">의뢰일</div>
+                  <div className="font-mono text-sm text-slate-900">
+                    {formatTimestamp(request?.createdAt)}
+                  </div>
+                </div>
+              </div>
               <div className="grid grid-cols-[110px_1fr] gap-2">
                 <span className="text-slate-600">치과명</span>
                 <span className="font-medium text-right">

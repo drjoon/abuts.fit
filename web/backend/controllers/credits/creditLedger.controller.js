@@ -5,16 +5,33 @@ import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import Request from "../../models/request.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 
+function normalizeNumber(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
 function buildRequestSummary(doc) {
   if (!doc?._id) return null;
+  const caseInfos = doc?.caseInfos || {};
   return {
     requestId: String(doc.requestId || ""),
     manufacturerStage: String(doc.manufacturerStage || ""),
-    patientName: String(doc?.caseInfos?.patientName || ""),
-    tooth: String(doc?.caseInfos?.tooth || ""),
-    clinicName: String(doc?.caseInfos?.clinicName || ""),
+    patientName: String(caseInfos.patientName || ""),
+    tooth: String(caseInfos.tooth || ""),
+    clinicName: String(caseInfos.clinicName || ""),
     lotNumber: {
       value: String(doc?.lotNumber?.value || ""),
+    },
+    caseInfos: {
+      clinicName: String(caseInfos.clinicName || ""),
+      patientName: String(caseInfos.patientName || ""),
+      tooth: String(caseInfos.tooth || ""),
+      implantManufacturer: String(caseInfos.implantManufacturer || ""),
+      implantBrand: String(caseInfos.implantBrand || ""),
+      implantFamily: String(caseInfos.implantFamily || ""),
+      implantType: String(caseInfos.implantType || ""),
+      maxDiameter: normalizeNumber(caseInfos.maxDiameter),
+      connectionDiameter: normalizeNumber(caseInfos.connectionDiameter),
     },
   };
 }
@@ -236,6 +253,12 @@ export async function listMyCreditLedger(req, res) {
         "caseInfos.patientName": 1,
         "caseInfos.tooth": 1,
         "caseInfos.clinicName": 1,
+        "caseInfos.implantManufacturer": 1,
+        "caseInfos.implantBrand": 1,
+        "caseInfos.implantFamily": 1,
+        "caseInfos.implantType": 1,
+        "caseInfos.maxDiameter": 1,
+        "caseInfos.connectionDiameter": 1,
       })
       .lean();
 
@@ -352,6 +375,7 @@ export async function listMyCreditLedger(req, res) {
         clinicName: requestSummary?.clinicName || "",
         manufacturerStage: requestSummary?.manufacturerStage || "",
         lotNumber: requestSummary?.lotNumber || null,
+        caseInfos: requestSummary?.caseInfos || null,
       };
     }
 
