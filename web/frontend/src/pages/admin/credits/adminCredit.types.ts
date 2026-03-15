@@ -50,6 +50,7 @@ export type SalesmanCreditRow = {
   salesmanId: string;
   name: string;
   email: string;
+  role?: string;
   referralCode?: string;
   active: boolean;
   referredSalesmanCount?: number;

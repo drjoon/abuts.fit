@@ -26,7 +26,7 @@ export default function AdminCreditPage() {
                 의뢰자
               </TabsTrigger>
               <TabsTrigger value="salesman" className="px-6 text-base">
-                소개자
+                영업자
               </TabsTrigger>
             </TabsList>
             <PeriodFilter value={state.period} onChange={setPeriod} />

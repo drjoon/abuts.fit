@@ -38,18 +38,51 @@ export function SalesmanCreditTab({
   salesmanSentinelRef,
   onOpenLedger,
 }: SalesmanCreditTabProps) {
+  const salesmanRows = salesmen.filter(
+    (s) => String(s.role || "").trim() === "salesman",
+  );
+
+  const summaryForView = {
+    totalSalesmen: salesmanRows.length,
+    totalBalance: salesmanRows.reduce(
+      (acc, s) => acc + Number(s?.wallet?.balanceAmountPeriod || 0),
+      0,
+    ),
+    totalEarned: salesmanRows.reduce(
+      (acc, s) =>
+        acc +
+        Number(
+          (s?.performance30d?.myCommissionAmount ?? 0) +
+            (s?.performance30d?.level1CommissionAmount ?? 0),
+        ),
+      0,
+    ),
+    totalPaidOut: salesmanRows.reduce(
+      (acc, s) => acc + Number(s?.wallet?.paidOutAmountPeriod || 0),
+      0,
+    ),
+    totalReferredRevenue30d: salesmanRows.reduce(
+      (acc, s) => acc + Number(s?.performance30d?.revenueAmount || 0),
+      0,
+    ),
+    totalReferredBonus30d: salesmanRows.reduce(
+      (acc, s) => acc + Number(s?.performance30d?.bonusAmount || 0),
+      0,
+    ),
+  };
+
   return (
     <TabsContent value="salesman" className="space-y-4">
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">총 소개자 수</CardTitle>
+            <CardTitle className="text-sm font-medium">총 영업자 수</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
               {loadingSalesmanOverview
                 ? "..."
-                : salesmanSummary.totalSalesmen.toLocaleString()}
+                : summaryForView.totalSalesmen.toLocaleString()}
             </div>
           </CardContent>
         </Card>
@@ -64,21 +97,21 @@ export function SalesmanCreditTab({
               {loadingSalesmanOverview
                 ? "..."
                 : `${(
-                    Number(salesmanSummary.totalReferredRevenue30d || 0) +
-                    Number(salesmanSummary.totalReferredBonus30d || 0)
+                    Number(summaryForView.totalReferredRevenue30d || 0) +
+                    Number(summaryForView.totalReferredBonus30d || 0)
                   ).toLocaleString()}원`}
             </div>
             <div className="text-xs text-muted-foreground">
               유료{" "}
               {Number(
-                salesmanSummary.totalReferredRevenue30d || 0,
+                summaryForView.totalReferredRevenue30d || 0,
               ).toLocaleString()}
               원
             </div>
             <div className="text-xs text-muted-foreground">
               무료{" "}
               {Number(
-                salesmanSummary.totalReferredBonus30d || 0,
+                summaryForView.totalReferredBonus30d || 0,
               ).toLocaleString()}
               원
             </div>
@@ -92,15 +125,15 @@ export function SalesmanCreditTab({
             <div className="text-2xl font-bold">
               {loadingSalesmanOverview
                 ? "..."
-                : `${salesmanSummary.totalEarned.toLocaleString()}원`}
+                : `${summaryForView.totalEarned.toLocaleString()}원`}
             </div>
             <div className="text-xs text-muted-foreground">
               수수료율{" "}
               {(() => {
                 const base = Number(
-                  salesmanSummary.totalReferredRevenue30d || 0,
+                  summaryForView.totalReferredRevenue30d || 0,
                 );
-                const comm = Number(salesmanSummary.totalEarned || 0);
+                const comm = Number(summaryForView.totalEarned || 0);
                 if (base <= 0) return "-";
                 return `${((comm / base) * 100).toFixed(1)}%`;
               })()}
@@ -115,7 +148,7 @@ export function SalesmanCreditTab({
             <div className="text-2xl font-bold">
               {loadingSalesmanOverview
                 ? "..."
-                : `${salesmanSummary.totalBalance.toLocaleString()}원`}
+                : `${summaryForView.totalBalance.toLocaleString()}원`}
             </div>
           </CardContent>
         </Card>
@@ -127,7 +160,7 @@ export function SalesmanCreditTab({
             <div className="text-2xl font-bold">
               {loadingSalesmanOverview
                 ? "..."
-                : `${salesmanSummary.totalPaidOut.toLocaleString()}원`}
+                : `${summaryForView.totalPaidOut.toLocaleString()}원`}
             </div>
           </CardContent>
         </Card>
@@ -137,7 +170,7 @@ export function SalesmanCreditTab({
         <CardHeader>
           <div className="flex items-center justify-between gap-2">
             <div>
-              <CardTitle>소개자 크레딧</CardTitle>
+              <CardTitle>영업자 크레딧</CardTitle>
             </div>
             <div className="w-[170px]">
               <select
@@ -158,9 +191,9 @@ export function SalesmanCreditTab({
             <div className="text-center py-8 text-muted-foreground">
               불러오는 중...
             </div>
-          ) : salesmen.length === 0 ? (
+          ) : salesmanRows.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              소개자 데이터가 없습니다.
+              영업자 데이터가 없습니다.
             </div>
           ) : (
             <div
@@ -168,7 +201,7 @@ export function SalesmanCreditTab({
               className="h-[60vh] overflow-y-auto pr-1"
             >
               <div className="grid gap-4 md:grid-cols-3">
-                {[...salesmen]
+                {[...salesmanRows]
                   .sort((a, b) => {
                     if (salesmanSortKey === "balance") {
                       return (

@@ -24,12 +24,16 @@ export function RequestorOrganizationsTab({
   orgSentinelRef,
   onOpenLedger,
 }: RequestorOrganizationsTabProps) {
+  const requestorBusinesses = businesses.filter(
+    (b) => b.businessType === "requestor",
+  );
+
   return (
     <TabsContent value="organizations" className="space-y-4">
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-2">
-            <CardTitle>사업자별 크레딧 현황</CardTitle>
+            <CardTitle>의뢰자 크레딧</CardTitle>
             <div className="w-[180px]">
               <select
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
@@ -51,13 +55,13 @@ export function RequestorOrganizationsTab({
             </div>
           ) : (
             <div ref={orgScrollRef} className="h-[60vh] overflow-y-auto pr-1">
-              {businesses.length === 0 && !loadingOrgs ? (
+              {requestorBusinesses.length === 0 && !loadingOrgs ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  사업자가 없습니다.
+                  의뢰자가 없습니다.
                 </div>
               ) : (
                 <div className="grid gap-4 md:grid-cols-3">
-                  {[...businesses]
+                  {[...requestorBusinesses]
                     .sort((a, b) => {
                       if (orgSortKey === "paidBalance") {
                         return (
