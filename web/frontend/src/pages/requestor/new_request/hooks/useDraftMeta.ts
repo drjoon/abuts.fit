@@ -192,6 +192,12 @@ export function useDraftMeta() {
   }, [token, user?.id, loadDraftMeta, createDraft, saveDraftMeta]);
 
   const createFreshDraftState = useCallback(async () => {
+    if (patchTimeoutRef.current) {
+      clearTimeout(patchTimeoutRef.current);
+      patchTimeoutRef.current = null;
+    }
+    lastPatchMapRef.current = null;
+
     if (!token || !user?.id) {
       setDraftId(null);
       setCaseInfosMap({ ...emptyMap });

@@ -324,6 +324,19 @@ export function NewRequestDetailsSection({
     }
   }, [files, selectedPreviewIndex, setSelectedPreviewIndex]);
 
+  useEffect(() => {
+    if (!isDetailOpen || !files.length) return;
+
+    const nextIndex =
+      selectedPreviewIndex !== null && files[selectedPreviewIndex]
+        ? selectedPreviewIndex
+        : 0;
+
+    if (detailIndex !== nextIndex) {
+      setDetailIndex(nextIndex);
+    }
+  }, [isDetailOpen, files, selectedPreviewIndex, detailIndex]);
+
   // 파일이 삭제되어 상세 모달이 비어 있으면 자동으로 닫는다
   useEffect(() => {
     if (isDetailOpen) {

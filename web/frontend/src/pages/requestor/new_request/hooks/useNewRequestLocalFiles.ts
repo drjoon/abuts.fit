@@ -41,12 +41,23 @@ export const useNewRequestLocalFiles = ({
 
         if (newFiles.length === 0) return;
 
-        for (const file of newFiles) {
+        const normalizedFiles = newFiles.map((file) => {
+          const normalizedName = normalize(file.name);
+          if (!normalizedName || normalizedName === file.name) {
+            return file;
+          }
+          return new File([file], normalizedName, {
+            type: file.type || "application/octet-stream",
+            lastModified: file.lastModified,
+          });
+        });
+
+        for (const file of normalizedFiles) {
           const fileKey = getFileKey(file);
           await saveFile(fileKey, file);
         }
 
-        addUploadedFiles(newFiles);
+        addUploadedFiles(normalizedFiles);
 
         setFiles((prev) => {
           const seen = new Set<string>();
@@ -60,15 +71,8 @@ export const useNewRequestLocalFiles = ({
           };
 
           prev.forEach(pushIfNew);
-          newFiles.forEach((f) => {
-            const normalizedName = normalize(f.name);
-            const baseFile =
-              normalizedName && normalizedName !== f.name
-                ? new File([f], normalizedName, {
-                    type: f.type || "application/octet-stream",
-                  })
-                : f;
-            pushIfNew(baseFile);
+          normalizedFiles.forEach((file) => {
+            pushIfNew(file);
           });
 
           return out;
@@ -77,9 +81,9 @@ export const useNewRequestLocalFiles = ({
         setSelectedPreviewIndex((prev) => (prev === null ? 0 : prev));
 
         if (updateCaseInfos) {
-          newFiles.forEach((f) => {
-            const normalizedName = normalize(f.name);
-            const fileKey = getFileKey(f);
+          normalizedFiles.forEach((file) => {
+            const normalizedName = normalize(file.name);
+            const fileKey = getFileKey(file);
             const parsed = parseFilenameWithRules(normalizedName);
 
             if (!parsed.clinicName && !parsed.patientName && !parsed.tooth) {
@@ -106,7 +110,7 @@ export const useNewRequestLocalFiles = ({
 
         toast({
           title: "파일 추가 완료",
-          description: `${newFiles.length}개 파일이 추가되었습니다.`,
+          description: `${normalizedFiles.length}개 파일이 추가되었습니다.`,
           duration: 2000,
         });
       } catch (error) {

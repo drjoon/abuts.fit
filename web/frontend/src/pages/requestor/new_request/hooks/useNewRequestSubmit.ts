@@ -47,6 +47,94 @@ export const useNewRequestSubmit = ({
     return headers;
   };
 
+  const buildClientValidationErrors = useCallback(() => {
+    return files
+      .map((file, index) => {
+        const fileKey = getFileKey(file);
+        const caseInfos = caseInfosMap?.[fileKey];
+        const reasons: string[] = [];
+
+        if (!caseInfos) {
+          reasons.push("파일 정보가 없습니다.");
+          return {
+            index,
+            fileName: file.name,
+            message: `${file.name}: ${reasons.join(" ")}`,
+          };
+        }
+
+        const clinicName = String(caseInfos.clinicName || "").trim();
+        const patientName = String(caseInfos.patientName || "").trim();
+        const tooth = String(caseInfos.tooth || "").trim();
+        const implantManufacturer = String(
+          caseInfos.implantManufacturer || "",
+        ).trim();
+        const implantBrand = String(caseInfos.implantBrand || "").trim();
+        const implantFamily = String(caseInfos.implantFamily || "").trim();
+        const implantType = String(caseInfos.implantType || "").trim();
+
+        if (!clinicName || !patientName || !tooth) {
+          const missing = [
+            !clinicName ? "치과이름" : null,
+            !patientName ? "환자이름" : null,
+            !tooth ? "치아번호" : null,
+          ]
+            .filter(Boolean)
+            .join(", ");
+          reasons.push(`필수 정보 누락 (${missing})`);
+        }
+
+        if (
+          !implantManufacturer ||
+          !implantBrand ||
+          !implantFamily ||
+          !implantType
+        ) {
+          const missing = [
+            !implantManufacturer ? "Manufacturer" : null,
+            !implantBrand ? "Brand" : null,
+            !implantFamily ? "Family" : null,
+            !implantType ? "Type" : null,
+          ]
+            .filter(Boolean)
+            .join(", ");
+          reasons.push(`임플란트 정보 누락 (${missing})`);
+        }
+
+        if (!reasons.length) {
+          return null;
+        }
+
+        return {
+          index,
+          fileName: file.name,
+          message: `${file.name}: ${reasons.join(" / ")}`,
+        };
+      })
+      .filter(Boolean) as Array<{
+      index: number;
+      fileName: string;
+      message: string;
+    }>;
+  }, [caseInfosMap, files]);
+
+  const formatBulkErrorDescription = useCallback((bulkData: any) => {
+    const errors = Array.isArray(bulkData?.errors) ? bulkData.errors : [];
+    const messages = errors
+      .map((error: any) => String(error?.message || "").trim())
+      .filter(Boolean);
+
+    if (messages.length > 0) {
+      const uniqueMessages = Array.from(new Set(messages));
+      const preview = uniqueMessages.slice(0, 3).join("\n");
+      const suffix =
+        uniqueMessages.length > 3 ? `\n외 ${uniqueMessages.length - 3}건` : "";
+      return `${preview}${suffix}`;
+    }
+
+    return bulkData?.message || "의뢰 생성에 실패했습니다.";
+  }, []);
+
   const handleSubmit = useCallback(async () => {
     if (isSubmitting) return;
     if (!token) {
@@ -107,6 +195,26 @@ export const useNewRequestSubmit = ({
           return;
         }
       } catch {}
+
+      const clientValidationErrors = buildClientValidationErrors();
+      if (clientValidationErrors.length > 0) {
+        const description = clientValidationErrors
+          .slice(0, 3)
+          .map((error) => error.message)
+          .join("\n");
+        toast({
+          title: "입력 확인 필요",
+          description:
+            clientValidationErrors.length > 3
+              ? `${description}\n외 ${clientValidationErrors.length - 3}건`
+              : description,
+          variant: "destructive",
+          duration: 7000,
+        });
+        setSelectedPreviewIndex(clientValidationErrors[0]?.index ?? 0);
+        setIsSubmitting(false);
+        return;
+      }
 
       const resolvedFiles = await Promise.all(
         files.map(async (file) => {
@@ -253,11 +361,12 @@ export const useNewRequestSubmit = ({
           });
         }
       } else {
+        const failureDescription = formatBulkErrorDescription(bulkData);
         if (creatingToast.id) {
           creatingToast.update({
             id: creatingToast.id,
             title: "의뢰 생성 실패",
-            description: bulkData?.message || "의뢰 생성에 실패했습니다.",
+            description: failureDescription,
             variant: "destructive",
           });
           alreadyNotifiedError = true;
@@ -283,8 +392,11 @@ export const useNewRequestSubmit = ({
             );
           }
         } catch {}
-        const err: any = new Error(bulkData?.message || "의뢰 생성 실패(일괄)");
+        const err: any = new Error(
+          failureDescription || bulkData?.message || "의뢰 생성 실패(일괄)",
+        );
         if (bulkData?.code) err.code = bulkData.code;
+        err.bulkErrors = bulkData?.errors;
         throw err;
       }
 
@@ -378,15 +490,18 @@ export const useNewRequestSubmit = ({
       setIsSubmitting(false);
     }
   }, [
-    isSubmitting,
-    token,
-    files,
+    buildClientValidationErrors,
     caseInfosMap,
     duplicateResolutions,
+    files,
+    formatBulkErrorDescription,
+    isSubmitting,
+    navigate,
     setFiles,
     setSelectedPreviewIndex,
-    navigate,
     toast,
+    token,
+    uploadFilesWithToast,
   ]);
 
   return {
