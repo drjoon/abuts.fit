@@ -103,15 +103,17 @@ async function getBalanceBreakdown(scope) {
   const ledgerQuery = buildLedgerQuery(scope);
   const rows = await CreditLedger.find(ledgerQuery)
     .sort({ createdAt: 1, _id: 1 })
-    .select({ type: 1, amount: 1 })
+    .select({ type: 1, amount: 1, refType: 1 })
     .lean();
 
   let paid = 0;
   let bonus = 0;
+  let freeShippingCredit = 0;
 
   for (const r of rows) {
     const type = String(r?.type || "");
     const amount = Number(r?.amount || 0);
+    const refType = String(r?.refType || "");
 
     if (!Number.isFinite(amount)) continue;
 
@@ -123,6 +125,9 @@ async function getBalanceBreakdown(scope) {
     }
     if (type === "BONUS") {
       bonus += absAmount;
+      if (refType === "FREE_SHIPPING_CREDIT") {
+        freeShippingCredit += absAmount;
+      }
       continue;
     }
     if (type === "REFUND") {
@@ -135,6 +140,11 @@ async function getBalanceBreakdown(scope) {
     }
     if (type === "SPEND") {
       let spend = absAmount;
+      if (refType === "SHIPPING_PACKAGE" || refType === "SHIPPING_FEE") {
+        const fromFreeShippingCredit = Math.min(freeShippingCredit, spend);
+        freeShippingCredit -= fromFreeShippingCredit;
+        spend -= fromFreeShippingCredit;
+      }
       const fromBonus = Math.min(bonus, spend);
       bonus -= fromBonus;
       spend -= fromBonus;
@@ -144,10 +154,12 @@ async function getBalanceBreakdown(scope) {
 
   const paidBalance = Math.max(0, Math.round(paid));
   const bonusBalance = Math.max(0, Math.round(bonus));
+  const freeShippingCreditBalance = Math.max(0, Math.round(freeShippingCredit));
   return {
     balance: paidBalance + bonusBalance,
     paidBalance,
     bonusBalance,
+    freeShippingCreditBalance,
   };
 }
 
@@ -161,7 +173,7 @@ export async function getMyCreditBalance(req, res) {
   }
 
   const scope = await getCreditScope(req);
-  const { balance, paidBalance, bonusBalance } =
+  const { balance, paidBalance, bonusBalance, freeShippingCreditBalance } =
     await getBalanceBreakdown(scope);
   console.error("[CREDIT_BALANCE_RESPONSE]", {
     userId: req.user?._id ? String(req.user._id) : null,
@@ -172,10 +184,16 @@ export async function getMyCreditBalance(req, res) {
     balance,
     paidBalance,
     bonusBalance,
+    freeShippingCreditBalance,
   });
   return res.json({
     success: true,
-    data: { balance, paidBalance, bonusBalance },
+    data: {
+      balance,
+      paidBalance,
+      bonusBalance,
+      freeShippingCreditBalance,
+    },
   });
 }
 

@@ -198,11 +198,12 @@ export async function chargeShippingFeeOnPickupComplete({
   // 배송비 무료 크레딧 예외 허용 여부 확인
   if (!allowFreeShippingCredit) {
     // 유료 크레딧 기준으로만 배송비 결제 가능
-    const { paidBalance } = await getBusinessCreditBalanceBreakdown({
-      businessAnchorId: pkg.businessAnchorId,
-    });
+    const { paidBalance, freeShippingCreditBalance } =
+      await getBusinessCreditBalanceBreakdown({
+        businessAnchorId: pkg.businessAnchorId,
+      });
 
-    if (paidBalance < fee) {
+    if (paidBalance + freeShippingCreditBalance < fee) {
       // 유료 크레딧 부족 시 배송비 결제 불가
       return false;
     }

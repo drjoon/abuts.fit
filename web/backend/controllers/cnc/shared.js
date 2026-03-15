@@ -408,7 +408,8 @@ export async function rollbackRequestToCamByRequestId(requestId) {
   if (!rollbackStages.includes(stage)) return request;
 
   try {
-    const businessAnchorId = request.businessAnchorId || request.requestor?.businessAnchorId;
+    const businessAnchorId =
+      request.businessAnchorId || request.requestor?.businessAnchorId;
     if (businessAnchorId) {
       const spendRows = await CreditLedger.find({
         businessAnchorId,
@@ -441,7 +442,10 @@ export async function rollbackRequestToCamByRequestId(requestId) {
 
       const refundAmount = Math.max(0, totalSpendAbs - totalRefund);
       if (refundAmount > 0) {
-        const refundKey = `request:${String(request._id)}:cam_approve_refund`;
+        const camRollbackCount = Number(
+          request?.caseInfos?.rollbackCounts?.cam || 0,
+        );
+        const refundKey = `request:${String(request._id)}:cam_approve_refund:${camRollbackCount}`;
         const result = await CreditLedger.updateOne(
           { uniqueKey: refundKey },
           {

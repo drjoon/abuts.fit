@@ -567,7 +567,10 @@ export async function deleteNcFileAndRollbackCam(req, res) {
 
         const refundAmount = Math.abs(totalSpend);
         if (refundAmount > 0) {
-          const uniqueKey = `request:${String(request._id)}:rollback_cam_refund`;
+          const camRollbackCount = Number(
+            request?.caseInfos?.rollbackCounts?.cam || 0,
+          );
+          const uniqueKey = `request:${String(request._id)}:rollback_cam_refund:${camRollbackCount}`;
           const result = await CreditLedger.updateOne(
             { uniqueKey },
             {

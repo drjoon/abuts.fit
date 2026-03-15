@@ -64,6 +64,7 @@ type DashboardOutletContext = {
   creditBalance: number | null;
   paidBalance: number | null;
   bonusBalance: number | null;
+  freeShippingCreditBalance: number | null;
   loadingCreditBalance: boolean;
 };
 
@@ -71,8 +72,13 @@ export const RequestorDashboardPage = () => {
   const { user, token } = useAuthStore();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { creditBalance, paidBalance, bonusBalance, loadingCreditBalance } =
-    useOutletContext<DashboardOutletContext>();
+  const {
+    creditBalance,
+    paidBalance,
+    bonusBalance,
+    freeShippingCreditBalance,
+    loadingCreditBalance,
+  } = useOutletContext<DashboardOutletContext>();
   const { data: systemSettings } = useSystemSettings();
 
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
@@ -276,6 +282,7 @@ export const RequestorDashboardPage = () => {
     if (
       summaryResponse?.success &&
       paidBalance !== null &&
+      freeShippingCreditBalance !== null &&
       systemSettings?.creditSettings
     ) {
       const stats = summaryResponse.data.stats ?? {};
@@ -291,13 +298,16 @@ export const RequestorDashboardPage = () => {
         inRequest + inCam + inProduction + inPacking + inShipping;
 
       // 유료 크레딧이 배송비보다 적으면 배송비 충전 경고
-      if (totalInProgress > 0 && paidBalance < shippingFee) {
+      if (
+        totalInProgress > 0 &&
+        paidBalance + freeShippingCreditBalance < shippingFee
+      ) {
         setInsufficientShippingCredit(true);
       } else {
         setInsufficientShippingCredit(false);
       }
     }
-  }, [summaryResponse, paidBalance, systemSettings]);
+  }, [freeShippingCreditBalance, paidBalance, summaryResponse, systemSettings]);
 
   const {
     data: bulkResponse,

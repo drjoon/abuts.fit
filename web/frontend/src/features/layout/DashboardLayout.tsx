@@ -158,6 +158,9 @@ export const DashboardLayout = () => {
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [paidBalance, setPaidBalance] = useState<number | null>(null);
   const [bonusBalance, setBonusBalance] = useState<number | null>(null);
+  const [freeShippingCreditBalance, setFreeShippingCreditBalance] = useState<
+    number | null
+  >(null);
   const [loadingCreditBalance, setLoadingCreditBalance] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -293,12 +296,14 @@ export const DashboardLayout = () => {
       setCreditBalance(null);
       setPaidBalance(null);
       setBonusBalance(null);
+      setFreeShippingCreditBalance(null);
       return;
     }
     if (!(user as any).businessAnchorId) {
       setCreditBalance(null);
       setPaidBalance(null);
       setBonusBalance(null);
+      setFreeShippingCreditBalance(null);
       return;
     }
 
@@ -313,6 +318,7 @@ export const DashboardLayout = () => {
         setCreditBalance(null);
         setPaidBalance(null);
         setBonusBalance(null);
+        setFreeShippingCreditBalance(null);
         return;
       }
       const body: any = res.data || {};
@@ -320,10 +326,14 @@ export const DashboardLayout = () => {
       setCreditBalance(Number(data?.balance ?? 0));
       setPaidBalance(Number(data?.paidBalance ?? 0));
       setBonusBalance(Number(data?.bonusBalance ?? 0));
+      setFreeShippingCreditBalance(
+        Number(data?.freeShippingCreditBalance ?? 0),
+      );
     } catch {
       setCreditBalance(null);
       setPaidBalance(null);
       setBonusBalance(null);
+      setFreeShippingCreditBalance(null);
     } finally {
       setLoadingCreditBalance(false);
     }
@@ -365,24 +375,7 @@ export const DashboardLayout = () => {
         return;
       }
 
-      const delta = Number(payload?.balanceDelta || 0);
-      if (!Number.isFinite(delta) || delta === 0) {
-        void fetchCreditBalance();
-        return;
-      }
-
-      setCreditBalance((prev) => {
-        if (prev === null || !Number.isFinite(Number(prev))) {
-          void fetchCreditBalance();
-          return prev;
-        }
-        const newBalance = Number(prev) + delta;
-        setPaidBalance((pb) => {
-          if (pb === null) return pb;
-          return Math.max(0, pb + delta);
-        });
-        return newBalance;
-      });
+      void fetchCreditBalance();
     });
 
     return () => {
@@ -950,6 +943,7 @@ export const DashboardLayout = () => {
                           creditBalance,
                           paidBalance,
                           bonusBalance,
+                          freeShippingCreditBalance,
                           loadingCreditBalance,
                         }}
                       />

@@ -82,16 +82,18 @@ export async function getBusinessCreditBalanceBreakdown({
 }) {
   const rows = await CreditLedger.find({ businessAnchorId })
     .sort({ createdAt: 1, _id: 1 })
-    .select({ type: 1, amount: 1 })
+    .select({ type: 1, amount: 1, refType: 1 })
     .session(session || null)
     .lean();
 
   let paid = 0;
   let bonus = 0;
+  let freeShippingCredit = 0;
 
   for (const r of rows) {
     const type = String(r?.type || "");
     const amount = Number(r?.amount || 0);
+    const refType = String(r?.refType || "");
     if (!Number.isFinite(amount)) continue;
 
     if (type === "CHARGE") {
@@ -100,6 +102,9 @@ export async function getBusinessCreditBalanceBreakdown({
     }
     if (type === "BONUS") {
       bonus += amount;
+      if (refType === "FREE_SHIPPING_CREDIT") {
+        freeShippingCredit += amount;
+      }
       continue;
     }
     if (type === "REFUND") {
@@ -112,6 +117,11 @@ export async function getBusinessCreditBalanceBreakdown({
     }
     if (type === "SPEND") {
       let spend = Math.abs(amount);
+      if (refType === "SHIPPING_PACKAGE" || refType === "SHIPPING_FEE") {
+        const fromFreeShippingCredit = Math.min(freeShippingCredit, spend);
+        freeShippingCredit -= fromFreeShippingCredit;
+        spend -= fromFreeShippingCredit;
+      }
       const fromBonus = Math.min(bonus, spend);
       bonus -= fromBonus;
       spend -= fromBonus;
@@ -121,10 +131,12 @@ export async function getBusinessCreditBalanceBreakdown({
 
   const paidBalance = Math.max(0, Math.round(paid));
   const bonusBalance = Math.max(0, Math.round(bonus));
+  const freeShippingCreditBalance = Math.max(0, Math.round(freeShippingCredit));
   return {
     balance: paidBalance + bonusBalance,
     paidBalance,
     bonusBalance,
+    freeShippingCreditBalance,
   };
 }
 

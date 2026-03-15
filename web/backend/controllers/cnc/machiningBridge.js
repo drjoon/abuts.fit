@@ -9,6 +9,7 @@ import {
   ensureLotNumberForMachining,
   normalizeRequestForResponse,
 } from "../../controllers/requests/utils.js";
+import { ensureRequestCreditSpendOnMachiningEnter } from "../../controllers/requests/common.review.helpers.js";
 import Machine from "../../models/machine.model.js";
 import {
   BRIDGE_BASE,
@@ -1221,10 +1222,22 @@ export async function recordMachiningCompleteForBridge(req, res) {
         // CNC 가공 완료 시 제조 단계는 세척/패킹 단계로 전환한다.
         // status/manufacturerStage enum 은 '세척.패킹' 을 사용한다.
         applyStatusMapping(request, "세척.패킹");
+        const resolvedBusinessAnchorId = String(
+          request.businessAnchorId || request.requestor?.businessAnchorId || "",
+        ).trim();
+        const isNewSystemFree =
+          request?.caseInfos?.newSystemRequest?.requested &&
+          request?.caseInfos?.newSystemRequest?.free;
+        if (resolvedBusinessAnchorId && !isNewSystemFree) {
+          await ensureRequestCreditSpendOnMachiningEnter({
+            request,
+            businessAnchorId: resolvedBusinessAnchorId,
+            actorUserId: null,
+          });
+        }
         if (!request.mailboxAddress) {
           try {
-            const requestorOrgId =
-              request.businessAnchorId || request.requestor?.businessAnchorId;
+            const requestorOrgId = resolvedBusinessAnchorId;
             request.mailboxAddress =
               await allocateVirtualMailboxAddress(requestorOrgId);
           } catch (err) {

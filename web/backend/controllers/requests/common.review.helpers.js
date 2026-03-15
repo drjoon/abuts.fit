@@ -30,7 +30,8 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
 }) {
   if (!request || !businessAnchorId) return;
 
-  const uniqueKey = `request:${String(request._id)}:machining_spend`;
+  const camRollbackCount = Number(request?.caseInfos?.rollbackCounts?.cam || 0);
+  const uniqueKey = `request:${String(request._id)}:machining_spend:${camRollbackCount}`;
   const existingSpend = await CreditLedger.findOne({ uniqueKey })
     .select({ _id: 1 })
     .session(session || null)
