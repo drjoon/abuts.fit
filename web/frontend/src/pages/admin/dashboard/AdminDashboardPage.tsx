@@ -4,8 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useAdminDashboardData } from "./hooks/useAdminDashboardData";
-import { useMemo } from "react";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { RequestorRiskSummaryCard } from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
@@ -68,17 +66,6 @@ const getAlertIcon = (type: string) => {
 };
 
 export const AdminDashboardPage = () => {
-  const { data, loading } = useAdminDashboardData();
-  const isRequestorBusiness = useMemo(() => {
-    const type = String(
-      data?.business?.businessType ||
-        data?.business?.extracted?.businessType ||
-        "",
-    )
-      .trim()
-      .toLowerCase();
-    return type === "requestor";
-  }, [data?.business]);
   const { user, token } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
   const queryClient = useQueryClient();
@@ -319,13 +306,7 @@ export const AdminDashboardPage = () => {
         statsGridClassName="flex flex-col gap-3"
         topSection={
           <div className="grid grid-cols-1 gap-3 items-stretch">
-            {isRequestorBusiness ? (
-              <RequestorRiskSummaryCard riskSummary={riskSummary} />
-            ) : (
-              <div className="rounded-xl border border-dashed bg-white/70 p-4 text-sm text-muted-foreground">
-                무료 크레딧은 의뢰자 사업자에만 적용됩니다.
-              </div>
-            )}
+            <RequestorRiskSummaryCard riskSummary={riskSummary} />
           </div>
         }
         stats={

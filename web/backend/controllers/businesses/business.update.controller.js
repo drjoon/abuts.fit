@@ -1,4 +1,5 @@
 import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import { verifyBusinessNumber } from "../../services/hometax.service.js";
@@ -22,6 +23,99 @@ import {
   grantWelcomeBonusIfEligible,
   grantFreeShippingCreditIfEligible,
 } from "./business.bonus.util.js";
+
+async function ensureBusinessAnchorForBusiness({
+  business,
+  businessType,
+  userId,
+  referredByAnchorId,
+}) {
+  if (!business?._id) return null;
+
+  const businessNumberNormalized = normalizeBusinessNumber(
+    business?.extracted?.businessNumber || "",
+  )
+    .replace(/\D/g, "")
+    .trim();
+  if (!businessNumberNormalized) return null;
+
+  const nextName = String(
+    business?.name || business?.extracted?.companyName || "",
+  ).trim();
+  if (!nextName) return null;
+
+  const existingAnchor = await BusinessAnchor.findOne({
+    businessNumberNormalized,
+  })
+    .select({ _id: 1, referredByAnchorId: 1 })
+    .lean();
+
+  const anchor = await BusinessAnchor.findOneAndUpdate(
+    { businessNumberNormalized },
+    {
+      $set: {
+        businessType,
+        name: nextName,
+        status: business?.verification?.verified ? "verified" : "active",
+        primaryContactUserId: userId || null,
+        sourceBusinessId: business._id,
+        "metadata.companyName": String(
+          business?.extracted?.companyName || business?.name || "",
+        ).trim(),
+        "metadata.representativeName": String(
+          business?.extracted?.representativeName || "",
+        ).trim(),
+        "metadata.address": String(business?.extracted?.address || "").trim(),
+        "metadata.addressDetail": String(
+          business?.extracted?.addressDetail || "",
+        ).trim(),
+        "metadata.zipCode": String(business?.extracted?.zipCode || "").trim(),
+        "metadata.phoneNumber": String(
+          business?.extracted?.phoneNumber || "",
+        ).trim(),
+        "metadata.email": String(business?.extracted?.email || "").trim(),
+        "metadata.businessItem": String(
+          business?.extracted?.businessItem || "",
+        ).trim(),
+        "metadata.businessCategory": String(
+          business?.extracted?.businessType || "",
+        ).trim(),
+        "metadata.startDate": String(
+          business?.extracted?.startDate || "",
+        ).trim(),
+      },
+      $setOnInsert: {
+        referredByAnchorId: referredByAnchorId || null,
+        defaultReferralAnchorId: referredByAnchorId || null,
+      },
+    },
+    {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+    },
+  );
+
+  const anchorId = anchor?._id || existingAnchor?._id || null;
+  if (!anchorId) return null;
+
+  await Business.updateOne(
+    { _id: business._id },
+    { $set: { businessAnchorId: anchorId } },
+  );
+  await User.updateMany(
+    { businessId: business._id },
+    { $set: { businessAnchorId: anchorId, business: nextName } },
+  );
+  if (userId) {
+    await User.updateOne(
+      { _id: userId },
+      { $set: { businessId: business._id, businessAnchorId: anchorId } },
+    );
+  }
+
+  return anchorId;
+}
 
 export async function updateMyBusiness(req, res) {
   try {
@@ -48,7 +142,7 @@ export async function updateMyBusiness(req, res) {
     const shippingPolicyProvided = hasOwnKey(req.body, "shippingPolicy");
 
     const freshUser = await User.findById(req.user._id)
-      .select({ businessId: 1, business: 1 })
+      .select({ businessId: 1, business: 1, referredByAnchorId: 1 })
       .lean();
     const effectiveBusinessId =
       freshUser?.businessId || req.user.businessId || null;
@@ -449,11 +543,19 @@ export async function updateMyBusiness(req, res) {
         });
       }
 
+      const attachedAnchorId = await ensureBusinessAnchorForBusiness({
+        business: attachToBusiness,
+        businessType,
+        userId: req.user._id,
+        referredByAnchorId: freshUser?.referredByAnchorId || null,
+      });
+
       return res.json({
         success: true,
         data: {
           attached: true,
           businessId: attachToBusiness._id,
+          businessAnchorId: attachedAnchorId,
           businessName: attachToBusiness.name,
         },
       });
@@ -520,6 +622,13 @@ export async function updateMyBusiness(req, res) {
           { new: true },
         );
 
+        const createdAnchorId = await ensureBusinessAnchorForBusiness({
+          business: created,
+          businessType,
+          userId: req.user._id,
+          referredByAnchorId: freshUser?.referredByAnchorId || null,
+        });
+
         const priorLedgerCount = originalBusinessId
           ? await CreditLedger.countDocuments({
               businessId: originalBusinessId,
@@ -550,6 +659,7 @@ export async function updateMyBusiness(req, res) {
           data: {
             created: true,
             businessId: created._id,
+            businessAnchorId: createdAnchorId,
             businessName: created.name,
             verification: created.verification || null,
             welcomeBonusGranted: !!welcomeBonusAmount,
@@ -607,7 +717,7 @@ export async function updateMyBusiness(req, res) {
       });
       await Business.findByIdAndUpdate(business._id, update);
       const persistedBusiness = await Business.findById(business._id)
-        .select({ name: 1, extracted: 1, verification: 1 })
+        .select({ name: 1, extracted: 1, verification: 1, businessAnchorId: 1 })
         .lean();
       console.info("[Business] updateMyBusiness persisted result", {
         businessId: String(persistedBusiness?._id || business?._id || ""),
@@ -642,6 +752,19 @@ export async function updateMyBusiness(req, res) {
           ).trim(),
         },
         businessVerified: Boolean(persistedBusiness?.verification?.verified),
+      });
+
+      await ensureBusinessAnchorForBusiness({
+        business: {
+          _id: business._id,
+          name: persistedBusiness?.name || business?.name || "",
+          extracted: persistedBusiness?.extracted || business?.extracted || {},
+          verification:
+            persistedBusiness?.verification || business?.verification || {},
+        },
+        businessType,
+        userId: req.user._id,
+        referredByAnchorId: freshUser?.referredByAnchorId || null,
       });
     } catch (e) {
       if (isDuplicateKeyError(e)) {

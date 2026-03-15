@@ -35,19 +35,21 @@ export default function AdminCreditPage() {
           <div className="flex items-center gap-2">
             <div className="text-xs text-muted-foreground text-right">
               <div>
-                마지막 재계산{' '}
+                마지막 재계산{" "}
                 {state.loadingSnapshotStatus
-                  ? '...'
+                  ? "..."
                   : state.snapshotStatus?.lastComputedAt
-                    ? new Date(state.snapshotStatus.lastComputedAt).toLocaleString('ko-KR')
-                    : '-'}
+                    ? new Date(
+                        state.snapshotStatus.lastComputedAt,
+                      ).toLocaleString("ko-KR")
+                    : "-"}
               </div>
               <div>
-                기준{' '}
+                기준{" "}
                 {state.snapshotStatus?.baseYmd
                   ? `${state.snapshotStatus.baseYmd} 자정 기준 30일`
-                  : '-'}
-                {state.snapshotStatus?.snapshotMissing ? ' · 누락' : ''}
+                  : "-"}
+                {state.snapshotStatus?.snapshotMissing ? " · 누락" : ""}
               </div>
             </div>
             <SnapshotRecalcAllButton
@@ -80,7 +82,9 @@ export default function AdminCreditPage() {
               state.setOrgLedgerOpen(true);
             }}
             selectedBonusBusinessAnchorId={state.selectedBonusBusinessAnchorId}
-            setSelectedBonusBusinessAnchorId={state.setSelectedBonusBusinessAnchorId}
+            setSelectedBonusBusinessAnchorId={
+              state.setSelectedBonusBusinessAnchorId
+            }
             bonusGrantSearch={state.bonusGrantSearch}
             setBonusGrantSearch={state.setBonusGrantSearch}
             loadBonusGrantHistory={state.loadBonusGrantHistory}
@@ -89,12 +93,18 @@ export default function AdminCreditPage() {
             setFreeCreditMenu={state.setFreeCreditMenu}
             grantCreditType={state.grantCreditType}
             setGrantCreditType={state.setGrantCreditType}
-            selectedShippingCreditBusinessAnchorId={state.selectedShippingCreditBusinessAnchorId}
-            setSelectedShippingCreditBusinessAnchorId={state.setSelectedShippingCreditBusinessAnchorId}
+            selectedShippingCreditBusinessAnchorId={
+              state.selectedShippingCreditBusinessAnchorId
+            }
+            setSelectedShippingCreditBusinessAnchorId={
+              state.setSelectedShippingCreditBusinessAnchorId
+            }
             selectedBonusAmount={state.selectedBonusAmount}
             setSelectedBonusAmount={state.setSelectedBonusAmount}
             selectedShippingCreditAmount={state.selectedShippingCreditAmount}
-            setSelectedShippingCreditAmount={state.setSelectedShippingCreditAmount}
+            setSelectedShippingCreditAmount={
+              state.setSelectedShippingCreditAmount
+            }
             bonusReason={state.bonusReason}
             setBonusReason={state.setBonusReason}
             shippingCreditReason={state.shippingCreditReason}
@@ -104,7 +114,9 @@ export default function AdminCreditPage() {
             grantingBonus={state.grantingBonus}
             grantingShippingCredit={state.grantingShippingCredit}
             selectedBonusBusiness={state.selectedBonusBusiness}
-            selectedShippingCreditBusiness={state.selectedShippingCreditBusiness}
+            selectedShippingCreditBusiness={
+              state.selectedShippingCreditBusiness
+            }
             cancelStartDate={state.cancelStartDate}
             setCancelStartDate={state.setCancelStartDate}
             cancelEndDate={state.cancelEndDate}
@@ -132,7 +144,6 @@ export default function AdminCreditPage() {
             chargeOrders={state.chargeOrders}
             orderScrollRef={state.orderScrollRef}
             orderSentinelRef={state.orderSentinelRef}
-            setSelectedOrder={state.setSelectedOrder}
             setApproveModalOpen={state.setApproveModalOpen}
             setRejectNote={state.setRejectNote}
             setRejectModalOpen={state.setRejectModalOpen}

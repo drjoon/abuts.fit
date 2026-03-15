@@ -1,11 +1,5 @@
 import type { RefObject } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TabsContent } from "@/components/ui/tabs";
 import type { BusinessCredit } from "../adminCredit.types";
 
@@ -109,7 +103,7 @@ export function RequestorOrganizationsTab({
                             <CardTitle className="text-base">
                               {business.name}
                             </CardTitle>
-                            <CardDescription className="space-y-1">
+                            <div className="space-y-1 text-sm text-muted-foreground">
                               <div>{business.companyName || "-"}</div>
                               <div className="font-mono text-xs">
                                 {business.businessNumber || "-"}
@@ -121,7 +115,7 @@ export function RequestorOrganizationsTab({
                                 {business.ownerName || "-"} ·{" "}
                                 {business.ownerEmail || "-"}
                               </div>
-                            </CardDescription>
+                            </div>
                           </CardHeader>
                           <CardContent className="grid grid-cols-2 gap-3 text-sm">
                             <div>

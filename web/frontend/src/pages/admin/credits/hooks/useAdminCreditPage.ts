@@ -430,28 +430,42 @@ export function useAdminCreditPage() {
     if (!token) return;
     const businessAnchorId = String(selectedBonusBusinessAnchorId || "").trim();
     const reason = String(bonusReason || "").trim();
-    if (!businessAnchorId)
-      return toast({
+    if (!businessAnchorId) {
+      toast({
         title: "지급 대상 선택 필요",
         description: "무료 크레딧을 지급할 사업자를 선택해주세요.",
         variant: "destructive",
       });
-    if (!reason)
-      return toast({
+      return;
+    }
+    if (!reason) {
+      toast({
         title: "지급 이유 입력 필요",
         description: "무료 크레딧 지급 이유를 입력해주세요.",
         variant: "destructive",
       });
+      return;
+    }
     const targetBusiness = businesses.find(
       (business) => String(business._id) === businessAnchorId,
     );
+    if (String(targetBusiness?.businessType || "").trim() !== "requestor") {
+      toast({
+        title: "지급 대상 제한",
+        description: "무료 크레딧은 의뢰자 사업자에게만 지급할 수 있습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
     const businessNumber = String(targetBusiness?.businessNumber || "").trim();
-    if (!businessNumber)
-      return toast({
+    if (!businessNumber) {
+      toast({
         title: "사업자등록번호 없음",
         description: "선택한 사업자의 사업자등록번호를 확인할 수 없습니다.",
         variant: "destructive",
       });
+      return;
+    }
     setGrantingBonus(true);
     try {
       const res = await request<ApiMessageResponse>({
@@ -500,28 +514,43 @@ export function useAdminCreditPage() {
       selectedShippingCreditBusinessAnchorId || "",
     ).trim();
     const reason = String(shippingCreditReason || "").trim();
-    if (!businessAnchorId)
-      return toast({
+    if (!businessAnchorId) {
+      toast({
         title: "지급 대상 선택 필요",
         description: "배송비 무료 크레딧을 지급할 사업자를 선택해주세요.",
         variant: "destructive",
       });
-    if (!reason)
-      return toast({
+      return;
+    }
+    if (!reason) {
+      toast({
         title: "지급 이유 입력 필요",
         description: "배송비 무료 크레딧 지급 이유를 입력해주세요.",
         variant: "destructive",
       });
+      return;
+    }
     const targetBusiness = businesses.find(
       (business) => String(business._id) === businessAnchorId,
     );
+    if (String(targetBusiness?.businessType || "").trim() !== "requestor") {
+      toast({
+        title: "지급 대상 제한",
+        description:
+          "배송비 무료 크레딧은 의뢰자 사업자에게만 지급할 수 있습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
     const businessNumber = String(targetBusiness?.businessNumber || "").trim();
-    if (!businessNumber)
-      return toast({
+    if (!businessNumber) {
+      toast({
         title: "사업자등록번호 없음",
         description: "선택한 사업자의 사업자등록번호를 확인할 수 없습니다.",
         variant: "destructive",
       });
+      return;
+    }
     setGrantingShippingCredit(true);
     try {
       const res = await request<ApiMessageResponse>({
@@ -601,18 +630,22 @@ export function useAdminCreditPage() {
     if (!token) return;
     const grantId = String(selectedCancelGrantId || "").trim();
     const reason = String(cancelGrantReason || "").trim();
-    if (!grantId)
-      return toast({
+    if (!grantId) {
+      toast({
         title: "취소 대상 선택 필요",
         description: "취소할 지급 내역을 선택해주세요.",
         variant: "destructive",
       });
-    if (!reason)
-      return toast({
+      return;
+    }
+    if (!reason) {
+      toast({
         title: "취소 사유 입력 필요",
         description: "무료 크레딧 지급 취소 사유를 입력해주세요.",
         variant: "destructive",
       });
+      return;
+    }
     const selectedGrant = bonusGrantRows.find((r) => String(r._id) === grantId);
     if (selectedGrant?.hasSpent)
       toast({

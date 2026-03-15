@@ -86,14 +86,15 @@
 - 주문, 크레딧, 정산, 소개 스냅샷, 관리자 overview 스냅샷은 **`businessAnchorId` 기준** 집계/귀속을 기본으로 합니다.
 - `Business`는 멤버십/조직 UI/운영 컨테이너로만 남기고, 법적 식별/소개/정산 SSOT 책임은 `BusinessAnchor`로 이동합니다.
 - DB 리셋 전제 작업에서는 레거시 `businessId`, `organizationId`, `referredByBusinessId` 호환을 두지 않고 **`businessAnchorId` / `referredByAnchorId` 단일 소스**를 사용합니다.
-
-**크레딧 및 집계 SSOT:**
-
-- `CreditLedger`, `ChargeOrder`, `TaxInvoiceDraft` 등 사업자 귀속 금전 모델의 canonical 키는 **`businessAnchorId`** 입니다.
-- 크레딧 조회/집계/러닝밸런스 계산은 **항상 `businessAnchorId` 기준**으로 수행합니다.
-- 백엔드 크레딧 관련 컨트롤러(`adminCredit.controller.js`, `creditLedger.controller.js`, `credit.controller.js` 등)의 쿼리/집계는 레거시 fallback 없이 `businessAnchorId`만 사용합니다.
-- 프론트 관리자 크레딧 페이지(`AdminCreditPage`)와 관련 모달은 조직 선택/표시/실시간 동기화 시 **`businessAnchorId`만** 사용합니다.
-- 크레딧 생성 지점(`upsertBonusLedger`, bonus grant 등)은 `Business.businessAnchorId`를 조회하여 `CreditLedger.businessAnchorId`에 저장합니다.
+- 온보딩/사업자 설정 저장 시 사업자등록번호가 검증되면 **`BusinessAnchor`를 즉시 생성 또는 upsert** 하고, `Business.businessAnchorId` 및 해당 사업자 소속 `User.businessAnchorId`를 함께 동기화합니다.
+- **정말 필수적인 초기값 외에는 fallback을 추가하지 않습니다.** 값이 비어 있으면 프론트에 숨겨 문제를 드러내고, 저장/동기화의 근본 원인을 수정합니다.
+- 꼭 fallback 구현이 필요하면 **반드시 사용자 승인 후** 반영합니다.
+- 크레딧 및 집계 SSOT:
+  - `ChargeOrder`, `CreditLedger`, `TaxInvoiceDraft` 등 사업자 귀속 금전 모델의 canonical 키는 **`businessAnchorId`** 입니다.
+  - 크레딧 조회/집계/러닝밸런스 계산은 **항상 `businessAnchorId` 기준**으로 수행합니다.
+  - 백엔드 크레딧 관련 컨트롤러(`adminCredit.controller.js`, `creditLedger.controller.js`, `credit.controller.js` 등)의 쿼리/집계는 레거시 fallback 없이 `businessAnchorId`만 사용합니다.
+  - 프론트 관리자 크레딧 페이지(`AdminCreditPage`)와 관련 모달은 조직 선택/표시/실시간 동기화 시 **`businessAnchorId`만** 사용합니다.
+  - 크레딧 생성 지점(`upsertBonusLedger`, bonus grant 등)은 `Business.businessAnchorId`를 조회하여 `CreditLedger.businessAnchorId`에 저장합니다.
 
 ### 2.4 수익 분배 (매출 100 기준)
 
@@ -295,6 +296,7 @@
 - **유료 크레딧**: 의뢰 결제 + 배송비 결제 모두 가능
 - **무료 크레딧**: 의뢰 결제만 가능 (배송비 결제 불가)
 - **무료 배송비 크레딧**: 배송비 결제만 가능 (의뢰 결제 불가)
+- 관리자 무료 크레딧(`WELCOME_BONUS`, `FREE_SHIPPING_CREDIT`) 지급 대상은 **의뢰자 사업자(`requestor`)만** 허용합니다. `admin`, `manufacturer`, `salesman`, `devops` 사업자에는 프론트/백엔드 모두 지급을 막습니다.
 
 **신규의뢰 크레딧 검증:**
 

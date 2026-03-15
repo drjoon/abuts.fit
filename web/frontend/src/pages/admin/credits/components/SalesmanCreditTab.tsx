@@ -1,12 +1,6 @@
 import type { RefObject } from "react";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TabsContent } from "@/components/ui/tabs";
 import type { SalesmanCreditRow } from "../adminCredit.types";
 
@@ -211,12 +205,12 @@ export function SalesmanCreditTab({
                             <CardTitle className="text-base">
                               {s.name}
                             </CardTitle>
-                            <CardDescription className="space-y-1">
+                            <div className="space-y-1 text-sm text-muted-foreground">
                               <div>{s.email}</div>
                               <div className="font-mono">
                                 code: {s.referralCode || "-"}
                               </div>
-                            </CardDescription>
+                            </div>
                           </div>
                           <Badge variant={s.active ? "default" : "secondary"}>
                             {s.active ? "활성" : "비활성"}

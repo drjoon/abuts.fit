@@ -1,4 +1,9 @@
-export type AdminCreditLedgerType = "CHARGE" | "BONUS" | "SPEND" | "REFUND" | "ADJUST";
+export type AdminCreditLedgerType =
+  | "CHARGE"
+  | "BONUS"
+  | "SPEND"
+  | "REFUND"
+  | "ADJUST";
 
 export type AdminLedgerItem = {
   _id: string;
@@ -102,6 +107,7 @@ export type SalesmanCreditsOverview = {
 export type BusinessCredit = {
   _id: string;
   businessAnchorId?: string | null;
+  businessType?: string;
   name: string;
   companyName: string;
   businessNumber: string;

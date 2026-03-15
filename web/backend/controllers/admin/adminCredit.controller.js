@@ -1354,7 +1354,13 @@ export async function adminGetBusinessCredits(req, res) {
     const skip = Math.max(Number(req.query.skip) || 0, 0);
 
     const orgs = await Business.find({})
-      .select({ name: 1, owner: 1, extracted: 1, businessAnchorId: 1 })
+      .select({
+        name: 1,
+        owner: 1,
+        extracted: 1,
+        businessAnchorId: 1,
+        businessType: 1,
+      })
       .sort({ createdAt: -1 })
       .lean();
 
@@ -1567,6 +1573,7 @@ export async function adminGetBusinessCredits(req, res) {
       return {
         _id: org._id,
         businessAnchorId: lookupKey || org.businessAnchorId || null,
+        businessType: String(org.businessType || "").trim(),
         name: org.name,
         ownerName: ownerInfo?.name || "",
         ownerEmail: ownerInfo?.email || "",
