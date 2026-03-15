@@ -51,6 +51,31 @@ function emitWorksheetStageChanged(request, payload = {}) {
   });
 }
 
+function assertAndClaimManufacturerRequestAccess({ req, request }) {
+  if (req?.user?.role !== "manufacturer") return;
+  if (!request) {
+    const err = new Error("의뢰를 찾을 수 없습니다.");
+    err.statusCode = 404;
+    throw err;
+  }
+  const currentManufacturerId = request?.caManufacturer
+    ? String(request.caManufacturer)
+    : "";
+  const actorManufacturerId = req?.user?._id ? String(req.user._id) : "";
+  if (
+    currentManufacturerId &&
+    actorManufacturerId &&
+    currentManufacturerId !== actorManufacturerId
+  ) {
+    const err = new Error("다른 제조사에 배정된 의뢰입니다.");
+    err.statusCode = 403;
+    throw err;
+  }
+  if (!currentManufacturerId && req?.user?._id) {
+    request.caManufacturer = req.user._id;
+  }
+}
+
 export async function deleteStageFile(req, res) {
   try {
     const { id } = req.params;
@@ -86,6 +111,15 @@ export async function deleteStageFile(req, res) {
       return res
         .status(404)
         .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    try {
+      assertAndClaimManufacturerRequestAccess({ req, request });
+    } catch (accessError) {
+      return res.status(accessError?.statusCode || 403).json({
+        success: false,
+        message: accessError?.message || "접근 권한이 없습니다.",
+      });
     }
 
     request.caseInfos = request.caseInfos || {};
@@ -293,6 +327,8 @@ export async function updateReviewStatusByStage(req, res) {
         throw err;
       }
 
+      assertAndClaimManufacturerRequestAccess({ req, request });
+
       if (status === "APPROVED" && effectiveStage === "request") {
         await ensureMachineCompatibilityOrThrow({
           request,
@@ -318,8 +354,11 @@ export async function updateReviewStatusByStage(req, res) {
           if (directBusinessAnchorId) return directBusinessAnchorId;
           const requestorBusinessAnchorId = request.requestor?.businessAnchorId;
           if (!requestorBusinessAnchorId) return null;
-          const requestorBusinessAnchorIdStr = String(requestorBusinessAnchorId);
-          if (!Types.ObjectId.isValid(requestorBusinessAnchorIdStr)) return null;
+          const requestorBusinessAnchorIdStr = String(
+            requestorBusinessAnchorId,
+          );
+          if (!Types.ObjectId.isValid(requestorBusinessAnchorIdStr))
+            return null;
           return typeof requestorBusinessAnchorId === "string"
             ? new Types.ObjectId(requestorBusinessAnchorIdStr)
             : requestorBusinessAnchorId;
@@ -471,8 +510,9 @@ export async function updateReviewStatusByStage(req, res) {
             if (!request.mailboxAddress) {
               try {
                 const requestorBusinessAnchorId = resolvedBusinessAnchorId;
-                request.mailboxAddress =
-                  await allocateVirtualMailboxAddress(requestorBusinessAnchorId);
+                request.mailboxAddress = await allocateVirtualMailboxAddress(
+                  requestorBusinessAnchorId,
+                );
               } catch (err) {
                 console.error("[MAILBOX_ALLOCATION_ERROR]", err);
               }
@@ -492,8 +532,9 @@ export async function updateReviewStatusByStage(req, res) {
               console.log(
                 `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 할당 시작 - 사업자 anchor ID: ${requestorBusinessAnchorId}`,
               );
-              request.mailboxAddress =
-                await allocateVirtualMailboxAddress(requestorBusinessAnchorId);
+              request.mailboxAddress = await allocateVirtualMailboxAddress(
+                requestorBusinessAnchorId,
+              );
               console.log(
                 `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 할당 완료: ${request.mailboxAddress}`,
               );

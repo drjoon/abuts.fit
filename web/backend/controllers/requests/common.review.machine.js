@@ -1,10 +1,30 @@
 import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
+import BridgeSetting from "../../models/bridgeSetting.model.js";
 import {
   buildMachineQueueLoadMap,
   inferCurrentMaterialDiameter,
   inferDiameterGroupFromValue,
 } from "../cnc/distribution.utils.js";
+
+function isMachineOnlineStatus(status) {
+  const s = String(status || "")
+    .trim()
+    .toUpperCase();
+  return ["OK", "ONLINE", "RUN", "RUNNING", "IDLE", "STOP"].includes(s);
+}
+
+function isAssignableMachine({
+  machineMeta,
+  ignoreAllowAssign,
+  mockCncMachiningEnabled,
+}) {
+  const online = isMachineOnlineStatus(machineMeta?.lastStatus?.status);
+  const assignAllowed = ignoreAllowAssign
+    ? true
+    : machineMeta?.allowRequestAssign !== false;
+  return assignAllowed && (online || mockCncMachiningEnabled === true);
+}
 
 // Machine compatibility metadata builder
 export function buildMachineCompatibilityMeta({
@@ -142,8 +162,18 @@ export async function chooseMachineForCamMachining({
     ignoreAllowAssign,
   });
 
+  const bridgeSetting = await BridgeSetting.findById("default")
+    .select({ mockCncMachiningEnabled: 1 })
+    .lean();
+  const mockCncMachiningEnabled =
+    bridgeSetting?.mockCncMachiningEnabled === true;
+
   const cncMachines = await CncMachine.find({ status: "active" })
-    .select({ machineId: 1, maxModelDiameterGroups: 1, currentMaterial: 1 })
+    .select({
+      machineId: 1,
+      maxModelDiameterGroups: 1,
+      currentMaterial: 1,
+    })
     .lean();
   const machineIds = cncMachines
     .map((m) => String(m?.machineId || "").trim())
@@ -151,7 +181,12 @@ export async function chooseMachineForCamMachining({
 
   // session을 전달하여 같은 트랜잭션 내 lastAssignmentAt 업데이트를 반영
   const machineQuery = Machine.find({ uid: { $in: machineIds } })
-    .select({ uid: 1, allowRequestAssign: 1, lastAssignmentAt: 1 })
+    .select({
+      uid: 1,
+      allowRequestAssign: 1,
+      lastAssignmentAt: 1,
+      lastStatus: 1,
+    })
     .lean();
   const machineFlags = session
     ? await machineQuery.session(session)
@@ -161,18 +196,20 @@ export async function chooseMachineForCamMachining({
       .map((m) => [String(m?.uid || "").trim(), m])
       .filter(([uid]) => Boolean(uid)),
   );
-  const allowAssignSet = new Set(
-    machineFlags
-      .filter((m) => m?.allowRequestAssign !== false)
-      .map((m) => String(m?.uid || "").trim())
-      .filter(Boolean),
-  );
-
   const candidatesWithDia = cncMachines
     .map((m) => {
       const machineId = String(m?.machineId || "").trim();
       if (!machineId) return null;
-      if (!ignoreAllowAssign && !allowAssignSet.has(machineId)) return null;
+      const machineMeta = machineFlagMap.get(machineId) || null;
+      if (
+        !isAssignableMachine({
+          machineMeta,
+          ignoreAllowAssign,
+          mockCncMachiningEnabled,
+        })
+      ) {
+        return null;
+      }
       const materialDia = inferCurrentMaterialDiameter(m);
       if (!Number.isFinite(materialDia) || materialDia <= 0) {
         console.warn(
@@ -184,7 +221,6 @@ export async function chooseMachineForCamMachining({
         return null;
       }
       const availableDia = materialDia;
-      const machineMeta = machineFlagMap.get(machineId) || null;
       // reservedLastAssignmentMap에 값이 있으면 우선 사용 (같은 배치 작업 내 배정 추적)
       const lastAssignmentAt = reservedLastAssignmentMap?.has(machineId)
         ? reservedLastAssignmentMap.get(machineId)
@@ -208,7 +244,7 @@ export async function chooseMachineForCamMachining({
 
   if (!candidatesWithDia.length) {
     throw new Error(
-      "배정 가능한 장비(allowRequestAssign) 또는 소재 직경 정보를 찾을 수 없습니다.",
+      "배정 가능한 online 장비(allowRequestAssign) 또는 소재 직경 정보를 찾을 수 없습니다.",
     );
   }
 
@@ -238,7 +274,7 @@ export async function chooseMachineForCamMachining({
   if (!pool.length) {
     if (!candidatesWithDia.length) {
       const err = new Error(
-        "배정 가능한 장비(allowRequestAssign) 또는 소재 직경 정보를 찾을 수 없습니다.",
+        "배정 가능한 online 장비(allowRequestAssign) 또는 소재 직경 정보를 찾을 수 없습니다.",
       );
       err.statusCode = 409;
       err.code = "NO_ASSIGNABLE_MACHINE";

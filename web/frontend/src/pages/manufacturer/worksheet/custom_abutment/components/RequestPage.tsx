@@ -121,10 +121,7 @@ export const RequestPage = ({
 
         const path = (() => {
           const url = new URL(basePath, window.location.origin);
-          url.searchParams.set(
-            "page",
-            String(pageState.pageRefForCore.current),
-          );
+          url.searchParams.set("page", String(pageRef.current));
           url.searchParams.set("limit", String(PAGE_LIMIT));
           url.searchParams.set("view", "worksheet");
           url.searchParams.set("includeTotal", "0");
@@ -197,11 +194,17 @@ export const RequestPage = ({
             );
           }
           pageState.hasMoreRefForCore.current = list.length >= PAGE_LIMIT;
+          hasMoreRef.current = list.length >= PAGE_LIMIT;
+        } else {
+          pageState.hasMoreRefForCore.current = false;
+          hasMoreRef.current = false;
         }
 
         return list as ManufacturerRequest[];
       } catch (error) {
         console.error("Error fetching requests:", error);
+        pageState.hasMoreRefForCore.current = false;
+        hasMoreRef.current = false;
         if (!silent) {
           toast({
             title: "의뢰 불러오기 실패",

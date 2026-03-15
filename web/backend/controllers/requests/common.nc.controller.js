@@ -13,6 +13,31 @@ import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
 import { triggerEspritForNc } from "./common.review.esprit.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 
+function assertAndClaimManufacturerRequestAccess({ req, request }) {
+  if (req?.user?.role !== "manufacturer") return;
+  if (!request) {
+    const err = new Error("의뢰를 찾을 수 없습니다.");
+    err.statusCode = 404;
+    throw err;
+  }
+  const currentManufacturerId = request?.caManufacturer
+    ? String(request.caManufacturer)
+    : "";
+  const actorManufacturerId = req?.user?._id ? String(req.user._id) : "";
+  if (
+    currentManufacturerId &&
+    actorManufacturerId &&
+    currentManufacturerId !== actorManufacturerId
+  ) {
+    const err = new Error("다른 제조사에 배정된 의뢰입니다.");
+    err.statusCode = 403;
+    throw err;
+  }
+  if (!currentManufacturerId && req?.user?._id) {
+    request.caManufacturer = req.user._id;
+  }
+}
+
 const BRIDGE_BASE = process.env.BRIDGE_BASE;
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
 
@@ -327,6 +352,15 @@ export async function saveNcFileAndMoveToMachining(req, res) {
       return res
         .status(404)
         .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    try {
+      assertAndClaimManufacturerRequestAccess({ req, request });
+    } catch (accessError) {
+      return res.status(accessError?.statusCode || 403).json({
+        success: false,
+        message: accessError?.message || "접근 권한이 없습니다.",
+      });
     }
 
     let resolvedBridgePath = String(filePath || "").trim();

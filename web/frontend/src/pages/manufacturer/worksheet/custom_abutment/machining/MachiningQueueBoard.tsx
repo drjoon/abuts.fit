@@ -111,6 +111,33 @@ export const MachiningQueueBoard = ({
     [machines, toast, updateMachineAuto],
   );
 
+  const displayMachines = useMemo(() => {
+    const base = Array.isArray(filteredMachines) ? filteredMachines : [];
+    const knownIds = new Set(
+      base.map((m: any) => String(m?.uid || "").trim()).filter(Boolean),
+    );
+    const unassignedQueue = Array.isArray(queueMap?.unassigned)
+      ? queueMap.unassigned
+      : [];
+
+    if (!unassignedQueue.length || knownIds.has("unassigned")) {
+      return base;
+    }
+
+    return [
+      {
+        uid: "unassigned",
+        name: "미배정",
+        status: "offline",
+        allowRequestAssign: true,
+        allowAutoMachining: false,
+        currentMaterial: null,
+        maxModelDiameterGroups: [],
+      },
+      ...base,
+    ];
+  }, [filteredMachines, queueMap]);
+
   return (
     <div
       className="space-y-4"
@@ -187,7 +214,7 @@ export const MachiningQueueBoard = ({
       </div>
 
       <div className="grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 p-4 pb-8">
-        {filteredMachines.map((m) => {
+        {displayMachines.map((m) => {
           const statusFromStore = statusByUid?.[m.uid];
           const local = machineStatusMap?.[m.uid] ?? null;
           const mergedStatus: MachineStatus | null = local

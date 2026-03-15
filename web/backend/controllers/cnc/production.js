@@ -5,6 +5,7 @@ import {
 } from "./shared.js";
 import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
+import BridgeSetting from "../../models/bridgeSetting.model.js";
 import {
   MACHINING_ASSIGN_STAGE_SET,
   normalizeDiameterGroupValue,
@@ -15,13 +16,306 @@ import {
   getMachiningLoadWeight,
 } from "./distribution.utils.js";
 
+function isMachineOnlineStatus(status) {
+  const s = String(status || "")
+    .trim()
+    .toUpperCase();
+  return ["OK", "ONLINE", "RUNNING", "IDLE", "STOP"].includes(s);
+}
+
+function isAssignableMachine({ machineMeta, mockCncMachiningEnabled }) {
+  const online = isMachineOnlineStatus(machineMeta?.lastStatus?.status);
+  return (
+    machineMeta?.allowRequestAssign !== false &&
+    (online || mockCncMachiningEnabled === true)
+  );
+}
+
+async function resolveManufacturerMachineScope(req) {
+  if (!req?.user || req.user.role !== "manufacturer") {
+    return {
+      requestFilter: {},
+      machineFilter: {},
+      machineIds: null,
+    };
+  }
+
+  const machineFilter = {
+    $or: [
+      { manufacturerBusinessId: req.user.businessId },
+      { manufacturer: req.user._id },
+    ],
+  };
+
+  const ownedMachines = await Machine.find(machineFilter)
+    .select({ uid: 1 })
+    .lean();
+  const machineIds = ownedMachines
+    .map((m) => String(m?.uid || "").trim())
+    .filter(Boolean);
+
+  return {
+    requestFilter: {},
+    machineFilter,
+    machineIds,
+  };
+}
+
+async function rebalanceProductionQueuesInternal({ req, scope }) {
+  const requests = await Request.find({
+    manufacturerStage: { $in: MACHINING_ASSIGN_STAGE_SET },
+    ...scope.requestFilter,
+  })
+    .select(
+      "_id requestId manufacturerStage productionSchedule assignedMachine caseInfos",
+    )
+    .populate({
+      path: "productionSchedule.machiningRecord",
+      select: "status startedAt completedAt machineId",
+    });
+
+  const cncMachineQuery = {
+    status: "active",
+    ...(Array.isArray(scope.machineIds) && scope.machineIds.length
+      ? { machineId: { $in: scope.machineIds } }
+      : {}),
+  };
+
+  const bridgeSetting = await BridgeSetting.findById("default")
+    .select({ mockCncMachiningEnabled: 1 })
+    .lean();
+  const mockCncMachiningEnabled =
+    bridgeSetting?.mockCncMachiningEnabled === true;
+
+  const cncMachines = await CncMachine.find(cncMachineQuery)
+    .select({
+      machineId: 1,
+      maxModelDiameterGroups: 1,
+      currentMaterial: 1,
+    })
+    .lean();
+
+  const machineUids = cncMachines
+    .map((m) => String(m?.machineId || "").trim())
+    .filter(Boolean);
+
+  const machineFlags = await Machine.find({ uid: { $in: machineUids } })
+    .select({ uid: 1, allowRequestAssign: 1, lastStatus: 1 })
+    .lean();
+
+  const machineFlagMap = new Map(
+    machineFlags
+      .map((m) => [String(m?.uid || "").trim(), m])
+      .filter(([uid]) => Boolean(uid)),
+  );
+
+  const eligibleMachineSet = new Set(
+    cncMachines
+      .map((cncMachine) => {
+        const uid = String(cncMachine?.machineId || "").trim();
+        if (!uid) return null;
+        const machineMeta = machineFlagMap.get(uid) || null;
+        if (!machineMeta) return null;
+        return isAssignableMachine({
+          machineMeta,
+          mockCncMachiningEnabled,
+        })
+          ? uid
+          : null;
+      })
+      .filter(Boolean),
+  );
+
+  const machinesByGroup = new Map();
+  for (const m of cncMachines) {
+    const uid = String(m?.machineId || "").trim();
+    if (!uid || !eligibleMachineSet.has(uid)) continue;
+    const materialGroup = inferMaterialDiameterGroup(m);
+    const groups = materialGroup
+      ? [materialGroup]
+      : Array.isArray(m?.maxModelDiameterGroups)
+        ? m.maxModelDiameterGroups
+            .map((g) => normalizeDiameterGroupValue(g))
+            .filter(Boolean)
+        : [];
+    for (const g of groups) {
+      const key = normalizeDiameterGroupValue(g);
+      if (!key) continue;
+      if (!machinesByGroup.has(key)) machinesByGroup.set(key, []);
+      machinesByGroup.get(key).push(uid);
+    }
+  }
+
+  const queueCounts = new Map();
+  for (const uid of eligibleMachineSet) {
+    queueCounts.set(uid, 0);
+  }
+
+  const assignmentsByMachine = new Map();
+  const ops = [];
+  const sortedRequests = [...requests].sort((a, b) => {
+    const aRunning = isMachiningInProgress(a);
+    const bRunning = isMachiningInProgress(b);
+    if (aRunning !== bRunning) return aRunning ? -1 : 1;
+
+    const aPos = Number(a?.productionSchedule?.queuePosition ?? 0);
+    const bPos = Number(b?.productionSchedule?.queuePosition ?? 0);
+    const aPosOk = Number.isFinite(aPos) && aPos > 0;
+    const bPosOk = Number.isFinite(bPos) && bPos > 0;
+    if (aPosOk && bPosOk && aPos !== bPos) return aPos - bPos;
+    if (aPosOk !== bPosOk) return aPosOk ? -1 : 1;
+
+    const aTime = a.productionSchedule?.scheduledShipPickup || new Date(0);
+    const bTime = b.productionSchedule?.scheduledShipPickup || new Date(0);
+    const diff = aTime - bTime;
+    if (diff !== 0) return diff;
+
+    return String(a?.requestId || "").localeCompare(String(b?.requestId || ""));
+  });
+
+  for (const reqItem of sortedRequests) {
+    const group = inferRequestDiameterGroup(reqItem);
+    const rawCandidates = machinesByGroup.get(group) || [];
+    const candidates = Array.from(
+      new Set(
+        rawCandidates
+          .map((uid) => String(uid || "").trim())
+          .filter((uid) => uid && queueCounts.has(uid)),
+      ),
+    ).sort((a, b) => String(a).localeCompare(String(b)));
+    if (!candidates.length) continue;
+
+    const lockedMachineId = String(
+      reqItem?.productionSchedule?.machiningRecord?.machineId ||
+        reqItem?.productionSchedule?.assignedMachine ||
+        reqItem?.assignedMachine ||
+        "",
+    ).trim();
+    const isLocked =
+      isMachiningInProgress(reqItem) || isMachiningCompleted(reqItem);
+    const isCompleted = isMachiningCompleted(reqItem);
+
+    if (isLocked && lockedMachineId && candidates.includes(lockedMachineId)) {
+      if (!isCompleted) {
+        const load = getMachiningLoadWeight(reqItem);
+        queueCounts.set(
+          lockedMachineId,
+          (queueCounts.get(lockedMachineId) || 0) + load,
+        );
+      }
+
+      if (!assignmentsByMachine.has(lockedMachineId)) {
+        assignmentsByMachine.set(lockedMachineId, []);
+      }
+      assignmentsByMachine.get(lockedMachineId).push(reqItem);
+      continue;
+    }
+
+    let selected = null;
+    let minCount = Infinity;
+    const tied = [];
+
+    for (const uid of candidates) {
+      const count = queueCounts.get(uid) || 0;
+      if (count < minCount) {
+        minCount = count;
+        tied.length = 0;
+        tied.push(uid);
+      } else if (count === minCount) {
+        tied.push(uid);
+      }
+    }
+
+    if (tied.length === 1) {
+      selected = tied[0];
+    } else if (tied.length > 1) {
+      const assignCounts = tied.map((uid) => ({
+        uid,
+        count: assignmentsByMachine.get(uid)?.length || 0,
+      }));
+
+      assignCounts.sort((a, b) => {
+        if (a.count !== b.count) return a.count - b.count;
+        return a.uid.localeCompare(b.uid);
+      });
+
+      selected = assignCounts[0].uid;
+    }
+
+    if (!selected) continue;
+    const load = getMachiningLoadWeight(reqItem);
+    queueCounts.set(selected, (queueCounts.get(selected) || 0) + load);
+
+    if (!assignmentsByMachine.has(selected)) {
+      assignmentsByMachine.set(selected, []);
+    }
+    assignmentsByMachine.get(selected).push(reqItem);
+  }
+
+  for (const [uid, list] of assignmentsByMachine.entries()) {
+    list.forEach((reqItem, idx) => {
+      ops.push({
+        updateOne: {
+          filter: { _id: reqItem._id },
+          update: {
+            $set: {
+              "productionSchedule.assignedMachine": uid,
+              "productionSchedule.queuePosition": idx + 1,
+              assignedMachine: uid,
+            },
+          },
+        },
+      });
+    });
+  }
+
+  if (ops.length > 0) {
+    await Request.bulkWrite(ops);
+  }
+
+  return {
+    reassignedCount: ops.length,
+    eligibleMachineIds: Array.from(eligibleMachineSet),
+  };
+}
+
 export async function getProductionQueues(req, res) {
   try {
+    const scope = await resolveManufacturerMachineScope(req);
+
+    console.log("[getProductionQueues] scope", {
+      role: req?.user?.role,
+      userId: req?.user?._id ? String(req.user._id) : null,
+      businessId: req?.user?.businessId ? String(req.user.businessId) : null,
+      requestFilter: scope.requestFilter,
+      machineIds: scope.machineIds,
+    });
+
+    const unassignedCount = await Request.countDocuments({
+      manufacturerStage: { $in: MACHINING_ASSIGN_STAGE_SET },
+      ...scope.requestFilter,
+      $or: [
+        { "productionSchedule.assignedMachine": { $exists: false } },
+        { "productionSchedule.assignedMachine": null },
+        { "productionSchedule.assignedMachine": "" },
+      ],
+    });
+
+    if (unassignedCount > 0) {
+      const rebalance = await rebalanceProductionQueuesInternal({ req, scope });
+      console.log("[getProductionQueues] auto-rebalanced", {
+        unassignedCount,
+        reassignedCount: rebalance.reassignedCount,
+        eligibleMachineIds: rebalance.eligibleMachineIds,
+      });
+    }
+
     const requests = await Request.find({
       manufacturerStage: { $in: ["의뢰", "CAM", "가공"] },
+      ...scope.requestFilter,
     })
       .select(
-        "requestId status manufacturerStage productionSchedule caseInfos lotNumber timeline",
+        "requestId status manufacturerStage productionSchedule caseInfos lotNumber timeline caManufacturer",
       )
       .populate({
         path: "productionSchedule.machiningRecord",
@@ -29,7 +323,27 @@ export async function getProductionQueues(req, res) {
           "status startedAt completedAt durationSeconds elapsedSeconds lastTickAt machineId jobId",
       });
 
+    console.log("[getProductionQueues] found requests", {
+      count: requests.length,
+      samples: requests.slice(0, 5).map((r) => ({
+        requestId: r.requestId,
+        stage: r.manufacturerStage,
+        caManufacturer: r.caManufacturer ? String(r.caManufacturer) : null,
+        assignedMachine: r.productionSchedule?.assignedMachine || null,
+      })),
+    });
+
     const queues = getAllProductionQueues(requests);
+
+    console.log("[getProductionQueues] queues built", {
+      machineIds: Object.keys(queues),
+      counts: Object.fromEntries(
+        Object.entries(queues).map(([k, v]) => [
+          k,
+          Array.isArray(v) ? v.length : 0,
+        ]),
+      ),
+    });
 
     for (const machineId in queues) {
       queues[machineId] = queues[machineId].map((reqItem, index) => ({
@@ -120,194 +434,12 @@ const inferDiameterGroup = (reqItem) => {
 
 export async function reassignProductionQueues(req, res) {
   try {
-    const requests = await Request.find({
-      manufacturerStage: { $in: MACHINING_ASSIGN_STAGE_SET },
-    })
-      .select(
-        "_id requestId manufacturerStage productionSchedule assignedMachine caseInfos",
-      )
-      .populate({
-        path: "productionSchedule.machiningRecord",
-        select: "status startedAt completedAt machineId",
-      });
-
-    const cncMachines = await CncMachine.find({ status: "active" })
-      .select({ machineId: 1, maxModelDiameterGroups: 1, currentMaterial: 1 })
-      .lean();
-
-    const machineUids = cncMachines
-      .map((m) => String(m?.machineId || "").trim())
-      .filter(Boolean);
-
-    const machineFlags = await Machine.find({ uid: { $in: machineUids } })
-      .select({ uid: 1, allowRequestAssign: 1 })
-      .lean();
-
-    const allowAssignSet = new Set(
-      machineFlags
-        .filter((m) => m?.allowRequestAssign !== false)
-        .map((m) => String(m?.uid || "").trim())
-        .filter(Boolean),
-    );
-
-    const machinesByGroup = new Map();
-    for (const m of cncMachines) {
-      const uid = String(m?.machineId || "").trim();
-      if (!uid || !allowAssignSet.has(uid)) continue;
-      const materialGroup = inferMaterialDiameterGroup(m);
-      const groups = materialGroup
-        ? [materialGroup]
-        : Array.isArray(m?.maxModelDiameterGroups)
-          ? m.maxModelDiameterGroups
-              .map((g) => normalizeDiameterGroupValue(g))
-              .filter(Boolean)
-          : [];
-      for (const g of groups) {
-        const key = normalizeDiameterGroupValue(g);
-        if (!key) continue;
-        if (!machinesByGroup.has(key)) machinesByGroup.set(key, []);
-        machinesByGroup.get(key).push(uid);
-      }
-    }
-
-    const queueCounts = new Map();
-    for (const uid of allowAssignSet) {
-      queueCounts.set(uid, 0);
-    }
-
-    const assignmentsByMachine = new Map();
-    const ops = [];
-    const sortedRequests = [...requests].sort((a, b) => {
-      const aRunning = isMachiningInProgress(a);
-      const bRunning = isMachiningInProgress(b);
-      if (aRunning !== bRunning) return aRunning ? -1 : 1;
-
-      const aPos = Number(a?.productionSchedule?.queuePosition ?? 0);
-      const bPos = Number(b?.productionSchedule?.queuePosition ?? 0);
-      const aPosOk = Number.isFinite(aPos) && aPos > 0;
-      const bPosOk = Number.isFinite(bPos) && bPos > 0;
-      if (aPosOk && bPosOk && aPos !== bPos) return aPos - bPos;
-      if (aPosOk !== bPosOk) return aPosOk ? -1 : 1;
-
-      const aTime = a.productionSchedule?.scheduledShipPickup || new Date(0);
-      const bTime = b.productionSchedule?.scheduledShipPickup || new Date(0);
-      const diff = aTime - bTime;
-      if (diff !== 0) return diff;
-
-      return String(a?.requestId || "").localeCompare(
-        String(b?.requestId || ""),
-      );
-    });
-
-    for (const reqItem of sortedRequests) {
-      const group = inferRequestDiameterGroup(reqItem);
-      const rawCandidates = machinesByGroup.get(group) || [];
-      const candidates = Array.from(
-        new Set(
-          rawCandidates
-            .map((uid) => String(uid || "").trim())
-            .filter((uid) => uid && queueCounts.has(uid)),
-        ),
-      ).sort((a, b) => String(a).localeCompare(String(b)));
-      if (!candidates.length) continue;
-
-      const lockedMachineId = String(
-        reqItem?.productionSchedule?.machiningRecord?.machineId ||
-          reqItem?.productionSchedule?.assignedMachine ||
-          reqItem?.assignedMachine ||
-          "",
-      ).trim();
-      const isLocked =
-        isMachiningInProgress(reqItem) || isMachiningCompleted(reqItem);
-      const isCompleted = isMachiningCompleted(reqItem);
-
-      if (isLocked && lockedMachineId && candidates.includes(lockedMachineId)) {
-        // 이미 진행 중이거나 완료된 건은 부하에 포함시키지 않거나 진행중인 것만 포함시킴
-        if (!isCompleted) {
-          const load = getMachiningLoadWeight(reqItem);
-          queueCounts.set(
-            lockedMachineId,
-            (queueCounts.get(lockedMachineId) || 0) + load,
-          );
-        }
-
-        if (!assignmentsByMachine.has(lockedMachineId)) {
-          assignmentsByMachine.set(lockedMachineId, []);
-        }
-        assignmentsByMachine.get(lockedMachineId).push(reqItem);
-        continue;
-      }
-
-      let selected = null;
-      let minCount = Infinity;
-      const tied = [];
-
-      for (const uid of candidates) {
-        const count = queueCounts.get(uid) || 0;
-        if (count < minCount) {
-          minCount = count;
-          tied.length = 0;
-          tied.push(uid);
-        } else if (count === minCount) {
-          tied.push(uid);
-        }
-      }
-
-      if (tied.length === 1) {
-        selected = tied[0];
-      } else {
-        // 같은 부하를 가진 장비들 중에서 균등하게 배분하기 위해
-        // 현재까지 배정된 횟수를 기준으로 가장 적게 배정된 장비 선택
-        const assignCounts = tied.map((uid) => ({
-          uid,
-          count: assignmentsByMachine.get(uid)?.length || 0,
-        }));
-
-        assignCounts.sort((a, b) => {
-          // 배정 횟수가 적은 순으로 정렬
-          if (a.count !== b.count) return a.count - b.count;
-          // 배정 횟수가 같으면 uid 알파벳 순
-          return a.uid.localeCompare(b.uid);
-        });
-
-        // 가장 적게 배정된 장비 선택
-        selected = assignCounts[0].uid;
-      }
-
-      if (!selected) continue;
-      const load = getMachiningLoadWeight(reqItem);
-      queueCounts.set(selected, (queueCounts.get(selected) || 0) + load);
-
-      if (!assignmentsByMachine.has(selected)) {
-        assignmentsByMachine.set(selected, []);
-      }
-      assignmentsByMachine.get(selected).push(reqItem);
-    }
-
-    for (const [uid, list] of assignmentsByMachine.entries()) {
-      list.forEach((reqItem, idx) => {
-        ops.push({
-          updateOne: {
-            filter: { _id: reqItem._id },
-            update: {
-              $set: {
-                "productionSchedule.assignedMachine": uid,
-                "productionSchedule.queuePosition": idx + 1,
-                assignedMachine: uid,
-              },
-            },
-          },
-        });
-      });
-    }
-
-    if (ops.length > 0) {
-      await Request.bulkWrite(ops);
-    }
+    const scope = await resolveManufacturerMachineScope(req);
+    const result = await rebalanceProductionQueuesInternal({ req, scope });
 
     return res.status(200).json({
       success: true,
-      data: { reassignedCount: ops.length },
+      data: { reassignedCount: result.reassignedCount },
     });
   } catch (error) {
     console.error("Error in reassignProductionQueues:", error);

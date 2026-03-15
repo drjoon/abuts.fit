@@ -423,9 +423,68 @@ export const useMachiningBoard = ({
     });
   }, [cncMachineMetaMap, machines]);
 
+  const queueOnlyMachines = useMemo(() => {
+    const knownIds = new Set(
+      (mergedMachines || [])
+        .map((m: any) => String(m?.uid || "").trim())
+        .filter(Boolean),
+    );
+
+    return Object.entries(queueMap || {})
+      .map(([mid, list]) => {
+        const machineId = String(mid || "").trim();
+        if (!machineId || knownIds.has(machineId)) return null;
+        const items = Array.isArray(list) ? list : [];
+        if (!items.length) return null;
+        return {
+          uid: machineId,
+          name: machineId === "unassigned" ? "미배정" : machineId,
+          status: "offline",
+          allowRequestAssign: machineId === "unassigned",
+          allowAutoMachining: false,
+          currentMaterial: null,
+          maxModelDiameterGroups: [],
+        };
+      })
+      .filter(Boolean);
+  }, [mergedMachines, queueMap]);
+
+  const machinesForBoard = useMemo(() => {
+    return [...(mergedMachines || []), ...(queueOnlyMachines as any[])];
+  }, [mergedMachines, queueOnlyMachines]);
+
   const filteredMachines = useMemo(() => {
-    return (mergedMachines || []).filter((m: any) => m.status !== "offline");
-  }, [mergedMachines]);
+    return (machinesForBoard || []).filter((m: any) => {
+      if (m.status !== "offline") return true;
+      const mid = String(m?.uid || "").trim();
+      if (!mid) return false;
+      return Array.isArray(queueMap?.[mid]) && queueMap[mid].length > 0;
+    });
+  }, [machinesForBoard, queueMap]);
+
+  useEffect(() => {
+    const knownIds = new Set(
+      (mergedMachines || [])
+        .map((m: any) => String(m?.uid || "").trim())
+        .filter(Boolean),
+    );
+    const danglingQueueIds = Object.entries(queueMap || {})
+      .map(([mid, list]) => ({
+        machineId: String(mid || "").trim(),
+        count: Array.isArray(list) ? list.length : 0,
+        requestIds: (Array.isArray(list) ? list : [])
+          .map((item: any) => String(item?.requestId || "").trim())
+          .filter(Boolean),
+      }))
+      .filter((entry) => entry.machineId && !knownIds.has(entry.machineId));
+
+    if (danglingQueueIds.length > 0) {
+      console.warn("[MACHINING_BOARD] queue has unknown machine ids", {
+        danglingQueueIds,
+        knownMachineIds: Array.from(knownIds),
+      });
+    }
+  }, [mergedMachines, queueMap]);
 
   const {
     programEditorOpen,
