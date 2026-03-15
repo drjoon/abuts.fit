@@ -701,7 +701,26 @@ export async function updateMyBusiness(req, res) {
       Object.keys(patch).length === 0 &&
       Object.keys(unsetPatch).length === 0
     ) {
-      return res.json({ success: true, data: { updated: false } });
+      const repairedAnchorId = await ensureBusinessAnchorForBusiness({
+        business: {
+          _id: business?._id,
+          name: business?.name || "",
+          extracted: business?.extracted || {},
+          verification: business?.verification || {},
+        },
+        businessType,
+        userId: req.user._id,
+        referredByAnchorId: freshUser?.referredByAnchorId || null,
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          updated: false,
+          businessAnchorId:
+            repairedAnchorId || business?.businessAnchorId || null,
+        },
+      });
     }
 
     try {

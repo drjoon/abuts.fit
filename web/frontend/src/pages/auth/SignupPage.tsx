@@ -20,6 +20,7 @@ import { SignupSocialWizardStep1 } from "./signup/SignupSocialWizardStep1";
 import { SignupWizardAccountStep } from "./signup/SignupWizardAccountStep";
 
 export const SignupPage = () => {
+  type SignupRole = "requestor" | "salesman";
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -42,15 +43,9 @@ export const SignupPage = () => {
   const [accountFocusField, setAccountFocusField] = useState<
     "name" | "password" | "confirmPassword" | null
   >(null);
-  const [signupRole, setSignupRole] = useState<"requestor" | "salesman">(
-    "requestor",
-  );
-  const [refInput, setRefInput] = useState<string>("");
-  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(1);
+  const [signupRole, setSignupRole] = useState<SignupRole>("requestor");
+  const [wizardStep, setWizardStep] = useState<1 | 3 | 4>(1);
   const [selectedMethod, setSelectedMethod] = useState<"email" | null>(null);
-  const [pendingSocialProvider, setPendingSocialProvider] = useState<
-    "google" | "kakao" | null
-  >(null);
   const [emailVerifiedAt, setEmailVerifiedAt] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [emailVerificationSent, setEmailVerificationSent] = useState(false);
@@ -82,9 +77,9 @@ export const SignupPage = () => {
   const [referrerInfo, setReferrerInfo] = useState<{
     name?: string;
     business?: string;
+    role?: SignupRole;
+    allowedSignupRoles?: SignupRole[];
   } | null>(null);
-  const [loadingReferrer, setLoadingReferrer] = useState(false);
-
   const markSetupWizardRequired = useCallback(
     (role?: string | null) => {
       if (role !== "requestor" && role !== "salesman") return false;
@@ -105,10 +100,11 @@ export const SignupPage = () => {
       const qs = new URLSearchParams({
         intent: "signup",
         role: signupRole,
+        ...(referralCode ? { ref: referralCode } : {}),
       });
       return `/api/auth/oauth/${provider}/start?${qs.toString()}`;
     },
-    [signupRole],
+    [referralCode, signupRole],
   );
 
   const goSocialSignup = useCallback(
@@ -116,16 +112,15 @@ export const SignupPage = () => {
       sessionStorage.setItem("oauthIntent", "signup");
       sessionStorage.setItem("oauthReturnTo", "/signup");
       sessionStorage.setItem("oauthSignupRole", signupRole);
+      if (referralCode) {
+        sessionStorage.setItem("oauthSignupRef", referralCode);
+      } else {
+        sessionStorage.removeItem("oauthSignupRef");
+      }
       window.location.href = oauthStartUrl(provider);
     },
-    [oauthStartUrl, signupRole],
+    [oauthStartUrl, referralCode, signupRole],
   );
-
-  useEffect(() => {
-    if (signupRole === "salesman") {
-      setPendingSocialProvider(null);
-    }
-  }, [signupRole]);
 
   useEffect(() => {
     if (!isSocialNewMode) return;
@@ -159,21 +154,12 @@ export const SignupPage = () => {
     return "완료";
   }, [isSocialNewMode, isWizardMode, wizardStep]);
 
-  // referralCode를 refInput에 설정
-  useEffect(() => {
-    if (typeof referralCode !== "string") return;
-    if (refInput.trim().length > 0) return;
-    setRefInput(referralCode);
-  }, [referralCode, refInput]);
-
-  // 소개자 정보 조회
   useEffect(() => {
     if (typeof referralCode !== "string") {
       setReferrerInfo(null);
       return;
     }
 
-    setLoadingReferrer(true);
     request<any>({
       path: "/api/auth/referral/validate",
       method: "POST",
@@ -182,19 +168,47 @@ export const SignupPage = () => {
       .then((res) => {
         const body: any = res.data || {};
         if (res.ok && body?.success && body?.data) {
+          const nextAllowedSignupRoles = Array.isArray(
+            body.data.allowedSignupRoles,
+          )
+            ? body.data.allowedSignupRoles.filter(
+                (role: string): role is SignupRole =>
+                  role === "requestor" || role === "salesman",
+              )
+            : [];
           setReferrerInfo({
             name: body.data.name,
             business: body.data.businessName,
+            role: body.data.role === "salesman" ? "salesman" : "requestor",
+            allowedSignupRoles: nextAllowedSignupRoles,
           });
+          if (
+            nextAllowedSignupRoles.length > 0 &&
+            !nextAllowedSignupRoles.includes(signupRole)
+          ) {
+            setSignupRole(nextAllowedSignupRoles[0]);
+          }
         } else {
           setReferrerInfo(null);
         }
       })
       .catch(() => {
         setReferrerInfo(null);
-      })
-      .finally(() => setLoadingReferrer(false));
-  }, [referralCode]);
+      });
+  }, [referralCode, signupRole]);
+
+  const allowedSignupRoles = useMemo<SignupRole[]>(() => {
+    if (typeof referralCode !== "string") return ["requestor", "salesman"];
+    const roles = referrerInfo?.allowedSignupRoles || [];
+    return roles.filter(
+      (role): role is SignupRole => role === "requestor" || role === "salesman",
+    );
+  }, [referralCode, referrerInfo]);
+
+  const isSalesmanDisabled = useMemo(() => {
+    if (typeof referralCode !== "string") return false;
+    return !allowedSignupRoles.includes("salesman");
+  }, [allowedSignupRoles, referralCode]);
 
   // LocalStorage에서 폼 데이터 및 이메일 인증 정보 복구
   useEffect(() => {
@@ -421,71 +435,6 @@ export const SignupPage = () => {
     setWizardStep(4);
   }, [validateAccountInfo]);
 
-  const handleReferralNext = useCallback(async () => {
-    const value = String(refInput || "").trim();
-    if (!value) {
-      setWizardStep(3);
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const res = await request<any>({
-        path: "/api/auth/referral/validate",
-        method: "POST",
-        jsonBody: { value },
-      });
-      const payload = res.data || {};
-      if (!res.ok || !payload?.success) {
-        throw new Error(payload?.message || "추천인을 찾을 수 없습니다.");
-      }
-      setWizardStep(3);
-    } catch (err) {
-      toast({
-        title: "오류",
-        description: (err as any)?.message || "추천인을 확인할 수 없습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [refInput, request, toast]);
-
-  const handleReferralInputKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key !== "Enter") return;
-      e.preventDefault();
-      void handleReferralNext();
-    },
-    [handleReferralNext],
-  );
-
-  useEffect(() => {
-    if (!isWizardMode) return;
-    if (wizardStep !== 2) return;
-    if (pendingSocialProvider) return;
-    if (refInput.trim().length > 0) return;
-
-    const handler = (event: KeyboardEvent) => {
-      if (event.key !== "Enter") return;
-      const target = event.target as HTMLElement | null;
-      if (target && ["INPUT", "TEXTAREA", "BUTTON"].includes(target.tagName)) {
-        return;
-      }
-      event.preventDefault();
-      void handleReferralNext();
-    };
-
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [
-    handleReferralNext,
-    isWizardMode,
-    pendingSocialProvider,
-    refInput,
-    wizardStep,
-  ]);
-
   const submitSignup = useCallback(async () => {
     if (!isSocialCompleteMode && !isSocialNewMode) {
       if (!validateAccountInfo()) return;
@@ -518,6 +467,7 @@ export const SignupPage = () => {
             socialProvider: socialInfo.provider,
             socialProviderUserId: socialInfo.providerUserId,
             socialToken: sessionStorage.getItem("socialToken") || undefined,
+            ...(referralCode ? { referredByReferralCode: referralCode } : {}),
           },
         });
 
@@ -592,6 +542,7 @@ export const SignupPage = () => {
           email: formData.email,
           password: formData.password,
           role: signupRole,
+          ...(referralCode ? { referredByReferralCode: referralCode } : {}),
         },
       });
 
@@ -638,6 +589,7 @@ export const SignupPage = () => {
     isSocialNewMode,
     loginWithToken,
     navigate,
+    referralCode,
     signupRole,
     socialInfo,
     token,
@@ -912,11 +864,17 @@ export const SignupPage = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => setSignupRole("salesman")}
+                          onClick={() => {
+                            if (isSalesmanDisabled) return;
+                            setSignupRole("salesman");
+                          }}
+                          disabled={isSalesmanDisabled}
                           className={`h-10 rounded-md border text-sm font-medium transition-colors ${
                             signupRole === "salesman"
                               ? "border-white/10 bg-white/15 text-white"
-                              : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                              : isSalesmanDisabled
+                                ? "cursor-not-allowed border-white/10 bg-white/5 text-white/35"
+                                : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
                           }`}
                         >
                           영업자
@@ -946,7 +904,6 @@ export const SignupPage = () => {
                         }}
                         onEmailClick={() => {
                           setSelectedMethod("email");
-                          setPendingSocialProvider(null);
                           setWizardStep(3);
                         }}
                       />

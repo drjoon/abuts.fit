@@ -20,6 +20,17 @@ async function grantRequestorSeedCredit({
   uniqueKey,
   amount = 500000,
 }) {
+  if (!businessAnchorId) {
+    console.warn(
+      "[seed] skip requestor seed credit because businessAnchorId is missing",
+      {
+        businessId,
+        userId,
+        uniqueKey,
+      },
+    );
+    return false;
+  }
   const ledgerKey = `seed:requestor-credit:${uniqueKey}`;
   const existing = await CreditLedger.findOne({ uniqueKey: ledgerKey })
     .select({ _id: 1 })
@@ -28,7 +39,7 @@ async function grantRequestorSeedCredit({
 
   await CreditLedger.create({
     businessId,
-    businessAnchorId: businessAnchorId || null,
+    businessAnchorId,
     userId,
     type: "CHARGE",
     amount,

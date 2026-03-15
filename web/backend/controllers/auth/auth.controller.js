@@ -42,6 +42,37 @@ const ensureUniqueReferralCode = async (length) => {
 };
 
 const REFERRAL_ALLOWED_ROLES = new Set(["requestor", "salesman", "devops"]);
+const SIGNUP_LINK_REFERRER_ALLOWED_ROLES = new Set(["requestor", "salesman"]);
+
+function getAllowedSignupRolesForReferrerRole(referrerRole) {
+  const normalizedReferrerRole = String(referrerRole || "").trim();
+  if (normalizedReferrerRole === "requestor") {
+    return ["requestor"];
+  }
+  if (normalizedReferrerRole === "salesman") {
+    return ["requestor", "salesman"];
+  }
+  return [];
+}
+
+function getReferralRoleMismatchMessage({ signupRole, referrerRole }) {
+  const normalizedSignupRole = String(signupRole || "").trim();
+  const normalizedReferrerRole = String(referrerRole || "").trim();
+  if (
+    normalizedReferrerRole === "requestor" &&
+    normalizedSignupRole !== "requestor"
+  ) {
+    return "의뢰자 소개 링크로는 의뢰자만 가입할 수 있습니다.";
+  }
+  if (
+    normalizedReferrerRole === "salesman" &&
+    normalizedSignupRole !== "requestor" &&
+    normalizedSignupRole !== "salesman"
+  ) {
+    return "영업자 소개 링크로는 의뢰자 또는 영업자만 가입할 수 있습니다.";
+  }
+  return "소개 링크와 가입 역할이 맞지 않습니다.";
+}
 
 async function resolveDefaultDevopsReferrer() {
   const defaultDevopsUser = await User.findOne({
@@ -94,6 +125,7 @@ async function resolveReferrerTargets({
   referredByEmail,
   referredByReferralCode,
   socialToken,
+  signupRole,
 }) {
   if (referredByUserId) {
     throw new Error(
@@ -120,8 +152,17 @@ async function resolveReferrerTargets({
     }
   }
 
+  const normalizedSignupRole = String(signupRole || "").trim();
+
   if (!resolvedReferralCode && !resolvedReferralEmail) {
-    return resolveDefaultDevopsReferrer();
+    if (normalizedSignupRole === "requestor") {
+      return resolveDefaultDevopsReferrer();
+    }
+    return {
+      referredByAnchorId: null,
+      referrerRole: null,
+      allowedSignupRoles: [],
+    };
   }
 
   let refUser = null;
@@ -155,6 +196,23 @@ async function resolveReferrerTargets({
     throw new Error("추천인은 의뢰자/영업자/개발운영사 계정만 가능합니다.");
   }
 
+  const normalizedReferrerRole = String(refUser.role || "").trim();
+  if (!SIGNUP_LINK_REFERRER_ALLOWED_ROLES.has(normalizedReferrerRole)) {
+    throw new Error("소개 링크 가입은 의뢰자 또는 영업자 소개만 가능합니다.");
+  }
+
+  const allowedSignupRoles = getAllowedSignupRolesForReferrerRole(
+    normalizedReferrerRole,
+  );
+  if (!allowedSignupRoles.includes(normalizedSignupRole)) {
+    throw new Error(
+      getReferralRoleMismatchMessage({
+        signupRole: normalizedSignupRole,
+        referrerRole: normalizedReferrerRole,
+      }),
+    );
+  }
+
   const refBusinessAnchorId = String(refUser.businessAnchorId || "").trim();
   if (!Types.ObjectId.isValid(refBusinessAnchorId)) {
     throw new Error(
@@ -171,6 +229,8 @@ async function resolveReferrerTargets({
 
   return {
     referredByAnchorId: new Types.ObjectId(refBusinessAnchorId),
+    referrerRole: normalizedReferrerRole,
+    allowedSignupRoles,
   };
 }
 
@@ -453,6 +513,8 @@ async function register(req, res) {
       socialToken,
     } = req.body;
 
+    const normalizedRole = String(role || "requestor").trim();
+
     const normalizedEmail = String(email || "")
       .trim()
       .toLowerCase();
@@ -489,6 +551,7 @@ async function register(req, res) {
         referredByEmail,
         referredByReferralCode,
         socialToken,
+        signupRole: normalizedRole,
       });
       referredByAnchorId = referrerTargets?.referredByAnchorId || null;
     } catch (refError) {
@@ -497,8 +560,6 @@ async function register(req, res) {
         message: refError?.message || "추천인 정보가 올바르지 않습니다.",
       });
     }
-
-    const normalizedRole = String(role || "requestor").trim();
 
     let referralCodeLength = 5;
     if (normalizedRole === "salesman") {
@@ -671,6 +732,14 @@ async function validateReferral(req, res) {
       });
     }
 
+    const normalizedReferrerRole = String(refUser.role || "").trim();
+    if (!SIGNUP_LINK_REFERRER_ALLOWED_ROLES.has(normalizedReferrerRole)) {
+      return res.status(400).json({
+        success: false,
+        message: "소개 링크 가입은 의뢰자 또는 영업자 소개만 가능합니다.",
+      });
+    }
+
     const refBusinessAnchorId = String(refUser.businessAnchorId || "").trim();
     if (!Types.ObjectId.isValid(refBusinessAnchorId)) {
       return res.status(400).json({
@@ -689,8 +758,11 @@ async function validateReferral(req, res) {
       data: {
         id: refUser._id,
         name: refUser.name || "",
-        role: refUser.role,
+        role: normalizedReferrerRole,
         businessName,
+        allowedSignupRoles: getAllowedSignupRolesForReferrerRole(
+          normalizedReferrerRole,
+        ),
       },
     });
   } catch (error) {

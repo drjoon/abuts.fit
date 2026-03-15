@@ -140,6 +140,7 @@ export async function findOrCreateOrganization({
   ownerId,
   memberIds = [],
   extracted = {},
+  skipBusinessAnchorCreation = false,
 }) {
   let organization = await Business.findOne({
     organizationType,
@@ -151,7 +152,7 @@ export async function findOrCreateOrganization({
   );
 
   let businessAnchor = null;
-  if (businessNumberNormalized) {
+  if (!skipBusinessAnchorCreation && businessNumberNormalized) {
     businessAnchor = await BusinessAnchor.findOneAndUpdate(
       { businessNumberNormalized },
       {
@@ -190,7 +191,9 @@ export async function findOrCreateOrganization({
       members: [ownerId, ...memberIds],
       joinRequests: [],
       extracted,
-      businessAnchorId: businessAnchor?._id || null,
+      businessAnchorId: skipBusinessAnchorCreation
+        ? organization?.businessAnchorId || null
+        : businessAnchor?._id || null,
     });
   } else {
     const nextMembers = [ownerId, ...memberIds].filter(Boolean);
@@ -202,8 +205,9 @@ export async function findOrCreateOrganization({
           owner: ownerId,
           name,
           businessType: organizationType,
-          businessAnchorId:
-            organization.businessAnchorId || businessAnchor?._id || null,
+          businessAnchorId: skipBusinessAnchorCreation
+            ? organization.businessAnchorId || null
+            : organization.businessAnchorId || businessAnchor?._id || null,
           extracted: {
             ...(organization.extracted || {}),
             ...extracted,
@@ -219,6 +223,7 @@ export async function findOrCreateOrganization({
   }
 
   if (
+    !skipBusinessAnchorCreation &&
     businessAnchor &&
     (!organization?.businessAnchorId ||
       String(organization.businessAnchorId) !== String(businessAnchor._id))
