@@ -607,26 +607,12 @@ export const WorksheetCardGrid = ({
                     )}
                   </div>
                 )}
-                {/* <div className="flex flex-wrap items-center justify-between gap-1 text-[12px] text-slate-500">
-                  <div className="flex items-center gap-1">
-                    <span>{formatImplantDisplay(caseInfos as any)}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {sp?.label &&
-                      (urgency === "danger" || urgency === "warning") && (
-                        <Badge
-                          variant="outline"
-                          className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] ${
-                            urgency === "danger"
-                              ? "bg-white text-rose-700 border-rose-500"
-                              : "bg-white text-amber-700 border-amber-500"
-                          }`}
-                        >
-                          {sp.label}
-                        </Badge>
-                      )}
-                  </div>
-                </div> */}
+                <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
+                  {caseInfos.implantManufacturer || "-"} /{" "}
+                  {caseInfos.implantBrand || "-"} /{" "}
+                  {caseInfos.implantFamily || "-"} /{" "}
+                  {caseInfos.implantType || "-"}
+                </div>
                 {/* 백그라운드 작업 실패 시 안내 메시지 */}
                 {((isCamStage &&
                   request.caseInfos?.reviewByStage?.cam?.status ===
