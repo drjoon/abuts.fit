@@ -157,5 +157,17 @@ export function useBulkShippingPolicy(email?: string | null) {
     };
   }, [businessType, token, user?.role]);
 
-  return policy;
+  const setWeeklyBatchDays = (days: string[]) => {
+    const weeklyDays = normalizeWeeklyBatchDays(days);
+    setPolicy((prev) => ({
+      ...prev,
+      weeklyBatchDays: weeklyDays,
+      weeklyBatchLabel: formatWeekdayLabel(weeklyDays),
+    }));
+  };
+
+  return {
+    ...policy,
+    setWeeklyBatchDays,
+  };
 }

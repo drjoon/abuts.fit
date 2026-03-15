@@ -579,7 +579,15 @@ export function NewRequestDetailsSection({
 
   const requiredFieldsPresent = (info?: CaseInfos | null) => {
     if (!info) return false;
-    return Boolean(info.clinicName && info.patientName && info.tooth);
+    return Boolean(
+      info.clinicName &&
+      info.patientName &&
+      info.tooth &&
+      info.implantManufacturer &&
+      info.implantBrand &&
+      info.implantFamily &&
+      info.implantType,
+    );
   };
 
   useEffect(() => {
@@ -843,6 +851,7 @@ export function NewRequestDetailsSection({
                     setCaseInfos={setDetailCaseInfos}
                     showImplantSelect={showImplantSelect}
                     readOnly={!detailFile}
+                    implantSelectSource="caseInfos"
                     connections={connections}
                     familyOptions={familyOptions}
                     typeOptions={typeOptions}

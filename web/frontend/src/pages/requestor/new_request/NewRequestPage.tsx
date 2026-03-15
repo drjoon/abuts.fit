@@ -11,7 +11,6 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { usePresetStorage } from "./hooks/usePresetStorage";
 import { useBulkShippingPolicy } from "./hooks/useBulkShippingPolicy";
 import { useFileVerification } from "./hooks/useFileVerification";
-import { apiFetch } from "@/shared/api/apiClient";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { clearLocalDraft } from "./utils/localDraftStorage";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
@@ -376,7 +375,8 @@ export const NewRequestPage = () => {
     );
   };
 
-  const { weeklyBatchLabel } = useBulkShippingPolicy(user?.email);
+  const { weeklyBatchLabel, weeklyBatchDays, setWeeklyBatchDays } =
+    useBulkShippingPolicy(user?.email);
 
   const [focusUnverifiedTick, setFocusUnverifiedTick] = useState(0);
 
@@ -639,6 +639,8 @@ export const NewRequestPage = () => {
               highlight={highlightStep === "shipping"}
               sectionHighlightClass={sectionHighlightClass}
               weeklyBatchLabel={weeklyBatchLabel}
+              weeklyBatchDays={weeklyBatchDays}
+              onWeeklyBatchDaysChange={setWeeklyBatchDays}
               onOpenShippingSettings={() =>
                 navigate("/dashboard/settings?tab=shipping")
               }
@@ -671,37 +673,23 @@ export const NewRequestPage = () => {
                   setTimeout(() => setHighlightUnverifiedArrows(false), 10000);
                   return;
                 }
-                // Pre-validate weekly batch days before submitting (no upload/draft until valid)
                 (async () => {
-                  try {
-                    const res = await apiFetch<any>({
-                      path: "/api/businesses/me?businessType=requestor",
-                      method: "GET",
+                  if (!weeklyBatchDays.length) {
+                    try {
+                      if (typeof window !== "undefined") {
+                        window.dispatchEvent(
+                          new CustomEvent("abuts:shipping:needs-weekly-days"),
+                        );
+                      }
+                    } catch {}
+                    toast({
+                      title: "설정 필요",
+                      description:
+                        "이 화면의 ‘묶음 배송’ 섹션에서 요일을 선택한 후 다시 시도하세요.",
+                      variant: "destructive",
+                      duration: 4500,
                     });
-                    const days: string[] = Array.isArray(
-                      res?.data?.data?.shippingPolicy?.weeklyBatchDays,
-                    )
-                      ? res.data.data.shippingPolicy.weeklyBatchDays
-                      : [];
-                    if (!days.length) {
-                      try {
-                        if (typeof window !== "undefined") {
-                          window.dispatchEvent(
-                            new CustomEvent("abuts:shipping:needs-weekly-days"),
-                          );
-                        }
-                      } catch {}
-                      toast({
-                        title: "설정 필요",
-                        description:
-                          "이 화면의 ‘묶음 배송’ 섹션에서 요일을 선택한 후 다시 시도하세요.",
-                        variant: "destructive",
-                        duration: 4500,
-                      });
-                      return;
-                    }
-                  } catch {
-                    // ignore precheck error; backend will guard again
+                    return;
                   }
 
                   toast({

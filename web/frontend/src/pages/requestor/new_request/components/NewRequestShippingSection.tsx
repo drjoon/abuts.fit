@@ -1,5 +1,4 @@
 import { Button } from "@/components/ui/button";
-import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
 import { Truck } from "lucide-react";
 import type { CaseInfos } from "../hooks/newRequestTypes";
 import { useState, useEffect, useRef } from "react";
@@ -15,6 +14,8 @@ type Props = {
   highlight: boolean;
   sectionHighlightClass: string;
   weeklyBatchLabel: string;
+  weeklyBatchDays: string[];
+  onWeeklyBatchDaysChange?: (days: string[]) => void;
   onOpenShippingSettings?: () => void;
   onSubmit: () => void;
 };
@@ -36,6 +37,8 @@ export function NewRequestShippingSection({
   highlight,
   sectionHighlightClass,
   weeklyBatchLabel,
+  weeklyBatchDays,
+  onWeeklyBatchDaysChange,
   onOpenShippingSettings,
   onSubmit,
 }: Props) {
@@ -71,23 +74,13 @@ export function NewRequestShippingSection({
   }, []);
 
   useEffect(() => {
-    const loadWeeklyBatchDays = async () => {
-      if (!token) return;
-      try {
-        const res = await apiFetch<any>({
-          path: "/api/businesses/me?businessType=requestor",
-          method: "GET",
-          token,
-        });
-        if (res.ok && res.data?.data?.shippingPolicy?.weeklyBatchDays) {
-          setSelectedDays(res.data.data.shippingPolicy.weeklyBatchDays);
-        }
-      } catch (e) {
-        console.error("Failed to load weeklyBatchDays:", e);
-      }
-    };
-    void loadWeeklyBatchDays();
-  }, [token]);
+    const nextDays = Array.isArray(weeklyBatchDays)
+      ? weeklyBatchDays.filter((day): day is WeekDay =>
+          WEEKDAYS.some((item) => item.key === day),
+        )
+      : [];
+    setSelectedDays(nextDays);
+  }, [weeklyBatchDays]);
 
   const toggleDay = async (day: WeekDay) => {
     if (isDisabled || isUpdating) return;
@@ -121,6 +114,7 @@ export function NewRequestShippingSection({
 
       if (res.ok) {
         setSelectedDays(newDays);
+        onWeeklyBatchDaysChange?.(newDays);
         toast({
           title: "배송일 설정 완료",
           description: "배송일이 업데이트되었습니다.",
@@ -163,7 +157,6 @@ export function NewRequestShippingSection({
     }
   };
 
-  const bulkLabelText = weeklyBatchLabel || "미설정";
   const holidayRolloverNote = "공휴일은 다음날 발송합니다";
   return (
     <div

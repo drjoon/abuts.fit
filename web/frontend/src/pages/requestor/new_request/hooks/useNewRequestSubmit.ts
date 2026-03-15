@@ -162,40 +162,6 @@ export const useNewRequestSubmit = ({
     try {
       const createdRequests: any[] = [];
 
-      try {
-        const precheckRes = await fetch(
-          `${API_BASE_URL}/businesses/me?businessType=requestor`,
-          {
-            method: "GET",
-            headers: getHeaders(),
-          },
-        );
-        const preData = await precheckRes.json().catch(() => ({}) as any);
-        const weeklyDays: string[] = Array.isArray(
-          preData?.data?.shippingPolicy?.weeklyBatchDays,
-        )
-          ? preData.data.shippingPolicy.weeklyBatchDays
-          : [];
-        if (!weeklyDays.length) {
-          try {
-            if (typeof window !== "undefined") {
-              window.dispatchEvent(
-                new CustomEvent("abuts:shipping:needs-weekly-days"),
-              );
-            }
-          } catch {}
-          toast({
-            title: "설정 필요",
-            description:
-              "이 화면의 ‘묶음 배송’ 섹션에서 요일을 선택한 후 다시 시도하세요.",
-            variant: "destructive",
-            duration: 4500,
-          });
-          setIsSubmitting(false);
-          return;
-        }
-      } catch {}
-
       const clientValidationErrors = buildClientValidationErrors();
       if (clientValidationErrors.length > 0) {
         const description = clientValidationErrors
