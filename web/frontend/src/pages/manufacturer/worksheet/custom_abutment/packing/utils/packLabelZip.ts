@@ -61,7 +61,7 @@ export const buildPackLabelRenderOptions = ({
   const caseInfos = req.caseInfos || {};
   const fullLotNumber = resolvePackFullLotNumber(req);
   const labName = requireNonEmptyString(
-    req.requestorBusiness?.name || req.requestorOrganization?.name,
+    (req as any)?.requestorBusinessAnchor?.name || (req as any)?.business?.name,
     "사업자명",
     req,
   );
@@ -86,7 +86,11 @@ export const buildPackLabelRenderOptions = ({
     "타입",
     req,
   );
-  const patientName = requireNonEmptyString(caseInfos.patientName, "환자명", req);
+  const patientName = requireNonEmptyString(
+    caseInfos.patientName,
+    "환자명",
+    req,
+  );
   const toothNumber = requireNonEmptyString(caseInfos.tooth, "치아번호", req);
   const createdAtIso = req.createdAt ? String(req.createdAt) : "";
   const { manufacturingDate, rawSources } = resolveManufacturingDate(req);

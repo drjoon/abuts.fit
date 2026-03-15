@@ -435,7 +435,8 @@ export const PackingPageContent = ({
       const caseInfos = req.caseInfos || {};
       const fullLotNumber = resolvePackFullLotNumber(req);
       const labName = requireNonEmptyString(
-        req.requestorBusiness?.name || req.requestorOrganization?.name,
+        (req as any)?.requestorBusinessAnchor?.name ||
+          (req as any)?.business?.name,
         "사업자명",
         req,
       );
