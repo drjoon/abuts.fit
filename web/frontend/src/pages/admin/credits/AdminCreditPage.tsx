@@ -277,6 +277,12 @@ export default function AdminCreditPage() {
   const [salesmanOverview, setSalesmanOverview] =
     useState<SalesmanCreditsOverview | null>(null);
   const [loadingSalesmanOverview, setLoadingSalesmanOverview] = useState(false);
+  const [snapshotStatus, setSnapshotStatus] = useState<{
+    lastComputedAt: string | null;
+    baseYmd: string | null;
+    snapshotMissing?: boolean;
+  } | null>(null);
+  const [loadingSnapshotStatus, setLoadingSnapshotStatus] = useState(false);
 
   const [creditTab, setCreditTab] = useState<"requestor" | "salesman">(
     "requestor",
@@ -408,6 +414,32 @@ export default function AdminCreditPage() {
       setSalesmanOverview(null);
     } finally {
       setLoadingSalesmanOverview(false);
+    }
+  };
+
+  const loadSnapshotStatus = async () => {
+    if (!token) return;
+    setLoadingSnapshotStatus(true);
+    try {
+      const res = await request<{
+        success: boolean;
+        data?: {
+          lastComputedAt: string | null;
+          baseYmd: string | null;
+          snapshotMissing?: boolean;
+        };
+      }>({
+        path: "/api/snapshots/admin-status",
+        method: "GET",
+        token,
+      });
+      if (res.ok && res.data?.success && res.data?.data) {
+        setSnapshotStatus(res.data.data);
+      }
+    } catch {
+      setSnapshotStatus(null);
+    } finally {
+      setLoadingSnapshotStatus(false);
     }
   };
 
@@ -997,6 +1029,7 @@ export default function AdminCreditPage() {
     setSalesmanHasMore(true);
     loadSalesmen({ reset: true });
     loadSalesmanOverview();
+    loadSnapshotStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period, token]);
 
@@ -1332,14 +1365,38 @@ export default function AdminCreditPage() {
             </TabsTrigger>
           </TabsList>
 
-          {creditTab === "salesman" ? (
+          <div className="flex items-center gap-2">
+            <div className="text-xs text-muted-foreground text-right">
+              <div>
+                마지막 재계산{" "}
+                {loadingSnapshotStatus
+                  ? "..."
+                  : snapshotStatus?.lastComputedAt
+                    ? new Date(snapshotStatus.lastComputedAt).toLocaleString(
+                        "ko-KR",
+                      )
+                    : "-"}
+              </div>
+              <div>
+                기준{" "}
+                {snapshotStatus?.baseYmd
+                  ? `${snapshotStatus.baseYmd} 자정 기준 30일`
+                  : "-"}
+                {snapshotStatus?.snapshotMissing ? " · 누락" : ""}
+              </div>
+            </div>
             <SnapshotRecalcAllButton
               token={token}
-              periodKey={period}
+              periodKey="30d"
               className="h-9"
-              onSuccess={loadSalesmanOverview}
+              onSuccess={async () => {
+                await Promise.all([
+                  loadSalesmanOverview(),
+                  loadSnapshotStatus(),
+                ]);
+              }}
             />
-          ) : null}
+          </div>
         </div>
 
         <TabsContent value="requestor" className="space-y-4">

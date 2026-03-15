@@ -1,5 +1,7 @@
 import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
 import ManufacturerDailySettlementSnapshot from "../../models/manufacturerDailySettlementSnapshot.model.js";
+import PricingReferralStatsSnapshot from "../../models/pricingReferralStatsSnapshot.model.js";
+import AdminSalesmanCreditsOverviewSnapshot from "../../models/adminSalesmanCreditsOverviewSnapshot.model.js";
 import {
   getTodayYmdInKst,
   getYesterdayYmdInKst,
@@ -109,6 +111,58 @@ async function runManufacturerDailySettlementSnapshotRecalc({
       computedAt: computedAt.toISOString(),
     },
   };
+}
+
+export async function getAdminSnapshotsStatus(req, res) {
+  try {
+    const ymd = getTodayYmdInKst();
+    if (!ymd) {
+      return res.status(500).json({
+        success: false,
+        message: "날짜 계산에 실패했습니다.",
+      });
+    }
+
+    const [referralLatest, creditLatest] = await Promise.all([
+      PricingReferralStatsSnapshot.findOne({ ymd })
+        .sort({ computedAt: -1 })
+        .select({ computedAt: 1, ymd: 1 })
+        .lean(),
+      AdminSalesmanCreditsOverviewSnapshot.findOne({ ymd, periodKey: "30d" })
+        .sort({ computedAt: -1 })
+        .select({ computedAt: 1, ymd: 1, periodKey: 1 })
+        .lean(),
+    ]);
+
+    const referralAt = referralLatest?.computedAt
+      ? new Date(referralLatest.computedAt)
+      : null;
+    const creditAt = creditLatest?.computedAt
+      ? new Date(creditLatest.computedAt)
+      : null;
+
+    const lastComputedAt =
+      referralAt && creditAt
+        ? new Date(Math.max(referralAt.getTime(), creditAt.getTime()))
+        : referralAt || creditAt || null;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        lastComputedAt: lastComputedAt ? lastComputedAt.toISOString() : null,
+        baseYmd: ymd,
+        snapshotMissing: !referralLatest || !creditLatest,
+        referralLastComputedAt: referralAt ? referralAt.toISOString() : null,
+        creditLastComputedAt: creditAt ? creditAt.toISOString() : null,
+      },
+    });
+  } catch (error) {
+    console.error("getAdminSnapshotsStatus error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "스냅샷 상태 조회에 실패했습니다.",
+    });
+  }
 }
 
 export async function recalcAllSnapshots(req, res) {

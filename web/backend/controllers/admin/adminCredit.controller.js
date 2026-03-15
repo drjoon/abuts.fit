@@ -4,6 +4,7 @@ import ChargeOrder from "../../models/chargeOrder.model.js";
 import BankTransaction from "../../models/bankTransaction.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import User from "../../models/user.model.js";
 import SalesmanLedger from "../../models/salesmanLedger.model.js";
@@ -15,6 +16,7 @@ import {
   getTodayYmdInKst,
   getThisMonthStartYmdInKst,
 } from "../../utils/krBusinessDays.js";
+import { normalizeBusinessNumber } from "../../utils/businessAnchor.utils.js";
 import AdminSalesmanCreditsOverviewSnapshot from "../../models/adminSalesmanCreditsOverviewSnapshot.model.js";
 import { buildSalesmanReferralAggregation } from "./adminCredit.salesmanAggregation.js";
 
@@ -913,10 +915,16 @@ export async function adminGetSalesmanCredits(req, res) {
     const salesmen = await User.find({
       role: { $in: REFERRAL_LEADER_ROLES },
     })
-      .select({ _id: 1, name: 1, email: 1, referralCode: 1, active: 1 })
+      .select({
+        _id: 1,
+        name: 1,
+        email: 1,
+        referralCode: 1,
+        active: 1,
+        role: 1,
+        businessAnchorId: 1,
+      })
       .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
       .lean();
 
     const salesmanIds = salesmen
@@ -931,6 +939,30 @@ export async function adminGetSalesmanCredits(req, res) {
         data: { items: [], total: 0, skip, limit },
       });
     }
+
+    const businessAnchorIds = Array.from(
+      new Set(
+        salesmen
+          .map((u) => String(u?.businessAnchorId || ""))
+          .filter((id) => Types.ObjectId.isValid(id)),
+      ),
+    ).map((id) => new Types.ObjectId(id));
+
+    const anchors = businessAnchorIds.length
+      ? await BusinessAnchor.find({ _id: { $in: businessAnchorIds } })
+          .select({
+            _id: 1,
+            name: 1,
+            businessType: 1,
+            metadata: 1,
+            status: 1,
+          })
+          .lean()
+      : [];
+
+    const anchorById = new Map(
+      (anchors || []).map((a) => [String(a?._id || ""), a]),
+    );
 
     // 잔액(balance)은 항상 전체 기간 기준 (정산 전 잔액)
     const ledgerRows = await SalesmanLedger.aggregate([
@@ -1068,13 +1100,30 @@ export async function adminGetSalesmanCredits(req, res) {
         level1Revenue30d * commissionRate * 0.5,
       ); // 2.5%
       const commission30d = myCommission30d + level1Commission30d;
+      const anchorId = String(s?.businessAnchorId || "");
+      const anchor = anchorById.get(anchorId) || null;
 
       return {
         salesmanId: sid,
         name: String(s?.name || ""),
         email: String(s?.email || ""),
+        role: String(s?.role || ""),
         referralCode: String(s?.referralCode || ""),
         active: Boolean(s?.active),
+        businessAnchorId: anchorId || null,
+        businessAnchor: anchor
+          ? {
+              id: String(anchor?._id || ""),
+              name: String(anchor?.name || ""),
+              businessType: String(anchor?.businessType || ""),
+              status: String(anchor?.status || ""),
+              representativeName: String(
+                anchor?.metadata?.representativeName || "",
+              ),
+              email: String(anchor?.metadata?.email || ""),
+              phoneNumber: String(anchor?.metadata?.phoneNumber || ""),
+            }
+          : null,
         referredSalesmanCount: referredSalesmanCountBySalesmanId.get(sid) || 0,
         wallet: {
           earnedAmount: Math.round(Number(ledger.earn || 0)),
@@ -1103,10 +1152,27 @@ export async function adminGetSalesmanCredits(req, res) {
       };
     });
 
+    const sortedItems = [...items].sort(
+      (a, b) =>
+        Number(b.wallet?.balanceAmountPeriod || 0) -
+          Number(a.wallet?.balanceAmountPeriod || 0) ||
+        Number(b.performance30d?.commissionAmount || 0) -
+          Number(a.performance30d?.commissionAmount || 0) ||
+        String(a.name || "").localeCompare(String(b.name || ""), "ko"),
+    );
+
     const total = await User.countDocuments({
       role: { $in: REFERRAL_LEADER_ROLES },
     });
-    return res.json({ success: true, data: { items, total, skip, limit } });
+    return res.json({
+      success: true,
+      data: {
+        items: sortedItems.slice(skip, skip + limit),
+        total,
+        skip,
+        limit,
+      },
+    });
   } catch (error) {
     console.error("adminGetSalesmanCredits error:", error);
     return res.status(500).json({
@@ -1287,13 +1353,9 @@ export async function adminGetBusinessCredits(req, res) {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const skip = Math.max(Number(req.query.skip) || 0, 0);
 
-    const orgs = await Business.find({
-      businessAnchorId: { $ne: null },
-    })
+    const orgs = await Business.find({})
       .select({ name: 1, owner: 1, extracted: 1, businessAnchorId: 1 })
       .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
       .lean();
 
     const ownerIds = Array.from(
@@ -1309,73 +1371,145 @@ export async function adminGetBusinessCredits(req, res) {
 
     const owners = ownerIds.length
       ? await User.find({ _id: { $in: ownerIds } })
-          .select({ _id: 1, name: 1, email: 1 })
+          .select({
+            _id: 1,
+            name: 1,
+            email: 1,
+            businessAnchorId: 1,
+            businessId: 1,
+          })
           .lean()
       : [];
 
     const ownerById = new Map(
       (owners || []).map((u) => [
         String(u._id),
-        { name: u.name, email: u.email },
+        {
+          name: u.name,
+          email: u.email,
+          businessAnchorId: u.businessAnchorId || null,
+          businessId: u.businessId || null,
+        },
       ]),
     );
 
-    const orgAnchorIds = orgs.map((o) => o?.businessAnchorId).filter(Boolean);
+    const businessNumberNormalizedSet = new Set(
+      (orgs || [])
+        .map((org) =>
+          normalizeBusinessNumber(org?.extracted?.businessNumber || ""),
+        )
+        .filter(Boolean),
+    );
 
-    const ledgerData = await CreditLedger.aggregate([
-      {
-        $match: {
-          businessAnchorId: { $in: orgAnchorIds },
-        },
-      },
-      {
-        $group: {
-          _id: "$businessAnchorId",
-          chargedPaid: {
-            $sum: {
-              $cond: [
-                { $in: ["$type", ["CHARGE", "REFUND"]] },
-                { $abs: "$amount" },
-                0,
-              ],
+    const anchors = businessNumberNormalizedSet.size
+      ? await BusinessAnchor.find({
+          businessNumberNormalized: {
+            $in: Array.from(businessNumberNormalizedSet),
+          },
+        })
+          .select({ _id: 1, businessNumberNormalized: 1, sourceBusinessId: 1 })
+          .lean()
+      : [];
+
+    const anchorIdByBusinessNumber = new Map(
+      (anchors || []).map((anchor) => [
+        String(anchor?.businessNumberNormalized || ""),
+        String(anchor?._id || ""),
+      ]),
+    );
+
+    const anchorIdBySourceBusinessId = new Map(
+      (anchors || [])
+        .filter((anchor) => anchor?.sourceBusinessId)
+        .map((anchor) => [
+          String(anchor?.sourceBusinessId || ""),
+          String(anchor?._id || ""),
+        ]),
+    );
+
+    const resolvedAnchorIdByBusinessId = new Map();
+    for (const org of orgs || []) {
+      const businessId = String(org?._id || "");
+      const directAnchorId = String(org?.businessAnchorId || "").trim();
+      const ownerInfo = ownerById.get(String(org?.owner || "")) || null;
+      const ownerAnchorId = String(ownerInfo?.businessAnchorId || "").trim();
+      const normalizedBusinessNumber = normalizeBusinessNumber(
+        org?.extracted?.businessNumber || "",
+      );
+      const mappedAnchorId =
+        directAnchorId ||
+        ownerAnchorId ||
+        String(anchorIdBySourceBusinessId.get(businessId) || "") ||
+        String(anchorIdByBusinessNumber.get(normalizedBusinessNumber) || "");
+      if (businessId) {
+        resolvedAnchorIdByBusinessId.set(businessId, mappedAnchorId);
+      }
+    }
+
+    const orgAnchorIds = Array.from(
+      new Set(
+        Array.from(resolvedAnchorIdByBusinessId.values()).filter((id) =>
+          Boolean(id),
+        ),
+      ),
+    ).map((id) => new Types.ObjectId(String(id)));
+
+    const ledgerData = orgAnchorIds.length
+      ? await CreditLedger.aggregate([
+          {
+            $match: {
+              businessAnchorId: { $in: orgAnchorIds },
             },
           },
-          chargedBonus: {
-            $sum: {
-              $cond: [{ $eq: ["$type", "BONUS"] }, { $abs: "$amount" }, 0],
+          {
+            $group: {
+              _id: "$businessAnchorId",
+              chargedPaid: {
+                $sum: {
+                  $cond: [
+                    { $in: ["$type", ["CHARGE", "REFUND"]] },
+                    { $abs: "$amount" },
+                    0,
+                  ],
+                },
+              },
+              chargedBonus: {
+                $sum: {
+                  $cond: [{ $eq: ["$type", "BONUS"] }, { $abs: "$amount" }, 0],
+                },
+              },
+              adjustSum: {
+                $sum: {
+                  $cond: [{ $eq: ["$type", "ADJUST"] }, "$amount", 0],
+                },
+              },
+              spentTotal: {
+                $sum: {
+                  $cond: [{ $eq: ["$type", "SPEND"] }, { $abs: "$amount" }, 0],
+                },
+              },
+              spentPaidSum: {
+                $sum: {
+                  $cond: [
+                    { $eq: ["$type", "SPEND"] },
+                    { $ifNull: ["$spentPaidAmount", 0] },
+                    0,
+                  ],
+                },
+              },
+              spentBonusSum: {
+                $sum: {
+                  $cond: [
+                    { $eq: ["$type", "SPEND"] },
+                    { $ifNull: ["$spentBonusAmount", 0] },
+                    0,
+                  ],
+                },
+              },
             },
           },
-          adjustSum: {
-            $sum: {
-              $cond: [{ $eq: ["$type", "ADJUST"] }, "$amount", 0],
-            },
-          },
-          spentTotal: {
-            $sum: {
-              $cond: [{ $eq: ["$type", "SPEND"] }, { $abs: "$amount" }, 0],
-            },
-          },
-          spentPaidSum: {
-            $sum: {
-              $cond: [
-                { $eq: ["$type", "SPEND"] },
-                { $ifNull: ["$spentPaidAmount", 0] },
-                0,
-              ],
-            },
-          },
-          spentBonusSum: {
-            $sum: {
-              $cond: [
-                { $eq: ["$type", "SPEND"] },
-                { $ifNull: ["$spentBonusAmount", 0] },
-                0,
-              ],
-            },
-          },
-        },
-      },
-    ]);
+        ])
+      : [];
 
     const balanceMap = {};
     ledgerData.forEach((item) => {
@@ -1414,7 +1548,9 @@ export async function adminGetBusinessCredits(req, res) {
     });
 
     const result = orgs.map((org) => {
-      const lookupKey = String(org.businessAnchorId);
+      const lookupKey = String(
+        resolvedAnchorIdByBusinessId.get(String(org?._id || "")) || "",
+      );
       const balanceInfo = balanceMap[lookupKey] || {
         balance: 0,
         paidBalance: 0,
@@ -1430,7 +1566,7 @@ export async function adminGetBusinessCredits(req, res) {
 
       return {
         _id: org._id,
-        businessAnchorId: org.businessAnchorId || null,
+        businessAnchorId: lookupKey || org.businessAnchorId || null,
         name: org.name,
         ownerName: ownerInfo?.name || "",
         ownerEmail: ownerInfo?.email || "",
@@ -1440,12 +1576,19 @@ export async function adminGetBusinessCredits(req, res) {
       };
     });
 
+    const sortedResult = [...result].sort(
+      (a, b) =>
+        Number(b.paidBalance || 0) - Number(a.paidBalance || 0) ||
+        Number(b.bonusBalance || 0) - Number(a.bonusBalance || 0) ||
+        String(a.name || "").localeCompare(String(b.name || ""), "ko"),
+    );
+
     const total = await Business.countDocuments();
 
     return res.json({
       success: true,
       data: {
-        items: result,
+        items: sortedResult.slice(skip, skip + limit),
         total,
         skip,
         limit,

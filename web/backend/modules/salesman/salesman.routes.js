@@ -8,7 +8,7 @@ import {
 const router = Router();
 
 router.use(authenticate);
-router.use(authorize(["salesman"]));
+router.use(authorize(["salesman", "devops"]));
 
 router.get("/dashboard", getSalesmanDashboard);
 router.get("/ledger", getSalesmanLedger);

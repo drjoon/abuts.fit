@@ -2,6 +2,8 @@ import crypto from "crypto";
 import mongoose from "mongoose";
 import User from "../../../models/user.model.js";
 import Business from "../../../models/business.model.js";
+import BusinessAnchor from "../../../models/businessAnchor.model.js";
+import { normalizeBusinessNumber } from "../../../utils/businessAnchor.utils.js";
 
 export const NOW = new Date();
 
@@ -144,15 +146,51 @@ export async function findOrCreateOrganization({
     name,
   });
 
+  const businessNumberNormalized = normalizeBusinessNumber(
+    extracted?.businessNumber || "",
+  );
+
+  let businessAnchor = null;
+  if (businessNumberNormalized) {
+    businessAnchor = await BusinessAnchor.findOneAndUpdate(
+      { businessNumberNormalized },
+      {
+        $set: {
+          businessType: organizationType,
+          name,
+          status: "verified",
+          primaryContactUserId: ownerId || null,
+          metadata: {
+            companyName: String(extracted?.companyName || name || "").trim(),
+            representativeName: String(
+              extracted?.representativeName || "",
+            ).trim(),
+            address: String(extracted?.address || "").trim(),
+            addressDetail: String(extracted?.addressDetail || "").trim(),
+            zipCode: String(extracted?.zipCode || "").trim(),
+            phoneNumber: String(extracted?.phoneNumber || "").trim(),
+            email: String(extracted?.email || "").trim(),
+            businessItem: String(extracted?.businessItem || "").trim(),
+            businessCategory: String(extracted?.businessCategory || "").trim(),
+            startDate: String(extracted?.startDate || "").trim(),
+          },
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+  }
+
   if (!organization) {
     organization = await Business.create({
       organizationType,
+      businessType: organizationType,
       name,
       owner: ownerId,
       owners: [],
       members: [ownerId, ...memberIds],
       joinRequests: [],
       extracted,
+      businessAnchorId: businessAnchor?._id || null,
     });
   } else {
     const nextMembers = [ownerId, ...memberIds].filter(Boolean);
@@ -163,6 +201,9 @@ export async function findOrCreateOrganization({
         $set: {
           owner: ownerId,
           name,
+          businessType: organizationType,
+          businessAnchorId:
+            organization.businessAnchorId || businessAnchor?._id || null,
           extracted: {
             ...(organization.extracted || {}),
             ...extracted,
@@ -171,6 +212,22 @@ export async function findOrCreateOrganization({
         $addToSet: {
           owners: { $each: nextOwners },
           members: { $each: nextMembers },
+        },
+      },
+    );
+    organization = await Business.findById(organization._id);
+  }
+
+  if (
+    businessAnchor &&
+    (!organization?.businessAnchorId ||
+      String(organization.businessAnchorId) !== String(businessAnchor._id))
+  ) {
+    await Business.updateOne(
+      { _id: organization._id },
+      {
+        $set: {
+          businessAnchorId: businessAnchor._id,
         },
       },
     );
@@ -187,6 +244,7 @@ export async function attachUserToOrganization(userId, organization) {
       $set: {
         businessId: organization._id,
         business: organization.name,
+        businessAnchorId: organization.businessAnchorId || null,
       },
     },
   );

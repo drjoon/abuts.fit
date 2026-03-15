@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { RequestorRiskSummaryCard } from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
-import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import { SnapshotRecalcAllButton } from "@/shared/components/SnapshotRecalcAllButton";
 import {
   Users,
   FileText,
@@ -74,12 +73,11 @@ export const AdminDashboardPage = () => {
     null,
   );
   const [pricingLoading, setPricingLoading] = useState(false);
-  const [recalcConfirmOpen, setRecalcConfirmOpen] = useState(false);
 
   if (!user || user.role !== "admin") return null;
 
   const { data: snapshotStatus, refetch: refetchSnapshotStatus } = useQuery({
-    queryKey: ["admin-referral-snapshot-status"],
+    queryKey: ["admin-shared-snapshot-status"],
     enabled: Boolean(token),
     queryFn: async () => {
       const res = await apiFetch<{
@@ -90,44 +88,13 @@ export const AdminDashboardPage = () => {
           snapshotMissing?: boolean;
         };
       }>({
-        path: `/api/admin/referral-snapshot/status`,
+        path: `/api/snapshots/admin-status`,
         method: "GET",
         token,
       });
       return res.data?.data || null;
     },
     refetchInterval: 60000,
-  });
-
-  const snapshotRecalcDisabled = (() => {
-    const baseYmd = snapshotStatus?.baseYmd;
-    const last = snapshotStatus?.lastComputedAt;
-    if (!baseYmd || !last) return false;
-    const base = new Date(`${baseYmd}T00:00:00.000+09:00`);
-    const computed = new Date(last);
-    if (Number.isNaN(base.getTime()) || Number.isNaN(computed.getTime())) {
-      return false;
-    }
-    return computed.getTime() >= base.getTime();
-  })();
-
-  const recalcMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiFetch<{ success: boolean; upsertCount?: number }>({
-        path: `/api/admin/referral-snapshot/recalc`,
-        method: "POST",
-        token,
-      });
-      if (!res.ok || !res.data?.success) throw new Error("재계산 실패");
-      return res.data;
-    },
-    onSuccess: () => {
-      refetchSnapshotStatus();
-      queryClient.invalidateQueries({ queryKey: ["admin-referral-groups"] });
-      queryClient.invalidateQueries({
-        queryKey: ["admin-referral-group-tree"],
-      });
-    },
   });
 
   const { data: riskSummaryResponse } = useQuery({
@@ -389,13 +356,37 @@ export const AdminDashboardPage = () => {
                     <div className="flex items-end justify-between gap-2 mr-6">
                       <div className="text-xs text-muted-foreground">진행</div>
                       <div className="text-2xl font-bold">
-                        {Number(data.stats?.[1]?.value || 0).toLocaleString()}
+                        {(
+                          Number(
+                            adminDashboardResponse?.data?.requestStats
+                              ?.byStatus?.["의뢰"] || 0,
+                          ) +
+                          Number(
+                            adminDashboardResponse?.data?.requestStats
+                              ?.byStatus?.["CAM"] || 0,
+                          ) +
+                          Number(
+                            adminDashboardResponse?.data?.requestStats
+                              ?.byStatus?.["가공"] || 0,
+                          ) +
+                          Number(
+                            adminDashboardResponse?.data?.requestStats
+                              ?.byStatus?.["세척.패킹"] || 0,
+                          ) +
+                          Number(
+                            adminDashboardResponse?.data?.requestStats
+                              ?.byStatus?.["포장.발송"] || 0,
+                          )
+                        ).toLocaleString()}
                       </div>
                     </div>
                     <div className="flex items-end justify-between gap-2 ml-6">
                       <div className="text-xs text-muted-foreground">취소</div>
                       <div className="text-2xl font-bold text-muted-foreground">
-                        {Number(data.stats?.[3]?.value || 0).toLocaleString()}
+                        {Number(
+                          adminDashboardResponse?.data?.requestStats
+                            ?.byStatus?.["취소"] || 0,
+                        ).toLocaleString()}
                       </div>
                     </div>
                   </div>
@@ -461,22 +452,25 @@ export const AdminDashboardPage = () => {
                       )}
                     </div>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
+                  <SnapshotRecalcAllButton
+                    token={token}
+                    periodKey="30d"
                     className="w-full h-7 text-xs mt-1"
-                    disabled={
-                      recalcMutation.isPending || snapshotRecalcDisabled
-                    }
-                    onClick={() => setRecalcConfirmOpen(true)}
-                  >
-                    {snapshotRecalcDisabled
-                      ? "이미 재계산됨"
-                      : recalcMutation.isPending
-                        ? "재계산 중..."
-                        : "수동 재계산"}
-                  </Button>
+                    onSuccess={async () => {
+                      await refetchSnapshotStatus();
+                      await Promise.all([
+                        queryClient.invalidateQueries({
+                          queryKey: ["admin-referral-groups"],
+                        }),
+                        queryClient.invalidateQueries({
+                          queryKey: ["admin-referral-group-tree"],
+                        }),
+                        queryClient.invalidateQueries({
+                          queryKey: ["admin-dashboard-risk-summary", period],
+                        }),
+                      ]);
+                    }}
+                  />
                 </CardContent>
               </Card>
             </div>
@@ -603,18 +597,6 @@ export const AdminDashboardPage = () => {
           </>
         }
         mainLeft={undefined}
-      />
-      <ConfirmDialog
-        open={recalcConfirmOpen}
-        title="스냅샷 재계산"
-        description="전체 소개 스냅샷을 재계산합니다. 계속하시겠습니까?"
-        confirmLabel="재계산"
-        cancelLabel="취소"
-        onConfirm={async () => {
-          await recalcMutation.mutateAsync();
-          setRecalcConfirmOpen(false);
-        }}
-        onCancel={() => setRecalcConfirmOpen(false)}
       />
     </>
   );

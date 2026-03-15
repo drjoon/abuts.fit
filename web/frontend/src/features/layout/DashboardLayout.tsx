@@ -61,11 +61,13 @@ const sidebarItems = {
   salesman: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
+    { icon: Wallet, label: "정산", href: "/dashboard/payments" },
     { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   devops: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
+    { icon: Wallet, label: "정산", href: "/dashboard/payments" },
     { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
@@ -86,6 +88,7 @@ const sidebarItems = {
       label: "의뢰",
       href: "/dashboard/monitoring",
     },
+    { icon: Wallet, label: "정산", href: "/dashboard/payments" },
     { icon: FileText, label: "세금계산서", href: "/dashboard/tax-invoices" },
     {
       icon: MessageSquare,

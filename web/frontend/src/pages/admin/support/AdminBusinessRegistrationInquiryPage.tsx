@@ -73,6 +73,7 @@ export const AdminBusinessRegistrationInquiryPage = () => {
     () => items.find((item) => item._id === selectedId) || null,
     [items, selectedId],
   );
+  const selectedUser = selected?.user || selected?.userSnapshot || {};
 
   const filteredItems = useMemo(() => {
     if (!searchQuery.trim()) return items;
@@ -253,263 +254,274 @@ export const AdminBusinessRegistrationInquiryPage = () => {
   return (
     <div className="p-4 space-y-4">
       <Card>
-        <CardHeader>
-          <CardTitle>문의</CardTitle>
-          <CardDescription>
-            모든 문의를 확인하고 처리 상태를 관리합니다.
-          </CardDescription>
+        <CardHeader className="space-y-3">
+          <div>
+            <CardTitle>문의</CardTitle>
+            <CardDescription>
+              문의 목록을 확인하고 처리 상태를 관리합니다.
+            </CardDescription>
+          </div>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Tabs
+                value={statusFilter}
+                onValueChange={(value) =>
+                  setStatusFilter(value as "all" | "open" | "resolved")
+                }
+              >
+                <TabsList className="gap-2">
+                  <TabsTrigger value="open">미처리</TabsTrigger>
+                  <TabsTrigger value="resolved">처리완료</TabsTrigger>
+                  <TabsTrigger value="all">전체</TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <Tabs
+                value={typeFilter}
+                onValueChange={(value) =>
+                  setTypeFilter(
+                    value as
+                      | "all"
+                      | "general"
+                      | "business_registration"
+                      | "user_registration",
+                  )
+                }
+              >
+                <TabsList className="gap-2">
+                  <TabsTrigger value="all">전체</TabsTrigger>
+                  <TabsTrigger value="general">일반</TabsTrigger>
+                  <TabsTrigger value="business_registration">
+                    사업자등록
+                  </TabsTrigger>
+                  <TabsTrigger value="user_registration">
+                    사용자등록
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                type="text"
+                placeholder="검색 (제목, 내용, 사업장, 담당자, 이메일)"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="max-w-md"
+              />
+              <Button type="button" variant="outline" onClick={handleExportCsv}>
+                CSV
+              </Button>
+              <Select
+                value={bulkStatus}
+                onValueChange={(value) =>
+                  setBulkStatus(value as "open" | "resolved")
+                }
+              >
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="resolved">처리완료</SelectItem>
+                  <SelectItem value="open">미처리</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                onClick={handleBulkStatusChange}
+                disabled={saving || !selectedIds.size}
+              >
+                선택 상태 변경
+              </Button>
+              <div className="ml-auto text-sm text-muted-foreground">
+                {loading ? "불러오는 중..." : `총 ${filteredItems.length}건`}
+                {selectedIds.size > 0 ? ` · 선택 ${selectedIds.size}건` : ""}
+              </div>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent>
-          <Tabs
-            value={statusFilter}
-            onValueChange={(value) =>
-              setStatusFilter(value as "all" | "open" | "resolved")
-            }
-          >
-            <TabsList className="gap-2">
-              <TabsTrigger value="open">미처리</TabsTrigger>
-              <TabsTrigger value="resolved">처리완료</TabsTrigger>
-              <TabsTrigger value="all">전체</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <Tabs
-            value={typeFilter}
-            onValueChange={(value) =>
-              setTypeFilter(
-                value as
-                  | "all"
-                  | "general"
-                  | "business_registration"
-                  | "user_registration",
-              )
-            }
-          >
-            <TabsList className="mt-3 gap-2">
-              <TabsTrigger value="all">전체 문의</TabsTrigger>
-              <TabsTrigger value="general">일반 문의</TabsTrigger>
-              <TabsTrigger value="business_registration">
-                사업자등록
-              </TabsTrigger>
-              <TabsTrigger value="user_registration">사용자등록</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <Input
-              type="text"
-              placeholder="검색 (제목, 내용, 사업장, 담당자, 이메일)"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="max-w-md"
-            />
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" onClick={handleExportCsv}>
-              CSV 내보내기
-            </Button>
-            <Select
-              value={bulkStatus}
-              onValueChange={(value) =>
-                setBulkStatus(value as "open" | "resolved")
-              }
-            >
-              <SelectTrigger className="w-[140px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="resolved">처리완료</SelectItem>
-                <SelectItem value="open">미처리</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button
-              type="button"
-              onClick={handleBulkStatusChange}
-              disabled={saving || !selectedIds.size}
-            >
-              선택 상태 변경
-            </Button>
-            {selectedIds.size > 0 && (
-              <span className="text-sm text-slate-500">
-                선택 {selectedIds.size}건
-              </span>
-            )}
-          </div>
-        </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        <Card>
-          <CardHeader>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+        <Card className="min-h-0">
+          <CardHeader className="pb-3">
             <CardTitle className="text-base">문의 목록</CardTitle>
-            <CardDescription>
-              {loading ? "불러오는 중..." : `${items.length}건`}
-            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12">
-                    <Checkbox
-                      checked={
-                        filteredItems.length > 0 &&
-                        selectedIds.size === filteredItems.length
-                      }
-                      onCheckedChange={(value) =>
-                        handleSelectAll(Boolean(value))
-                      }
-                    />
-                  </TableHead>
-                  <TableHead>접수일</TableHead>
-                  <TableHead>유형</TableHead>
-                  <TableHead>사업장</TableHead>
-                  <TableHead>담당자</TableHead>
-                  <TableHead>제목</TableHead>
-                  <TableHead>상태</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredItems.map((item) => {
-                  const user = item.user || item.userSnapshot || {};
-                  const typeLabel =
-                    typeLabelMap[item.type || "general"] || "일반 문의";
-                  const isChecked = selectedIds.has(item._id);
-                  return (
-                    <TableRow
-                      key={item._id}
-                      className={
-                        item._id === selectedId
-                          ? "bg-slate-50"
-                          : "cursor-pointer"
-                      }
-                      onClick={() => setSelectedId(item._id)}
-                    >
-                      <TableCell>
-                        <Checkbox
-                          checked={isChecked}
-                          onCheckedChange={(value) =>
-                            toggleSelection(item._id, Boolean(value))
-                          }
-                          onClick={(event) => event.stopPropagation()}
-                        />
-                      </TableCell>
-                      <TableCell>{formatDate(item.createdAt)}</TableCell>
-                      <TableCell>{typeLabel}</TableCell>
-                      <TableCell>{user.business || "-"}</TableCell>
-                      <TableCell>{user.name || "-"}</TableCell>
-                      <TableCell>{item.subject || "-"}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            item.status === "resolved" ? "outline" : "default"
-                          }
-                        >
-                          {statusLabelMap[item.status || "open"] || "미처리"}
-                        </Badge>
+          <CardContent className="min-h-0">
+            <div className="overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">
+                      <Checkbox
+                        checked={
+                          filteredItems.length > 0 &&
+                          selectedIds.size === filteredItems.length
+                        }
+                        onCheckedChange={(value) =>
+                          handleSelectAll(Boolean(value))
+                        }
+                      />
+                    </TableHead>
+                    <TableHead className="w-[120px]">상태</TableHead>
+                    <TableHead className="w-[120px]">유형</TableHead>
+                    <TableHead className="w-[180px]">사업장</TableHead>
+                    <TableHead className="w-[120px]">담당자</TableHead>
+                    <TableHead>제목</TableHead>
+                    <TableHead className="w-[150px]">접수일</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredItems.map((item) => {
+                    const user = item.user || item.userSnapshot || {};
+                    const isChecked = selectedIds.has(item._id);
+                    const isSelected = item._id === selectedId;
+                    return (
+                      <TableRow
+                        key={item._id}
+                        className={
+                          isSelected ? "bg-slate-50" : "cursor-pointer"
+                        }
+                        onClick={() => setSelectedId(item._id)}
+                      >
+                        <TableCell>
+                          <Checkbox
+                            checked={isChecked}
+                            onCheckedChange={(value) =>
+                              toggleSelection(item._id, Boolean(value))
+                            }
+                            onClick={(event) => event.stopPropagation()}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              item.status === "resolved" ? "outline" : "default"
+                            }
+                          >
+                            {statusLabelMap[item.status || "open"] || "미처리"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {typeLabelMap[item.type || "general"] || "일반 문의"}
+                        </TableCell>
+                        <TableCell className="truncate">
+                          {user.business || "-"}
+                        </TableCell>
+                        <TableCell>{user.name || "-"}</TableCell>
+                        <TableCell className="truncate">
+                          {item.subject || "-"}
+                        </TableCell>
+                        <TableCell>{formatDate(item.createdAt)}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {!filteredItems.length && !loading && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={7}
+                        className="text-center text-sm text-slate-400"
+                      >
+                        문의 내역이 없습니다.
                       </TableCell>
                     </TableRow>
-                  );
-                })}
-                {!filteredItems.length && !loading && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={7}
-                      className="text-center text-sm text-slate-400"
-                    >
-                      문의 내역이 없습니다.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
+        <Card className="min-h-0">
+          <CardHeader className="pb-3">
             <CardTitle className="text-base">문의 상세</CardTitle>
             <CardDescription>
-              선택한 문의의 상세 정보를 확인하고 메모를 남길 수 있습니다.
+              선택한 문의의 상세 정보와 관리자 메모를 확인합니다.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {!selected && (
+            {!selected ? (
               <div className="text-sm text-slate-400">
                 문의 내역을 선택해주세요.
               </div>
-            )}
-            {selected && (
+            ) : (
               <>
-                <div className="grid gap-3 text-sm">
-                  <div className="grid grid-cols-[120px_1fr] gap-2">
-                    <span className="text-slate-500">접수일</span>
-                    <span>{formatDate(selected.createdAt)}</span>
+                <div className="grid gap-2 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-500">상태</span>
+                    <Badge
+                      variant={
+                        selected.status === "resolved" ? "outline" : "default"
+                      }
+                    >
+                      {statusLabelMap[selected.status || "open"] || "미처리"}
+                    </Badge>
                   </div>
-                  <div className="grid grid-cols-[120px_1fr] gap-2">
-                    <span className="text-slate-500">문의 유형</span>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-500">유형</span>
                     <span>
                       {typeLabelMap[selected.type || "general"] || "일반 문의"}
                     </span>
                   </div>
-                  <div className="grid grid-cols-[120px_1fr] gap-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-500">접수일</span>
+                    <span>{formatDate(selected.createdAt)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
                     <span className="text-slate-500">사업장</span>
-                    <span>
-                      {selected.user?.business ||
-                        selected.userSnapshot?.business ||
-                        "-"}
+                    <span className="text-right">
+                      {selectedUser.business || "-"}
                     </span>
                   </div>
-                  <div className="grid grid-cols-[120px_1fr] gap-2">
+                  <div className="flex items-center justify-between gap-3">
                     <span className="text-slate-500">담당자</span>
-                    <span>
-                      {selected.user?.name ||
-                        selected.userSnapshot?.name ||
-                        "-"}
-                    </span>
+                    <span>{selectedUser.name || "-"}</span>
                   </div>
-                  <div className="grid grid-cols-[120px_1fr] gap-2">
+                  <div className="flex items-center justify-between gap-3">
                     <span className="text-slate-500">이메일</span>
-                    <span>
-                      {selected.user?.email ||
-                        selected.userSnapshot?.email ||
-                        "-"}
+                    <span className="text-right">
+                      {selectedUser.email || "-"}
                     </span>
                   </div>
-                  <div className="grid grid-cols-[120px_1fr] gap-2">
+                  <div className="flex items-center justify-between gap-3">
                     <span className="text-slate-500">역할</span>
-                    <span>
-                      {selected.user?.role ||
-                        selected.userSnapshot?.role ||
-                        "-"}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-[120px_1fr] gap-2">
-                    <span className="text-slate-500">문의 사유</span>
-                    <span>{selected.reason || "-"}</span>
-                  </div>
-                  <div className="grid grid-cols-[120px_1fr] gap-2">
-                    <span className="text-slate-500">문의 제목</span>
-                    <span>{selected.subject || "-"}</span>
-                  </div>
-                  <div className="grid grid-cols-[120px_1fr] gap-2">
-                    <span className="text-slate-500">문의 내용</span>
-                    <span>{selected.message || "-"}</span>
-                  </div>
-                  <div className="grid grid-cols-[120px_1fr] gap-2">
-                    <span className="text-slate-500">오류 메시지</span>
-                    <span>{selected.payload?.errorMessage || "-"}</span>
+                    <span>{selectedUser.role || "-"}</span>
                   </div>
                 </div>
 
-                <div className="rounded-md border bg-slate-50 p-3 text-xs text-slate-600">
-                  <pre className="whitespace-pre-wrap break-words">
-                    {JSON.stringify(selected.payload?.ownerForm || {}, null, 2)}
-                  </pre>
+                <div className="space-y-2 rounded-lg border p-3">
+                  <div className="text-xs text-slate-500">제목</div>
+                  <div className="text-sm font-medium">
+                    {selected.subject || "-"}
+                  </div>
                 </div>
+
+                <div className="space-y-2 rounded-lg border p-3">
+                  <div className="text-xs text-slate-500">내용</div>
+                  <div className="whitespace-pre-wrap break-words text-sm">
+                    {selected.message || "-"}
+                  </div>
+                </div>
+
+                {selected.reason || selected.payload?.errorMessage ? (
+                  <div className="space-y-2 rounded-lg border p-3">
+                    <div className="text-xs text-slate-500">추가 정보</div>
+                    <div className="space-y-1 text-sm">
+                      <div>
+                        <span className="text-slate-500">문의 사유</span>
+                        <div>{selected.reason || "-"}</div>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">오류 메시지</span>
+                        <div>{selected.payload?.errorMessage || "-"}</div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="space-y-2">
                   <label className="text-sm font-medium">관리자 메모</label>
                   <Textarea
-                    rows={4}
+                    rows={5}
                     value={adminNote}
                     onChange={(event) => setAdminNote(event.target.value)}
                     placeholder="처리 내용을 입력하세요"

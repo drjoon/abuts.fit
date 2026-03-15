@@ -32,6 +32,23 @@ function setLastRunAt(key: string, at: number) {
   }
 }
 
+async function fetchAdminSnapshotLastComputedAt(token?: string | null) {
+  if (!token) return 0;
+  try {
+    const res = await apiFetch<any>({
+      path: "/api/snapshots/admin-status",
+      method: "GET",
+      token,
+    });
+    const raw = String(res.data?.data?.lastComputedAt || "").trim();
+    if (!raw) return 0;
+    const dt = new Date(raw);
+    return Number.isNaN(dt.getTime()) ? 0 : dt.getTime();
+  } catch {
+    return 0;
+  }
+}
+
 export function useSnapshotRecalcAll({
   token,
   periodKey,
@@ -52,12 +69,24 @@ export function useSnapshotRecalcAll({
 
   const [running, setRunning] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [serverLastAt, setServerLastAt] = useState(0);
 
   const remainingMs = useMemo(() => {
-    const lastAt = getLastRunAt(storageKey);
+    const lastAt = Math.max(getLastRunAt(storageKey), serverLastAt);
     if (!lastAt) return 0;
     return Math.max(0, lastAt + COOLDOWN_MS - now);
-  }, [now, storageKey]);
+  }, [now, serverLastAt, storageKey]);
+
+  useEffect(() => {
+    if (user?.role !== "admin" || !token) return;
+    let cancelled = false;
+    fetchAdminSnapshotLastComputedAt(token).then((at) => {
+      if (!cancelled) setServerLastAt(at);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, user?.role]);
 
   useEffect(() => {
     if (remainingMs <= 0) return;
@@ -74,7 +103,7 @@ export function useSnapshotRecalcAll({
   const recalcAll = useCallback(async () => {
     if (!token) return;
 
-    const lastAt = getLastRunAt(storageKey);
+    const lastAt = Math.max(getLastRunAt(storageKey), serverLastAt);
     const remaining = lastAt
       ? Math.max(0, lastAt + COOLDOWN_MS - Date.now())
       : 0;
@@ -101,7 +130,12 @@ export function useSnapshotRecalcAll({
         throw new Error(res.data?.message || "스냅샷 재계산에 실패했습니다.");
       }
 
-      setLastRunAt(storageKey, Date.now());
+      const executedAt = Date.now();
+      setLastRunAt(storageKey, executedAt);
+      if (user?.role === "admin") {
+        const refreshed = await fetchAdminSnapshotLastComputedAt(token);
+        setServerLastAt(refreshed || executedAt);
+      }
       setNow(Date.now());
 
       toast({
@@ -121,7 +155,15 @@ export function useSnapshotRecalcAll({
     } finally {
       setRunning(false);
     }
-  }, [onSuccess, periodKey, storageKey, toast, token]);
+  }, [
+    onSuccess,
+    periodKey,
+    serverLastAt,
+    storageKey,
+    toast,
+    token,
+    user?.role,
+  ]);
 
   return {
     recalcAll,

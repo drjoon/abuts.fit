@@ -1,5 +1,7 @@
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
+import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { Types } from "mongoose";
 
 const REFERRAL_LEADER_ROLES = ["salesman", "devops"];
@@ -54,8 +56,76 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
   );
 
   const salesmen = await User.find({ _id: { $in: salesmanObjectIds } })
-    .select({ _id: 1, businessAnchorId: 1 })
+    .select({ _id: 1, businessAnchorId: 1, businessId: 1 })
     .lean();
+
+  const salesmanBusinessIds = Array.from(
+    new Set(
+      (salesmen || [])
+        .map((salesman) => normalizeObjectIdString(salesman?.businessId))
+        .filter(Boolean),
+    ),
+  ).map((id) => new Types.ObjectId(id));
+
+  const businesses = salesmanBusinessIds.length
+    ? await Business.find({ _id: { $in: salesmanBusinessIds } })
+        .select({ _id: 1, businessAnchorId: 1, extracted: 1 })
+        .lean()
+    : [];
+
+  const businessNumberNormalizedSet = new Set(
+    (businesses || [])
+      .map((business) =>
+        String(business?.extracted?.businessNumber || "")
+          .replace(/\D/g, "")
+          .trim(),
+      )
+      .filter(Boolean),
+  );
+
+  const anchors = businessNumberNormalizedSet.size
+    ? await BusinessAnchor.find({
+        businessNumberNormalized: {
+          $in: Array.from(businessNumberNormalizedSet),
+        },
+      })
+        .select({ _id: 1, businessNumberNormalized: 1, sourceBusinessId: 1 })
+        .lean()
+    : [];
+
+  const anchorIdBySourceBusinessId = new Map(
+    (anchors || [])
+      .filter((anchor) => anchor?.sourceBusinessId)
+      .map((anchor) => [
+        String(anchor?.sourceBusinessId || ""),
+        String(anchor?._id || ""),
+      ]),
+  );
+
+  const anchorIdByBusinessNumber = new Map(
+    (anchors || []).map((anchor) => [
+      String(anchor?.businessNumberNormalized || ""),
+      String(anchor?._id || ""),
+    ]),
+  );
+
+  const resolvedBusinessAnchorIdByBusinessId = new Map();
+  for (const business of businesses || []) {
+    const businessId = normalizeObjectIdString(business?._id);
+    const directAnchorId = normalizeObjectIdString(business?.businessAnchorId);
+    const normalizedBusinessNumber = String(
+      business?.extracted?.businessNumber || "",
+    )
+      .replace(/\D/g, "")
+      .trim();
+    const resolvedAnchorId =
+      directAnchorId ||
+      String(anchorIdBySourceBusinessId.get(businessId) || "") ||
+      String(anchorIdByBusinessNumber.get(normalizedBusinessNumber) || "");
+    if (businessId) {
+      resolvedBusinessAnchorIdByBusinessId.set(businessId, resolvedAnchorId);
+    }
+  }
 
   const salesmenById = new Map(
     (salesmen || []).map((salesman) => [String(salesman?._id || ""), salesman]),
@@ -65,9 +135,10 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
     (salesmen || [])
       .map((salesman) => {
         const salesmanId = normalizeObjectIdString(salesman?._id);
-        const businessAnchorId = normalizeObjectIdString(
-          salesman?.businessAnchorId,
-        );
+        const businessId = normalizeObjectIdString(salesman?.businessId);
+        const businessAnchorId =
+          normalizeObjectIdString(salesman?.businessAnchorId) ||
+          String(resolvedBusinessAnchorIdByBusinessId.get(businessId) || "");
         return salesmanId && businessAnchorId
           ? [businessAnchorId, salesmanId]
           : null;

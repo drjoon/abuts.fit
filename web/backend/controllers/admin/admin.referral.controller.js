@@ -37,11 +37,14 @@ function setAdminReferralCache(key, value) {
 
 function normalizeReferralLeaders(leaders) {
   const pickedByBusinessAnchorId = new Map();
+  const fallbackLeaders = [];
 
   for (const leader of leaders || []) {
     const businessAnchorId = String(leader?.businessAnchorId || "").trim();
-    if (!businessAnchorId || !Types.ObjectId.isValid(businessAnchorId))
+    if (!businessAnchorId || !Types.ObjectId.isValid(businessAnchorId)) {
+      fallbackLeaders.push(leader);
       continue;
+    }
 
     const current = pickedByBusinessAnchorId.get(businessAnchorId);
     if (!current) {
@@ -61,7 +64,10 @@ function normalizeReferralLeaders(leaders) {
     }
   }
 
-  return Array.from(pickedByBusinessAnchorId.values()).sort((a, b) => {
+  return [
+    ...Array.from(pickedByBusinessAnchorId.values()),
+    ...fallbackLeaders,
+  ].sort((a, b) => {
     const aCreatedAt = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
     const bCreatedAt = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
     return bCreatedAt - aCreatedAt;

@@ -88,6 +88,8 @@ import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizatio
 import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
 import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsPage";
 import AdminReferralGroupsPage from "@/pages/admin/referralGroups/AdminReferralGroupsPage";
+import SalesmanPaymentsPage from "@/pages/payments/SalesmanPaymentsPage";
+import AdminPaymentsPage from "@/pages/payments/AdminPaymentsPage";
 const ManufacturerDashboardPage = lazy(() =>
   import("./pages/manufacturer/dashboard/ManufacturerDashboardPage").then(
     (m) => ({ default: m.ManufacturerDashboardPage }),
@@ -189,6 +191,18 @@ const ReferralGroupsRoute = () => {
   if (user.role === "admin") return <AdminReferralGroupsPage />;
   if (user.role === "requestor" || user.role === "salesman")
     return <ReferralGroupsPage />;
+  return <Navigate to="/dashboard" replace />;
+};
+
+const PaymentsRoute = () => {
+  const { user } = useAuthStore();
+
+  if (!user) return <Navigate to="/dashboard" replace />;
+  if (user.role === "manufacturer") return <ManufacturerPaymentPage />;
+  if (user.role === "salesman" || user.role === "devops") {
+    return <SalesmanPaymentsPage />;
+  }
+  if (user.role === "admin") return <AdminPaymentsPage />;
   return <Navigate to="/dashboard" replace />;
 };
 
@@ -298,6 +312,25 @@ const App = () => {
                       </RoleProtectedRoute>
                     }
                   />
+                  <Route
+                    path="inquiries"
+                    element={
+                      <RoleProtectedRoute
+                        roles={[
+                          "admin",
+                          "requestor",
+                          "salesman",
+                          "manufacturer",
+                        ]}
+                      >
+                        {useAuthStore.getState().user?.role === "admin" ? (
+                          <AdminInquiriesPage />
+                        ) : (
+                          <InquiriesPage />
+                        )}
+                      </RoleProtectedRoute>
+                    }
+                  />
                   <Route path="sms" element={<AdminSmsPage />} />
                   <Route
                     path="chat-management"
@@ -331,8 +364,10 @@ const App = () => {
                   <Route
                     path="payments"
                     element={
-                      <RoleProtectedRoute roles={["manufacturer"]}>
-                        <ManufacturerPaymentPage />
+                      <RoleProtectedRoute
+                        roles={["manufacturer", "salesman", "devops", "admin"]}
+                      >
+                        <PaymentsRoute />
                       </RoleProtectedRoute>
                     }
                   />
@@ -358,16 +393,6 @@ const App = () => {
                         ]}
                       >
                         <SharedOnboardingWizardPage />
-                      </RoleProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="inquiries"
-                    element={
-                      <RoleProtectedRoute
-                        roles={["requestor", "salesman", "manufacturer"]}
-                      >
-                        <InquiriesPage />
                       </RoleProtectedRoute>
                     }
                   />
