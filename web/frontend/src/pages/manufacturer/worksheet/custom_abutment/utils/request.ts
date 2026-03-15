@@ -3,6 +3,11 @@ import type { RequestBase } from "@/types/request";
 export type ManufacturerRequest = RequestBase & {
   referenceIds?: string[];
   mailboxAddress?: string | null;
+  requestor?:
+    | (RequestBase["requestor"] & {
+        business?: string;
+      })
+    | null;
   deliveryInfoRef?: any;
   wasPickedUp?: boolean;
   pickupStatusCode?: string | null;

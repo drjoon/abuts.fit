@@ -2,9 +2,9 @@ import mongoose from "mongoose";
 
 const creditOrderSchema = new mongoose.Schema(
   {
-    organizationId: {
+    businessAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Business",
+      ref: "BusinessAnchor",
       required: true,
       index: true,
     },
@@ -58,7 +58,7 @@ const creditOrderSchema = new mongoose.Schema(
       dueDate: { type: String, default: "" },
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 creditOrderSchema.index(
@@ -66,7 +66,7 @@ creditOrderSchema.index(
   {
     unique: true,
     partialFilterExpression: { paymentKey: { $type: "string", $gt: "" } },
-  }
+  },
 );
 
 export default mongoose.model("CreditOrder", creditOrderSchema);

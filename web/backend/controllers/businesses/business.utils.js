@@ -2,26 +2,40 @@ import Business from "../../models/business.model.js";
 import { buildBusinessTypeFilter } from "./businessRole.util.js";
 
 export async function resolveOwnedBusiness(req, businessType) {
-  const businessId = req.user?.businessId;
-  if (!businessId) return null;
   const meId = req.user?._id;
   const typeFilter = buildBusinessTypeFilter(businessType);
-  const business = await Business.findOne({
-    _id: businessId,
+  const businessAnchorId = req.user?.businessAnchorId;
+
+  if (businessAnchorId) {
+    const byAnchor = await Business.findOne({
+      businessAnchorId,
+      ...typeFilter,
+      $or: [{ owner: meId }, { owners: meId }],
+    });
+    if (byAnchor) return byAnchor;
+  }
+
+  return await Business.findOne({
     ...typeFilter,
     $or: [{ owner: meId }, { owners: meId }],
-  });
-  return business;
+  }).sort({ updatedAt: -1, createdAt: -1 });
 }
 
 export async function resolvePrimaryOwnedBusiness(req, businessType) {
-  const businessId = req.user?.businessId;
-  if (!businessId) return null;
   const typeFilter = buildBusinessTypeFilter(businessType);
-  const business = await Business.findOne({
-    _id: businessId,
+  const businessAnchorId = req.user?.businessAnchorId;
+
+  if (businessAnchorId) {
+    const byAnchor = await Business.findOne({
+      businessAnchorId,
+      ...typeFilter,
+      owner: req.user._id,
+    });
+    if (byAnchor) return byAnchor;
+  }
+
+  return await Business.findOne({
     ...typeFilter,
     owner: req.user._id,
-  });
-  return business;
+  }).sort({ updatedAt: -1, createdAt: -1 });
 }

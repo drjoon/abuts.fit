@@ -29,6 +29,15 @@ export type DirectMemberRow = {
   last30DaysOrders?: number;
 };
 
+const buildReferralSignupLink = (referralCode: string) => {
+  const code = String(referralCode || "")
+    .trim()
+    .toUpperCase();
+  if (!code) return "";
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  return `${origin}/signup/referral?ref=${encodeURIComponent(code)}`;
+};
+
 export const useReferralData = () => {
   const { user, token } = useAuthStore();
   const { toast } = useToast();
@@ -40,7 +49,10 @@ export const useReferralData = () => {
   const [directMembers, setDirectMembers] = useState<DirectMemberRow[]>([]);
   const [loadingDirectMembers, setLoadingDirectMembers] = useState(false);
 
-  const isReferralEligible = user?.role === "requestor" || user?.role === "salesman";
+  const isReferralEligible =
+    user?.role === "requestor" ||
+    user?.role === "salesman" ||
+    user?.role === "devops";
 
   const referralCode = useMemo(
     () =>
@@ -51,9 +63,7 @@ export const useReferralData = () => {
   );
 
   const referralLink = useMemo(() => {
-    if (!referralCode) return "";
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    return `${origin}/signup?ref=${encodeURIComponent(referralCode)}`;
+    return buildReferralSignupLink(referralCode);
   }, [referralCode]);
 
   useEffect(() => {

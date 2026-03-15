@@ -16,28 +16,28 @@ export async function buildReferralLeaderAggregation({
   periodStart,
   periodEnd,
 }) {
-  const leaderBusinessIds = Array.from(
+  const leaderBusinessAnchorIds = Array.from(
     new Set(
       (leaders || [])
-        .map((leader) => normalizeObjectIdString(leader?.businessId))
+        .map((leader) => normalizeObjectIdString(leader?.businessAnchorId))
         .filter(Boolean),
     ),
   );
 
   const emptyResult = {
     directChildren: [],
-    directCountByLeaderBusinessId: new Map(),
-    childIdsByLeaderBusinessId: new Map(),
-    childBusinessIdsByLeaderBusinessId: new Map(),
-    ordersByBusinessId: new Map(),
-    revenueByBusinessId: new Map(),
-    bonusByBusinessId: new Map(),
-    requestorBusinessStatsByBusinessId: new Map(),
+    directCountByLeaderBusinessAnchorId: new Map(),
+    childIdsByLeaderBusinessAnchorId: new Map(),
+    childBusinessAnchorIdsByLeaderBusinessAnchorId: new Map(),
+    ordersByBusinessAnchorId: new Map(),
+    revenueByBusinessAnchorId: new Map(),
+    bonusByBusinessAnchorId: new Map(),
+    requestorBusinessStatsByBusinessAnchorId: new Map(),
   };
 
-  if (!leaderBusinessIds.length) return emptyResult;
+  if (!leaderBusinessAnchorIds.length) return emptyResult;
 
-  const leaderBusinessObjectIds = leaderBusinessIds.map(
+  const leaderBusinessAnchorObjectIds = leaderBusinessAnchorIds.map(
     (id) => new Types.ObjectId(id),
   );
 
@@ -45,68 +45,76 @@ export async function buildReferralLeaderAggregation({
     User.aggregate([
       {
         $match: {
-          referredByBusinessId: { $in: leaderBusinessObjectIds },
+          referredByAnchorId: { $in: leaderBusinessAnchorObjectIds },
           active: true,
           role: { $in: REFERRAL_CHILD_ROLES },
         },
       },
-      { $group: { _id: "$referredByBusinessId", count: { $sum: 1 } } },
+      { $group: { _id: "$referredByAnchorId", count: { $sum: 1 } } },
     ]),
     User.find({
-      referredByBusinessId: { $in: leaderBusinessObjectIds },
+      referredByAnchorId: { $in: leaderBusinessAnchorObjectIds },
       role: { $in: REFERRAL_CHILD_ROLES },
       active: true,
     })
-      .select({ _id: 1, referredByBusinessId: 1, businessId: 1 })
+      .select({ _id: 1, referredByAnchorId: 1, businessAnchorId: 1 })
       .lean(),
   ]);
 
-  const directCountByLeaderBusinessId = new Map(
+  const directCountByLeaderBusinessAnchorId = new Map(
     (directCounts || []).map((row) => [
       String(row?._id || ""),
       Number(row?.count || 0),
     ]),
   );
 
-  const childIdsByLeaderBusinessId = new Map();
-  const childBusinessIdsByLeaderBusinessId = new Map();
+  const childIdsByLeaderBusinessAnchorId = new Map();
+  const childBusinessAnchorIdsByLeaderBusinessAnchorId = new Map();
   for (const user of directChildren || []) {
-    const leaderBusinessId = normalizeObjectIdString(
-      user?.referredByBusinessId,
+    const leaderBusinessAnchorId = normalizeObjectIdString(
+      user?.referredByAnchorId,
     );
-    if (!leaderBusinessId) continue;
+    if (!leaderBusinessAnchorId) continue;
 
-    const childIds = childIdsByLeaderBusinessId.get(leaderBusinessId) || [];
+    const childIds =
+      childIdsByLeaderBusinessAnchorId.get(leaderBusinessAnchorId) || [];
     childIds.push(String(user?._id || ""));
-    childIdsByLeaderBusinessId.set(leaderBusinessId, childIds);
+    childIdsByLeaderBusinessAnchorId.set(leaderBusinessAnchorId, childIds);
 
-    const childBusinessId = normalizeObjectIdString(user?.businessId);
-    if (childBusinessId) {
-      const businessIds =
-        childBusinessIdsByLeaderBusinessId.get(leaderBusinessId) || new Set();
-      businessIds.add(childBusinessId);
-      childBusinessIdsByLeaderBusinessId.set(leaderBusinessId, businessIds);
-    }
+    const childBusinessAnchorId = normalizeObjectIdString(
+      user?.businessAnchorId,
+    );
+    if (!childBusinessAnchorId) continue;
+
+    const businessAnchorIds =
+      childBusinessAnchorIdsByLeaderBusinessAnchorId.get(
+        leaderBusinessAnchorId,
+      ) || new Set();
+    businessAnchorIds.add(childBusinessAnchorId);
+    childBusinessAnchorIdsByLeaderBusinessAnchorId.set(
+      leaderBusinessAnchorId,
+      businessAnchorIds,
+    );
   }
 
-  const relevantBusinessIds = Array.from(
+  const relevantBusinessAnchorIds = Array.from(
     new Set(
       [...(leaders || []), ...(directChildren || [])]
-        .map((user) => normalizeObjectIdString(user?.businessId))
+        .map((user) => normalizeObjectIdString(user?.businessAnchorId))
         .filter(Boolean),
     ),
   );
 
   const hasPeriod = periodStart instanceof Date && periodEnd instanceof Date;
-  const relevantBusinessObjectIds = relevantBusinessIds.map(
+  const relevantBusinessAnchorObjectIds = relevantBusinessAnchorIds.map(
     (id) => new Types.ObjectId(id),
   );
 
-  const requestRows = relevantBusinessObjectIds.length
+  const requestRows = relevantBusinessAnchorObjectIds.length
     ? await Request.aggregate([
         {
           $match: {
-            businessId: { $in: relevantBusinessObjectIds },
+            businessAnchorId: { $in: relevantBusinessAnchorObjectIds },
             manufacturerStage: "추적관리",
             ...(hasPeriod
               ? { createdAt: { $gte: periodStart, $lte: periodEnd } }
@@ -115,7 +123,7 @@ export async function buildReferralLeaderAggregation({
         },
         {
           $group: {
-            _id: "$businessId",
+            _id: "$businessAnchorId",
             orderCount: { $sum: 1 },
             revenueAmount: {
               $sum: {
@@ -131,19 +139,19 @@ export async function buildReferralLeaderAggregation({
       ])
     : [];
 
-  const requestorLeaderBusinessIds = (leaders || [])
+  const requestorLeaderBusinessAnchorIds = (leaders || [])
     .filter((leader) =>
       REFERRAL_SELF_METRIC_ROLES.includes(String(leader?.role || "")),
     )
-    .map((leader) => normalizeObjectIdString(leader?.businessId))
+    .map((leader) => normalizeObjectIdString(leader?.businessAnchorId))
     .filter(Boolean);
 
-  const requestorBusinessRows = requestorLeaderBusinessIds.length
+  const requestorBusinessRows = requestorLeaderBusinessAnchorIds.length
     ? await Request.aggregate([
         {
           $match: {
-            businessId: {
-              $in: requestorLeaderBusinessIds.map(
+            businessAnchorId: {
+              $in: requestorLeaderBusinessAnchorIds.map(
                 (id) => new Types.ObjectId(id),
               ),
             },
@@ -155,7 +163,7 @@ export async function buildReferralLeaderAggregation({
         },
         {
           $group: {
-            _id: "$businessId",
+            _id: "$businessAnchorId",
             orderCount: { $sum: 1 },
             revenueAmount: {
               $sum: {
@@ -173,28 +181,28 @@ export async function buildReferralLeaderAggregation({
 
   return {
     directChildren,
-    directCountByLeaderBusinessId,
-    childIdsByLeaderBusinessId,
-    childBusinessIdsByLeaderBusinessId,
-    ordersByBusinessId: new Map(
+    directCountByLeaderBusinessAnchorId,
+    childIdsByLeaderBusinessAnchorId,
+    childBusinessAnchorIdsByLeaderBusinessAnchorId,
+    ordersByBusinessAnchorId: new Map(
       requestRows.map((row) => [
         String(row?._id || ""),
         Number(row?.orderCount || 0),
       ]),
     ),
-    revenueByBusinessId: new Map(
+    revenueByBusinessAnchorId: new Map(
       requestRows.map((row) => [
         String(row?._id || ""),
         Number(row?.revenueAmount || 0),
       ]),
     ),
-    bonusByBusinessId: new Map(
+    bonusByBusinessAnchorId: new Map(
       requestRows.map((row) => [
         String(row?._id || ""),
         Number(row?.bonusAmount || 0),
       ]),
     ),
-    requestorBusinessStatsByBusinessId: new Map(
+    requestorBusinessStatsByBusinessAnchorId: new Map(
       requestorBusinessRows.map((row) => [
         String(row?._id || ""),
         {

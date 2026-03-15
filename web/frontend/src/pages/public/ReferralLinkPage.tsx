@@ -31,7 +31,7 @@ export const ReferralLinkPage = () => {
   const signupUrl = useMemo(() => {
     if (!referralCode) return "";
     const origin = typeof window !== "undefined" ? window.location.origin : "";
-    return `${origin}/signup?ref=${encodeURIComponent(referralCode)}`;
+    return `${origin}/signup/referral?ref=${encodeURIComponent(referralCode)}`;
   }, [referralCode]);
 
   useEffect(() => {
@@ -89,7 +89,7 @@ export const ReferralLinkPage = () => {
   };
 
   const handleSignup = () => {
-    navigate(`/signup?ref=${encodeURIComponent(referralCode || "")}`);
+    navigate(`/signup/referral?ref=${encodeURIComponent(referralCode || "")}`);
   };
 
   if (loading) {
@@ -149,9 +149,7 @@ export const ReferralLinkPage = () => {
         <CardContent className="space-y-6">
           {/* 소개자 정보 */}
           <div className="rounded-lg bg-blue-50 border border-blue-100 p-4">
-            <div className="text-xs text-blue-600 font-medium mb-1">
-              소개자
-            </div>
+            <div className="text-xs text-blue-600 font-medium mb-1">소개자</div>
             <div className="text-sm font-semibold text-slate-900">
               {referrerDisplay}
             </div>

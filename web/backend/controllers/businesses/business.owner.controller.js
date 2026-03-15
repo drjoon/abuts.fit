@@ -5,7 +5,10 @@ import {
   resolveOwnedBusiness,
   resolvePrimaryOwnedBusiness,
 } from "./business.utils.js";
-import { assertBusinessRole } from "./businessRole.util.js";
+import {
+  assertBusinessRole,
+  buildBusinessTypeFilter,
+} from "./businessRole.util.js";
 
 function readUserBusinessId(user) {
   return String(user?.businessId || "").trim();

@@ -285,7 +285,7 @@ export async function updateReviewStatusByStage(req, res) {
 
     await session.withTransaction(async () => {
       const request = await Request.findById(id)
-        .populate("requestor", "business businessId")
+        .populate("requestor", "businessAnchorId")
         .session(session);
       if (!request) {
         const err = new Error("의뢰를 찾을 수 없습니다.");
@@ -313,35 +313,32 @@ export async function updateReviewStatusByStage(req, res) {
 
       // 승인 시 다음 공정으로 전환, 미승인(PENDING) 시 현재 단계로 되돌림
       if (status === "APPROVED") {
-        const resolvedRequestorOrgId = (() => {
-          const direct = request.businessId;
-          if (direct) return direct;
-          const fallbackId =
-            request.requestor?.businessId ||
-            request.requestor?.business?._id ||
-            request.requestor?.business;
-          if (!fallbackId) return null;
-          const fallbackStr = String(fallbackId);
-          if (!Types.ObjectId.isValid(fallbackStr)) return null;
-          return typeof fallbackId === "string"
-            ? new Types.ObjectId(fallbackStr)
-            : fallbackId;
+        const resolvedBusinessAnchorId = (() => {
+          const directBusinessAnchorId = request.businessAnchorId;
+          if (directBusinessAnchorId) return directBusinessAnchorId;
+          const requestorBusinessAnchorId = request.requestor?.businessAnchorId;
+          if (!requestorBusinessAnchorId) return null;
+          const requestorBusinessAnchorIdStr = String(requestorBusinessAnchorId);
+          if (!Types.ObjectId.isValid(requestorBusinessAnchorIdStr)) return null;
+          return typeof requestorBusinessAnchorId === "string"
+            ? new Types.ObjectId(requestorBusinessAnchorIdStr)
+            : requestorBusinessAnchorId;
         })();
 
         const isNewSystemFree =
           request?.caseInfos?.newSystemRequest?.requested &&
           request?.caseInfos?.newSystemRequest?.free;
 
-        if (!request.businessId && resolvedRequestorOrgId) {
-          request.businessId = resolvedRequestorOrgId;
+        if (!request.businessAnchorId && resolvedBusinessAnchorId) {
+          request.businessAnchorId = resolvedBusinessAnchorId;
         }
 
         {
-          const requestBusinessIdStr = request.businessId
-            ? String(request.businessId)
+          const requestBusinessIdStr = request.businessAnchorId
+            ? String(request.businessAnchorId)
             : "";
-          const requestorUserBusinessIdStr = request.requestor?.businessId
-            ? String(request.requestor.businessId)
+          const requestorUserBusinessIdStr = request.requestor?.businessAnchorId
+            ? String(request.requestor.businessAnchorId)
             : "";
           if (
             requestBusinessIdStr &&
@@ -353,8 +350,8 @@ export async function updateReviewStatusByStage(req, res) {
               requestMongoId: String(request._id),
               effectiveStage,
               status,
-              businessId: requestBusinessIdStr,
-              requestorUserBusinessId: requestorUserBusinessIdStr,
+              businessAnchorId: requestBusinessIdStr,
+              requestorUserBusinessAnchorId: requestorUserBusinessIdStr,
               requestorUserId: request.requestor?._id
                 ? String(request.requestor._id)
                 : null,
@@ -473,9 +470,9 @@ export async function updateReviewStatusByStage(req, res) {
             applyStatusMapping(request, "세척.패킹");
             if (!request.mailboxAddress) {
               try {
-                const requestorOrgId = resolvedRequestorOrgId;
+                const requestorBusinessAnchorId = resolvedBusinessAnchorId;
                 request.mailboxAddress =
-                  await allocateVirtualMailboxAddress(requestorOrgId);
+                  await allocateVirtualMailboxAddress(requestorBusinessAnchorId);
               } catch (err) {
                 console.error("[MAILBOX_ALLOCATION_ERROR]", err);
               }
@@ -491,13 +488,12 @@ export async function updateReviewStatusByStage(req, res) {
           await ensureFinishedLotNumberForPacking(request);
           if (!request.mailboxAddress) {
             try {
-              // 의뢰자 organization ID를 전달하여 같은 의뢰자의 요청들을 같은 우편함으로 그룹화
-              const requestorOrgId = resolvedRequestorOrgId;
+              const requestorBusinessAnchorId = resolvedBusinessAnchorId;
               console.log(
-                `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 할당 시작 - 조직 ID: ${requestorOrgId}`,
+                `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 할당 시작 - 사업자 anchor ID: ${requestorBusinessAnchorId}`,
               );
               request.mailboxAddress =
-                await allocateVirtualMailboxAddress(requestorOrgId);
+                await allocateVirtualMailboxAddress(requestorBusinessAnchorId);
               console.log(
                 `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 할당 완료: ${request.mailboxAddress}`,
               );
@@ -508,10 +504,10 @@ export async function updateReviewStatusByStage(req, res) {
         }
 
         if (effectiveStage === "cam") {
-          if (resolvedRequestorOrgId && !isNewSystemFree) {
+          if (resolvedBusinessAnchorId && !isNewSystemFree) {
             await ensureRequestCreditSpendOnMachiningEnter({
               request,
-              businessId: resolvedRequestorOrgId,
+              businessAnchorId: resolvedBusinessAnchorId,
               actorUserId: req.user?._id || null,
               session,
             });

@@ -62,18 +62,38 @@
 ### 2.3 사업자 규칙
 
 - 사업자 단위 데이터는 개인이 아니라 **사업자 SSOT**로 관리합니다.
+- 현재 권장 구조는 **`User = 사람`, `BusinessAnchor = 법인/사업자 SSOT`, `Business = 멤버십/운영 UI 컨테이너`** 입니다.
 - 의뢰 조회 범위는 기본적으로 **내 사업자 + 허용된 하위 범위** 기준입니다.
 - 직계 멤버 집계는 사업자 단위로 계산합니다.
 - requestor/salesman/manufacturer 등 role별 사업자의 내부 식별자는 Mongo `_id` 이지만, **사업자 anchor는 `organizationType + normalizedBusinessNumber`** 입니다.
 - 사업자 이름(`name`), 대표자명, 주소는 수정 가능하지만 **사업자 anchor로 사용하지 않습니다.** 이름 변경 때문에 새 사업자를 만들면 안 됩니다.
 - 사업자등록번호가 없는 사업자는 임시 사업자일 수 있지만, 사업자등록번호가 확정되면 **기존 사업자 재사용/attach** 를 우선하고 중복 새 사업자 생성을 피합니다.
 - **검증 완료된 사업자**의 사업자등록번호는 일반 설정 수정으로 직접 바꾸지 않습니다. 필요 시 관리자 승인 기반의 별도 사업자 전환 절차를 사용합니다.
-- 도메인 용어와 핵심 식별 필드는 `organization`이 아니라 **`business`(사업자)** 를 사용합니다. 1차 전환 이후 식별 필드는 `organizationId` 대신 **`businessId`** 를 기준으로 정리합니다.
-- request 문서의 사업자 귀속 필드는 `requestorOrganizationId`가 아니라 **`requestorBusinessId`** 를 기준으로 사용합니다.
+- 도메인 용어와 핵심 식별 필드는 `organization`이 아니라 **`business`(사업자)** 를 사용합니다.
+- 법적/정산/소개/집계/실시간 동기화의 canonical 식별 필드는 **`businessAnchorId`** 입니다.
+- request 문서의 사업자 귀속 필드는 과도기 명칭보다 **`requestorBusinessAnchorId`** 를 우선 사용합니다.
 - 의뢰건, 크레딧, 수수료, 리퍼럴, 주문량/통계, 배송 박스/우편함 귀속의 기본 단위는 **유저가 아니라 사업자**입니다.
 - requestor 역할에서 대표/직원 구분은 권한 모델일 뿐이며, 금액/집계/추천 보상/우편함/배송비 귀속 기준을 개인 사용자로 분기하지 않습니다.
 - business owner는 사업자를 생성/검증 요청하는 사용자 역할일 뿐, 사업자 생성 이후 관련 데이터의 canonical 귀속 주체는 **owner가 아니라 business 엔터티 자체**입니다.
 - 개인 사용자 기준 처리가 필요한 경우는 인증/세션/알림 수신 주체처럼 **사용자 자체가 엔터티인 기능**으로 한정합니다.
+
+### 2.3.2 BusinessAnchor 전환 원칙
+
+- `BusinessAnchor`는 법적/정산/소개 기준 사업자의 **canonical SSOT** 입니다.
+- `BusinessAnchor.businessType`은 `requestor`, `salesman`, `manufacturer`, `devops`, `admin` 을 지원합니다.
+- `BusinessAnchor`의 natural key는 **정규화된 사업자등록번호(`businessNumberNormalized`)** 이고, DB PK는 Mongo `ObjectId` 를 유지합니다.
+- 소개 원본 DB의 canonical 관계는 `User.referredByBusinessId`가 아니라 **`BusinessAnchor.referredByAnchorId`** 방향으로 전환합니다.
+- 주문, 크레딧, 정산, 소개 스냅샷, 관리자 overview 스냅샷은 **`businessAnchorId` 기준** 집계/귀속을 기본으로 합니다.
+- `Business`는 멤버십/조직 UI/운영 컨테이너로만 남기고, 법적 식별/소개/정산 SSOT 책임은 `BusinessAnchor`로 이동합니다.
+- DB 리셋 전제 작업에서는 레거시 `businessId`, `organizationId`, `referredByBusinessId` 호환을 두지 않고 **`businessAnchorId` / `referredByAnchorId` 단일 소스**를 사용합니다.
+
+**크레딧 및 집계 SSOT:**
+
+- `CreditLedger`, `ChargeOrder`, `TaxInvoiceDraft` 등 사업자 귀속 금전 모델의 canonical 키는 **`businessAnchorId`** 입니다.
+- 크레딧 조회/집계/러닝밸런스 계산은 **항상 `businessAnchorId` 기준**으로 수행합니다.
+- 백엔드 크레딧 관련 컨트롤러(`adminCredit.controller.js`, `creditLedger.controller.js`, `credit.controller.js` 등)의 쿼리/집계는 레거시 fallback 없이 `businessAnchorId`만 사용합니다.
+- 프론트 관리자 크레딧 페이지(`AdminCreditPage`)와 관련 모달은 조직 선택/표시/실시간 동기화 시 **`businessAnchorId`만** 사용합니다.
+- 크레딧 생성 지점(`upsertBonusLedger`, bonus grant 등)은 `Business.businessAnchorId`를 조회하여 `CreditLedger.businessAnchorId`에 저장합니다.
 
 ### 2.4 수익 분배 (매출 100 기준)
 
@@ -83,16 +103,17 @@
 - 관리자(어벗츠): 22.5~25
 - 분배 비율은 개발운영사 설정 화면에서 관리하며, 변경 시 본 문서를 먼저 갱신합니다.
 
-### 2.3.1 사업자 대표 가입 및 businessId 생성
+### 2.3.1 사업자 대표 가입 및 BusinessAnchor/Business 생성
 
 - **사업자 대표(owner)가 가입할 때** 다음 흐름을 따릅니다:
   1. 사용자가 개인 계정 생성 (User 엔터티)
   2. 온보딩 또는 설정에서 사업자등록증 업로드 및 검증
-  3. 검증 완료 시 독립적인 **Business 엔터티 생성** (`businessId` 할당)
-  4. 대표 사용자는 해당 Business에 owner 권한으로 귀속
-  5. 이후 가입하는 직원들도 같은 Business에 member 권한으로 귀속
-- **businessId는 사업자등록번호 검증 완료 시점에 생성**되며, 이후 모든 데이터(의뢰, 크레딧, 배송 등)는 businessId 기준으로 귀속됩니다.
-- 사업자 대표와 직원은 모두 같은 Business 엔터티에 속하며, 개인 사용자 ID가 아니라 **businessId**를 기준으로 집계합니다.
+  3. 검증 완료 시 canonical **BusinessAnchor** 생성 또는 기존 anchor attach
+  4. 운영/멤버십 컨테이너인 **Business 엔터티 생성** 및 `businessAnchorId` 연결
+  5. 대표 사용자는 해당 Business에 owner 권한으로 귀속
+  6. 이후 가입하는 직원들도 같은 Business에 member 권한으로 귀속
+- **canonical 귀속 키는 사업자등록번호 검증 완료 시점의 `businessAnchorId`** 이며, 이후 의뢰/크레딧/배송/소개/집계는 `businessAnchorId` 기준으로 처리합니다.
+- 사업자 대표와 직원은 모두 같은 Business/BusinessAnchor에 속하며, 개인 사용자 ID가 아니라 **`businessAnchorId`** 를 기준으로 집계합니다.
 - 온보딩과 설정 메뉴의 사업자등록 UI는 동일한 BusinessForm 컴포넌트를 공유하여 일관성을 유지합니다.
 
 ## 3. SSOT와 데이터 흐름
@@ -103,12 +124,12 @@
 - 프론트 설정/토글/상태 변경은 항상 백엔드 API를 통해 먼저 저장합니다.
 - BG 프로그램은 프론트나 브리지 로컬 상태를 직접 신뢰하지 않고 백엔드 기준으로 동작합니다.
 - requestor 크레딧과 수수료 장부의 기본 귀속 단위는 **사업자**입니다. 대표/직원 개별 사용자 잔액처럼 분산 관리하지 않습니다.
-- `ChargeOrder`, `CreditLedger`, `TaxInvoiceDraft`, `ShippingPackage` 등 금전/정산/배송 귀속 모델은 1차 전환 이후 **`businessId` 기준**으로 쿼리/기록합니다.
+- `ChargeOrder`, `CreditLedger`, `TaxInvoiceDraft`, `ShippingPackage` 등 금전/정산/배송 귀속 모델은 **`businessAnchorId` 기준**으로 쿼리/기록합니다.
 - 배송비, 각종 사용 수수료, 환불, 보너스도 가능하면 **사업자 기준 ledger key / ref key** 로 일관되게 기록합니다.
 - requestor 크레딧 변동(CHARGE, BONUS, SPEND, REFUND, ADJUST)은 가능하면 모두 `credit:balance-updated` 실시간 이벤트를 함께 발행해 헤더와 대시보드가 즉시 동기화되게 합니다.
 - 크레딧 실시간 반영도 전체 페이지 refetch 대신 **헤더/관련 카드 숫자만 국소 patch**하는 것을 기본으로 합니다.
-- backend/controller, frontend consumer, `bg/` 연동 코드는 1차 전환 이후 **`businessId` / `requestorBusinessId` 우선 소비**를 기본으로 합니다.
-- 다만 스키마/이벤트/route param 호환 때문에 `organizationId`, `organization`, `requestorOrganizationId`가 과도기로 일부 남아 있을 수 있으며, 이 경우에도 **새 코드는 반드시 business 우선 fallback 순서**를 사용합니다.
+- backend/controller, frontend consumer, `bg/` 연동 코드는 **`businessAnchorId` / `requestorBusinessAnchorId` 우선이 아니라 단일 기준**으로 사용합니다.
+- 새 코드에서는 `businessId`, `organizationId`, `requestorOrganizationId`, `referredByBusinessId` fallback이나 alias를 두지 않습니다.
 
 ### 3.2 New Request 예외 규칙
 
@@ -328,6 +349,7 @@
 - 영업자 소개자가 명시적으로 등록되지 않은 회원가입/온보딩 케이스에서는 **기본값으로 개발운영사(`devops`) 사업자를 소개자**로 등록합니다.
 - 소개 그룹, 소개 코드, 소개 보상, 소개 수수료, 관리자 소개/크레딧 UI에서는 `devops`를 `salesman`과 함께 **소개자 버킷**으로 집계합니다.
 - 소개 리더 집계는 사용자 개인이 아니라 **business 기준으로 대표 1명만 canonical leader**로 사용합니다.
+- 프론트의 canonical 소개 가입 링크는 **`/signup/referral?ref={REFERRAL_CODE}`** 이며, 소개 링크 복사/공유/CTA는 이 경로를 사용합니다.
 
 ### 6.4 브리지/CNC 제어
 

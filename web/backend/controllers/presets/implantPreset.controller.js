@@ -80,20 +80,20 @@ function buildPrcFileNames({
   };
 }
 
-function getBusinessId(req) {
-  return String(req.user?.businessId || "").trim();
+function getBusinessAnchorId(req) {
+  return String(req.user?.businessAnchorId || "").trim();
 }
 
 export async function getImplantPresets(req, res) {
   try {
-    const businessId = getBusinessId(req);
+    const businessAnchorId = getBusinessAnchorId(req);
     const all = await Connection.find({ isActive: true }).lean();
 
-    const usage = businessId
+    const usage = businessAnchorId
       ? await Request.aggregate([
           {
             $match: {
-              businessId: businessId,
+              businessAnchorId,
               connection: { $ne: null },
             },
           },
@@ -244,9 +244,9 @@ export async function findImplantPresetByDiameter(req, res) {
 export async function findPreset(req, res) {
   try {
     const { clinicName, patientName, tooth } = req.query;
-    const businessId = getBusinessId(req);
+    const businessAnchorId = getBusinessAnchorId(req);
 
-    if (!businessId) {
+    if (!businessAnchorId) {
       return res.status(403).json({
         success: false,
         message: "사업자 정보가 설정되지 않았습니다.",
@@ -263,7 +263,7 @@ export async function findPreset(req, res) {
 
     // clinicName이 없거나 빈 문자열이면 null로 처리
     const query = {
-      businessId,
+      businessAnchorId,
       patientName,
       tooth,
     };

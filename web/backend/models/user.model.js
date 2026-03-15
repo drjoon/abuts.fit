@@ -51,9 +51,9 @@ const userSchema = new mongoose.Schema(
       sparse: true,
       index: true,
     },
-    referredByBusinessId: {
+    referredByAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Business",
+      ref: "BusinessAnchor",
       default: null,
       index: true,
     },
@@ -81,6 +81,12 @@ const userSchema = new mongoose.Schema(
     businessId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Business",
+      default: null,
+      index: true,
+    },
+    businessAnchorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BusinessAnchor",
       default: null,
       index: true,
     },

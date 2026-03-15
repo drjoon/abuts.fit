@@ -188,7 +188,10 @@ export const RequestorReferralPage = () => {
                           - 주문량 집계는 사용자 개인이 아니라 사업자 기준으로
                           매일 자정(00:00) 업데이트됩니다.
                         </p>
-                        <p>- 소개 정책은 의뢰자와 영업자에게만 적용됩니다.</p>
+                        <p>
+                          - 소개 정책은 의뢰자, 영업자, 개발운영사에게
+                          적용됩니다.
+                        </p>
                       </div>
                       <Button
                         type="button"
@@ -309,11 +312,7 @@ export const RequestorReferralPage = () => {
                       <div className="grid gap-3 md:grid-cols-4">
                         {directMembers.map((m) => {
                           const label = String(
-                            m.business ||
-                              m.organization ||
-                              m.name ||
-                              m.email ||
-                              "-",
+                            m.business || m.name || m.email || "-",
                           );
                           return (
                             <div

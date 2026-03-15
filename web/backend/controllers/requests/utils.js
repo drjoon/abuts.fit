@@ -144,7 +144,7 @@ export function applyShippingWorkflowState(requestLike, patch = {}) {
 }
 
 export function getRequestorOrgId(req) {
-  const raw = req?.user?.businessId;
+  const raw = req?.user?.businessAnchorId;
   return raw ? String(raw) : "";
 }
 
@@ -152,7 +152,7 @@ export function buildRequestorOrgFilter(req) {
   if (req?.user?.role !== "requestor") return {};
   const orgId = getRequestorOrgId(req);
   if (orgId && Types.ObjectId.isValid(orgId)) {
-    return { businessId: new Types.ObjectId(orgId) };
+    return { businessAnchorId: new Types.ObjectId(orgId) };
   }
   return { requestor: req.user._id };
 }
@@ -165,7 +165,9 @@ export async function buildRequestorOrgScopeFilter(req) {
     return { requestor: req.user._id };
   }
 
-  const org = await Business.findById(orgId)
+  const org = await Business.findOne({
+    businessAnchorId: new Types.ObjectId(orgId),
+  })
     .select({ owner: 1, owners: 1, members: 1 })
     .lean();
 
@@ -181,10 +183,11 @@ export async function buildRequestorOrgScopeFilter(req) {
     .filter((id) => Types.ObjectId.isValid(id));
 
   const memberObjectIds = memberIds.map((id) => new Types.ObjectId(id));
-  const orgObjectId = new Types.ObjectId(orgId);
-
   return {
-    $or: [{ businessId: orgObjectId }, { requestor: { $in: memberObjectIds } }],
+    $or: [
+      { businessAnchorId: new Types.ObjectId(orgId) },
+      { requestor: { $in: memberObjectIds } },
+    ],
   };
 }
 
@@ -262,7 +265,9 @@ export async function canAccessRequestAsRequestor(req, requestDoc) {
 
   const myId = String(req.user._id);
   const myOrgId = getRequestorOrgId(req);
-  const reqOrgId = requestDoc.businessId ? String(requestDoc.businessId) : "";
+  const reqOrgId = requestDoc.businessAnchorId
+    ? String(requestDoc.businessAnchorId)
+    : "";
 
   // 1. 의뢰 생성자가 본인인 경우 항상 접근 가능
   const populatedReqUser = requestDoc.requestor || null;
@@ -280,9 +285,9 @@ export async function canAccessRequestAsRequestor(req, requestDoc) {
     return false;
   }
 
-  // 의뢰의 사업자 ID 확인 (직접 저장된 것 또는 requestor.businessId)
-  const populatedReqUserOrgId = populatedReqUser?.businessId
-    ? String(populatedReqUser.businessId)
+  // 의뢰의 사업자 anchor 확인 (직접 저장된 것 또는 requestor.businessAnchorId)
+  const populatedReqUserOrgId = populatedReqUser?.businessAnchorId
+    ? String(populatedReqUser.businessAnchorId)
     : "";
   const targetOrgId = reqOrgId || populatedReqUserOrgId;
 
@@ -458,7 +463,7 @@ export async function normalizeRequestForResponse(requestDoc) {
   const ci = obj.caseInfos || {};
   obj.caseInfos = await normalizeCaseInfosImplantFields(ci, false);
   normalizeProductionScheduleDiameter(obj);
-  const requestorOrgRaw = obj?.businessId;
+  const requestorOrgRaw = obj?.businessAnchorId;
   const requestorOrgId = (() => {
     if (!requestorOrgRaw) return "";
     if (
@@ -471,7 +476,9 @@ export async function normalizeRequestForResponse(requestDoc) {
     return String(requestorOrgRaw);
   })();
   if (requestorOrgId && Types.ObjectId.isValid(requestorOrgId)) {
-    const requestorOrgDoc = await Business.findById(requestorOrgId)
+    const requestorOrgDoc = await Business.findOne({
+      businessAnchorId: new Types.ObjectId(requestorOrgId),
+    })
       .select({ name: 1, extracted: 1 })
       .lean();
     if (requestorOrgDoc) {
@@ -493,6 +500,7 @@ export async function normalizeRequestForResponse(requestDoc) {
         name: orgName || companyName || undefined,
         extracted,
       };
+      obj.requestorBusinessAnchor = obj.business;
     }
   }
   if (obj?.lotNumber && typeof obj.lotNumber === "object") {
@@ -610,7 +618,7 @@ export async function computePriceForRequest({
 
   const scopeFilter =
     requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))
-      ? { businessId: new Types.ObjectId(String(requestorOrgId)) }
+      ? { businessAnchorId: new Types.ObjectId(String(requestorOrgId)) }
       : { requestor: requestorId };
 
   const BASE_UNIT_PRICE = 15000;
@@ -656,7 +664,9 @@ export async function computePriceForRequest({
   // updatedAt은 운영 중 자주 갱신될 수 있어 기준일로 사용하지 않는다.
   const baseDate = await (async () => {
     if (requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))) {
-      const org = await Business.findById(String(requestorOrgId))
+      const org = await Business.findOne({
+        businessAnchorId: new Types.ObjectId(String(requestorOrgId)),
+      })
         .select({ owner: 1 })
         .lean();
       const ownerId = org?.owner ? String(org.owner) : "";
@@ -703,16 +713,16 @@ export async function computePriceForRequest({
     createdAt: { $gte: last30Cutoff },
   });
 
-  // 추천인 합산: 내 business를 referredByBusinessId로 가진 사용자들의 최근 30일 주문량을 합산
-  const myBusinessId =
+  // 추천인 합산: 내 business anchor를 referredByAnchorId로 가진 사용자들의 최근 30일 주문량을 합산
+  const myBusinessAnchorId =
     requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))
       ? new Types.ObjectId(String(requestorOrgId))
       : null;
 
   let referralLast30DaysOrders = 0;
-  if (myBusinessId) {
+  if (myBusinessAnchorId) {
     const referredUsers = await User.find({
-      referredByBusinessId: myBusinessId,
+      referredByAnchorId: myBusinessAnchorId,
       active: true,
       role: "requestor",
     })
@@ -788,13 +798,13 @@ export function applyStatusMapping(request, status) {
  */
 export async function getReferralGroupMembers(userId) {
   throw new Error(
-    "getReferralGroupMembers는 레거시 user 리퍼럴 필드에 의존하므로 제거되었습니다. business anchor(referredByBusinessId) 기준 로직을 사용하세요.",
+    "getReferralGroupMembers는 레거시 user 리퍼럴 필드에 의존하므로 제거되었습니다. business anchor(referredByAnchorId) 기준 로직을 사용하세요.",
   );
 }
 
 export async function getReferralGroupLeaderId(userIdObj, userLean) {
   throw new Error(
-    "getReferralGroupLeaderId는 레거시 user 리퍼럴 필드에 의존하므로 제거되었습니다. business anchor(referredByBusinessId) 기준 로직을 사용하세요.",
+    "getReferralGroupLeaderId는 레거시 user 리퍼럴 필드에 의존하므로 제거되었습니다. business anchor(referredByAnchorId) 기준 로직을 사용하세요.",
   );
 }
 
@@ -806,6 +816,6 @@ export async function getReferralGroupLeaderId(userIdObj, userLean) {
  */
 export async function handleReferralGroupLeaderChange(deletedUserId) {
   throw new Error(
-    "handleReferralGroupLeaderChange는 레거시 user 리퍼럴 필드에 의존하므로 제거되었습니다. business anchor(referredByBusinessId) 기반으로 재구현하세요.",
+    "handleReferralGroupLeaderChange는 레거시 user 리퍼럴 필드에 의존하므로 제거되었습니다. business anchor(referredByAnchorId) 기반으로 재구현하세요.",
   );
 }

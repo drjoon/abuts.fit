@@ -600,7 +600,7 @@ export const WorksheetCardGrid = ({
                 )}
                 <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
                   <span>
-                    {request.requestor?.organization || request.requestor?.name}
+                    {request.requestor?.business || request.requestor?.name}
                   </span>
                   {caseInfos.clinicName && (
                     <>

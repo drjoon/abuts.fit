@@ -3,7 +3,7 @@ import React from "react";
 
 type Props = {
   caseInfos?: any;
-  organization?: string | null;
+  business?: string | null;
   clinicName?: string | null;
   patientName?: string | null;
   tooth?: string | null;
@@ -13,7 +13,7 @@ type Props = {
 };
 
 export const MachiningRequestLabel = ({
-  organization,
+  business,
   clinicName,
   patientName,
   tooth,
@@ -22,7 +22,7 @@ export const MachiningRequestLabel = ({
   className,
   caseInfos,
 }: Props) => {
-  const org = String(organization || "").trim();
+  const businessName = String(business || "").trim();
   const clinic = String(clinicName || "").trim();
   const patient = String(patientName || "").trim() || "미지정";
   const t = String(tooth || "").trim() || "-";
@@ -31,7 +31,7 @@ export const MachiningRequestLabel = ({
     .trim()
     .toUpperCase();
 
-  const desktopParts = [org, clinic, patient, t, rid].filter(Boolean);
+  const desktopParts = [businessName, clinic, patient, t, rid].filter(Boolean);
   const mobileParts = [clinic, patient, t].filter(Boolean);
 
   return (

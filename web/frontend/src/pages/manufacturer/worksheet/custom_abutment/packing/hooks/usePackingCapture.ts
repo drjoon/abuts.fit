@@ -323,6 +323,8 @@ export const usePackingCapture = ({
             ...currentRequest,
             ...eventRequest,
             requestor: eventRequest.requestor || currentRequest.requestor,
+            requestorBusiness:
+              eventRequest.requestorBusiness || currentRequest.requestorBusiness,
             requestorOrganization:
               eventRequest.requestorOrganization ||
               currentRequest.requestorOrganization,

@@ -136,13 +136,11 @@ export const useBusinessDataManagement = (
         }
         suppressPrefillRef.current = false;
 
-        const orgName = String(
-          data?.business?.name || data?.organization?.name || "",
-        ).trim();
+        const businessName = String(data?.business?.name || "").trim();
         const ex = data?.extracted || {};
 
         const nextBusinessData = normalizeBusinessData({
-          companyName: String(ex?.companyName || "").trim() || orgName,
+          companyName: String(ex?.companyName || "").trim() || businessName,
           businessNumber: formatBusinessNumberInput(
             String(ex?.businessNumber || "").trim(),
           ),
@@ -158,7 +156,7 @@ export const useBusinessDataManagement = (
 
         setExtracted(
           normalizeExtracted({
-            companyName: String(ex?.companyName || "").trim() || orgName,
+            companyName: String(ex?.companyName || "").trim() || businessName,
             businessNumber: String(ex?.businessNumber || "").trim(),
             address: String(ex?.address || "").trim(),
             addressDetail: String(ex?.addressDetail || "").trim(),

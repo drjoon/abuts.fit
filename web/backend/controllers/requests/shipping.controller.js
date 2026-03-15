@@ -45,7 +45,7 @@ export async function mockHanjinPickupCompleted(req, res) {
       requestId: { $in: idList },
     })
       .populate("requestor", "name business phoneNumber address")
-      .populate("businessId", "name extracted")
+      .populate("businessAnchorId", "name metadata")
       .populate("deliveryInfoRef");
 
     if (!targetRequests.length) {

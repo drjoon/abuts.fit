@@ -43,11 +43,12 @@ function parseBonusGrantIdFromUniqueKey(uniqueKey) {
 }
 
 export async function listMyCreditLedger(req, res) {
-  const businessId = req.user?.businessId;
-  if (!businessId) {
+  const businessAnchorId = req.user?.businessAnchorId;
+
+  if (!businessAnchorId) {
     return res.status(403).json({
       success: false,
-      message: "기공소 정보가 설정되지 않았습니다.",
+      message: "사업자 정보가 설정되지 않았습니다.",
     });
   }
 
@@ -64,7 +65,7 @@ export async function listMyCreditLedger(req, res) {
   );
 
   const match = {
-    businessId: new mongoose.Types.ObjectId(String(businessId)),
+    businessAnchorId: new mongoose.Types.ObjectId(String(businessAnchorId)),
   };
 
   if (
@@ -133,9 +134,12 @@ export async function listMyCreditLedger(req, res) {
   }
 
   // running balance: 전체 잔액 계산 (필터 무관)
-  const orgId = new mongoose.Types.ObjectId(String(businessId));
+  const balanceMatchQuery = {
+    businessAnchorId: new mongoose.Types.ObjectId(String(businessAnchorId)),
+  };
+
   const allLedgerRows = await CreditLedger.aggregate([
-    { $match: { businessId: orgId } },
+    { $match: balanceMatchQuery },
     { $group: { _id: "$type", total: { $sum: "$amount" } } },
   ]);
   let totalBalance = 0;

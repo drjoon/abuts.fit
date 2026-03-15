@@ -44,7 +44,7 @@ export const SalesmanReferralPage = () => {
         <CardContent className="space-y-6">
           {!isReferralEligible ? (
             <div className="rounded-lg bg-blue-50 border border-blue-100 p-4 text-sm text-blue-700">
-              영업자 계정에서 확인할 수 있습니다.
+              영업자 또는 개발운영사 계정에서 확인할 수 있습니다.
             </div>
           ) : (
             <>
@@ -94,7 +94,9 @@ export const SalesmanReferralPage = () => {
                     - 주문량 집계는 사용자 개인이 아니라 사업자 기준으로 매일
                     자정(00:00) 업데이트됩니다.
                   </p>
-                  <p>- 소개 정책은 의뢰자와 영업자에게만 적용됩니다.</p>
+                  <p>
+                    - 소개 정책은 의뢰자, 영업자, 개발운영사에게 적용됩니다.
+                  </p>
                 </div>
               </div>
             </>

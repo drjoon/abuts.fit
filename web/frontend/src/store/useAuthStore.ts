@@ -22,7 +22,7 @@ export interface User {
   companyName?: string;
   referralCode?: string;
   approvedAt?: string | null;
-  businessId?: string | null;
+  businessAnchorId?: string | null;
   onboardingWizardCompleted?: boolean;
   salesmanPayoutAccount?: {
     bankName: string;
@@ -47,7 +47,7 @@ const normalizeApiUser = (u: any): User | null => {
     companyName: String(u.business || u.companyName || ""),
     referralCode: String(u.referralCode || ""),
     approvedAt: u.approvedAt ? String(u.approvedAt) : null,
-    businessId: u.businessId ? String(u.businessId) : null,
+    businessAnchorId: u.businessAnchorId ? String(u.businessAnchorId) : null,
     onboardingWizardCompleted: Boolean(u.onboardingWizardCompleted),
     salesmanPayoutAccount:
       u.role === "salesman" || u.role === "devops"
@@ -192,7 +192,9 @@ export const useAuthStore = create<AuthState>((set, get) => {
           companyName: String(u.business || u.companyName || ""),
           referralCode: String(u.referralCode || ""),
           approvedAt: u.approvedAt ? String(u.approvedAt) : null,
-          businessId: u.businessId ? String(u.businessId) : null,
+          businessAnchorId: u.businessAnchorId
+            ? String(u.businessAnchorId)
+            : null,
           onboardingWizardCompleted: Boolean(u.onboardingWizardCompleted),
         };
 

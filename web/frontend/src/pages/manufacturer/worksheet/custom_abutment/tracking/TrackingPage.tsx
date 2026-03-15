@@ -594,7 +594,7 @@ export const TrackingInquiryPage = () => {
       const ci: any = firstRequest?.caseInfos || {};
       const name =
         ci.clinicName ||
-        firstRequest?.requestor?.organization ||
+        firstRequest?.requestor?.business ||
         firstRequest?.requestor?.name ||
         "";
       const phone = (ci as any)?.phone || firstRequest?.requestor?.phone || "";

@@ -2,9 +2,9 @@ import mongoose from "mongoose";
 
 const shippingPackageSchema = new mongoose.Schema(
   {
-    businessId: {
+    businessAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Business",
+      ref: "BusinessAnchor",
       required: true,
       index: true,
     },
@@ -43,7 +43,7 @@ const shippingPackageSchema = new mongoose.Schema(
 );
 
 shippingPackageSchema.index(
-  { businessId: 1, shipDateYmd: 1, mailboxAddress: 1 },
+  { businessAnchorId: 1, shipDateYmd: 1, mailboxAddress: 1 },
   { unique: true },
 );
 

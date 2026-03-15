@@ -156,7 +156,7 @@ export async function createRequest(req, res) {
 
             const computedPrice = await computePriceForRequest({
               requestorId: req.user._id,
-              requestorOrgId: req.user?.businessId,
+              requestorOrgId: req.user?.businessAnchorId,
               clinicName,
               patientName,
               tooth,
@@ -179,9 +179,9 @@ export async function createRequest(req, res) {
               ...rest,
               caseInfos: normalizedCaseInfos,
               requestor: req.user._id,
-              businessId:
-                req.user?.role === "requestor" && req.user?.businessId
-                  ? req.user.businessId
+              businessAnchorId:
+                req.user?.role === "requestor" && req.user?.businessAnchorId
+                  ? req.user.businessAnchorId
                   : null,
               price: computedPrice,
             });
@@ -389,7 +389,7 @@ export async function createRequest(req, res) {
 
             const computedPrice = await computePriceForRequest({
               requestorId: req.user._id,
-              requestorOrgId: req.user?.businessId,
+              requestorOrgId: req.user?.businessAnchorId,
               clinicName,
               patientName,
               tooth,
@@ -413,9 +413,9 @@ export async function createRequest(req, res) {
               ...rest,
               caseInfos: normalizedCaseInfos,
               requestor: req.user._id,
-              businessId:
-                req.user?.role === "requestor" && req.user?.businessId
-                  ? req.user.businessId
+              businessAnchorId:
+                req.user?.role === "requestor" && req.user?.businessAnchorId
+                  ? req.user.businessAnchorId
                   : null,
               price: computedPrice,
             });
@@ -565,7 +565,7 @@ export async function createRequest(req, res) {
 
     const computedPrice = await computePriceForRequest({
       requestorId: req.user._id,
-      requestorOrgId: req.user?.businessId,
+      requestorOrgId: req.user?.businessAnchorId,
       clinicName,
       patientName,
       tooth,
@@ -581,9 +581,9 @@ export async function createRequest(req, res) {
       ...bodyRest,
       caseInfos: normalizedCaseInfos,
       requestor: req.user._id,
-      businessId:
-        req.user?.role === "requestor" && req.user?.businessId
-          ? req.user.businessId
+      businessAnchorId:
+        req.user?.role === "requestor" && req.user?.businessAnchorId
+          ? req.user.businessAnchorId
           : null,
       caManufacturer:
         req.user?.role === "manufacturer"
@@ -1103,10 +1103,10 @@ export async function createRequestsBulk(req, res) {
                 _id: 1,
                 requestId: 1,
                 requestor: 1,
-                businessId: 1,
+                businessAnchorId: 1,
                 manufacturerStage: 1,
               })
-              .populate("requestor", "_id businessId");
+              .populate("requestor", "_id businessAnchorId");
 
             if (!existingRequestForResolution) {
               throw new Error("기존 의뢰를 찾을 수 없습니다.");
@@ -1142,7 +1142,7 @@ export async function createRequestsBulk(req, res) {
 
           const computedPrice = await computePriceForRequest({
             requestorId: req.user._id,
-            requestorOrgId: req.user?.businessId,
+            requestorOrgId: req.user?.businessAnchorId,
             clinicName,
             patientName,
             tooth,
@@ -1165,9 +1165,9 @@ export async function createRequestsBulk(req, res) {
             ...rest,
             caseInfos: normalizedCaseInfos,
             requestor: req.user._id,
-            businessId:
-              req.user?.role === "requestor" && req.user?.businessId
-                ? req.user.businessId
+            businessAnchorId:
+              req.user?.role === "requestor" && req.user?.businessAnchorId
+                ? req.user.businessAnchorId
                 : null,
             price: computedPrice,
           });

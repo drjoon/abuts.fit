@@ -5,7 +5,13 @@ const pricingReferralStatsSnapshotSchema = new mongoose.Schema(
     businessId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Business",
-      required: true,
+      default: null,
+      index: true,
+    },
+    businessAnchorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BusinessAnchor",
+      default: null,
       index: true,
     },
     leaderUserId: {
@@ -39,7 +45,12 @@ const pricingReferralStatsSnapshotSchema = new mongoose.Schema(
 
 pricingReferralStatsSnapshotSchema.index(
   { businessId: 1, ymd: 1 },
-  { unique: true },
+  { unique: true, sparse: true },
+);
+
+pricingReferralStatsSnapshotSchema.index(
+  { businessAnchorId: 1, ymd: 1 },
+  { unique: true, sparse: true },
 );
 
 // 레거시 groupLeaderId_1_ymd_1 인덱스 제거 (마이그레이션 완료)

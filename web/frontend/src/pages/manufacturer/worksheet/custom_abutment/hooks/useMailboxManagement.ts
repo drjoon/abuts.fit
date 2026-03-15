@@ -8,8 +8,12 @@ export const useMailboxManagement = (
 ) => {
   const [mailboxModalOpen, setMailboxModalOpen] = useState(false);
   const [mailboxModalAddress, setMailboxModalAddress] = useState("");
-  const [mailboxModalRequests, setMailboxModalRequests] = useState<ManufacturerRequest[]>([]);
-  const [mailboxErrorByAddress, setMailboxErrorByAddress] = useState<Record<string, string>>({});
+  const [mailboxModalRequests, setMailboxModalRequests] = useState<
+    ManufacturerRequest[]
+  >([]);
+  const [mailboxErrorByAddress, setMailboxErrorByAddress] = useState<
+    Record<string, string>
+  >({});
   const [isRollingBackAll, setIsRollingBackAll] = useState(false);
   const { toast } = useToast();
 
@@ -33,13 +37,13 @@ export const useMailboxManagement = (
 
   const handleMailboxAddressSaved = useCallback(
     (payload: {
-      businessId: string;
+      businessAnchorId: string;
       address: string;
       addressDetail: string;
       zipCode: string;
     }) => {
-      const businessId = String(payload.businessId || "").trim();
-      if (!businessId) return;
+      const businessAnchorId = String(payload.businessAnchorId || "").trim();
+      if (!businessAnchorId) return;
 
       setMailboxErrorByAddress((prev) => {
         const next = { ...prev };
@@ -51,7 +55,12 @@ export const useMailboxManagement = (
   );
 
   const handleRollbackAllInMailbox = useCallback(async () => {
-    if (!mailboxModalRequests.length || isRollingBackAll || !mailboxModalAddress || !token)
+    if (
+      !mailboxModalRequests.length ||
+      isRollingBackAll ||
+      !mailboxModalAddress ||
+      !token
+    )
       return;
     setIsRollingBackAll(true);
     try {
@@ -63,7 +72,9 @@ export const useMailboxManagement = (
         },
         body: JSON.stringify({
           mailboxAddress: mailboxModalAddress,
-          requestIds: mailboxModalRequests.map((req) => req._id).filter(Boolean),
+          requestIds: mailboxModalRequests
+            .map((req) => req._id)
+            .filter(Boolean),
         }),
       });
 
@@ -87,7 +98,14 @@ export const useMailboxManagement = (
     } finally {
       setIsRollingBackAll(false);
     }
-  }, [fetchRequests, isRollingBackAll, mailboxModalAddress, mailboxModalRequests, toast, token]);
+  }, [
+    fetchRequests,
+    isRollingBackAll,
+    mailboxModalAddress,
+    mailboxModalRequests,
+    toast,
+    token,
+  ]);
 
   const clearMailboxError = useCallback((address: string) => {
     setMailboxErrorByAddress((prev) => {

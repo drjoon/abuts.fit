@@ -1,4 +1,8 @@
-import { type ManufacturerRequest, deriveStageForFilter, stageOrder } from "./request";
+import {
+  type ManufacturerRequest,
+  deriveStageForFilter,
+  stageOrder,
+} from "./request";
 
 // Check if request is pre-pickup shipping visible
 export function isPrePickupShippingVisible(req: ManufacturerRequest): boolean {
@@ -89,7 +93,7 @@ export function filterAndSortRequests(
       const caseInfos = request.caseInfos || {};
       const text = (
         (request.referenceIds?.join(",") || "") +
-        (request.requestor?.organization || "") +
+        (request.requestor?.business || "") +
         (request.requestor?.name || "") +
         (caseInfos.clinicName || "") +
         (caseInfos.patientName || "") +

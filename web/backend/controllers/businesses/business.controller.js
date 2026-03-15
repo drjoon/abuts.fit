@@ -558,7 +558,7 @@ export async function clearMyBusinessLicense(req, res) {
       "[business] clearMyBusinessLicense error",
       {
         userId: req.user?._id,
-        businessId: req.user?.businessId,
+        businessAnchorId: req.user?.businessAnchorId,
         message: error?.message,
       },
       error,

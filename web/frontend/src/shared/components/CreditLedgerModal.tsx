@@ -73,8 +73,7 @@ export type CreditLedgerModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** 관리자가 특정 조직의 원장을 볼 때 사용. 없으면 로그인 유저 기준 */
-  businessId?: string;
-  organizationId?: string;
+  businessAnchorId?: string;
   /** 모달 제목 suffix (예: "· org-001") */
   titleSuffix?: string;
   /** 충전하기 버튼 클릭 시 이동할 경로. 없으면 버튼 숨김 */
@@ -243,8 +242,7 @@ const renderTransactionDetail = ({
 export const CreditLedgerModal = ({
   open,
   onOpenChange,
-  businessId,
-  organizationId,
+  businessAnchorId,
   titleSuffix,
   chargeNavPath,
 }: CreditLedgerModalProps) => {
@@ -286,9 +284,8 @@ export const CreditLedgerModal = ({
     params.set("page", String(pageNum));
     params.set("pageSize", String(PAGE_SIZE));
 
-    const scopedBusinessId = businessId || organizationId;
-    if (scopedBusinessId) {
-      return `/api/admin/credits/organizations/${scopedBusinessId}/ledger?${params.toString()}`;
+    if (businessAnchorId) {
+      return `/api/admin/credits/organizations/${businessAnchorId}/ledger?${params.toString()}`;
     }
     return `/api/credits/ledger?${params.toString()}`;
   };
@@ -342,7 +339,7 @@ export const CreditLedgerModal = ({
     setHasMore(true);
     load(1, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, period, type, q, from, to, businessId, organizationId]);
+  }, [open, period, type, q, from, to, businessAnchorId]);
 
   // 무한 스크롤
   useEffect(() => {

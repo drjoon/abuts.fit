@@ -24,9 +24,13 @@ type ApiDashboard = {
   payoutDayOfMonth: number;
   referralCode: string;
   overview: {
+    referredBusinessCount?: number;
     referredOrganizationCount: number;
     monthRevenueAmount: number;
     monthCommissionAmount: number;
+    directBusinessCount?: number;
+    level1BusinessCount?: number;
+    totalBusinessCount?: number;
     directOrganizationCount?: number;
     level1OrganizationCount?: number;
     totalOrganizationCount?: number;
@@ -36,9 +40,16 @@ type ApiDashboard = {
     payableGrossCommissionAmount?: number;
     paidNetCommissionAmount?: number;
   };
+  businesses?: Array<{
+    businessAnchorId?: string;
+    name: string;
+    monthRevenueAmount: number;
+    monthOrderCount: number;
+    monthCommissionAmount: number;
+    referralLevel?: "direct" | "level1";
+  }>;
   organizations: Array<{
-    businessId?: string;
-    organizationId?: string;
+    businessAnchorId?: string;
     name: string;
     monthRevenueAmount: number;
     monthOrderCount: number;
@@ -68,7 +79,7 @@ export const SalesmanDashboardPage = () => {
     const origin = window.location.origin;
     const code = String(user?.referralCode || "").trim();
     if (!code) return "";
-    return `${origin}/signup?ref=${encodeURIComponent(code)}`;
+    return `${origin}/signup/referral?ref=${encodeURIComponent(code)}`;
   }, [user?.referralCode]);
   const [data, setData] = useState<ApiDashboard | null>(null);
   const [loading, setLoading] = useState(false);
@@ -111,10 +122,18 @@ export const SalesmanDashboardPage = () => {
 
   const overview = data?.overview || ({} as any);
 
-  const directOrgCount = Number(overview.directOrganizationCount || 0);
-  const level1OrgCount = Number(overview.level1OrganizationCount || 0);
-  const totalOrgCount = Number(
-    overview.totalOrganizationCount || overview.referredOrganizationCount || 0,
+  const directBusinessCount = Number(
+    overview.directBusinessCount || overview.directOrganizationCount || 0,
+  );
+  const level1BusinessCount = Number(
+    overview.level1BusinessCount || overview.level1OrganizationCount || 0,
+  );
+  const totalBusinessCount = Number(
+    overview.totalBusinessCount ||
+      overview.referredBusinessCount ||
+      overview.totalOrganizationCount ||
+      overview.referredOrganizationCount ||
+      0,
   );
 
   const directCommission = Number(overview.directCommissionAmount || 0);
@@ -129,21 +148,27 @@ export const SalesmanDashboardPage = () => {
   const paidNet = Number(overview.paidNetCommissionAmount || 0);
   const referralSalesmanCount = Number(overview.referralSalesmanCount || 0);
 
-  const directList = (data?.organizations || []).filter(
-    (o) => o.referralLevel !== "level1",
+  const referredBusinesses = (
+    data?.businesses ||
+    data?.organizations ||
+    []
+  ).filter((business) => Boolean(business));
+  const directBusinesses = referredBusinesses.filter(
+    (business) => business.referralLevel !== "level1",
   );
-  const level1List = (data?.organizations || []).filter(
-    (o) => o.referralLevel === "level1",
+  const level1Businesses = referredBusinesses.filter(
+    (business) => business.referralLevel === "level1",
   );
   const referralSalesmen = data?.referralSalesmen || [];
 
-  const creditRows = (data?.organizations || []).map((o) => {
+  const creditRows = referredBusinesses.map((business) => {
     return {
-      key: String(o.businessId || o.organizationId || o.name || Math.random()),
-      name: String(o.name || "의뢰자"),
-      referralLevel: o.referralLevel === "level1" ? "간접 소개" : "직접 소개",
-      revenue: Number(o.monthRevenueAmount || 0),
-      commission: Number(o.monthCommissionAmount || 0),
+      key: String(business.businessAnchorId || business.name || Math.random()),
+      name: String(business.name || "의뢰자"),
+      referralLevel:
+        business.referralLevel === "level1" ? "간접 소개" : "직접 소개",
+      revenue: Number(business.monthRevenueAmount || 0),
+      commission: Number(business.monthCommissionAmount || 0),
     };
   });
 
@@ -247,16 +272,20 @@ export const SalesmanDashboardPage = () => {
                 <div className="flex items-baseline justify-between gap-2 text-sm">
                   <div className="font-semibold">합계 소개 의뢰자</div>
                   <div className="text-base font-bold">
-                    {totalOrgCount} 개소
+                    {totalBusinessCount} 개소
                   </div>
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-sm">
                   <div className="text-muted-foreground">내 소개 의뢰자</div>
-                  <div className="font-semibold">{directOrgCount} 개소</div>
+                  <div className="font-semibold">
+                    {directBusinessCount} 개소
+                  </div>
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-sm">
                   <div className="text-muted-foreground">간접 소개 의뢰자</div>
-                  <div className="font-semibold">{level1OrgCount} 개소</div>
+                  <div className="font-semibold">
+                    {level1BusinessCount} 개소
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -352,37 +381,39 @@ export const SalesmanDashboardPage = () => {
                 <Card className="app-glass-card app-glass-card--lg">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-semibold">
-                      내 소개 의뢰자 ({directList.length}개소)
+                      내 소개 의뢰자 ({directBusinesses.length}개소)
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    {directList.length === 0 ? (
+                    {directBusinesses.length === 0 ? (
                       <div className="py-4 text-sm text-muted-foreground">
                         내 소개 의뢰자가 없습니다.
                       </div>
                     ) : (
                       <ul className="space-y-2">
-                        {directList.map((org) => (
+                        {directBusinesses.map((business) => (
                           <li
-                            key={
-                              org.businessId || org.organizationId || org.name
-                            }
+                            key={business.businessAnchorId || business.name}
                             className="flex items-start gap-2"
                           >
                             <div className="mt-1 h-2 w-2 rounded-full bg-indigo-500" />
                             <div className="flex-1">
                               <div className="font-semibold text-sm">
-                                {org.name || "의뢰자"}
+                                {business.name || "의뢰자"}
                               </div>
                               <div className="mt-0.5 pl-3 border-l text-xs text-muted-foreground space-y-0.5">
                                 <div>
-                                  매출: {formatMoney(org.monthRevenueAmount)}원
+                                  매출:{" "}
+                                  {formatMoney(business.monthRevenueAmount)}원
                                 </div>
                                 <div>
                                   수수료:{" "}
-                                  {formatMoney(org.monthCommissionAmount)}원
+                                  {formatMoney(business.monthCommissionAmount)}
+                                  원
                                 </div>
-                                <div>완료 건수: {org.monthOrderCount}건</div>
+                                <div>
+                                  완료 건수: {business.monthOrderCount}건
+                                </div>
                               </div>
                             </div>
                           </li>

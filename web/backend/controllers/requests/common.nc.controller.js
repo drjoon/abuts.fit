@@ -548,11 +548,11 @@ export async function deleteNcFileAndRollbackCam(req, res) {
     } else {
       request.manufacturerStage = "CAM";
 
-      const businessId =
-        request.businessId || request.requestor?.businessId;
-      if (businessId) {
+      const businessAnchorId =
+        request.businessAnchorId || request.requestor?.businessAnchorId;
+      if (businessAnchorId) {
         const spendRows = await CreditLedger.find({
-          businessId,
+          businessAnchorId,
           type: "SPEND",
           refType: "REQUEST",
           refId: request._id,
@@ -572,7 +572,7 @@ export async function deleteNcFileAndRollbackCam(req, res) {
             { uniqueKey },
             {
               $setOnInsert: {
-                businessId: businessId,
+                businessAnchorId,
                 userId: req.user?._id || null,
                 type: "REFUND",
                 amount: refundAmount,
@@ -586,7 +586,7 @@ export async function deleteNcFileAndRollbackCam(req, res) {
 
           if (result?.upsertedCount) {
             await emitCreditBalanceUpdatedToBusiness({
-              businessId,
+              businessAnchorId,
               balanceDelta: refundAmount,
               reason: "rollback_cam_refund",
               refId: request._id,

@@ -121,12 +121,12 @@ type ApiTreeNode = {
   name?: string;
   email?: string;
   business?: string;
-  businessId?: string;
+  businessAnchorId?: string;
   active?: boolean;
   createdAt?: string;
   approvedAt?: string;
   updatedAt?: string;
-  referredByBusinessId?: string | null;
+  referredByAnchorId?: string | null;
   lastMonthOrders?: number;
   lastMonthPaidOrders?: number;
   lastMonthBonusOrders?: number;
@@ -1126,7 +1126,19 @@ export default function AdminReferralGroupsPage() {
               <div className="flex items-center justify-between">
                 <div className="text-muted-foreground">추천인 사업자 ID</div>
                 <div className="font-mono text-xs">
-                  {selectedNode.referredByBusinessId || "-"}
+                  {selectedNode.referredByAnchorId || "-"}
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="text-muted-foreground">추천인 사업자 ID</div>
+                <div className="font-mono text-xs">
+                  {selectedNode.referredByAnchorId || "-"}
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="text-muted-foreground">사업자 ID</div>
+                <div className="font-mono text-xs">
+                  {selectedNode.businessAnchorId || "-"}
                 </div>
               </div>
               <div className="flex items-center justify-between">

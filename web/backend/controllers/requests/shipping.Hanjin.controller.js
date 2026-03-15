@@ -390,7 +390,7 @@ async function finalizeMailboxPickupResult({
     _id: { $in: requestDocs.map((request) => request._id) },
   })
     .populate("requestor", "name business phoneNumber address")
-    .populate("businessId", "name extracted")
+    .populate("businessAnchorId", "name metadata")
     .populate("deliveryInfoRef");
 
   for (const doc of updatedDocs) {
@@ -489,11 +489,10 @@ async function markMailboxWorkflowError({
   if (!list.length) return;
 
   const requestDocs = await Request.find({
-    mailboxAddress: { $in: list },
     manufacturerStage: "포장.발송",
   })
     .populate("requestor", "name business phoneNumber address")
-    .populate("businessId", "name extracted")
+    .populate("businessAnchorId", "name metadata")
     .populate("deliveryInfoRef");
 
   for (const requestDoc of requestDocs) {
@@ -773,11 +772,10 @@ export async function printHanjinLabels(req, res) {
     });
 
     const updatedDocs = await Request.find({
-      mailboxAddress: { $in: normalizedMailboxAddresses },
       manufacturerStage: "포장.발송",
     })
       .populate("requestor", "name business phoneNumber address")
-      .populate("businessId", "name extracted")
+      .populate("businessAnchorId", "name metadata")
       .populate("deliveryInfoRef");
 
     for (const doc of updatedDocs) {
@@ -973,11 +971,10 @@ export async function cancelHanjinPickup(req, res) {
       const data = await callHanjinWithFallback({ data: cancelBody });
 
       const requestDocs = await Request.find({
-        mailboxAddress: mailbox,
         manufacturerStage: "포장.발송",
       })
         .populate("requestor", "name business phoneNumber address")
-        .populate("businessId", "name extracted")
+        .populate("businessAnchorId", "name metadata")
         .populate("deliveryInfoRef");
 
       console.log("[hanjin][pickup-cancel][debug] before update", {
@@ -1056,7 +1053,7 @@ export async function cancelHanjinPickup(req, res) {
         _id: { $in: requestDocs.map((request) => request._id) },
       })
         .populate("requestor", "name business phoneNumber address")
-        .populate("businessId", "name extracted")
+        .populate("businessAnchorId", "name metadata")
         .populate("deliveryInfoRef");
 
       console.log("[hanjin][pickup-cancel][debug] reloaded docs before emit", {

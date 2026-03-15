@@ -32,8 +32,7 @@ export async function allocateVirtualMailboxAddress(requestorOrgId) {
     manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
     mailboxAddress: { $ne: null },
   })
-    .select("mailboxAddress requestor businessId")
-    .populate("requestor", "business")
+    .select("mailboxAddress businessAnchorId")
     .lean();
 
   console.log(
@@ -45,10 +44,7 @@ export async function allocateVirtualMailboxAddress(requestorOrgId) {
     const requestorOrgIdStr = requestorOrgId.toString();
 
     for (const r of activeRequests) {
-      const orgId =
-        r.businessId?.toString() ||
-        r.requestor?.business?._id?.toString() ||
-        r.requestor?.business?.toString();
+      const orgId = r.businessAnchorId?.toString() || "";
 
       console.log(
         `[MAILBOX_ALLOCATION] 비교 중 - 요청: ${requestorOrgIdStr}, 기존: ${orgId || "N/A"}, 우편함: ${r.mailboxAddress}`,

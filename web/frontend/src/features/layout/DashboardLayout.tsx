@@ -292,7 +292,7 @@ export const DashboardLayout = () => {
       setBonusBalance(null);
       return;
     }
-    if (!(user as any).businessId) {
+    if (!(user as any).businessAnchorId) {
       setCreditBalance(null);
       setPaidBalance(null);
       setBonusBalance(null);
@@ -345,17 +345,15 @@ export const DashboardLayout = () => {
     if (!token) return;
     if (!user) return;
     if (user.role !== "requestor") return;
-    if (!(user as any).businessId) return;
+    if (!(user as any).businessAnchorId) return;
 
     const unsubscribe = onAppEvent((evt) => {
       const type = String(evt?.type || "").trim();
       const payload = evt?.data || {};
       if (type !== "credit:balance-updated") return;
 
-      const eventBusinessId = String(
-        payload?.businessId || payload?.organizationId || "",
-      ).trim();
-      const myBusinessId = String((user as any)?.businessId || "").trim();
+      const eventBusinessId = String(payload?.businessAnchorId || "").trim();
+      const myBusinessId = String((user as any)?.businessAnchorId || "").trim();
       if (
         !eventBusinessId ||
         !myBusinessId ||
@@ -405,7 +403,7 @@ export const DashboardLayout = () => {
     if (!token) return;
     if (!user) return;
     if (user.role !== "requestor") return;
-    if (!(user as any).businessId) return;
+    if (!(user as any).businessAnchorId) return;
 
     // 크레딧 안내는 신규 의뢰 흐름에서만 노출한다.
     // (설정/대시보드 등에서 자동 토스트가 뜨며 흐름을 방해하는 문제 방지)

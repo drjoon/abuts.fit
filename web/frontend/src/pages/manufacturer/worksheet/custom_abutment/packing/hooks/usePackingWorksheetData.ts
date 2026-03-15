@@ -175,7 +175,7 @@ export const usePackingWorksheetData = ({
         const caseInfos = request.caseInfos || {};
         const text = (
           (request.referenceIds?.join(",") || "") +
-          (request.requestor?.organization || "") +
+          (request.requestor?.business || "") +
           (request.requestor?.name || "") +
           (caseInfos.clinicName || "") +
           (caseInfos.patientName || "") +
@@ -216,7 +216,7 @@ export const usePackingWorksheetData = ({
       const bucketIndex = getDiameterBucketIndex(caseInfos.maxDiameter);
       const item: WorksheetQueueItem = {
         id: req._id,
-        client: req.requestor?.organization || req.requestor?.name || "",
+        client: req.requestor?.business || req.requestor?.name || "",
         patient: caseInfos.patientName || "",
         tooth: caseInfos.tooth || "",
         connectionDiameter:

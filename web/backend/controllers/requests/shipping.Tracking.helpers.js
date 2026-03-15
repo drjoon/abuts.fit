@@ -121,7 +121,7 @@ export const resolveTrackingSyncTargets = async ({
 
   const requests = await Request.find(query)
     .populate("requestor", "name business phoneNumber address")
-    .populate("businessId", "name extracted")
+    .populate("businessAnchorId", "name metadata")
     .populate("deliveryInfoRef");
 
   return requests.filter((requestDoc) => {
@@ -492,35 +492,28 @@ export const syncHanjinTrackingPayload = async ({
         const requestor = await User.findById(
           new Types.ObjectId(requestorIdRaw),
         )
-          .select({ _id: 1, role: 1, referredByBusinessId: 1 })
+          .select({ _id: 1, role: 1, referredByAnchorId: 1 })
           .lean();
 
-        const referredByBusinessIdRaw = requestor?.referredByBusinessId
-          ? String(requestor.referredByBusinessId)
+        const referredByAnchorIdRaw = requestor?.referredByAnchorId
+          ? String(requestor.referredByAnchorId)
           : "";
 
         let directSalesman = null;
         if (
-          referredByBusinessIdRaw &&
-          Types.ObjectId.isValid(referredByBusinessIdRaw)
+          referredByAnchorIdRaw &&
+          Types.ObjectId.isValid(referredByAnchorIdRaw)
         ) {
-          const referrerBusiness = await Business.findById(
-            new Types.ObjectId(referredByBusinessIdRaw),
-          )
-            .select({ owner: 1 })
+          const referrerOwner = await User.findOne({
+            businessAnchorId: new Types.ObjectId(referredByAnchorIdRaw),
+            role: "salesman",
+            active: true,
+          })
+            .select({ _id: 1, role: 1, referredByAnchorId: 1 })
             .lean();
 
-          if (referrerBusiness?.owner) {
-            const referrerOwner = await User.findById(referrerBusiness.owner)
-              .select({ _id: 1, role: 1, referredByBusinessId: 1 })
-              .lean();
-
-            if (
-              referrerOwner &&
-              String(referrerOwner.role || "") === "salesman"
-            ) {
-              directSalesman = referrerOwner;
-            }
+          if (referrerOwner) {
+            directSalesman = referrerOwner;
           }
         }
 
@@ -544,33 +537,28 @@ export const syncHanjinTrackingPayload = async ({
             );
           }
 
-          const directSalesmanBusinessIdRaw =
-            directSalesman?.referredByBusinessId
-              ? String(directSalesman.referredByBusinessId)
+          const directSalesmanBusinessAnchorIdRaw =
+            directSalesman?.referredByAnchorId
+              ? String(directSalesman.referredByAnchorId)
               : "";
 
           let parentSalesman = null;
           if (
-            directSalesmanBusinessIdRaw &&
-            Types.ObjectId.isValid(directSalesmanBusinessIdRaw)
+            directSalesmanBusinessAnchorIdRaw &&
+            Types.ObjectId.isValid(directSalesmanBusinessAnchorIdRaw)
           ) {
-            const parentBusiness = await Business.findById(
-              new Types.ObjectId(directSalesmanBusinessIdRaw),
-            )
-              .select({ owner: 1 })
+            const parentOwner = await User.findOne({
+              businessAnchorId: new Types.ObjectId(
+                directSalesmanBusinessAnchorIdRaw,
+              ),
+              role: "salesman",
+              active: true,
+            })
+              .select({ _id: 1, role: 1 })
               .lean();
 
-            if (parentBusiness?.owner) {
-              const parentOwner = await User.findById(parentBusiness.owner)
-                .select({ _id: 1, role: 1 })
-                .lean();
-
-              if (
-                parentOwner &&
-                String(parentOwner.role || "") === "salesman"
-              ) {
-                parentSalesman = parentOwner;
-              }
+            if (parentOwner && String(parentOwner.role || "") === "salesman") {
+              parentSalesman = parentOwner;
             }
           }
 

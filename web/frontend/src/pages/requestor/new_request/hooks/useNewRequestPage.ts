@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
+import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { useNewRequestClinics } from "./useNewRequestClinics";
 import { useNewRequestSubmit } from "./useNewRequestSubmit";
 import { useNewRequestSubmitV2 } from "./useNewRequestSubmitV2";
@@ -55,8 +56,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   }, [user?.id]);
 
   const businessType = useMemo(() => {
-    const role = String(user?.role || "requestor").trim();
-    return role || "requestor";
+    return resolveBusinessType(user?.role, "requestor");
   }, [user?.role]);
 
   // Draft 메타 관리 (caseInfosMap)

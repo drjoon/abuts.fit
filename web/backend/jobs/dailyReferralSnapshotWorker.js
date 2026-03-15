@@ -68,7 +68,6 @@ async function runDailySnapshot(ymd, range) {
 
   const { start: rangeStart, end: rangeEnd } = range;
 
-  // 모든 그룹 리더(영업자/개발운영사 + 의뢰자 owner) 조회
   const leaders = await User.find({
     $or: [
       { role: "salesman" },
@@ -76,8 +75,9 @@ async function runDailySnapshot(ymd, range) {
       { role: "requestor", requestorRole: "owner" },
     ],
     active: true,
+    businessAnchorId: { $ne: null },
   })
-    .select({ _id: 1, role: 1, businessId: 1 })
+    .select({ _id: 1, role: 1, businessId: 1, businessAnchorId: 1 })
     .lean();
 
   if (!leaders.length) {
@@ -85,117 +85,102 @@ async function runDailySnapshot(ymd, range) {
     return;
   }
 
-  const leaderIds = leaders.map((l) => l._id).filter(Boolean);
-
-  // leader들의 businessId 조회
-  const leaderBusinessIds = (
-    await User.find({ _id: { $in: leaderIds } })
-      .select({ businessId: 1 })
-      .lean()
-  )
-    .map((u) => u?.businessId)
-    .filter((id) => id);
-
-  // 직계 자식 조회 (그룹 멤버 수 계산용)
-  const directChildren = await User.find({
-    referredByBusinessId: { $in: leaderBusinessIds },
-    role: { $in: ["requestor", "salesman", "devops"] },
-    active: true,
-  })
-    .select({ _id: 1, referredByBusinessId: 1, businessId: 1, role: 1 })
-    .lean();
-
-  const childIdsByLeaderBusinessId = new Map();
-  for (const u of directChildren) {
-    const lBusinessId = String(u.referredByBusinessId || "");
-    if (!lBusinessId) continue;
-    const arr = childIdsByLeaderBusinessId.get(lBusinessId) || [];
-    arr.push(u);
-    childIdsByLeaderBusinessId.set(lBusinessId, arr);
-  }
-
-  // 최근 30일 완료 의뢰 집계 (requestor 기준)
-  const relevantUserIds = [
-    ...leaderIds,
-    ...directChildren.map((u) => u._id),
-  ].filter(Boolean);
-
-  const requestRows = relevantUserIds.length
-    ? await Request.aggregate([
-        {
-          $match: {
-            requestor: { $in: relevantUserIds },
-            manufacturerStage: "추적관리",
-            createdAt: { $gte: rangeStart, $lte: rangeEnd },
-          },
-        },
-        { $group: { _id: "$requestor", orderCount: { $sum: 1 } } },
-      ])
-    : [];
-
-  const ordersByUserId = new Map(
-    requestRows.map((r) => [String(r._id), Number(r.orderCount || 0)]),
-  );
-
-  // 의뢰자 조직 기준 집계 (requestor leader용)
-  const requestorLeaderBusinessIds = leaders
-    .filter((l) => String(l.role) === "requestor" && l.businessId)
-    .map((l) => String(l.businessId));
-  const requestorLeaderBusinessObjectIds = requestorLeaderBusinessIds
+  const leaderAnchorIds = leaders
+    .map((leader) => String(leader?.businessAnchorId || ""))
     .filter((id) => Types.ObjectId.isValid(id))
     .map((id) => new Types.ObjectId(id));
 
-  const businessOrderRows = requestorLeaderBusinessObjectIds.length
+  const directChildren = await User.find({
+    referredByAnchorId: { $in: leaderAnchorIds },
+    role: { $in: ["requestor", "salesman", "devops"] },
+    active: true,
+    businessAnchorId: { $ne: null },
+  })
+    .select({
+      _id: 1,
+      referredByAnchorId: 1,
+      businessAnchorId: 1,
+      businessId: 1,
+      role: 1,
+    })
+    .lean();
+
+  const childUsersByLeaderAnchorId = new Map();
+  const childAnchorIdsByLeaderAnchorId = new Map();
+  for (const user of directChildren) {
+    const leaderAnchorId = String(user?.referredByAnchorId || "");
+    const childAnchorId = String(user?.businessAnchorId || "");
+    if (!leaderAnchorId) continue;
+    const users = childUsersByLeaderAnchorId.get(leaderAnchorId) || [];
+    users.push(user);
+    childUsersByLeaderAnchorId.set(leaderAnchorId, users);
+    if (Types.ObjectId.isValid(childAnchorId)) {
+      const anchorSet =
+        childAnchorIdsByLeaderAnchorId.get(leaderAnchorId) || new Set();
+      anchorSet.add(childAnchorId);
+      childAnchorIdsByLeaderAnchorId.set(leaderAnchorId, anchorSet);
+    }
+  }
+
+  const relevantAnchorIds = Array.from(
+    new Set(
+      [
+        ...leaders.map((leader) => String(leader?.businessAnchorId || "")),
+        ...directChildren.map((user) => String(user?.businessAnchorId || "")),
+      ].filter((id) => Types.ObjectId.isValid(id)),
+    ),
+  ).map((id) => new Types.ObjectId(id));
+
+  const requestRows = relevantAnchorIds.length
     ? await Request.aggregate([
         {
           $match: {
-            businessId: { $in: requestorLeaderBusinessObjectIds },
+            businessAnchorId: { $in: relevantAnchorIds },
             manufacturerStage: "추적관리",
             createdAt: { $gte: rangeStart, $lte: rangeEnd },
           },
         },
         {
-          $group: { _id: "$businessId", orderCount: { $sum: 1 } },
+          $group: {
+            _id: "$businessAnchorId",
+            orderCount: { $sum: 1 },
+          },
         },
       ])
     : [];
 
-  const ordersByBusinessId = new Map(
-    businessOrderRows.map((r) => [String(r._id), Number(r.orderCount || 0)]),
+  const ordersByAnchorId = new Map(
+    requestRows.map((row) => [String(row._id), Number(row.orderCount || 0)]),
   );
 
   let upsertCount = 0;
   for (const leader of leaders) {
-    const lid = String(leader._id);
-    const children = childIdsByLeaderId.get(lid) || [];
-    const memberCount = 1 + children.length;
+    const leaderAnchorId = String(leader?.businessAnchorId || "");
+    if (!Types.ObjectId.isValid(leaderAnchorId)) continue;
 
-    let groupTotalOrders = 0;
-    let snapshotBusinessId = null;
-    if (String(leader.role) === "requestor") {
-      const businessId = String(leader.businessId || "");
-      snapshotBusinessId =
-        businessId && Types.ObjectId.isValid(businessId)
-          ? new Types.ObjectId(businessId)
-          : null;
-      groupTotalOrders = businessId
-        ? ordersByBusinessId.get(businessId) || 0
-        : 0;
-    } else {
-      const leaderOrders = ordersByUserId.get(lid) || 0;
-      const childOrders = children.reduce(
-        (acc, c) => acc + (ordersByUserId.get(String(c._id)) || 0),
-        0,
-      );
-      groupTotalOrders = leaderOrders + childOrders;
-      snapshotBusinessId = new Types.ObjectId(leader._id);
-    }
+    const children = childUsersByLeaderAnchorId.get(leaderAnchorId) || [];
+    const memberCount = 1 + children.length;
+    const groupAnchorIds = new Set([
+      leaderAnchorId,
+      ...Array.from(childAnchorIdsByLeaderAnchorId.get(leaderAnchorId) || []),
+    ]);
+    const groupTotalOrders = Array.from(groupAnchorIds).reduce(
+      (acc, anchorId) =>
+        acc + Number(ordersByAnchorId.get(String(anchorId)) || 0),
+      0,
+    );
+    const snapshotBusinessId =
+      leader?.businessId && Types.ObjectId.isValid(String(leader.businessId))
+        ? new Types.ObjectId(String(leader.businessId))
+        : null;
+    const snapshotBusinessAnchorId = new Types.ObjectId(leaderAnchorId);
 
     await PricingReferralStatsSnapshot.findOneAndUpdate(
-      { businessId: snapshotBusinessId, ymd },
+      { businessAnchorId: snapshotBusinessAnchorId, ymd },
       {
         $set: {
           businessId: snapshotBusinessId,
+          businessAnchorId: snapshotBusinessAnchorId,
           leaderUserId: leader._id,
           groupMemberCount: memberCount,
           groupTotalOrders,

@@ -86,6 +86,14 @@ const formatShortCode = (value: string) => {
 const normalizeDigits = (value: string) =>
   String(value || "").replace(/\D/g, "");
 
+const formatBusinessSelectLabel = (business: BusinessCredit) => {
+  const businessNumber =
+    String(business.businessNumber || "").trim() || "사업자번호 없음";
+  const businessAnchorId = String(business.businessAnchorId || "").trim();
+  if (!businessAnchorId) return `${business.name} (${businessNumber})`;
+  return `${business.name} (${businessNumber} / anchor ${businessAnchorId})`;
+};
+
 const creditTypeLabel = (t: AdminCreditLedgerType) => {
   if (t === "CHARGE") return "충전";
   if (t === "BONUS") return "보너스";
@@ -177,8 +185,9 @@ type SalesmanCreditsOverview = {
   computedAt?: string | null;
 };
 
-type OrganizationCredit = {
+type BusinessCredit = {
   _id: string;
+  businessAnchorId?: string | null;
   name: string;
   companyName: string;
   businessNumber: string;
@@ -204,8 +213,7 @@ type ChargeOrder = {
   expiresAt?: string;
   matchedAt?: string;
   createdAt?: string;
-  businessId?: string;
-  organizationId?: string;
+  businessAnchorId?: string;
   adminApprovalStatus?: "PENDING" | "APPROVED" | "REJECTED";
   adminApprovalNote?: string;
   adminApprovalAt?: string;
@@ -247,15 +255,15 @@ export default function AdminCreditPage() {
   const [stats, setStats] = useState<CreditStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
 
-  const [organizations, setOrganizations] = useState<OrganizationCredit[]>([]);
+  const [businesses, setBusinesses] = useState<BusinessCredit[]>([]);
   const [loadingOrgs, setLoadingOrgs] = useState(false);
+  const loadingOrgsRef = useRef(false);
   const [orgSkip, setOrgSkip] = useState(0);
   const [orgHasMore, setOrgHasMore] = useState(true);
 
   const [orgLedgerOpen, setOrgLedgerOpen] = useState(false);
-  const [orgLedgerOrg, setOrgLedgerOrg] = useState<OrganizationCredit | null>(
-    null,
-  );
+  const [orgLedgerBusiness, setOrgLedgerBusiness] =
+    useState<BusinessCredit | null>(null);
 
   const [salesmanLedgerOpen, setSalesmanLedgerOpen] = useState(false);
   const [salesmanLedgerRow, setSalesmanLedgerRow] =
@@ -300,7 +308,8 @@ export default function AdminCreditPage() {
   const TX_PAGE_SIZE = 50;
 
   const [txTab, setTxTab] = useState<"auto" | "manual">("auto");
-  const [selectedBonusBusinessId, setSelectedBonusBusinessId] = useState("");
+  const [selectedBonusBusinessAnchorId, setSelectedBonusBusinessAnchorId] =
+    useState("");
   const [selectedBonusAmount, setSelectedBonusAmount] =
     useState<FreeCreditAmount>(30000);
   const [bonusReason, setBonusReason] = useState("");
@@ -321,8 +330,8 @@ export default function AdminCreditPage() {
     | "shipping-credit"
   >("grant");
   const [
-    selectedShippingCreditBusinessId,
-    setSelectedShippingCreditBusinessId,
+    selectedShippingCreditBusinessAnchorId,
+    setSelectedShippingCreditBusinessAnchorId,
   ] = useState("");
   const [selectedShippingCreditAmount, setSelectedShippingCreditAmount] =
     useState(3500);
@@ -450,6 +459,8 @@ export default function AdminCreditPage() {
 
   const loadOrganizations = async ({ reset = false } = {}) => {
     if (!token) return;
+    if (loadingOrgsRef.current) return;
+    loadingOrgsRef.current = true;
     setLoadingOrgs(true);
     try {
       const qs = new URLSearchParams({
@@ -464,32 +475,41 @@ export default function AdminCreditPage() {
       const res = await request<{
         success: boolean;
         data: {
-          items: OrganizationCredit[];
+          items: BusinessCredit[];
           total?: number;
           skip?: number;
           limit?: number;
         };
       }>({
-        path: `/api/admin/credits/organizations?${qs.toString()}`,
+        path: `/api/admin/credits/businesses?${qs.toString()}`,
         method: "GET",
         token,
       });
+      if (!res.ok || !res.data?.success) {
+        setOrgHasMore(false);
+        const message =
+          String((res.data as any)?.message || "").trim() ||
+          "사업자별 크레딧을 불러오는데 실패했습니다.";
+        throw new Error(message);
+      }
       if (res.ok && res.data?.data?.items) {
         const items = Array.isArray(res.data.data.items)
           ? res.data.data.items
           : [];
-        setOrganizations((prev) => (reset ? items : [...prev, ...items]));
+        setBusinesses((prev) => (reset ? items : [...prev, ...items]));
         const nextSkip = (reset ? 0 : orgSkip) + items.length;
         setOrgSkip(nextSkip);
         setOrgHasMore(items.length >= ORG_PAGE_SIZE);
       }
-    } catch (error) {
+    } catch (error: any) {
       toast({
-        title: "조직 조회 실패",
-        description: "조직별 크레딧을 불러오는데 실패했습니다.",
+        title: "사업자 조회 실패",
+        description:
+          error?.message || "사업자별 크레딧을 불러오는데 실패했습니다.",
         variant: "destructive",
       });
     } finally {
+      loadingOrgsRef.current = false;
       setLoadingOrgs(false);
     }
   };
@@ -633,10 +653,10 @@ export default function AdminCreditPage() {
   const handleGrantFreeCredit = async () => {
     if (!token) return;
 
-    const businessId = String(selectedBonusBusinessId || "").trim();
+    const businessAnchorId = String(selectedBonusBusinessAnchorId || "").trim();
     const reason = String(bonusReason || "").trim();
 
-    if (!businessId) {
+    if (!businessAnchorId) {
       toast({
         title: "지급 대상 선택 필요",
         description: "무료 크레딧을 지급할 사업자를 선택해주세요.",
@@ -654,10 +674,10 @@ export default function AdminCreditPage() {
       return;
     }
 
-    const targetOrg = organizations.find(
-      (org) => String(org._id) === businessId,
+    const targetBusiness = businesses.find(
+      (business) => String(business._id) === businessAnchorId,
     );
-    const businessNumber = String(targetOrg?.businessNumber || "").trim();
+    const businessNumber = String(targetBusiness?.businessNumber || "").trim();
     if (!businessNumber) {
       toast({
         title: "사업자등록번호 없음",
@@ -674,7 +694,7 @@ export default function AdminCreditPage() {
         method: "POST",
         token,
         jsonBody: {
-          businessId,
+          businessAnchorId,
           businessNumber,
           amount: selectedBonusAmount,
           reason,
@@ -717,10 +737,12 @@ export default function AdminCreditPage() {
   const handleGrantShippingCredit = async () => {
     if (!token) return;
 
-    const businessId = String(selectedShippingCreditBusinessId || "").trim();
+    const businessAnchorId = String(
+      selectedShippingCreditBusinessAnchorId || "",
+    ).trim();
     const reason = String(shippingCreditReason || "").trim();
 
-    if (!businessId) {
+    if (!businessAnchorId) {
       toast({
         title: "지급 대상 선택 필요",
         description: "배송비 무료 크레딧을 지급할 사업자를 선택해주세요.",
@@ -738,10 +760,10 @@ export default function AdminCreditPage() {
       return;
     }
 
-    const targetOrg = organizations.find(
-      (org) => String(org._id) === businessId,
+    const targetBusiness = businesses.find(
+      (business) => String(business._id) === businessAnchorId,
     );
-    const businessNumber = String(targetOrg?.businessNumber || "").trim();
+    const businessNumber = String(targetBusiness?.businessNumber || "").trim();
     if (!businessNumber) {
       toast({
         title: "사업자등록번호 없음",
@@ -758,7 +780,7 @@ export default function AdminCreditPage() {
         method: "POST",
         token,
         jsonBody: {
-          businessId,
+          businessAnchorId,
           businessNumber,
           amount: selectedShippingCreditAmount,
           reason,
@@ -779,7 +801,7 @@ export default function AdminCreditPage() {
 
       setShippingCreditReason("");
       setSelectedShippingCreditAmount(3500);
-      setSelectedShippingCreditBusinessId("");
+      setSelectedShippingCreditBusinessAnchorId("");
 
       setOrgSkip(0);
       setOrgHasMore(true);
@@ -982,12 +1004,12 @@ export default function AdminCreditPage() {
     const sentinel = orgSentinelRef.current;
     const root = orgScrollRef.current;
     if (!sentinel || !root) return;
-    if (!orgHasMore || loadingOrgs) return;
+    if (!orgHasMore || loadingOrgsRef.current) return;
     const io = new IntersectionObserver(
       (entries) => {
         const hit = entries.some((e) => e.isIntersecting);
         if (!hit) return;
-        if (loadingOrgs || !orgHasMore) return;
+        if (loadingOrgsRef.current || !orgHasMore) return;
         loadOrganizations({ reset: false });
       },
       { root, rootMargin: "400px", threshold: 0 },
@@ -1072,11 +1094,11 @@ export default function AdminCreditPage() {
   };
 
   const requestorTotalBalance = useMemo(() => {
-    return (organizations || []).reduce(
-      (acc, org) => acc + Number(org?.balance || 0),
+    return (businesses || []).reduce(
+      (acc, business) => acc + Number(business?.balance || 0),
       0,
     );
-  }, [organizations]);
+  }, [businesses]);
 
   const salesmanSummary = useMemo(() => {
     const fallback = {
@@ -1123,24 +1145,33 @@ export default function AdminCreditPage() {
     };
   }, [salesmanOverview, salesmen]);
 
-  const selectedBonusOrganization = useMemo(
+  const selectedBonusBusiness = useMemo(
     () =>
-      organizations.find(
-        (org) => String(org._id) === selectedBonusBusinessId,
+      businesses.find(
+        (business) => String(business._id) === selectedBonusBusinessAnchorId,
       ) || null,
-    [organizations, selectedBonusBusinessId],
+    [businesses, selectedBonusBusinessAnchorId],
+  );
+
+  const selectedShippingCreditBusiness = useMemo(
+    () =>
+      businesses.find(
+        (business) =>
+          String(business._id) === selectedShippingCreditBusinessAnchorId,
+      ) || null,
+    [businesses, selectedShippingCreditBusinessAnchorId],
   );
 
   const filteredBonusGrantRows = useMemo(() => {
     const selectedBusinessNumberDigits = normalizeDigits(
-      String(selectedBonusOrganization?.businessNumber || ""),
+      String(selectedBonusBusiness?.businessNumber || ""),
     );
     const search = String(bonusGrantSearch || "")
       .trim()
       .toLowerCase();
 
     return bonusGrantRows.filter((row) => {
-      if (selectedBonusBusinessId) {
+      if (selectedBonusBusinessAnchorId) {
         if (!selectedBusinessNumberDigits) return false;
         const rowBusinessNumberDigits = normalizeDigits(
           String(row.businessNumber || ""),
@@ -1166,8 +1197,8 @@ export default function AdminCreditPage() {
     });
   }, [
     bonusGrantRows,
-    selectedBonusBusinessId,
-    selectedBonusOrganization,
+    selectedBonusBusinessAnchorId,
+    selectedBonusBusiness,
     bonusGrantSearch,
   ]);
 
@@ -1175,31 +1206,31 @@ export default function AdminCreditPage() {
     const search = String(bonusGrantSearch || "")
       .trim()
       .toLowerCase();
-    return organizations
-      .filter((org) => {
+    return businesses
+      .filter((business) => {
         if (
-          selectedBonusBusinessId &&
-          String(org._id) !== selectedBonusBusinessId
+          selectedBonusBusinessAnchorId &&
+          String(business._id) !== selectedBonusBusinessAnchorId
         ) {
           return false;
         }
         if (!search) return true;
         const haystack = [
-          String(org.name || ""),
-          String(org.companyName || ""),
-          String(org.businessNumber || ""),
-          normalizeDigits(String(org.businessNumber || "")),
+          String(business.name || ""),
+          String(business.companyName || ""),
+          String(business.businessNumber || ""),
+          normalizeDigits(String(business.businessNumber || "")),
         ]
           .join(" ")
           .toLowerCase();
         return haystack.includes(search);
       })
-      .filter((org) => Number(org.spentBonusAmount || 0) > 0)
+      .filter((business) => Number(business.spentBonusAmount || 0) > 0)
       .sort(
         (a, b) =>
           Number(b.spentBonusAmount || 0) - Number(a.spentBonusAmount || 0),
       );
-  }, [organizations, selectedBonusBusinessId, bonusGrantSearch]);
+  }, [businesses, selectedBonusBusinessAnchorId, bonusGrantSearch]);
 
   const [orgLedgerPeriod, setOrgLedgerPeriod] = useState<
     "7d" | "30d" | "90d" | "thisMonth" | "lastMonth"
@@ -1227,7 +1258,7 @@ export default function AdminCreditPage() {
   };
 
   const loadOrgLedger = async () => {
-    if (!token || !orgLedgerOrg?._id) return;
+    if (!token || !orgLedgerBusiness?._id) return;
     setOrgLedgerLoading(true);
     try {
       const params = new URLSearchParams();
@@ -1241,7 +1272,7 @@ export default function AdminCreditPage() {
       params.set("pageSize", String(LEDGER_PAGE_SIZE));
 
       const res = await request<AdminLedgerResponse>({
-        path: `/api/admin/credits/organizations/${orgLedgerOrg._id}/ledger?${params.toString()}`,
+        path: `/api/admin/credits/businesses/${orgLedgerBusiness._id}/ledger?${params.toString()}`,
         method: "GET",
         token,
       });
@@ -1316,7 +1347,7 @@ export default function AdminCreditPage() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
-                  총 조직 수
+                  총 사업자 수
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -1413,7 +1444,7 @@ export default function AdminCreditPage() {
 
           <Tabs defaultValue="organizations" className="space-y-4">
             <TabsList>
-              <TabsTrigger value="organizations">조직별 크레딧</TabsTrigger>
+              <TabsTrigger value="organizations">사업자별 크레딧</TabsTrigger>
               <TabsTrigger value="free-credit">무료 크레딧</TabsTrigger>
               <TabsTrigger value="verification">자동 매칭 검증</TabsTrigger>
               <TabsTrigger value="orders">충전 주문</TabsTrigger>
@@ -1424,7 +1455,7 @@ export default function AdminCreditPage() {
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between gap-2">
-                    <CardTitle>조직별 크레딧 현황</CardTitle>
+                    <CardTitle>사업자별 크레딧 현황</CardTitle>
                     <div className="w-[180px]">
                       <select
                         className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
@@ -1449,13 +1480,13 @@ export default function AdminCreditPage() {
                       ref={orgScrollRef}
                       className="h-[60vh] overflow-y-auto pr-1"
                     >
-                      {organizations.length === 0 && !loadingOrgs ? (
+                      {businesses.length === 0 && !loadingOrgs ? (
                         <div className="text-center py-8 text-muted-foreground">
-                          조직이 없습니다.
+                          사업자가 없습니다.
                         </div>
                       ) : (
                         <div className="grid gap-4 md:grid-cols-3">
-                          {[...organizations]
+                          {[...businesses]
                             .sort((a, b) => {
                               if (orgSortKey === "paidBalance")
                                 return (
@@ -1477,42 +1508,50 @@ export default function AdminCreditPage() {
                                 "ko",
                               );
                             })
-                            .map((org) => {
+                            .map((business) => {
                               const chargedPaid = Number(
-                                org.chargedPaidAmount || 0,
+                                business.chargedPaidAmount || 0,
                               );
                               const chargedBonus = Number(
-                                org.chargedBonusAmount || 0,
+                                business.chargedBonusAmount || 0,
                               );
                               const spentPaid = Number(
-                                org.spentPaidAmount || 0,
+                                business.spentPaidAmount || 0,
                               );
                               const spentBonus = Number(
-                                org.spentBonusAmount || 0,
+                                business.spentBonusAmount || 0,
                               );
-                              const paidRemain = Number(org.paidBalance || 0);
-                              const bonusRemain = Number(org.bonusBalance || 0);
+                              const paidRemain = Number(
+                                business.paidBalance || 0,
+                              );
+                              const bonusRemain = Number(
+                                business.bonusBalance || 0,
+                              );
                               return (
                                 <Card
-                                  key={org._id}
+                                  key={business._id}
                                   className="border-muted cursor-pointer"
                                   onClick={() => {
-                                    setOrgLedgerOrg(org);
+                                    setOrgLedgerBusiness(business);
                                     setOrgLedgerOpen(true);
                                   }}
                                 >
                                   <CardHeader className="pb-3">
                                     <CardTitle className="text-base">
-                                      {org.name}
+                                      {business.name}
                                     </CardTitle>
                                     <CardDescription className="space-y-1">
-                                      <div>{org.companyName || "-"}</div>
+                                      <div>{business.companyName || "-"}</div>
                                       <div className="font-mono text-xs">
-                                        {org.businessNumber || "-"}
+                                        {business.businessNumber || "-"}
+                                      </div>
+                                      <div className="font-mono text-[11px] text-muted-foreground">
+                                        anchor:{" "}
+                                        {business.businessAnchorId || "-"}
                                       </div>
                                       <div className="text-xs">
-                                        {org.ownerName || "-"} ·{" "}
-                                        {org.ownerEmail || "-"}
+                                        {business.ownerName || "-"} ·{" "}
+                                        {business.ownerEmail || "-"}
                                       </div>
                                     </CardDescription>
                                   </CardHeader>
@@ -1572,7 +1611,7 @@ export default function AdminCreditPage() {
                         </div>
                       )}
                       <div ref={orgSentinelRef} className="h-6" />
-                      {loadingOrgs && organizations.length > 0 && (
+                      {loadingOrgs && businesses.length > 0 && (
                         <div className="text-center py-4 text-muted-foreground text-sm">
                           불러오는 중...
                         </div>
@@ -1607,23 +1646,22 @@ export default function AdminCreditPage() {
                           <select
                             id="free-credit-business"
                             className="h-11 w-full appearance-none rounded-lg border border-input bg-background px-3 pr-10 text-sm"
-                            value={selectedBonusBusinessId}
+                            value={selectedBonusBusinessAnchorId}
                             onChange={(e) =>
-                              setSelectedBonusBusinessId(e.target.value)
+                              setSelectedBonusBusinessAnchorId(e.target.value)
                             }
                           >
                             <option value="">전체 사업자</option>
-                            {[...organizations]
+                            {[...businesses]
                               .sort((a, b) =>
                                 String(a.name || "").localeCompare(
                                   String(b.name || ""),
                                   "ko",
                                 ),
                               )
-                              .map((org) => (
-                                <option key={org._id} value={org._id}>
-                                  {org.name} (
-                                  {org.businessNumber || "사업자번호 없음"})
+                              .map((business) => (
+                                <option key={business._id} value={business._id}>
+                                  {formatBusinessSelectLabel(business)}
                                 </option>
                               ))}
                           </select>
@@ -1726,31 +1764,35 @@ export default function AdminCreditPage() {
                               className="h-11 w-full appearance-none rounded-lg border border-input bg-background px-3 pr-10 text-sm"
                               value={
                                 grantCreditType === "general"
-                                  ? selectedBonusBusinessId
-                                  : selectedShippingCreditBusinessId
+                                  ? selectedBonusBusinessAnchorId
+                                  : selectedShippingCreditBusinessAnchorId
                               }
                               onChange={(e) => {
                                 if (grantCreditType === "general") {
-                                  setSelectedBonusBusinessId(e.target.value);
+                                  setSelectedBonusBusinessAnchorId(
+                                    e.target.value,
+                                  );
                                 } else {
-                                  setSelectedShippingCreditBusinessId(
+                                  setSelectedShippingCreditBusinessAnchorId(
                                     e.target.value,
                                   );
                                 }
                               }}
                             >
                               <option value="">사업자 선택</option>
-                              {[...organizations]
+                              {[...businesses]
                                 .sort((a, b) =>
                                   String(a.name || "").localeCompare(
                                     String(b.name || ""),
                                     "ko",
                                   ),
                                 )
-                                .map((org) => (
-                                  <option key={org._id} value={org._id}>
-                                    {org.name} (
-                                    {org.businessNumber || "사업자번호 없음"})
+                                .map((business) => (
+                                  <option
+                                    key={business._id}
+                                    value={business._id}
+                                  >
+                                    {formatBusinessSelectLabel(business)}
                                   </option>
                                 ))}
                             </select>
@@ -1884,9 +1926,10 @@ export default function AdminCreditPage() {
                             }
                             disabled={
                               grantCreditType === "general"
-                                ? grantingBonus || !selectedBonusBusinessId
+                                ? grantingBonus ||
+                                  !selectedBonusBusinessAnchorId
                                 : grantingShippingCredit ||
-                                  !selectedShippingCreditBusinessId
+                                  !selectedShippingCreditBusinessAnchorId
                             }
                           >
                             {grantCreditType === "general"
@@ -1909,13 +1952,9 @@ export default function AdminCreditPage() {
                                 </span>
                                 <span className="text-right font-medium">
                                   {grantCreditType === "general"
-                                    ? selectedBonusOrganization?.name ||
-                                      "미선택"
-                                    : organizations.find(
-                                        (org) =>
-                                          String(org._id) ===
-                                          selectedShippingCreditBusinessId,
-                                      )?.name || "미선택"}
+                                    ? selectedBonusBusiness?.name || "미선택"
+                                    : selectedShippingCreditBusiness?.name ||
+                                      "미선택"}
                                 </span>
                               </div>
                               <div className="flex items-center justify-between gap-3">
@@ -1924,13 +1963,22 @@ export default function AdminCreditPage() {
                                 </span>
                                 <span className="font-mono">
                                   {grantCreditType === "general"
-                                    ? selectedBonusOrganization?.businessNumber ||
+                                    ? selectedBonusBusiness?.businessNumber ||
                                       "-"
-                                    : organizations.find(
-                                        (org) =>
-                                          String(org._id) ===
-                                          selectedShippingCreditBusinessId,
-                                      )?.businessNumber || "-"}
+                                    : selectedShippingCreditBusiness?.businessNumber ||
+                                      "-"}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-muted-foreground">
+                                  사업자 ID
+                                </span>
+                                <span className="font-mono text-xs">
+                                  {grantCreditType === "general"
+                                    ? selectedBonusBusiness?.businessAnchorId ||
+                                      "-"
+                                    : selectedShippingCreditBusiness?.businessAnchorId ||
+                                      "-"}
                                 </span>
                               </div>
                               <div className="flex items-center justify-between gap-3">
@@ -2271,25 +2319,27 @@ export default function AdminCreditPage() {
                             <select
                               id="shipping-credit-business"
                               className="h-11 w-full appearance-none rounded-lg border border-input bg-background px-3 pr-10 text-sm"
-                              value={selectedShippingCreditBusinessId}
+                              value={selectedShippingCreditBusinessAnchorId}
                               onChange={(e) =>
-                                setSelectedShippingCreditBusinessId(
+                                setSelectedShippingCreditBusinessAnchorId(
                                   e.target.value,
                                 )
                               }
                             >
                               <option value="">사업자 선택</option>
-                              {[...organizations]
+                              {[...businesses]
                                 .sort((a, b) =>
                                   String(a.name || "").localeCompare(
                                     String(b.name || ""),
                                     "ko",
                                   ),
                                 )
-                                .map((org) => (
-                                  <option key={org._id} value={org._id}>
-                                    {org.name} (
-                                    {org.businessNumber || "사업자번호 없음"})
+                                .map((business) => (
+                                  <option
+                                    key={business._id}
+                                    value={business._id}
+                                  >
+                                    {formatBusinessSelectLabel(business)}
                                   </option>
                                 ))}
                             </select>
@@ -2349,7 +2399,7 @@ export default function AdminCreditPage() {
                             onClick={handleGrantShippingCredit}
                             disabled={
                               grantingShippingCredit ||
-                              !selectedShippingCreditBusinessId
+                              !selectedShippingCreditBusinessAnchorId
                             }
                           >
                             {grantingShippingCredit
@@ -2367,10 +2417,10 @@ export default function AdminCreditPage() {
                                   선택 사업자
                                 </span>
                                 <span className="text-right font-medium">
-                                  {organizations.find(
-                                    (org) =>
-                                      String(org._id) ===
-                                      selectedShippingCreditBusinessId,
+                                  {businesses.find(
+                                    (business) =>
+                                      String(business._id) ===
+                                      selectedShippingCreditBusinessAnchorId,
                                   )?.name || "미선택"}
                                 </span>
                               </div>
@@ -2379,10 +2429,10 @@ export default function AdminCreditPage() {
                                   사업자번호
                                 </span>
                                 <span className="font-mono">
-                                  {organizations.find(
-                                    (org) =>
-                                      String(org._id) ===
-                                      selectedShippingCreditBusinessId,
+                                  {businesses.find(
+                                    (business) =>
+                                      String(business._id) ===
+                                      selectedShippingCreditBusinessAnchorId,
                                   )?.businessNumber || "-"}
                                 </span>
                               </div>
@@ -3391,10 +3441,10 @@ export default function AdminCreditPage() {
         open={orgLedgerOpen}
         onOpenChange={(open) => {
           setOrgLedgerOpen(open);
-          if (!open) setOrgLedgerOrg(null);
+          if (!open) setOrgLedgerBusiness(null);
         }}
-        organizationId={orgLedgerOrg?._id}
-        titleSuffix={orgLedgerOrg?.name}
+        businessAnchorId={orgLedgerBusiness?._id}
+        titleSuffix={orgLedgerBusiness?.name}
       />
 
       <SalesmanLedgerModal

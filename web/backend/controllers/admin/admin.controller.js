@@ -128,7 +128,7 @@ export async function getPricingStats(req, res) {
       { $unwind: "$requestorUser" },
       {
         $group: {
-          _id: "$requestorUser.referredByBusinessId",
+          _id: "$requestorUser.referredByAnchorId",
           referralOrders: { $sum: 1 },
         },
       },
@@ -212,7 +212,7 @@ export async function getPricingStatsByUser(req, res) {
       { $unwind: "$requestorUser" },
       {
         $group: {
-          _id: "$requestorUser.referredByBusinessId",
+          _id: "$requestorUser.referredByAnchorId",
           referralOrders: { $sum: 1 },
         },
       },

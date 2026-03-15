@@ -190,7 +190,7 @@ export const AdminBusinessRegistrationInquiryPage = () => {
         status: statusLabelMap[item.status || "open"] || "",
         subject: item.subject || "",
         message: item.message || "",
-        organization: user.business || "",
+        business: user.business || "",
         name: user.name || "",
         email: user.email || "",
       };
@@ -202,7 +202,7 @@ export const AdminBusinessRegistrationInquiryPage = () => {
       "status",
       "subject",
       "message",
-      "organization",
+      "business",
       "name",
       "email",
     ];

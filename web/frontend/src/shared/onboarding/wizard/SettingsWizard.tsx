@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
+import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { apiFetch } from "@/shared/api/apiClient";
 import { onAppEvent } from "@/shared/realtime/socket";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,11 +69,7 @@ export const SettingsWizard = ({
   const token = useAuthStore((s) => s.token);
   const logout = useAuthStore((s) => s.logout);
   const businessType = useMemo(() => {
-    const role = String(user?.role || "requestor").trim();
-    if (["salesman", "manufacturer", "requestor"].includes(role)) {
-      return role;
-    }
-    return "requestor";
+    return resolveBusinessType(user?.role, "requestor");
   }, [user?.role]);
   const storageIdentity = useMemo(() => {
     const resolvedUser = user as {

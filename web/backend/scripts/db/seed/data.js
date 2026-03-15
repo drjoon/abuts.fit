@@ -11,7 +11,12 @@ import {
   toKstYmd,
 } from "./utils.js";
 
-async function ensureFundingForOrganization({ businessId, userId, uniqueKey }) {
+async function ensureFundingForOrganization({
+  businessId,
+  businessAnchorId,
+  userId,
+  uniqueKey,
+}) {
   const chargeKey = `seed:charge:${uniqueKey}`;
   const bonusKey = `seed:bonus:${uniqueKey}`;
 
@@ -19,6 +24,7 @@ async function ensureFundingForOrganization({ businessId, userId, uniqueKey }) {
   if (!existingCharge) {
     await CreditLedger.create({
       businessId,
+      businessAnchorId: businessAnchorId || null,
       userId,
       type: "CHARGE",
       amount: 3000000,
@@ -32,6 +38,7 @@ async function ensureFundingForOrganization({ businessId, userId, uniqueKey }) {
   if (!existingBonus) {
     await CreditLedger.create({
       businessId,
+      businessAnchorId: businessAnchorId || null,
       userId,
       type: "BONUS",
       amount: 30000,
@@ -77,6 +84,7 @@ export async function seedRequestData({ count = 50 } = {}) {
   for (const requestor of requestorPool) {
     await ensureFundingForOrganization({
       businessId: requestor.businessId,
+      businessAnchorId: requestor.businessAnchorId || null,
       userId: requestor._id,
       uniqueKey: requestor.email,
     });
@@ -125,6 +133,7 @@ export async function seedRequestData({ count = 50 } = {}) {
       _id: requestObjectId,
       requestId,
       businessId: owner.businessId,
+      businessAnchorId: owner.businessAnchorId || null,
       requestor: owner._id,
       manufacturer: null,
       caseInfos: {
@@ -165,6 +174,7 @@ export async function seedRequestData({ count = 50 } = {}) {
       funding.remainingPaid -= paidAmount;
       creditLedgerDocs.push({
         businessId: owner.businessId,
+        businessAnchorId: owner.businessAnchorId || null,
         userId: owner._id,
         type: "SPEND",
         amount: -amount,

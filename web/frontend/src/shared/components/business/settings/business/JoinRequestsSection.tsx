@@ -8,14 +8,14 @@ interface JoinRequestsSectionProps {
   }[];
   cancelLoadingBusinessId: string;
   onCancelJoinRequest: (businessId: string) => void;
-  onLeaveOrganization: (businessId: string) => void;
+  onLeaveBusiness: (businessId: string) => void;
 }
 
 export const JoinRequestsSection = ({
   myJoinRequests,
   cancelLoadingBusinessId,
   onCancelJoinRequest,
-  onLeaveOrganization,
+  onLeaveBusiness,
 }: JoinRequestsSectionProps) => {
   const getJoinStatusLabel = (status: string) => {
     const s = String(status || "").trim();
@@ -59,7 +59,7 @@ export const JoinRequestsSection = ({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => onLeaveOrganization(String(r.businessId))}
+                onClick={() => onLeaveBusiness(String(r.businessId))}
                 disabled={cancelLoadingBusinessId === r.businessId}
               >
                 {cancelLoadingBusinessId === r.businessId

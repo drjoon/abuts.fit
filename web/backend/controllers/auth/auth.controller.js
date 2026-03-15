@@ -2,6 +2,7 @@ import User from "../../models/user.model.js";
 import SignupVerification from "../../models/signupVerification.model.js";
 import GuideProgress from "../../models/guideProgress.model.js";
 import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import {
   generateToken,
@@ -42,13 +43,14 @@ const ensureUniqueReferralCode = async (length) => {
 
 const REFERRAL_ALLOWED_ROLES = new Set(["requestor", "salesman", "devops"]);
 
-async function resolveDefaultDevopsReferrerBusinessId() {
+async function resolveDefaultDevopsReferrer() {
   const defaultDevopsUser = await User.findOne({
     role: "devops",
     active: true,
     businessId: { $ne: null },
+    businessAnchorId: { $ne: null },
   })
-    .select({ _id: 1, businessId: 1, createdAt: 1 })
+    .select({ _id: 1, businessId: 1, businessAnchorId: 1, createdAt: 1 })
     .sort({ createdAt: 1, _id: 1 })
     .lean();
 
@@ -62,6 +64,12 @@ async function resolveDefaultDevopsReferrerBusinessId() {
   if (!Types.ObjectId.isValid(businessId)) {
     throw new Error("기본 소개 개발운영사 사업자 정보가 올바르지 않습니다.");
   }
+  const businessAnchorId = String(
+    defaultDevopsUser.businessAnchorId || "",
+  ).trim();
+  if (!Types.ObjectId.isValid(businessAnchorId)) {
+    throw new Error("기본 소개 개발운영사 사업자 정보가 올바르지 않습니다.");
+  }
 
   const businessExists = await Business.exists({
     _id: new Types.ObjectId(businessId),
@@ -69,11 +77,19 @@ async function resolveDefaultDevopsReferrerBusinessId() {
   if (!businessExists) {
     throw new Error("기본 소개 개발운영사 사업자를 찾을 수 없습니다.");
   }
+  const anchorExists = await BusinessAnchor.exists({
+    _id: new Types.ObjectId(businessAnchorId),
+  });
+  if (!anchorExists) {
+    throw new Error("기본 소개 개발운영사 사업자 정보를 찾을 수 없습니다.");
+  }
 
-  return new Types.ObjectId(businessId);
+  return {
+    referredByAnchorId: new Types.ObjectId(businessAnchorId),
+  };
 }
 
-async function resolveReferrerBusinessId({
+async function resolveReferrerTargets({
   referredByUserId,
   referredByEmail,
   referredByReferralCode,
@@ -105,17 +121,29 @@ async function resolveReferrerBusinessId({
   }
 
   if (!resolvedReferralCode && !resolvedReferralEmail) {
-    return resolveDefaultDevopsReferrerBusinessId();
+    return resolveDefaultDevopsReferrer();
   }
 
   let refUser = null;
   if (resolvedReferralEmail) {
     refUser = await User.findOne({ email: resolvedReferralEmail })
-      .select({ _id: 1, role: 1, active: 1, businessId: 1 })
+      .select({
+        _id: 1,
+        role: 1,
+        active: 1,
+        businessId: 1,
+        businessAnchorId: 1,
+      })
       .lean();
   } else if (resolvedReferralCode) {
     refUser = await User.findOne({ referralCode: resolvedReferralCode })
-      .select({ _id: 1, role: 1, active: 1, businessId: 1 })
+      .select({
+        _id: 1,
+        role: 1,
+        active: 1,
+        businessId: 1,
+        businessAnchorId: 1,
+      })
       .lean();
   }
 
@@ -127,21 +155,23 @@ async function resolveReferrerBusinessId({
     throw new Error("추천인은 의뢰자/영업자/개발운영사 계정만 가능합니다.");
   }
 
-  const refBusinessId = String(refUser.businessId || "").trim();
-  if (!Types.ObjectId.isValid(refBusinessId)) {
+  const refBusinessAnchorId = String(refUser.businessAnchorId || "").trim();
+  if (!Types.ObjectId.isValid(refBusinessAnchorId)) {
     throw new Error(
       "추천인 사업자 정보가 없습니다. 사업자 등록 후 다시 시도해주세요.",
     );
   }
 
-  const businessExists = await Business.exists({
-    _id: new Types.ObjectId(refBusinessId),
+  const anchorExists = await BusinessAnchor.exists({
+    _id: new Types.ObjectId(refBusinessAnchorId),
   });
-  if (!businessExists) {
-    throw new Error("추천인 사업자를 찾을 수 없습니다.");
+  if (!anchorExists) {
+    throw new Error("추천인 사업자 정보를 찾을 수 없습니다.");
   }
 
-  return new Types.ObjectId(refBusinessId);
+  return {
+    referredByAnchorId: new Types.ObjectId(refBusinessAnchorId),
+  };
 }
 
 const isStrongPassword = (password) => {
@@ -151,8 +181,19 @@ const isStrongPassword = (password) => {
   return true;
 };
 
-async function getBusinessCreditBalanceBreakdown(businessId) {
-  const rows = await CreditLedger.find({ businessId })
+async function getBusinessCreditBalanceBreakdown(businessAnchorId) {
+  const normalizedBusinessAnchorId = String(businessAnchorId || "").trim();
+  if (!Types.ObjectId.isValid(normalizedBusinessAnchorId)) {
+    return {
+      balance: 0,
+      paidBalance: 0,
+      bonusBalance: 0,
+    };
+  }
+
+  const rows = await CreditLedger.find({
+    businessAnchorId: new Types.ObjectId(normalizedBusinessAnchorId),
+  })
     .sort({ createdAt: 1, _id: 1 })
     .select({ type: 1, amount: 1 })
     .lean();
@@ -441,14 +482,15 @@ async function register(req, res) {
       });
     }
 
-    let referredByBusinessId = null;
+    let referredByAnchorId = null;
     try {
-      referredByBusinessId = await resolveReferrerBusinessId({
+      const referrerTargets = await resolveReferrerTargets({
         referredByUserId,
         referredByEmail,
         referredByReferralCode,
         socialToken,
       });
+      referredByAnchorId = referrerTargets?.referredByAnchorId || null;
     } catch (refError) {
       return res.status(400).json({
         success: false,
@@ -511,7 +553,7 @@ async function register(req, res) {
       adminRole: normalizedRole === "admin" ? "owner" : null,
       organization: effectiveOrganization,
       referralCode,
-      referredByBusinessId,
+      referredByAnchorId,
       onboardingWizardCompleted: false,
       approvedAt: isInstantApprove ? new Date() : null,
       active: isInstantApprove,
@@ -599,19 +641,19 @@ async function validateReferral(req, res) {
     }
 
     let refUser = null;
-    let orgName = "";
+    let businessName = "";
     const isEmail = /@/.test(raw);
 
     if (isEmail) {
       const refEmail = raw.toLowerCase();
       refUser = await User.findOne({ email: refEmail })
-        .select({ _id: 1, role: 1, active: 1, name: 1, businessId: 1 })
+        .select({ _id: 1, role: 1, active: 1, name: 1, businessAnchorId: 1 })
         .lean();
     } else {
       refUser = await User.findOne({
         referralCode: { $regex: `^${raw}$`, $options: "i" },
       })
-        .select({ _id: 1, role: 1, active: 1, name: 1, businessId: 1 })
+        .select({ _id: 1, role: 1, active: 1, name: 1, businessAnchorId: 1 })
         .lean();
     }
 
@@ -629,18 +671,18 @@ async function validateReferral(req, res) {
       });
     }
 
-    const refBusinessId = String(refUser.businessId || "").trim();
-    if (!Types.ObjectId.isValid(refBusinessId)) {
+    const refBusinessAnchorId = String(refUser.businessAnchorId || "").trim();
+    if (!Types.ObjectId.isValid(refBusinessAnchorId)) {
       return res.status(400).json({
         success: false,
         message:
           "추천인 사업자 정보가 없습니다. 사업자 등록 후 다시 시도해주세요.",
       });
     }
-    const org = await Business.findById(refBusinessId)
+    const anchor = await BusinessAnchor.findById(refBusinessAnchorId)
       .select({ name: 1 })
       .lean();
-    orgName = org?.name || "";
+    businessName = anchor?.name || "";
 
     return res.status(200).json({
       success: true,
@@ -648,7 +690,7 @@ async function validateReferral(req, res) {
         id: refUser._id,
         name: refUser.name || "",
         role: refUser.role,
-        businessName: orgName,
+        businessName,
       },
     });
   } catch (error) {
@@ -1126,6 +1168,7 @@ async function withdraw(req, res) {
         originalEmail: 1,
         role: 1,
         businessId: 1,
+        businessAnchorId: 1,
       })
       .lean();
 
@@ -1137,21 +1180,23 @@ async function withdraw(req, res) {
     }
 
     let isRequestorOwner = false;
+    const businessAnchorId = user?.businessAnchorId || null;
     let businessId = user.businessId || null;
     if (user.role === "requestor" && businessId) {
-      const organization = await Business.findById(businessId)
+      const business = await Business.findById(businessId)
         .select({ owner: 1 })
         .lean();
-      if (!organization) {
+      if (!business) {
         businessId = null;
       } else {
-        isRequestorOwner = String(organization.owner) === String(userId);
+        isRequestorOwner = String(business.owner) === String(userId);
       }
     }
 
     let paidBalance = 0;
-    if (user.role === "requestor" && isRequestorOwner && businessId) {
-      const breakdown = await getBusinessCreditBalanceBreakdown(businessId);
+    if (user.role === "requestor" && isRequestorOwner && businessAnchorId) {
+      const breakdown =
+        await getBusinessCreditBalanceBreakdown(businessAnchorId);
       paidBalance = Number(breakdown?.paidBalance || 0);
       if (paidBalance > 0) {
         const refundAccountRaw = req.body?.refundReceiveAccount || {};
@@ -1170,12 +1215,14 @@ async function withdraw(req, res) {
           });
         }
 
-        const uniqueKey = `account_withdraw_refund:${String(businessId)}:${String(userId)}`;
+        const uniqueKey = `account_withdraw_refund:${String(
+          businessAnchorId,
+        )}:${String(userId)}`;
         await CreditLedger.updateOne(
           { uniqueKey },
           {
             $setOnInsert: {
-              businessId,
+              businessAnchorId,
               userId,
               type: "ADJUST",
               amount: -paidBalance,

@@ -142,17 +142,27 @@ const resolveMailboxCode = (request) =>
 
 const resolveBusinessOrganization = (request) => {
   const candidates = [
+    request?.requestorBusinessAnchor,
+    request?.businessAnchorId,
     request?.business,
-    request?.businessId,
     request?.requestor?.businessInfo,
   ];
   return candidates.find((c) => c && typeof c === "object" && c._id) || null;
 };
 
+const resolveOrganizationMeta = (business) => {
+  if (!business || typeof business !== "object") return {};
+  return business.extracted && typeof business.extracted === "object"
+    ? business.extracted
+    : business.metadata && typeof business.metadata === "object"
+      ? business.metadata
+      : {};
+};
+
 const resolveRequestOrganizationName = (request) => {
   const requestor = request?.requestor || {};
   const business = resolveBusinessOrganization(request);
-  const extracted = business?.extracted || {};
+  const extracted = resolveOrganizationMeta(business);
   return (
     business?.name ||
     extracted?.companyName ||
@@ -166,7 +176,7 @@ const resolveRequestOrganizationName = (request) => {
 const resolveReceiverZipSource = (request) => {
   const requestor = request?.requestor || {};
   const business = resolveBusinessOrganization(request);
-  const extracted = business?.extracted || {};
+  const extracted = resolveOrganizationMeta(business);
   return (
     requestor?.address?.postalCode ||
     requestor?.zipCode ||
@@ -180,7 +190,7 @@ const resolveReceiverZipSource = (request) => {
 const normalizeReceiverAddressForHanjin = (request) => {
   const requestor = request?.requestor || {};
   const business = resolveBusinessOrganization(request);
-  const extracted = business?.extracted || {};
+  const extracted = resolveOrganizationMeta(business);
   const addressCandidates = [
     requestor?.addressText,
     requestor?.address?.roadAddress,
@@ -199,7 +209,7 @@ const normalizeReceiverAddressForHanjin = (request) => {
 const resolveReceiverDetailAddress = (request) => {
   const requestor = request?.requestor || {};
   const business = resolveBusinessOrganization(request);
-  const extracted = business?.extracted || {};
+  const extracted = resolveOrganizationMeta(business);
   const candidates = [
     requestor?.address?.detailAddress,
     requestor?.address?.address2,
@@ -218,7 +228,7 @@ const logMissingReceiverAddressDiagnostics = ({ request, mailbox, reason }) => {
   try {
     const requestor = request?.requestor || {};
     const business = resolveBusinessOrganization(request);
-    const extracted = business?.extracted || {};
+    const extracted = resolveOrganizationMeta(business);
     const normalizedBaseAddress = normalizeReceiverAddressForHanjin(request);
     const normalizedDetailAddress = resolveReceiverDetailAddress(request);
     console.error("[hanjin][address] missing receiver address", {
@@ -460,7 +470,7 @@ export const findPackingStageRequestsByMailboxes = async (
 
   if (options.populateRequestor !== false) {
     query = query.populate("requestor", "name business phoneNumber address");
-    query = query.populate("businessId", "name extracted");
+    query = query.populate("businessAnchorId", "name metadata");
   }
 
   if (options.select && typeof options.select === "object") {
@@ -593,7 +603,7 @@ const buildHanjinDraftPayload = (requests) => {
       const first = group[0] || {};
       const requestor = first.requestor || {};
       const business = resolveBusinessOrganization(first);
-      const extracted = business?.extracted || {};
+      const extracted = resolveOrganizationMeta(business);
       const organizationName = resolveRequestOrganizationName(first);
       const addressText = normalizeReceiverAddressForHanjin(first);
       const receiverZip = normalizeHanjinZip(resolveReceiverZipSource(first));

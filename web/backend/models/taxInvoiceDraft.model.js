@@ -11,6 +11,11 @@ const TaxInvoiceDraftSchema = new mongoose.Schema(
     businessId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Business",
+      default: null,
+    },
+    businessAnchorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BusinessAnchor",
       required: true,
     },
     status: {
@@ -50,6 +55,7 @@ const TaxInvoiceDraftSchema = new mongoose.Schema(
 );
 
 TaxInvoiceDraftSchema.index({ status: 1, updatedAt: -1 });
+TaxInvoiceDraftSchema.index({ businessAnchorId: 1, createdAt: -1 });
 
 const TaxInvoiceDraft = mongoose.model(
   "TaxInvoiceDraft",

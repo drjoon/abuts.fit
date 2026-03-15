@@ -242,7 +242,7 @@ export async function createRequestsFromDraft(req, res) {
         const priceStart = Date.now();
         let computedPrice = await computePriceForRequest({
           requestorId: req.user._id,
-          requestorOrgId: req.user?.businessId,
+          requestorOrgId: req.user?.businessAnchorId,
           clinicName,
           patientName,
           tooth,
@@ -355,8 +355,11 @@ export async function createRequestsFromDraft(req, res) {
       });
     }
 
-    const businessId = req.user?.businessId;
-    if (!businessId || !Types.ObjectId.isValid(String(businessId))) {
+    const businessAnchorId = req.user?.businessAnchorId;
+    if (
+      !businessAnchorId ||
+      !Types.ObjectId.isValid(String(businessAnchorId))
+    ) {
       return res.status(403).json({
         success: false,
         message:
@@ -635,7 +638,7 @@ export async function createRequestsFromDraft(req, res) {
             if (!dup || !existingRequestId) continue;
 
             const existingDoc = await Request.findById(existingRequestId)
-              .populate("requestor", "_id businessId")
+              .populate("requestor", "_id businessAnchorId")
               .session(session);
             if (!existingDoc) {
               const err = new Error("기존 의뢰를 찾을 수 없습니다.");
@@ -693,11 +696,11 @@ export async function createRequestsFromDraft(req, res) {
               .select({
                 _id: 1,
                 requestor: 1,
-                businessId: 1,
+                businessAnchorId: 1,
                 manufacturerStage: 1,
                 "caseInfos.reviewByStage.shipping.status": 1,
               })
-              .populate("requestor", "_id businessId")
+              .populate("requestor", "_id businessAnchorId")
               .session(session);
             if (!existingDoc) {
               const err = new Error("기존 의뢰를 찾을 수 없습니다.");
@@ -715,7 +718,7 @@ export async function createRequestsFromDraft(req, res) {
 
         const { balance, paidBalance, bonusBalance } =
           await getBusinessCreditBalanceBreakdown({
-            businessId,
+            businessAnchorId,
             session,
           });
         console.log("[createRequestsFromDraft] credit check", {
@@ -771,9 +774,9 @@ export async function createRequestsFromDraft(req, res) {
           const newRequest = {
             requestId,
             requestor: req.user._id,
-            businessId:
-              req.user?.role === "requestor" && req.user?.businessId
-                ? req.user.businessId
+            businessAnchorId:
+              req.user?.role === "requestor" && req.user?.businessAnchorId
+                ? req.user.businessAnchorId
                 : null,
             price: item.computedPrice,
             shippingMode,

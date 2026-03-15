@@ -33,12 +33,12 @@ async function getNextSequence({ key, startAt }) {
   return start - 1 + seq;
 }
 
-export async function ensureOrganizationDepositCode(organizationId) {
-  if (!organizationId) {
-    throw new Error("organizationId가 필요합니다.");
+export async function ensureOrganizationDepositCode(businessAnchorId) {
+  if (!businessAnchorId) {
+    throw new Error("businessAnchorId가 필요합니다.");
   }
 
-  const org = await Business.findById(organizationId)
+  const org = await Business.findOne({ businessAnchorId })
     .select({ depositCode: 1 })
     .lean();
 
@@ -62,7 +62,7 @@ export async function ensureOrganizationDepositCode(organizationId) {
     try {
       result = await Business.updateOne(
         {
-          _id: organizationId,
+          businessAnchorId,
           $or: [{ depositCode: "" }, { depositCode: null }],
         },
         { $set: { depositCode } },
@@ -78,7 +78,7 @@ export async function ensureOrganizationDepositCode(organizationId) {
       return { depositCode, created: true };
     }
 
-    const after = await Business.findById(organizationId)
+    const after = await Business.findOne({ businessAnchorId })
       .select({ depositCode: 1 })
       .lean();
     const afterCode = String(after?.depositCode || "").trim();

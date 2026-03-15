@@ -123,24 +123,22 @@ export async function getGuideProgress(req, res) {
     const doc = await GuideProgress.ensureForUser(req.user._id, tourId);
 
     if (tourId === "requestor-onboarding") {
-      // User와 Organization을 병렬로 조회
-      const [user, organization] = await Promise.all([
-        User.findById(req.user._id)
-          .select({
-            profileImage: 1,
-            phoneVerifiedAt: 1,
-            phoneVerification: 1,
-            businessId: 1,
-          })
-          .lean(),
-        req.user.businessId
-          ? Business.findById(req.user.businessId)
-              .select({ name: 1, extracted: 1, businessLicense: 1 })
-              .lean()
-          : Promise.resolve(null),
-      ]);
+      // User와 Business를 병렬로 조회
+      const user = await User.findById(req.user._id)
+        .select({
+          profileImage: 1,
+          phoneVerifiedAt: 1,
+          phoneVerification: 1,
+          businessId: 1,
+        })
+        .lean();
+      const business = user?.businessId
+        ? await Business.findById(user.businessId)
+            .select({ name: 1, extracted: 1, businessLicense: 1 })
+            .lean()
+        : null;
 
-      const doneMap = computeRequestorOnboardingDoneMap({ user, organization });
+      const doneMap = computeRequestorOnboardingDoneMap({ user, organization: business });
       const defaultSteps = GuideProgress.getDefaultSteps(tourId);
       const prevSteps = Array.isArray(doc.steps) ? doc.steps : [];
 

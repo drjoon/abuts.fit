@@ -1,7 +1,10 @@
 import { useMemo } from "react";
 import { type DiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 import { type WorksheetQueueItem } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
-import { type ManufacturerRequest, getDiameterBucketIndex } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import {
+  type ManufacturerRequest,
+  getDiameterBucketIndex,
+} from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 
 export const useDiameterQueue = (filteredAndSorted: ManufacturerRequest[]) => {
   const diameterQueueForReceive = useMemo(() => {
@@ -19,7 +22,7 @@ export const useDiameterQueue = (filteredAndSorted: ManufacturerRequest[]) => {
       const bucketIndex = getDiameterBucketIndex(caseInfos.maxDiameter);
       const item: WorksheetQueueItem = {
         id: req._id,
-        client: req.requestor?.organization || req.requestor?.name || "",
+        client: req.requestor?.business || req.requestor?.name || "",
         patient: caseInfos.patientName || "",
         tooth: caseInfos.tooth || "",
         connectionDiameter:

@@ -24,11 +24,11 @@ export function revertManufacturerStageByReviewStage(request, stage) {
 // Ensure request credit spend on machining enter
 export async function ensureRequestCreditSpendOnMachiningEnter({
   request,
-  businessId,
+  businessAnchorId,
   actorUserId,
   session,
 }) {
-  if (!request || !businessId) return;
+  if (!request || !businessAnchorId) return;
 
   const uniqueKey = `request:${String(request._id)}:machining_spend`;
   const existingSpend = await CreditLedger.findOne({ uniqueKey })
@@ -56,7 +56,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
         (
           await computePriceForRequest({
             requestorId: request?.requestor,
-            requestorOrgId: businessId,
+            requestorOrgId: businessAnchorId,
             clinicName: request?.caseInfos?.clinicName || "",
             patientName: request?.caseInfos?.patientName || "",
             tooth: request?.caseInfos?.tooth || "",
@@ -77,7 +77,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     { uniqueKey },
     {
       $setOnInsert: {
-        businessId,
+        businessAnchorId,
         userId: actorUserId || null,
         type: "SPEND",
         amount: -resolvedAmount,
@@ -93,11 +93,11 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     requestId: request?.requestId,
     requestMongoId: String(request?._id || ""),
     amount: resolvedAmount,
-    businessId: String(businessId),
+    businessAnchorId: String(businessAnchorId),
   });
 
   await emitCreditBalanceUpdatedToBusiness({
-    businessId,
+    businessAnchorId,
     balanceDelta: -resolvedAmount,
     reason: "machining_spend",
     refId: request?._id,

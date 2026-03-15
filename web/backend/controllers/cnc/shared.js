@@ -408,10 +408,10 @@ export async function rollbackRequestToCamByRequestId(requestId) {
   if (!rollbackStages.includes(stage)) return request;
 
   try {
-    const orgId = request.businessId || request.requestor?.businessId;
-    if (orgId) {
+    const businessAnchorId = request.businessAnchorId || request.requestor?.businessAnchorId;
+    if (businessAnchorId) {
       const spendRows = await CreditLedger.find({
-        businessId: orgId,
+        businessAnchorId,
         type: "SPEND",
         refType: "REQUEST",
         refId: request._id,
@@ -420,7 +420,7 @@ export async function rollbackRequestToCamByRequestId(requestId) {
         .lean();
 
       const refundRows = await CreditLedger.find({
-        businessId: orgId,
+        businessAnchorId,
         type: "REFUND",
         refType: "REQUEST",
         refId: request._id,
@@ -446,7 +446,8 @@ export async function rollbackRequestToCamByRequestId(requestId) {
           { uniqueKey: refundKey },
           {
             $setOnInsert: {
-              businessId: orgId,
+              businessAnchorId,
+              businessAnchorId: request?.businessAnchorId || null,
               userId: null,
               type: "REFUND",
               amount: refundAmount,
@@ -460,7 +461,7 @@ export async function rollbackRequestToCamByRequestId(requestId) {
 
         if (result?.upsertedCount) {
           await emitCreditBalanceUpdatedToBusiness({
-            businessId: orgId,
+            businessAnchorId,
             balanceDelta: refundAmount,
             reason: "cam_approve_refund",
             refId: request._id,

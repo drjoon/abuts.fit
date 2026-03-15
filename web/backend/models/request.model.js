@@ -37,9 +37,9 @@ const requestSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
-    businessId: {
+    businessAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Business",
+      ref: "BusinessAnchor",
       default: null,
       index: true,
     },
@@ -598,7 +598,7 @@ const requestSchema = new mongoose.Schema(
 );
 
 requestSchema.index({
-  businessId: 1,
+  businessAnchorId: 1,
   "caseInfos.clinicName": 1,
   "caseInfos.patientName": 1,
   "caseInfos.tooth": 1,
@@ -615,9 +615,8 @@ requestSchema.index({
   createdAt: -1,
 });
 
-// 대시보드 조회 최적화를 위한 복합 인덱스
 requestSchema.index({
-  businessId: 1,
+  businessAnchorId: 1,
   manufacturerStage: 1,
   "caseInfos.implantBrand": 1,
   createdAt: -1,
@@ -631,9 +630,8 @@ requestSchema.index({
   createdAt: -1,
 });
 
-// 배송 모드 및 상태 기반 조회를 위한 인덱스
 requestSchema.index({
-  businessId: 1,
+  businessAnchorId: 1,
   manufacturerStage: 1,
 });
 

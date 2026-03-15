@@ -148,100 +148,100 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
     earnedAmount - paidOutAmount + adjustedAmount,
   );
 
-  // 영업자들의 businessId 조회
-  const salesmanBusinessIds = (
+  // 영업자들의 businessAnchorId 조회
+  const salesmanBusinessAnchorIds = (
     await User.find({ _id: { $in: salesmanObjectIds } })
-      .select({ businessId: 1 })
+      .select({ businessAnchorId: 1 })
       .lean()
   )
-    .map((s) => s?.businessId)
+    .map((s) => s?.businessAnchorId)
     .filter((id) => id && Types.ObjectId.isValid(String(id)));
 
   // 직접 소개 의뢰자: salesmen -> requestor
   const directRequestors = await User.find({
     role: "requestor",
     active: true,
-    referredByBusinessId: { $in: salesmanBusinessIds },
-    businessId: { $ne: null },
+    referredByAnchorId: { $in: salesmanBusinessAnchorIds },
+    businessAnchorId: { $ne: null },
   })
-    .select({ _id: 1, referredByBusinessId: 1, businessId: 1 })
+    .select({ _id: 1, referredByAnchorId: 1, businessAnchorId: 1 })
     .lean();
 
   // 직계1 영업자
   const childSalesmen = await User.find({
     role: { $in: REFERRAL_LEADER_ROLES },
     active: true,
-    referredByBusinessId: { $in: salesmanBusinessIds },
+    referredByAnchorId: { $in: salesmanBusinessAnchorIds },
   })
-    .select({ _id: 1, referredByBusinessId: 1, businessId: 1 })
+    .select({ _id: 1, referredByAnchorId: 1, businessAnchorId: 1 })
     .lean();
 
-  const childSalesmanBusinessIds = (childSalesmen || [])
-    .map((s) => s?.businessId)
+  const childSalesmanBusinessAnchorIds = (childSalesmen || [])
+    .map((s) => s?.businessAnchorId)
     .filter((id) => id && Types.ObjectId.isValid(String(id)));
 
   // 직계1 영업자가 소개한 의뢰자
   const level1Requestors =
-    childSalesmanBusinessIds.length === 0
+    childSalesmanBusinessAnchorIds.length === 0
       ? []
       : await User.find({
           role: "requestor",
           active: true,
-          referredByBusinessId: { $in: childSalesmanBusinessIds },
-          businessId: { $ne: null },
+          referredByAnchorId: { $in: childSalesmanBusinessAnchorIds },
+          businessAnchorId: { $ne: null },
         })
-          .select({ _id: 1, referredByBusinessId: 1, businessId: 1 })
+          .select({ _id: 1, referredByAnchorId: 1, businessAnchorId: 1 })
           .lean();
 
-  const leaderBusinessIdByChildSalesmanBusinessId = new Map(
+  const leaderBusinessAnchorIdByChildSalesmanBusinessAnchorId = new Map(
     (childSalesmen || [])
       .map((s) => [
-        String(s?.businessId || ""),
-        String(s?.referredByBusinessId || ""),
+        String(s?.businessAnchorId || ""),
+        String(s?.referredByAnchorId || ""),
       ])
       .filter(([cid, pid]) => cid && pid),
   );
 
   // 수수료/매출 집계는 조직 단위
-  const directOrgIdsBySalesmanBusinessId = new Map();
+  const directOrgIdsBySalesmanBusinessAnchorId = new Map();
   for (const u of directRequestors || []) {
-    const sBusinessId = String(u?.referredByBusinessId || "");
-    const orgId = u?.businessId ? String(u.businessId) : "";
+    const sBusinessId = String(u?.referredByAnchorId || "");
+    const orgId = u?.businessAnchorId ? String(u.businessAnchorId) : "";
     if (!sBusinessId || !orgId) continue;
-    const set = directOrgIdsBySalesmanBusinessId.get(sBusinessId) || new Set();
+    const set = directOrgIdsBySalesmanBusinessAnchorId.get(sBusinessId) || new Set();
     set.add(orgId);
-    directOrgIdsBySalesmanBusinessId.set(sBusinessId, set);
+    directOrgIdsBySalesmanBusinessAnchorId.set(sBusinessId, set);
   }
 
-  const level1OrgIdsBySalesmanBusinessId = new Map();
-  const requestorOrgIdsByChildSalesmanBusinessId = new Map();
+  const level1OrgIdsBySalesmanBusinessAnchorId = new Map();
+  const requestorOrgIdsByChildSalesmanBusinessAnchorId = new Map();
   for (const u of level1Requestors || []) {
-    const childSBusinessId = String(u?.referredByBusinessId || "");
+    const childSBusinessId = String(u?.referredByAnchorId || "");
     const leaderSBusinessId = String(
-      leaderBusinessIdByChildSalesmanBusinessId.get(childSBusinessId) || "",
+      leaderBusinessAnchorIdByChildSalesmanBusinessAnchorId.get(childSBusinessId) || "",
     );
-    const orgId = u?.businessId ? String(u.businessId) : "";
+    const orgId = u?.businessAnchorId ? String(u.businessAnchorId) : "";
     if (!orgId) continue;
     if (leaderSBusinessId) {
       const set =
-        level1OrgIdsBySalesmanBusinessId.get(leaderSBusinessId) || new Set();
+        level1OrgIdsBySalesmanBusinessAnchorId.get(leaderSBusinessId) || new Set();
       set.add(orgId);
-      level1OrgIdsBySalesmanBusinessId.set(leaderSBusinessId, set);
+      level1OrgIdsBySalesmanBusinessAnchorId.set(leaderSBusinessId, set);
     }
     if (childSBusinessId) {
       const set2 =
-        requestorOrgIdsByChildSalesmanBusinessId.get(childSBusinessId) ||
+        requestorOrgIdsByChildSalesmanBusinessAnchorId.get(childSBusinessId) ||
         new Set();
       set2.add(orgId);
-      requestorOrgIdsByChildSalesmanBusinessId.set(childSBusinessId, set2);
+      requestorOrgIdsByChildSalesmanBusinessAnchorId.set(childSBusinessId, set2);
     }
   }
 
   const orgIdsAll = Array.from(
     new Set(
       [
-        ...directOrgIdsBySalesmanBusinessId.values(),
-        ...level1OrgIdsBySalesmanBusinessId.values(),
+        ...directOrgIdsBySalesmanBusinessAnchorId.values(),
+        ...level1OrgIdsBySalesmanBusinessAnchorId.values(),
       ].flatMap((s) => Array.from(s)),
     ),
   )
@@ -254,14 +254,14 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
       : await Request.aggregate([
           {
             $match: {
-              businessId: { $in: orgIdsAll },
+              businessAnchorId: { $in: orgIdsAll },
               manufacturerStage: "추적관리",
               createdAt: { $gte: rangeStartUtc, $lte: rangeEndUtc },
             },
           },
           {
             $group: {
-              _id: "$businessId",
+              _id: "$businessAnchorId",
               paidRevenueAmount: {
                 $sum: {
                   $ifNull: [
@@ -305,7 +305,7 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
   for (const [
     sBusinessId,
     orgSet,
-  ] of directOrgIdsBySalesmanBusinessId.entries()) {
+  ] of directOrgIdsBySalesmanBusinessAnchorId.entries()) {
     let paid = 0;
     for (const oid of orgSet) {
       paid += Number(revenueByOrgId.get(String(oid))?.paid || 0);
@@ -316,12 +316,12 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
   // 간접: 자식 영업자의 direct 커미션 합 * 50%
   let indirectCommissionTotal = 0;
   for (const child of childSalesmen || []) {
-    const childSBusinessId = String(child?.businessId || "");
-    const parentSBusinessId = String(child?.referredByBusinessId || "");
+    const childSBusinessId = String(child?.businessAnchorId || "");
+    const parentSBusinessId = String(child?.referredByAnchorId || "");
     if (!childSBusinessId || !parentSBusinessId) continue;
 
     const orgSet =
-      requestorOrgIdsByChildSalesmanBusinessId.get(childSBusinessId) ||
+      requestorOrgIdsByChildSalesmanBusinessAnchorId.get(childSBusinessId) ||
       new Set();
     let paid = 0;
     for (const oid of orgSet) {

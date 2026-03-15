@@ -94,7 +94,7 @@ export async function createInquiry(req, res) {
 
     const inquiry = await BusinessRegistrationInquiry.create({
       user: req.user._id,
-      organizationId: req.user?.businessId || null,
+      businessAnchorId: req.user?.businessAnchorId || null,
       businessType: req.user?.role || null,
       userSnapshot: buildUserSnapshot(req.user),
       type: normalizedType,
@@ -169,7 +169,7 @@ export async function createBusinessRegistrationInquiry(req, res) {
 
     const inquiry = await BusinessRegistrationInquiry.create({
       user: req.user._id,
-      organizationId: req.user?.businessId || null,
+      businessAnchorId: req.user?.businessAnchorId || null,
       businessType: resolvedType,
       userSnapshot,
       type: "business_registration",

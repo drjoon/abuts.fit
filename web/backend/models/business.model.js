@@ -24,6 +24,12 @@ const businessSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    businessAnchorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BusinessAnchor",
+      default: null,
+      index: true,
+    },
     owners: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -132,6 +138,7 @@ businessSchema.index(
   { "extracted.businessNumber": 1 },
   { unique: true, sparse: true },
 );
+businessSchema.index({ businessAnchorId: 1 }, { sparse: true });
 businessSchema.index(
   { depositCode: 1 },
   {

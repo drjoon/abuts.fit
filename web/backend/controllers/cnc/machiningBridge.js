@@ -1224,9 +1224,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
         if (!request.mailboxAddress) {
           try {
             const requestorOrgId =
-              request.businessId ||
-              request.requestor?.businessId ||
-              request.requestor?.business?._id;
+              request.businessAnchorId || request.requestor?.businessAnchorId;
             request.mailboxAddress =
               await allocateVirtualMailboxAddress(requestorOrgId);
           } catch (err) {

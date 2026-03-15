@@ -1,8 +1,8 @@
 import ChargeOrder from "../models/chargeOrder.model.js";
 
-export async function checkCreditLock(organizationId) {
+export async function checkCreditLock(businessAnchorId) {
   const lockedOrder = await ChargeOrder.findOne({
-    organizationId,
+    businessAnchorId,
     isLocked: true,
   })
     .select({ _id: 1, lockedReason: 1, lockedAt: 1 })

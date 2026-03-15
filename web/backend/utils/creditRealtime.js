@@ -2,22 +2,34 @@ import Business from "../models/business.model.js";
 import { emitAppEventToUser } from "../socket.js";
 
 export async function emitCreditBalanceUpdatedToBusiness({
+  businessAnchorId,
   businessId,
   balanceDelta,
   reason,
   refId,
 }) {
+  const anchorId = String(businessAnchorId || "").trim();
   const id = String(businessId || "").trim();
-  if (!id) return;
+  if (!anchorId && !id) return;
 
   const delta = Number(balanceDelta || 0);
   if (!Number.isFinite(delta) || delta === 0) return;
 
-  const business = await Business.findById(id)
-    .select({ owner: 1, owners: 1, members: 1 })
-    .lean()
-    .catch(() => null);
+  const business = anchorId
+    ? await Business.findOne({ businessAnchorId: anchorId })
+        .select({ owner: 1, owners: 1, members: 1, businessAnchorId: 1 })
+        .lean()
+        .catch(() => null)
+    : await Business.findById(id)
+        .select({ owner: 1, owners: 1, members: 1, businessAnchorId: 1 })
+        .lean()
+        .catch(() => null);
   if (!business) return;
+
+  const resolvedBusinessAnchorId = String(
+    business.businessAnchorId || "",
+  ).trim();
+  if (!resolvedBusinessAnchorId) return;
 
   const targetUserIds = Array.from(
     new Set(
@@ -33,7 +45,7 @@ export async function emitCreditBalanceUpdatedToBusiness({
 
   for (const userId of targetUserIds) {
     emitAppEventToUser(userId, "credit:balance-updated", {
-      businessId: id,
+      businessAnchorId: resolvedBusinessAnchorId,
       balanceDelta: delta,
       reason: String(reason || "").trim() || null,
       refId: refId ? String(refId) : null,

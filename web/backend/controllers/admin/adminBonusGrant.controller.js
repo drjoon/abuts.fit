@@ -50,9 +50,7 @@ export async function adminOverrideWelcomeBonus(req, res) {
 
     const formatted = formatBusinessNumber(businessNumberDigits);
 
-    let businessId = String(
-      req.body?.businessId || req.body?.organizationId || "",
-    ).trim();
+    let businessId = String(req.body?.businessId || "").trim();
     if (businessId && !Types.ObjectId.isValid(businessId)) {
       return res.status(400).json({
         success: false,
@@ -60,11 +58,12 @@ export async function adminOverrideWelcomeBonus(req, res) {
       });
     }
 
+    let businessAnchorId = null;
     if (!businessId) {
       const org = await Business.findOne({
         "extracted.businessNumber": formatted,
       })
-        .select({ _id: 1 })
+        .select({ _id: 1, businessAnchorId: 1 })
         .lean();
       if (!org?._id) {
         return res.status(404).json({
@@ -73,6 +72,12 @@ export async function adminOverrideWelcomeBonus(req, res) {
         });
       }
       businessId = String(org._id);
+      businessAnchorId = org?.businessAnchorId || null;
+    } else {
+      const org = await Business.findById(businessId)
+        .select({ businessAnchorId: 1 })
+        .lean();
+      businessAnchorId = org?.businessAnchorId || null;
     }
 
     const userIdRaw = String(req.body?.userId || "").trim();
@@ -97,11 +102,12 @@ export async function adminOverrideWelcomeBonus(req, res) {
       {
         $setOnInsert: {
           businessId,
+          businessAnchorId,
           userId,
           type: "BONUS",
           amount,
           refType: "WELCOME_BONUS",
-          refId: businessId,
+          refId: businessAnchorId || businessId,
           uniqueKey,
         },
       },
@@ -125,7 +131,7 @@ export async function adminOverrideWelcomeBonus(req, res) {
     );
 
     await emitCreditBalanceUpdatedToBusiness({
-      businessId,
+      businessAnchorId,
       balanceDelta: amount,
       reason: "admin_welcome_bonus",
       refId: ledgerDoc?._id || grant._id,
@@ -188,16 +194,44 @@ export async function adminListBonusGrants(req, res) {
       .lean();
 
     const total = await BonusGrant.countDocuments(q);
+    const businessIds = Array.from(
+      new Set(
+        (rows || [])
+          .map((row) => String(row?.businessId || "").trim())
+          .filter((id) => id && Types.ObjectId.isValid(id)),
+      ),
+    );
+    const businesses = businessIds.length
+      ? await Business.find({
+          _id: {
+            $in: businessIds.map((id) => new Types.ObjectId(id)),
+          },
+        })
+          .select({ _id: 1, businessAnchorId: 1 })
+          .lean()
+      : [];
+    const businessAnchorIdByBusinessId = new Map(
+      (businesses || []).map((business) => [
+        String(business?._id || ""),
+        String(business?.businessAnchorId || "").trim(),
+      ]),
+    );
 
     const rowsWithSpent = await Promise.all(
       rows.map(async (row) => {
-        const spentLedger = await CreditLedger.findOne({
-          businessId: row.businessId,
-          type: "SPEND",
-          createdAt: { $gte: row.createdAt },
-        })
-          .select({ amount: 1 })
-          .lean();
+        const businessId = String(row?.businessId || "").trim();
+        const businessAnchorId =
+          businessAnchorIdByBusinessId.get(businessId) || "";
+        const spentLedger =
+          businessAnchorId && Types.ObjectId.isValid(businessAnchorId)
+            ? await CreditLedger.findOne({
+                businessAnchorId: new Types.ObjectId(businessAnchorId),
+                type: "SPEND",
+                createdAt: { $gte: row.createdAt },
+              })
+                .select({ amount: 1 })
+                .lean()
+            : null;
 
         return {
           ...row,
@@ -259,10 +293,27 @@ export async function adminCancelBonusGrant(req, res) {
     }
 
     const businessId = String(grant.businessId || "").trim();
-    if (!businessId || !Types.ObjectId.isValid(businessId)) {
+    let businessAnchorId = null;
+    if (businessId && Types.ObjectId.isValid(businessId)) {
+      businessAnchorId =
+        (
+          await Business.findById(businessId)
+            .select({ businessAnchorId: 1 })
+            .lean()
+        )?.businessAnchorId || null;
+    }
+    if (!businessAnchorId) {
+      const businessByNumber = await Business.findOne({
+        "extracted.businessNumber": formatBusinessNumber(grant.businessNumber),
+      })
+        .select({ _id: 1, businessAnchorId: 1 })
+        .lean();
+      businessAnchorId = businessByNumber?.businessAnchorId || null;
+    }
+    if (!businessAnchorId) {
       return res.status(400).json({
         success: false,
-        message: "지급 건의 businessId가 올바르지 않습니다.",
+        message: "지급 건의 businessAnchorId를 확인할 수 없습니다.",
       });
     }
 
@@ -280,6 +331,7 @@ export async function adminCancelBonusGrant(req, res) {
       {
         $setOnInsert: {
           businessId,
+          businessAnchorId,
           userId: grant.userId || null,
           type: "ADJUST",
           amount: -amount,
@@ -317,7 +369,7 @@ export async function adminCancelBonusGrant(req, res) {
     );
 
     await emitCreditBalanceUpdatedToBusiness({
-      businessId,
+      businessAnchorId,
       balanceDelta: -amount,
       reason: "admin_welcome_bonus_cancel",
       refId: cancelLedgerDoc?._id || grant._id,
@@ -370,9 +422,7 @@ export async function adminGrantFreeShippingCredit(req, res) {
 
     const formatted = formatBusinessNumber(businessNumberDigits);
 
-    let businessId = String(
-      req.body?.businessId || req.body?.organizationId || "",
-    ).trim();
+    let businessId = String(req.body?.businessId || "").trim();
     if (businessId && !Types.ObjectId.isValid(businessId)) {
       return res.status(400).json({
         success: false,
@@ -380,11 +430,12 @@ export async function adminGrantFreeShippingCredit(req, res) {
       });
     }
 
+    let businessAnchorId = null;
     if (!businessId) {
       const org = await Business.findOne({
         "extracted.businessNumber": formatted,
       })
-        .select({ _id: 1 })
+        .select({ _id: 1, businessAnchorId: 1 })
         .lean();
       if (!org?._id) {
         return res.status(404).json({
@@ -393,6 +444,12 @@ export async function adminGrantFreeShippingCredit(req, res) {
         });
       }
       businessId = String(org._id);
+      businessAnchorId = org?.businessAnchorId || null;
+    } else {
+      const org = await Business.findById(businessId)
+        .select({ businessAnchorId: 1 })
+        .lean();
+      businessAnchorId = org?.businessAnchorId || null;
     }
 
     const userIdRaw = String(req.body?.userId || "").trim();
@@ -417,11 +474,12 @@ export async function adminGrantFreeShippingCredit(req, res) {
       {
         $setOnInsert: {
           businessId,
+          businessAnchorId,
           userId,
           type: "BONUS",
           amount,
           refType: "FREE_SHIPPING_CREDIT",
-          refId: businessId,
+          refId: businessAnchorId || businessId,
           uniqueKey,
         },
       },
@@ -445,7 +503,7 @@ export async function adminGrantFreeShippingCredit(req, res) {
     );
 
     await emitCreditBalanceUpdatedToBusiness({
-      businessId,
+      businessAnchorId,
       balanceDelta: amount,
       reason: "admin_free_shipping_credit",
       refId: ledgerDoc?._id || grant._id,

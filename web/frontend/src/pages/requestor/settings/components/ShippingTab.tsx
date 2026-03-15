@@ -5,6 +5,7 @@ import { Truck } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 
 interface ShippingTabProps {
   userData: {
@@ -33,8 +34,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
   ]);
 
   const businessType = useMemo(() => {
-    const role = String(user?.role || userData?.role || "requestor").trim();
-    return role || "requestor";
+    return resolveBusinessType(user?.role || userData?.role, "requestor");
   }, [user?.role, userData?.role]);
 
   const [policyLoaded, setPolicyLoaded] = useState(false);
@@ -79,7 +79,6 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
         const businessNumberRaw = String(
           data?.extracted?.businessNumber ||
             data?.business?.businessNumber ||
-            data?.organization?.businessNumber ||
             data?.businessNumber ||
             "",
         ).trim();

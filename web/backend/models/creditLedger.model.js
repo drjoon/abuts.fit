@@ -2,9 +2,9 @@ import mongoose from "mongoose";
 
 const creditLedgerSchema = new mongoose.Schema(
   {
-    businessId: {
+    businessAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Business",
+      ref: "BusinessAnchor",
       required: true,
       index: true,
     },

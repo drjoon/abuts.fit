@@ -103,7 +103,7 @@ export function usePreviewLoader({
 
         const title =
           req.caseInfos?.patientName ||
-          req.requestor?.organization ||
+          req.requestor?.business ||
           req.requestor?.name ||
           "파일 미리보기";
 

@@ -10,15 +10,17 @@ function roundUpUnit(amount, unit) {
   return Math.ceil(n / u) * u;
 }
 
-async function resolveBusinessIdForCredit(req) {
-  const directBusinessId = req.user?.businessId;
-  if (directBusinessId) {
-    return String(directBusinessId);
+async function resolveCreditScopeIdentity(req) {
+  const directBusinessAnchorId = req.user?.businessAnchorId;
+  if (directBusinessAnchorId) {
+    return {
+      businessAnchorId: String(directBusinessAnchorId),
+    };
   }
 
   const userId = req.user?._id;
   if (!userId) {
-    return "";
+    return { businessAnchorId: "" };
   }
 
   const business = await Business.findOne({
@@ -32,49 +34,56 @@ async function resolveBusinessIdForCredit(req) {
       },
     ],
   })
-    .select({ _id: 1 })
+    .select({ businessAnchorId: 1 })
     .lean();
 
-  if (business?._id) {
-    const resolved = String(business._id);
-    console.error("[CREDIT_BALANCE_SCOPE_FALLBACK] resolved from business", {
+  if (business?.businessAnchorId) {
+    const resolvedBusinessAnchorId = String(business?.businessAnchorId || "");
+    console.error("[CREDIT_BALANCE_SCOPE_RESOLVED] resolved from business", {
       userId: String(userId),
-      resolvedBusinessId: resolved,
-      originalUserBusinessId: req.user?.businessId
-        ? String(req.user.businessId)
+      resolvedBusinessAnchorId,
+      originalUserBusinessAnchorId: req.user?.businessAnchorId
+        ? String(req.user.businessAnchorId)
         : null,
     });
-    return resolved;
+    return {
+      businessAnchorId: resolvedBusinessAnchorId,
+    };
   }
 
   const requestWithBusiness = await Request.findOne({ requestor: userId })
     .sort({ createdAt: -1, _id: -1 })
-    .select({ businessId: 1, requestId: 1 })
+    .select({ businessAnchorId: 1, requestId: 1 })
     .lean();
 
-  if (requestWithBusiness?.businessId) {
-    const resolved = String(requestWithBusiness.businessId);
-    console.error("[CREDIT_BALANCE_SCOPE_FALLBACK] resolved from request", {
+  if (requestWithBusiness?.businessAnchorId) {
+    const resolvedBusinessAnchorId = String(
+      requestWithBusiness.businessAnchorId || "",
+    );
+    console.error("[CREDIT_BALANCE_SCOPE_RESOLVED] resolved from request", {
       userId: String(userId),
-      resolvedBusinessId: resolved,
+      resolvedBusinessAnchorId,
       requestId: String(requestWithBusiness.requestId || ""),
-      originalUserBusinessId: req.user?.businessId
-        ? String(req.user.businessId)
+      originalUserBusinessAnchorId: req.user?.businessAnchorId
+        ? String(req.user.businessAnchorId)
         : null,
     });
-    return resolved;
+    return {
+      businessAnchorId: resolvedBusinessAnchorId,
+    };
   }
 
-  return "";
+  return { businessAnchorId: "" };
 }
 
 async function getCreditScope(req) {
-  const businessId = await resolveBusinessIdForCredit(req);
-  if (!businessId) {
+  const { businessAnchorId } = await resolveCreditScopeIdentity(req);
+  if (!businessAnchorId) {
     throw new Error("사업자 정보가 설정되지 않았습니다.");
   }
 
-  const members = await User.find({ businessId }).select({ _id: 1 }).lean();
+  const userQuery = { businessAnchorId };
+  const members = await User.find(userQuery).select({ _id: 1 }).lean();
   const userIds = (members || []).map((m) => m?._id).filter(Boolean);
   if (
     req.user?._id &&
@@ -83,11 +92,11 @@ async function getCreditScope(req) {
     userIds.push(req.user._id);
   }
 
-  return { businessId, userIds };
+  return { businessAnchorId, userIds };
 }
 
 function buildLedgerQuery(scope) {
-  return { businessId: scope.businessId };
+  return { businessAnchorId: scope.businessAnchorId };
 }
 
 async function getBalanceBreakdown(scope) {
@@ -143,8 +152,8 @@ async function getBalanceBreakdown(scope) {
 }
 
 export async function getMyCreditBalance(req, res) {
-  const businessId = await resolveBusinessIdForCredit(req);
-  if (!businessId) {
+  const identity = await resolveCreditScopeIdentity(req);
+  if (!identity?.businessAnchorId) {
     return res.status(403).json({
       success: false,
       message: "사업자 정보가 설정되지 않았습니다.",
@@ -156,8 +165,10 @@ export async function getMyCreditBalance(req, res) {
     await getBalanceBreakdown(scope);
   console.error("[CREDIT_BALANCE_RESPONSE]", {
     userId: req.user?._id ? String(req.user._id) : null,
-    userBusinessId: req.user?.businessId ? String(req.user.businessId) : null,
-    resolvedBusinessId: String(scope.businessId),
+    userBusinessAnchorId: req.user?.businessAnchorId
+      ? String(req.user.businessAnchorId)
+      : null,
+    resolvedBusinessAnchorId: String(scope.businessAnchorId || ""),
     balance,
     paidBalance,
     bonusBalance,
@@ -169,8 +180,8 @@ export async function getMyCreditBalance(req, res) {
 }
 
 export async function getMyCreditSpendInsights(req, res) {
-  const businessId = await resolveBusinessIdForCredit(req);
-  if (!businessId) {
+  const identity = await resolveCreditScopeIdentity(req);
+  if (!identity?.businessAnchorId) {
     return res.status(403).json({
       success: false,
       message: "사업자 정보가 설정되지 않았습니다.",
@@ -181,8 +192,10 @@ export async function getMyCreditSpendInsights(req, res) {
   const ledgerQuery = buildLedgerQuery(scope);
   console.error("[CREDIT_SPEND_INSIGHTS_SCOPE]", {
     userId: req.user?._id ? String(req.user._id) : null,
-    userBusinessId: req.user?.businessId ? String(req.user.businessId) : null,
-    resolvedBusinessId: String(scope.businessId),
+    userBusinessAnchorId: req.user?.businessAnchorId
+      ? String(req.user.businessAnchorId)
+      : null,
+    resolvedBusinessAnchorId: String(scope.businessAnchorId || ""),
   });
 
   const MIN = 500000;

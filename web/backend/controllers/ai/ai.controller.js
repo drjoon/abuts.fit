@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
-import Organization from "../../models/business.model.js";
+import Business from "../../models/business.model.js";
 import {
   assertBusinessRole,
   buildBusinessTypeFilter,
@@ -49,22 +49,23 @@ export async function parseBusinessLicense(req, res) {
     if (!roleCheck) return;
     const { businessType } = roleCheck;
 
-    const hasOrganization = !!req.user.businessId;
-    let org = null;
-    if (hasOrganization) {
-      const orgTypeFilter = buildBusinessTypeFilter(businessType);
-      org = await Organization.findOne({
-        _id: req.user.businessId,
-        ...orgTypeFilter,
+    const businessMembershipId = String(req.user?.businessId || "").trim();
+    const hasBusinessMembership = Boolean(businessMembershipId);
+    let business = null;
+    if (hasBusinessMembership) {
+      const businessTypeFilter = buildBusinessTypeFilter(businessType);
+      business = await Business.findOne({
+        _id: businessMembershipId,
+        ...businessTypeFilter,
       })
         .select({ owner: 1, owners: 1 })
         .lean();
       const meId = String(req.user._id);
       const canUpload =
-        org &&
-        (String(org.owner) === meId ||
-          (Array.isArray(org.owners) &&
-            org.owners.some((c) => String(c) === meId)));
+        business &&
+        (String(business.owner) === meId ||
+          (Array.isArray(business.owners) &&
+            business.owners.some((c) => String(c) === meId)));
       if (!canUpload) {
         return res.status(403).json({
           success: false,
@@ -125,8 +126,8 @@ export async function parseBusinessLicense(req, res) {
           "GOOGLE_API_KEY가 설정되지 않아 사업자등록증 자동 인식이 비활성화되어 있습니다.",
       };
 
-      if (hasOrganization && org?._id) {
-        await Organization.findByIdAndUpdate(req.user.businessId, {
+      if (hasBusinessMembership && business?._id) {
+        await Business.findByIdAndUpdate(businessMembershipId, {
           $set: {
             businessLicense: {
               fileId: fileId || null,
@@ -336,9 +337,9 @@ export async function parseBusinessLicense(req, res) {
       },
     };
 
-    if (hasOrganization && org?._id) {
+    if (hasBusinessMembership && business?._id) {
       try {
-        await Organization.findByIdAndUpdate(req.user.businessId, {
+        await Business.findByIdAndUpdate(businessMembershipId, {
           $set: normalizedBusinessNumber ? setWithBusinessNumber : baseSet,
         });
       } catch (e) {
@@ -350,7 +351,7 @@ export async function parseBusinessLicense(req, res) {
               "사업자등록번호가 이미 등록되어 있어 자동 저장을 건너뛰었습니다. 사업자등록번호를 확인하거나, 기존 기공소에 가입 요청을 진행해주세요.",
           };
 
-          await Organization.findByIdAndUpdate(req.user.businessId, {
+          await Business.findByIdAndUpdate(businessMembershipId, {
             $set: {
               ...baseSet,
               verification: {

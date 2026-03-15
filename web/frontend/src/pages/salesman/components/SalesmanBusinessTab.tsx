@@ -17,7 +17,7 @@ export const SalesmanBusinessTab = () => {
 
   const [loading, setLoading] = useState(Boolean(token));
   const [saving, setSaving] = useState(false);
-  const [organization, setOrganization] = useState(user?.companyName || "");
+  const [businessName, setBusinessName] = useState(user?.companyName || "");
   const lastSavedRef = useRef<string>("");
 
   useEffect(() => {
@@ -36,11 +36,9 @@ export const SalesmanBusinessTab = () => {
         if (!res.ok || !mounted) return;
         const body: any = res.data || {};
         const data = body.data || body;
-        const nextOrg = String(
-          data?.business || data?.organization || "",
-        ).trim();
-        setOrganization(nextOrg);
-        lastSavedRef.current = nextOrg;
+        const nextBusinessName = String(data?.business || "").trim();
+        setBusinessName(nextBusinessName);
+        lastSavedRef.current = nextBusinessName;
       } finally {
         if (mounted) setLoading(false);
       }
@@ -62,8 +60,8 @@ export const SalesmanBusinessTab = () => {
     }
     if (saving) return;
 
-    const nextOrg = organization.trim();
-    if (!nextOrg) {
+    const nextBusinessName = businessName.trim();
+    if (!nextBusinessName) {
       toast({
         title: "사업자명을 입력해주세요",
         variant: "destructive",
@@ -80,7 +78,7 @@ export const SalesmanBusinessTab = () => {
         token,
         headers: mockHeaders,
         jsonBody: {
-          business: nextOrg,
+          business: nextBusinessName,
         },
       });
       if (!res.ok) {
@@ -96,7 +94,7 @@ export const SalesmanBusinessTab = () => {
         return;
       }
 
-      lastSavedRef.current = nextOrg;
+      lastSavedRef.current = nextBusinessName;
       toast({
         title: "저장되었습니다",
         duration: 2000,
@@ -137,12 +135,12 @@ export const SalesmanBusinessTab = () => {
           <Label htmlFor="salesman-org">사업자명(상호)</Label>
           <Input
             id="salesman-org"
-            value={organization}
-            onChange={(e) => setOrganization(e.target.value)}
+            value={businessName}
+            onChange={(e) => setBusinessName(e.target.value)}
             onBlur={() => {
               if (
-                organization.trim() &&
-                organization.trim() !== lastSavedRef.current
+                businessName.trim() &&
+                businessName.trim() !== lastSavedRef.current
               ) {
                 void save();
               }

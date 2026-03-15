@@ -36,15 +36,16 @@ function setAdminReferralCache(key, value) {
 }
 
 function normalizeReferralLeaders(leaders) {
-  const pickedByBusinessId = new Map();
+  const pickedByBusinessAnchorId = new Map();
 
   for (const leader of leaders || []) {
-    const businessId = String(leader?.businessId || "").trim();
-    if (!businessId || !Types.ObjectId.isValid(businessId)) continue;
+    const businessAnchorId = String(leader?.businessAnchorId || "").trim();
+    if (!businessAnchorId || !Types.ObjectId.isValid(businessAnchorId))
+      continue;
 
-    const current = pickedByBusinessId.get(businessId);
+    const current = pickedByBusinessAnchorId.get(businessAnchorId);
     if (!current) {
-      pickedByBusinessId.set(businessId, leader);
+      pickedByBusinessAnchorId.set(businessAnchorId, leader);
       continue;
     }
 
@@ -56,11 +57,11 @@ function normalizeReferralLeaders(leaders) {
       : Number.POSITIVE_INFINITY;
 
     if (nextCreatedAt < currentCreatedAt) {
-      pickedByBusinessId.set(businessId, leader);
+      pickedByBusinessAnchorId.set(businessAnchorId, leader);
     }
   }
 
-  return Array.from(pickedByBusinessId.values()).sort((a, b) => {
+  return Array.from(pickedByBusinessAnchorId.values()).sort((a, b) => {
     const aCreatedAt = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
     const bCreatedAt = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
     return bCreatedAt - aCreatedAt;
@@ -93,7 +94,7 @@ export async function getReferralGroups(req, res) {
         name: 1,
         email: 1,
         business: 1,
-        businessId: 1,
+        businessAnchorId: 1,
         active: 1,
         createdAt: 1,
         approvedAt: 1,
@@ -110,7 +111,7 @@ export async function getReferralGroups(req, res) {
     const ymd = getThisMonthStartYmdInKst();
     const snapshots = await PricingReferralStatsSnapshot.find({ ymd })
       .select({
-        businessId: 1,
+        businessAnchorId: 1,
         leaderUserId: 1,
         groupMemberCount: 1,
         groupTotalOrders: 1,
@@ -128,68 +129,77 @@ export async function getReferralGroups(req, res) {
       ? new Date(endDateRaw)
       : (defaultRange?.end ?? now);
     const {
-      directCountByLeaderBusinessId,
-      childBusinessIdsByLeaderBusinessId,
-      ordersByBusinessId,
-      revenueByBusinessId,
-      bonusByBusinessId,
-      requestorBusinessStatsByBusinessId,
+      directCountByLeaderBusinessAnchorId,
+      childBusinessAnchorIdsByLeaderBusinessAnchorId,
+      ordersByBusinessAnchorId,
+      revenueByBusinessAnchorId,
+      bonusByBusinessAnchorId,
+      requestorBusinessStatsByBusinessAnchorId,
     } = await buildReferralLeaderAggregation({
       leaders,
       periodStart,
       periodEnd,
     });
-    const businessSnapshotByBusinessId = new Map(
+    const businessSnapshotByBusinessAnchorId = new Map(
       snapshots
-        .filter((row) => String(row?.businessId || ""))
-        .map((row) => [String(row?.businessId || ""), row]),
+        .filter((row) => String(row?.businessAnchorId || ""))
+        .map((row) => [String(row?.businessAnchorId || ""), row]),
     );
 
     const groups = leaders.map((leader) => {
-      const leaderBusinessId = String(leader?.businessId || "");
+      const leaderBusinessAnchorId = String(leader?.businessAnchorId || "");
       const directCount =
-        directCountByLeaderBusinessId.get(leaderBusinessId) || 0;
-      const snapshot = leaderBusinessId
-        ? businessSnapshotByBusinessId.get(leaderBusinessId)
+        directCountByLeaderBusinessAnchorId.get(leaderBusinessAnchorId) || 0;
+      const snapshot = leaderBusinessAnchorId
+        ? businessSnapshotByBusinessAnchorId.get(leaderBusinessAnchorId)
         : null;
       const snapshotGroupMemberCount = Number(snapshot?.groupMemberCount || 0);
       const role = String(leader?.role || "");
-      const fallbackChildBusinessIds = Array.from(
-        childBusinessIdsByLeaderBusinessId.get(leaderBusinessId) || [],
+      const fallbackChildBusinessAnchorIds = Array.from(
+        childBusinessAnchorIdsByLeaderBusinessAnchorId.get(
+          leaderBusinessAnchorId,
+        ) || [],
       );
 
       let groupTotalOrders = 0;
       let groupRevenueAmount = 0;
       let groupBonusAmount = 0;
       if (REFERRAL_REVENUE_OWNER_ROLES.has(role)) {
-        const businessStats = leaderBusinessId
-          ? requestorBusinessStatsByBusinessId.get(leaderBusinessId)
+        const businessStats = leaderBusinessAnchorId
+          ? requestorBusinessStatsByBusinessAnchorId.get(leaderBusinessAnchorId)
           : null;
         groupTotalOrders = Number(businessStats?.orderCount || 0);
         groupRevenueAmount = Number(businessStats?.revenueAmount || 0);
         groupBonusAmount = Number(businessStats?.bonusAmount || 0);
       } else {
-        const fallbackOrders = fallbackChildBusinessIds.reduce(
-          (acc, businessId) =>
-            acc + Number(ordersByBusinessId.get(String(businessId)) || 0),
+        const fallbackOrders = fallbackChildBusinessAnchorIds.reduce(
+          (acc, businessAnchorId) =>
+            acc +
+            Number(ordersByBusinessAnchorId.get(String(businessAnchorId)) || 0),
           0,
         );
         const fallbackLeaderOrders = Number(
-          ordersByBusinessId.get(leaderBusinessId) || 0,
+          ordersByBusinessAnchorId.get(leaderBusinessAnchorId) || 0,
         );
         groupTotalOrders = fallbackLeaderOrders + fallbackOrders;
         groupRevenueAmount =
-          Number(revenueByBusinessId.get(leaderBusinessId) || 0) +
-          fallbackChildBusinessIds.reduce(
-            (acc, businessId) =>
-              acc + Number(revenueByBusinessId.get(String(businessId)) || 0),
+          Number(revenueByBusinessAnchorId.get(leaderBusinessAnchorId) || 0) +
+          fallbackChildBusinessAnchorIds.reduce(
+            (acc, businessAnchorId) =>
+              acc +
+              Number(
+                revenueByBusinessAnchorId.get(String(businessAnchorId)) || 0,
+              ),
             0,
           );
         groupBonusAmount =
-          Number(bonusByBusinessId.get(leaderBusinessId) || 0) +
-          fallbackChildBusinessIds.reduce(
-            (acc, businessId) =>
-              acc + Number(bonusByBusinessId.get(String(businessId)) || 0),
+          Number(bonusByBusinessAnchorId.get(leaderBusinessAnchorId) || 0) +
+          fallbackChildBusinessAnchorIds.reduce(
+            (acc, businessAnchorId) =>
+              acc +
+              Number(
+                bonusByBusinessAnchorId.get(String(businessAnchorId)) || 0,
+              ),
             0,
           );
       }
@@ -348,12 +358,12 @@ export async function getReferralGroupTree(req, res) {
         name: 1,
         email: 1,
         business: 1,
-        businessId: 1,
+        businessAnchorId: 1,
         active: 1,
         createdAt: 1,
         approvedAt: 1,
         updatedAt: 1,
-        referredByBusinessId: 1,
+        referredByAnchorId: 1,
       })
       .lean();
 
@@ -363,8 +373,8 @@ export async function getReferralGroupTree(req, res) {
         .json({ success: false, message: "리더를 찾을 수 없습니다." });
     }
 
-    const leaderBusinessId = String(leader?.businessId || "");
-    if (!Types.ObjectId.isValid(leaderBusinessId)) {
+    const leaderBusinessAnchorId = String(leader?.businessAnchorId || "");
+    if (!Types.ObjectId.isValid(leaderBusinessAnchorId)) {
       return res.status(400).json({
         success: false,
         message: "리더의 사업자 정보가 없어 그룹 트리를 구성할 수 없습니다.",
@@ -372,24 +382,26 @@ export async function getReferralGroupTree(req, res) {
     }
 
     const memberMap = new Map();
-    const queueBusinessIds = [leaderBusinessId];
-    const visitedParentBusinessIds = new Set();
+    const queueBusinessAnchorIds = [leaderBusinessAnchorId];
+    const visitedParentBusinessAnchorIds = new Set();
 
     memberMap.set(String(leader._id), leader);
 
-    while (queueBusinessIds.length) {
-      const frontier = queueBusinessIds.splice(0, 100);
-      const parentBusinessIds = frontier.filter(
-        (id) => id && !visitedParentBusinessIds.has(id),
+    while (queueBusinessAnchorIds.length) {
+      const frontier = queueBusinessAnchorIds.splice(0, 100);
+      const parentBusinessAnchorIds = frontier.filter(
+        (id) => id && !visitedParentBusinessAnchorIds.has(id),
       );
-      if (!parentBusinessIds.length) continue;
+      if (!parentBusinessAnchorIds.length) continue;
 
-      parentBusinessIds.forEach((id) => visitedParentBusinessIds.add(id));
-      const parentBusinessObjectIds = parentBusinessIds.map(
+      parentBusinessAnchorIds.forEach((id) =>
+        visitedParentBusinessAnchorIds.add(id),
+      );
+      const parentBusinessAnchorObjectIds = parentBusinessAnchorIds.map(
         (id) => new Types.ObjectId(id),
       );
       const children = await User.find({
-        referredByBusinessId: { $in: parentBusinessObjectIds },
+        referredByAnchorId: { $in: parentBusinessAnchorObjectIds },
         role: { $in: REFERRAL_TREE_ROLES },
       })
         .select({
@@ -399,34 +411,34 @@ export async function getReferralGroupTree(req, res) {
           name: 1,
           email: 1,
           business: 1,
-          businessId: 1,
+          businessAnchorId: 1,
           active: 1,
           createdAt: 1,
           approvedAt: 1,
           updatedAt: 1,
-          referredByBusinessId: 1,
+          referredByAnchorId: 1,
         })
         .lean();
 
       for (const child of children) {
         memberMap.set(String(child._id), child);
-        const childBusinessId = String(child?.businessId || "");
+        const childBusinessAnchorId = String(child?.businessAnchorId || "");
         if (
-          childBusinessId &&
-          Types.ObjectId.isValid(childBusinessId) &&
-          !visitedParentBusinessIds.has(childBusinessId)
+          childBusinessAnchorId &&
+          Types.ObjectId.isValid(childBusinessAnchorId) &&
+          !visitedParentBusinessAnchorIds.has(childBusinessAnchorId)
         ) {
-          queueBusinessIds.push(childBusinessId);
+          queueBusinessAnchorIds.push(childBusinessAnchorId);
         }
       }
     }
 
     const members = Array.from(memberMap.values());
 
-    const memberBusinessIds = Array.from(
+    const memberBusinessAnchorIds = Array.from(
       new Set(
         (members || [])
-          .map((u) => String(u?.businessId || ""))
+          .map((u) => String(u?.businessAnchorId || ""))
           .filter((id) => id && Types.ObjectId.isValid(id)),
       ),
     ).map((id) => new Types.ObjectId(id));
@@ -436,18 +448,18 @@ export async function getReferralGroupTree(req, res) {
     const end = range30?.end;
 
     const businessStatsRows =
-      memberBusinessIds.length && start && end
+      memberBusinessAnchorIds.length && start && end
         ? await Request.aggregate([
             {
               $match: {
-                businessId: { $in: memberBusinessIds },
+                businessAnchorId: { $in: memberBusinessAnchorIds },
                 manufacturerStage: "추적관리",
                 createdAt: { $gte: start, $lte: end },
               },
             },
             {
               $group: {
-                _id: "$businessId",
+                _id: "$businessAnchorId",
                 lastMonthOrders: { $sum: 1 },
                 lastMonthPaidOrders: {
                   $sum: {
@@ -483,7 +495,7 @@ export async function getReferralGroupTree(req, res) {
           ])
         : [];
 
-    const businessStatsByBusinessId = new Map(
+    const businessStatsByBusinessAnchorId = new Map(
       businessStatsRows.map((row) => [
         String(row._id),
         {
@@ -499,50 +511,51 @@ export async function getReferralGroupTree(req, res) {
     const nodes = members.map((u) => ({
       ...u,
       lastMonthOrders: Number(
-        businessStatsByBusinessId.get(String(u?.businessId || ""))
+        businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
           ?.lastMonthOrders || 0,
       ),
       lastMonthPaidOrders: Number(
-        businessStatsByBusinessId.get(String(u?.businessId || ""))
+        businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
           ?.lastMonthPaidOrders || 0,
       ),
       lastMonthBonusOrders: Number(
-        businessStatsByBusinessId.get(String(u?.businessId || ""))
+        businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
           ?.lastMonthBonusOrders || 0,
       ),
       lastMonthPaidRevenue: Number(
-        businessStatsByBusinessId.get(String(u?.businessId || ""))
+        businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
           ?.lastMonthPaidRevenue || 0,
       ),
       lastMonthBonusRevenue: Number(
-        businessStatsByBusinessId.get(String(u?.businessId || ""))
+        businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
           ?.lastMonthBonusRevenue || 0,
       ),
-      referredByBusinessId: u.referredByBusinessId || null,
+      referredByAnchorId: u.referredByAnchorId || null,
       children: [],
     }));
     const nodeById = new Map(nodes.map((n) => [String(n._id), n]));
-    const representativeByBusinessId = new Map();
+    const representativeByBusinessAnchorId = new Map();
     for (const node of nodes) {
-      const businessId = String(node?.businessId || "");
-      if (!businessId || !Types.ObjectId.isValid(businessId)) continue;
+      const businessAnchorId = String(node?.businessAnchorId || "");
+      if (!businessAnchorId || !Types.ObjectId.isValid(businessAnchorId))
+        continue;
       if (
-        businessId === leaderBusinessId &&
+        businessAnchorId === leaderBusinessAnchorId &&
         String(node._id) === String(leader._id)
       ) {
-        representativeByBusinessId.set(businessId, node);
+        representativeByBusinessAnchorId.set(businessAnchorId, node);
         continue;
       }
-      if (!representativeByBusinessId.has(businessId)) {
-        representativeByBusinessId.set(businessId, node);
+      if (!representativeByBusinessAnchorId.has(businessAnchorId)) {
+        representativeByBusinessAnchorId.set(businessAnchorId, node);
       }
     }
     for (const node of nodes) {
-      const parentBusinessId = node.referredByBusinessId
-        ? String(node.referredByBusinessId)
+      const parentBusinessAnchorId = node.referredByAnchorId
+        ? String(node.referredByAnchorId)
         : null;
-      const parentNode = parentBusinessId
-        ? representativeByBusinessId.get(parentBusinessId)
+      const parentNode = parentBusinessAnchorId
+        ? representativeByBusinessAnchorId.get(parentBusinessAnchorId)
         : null;
       const parentId = parentNode?._id ? String(parentNode._id) : null;
       if (!parentId || !nodeById.has(parentId)) continue;
@@ -615,7 +628,7 @@ export async function recalcReferralSnapshot() {
     $or: REFERRAL_LEADER_ROLE_FILTER,
     active: true,
   })
-    .select({ _id: 1, role: 1, businessId: 1 })
+    .select({ _id: 1, role: 1, businessAnchorId: 1 })
     .lean();
   const leaders = normalizeReferralLeaders(rawLeaders);
 
@@ -625,9 +638,9 @@ export async function recalcReferralSnapshot() {
   }
 
   const {
-    childIdsByLeaderBusinessId,
-    childBusinessIdsByLeaderBusinessId,
-    ordersByBusinessId,
+    childIdsByLeaderBusinessAnchorId,
+    childBusinessAnchorIdsByLeaderBusinessAnchorId,
+    ordersByBusinessAnchorId,
   } = await buildReferralLeaderAggregation({
     leaders,
     periodStart: start,
@@ -637,30 +650,37 @@ export async function recalcReferralSnapshot() {
   let upsertCount = 0;
   const computedAt = new Date();
   for (const leader of leaders) {
-    const leaderBusinessId = String(leader?.businessId || "");
-    if (!leaderBusinessId || !Types.ObjectId.isValid(leaderBusinessId)) {
+    const leaderBusinessAnchorId = String(leader?.businessAnchorId || "");
+    if (
+      !leaderBusinessAnchorId ||
+      !Types.ObjectId.isValid(leaderBusinessAnchorId)
+    ) {
       continue;
     }
-    const children = childIdsByLeaderBusinessId.get(leaderBusinessId) || [];
-    const childBusinessIds = Array.from(
-      childBusinessIdsByLeaderBusinessId.get(leaderBusinessId) || [],
+    const children =
+      childIdsByLeaderBusinessAnchorId.get(leaderBusinessAnchorId) || [];
+    const childBusinessAnchorIds = Array.from(
+      childBusinessAnchorIdsByLeaderBusinessAnchorId.get(
+        leaderBusinessAnchorId,
+      ) || [],
     );
     const memberCount = 1 + children.length;
     const groupTotalOrders =
-      Number(ordersByBusinessId.get(leaderBusinessId) || 0) +
-      childBusinessIds.reduce(
-        (acc, businessId) =>
-          acc + Number(ordersByBusinessId.get(String(businessId)) || 0),
+      Number(ordersByBusinessAnchorId.get(leaderBusinessAnchorId) || 0) +
+      childBusinessAnchorIds.reduce(
+        (acc, businessAnchorId) =>
+          acc +
+          Number(ordersByBusinessAnchorId.get(String(businessAnchorId)) || 0),
         0,
       );
-    const snapshotBusinessId = new Types.ObjectId(leaderBusinessId);
+    const snapshotBusinessAnchorId = new Types.ObjectId(leaderBusinessAnchorId);
 
-    if (snapshotBusinessId) {
+    if (snapshotBusinessAnchorId) {
       await PricingReferralStatsSnapshot.findOneAndUpdate(
-        { businessId: snapshotBusinessId, ymd },
+        { businessAnchorId: snapshotBusinessAnchorId, ymd },
         {
           $set: {
-            businessId: snapshotBusinessId,
+            businessAnchorId: snapshotBusinessAnchorId,
             leaderUserId: leader._id,
             groupMemberCount: memberCount,
             groupTotalOrders,

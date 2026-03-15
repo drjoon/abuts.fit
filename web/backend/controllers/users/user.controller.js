@@ -423,10 +423,12 @@ async function updateProfile(req, res) {
     if (
       Object.prototype.hasOwnProperty.call(updateData, "organization") &&
       req.user?.role === "requestor" &&
-      req.user?.businessId
+      req.user?.businessAnchorId
     ) {
       const nextName = String(updateData.organization || "").trim();
-      const org = await Business.findById(req.user.businessId);
+      const org = await Business.findOne({
+        businessAnchorId: req.user.businessAnchorId,
+      });
       if (!org || String(org.owner) !== String(req.user._id)) {
         delete updateData.organization;
       } else {

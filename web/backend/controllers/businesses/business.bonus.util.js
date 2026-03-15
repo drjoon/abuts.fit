@@ -12,6 +12,7 @@ import {
 
 async function upsertBonusLedger({
   businessId,
+  businessAnchorId,
   userId,
   amount,
   refType,
@@ -23,6 +24,7 @@ async function upsertBonusLedger({
     {
       $setOnInsert: {
         businessId,
+        businessAnchorId: businessAnchorId || null,
         userId: userId || null,
         type: "BONUS",
         amount,
@@ -97,7 +99,7 @@ export async function grantWelcomeBonusIfEligible({ businessId, userId }) {
   const business = await BonusGrant.db
     .model("Business")
     .findById(businessId)
-    .select({ businessType: 1, extracted: 1 })
+    .select({ businessType: 1, extracted: 1, businessAnchorId: 1 })
     .lean();
   if (!business) return null;
   if (String(business.businessType || "") !== "requestor") return null;
@@ -124,6 +126,7 @@ export async function grantWelcomeBonusIfEligible({ businessId, userId }) {
 
   const ledgerId = await upsertBonusLedger({
     businessId,
+    businessAnchorId: business?.businessAnchorId || null,
     userId,
     amount,
     refType: "WELCOME_BONUS",
@@ -137,7 +140,7 @@ export async function grantWelcomeBonusIfEligible({ businessId, userId }) {
   );
 
   await emitCreditBalanceUpdatedToBusiness({
-    businessId,
+    businessAnchorId: business?.businessAnchorId || null,
     balanceDelta: amount,
     reason: "welcome_bonus",
     refId: ledgerId,
@@ -154,7 +157,7 @@ export async function grantFreeShippingCreditIfEligible({
   const business = await BonusGrant.db
     .model("Business")
     .findById(businessId)
-    .select({ businessType: 1, extracted: 1 })
+    .select({ businessType: 1, extracted: 1, businessAnchorId: 1 })
     .lean();
   if (!business) return null;
   if (String(business.businessType || "") !== "requestor") return null;
@@ -182,6 +185,7 @@ export async function grantFreeShippingCreditIfEligible({
 
   const ledgerId = await upsertBonusLedger({
     businessId,
+    businessAnchorId: business?.businessAnchorId || null,
     userId,
     amount,
     refType: "FREE_SHIPPING_CREDIT",
@@ -195,7 +199,7 @@ export async function grantFreeShippingCreditIfEligible({
   );
 
   await emitCreditBalanceUpdatedToBusiness({
-    businessId,
+    businessAnchorId: business?.businessAnchorId || null,
     balanceDelta: amount,
     reason: "free_shipping_credit",
     refId: ledgerId,

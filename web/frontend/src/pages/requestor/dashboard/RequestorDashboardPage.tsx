@@ -104,7 +104,7 @@ export const RequestorDashboardPage = () => {
       "requestor-dashboard-summary-page",
       period,
       String(user?.id || ""),
-      String((user as any)?.businessId || ""),
+      String((user as any)?.businessAnchorId || ""),
     ],
     [period, user],
   );
@@ -346,11 +346,11 @@ export const RequestorDashboardPage = () => {
       const payload = evt?.data || {};
       const eventRequest = payload?.request;
       const eventOrgId = String(
-        eventRequest?.requestorBusinessId ||
-          eventRequest?.requestor?.businessId ||
+        eventRequest?.requestorBusinessAnchorId ||
+          eventRequest?.requestor?.businessAnchorId ||
           "",
       ).trim();
-      const myOrgId = String((user as any)?.businessId || "").trim();
+      const myOrgId = String((user as any)?.businessAnchorId || "").trim();
       if (!eventOrgId || !myOrgId || eventOrgId !== myOrgId) return;
 
       if (type === "request:stage-changed") {
@@ -520,7 +520,6 @@ export const RequestorDashboardPage = () => {
         ci.clinicName ||
         request.clinicName ||
         request.requestor?.business ||
-        request.requestor?.organization ||
         request.requestor?.companyName ||
         "",
       patientName: ci.patientName || request.patientName || "",
@@ -537,7 +536,6 @@ export const RequestorDashboardPage = () => {
       ci.clinicName ||
         request.clinicName ||
         request.requestor?.business ||
-        request.requestor?.organization ||
         request.requestor?.companyName ||
         "",
     );

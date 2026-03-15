@@ -163,7 +163,7 @@ export async function adminApproveChargeOrder(req, res) {
     refId: order._id,
     details: {
       chargeOrderId: String(order._id),
-      businessId: String(order.businessId),
+      businessAnchorId: String(order.businessAnchorId || ""),
       amountTotal: order.amountTotal,
       note,
     },
@@ -174,7 +174,7 @@ export async function adminApproveChargeOrder(req, res) {
     action: "CHARGE_APPROVED",
     details: {
       chargeOrderId: String(order._id),
-      businessId: String(order.businessId),
+      businessAnchorId: String(order.businessAnchorId || ""),
       amountTotal: order.amountTotal,
       note,
     },
@@ -262,7 +262,7 @@ export async function adminRejectChargeOrder(req, res) {
     refId: order._id,
     details: {
       chargeOrderId: String(order._id),
-      businessId: String(order.businessId),
+      businessAnchorId: String(order.businessAnchorId || ""),
       amountTotal: order.amountTotal,
       note,
     },
@@ -273,7 +273,7 @@ export async function adminRejectChargeOrder(req, res) {
     action: "CHARGE_REJECTED",
     details: {
       chargeOrderId: String(order._id),
-      businessId: String(order.businessId),
+      businessAnchorId: String(order.businessAnchorId || ""),
       amountTotal: order.amountTotal,
       note,
     },
@@ -464,7 +464,7 @@ export async function adminManualMatch(req, res) {
         { uniqueKey },
         {
           $setOnInsert: {
-            businessId: order.businessId,
+            businessAnchorId: order.businessAnchorId || null,
             userId: order.userId,
             type: "CHARGE",
             amount: Number(order.supplyAmount),
@@ -478,7 +478,7 @@ export async function adminManualMatch(req, res) {
 
       if (creditLedgerResult?.upsertedCount) {
         await emitCreditBalanceUpdatedToBusiness({
-          businessId: order.businessId,
+          businessAnchorId: order.businessAnchorId,
           balanceDelta: Number(order.supplyAmount),
           reason: "bplan_admin_charge",
           refId: order._id,
@@ -491,7 +491,9 @@ export async function adminManualMatch(req, res) {
         { session },
       );
       if (!existingDraft) {
-        const org = await Business.findById(order.businessId)
+        const org = await Business.findOne({
+          businessAnchorId: order.businessAnchorId,
+        })
           .select({
             "extracted.businessNumber": 1,
             "extracted.companyName": 1,
@@ -508,7 +510,7 @@ export async function adminManualMatch(req, res) {
           [
             {
               chargeOrderId: order._id,
-              businessId: order.businessId,
+              businessAnchorId: order.businessAnchorId,
               status: "PENDING_APPROVAL",
               supplyAmount: Number(order.supplyAmount),
               vatAmount: Number(order.vatAmount || 0),
@@ -613,7 +615,7 @@ export async function adminVerifyChargeOrder(req, res) {
       refId: order._id,
       details: {
         chargeOrderId: String(order._id),
-        businessId: String(order.businessId),
+        businessAnchorId: String(order.businessAnchorId || ""),
         supplyAmount: order.supplyAmount,
       },
     });
@@ -679,7 +681,7 @@ export async function adminLockChargeOrder(req, res) {
       refId: order._id,
       details: {
         chargeOrderId: String(order._id),
-        businessId: String(order.businessId),
+        businessAnchorId: String(order.businessAnchorId || ""),
         reason: reason || "관리자 검토 필요",
       },
     });
@@ -745,7 +747,7 @@ export async function adminUnlockChargeOrder(req, res) {
       refId: order._id,
       details: {
         chargeOrderId: String(order._id),
-        businessId: String(order.businessId),
+        businessAnchorId: String(order.businessAnchorId || ""),
       },
     });
 

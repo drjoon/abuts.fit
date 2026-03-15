@@ -36,8 +36,7 @@ type DraftStatus =
 type TaxInvoiceDraft = {
   _id: string;
   chargeOrderId: string;
-  businessId?: string;
-  organizationId?: string;
+  businessAnchorId?: string;
   status: DraftStatus;
   supplyAmount: number;
   vatAmount: number;

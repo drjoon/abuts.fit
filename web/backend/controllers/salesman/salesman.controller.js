@@ -295,46 +295,53 @@ export async function getSalesmanDashboard(req, res) {
 
     const { start, end } = getPeriodRangeUtc(period);
 
-    const myBusinessId = me?.businessId;
-    if (!myBusinessId) {
+    const myBusinessAnchorId = me?.businessAnchorId;
+    if (
+      !myBusinessAnchorId ||
+      !Types.ObjectId.isValid(String(myBusinessAnchorId))
+    ) {
       return res.status(400).json({
         success: false,
         message: "사업자 정보가 없습니다.",
       });
     }
 
+    const myBusinessAnchorObjectId = new Types.ObjectId(
+      String(myBusinessAnchorId),
+    );
+
     const referredRequestors = await User.find({
-      referredByBusinessId: myBusinessId,
+      referredByAnchorId: myBusinessAnchorObjectId,
       role: "requestor",
       active: true,
     })
-      .select({ _id: 1, businessId: 1 })
+      .select({ _id: 1, businessAnchorId: 1 })
       .lean();
 
     const referredSalesmen = await User.find({
-      referredByBusinessId: myBusinessId,
+      referredByAnchorId: myBusinessAnchorObjectId,
       role: "salesman",
       active: true,
     })
-      .select({ _id: 1, name: 1, businessId: 1 })
+      .select({ _id: 1, name: 1, businessAnchorId: 1 })
       .lean();
 
-    const referredSalesmanBusinessIds = (referredSalesmen || [])
-      .map((u) => u?.businessId)
+    const referredSalesmanBusinessAnchorIds = (referredSalesmen || [])
+      .map((u) => u?.businessAnchorId)
       .filter((id) => id && Types.ObjectId.isValid(String(id)));
 
     const level1Requestors =
-      referredSalesmanBusinessIds.length === 0
+      referredSalesmanBusinessAnchorIds.length === 0
         ? []
         : await User.find({
-            referredByBusinessId: { $in: referredSalesmanBusinessIds },
+            referredByAnchorId: { $in: referredSalesmanBusinessAnchorIds },
             role: "requestor",
             active: true,
           })
-            .select({ _id: 1, businessId: 1 })
+            .select({ _id: 1, businessAnchorId: 1 })
             .lean();
 
-    const referralSalesmanCount = referredSalesmanBusinessIds.length;
+    const referralSalesmanCount = referredSalesmanBusinessAnchorIds.length;
     const referralSalesmen = (referredSalesmen || []).map((u) => ({
       userId: String(u?._id || ""),
       name: String(u?.name || ""),
@@ -342,19 +349,19 @@ export async function getSalesmanDashboard(req, res) {
 
     const directOrgIdSet = new Set(
       (referredRequestors || [])
-        .map((u) => (u?.businessId ? String(u.businessId) : ""))
+        .map((u) => (u?.businessAnchorId ? String(u.businessAnchorId) : ""))
         .filter(Boolean),
     );
     const level1OrgIdSet = new Set(
       (level1Requestors || [])
-        .map((u) => (u?.businessId ? String(u.businessId) : ""))
+        .map((u) => (u?.businessAnchorId ? String(u.businessAnchorId) : ""))
         .filter(Boolean),
     );
-    const organizationIds = Array.from(
+    const organizationAnchorIds = Array.from(
       new Set([...directOrgIdSet, ...level1OrgIdSet]),
     );
 
-    if (organizationIds.length === 0) {
+    if (organizationAnchorIds.length === 0) {
       const totalCommissionAmount = 0;
       return res.status(200).json({
         success: true,
@@ -389,30 +396,39 @@ export async function getSalesmanDashboard(req, res) {
     }
 
     const orgDocs = await Business.find({
-      _id: { $in: organizationIds },
+      businessAnchorId: { $in: organizationAnchorIds },
     })
-      .select({ _id: 1, name: 1, extracted: 1, verification: 1 })
+      .select({
+        _id: 1,
+        businessAnchorId: 1,
+        name: 1,
+        extracted: 1,
+        verification: 1,
+      })
       .lean();
 
     const orgNameById = new Map(
-      (orgDocs || []).map((o) => [String(o._id), String(o.name || "")]),
+      (orgDocs || []).map((o) => [
+        String(o.businessAnchorId || ""),
+        String(o.name || ""),
+      ]),
     );
 
-    const orgObjectIds = organizationIds
+    const orgObjectIds = organizationAnchorIds
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
 
     const revenueRows = await Request.aggregate([
       {
         $match: {
-          businessId: { $in: orgObjectIds },
+          businessAnchorId: { $in: orgObjectIds },
           manufacturerStage: "추적관리",
           createdAt: { $gte: start, $lt: end },
         },
       },
       {
         $group: {
-          _id: "$businessId",
+          _id: "$businessAnchorId",
           revenueAmount: {
             $sum: {
               $ifNull: ["$price.paidAmount", { $ifNull: ["$price.amount", 0] }],
@@ -436,7 +452,7 @@ export async function getSalesmanDashboard(req, res) {
       ]),
     );
 
-    const organizations = organizationIds
+    const organizations = organizationAnchorIds
       .map((id) => {
         const idStr = String(id);
         const revenueAmount = roundMoney(revenueByOrgId.get(idStr) || 0);
@@ -447,7 +463,7 @@ export async function getSalesmanDashboard(req, res) {
         const commissionAmount = roundMoney(revenueAmount * rate);
 
         return {
-          businessId: idStr,
+          businessAnchorId: idStr,
           name: orgNameById.get(idStr) || "",
           monthRevenueAmount: revenueAmount,
           monthOrderCount: orderCount,

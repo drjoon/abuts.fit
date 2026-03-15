@@ -7,6 +7,7 @@ import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 
 interface ShippingTabProps {
   userData: {
@@ -51,8 +52,7 @@ export const ManufacturerShippingTab = ({ userData }: ShippingTabProps) => {
   const [isSaving, setIsSaving] = useState(false);
 
   const businessType = useMemo(() => {
-    const role = String(user?.role || userData?.role || "manufacturer").trim();
-    return role || "manufacturer";
+    return resolveBusinessType(user?.role || userData?.role, "manufacturer");
   }, [user?.role, userData?.role]);
 
   const normalizeLeadTimes = (

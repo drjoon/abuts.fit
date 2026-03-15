@@ -336,7 +336,7 @@ export const PackingPageContent = ({
           const caseInfos = request.caseInfos || {};
           const text = (
             (request.referenceIds?.join(",") || "") +
-            (request.requestor?.organization || "") +
+            (request.requestor?.business || "") +
             (request.requestor?.name || "") +
             (caseInfos.clinicName || "") +
             (caseInfos.patientName || "") +
@@ -435,7 +435,7 @@ export const PackingPageContent = ({
       const caseInfos = req.caseInfos || {};
       const fullLotNumber = resolvePackFullLotNumber(req);
       const labName = requireNonEmptyString(
-        req.requestorOrganization?.name,
+        req.requestorBusiness?.name || req.requestorOrganization?.name,
         "사업자명",
         req,
       );

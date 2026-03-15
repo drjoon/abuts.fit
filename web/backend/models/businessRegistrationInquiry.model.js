@@ -7,9 +7,9 @@ const businessRegistrationInquirySchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    organizationId: {
+    businessAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Business",
+      ref: "BusinessAnchor",
       default: null,
     },
     businessType: {

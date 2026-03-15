@@ -16,6 +16,7 @@ import { request } from "@/shared/api/apiClient";
 import { RequestorSecurity } from "./Security";
 import { Shield } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
+import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 
 type TabKey =
   | "account"
@@ -41,8 +42,7 @@ export const RequestorSettingsPage = () => {
   }, []);
 
   const businessType = useMemo(() => {
-    const role = String(user?.role || "requestor").trim();
-    return role || "requestor";
+    return resolveBusinessType(user?.role, "requestor");
   }, [user?.role]);
 
   useEffect(() => {

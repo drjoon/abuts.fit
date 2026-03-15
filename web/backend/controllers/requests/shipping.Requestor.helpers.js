@@ -36,7 +36,15 @@ const resolveExpressShipLeadDays = () => 1;
 
 export const resolveRequestOrganizationName = (request) => {
   const requestor = request?.requestor || {};
-  const requestorOrg = request?.businessId || {};
+  const requestorOrg =
+    request?.requestorBusinessAnchor &&
+    typeof request?.requestorBusinessAnchor === "object"
+      ? request.requestorBusinessAnchor
+      : request?.business &&
+          typeof request?.business === "object" &&
+          request.business._id
+        ? request.business
+        : {};
   const extracted = requestorOrg?.extracted || {};
   return (
     requestorOrg?.name ||
@@ -65,11 +73,11 @@ export async function ensureShippingPackageForPickup({
     ),
   );
 
-  const businessIds = Array.from(
+  const businessAnchorIds = Array.from(
     new Set(
       list
         .map((request) => {
-          const rawOrg = request?.businessId;
+          const rawOrg = request?.businessAnchorId;
           const value =
             rawOrg && typeof rawOrg === "object"
               ? String(rawOrg?._id || rawOrg?.id || "").trim()
@@ -88,7 +96,7 @@ export async function ensureShippingPackageForPickup({
     ),
   );
 
-  if (businessIds.length > 1) {
+  if (businessAnchorIds.length > 1) {
     throw new Error(
       "우편함 묶음의 조직 정보가 일관되지 않아 발송 박스를 생성할 수 없습니다.",
     );
@@ -98,44 +106,28 @@ export async function ensureShippingPackageForPickup({
       "발송 패키지는 단일 우편함(mailboxAddress) 단위로만 생성할 수 있습니다.",
     );
   }
-  if (!businessIds.length && organizationNames.length > 1) {
+  if (!businessAnchorIds.length && organizationNames.length > 1) {
     throw new Error(
       "우편함 묶음의 조직명 정보가 일관되지 않아 발송 박스를 생성할 수 없습니다.",
     );
   }
 
-  let businessId = null;
-  if (businessIds.length === 1) {
-    businessId = new Types.ObjectId(businessIds[0]);
-  } else {
-    const fallbackName = organizationNames[0] || "";
-    if (!fallbackName) {
-      throw new Error(
-        "우편함 묶음의 조직 정보를 확인할 수 없어 발송 박스를 생성할 수 없습니다.",
-      );
-    }
-    const orgDoc = await Business.findOne({
-      $or: [{ name: fallbackName }, { "extracted.companyName": fallbackName }],
-    })
-      .select({ _id: 1 })
-      .lean();
-    if (!orgDoc?._id) {
-      throw new Error(
-        "우편함 묶음의 조직 정보를 확인할 수 없어 발송 박스를 생성할 수 없습니다.",
-      );
-    }
-    businessId = new Types.ObjectId(String(orgDoc._id));
+  if (!businessAnchorIds.length) {
+    throw new Error(
+      "우편함 묶음의 businessAnchorId가 없어 발송 박스를 생성할 수 없습니다.",
+    );
   }
+  const businessAnchorId = new Types.ObjectId(businessAnchorIds[0]);
   const shipDateYmd = getTodayYmdInKst();
   const mailboxAddress = mailboxAddresses[0];
 
   let pkg = null;
   try {
     pkg = await ShippingPackage.findOneAndUpdate(
-      { businessId, shipDateYmd, mailboxAddress },
+      { businessAnchorId, shipDateYmd, mailboxAddress },
       {
         $setOnInsert: {
-          businessId,
+          businessAnchorId,
           shipDateYmd,
           mailboxAddress,
           createdBy: actorUserId || null,
@@ -154,7 +146,7 @@ export async function ensureShippingPackageForPickup({
     const message = String(error?.message || "");
     if (error?.code === 11000 || message.includes("E11000")) {
       pkg = await ShippingPackage.findOne({
-        businessId,
+        businessAnchorId,
         shipDateYmd,
         mailboxAddress,
       });
@@ -192,13 +184,13 @@ export async function chargeShippingFeeOnPickupComplete({
   const pkg = await ShippingPackage.findById(pkgId)
     .select({
       _id: 1,
-      businessId: 1,
+      businessAnchorId: 1,
       mailboxAddress: 1,
       shippingFeeSupply: 1,
       requestIds: 1,
     })
     .lean();
-  if (!pkg?._id || !pkg.businessId) return false;
+  if (!pkg?._id || !pkg.businessAnchorId) return false;
 
   const fee = Number(pkg.shippingFeeSupply || 0);
   if (!Number.isFinite(fee) || fee <= 0) return false;
@@ -207,7 +199,7 @@ export async function chargeShippingFeeOnPickupComplete({
   if (!allowFreeShippingCredit) {
     // 유료 크레딧 기준으로만 배송비 결제 가능
     const { paidBalance } = await getBusinessCreditBalanceBreakdown({
-      businessId: pkg.businessId,
+      businessAnchorId: pkg.businessAnchorId,
     });
 
     if (paidBalance < fee) {
@@ -221,7 +213,7 @@ export async function chargeShippingFeeOnPickupComplete({
     { uniqueKey },
     {
       $setOnInsert: {
-        businessId: pkg.businessId,
+        businessAnchorId: pkg.businessAnchorId,
         userId: actorUserId || null,
         type: "SPEND",
         amount: -fee,
@@ -236,7 +228,7 @@ export async function chargeShippingFeeOnPickupComplete({
   if (!chargeResult?.upsertedCount) return false;
 
   await emitCreditBalanceUpdatedToBusiness({
-    businessId: pkg.businessId,
+    businessAnchorId: pkg.businessAnchorId,
     balanceDelta: -fee,
     reason: "shipping_fee_spend",
     refId: pkg._id,
@@ -245,16 +237,16 @@ export async function chargeShippingFeeOnPickupComplete({
   return true;
 }
 
-async function resolveBusinessId(req) {
-  const businessId = getRequestorOrgId(req);
-  if (businessId && Types.ObjectId.isValid(businessId)) {
-    return businessId;
+async function resolveBusinessAnchorId(req) {
+  const businessAnchorId = getRequestorOrgId(req);
+  if (businessAnchorId && Types.ObjectId.isValid(businessAnchorId)) {
+    return businessAnchorId;
   }
 
   const userId = req?.user?._id;
   if (!userId) return "";
 
-  const org = await Business.findOne({
+  const business = await Business.findOne({
     $or: [
       { owner: userId },
       { owners: userId },
@@ -265,20 +257,23 @@ async function resolveBusinessId(req) {
       },
     ],
   })
-    .select({ _id: 1 })
+    .select({ businessAnchorId: 1 })
     .lean();
 
-  if (org?._id) {
-    return String(org._id);
+  if (business?.businessAnchorId) {
+    return String(business.businessAnchorId);
   }
 
-  const requestWithOrg = await Request.findOne({ requestor: userId })
-    .select({ businessId: 1 })
+  const requestWithBusinessAnchor = await Request.findOne({ requestor: userId })
+    .select({ businessAnchorId: 1 })
     .lean();
 
-  const fallbackId = requestWithOrg?.businessId;
-  if (fallbackId && Types.ObjectId.isValid(fallbackId)) {
-    return String(fallbackId);
+  const requestBusinessAnchorId = requestWithBusinessAnchor?.businessAnchorId;
+  if (
+    requestBusinessAnchorId &&
+    Types.ObjectId.isValid(requestBusinessAnchorId)
+  ) {
+    return String(requestBusinessAnchorId);
   }
 
   return "";
@@ -299,8 +294,8 @@ export async function buildShippingPackagesSummary(req) {
     });
   }
 
-  const orgId = await resolveBusinessId(req);
-  if (!orgId) {
+  const businessAnchorId = await resolveBusinessAnchorId(req);
+  if (!businessAnchorId) {
     throw Object.assign(new Error("조직 정보가 필요합니다."), {
       statusCode: 400,
     });
@@ -312,7 +307,7 @@ export async function buildShippingPackagesSummary(req) {
   const cutoffYmd = toKstYmd(cutoffDate);
 
   const packages = await ShippingPackage.find({
-    businessId: new Types.ObjectId(orgId),
+    businessAnchorId: new Types.ObjectId(businessAnchorId),
     shipDateYmd: { $gte: cutoffYmd },
   })
     .select({
@@ -449,7 +444,9 @@ export async function buildShippingEstimate(req) {
   try {
     const orgId = getRequestorOrgId(req);
     if (orgId && Types.ObjectId.isValid(orgId)) {
-      const org = await Business.findById(orgId)
+      const business = await Business.findOne({
+        businessAnchorId: new Types.ObjectId(orgId),
+      })
         .select({ "shippingPolicy.weeklyBatchDays": 1 })
         .lean();
       requestorWeeklyBatchDays = Array.isArray(
@@ -626,11 +623,7 @@ export async function buildBulkShippingCandidates(req) {
   const mapItem = async (r) => {
     const ci = r.caseInfos || {};
     const clinic =
-      r.requestor?.business ||
-      r.requestor?.organization ||
-      r.requestor?.name ||
-      req.user?.name ||
-      "";
+      r.requestor?.organization || r.requestor?.name || req.user?.name || "";
     const maxDiameter =
       typeof ci.maxDiameter === "number"
         ? `${ci.maxDiameter}mm`

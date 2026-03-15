@@ -338,6 +338,12 @@ export async function adminGetBusinessLedger(req, res) {
     }
     const businessId = new Types.ObjectId(orgIdRaw);
 
+    // BusinessAnchor SSOT: Business에서 businessAnchorId 우선 조회
+    const org = await Business.findById(businessId)
+      .select({ businessAnchorId: 1 })
+      .lean();
+    const businessAnchorId = org?.businessAnchorId;
+
     const typeRaw = String(req.query.type || "")
       .trim()
       .toUpperCase();
@@ -350,7 +356,14 @@ export async function adminGetBusinessLedger(req, res) {
       Math.max(1, Number(req.query.pageSize || 50) || 50),
     );
 
-    const match = { businessId };
+    if (!businessAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "해당 사업자에 businessAnchorId가 없습니다.",
+      });
+    }
+
+    const match = { businessAnchorId };
 
     if (
       typeRaw &&
@@ -404,7 +417,7 @@ export async function adminGetBusinessLedger(req, res) {
 
     // running balance: 전체 잔액 계산 (필터 무관)
     const allLedgerRows = await CreditLedger.aggregate([
-      { $match: { businessId } },
+      { $match: { businessAnchorId } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
     let totalBalance = Number(allLedgerRows[0]?.total || 0);
@@ -776,7 +789,7 @@ export async function adminGetCreditStats(req, res) {
     const statsRows = await CreditLedger.aggregate([
       {
         $group: {
-          _id: "$businessId",
+          _id: "$businessAnchorId",
           chargedPaid: {
             $sum: {
               $cond: [
@@ -1274,8 +1287,10 @@ export async function adminGetBusinessCredits(req, res) {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const skip = Math.max(Number(req.query.skip) || 0, 0);
 
-    const orgs = await Business.find()
-      .select({ name: 1, owner: 1, extracted: 1 })
+    const orgs = await Business.find({
+      businessAnchorId: { $ne: null },
+    })
+      .select({ name: 1, owner: 1, extracted: 1, businessAnchorId: 1 })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -1305,13 +1320,17 @@ export async function adminGetBusinessCredits(req, res) {
       ]),
     );
 
-    const orgIds = orgs.map((o) => o._id);
+    const orgAnchorIds = orgs.map((o) => o?.businessAnchorId).filter(Boolean);
 
     const ledgerData = await CreditLedger.aggregate([
-      { $match: { businessId: { $in: orgIds } } },
+      {
+        $match: {
+          businessAnchorId: { $in: orgAnchorIds },
+        },
+      },
       {
         $group: {
-          _id: "$businessId",
+          _id: "$businessAnchorId",
           chargedPaid: {
             $sum: {
               $cond: [
@@ -1395,8 +1414,8 @@ export async function adminGetBusinessCredits(req, res) {
     });
 
     const result = orgs.map((org) => {
-      const orgId = String(org._id);
-      const balanceInfo = balanceMap[orgId] || {
+      const lookupKey = String(org.businessAnchorId);
+      const balanceInfo = balanceMap[lookupKey] || {
         balance: 0,
         paidBalance: 0,
         bonusBalance: 0,
@@ -1411,6 +1430,7 @@ export async function adminGetBusinessCredits(req, res) {
 
       return {
         _id: org._id,
+        businessAnchorId: org.businessAnchorId || null,
         name: org.name,
         ownerName: ownerInfo?.name || "",
         ownerEmail: ownerInfo?.email || "",
@@ -1444,17 +1464,25 @@ export async function adminGetBusinessCreditDetail(req, res) {
   try {
     const orgId = req.params.id;
     const org = await Business.findById(orgId)
-      .select({ name: 1, extracted: 1 })
+      .select({ name: 1, extracted: 1, businessAnchorId: 1 })
       .lean();
 
     if (!org) {
       return res.status(404).json({
         success: false,
-        message: "사업자를 찾을 수 없습니다.",
+        message: "해당 사업자를 찾을 수 없습니다.",
       });
     }
 
-    const ledgers = await CreditLedger.find({ businessId: orgId })
+    const businessAnchorId = org?.businessAnchorId;
+    if (!businessAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "해당 사업자에 businessAnchorId가 없습니다.",
+      });
+    }
+
+    const ledgers = await CreditLedger.find({ businessAnchorId })
       .sort({ createdAt: -1 })
       .limit(100)
       .lean();

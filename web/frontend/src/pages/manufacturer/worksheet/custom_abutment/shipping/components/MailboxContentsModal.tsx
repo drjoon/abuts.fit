@@ -66,7 +66,7 @@ type MailboxContentsModalProps = {
   onRollbackAll?: (requests: ManufacturerRequest[]) => void;
   isRollingBackAll?: boolean;
   onAddressSaved?: (payload: {
-    businessId: string;
+    businessAnchorId: string;
     address: string;
     addressDetail: string;
     zipCode: string;
@@ -95,37 +95,34 @@ export const MailboxContentsModal = ({
   };
 
   const primaryOrganization =
-    requests.find((req) => req.requestor?.organization)?.requestor
-      ?.organization || "-";
+    requests.find((req) => req.requestor?.business)?.requestor?.business || "-";
 
   const stageLabel =
     requests.find((req) => req.manufacturerStage)?.manufacturerStage || "의뢰";
 
   const primaryRequest = requests[0] || null;
-  const requestorOrganization =
-    (primaryRequest as any)?.requestorBusiness ||
-    (primaryRequest as any)?.requestorBusinessId ||
-    (primaryRequest as any)?.requestorOrganization ||
-    (primaryRequest as any)?.requestorOrganizationId ||
+  const requestorBusinessAnchor =
+    (primaryRequest as any)?.requestorBusinessAnchor ||
+    (primaryRequest as any)?.requestorBusinessAnchorId ||
     null;
-  const businessId = String(
-    requestorOrganization?._id || requestorOrganization || "",
+  const businessAnchorId = String(
+    requestorBusinessAnchor?._id || requestorBusinessAnchor || "",
   ).trim();
   const initialAddress = String(
-    requestorOrganization?.extracted?.address ||
+    requestorBusinessAnchor?.extracted?.address ||
       (primaryRequest as any)?.requestor?.addressText ||
       (primaryRequest as any)?.requestor?.address?.roadAddress ||
       (primaryRequest as any)?.requestor?.address?.address1 ||
       "",
   ).trim();
   const initialAddressDetail = String(
-    requestorOrganization?.extracted?.addressDetail ||
+    requestorBusinessAnchor?.extracted?.addressDetail ||
       (primaryRequest as any)?.requestor?.address?.detailAddress ||
       (primaryRequest as any)?.requestor?.address?.address2 ||
       "",
   ).trim();
   const initialZipCode = String(
-    requestorOrganization?.extracted?.zipCode ||
+    requestorBusinessAnchor?.extracted?.zipCode ||
       (primaryRequest as any)?.requestor?.address?.postalCode ||
       (primaryRequest as any)?.requestor?.zipCode ||
       "",
@@ -212,7 +209,7 @@ export const MailboxContentsModal = ({
       });
       return;
     }
-    if (!businessId) {
+    if (!businessAnchorId) {
       toast({
         title: "조직 정보를 찾을 수 없습니다",
         variant: "destructive",
@@ -238,7 +235,7 @@ export const MailboxContentsModal = ({
         method: "PUT",
         token,
         jsonBody: {
-          businessId,
+          businessAnchorId,
           address: nextAddress,
           addressDetail: nextAddressDetail,
           zipCode: nextZipCode,
@@ -250,7 +247,7 @@ export const MailboxContentsModal = ({
         );
       }
       onAddressSaved?.({
-        businessId,
+        businessAnchorId,
         address: String(res.data?.data?.address || nextAddress).trim(),
         addressDetail: String(
           res.data?.data?.addressDetail || nextAddressDetail,
@@ -325,7 +322,7 @@ export const MailboxContentsModal = ({
             {errorMessage}
           </div>
         ) : null}
-        {errorMessage && businessId ? (
+        {errorMessage && businessAnchorId ? (
           <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div>

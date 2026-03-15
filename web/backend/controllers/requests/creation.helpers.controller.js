@@ -77,10 +77,10 @@ export async function uploadS3ToRhinoServer(s3Url, fileName) {
 }
 
 export async function getBusinessCreditBalanceBreakdown({
-  businessId,
+  businessAnchorId,
   session,
 }) {
-  const rows = await CreditLedger.find({ businessId })
+  const rows = await CreditLedger.find({ businessAnchorId })
     .sort({ createdAt: 1, _id: 1 })
     .select({ type: 1, amount: 1 })
     .session(session || null)

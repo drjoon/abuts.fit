@@ -100,7 +100,7 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
       })
         .select({
           _id: 1,
-          organizationId: 1,
+          businessAnchorId: 1,
           userId: 1,
           supplyAmount: 1,
           vatAmount: 1,
@@ -124,7 +124,7 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
     })
       .select({
         _id: 1,
-        organizationId: 1,
+        businessAnchorId: 1,
         userId: 1,
         supplyAmount: 1,
         depositorName: 1,
@@ -200,7 +200,7 @@ async function matchTxWithOrder({ tx, order }) {
         { uniqueKey },
         {
           $setOnInsert: {
-            organizationId: order.organizationId,
+            businessAnchorId: order.businessAnchorId || null,
             userId: order.userId,
             type: "CHARGE",
             amount: Number(order.supplyAmount),
@@ -214,7 +214,7 @@ async function matchTxWithOrder({ tx, order }) {
 
       if (creditLedgerResult?.upsertedCount) {
         await emitCreditBalanceUpdatedToBusiness({
-          businessId: order.organizationId,
+          businessAnchorId: order.businessAnchorId,
           balanceDelta: Number(order.supplyAmount),
           reason: "bplan_auto_charge",
           refId: order._id,
@@ -228,7 +228,9 @@ async function matchTxWithOrder({ tx, order }) {
         { session },
       );
       if (!existingDraft) {
-        const org = await Business.findById(order.organizationId)
+        const org = await Business.findOne({
+          businessAnchorId: order.businessAnchorId,
+        })
           .select({
             "extracted.businessNumber": 1,
             "extracted.companyName": 1,
@@ -245,7 +247,7 @@ async function matchTxWithOrder({ tx, order }) {
           [
             {
               chargeOrderId: order._id,
-              organizationId: order.organizationId,
+              businessAnchorId: order.businessAnchorId,
               status: "APPROVED",
               supplyAmount: Number(order.supplyAmount),
               vatAmount: Number(order.vatAmount || 0),

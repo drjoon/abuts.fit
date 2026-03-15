@@ -27,7 +27,7 @@ export const RequestorPricingReferralPolicyCard = () => {
   const referralLink = useMemo(() => {
     if (!referralCode) return "";
     const origin = typeof window !== "undefined" ? window.location.origin : "";
-    return `${origin}/signup?ref=${encodeURIComponent(referralCode)}`;
+    return `${origin}/signup/referral?ref=${encodeURIComponent(referralCode)}`;
   }, [referralCode]);
 
   const { data, isLoading, isFetching, isError, error } = useQuery({

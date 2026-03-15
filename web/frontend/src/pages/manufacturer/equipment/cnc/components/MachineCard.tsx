@@ -535,7 +535,7 @@ export const MachineCard = (props: MachineCardProps) => {
   })();
 
   const requestInfo = (machine as any)?.requestInfo || {};
-  const org = requestInfo.organization || "";
+  const business = requestInfo.business || requestInfo.organization || "";
   const clinic = requestInfo.clinicName || "";
   const patient = requestInfo.patientName || "미지정";
   const tooth = requestInfo.tooth || "-";
@@ -587,8 +587,8 @@ export const MachineCard = (props: MachineCardProps) => {
             <div className="flex flex-col gap-0.5 min-w-0">
               {/* 데스크탑 */}
               <div className="hidden md:flex flex-wrap items-center gap-1 text-[12px] text-slate-700">
-                <span className="truncate max-w-[180px]" title={org}>
-                  {org || "-"}
+                <span className="truncate max-w-[180px]" title={business}>
+                  {business || "-"}
                 </span>
                 <span className="text-slate-400">/</span>
                 <span className="truncate max-w-[150px]" title={clinic}>
@@ -612,9 +612,15 @@ export const MachineCard = (props: MachineCardProps) => {
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200">
                       {lotBadge}
                     </span>
-                    {generateModelNumber(requestInfo?.caseInfos, String(lotRaw || "")) && (
+                    {generateModelNumber(
+                      requestInfo?.caseInfos,
+                      String(lotRaw || ""),
+                    ) && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-50 text-slate-600 border border-slate-200">
-                        {generateModelNumber(requestInfo?.caseInfos, String(lotRaw || ""))}
+                        {generateModelNumber(
+                          requestInfo?.caseInfos,
+                          String(lotRaw || ""),
+                        )}
                       </span>
                     )}
                   </div>
@@ -637,9 +643,15 @@ export const MachineCard = (props: MachineCardProps) => {
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200">
                       {lotBadge}
                     </span>
-                    {generateModelNumber(requestInfo?.caseInfos, String(lotRaw || "")) && (
+                    {generateModelNumber(
+                      requestInfo?.caseInfos,
+                      String(lotRaw || ""),
+                    ) && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-50 text-slate-600 border border-slate-200">
-                        {generateModelNumber(requestInfo?.caseInfos, String(lotRaw || ""))}
+                        {generateModelNumber(
+                          requestInfo?.caseInfos,
+                          String(lotRaw || ""),
+                        )}
                       </span>
                     )}
                   </div>

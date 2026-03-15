@@ -15,6 +15,7 @@ import {
 
 async function grantRequestorSeedCredit({
   businessId,
+  businessAnchorId,
   userId,
   uniqueKey,
   amount = 500000,
@@ -27,6 +28,7 @@ async function grantRequestorSeedCredit({
 
   await CreditLedger.create({
     businessId,
+    businessAnchorId: businessAnchorId || null,
     userId,
     type: "CHARGE",
     amount,
@@ -192,6 +194,7 @@ export async function seedDefaultAccounts() {
   await attachUserToOrganization(requestorStaff._id, requestorOrg);
   await grantRequestorSeedCredit({
     businessId: requestorOrg._id,
+    businessAnchorId: requestorOrg.businessAnchorId || null,
     userId: requestorOwner._id,
     uniqueKey: `org:${String(requestorOrg._id)}`,
   });
@@ -519,6 +522,7 @@ export async function seedBulkAccounts() {
 
       await grantRequestorSeedCredit({
         businessId: business._id,
+        businessAnchorId: business.businessAnchorId || null,
         userId: user._id,
         uniqueKey: `org:${String(business._id)}`,
       });

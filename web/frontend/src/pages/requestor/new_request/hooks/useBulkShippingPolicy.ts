@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 
 const SHIPPING_POLICY_STORAGE_PREFIX = "abutsfit:shipping-policy:v1:";
 
@@ -112,8 +113,7 @@ export function useBulkShippingPolicy(email?: string | null) {
     getLocalShippingPolicy(email),
   );
   const businessType = useMemo(() => {
-    const role = String(user?.role || "requestor").trim();
-    return role || "requestor";
+    return resolveBusinessType(user?.role, "requestor");
   }, [user?.role]);
 
   useEffect(() => {

@@ -77,8 +77,7 @@ export const BusinessTab = ({
   const authUserId = user?.id ? String(user.id) : null;
   const businessType = useMemo(() => {
     if (businessTypeOverride) return businessTypeOverride;
-    const role = String(user?.role || userData?.role || "requestor").trim();
-    return role || "requestor";
+    return resolveBusinessType(user?.role || userData?.role, "requestor");
   }, [businessTypeOverride, user?.role, userData?.role]);
 
   // 커스텀 훅으로 상태 관리 분리
@@ -407,7 +406,7 @@ export const BusinessTab = ({
           }
         }
       } catch (err) {
-        console.error("[BusinessTab] Failed to verify organization owner", err);
+        console.error("[BusinessTab] Failed to verify business owner", err);
       }
 
       await runDeleteLicense();
@@ -493,7 +492,7 @@ export const BusinessTab = ({
     });
   };
 
-  const handleLeaveOrganization = async (businessId: string) => {
+  const handleLeaveBusiness = async (businessId: string) => {
     await handleJoinOrLeave({
       token,
       businessId,
@@ -524,9 +523,7 @@ export const BusinessTab = ({
   };
 
   const currentBusinessName = useMemo(() => {
-    const fromUser = String(
-      (user as any)?.business || (user as any)?.organization || "",
-    ).trim();
+    const fromUser = String((user as any)?.business || "").trim();
     const fromState = String(
       businessDataMgmt.businessData.companyName || "",
     ).trim();
@@ -592,7 +589,7 @@ export const BusinessTab = ({
                 myJoinRequests={membershipMgmt.myJoinRequests}
                 cancelLoadingBusinessId={membershipMgmt.cancelLoadingBusinessId}
                 onCancelJoinRequest={handleCancelJoinRequest}
-                onLeaveOrganization={handleLeaveOrganization}
+                onLeaveBusiness={handleLeaveBusiness}
               />
             </div>
           )}
@@ -602,7 +599,7 @@ export const BusinessTab = ({
             myJoinRequests={membershipMgmt.myJoinRequests || []}
             cancelLoadingBusinessId={membershipMgmt.cancelLoadingBusinessId}
             onCancelJoinRequest={handleCancelJoinRequest}
-            onLeaveOrganization={handleLeaveOrganization}
+            onLeaveBusiness={handleLeaveBusiness}
           />
         )}
 
@@ -729,7 +726,7 @@ export const BusinessTab = ({
                         membershipMgmt.cancelLoadingBusinessId
                       }
                       onCancelJoinRequest={handleCancelJoinRequest}
-                      onLeaveOrganization={handleLeaveOrganization}
+                      onLeaveBusiness={handleLeaveBusiness}
                     />
                   )}
               </>

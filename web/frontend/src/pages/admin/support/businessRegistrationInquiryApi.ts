@@ -21,8 +21,7 @@ export type BusinessRegistrationInquiry = {
     organization?: string;
   } | null;
   organizationType?: string | null;
-  businessId?: string | null;
-  organizationId?: string | null;
+  businessAnchorId?: string | null;
   status?: "open" | "resolved";
   adminNote?: string;
   resolvedAt?: string | null;

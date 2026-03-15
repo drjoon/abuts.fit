@@ -61,7 +61,7 @@ export const buildPackLabelRenderOptions = ({
   const caseInfos = req.caseInfos || {};
   const fullLotNumber = resolvePackFullLotNumber(req);
   const labName = requireNonEmptyString(
-    req.requestorOrganization?.name,
+    req.requestorBusiness?.name || req.requestorOrganization?.name,
     "사업자명",
     req,
   );

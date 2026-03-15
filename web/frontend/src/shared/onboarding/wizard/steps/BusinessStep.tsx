@@ -41,7 +41,7 @@ export const BusinessStep = ({
   return (
     <BusinessTab
       userData={userData}
-      organizationTypeOverride={businessType}
+      businessTypeOverride={businessType}
       selectedRole={role}
       registerValidationState={registerValidationState}
       isOnboarding={true}

@@ -6,6 +6,7 @@ import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 
 type StaffMember = {
   _id: string;
@@ -60,16 +61,15 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     return {} as Record<string, string>;
   }, []);
 
-  const organizationType = useMemo(() => {
-    const role = String(user?.role || userData?.role || "requestor").trim();
-    return role || "requestor";
+  const businessType = useMemo(() => {
+    return resolveBusinessType(user?.role || userData?.role, "requestor");
   }, [user?.role, userData?.role]);
 
   const refreshMembership = useCallback(async () => {
     if (!token) return;
     const res = await request<any>({
-      path: `/api/businesses/me?organizationType=${encodeURIComponent(
-        organizationType,
+      path: `/api/businesses/me?businessType=${encodeURIComponent(
+        businessType,
       )}`,
       method: "GET",
       token,
@@ -84,13 +84,13 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       | "member"
       | "pending";
     setMembership(next);
-  }, [mockHeaders, organizationType, token]);
+  }, [mockHeaders, businessType, token]);
 
   const refreshRepresentatives = useCallback(async () => {
     if (!token) return;
     const res = await request<any>({
-      path: `/api/businesses/owners?organizationType=${encodeURIComponent(
-        organizationType,
+      path: `/api/businesses/owners?businessType=${encodeURIComponent(
+        businessType,
       )}`,
       method: "GET",
       token,
@@ -116,13 +116,13 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       return;
     }
     setRepresentatives([]);
-  }, [mockHeaders, organizationType, token]);
+  }, [mockHeaders, businessType, token]);
 
   const refreshStaff = useCallback(async () => {
     if (!token) return;
     const res = await request<any>({
-      path: `/api/businesses/staff?organizationType=${encodeURIComponent(
-        organizationType,
+      path: `/api/businesses/staff?businessType=${encodeURIComponent(
+        businessType,
       )}`,
       method: "GET",
       token,
@@ -135,13 +135,13 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     const body: any = res.data || {};
     const data = body.data || body;
     setStaff(Array.isArray(data?.staff) ? data.staff : []);
-  }, [mockHeaders, organizationType, token]);
+  }, [mockHeaders, businessType, token]);
 
   const refreshPending = useCallback(async () => {
     if (!token) return;
     const res = await request<any>({
-      path: `/api/businesses/join-requests/pending?organizationType=${encodeURIComponent(
-        organizationType,
+      path: `/api/businesses/join-requests/pending?businessType=${encodeURIComponent(
+        businessType,
       )}`,
       method: "GET",
       token,
@@ -154,7 +154,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     const body: any = res.data || {};
     const data = body.data || body;
     setPending(Array.isArray(data?.joinRequests) ? data.joinRequests : []);
-  }, [mockHeaders, organizationType, token]);
+  }, [mockHeaders, businessType, token]);
 
   useEffect(() => {
     const load = async () => {
@@ -195,8 +195,8 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
 
       setActionUserId(id);
       const res = await request<any>({
-        path: `/api/businesses/staff/${id}?organizationType=${encodeURIComponent(
-          organizationType,
+        path: `/api/businesses/staff/${id}?businessType=${encodeURIComponent(
+          businessType,
         )}`,
         method: "DELETE",
         token,
@@ -235,7 +235,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
         method: "POST",
         token,
         headers: mockHeaders,
-        jsonBody: { role, organizationType },
+        jsonBody: { role, businessType },
       });
 
       if (!res.ok) {
@@ -278,7 +278,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
         method: "POST",
         token,
         headers: mockHeaders,
-        jsonBody: { organizationType },
+        jsonBody: { businessType },
       });
 
       if (!res.ok) {
