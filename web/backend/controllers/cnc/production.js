@@ -175,8 +175,6 @@ export async function reassignProductionQueues(req, res) {
       queueCounts.set(uid, 0);
     }
 
-    const roundRobinIndexByKey = new Map();
-
     const assignmentsByMachine = new Map();
     const ops = [];
     const sortedRequests = [...requests].sort((a, b) => {
@@ -258,13 +256,22 @@ export async function reassignProductionQueues(req, res) {
       if (tied.length === 1) {
         selected = tied[0];
       } else {
-        const key = tied
-          .slice()
-          .sort((a, b) => a.localeCompare(b))
-          .join("|");
-        const idx = roundRobinIndexByKey.get(key) || 0;
-        selected = tied[idx % tied.length];
-        roundRobinIndexByKey.set(key, (idx + 1) % tied.length);
+        // 같은 부하를 가진 장비들 중에서 균등하게 배분하기 위해
+        // 현재까지 배정된 횟수를 기준으로 가장 적게 배정된 장비 선택
+        const assignCounts = tied.map((uid) => ({
+          uid,
+          count: assignmentsByMachine.get(uid)?.length || 0,
+        }));
+
+        assignCounts.sort((a, b) => {
+          // 배정 횟수가 적은 순으로 정렬
+          if (a.count !== b.count) return a.count - b.count;
+          // 배정 횟수가 같으면 uid 알파벳 순
+          return a.uid.localeCompare(b.uid);
+        });
+
+        // 가장 적게 배정된 장비 선택
+        selected = assignCounts[0].uid;
       }
 
       if (!selected) continue;
