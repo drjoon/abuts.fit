@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { generateModelNumber } from "@/utils/modelNumber";
-import { getDeadlineInfo } from "../../utils/deadline";
+import { getDeadlineInfo } from "../../utils/request";
 import { ArrowLeft, Loader2, MapPinned, Search } from "lucide-react";
 import type { ManufacturerRequest } from "../../utils/request";
 

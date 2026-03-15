@@ -4,12 +4,12 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { formatImplantDisplay } from "@/utils/implant";
 import { generateModelNumber } from "@/utils/modelNumber";
-import { getDeadlineInfo } from "../utils/deadline";
 import {
   type ManufacturerRequest,
   computeStageLabel,
   deriveStageForFilter,
   getAcceptByStage,
+  getDeadlineInfo,
   getDiameterBucketIndex,
   stageOrder,
 } from "../utils/request";
@@ -289,68 +289,32 @@ export const WorksheetCardGrid = ({
           return `${base} bg-slate-50 text-slate-700 border-slate-200`;
         })();
 
-        const stageBadge = (() => {
+        const stageBadgeClassName = (() => {
           const s = String(stageForRollback || "").trim();
           const base =
             "text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border";
           if (s === "CAM") {
-            return (
-              <Badge
-                variant="outline"
-                className={`${base} bg-indigo-50 text-indigo-700 border-indigo-200`}
-              >
-                CAM
-              </Badge>
-            );
+            return `${base} bg-indigo-50 text-indigo-700 border-indigo-200`;
           }
           if (s === "가공") {
-            return (
-              <Badge
-                variant="outline"
-                className={`${base} bg-blue-50 text-blue-700 border-blue-200`}
-              >
-                가공
-              </Badge>
-            );
+            return `${base} bg-blue-50 text-blue-700 border-blue-200`;
           }
           if (s === "세척.포장" || s === "세척.패킹") {
-            return (
-              <Badge
-                variant="outline"
-                className={`${base} bg-emerald-50 text-emerald-700 border-emerald-200`}
-              >
-                세척·패킹
-              </Badge>
-            );
+            return `${base} bg-emerald-50 text-emerald-700 border-emerald-200`;
           }
           if (s === "발송" || s === "포장.발송") {
-            return (
-              <Badge
-                variant="outline"
-                className={`${base} bg-amber-50 text-amber-700 border-amber-200`}
-              >
-                포장·발송
-              </Badge>
-            );
+            return `${base} bg-amber-50 text-amber-700 border-amber-200`;
           }
           if (s === "추적관리") {
-            return (
-              <Badge
-                variant="outline"
-                className={`${base} bg-slate-50 text-slate-700 border-slate-200`}
-              >
-                추적관리
-              </Badge>
-            );
+            return `${base} bg-slate-50 text-slate-700 border-slate-200`;
           }
-          return (
-            <Badge
-              variant="outline"
-              className={`${base} bg-slate-50 text-slate-700 border-slate-200`}
-            >
-              {s || "의뢰"}
-            </Badge>
-          );
+          return `${base} bg-slate-50 text-slate-700 border-slate-200`;
+        })();
+        const stageBadgeLabel = (() => {
+          const s = String(stageForRollback || "").trim();
+          if (s === "세척.포장" || s === "세척.패킹") return "세척·패킹";
+          if (s === "발송" || s === "포장.발송") return "포장·발송";
+          return s || "의뢰";
         })();
 
         const machiningElapsedLabel = (() => {
@@ -385,18 +349,6 @@ export const WorksheetCardGrid = ({
           request.createdAt,
           request.timeline?.estimatedShipYmd,
         );
-        const urgencyClass = (() => {
-          if (isCompletedForCurrentStage) return "";
-          if (deadlineInfo) return deadlineInfo.borderClass;
-          if (urgency === "danger") {
-            return "border-rose-500 border-2";
-          }
-          if (urgency === "warning") {
-            return "border-amber-500 border-2";
-          }
-          return "";
-        })();
-
         const handleDrop = async (e: React.DragEvent) => {
           e.preventDefault();
           e.stopPropagation();
@@ -460,7 +412,11 @@ export const WorksheetCardGrid = ({
                   ? "border-emerald-500 bg-emerald-50/30"
                   : deadlineInfo
                     ? deadlineInfo.borderClass
-                    : "border-slate-200"
+                    : urgency === "danger"
+                      ? "border-rose-500 border-2"
+                      : urgency === "warning"
+                        ? "border-amber-500 border-2"
+                        : "border-slate-200"
             } ${onToggleSelected ? "cursor-pointer" : ""}`}
             role={onToggleSelected ? "button" : undefined}
             aria-pressed={onToggleSelected ? isSelected : undefined}
@@ -509,13 +465,18 @@ export const WorksheetCardGrid = ({
               )}
             </div>
             {deadlineInfo && (
-              <div className="absolute right-2 bottom-2 z-20">
-                {stageBadge}
+              <div className="absolute right-2 bottom-2 z-20 flex items-center gap-1 flex-nowrap">
                 <Badge
                   variant="outline"
-                  className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border ${deadlineInfo.badgeClass}`}
+                  className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border whitespace-nowrap ${deadlineInfo.badgeClass}`}
                 >
                   {deadlineInfo.displayText}
+                </Badge>
+                <Badge
+                  variant="outline"
+                  className={`${stageBadgeClassName} whitespace-nowrap`}
+                >
+                  {stageBadgeLabel}
                 </Badge>
               </div>
             )}
@@ -646,7 +607,7 @@ export const WorksheetCardGrid = ({
                     )}
                   </div>
                 )}
-                <div className="flex flex-wrap items-center justify-between gap-1 text-[12px] text-slate-500">
+                {/* <div className="flex flex-wrap items-center justify-between gap-1 text-[12px] text-slate-500">
                   <div className="flex items-center gap-1">
                     <span>{formatImplantDisplay(caseInfos as any)}</span>
                   </div>
@@ -665,7 +626,7 @@ export const WorksheetCardGrid = ({
                         </Badge>
                       )}
                   </div>
-                </div>
+                </div> */}
                 {/* 백그라운드 작업 실패 시 안내 메시지 */}
                 {((isCamStage &&
                   request.caseInfos?.reviewByStage?.cam?.status ===
