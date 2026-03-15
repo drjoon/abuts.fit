@@ -580,7 +580,7 @@ export const WorksheetCardGrid = ({
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
                   <span>
-                    치과: {caseInfos.clinicName || "-"} /{" "}
+                    {caseInfos.clinicName || "-"} /{" "}
                     {caseInfos.patientName || "미지정"} /{" "}
                     {caseInfos.tooth || "-"}
                   </span>

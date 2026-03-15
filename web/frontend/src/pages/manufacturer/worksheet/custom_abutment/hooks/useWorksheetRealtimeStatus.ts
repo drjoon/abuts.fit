@@ -199,6 +199,7 @@ export function useWorksheetRealtimeStatus({
         case "request:cam-processing-started":
           return;
         case "request:filled-processing-started":
+          delete realtimeBaseRef.current[requestId];
           setRequests((prev) =>
             prev.map((r) => {
               if (String((r as any)?.requestId || "").trim() !== requestId) {
@@ -280,6 +281,9 @@ export function useWorksheetRealtimeStatus({
         }
         case "bg:runtime-status": {
           const clear = payload?.clear === true;
+          const status = String(payload?.status || "")
+            .trim()
+            .toLowerCase();
           const label = String(payload?.label || "").trim();
           const tone = String(payload?.tone || "blue").trim();
           const startedAt = payload?.startedAt || null;
@@ -289,21 +293,33 @@ export function useWorksheetRealtimeStatus({
             ? Math.max(0, Math.floor(Number(payload?.elapsedSeconds)))
             : null;
 
+          const hasStartedAt =
+            typeof startedAt === "string" &&
+            String(startedAt).trim().length > 0;
+          const parsedBase = hasStartedAt
+            ? new Date(startedAt as string).getTime()
+            : Number.NaN;
+          const hasValidBase = Number.isFinite(parsedBase);
+          const shouldClearRealtime =
+            clear || (status === "completed" && !hasValidBase);
+          if (!hasValidBase || shouldClearRealtime) {
+            delete realtimeBaseRef.current[requestId];
+          }
+
           setRequests((prev) =>
             prev.map((r) => {
               if (String((r as any)?.requestId || "").trim() !== requestId) {
                 return r;
               }
-              if (clear) {
+              if (shouldClearRealtime) {
                 delete realtimeBaseRef.current[requestId];
                 return {
                   ...(r as any),
                   realtimeProgress: null,
                 } as any;
               }
-              const base = new Date(startedAt).getTime();
-              if (Number.isFinite(base)) {
-                realtimeBaseRef.current[requestId] = base;
+              if (hasValidBase) {
+                realtimeBaseRef.current[requestId] = parsedBase;
               }
               return {
                 ...(r as any),
