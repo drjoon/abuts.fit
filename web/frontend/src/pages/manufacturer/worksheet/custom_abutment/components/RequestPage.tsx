@@ -459,7 +459,7 @@ export const RequestPage = ({
     pageState.pageRefForCore.current = 1;
     // eslint-disable-next-line react-hooks/exhaustive-deps
     void fetchRequestsCore(false, false);
-  }, [tabStage]);
+  }, [tabStage, showCompleted]);
 
   const currentStageForTab = isMachiningStage
     ? "가공"
