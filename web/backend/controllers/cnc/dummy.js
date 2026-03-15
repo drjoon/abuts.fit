@@ -1,4 +1,4 @@
-import { CncMachine, getOrCreateCncMachine } from "./shared.js";
+import { CncMachine, Machine, getOrCreateCncMachine } from "./shared.js";
 
 export async function updateDummyEnabledBulk(req, res) {
   try {
@@ -6,16 +6,29 @@ export async function updateDummyEnabledBulk(req, res) {
     const enabledProvided = enabled === true || enabled === false;
     const nextEnabled = enabledProvided ? enabled === true : true;
 
-    await CncMachine.updateMany(
-      { status: "active" },
-      {
-        $set: {
+    const activeMachines = await Machine.find({})
+      .select({ uid: 1, name: 1 })
+      .sort({ uid: 1 })
+      .lean();
+
+    await Promise.all(
+      activeMachines.map(async (machine) => {
+        const machineId = String(machine?.uid || "").trim();
+        if (!machineId) return;
+
+        await getOrCreateCncMachine(machineId, {
           "dummySettings.enabled": nextEnabled,
-        },
-      },
+        });
+      }),
     );
 
-    const machines = await CncMachine.find({ status: "active" })
+    const machines = await CncMachine.find({
+      machineId: {
+        $in: activeMachines
+          .map((machine) => String(machine?.uid || "").trim())
+          .filter(Boolean),
+      },
+    })
       .sort({ machineId: 1 })
       .lean();
 
