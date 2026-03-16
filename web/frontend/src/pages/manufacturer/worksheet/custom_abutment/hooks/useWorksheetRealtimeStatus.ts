@@ -39,6 +39,31 @@ export function useWorksheetRealtimeStatus({
   const realtimeBaseRef = useRef<Record<string, number>>({});
   const { toast } = useToast();
 
+  const toStageLabel = (raw: unknown) => {
+    const stage = String(raw || "")
+      .trim()
+      .toLowerCase();
+    if (stage === "request") return "의뢰";
+    if (stage === "cam") return "CAM";
+    if (stage === "machining") return "가공";
+    if (stage === "packing") return "세척.패킹";
+    if (stage === "shipping") return "포장.발송";
+    if (stage === "tracking") return "추적관리";
+    return String(raw || "").trim() || "공정";
+  };
+
+  const toActionLabel = (raw: unknown) => {
+    const action = String(raw || "")
+      .trim()
+      .toLowerCase();
+    if (action === "esprit-trigger") return "Esprit 트리거";
+    if (action === "auto-machining-trigger") return "자동 가공 트리거";
+    if (action === "stage-file-cleanup") return "공정 파일 정리";
+    if (action === "nc-file-cleanup") return "NC 파일 정리";
+    if (action === "nc-bridge-cleanup") return "NC 브리지 정리";
+    return "비동기 작업";
+  };
+
   const applyRequestPatch = (
     prev: ManufacturerRequest[],
     nextRequest: ManufacturerRequest | null | undefined,
@@ -262,11 +287,13 @@ export function useWorksheetRealtimeStatus({
         }
         case "request:cam-trigger-failed":
         case "request:async-action-failed": {
+          const stageLabel = toStageLabel(payload?.stage);
+          const actionLabel = toActionLabel(payload?.action);
           toast({
             title: "비동기 작업 실패",
             description: String(
               payload?.message ||
-                `의뢰 ${requestId || ""} 비동기 작업에 실패했습니다.`,
+                `${stageLabel} 단계 ${actionLabel} 실패 (${requestId || ""})`,
             ).trim(),
             variant: "destructive",
           });
