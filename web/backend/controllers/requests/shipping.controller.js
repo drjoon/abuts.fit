@@ -20,7 +20,6 @@ import {
 } from "./shipping.Tracking.helpers.js";
 import { startHanjinTrackingPoll } from "./shipping.TrackingPoller.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
-import { chargeShippingFeeOnPickupComplete } from "./shipping.Requestor.helpers.js";
 
 /**
  * MOCK 집하 완료 시뮬레이션 (Hanjin status code 11)
@@ -116,12 +115,6 @@ export async function mockHanjinPickupCompleted(req, res) {
       deliveryInfo.tracking.lastSyncedAt = now;
       deliveryInfo.pickedUpAt = now;
       await deliveryInfo.save();
-
-      // 배송비 차감
-      await chargeShippingFeeOnPickupComplete({
-        shippingPackageId: requestDoc.shippingPackageId,
-        actorUserId: req.user?._id || null,
-      });
 
       // request 업데이트
       requestDoc.manufacturerStage = "추적관리";

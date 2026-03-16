@@ -19,7 +19,6 @@ import {
   buildBulkShippingCandidates,
   buildShippingEstimate,
   buildShippingPackagesSummary,
-  chargeShippingFeeOnPickupComplete,
   ensureShippingPackageForPickup,
 } from "./shipping.Requestor.helpers.js";
 

@@ -1,7 +1,6 @@
 import Request from "../../models/request.model.js";
 import Business from "../../models/business.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
 import { Types } from "mongoose";
 import {
   buildRequestorOrgScopeFilter,
@@ -17,8 +16,6 @@ import {
   normalizeRequestStage,
   normalizeRequestStageLabel,
 } from "./utils.js";
-import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
-import { getBusinessCreditBalanceBreakdown } from "./creation.helpers.controller.js";
 
 const __cache = new Map();
 const memo = async ({ key, ttlMs, fn }) => {
@@ -171,71 +168,6 @@ export async function ensureShippingPackageForPickup({
   }
 
   return pkg;
-}
-
-export async function chargeShippingFeeOnPickupComplete({
-  shippingPackageId,
-  actorUserId,
-  allowFreeShippingCredit = false,
-}) {
-  const pkgId = String(shippingPackageId || "").trim();
-  if (!pkgId || !Types.ObjectId.isValid(pkgId)) return false;
-
-  const pkg = await ShippingPackage.findById(pkgId)
-    .select({
-      _id: 1,
-      businessAnchorId: 1,
-      mailboxAddress: 1,
-      shippingFeeSupply: 1,
-      requestIds: 1,
-    })
-    .lean();
-  if (!pkg?._id || !pkg.businessAnchorId) return false;
-
-  const fee = Number(pkg.shippingFeeSupply || 0);
-  if (!Number.isFinite(fee) || fee <= 0) return false;
-
-  // 배송비 무료 크레딧 예외 허용 여부 확인
-  if (!allowFreeShippingCredit) {
-    // 유료 크레딧 기준으로만 배송비 결제 가능
-    const { paidBalance, freeShippingCreditBalance } =
-      await getBusinessCreditBalanceBreakdown({
-        businessAnchorId: pkg.businessAnchorId,
-      });
-
-    if (paidBalance + freeShippingCreditBalance < fee) {
-      // 유료 크레딧 부족 시 배송비 결제 불가
-      return false;
-    }
-  }
-
-  const uniqueKey = `shippingPackage:${String(pkg._id)}:shipping_fee`;
-  const chargeResult = await CreditLedger.updateOne(
-    { uniqueKey },
-    {
-      $setOnInsert: {
-        businessAnchorId: pkg.businessAnchorId,
-        userId: actorUserId || null,
-        type: "SPEND",
-        amount: -fee,
-        refType: "SHIPPING_PACKAGE",
-        refId: pkg._id,
-        uniqueKey,
-      },
-    },
-    { upsert: true },
-  );
-
-  if (!chargeResult?.upsertedCount) return false;
-
-  await emitCreditBalanceUpdatedToBusiness({
-    businessAnchorId: pkg.businessAnchorId,
-    balanceDelta: -fee,
-    reason: "shipping_fee_spend",
-    refId: pkg._id,
-  });
-
-  return true;
 }
 
 async function resolveBusinessAnchorId(req) {

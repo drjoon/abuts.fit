@@ -1,7 +1,6 @@
 import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
 import Request from "../../models/request.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
 import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
 import User from "../../models/user.model.js";
 import {
@@ -17,7 +16,6 @@ import {
   getAllProductionQueues,
   recalculateQueueOnMaterialChange,
 } from "../../controllers/requests/production.utils.js";
-import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 
 export const CAM_RETRY_BATCH_LIMIT = Number(
   process.env.CAM_RETRY_BATCH_LIMIT || 30,
@@ -408,72 +406,6 @@ export async function rollbackRequestToCamByRequestId(requestId) {
   if (!rollbackStages.includes(stage)) return request;
 
   try {
-    const businessAnchorId =
-      request.businessAnchorId || request.requestor?.businessAnchorId;
-    if (businessAnchorId) {
-      const spendRows = await CreditLedger.find({
-        businessAnchorId,
-        type: "SPEND",
-        refType: "REQUEST",
-        refId: request._id,
-      })
-        .select({ amount: 1 })
-        .lean();
-
-      const refundRows = await CreditLedger.find({
-        businessAnchorId,
-        type: "REFUND",
-        refType: "REQUEST",
-        refId: request._id,
-      })
-        .select({ amount: 1 })
-        .lean();
-
-      const totalSpendAbs = Math.abs(
-        (spendRows || []).reduce((acc, row) => {
-          const amount = Number(row?.amount || 0);
-          return acc + (Number.isFinite(amount) ? amount : 0);
-        }, 0),
-      );
-      const totalRefund = (refundRows || []).reduce((acc, row) => {
-        const amount = Number(row?.amount || 0);
-        return acc + (Number.isFinite(amount) ? amount : 0);
-      }, 0);
-
-      const refundAmount = Math.max(0, totalSpendAbs - totalRefund);
-      if (refundAmount > 0) {
-        const camRollbackCount = Number(
-          request?.caseInfos?.rollbackCounts?.cam || 0,
-        );
-        const refundKey = `request:${String(request._id)}:cam_approve_refund:${camRollbackCount}`;
-        const result = await CreditLedger.updateOne(
-          { uniqueKey: refundKey },
-          {
-            $setOnInsert: {
-              businessAnchorId,
-              businessAnchorId: request?.businessAnchorId || null,
-              userId: null,
-              type: "REFUND",
-              amount: refundAmount,
-              refType: "REQUEST",
-              refId: request._id,
-              uniqueKey: refundKey,
-            },
-          },
-          { upsert: true },
-        );
-
-        if (result?.upsertedCount) {
-          await emitCreditBalanceUpdatedToBusiness({
-            businessAnchorId,
-            balanceDelta: refundAmount,
-            reason: "cam_approve_refund",
-            refId: request._id,
-          });
-        }
-      }
-    }
-
     // 제조사 리펀드 (건당 6,500) - 조직 단위
     try {
       const manufacturerId = request?.manufacturer;
@@ -656,7 +588,6 @@ export {
   CncMachine,
   Machine,
   Request,
-  CreditLedger,
   getPresignedGetUrl,
   getPresignedPutUrl,
   getTodayYmdInKst,

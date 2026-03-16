@@ -11,7 +11,6 @@ import {
   SHIPPING_WORKFLOW_CODES,
   SHIPPING_WORKFLOW_LABELS,
 } from "./utils.js";
-import { chargeShippingFeeOnPickupComplete } from "./shipping.Requestor.helpers.js";
 import { resetPrintedAndAcceptedWorkingState } from "./shipping.MailboxRealtime.helpers.js";
 
 export const HANJIN_CLIENT_ID = String(
@@ -171,12 +170,6 @@ export const applyTrackingRowsToRequests = async ({
     }
     if (hasPickupCompleted(last?.statusCode) && last?.occurredAt) {
       deliveryInfo.pickedUpAt = last.occurredAt;
-    }
-    if (hasPickupCompleted(last?.statusCode)) {
-      await chargeShippingFeeOnPickupComplete({
-        shippingPackageId: requestDoc.shippingPackageId,
-        actorUserId,
-      });
     }
     if (isTrackingStageEligible(deliveryInfo)) {
       requestDoc.manufacturerStage = "추적관리";
@@ -589,13 +582,6 @@ export const syncHanjinTrackingPayload = async ({
         console.error("[hanjinTracking] salesman earn update failed", e);
       }
     }
-  }
-
-  if (String(deliveryInfo?.tracking?.lastStatusCode || "").trim() === "11") {
-    await chargeShippingFeeOnPickupComplete({
-      shippingPackageId: request.shippingPackageId,
-      actorUserId: null,
-    });
   }
 
   if (isTrackingStageEligible(deliveryInfo)) {

@@ -1,6 +1,5 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
 import { ApiError } from "../../utils/ApiError.js";
 import {
   normalizeRequestForResponse,
@@ -11,7 +10,6 @@ import {
 } from "./utils.js";
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
 import { triggerEspritForNc } from "./common.review.esprit.js";
-import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 
 function assertAndClaimManufacturerRequestAccess({ req, request }) {
   if (req?.user?.role !== "manufacturer") return;
@@ -581,56 +579,6 @@ export async function deleteNcFileAndRollbackCam(req, res) {
       request.manufacturerStage = "의뢰";
     } else {
       request.manufacturerStage = "CAM";
-
-      const businessAnchorId =
-        request.businessAnchorId || request.requestor?.businessAnchorId;
-      if (businessAnchorId) {
-        const spendRows = await CreditLedger.find({
-          businessAnchorId,
-          type: "SPEND",
-          refType: "REQUEST",
-          refId: request._id,
-        })
-          .select({ amount: 1 })
-          .lean();
-
-        const totalSpend = (spendRows || []).reduce((acc, r) => {
-          const n = Number(r?.amount || 0);
-          return acc + (Number.isFinite(n) ? n : 0);
-        }, 0);
-
-        const refundAmount = Math.abs(totalSpend);
-        if (refundAmount > 0) {
-          const camRollbackCount = Number(
-            request?.caseInfos?.rollbackCounts?.cam || 0,
-          );
-          const uniqueKey = `request:${String(request._id)}:rollback_cam_refund:${camRollbackCount}`;
-          const result = await CreditLedger.updateOne(
-            { uniqueKey },
-            {
-              $setOnInsert: {
-                businessAnchorId,
-                userId: req.user?._id || null,
-                type: "REFUND",
-                amount: refundAmount,
-                refType: "REQUEST",
-                refId: request._id,
-                uniqueKey,
-              },
-            },
-            { upsert: true },
-          );
-
-          if (result?.upsertedCount) {
-            await emitCreditBalanceUpdatedToBusiness({
-              businessAnchorId,
-              balanceDelta: refundAmount,
-              reason: "rollback_cam_refund",
-              refId: request._id,
-            });
-          }
-        }
-      }
     }
 
     await request.save();

@@ -18,6 +18,9 @@ import { emitAppEventToRoles } from "../../socket.js";
 import {
   revertManufacturerStageByReviewStage,
   ensureRequestCreditSpendOnMachiningEnter,
+  ensureRequestCreditRefundOnRollbackToCam,
+  ensureShippingFeeSpendOnPackingApprove,
+  ensureShippingFeeRefundOnShippingRollback,
   ensureDeliveryInfoShippedAtNow,
 } from "./common.review.helpers.js";
 import {
@@ -542,6 +545,14 @@ export async function updateReviewStatusByStage(req, res) {
               console.error("[MAILBOX_ALLOCATION_ERROR]", err);
             }
           }
+          if (resolvedBusinessAnchorId) {
+            await ensureShippingFeeSpendOnPackingApprove({
+              request,
+              businessAnchorId: resolvedBusinessAnchorId,
+              actorUserId: req.user?._id || null,
+              session,
+            });
+          }
         }
 
         if (effectiveStage === "cam") {
@@ -663,6 +674,23 @@ export async function updateReviewStatusByStage(req, res) {
           }
         }
       } else if (status === "PENDING") {
+        if (effectiveStage === "machining" && resolvedBusinessAnchorId) {
+          await ensureRequestCreditRefundOnRollbackToCam({
+            request,
+            businessAnchorId: resolvedBusinessAnchorId,
+            actorUserId: req.user?._id || null,
+            session,
+          });
+          bumpRollbackCount(request, "cam");
+        }
+        if (effectiveStage === "shipping") {
+          await ensureShippingFeeRefundOnShippingRollback({
+            request,
+            actorUserId: req.user?._id || null,
+            session,
+          });
+          bumpRollbackCount(request, "shipping");
+        }
         revertManufacturerStageByReviewStage(request, effectiveStage);
       }
 
