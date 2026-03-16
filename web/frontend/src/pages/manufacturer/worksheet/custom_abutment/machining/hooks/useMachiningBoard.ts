@@ -777,12 +777,22 @@ export const useMachiningBoard = ({
   }, [machines, refreshStatuses, token]);
 
   const lastRefreshAtRef = useRef(0);
-  const handleBoardClickCapture = useCallback(() => {
-    const now = Date.now();
-    if (now - lastRefreshAtRef.current < 800) return;
-    lastRefreshAtRef.current = now;
-    void refreshMachineStatuses();
-  }, [refreshMachineStatuses]);
+  const handleBoardClickCapture = useCallback(
+    (event?: { target?: EventTarget | null }) => {
+      const target = event?.target;
+      if (target instanceof Element) {
+        const skipRefresh = target.closest(
+          '[data-no-status-refresh="true"], button, [role="dialog"]',
+        );
+        if (skipRefresh) return;
+      }
+      const now = Date.now();
+      if (now - lastRefreshAtRef.current < 800) return;
+      lastRefreshAtRef.current = now;
+      void refreshMachineStatuses();
+    },
+    [refreshMachineStatuses],
+  );
 
   const updateMachineRequestAssign = async (uid: string, next: boolean) => {
     if (!token) return;

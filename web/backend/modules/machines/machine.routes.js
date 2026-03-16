@@ -21,6 +21,14 @@ const router = express.Router();
 const maybeAuth =
   (roles = []) =>
   async (req, res, next) => {
+    const path = String(req.path || "").trim();
+    const isReadOnlyStatusRoute =
+      req.method === "GET" &&
+      (path === "/status" || /^\/[^/]+\/status$/.test(path));
+    if (isReadOnlyStatusRoute) {
+      return next();
+    }
+
     if (
       process.env.NODE_ENV === "test" ||
       process.env.NODE_ENV === "development"
