@@ -127,6 +127,14 @@ export const useBusinessDataManagement = (
         const data = body.data || body;
         const next = (data?.membership || "none") as MembershipStatus;
 
+        const localDraft = latestDraftRef.current;
+        const localLicense = latestLicenseStateRef.current;
+        const hasLocalLicense =
+          Boolean(String(localLicense.fileName || "").trim()) ||
+          Boolean(String(localLicense.fileId || "").trim()) ||
+          Boolean(String(localLicense.s3Key || "").trim());
+        const hasLocalDraftData = Boolean(localDraft.hasAnyData);
+
         serverHydratedRef.current = true;
         setValidationSucceeded(Boolean(data?.businessVerified));
 
@@ -138,6 +146,37 @@ export const useBusinessDataManagement = (
 
         const businessName = String(data?.business?.name || "").trim();
         const ex = data?.extracted || {};
+        const lic = data?.businessLicense || {};
+        const licName = String(lic?.originalName || "").trim();
+        const nextLicenseFileId = String(lic?.fileId || "").trim();
+        const nextLicenseS3Key = String(lic?.s3Key || "").trim();
+        const hasServerLicense =
+          Boolean(licName) ||
+          Boolean(nextLicenseFileId) ||
+          Boolean(nextLicenseS3Key);
+        const hasServerBusinessData =
+          Boolean(businessName) ||
+          Object.values(ex || {}).some((value) =>
+            Boolean(String(value || "").trim()),
+          );
+
+        if (resetVersionRef.current !== loadVersion) return;
+
+        if (
+          next === "none" &&
+          !hasServerLicense &&
+          !hasServerBusinessData &&
+          (hasLocalLicense || hasLocalDraftData)
+        ) {
+          console.info("[business-data] skip empty server hydrate overwrite", {
+            businessType: props.businessType,
+            membership: next,
+            localLicenseStatus: localLicense.status,
+            localFileName: localLicense.fileName,
+            hasLocalDraftData,
+          });
+          return;
+        }
 
         const nextBusinessData = normalizeBusinessData({
           companyName: String(ex?.companyName || "").trim() || businessName,
@@ -169,35 +208,6 @@ export const useBusinessDataManagement = (
             startDate: String(ex?.startDate || "").trim(),
           }),
         );
-
-        const lic = data?.businessLicense || {};
-        const licName = String(lic?.originalName || "").trim();
-        const nextLicenseFileId = String(lic?.fileId || "").trim();
-        const nextLicenseS3Key = String(lic?.s3Key || "").trim();
-        const hasServerLicense =
-          Boolean(licName) ||
-          Boolean(nextLicenseFileId) ||
-          Boolean(nextLicenseS3Key);
-        const localLicense = latestLicenseStateRef.current;
-        const hasLocalLicense =
-          Boolean(String(localLicense.fileName || "").trim()) ||
-          Boolean(String(localLicense.fileId || "").trim()) ||
-          Boolean(String(localLicense.s3Key || "").trim());
-
-        if (resetVersionRef.current !== loadVersion) return;
-
-        if (next === "none" && !hasServerLicense && hasLocalLicense) {
-          console.info(
-            "[business-data] skip server hydrate license overwrite",
-            {
-              businessType: props.businessType,
-              membership: next,
-              localLicenseStatus: localLicense.status,
-              localFileName: localLicense.fileName,
-            },
-          );
-          return;
-        }
 
         if (hasServerLicense) {
           setLicenseFileName(licName);

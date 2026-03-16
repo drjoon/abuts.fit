@@ -386,6 +386,7 @@ const App = () => {
                           "salesman",
                           "manufacturer",
                           "admin",
+                          "devops",
                         ]}
                       >
                         <SharedOnboardingWizardPage />
