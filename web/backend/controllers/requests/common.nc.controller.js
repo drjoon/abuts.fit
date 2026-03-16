@@ -47,6 +47,48 @@ function withBridgeHeaders(extra = {}) {
   return { ...base, ...extra };
 }
 
+function runNcFileCleanupInBackground({ requestId, s3Key, bridgePath }) {
+  Promise.resolve()
+    .then(async () => {
+      if (s3Key) {
+        try {
+          await deleteFileFromS3(s3Key);
+        } catch (e) {
+          console.warn("[NC_ROLLBACK_ASYNC_S3_DELETE_FAILED]", {
+            requestId,
+            s3Key,
+            error: e?.message || e,
+          });
+        }
+      }
+
+      if (bridgePath && BRIDGE_BASE) {
+        try {
+          await fetch(
+            `${BRIDGE_BASE}/api/bridge-store/file?path=${encodeURIComponent(
+              bridgePath,
+            )}`,
+            { method: "DELETE", headers: withBridgeHeaders() },
+          );
+        } catch (e) {
+          console.warn("[NC_ROLLBACK_ASYNC_BRIDGE_DELETE_FAILED]", {
+            requestId,
+            bridgePath,
+            error: e?.message || e,
+          });
+        }
+      }
+    })
+    .catch((e) => {
+      console.warn("[NC_ROLLBACK_ASYNC_CLEANUP_FAILED]", {
+        requestId,
+        s3Key,
+        bridgePath,
+        error: e?.message || e,
+      });
+    });
+}
+
 function extractProgramNoFromNcText(text) {
   const s = String(text || "");
   const m = s.toUpperCase().match(/\bO(\d{1,5})\b/m);
@@ -521,7 +563,9 @@ export async function deleteNcFileAndRollbackCam(req, res) {
         .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
     }
 
-    const request = await Request.findById(id);
+    const request = await Request.findById(id)
+      .select("_id requestId caManufacturer caseInfos.ncFile")
+      .lean();
     if (!request) {
       return res
         .status(404)
@@ -534,36 +578,26 @@ export async function deleteNcFileAndRollbackCam(req, res) {
         .json({ success: false, message: "삭제 권한이 없습니다." });
     }
 
-    const s3Key = request?.caseInfos?.ncFile?.s3Key;
-    if (s3Key) {
-      try {
-        await deleteFileFromS3(s3Key);
-      } catch (e) {
-        console.warn("delete nc file s3 failed", e);
-      }
-    }
-
+    const s3Key = String(request?.caseInfos?.ncFile?.s3Key || "").trim();
     const bridgePath = String(
       request?.caseInfos?.ncFile?.filePath || "",
     ).trim();
-    if (bridgePath && BRIDGE_BASE) {
-      try {
-        await fetch(
-          `${BRIDGE_BASE}/api/bridge-store/file?path=${encodeURIComponent(
-            bridgePath,
-          )}`,
-          { method: "DELETE", headers: withBridgeHeaders() },
-        );
-      } catch (e) {
-        console.warn("delete nc file bridge-store failed", e);
-      }
-    }
 
-    request.caseInfos = request.caseInfos || {};
-    request.caseInfos.ncFile = undefined;
+    const isRollbackToRequest = req.query.nextStage === "request";
+    const rollbackStageKey = isRollbackToRequest ? "machining" : "cam";
+    const update = {
+      $unset: {
+        "caseInfos.ncFile": 1,
+      },
+      $set: {
+        manufacturerStage: isRollbackToRequest ? "의뢰" : "CAM",
+      },
+      $inc: {
+        [`caseInfos.rollbackCounts.${rollbackStageKey}`]: 1,
+      },
+    };
     if (rollbackOnly) {
-      ensureReviewByStageDefaults(request);
-      request.caseInfos.reviewByStage.machining = {
+      update.$set["caseInfos.reviewByStage.machining"] = {
         status: "PENDING",
         updatedAt: new Date(),
         updatedBy: req.user?._id,
@@ -571,22 +605,22 @@ export async function deleteNcFileAndRollbackCam(req, res) {
       };
     }
 
-    const isRollbackToRequest = req.query.nextStage === "request";
-    const rollbackStageKey = isRollbackToRequest ? "machining" : "cam";
-    bumpRollbackCount(request, rollbackStageKey);
+    await Request.updateOne({ _id: id }, update);
 
-    if (isRollbackToRequest) {
-      request.manufacturerStage = "의뢰";
-    } else {
-      request.manufacturerStage = "CAM";
-    }
-
-    await request.save();
+    runNcFileCleanupInBackground({
+      requestId: request.requestId || request._id,
+      s3Key,
+      bridgePath,
+    });
 
     return res.status(200).json({
       success: true,
       message: "NC 파일이 삭제되고 CAM 단계로 되돌아갑니다.",
-      data: await normalizeRequestForResponse(request),
+      data: {
+        _id: String(request._id),
+        requestId: String(request.requestId || ""),
+        manufacturerStage: isRollbackToRequest ? "의뢰" : "CAM",
+      },
     });
   } catch (error) {
     res.status(500).json({

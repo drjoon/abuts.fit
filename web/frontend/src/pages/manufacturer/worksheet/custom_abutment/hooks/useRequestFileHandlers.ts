@@ -65,6 +65,140 @@ export const useRequestFileHandlers = ({
   const { toast } = useToast();
   const { uploadFiles } = useS3TempUpload({ token });
 
+  const getApprovedManufacturerStage = useCallback(
+    (stageKey: ReviewStageKey) => {
+      if (stageKey === "cam") return "가공";
+      if (stageKey === "machining") return "세척.패킹";
+      if (stageKey === "packing") return "포장.발송";
+      if (stageKey === "shipping") return "추적관리";
+      return null;
+    },
+    [],
+  );
+
+  const getRolledBackManufacturerStage = useCallback(
+    (stageKey: ReviewStageKey) => {
+      if (stageKey === "machining") return "CAM";
+      if (stageKey === "packing") return "가공";
+      if (stageKey === "shipping") return "세척.패킹";
+      if (stageKey === "tracking") return "포장.발송";
+      return null;
+    },
+    [],
+  );
+
+  const patchReviewStatusLocally = useCallback(
+    (
+      req: ManufacturerRequest,
+      stageKey: ReviewStageKey,
+      status: "PENDING" | "APPROVED" | "REJECTED",
+      reason?: string,
+    ): ManufacturerRequest => {
+      const next = {
+        ...req,
+        caseInfos: {
+          ...req.caseInfos,
+          reviewByStage: {
+            ...req.caseInfos?.reviewByStage,
+            [stageKey]: {
+              ...req.caseInfos?.reviewByStage?.[stageKey],
+              status,
+              updatedAt: new Date().toISOString(),
+              reason: String(reason || ""),
+            },
+          },
+        },
+      } as ManufacturerRequest;
+
+      if (status === "APPROVED") {
+        const nextStage = getApprovedManufacturerStage(stageKey);
+        if (nextStage) {
+          next.manufacturerStage = nextStage;
+        }
+      } else if (status === "PENDING") {
+        const rollbackStage = getRolledBackManufacturerStage(stageKey);
+        if (rollbackStage) {
+          next.manufacturerStage = rollbackStage;
+        }
+      }
+
+      if (stageKey === "shipping" && status === "PENDING") {
+        next.mailboxAddress = null;
+      }
+
+      if (stageKey === "machining" && status === "PENDING") {
+        next.assignedMachine = null;
+        next.productionSchedule = {
+          ...next.productionSchedule,
+          actualMachiningComplete: null,
+          assignedMachine: null,
+          queuePosition: null,
+        };
+      }
+
+      return next;
+    },
+    [getApprovedManufacturerStage, getRolledBackManufacturerStage],
+  );
+
+  const patchDeleteStageFileLocally = useCallback(
+    (
+      req: ManufacturerRequest,
+      stageKey: "machining" | "packing" | "shipping" | "tracking",
+      rollbackOnly: boolean,
+    ): ManufacturerRequest => {
+      const nextStageFiles = { ...(req.caseInfos?.stageFiles || {}) } as Record<
+        string,
+        unknown
+      >;
+      delete nextStageFiles[stageKey];
+
+      const next = {
+        ...req,
+        caseInfos: {
+          ...req.caseInfos,
+          stageFiles: nextStageFiles,
+          reviewByStage: {
+            ...req.caseInfos?.reviewByStage,
+            [stageKey]: {
+              ...req.caseInfos?.reviewByStage?.[stageKey],
+              status: "PENDING",
+              updatedAt: new Date().toISOString(),
+              reason: "",
+            },
+          },
+        },
+      } as ManufacturerRequest;
+
+      if (rollbackOnly) {
+        const rollbackStage = getRolledBackManufacturerStage(stageKey);
+        if (rollbackStage) {
+          next.manufacturerStage = rollbackStage;
+        }
+      }
+
+      if (stageKey === "shipping" && rollbackOnly) {
+        next.mailboxAddress = null;
+      }
+
+      if (
+        (stageKey === "machining" || stageKey === "packing") &&
+        rollbackOnly
+      ) {
+        next.assignedMachine = null;
+        next.productionSchedule = {
+          ...next.productionSchedule,
+          actualMachiningComplete: null,
+          assignedMachine: null,
+          queuePosition: null,
+        };
+      }
+
+      return next;
+    },
+    [getRolledBackManufacturerStage],
+  );
+
   const applySingleRequestPatch = useCallback(
     (nextRequest: ManufacturerRequest | null | undefined) => {
       if (!nextRequest || !setRequests) return false;
@@ -262,12 +396,12 @@ export const useRequestFileHandlers = ({
           throw err;
         }
 
-        const body = await res
-          .clone()
-          .json()
-          .catch(() => null);
-        const updatedRequest = (body?.data ||
-          null) as ManufacturerRequest | null;
+        const updatedRequest = patchReviewStatusLocally(
+          params.req,
+          stageKey,
+          params.status,
+          params.reason,
+        );
         const patched = applySingleRequestPatch(updatedRequest);
         if (!patched) {
           await fetchRequests();
@@ -284,17 +418,6 @@ export const useRequestFileHandlers = ({
             : params.status === "REJECTED"
               ? "반려되었습니다."
               : "미승인 상태로 변경되었습니다.";
-
-        try {
-          if (body?.message) {
-            successDescription = body.message;
-            if (body.message.includes("자동 가공 명령")) {
-              successTitle = "자동 가공 트리거 전송";
-            }
-          }
-        } catch {
-          // ignore
-        }
 
         // 성공 시에만 안내 토스트 표시
         toast({
@@ -336,6 +459,7 @@ export const useRequestFileHandlers = ({
       applySingleRequestPatch,
       isCamStage,
       isMachiningStage,
+      patchReviewStatusLocally,
       setSearchParams,
       setPreviewOpen,
       setReviewSaving,
@@ -366,12 +490,25 @@ export const useRequestFileHandlers = ({
         if (!res.ok) {
           throw new Error("delete cam file failed");
         }
-        const body = await res
-          .clone()
-          .json()
-          .catch(() => null);
-        const updatedRequest = (body?.data ||
-          null) as ManufacturerRequest | null;
+        const updatedRequest = {
+          ...req,
+          caseInfos: {
+            ...req.caseInfos,
+            camFile: undefined,
+            reviewByStage: rollbackOnly
+              ? {
+                  ...req.caseInfos?.reviewByStage,
+                  cam: {
+                    ...req.caseInfos?.reviewByStage?.cam,
+                    status: "PENDING",
+                    updatedAt: new Date().toISOString(),
+                    reason: "",
+                  },
+                }
+              : req.caseInfos?.reviewByStage,
+          },
+          manufacturerStage: "의뢰",
+        } as ManufacturerRequest;
         toast({
           title: "롤백 완료",
           description: "의뢰 단계로 되돌렸습니다.",
@@ -437,17 +574,29 @@ export const useRequestFileHandlers = ({
         if (!res.ok) {
           throw new Error("delete nc file failed");
         }
-        const body = await res
-          .clone()
-          .json()
-          .catch(() => null);
-        const updatedRequest = (body?.data ||
-          null) as ManufacturerRequest | null;
         const stageLabel = targetStage === "request" ? "의뢰" : "CAM";
         toast({
           title: "롤백 완료",
           description: `${stageLabel} 단계로 되돌렸습니다.`,
         });
+        const updatedRequest = {
+          ...req,
+          caseInfos: {
+            ...req.caseInfos,
+            ncFile: undefined,
+            reviewByStage: rollbackOnly
+              ? {
+                  ...req.caseInfos?.reviewByStage,
+                  machining: {
+                    status: "PENDING",
+                    updatedAt: new Date().toISOString(),
+                    reason: "",
+                  },
+                }
+              : req.caseInfos?.reviewByStage,
+          },
+          manufacturerStage: targetStage === "request" ? "의뢰" : "CAM",
+        } as ManufacturerRequest;
         const patched = applySingleRequestPatch(updatedRequest);
         if (!patched) {
           removeSingleRequest(req);
@@ -890,12 +1039,11 @@ export const useRequestFileHandlers = ({
         if (!res.ok) {
           throw new Error("delete stage file failed");
         }
-        const body = await res
-          .clone()
-          .json()
-          .catch(() => null);
-        const updatedRequest = (body?.data ||
-          null) as ManufacturerRequest | null;
+        const updatedRequest = patchDeleteStageFileLocally(
+          params.req,
+          params.stage,
+          rollbackOnly,
+        );
 
         toast(
           rollbackOnly
@@ -942,6 +1090,8 @@ export const useRequestFileHandlers = ({
       toast,
       fetchRequests,
       applySingleRequestPatch,
+      patchDeleteStageFileLocally,
+      patchReviewStatusLocally,
       removeSingleRequest,
       setUploading,
       setPreviewStageUrl,

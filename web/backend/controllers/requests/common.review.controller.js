@@ -3,7 +3,6 @@ import Request from "../../models/request.model.js";
 import Machine from "../../models/machine.model.js";
 import {
   applyStatusMapping,
-  normalizeRequestForResponse,
   ensureLotNumberForMachining,
   ensureFinishedLotNumberForPacking,
   bumpRollbackCount,
@@ -52,6 +51,31 @@ function emitWorksheetStageChanged(request, payload = {}) {
     source: payload.source || "review-status",
     request,
   });
+}
+
+function runStageFileCleanupInBackground({ requestId, stage, s3Key }) {
+  Promise.resolve()
+    .then(async () => {
+      if (!s3Key) return;
+      try {
+        await deleteFileFromS3(s3Key);
+      } catch (e) {
+        console.warn("[STAGE_FILE_ASYNC_S3_DELETE_FAILED]", {
+          requestId,
+          stage,
+          s3Key,
+          error: e?.message || e,
+        });
+      }
+    })
+    .catch((e) => {
+      console.warn("[STAGE_FILE_ASYNC_CLEANUP_FAILED]", {
+        requestId,
+        stage,
+        s3Key,
+        error: e?.message || e,
+      });
+    });
 }
 
 function assertAndClaimManufacturerRequestAccess({ req, request }) {
@@ -225,7 +249,12 @@ export async function deleteStageFile(req, res) {
 
       return res.status(200).json({
         success: true,
-        data: await normalizeRequestForResponse(request),
+        data: {
+          _id: String(request._id),
+          requestId: String(request.requestId || ""),
+          manufacturerStage:
+            String(request.manufacturerStage || "").trim() || null,
+        },
       });
     }
 
@@ -234,12 +263,6 @@ export async function deleteStageFile(req, res) {
         success: false,
         message: "삭제할 파일이 없습니다.",
       });
-    }
-
-    try {
-      await deleteFileFromS3(s3Key);
-    } catch {
-      // ignore S3 delete errors
     }
 
     delete request.caseInfos.stageFiles[stage];
@@ -260,9 +283,20 @@ export async function deleteStageFile(req, res) {
 
     await request.save();
 
+    runStageFileCleanupInBackground({
+      requestId: request.requestId || request._id,
+      stage,
+      s3Key,
+    });
+
     return res.status(200).json({
       success: true,
-      data: await normalizeRequestForResponse(request),
+      data: {
+        _id: String(request._id),
+        requestId: String(request.requestId || ""),
+        manufacturerStage:
+          String(request.manufacturerStage || "").trim() || null,
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -698,21 +732,32 @@ export async function updateReviewStatusByStage(req, res) {
       resultRequest = request;
     });
 
-    const normalizedResult = await normalizeRequestForResponse(resultRequest);
-    emitWorksheetStageChanged(normalizedResult, {
+    const responseData = {
+      _id: String(resultRequest?._id || ""),
+      requestId: String(resultRequest?.requestId || ""),
+      manufacturerStage:
+        String(resultRequest?.manufacturerStage || "").trim() || null,
+      caseInfos: {
+        reviewByStage: resultRequest?.caseInfos?.reviewByStage || {},
+      },
+      mailboxAddress: resultRequest?.mailboxAddress || null,
+      assignedMachine: resultRequest?.assignedMachine || null,
+      productionSchedule: resultRequest?.productionSchedule || null,
+    };
+    emitWorksheetStageChanged(responseData, {
       reviewStage: String(stageOverride || stage || "").trim() || null,
       reviewStatus: String(status || "").trim() || null,
       fromStage:
         typeof previousManufacturerStage === "string"
           ? previousManufacturerStage
           : null,
-      toStage: String(normalizedResult?.manufacturerStage || "").trim() || null,
+      toStage: String(responseData?.manufacturerStage || "").trim() || null,
       source: "review-status",
     });
 
     return res.status(200).json({
       success: true,
-      data: normalizedResult,
+      data: responseData,
       message: acceptedMessage,
     });
   } catch (error) {
