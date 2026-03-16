@@ -242,6 +242,7 @@ export const useRequestFileHandlers = ({
 
         if (!res.ok) {
           let message = "검토 상태 변경에 실패했습니다.";
+          let statusCode = res.status;
           try {
             const ct = res.headers.get("content-type") || "";
             if (ct.includes("application/json")) {
@@ -255,8 +256,8 @@ export const useRequestFileHandlers = ({
             // ignore
           }
 
-          // 백엔드에서 503로 내려오는 경우(Esprit/Bridge 미실행 등) 메시지를 그대로 보여준다.
           const err = new Error(message);
+          (err as any).statusCode = statusCode;
           (err as any).skipFetchRequests = true; // 에러 시 목록 갱신 및 안내 토스트 방지
           throw err;
         }
@@ -311,10 +312,15 @@ export const useRequestFileHandlers = ({
           setPreviewOpen(false);
         }
       } catch (error) {
+        const errorMessage =
+          (error as Error)?.message || "잠시 후 다시 시도해주세요.";
         toast({
           title: "검토 상태 변경 실패",
           description:
-            (error as Error)?.message || "잠시 후 다시 시도해주세요.",
+            (error as any)?.statusCode === 402 &&
+            errorMessage.includes("의뢰자 잔액 부족")
+              ? "의뢰자 잔액 부족으로 가공 진입 불가"
+              : errorMessage,
           variant: "destructive",
           duration: 5000,
         });

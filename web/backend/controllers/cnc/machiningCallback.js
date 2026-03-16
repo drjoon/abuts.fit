@@ -2,7 +2,6 @@ import { getIO } from "../../socket.js";
 import mongoose from "mongoose";
 import Request from "../../models/request.model.js";
 import { applyStatusMapping } from "../../controllers/requests/utils.js";
-import { ensureRequestCreditSpendOnMachiningEnter } from "../../controllers/requests/common.review.helpers.js";
 
 /**
  * 브리지 서버에서 가공 완료 시 호출하는 콜백 엔드포인트
@@ -44,21 +43,6 @@ export async function machiningCompleted(req, res) {
 
         if (request) {
           applyStatusMapping(request, "세척.패킹");
-          const resolvedBusinessAnchorId = String(
-            request.businessAnchorId ||
-              request.requestor?.businessAnchorId ||
-              "",
-          ).trim();
-          const isNewSystemFree =
-            request?.caseInfos?.newSystemRequest?.requested &&
-            request?.caseInfos?.newSystemRequest?.free;
-          if (resolvedBusinessAnchorId && !isNewSystemFree) {
-            await ensureRequestCreditSpendOnMachiningEnter({
-              request,
-              businessAnchorId: resolvedBusinessAnchorId,
-              actorUserId: null,
-            });
-          }
           await request.save();
         }
       }
