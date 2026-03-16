@@ -21,5 +21,9 @@ export const DashboardHome = () => {
     return <SalesmanDashboardPage />;
   }
 
+  if (user.role === "devops") {
+    return <SalesmanDashboardPage />;
+  }
+
   return <AdminDashboardPage />;
 };

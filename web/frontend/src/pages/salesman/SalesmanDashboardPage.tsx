@@ -74,6 +74,25 @@ const formatMoney = (n: number) => {
 export const SalesmanDashboardPage = () => {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
+  const isDevops = user?.role === "devops";
+  const roleLabel = isDevops ? "개발운영사" : "영업자";
+  const dashboardTitle = `${roleLabel} 대시보드`;
+  const policyButtonLabel = isDevops ? "수익 분배 정책" : "의뢰자 정책";
+  const referralCodeHelpText = isDevops
+    ? "가입시 기입하는 내 소개 코드"
+    : "의뢰자 가입시 기입하는 내 코드";
+  const referralSalesmanCountText = isDevops
+    ? "내 소개 코드로 연결된 영업자 수"
+    : "내 소개 코드로 가입한 영업자 수";
+  const referralSalesmanLabel = isDevops
+    ? "직접 연결한 영업자"
+    : "직접 소개한 영업자";
+  const noReferralSalesmanText = isDevops
+    ? "직접 연결한 영업자가 없습니다."
+    : "직접 소개한 영업자가 없습니다.";
+  const referralSalesmanDescription = isDevops
+    ? "내 소개 코드로 연결된 영업자입니다."
+    : "내가 직접 소개한 영업자입니다.";
   const referralLink = useMemo(() => {
     if (typeof window === "undefined") return "";
     const origin = window.location.origin;
@@ -175,7 +194,7 @@ export const SalesmanDashboardPage = () => {
   return (
     <TooltipProvider>
       <DashboardShell
-        title="영업자 대시보드"
+        title={dashboardTitle}
         subtitle=""
         headerRight={
           <div className="flex flex-wrap items-center gap-2">
@@ -187,7 +206,7 @@ export const SalesmanDashboardPage = () => {
               className="h-8"
               onClick={() => setPolicyOpen(true)}
             >
-              의뢰자 정책
+              {policyButtonLabel}
             </Button>
             <Button
               type="button"
@@ -211,9 +230,7 @@ export const SalesmanDashboardPage = () => {
                       <BadgeCheck className="h-4 w-4" />내 소개 코드
                     </CardTitle>
                   </TooltipTrigger>
-                  <TooltipContent>
-                    의뢰자 가입시 기입하는 내 코드
-                  </TooltipContent>
+                  <TooltipContent>{referralCodeHelpText}</TooltipContent>
                 </Tooltip>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -251,7 +268,7 @@ export const SalesmanDashboardPage = () => {
                   </Button>
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  내 소개 코드로 가입한 영업자 수: {referralSalesmanCount}명
+                  {referralSalesmanCountText}: {referralSalesmanCount}명
                 </div>
               </CardContent>
             </Card>
@@ -426,13 +443,13 @@ export const SalesmanDashboardPage = () => {
                 <Card className="app-glass-card app-glass-card--lg">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-semibold">
-                      직접 소개한 영업자 ({referralSalesmen.length}명)
+                      {referralSalesmanLabel} ({referralSalesmen.length}명)
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     {referralSalesmen.length === 0 ? (
                       <div className="py-4 text-sm text-muted-foreground">
-                        직접 소개한 영업자가 없습니다.
+                        {noReferralSalesmanText}
                       </div>
                     ) : (
                       <ul className="space-y-2">
@@ -447,7 +464,7 @@ export const SalesmanDashboardPage = () => {
                                 {salesman.name || "영업자"}
                               </div>
                               <div className="mt-0.5 pl-3 border-l text-xs text-muted-foreground">
-                                내가 직접 소개한 영업자입니다.
+                                {referralSalesmanDescription}
                               </div>
                             </div>
                           </li>

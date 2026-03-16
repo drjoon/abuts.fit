@@ -40,6 +40,8 @@ const formatMoney = (value?: number) =>
 export default function SalesmanPaymentsPage() {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
+  const isDevops = user?.role === "devops";
+  const roleLabel = isDevops ? "개발운영사" : "영업자";
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<DashboardResponse | null>(null);
@@ -56,7 +58,9 @@ export default function SalesmanPaymentsPage() {
       .then((res) => {
         const body = res.data || {};
         if (!res.ok || !body?.success) {
-          throw new Error(body?.message || "정산 데이터를 불러오지 못했습니다.");
+          throw new Error(
+            body?.message || "정산 데이터를 불러오지 못했습니다.",
+          );
         }
         setData(body.data || null);
       })
@@ -76,17 +80,22 @@ export default function SalesmanPaymentsPage() {
     [data?.organizations],
   );
 
-  if (!user || (user.role !== "salesman" && user.role !== "devops")) return null;
+  if (!user || (user.role !== "salesman" && user.role !== "devops"))
+    return null;
 
   return (
     <>
       <DashboardShell
-        title="정산 내역"
-        subtitle="직접/간접 소개 수수료와 정산 가능 금액을 확인하세요."
+        title={`${roleLabel} 정산`}
+        subtitle={`${roleLabel} 수수료와 정산 가능 금액을 확인하세요.`}
         headerRight={
           <div className="flex items-center gap-2">
             <PeriodFilter value={period} onChange={setPeriod} />
-            <Button type="button" variant="outline" onClick={() => setLedgerOpen(true)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setLedgerOpen(true)}
+            >
               정산 원장 보기
             </Button>
           </div>
@@ -95,34 +104,50 @@ export default function SalesmanPaymentsPage() {
           <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">직접 소개 수수료</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  직접 소개 수수료
+                </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-bold">
-                {loading ? "..." : `${formatMoney(overview.directCommissionAmount)}원`}
+                {loading
+                  ? "..."
+                  : `${formatMoney(overview.directCommissionAmount)}원`}
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">간접 소개 수수료</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  간접 소개 수수료
+                </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-bold">
-                {loading ? "..." : `${formatMoney(overview.level1CommissionAmount)}원`}
+                {loading
+                  ? "..."
+                  : `${formatMoney(overview.level1CommissionAmount)}원`}
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">총 정산 가능액</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  총 정산 가능액
+                </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-bold">
-                {loading ? "..." : `${formatMoney(overview.payableGrossCommissionAmount)}원`}
+                {loading
+                  ? "..."
+                  : `${formatMoney(overview.payableGrossCommissionAmount)}원`}
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">총 정산 완료액</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  총 정산 완료액
+                </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-bold">
-                {loading ? "..." : `${formatMoney(overview.paidNetCommissionAmount)}원`}
+                {loading
+                  ? "..."
+                  : `${formatMoney(overview.paidNetCommissionAmount)}원`}
               </CardContent>
             </Card>
           </div>
@@ -138,13 +163,17 @@ export default function SalesmanPaymentsPage() {
                 {organizations.map((org) => (
                   <Card key={String(org.businessAnchorId || org.name)}>
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-base">{org.name || "-"}</CardTitle>
+                      <CardTitle className="text-base">
+                        {org.name || "-"}
+                      </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
                       <div className="flex items-center justify-between">
                         <span className="text-muted-foreground">소개 단계</span>
                         <span>
-                          {org.referralLevel === "level1" ? "간접 소개" : "직접 소개"}
+                          {org.referralLevel === "level1"
+                            ? "간접 소개"
+                            : "직접 소개"}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
@@ -152,11 +181,17 @@ export default function SalesmanPaymentsPage() {
                         <span>{formatMoney(org.monthRevenueAmount)}원</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">기간 주문수</span>
-                        <span>{Number(org.monthOrderCount || 0).toLocaleString()}건</span>
+                        <span className="text-muted-foreground">
+                          기간 주문수
+                        </span>
+                        <span>
+                          {Number(org.monthOrderCount || 0).toLocaleString()}건
+                        </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">기간 정산액</span>
+                        <span className="text-muted-foreground">
+                          기간 정산액
+                        </span>
                         <span className="font-semibold">
                           {formatMoney(org.monthCommissionAmount)}원
                         </span>
@@ -175,12 +210,17 @@ export default function SalesmanPaymentsPage() {
                   <CardContent className="space-y-2 text-sm">
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">직접 소개</span>
-                      <span>{Math.round(Number(data?.commissionRate || 0) * 100)}%</span>
+                      <span>
+                        {Math.round(Number(data?.commissionRate || 0) * 100)}%
+                      </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">간접 소개</span>
                       <span>
-                        {Math.round(Number(data?.indirectCommissionRate || 0) * 1000) / 10}%
+                        {Math.round(
+                          Number(data?.indirectCommissionRate || 0) * 1000,
+                        ) / 10}
+                        %
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -201,7 +241,8 @@ export default function SalesmanPaymentsPage() {
                       </span>
                     </div>
                     <div className="text-muted-foreground">
-                      정산은 사업자 단위로 계산되며, 수수료 장부의 기준 키는 `businessAnchorId`입니다.
+                      정산은 사업자 단위로 계산되며, 수수료 장부의 기준 키는
+                      `businessAnchorId`입니다.
                     </div>
                   </CardContent>
                 </Card>
@@ -212,7 +253,11 @@ export default function SalesmanPaymentsPage() {
         mainRight={null}
       />
 
-      <SalesmanLedgerModal open={ledgerOpen} onOpenChange={setLedgerOpen} mode="self" />
+      <SalesmanLedgerModal
+        open={ledgerOpen}
+        onOpenChange={setLedgerOpen}
+        mode="self"
+      />
     </>
   );
 }
