@@ -64,6 +64,16 @@ const formatWeekdayLabel = (days: string[]) => {
     .join("/");
 };
 
+const buildShippingPolicyResult = (
+  weeklyBatchDays: string[],
+  shippingMode: "countBased" | "weeklyBased" = "countBased",
+): ShippingPolicyResult => ({
+  shippingMode,
+  summary: "",
+  weeklyBatchDays,
+  weeklyBatchLabel: formatWeekdayLabel(weeklyBatchDays),
+});
+
 const getLocalShippingPolicy = (
   email?: string | null,
 ): ShippingPolicyResult => {
@@ -78,47 +88,28 @@ const getLocalShippingPolicy = (
     const weeklyBatchDays = normalizeWeeklyBatchDays(
       Array.isArray(parsed.weeklyBatchDays) ? parsed.weeklyBatchDays : [],
     );
-    const selectedDays = formatWeekdayLabel(
-      weeklyBatchDays.length ? weeklyBatchDays : ["mon", "thu"],
-    );
-
-    if (shippingMode === "weeklyBased") {
-      return {
-        shippingMode,
-        summary: "",
-        weeklyBatchDays,
-        weeklyBatchLabel: selectedDays,
-      };
-    }
-
-    return {
-      shippingMode,
-      summary: "",
-      weeklyBatchDays,
-      weeklyBatchLabel: selectedDays,
-    };
+    void autoBatchThreshold;
+    void maxWaitDays;
+    return buildShippingPolicyResult(weeklyBatchDays, shippingMode);
   } catch {
-    return {
-      shippingMode: "countBased",
-      summary: "",
-      weeklyBatchDays: ["mon", "thu"],
-      weeklyBatchLabel: "월/목",
-    };
+    return buildShippingPolicyResult([]);
   }
 };
 
 export function useBulkShippingPolicy(email?: string | null) {
   const { token, user } = useAuthStore();
   const [policy, setPolicy] = useState<ShippingPolicyResult>(() =>
-    getLocalShippingPolicy(email),
+    token ? buildShippingPolicyResult([]) : getLocalShippingPolicy(email),
   );
   const businessType = useMemo(() => {
     return resolveBusinessType(user?.role, "requestor");
   }, [user?.role]);
 
   useEffect(() => {
-    setPolicy(getLocalShippingPolicy(email));
-  }, [email]);
+    setPolicy(
+      token ? buildShippingPolicyResult([]) : getLocalShippingPolicy(email),
+    );
+  }, [email, token]);
 
   useEffect(() => {
     if (!token) return;
@@ -140,7 +131,7 @@ export function useBulkShippingPolicy(email?: string | null) {
         const weeklyDays = normalizeWeeklyBatchDays(
           data?.shippingPolicy?.weeklyBatchDays || [],
         );
-        if (!weeklyDays.length || cancelled) return;
+        if (cancelled) return;
         setPolicy((prev) => ({
           ...prev,
           weeklyBatchDays: weeklyDays,

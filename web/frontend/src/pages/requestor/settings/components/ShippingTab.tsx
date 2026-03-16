@@ -18,9 +18,6 @@ interface ShippingTabProps {
 const STORAGE_KEY_PREFIX = "abutsfit:shipping-policy:v1:";
 const WEEKDAY_OPTIONS = ["mon", "tue", "wed", "thu", "fri"] as const;
 
-const getRandomWeekday = () =>
-  WEEKDAY_OPTIONS[Math.floor(Math.random() * WEEKDAY_OPTIONS.length)];
-
 export const ShippingTab = ({ userData }: ShippingTabProps) => {
   const { toast } = useToast();
   const storageKey = `${STORAGE_KEY_PREFIX}${userData?.email || "guest"}`;
@@ -29,9 +26,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
 
   const { token, user } = useAuthStore();
 
-  const [weeklyBatchDays, setWeeklyBatchDays] = useState<string[]>([
-    getRandomWeekday(),
-  ]);
+  const [weeklyBatchDays, setWeeklyBatchDays] = useState<string[]>([]);
 
   const businessType = useMemo(() => {
     return resolveBusinessType(user?.role || userData?.role, "requestor");
@@ -71,32 +66,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
         const serverDays = normalizeWeeklyBatchDays(
           data?.shippingPolicy?.weeklyBatchDays || [],
         );
-        if (serverDays.length > 0) {
-          setWeeklyBatchDays(serverDays);
-          setPolicyLoaded(true);
-          return;
-        }
-        const businessNumberRaw = String(
-          data?.extracted?.businessNumber ||
-            data?.business?.businessNumber ||
-            data?.businessNumber ||
-            "",
-        ).trim();
-        const digits = businessNumberRaw.replace(/\D/g, "");
-        if (!digits) {
-          setPolicyLoaded(true);
-          return;
-        }
-        let idx = 0;
-        try {
-          idx = Number(((BigInt(digits) % 5n) + 5n) % 5n);
-        } catch {
-          const n = Number(digits);
-          if (!Number.isFinite(n)) return;
-          idx = ((n % 5) + 5) % 5;
-        }
-        const map = ["mon", "tue", "wed", "thu", "fri"] as const;
-        setWeeklyBatchDays((prev) => (prev.length > 0 ? prev : [map[idx]]));
+        setWeeklyBatchDays(serverDays);
         setPolicyLoaded(true);
       } catch {
         // ignore
