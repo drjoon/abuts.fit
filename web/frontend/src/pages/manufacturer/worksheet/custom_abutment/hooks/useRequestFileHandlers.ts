@@ -403,7 +403,7 @@ export const useRequestFileHandlers = ({
           params.reason,
         );
         const patched = applySingleRequestPatch(updatedRequest);
-        if (!patched) {
+        if (!patched && !setRequests) {
           await fetchRequests();
         }
 
@@ -460,6 +460,7 @@ export const useRequestFileHandlers = ({
       isCamStage,
       isMachiningStage,
       patchReviewStatusLocally,
+      setRequests,
       setSearchParams,
       setPreviewOpen,
       setReviewSaving,

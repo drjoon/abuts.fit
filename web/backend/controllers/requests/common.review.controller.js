@@ -23,7 +23,6 @@ import {
 } from "./common.review.helpers.js";
 import {
   screenCamMachineForRequest,
-  chooseMachineForCamMachining,
   ensureMachineCompatibilityOrThrow,
   inferDiameterGroupFromDiameter,
 } from "./common.review.machine.js";
@@ -353,6 +352,7 @@ export async function updateReviewStatusByStage(req, res) {
     let acceptedMessage = "";
     let previousManufacturerStage = null;
     let pendingEspritTriggerRequest = null;
+    let requestStageMachineSelection = null;
 
     await session.withTransaction(async () => {
       const request = await Request.findById(id)
@@ -367,7 +367,7 @@ export async function updateReviewStatusByStage(req, res) {
       assertAndClaimManufacturerRequestAccess({ req, request });
 
       if (status === "APPROVED" && effectiveStage === "request") {
-        await ensureMachineCompatibilityOrThrow({
+        requestStageMachineSelection = await ensureMachineCompatibilityOrThrow({
           request,
           stageKey: "request",
         });
@@ -439,7 +439,9 @@ export async function updateReviewStatusByStage(req, res) {
           // 비동기 처리: 의뢰 승인 시점에 manufacturerStage/status 를 CAM으로 바꾸지 않는다.
           // Esprit(NC 생성) 완료 콜백(/api/bg/register-file, sourceStep=3-nc)에서 상태를 CAM으로 전환한다.
           // 여기서는 '명령 접수'만 처리하고, BG 트리거만 시도한다.
-          const screening = await screenCamMachineForRequest({ request });
+          const screening =
+            requestStageMachineSelection ||
+            (await screenCamMachineForRequest({ request }));
           request.caseInfos.reviewByStage.request.reason = "";
 
           await ensureLotNumberForMachining(request);
@@ -447,23 +449,13 @@ export async function updateReviewStatusByStage(req, res) {
           request.productionSchedule = request.productionSchedule || {};
 
           // 실제 소재가 적재된 장비 직경을 선호한다. (예: M4/M5 8mm 적재 시 8mm 설정)
-          let preselectedDia = null;
-          let preselectedGroup = null;
-          try {
-            const preselect = await chooseMachineForCamMachining({
-              request,
-              ignoreAllowAssign: true,
-            });
-            if (Number.isFinite(preselect?.diameter)) {
-              preselectedDia = preselect.diameter;
-              preselectedGroup = preselect.diameterGroup || preselect.reqGroup;
-            }
-          } catch (err) {
-            console.warn(
-              "[CAM_PRESELECT] chooseMachine failed (fallback to screening)",
-              err,
-            );
-          }
+          const preselectedDia = Number.isFinite(
+            requestStageMachineSelection?.diameter,
+          )
+            ? requestStageMachineSelection.diameter
+            : null;
+          const preselectedGroup =
+            requestStageMachineSelection?.diameterGroup || null;
 
           // 1차: 장비 실제 소재 직경(preselect), 2차: screening 결과
           let resolvedDia =
@@ -471,15 +463,6 @@ export async function updateReviewStatusByStage(req, res) {
             (Number.isFinite(screening?.diameter) ? screening.diameter : null);
           let resolvedGroup =
             preselectedGroup || screening?.diameterGroup || screening?.reqGroup;
-          console.log("[CAM-PRESELECT] before adjust", {
-            requestId: request?.requestId,
-            preselectedDia,
-            preselectedGroup,
-            screening,
-            resolvedDia,
-            resolvedGroup,
-          });
-
           // 3차: 여전히 미결정이거나 STL 최대직경보다 낮은 그룹으로 선택된 경우, 그룹 천장값으로 보정
           try {
             const maxD = Number(request?.caseInfos?.maxDiameter);
@@ -505,11 +488,6 @@ export async function updateReviewStatusByStage(req, res) {
             request.productionSchedule.diameterGroup =
               resolvedGroup || request.productionSchedule.diameterGroup;
           }
-          console.log("[CAM-PRESELECT] after adjust", {
-            requestId: request?.requestId,
-            finalDiameter: request.productionSchedule.diameter,
-            finalGroup: request.productionSchedule.diameterGroup,
-          });
 
           // PRC 파일명은 의뢰자가 아니라, 관리자(의뢰 승인) 시점에 확정한다.
           // 누락 시 esprit-addin에서 OpenProcess("")로 크래시/불량 가공 위험이 있으므로 승인 자체를 막는다.
