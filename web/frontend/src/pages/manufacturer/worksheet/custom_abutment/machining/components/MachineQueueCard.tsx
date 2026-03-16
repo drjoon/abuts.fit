@@ -10,7 +10,7 @@ import {
   formatElapsedMMSS,
 } from "@/features/manufacturer/cnc/lib/machiningUi";
 import type { MachineQueueCardProps, QueueItem } from "../types";
-import { formatMachiningLabel } from "../utils/label";
+import { buildLabelExtraProps, formatMachiningLabel } from "../utils/label";
 import { MachiningRequestLabel } from "./MachiningRequestLabel";
 
 const isMachiningStatus = (slot?: QueueItem) => {
@@ -407,6 +407,7 @@ export const MachineQueueCard = ({
                       )}
                       caseInfos={(effectiveLastCompleted as any)?.caseInfos}
                       className="text-[15px] leading-tight"
+                      {...buildLabelExtraProps(effectiveLastCompleted as any)}
                     />
                   ) : (
                     "없음"
@@ -502,6 +503,7 @@ export const MachineQueueCard = ({
                       lotShortCode={getLotShortCode(currentSlot)}
                       caseInfos={(currentSlot as any)?.caseInfos}
                       className="text-[15px]"
+                      {...buildLabelExtraProps(currentSlot)}
                     />
                   ) : (
                     nowPlayingLabel
@@ -609,6 +611,7 @@ export const MachineQueueCard = ({
                       lotShortCode={getLotShortCode(nextSlot)}
                       caseInfos={(nextSlot as any)?.caseInfos}
                       className="text-[15px]"
+                      {...buildLabelExtraProps(nextSlot)}
                     />
                   ) : (
                     nextUpLabel

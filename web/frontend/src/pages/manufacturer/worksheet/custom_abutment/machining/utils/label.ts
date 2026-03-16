@@ -35,3 +35,40 @@ export const formatMachiningLabel = (q: QueueItem | null | undefined) => {
 
   return parts.length ? parts.join(" ") : "-";
 };
+
+type LabelExtra = {
+  maxDiameter?: number | null;
+  camDiameter?: number | null;
+  implantManufacturer?: string | null;
+  implantBrand?: string | null;
+  implantFamily?: string | null;
+  implantType?: string | null;
+};
+
+const toNumber = (value: unknown) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+export const buildLabelExtraProps = (slot?: QueueItem | null): LabelExtra => {
+  if (!slot) return {};
+  const ci = (slot as any)?.caseInfos || {};
+  const schedule = (slot as any)?.productionSchedule || {};
+  return {
+    maxDiameter:
+      toNumber((slot as any)?.maxDiameter) ??
+      toNumber(ci?.maxDiameter) ??
+      toNumber(ci?.diameter) ??
+      null,
+    camDiameter:
+      toNumber((slot as any)?.diameter) ??
+      toNumber(ci?.camDiameter) ??
+      toNumber(schedule?.diameter) ??
+      toNumber(ci?.materialDiameter) ??
+      null,
+    implantManufacturer: ci?.implantManufacturer ?? null,
+    implantBrand: ci?.implantBrand ?? null,
+    implantFamily: ci?.implantFamily ?? null,
+    implantType: ci?.implantType ?? null,
+  };
+};

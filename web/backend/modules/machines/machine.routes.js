@@ -40,9 +40,17 @@ router.get("/", maybeAuth(["manufacturer"]), getMachines);
 router.post("/", maybeAuth(["manufacturer"]), upsertMachine);
 router.delete("/:uid", maybeAuth(["manufacturer"]), deleteMachine);
 
-router.get("/status", maybeAuth(["manufacturer"]), getAllMachineStatusProxy);
+router.get(
+  "/status",
+  maybeAuth(["manufacturer", "admin", "devops"]),
+  getAllMachineStatusProxy,
+);
 
-router.get("/:uid/status", maybeAuth(["manufacturer"]), getMachineStatusProxy);
+router.get(
+  "/:uid/status",
+  maybeAuth(["manufacturer", "admin", "devops"]),
+  getMachineStatusProxy,
+);
 
 router.post("/:uid/alarm", maybeAuth(["manufacturer"]), getMachineAlarmProxy);
 

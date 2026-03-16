@@ -2,15 +2,24 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { ToastAction } from "@/components/ui/toast";
 import { CncEventLogModal } from "@/features/cnc/components/CncEventLogModal";
 import { CncProgramEditorPanel } from "@/pages/manufacturer/equipment/cnc/components/CncProgramEditorPanel";
 import { CncPlaylistDrawer } from "@/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer";
 import { CompletedMachiningRecordsModal } from "@/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal";
 import { MachineQueueCard } from "./components/MachineQueueCard";
-import type { MachineStatus } from "./types";
+import type { MachineStatus, QueueItem } from "./types";
 import { useMachiningBoard } from "./hooks/useMachiningBoard";
 import { CncMaterialModal } from "@/pages/manufacturer/equipment/cnc/components/CncMaterialModal";
+import { MachiningRequestLabel } from "./components/MachiningRequestLabel";
+import { buildLabelExtraProps } from "./utils/label";
 
 export const MachiningQueueBoard = ({
   searchQuery,
@@ -21,6 +30,7 @@ export const MachiningQueueBoard = ({
   const { toast } = useToast();
   const board = useMachiningBoard({ token });
   const [activeMachineId, setActiveMachineId] = useState<string | null>(null);
+  const [unassignedModalOpen, setUnassignedModalOpen] = useState(false);
 
   const {
     machines,
@@ -111,32 +121,33 @@ export const MachiningQueueBoard = ({
     [machines, toast, updateMachineAuto],
   );
 
-  const displayMachines = useMemo(() => {
-    const base = Array.isArray(filteredMachines) ? filteredMachines : [];
-    const knownIds = new Set(
-      base.map((m: any) => String(m?.uid || "").trim()).filter(Boolean),
-    );
-    const unassignedQueue = Array.isArray(queueMap?.unassigned)
-      ? queueMap.unassigned
-      : [];
+  const displayMachines = useMemo(
+    () =>
+      (Array.isArray(filteredMachines) ? filteredMachines : []).filter(
+        (m: any) => String(m?.uid || "").trim() !== "unassigned",
+      ),
+    [filteredMachines],
+  );
 
-    if (!unassignedQueue.length || knownIds.has("unassigned")) {
-      return base;
-    }
+  const unassignedQueue = useMemo(
+    () =>
+      Array.isArray(queueMap?.unassigned)
+        ? (queueMap.unassigned as QueueItem[])
+        : [],
+    [queueMap],
+  );
 
-    return [
-      {
-        uid: "unassigned",
-        name: "미배정",
-        status: "offline",
-        allowRequestAssign: true,
-        allowAutoMachining: false,
-        currentMaterial: null,
-        maxModelDiameterGroups: [],
-      },
-      ...base,
-    ];
-  }, [filteredMachines, queueMap]);
+  const unassignedHead = unassignedQueue[0] || null;
+  const unassignedRest = unassignedQueue.slice(1);
+  const hasUnassigned = unassignedQueue.length > 0;
+
+  const getLotShortCode = useCallback((slot?: QueueItem | null) => {
+    return String(slot?.lotNumber?.value || "")
+      .trim()
+      .replace(/^CA(P)?/i, "")
+      .slice(-3)
+      .toUpperCase();
+  }, []);
 
   return (
     <div
@@ -144,7 +155,7 @@ export const MachiningQueueBoard = ({
       onMouseDownCapture={handleBoardClickCapture}
       onTouchStartCapture={handleBoardClickCapture}
     >
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           {isMockFromBackend != null ? (
             <Badge
@@ -175,9 +186,49 @@ export const MachiningQueueBoard = ({
           </div>
         </div>
         <div
-          className="flex items-center gap-3"
+          className="flex flex-wrap items-center justify-end gap-3"
           title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
         >
+          {hasUnassigned ? (
+            <button
+              type="button"
+              className="min-w-0 max-w-[560px] rounded-xl border  px-3 py-1.5 text-left shadow-sm border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+              onClick={() => {
+                setUnassignedModalOpen(true);
+              }}
+              title={`미배정 ${unassignedQueue.length}건`}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <Badge
+                  variant="outline"
+                  className="shrink-0 text-[11px] border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                >
+                  미배정 {unassignedQueue.length}건
+                </Badge>
+                <div className="min-w-0 flex-1 text-[12px] font-extrabold text-slate-800 truncate">
+                  {unassignedHead ? (
+                    <MachiningRequestLabel
+                      clinicName={unassignedHead.clinicName}
+                      patientName={unassignedHead.patientName}
+                      tooth={(unassignedHead as any)?.tooth}
+                      requestId={unassignedHead.requestId}
+                      lotShortCode={getLotShortCode(unassignedHead)}
+                      caseInfos={(unassignedHead as any)?.caseInfos}
+                      className="text-[12px]"
+                      {...buildLabelExtraProps(unassignedHead)}
+                    />
+                  ) : (
+                    "미배정"
+                  )}
+                </div>
+                {unassignedRest.length > 0 ? (
+                  <span className="shrink-0 text-[11px] font-bold text-slate-500">
+                    외 {unassignedRest.length}건
+                  </span>
+                ) : null}
+              </div>
+            </button>
+          ) : null}
           <button
             type="button"
             className="rounded-xl border border-slate-200 bg-white px-3 py-1 text-[12px] font-extrabold text-slate-700 shadow-sm hover:bg-slate-50"
@@ -549,6 +600,62 @@ export const MachiningQueueBoard = ({
           onAdd={handleAddMaterial}
         />
       )}
+
+      <Dialog open={unassignedModalOpen} onOpenChange={setUnassignedModalOpen}>
+        <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[80vh] overflow-y-auto p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900">
+              <span>미배정</span>
+              <Badge
+                variant="outline"
+                className="border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+              >
+                {unassignedQueue.length}건
+              </Badge>
+            </DialogTitle>
+            <DialogDescription className="text-sm text-slate-500">
+              세척.패킹 롤백 시 온라인이면서 조건이 맞는 장비가 없어서 배정되지
+              않은 의뢰건입니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 gap-3">
+            {unassignedQueue.map((item, index) => (
+              <div
+                key={`${String(item.requestMongoId || item.requestId || index)}`}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <div className="text-[11px] font-semibold text-slate-500">
+                        #{index + 1}
+                      </div>
+                      {getLotShortCode(item) ? (
+                        <Badge className="bg-slate-900 text-white border border-slate-900 text-[10px]">
+                          {getLotShortCode(item)}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <div className="mt-1 text-[14px] font-extrabold text-slate-900 leading-tight">
+                      <MachiningRequestLabel
+                        clinicName={item.clinicName}
+                        patientName={item.patientName}
+                        tooth={(item as any)?.tooth}
+                        requestId={item.requestId}
+                        lotShortCode={getLotShortCode(item)}
+                        caseInfos={(item as any)?.caseInfos}
+                        className="text-[14px] leading-tight"
+                        {...buildLabelExtraProps(item)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

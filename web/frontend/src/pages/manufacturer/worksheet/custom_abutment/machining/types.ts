@@ -9,6 +9,8 @@ export type QueueItem = {
   scheduledShipPickup?: string | Date;
   diameter?: number;
   diameterGroup?: string;
+  caseInfos?: Record<string, any> | null;
+  productionSchedule?: Record<string, any> | null;
   paused?: boolean;
   machiningRecord?: {
     status?: string;
