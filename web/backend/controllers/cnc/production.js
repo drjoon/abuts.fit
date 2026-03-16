@@ -291,25 +291,6 @@ export async function getProductionQueues(req, res) {
       machineIds: scope.machineIds,
     });
 
-    const unassignedCount = await Request.countDocuments({
-      manufacturerStage: { $in: MACHINING_ASSIGN_STAGE_SET },
-      ...scope.requestFilter,
-      $or: [
-        { "productionSchedule.assignedMachine": { $exists: false } },
-        { "productionSchedule.assignedMachine": null },
-        { "productionSchedule.assignedMachine": "" },
-      ],
-    });
-
-    if (unassignedCount > 0) {
-      const rebalance = await rebalanceProductionQueuesInternal({ req, scope });
-      console.log("[getProductionQueues] auto-rebalanced", {
-        unassignedCount,
-        reassignedCount: rebalance.reassignedCount,
-        eligibleMachineIds: rebalance.eligibleMachineIds,
-      });
-    }
-
     const requests = await Request.find({
       manufacturerStage: { $in: ["의뢰", "CAM", "가공"] },
       ...scope.requestFilter,
@@ -344,6 +325,27 @@ export async function getProductionQueues(req, res) {
         ]),
       ),
     });
+
+    const unassignedCount = Array.isArray(queues.unassigned)
+      ? queues.unassigned.length
+      : 0;
+
+    if (unassignedCount > 0) {
+      void rebalanceProductionQueuesInternal({ req, scope })
+        .then((rebalance) => {
+          console.log("[getProductionQueues] auto-rebalanced", {
+            unassignedCount,
+            reassignedCount: rebalance.reassignedCount,
+            eligibleMachineIds: rebalance.eligibleMachineIds,
+          });
+        })
+        .catch((rebalanceError) => {
+          console.error("[getProductionQueues] auto-rebalance failed", {
+            unassignedCount,
+            error: rebalanceError?.message || String(rebalanceError),
+          });
+        });
+    }
 
     for (const machineId in queues) {
       queues[machineId] = queues[machineId].map((reqItem, index) => ({
