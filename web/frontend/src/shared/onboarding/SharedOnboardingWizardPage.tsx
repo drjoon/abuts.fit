@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -13,21 +13,11 @@ type BackendGuideProgress = {
 
 export const SharedOnboardingWizardPage = () => {
   const { user, token, setUser } = useAuthStore();
-  const resolvedUserId = user?.id || null;
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [progress, setProgress] = useState<BackendGuideProgress | null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    console.log("[wizard-page] render-state", {
-      path: window.location.pathname + window.location.search,
-      hasToken: Boolean(token),
-      userId: resolvedUserId,
-      loading,
-      hasProgress: Boolean(progress),
-    });
-  }, [loading, progress, resolvedUserId, token]);
+  const completionHandledRef = useRef(false);
 
   useEffect(() => {
     if (!user) return;
@@ -114,6 +104,8 @@ export const SharedOnboardingWizardPage = () => {
 
   useEffect(() => {
     if (!progress?.finishedAt) return;
+    if (completionHandledRef.current) return;
+    completionHandledRef.current = true;
     void markWizardCompleted().finally(() => {
       navigate("/dashboard", { replace: true });
     });
@@ -137,9 +129,6 @@ export const SharedOnboardingWizardPage = () => {
   };
 
   if (!token) {
-    console.log("[wizard-page] return navigate /login", {
-      path: window.location.pathname + window.location.search,
-    });
     return <Navigate to="/login" replace />;
   }
 

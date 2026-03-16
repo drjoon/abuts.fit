@@ -64,7 +64,7 @@ guideProgressSchema.statics.getDefaultSteps = (tourIdRaw) => {
       "wizard.profile",
       "wizard.phone",
       "wizard.role",
-      "wizard.organization",
+      "wizard.business",
     ].map((stepId) => ({ stepId, status: "pending", doneAt: null }));
   }
 

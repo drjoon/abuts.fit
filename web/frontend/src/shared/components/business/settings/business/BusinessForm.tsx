@@ -44,8 +44,6 @@ const POSTCODE_SCRIPT_SRC =
   "https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
 
 let postcodeScriptPromise: Promise<void> | null = null;
-const POSTCODE_POPUP_NAME = "daum-postcode";
-let postcodePopupOpen = false;
 
 const loadPostcodeScript = () => {
   if (typeof window === "undefined") return Promise.resolve();
@@ -129,6 +127,7 @@ export const BusinessForm = ({
   const addressDetailRef = useRef<HTMLInputElement | null>(null);
   const zipCodeRef = useRef<HTMLInputElement | null>(null);
   const submitRef = useRef<HTMLButtonElement | null>(null);
+  const postcodeContainerRef = useRef<HTMLDivElement | null>(null);
 
   const focusNextEmpty = (current: FieldKey) => {
     const fields: {
@@ -234,59 +233,14 @@ export const BusinessForm = ({
 
   const [addressPromptActive, setAddressPromptActive] = useState(false);
 
-  const handleOpenAddressSearch = (options?: { silent?: boolean }) => {
+  const handleOpenAddressSearch = async (options?: { silent?: boolean }) => {
     const silent = Boolean(options?.silent);
     try {
       if (!window.daum?.Postcode) {
-        loadPostcodeScript().catch(() => {
-          if (!silent) {
-            toast({
-              title: "주소 검색 스크립트를 불러오지 못했습니다",
-              description: "잠시 후 다시 시도해주세요.",
-              variant: "destructive",
-            });
-          }
-        });
-        if (!silent) {
-          toast({
-            title: "주소 검색 준비 중",
-            description: "잠시만 기다린 뒤 다시 눌러주세요.",
-          });
-        }
-        return;
+        await loadPostcodeScript();
       }
-      if (postcodePopupOpen) {
-        window.open("", POSTCODE_POPUP_NAME)?.focus();
-        return;
-      }
-      postcodePopupOpen = true;
-      setAddressPromptActive(false);
-      new window.daum.Postcode({
-        oncomplete: (data) => {
-          const nextAddress =
-            data.roadAddress || data.jibunAddress || data.address || "";
-          const nextZipCode = String(data.zonecode || "").trim();
-          setBusinessData((prev) => ({
-            ...prev,
-            address: nextAddress || prev.address,
-            addressDetail: prev.addressDetail,
-            zipCode: nextZipCode || prev.zipCode,
-          }));
-          setErrors((prev) => ({
-            ...prev,
-            address: false,
-            zipCode: false,
-          }));
-          requestAnimationFrame(() => {
-            addressDetailRef.current?.focus();
-          });
-        },
-        onclose: () => {
-          postcodePopupOpen = false;
-        },
-      }).open({ popupName: POSTCODE_POPUP_NAME });
+      setAddressPromptActive(true);
     } catch {
-      postcodePopupOpen = false;
       if (!silent) {
         toast({
           title: "주소 검색을 불러오지 못했습니다",
@@ -309,11 +263,51 @@ export const BusinessForm = ({
 
   useEffect(() => {
     if (!autoOpenAddressSearchSignal) return;
-    setAddressPromptActive(true);
     requestAnimationFrame(() => {
-      handleOpenAddressSearch({ silent: true });
+      void handleOpenAddressSearch({ silent: true });
     });
   }, [autoOpenAddressSearchSignal, toast]);
+
+  useEffect(() => {
+    if (!addressPromptActive) return;
+    if (!window.daum?.Postcode) return;
+    const container = postcodeContainerRef.current;
+    if (!container) return;
+
+    container.innerHTML = "";
+    const postcode = new window.daum.Postcode({
+      oncomplete: (data) => {
+        const nextAddress =
+          data.roadAddress || data.jibunAddress || data.address || "";
+        const nextZipCode = String(data.zonecode || "").trim();
+        setBusinessData((prev) => ({
+          ...prev,
+          address: nextAddress || prev.address,
+          addressDetail: prev.addressDetail,
+          zipCode: nextZipCode || prev.zipCode,
+        }));
+        setErrors((prev) => ({
+          ...prev,
+          address: false,
+          zipCode: false,
+        }));
+        setAddressPromptActive(false);
+        requestAnimationFrame(() => {
+          addressDetailRef.current?.focus();
+        });
+      },
+      onclose: () => {
+        setAddressPromptActive(false);
+      },
+    }) as { embed?: (element: HTMLElement) => void };
+
+    if (!postcode.embed) return;
+    postcode.embed(container);
+
+    return () => {
+      container.innerHTML = "";
+    };
+  }, [addressPromptActive, setBusinessData, setErrors]);
 
   useEffect(() => {
     if (!focusFirstMissingSignal) return;
@@ -680,6 +674,28 @@ export const BusinessForm = ({
         <div className="space-y-2">
           <Label htmlFor="address">주소</Label>
           <GuideFocus className="rounded-xl p-1">
+            {addressPromptActive && (
+              <div className="mb-3 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+                  <div className="text-xs font-medium text-slate-600">
+                    주소 검색
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setAddressPromptActive(false)}
+                  >
+                    닫기
+                  </Button>
+                </div>
+                <div
+                  ref={postcodeContainerRef}
+                  className="min-h-[420px] w-full bg-white"
+                />
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div className="md:col-span-1">
                 <Button

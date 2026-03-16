@@ -169,6 +169,10 @@ export const DashboardLayout = () => {
   const [bootstrappingAuth, setBootstrappingAuth] = useState(false);
   const [bootstrappedOnce, setBootstrappedOnce] = useState(false);
   const [sidebarProfileImage, setSidebarProfileImage] = useState<string>("");
+  const [onboardingGateLoading, setOnboardingGateLoading] = useState(false);
+  const [serverOnboardingFinished, setServerOnboardingFinished] = useState<
+    boolean | null
+  >(null);
 
   const isWizardRoute = location.pathname.startsWith("/dashboard/wizard");
   const onboardingCompleted = Boolean(user?.onboardingWizardCompleted);
@@ -179,38 +183,86 @@ export const DashboardLayout = () => {
     );
 
   useEffect(() => {
-    console.log("[dashboard-layout] gate", {
-      path: location.pathname + location.search,
-      hasToken: Boolean(token),
-      userId: user?.id || null,
-      isWizardRoute,
-      onboardingCompleted,
-      shouldForceOnboarding,
-      bootstrappedOnce,
+    if (!token) {
+      setServerOnboardingFinished(null);
+      setOnboardingGateLoading(false);
+      return;
+    }
+    if (!user || !user.id) {
+      setServerOnboardingFinished(null);
+      return;
+    }
+    if (!shouldForceOnboarding) {
+      setServerOnboardingFinished(true);
+      setOnboardingGateLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadOnboardingProgress = async () => {
+      try {
+        setOnboardingGateLoading(true);
+        const res = await apiFetch<any>({
+          path: "/api/guide-progress/requestor-onboarding",
+          method: "GET",
+          token,
+        });
+        if (cancelled) return;
+        if (!res.ok) {
+          setServerOnboardingFinished(onboardingCompleted);
+          return;
+        }
+        const body: any = res.data || {};
+        const data = body.data || body;
+        setServerOnboardingFinished(Boolean(data?.finishedAt));
+      } catch {
+        if (!cancelled) {
+          setServerOnboardingFinished(onboardingCompleted);
+        }
+      } finally {
+        if (!cancelled) {
+          setOnboardingGateLoading(false);
+        }
+      }
+    };
+
+    void loadOnboardingProgress();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [onboardingCompleted, shouldForceOnboarding, token, user]);
+
+  useEffect(() => {
+    if (!token) return;
+    const unsubscribe = onAppEvent((evt) => {
+      if (evt.type !== "guide-progress:updated") return;
+      const payload = evt.data || {};
+      if (payload?.tourId !== "requestor-onboarding") return;
+      setServerOnboardingFinished(Boolean(payload?.finishedAt));
+      setOnboardingGateLoading(false);
     });
-  }, [
-    bootstrappedOnce,
-    isWizardRoute,
-    location.pathname,
-    location.search,
-    onboardingCompleted,
-    shouldForceOnboarding,
-    token,
-    user?.id,
-  ]);
+    return () => {
+      unsubscribe?.();
+    };
+  }, [token]);
 
   useEffect(() => {
     if (!token) return;
     if (!user || !user.id) return;
     if (!shouldForceOnboarding) return;
     if (isWizardRoute) return;
-    if (onboardingCompleted) return;
+    if (onboardingGateLoading) return;
+    if (serverOnboardingFinished === null) return;
+    if (serverOnboardingFinished) return;
 
     navigate("/dashboard/wizard?mode=account", { replace: true });
   }, [
     isWizardRoute,
     navigate,
-    onboardingCompleted,
+    onboardingGateLoading,
+    serverOnboardingFinished,
     shouldForceOnboarding,
     token,
     user,
@@ -248,14 +300,6 @@ export const DashboardLayout = () => {
       }
     });
   }, [bootstrappedOnce, loginWithToken, logout, navigate, token, user]);
-
-  if (bootstrappingAuth) {
-    return null;
-  }
-
-  if (!token || !user || !user.id) {
-    return null;
-  }
 
   const refreshSidebarProfile = useCallback(async () => {
     if (!token) return;
@@ -555,6 +599,26 @@ export const DashboardLayout = () => {
       .join("")
       .toUpperCase();
   };
+
+  if (bootstrappingAuth) {
+    return null;
+  }
+
+  if (!token || !user || !user.id) {
+    return null;
+  }
+
+  if (!isWizardRoute && shouldForceOnboarding && onboardingGateLoading) {
+    return null;
+  }
+
+  if (
+    !isWizardRoute &&
+    shouldForceOnboarding &&
+    serverOnboardingFinished === false
+  ) {
+    return null;
+  }
 
   if (isWizardRoute) {
     return (
