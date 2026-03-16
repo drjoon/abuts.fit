@@ -141,7 +141,11 @@ export const PreviewModal = ({
 
   // Hook은 항상 같은 순서로 호출되어야 하므로 조건부 로직 이전에 호출
   const requestId = req?.requestId || lastStableReqRef.current?.requestId;
-  const { recalculate, loading: metadataLoading } = useStlMetadata(requestId);
+  const {
+    metadata: stlMetadata,
+    recalculate,
+    loading: metadataLoading,
+  } = useStlMetadata(requestId);
 
   const activeReq = req || lastStableReqRef.current;
   if (!activeReq && !open) return null;
@@ -787,6 +791,7 @@ export const PreviewModal = ({
                     <StlPreviewViewer
                       file={leftViewer}
                       requestId={requestId}
+                      metadata={stlMetadata}
                       showOverlay={true}
                       finishLinePoints={finishLinePoints}
                     />
@@ -933,6 +938,7 @@ export const PreviewModal = ({
                     <StlPreviewViewer
                       file={rightViewer}
                       requestId={requestId}
+                      metadata={stlMetadata}
                       showOverlay={true}
                       finishLinePoints={finishLinePoints}
                     />

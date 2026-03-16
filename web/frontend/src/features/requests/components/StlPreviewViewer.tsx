@@ -7,7 +7,7 @@ import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { cn } from "@/shared/ui/cn";
-import { useStlMetadata } from "../hooks/useStlMetadata";
+import { useStlMetadata, type StlMetadata } from "../hooks/useStlMetadata";
 
 type Props = {
   file: File;
@@ -24,6 +24,7 @@ type Props = {
   showOverlay?: boolean;
   finishLinePoints?: number[][] | null;
   className?: string;
+  metadata?: StlMetadata | null;
 };
 
 export function StlPreviewViewer({
@@ -33,10 +34,23 @@ export function StlPreviewViewer({
   showOverlay = true,
   finishLinePoints,
   className,
+  metadata,
 }: Props) {
-  const { metadata: cachedMetadata, cached } = useStlMetadata(requestId);
+  const { metadata: fetchedMetadata } = useStlMetadata(
+    metadata ? undefined : requestId,
+  );
   const containerRef = useRef<HTMLDivElement | null>(null);
   const onDiameterComputedRef = useRef(onDiameterComputed);
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const centerRef = useRef<THREE.Vector3 | null>(null);
+  const centeredBoundsRef = useRef<{
+    min: THREE.Vector3;
+    max: THREE.Vector3;
+    margin: number;
+  } | null>(null);
+  const frontPointMeshRef = useRef<THREE.Mesh | null>(null);
+  const maxDiameterRef = useRef<number>(0);
+  const [frontPointRenderRevision, setFrontPointRenderRevision] = useState(0);
   const [maxDiameterState, setMaxDiameterState] = useState<number | null>(null);
   const [connectionDiameterState, setConnectionDiameterState] = useState<
     number | null
@@ -54,6 +68,52 @@ export function StlPreviewViewer({
     z: number;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const resolvedMetadata = metadata ?? fetchedMetadata;
+
+  const disposeFrontPointMesh = () => {
+    const existing = frontPointMeshRef.current;
+    if (!existing) return;
+    if (sceneRef.current) {
+      sceneRef.current.remove(existing);
+    }
+    existing.geometry?.dispose?.();
+    const material = existing.material;
+    if (Array.isArray(material)) {
+      material.forEach((m) => m.dispose());
+    } else {
+      material.dispose();
+    }
+    frontPointMeshRef.current = null;
+  };
+
+  const resolveFrontPointScenePosition = (point: {
+    x: number;
+    y: number;
+    z: number;
+  }) => {
+    const center = centerRef.current;
+    const bounds = centeredBoundsRef.current;
+    if (!center || !bounds) return null;
+
+    const isWithinCenteredBounds = (candidate: THREE.Vector3) =>
+      candidate.x >= bounds.min.x - bounds.margin &&
+      candidate.x <= bounds.max.x + bounds.margin &&
+      candidate.y >= bounds.min.y - bounds.margin &&
+      candidate.y <= bounds.max.y + bounds.margin &&
+      candidate.z >= bounds.min.z - bounds.margin &&
+      candidate.z <= bounds.max.z + bounds.margin;
+
+    const rawScenePoint = new THREE.Vector3(point.x, point.y, point.z);
+    const centeredScenePoint = rawScenePoint.clone().sub(center);
+
+    if (isWithinCenteredBounds(centeredScenePoint)) {
+      return centeredScenePoint;
+    }
+    if (isWithinCenteredBounds(rawScenePoint)) {
+      return rawScenePoint;
+    }
+    return centeredScenePoint;
+  };
 
   useEffect(() => {
     onDiameterComputedRef.current = onDiameterComputed;
@@ -61,42 +121,103 @@ export function StlPreviewViewer({
 
   // 백엔드 캐시된 메타데이터 동기화
   useEffect(() => {
-    if (cachedMetadata && cachedMetadata.maxDiameter) {
+    if (resolvedMetadata && resolvedMetadata.maxDiameter) {
       // 이미 상태에 값이 있으면 업데이트하지 않음 (중복 렌더링 방지)
-      if (maxDiameterState === cachedMetadata.maxDiameter) {
+      if (maxDiameterState === resolvedMetadata.maxDiameter) {
         return;
       }
 
-      setMaxDiameterState(cachedMetadata.maxDiameter);
-      setConnectionDiameterState(cachedMetadata.connectionDiameter || null);
-      setTotalLengthState(cachedMetadata.totalLength || null);
+      setMaxDiameterState(resolvedMetadata.maxDiameter);
+      setConnectionDiameterState(resolvedMetadata.connectionDiameter || null);
+      setTotalLengthState(resolvedMetadata.totalLength || null);
       setTaperAngleState(
-        cachedMetadata.taperAngle !== undefined
-          ? cachedMetadata.taperAngle
+        resolvedMetadata.taperAngle !== undefined
+          ? resolvedMetadata.taperAngle
           : null,
       );
-      setTiltAxisVectorState(cachedMetadata.tiltAxisVector || null);
-      setFrontPointState(cachedMetadata.frontPoint || null);
+      setTiltAxisVectorState(resolvedMetadata.tiltAxisVector || null);
+      setFrontPointState(resolvedMetadata.frontPoint || null);
 
       // 콜백 호출
       if (
         onDiameterComputedRef.current &&
-        cachedMetadata.maxDiameter &&
-        cachedMetadata.connectionDiameter &&
-        cachedMetadata.totalLength
+        resolvedMetadata.maxDiameter &&
+        resolvedMetadata.connectionDiameter &&
+        resolvedMetadata.totalLength
       ) {
         onDiameterComputedRef.current(
           file.name,
-          cachedMetadata.maxDiameter,
-          cachedMetadata.connectionDiameter,
-          cachedMetadata.totalLength,
-          cachedMetadata.taperAngle || 0,
-          cachedMetadata.tiltAxisVector,
-          cachedMetadata.frontPoint,
+          resolvedMetadata.maxDiameter,
+          resolvedMetadata.connectionDiameter,
+          resolvedMetadata.totalLength,
+          resolvedMetadata.taperAngle || 0,
+          resolvedMetadata.tiltAxisVector,
+          resolvedMetadata.frontPoint,
         );
       }
     }
-  }, [cachedMetadata?.maxDiameter]);
+  }, [
+    file.name,
+    maxDiameterState,
+    resolvedMetadata?.maxDiameter,
+    resolvedMetadata?.connectionDiameter,
+    resolvedMetadata?.totalLength,
+    resolvedMetadata?.taperAngle,
+    resolvedMetadata?.tiltAxisVector?.x,
+    resolvedMetadata?.tiltAxisVector?.y,
+    resolvedMetadata?.tiltAxisVector?.z,
+    resolvedMetadata?.frontPoint?.x,
+    resolvedMetadata?.frontPoint?.y,
+    resolvedMetadata?.frontPoint?.z,
+  ]);
+
+  useEffect(() => {
+    const point = resolvedMetadata?.frontPoint ?? frontPointState ?? null;
+    const scene = sceneRef.current;
+    const scenePosition = point ? resolveFrontPointScenePosition(point) : null;
+
+    if (
+      !showOverlay ||
+      !scene ||
+      !scenePosition ||
+      maxDiameterRef.current <= 0
+    ) {
+      disposeFrontPointMesh();
+      return;
+    }
+
+    if (!frontPointMeshRef.current) {
+      const dotGeometry = new THREE.SphereGeometry(
+        maxDiameterRef.current * 0.02,
+        32,
+        32,
+      );
+      const dotMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+      dotMaterial.depthTest = false;
+      dotMaterial.depthWrite = false;
+      const mesh = new THREE.Mesh(dotGeometry, dotMaterial);
+      mesh.renderOrder = 999;
+      scene.add(mesh);
+      frontPointMeshRef.current = mesh;
+    }
+
+    frontPointMeshRef.current.position.copy(scenePosition);
+
+    return () => {
+      if (!sceneRef.current) {
+        disposeFrontPointMesh();
+      }
+    };
+  }, [
+    showOverlay,
+    frontPointRenderRevision,
+    frontPointState?.x,
+    frontPointState?.y,
+    frontPointState?.z,
+    resolvedMetadata?.frontPoint?.x,
+    resolvedMetadata?.frontPoint?.y,
+    resolvedMetadata?.frontPoint?.z,
+  ]);
 
   // STL 렌더링 및 finish line 시각화
   useEffect(() => {
@@ -108,6 +229,7 @@ export function StlPreviewViewer({
     let width = containerRef.current.clientWidth || 300;
 
     const scene = new THREE.Scene();
+    sceneRef.current = scene;
     scene.background = new THREE.Color(0xf9fafb);
 
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
@@ -164,6 +286,7 @@ export function StlPreviewViewer({
         const bbox = geometry.boundingBox!;
         const center = new THREE.Vector3();
         bbox.getCenter(center);
+        centerRef.current = center.clone();
 
         const material = new THREE.MeshStandardMaterial({
           color: 0x5b9dff,
@@ -248,6 +371,7 @@ export function StlPreviewViewer({
         }
 
         const maxDiameter = maxR * 2;
+        maxDiameterRef.current = maxDiameter;
         const connectionDiameter =
           connectionMaxR > 0 ? connectionMaxR * 2 : maxDiameter;
 
@@ -883,30 +1007,17 @@ export function StlPreviewViewer({
           scene.add(taperAxisGuide);
         }
 
-        const resolvedFrontPoint = frontPointState ?? frontPoint;
-
-        // Draw FrontPoint (green dot)
-        let frontPointMesh: THREE.Mesh | null = null;
-        if (resolvedFrontPoint && showOverlay) {
-          // 사이즈를 기존 0.08에서 0.02으로 축소
-          const dotGeometry = new THREE.SphereGeometry(
-            maxDiameter * 0.02,
-            32,
-            32,
-          );
-          const dotMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-          frontPointMesh = new THREE.Mesh(dotGeometry, dotMaterial);
-          frontPointMesh.position.set(
-            resolvedFrontPoint.x - center.x,
-            resolvedFrontPoint.y - center.y,
-            resolvedFrontPoint.z - center.z,
-          );
-          frontPointMesh.renderOrder = 999;
-          // depth test disable so it is always drawn on top of the STL
-          dotMaterial.depthTest = false;
-          dotMaterial.depthWrite = false;
-          scene.add(frontPointMesh);
-        }
+        const bboxSize = new THREE.Vector3();
+        bbox.getSize(bboxSize);
+        centeredBoundsRef.current = {
+          min: bbox.min.clone().sub(center),
+          max: bbox.max.clone().sub(center),
+          margin: Math.max(
+            0.2,
+            Math.min(bboxSize.x, bboxSize.y, bboxSize.z) * 0.1,
+          ),
+        };
+        setFrontPointRenderRevision((prev) => prev + 1);
 
         // showOverlay가 true일 때(제조사 페이지 등)는 모든 가이드를,
         // false일 때(의뢰자 페이지)는 AAA 값과 관련된 가이드만 그립니다.
@@ -1044,15 +1155,6 @@ export function StlPreviewViewer({
         }
 
         const hasFinishLine = Array.isArray(finishLinePoints);
-        if (!hasFinishLine || finishLinePoints!.length < 2) {
-          console.log("[StlPreviewViewer] finish line unavailable", {
-            fileName: file.name,
-            hasFinishLine,
-            finishLinePointCount: Array.isArray(finishLinePoints)
-              ? finishLinePoints.length
-              : 0,
-          });
-        }
         if (hasFinishLine && finishLinePoints!.length >= 2) {
           const pts = finishLinePoints!
             .filter((p) => Array.isArray(p) && p.length >= 3)
@@ -1091,18 +1193,6 @@ export function StlPreviewViewer({
             finishLine = new THREE.Mesh(tubeGeometry, tubeMaterial);
             finishLine.renderOrder = 10;
             scene.add(finishLine);
-            console.log("[StlPreviewViewer] finish line rendered", {
-              fileName: file.name,
-              finishLinePointCount: finishLinePoints!.length,
-              renderedPointCount: pts.length,
-              radius,
-            });
-          } else {
-            console.warn("[StlPreviewViewer] finish line points filtered out", {
-              fileName: file.name,
-              finishLinePointCount: finishLinePoints!.length,
-              renderedPointCount: pts.length,
-            });
           }
         }
 
@@ -1179,7 +1269,6 @@ export function StlPreviewViewer({
         }
       }
       if (finishLine) {
-        console.log("[StlPreviewViewer] dispose finish line");
         scene.remove(finishLine);
         if (finishLine instanceof THREE.Mesh) {
           finishLine.geometry?.dispose?.();
@@ -1191,6 +1280,7 @@ export function StlPreviewViewer({
           }
         }
       }
+      disposeFrontPointMesh();
       if (taperAxisGuide) {
         scene.remove(taperAxisGuide);
         taperAxisGuide.geometry?.dispose?.();
@@ -1250,18 +1340,16 @@ export function StlPreviewViewer({
       }
       controls.dispose();
       renderer.dispose();
+      sceneRef.current = null;
+      centerRef.current = null;
+      centeredBoundsRef.current = null;
+      maxDiameterRef.current = 0;
+      setFrontPointRenderRevision((prev) => prev + 1);
       if (containerRef.current) {
         containerRef.current.innerHTML = "";
       }
     };
-  }, [
-    file,
-    showOverlay,
-    finishLinePoints,
-    frontPointState?.x,
-    frontPointState?.y,
-    frontPointState?.z,
-  ]);
+  }, [file, showOverlay, finishLinePoints]);
 
   return (
     <div

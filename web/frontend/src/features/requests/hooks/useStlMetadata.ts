@@ -6,7 +6,7 @@
 import { useState, useEffect } from "react";
 import { request as api } from "@/shared/api/apiClient";
 
-interface StlMetadata {
+export interface StlMetadata {
   maxDiameter?: number;
   connectionDiameter?: number;
   totalLength?: number;
@@ -30,10 +30,7 @@ export function useStlMetadata(requestId?: string): UseStlMetadataResult {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log("[useStlMetadata] Hook called with requestId:", requestId);
-
     if (!requestId) {
-      console.log("[useStlMetadata] No requestId, skipping fetch");
       setMetadata(null);
       setCached(false);
       return;
@@ -49,8 +46,6 @@ export function useStlMetadata(requestId?: string): UseStlMetadataResult {
           path: `/bg/stl-metadata/${requestId}`,
         });
 
-        console.log("[useStlMetadata] Raw response:", response);
-
         // apiFetch 반환 구조: { ok, status, data, raw }
         // data 구조: { statusCode, data: { requestId, metadata, cached }, message, success }
         const apiData = response.data;
@@ -59,15 +54,11 @@ export function useStlMetadata(requestId?: string): UseStlMetadataResult {
         if (actualData?.metadata) {
           setMetadata(actualData.metadata);
           setCached(actualData.cached || false);
-          console.log("[useStlMetadata] Metadata loaded:", actualData.metadata);
         } else {
-          console.warn("[useStlMetadata] No metadata found in response:", {
-            apiData,
-            actualData,
-          });
+          setMetadata(null);
+          setCached(false);
         }
       } catch (err: any) {
-        console.error("[useStlMetadata] Error fetching metadata:", err);
         setError(err.message || "Failed to fetch metadata");
       } finally {
         setLoading(false);
@@ -102,23 +93,14 @@ export function useStlMetadata(requestId?: string): UseStlMetadataResult {
           if (actualData?.metadata) {
             setMetadata(actualData.metadata);
             setCached(actualData.cached || false);
-            console.log(
-              "[useStlMetadata] Metadata updated after recalculation:",
-              actualData.metadata,
-            );
           }
         } catch (err) {
-          console.error(
-            "[useStlMetadata] Error refetching after recalculation:",
-            err,
-          );
           setError(err.message || "Failed to refetch metadata");
         } finally {
           setLoading(false);
         }
       }, 2000);
     } catch (err: any) {
-      console.error("[useStlMetadata] Error recalculating metadata:", err);
       setError(err.message || "Failed to recalculate metadata");
       setLoading(false);
     }
