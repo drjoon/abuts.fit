@@ -219,7 +219,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private string _backendImplantLabel;
         public string FaceHoleProcessFilePath { get; set; }
         public string ConnectionMachiningProcessFilePath { get; set; }
-        public double DefaultFrontLimitX { get; set; } = -8;
+        private double? _effectiveFrontLimitX;
         public double DefaultBackLimitX { get; set; } = 0;
         public string lotNumber { get; set; } = "ACR";
         public StlFileProcessor(Application app, string outputFolder = null,
@@ -246,8 +246,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             EnsureCleanDocument(document);
             ResetAllDentalAddinStaticFields();
             RemoveLayerIfExists(document, StlImportLayerName);
-            double effectiveFrontLimit = frontLimitX ?? DefaultFrontLimitX;
+            double effectiveFrontLimit = frontLimitX ?? throw new InvalidOperationException("FrontPoint from backend is missing");
             double effectiveBackLimit = backLimitX ?? DefaultBackLimitX;
+            _effectiveFrontLimitX = effectiveFrontLimit;
             AppLogger.Log($"StlFileProcessor: LimitX 적용 - Front:{effectiveFrontLimit:F4}, Back:{effectiveBackLimit:F4}");
             string requestId = null;
             RequestMetaCaseInfos requestMeta = null;
@@ -415,6 +416,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendSerialCode = null;
             _backendRequestId = null;
             _backendImplantLabel = null;
+            _effectiveFrontLimitX = null;
             FaceHoleProcessFilePath = null;
             ConnectionMachiningProcessFilePath = null;
             lotNumber = "ACR";
@@ -2972,12 +2974,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             double mtiDefault = 0.0;
             double barDiameter = document?.LatheMachineSetup?.BarDiameter ?? 0.0;
             bool mtiSet = TrySetFieldIfNull(moveModuleType, "MTI", mtiDefault);
-            bool frontSet = TrySetFieldIfNull(moveModuleType, "FrontPointX", DefaultFrontLimitX);
+            double frontLimit = _effectiveFrontLimitX ?? throw new InvalidOperationException("FrontPointX not initialized");
+            bool frontSet = TrySetFieldIfNull(moveModuleType, "FrontPointX", frontLimit);
             bool backSet = TrySetFieldIfNull(moveModuleType, "BackPointX", DefaultBackLimitX);
             SetStaticField(moveModuleType, "NeedMove", false);
             SetStaticField(moveModuleType, "NeedMoveY", 0.0);
             SetStaticField(moveModuleType, "NeedMoveZ", 0.0);
-            AppLogger.Log($"DentalAddin: MoveSTL 초기화 - MTI:{mtiDefault}({mtiSet}), Front:{DefaultFrontLimitX}({frontSet}), Back:{DefaultBackLimitX}({backSet}), BarDia:{barDiameter}");
+            AppLogger.Log($"DentalAddin: MoveSTL 초기화 - MTI:{mtiDefault}({mtiSet}), Front:{frontLimit}({frontSet}), Back:{DefaultBackLimitX}({backSet}), BarDia:{barDiameter}");
         }
         private static void ApplyTurningParameters(Type mainModuleType)
         {

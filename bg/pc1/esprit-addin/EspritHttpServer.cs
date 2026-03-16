@@ -474,15 +474,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 ? $"({req.FrontPoint.x:F4}, {req.FrontPoint.y:F4}, {req.FrontPoint.z:F4})"
                 : "<null>";
             AppLogger.Log($"[NC Processing] STL metadata: TotalLength={req.TotalLength:F4}, TaperAngle={req.TaperAngle:F4}, TiltAxis={tiltVectorLabel}, FrontPoint={frontPointLabel}");
-            double? frontLimitX = req.FrontPoint != null ? -req.FrontPoint.x : (double?)null;
+            if (req.FrontPoint == null)
+            {
+                throw new InvalidOperationException("FrontPoint from backend is missing");
+            }
+            double frontLimitX = -req.FrontPoint.z;
             var processor = new StlFileProcessor(_espApp)
             {
                 lotNumber = req.LotNumber ?? "ACR"
             };
-            if (frontLimitX.HasValue)
-            {
-                processor.DefaultFrontLimitX = frontLimitX.Value;
-            }
             AppLogger.Log("[NC Processing] Invoking StlFileProcessor.Process()...");
             processor.Process(stlPath, frontLimitX, null, req.MaterialDiameter);
             AppLogger.Log($"[NC Processing] CAM processing completed successfully: {req.RequestId}");
