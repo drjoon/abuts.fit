@@ -10,7 +10,6 @@ import {
 } from "./utils.js";
 import { allocateVirtualMailboxAddress } from "./mailbox.utils.js";
 import { triggerNextAutoMachiningAfterComplete } from "../cnc/machiningBridge.js";
-import { getAllProductionQueues } from "../cnc/shared.js";
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
 import { resolvePrcFileNames } from "./prcMapping.utils.js";
 import { emitAppEventToRoles } from "../../socket.js";
@@ -353,6 +352,7 @@ export async function updateReviewStatusByStage(req, res) {
     let resultRequest = null;
     let acceptedMessage = "";
     let previousManufacturerStage = null;
+    let pendingEspritTriggerRequest = null;
 
     await session.withTransaction(async () => {
       const request = await Request.findById(id)
@@ -533,7 +533,9 @@ export async function updateReviewStatusByStage(req, res) {
           }
 
           request.productionSchedule.actualCamStart = new Date();
-          await triggerEspritForNc({ request, session });
+          pendingEspritTriggerRequest = request.toObject
+            ? request.toObject()
+            : JSON.parse(JSON.stringify(request));
           acceptedMessage =
             "CAM 작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다.";
         } else {
@@ -619,70 +621,11 @@ export async function updateReviewStatusByStage(req, res) {
             { $set: { lastAssignmentAt: new Date() } },
             { session },
           );
-          // CAM 승인 시점 디버깅: 현재 요청의 productionSchedule 과 장비별 생산 큐 일부를 로깅
-          try {
-            // 1) 현재 요청 스케줄
-            console.log("[CAM-APPROVE] request productionSchedule", {
-              id: String(request._id),
-              requestId: request.requestId,
-              manufacturerStage: request.manufacturerStage,
-              productionSchedule: request.productionSchedule,
-            });
-
-            // 2) 장비별 생산 큐 스냅샷 (M3/M4/M5 중심)
-            const related = await Request.find({
-              manufacturerStage: { $in: ["의뢰", "CAM", "가공"] },
-            })
-              .select(
-                "requestId manufacturerStage productionSchedule lotNumber timeline",
-              )
-              .lean();
-            const queues = getAllProductionQueues(related || []);
-            console.log("[CAM-APPROVE] production queues snapshot", {
-              M3: (queues.M3 || []).map((q) => ({
-                requestId: q.requestId,
-                manufacturerStage: q.manufacturerStage,
-                assignedMachine: q.productionSchedule?.assignedMachine,
-                queuePosition: q.productionSchedule?.queuePosition,
-                diameter: q.productionSchedule?.diameter,
-              })),
-              M4: (queues.M4 || []).map((q) => ({
-                requestId: q.requestId,
-                manufacturerStage: q.manufacturerStage,
-                assignedMachine: q.productionSchedule?.assignedMachine,
-                queuePosition: q.productionSchedule?.queuePosition,
-                diameter: q.productionSchedule?.diameter,
-              })),
-              M5: (queues.M5 || []).map((q) => ({
-                requestId: q.requestId,
-                manufacturerStage: q.manufacturerStage,
-                assignedMachine: q.productionSchedule?.assignedMachine,
-                queuePosition: q.productionSchedule?.queuePosition,
-                diameter: q.productionSchedule?.diameter,
-              })),
-              unassigned: (queues.unassigned || []).map((q) => ({
-                requestId: q.requestId,
-                manufacturerStage: q.manufacturerStage,
-                assignedMachine: q.productionSchedule?.assignedMachine,
-                queuePosition: q.productionSchedule?.queuePosition,
-                diameter: q.productionSchedule?.diameter,
-              })),
-            });
-          } catch (e) {
-            console.error("[CAM-APPROVE] debug logging failed", e);
-          }
           const meta = await Machine.findOne({ uid: selected.machineId })
             .select({ allowAutoMachining: 1, allowRequestAssign: 1 })
             .lean()
             .session(session)
             .catch(() => null);
-
-          console.log("[CAM-APPROVE] auto-machining check", {
-            requestId: request.requestId,
-            machineId: selected.machineId,
-            allowRequestAssign: meta?.allowRequestAssign,
-            allowAutoMachining: meta?.allowAutoMachining,
-          });
 
           if (
             meta?.allowRequestAssign !== false &&
@@ -754,6 +697,25 @@ export async function updateReviewStatusByStage(req, res) {
       toStage: String(responseData?.manufacturerStage || "").trim() || null,
       source: "review-status",
     });
+
+    if (pendingEspritTriggerRequest) {
+      triggerEspritForNc({ request: pendingEspritTriggerRequest }).catch(
+        (error) => {
+          emitAppEventToRoles(
+            ["manufacturer", "admin"],
+            "request:cam-trigger-failed",
+            {
+              requestId: pendingEspritTriggerRequest?.requestId || null,
+              message: error?.message || "Esprit 트리거에 실패했습니다.",
+            },
+          );
+          console.error("[REVIEW] async triggerEspritForNc failed", {
+            requestId: pendingEspritTriggerRequest?.requestId || null,
+            message: error?.message || String(error || ""),
+          });
+        },
+      );
+    }
 
     return res.status(200).json({
       success: true,

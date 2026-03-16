@@ -1,4 +1,5 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
+import { useToast } from "@/shared/hooks/use-toast";
 import {
   onAppEvent,
   onNotification,
@@ -36,6 +37,7 @@ export function useWorksheetRealtimeStatus({
   matchesCurrentPage,
 }: UseWorksheetRealtimeStatusParams) {
   const realtimeBaseRef = useRef<Record<string, number>>({});
+  const { toast } = useToast();
 
   const applyRequestPatch = (
     prev: ManufacturerRequest[],
@@ -258,6 +260,17 @@ export function useWorksheetRealtimeStatus({
           );
           return;
         }
+        case "request:cam-trigger-failed": {
+          toast({
+            title: "CAM 트리거 실패",
+            description: String(
+              payload?.message ||
+                `의뢰 ${requestId || ""} CAM 작업 트리거에 실패했습니다.`,
+            ).trim(),
+            variant: "destructive",
+          });
+          return;
+        }
         case "request:delivery-updated": {
           const eventRequest = payload?.request as
             | ManufacturerRequest
@@ -401,18 +414,7 @@ export function useWorksheetRealtimeStatus({
       if (typeof unsubTick === "function") unsubTick();
       if (typeof unsubCompleted === "function") unsubCompleted();
     };
-  }, [
-    enabled,
-    token,
-    setRequests,
-    fetchRequests,
-    fetchRequestsCore,
-    previewOpen,
-    previewFiles,
-    handleOpenPreview,
-    removeOnMachiningComplete,
-    matchesCurrentPage,
-  ]);
+  }, [enabled, token, setRequests, fetchRequests, toast]);
 
   return {
     realtimeBaseRef,
