@@ -88,8 +88,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
           if (fileFromIdb) {
             restored.push(fileFromIdb);
           }
-        } catch (err) {
-          console.warn("[restoreLocalDraft] IndexedDB load failed", err);
+        } catch {
+          continue;
         }
       }
 
@@ -120,11 +120,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         // V3 모드: Draft ID 제거하여 서버 Draft 복원 방지
         try {
           localStorage.removeItem("abutsfit:new-request-draft-id:v1");
-          console.log(
-            "[restoreLocalDraft] Removed draft ID to prevent server restore",
-          );
-        } catch (err) {
-          console.warn("[restoreLocalDraft] Failed to remove draft ID:", err);
+        } catch {
+          return;
         }
       }
     };
@@ -195,23 +192,13 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   const currentCaseInfos = useMemo(() => {
     const key =
       currentFileKey === "__default__" ? "__default__" : currentFileKey;
-    const info = (() => {
+    return (() => {
       if (key === "__default__") {
         return caseInfosMap.__default__ || { workType: "abutment" };
       }
       return caseInfosMap[key] || { workType: "abutment" };
     })();
-
-    console.log("[useNewRequestPage] currentCaseInfos compute:", {
-      selectedPreviewIndex,
-      currentFileKey,
-      key,
-      patientName: info.patientName,
-      filesCount: files.length,
-    });
-
-    return info;
-  }, [currentFileKey, caseInfosMap, selectedPreviewIndex, files]);
+  }, [currentFileKey, caseInfosMap]);
 
   // 현재 파일의 caseInfos 업데이트 함수
   const setCaseInfos = useCallback(
@@ -219,13 +206,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       const file =
         selectedPreviewIndex !== null ? files[selectedPreviewIndex] : null;
       const fileKey = file ? toNormalizedFileKey(file) : "__default__";
-
-      console.log("[useNewRequestPage] setCaseInfos called:", {
-        fileKey,
-        updates,
-        currentCaseInfos,
-        selectedPreviewIndex,
-      });
 
       // 1) 로컬 캐시(caseInfosMap) 업데이트
       updateCaseInfos(fileKey, updates);
@@ -322,13 +302,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   // 파일 전환 시 로컬 임플란트 상태 동기화
   useEffect(() => {
     if (currentCaseInfos) {
-      console.log("[useNewRequestPage] Syncing implant state for file:", {
-        currentFileKey,
-        implantManufacturer: currentCaseInfos.implantManufacturer,
-        implantBrand: currentCaseInfos.implantBrand,
-        implantFamily: currentCaseInfos.implantFamily,
-        implantType: currentCaseInfos.implantType,
-      });
       setImplantManufacturer(currentCaseInfos.implantManufacturer || "");
       setImplantBrand(currentCaseInfos.implantBrand || "");
       setImplantFamily(currentCaseInfos.implantFamily || "");
@@ -761,11 +734,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     async (payload: { mode: "active" | "tracking"; duplicates: any[] }) => {
       if (!payload || !Array.isArray(payload.duplicates)) return;
 
-      console.log("[handleServerDuplicateDetected] Auto-resolving duplicates", {
-        mode: payload.mode,
-        count: payload.duplicates.length,
-      });
-
       // 자동으로 적절한 전략 선택
       const autoResolutions = payload.duplicates.map((dup: any) => {
         const stageOrder = Number(dup?.stageOrder ?? 0);
@@ -778,10 +746,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
           strategy,
           existingRequestId: String(dup?.existingRequest?._id || ""),
         };
-      });
-
-      console.log("[handleServerDuplicateDetected] Auto-resolutions", {
-        resolutions: autoResolutions,
       });
 
       // 자동 선택된 resolutions로 설정
@@ -823,11 +787,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   const handleSubmit = useCallback(async () => {
     const ok = await ensureSetupForUpload();
     if (!ok) return;
-
-    console.log("[handleSubmit] Starting V3 submission", {
-      duplicateResolutionsCount: duplicateResolutions.length,
-      filesCount: files.length,
-    });
 
     // V3 방식: 로컬에서 파일 가져와 S3 업로드 후 제출
     try {

@@ -11,6 +11,49 @@ import {
 } from "./creation.helpers.controller.js";
 import { normalizeCaseInfosImplantFields } from "./utils.js";
 
+async function buildNormalizedDraftCaseInfos(caseInfosInput = []) {
+  const incomingList = Array.isArray(caseInfosInput)
+    ? caseInfosInput
+    : [caseInfosInput];
+
+  const normalizedCaseInfos = await Promise.all(
+    incomingList.map(async (ci) => {
+      const normalized = await normalizeCaseInfosImplantFields(ci || {}, false);
+      return {
+        ...(ci || {}),
+        ...normalized,
+        workType: ((ci && ci.workType) || "abutment").trim(),
+      };
+    }),
+  );
+
+  return normalizedCaseInfos;
+}
+
+async function findOrCreateDraftByRequestedId({
+  draftId,
+  requestorId,
+  caseInfos,
+}) {
+  let draft = await DraftRequest.findById(draftId);
+  if (draft) {
+    return draft;
+  }
+
+  const normalizedCaseInfos = await buildNormalizedDraftCaseInfos(
+    caseInfos || [],
+  );
+
+  draft = await DraftRequest.create({
+    _id: draftId,
+    requestor: requestorId,
+    status: "draft",
+    caseInfos: normalizedCaseInfos,
+  });
+
+  return draft;
+}
+
 // 새 드래프트 생성
 export const createDraft = asyncHandler(async (req, res) => {
   const { caseInfos = [] } = req.body || {};
@@ -68,18 +111,30 @@ export const updateDraft = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Invalid draft ID");
   }
 
-  // 권한 확인을 위해 먼저 조회
+  const { caseInfos } = req.body || {};
   const draft = await DraftRequest.findById(id).lean();
 
   if (!draft) {
-    throw new ApiError(404, "Draft not found");
+    const recreatedDraft = await findOrCreateDraftByRequestedId({
+      draftId: id,
+      requestorId: req.user._id,
+      caseInfos,
+    });
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          recreatedDraft,
+          "Draft recreated and updated successfully",
+        ),
+      );
   }
 
   if (draft.requestor.toString() !== req.user._id.toString()) {
     throw new ApiError(403, "You are not allowed to update this draft");
   }
-
-  const { caseInfos } = req.body || {};
 
   if (!caseInfos) {
     // caseInfos가 없으면 그냥 기존 draft 반환
@@ -98,10 +153,11 @@ export const updateDraft = asyncHandler(async (req, res) => {
       const incomingList = Array.isArray(caseInfos) ? caseInfos : [caseInfos];
 
       // 현재 최신 상태 조회
-      const currentDraft = await DraftRequest.findById(id);
-      if (!currentDraft) {
-        throw new ApiError(404, "Draft not found");
-      }
+      const currentDraft = await findOrCreateDraftByRequestedId({
+        draftId: id,
+        requestorId: req.user._id,
+        caseInfos,
+      });
 
       const prevCaseInfos = Array.isArray(currentDraft.caseInfos)
         ? currentDraft.caseInfos

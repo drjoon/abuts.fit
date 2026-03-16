@@ -16,6 +16,7 @@ import Counter from "./models/counter.model.js";
 import AdminAuditLog from "./models/adminAuditLog.model.js";
 import SignupVerification from "./models/signupVerification.model.js";
 import TaxInvoiceDraft from "./models/taxInvoiceDraft.model.js";
+import ShippingPackage from "./models/shippingPackage.model.js";
 import { requestFloodBlocker } from "./middlewares/requestFloodBlocker.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -97,6 +98,7 @@ const dbReady = connect(mongoUri)
         ["ChargeOrder", ChargeOrder],
         ["BankTransaction", BankTransaction],
         ["TaxInvoiceDraft", TaxInvoiceDraft],
+        ["ShippingPackage", ShippingPackage],
         ["Counter", Counter],
         ["AdminAuditLog", AdminAuditLog],
         ["SignupVerification", SignupVerification],

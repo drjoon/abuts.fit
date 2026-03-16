@@ -125,184 +125,8 @@ export const useNewRequestFilesV2 = ({
 
   // 파일 URL 복원 (Draft.files 기준)
   const restoreFileUrls = useCallback(async () => {
-    const currentDraftId = draftId; // 이 함수가 시작될 때의 draftId 스냅샷
-    console.log("[restoreFileUrls] start", {
-      currentDraftId,
-      draftFilesLen: draftFilesRef.current.length,
-    });
-
-    // V3 모드: Draft 서버 복원 비활성화 (로컬 스토리지만 사용)
-    // 로컬 Draft 복원은 useNewRequestPage의 useEffect에서 처리됨
-    console.log("[restoreFileUrls] V3 mode - skipping server draft restore");
     return;
-
-    // draftId가 변경되었으면 즉시 중단 (새 Draft로 전환됨)
-    if (draftId !== currentDraftId) {
-      console.log("[restoreFileUrls] draftId changed, aborting restore");
-      return;
-    }
-
-    // 1) 복원 대상 draftFiles (항상 최신값 Ref 사용)
-    let sourceDraftFiles = draftFilesRef.current;
-
-    // draftFiles가 비어 있는데 draftId는 있는 경우, 서버에서 최신 draft를 한 번 조회해 caseInfos를 채운다.
-    if (!sourceDraftFiles.length && currentDraftId) {
-      try {
-        console.log(
-          "[restoreFileUrls] draftFiles empty, fetching draft from server",
-          {
-            draftId: currentDraftId,
-          },
-        );
-        const res = await fetch(
-          `${API_BASE_URL}/requests/drafts/${currentDraftId}`,
-          {
-            method: "GET",
-            headers: getHeaders(),
-          },
-        );
-
-        if (res.ok) {
-          const data = await res.json();
-          const draft = data.data || data;
-          const draftCaseInfos = Array.isArray(draft.caseInfos)
-            ? draft.caseInfos
-            : [];
-
-          if (draftCaseInfos.length > 0) {
-            console.log("[restoreFileUrls] server draft caseInfos loaded", {
-              len: draftCaseInfos.length,
-            });
-            draftFilesRef.current = draftCaseInfos;
-            setDraftFiles(draftCaseInfos);
-            sourceDraftFiles = draftCaseInfos;
-          }
-        } else {
-          console.warn("[restoreFileUrls] failed to refetch draft", {
-            status: res.status,
-          });
-        }
-      } catch (err) {
-        console.error("[restoreFileUrls] error while refetching draft", err);
-      }
-    }
-
-    if (!sourceDraftFiles.length) {
-      console.log("[restoreFileUrls] no draftFiles to restore, skipping");
-      return;
-    }
-
-    const restoredFiles: FileWithDraftId[] = [];
-    let hadError = false;
-
-    for (const draftCase of sourceDraftFiles) {
-      const fileMeta = draftCase.file;
-      console.log("[restoreFileUrls] processing case", {
-        caseId: draftCase._id,
-        fileMeta,
-      });
-      if (!fileMeta) continue;
-
-      try {
-        // 루프 중간에도 draftId 변경 확인 (빠른 취소 대응)
-        if (draftId !== currentDraftId) {
-          return;
-        }
-
-        // 캐시 확인 (fileId 또는 s3Key 기반)
-        const cacheKey = fileMeta.fileId || fileMeta.s3Key;
-        if (!cacheKey) continue;
-
-        // 1) IndexedDB에서 Blob 먼저 시도
-        let blobData: Blob | null = await getStlBlob(cacheKey);
-
-        // 2) IndexedDB에 없으면 presigned URL → 네트워크 fetch
-        if (!blobData) {
-          let url = getCachedUrl(cacheKey);
-          if (!url) {
-            // 캐시 없으면 서버에서 URL 획득
-            const endpoint = fileMeta.fileId
-              ? `/files/${fileMeta.fileId}/download-url`
-              : `/files/s3/${encodeURIComponent(fileMeta.s3Key!)}/download-url`;
-
-            const res = await fetch(`${API_BASE_URL}${endpoint}`, {
-              method: "GET",
-              headers: getHeaders(),
-            });
-
-            if (!res.ok) {
-              console.warn(
-                `Failed to get download URL for ${fileMeta.originalName}: ${res.status} ${res.statusText}`,
-                { endpoint, s3Key: fileMeta.s3Key, fileId: fileMeta.fileId },
-              );
-              continue;
-            }
-
-            const data = await res.json();
-            url = data.data?.url || data.url;
-            if (!url) {
-              console.warn(`No URL in response for ${fileMeta.originalName}`);
-              continue;
-            }
-
-            // URL 캐시 저장 (localStorage)
-            setCachedUrl(cacheKey, url, 50 * 60 * 1000); // 50분 TTL
-          }
-
-          // URL에서 파일 다운로드
-          const response = await fetch(url);
-          if (!response.ok) {
-            hadError = true;
-            continue;
-          }
-
-          blobData = await response.blob();
-        }
-
-        if (!blobData) {
-          hadError = true;
-          continue;
-        }
-
-        const file = new File([blobData], fileMeta.originalName, {
-          type: blobData.type,
-        }) as FileWithDraftId;
-        // 서버 Draft.caseInfos 의 _id 를 파일에 매핑해 두어야, 이후 삭제 시 서버에서도 동일 caseInfo 를 제거할 수 있다.
-        file._draftCaseInfoId = (draftCase as any)._id;
-        restoredFiles.push(file);
-      } catch (err) {
-        // 복원 실패는 조용히 표시만 남기고 계속 진행
-        hadError = true;
-      }
-    }
-
-    // 여기서 한 번 더 체크
-    if (draftId !== currentDraftId) {
-      // Draft가 중간에 바뀌었으면, 이 복원 결과는 무시
-      return;
-    }
-
-    if (restoredFiles.length > 0) {
-      setFiles(restoredFiles);
-      setSelectedPreviewIndex((prev) => (prev === null ? 0 : prev));
-    } else if (hadError && filesRef.current.length === 0) {
-      toast({
-        title: "STL 복원 실패",
-        description:
-          "임시 STL 파일을 다시 불러오지 못했습니다. 네트워크 또는 서버 상태를 확인한 뒤 파일을 다시 업로드해주세요.",
-        variant: "destructive",
-        duration: 4000,
-      });
-    }
-  }, [
-    draftId,
-    token,
-    getHeaders,
-    setFiles,
-    setSelectedPreviewIndex,
-    setDraftFiles,
-    toast,
-  ]);
+  }, []);
 
   // 페이지 최초 진입 시 또는 draftId 변경 후에 파일 복원
   // 취소 후 새 Draft로 전환된 경우에는 동일 draftId에 대해 한 번만 복원한다 (완전 리셋 보장)
@@ -428,10 +252,6 @@ export const useNewRequestFilesV2 = ({
             });
           });
         }
-
-        console.log(
-          `[Upload] Processing ${filesToProcess.length} of ${filesToUpload.length} files`,
-        );
 
         // 1. S3 임시 업로드
         const tempFiles = await uploadFilesWithToast(filesToProcess);
@@ -570,9 +390,6 @@ export const useNewRequestFilesV2 = ({
               const data = await res.json();
               const addedCaseInfo: DraftCaseInfo = data.data || data;
               newDraftFiles.push(addedCaseInfo);
-              console.log(
-                `[Upload] Successfully added file to draft: ${tempFile.originalName}`,
-              );
 
               // 서버 레이트리밋 회피를 위한 최소 딜레이
               await sleep(150);
@@ -834,23 +651,15 @@ export const useNewRequestFilesV2 = ({
       try {
         const { deleteFile } = await import("../utils/fileIndexedDB");
         await deleteFile(ssotKey);
-        console.log("[handleRemoveFile] IDB delete done", { ssotKey });
-      } catch (err) {
-        console.warn(
-          "[handleRemoveFile] Failed to delete from IndexedDB:",
-          err,
-        );
+      } catch {
+        // noop
       }
 
       try {
         // Remove from local draft meta by SSOT key
         removeUploadedFile(ssotKey);
-        console.log("[handleRemoveFile] localDraft remove done", { ssotKey });
-      } catch (err) {
-        console.warn(
-          "[handleRemoveFile] Failed to remove from localStorage:",
-          err,
-        );
+      } catch {
+        // noop
       }
 
       const draftCaseInfoId = (file as FileWithDraftId)._draftCaseInfoId;
@@ -860,34 +669,15 @@ export const useNewRequestFilesV2 = ({
         setFiles(newFiles);
         // Remove SSOT key from caseInfosMap
         removeCaseInfos?.(ssotKey);
-        console.log("[handleRemoveFile] caseInfosMap remove done", { ssotKey });
 
         // 모든 파일이 삭제되면 Draft ID도 제거 (V3 모드에서 복원 방지)
         if (newFiles.length === 0) {
           try {
             localStorage.removeItem("abutsfit:new-request-draft-id:v1");
-            console.log(
-              "[handleRemoveFile] All files removed, cleared draft ID",
-            );
-          } catch (err) {
-            console.warn("[handleRemoveFile] Failed to clear draft ID:", err);
+          } catch {
+            // noop
           }
         }
-
-        // Debug: log current local draft files and IDB keys after removal
-        try {
-          const d = getLocalDraft();
-          console.log("[handleRemoveFile] Local draft files after removal", {
-            fileKeys: d?.files?.map((f) => f.fileKey),
-          });
-        } catch {}
-        try {
-          const { getAllFiles } = await import("../utils/fileIndexedDB");
-          const idb = await getAllFiles();
-          console.log("[handleRemoveFile] IDB keys after removal", {
-            keys: Array.from(idb.keys()),
-          });
-        } catch {}
         return;
       }
 
@@ -918,9 +708,6 @@ export const useNewRequestFilesV2 = ({
         setFiles((prev) => prev.filter((_, i) => i !== index));
         // Remove SSOT key from caseInfosMap
         removeCaseInfos?.(ssotKey);
-        console.log("[handleRemoveFile] caseInfosMap remove done (server)", {
-          ssotKey,
-        });
 
         // 미리보기 인덱스 조정
         if (selectedPreviewIndexRef.current === index) {
@@ -945,24 +732,6 @@ export const useNewRequestFilesV2 = ({
             duration: 2000,
           });
         }
-
-        // Debug: log current local draft files and IDB keys after server-synced removal
-        try {
-          const d = getLocalDraft();
-          console.log(
-            "[handleRemoveFile] Local draft files after server removal",
-            {
-              fileKeys: d?.files?.map((f) => f.fileKey),
-            },
-          );
-        } catch {}
-        try {
-          const { getAllFiles } = await import("../utils/fileIndexedDB");
-          const idb = await getAllFiles();
-          console.log("[handleRemoveFile] IDB keys after server removal", {
-            keys: Array.from(idb.keys()),
-          });
-        } catch {}
       } catch (err) {
         console.error("Delete error:", err);
         toast({

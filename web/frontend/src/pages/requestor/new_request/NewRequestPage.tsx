@@ -226,13 +226,6 @@ export const NewRequestPage = () => {
       if (choice.caseId.includes(":")) {
         const [fileName] = choice.caseId.split(":");
         fileIndex = (files || []).findIndex((f) => f.name === fileName);
-
-        console.log("[DuplicateModal] skip - fileKey format:", {
-          caseId: choice.caseId,
-          extractedFileName: fileName,
-          fileIndex,
-          filesCount: files?.length,
-        });
       }
 
       // fileKey 형식이 아니면 기존 로직 사용
@@ -253,16 +246,7 @@ export const NewRequestPage = () => {
       }
 
       if (fileIndex >= 0) {
-        console.log("[DuplicateModal] Found file, removing:", {
-          fileIndex,
-          fileName: files[fileIndex]?.name,
-        });
         await handleRemoveFile(fileIndex);
-      } else {
-        console.warn("[DuplicateModal] Could not find file for caseId:", {
-          caseId: choice.caseId,
-          allFileNames: files?.map((f) => f.name),
-        });
       }
     }
 
@@ -338,11 +322,6 @@ export const NewRequestPage = () => {
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            console.log("[DuplicateModal] Primary button clicked", {
-              strategy: primaryStrategy,
-              caseId: dup.caseId,
-              stageOrder,
-            });
             applyDuplicateChoice({
               strategy: primaryStrategy,
               caseId: dup.caseId,
@@ -358,9 +337,6 @@ export const NewRequestPage = () => {
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            console.log("[DuplicateModal] Skip button clicked", {
-              caseId: dup.caseId,
-            });
             applyDuplicateChoice({
               strategy: "skip",
               caseId: dup.caseId,

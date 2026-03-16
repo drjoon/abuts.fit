@@ -1,11 +1,7 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
-import {
-  CaseInfos,
-  DraftCaseInfo,
-  DraftMeta,
-  DraftRequest,
-} from "./newRequestTypes";
+import type { DraftCaseInfo, CaseInfos, DraftRequest } from "./newRequestTypes";
+import { getLocalDraft as getLocalNewRequestDraft } from "../utils/localDraftStorage";
 
 const DRAFT_ID_STORAGE_KEY = "abutsfit:new-request-draft-id:v1";
 const DRAFT_META_KEY_PREFIX = "abutsfit:new-request-draft-meta:v1:";
@@ -13,6 +9,17 @@ const DRAFT_META_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const API_BASE_URL =
   (import.meta.env.DEV && import.meta.env.VITE_API_BASE_URL) || "/api";
+
+type DraftMeta = {
+  draftId: string;
+  updatedAt: number;
+  caseInfos?: CaseInfos;
+};
+
+type LocalDraftSnapshot = {
+  files?: Array<unknown>;
+  caseInfosMap?: Record<string, CaseInfos>;
+};
 
 const emptyMap: Record<string, CaseInfos> = {
   __default__: { workType: "abutment" },
@@ -139,6 +146,36 @@ export function useDraftMeta() {
       setError(null);
 
       try {
+        const localDraft =
+          getLocalNewRequestDraft() as LocalDraftSnapshot | null;
+        const hasLocalFiles =
+          Array.isArray(localDraft?.files) && localDraft.files.length > 0;
+
+        if (hasLocalFiles) {
+          const newDraft = await createDraft();
+          if (!newDraft) {
+            throw new Error("Failed to create new draft");
+          }
+
+          const initialMap =
+            localDraft?.caseInfosMap &&
+            Object.keys(localDraft.caseInfosMap).length > 0
+              ? { ...localDraft.caseInfosMap }
+              : { ...emptyMap };
+
+          if (Object.keys(initialMap).length === 0) {
+            initialMap.__default__ = { workType: "abutment" };
+          }
+
+          clearStoredDraftIdentity();
+          setDraftId(newDraft._id);
+          setCaseInfosMap(initialMap);
+          setInitialDraftFiles([]);
+          saveDraftMeta(newDraft._id, initialMap);
+          setStatus("ready");
+          return;
+        }
+
         const cachedMeta = loadDraftMeta();
         if (cachedMeta) {
           const initialMap = cachedMeta.caseInfosMap || { ...emptyMap };
@@ -243,34 +280,19 @@ export function useDraftMeta() {
         });
 
         if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          console.error("[patchDraftImmediately] Server error:", {
-            status: res.status,
-            errData,
-          });
           if (res.status === 404) {
             clearStoredDraftIdentity();
-            setDraftId(null);
-            draftIdRef.current = null;
-            void createFreshDraftState();
             return;
           }
           throw new Error(`Failed to update draft: ${res.status}`);
         }
 
         saveDraftMeta(draftId, map);
-      } catch (err) {
-        console.error("patchDraftImmediately error:", err);
+      } catch {
+        return;
       }
     },
-    [
-      draftId,
-      token,
-      getHeaders,
-      saveDraftMeta,
-      clearStoredDraftIdentity,
-      createFreshDraftState,
-    ],
+    [draftId, token, getHeaders, saveDraftMeta, clearStoredDraftIdentity],
   );
 
   // Debounced patch: 500ms 동안 변경이 없으면 한 번만 API 호출
