@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import { ApiError } from "../../utils/ApiError.js";
+import { emitAppEventToRoles } from "../../socket.js";
 import {
   normalizeRequestForResponse,
   ensureLotNumberForMachining,
@@ -54,6 +55,16 @@ function runNcFileCleanupInBackground({ requestId, s3Key, bridgePath }) {
         try {
           await deleteFileFromS3(s3Key);
         } catch (e) {
+          emitAppEventToRoles(
+            ["manufacturer", "admin"],
+            "request:async-action-failed",
+            {
+              requestId: requestId ? String(requestId) : null,
+              action: "nc-file-cleanup",
+              stage: "machining",
+              message: `NC 파일 S3 정리 실패: ${e?.message || e}`,
+            },
+          );
           console.warn("[NC_ROLLBACK_ASYNC_S3_DELETE_FAILED]", {
             requestId,
             s3Key,
@@ -71,6 +82,16 @@ function runNcFileCleanupInBackground({ requestId, s3Key, bridgePath }) {
             { method: "DELETE", headers: withBridgeHeaders() },
           );
         } catch (e) {
+          emitAppEventToRoles(
+            ["manufacturer", "admin"],
+            "request:async-action-failed",
+            {
+              requestId: requestId ? String(requestId) : null,
+              action: "nc-bridge-cleanup",
+              stage: "machining",
+              message: `NC 브리지 정리 실패: ${e?.message || e}`,
+            },
+          );
           console.warn("[NC_ROLLBACK_ASYNC_BRIDGE_DELETE_FAILED]", {
             requestId,
             bridgePath,
@@ -80,6 +101,16 @@ function runNcFileCleanupInBackground({ requestId, s3Key, bridgePath }) {
       }
     })
     .catch((e) => {
+      emitAppEventToRoles(
+        ["manufacturer", "admin"],
+        "request:async-action-failed",
+        {
+          requestId: requestId ? String(requestId) : null,
+          action: "nc-file-cleanup",
+          stage: "machining",
+          message: `NC 비동기 정리 실패: ${e?.message || e}`,
+        },
+      );
       console.warn("[NC_ROLLBACK_ASYNC_CLEANUP_FAILED]", {
         requestId,
         s3Key,

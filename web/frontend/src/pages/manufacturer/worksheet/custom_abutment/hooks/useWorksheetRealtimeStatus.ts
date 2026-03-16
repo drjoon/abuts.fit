@@ -260,12 +260,13 @@ export function useWorksheetRealtimeStatus({
           );
           return;
         }
-        case "request:cam-trigger-failed": {
+        case "request:cam-trigger-failed":
+        case "request:async-action-failed": {
           toast({
-            title: "CAM 트리거 실패",
+            title: "비동기 작업 실패",
             description: String(
               payload?.message ||
-                `의뢰 ${requestId || ""} CAM 작업 트리거에 실패했습니다.`,
+                `의뢰 ${requestId || ""} 비동기 작업에 실패했습니다.`,
             ).trim(),
             variant: "destructive",
           });

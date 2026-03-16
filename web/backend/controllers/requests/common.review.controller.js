@@ -51,6 +51,26 @@ function emitWorksheetStageChanged(request, payload = {}) {
   });
 }
 
+function emitManufacturingAsyncFailure({
+  requestId,
+  requestMongoId = null,
+  action,
+  stage = null,
+  message,
+}) {
+  emitAppEventToRoles(
+    ["manufacturer", "admin"],
+    "request:async-action-failed",
+    {
+      requestId: requestId ? String(requestId) : null,
+      requestMongoId: requestMongoId ? String(requestMongoId) : null,
+      action: String(action || "").trim() || null,
+      stage: String(stage || "").trim() || null,
+      message: String(message || "비동기 후처리에 실패했습니다.").trim(),
+    },
+  );
+}
+
 function runStageFileCleanupInBackground({ requestId, stage, s3Key }) {
   Promise.resolve()
     .then(async () => {
@@ -58,6 +78,12 @@ function runStageFileCleanupInBackground({ requestId, stage, s3Key }) {
       try {
         await deleteFileFromS3(s3Key);
       } catch (e) {
+        emitManufacturingAsyncFailure({
+          requestId,
+          action: "stage-file-cleanup",
+          stage,
+          message: `공정 파일 정리 실패: ${e?.message || e}`,
+        });
         console.warn("[STAGE_FILE_ASYNC_S3_DELETE_FAILED]", {
           requestId,
           stage,
@@ -67,6 +93,12 @@ function runStageFileCleanupInBackground({ requestId, stage, s3Key }) {
       }
     })
     .catch((e) => {
+      emitManufacturingAsyncFailure({
+        requestId,
+        action: "stage-file-cleanup",
+        stage,
+        message: `공정 파일 정리 실패: ${e?.message || e}`,
+      });
       console.warn("[STAGE_FILE_ASYNC_CLEANUP_FAILED]", {
         requestId,
         stage,
@@ -614,6 +646,13 @@ export async function updateReviewStatusByStage(req, res) {
               machineId: selected.machineId,
               completedRequestId: null,
             }).catch((err) => {
+              emitManufacturingAsyncFailure({
+                requestId: request.requestId,
+                requestMongoId: request._id,
+                action: "auto-machining-trigger",
+                stage: "cam",
+                message: err?.message || "자동 가공 명령 전송에 실패했습니다.",
+              });
               console.error(
                 "[CAM-APPROVE] triggerNextAutoMachiningAfterComplete failed",
                 {
@@ -679,14 +718,13 @@ export async function updateReviewStatusByStage(req, res) {
     if (pendingEspritTriggerRequest) {
       triggerEspritForNc({ request: pendingEspritTriggerRequest }).catch(
         (error) => {
-          emitAppEventToRoles(
-            ["manufacturer", "admin"],
-            "request:cam-trigger-failed",
-            {
-              requestId: pendingEspritTriggerRequest?.requestId || null,
-              message: error?.message || "Esprit 트리거에 실패했습니다.",
-            },
-          );
+          emitManufacturingAsyncFailure({
+            requestId: pendingEspritTriggerRequest?.requestId || null,
+            requestMongoId: pendingEspritTriggerRequest?._id || null,
+            action: "esprit-trigger",
+            stage: "request",
+            message: error?.message || "Esprit 트리거에 실패했습니다.",
+          });
           console.error("[REVIEW] async triggerEspritForNc failed", {
             requestId: pendingEspritTriggerRequest?.requestId || null,
             message: error?.message || String(error || ""),
