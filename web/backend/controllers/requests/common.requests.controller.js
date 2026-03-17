@@ -38,6 +38,26 @@ const ESPRIT_BASE =
   process.env.ESPRIT_URL ||
   "http://localhost:8001";
 
+const __myRequestsCache = new Map();
+
+const getMyRequestsCacheValue = (key) => {
+  const hit = __myRequestsCache.get(key);
+  if (!hit) return null;
+  if (typeof hit.expiresAt !== "number" || hit.expiresAt <= Date.now()) {
+    __myRequestsCache.delete(key);
+    return null;
+  }
+  return hit.value;
+};
+
+const setMyRequestsCacheValue = (key, value, ttlMs) => {
+  __myRequestsCache.set(key, {
+    value,
+    expiresAt: Date.now() + ttlMs,
+  });
+  return value;
+};
+
 const BRIDGE_PROCESS_BASE =
   process.env.BRIDGE_NODE_URL ||
   process.env.BRIDGE_PROCESS_BASE ||
@@ -392,6 +412,26 @@ export async function getMyRequests(req, res) {
     }
     if (req.query.implantType) filter.implantType = req.query.implantType;
 
+    const cacheKey = `my-requests:${String(req.user?._id || "")}:${String(
+      req.user?.businessAnchorId || "",
+    )}:${JSON.stringify({
+      page,
+      limit,
+      manufacturerStage: req.query.manufacturerStage || "",
+      manufacturerStageIn: req.query.manufacturerStageIn || "",
+      implantType: req.query.implantType || "",
+      sortBy: req.query.sortBy || "",
+      sortOrder: req.query.sortOrder || "",
+    })}`;
+    const cached = getMyRequestsCacheValue(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        success: true,
+        data: cached,
+        cached: true,
+      });
+    }
+
     // 정렬 파라미터
     const sort = {};
     if (req.query.sortBy) {
@@ -402,31 +442,34 @@ export async function getMyRequests(req, res) {
       sort.createdAt = -1; // 기본 정렬: 최신순
     }
 
-    // 의뢰 조회
-    const rawRequests = await Request.find(filter)
-      .select("-messages -statusHistory") // 상세 내역 조회 시 불필요한 큰 필드 제외
-      .populate("requestor", "name email business businessAnchorId")
-      .sort(sort)
-      .skip(skip)
-      .limit(limit)
-      .lean();
+    const [rawRequests, total] = await Promise.all([
+      Request.find(filter)
+        .select("-messages -statusHistory")
+        .sort(sort)
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Request.countDocuments(filter),
+    ]);
 
     const requests = rawRequests;
 
-    // 전체 의뢰 수
-    const total = await Request.countDocuments(filter);
+    const responseData = {
+      requests,
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit),
+      },
+    };
+
+    setMyRequestsCacheValue(cacheKey, responseData, 15 * 1000);
 
     res.status(200).json({
       success: true,
-      data: {
-        requests,
-        pagination: {
-          total,
-          page,
-          limit,
-          pages: Math.ceil(total / limit),
-        },
-      },
+      data: responseData,
+      cached: false,
     });
   } catch (error) {
     res.status(500).json({

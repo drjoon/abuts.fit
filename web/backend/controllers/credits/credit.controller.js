@@ -81,18 +81,7 @@ async function getCreditScope(req) {
   if (!businessAnchorId) {
     throw new Error("사업자 정보가 설정되지 않았습니다.");
   }
-
-  const userQuery = { businessAnchorId };
-  const members = await User.find(userQuery).select({ _id: 1 }).lean();
-  const userIds = (members || []).map((m) => m?._id).filter(Boolean);
-  if (
-    req.user?._id &&
-    !userIds.some((id) => String(id) === String(req.user._id))
-  ) {
-    userIds.push(req.user._id);
-  }
-
-  return { businessAnchorId, userIds };
+  return { businessAnchorId };
 }
 
 function buildLedgerQuery(scope) {

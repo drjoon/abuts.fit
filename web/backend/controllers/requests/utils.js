@@ -160,9 +160,14 @@ export function buildRequestorOrgFilter(req) {
 export async function buildRequestorOrgScopeFilter(req) {
   if (req?.user?.role !== "requestor") return {};
 
+  if (req?._requestorOrgScopeFilter) {
+    return req._requestorOrgScopeFilter;
+  }
+
   const orgId = getRequestorOrgId(req);
   if (!orgId || !Types.ObjectId.isValid(orgId)) {
-    return { requestor: req.user._id };
+    req._requestorOrgScopeFilter = { requestor: req.user._id };
+    return req._requestorOrgScopeFilter;
   }
 
   const org = await Business.findOne({
@@ -172,7 +177,8 @@ export async function buildRequestorOrgScopeFilter(req) {
     .lean();
 
   if (!org) {
-    return { requestor: req.user._id };
+    req._requestorOrgScopeFilter = { requestor: req.user._id };
+    return req._requestorOrgScopeFilter;
   }
 
   const ownerId = String(org.owner || "");
@@ -183,12 +189,13 @@ export async function buildRequestorOrgScopeFilter(req) {
     .filter((id) => Types.ObjectId.isValid(id));
 
   const memberObjectIds = memberIds.map((id) => new Types.ObjectId(id));
-  return {
+  req._requestorOrgScopeFilter = {
     $or: [
       { businessAnchorId: new Types.ObjectId(orgId) },
       { requestor: { $in: memberObjectIds } },
     ],
   };
+  return req._requestorOrgScopeFilter;
 }
 
 export function normalizeRequestStage(requestLike) {

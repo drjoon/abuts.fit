@@ -237,10 +237,10 @@ export const RequestorDashboardPage = () => {
       return res.data;
     },
     retry: false,
-    staleTime: 0,
-    refetchOnMount: "always",
+    staleTime: 30 * 1000,
+    refetchOnMount: false,
     refetchOnReconnect: true,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     enabled: !!token,
   });
 
@@ -328,10 +328,10 @@ export const RequestorDashboardPage = () => {
       return res.data;
     },
     retry: false,
-    staleTime: 0,
-    refetchOnMount: "always",
+    staleTime: 30 * 1000,
+    refetchOnMount: false,
     refetchOnReconnect: true,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     enabled: !!token,
   });
 

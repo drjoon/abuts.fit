@@ -55,6 +55,9 @@ export const RequestorPricingReferralPolicyCard = () => {
     },
     enabled: Boolean(token && user && user.role === "requestor"),
     retry: false,
+    staleTime: 5 * 60 * 1000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   });
 
   const shouldShowSkeleton = (isLoading || isFetching) && !data;

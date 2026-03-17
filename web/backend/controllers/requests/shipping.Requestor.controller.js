@@ -22,6 +22,26 @@ import {
   ensureShippingPackageForPickup,
 } from "./shipping.Requestor.helpers.js";
 
+const __bulkShippingCache = new Map();
+
+const getBulkCacheValue = (key) => {
+  const hit = __bulkShippingCache.get(key);
+  if (!hit) return null;
+  if (typeof hit.expiresAt !== "number" || hit.expiresAt <= Date.now()) {
+    __bulkShippingCache.delete(key);
+    return null;
+  }
+  return hit.value;
+};
+
+const setBulkCacheValue = (key, value, ttlMs) => {
+  __bulkShippingCache.set(key, {
+    value,
+    expiresAt: Date.now() + ttlMs,
+  });
+  return value;
+};
+
 export async function updateMyShippingMode(req, res) {
   try {
     const requestFilter = await buildRequestorOrgScopeFilter(req);
@@ -165,9 +185,24 @@ export async function getShippingEstimate(req, res) {
 
 export async function getMyBulkShipping(req, res) {
   try {
+    const cacheKey = `bulk-shipping:${String(req.user?._id || "")}:${String(
+      req.user?.businessAnchorId || "",
+    )}`;
+    const cached = getBulkCacheValue(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        success: true,
+        data: cached,
+        cached: true,
+      });
+    }
+
+    const data = await buildBulkShippingCandidates(req);
+    setBulkCacheValue(cacheKey, data, 15 * 1000);
+
     return res.status(200).json({
       success: true,
-      data: await buildBulkShippingCandidates(req),
+      data,
       cached: false,
     });
   } catch (error) {

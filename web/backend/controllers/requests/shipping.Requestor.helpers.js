@@ -548,15 +548,16 @@ export async function buildBulkShippingCandidates(req) {
     },
   })
     .select(
-      "requestId title manufacturerStage caseInfos shippingMode requestedShipDate createdAt timeline.estimatedShipYmd requestor productionSchedule",
+      "requestId title manufacturerStage caseInfos shippingMode requestedShipDate createdAt productionSchedule",
     )
-    .populate("requestor", "name organization")
     .lean();
 
   const mapItem = async (r) => {
     const ci = r.caseInfos || {};
     const clinic =
-      r.requestor?.organization || r.requestor?.name || req.user?.name || "";
+      (typeof ci.clinicName === "string" && ci.clinicName.trim()) ||
+      (typeof ci.hospital === "string" && ci.hospital.trim()) ||
+      "";
     const maxDiameter =
       typeof ci.maxDiameter === "number"
         ? `${ci.maxDiameter}mm`
@@ -566,21 +567,6 @@ export async function buildBulkShippingCandidates(req) {
 
     const { original: originalEstimatedShipYmd, next: nextEstimatedShipYmd } =
       await resolveEstimatedShipYmds(r);
-
-    const timeline = r.timeline || {};
-    const updates = {};
-    if (timeline.originalEstimatedShipYmd !== originalEstimatedShipYmd) {
-      updates["timeline.originalEstimatedShipYmd"] = originalEstimatedShipYmd;
-    }
-    if (timeline.nextEstimatedShipYmd !== nextEstimatedShipYmd) {
-      updates["timeline.nextEstimatedShipYmd"] = nextEstimatedShipYmd;
-    }
-    if (timeline.estimatedShipYmd == null) {
-      updates["timeline.estimatedShipYmd"] = originalEstimatedShipYmd;
-    }
-    if (Object.keys(updates).length > 0) {
-      await Request.updateOne({ _id: r._id }, { $set: updates }).exec();
-    }
 
     const estimatedShipYmd = nextEstimatedShipYmd || originalEstimatedShipYmd;
     const stageKey = normalizeRequestStage(r);

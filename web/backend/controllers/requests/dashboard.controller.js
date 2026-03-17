@@ -41,6 +41,69 @@ const getUniqueRequestIdCount = (requestIds) => {
   ).size;
 };
 
+const __requestPerfCache = new Map();
+
+const getCacheValue = (key) => {
+  const hit = __requestPerfCache.get(key);
+  if (!hit) return null;
+  if (typeof hit.expiresAt !== "number" || hit.expiresAt <= Date.now()) {
+    __requestPerfCache.delete(key);
+    return null;
+  }
+  return hit.value;
+};
+
+const setCacheValue = (key, value, ttlMs) => {
+  __requestPerfCache.set(key, {
+    value,
+    expiresAt: Date.now() + ttlMs,
+  });
+  return value;
+};
+
+const buildShippingRequestCountByBusinessKey = (rows) => {
+  const map = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const businessKey = String(row?.businessAnchorId || "").trim();
+    if (!businessKey) continue;
+    const count = getUniqueRequestIdCount(row?.requestIds);
+    map.set(businessKey, Number(map.get(businessKey) || 0) + count);
+  }
+  return map;
+};
+
+const getRequestEstimatedShipYmd = ({ request, fallbackMap }) => {
+  const timeline = request?.timeline || {};
+  const next =
+    typeof timeline.nextEstimatedShipYmd === "string" &&
+    timeline.nextEstimatedShipYmd.trim()
+      ? timeline.nextEstimatedShipYmd.trim()
+      : null;
+  const est =
+    typeof timeline.estimatedShipYmd === "string" &&
+    timeline.estimatedShipYmd.trim()
+      ? timeline.estimatedShipYmd.trim()
+      : null;
+  const orig =
+    typeof timeline.originalEstimatedShipYmd === "string" &&
+    timeline.originalEstimatedShipYmd.trim()
+      ? timeline.originalEstimatedShipYmd.trim()
+      : null;
+
+  if (next || est || orig) {
+    return next || est || orig;
+  }
+
+  const pickup = request?.productionSchedule?.scheduledShipPickup;
+  const pickupYmd = pickup ? toKstYmd(pickup) : null;
+  if (pickupYmd) {
+    return pickupYmd;
+  }
+
+  const createdYmd = toKstYmd(request?.createdAt) || getTodayYmdInKst();
+  return fallbackMap.get(createdYmd) || createdYmd;
+};
+
 const findReferredRequestorUsersByReferrerAnchorId = async (
   businessAnchorId,
 ) => {
@@ -518,6 +581,20 @@ export async function getMyDashboardSummary(req, res) {
     const userId = req.user?._id?.toString();
     const debug =
       process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
+    const summaryCacheKey = `dashboard-summary:${String(
+      req.user?._id || "",
+    )}:${String(req.user?.businessAnchorId || "")}:${period}`;
+
+    if (!debug) {
+      const cached = getCacheValue(summaryCacheKey);
+      if (cached) {
+        return res.status(200).json({
+          success: true,
+          data: cached,
+          cached: true,
+        });
+      }
+    }
 
     const requestFilter = await buildRequestorOrgScopeFilter(req);
 
@@ -762,16 +839,18 @@ export async function getMyDashboardSummary(req, res) {
       packageCount: 0,
     };
 
-    console.info("[REQUESTOR_DASHBOARD_STAGE_COUNTS]", {
-      userId: req.user?._id ? String(req.user._id) : null,
-      requestFilter,
-      statsShippingCount: Number(stats.shippingCount || 0),
-      statsTrackingCount: Number(stats.trackingCount || 0),
-      shippingProductCount: Number(shippingCounts.productCount || 0),
-      shippingPackageCount: Number(shippingCounts.packageCount || 0),
-      trackingProductCount: Number(trackingCounts.productCount || 0),
-      trackingPackageCount: Number(trackingCounts.packageCount || 0),
-    });
+    if (debug) {
+      console.info("[REQUESTOR_DASHBOARD_STAGE_COUNTS]", {
+        userId: req.user?._id ? String(req.user._id) : null,
+        requestFilter,
+        statsShippingCount: Number(stats.shippingCount || 0),
+        statsTrackingCount: Number(stats.trackingCount || 0),
+        shippingProductCount: Number(shippingCounts.productCount || 0),
+        shippingPackageCount: Number(shippingCounts.packageCount || 0),
+        trackingProductCount: Number(trackingCounts.productCount || 0),
+        trackingPackageCount: Number(trackingCounts.packageCount || 0),
+      });
+    }
 
     // '포장.발송'은 shipping, '추적관리'는 tracking으로 분리.
     const shippingTotal = Number(shippingCounts.productCount || 0);
@@ -811,15 +890,18 @@ export async function getMyDashboardSummary(req, res) {
           "machining",
           "packing",
           "shipping",
-          "tracking",
           "의뢰",
           "CAM",
           "가공",
           "세척.패킹",
           "포장.발송",
-          "추적관리",
         ],
       },
+      productionSchedule: { $exists: true, $ne: null },
+      $or: [
+        { "timeline.originalEstimatedShipYmd": { $exists: true, $ne: "" } },
+        { "timeline.estimatedShipYmd": { $exists: true, $ne: "" } },
+      ],
     })
       .select(
         "requestId title manufacturerStage productionSchedule caseInfos createdAt timeline shippingMode finalShipping originalShipping",
@@ -830,61 +912,49 @@ export async function getMyDashboardSummary(req, res) {
 
     // 직경별 통계 실제 집계
 
-    const recentRequests = await Promise.all(
-      (recentRequestsResult || []).map(async (r) => {
-        const ci = r.caseInfos || {};
-        const existingShipYmd = (() => {
-          const timeline = r.timeline || {};
-          const next =
-            typeof timeline.nextEstimatedShipYmd === "string" &&
-            timeline.nextEstimatedShipYmd.trim()
-              ? timeline.nextEstimatedShipYmd.trim()
-              : null;
-          const est =
-            typeof timeline.estimatedShipYmd === "string" &&
-            timeline.estimatedShipYmd.trim()
-              ? timeline.estimatedShipYmd.trim()
-              : null;
-          const orig =
-            typeof timeline.originalEstimatedShipYmd === "string" &&
-            timeline.originalEstimatedShipYmd.trim()
-              ? timeline.originalEstimatedShipYmd.trim()
-              : null;
-          return next || est || orig;
-        })();
-
-        if (existingShipYmd) {
-          return {
-            ...r,
-            caseInfos: ci,
-            estimatedShipYmd: existingShipYmd,
-          };
-        }
-
-        const pickup = r.productionSchedule?.scheduledShipPickup;
-        const pickupYmd = pickup ? toKstYmd(pickup) : null;
-        if (pickupYmd) {
-          return {
-            ...r,
-            caseInfos: ci,
-            estimatedShipYmd: pickupYmd,
-          };
-        }
-
-        const createdYmd = toKstYmd(r.createdAt) || getTodayYmdInKst();
-        const baseYmd = await normalizeKoreanBusinessDay({ ymd: createdYmd });
-        const estimatedShipYmd = await addKoreanBusinessDays({
-          startYmd: baseYmd,
-          days: 1,
-        });
-
-        return {
-          ...r,
-          caseInfos: ci,
-          estimatedShipYmd,
-        };
-      }),
+    const recentRequestFallbackYmds = Array.from(
+      new Set(
+        (recentRequestsResult || [])
+          .map((r) => {
+            const timeline = r?.timeline || {};
+            const hasTimelineEstimate =
+              (typeof timeline.nextEstimatedShipYmd === "string" &&
+                timeline.nextEstimatedShipYmd.trim()) ||
+              (typeof timeline.estimatedShipYmd === "string" &&
+                timeline.estimatedShipYmd.trim()) ||
+              (typeof timeline.originalEstimatedShipYmd === "string" &&
+                timeline.originalEstimatedShipYmd.trim());
+            const pickup = r?.productionSchedule?.scheduledShipPickup;
+            if (hasTimelineEstimate || pickup) {
+              return null;
+            }
+            return toKstYmd(r?.createdAt) || getTodayYmdInKst();
+          })
+          .filter(Boolean),
+      ),
     );
+
+    const fallbackEstimatedShipYmdMap = new Map(
+      await Promise.all(
+        recentRequestFallbackYmds.map(async (createdYmd) => {
+          const baseYmd = await normalizeKoreanBusinessDay({ ymd: createdYmd });
+          const estimatedShipYmd = await addKoreanBusinessDays({
+            startYmd: baseYmd,
+            days: 1,
+          });
+          return [createdYmd, estimatedShipYmd];
+        }),
+      ),
+    );
+
+    const recentRequests = (recentRequestsResult || []).map((r) => ({
+      ...r,
+      caseInfos: r.caseInfos || {},
+      estimatedShipYmd: getRequestEstimatedShipYmd({
+        request: r,
+        fallbackMap: fallbackEstimatedShipYmdMap,
+      }),
+    }));
 
     const recentRequestsData = recentRequests.map((r) => {
       const ci = r.caseInfos || {};
@@ -1016,6 +1086,10 @@ export async function getMyDashboardSummary(req, res) {
         period,
         stageBreakdown,
       };
+    }
+
+    if (!debug) {
+      setCacheValue(summaryCacheKey, responseData, 15 * 1000);
     }
 
     return res.status(200).json({
@@ -1218,6 +1292,22 @@ export async function getDashboardRiskSummary(req, res) {
 export async function getMyPricingReferralStats(req, res) {
   try {
     const requestorId = req.user._id;
+    const debug =
+      process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
+    const statsCacheKey = `pricing-referral-stats:${String(
+      req.user?._id || "",
+    )}:${String(req.user?.businessAnchorId || "")}`;
+
+    if (!debug) {
+      const cached = getCacheValue(statsCacheKey);
+      if (cached) {
+        return res.status(200).json({
+          success: true,
+          data: cached,
+          cached: true,
+        });
+      }
+    }
 
     if (!requestorId) {
       return res.status(400).json({
@@ -1280,64 +1370,71 @@ export async function getMyPricingReferralStats(req, res) {
     // 누락 감지: 오늘 스냅샷이 없으면 당일 자정 기준 30일로 즉시 계산 (워커 장애 복구)
     const snapshotMissing = !cachedSnapshot;
 
-    const cachedGroupMemberCount = cachedSnapshot?.groupMemberCount;
-    const cachedGroupTotalOrders = cachedSnapshot?.groupTotalOrders;
-
     const role = String(me?.role || req.user?.role || "requestor");
-    let groupMemberCount = 0;
-    let freshGroupTotalOrders = 0;
+    let groupMemberCount = Number(cachedSnapshot?.groupMemberCount || 0);
+    let freshGroupTotalOrders = Number(cachedSnapshot?.groupTotalOrders || 0);
     let myLastMonthOrders = 0;
     let groupMemberIds = [];
 
-    const shippedBusinessRows = await ShippingPackage.find({
-      shipDateYmd: { $gte: last30StartYmd, $lte: todayYmd },
-    })
-      .select({ _id: 0, businessAnchorId: 1, requestIds: 1 })
-      .lean();
-
-    const shippingRequestCountByBusinessKey = new Map();
-    for (const row of Array.isArray(shippedBusinessRows)
-      ? shippedBusinessRows
-      : []) {
-      const businessKey = String(row?.businessAnchorId || "").trim();
-      if (!businessKey) continue;
-      const count = getUniqueRequestIdCount(row?.requestIds);
-      shippingRequestCountByBusinessKey.set(
-        businessKey,
-        Number(shippingRequestCountByBusinessKey.get(businessKey) || 0) + count,
-      );
-    }
-
     if (role === "requestor") {
       const leaderBusinessAnchorId = String(me?.businessAnchorId || "");
-      const referredRequestors =
-        await findReferredRequestorUsersByReferrerAnchorId(
-          leaderBusinessAnchorId,
+      const shouldComputeRequestorGroup = !cachedSnapshot;
+
+      if (shouldComputeRequestorGroup) {
+        const referredRequestors =
+          await findReferredRequestorUsersByReferrerAnchorId(
+            leaderBusinessAnchorId,
+          );
+
+        const orgKeys = Array.from(
+          new Set(
+            [
+              leaderBusinessAnchorId,
+              ...(referredRequestors || []).map((u) =>
+                String(u.businessAnchorId || ""),
+              ),
+            ].filter(Boolean),
+          ),
         );
 
-      const orgKeys = Array.from(
-        new Set(
-          [
-            leaderBusinessAnchorId,
-            ...(referredRequestors || []).map((u) =>
-              String(u.businessAnchorId || ""),
-            ),
-          ].filter(Boolean),
-        ),
-      );
-
-      groupMemberCount = orgKeys.length;
-      groupMemberIds = orgKeys.map((id) => String(id));
-
-      freshGroupTotalOrders = orgKeys.reduce(
-        (acc, id) =>
-          acc + Number(shippingRequestCountByBusinessKey.get(String(id)) || 0),
-        0,
-      );
-      myLastMonthOrders = Number(
-        shippingRequestCountByBusinessKey.get(String(leaderBusinessAnchorId)) ||
+        groupMemberCount = orgKeys.length;
+        groupMemberIds = orgKeys.map((id) => String(id));
+        const shippedBusinessRows = orgKeys.length
+          ? await ShippingPackage.find({
+              businessAnchorId: {
+                $in: orgKeys
+                  .filter((id) => Types.ObjectId.isValid(id))
+                  .map((id) => new Types.ObjectId(id)),
+              },
+              shipDateYmd: { $gte: last30StartYmd, $lte: todayYmd },
+            })
+              .select({ _id: 0, businessAnchorId: 1, requestIds: 1 })
+              .lean()
+          : [];
+        const countMap =
+          buildShippingRequestCountByBusinessKey(shippedBusinessRows);
+        freshGroupTotalOrders = orgKeys.reduce(
+          (acc, id) => acc + Number(countMap.get(String(id)) || 0),
           0,
-      );
+        );
+        myLastMonthOrders = Number(
+          countMap.get(String(leaderBusinessAnchorId)) || 0,
+        );
+      } else {
+        const myShippingRows = Types.ObjectId.isValid(leaderBusinessAnchorId)
+          ? await ShippingPackage.find({
+              businessAnchorId: new Types.ObjectId(leaderBusinessAnchorId),
+              shipDateYmd: { $gte: last30StartYmd, $lte: todayYmd },
+            })
+              .select({ _id: 0, businessAnchorId: 1, requestIds: 1 })
+              .lean()
+          : [];
+        const myCountMap =
+          buildShippingRequestCountByBusinessKey(myShippingRows);
+        myLastMonthOrders = Number(
+          myCountMap.get(String(leaderBusinessAnchorId)) || 0,
+        );
+      }
     } else {
       const refBusinessAnchorId = String(me?.businessAnchorId || "").trim();
       const directChildren =
@@ -1383,45 +1480,6 @@ export async function getMyPricingReferralStats(req, res) {
 
     const totalLastMonthOrders = freshGroupTotalOrders;
 
-    if (snapshotBusinessAnchorObjectId) {
-      try {
-        await PricingReferralStatsSnapshot.findOneAndUpdate(
-          { businessAnchorId: snapshotBusinessAnchorObjectId, ymd },
-          {
-            $set: {
-              businessAnchorId: snapshotBusinessAnchorObjectId,
-              leaderUserId: requestorId,
-              groupMemberCount,
-              groupTotalOrders: totalLastMonthOrders,
-              computedAt: now,
-            },
-          },
-          { upsert: true, new: true },
-        );
-      } catch (upsertError) {
-        // 중복 키 에러 발생 시 기존 문서 업데이트로 재시도
-        if (upsertError.code === 11000) {
-          console.warn(
-            `[PricingReferralStats] Duplicate key on upsert, retrying with update: businessAnchorId=${snapshotBusinessAnchorObjectId}, ymd=${ymd}`,
-          );
-          await PricingReferralStatsSnapshot.updateOne(
-            { businessAnchorId: snapshotBusinessAnchorObjectId, ymd },
-            {
-              $set: {
-                businessAnchorId: snapshotBusinessAnchorObjectId,
-                leaderUserId: requestorId,
-                groupMemberCount,
-                groupTotalOrders: totalLastMonthOrders,
-                computedAt: now,
-              },
-            },
-          );
-        } else {
-          throw upsertError;
-        }
-      }
-    }
-
     const totalOrders = totalLastMonthOrders;
 
     const baseUnitPrice = 15000;
@@ -1453,7 +1511,7 @@ export async function getMyPricingReferralStats(req, res) {
       }
     }
 
-    if (process.env.NODE_ENV !== "production") {
+    if (debug) {
       console.log("[pricing-referral-stats]", {
         requestorId: String(requestorId),
         now,
@@ -1489,7 +1547,7 @@ export async function getMyPricingReferralStats(req, res) {
       rule,
       groupMemberCount,
       snapshotMissing,
-      ...(process.env.NODE_ENV !== "production"
+      ...(debug
         ? {
             debug: {
               lastMonthStart,
@@ -1519,6 +1577,10 @@ export async function getMyPricingReferralStats(req, res) {
           }
         : {}),
     };
+
+    if (!debug) {
+      setCacheValue(statsCacheKey, responseData, 60 * 1000);
+    }
 
     return res.status(200).json({
       success: true,

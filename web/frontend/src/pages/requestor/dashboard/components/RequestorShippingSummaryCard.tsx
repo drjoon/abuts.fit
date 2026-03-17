@@ -75,6 +75,9 @@ export const RequestorShippingSummaryCard = () => {
       }
       return res.data.data;
     },
+    staleTime: 60 * 1000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   });
 
   const memo = useMemo(() => {
