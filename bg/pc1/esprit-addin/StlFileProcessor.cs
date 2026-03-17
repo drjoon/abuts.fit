@@ -194,10 +194,141 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         {
             try
             {
-                // 원본 정리 로직이 제거되었을 때를 위한 안전한 초기화 더미
-                AppLogger.Log("StlFileProcessor: DentalAddin static 필드 초기화 생략 (no-op)");
+                Type mainModuleType = ResolveMainModuleType();
+                if (mainModuleType != null)
+                {
+                    ResetStaticField(mainModuleType, "Document", null);
+                    ResetStaticProperty(mainModuleType, "EspritApp", null);
+                    ResetStaticField(mainModuleType, "PrcFilePath", new string[13]);
+                    ResetStaticField(mainModuleType, "PrcFileName", new string[13]);
+                    ResetStaticField(mainModuleType, "NumData", new double[7]);
+                    ResetStaticField(mainModuleType, "NumCombobox", new int[7]);
+                    ResetStaticField(mainModuleType, "FSName", new string[13]);
+                    ResetStaticField(mainModuleType, "NumberT", new double[9]);
+                    ResetStaticField(mainModuleType, "ToolNs", null);
+                    ResetStaticField(mainModuleType, "FilPath", null);
+                    ResetStaticField(mainModuleType, "tfc", null);
+                    ResetStaticArrayField(mainModuleType, "Fcb2", 13);
+                    ResetStaticField(mainModuleType, "Fcb1", null);
+                    ResetStaticField(mainModuleType, "FC1", null);
+                    ResetStaticField(mainModuleType, "FC2", null);
+                    ResetStaticField(mainModuleType, "FC3", null);
+                    ResetStaticField(mainModuleType, "FC4", null);
+                    ResetStaticField(mainModuleType, "FC5", null);
+                    ResetStaticField(mainModuleType, "Fcc", null);
+                    ResetStaticField(mainModuleType, "FcM", null);
+                    ResetStaticField(mainModuleType, "SS1", null);
+                    ResetStaticField(mainModuleType, "Ss", null);
+                    ResetStaticField(mainModuleType, "seg", null);
+                    ResetStaticField(mainModuleType, "Wp", null);
+                    ResetStaticField(mainModuleType, "Gas", null);
+                    ResetStaticField(mainModuleType, "Pt12", null);
+                    ResetStaticField(mainModuleType, "IntPt", null);
+                    ResetStaticArrayField(mainModuleType, "ptp", 7);
+                    ResetStaticField(mainModuleType, "FcNumber", new int[7]);
+                    ResetStaticField(mainModuleType, "Matrix1", new double[19]);
+                    ResetStaticField(mainModuleType, "Matrix2", new double[19]);
+                    ResetStaticField(mainModuleType, "Matrix3", new double[37]);
+                    ResetStaticField(mainModuleType, "P", new int[37]);
+                    ResetStaticField(mainModuleType, "Q", new int[9]);
+
+                    ResetStaticField(mainModuleType, "SurfaceNumber", 0);
+                    ResetStaticField(mainModuleType, "SurfaceNumber2", 0.0);
+                    ResetStaticField(mainModuleType, "Jump", 0);
+                    ResetStaticField(mainModuleType, "machinetype", 0);
+                    ResetStaticField(mainModuleType, "EndXValue", 0.0);
+                    ResetStaticField(mainModuleType, "Chamfer", 0.0);
+                    ResetStaticField(mainModuleType, "DownZ", 0.0);
+                    ResetStaticField(mainModuleType, "MillingDepth", 0.0);
+                    ResetStaticField(mainModuleType, "TurningExtend", 0.0);
+                    ResetStaticField(mainModuleType, "TurningDepth", 0.0);
+                    ResetStaticField(mainModuleType, "BackTurn", 0.0);
+                    ResetStaticField(mainModuleType, "SL", 0.0);
+                    ResetStaticField(mainModuleType, "ProfileType", 0);
+                    ResetStaticField(mainModuleType, "ProfileT", 0);
+                    ResetStaticField(mainModuleType, "LowerY", 0.0);
+                    ResetStaticField(mainModuleType, "HighY", 0.0);
+                    ResetStaticField(mainModuleType, "iLine", 0.0);
+                    ResetStaticField(mainModuleType, "HighY1", 0.0);
+                    ResetStaticField(mainModuleType, "HighY2", 0.0);
+                    ResetStaticField(mainModuleType, "FirstYy", 0.0);
+                    ResetStaticField(mainModuleType, "Hdepth", 0.0);
+                    ResetStaticField(mainModuleType, "Bdepth", 0.0);
+                    ResetStaticField(mainModuleType, "FrontYvalue", 0.0);
+                    ResetStaticField(mainModuleType, "FirstH", 0.0);
+                    ResetStaticField(mainModuleType, "Dayu", 0);
+                    ResetStaticField(mainModuleType, "EndX", 0.0);
+                    ResetStaticField(mainModuleType, "EndY", 0.0);
+                    ResetStaticField(mainModuleType, "Eror", 0);
+                    ResetStaticField(mainModuleType, "TurningTimes", 0);
+                    ResetStaticField(mainModuleType, "MaxX", 0.0);
+                    ResetStaticField(mainModuleType, "MaxY", 0.0);
+                    ResetStaticField(mainModuleType, "GrFeature", 0);
+                    ResetStaticField(mainModuleType, "FirstFeatureNeed", 0);
+                    ResetStaticField(mainModuleType, "NeedFirstFeature", 0);
+                    ResetStaticField(mainModuleType, "MinF", 0);
+                    ResetStaticField(mainModuleType, "Ang", 0.0);
+                    ResetStaticField(mainModuleType, "BtmY", 0.0);
+                    ResetStaticField(mainModuleType, "Percent", new double[5]);
+                    ResetStaticField(mainModuleType, "PercentB", new double[5]);
+                    ResetStaticField(mainModuleType, "MidX", 0.0);
+                    ResetStaticField(mainModuleType, "Xmin", 0.0);
+                    ResetStaticField(mainModuleType, "YWant", 0.0);
+                    ResetStaticField(mainModuleType, "roughm", 0);
+                    ResetStaticField(mainModuleType, "n", 0);
+                    ResetStaticField(mainModuleType, "m", 0);
+                    ResetStaticField(mainModuleType, "tek", 0);
+                    ResetStaticField(mainModuleType, "CPen", 0);
+                    ResetStaticField(mainModuleType, "MidXc", 0.0);
+                    ResetStaticField(mainModuleType, "NeedEndPart", 0);
+                    ResetStaticField(mainModuleType, "EndTimes", 0);
+                    ResetStaticField(mainModuleType, "NeediLine", 0);
+                    ResetStaticField(mainModuleType, "Px", 0.0);
+                    ResetStaticField(mainModuleType, "Py", 0.0);
+                    ResetStaticField(mainModuleType, "DeleteLine", 0);
+                    ResetStaticField(mainModuleType, "DeleteOLine", 0);
+                    ResetStaticField(mainModuleType, "Incline", 0.0);
+                    ResetStaticField(mainModuleType, "Intersect", 0);
+                    ResetStaticField(mainModuleType, "fcname", null);
+                    ResetStaticField(mainModuleType, "SpindleSide", false);
+                    ResetStaticField(mainModuleType, "RL", 0.0);
+                    ResetStaticField(mainModuleType, "ExtendX", 0.0);
+                    ResetStaticField(mainModuleType, "COMX1", 0.0);
+                    ResetStaticField(mainModuleType, "COMX2", 0.0);
+                    ResetStaticField(mainModuleType, "XT", 0.0);
+                    ResetStaticField(mainModuleType, "ZT", 0.0);
+                    ResetStaticField(mainModuleType, "ZH", 0.0);
+                    ResetStaticField(mainModuleType, "AngNumber", 0);
+                    ResetStaticField(mainModuleType, "AngType1", 0);
+                    ResetStaticField(mainModuleType, "AngType2", 0);
+                    ResetStaticField(mainModuleType, "ReverseOn", false);
+                    ResetStaticField(mainModuleType, "AngleNumber", 0.0);
+                    ResetStaticField(mainModuleType, "SemiAngle", 0.0);
+                    ResetStaticField(mainModuleType, "RoughType", 0.0);
+                    ResetStaticField(mainModuleType, "x3", 0.0);
+                }
+
+                Type moveModuleType = ResolveMoveModuleType(mainModuleType);
+                if (moveModuleType != null)
+                {
+                    ResetStaticField(moveModuleType, "Chazhi", 0.0);
+                    ResetStaticField(moveModuleType, "NeedMove", false);
+                    ResetStaticField(moveModuleType, "NeedMoveY", 0.0);
+                    ResetStaticField(moveModuleType, "NeedMoveZ", 0.0);
+                    ResetStaticField(moveModuleType, "RMTI", 0.0);
+                    ResetStaticField(moveModuleType, "MTI", 0.0);
+                    ResetStaticField(moveModuleType, "NonConnection", false);
+                    ResetStaticField(moveModuleType, "FirstPX", 0.0);
+                    ResetStaticField(moveModuleType, "BackPointX", 0.0);
+                    ResetStaticField(moveModuleType, "FrontPointX", 0.0);
+                    ResetStaticField(moveModuleType, "ExtendMill", 0.0);
+                }
+                AppLogger.Log("StlFileProcessor: DentalAddin static 필드 초기화 완료");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"StlFileProcessor: DentalAddin static 필드 초기화 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
         }
         private static string GetBackendUrl()
         {
@@ -1625,8 +1756,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     AppLogger.Log($"DentalAddin: MainModuleType Assembly 정보 로깅 실패 - {ex.GetType().Name}:{ex.Message}");
                 }
-                ConfigureDentalProcesses(mainModuleType);
                 EnsureMainModuleContext(mainModuleType, document);
+                bool bindInvoked = TryInvokeMainModuleMethod(mainModuleType, "Bind", false, _espApp, document);
+                if (!bindInvoked)
+                {
+                    AppLogger.Log("DentalAddin: Bind 미제공 - 필드 주입만으로 진행합니다.");
+                }
+                ConfigureDentalProcesses(mainModuleType);
                 ApplyTurningParameters(mainModuleType);
                 EnsureMoveModuleDefaults(mainModuleType, document);
                 ApplyLimitPoints(mainModuleType, frontLimitX, backLimitX);
@@ -1645,12 +1781,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 TryApplyCompositeSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ);
                 // ApplyAdditionalStlShift(document, mainModuleType, AppConfig.DefaultStlShift);
                 AppLogger.Log("DentalAddin: MoveSTL 실행 완료");
-                AppLogger.Log("DentalAddin: Bind 실행 시도 (Document: {(document != null)}, EspritApp: {(_espApp != null)})");
-                bool bindInvoked = TryInvokeMainModuleMethod(mainModuleType, "Bind", false, _espApp, document);
-                if (!bindInvoked)
-                {
-                    AppLogger.Log("DentalAddin: Bind 미제공 - 필드 주입만으로 진행합니다.");
-                }
                 AppLogger.Log("DentalAddin: Main 실행 시작");
                 bool searchToolInvoked = TryInvokeMainModuleMethod(mainModuleType, "SearchTool", false);
                 AppLogger.Log(searchToolInvoked
@@ -2342,6 +2472,32 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             field.SetValue(null, value);
         }
+        private static void ResetStaticField(Type targetType, string fieldName, object value)
+        {
+            SetStaticField(targetType, fieldName, value);
+        }
+        private static void ResetStaticProperty(Type targetType, string propertyName, object value)
+        {
+            SetStaticProperty(targetType, propertyName, value);
+        }
+        private static void ResetStaticArrayField(Type targetType, string fieldName, int length)
+        {
+            FieldInfo field = targetType?.GetField(fieldName, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+            if (field == null)
+            {
+                AppLogger.Log($"DentalAddin: {targetType?.FullName ?? "알 수 없는 타입"}.{fieldName} 배열 필드를 찾을 수 없습니다.");
+                return;
+            }
+            Type fieldType = field.FieldType;
+            if (!fieldType.IsArray)
+            {
+                AppLogger.Log($"DentalAddin: {targetType?.FullName ?? "알 수 없는 타입"}.{fieldName} 는 배열 필드가 아닙니다.");
+                return;
+            }
+            Type elementType = fieldType.GetElementType() ?? typeof(object);
+            Array emptyArray = Array.CreateInstance(elementType, Math.Max(0, length));
+            field.SetValue(null, emptyArray);
+        }
         private static T GetMainModuleField<T>(Type mainModuleType, string fieldName) where T : class
         {
             FieldInfo field = mainModuleType?.GetField(fieldName, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
@@ -2973,14 +3129,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             double mtiDefault = 0.0;
             double barDiameter = document?.LatheMachineSetup?.BarDiameter ?? 0.0;
-            bool mtiSet = TrySetFieldIfNull(moveModuleType, "MTI", mtiDefault);
+            SetStaticField(moveModuleType, "MTI", mtiDefault);
             double frontLimit = _effectiveFrontLimitX ?? throw new InvalidOperationException("FrontPointX not initialized");
-            bool frontSet = TrySetFieldIfNull(moveModuleType, "FrontPointX", frontLimit);
-            bool backSet = TrySetFieldIfNull(moveModuleType, "BackPointX", DefaultBackLimitX);
+            SetStaticField(moveModuleType, "FrontPointX", frontLimit);
+            SetStaticField(moveModuleType, "BackPointX", DefaultBackLimitX);
             SetStaticField(moveModuleType, "NeedMove", false);
             SetStaticField(moveModuleType, "NeedMoveY", 0.0);
             SetStaticField(moveModuleType, "NeedMoveZ", 0.0);
-            AppLogger.Log($"DentalAddin: MoveSTL 초기화 - MTI:{mtiDefault}({mtiSet}), Front:{frontLimit}({frontSet}), Back:{DefaultBackLimitX}({backSet}), BarDia:{barDiameter}");
+            AppLogger.Log($"DentalAddin: MoveSTL 초기화 - MTI:{mtiDefault}(overwrite), Front:{frontLimit}(overwrite), Back:{DefaultBackLimitX}(overwrite), BarDia:{barDiameter}");
         }
         private static void ApplyTurningParameters(Type mainModuleType)
         {
