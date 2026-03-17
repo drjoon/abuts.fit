@@ -12,7 +12,7 @@ import { toKstYmd } from "../../utils/krBusinessDays.js";
  */
 async function getProfile(req, res) {
   try {
-    const user = await User.findById(req.user._id).select("-password");
+    const user = await User.findById(req.user._id).select("-password").lean();
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -20,7 +20,7 @@ async function getProfile(req, res) {
       });
     }
 
-    const data = typeof user.toObject === "function" ? user.toObject() : user;
+    const data = user;
     const provider = data?.social?.provider;
     data.authMethods = {
       email: !provider,

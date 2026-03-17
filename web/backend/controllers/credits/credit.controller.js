@@ -3,6 +3,26 @@ import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import Business from "../../models/business.model.js";
 
+const __creditBalanceCache = new Map();
+
+function getCreditBalanceCacheValue(key) {
+  const hit = __creditBalanceCache.get(key);
+  if (!hit) return null;
+  if (typeof hit.expiresAt !== "number" || hit.expiresAt <= Date.now()) {
+    __creditBalanceCache.delete(key);
+    return null;
+  }
+  return hit.value;
+}
+
+function setCreditBalanceCacheValue(key, value, ttlMs) {
+  __creditBalanceCache.set(key, {
+    value,
+    expiresAt: Date.now() + ttlMs,
+  });
+  return value;
+}
+
 function roundUpUnit(amount, unit) {
   const n = Number(amount);
   const u = Number(unit);
@@ -161,28 +181,23 @@ export async function getMyCreditBalance(req, res) {
     });
   }
 
-  const scope = await getCreditScope(req);
-  const { balance, paidBalance, bonusBalance, freeShippingCreditBalance } =
-    await getBalanceBreakdown(scope);
-  console.error("[CREDIT_BALANCE_RESPONSE]", {
-    userId: req.user?._id ? String(req.user._id) : null,
-    userBusinessAnchorId: req.user?.businessAnchorId
-      ? String(req.user.businessAnchorId)
-      : null,
-    resolvedBusinessAnchorId: String(scope.businessAnchorId || ""),
-    balance,
-    paidBalance,
-    bonusBalance,
-    freeShippingCreditBalance,
-  });
+  const scope = { businessAnchorId: String(identity.businessAnchorId || "") };
+  const cacheKey = `credit-balance:${scope.businessAnchorId}`;
+  const cached = getCreditBalanceCacheValue(cacheKey);
+  if (cached) {
+    return res.json({
+      success: true,
+      data: cached,
+      cached: true,
+    });
+  }
+
+  const balanceData = await getBalanceBreakdown(scope);
+  setCreditBalanceCacheValue(cacheKey, balanceData, 15 * 1000);
+
   return res.json({
     success: true,
-    data: {
-      balance,
-      paidBalance,
-      bonusBalance,
-      freeShippingCreditBalance,
-    },
+    data: balanceData,
   });
 }
 

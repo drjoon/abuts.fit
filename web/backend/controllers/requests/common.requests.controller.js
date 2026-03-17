@@ -444,7 +444,15 @@ export async function getMyRequests(req, res) {
 
     const [rawRequests, total] = await Promise.all([
       Request.find(filter)
-        .select("-messages -statusHistory")
+        .select({
+          _id: 1,
+          requestId: 1,
+          createdAt: 1,
+          title: 1,
+          description: 1,
+          manufacturerStage: 1,
+          caseInfos: 1,
+        })
         .sort(sort)
         .skip(skip)
         .limit(limit)
