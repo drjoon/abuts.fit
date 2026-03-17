@@ -55,6 +55,10 @@ export const RequestorRiskSummaryCard = ({
   }
 
   const summary = riskSummary || {};
+  const normalizeYmd = (value?: string | null) => {
+    const normalized = String(value || "").trim();
+    return normalized || null;
+  };
 
   const STAGE_BADGE_BASE =
     "text-[10px] h-4 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
@@ -192,76 +196,89 @@ export const RequestorRiskSummaryCard = ({
         </div>
         <div className="space-y-2 flex-1 max-h-[550px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
           {summary.items && summary.items.length > 0 ? (
-            summary.items.map((item) => (
-              <FunctionalItemCard
-                key={item.id}
-                className="flex items-center justify-between p-3 border border-border rounded-lg"
-                disabled
-                onClick={(e) => {
-                  if (!onItemClick) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onItemClick(item);
-                }}
-              >
-                <div className="flex-1 min-w-0 mr-2">
-                  <div className="flex items-start mb-1 gap-2">
-                    <div className="text-sm font-medium truncate flex-1 min-w-0">
-                      {item.title}
+            summary.items.map((item) => {
+              const originalYmd =
+                normalizeYmd(item.originalEstimatedShipYmd) ||
+                normalizeYmd(item.dueDate);
+              const currentYmd = normalizeYmd(item.nextEstimatedShipYmd);
+              const showCurrentYmd =
+                currentYmd && currentYmd !== originalYmd ? currentYmd : null;
+
+              return (
+                <FunctionalItemCard
+                  key={item.id}
+                  className="flex items-center justify-between p-3 border border-border rounded-lg"
+                  disabled
+                  onClick={(e) => {
+                    if (!onItemClick) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onItemClick(item);
+                  }}
+                >
+                  <div className="flex-1 min-w-0 mr-2">
+                    <div className="flex items-start mb-1 gap-2">
+                      <div className="text-sm font-medium truncate flex-1 min-w-0">
+                        {item.title}
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {getStatusBadge(
+                          item.manufacturerStage || "",
+                          item.manufacturerStage,
+                        )}
+                        {item.riskLevel === "danger" ? (
+                          <Badge
+                            variant="destructive"
+                            className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+                          >
+                            지연확정
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+                          >
+                            지연가능
+                          </Badge>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      {getStatusBadge(
-                        item.manufacturerStage || "",
-                        item.manufacturerStage,
+                    <div className="text-[11px] text-muted-foreground truncate">
+                      {item.caseInfos?.clinicName && (
+                        <span>{item.caseInfos.clinicName}</span>
                       )}
-                      {item.riskLevel === "danger" ? (
-                        <Badge
-                          variant="destructive"
-                          className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
-                        >
-                          지연확정
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
-                        >
-                          지연가능
-                        </Badge>
+                      {item.caseInfos?.patientName && (
+                        <span className="ml-1">
+                          {item.caseInfos.patientName}
+                        </span>
                       )}
+                      {item.caseInfos?.tooth && (
+                        <span className="ml-1">#{item.caseInfos.tooth}</span>
+                      )}
+                      <span className="ml-1">
+                        {formatImplantDisplay(item.caseInfos)}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2">
+                      {originalYmd && (
+                        <span className="text-blue-600 font-medium">
+                          최초 예정일: {formatDateOnly(originalYmd, "확인 중")}
+                        </span>
+                      )}
+                      {showCurrentYmd && (
+                        <span className="text-[11px] text-slate-500">
+                          현재 예정일:{" "}
+                          {formatDateOnly(showCurrentYmd, "확인 중")}
+                        </span>
+                      )}
+                      <span className="truncate">
+                        {item.manufacturer || "-"}
+                      </span>
                     </div>
                   </div>
-                  <div className="text-[11px] text-muted-foreground truncate">
-                    {item.caseInfos?.clinicName && (
-                      <span>{item.caseInfos.clinicName}</span>
-                    )}
-                    {item.caseInfos?.patientName && (
-                      <span className="ml-1">{item.caseInfos.patientName}</span>
-                    )}
-                    {item.caseInfos?.tooth && (
-                      <span className="ml-1">#{item.caseInfos.tooth}</span>
-                    )}
-                    <span className="ml-1">
-                      {formatImplantDisplay(item.caseInfos)}
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2">
-                    {item.dueDate && (
-                      <span className="text-blue-600 font-medium">
-                        발송 예정일: {item.dueDate}
-                      </span>
-                    )}
-                    {item.nextEstimatedShipYmd && (
-                      <span className="text-[11px] text-slate-500">
-                        다음 예정일:{" "}
-                        {formatDateOnly(item.nextEstimatedShipYmd, "확인 중")}
-                      </span>
-                    )}
-                    <span className="truncate">{item.manufacturer || "-"}</span>
-                  </div>
-                </div>
-              </FunctionalItemCard>
-            ))
+                </FunctionalItemCard>
+              );
+            })
           ) : (
             <div className="flex h-32 items-center justify-center text-xs text-muted-foreground border border-dashed rounded-lg">
               지연 위험 내역이 없습니다.

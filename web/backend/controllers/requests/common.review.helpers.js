@@ -97,6 +97,28 @@ export function revertManufacturerStageByReviewStage(request, stage) {
   }
 }
 
+export function updateCurrentEstimatedShipYmdOnPackingEnter(request) {
+  if (!request) return;
+
+  request.timeline = request.timeline || {};
+  const timeline = request.timeline;
+  const todayYmd = getTodayYmdInKst();
+  if (!todayYmd) return;
+
+  const originalEstimatedShipYmd =
+    typeof timeline.originalEstimatedShipYmd === "string" &&
+    timeline.originalEstimatedShipYmd.trim()
+      ? timeline.originalEstimatedShipYmd.trim()
+      : typeof timeline.estimatedShipYmd === "string" &&
+          timeline.estimatedShipYmd.trim()
+        ? timeline.estimatedShipYmd.trim()
+        : todayYmd;
+
+  timeline.originalEstimatedShipYmd = originalEstimatedShipYmd;
+  timeline.estimatedShipYmd = todayYmd;
+  timeline.nextEstimatedShipYmd = todayYmd;
+}
+
 // Ensure request credit spend on machining enter
 export async function ensureRequestCreditSpendOnMachiningEnter({
   request,

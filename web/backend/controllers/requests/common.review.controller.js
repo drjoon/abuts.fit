@@ -20,6 +20,7 @@ import {
   ensureShippingFeeSpendOnPackingApprove,
   ensureShippingFeeRefundOnShippingRollback,
   ensureDeliveryInfoShippedAtNow,
+  updateCurrentEstimatedShipYmdOnPackingEnter,
 } from "./common.review.helpers.js";
 import {
   screenCamMachineForRequest,
@@ -575,6 +576,7 @@ export async function updateReviewStatusByStage(req, res) {
 
         if (effectiveStage === "packing") {
           await ensureFinishedLotNumberForPacking(request);
+          updateCurrentEstimatedShipYmdOnPackingEnter(request);
           if (!request.mailboxAddress) {
             try {
               const requestorBusinessAnchorId = resolvedBusinessAnchorId;
