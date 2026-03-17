@@ -4,6 +4,25 @@ import Business from "../../models/business.model.js";
 import { emitAppEventToUser } from "../../socket.js";
 
 const GUIDE_PROGRESS_EVENT = "guide-progress:updated";
+const __guideProgressCache = new Map();
+
+const getGuideProgressCacheValue = (key) => {
+  const hit = __guideProgressCache.get(key);
+  if (!hit) return null;
+  if (typeof hit.expiresAt !== "number" || hit.expiresAt <= Date.now()) {
+    __guideProgressCache.delete(key);
+    return null;
+  }
+  return hit.value;
+};
+
+const setGuideProgressCacheValue = (key, value, ttlMs) => {
+  __guideProgressCache.set(key, {
+    value,
+    expiresAt: Date.now() + ttlMs,
+  });
+  return value;
+};
 
 const emitGuideProgressUpdated = (userId, doc) => {
   const uid = String(userId || "").trim();
@@ -120,10 +139,19 @@ export async function getGuideProgress(req, res) {
       });
     }
 
+    const cacheKey = `guide-progress:${String(req.user?._id || "")}:${tourId}`;
+    const cached = getGuideProgressCacheValue(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        success: true,
+        data: cached,
+        cached: true,
+      });
+    }
+
     const doc = await GuideProgress.ensureForUser(req.user._id, tourId);
 
     if (tourId === "requestor-onboarding") {
-      // User와 Business를 병렬로 조회
       const user = await User.findById(req.user._id)
         .select({
           profileImage: 1,
@@ -138,7 +166,10 @@ export async function getGuideProgress(req, res) {
             .lean()
         : null;
 
-      const doneMap = computeRequestorOnboardingDoneMap({ user, organization: business });
+      const doneMap = computeRequestorOnboardingDoneMap({
+        user,
+        organization: business,
+      });
       const defaultSteps = GuideProgress.getDefaultSteps(tourId);
       const prevSteps = Array.isArray(doc.steps) ? doc.steps : [];
 
@@ -156,20 +187,52 @@ export async function getGuideProgress(req, res) {
       });
 
       const nextFinishedAt = recalcFinishedAt(nextSteps);
-      doc.steps = nextSteps;
-      doc.finishedAt = nextFinishedAt ? doc.finishedAt || nextFinishedAt : null;
-      await doc.save();
-      emitGuideProgressUpdated(req.user?._id, doc);
+      const normalizedFinishedAt = nextFinishedAt
+        ? doc.finishedAt || nextFinishedAt
+        : null;
+      const prevSerialized = JSON.stringify(
+        (Array.isArray(doc.steps) ? doc.steps : []).map((step) => ({
+          stepId: String(step?.stepId || "").trim(),
+          status: String(step?.status || "pending"),
+          doneAt: step?.doneAt ? new Date(step.doneAt).toISOString() : null,
+        })),
+      );
+      const nextSerialized = JSON.stringify(
+        nextSteps.map((step) => ({
+          stepId: String(step?.stepId || "").trim(),
+          status: String(step?.status || "pending"),
+          doneAt: step?.doneAt ? new Date(step.doneAt).toISOString() : null,
+        })),
+      );
+      const prevFinishedAt = doc.finishedAt
+        ? new Date(doc.finishedAt).toISOString()
+        : null;
+      const nextFinishedAtIso = normalizedFinishedAt
+        ? new Date(normalizedFinishedAt).toISOString()
+        : null;
+
+      if (
+        prevSerialized !== nextSerialized ||
+        prevFinishedAt !== nextFinishedAtIso
+      ) {
+        doc.steps = nextSteps;
+        doc.finishedAt = normalizedFinishedAt;
+        await doc.save();
+        emitGuideProgressUpdated(req.user?._id, doc);
+      }
     }
+
+    const responseData = {
+      tourId: doc.tourId,
+      steps: doc.steps || [],
+      finishedAt: doc.finishedAt || null,
+      updatedAt: doc.updatedAt,
+    };
+    setGuideProgressCacheValue(cacheKey, responseData, 30 * 1000);
 
     return res.status(200).json({
       success: true,
-      data: {
-        tourId: doc.tourId,
-        steps: doc.steps || [],
-        finishedAt: doc.finishedAt || null,
-        updatedAt: doc.updatedAt,
-      },
+      data: responseData,
     });
   } catch (error) {
     return res.status(500).json({

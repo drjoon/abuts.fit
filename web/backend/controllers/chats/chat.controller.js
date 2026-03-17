@@ -3,6 +3,26 @@ import ChatRoom from "../../models/chatRoom.model.js";
 import Chat from "../../models/chat.model.js";
 import User from "../../models/user.model.js";
 
+const __chatPerfCache = new Map();
+
+const getChatPerfCacheValue = (key) => {
+  const hit = __chatPerfCache.get(key);
+  if (!hit) return null;
+  if (typeof hit.expiresAt !== "number" || hit.expiresAt <= Date.now()) {
+    __chatPerfCache.delete(key);
+    return null;
+  }
+  return hit.value;
+};
+
+const setChatPerfCacheValue = (key, value, ttlMs) => {
+  __chatPerfCache.set(key, {
+    value,
+    expiresAt: Date.now() + ttlMs,
+  });
+  return value;
+};
+
 /**
  * 내 채팅방 목록 조회
  * @route GET /api/chats/rooms
@@ -120,11 +140,26 @@ export async function getMyChatRooms(req, res) {
 export async function getSupportRoom(req, res) {
   try {
     const userId = req.user._id;
+    const roomCacheKey = `support-room:${String(userId || "")}`;
+    const cachedRoom = getChatPerfCacheValue(roomCacheKey);
+    if (cachedRoom) {
+      return res.status(200).json({
+        success: true,
+        data: cachedRoom,
+        cached: true,
+      });
+    }
 
     // 지원 채팅은 admin 계정 중 1명을 사용
-    const admin = await User.findOne({ role: "admin", active: true })
-      .select({ _id: 1 })
-      .lean();
+    let admin = getChatPerfCacheValue("support-room:admin");
+    if (!admin) {
+      admin = await User.findOne({ role: "admin", active: true })
+        .select({ _id: 1 })
+        .lean();
+      if (admin?._id) {
+        setChatPerfCacheValue("support-room:admin", admin, 5 * 60 * 1000);
+      }
+    }
 
     if (!admin?._id) {
       return res.status(404).json({
@@ -198,6 +233,7 @@ export async function getSupportRoom(req, res) {
 
     if (existing) {
       const enriched = await enrichRoom(existing);
+      setChatPerfCacheValue(roomCacheKey, enriched, 15 * 1000);
       return res.status(200).json({
         success: true,
         data: enriched,
@@ -216,6 +252,7 @@ export async function getSupportRoom(req, res) {
       .lean();
 
     const enriched = await enrichRoom(populated);
+    setChatPerfCacheValue(roomCacheKey, enriched, 15 * 1000);
 
     return res.status(201).json({
       success: true,
@@ -338,7 +375,9 @@ export async function getChatMessages(req, res) {
     }
 
     // 채팅방 존재 및 참여자 확인
-    const room = await ChatRoom.findById(roomId);
+    const room = await ChatRoom.findById(roomId)
+      .select({ participants: 1 })
+      .lean();
     if (!room) {
       return res.status(404).json({
         success: false,
@@ -357,42 +396,49 @@ export async function getChatMessages(req, res) {
       });
     }
 
-    // 메시지 조회
-    const messages = await Chat.find({ roomId, isDeleted: false })
+    const fetchedMessages = await Chat.find({ roomId, isDeleted: false })
       .populate("sender", "name email role")
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit)
+      .limit(limit + 1)
       .lean();
 
-    const total = await Chat.countDocuments({ roomId, isDeleted: false });
+    const hasMore = fetchedMessages.length > limit;
+    const messages = hasMore
+      ? fetchedMessages.slice(0, limit)
+      : fetchedMessages;
 
-    // 메시지 읽음 처리
-    await Chat.updateMany(
-      {
-        roomId,
-        sender: { $ne: userId },
-        "readBy.userId": { $ne: userId },
-      },
-      {
-        $addToSet: {
-          readBy: {
-            userId,
-            readAt: new Date(),
+    setImmediate(async () => {
+      try {
+        await Chat.updateMany(
+          {
+            roomId,
+            sender: { $ne: userId },
+            "readBy.userId": { $ne: userId },
           },
-        },
-      },
-    );
+          {
+            $addToSet: {
+              readBy: {
+                userId,
+                readAt: new Date(),
+              },
+            },
+          },
+        );
+      } catch (error) {
+        console.error("Error updating chat read state:", error);
+      }
+    });
 
     res.status(200).json({
       success: true,
       data: {
         messages: messages.reverse(), // 오래된 것부터 표시
         pagination: {
-          total,
+          total: skip + messages.length + (hasMore ? 1 : 0),
           page,
           limit,
-          pages: Math.ceil(total / limit),
+          pages: hasMore ? page + 1 : page,
         },
       },
     });
