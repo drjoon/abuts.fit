@@ -26,6 +26,7 @@ import {
   screenCamMachineForRequest,
   ensureMachineCompatibilityOrThrow,
   inferDiameterGroupFromDiameter,
+  chooseMachineForCamMachining,
 } from "./common.review.machine.js";
 import { triggerEspritForNc } from "./common.review.esprit.js";
 
@@ -105,6 +106,84 @@ function runStageFileCleanupInBackground({ requestId, stage, s3Key }) {
         stage,
         s3Key,
         error: e?.message || e,
+      });
+    });
+}
+
+function runCamApprovePostProcessingInBackground({
+  requestMongoId,
+  requestId,
+}) {
+  Promise.resolve()
+    .then(async () => {
+      const request = await Request.findById(requestMongoId).catch(() => null);
+      if (!request) return;
+      if (String(request?.manufacturerStage || "").trim() !== "가공") return;
+
+      const existingMachineId = String(
+        request?.productionSchedule?.assignedMachine ||
+          request?.assignedMachine ||
+          "",
+      ).trim();
+
+      let selectedMachineId = existingMachineId;
+
+      if (!selectedMachineId) {
+        const selected = await chooseMachineForCamMachining({
+          request,
+          requireCeil: true,
+          reserveAssignment: true,
+        });
+
+        request.productionSchedule = request.productionSchedule || {};
+        request.productionSchedule.assignedMachine = selected.machineId;
+        request.productionSchedule.queuePosition = selected.queuePosition;
+        request.assignedMachine = selected.machineId;
+        if (selected.diameterGroup) {
+          request.productionSchedule.diameterGroup = selected.diameterGroup;
+        }
+        if (Number.isFinite(selected.diameter) && selected.diameter > 0) {
+          request.productionSchedule.diameter = selected.diameter;
+        }
+        await request.save();
+        selectedMachineId = selected.machineId;
+
+        console.log("[CAM-APPROVE] single-request append assigned", {
+          requestId,
+          machineId: selected.machineId,
+          queuePosition: selected.queuePosition,
+          diameterGroup: selected.diameterGroup || null,
+        });
+      }
+
+      if (!selectedMachineId) return;
+
+      const meta = await Machine.findOne({ uid: selectedMachineId })
+        .select({ allowAutoMachining: 1, allowRequestAssign: 1 })
+        .lean()
+        .catch(() => null);
+
+      if (meta?.allowRequestAssign === false) return;
+      if (meta?.allowAutoMachining !== true) return;
+
+      await triggerNextAutoMachiningAfterComplete({
+        machineId: selectedMachineId,
+        completedRequestId: null,
+      });
+    })
+    .catch((err) => {
+      emitManufacturingAsyncFailure({
+        requestId,
+        requestMongoId,
+        action: "cam-approve-post-processing",
+        stage: "cam",
+        message:
+          err?.message || "CAM 승인 후 재배정/자동 가공 후처리에 실패했습니다.",
+      });
+      console.error("[CAM-APPROVE] background post-processing failed", {
+        requestId,
+        requestMongoId,
+        message: err?.message || String(err || ""),
       });
     });
 }
@@ -259,10 +338,6 @@ export async function deleteStageFile(req, res) {
             request.productionSchedule.diameter = selected.diameter;
           }
           request.assignedMachine = selected.machineId;
-          await Machine.updateOne(
-            { uid: selected.machineId },
-            { $set: { lastAssignmentAt: new Date() } },
-          );
           console.log("[ROLLBACK-PACKING] reassigned machine", {
             requestId: request?.requestId,
             machineId: selected.machineId,
@@ -613,61 +688,16 @@ export async function updateReviewStatusByStage(req, res) {
             });
           }
 
-          const selected = await ensureMachineCompatibilityOrThrow({
+          await ensureMachineCompatibilityOrThrow({
             request,
             stageKey: "cam",
             session,
           });
           request.productionSchedule = request.productionSchedule || {};
-          request.productionSchedule.assignedMachine = selected.machineId;
-          request.productionSchedule.queuePosition = selected.queuePosition;
-          if (selected.diameterGroup) {
-            request.productionSchedule.diameterGroup = selected.diameterGroup;
-          }
-          if (Number.isFinite(selected.diameter)) {
-            request.productionSchedule.diameter = selected.diameter;
-          }
-          request.assignedMachine = selected.machineId;
-          await Machine.updateOne(
-            { uid: selected.machineId },
-            { $set: { lastAssignmentAt: new Date() } },
-            { session },
-          );
-          const meta = await Machine.findOne({ uid: selected.machineId })
-            .select({ allowAutoMachining: 1, allowRequestAssign: 1 })
-            .lean()
-            .session(session)
-            .catch(() => null);
-
-          if (
-            meta?.allowRequestAssign !== false &&
-            meta?.allowAutoMachining === true
-          ) {
-            // 트리거 성공 시 응답 메시지 변경
-            triggerNextAutoMachiningAfterComplete({
-              machineId: selected.machineId,
-              completedRequestId: null,
-            }).catch((err) => {
-              emitManufacturingAsyncFailure({
-                requestId: request.requestId,
-                requestMongoId: request._id,
-                action: "auto-machining-trigger",
-                stage: "cam",
-                message: err?.message || "자동 가공 명령 전송에 실패했습니다.",
-              });
-              console.error(
-                "[CAM-APPROVE] triggerNextAutoMachiningAfterComplete failed",
-                {
-                  requestId: request.requestId,
-                  machineId: selected.machineId,
-                  message: err?.message,
-                },
-              );
-            });
-            acceptedMessage = "자동 가공 명령이 전송되었습니다.";
-          } else {
-            acceptedMessage = "가공 단계로 이동했습니다.";
-          }
+          request.productionSchedule.assignedMachine = null;
+          request.productionSchedule.queuePosition = null;
+          request.assignedMachine = null;
+          acceptedMessage = "가공 단계로 이동했습니다.";
         }
       } else if (status === "PENDING") {
         if (effectiveStage === "machining" && resolvedBusinessAnchorId) {
@@ -706,6 +736,14 @@ export async function updateReviewStatusByStage(req, res) {
       assignedMachine: resultRequest?.assignedMachine || null,
       productionSchedule: resultRequest?.productionSchedule || null,
     };
+
+    if (status === "APPROVED" && effectiveStage === "cam") {
+      runCamApprovePostProcessingInBackground({
+        requestMongoId: resultRequest?._id || null,
+        requestId: resultRequest?.requestId || null,
+      });
+    }
+
     emitWorksheetStageChanged(responseData, {
       reviewStage: String(stageOverride || stage || "").trim() || null,
       reviewStatus: String(status || "").trim() || null,

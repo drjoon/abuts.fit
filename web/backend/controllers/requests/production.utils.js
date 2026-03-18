@@ -9,6 +9,7 @@ import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
 import {
   MACHINING_ASSIGN_STAGE_SET,
+  MACHINING_QUEUE_STAGE_SET,
   buildMachineQueueLoadMap,
   getMachiningLoadWeight,
   normalizeDiameterGroupValue,
@@ -302,8 +303,8 @@ export function getProductionQueueForMachine(machineId, requests) {
       // 해당 장비에 할당된 의뢰만
       if (schedule.assignedMachine !== machineId) return false;
 
-      // 의뢰, CAM, 가공 단계만 (발송 이후는 제외)
-      if (!["의뢰", "CAM", "가공"].includes(req.manufacturerStage))
+      // 가공 단계만
+      if (!MACHINING_QUEUE_STAGE_SET.includes(req.manufacturerStage))
         return false;
 
       return true;
@@ -333,8 +334,8 @@ export function getAllProductionQueues(requests) {
     const schedule = req.productionSchedule;
     if (!schedule) continue;
 
-    // 의뢰, CAM, 가공 단계만
-    if (!["의뢰", "CAM", "가공"].includes(req.manufacturerStage)) continue;
+    // 가공 단계만
+    if (!MACHINING_QUEUE_STAGE_SET.includes(req.manufacturerStage)) continue;
 
     const machine = schedule.assignedMachine;
     if (machine && typeof machine === "string") {
@@ -437,7 +438,7 @@ export async function recalculateQueueOnMaterialChange(
   const queueLoadMap = await buildMachineQueueLoadMap(candidateMachineIds);
 
   const assignedCounts = await Request.find({
-    manufacturerStage: { $in: MACHINING_ASSIGN_STAGE_SET },
+    manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
     "productionSchedule.assignedMachine": { $in: candidateMachineIds },
   })
     .select("productionSchedule.assignedMachine")
@@ -451,7 +452,7 @@ export async function recalculateQueueOnMaterialChange(
   }
 
   const unassignedRequests = await Request.find({
-    manufacturerStage: { $in: MACHINING_ASSIGN_STAGE_SET },
+    manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
     $or: [
       { "productionSchedule.assignedMachine": { $exists: false } },
       { "productionSchedule.assignedMachine": null },

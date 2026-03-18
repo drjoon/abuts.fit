@@ -16,6 +16,10 @@ import {
   getAllProductionQueues,
   recalculateQueueOnMaterialChange,
 } from "../../controllers/requests/production.utils.js";
+import {
+  MACHINING_ASSIGN_STAGE_SET,
+  MACHINING_QUEUE_STAGE_SET,
+} from "./distribution.utils.js";
 
 export const CAM_RETRY_BATCH_LIMIT = Number(
   process.env.CAM_RETRY_BATCH_LIMIT || 30,
@@ -506,7 +510,7 @@ export async function getMachinesHandler(req, res) {
 export async function getProductionQueuesHandler(req, res) {
   try {
     const requests = await Request.find({
-      manufacturerStage: { $in: ["의뢰", "CAM", "가공"] },
+      manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
     })
       .select(
         "requestId manufacturerStage productionSchedule caseInfos timeline",

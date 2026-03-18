@@ -1,6 +1,7 @@
 import Request from "../../models/request.model.js";
 
-export const MACHINING_ASSIGN_STAGE_SET = ["의뢰", "CAM", "가공"];
+export const MACHINING_ASSIGN_STAGE_SET = ["CAM", "가공"];
+export const MACHINING_QUEUE_STAGE_SET = ["가공"];
 
 export function normalizeDiameterGroupValue(value) {
   const raw = String(value || "").trim();
@@ -103,7 +104,7 @@ export async function buildMachineQueueLoadMap(machineIds, session = null) {
 
   // session을 전달하여 같은 트랜잭션 내 변경사항(방금 배정한 요청)을 큐 계산에 포함
   const query = Request.find({
-    manufacturerStage: { $in: MACHINING_ASSIGN_STAGE_SET },
+    manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
     "productionSchedule.assignedMachine": { $in: ids },
   }).select(
     "productionSchedule.assignedMachine productionSchedule.machiningQty productionSchedule.machiningRecord",

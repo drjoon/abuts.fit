@@ -21,7 +21,7 @@ const isMachiningStatus = (slot?: QueueItem) => {
   if (recStatus) {
     if (["RUNNING", "PROCESSING"].includes(recStatus)) return true;
   }
-  return s === "생산" || s === "가공";
+  return s === "가공";
 };
 
 const getNcPreloadBadge = (slot: QueueItem | null) => {

@@ -141,6 +141,7 @@ export async function chooseMachineForCamMachining({
   reservedMachineLoadMap = null,
   reservedQueuePositionMap = null,
   reservedLastAssignmentMap = null,
+  reserveAssignment = true,
   session = null,
 }) {
   if (!request) throw new Error("request is required");
@@ -179,7 +180,8 @@ export async function chooseMachineForCamMachining({
     .map((m) => String(m?.machineId || "").trim())
     .filter(Boolean);
 
-  // session을 전달하여 같은 트랜잭션 내 lastAssignmentAt 업데이트를 반영
+  // 동시 요청 경쟁 상태 방지를 위해 최신 lastAssignmentAt 조회
+  // session을 전달하여 같은 트랜잭션 내 업데이트를 반영
   const machineQuery = Machine.find({ uid: { $in: machineIds } })
     .select({
       uid: 1,
@@ -346,6 +348,20 @@ export async function chooseMachineForCamMachining({
     queuePosition,
   });
 
+  if (reserveAssignment) {
+    // 동시 요청 경쟁 상태 방지: 실제 배정 경로에서만 lastAssignmentAt 업데이트
+    const now = new Date();
+    const updateQuery = Machine.updateOne(
+      { uid: chosen.machineId },
+      { $set: { lastAssignmentAt: now } },
+    );
+    if (session) {
+      await updateQuery.session(session);
+    } else {
+      await updateQuery;
+    }
+  }
+
   return {
     machineId: chosen.machineId,
     queuePosition,
@@ -380,11 +396,15 @@ export async function ensureMachineCompatibilityOrThrow({
   }
 
   try {
-    const selection = await chooseMachineForCamMachining({
-      request,
-      requireCeil: true,
-      session,
-    });
+    const selection = await screenCamMachineForRequest({ request });
+    if (!selection?.ok) {
+      const err = new Error(
+        selection?.reason ||
+          `소재 직경 ${targetDiameter}mm 이상을 처리할 수 있는 장비를 찾을 수 없습니다.`,
+      );
+      err.statusCode = 409;
+      throw err;
+    }
     const meta = buildMachineCompatibilityMeta({
       stageKey,
       ok: true,

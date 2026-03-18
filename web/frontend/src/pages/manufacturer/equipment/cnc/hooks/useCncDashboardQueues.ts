@@ -281,7 +281,7 @@ export function useCncDashboardQueues({
         const raw: any[] = Array.isArray(map?.[uid]) ? map[uid] : [];
         const filtered = raw.filter((it) => {
           const s = String(it?.status || "").trim();
-          return s === "생산" || s === "가공";
+          return s === "가공";
         });
 
         nextWorksheetCountMap[uid] = filtered.length;

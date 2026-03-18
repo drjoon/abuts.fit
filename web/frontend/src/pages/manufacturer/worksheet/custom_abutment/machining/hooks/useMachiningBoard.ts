@@ -27,7 +27,7 @@ import { useCncDashboardMaterials } from "@/pages/manufacturer/equipment/cnc/hoo
 
 const isMachiningStatus = (status?: string) => {
   const s = String(status || "").trim();
-  return s === "생산" || s === "가공";
+  return s === "가공";
 };
 
 const resolveCompletedDisplayLabel = (q: QueueItem | null) => {

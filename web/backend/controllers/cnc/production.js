@@ -8,6 +8,7 @@ import Machine from "../../models/machine.model.js";
 import BridgeSetting from "../../models/bridgeSetting.model.js";
 import {
   MACHINING_ASSIGN_STAGE_SET,
+  MACHINING_QUEUE_STAGE_SET,
   normalizeDiameterGroupValue,
   inferMaterialDiameterGroup,
   inferRequestDiameterGroup,
@@ -31,7 +32,16 @@ function isAssignableMachine({ machineMeta, mockCncMachiningEnabled }) {
   );
 }
 
-async function resolveManufacturerMachineScope(req) {
+function normalizeTargetGroupSet(targetDiameterGroups) {
+  const set = new Set(
+    (Array.isArray(targetDiameterGroups) ? targetDiameterGroups : [])
+      .map((group) => normalizeDiameterGroupValue(group))
+      .filter(Boolean),
+  );
+  return set;
+}
+
+export async function resolveManufacturerMachineScope(req) {
   if (!req?.user || req.user.role !== "manufacturer") {
     return {
       requestFilter: {},
@@ -61,9 +71,15 @@ async function resolveManufacturerMachineScope(req) {
   };
 }
 
-async function rebalanceProductionQueuesInternal({ req, scope }) {
-  const requests = await Request.find({
-    manufacturerStage: { $in: MACHINING_ASSIGN_STAGE_SET },
+export async function rebalanceProductionQueuesInternal({
+  req,
+  scope,
+  targetDiameterGroups = null,
+}) {
+  const targetGroupSet = normalizeTargetGroupSet(targetDiameterGroups);
+
+  let requests = await Request.find({
+    manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
     ...scope.requestFilter,
   })
     .select(
@@ -73,6 +89,12 @@ async function rebalanceProductionQueuesInternal({ req, scope }) {
       path: "productionSchedule.machiningRecord",
       select: "status startedAt completedAt machineId",
     });
+
+  if (targetGroupSet.size > 0) {
+    requests = requests.filter((reqItem) =>
+      targetGroupSet.has(inferRequestDiameterGroup(reqItem)),
+    );
+  }
 
   const cncMachineQuery = {
     status: "active",
@@ -141,6 +163,7 @@ async function rebalanceProductionQueuesInternal({ req, scope }) {
     for (const g of groups) {
       const key = normalizeDiameterGroupValue(g);
       if (!key) continue;
+      if (targetGroupSet.size > 0 && !targetGroupSet.has(key)) continue;
       if (!machinesByGroup.has(key)) machinesByGroup.set(key, []);
       machinesByGroup.get(key).push(uid);
     }
@@ -229,17 +252,9 @@ async function rebalanceProductionQueuesInternal({ req, scope }) {
     if (tied.length === 1) {
       selected = tied[0];
     } else if (tied.length > 1) {
-      const assignCounts = tied.map((uid) => ({
-        uid,
-        count: assignmentsByMachine.get(uid)?.length || 0,
-      }));
-
-      assignCounts.sort((a, b) => {
-        if (a.count !== b.count) return a.count - b.count;
-        return a.uid.localeCompare(b.uid);
-      });
-
-      selected = assignCounts[0].uid;
+      // queueCounts가 동일한 경우 알파벳 순으로 선택 (안정적인 분배)
+      tied.sort((a, b) => a.localeCompare(b));
+      selected = tied[0];
     }
 
     if (!selected) continue;
@@ -291,8 +306,8 @@ export async function getProductionQueues(req, res) {
       machineIds: scope.machineIds,
     });
 
-    const requests = await Request.find({
-      manufacturerStage: { $in: ["의뢰", "CAM", "가공"] },
+    let requests = await Request.find({
+      manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
       ...scope.requestFilter,
     })
       .select(
@@ -314,7 +329,7 @@ export async function getProductionQueues(req, res) {
       })),
     });
 
-    const queues = getAllProductionQueues(requests);
+    let queues = getAllProductionQueues(requests);
 
     console.log("[getProductionQueues] queues built", {
       machineIds: Object.keys(queues),
@@ -331,20 +346,38 @@ export async function getProductionQueues(req, res) {
       : 0;
 
     if (unassignedCount > 0) {
-      void rebalanceProductionQueuesInternal({ req, scope })
-        .then((rebalance) => {
-          console.log("[getProductionQueues] auto-rebalanced", {
-            unassignedCount,
-            reassignedCount: rebalance.reassignedCount,
-            eligibleMachineIds: rebalance.eligibleMachineIds,
-          });
-        })
-        .catch((rebalanceError) => {
-          console.error("[getProductionQueues] auto-rebalance failed", {
-            unassignedCount,
-            error: rebalanceError?.message || String(rebalanceError),
-          });
+      const rebalance = await rebalanceProductionQueuesInternal({ req, scope });
+
+      console.log("[getProductionQueues] auto-rebalanced", {
+        unassignedCount,
+        reassignedCount: rebalance.reassignedCount,
+        eligibleMachineIds: rebalance.eligibleMachineIds,
+      });
+
+      requests = await Request.find({
+        manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
+        ...scope.requestFilter,
+      })
+        .select(
+          "requestId status manufacturerStage productionSchedule caseInfos lotNumber timeline caManufacturer",
+        )
+        .populate({
+          path: "productionSchedule.machiningRecord",
+          select:
+            "status startedAt completedAt durationSeconds elapsedSeconds lastTickAt machineId jobId",
         });
+
+      queues = getAllProductionQueues(requests);
+
+      console.log("[getProductionQueues] queues rebuilt after rebalance", {
+        machineIds: Object.keys(queues),
+        counts: Object.fromEntries(
+          Object.entries(queues).map(([k, v]) => [
+            k,
+            Array.isArray(v) ? v.length : 0,
+          ]),
+        ),
+      });
     }
 
     for (const machineId in queues) {
@@ -487,7 +520,7 @@ export async function applyProductionQueueBatchForMachine(req, res) {
       : [];
 
     const list = await Request.find({
-      manufacturerStage: { $in: ["의뢰", "CAM", "가공"] },
+      manufacturerStage: { $in: MACHINING_ASSIGN_STAGE_SET },
       "productionSchedule.assignedMachine": mid,
     }).select("_id requestId productionSchedule manufacturerStage");
 

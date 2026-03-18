@@ -704,7 +704,7 @@ export const PreviewModal = ({
                         );
                       }
 
-                      const ensureRes = await fetch(
+                      void fetch(
                         `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/ensure-bridge`,
                         {
                           method: "POST",
@@ -714,17 +714,22 @@ export const PreviewModal = ({
                           },
                           body: JSON.stringify({}),
                         },
-                      );
-                      const ensureBody: any = await ensureRes
-                        .json()
-                        .catch(() => ({}));
-                      if (!ensureRes.ok || ensureBody?.success === false) {
-                        throw new Error(
-                          ensureBody?.message ||
-                            ensureBody?.error ||
-                            "NC 파일 bridge-store 동기화에 실패했습니다.",
-                        );
-                      }
+                      )
+                        .then(async (ensureRes) => {
+                          const ensureBody: any = await ensureRes
+                            .json()
+                            .catch(() => ({}));
+                          if (!ensureRes.ok || ensureBody?.success === false) {
+                            throw new Error(
+                              ensureBody?.message ||
+                                ensureBody?.error ||
+                                "NC 파일 bridge-store 동기화에 실패했습니다.",
+                            );
+                          }
+                        })
+                        .catch((err) => {
+                          console.error("NC bridge ensure failed:", err);
+                        });
                     }
 
                     if (onOpenNextRequest && activeReq._id) {
