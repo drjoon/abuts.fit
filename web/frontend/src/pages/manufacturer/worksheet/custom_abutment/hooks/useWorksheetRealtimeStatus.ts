@@ -220,7 +220,8 @@ export function useWorksheetRealtimeStatus({
       const type = String(evt?.type || "").trim();
       const payload = evt?.data || {};
       const requestId = String(payload?.requestId || "").trim();
-      if (!requestId) return;
+      const isBatchDeliveryUpdate = type === "request:delivery-updated-batch";
+      if (!requestId && !isBatchDeliveryUpdate) return;
 
       switch (type) {
         case "request:cam-processing-started":
@@ -304,20 +305,25 @@ export function useWorksheetRealtimeStatus({
             | ManufacturerRequest
             | undefined;
           if (!eventRequest) return;
-          console.log("[shipping][realtime][delivery-updated][recv]", {
-            requestId: String(eventRequest?.requestId || "").trim(),
-            mailboxAddress: String(eventRequest?.mailboxAddress || "").trim(),
-            shippingWorkflowCode: String(
-              eventRequest?.shippingWorkflow?.code || "",
-            ).trim(),
-            shippingWorkflowLabel: String(
-              eventRequest?.shippingWorkflow?.label || "",
-            ).trim(),
-            printed: Boolean(
-              (eventRequest as any)?.shippingLabelPrinted?.printed,
-            ),
-          });
           setRequests((prev) => applyRequestPatch(prev, eventRequest));
+          return;
+        }
+        case "request:delivery-updated-batch": {
+          const eventRequests = Array.isArray(payload?.requests)
+            ? payload.requests
+            : [];
+          if (!eventRequests.length) return;
+          setRequests((prev) => {
+            let next = prev;
+            for (const item of eventRequests) {
+              const eventRequest = item?.request as
+                | ManufacturerRequest
+                | undefined;
+              if (!eventRequest) continue;
+              next = applyRequestPatch(next, eventRequest);
+            }
+            return next;
+          });
           return;
         }
         case "bg:runtime-status": {

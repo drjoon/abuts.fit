@@ -5,7 +5,6 @@ import { emitAppEventToRoles } from "../../socket.js";
 import {
   applyStatusMapping,
   applyShippingWorkflowState,
-  normalizeRequestForResponse,
   ensureReviewByStageDefaults,
   SHIPPING_WORKFLOW_CODES,
   SHIPPING_WORKFLOW_LABELS,
@@ -17,6 +16,7 @@ import {
   buildHanjinOrderFallbackCaller,
   buildHanjinPathCandidates,
   debugHanjinPrintPayload,
+  executeCachedLabelPrint,
   executeHanjinLabelPrint,
   executeHanjinOrderApiWithFallback,
   findPackingStageRequestsByMailboxes,
@@ -36,30 +36,138 @@ import {
 } from "./shipping.MailboxRealtime.helpers.js";
 import { startHanjinTrackingPoll } from "./shipping.TrackingPoller.js";
 
+const buildDeliveryUpdatedEventRequest = (
+  requestDoc,
+  requestOverride = null,
+) => {
+  const source =
+    requestOverride && typeof requestOverride === "object"
+      ? requestOverride
+      : requestDoc || {};
+
+  return {
+    _id: source?._id || requestDoc?._id || null,
+    requestId: String(source?.requestId || requestDoc?.requestId || "").trim(),
+    mailboxAddress: String(
+      source?.mailboxAddress || requestDoc?.mailboxAddress || "",
+    ).trim(),
+    manufacturerStage: String(
+      source?.manufacturerStage || requestDoc?.manufacturerStage || "",
+    ).trim(),
+    shippingWorkflow:
+      source?.shippingWorkflow && typeof source.shippingWorkflow === "object"
+        ? { ...source.shippingWorkflow }
+        : {},
+    shippingLabelPrinted:
+      source?.shippingLabelPrinted &&
+      typeof source.shippingLabelPrinted === "object"
+        ? {
+            printed: Boolean(source.shippingLabelPrinted.printed),
+            printedAt: source.shippingLabelPrinted.printedAt || null,
+            mailboxAddress:
+              String(source.shippingLabelPrinted.mailboxAddress || "").trim() ||
+              null,
+          }
+        : {
+            printed: Boolean(requestDoc?.shippingLabelPrinted?.printed),
+            printedAt: requestDoc?.shippingLabelPrinted?.printedAt || null,
+            mailboxAddress:
+              String(
+                requestDoc?.shippingLabelPrinted?.mailboxAddress || "",
+              ).trim() || null,
+          },
+  };
+};
+
 const emitDeliveryUpdated = async (requestDoc, extra = {}) => {
-  const normalized = await normalizeRequestForResponse(requestDoc);
-  const eventRequest =
-    extra?.request && typeof extra.request === "object"
-      ? extra.request
-      : normalized;
-  console.log("[hanjin][delivery-updated][emit]", {
-    requestId: String(requestDoc?.requestId || "").trim() || null,
-    mailboxAddress: String(requestDoc?.mailboxAddress || "").trim() || null,
-    shippingWorkflowCode: String(
-      eventRequest?.shippingWorkflow?.code || "",
-    ).trim(),
-    shippingWorkflowLabel: String(
-      eventRequest?.shippingWorkflow?.label || "",
-    ).trim(),
-    printed: Boolean(eventRequest?.shippingLabelPrinted?.printed),
-    extra,
-  });
+  const { request: ignoredRequest, ...restExtra } =
+    extra && typeof extra === "object" ? extra : {};
+  const eventRequest = buildDeliveryUpdatedEventRequest(
+    requestDoc,
+    extra?.request && typeof extra.request === "object" ? extra.request : null,
+  );
   emitAppEventToRoles(["manufacturer", "admin"], "request:delivery-updated", {
     requestId: String(requestDoc?.requestId || "").trim() || null,
     requestMongoId: String(requestDoc?._id || "").trim() || null,
     request: eventRequest,
-    ...extra,
+    ...restExtra,
   });
+};
+
+const emitDeliveryUpdatedBatch = async (items = [], extra = {}) => {
+  const normalizedItems = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!normalizedItems.length) return;
+  const { requests: ignoredRequests, ...restExtra } =
+    extra && typeof extra === "object" ? extra : {};
+  emitAppEventToRoles(
+    ["manufacturer", "admin"],
+    "request:delivery-updated-batch",
+    {
+      requests: normalizedItems.map((item) => ({
+        requestId:
+          String(item?.requestId || item?.requestDoc?.requestId || "").trim() ||
+          null,
+        requestMongoId:
+          String(item?.requestMongoId || item?.requestDoc?._id || "").trim() ||
+          null,
+        request: buildDeliveryUpdatedEventRequest(
+          item?.requestDoc || item,
+          item?.request && typeof item.request === "object"
+            ? item.request
+            : null,
+        ),
+      })),
+      ...restExtra,
+    },
+  );
+};
+
+const buildPrintedEventItems = ({
+  requests = [],
+  printedAt,
+  snapshotByAddress,
+}) => {
+  const eventItems = [];
+  for (const requestDoc of Array.isArray(requests) ? requests : []) {
+    const mailboxAddress = String(requestDoc?.mailboxAddress || "").trim();
+    const snapshot = snapshotByAddress?.get?.(mailboxAddress) || null;
+    const nextShippingWorkflow = {
+      ...(requestDoc?.shippingWorkflow || {}),
+      printedAt,
+      acceptedAt: null,
+      pickedUpAt: null,
+      completedAt: null,
+      erroredAt: null,
+      canceledAt: null,
+      source: "hanjin-print",
+      updatedAt: printedAt,
+      code: SHIPPING_WORKFLOW_CODES.PRINTED,
+      label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.PRINTED],
+    };
+    eventItems.push({
+      requestId: String(requestDoc?.requestId || "").trim(),
+      requestMongoId: String(requestDoc?._id || "").trim(),
+      requestDoc,
+      request: {
+        _id: requestDoc?._id || null,
+        requestId: String(requestDoc?.requestId || "").trim(),
+        mailboxAddress,
+        manufacturerStage: String(requestDoc?.manufacturerStage || "").trim(),
+        shippingLabelPrinted: {
+          printed: true,
+          printedAt,
+          mailboxAddress: mailboxAddress || null,
+          snapshotFingerprint: snapshot?.fingerprint || null,
+          snapshotCapturedAt: printedAt,
+          snapshotRequestIds: Array.isArray(snapshot?.requestIds)
+            ? snapshot.requestIds
+            : [],
+        },
+        shippingWorkflow: nextShippingWorkflow,
+      },
+    });
+  }
+  return eventItems;
 };
 
 const buildPickupAndPrintResponseData = ({
@@ -296,57 +404,89 @@ async function finalizeMailboxPickupShipment({
   const actualShipPickup = new Date();
   const updatedIds = [];
 
+  const activeRequests = [];
+  const existingDeliveryInfoIds = [];
   for (const request of list) {
-    // 이미 accepted 상태인 경우 스킵
     const currentCode = String(request?.shippingWorkflow?.code || "").trim();
     if (currentCode === "accepted" || currentCode === "picked_up") {
-      console.log(
-        "[hanjin][pickup] request already in accepted/picked_up state, skipping",
-        {
-          requestId: request.requestId,
-          currentCode,
-        },
-      );
       updatedIds.push(String(request.requestId || "").trim());
       continue;
     }
-
-    let deliveryInfo = null;
+    activeRequests.push(request);
     if (request.deliveryInfoRef) {
-      deliveryInfo = await DeliveryInfo.findById(request.deliveryInfoRef);
+      existingDeliveryInfoIds.push(request.deliveryInfoRef);
     }
+  }
 
-    if (!deliveryInfo) {
-      // 택배 접수 시에는 trackingNumber를 설정하지 않음
-      // 실제 집하 완료(statusCode 11) 시에만 설정되어야 함
-      deliveryInfo = await DeliveryInfo.create({
-        request: request._id,
-        trackingNumber: undefined,
-        carrier: "hanjin",
-        shippedAt: actualShipPickup,
-      });
-      request.deliveryInfoRef = deliveryInfo._id;
-    } else {
-      // 기존 deliveryInfo가 있어도 trackingNumber는 설정하지 않음
-      // (이미 설정되어 있다면 유지, 없다면 그대로 두기)
-      deliveryInfo.carrier = "hanjin";
-      if (!deliveryInfo.shippedAt) {
-        deliveryInfo.shippedAt = actualShipPickup;
-      }
-      await deliveryInfo.save();
-    }
+  const existingDeliveryInfos = existingDeliveryInfoIds.length
+    ? await DeliveryInfo.find({ _id: { $in: existingDeliveryInfoIds } }).lean()
+    : [];
+  const existingDeliveryInfoMap = new Map(
+    existingDeliveryInfos.map((item) => [String(item?._id || "").trim(), item]),
+  );
 
-    ensureReviewByStageDefaults(request);
-    request.caseInfos.reviewByStage.shipping = {
-      ...request.caseInfos.reviewByStage.shipping,
+  const missingDeliveryInfoRequests = activeRequests.filter((request) => {
+    const key = String(request?.deliveryInfoRef || "").trim();
+    return !key || !existingDeliveryInfoMap.has(key);
+  });
+
+  const insertedDeliveryInfos = missingDeliveryInfoRequests.length
+    ? await DeliveryInfo.insertMany(
+        missingDeliveryInfoRequests.map((request) => ({
+          request: request._id,
+          trackingNumber: trackingNumber || undefined,
+          carrier: "hanjin",
+          shippedAt: actualShipPickup,
+        })),
+      )
+    : [];
+  const insertedDeliveryInfoMap = new Map(
+    insertedDeliveryInfos.map((item) => [
+      String(item?.request || "").trim(),
+      item,
+    ]),
+  );
+
+  const deliveryInfoUpdateOps = existingDeliveryInfos.length
+    ? existingDeliveryInfos.map((deliveryInfo) => ({
+        updateOne: {
+          filter: { _id: deliveryInfo._id },
+          update: {
+            $set: {
+              carrier: "hanjin",
+              shippedAt: deliveryInfo?.shippedAt || actualShipPickup,
+            },
+          },
+        },
+      }))
+    : [];
+  if (deliveryInfoUpdateOps.length) {
+    await DeliveryInfo.bulkWrite(deliveryInfoUpdateOps);
+  }
+
+  const requestUpdateOps = [];
+  const eventItems = [];
+  for (const request of activeRequests) {
+    const nextRequest = request.toObject ? request.toObject() : { ...request };
+    const deliveryInfoIdFromExisting = request.deliveryInfoRef
+      ? String(request.deliveryInfoRef || "").trim()
+      : "";
+    const insertedDeliveryInfo = insertedDeliveryInfoMap.get(
+      String(request?._id || "").trim(),
+    );
+    const resolvedDeliveryInfoId =
+      insertedDeliveryInfo?._id || request.deliveryInfoRef || null;
+
+    ensureReviewByStageDefaults(nextRequest);
+    nextRequest.caseInfos.reviewByStage.shipping = {
+      ...nextRequest.caseInfos.reviewByStage.shipping,
       status: "APPROVED",
       updatedAt: actualShipPickup,
       updatedBy: actorUserId || null,
       reason: "",
     };
-
-    applyStatusMapping(request, "포장.발송");
-    applyShippingWorkflowState(request, {
+    applyStatusMapping(nextRequest, "포장.발송");
+    applyShippingWorkflowState(nextRequest, {
       code: SHIPPING_WORKFLOW_CODES.ACCEPTED,
       label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.ACCEPTED],
       acceptedAt: actualShipPickup,
@@ -355,15 +495,66 @@ async function finalizeMailboxPickupShipment({
       source: "hanjin-pickup",
       updatedAt: actualShipPickup,
     });
-    request.productionSchedule = request.productionSchedule || {};
-    request.productionSchedule.actualShipPickup = actualShipPickup;
-    request.shippingPackageId = pkg._id;
+    nextRequest.productionSchedule = nextRequest.productionSchedule || {};
+    nextRequest.productionSchedule.actualShipPickup = actualShipPickup;
+    nextRequest.shippingPackageId = pkg._id;
+    nextRequest.deliveryInfoRef = resolvedDeliveryInfoId;
 
-    await request.save();
+    requestUpdateOps.push({
+      updateOne: {
+        filter: { _id: request._id },
+        update: {
+          $set: {
+            deliveryInfoRef: resolvedDeliveryInfoId,
+            manufacturerStage: nextRequest.manufacturerStage,
+            shippingWorkflow: nextRequest.shippingWorkflow,
+            productionSchedule: nextRequest.productionSchedule,
+            shippingPackageId: nextRequest.shippingPackageId,
+            "caseInfos.reviewByStage.shipping":
+              nextRequest.caseInfos?.reviewByStage?.shipping || null,
+            updatedAt: actualShipPickup,
+          },
+        },
+      },
+    });
     updatedIds.push(String(request.requestId || "").trim());
+
+    const deliveryInfo =
+      insertedDeliveryInfo ||
+      existingDeliveryInfoMap.get(deliveryInfoIdFromExisting) ||
+      null;
+    eventItems.push({
+      requestId: String(request?.requestId || "").trim(),
+      requestMongoId: String(request?._id || "").trim(),
+      requestDoc: request,
+      request: {
+        _id: request?._id || null,
+        requestId: String(request?.requestId || "").trim(),
+        mailboxAddress: String(request?.mailboxAddress || "").trim(),
+        manufacturerStage: nextRequest.manufacturerStage,
+        shippingWorkflow: nextRequest.shippingWorkflow,
+        shippingLabelPrinted: {
+          printed: Boolean(request?.shippingLabelPrinted?.printed),
+          printedAt: request?.shippingLabelPrinted?.printedAt || null,
+          mailboxAddress:
+            String(
+              request?.shippingLabelPrinted?.mailboxAddress || "",
+            ).trim() || null,
+        },
+      },
+      shippingStatusLabel: buildTrackingStatusLabel({
+        trackingNumber: trackingNumber || deliveryInfo?.trackingNumber,
+        shippedAt: deliveryInfo?.shippedAt || actualShipPickup,
+        tracking: deliveryInfo?.tracking || {},
+      }),
+    });
   }
 
-  return updatedIds;
+  if (requestUpdateOps.length) {
+    await Request.bulkWrite(requestUpdateOps);
+  }
+
+  return { updatedIds, eventItems };
 }
 
 async function finalizeMailboxPickupResult({
@@ -378,27 +569,15 @@ async function finalizeMailboxPickupResult({
     manufacturerStage: "포장.발송",
   });
 
-  // 중복 에러인 경우에도 상태를 accepted로 설정 (이미 한진에 등록됨)
-  const updatedIds = await finalizeMailboxPickupShipment({
+  const { updatedIds, eventItems } = await finalizeMailboxPickupShipment({
     requests: requestDocs,
     pickupData,
     actorUserId,
     isDuplicate,
   });
-
-  const updatedDocs = await Request.find({
-    _id: { $in: requestDocs.map((request) => request._id) },
-  })
-    .populate("requestor", "name business phoneNumber address")
-    .populate("businessAnchorId", "name metadata")
-    .populate("deliveryInfoRef");
-
-  for (const doc of updatedDocs) {
-    await emitDeliveryUpdated(doc, {
-      source: "hanjin-pickup",
-      shippingStatusLabel: buildTrackingStatusLabel(doc.deliveryInfoRef),
-    });
-  }
+  await emitDeliveryUpdatedBatch(eventItems, {
+    source: "hanjin-pickup",
+  });
 
   return {
     mailbox,
@@ -424,13 +603,6 @@ async function executeSingleMailboxPickup({
   });
 
   if (alreadyAccepted) {
-    console.log(
-      "[hanjin][pickup] mailbox already accepted, skipping hanjin api call",
-      {
-        mailbox,
-        requestCount: group.length,
-      },
-    );
     // 이미 접수된 경우 finalizeMailboxPickupResult 호출하지 않고 바로 반환
     return {
       mailbox,
@@ -441,44 +613,153 @@ async function executeSingleMailboxPickup({
     };
   }
 
-  const orderBody = buildHanjinInsertOrderBody({ mailbox, requests: group });
+  try {
+    const orderBody = buildHanjinInsertOrderBody({ mailbox, requests: group });
 
-  console.log("[hanjin][pickup] mailbox order body", {
-    mailbox,
-    requestCount: group.length,
-    path,
-    pathCandidates,
-    orderBody,
-  });
-
-  let data = await callHanjinWithFallback({ data: orderBody });
-  if (isDuplicateOrderError(data)) {
-    console.warn(
-      "[hanjin][pickup] duplicate order detected, treating as already accepted",
-      {
+    let data = await callHanjinWithFallback({ data: orderBody });
+    if (isDuplicateOrderError(data)) {
+      return finalizeMailboxPickupResult({
         mailbox,
-        resultCode: data?.resultCode,
-        resultMessage: data?.resultMessage,
-        wblNo: data?.wblNo,
-        custOrdNo: data?.custOrdNo || orderBody.custOrdNo,
-      },
-    );
-    // 중복 에러 = 이미 한진에 등록됨 = 이미 접수됨
-    // 상태를 accepted로 업데이트하고 반환
+        group,
+        pickupData: data,
+        actorUserId,
+        isDuplicate: true,
+      });
+    }
     return finalizeMailboxPickupResult({
       mailbox,
       group,
       pickupData: data,
       actorUserId,
-      isDuplicate: true,
     });
+  } catch (error) {
+    return {
+      mailbox,
+      success: false,
+      error: error.message,
+      statusCode: error?.statusCode || error?.status || 500,
+      data: error?.data,
+    };
   }
-  return finalizeMailboxPickupResult({
-    mailbox,
-    group,
-    pickupData: data,
-    actorUserId,
-  });
+}
+
+async function executeSingleMailboxPickupCancel({
+  mailbox,
+  group,
+  callHanjinWithFallback,
+}) {
+  const ymd = getTodayYmdInKst().replace(/-/g, "");
+  const updatedIds = [];
+  const custOrdNo = `ABUTS_${ymd}_${String(mailbox || "-")}`.slice(0, 30);
+  const cancelBody = {
+    custEdiCd: HANJIN_CLIENT_ID,
+    custOrdNo,
+  };
+
+  try {
+    const data = await callHanjinWithFallback({ data: cancelBody });
+    const now = new Date();
+
+    const deliveryInfoUpdateOps = [];
+    const requestUpdateOps = [];
+    const eventItems = [];
+    for (const requestDoc of group) {
+      const deliveryInfoId =
+        requestDoc.deliveryInfoRef &&
+        typeof requestDoc.deliveryInfoRef === "object"
+          ? requestDoc.deliveryInfoRef?._id
+          : requestDoc.deliveryInfoRef || null;
+      if (deliveryInfoId) {
+        deliveryInfoUpdateOps.push({
+          updateOne: {
+            filter: { _id: deliveryInfoId },
+            update: {
+              $set: {
+                "tracking.lastStatusCode": "03",
+                "tracking.lastStatusText": "예약취소",
+                "tracking.lastEventAt": now,
+                "tracking.lastSyncedAt": now,
+                updatedAt: now,
+              },
+            },
+          },
+        });
+      }
+
+      const nextShippingWorkflow = {
+        ...(requestDoc?.shippingWorkflow || {}),
+        code: SHIPPING_WORKFLOW_CODES.CANCELED,
+        label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.CANCELED],
+        printedAt: requestDoc?.shippingWorkflow?.printedAt || null,
+        acceptedAt: null,
+        pickedUpAt: null,
+        completedAt: null,
+        canceledAt: now,
+        erroredAt: null,
+        trackingStatusCode: "03",
+        trackingStatusText: "예약취소",
+        source: "hanjin-pickup-cancel",
+        updatedAt: now,
+      };
+
+      requestUpdateOps.push({
+        updateOne: {
+          filter: { _id: requestDoc._id },
+          update: {
+            $set: {
+              manufacturerStage: "포장.발송",
+              shippingWorkflow: nextShippingWorkflow,
+              updatedAt: now,
+            },
+          },
+        },
+      });
+      updatedIds.push(String(requestDoc.requestId || "").trim());
+      eventItems.push({
+        requestId: String(requestDoc?.requestId || "").trim(),
+        requestMongoId: String(requestDoc?._id || "").trim(),
+        requestDoc,
+        request: {
+          _id: requestDoc?._id || null,
+          requestId: String(requestDoc?.requestId || "").trim(),
+          mailboxAddress: String(requestDoc?.mailboxAddress || "").trim(),
+          manufacturerStage: "포장.발송",
+          shippingLabelPrinted: {
+            printed: Boolean(requestDoc?.shippingLabelPrinted?.printed),
+            printedAt: requestDoc?.shippingLabelPrinted?.printedAt || null,
+            mailboxAddress:
+              String(
+                requestDoc?.shippingLabelPrinted?.mailboxAddress || "",
+              ).trim() || null,
+          },
+          shippingWorkflow: nextShippingWorkflow,
+        },
+      });
+    }
+
+    if (deliveryInfoUpdateOps.length) {
+      await DeliveryInfo.bulkWrite(deliveryInfoUpdateOps);
+    }
+    if (requestUpdateOps.length) {
+      await Request.bulkWrite(requestUpdateOps);
+    }
+    await emitDeliveryUpdatedBatch(eventItems, {
+      source: "hanjin-pickup-cancel",
+      shippingStatusLabel:
+        SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.CANCELED],
+    });
+
+    return { mailbox, success: true, data, updatedIds };
+  } catch (error) {
+    return {
+      mailbox,
+      success: false,
+      error: error.message,
+      statusCode: error?.statusCode || error?.status || 500,
+      data: error?.data,
+      updatedIds,
+    };
+  }
 }
 
 async function markMailboxWorkflowError({
@@ -489,27 +770,63 @@ async function markMailboxWorkflowError({
   if (!list.length) return;
 
   const requestDocs = await Request.find({
+    mailboxAddress: { $in: list },
     manufacturerStage: "포장.발송",
-  })
-    .populate("requestor", "name business phoneNumber address")
-    .populate("businessAnchorId", "name metadata")
-    .populate("deliveryInfoRef");
+  }).lean();
 
+  const now = new Date();
+  const requestUpdateOps = [];
+  const eventItems = [];
   for (const requestDoc of requestDocs) {
-    applyShippingWorkflowState(requestDoc, {
+    const nextShippingWorkflow = {
+      ...(requestDoc?.shippingWorkflow || {}),
       code: SHIPPING_WORKFLOW_CODES.ERROR,
       label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.ERROR],
-      erroredAt: new Date(),
+      erroredAt: now,
       source: actorSource,
-      updatedAt: new Date(),
+      updatedAt: now,
+    };
+    requestUpdateOps.push({
+      updateOne: {
+        filter: { _id: requestDoc._id },
+        update: {
+          $set: {
+            shippingWorkflow: nextShippingWorkflow,
+            updatedAt: now,
+          },
+        },
+      },
     });
-    await requestDoc.save();
-    await emitDeliveryUpdated(requestDoc, {
-      source: actorSource,
-      shippingStatusLabel:
-        SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.ERROR],
+    eventItems.push({
+      requestId: String(requestDoc?.requestId || "").trim(),
+      requestMongoId: String(requestDoc?._id || "").trim(),
+      requestDoc,
+      request: {
+        _id: requestDoc?._id || null,
+        requestId: String(requestDoc?.requestId || "").trim(),
+        mailboxAddress: String(requestDoc?.mailboxAddress || "").trim(),
+        manufacturerStage: String(requestDoc?.manufacturerStage || "").trim(),
+        shippingLabelPrinted: {
+          printed: Boolean(requestDoc?.shippingLabelPrinted?.printed),
+          printedAt: requestDoc?.shippingLabelPrinted?.printedAt || null,
+          mailboxAddress:
+            String(
+              requestDoc?.shippingLabelPrinted?.mailboxAddress || "",
+            ).trim() || null,
+        },
+        shippingWorkflow: nextShippingWorkflow,
+      },
     });
   }
+
+  if (requestUpdateOps.length) {
+    await Request.bulkWrite(requestUpdateOps);
+  }
+  await emitDeliveryUpdatedBatch(eventItems, {
+    source: actorSource,
+    shippingStatusLabel:
+      SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.ERROR],
+  });
 }
 
 const groupRequestsByMailbox = (requests = []) => {
@@ -643,17 +960,9 @@ export async function validateHanjinCustomerCheck(req, res) {
 
 export async function printHanjinLabels(req, res) {
   try {
-    console.log("[hanjin][print] printHanjinLabels called");
-
     const { mailboxAddresses, payload, wblPrintOptions } = req.body || {};
     const preResolved = req?.__resolvedHanjinPayload || null;
     const normalizedMailboxAddresses = resolveMailboxList(mailboxAddresses);
-
-    console.log("[hanjin][print] resolved params", {
-      mailboxAddresses,
-      wblPrintOptions,
-      preResolved: !!preResolved,
-    });
 
     const path = resolveHanjinPath(
       "HANJIN_PRINT_WBL_PATH",
@@ -682,8 +991,6 @@ export async function printHanjinLabels(req, res) {
       throw err;
     }
 
-    debugHanjinPrintPayload(resolved.payload);
-
     const printRequests = Array.isArray(preResolved?.requests)
       ? preResolved.requests
       : await findPrePrintSnapshotRequests(normalizedMailboxAddresses);
@@ -706,58 +1013,41 @@ export async function printHanjinLabels(req, res) {
       },
     );
 
-    // 먼저 주문을 등록하여 운송장번호를 획득
-    console.log("[hanjin][print] registering orders before printing labels");
+    const allSelectedCacheHits =
+      normalizedMailboxAddresses.length > 0 &&
+      normalizedMailboxAddresses.every((address) => {
+        const change = mailboxChangeSet.get(address);
+        return (
+          change &&
+          change.changed === false &&
+          change.hasCachedLabels === true &&
+          Array.isArray(change.cachedZplLabels) &&
+          change.cachedZplLabels.length > 0
+        );
+      });
 
-    const pickupPathCandidates = buildHanjinPathCandidates(
-      resolveHanjinPath(
-        "HANJIN_PICKUP_REQUEST_PATH",
-        getHanjinPathFallbacks().HANJIN_PICKUP_REQUEST_PATH,
-      ),
-    );
+    if (allSelectedCacheHits) {
+      const cachedZplLabels = normalizedMailboxAddresses.flatMap((address) => {
+        const change = mailboxChangeSet.get(address);
+        return Array.isArray(change?.cachedZplLabels)
+          ? change.cachedZplLabels
+          : [];
+      });
 
-    const orderRegistrationResults = [];
-    for (const mailbox of normalizedMailboxAddresses) {
-      const mailboxRequests = printRequests.filter(
-        (r) => String(r?.mailboxAddress || "").trim() === mailbox,
+      const { labelData, wblPrint } = await executeCachedLabelPrint({
+        cachedZplLabels,
+        wblPrintOptions,
+      });
+
+      return res.status(200).json(
+        buildPrintLabelsSuccessPayload({
+          labelData,
+          wblPrint,
+          mailboxChangeResponse,
+          pickupUpdatedMailboxAddresses,
+        }),
       );
-      if (!mailboxRequests.length) continue;
-
-      try {
-        const orderBody = buildHanjinInsertOrderBody({
-          mailbox,
-          requests: mailboxRequests,
-        });
-
-        const orderResult = await executeHanjinOrderApiWithFallback({
-          pathCandidates: pickupPathCandidates,
-          data: orderBody,
-          logPrefix: "[hanjin][print-pre-order]",
-        });
-
-        orderRegistrationResults.push({
-          mailbox,
-          success: true,
-          wblNo: orderResult?.wblNo,
-          custOrdNo: orderResult?.custOrdNo,
-        });
-      } catch (err) {
-        console.error("[hanjin][print-pre-order] failed", {
-          mailbox,
-          error: err.message,
-        });
-        orderRegistrationResults.push({
-          mailbox,
-          success: false,
-          error: err.message,
-        });
-      }
     }
-
-    console.log("[hanjin][print] order registration results", {
-      total: orderRegistrationResults.length,
-      successful: orderRegistrationResults.filter((r) => r.success).length,
-    });
 
     const { labelData, wblPrint } = await executeHanjinLabelPrint({
       path,
@@ -766,25 +1056,38 @@ export async function printHanjinLabels(req, res) {
       wblPrintOptions,
     });
 
-    await persistPrintedMailboxState({
+    const cachedZplLabelsByAddress = Array.isArray(labelData?.address_list)
+      ? Object.fromEntries(
+          (labelData.address_list || []).map((row, index) => {
+            const mailboxAddress = String(
+              row?.mailbox_code || row?.msg_key || "",
+            ).trim();
+            const zpl = Array.isArray(labelData?.zplLabels)
+              ? labelData.zplLabels[index]
+              : null;
+            return [mailboxAddress, zpl ? [zpl] : []];
+          }),
+        )
+      : null;
+
+    const printedState = await persistPrintedMailboxState({
       mailboxAddresses: normalizedMailboxAddresses,
       requests: printRequests,
+      cachedZplLabelsByAddress,
     });
 
-    const updatedDocs = await Request.find({
-      manufacturerStage: "포장.발송",
-    })
-      .populate("requestor", "name business phoneNumber address")
-      .populate("businessAnchorId", "name metadata")
-      .populate("deliveryInfoRef");
-
-    for (const doc of updatedDocs) {
-      await emitDeliveryUpdated(doc, {
+    await emitDeliveryUpdatedBatch(
+      buildPrintedEventItems({
+        requests: printRequests,
+        printedAt: printedState?.printedAt || new Date(),
+        snapshotByAddress: printedState?.snapshotByAddress,
+      }),
+      {
         source: "hanjin-print",
         shippingStatusLabel:
           SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.PRINTED],
-      });
-    }
+      },
+    );
 
     return res.status(200).json(
       buildPrintLabelsSuccessPayload({
@@ -866,40 +1169,55 @@ export async function requestHanjinPickup(req, res) {
     }
 
     const byMailbox = groupRequestsByMailbox(requests);
-    const results = [];
-    for (const mailbox of list) {
-      const group = byMailbox.get(mailbox) || [];
-      if (!group.length) {
-        results.push({
-          mailbox,
-          success: false,
-          skipped: true,
-          reason: "no_requests",
-        });
-        continue;
-      }
-      results.push(
-        await executeSingleMailboxPickup({
+    const results = await Promise.all(
+      list.map(async (mailbox) => {
+        const group = byMailbox.get(mailbox) || [];
+        if (!group.length) {
+          return {
+            mailbox,
+            success: false,
+            skipped: true,
+            reason: "no_requests",
+          };
+        }
+        return executeSingleMailboxPickup({
           mailbox,
           group,
           path,
           pathCandidates,
           callHanjinWithFallback,
           actorUserId: req.user?._id || null,
-        }),
-      );
+        });
+      }),
+    );
+
+    const failedResults = results.filter((item) => item?.success === false);
+    if (failedResults.length) {
+      await markMailboxWorkflowError({
+        mailboxAddresses: failedResults
+          .map((item) => String(item?.mailbox || "").trim())
+          .filter(Boolean),
+        actorSource: "hanjin-pickup-error",
+      });
     }
 
-    return res.status(200).json({ success: true, data: { results } });
+    return res.status(failedResults.length ? 207 : 200).json({
+      success: failedResults.length === 0,
+      data: { results },
+      message:
+        failedResults.length > 0
+          ? `${failedResults.length}개 우편함 접수에 실패했습니다.`
+          : undefined,
+    });
   } catch (error) {
     console.error("Error in requestHanjinPickup:", error);
     await markMailboxWorkflowError({
       mailboxAddresses: req.body?.mailboxAddresses,
       actorSource: "hanjin-pickup-error",
     });
-    return res.status(500).json({
+    return res.status(error?.statusCode || error?.status || 500).json({
       success: false,
-      message: "한진 택배 수거 접수 중 오류가 발생했습니다.",
+      message: error?.message || "한진 택배 수거 접수 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -959,144 +1277,54 @@ export async function cancelHanjinPickup(req, res) {
       return res.status(200).json({ success: true, data });
     }
 
-    const ymd = getTodayYmdInKst().replace(/-/g, "");
-    const results = [];
-    for (const mailbox of list) {
-      const updatedIds = [];
-      const custOrdNo = `ABUTS_${ymd}_${String(mailbox || "-")}`.slice(0, 30);
-      const cancelBody = {
-        custEdiCd: HANJIN_CLIENT_ID,
-        custOrdNo,
-      };
-      const data = await callHanjinWithFallback({ data: cancelBody });
+    const requestDocs = await Request.find({
+      mailboxAddress: { $in: list },
+      manufacturerStage: "포장.발송",
+    }).populate("deliveryInfoRef");
 
-      const requestDocs = await Request.find({
-        manufacturerStage: "포장.발송",
-      })
-        .populate("requestor", "name business phoneNumber address")
-        .populate("businessAnchorId", "name metadata")
-        .populate("deliveryInfoRef");
+    const byMailbox = groupRequestsByMailbox(requestDocs);
 
-      console.log("[hanjin][pickup-cancel][debug] before update", {
-        mailbox,
-        requestCount: requestDocs.length,
-        requests: requestDocs.map((requestDoc) => ({
-          requestId: String(requestDoc.requestId || "").trim(),
-          shippingWorkflowCode: String(
-            requestDoc.shippingWorkflow?.code || "",
-          ).trim(),
-          shippingWorkflowLabel: String(
-            requestDoc.shippingWorkflow?.label || "",
-          ).trim(),
-          printed: Boolean(requestDoc.shippingLabelPrinted?.printed),
-          manufacturerStage: String(requestDoc.manufacturerStage || "").trim(),
-        })),
-      });
-
-      for (const requestDoc of requestDocs) {
-        if (
-          requestDoc.deliveryInfoRef &&
-          typeof requestDoc.deliveryInfoRef === "object"
-        ) {
-          requestDoc.deliveryInfoRef.tracking =
-            requestDoc.deliveryInfoRef.tracking || {};
-          requestDoc.deliveryInfoRef.tracking.lastStatusCode = "03";
-          requestDoc.deliveryInfoRef.tracking.lastStatusText = "예약취소";
-          requestDoc.deliveryInfoRef.tracking.lastEventAt = new Date();
-          requestDoc.deliveryInfoRef.tracking.lastSyncedAt = new Date();
-          await requestDoc.deliveryInfoRef.save();
+    const results = await Promise.all(
+      list.map(async (mailbox) => {
+        const group = byMailbox.get(mailbox) || [];
+        if (!group.length) {
+          return {
+            mailbox,
+            success: false,
+            skipped: true,
+            reason: "no_requests",
+          };
         }
 
-        requestDoc.manufacturerStage = "포장.발송";
-        applyShippingWorkflowState(requestDoc, {
-          code: SHIPPING_WORKFLOW_CODES.CANCELED,
-          label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.CANCELED],
-          printedAt: requestDoc.shippingWorkflow?.printedAt || null,
-          acceptedAt: null,
-          pickedUpAt: null,
-          completedAt: null,
-          canceledAt: new Date(),
-          erroredAt: null,
-          trackingStatusCode: "03",
-          trackingStatusText: "예약취소",
-          source: "hanjin-pickup-cancel",
-          updatedAt: new Date(),
-        });
-        await requestDoc.save();
-        console.log("[hanjin][pickup-cancel][debug] saved request", {
+        return executeSingleMailboxPickupCancel({
           mailbox,
-          requestId: String(requestDoc.requestId || "").trim(),
-          shippingWorkflowCode: String(
-            requestDoc.shippingWorkflow?.code || "",
-          ).trim(),
-          shippingWorkflowLabel: String(
-            requestDoc.shippingWorkflow?.label || "",
-          ).trim(),
-          printed: Boolean(requestDoc.shippingLabelPrinted?.printed),
+          group,
+          callHanjinWithFallback,
         });
-        updatedIds.push(String(requestDoc.requestId || "").trim());
-      }
+      }),
+    );
 
-      const updatedSummary = requestDocs.map((doc) => ({
-        requestId: String(doc.requestId || "").trim(),
-        shippingWorkflowCode: doc.shippingWorkflow?.code || null,
-        manufacturerStage: doc.manufacturerStage,
-      }));
-      console.log("[hanjin][pickup-cancel] mailbox processed", {
-        mailbox,
-        updatedCount: requestDocs.length,
-        updatedSummary,
-        resultCode: data?.resultCode,
+    const failedResults = results.filter((item) => item?.success === false);
+    if (failedResults.length) {
+      await markMailboxWorkflowError({
+        mailboxAddresses: failedResults
+          .map((item) => String(item?.mailbox || "").trim())
+          .filter(Boolean),
+        actorSource: "hanjin-pickup-cancel-error",
       });
-
-      const updatedDocs = await Request.find({
-        _id: { $in: requestDocs.map((request) => request._id) },
-      })
-        .populate("requestor", "name business phoneNumber address")
-        .populate("businessAnchorId", "name metadata")
-        .populate("deliveryInfoRef");
-
-      console.log("[hanjin][pickup-cancel][debug] reloaded docs before emit", {
-        mailbox,
-        requestCount: updatedDocs.length,
-        requests: updatedDocs.map((doc) => ({
-          requestId: String(doc.requestId || "").trim(),
-          shippingWorkflowCode: String(doc.shippingWorkflow?.code || "").trim(),
-          shippingWorkflowLabel: String(
-            doc.shippingWorkflow?.label || "",
-          ).trim(),
-          printed: Boolean(doc.shippingLabelPrinted?.printed),
-          manufacturerStage: String(doc.manufacturerStage || "").trim(),
-        })),
-      });
-
-      for (const doc of updatedDocs) {
-        const normalizedDoc = await normalizeRequestForResponse(doc);
-        await emitDeliveryUpdated(doc, {
-          source: "hanjin-pickup-cancel",
-          shippingStatusLabel:
-            SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.CANCELED],
-          request: {
-            ...normalizedDoc,
-            shippingWorkflow: {
-              ...(normalizedDoc?.shippingWorkflow || {}),
-              code: SHIPPING_WORKFLOW_CODES.CANCELED,
-              label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.CANCELED],
-              acceptedAt: null,
-              pickedUpAt: null,
-              completedAt: null,
-            },
-          },
-        });
-      }
-
-      results.push({ mailbox, success: true, data, updatedIds });
     }
 
-    return res.status(200).json({ success: true, data: { results } });
+    return res.status(failedResults.length ? 207 : 200).json({
+      success: failedResults.length === 0,
+      data: { results },
+      message:
+        failedResults.length > 0
+          ? `${failedResults.length}개 우편함 취소에 실패했습니다.`
+          : undefined,
+    });
   } catch (error) {
     console.error("Error in cancelHanjinPickup:", error);
-    return res.status(500).json({
+    return res.status(error?.statusCode || error?.status || 500).json({
       success: false,
       message: "한진 택배 수거 접수 취소 중 오류가 발생했습니다.",
       error: error.message,
@@ -1106,10 +1334,6 @@ export async function cancelHanjinPickup(req, res) {
 
 export async function requestHanjinPickupAndPrint(req, res) {
   try {
-    console.log("[hanjin][pickup-and-print] function called", {
-      timestamp: new Date().toISOString(),
-    });
-
     const body = req.body || {};
     const mailboxAddresses = resolveMailboxList(body.mailboxAddresses);
     if (!mailboxAddresses.length) {
@@ -1119,24 +1343,33 @@ export async function requestHanjinPickupAndPrint(req, res) {
       });
     }
 
-    console.log("[hanjin][pickup-and-print] preparing context", {
-      mailboxAddresses,
-    });
-
     const {
       changedMailboxAddressesBeforePrint,
       mailboxChangeResponse,
       selectedRequestsBeforePrint,
     } = await preparePickupAndPrintChangeContext(mailboxAddresses);
+    const pickupNeededMailboxAddresses = mailboxAddresses.filter((address) => {
+      const group = (
+        Array.isArray(selectedRequestsBeforePrint)
+          ? selectedRequestsBeforePrint
+          : []
+      ).filter(
+        (requestDoc) =>
+          String(requestDoc?.mailboxAddress || "").trim() === address,
+      );
+      if (!group.length) return false;
+      return group.some((requestDoc) => {
+        const code = String(requestDoc?.shippingWorkflow?.code || "").trim();
+        return (
+          code !== SHIPPING_WORKFLOW_CODES.ACCEPTED &&
+          code !== SHIPPING_WORKFLOW_CODES.PICKED_UP
+        );
+      });
+    });
     const printTargetMailboxAddresses =
       changedMailboxAddressesBeforePrint.length
         ? changedMailboxAddressesBeforePrint
         : mailboxAddresses;
-
-    console.log("[hanjin][pickup-and-print] context prepared", {
-      printTargetMailboxAddresses,
-      changedMailboxAddressesBeforePrint,
-    });
 
     const flowStartedAtMs = Date.now();
     const flowStartedAt = nowIso();
@@ -1145,18 +1378,38 @@ export async function requestHanjinPickupAndPrint(req, res) {
     const pickupStartedAtMs = Date.now();
     const pickupStartedAt = nowIso();
 
-    console.log("[hanjin][pickup-and-print] pickup step starting", {
-      mailboxAddresses,
-    });
-
-    const pickupStep = await executeIntegratedCapturedStep({
-      res,
-      controllerFn: requestHanjinPickup,
-      reqLike: req,
-      fallbackMessage: "한진 택배 접수에 실패했습니다.",
-    });
-    if (!pickupStep.ok) {
-      return pickupStep.response;
+    let pickupStep = {
+      ok: true,
+      captured: null,
+      body: {
+        success: true,
+        data: {
+          results: pickupNeededMailboxAddresses.map((mailbox) => ({
+            mailbox,
+            success: true,
+            skipped: true,
+            reason: "already_accepted",
+          })),
+        },
+      },
+    };
+    if (pickupNeededMailboxAddresses.length) {
+      const pickupReq = {
+        ...req,
+        body: {
+          ...(req.body || {}),
+          mailboxAddresses: pickupNeededMailboxAddresses,
+        },
+      };
+      pickupStep = await executeIntegratedCapturedStep({
+        res,
+        controllerFn: requestHanjinPickup,
+        reqLike: pickupReq,
+        fallbackMessage: "한진 택배 접수에 실패했습니다.",
+      });
+      if (!pickupStep.ok) {
+        return pickupStep.response;
+      }
     }
 
     const pickupFinishedAtMs = Date.now();
@@ -1165,11 +1418,6 @@ export async function requestHanjinPickupAndPrint(req, res) {
     // 2단계: 운송장 출력 (wblNo 포함)
     const printStartedAtMs = Date.now();
     const printStartedAt = nowIso();
-
-    console.log("[hanjin][pickup-and-print] print step starting", {
-      printTargetMailboxAddresses,
-      wblPrintOptions: body.wblPrintOptions,
-    });
 
     const printReq = buildIntegratedPrintRequest({
       req,
@@ -1190,11 +1438,6 @@ export async function requestHanjinPickupAndPrint(req, res) {
         : [],
     };
 
-    console.log("[hanjin][pickup-and-print] print request prepared", {
-      hasResolvedPayload: !!printReq.__resolvedHanjinPayload,
-      requestsCount: printReq.__resolvedHanjinPayload?.requests?.length || 0,
-    });
-
     const printStep = await executeIntegratedCapturedStep({
       res,
       controllerFn: printHanjinLabels,
@@ -1202,19 +1445,7 @@ export async function requestHanjinPickupAndPrint(req, res) {
       fallbackMessage: "운송장 출력에 실패했습니다.",
     });
 
-    console.log("[hanjin][pickup-and-print] print step completed", {
-      ok: printStep.ok,
-      status: printStep.response?.statusCode || printStep.response?.status,
-      body: printStep.body,
-      capturedBody: printStep.captured?.body,
-    });
-
     if (!printStep.ok) {
-      console.error("[hanjin][pickup-and-print] print step failed", {
-        body: printStep.body,
-        capturedBody: printStep.captured?.body,
-        capturedStatusCode: printStep.captured?.statusCode,
-      });
       return printStep.response;
     }
 
@@ -1241,19 +1472,16 @@ export async function requestHanjinPickupAndPrint(req, res) {
         startedAtMs: pickupStartedAtMs,
         finishedAtMs: pickupFinishedAtMs,
         startedAt: pickupStartedAt,
-        finishedAt: pickupFinishedAt,
+        totalMs: flowFinishedAtMs - flowStartedAtMs,
       }),
     };
 
-    console.log("[hanjin][pickup-and-print] timings", {
-      mailboxAddresses,
-      printTargetMailboxAddresses,
-      timings,
-    });
+    const pickupBody = pickupStep.body;
+    const printBody = printStep.body;
 
     const responseBody = buildIntegratedPickupAndPrintSuccessResponse({
-      pickupBody: pickupStep.body,
-      printBody: printStep.body,
+      pickupBody,
+      printBody,
       mailboxChangeResponse,
       changedMailboxAddressesBeforePrint,
       pickupUpdatedMailboxAddresses:

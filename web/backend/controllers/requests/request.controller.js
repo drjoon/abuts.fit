@@ -55,6 +55,7 @@ export const {
 
 export const { rollbackMailboxShipping, syncHanjinTracking } =
   shippingController;
+export const { resetMailboxShippingWorkingState } = shippingController;
 
 export const {
   printHanjinLabels,

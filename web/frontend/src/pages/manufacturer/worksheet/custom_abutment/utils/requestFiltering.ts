@@ -146,12 +146,6 @@ export function mergeTransientRealtimeProgress(
       const actualCamComplete = req.productionSchedule?.actualCamComplete;
       const hasNcFile = !!(req.caseInfos as any)?.ncFile?.fileName;
 
-      if (actualCamStart) {
-        console.log(
-          `[RESTORE_CAM] requestId: ${requestId}, stage: ${stage}, actualCamStart: ${actualCamStart}, actualCamComplete: ${actualCamComplete}, hasNcFile: ${hasNcFile}`,
-        );
-      }
-
       const isCamProcessing =
         !!actualCamStart &&
         (!actualCamComplete ||
@@ -169,10 +163,6 @@ export function mergeTransientRealtimeProgress(
             Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000),
           ),
         };
-        console.log(
-          `[RESTORE_CAM] Restored progress for ${requestId}:`,
-          restoredProgress,
-        );
       }
     }
 

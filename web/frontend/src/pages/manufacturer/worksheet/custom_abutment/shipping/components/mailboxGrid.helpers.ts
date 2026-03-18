@@ -57,7 +57,8 @@ export const callHanjinApi = async ({
     jsonBody: body,
   });
   const responseBody = response.data as any;
-  if (!response.ok || !responseBody?.success) {
+  const isPartialSuccess = response.status === 207 && response.ok;
+  if ((!response.ok || !responseBody?.success) && !isPartialSuccess) {
     const message =
       responseBody?.error ||
       responseBody?.message ||
@@ -67,7 +68,12 @@ export const callHanjinApi = async ({
     err.data = responseBody?.data || responseBody;
     throw err;
   }
-  return responseBody?.data;
+  return {
+    ...(responseBody?.data || {}),
+    success: Boolean(responseBody?.success),
+    partial: isPartialSuccess,
+    message: responseBody?.message || null,
+  };
 };
 
 export const callHanjinApiWithMeta = async ({

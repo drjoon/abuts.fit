@@ -61,6 +61,12 @@ export const getLastPrintedSnapshotForMailbox = (requests = []) => {
     requestIds,
     capturedAt: shippingLabelPrinted?.snapshotCapturedAt || null,
     printed: Boolean(shippingLabelPrinted?.printed),
+    cachedZplLabels: Array.isArray(shippingLabelPrinted?.cachedZplLabels)
+      ? shippingLabelPrinted.cachedZplLabels.filter((value) =>
+          Boolean(String(value || "").trim()),
+        )
+      : [],
+    cachedLabelCount: Number(shippingLabelPrinted?.cachedLabelCount || 0),
   };
 };
 
@@ -88,6 +94,11 @@ export const buildMailboxChangeSet = (requests = []) => {
       previousRequestIds: previous.requestIds,
       printed: previous.printed,
       snapshotCapturedAt: previous.capturedAt,
+      cachedZplLabels: previous.cachedZplLabels,
+      hasCachedLabels: Array.isArray(previous.cachedZplLabels)
+        ? previous.cachedZplLabels.length > 0
+        : false,
+      cachedLabelCount: previous.cachedLabelCount,
     });
   }
 
@@ -127,6 +138,7 @@ export const buildMailboxChangeResponse = ({
 export const persistPrintedMailboxState = async ({
   mailboxAddresses = [],
   requests = [],
+  cachedZplLabelsByAddress = null,
 }) => {
   const addresses = Array.isArray(mailboxAddresses)
     ? mailboxAddresses.map((v) => String(v || "").trim()).filter(Boolean)
@@ -150,6 +162,11 @@ export const persistPrintedMailboxState = async ({
   for (const address of addresses) {
     const snapshot = snapshotByAddress.get(address);
     if (!snapshot) continue;
+    const cachedZplLabels = Array.isArray(cachedZplLabelsByAddress?.[address])
+      ? cachedZplLabelsByAddress[address]
+          .map((value) => String(value || ""))
+          .filter(Boolean)
+      : [];
     bulkOps.push({
       updateMany: {
         filter: { mailboxAddress: address },
@@ -173,6 +190,13 @@ export const persistPrintedMailboxState = async ({
               "shippingWorkflow.code": SHIPPING_WORKFLOW_CODES.PRINTED,
               "shippingWorkflow.label":
                 SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.PRINTED],
+              ...(cachedZplLabels.length > 0
+                ? {
+                    "shippingLabelPrinted.cachedZplLabels": cachedZplLabels,
+                    "shippingLabelPrinted.cachedLabelCount":
+                      cachedZplLabels.length,
+                  }
+                : {}),
             },
           },
         ],
@@ -183,6 +207,11 @@ export const persistPrintedMailboxState = async ({
   if (bulkOps.length) {
     await Request.bulkWrite(bulkOps);
   }
+
+  return {
+    printedAt,
+    snapshotByAddress,
+  };
 };
 
 export const resetPrintedAndAcceptedWorkingState = (requestDoc, pickedUpAt) => {
@@ -239,20 +268,10 @@ export const resolveCapturedSuccessBody = (
 };
 
 export const executeCapturedController = async (controllerFn, reqLike) => {
-  console.log("[captured-controller] executing", {
-    fnName: controllerFn?.name || "unknown",
-    hasReqLike: !!reqLike,
-  });
-
   const capture = createCapturedJsonResponder();
 
   try {
     await controllerFn(reqLike, capture.responder);
-    console.log("[captured-controller] completed", {
-      fnName: controllerFn?.name || "unknown",
-      statusCode: capture.captured?.statusCode,
-      success: capture.captured?.body?.success,
-    });
   } catch (error) {
     console.error("[captured-controller] error", {
       fnName: controllerFn?.name || "unknown",

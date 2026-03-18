@@ -159,6 +159,13 @@ router.post(
   requestController.rollbackMailboxShipping,
 );
 
+router.post(
+  "/shipping/mailbox-reset-working-state",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.resetMailboxShippingWorkingState,
+);
+
 // 한진 운송장 출력 (메일박스 기준)
 router.post(
   "/shipping/hanjin/print-labels",

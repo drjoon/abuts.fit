@@ -390,6 +390,14 @@ const requestSchema = new mongoose.Schema(
         type: [String],
         default: undefined,
       },
+      cachedZplLabels: {
+        type: [String],
+        default: undefined,
+      },
+      cachedLabelCount: {
+        type: Number,
+        default: 0,
+      },
     },
     shippingWorkflow: {
       code: {

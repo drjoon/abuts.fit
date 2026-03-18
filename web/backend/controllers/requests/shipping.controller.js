@@ -257,6 +257,106 @@ export async function rollbackMailboxShipping(req, res) {
   }
 }
 
+export async function resetMailboxShippingWorkingState(req, res) {
+  try {
+    const mailboxAddressesRaw = Array.isArray(req.body?.mailboxAddresses)
+      ? req.body.mailboxAddresses
+      : [];
+    const mailboxAddresses = mailboxAddressesRaw
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+
+    if (!mailboxAddresses.length) {
+      return res.status(400).json({
+        success: false,
+        message: "mailboxAddresses가 필요합니다.",
+      });
+    }
+
+    const requests = await Request.find({
+      mailboxAddress: { $in: mailboxAddresses },
+      manufacturerStage: "포장.발송",
+    })
+      .populate("requestor", "name business phoneNumber address")
+      .populate("businessAnchorId", "name metadata")
+      .populate("deliveryInfoRef");
+
+    if (!requests.length) {
+      return res.status(404).json({
+        success: false,
+        message: "조건에 맞는 의뢰를 찾을 수 없습니다.",
+      });
+    }
+
+    const now = new Date();
+    const updatedIds = [];
+
+    for (const requestDoc of requests) {
+      requestDoc.shippingLabelPrinted = {
+        ...(requestDoc.shippingLabelPrinted || {}),
+        printed: false,
+        printedAt: null,
+        mailboxAddress: String(requestDoc.mailboxAddress || "").trim() || null,
+        snapshotFingerprint: null,
+        snapshotCapturedAt: null,
+        snapshotRequestIds: [],
+      };
+
+      applyShippingWorkflowState(requestDoc, {
+        code: SHIPPING_WORKFLOW_CODES.NONE,
+        label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.NONE],
+        printedAt: null,
+        acceptedAt: null,
+        pickedUpAt: null,
+        completedAt: null,
+        canceledAt: null,
+        erroredAt: null,
+        trackingStatusCode: null,
+        trackingStatusText: null,
+        source: "shipping-test-reset",
+        updatedAt: now,
+      });
+
+      if (
+        requestDoc.deliveryInfoRef &&
+        typeof requestDoc.deliveryInfoRef === "object"
+      ) {
+        requestDoc.deliveryInfoRef.tracking = {
+          ...(requestDoc.deliveryInfoRef.tracking || {}),
+          lastStatusCode: null,
+          lastStatusText: null,
+          lastEventAt: null,
+          lastSyncedAt: now,
+        };
+        requestDoc.deliveryInfoRef.shippedAt = null;
+        requestDoc.deliveryInfoRef.pickedUpAt = null;
+        requestDoc.deliveryInfoRef.deliveredAt = null;
+        requestDoc.deliveryInfoRef.trackingNumber = undefined;
+        await requestDoc.deliveryInfoRef.save();
+      }
+
+      await requestDoc.save();
+      updatedIds.push(String(requestDoc.requestId || "").trim());
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `${updatedIds.length}건의 포장.발송 작업 상태를 초기화했습니다.`,
+      data: {
+        updatedIds,
+        mailboxAddresses,
+      },
+    });
+  } catch (error) {
+    console.error("Error in resetMailboxShippingWorkingState:", error);
+    return res.status(500).json({
+      success: false,
+      message: "포장.발송 테스트 리셋 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 /**
  * 한진 배송정보 복수건 동기화
  * @route POST /api/requests/shipping/hanjin/tracking-sync

@@ -219,9 +219,15 @@ const resolveReceiverDetailAddress = (request) => {
     extracted?.detailAddress,
     extracted?.address2,
   ];
-  return (
-    candidates.map((value) => String(value || "").trim()).find(Boolean) || ""
-  );
+  const resolvedCandidate =
+    candidates.map((value) => String(value || "").trim()).find(Boolean) || "";
+
+  if (resolvedCandidate) return resolvedCandidate;
+
+  const baseAddress = normalizeReceiverAddressForHanjin(request);
+  if (baseAddress) return "상세주소없음";
+
+  return "";
 };
 
 const logMissingReceiverAddressDiagnostics = ({ request, mailbox, reason }) => {
@@ -310,36 +316,14 @@ export const executeHanjinLabelPrint = async ({
   metaByMsgKey,
   wblPrintOptions,
 }) => {
-  console.log("[hanjin][print] executeHanjinLabelPrint called", {
-    path,
-    wblPrintOptions,
-  });
-
   // 한진 API 응답에서 ZPL 라벨 데이터를 받기 위해 print-wbls API 호출
   // payload는 address_list를 포함한 형식이어야 함
   const printPath = path.replace("{client_id}", HANJIN_CLIENT_ID);
-
-  console.log("[hanjin][print] calling hanjin print api", {
-    path: printPath,
-    payloadAddressListLength: Array.isArray(payload?.address_list)
-      ? payload.address_list.length
-      : 0,
-  });
 
   const data = await hanjinService.requestPrintApi({
     path: printPath,
     method: "POST",
     data: payload,
-  });
-
-  console.log("[hanjin][print] hanjin api response", {
-    hasData: !!data,
-    dataKeys: data ? Object.keys(data) : null,
-    totalCnt: data?.total_cnt || data?.totalCnt,
-    errorCnt: data?.error_cnt || data?.errorCnt,
-    addressListLength: Array.isArray(data?.address_list)
-      ? data.address_list.length
-      : 0,
   });
 
   const errorCount = Number(data?.error_cnt || data?.errorCnt || 0);
@@ -370,9 +354,6 @@ export const executeHanjinLabelPrint = async ({
   }
 
   const labelData = buildResolvedLabelData({ data, metaByMsgKey });
-  console.log("[hanjin][print] labelData built", {
-    zplLabelsCount: labelData?.zplLabels?.length || 0,
-  });
 
   const shouldTriggerWblPrint =
     wblPrintOptions && typeof wblPrintOptions === "object";
@@ -389,12 +370,48 @@ export const executeHanjinLabelPrint = async ({
     .trim()
     .toLowerCase();
 
-  console.log("[hanjin][print] output mode", {
-    wblPrintOptions,
-    shippingOutputMode,
-    outputMode,
-    shouldTriggerWblPrint,
-  });
+  const wblPrint = shouldTriggerWblPrint
+    ? await triggerWblServerPrint(labelData, {
+        ...wblPrintOptions,
+        outputMode,
+        printMode,
+      })
+    : { success: true, skipped: true, reason: "no_wbl_print_options" };
+
+  return { labelData, wblPrint };
+};
+
+export const executeCachedLabelPrint = async ({
+  cachedZplLabels = [],
+  wblPrintOptions,
+}) => {
+  const zplLabels = Array.isArray(cachedZplLabels)
+    ? cachedZplLabels.map((value) => String(value || "")).filter(Boolean)
+    : [];
+  if (!zplLabels.length) {
+    throw Object.assign(
+      new Error("재출력에 사용할 캐시 라벨 데이터가 없습니다."),
+      {
+        statusCode: 400,
+      },
+    );
+  }
+
+  const labelData = {
+    address_list: [],
+    zplLabels,
+  };
+  const shouldTriggerWblPrint =
+    wblPrintOptions && typeof wblPrintOptions === "object";
+  const shippingOutputMode = String(
+    wblPrintOptions?.shippingOutputMode || "label",
+  )
+    .trim()
+    .toLowerCase();
+  const outputMode = shippingOutputMode === "image" ? "pdf" : "print";
+  const printMode = String(wblPrintOptions?.printMode || "pdf")
+    .trim()
+    .toLowerCase();
 
   const wblPrint = shouldTriggerWblPrint
     ? await triggerWblServerPrint(labelData, {
@@ -405,6 +422,45 @@ export const executeHanjinLabelPrint = async ({
     : { success: true, skipped: true, reason: "no_wbl_print_options" };
 
   return { labelData, wblPrint };
+};
+
+const requestWblServerPrint = async ({ zpl, body }) => {
+  const headers = { "Content-Type": "application/json" };
+  if (WBL_PRINT_SHARED_SECRET) {
+    headers["x-wbl-secret"] = WBL_PRINT_SHARED_SECRET;
+  }
+
+  const controller = new AbortController();
+  const timeoutMs = Number.isFinite(WBL_DOWNLOAD_TIMEOUT_MS)
+    ? Math.max(1000, WBL_DOWNLOAD_TIMEOUT_MS)
+    : 15000;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${WBL_PRINT_SERVER_BASE}/print-zpl`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ zpl, ...body }),
+      signal: controller.signal,
+    });
+
+    const data = await response.json();
+    return {
+      success: response.ok,
+      status: response.status,
+      ...data,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+const dispatchWblServerPrint = ({ zpl, body }) => {
+  void requestWblServerPrint({ zpl, body }).catch((error) => {
+    console.error("[wbl-print][dispatch] async print failed", {
+      message: error?.message,
+    });
+  });
 };
 
 export const executeHanjinOrderApiWithFallback = async ({
@@ -441,17 +497,10 @@ export const executeHanjinOrderApiWithFallback = async ({
 export const buildHanjinOrderFallbackCaller =
   ({ pathCandidates, logPrefix }) =>
   async ({ data }) => {
-    console.log(`${logPrefix} trying candidates`, {
-      pathCandidates,
-      data,
-    });
     const out = await executeHanjinOrderApiWithFallback({
       pathCandidates,
       data,
       logPrefix,
-    });
-    console.log(`${logPrefix} candidate success`, {
-      pathCandidates,
     });
     return out;
   };
@@ -670,23 +719,7 @@ const buildHanjinDraftPayload = (requests) => {
   };
 };
 
-export const debugHanjinPrintPayload = (payload) => {
-  try {
-    const row = Array.isArray(payload?.address_list)
-      ? payload.address_list[0]
-      : null;
-    if (!row) return;
-    console.log("[hanjin][print] address_list sample", {
-      msg_key: row?.msg_key,
-      has_address: Boolean(String(row?.address || "").trim()),
-      has_rcv_addr: Boolean(String(row?.rcv_addr || "").trim()),
-      has_rcvrBaseAddr: Boolean(String(row?.rcvrBaseAddr || "").trim()),
-      keys: row && typeof row === "object" ? Object.keys(row) : [],
-    });
-  } catch (e) {
-    console.error("[hanjin][print] payload debug failed", e);
-  }
-};
+export const debugHanjinPrintPayload = () => {};
 
 const enrichHanjinAddressList = ({ addressList, metaByMsgKey }) =>
   (Array.isArray(addressList) ? addressList : []).map((row) => {
@@ -708,12 +741,6 @@ const buildHanjinWblZplLabels = ({ addressList }) => {
       String(row?.result_code || row?.resultCode || "OK").trim() === "OK",
   );
 
-  console.log("[hanjin][zpl] addressList sample:", {
-    totalRows: filtered.length,
-    firstRow: filtered[0] ? Object.keys(filtered[0]) : null,
-    firstRowData: JSON.stringify(filtered[0], null, 2),
-  });
-
   const zplLabels = filtered
     .map((row) => {
       // 한진 API 응답 필드 추출
@@ -729,7 +756,6 @@ const buildHanjinWblZplLabels = ({ addressList }) => {
       const grpRnk = String(row?.grp_rnk || "").trim();
 
       if (!wblNum) {
-        console.log("[hanjin][zpl] missing wbl_num in row");
         return "";
       }
 
@@ -764,19 +790,9 @@ const buildHanjinWblZplLabels = ({ addressList }) => {
 ^FO700,640^BY2,2,80^BCN^FD${wblNum}^FS
 ^XZ`;
 
-      console.log("[hanjin][zpl] generated zpl for wbl_num:", {
-        wblNum,
-        hasReceiverName: Boolean(receiverName),
-        hasReceiverPhone: Boolean(receiverPhone),
-        hasPrtAdd: Boolean(prtAdd),
-        hasTerminalInfo: Boolean(tmlNam && cenNam),
-      });
-
       return zpl;
     })
     .filter(Boolean);
-
-  console.log("[hanjin][zpl] generated labels:", { count: zplLabels.length });
 
   return zplLabels;
 };
@@ -825,39 +841,27 @@ async function triggerWblServerPrint(payload, options = null) {
     }
 
     try {
-      const pdfResults = [];
-      for (const zpl of payload.zplLabels) {
-        const headers = { "Content-Type": "application/json" };
-        if (WBL_PRINT_SHARED_SECRET) {
-          headers["x-wbl-secret"] = WBL_PRINT_SHARED_SECRET;
-        }
-
-        const response = await fetch(`${WBL_PRINT_SERVER_BASE}/print-zpl`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
+      const pdfResults = await Promise.all(
+        payload.zplLabels.map((zpl) =>
+          requestWblServerPrint({
             zpl,
-            saveMode: "pdf",
-            paperProfile: media,
-            title: "Hanjin Waybill Label",
+            body: {
+              saveMode: "pdf",
+              paperProfile: media,
+              title: "Hanjin Waybill Label",
+            },
           }),
-        });
+        ),
+      );
 
-        const data = await response.json();
-        pdfResults.push({
-          success: response.ok,
-          status: response.status,
-          ...data,
-        });
-
-        if (!response.ok) {
-          return {
-            success: false,
-            reason: "zpl_pdf_failed",
-            message: data?.message || "ZPL PDF 변환에 실패했습니다.",
-            details: pdfResults,
-          };
-        }
+      const failedResult = pdfResults.find((result) => !result?.success);
+      if (failedResult) {
+        return {
+          success: false,
+          reason: "zpl_pdf_failed",
+          message: failedResult?.message || "ZPL PDF 변환에 실패했습니다.",
+          details: pdfResults,
+        };
       }
 
       return {
@@ -900,54 +904,22 @@ async function triggerWblServerPrint(payload, options = null) {
     };
   }
 
-  try {
-    // wbls-server의 /print-zpl 엔드포인트로 각 ZPL 라벨을 개별 인쇄
-    const results = [];
-    for (const zpl of payload.zplLabels) {
-      const headers = { "Content-Type": "application/json" };
-      if (WBL_PRINT_SHARED_SECRET) {
-        headers["x-wbl-secret"] = WBL_PRINT_SHARED_SECRET;
-      }
+  payload.zplLabels.forEach((zpl) => {
+    dispatchWblServerPrint({
+      zpl,
+      body: {
+        printer,
+        paperProfile: media,
+        title: "Hanjin Waybill Label",
+      },
+    });
+  });
 
-      const response = await fetch(`${WBL_PRINT_SERVER_BASE}/print-zpl`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          zpl,
-          printer,
-          paperProfile: media,
-          title: "Hanjin Waybill Label",
-        }),
-      });
-
-      const data = await response.json();
-      results.push({
-        success: response.ok,
-        status: response.status,
-        ...data,
-      });
-
-      if (!response.ok) {
-        return {
-          success: false,
-          reason: "zpl_print_failed",
-          message: data?.message || "ZPL 라벨 인쇄에 실패했습니다.",
-          details: results,
-        };
-      }
-    }
-
-    return {
-      success: true,
-      message: `${results.length}개의 라벨이 인쇄되었습니다.`,
-      details: results,
-    };
-  } catch (error) {
-    return {
-      success: false,
-      status: 500,
-      message: error.message,
-      reason: "wbl_print_server_error",
-    };
-  }
+  return {
+    success: true,
+    queued: true,
+    outputMode: "print",
+    message: `${payload.zplLabels.length}개의 라벨 인쇄 요청을 접수했습니다.`,
+    queuedCount: payload.zplLabels.length,
+  };
 }
