@@ -4,6 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
 import { formatImplantDisplay } from "@/utils/implant";
 import { formatDateOnly } from "@/utils/dateFormat";
+import { getNormalizedStageLabel } from "@/utils/stage";
 
 export type RiskSummary = {
   delayedCount?: number;
@@ -63,103 +64,51 @@ export const RequestorRiskSummaryCard = ({
   const STAGE_BADGE_BASE =
     "text-[10px] h-4 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
 
-  // 최근 의뢰 스타일의 상태 배지 가져오기
-  const getStatusBadge = (status: string, manufacturerStage?: string) => {
-    if (manufacturerStage) {
-      switch (manufacturerStage) {
-        case "의뢰":
-          return (
-            <Badge variant="outline" className={STAGE_BADGE_BASE}>
-              의뢰
-            </Badge>
-          );
-        case "의뢰접수":
-          return (
-            <Badge variant="outline" className={STAGE_BADGE_BASE}>
-              의뢰접수
-            </Badge>
-          );
-        case "CAM":
-          return (
-            <Badge variant="default" className={STAGE_BADGE_BASE}>
-              CAM
-            </Badge>
-          );
-        case "가공":
-          return (
-            <Badge variant="default" className={STAGE_BADGE_BASE}>
-              가공
-            </Badge>
-          );
-        case "생산":
-          return (
-            <Badge variant="default" className={STAGE_BADGE_BASE}>
-              생산
-            </Badge>
-          );
-        case "세척.포장":
-        case "세척.패킹":
-          return (
-            <Badge
-              variant="default"
-              className={`${STAGE_BADGE_BASE} bg-purple-50 text-purple-700 border border-purple-200`}
-            >
-              세척.패킹
-            </Badge>
-          );
-        case "발송":
-        case "포장.발송":
-          return (
-            <Badge
-              variant="default"
-              className={`${STAGE_BADGE_BASE} bg-blue-50 text-blue-700 border border-blue-200`}
-            >
-              포장.발송
-            </Badge>
-          );
-        case "추적관리":
-          return (
-            <Badge variant="secondary" className={STAGE_BADGE_BASE}>
-              추적관리
-            </Badge>
-          );
-        default:
-          break;
-      }
+  const getStatusBadge = (requestLike: any) => {
+    let label: string;
+    try {
+      label = getNormalizedStageLabel(requestLike);
+    } catch {
+      label = String(requestLike?.manufacturerStage || "").trim();
     }
 
-    switch (status) {
+    switch (label) {
       case "의뢰":
         return (
           <Badge variant="outline" className={STAGE_BADGE_BASE}>
             의뢰
           </Badge>
         );
-      case "의뢰접수":
-        return (
-          <Badge variant="outline" className={STAGE_BADGE_BASE}>
-            의뢰접수
-          </Badge>
-        );
-      case "가공전":
+      case "CAM":
         return (
           <Badge variant="default" className={STAGE_BADGE_BASE}>
             CAM
           </Badge>
         );
-      case "가공후":
+      case "가공":
         return (
           <Badge variant="default" className={STAGE_BADGE_BASE}>
-            생산
+            가공
           </Badge>
         );
-      case "배송중":
+      case "세척.패킹":
         return (
-          <Badge variant="default" className={STAGE_BADGE_BASE}>
-            발송
+          <Badge
+            variant="default"
+            className={`${STAGE_BADGE_BASE} bg-purple-50 text-purple-700 border border-purple-200`}
+          >
+            세척.패킹
           </Badge>
         );
-      case "완료":
+      case "포장.발송":
+        return (
+          <Badge
+            variant="default"
+            className={`${STAGE_BADGE_BASE} bg-blue-50 text-blue-700 border border-blue-200`}
+          >
+            포장.발송
+          </Badge>
+        );
       case "추적관리":
         return (
           <Badge variant="secondary" className={STAGE_BADGE_BASE}>
@@ -175,7 +124,7 @@ export const RequestorRiskSummaryCard = ({
       default:
         return (
           <Badge variant="outline" className={STAGE_BADGE_BASE}>
-            {status}
+            {label}
           </Badge>
         );
     }
@@ -222,10 +171,7 @@ export const RequestorRiskSummaryCard = ({
                         {item.title}
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0">
-                        {getStatusBadge(
-                          item.manufacturerStage || "",
-                          item.manufacturerStage,
-                        )}
+                        {getStatusBadge(item)}
                         {item.riskLevel === "danger" ? (
                           <Badge
                             variant="destructive"

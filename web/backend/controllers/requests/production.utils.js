@@ -4,6 +4,7 @@ import {
   getDeliveryEtaLeadDays,
   toKstYmd,
 } from "./utils.js";
+import { normalizeRequestStage } from "./utils.js";
 import { isKoreanBusinessDay } from "../../utils/krBusinessDays.js";
 import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
@@ -564,7 +565,6 @@ export function sortByProductionPriority(requests) {
 export function calculateRiskSummary(requests) {
   const now = new Date();
   const warningThresholdDays = 1; // 발송예정일 -1일부터 경고
-  const delayGraceDays = 0; // 발송예정일 당일 미발송이면 지연
 
   let delayedCount = 0;
   let warningCount = 0;
@@ -580,6 +580,7 @@ export function calculateRiskSummary(requests) {
       continue;
 
     const status = String(req.manufacturerStage || "");
+    const normalizedStage = normalizeRequestStage(req);
     const baseYmd = originalYmd.trim();
     const startOfDayShip = new Date(`${baseYmd}T00:00:00+09:00`);
     if (Number.isNaN(startOfDayShip.getTime())) continue;
@@ -587,13 +588,9 @@ export function calculateRiskSummary(requests) {
     const warningStart = new Date(startOfDayShip);
     warningStart.setDate(warningStart.getDate() - warningThresholdDays);
 
-    const isShippedOrLater = [
-      "발송",
-      "배송대기",
-      "배송중",
-      "완료",
-      "취소",
-    ].includes(status);
+    const isShippedOrLater = ["shipping", "tracking", "cancel"].includes(
+      normalizedStage,
+    );
 
     // 지연 확정: 발송예정일 당일까지 발송되지 않음
     if (!isShippedOrLater && now >= startOfDayShip) {
@@ -618,7 +615,7 @@ export function calculateRiskSummary(requests) {
 
     // 지연 위험: 발송예정일 - 1일까지 CAM 완료가 안 된 경우 (status가 의뢰/CAM)
     // 생산(Machining) 단계로 들어갔다면 지연 가능 목록에서 제외
-    const isPreProduction = ["의뢰", "CAM"].includes(status);
+    const isPreProduction = ["request", "cam"].includes(normalizedStage);
     if (isPreProduction && now >= warningStart && now < startOfDayShip) {
       warningCount++;
       riskItems.push({

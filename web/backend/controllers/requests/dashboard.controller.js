@@ -570,7 +570,6 @@ export async function getMyReferralDirectMembers(req, res) {
     });
   }
 }
-
 /**
  * 내 대시보드 요약 (의뢰자용)
  * @route GET /api/requests/my/dashboard-summary
@@ -596,7 +595,7 @@ export async function getMyDashboardSummary(req, res) {
       }
     }
 
-    const requestFilter = await buildRequestorOrgScopeFilter(req);
+    const requestFilter = buildRequestorOrgFilter(req);
 
     const dateFilter = buildDateFilter(period);
 
@@ -1013,6 +1012,39 @@ export async function getMyDashboardSummary(req, res) {
     };
 
     if (debug) {
+      const riskStageBreakdownMap = new Map();
+      for (const request of activeRequests || []) {
+        const manufacturerStage = String(
+          request?.manufacturerStage || "",
+        ).trim();
+        const timeline = request?.timeline || {};
+        const originalEstimatedShipYmd = String(
+          timeline?.originalEstimatedShipYmd ||
+            timeline?.estimatedShipYmd ||
+            "",
+        ).trim();
+        const nextEstimatedShipYmd = String(
+          timeline?.nextEstimatedShipYmd || originalEstimatedShipYmd || "",
+        ).trim();
+        const key = `${manufacturerStage}__${originalEstimatedShipYmd}__${nextEstimatedShipYmd}`;
+        const prev = riskStageBreakdownMap.get(key) || {
+          manufacturerStage,
+          originalEstimatedShipYmd,
+          nextEstimatedShipYmd,
+          count: 0,
+          sampleRequestIds: [],
+        };
+        prev.count += 1;
+        if (
+          prev.sampleRequestIds.length < 5 &&
+          request?.requestId &&
+          !prev.sampleRequestIds.includes(String(request.requestId))
+        ) {
+          prev.sampleRequestIds.push(String(request.requestId));
+        }
+        riskStageBreakdownMap.set(key, prev);
+      }
+
       const stageBreakdown = await Request.aggregate([
         {
           $match: {
@@ -1085,6 +1117,46 @@ export async function getMyDashboardSummary(req, res) {
       responseData.debug = {
         period,
         stageBreakdown,
+        riskQuery: {
+          totalMatched: Array.isArray(activeRequests)
+            ? activeRequests.length
+            : 0,
+          delayedCount: Number(riskSummary?.delayedCount || 0),
+          warningCount: Number(riskSummary?.warningCount || 0),
+          stageBreakdown: Array.from(riskStageBreakdownMap.values()).sort(
+            (a, b) => Number(b?.count || 0) - Number(a?.count || 0),
+          ),
+          delayedItems: Array.isArray(riskSummary?.items)
+            ? riskSummary.items
+                .filter((item) => item?.riskLevel === "danger")
+                .slice(0, 20)
+                .map((item) => ({
+                  requestId: String(item?.requestId || ""),
+                  manufacturerStage: String(item?.manufacturerStage || ""),
+                  originalEstimatedShipYmd: String(
+                    item?.originalEstimatedShipYmd || item?.dueDate || "",
+                  ),
+                  nextEstimatedShipYmd: String(
+                    item?.nextEstimatedShipYmd || "",
+                  ),
+                }))
+            : [],
+          warningItems: Array.isArray(riskSummary?.items)
+            ? riskSummary.items
+                .filter((item) => item?.riskLevel !== "danger")
+                .slice(0, 20)
+                .map((item) => ({
+                  requestId: String(item?.requestId || ""),
+                  manufacturerStage: String(item?.manufacturerStage || ""),
+                  originalEstimatedShipYmd: String(
+                    item?.originalEstimatedShipYmd || item?.dueDate || "",
+                  ),
+                  nextEstimatedShipYmd: String(
+                    item?.nextEstimatedShipYmd || "",
+                  ),
+                }))
+            : [],
+        },
       };
     }
 
