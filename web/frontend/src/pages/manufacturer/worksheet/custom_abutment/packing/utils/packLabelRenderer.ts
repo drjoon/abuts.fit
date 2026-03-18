@@ -217,25 +217,18 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   ctx.textBaseline = "top";
 
   const env = import.meta.env;
-  const PRODUCT_NAME = env.VITE_PACK_PRODUCT_NAME ?? "임플란트 상부구조물";
-  const MODEL_NAME = env.VITE_PACK_MODEL_NAME ?? "CA6512";
-  const LICENSE_NO = env.VITE_PACK_LICENSE_NO ?? "제3583호";
-  const COMPANY_NAME = env.VITE_PACK_MANUFACTURER_NAME ?? "(주)애크로덴트";
-  const COMPANY_ADDR =
-    env.VITE_PACK_MANUFACTURER_ADDR ?? "경남 김해시 전하로85번길 5(나동, 흥동)";
-  const COMPANY_TEL_FAX =
-    env.VITE_PACK_MANUFACTURER_TEL_FAX ?? "T 055-314-4607  F 055-901-0241";
+  const PRODUCT_NAME = env.VITE_PACK_PRODUCT_NAME;
+  const MODEL_NAME = env.VITE_PACK_MODEL_NAME;
+  const LICENSE_NO = env.VITE_PACK_LICENSE_NO;
+  const COMPANY_NAME = env.VITE_PACK_MANUFACTURER_NAME;
+  const COMPANY_ADDR = env.VITE_PACK_MANUFACTURER_ADDR;
+  const COMPANY_TEL_FAX = env.VITE_PACK_MANUFACTURER_TEL_FAX;
   const MANUFACTURER_LABEL = "제조업자";
-  const SELLER_NAME = env.VITE_PACK_SELLER_NAME ?? "어벗츠 주식회사";
-  const SELLER_PERMIT =
-    env.VITE_PACK_SELLER_PERMIT ?? "판매업허가 제2024-3170080-00001호";
-  const SELLER_ADDR =
-    env.VITE_PACK_SELLER_ADDR ??
-    "경상남도 거제시 거제중앙로29길 6, 3층(고현동)";
-  const SELLER_TEL = env.VITE_PACK_SELLER_TEL ?? "T 1588-3948";
-  const MANUAL_QR_LABEL = env.VITE_PACK_MANUAL_QR_LABEL ?? "사용자매뉴얼 QR";
-  const MANUAL_QR_TEXT =
-    env.VITE_PACK_MANUAL_QR_TEXT ?? "사용자매뉴얼 : 우측 하단 QR Code 참조";
+  const SELLER_NAME = env.VITE_PACK_SELLER_NAME;
+  const SELLER_PERMIT = env.VITE_PACK_SELLER_PERMIT;
+  const SELLER_ADDR = env.VITE_PACK_SELLER_ADDR;
+  const SELLER_TEL = env.VITE_PACK_SELLER_TEL;
+  const MANUAL_QR_LABEL = env.VITE_PACK_MANUAL_QR_LABEL;
 
   const drawBox = (x: number, y: number, w: number, h: number) => {
     ctx.strokeStyle = "black";
@@ -291,6 +284,51 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
     ctx.fillText(t, tx, ty);
   };
 
+  const fillTextLeft = (
+    text: string,
+    x: number,
+    y: number,
+    maxWidth: number,
+  ) => {
+    const t = truncateToFit(ctx, String(text || "-"), maxWidth);
+    ctx.fillText(t, x, y);
+  };
+
+  const fillWrappedTextLeft = (
+    text: string,
+    x: number,
+    y: number,
+    maxWidth: number,
+    lineHeight: number,
+    maxLines: number,
+  ) => {
+    const source = String(text || "-").trim();
+    if (!source) return;
+    const words = source.split(/\s+/);
+    const lines: string[] = [];
+    let current = "";
+
+    words.forEach((word) => {
+      const candidate = current ? `${current} ${word}` : word;
+      if (!current || ctx.measureText(candidate).width <= maxWidth) {
+        current = candidate;
+        return;
+      }
+      lines.push(current);
+      current = word;
+    });
+
+    if (current) lines.push(current);
+
+    lines.slice(0, maxLines).forEach((line, index) => {
+      const rendered =
+        index === maxLines - 1 && lines.length > maxLines
+          ? truncateToFit(ctx, `${line}…`, maxWidth)
+          : line;
+      ctx.fillText(rendered, x, y + index * lineHeight);
+    });
+  };
+
   const qr1DataUrl = await QRCode.toDataURL(
     JSON.stringify({
       lotNumber: opts.lotNumber || "-",
@@ -312,7 +350,7 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
 
   const qr2DataUrl = await QRCode.toDataURL(
     JSON.stringify({
-      label: MANUFACTURER_LABEL,
+      label: "제조업자",
       name: COMPANY_NAME,
       permit: `제조업허가 ${LICENSE_NO}`,
       address: COMPANY_ADDR,
@@ -335,7 +373,7 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
     JSON.stringify({
       label: "판매업자",
       name: SELLER_NAME,
-      permit: SELLER_PERMIT,
+      permit: `판매업허가 ${SELLER_PERMIT}`,
       address: SELLER_ADDR,
       contact: SELLER_TEL,
     }),
@@ -352,27 +390,28 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
     qr3Img.src = qr3DataUrl;
   });
 
-  drawBox(20, 20, 506, 50);
-  drawVLine(210, 20, 50);
-  drawVLine(370, 20, 50);
+  drawBox(20, 20, 498, 50);
+  drawVLine(202, 20, 50);
+  drawVLine(362, 20, 50);
   ctx.font = "bold 48px Arial";
-  fillTextCentered(opts.mailboxCode || "-", 20, 24, 190, 8);
-  fillTextCentered(opts.screwType || "-", 210, 24, 160, 8);
+  fillTextCentered(opts.mailboxCode || "-", 20, 24, 182, 8);
+  fillTextCentered(opts.screwType || "-", 202, 24, 160, 8);
   {
     const lot = String(opts.lotNumber || "-");
     const suffix = lot.length >= 3 ? lot.slice(-3) : lot;
-    fillTextCentered(suffix, 370, 24, 156, 8);
+    fillTextCentered(suffix, 362, 24, 156, 8);
   }
 
-  drawBox(20, 74, 506, 46);
+  drawBox(20, 74, 498, 46);
   ctx.font = "bold 36px Arial";
-  fillTextCenteredInBox(opts.labName || "-", 20, 74, 506, 46, 16);
+  fillTextCenteredInBox(opts.labName || "-", 20, 74, 498, 46, 16);
 
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(qr1Img, 536, 28, 64, 64);
+  ctx.drawImage(qr1Img, 533, 24, 72, 72);
   ctx.imageSmoothingEnabled = true;
+  ctx.font = "bold 10px Arial";
+  fillTextCenteredInBox(MANUAL_QR_LABEL, 526, 98, 86, 14, 0);
 
-  const layoutShiftY = 0;
   const unifiedTopY = 124;
   const infoRowHeights = [28, 28, 28];
   const unifiedDetailsY =
@@ -382,9 +421,8 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   const detailColWidth = 340;
   const infoH = infoRowHeights.reduce((sum, h) => sum + h, 0);
   const detailsH = detailRowHeights.reduce((sum, h) => sum + h, 0);
-  const usageTextH = 58;
-  const usageNoteH = 22;
-  const usageSectionH = usageTextH + usageNoteH;
+  const usageTextH = 30;
+  const usageSectionH = usageTextH;
   const unifiedTableH = infoH + detailsH + usageSectionH;
   const detailRows: Array<Array<{ label: string; value: string }>> = [
     [
@@ -443,7 +481,7 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
     _isLastRow = false,
   ) => {
     ctx.font = "bold 13px Arial";
-    fillTextCenteredInBox(`${label}  ${value}`, x, y + 3, w, h - 6, 0);
+    fillTextCenteredInBox(`${label} : ${value}`, x, y + 3, w, h - 6, 0);
   };
 
   let rowStartY = detailsY;
@@ -468,73 +506,106 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   });
 
   const usageY = detailsY + detailsH;
-  const usageQrW = 118;
-  const usageTextW = 600 - usageQrW;
   drawHLine(20, usageY, 600);
-  drawVLine(20 + usageTextW, usageY, usageTextH);
-  drawHLine(20, usageY + usageTextH, 600);
+  drawVLine(20 + detailColWidth, usageY, usageTextH);
   ctx.font = "bold 13px Arial";
   fillTextCenteredInBox(
-    "사용방법 : 사용자매뉴얼참조",
-    24,
+    "사용방법, 주의사항 : 사용자 매뉴얼 참조",
+    20,
     usageY + 4,
-    usageTextW - 8,
-    14,
-    0,
-  );
-  fillTextCenteredInBox(
-    "주의사항 : 사용자매뉴얼참조",
-    24,
-    usageY + 22,
-    usageTextW - 8,
-    14,
+    detailColWidth,
+    usageTextH - 6,
     0,
   );
   fillTextCenteredInBox(
     "보관방법 : 건조한 실온에서 보관",
-    24,
-    usageY + 40,
-    usageTextW - 8,
-    14,
-    0,
-  );
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(qr1Img, 20 + usageTextW + 22, usageY + 4, 74, 74);
-  ctx.imageSmoothingEnabled = true;
-  ctx.font = "12px Arial";
-  fillTextCenteredInBox(
-    "사용자매뉴얼 : 우측 상단 QR Code 참조",
-    20,
-    usageY + usageTextH + 1,
-    600,
-    usageNoteH - 6,
+    20 + detailColWidth,
+    usageY + 4,
+    600 - detailColWidth,
+    usageTextH - 6,
     0,
   );
 
   const companyY = unifiedTopY + unifiedTableH + 16;
-  const companyH = 88;
+  const companyH = 144;
+  const companyQrSize = 66;
+  const companyQrPaddingX = 8;
+  const companyQrPaddingTop = 8;
+  const companyTopTextWidth = 186;
+  const companyBottomTextWidth = 254;
+  const companyLineYs = [18, 42, 66, 90, 114];
   drawBox(20, companyY, 290, companyH);
-  drawVLine(228, companyY, companyH);
   ctx.font = "bold 14px Arial";
-  ctx.fillText(MANUFACTURER_LABEL, 26, companyY + 18);
+  ctx.fillText(MANUFACTURER_LABEL, 26, companyY + companyLineYs[0]);
   ctx.font = "12px Arial";
-  ctx.fillText(COMPANY_NAME, 26, companyY + 40);
-  ctx.fillText(`제조업허가 ${LICENSE_NO}`, 26, companyY + 60);
-  ctx.fillText(COMPANY_ADDR, 26, companyY + 80);
+  fillTextLeft(
+    COMPANY_NAME,
+    26,
+    companyY + companyLineYs[1],
+    companyTopTextWidth,
+  );
+  fillTextLeft(
+    `제조업허가 ${LICENSE_NO}`,
+    26,
+    companyY + companyLineYs[2],
+    companyTopTextWidth,
+  );
+  fillWrappedTextLeft(
+    COMPANY_ADDR,
+    26,
+    companyY + companyLineYs[3],
+    companyBottomTextWidth,
+    18,
+    2,
+  );
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(qr2Img, 236, companyY + 12, 66, 66);
+  ctx.drawImage(
+    qr2Img,
+    20 + 290 - companyQrPaddingX - companyQrSize,
+    companyY + companyQrPaddingTop,
+    companyQrSize,
+    companyQrSize,
+  );
   ctx.imageSmoothingEnabled = true;
 
   drawBox(330, companyY, 290, companyH);
-  drawVLine(538, companyY, companyH);
   ctx.font = "bold 14px Arial";
-  ctx.fillText("판매업자", 336, companyY + 18);
+  ctx.fillText("판매업자", 336, companyY + companyLineYs[0]);
   ctx.font = "12px Arial";
-  ctx.fillText(SELLER_NAME, 336, companyY + 40);
-  ctx.fillText(SELLER_PERMIT, 336, companyY + 60);
-  ctx.fillText(`${SELLER_ADDR} / ${SELLER_TEL}`, 336, companyY + 80);
+  fillTextLeft(
+    SELLER_NAME,
+    336,
+    companyY + companyLineYs[1],
+    companyTopTextWidth,
+  );
+  fillTextLeft(
+    SELLER_PERMIT,
+    336,
+    companyY + companyLineYs[2],
+    companyTopTextWidth,
+  );
+  fillTextLeft(
+    SELLER_TEL,
+    336,
+    companyY + companyLineYs[3],
+    companyBottomTextWidth,
+  );
+  fillWrappedTextLeft(
+    SELLER_ADDR,
+    336,
+    companyY + companyLineYs[4],
+    companyBottomTextWidth,
+    18,
+    2,
+  );
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(qr3Img, 546, companyY + 12, 66, 66);
+  ctx.drawImage(
+    qr3Img,
+    330 + 290 - companyQrPaddingX - companyQrSize,
+    companyY + companyQrPaddingTop,
+    companyQrSize,
+    companyQrSize,
+  );
   ctx.imageSmoothingEnabled = true;
 
   return canvas;

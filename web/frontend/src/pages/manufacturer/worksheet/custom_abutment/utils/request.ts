@@ -3,6 +3,8 @@ import type { RequestBase } from "@/types/request";
 export type ManufacturerRequest = RequestBase & {
   referenceIds?: string[];
   mailboxAddress?: string | null;
+  requestorBusiness?: any;
+  requestorOrganization?: any;
   requestor?:
     | (RequestBase["requestor"] & {
         business?: string;
