@@ -118,50 +118,25 @@ export async function ensureShippingPackageForPickup({
   const shipDateYmd = getTodayYmdInKst();
   const mailboxAddress = mailboxAddresses[0];
 
-  let pkg = null;
-  try {
-    pkg = await ShippingPackage.findOneAndUpdate(
-      { businessAnchorId, shipDateYmd, mailboxAddress },
-      {
-        $setOnInsert: {
-          businessAnchorId,
-          shipDateYmd,
-          mailboxAddress,
-          createdBy: actorUserId || null,
-        },
-        $addToSet: {
-          requestIds: { $each: list.map((request) => request._id) },
-        },
-      },
-      {
-        new: true,
-        upsert: true,
-        setDefaultsOnInsert: true,
-      },
-    );
-  } catch (error) {
-    const message = String(error?.message || "");
-    if (error?.code === 11000 || message.includes("E11000")) {
-      pkg = await ShippingPackage.findOne({
+  let pkg = await ShippingPackage.findOneAndUpdate(
+    { businessAnchorId, shipDateYmd, mailboxAddress },
+    {
+      $setOnInsert: {
         businessAnchorId,
         shipDateYmd,
         mailboxAddress,
-      });
-      if (pkg?._id) {
-        await ShippingPackage.updateOne(
-          { _id: pkg._id },
-          {
-            $addToSet: {
-              requestIds: { $each: list.map((request) => request._id) },
-            },
-          },
-        );
-        pkg = await ShippingPackage.findById(pkg._id);
-      }
-    } else {
-      throw error;
-    }
-  }
+        createdBy: actorUserId || null,
+      },
+      $addToSet: {
+        requestIds: { $each: list.map((request) => request._id) },
+      },
+    },
+    {
+      new: true,
+      upsert: true,
+      setDefaultsOnInsert: true,
+    },
+  );
 
   if (!pkg?._id) {
     throw new Error("발송 박스 생성에 실패했습니다.");

@@ -983,6 +983,7 @@ export const useRequestFileHandlers = ({
           description: "파일 업로드 또는 저장에 실패했습니다.",
           variant: "destructive",
         });
+        throw error;
       } finally {
         setUploading((prev) => ({
           ...prev,

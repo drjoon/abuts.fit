@@ -7,6 +7,7 @@ import {
   ensureFinishedLotNumberForPacking,
   bumpRollbackCount,
   ensureReviewByStageDefaults,
+  normalizeRequestForResponse,
 } from "./utils.js";
 import { allocateVirtualMailboxAddress } from "./mailbox.utils.js";
 import { triggerNextAutoMachiningAfterComplete } from "../cnc/machiningBridge.js";
