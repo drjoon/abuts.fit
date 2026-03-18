@@ -142,6 +142,19 @@ internal sealed class TurningFeature_Module
 			}
 			OffFrontFeature();
 			MainModule.Document.Refresh(RuntimeHelpers.GetObjectValue(Missing.Value), RuntimeHelpers.GetObjectValue(Missing.Value));
+			count = MainModule.Document.FeatureChains.Count;
+			for (int i = 1; i <= count && i <= MainModule.Document.FeatureChains.Count; i++)
+			{
+				MainModule.FC1 = MainModule.Document.FeatureChains[i];
+				string name = MainModule.FC1?.Name ?? string.Empty;
+				if ((Operators.CompareString(Strings.Left(name, 14), "TurningProfile", false) == 0 && Operators.CompareString(Strings.Right(name, 6), "_Front", false) == 0)
+					|| Operators.CompareString(Strings.Left(name, 13), "Back_Turning_", false) == 0)
+				{
+					MainModule.Document.FeatureChains.Remove(i);
+					i = 0;
+				}
+			}
+			MainModule.Document.Refresh(RuntimeHelpers.GetObjectValue(Missing.Value), RuntimeHelpers.GetObjectValue(Missing.Value));
 			MainModule.FC1 = null;
 			MainModule.FC2 = null;
 			ExtendTurning();
@@ -1886,6 +1899,12 @@ internal sealed class TurningFeature_Module
 					i = 0;
 				}
 				if (MainModule.MinF == 2 && Operators.CompareString(MainModule.FC1.Name, "TurningProfile1_Front", false) == 0)
+				{
+					MainModule.Document.FeatureChains.Remove(MainModule.FC1.Key);
+					MainModule.FC1 = null;
+					i = 0;
+				}
+				if (MainModule.MinF == 1 && Operators.CompareString(MainModule.FC1.Name, "TurningProfile1_Front", false) == 0)
 				{
 					MainModule.Document.FeatureChains.Remove(MainModule.FC1.Key);
 					MainModule.FC1 = null;

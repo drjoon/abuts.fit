@@ -19,6 +19,7 @@ using EspritTechnology;
 using Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging;
 using Abuts.EspritAddIns.ESPRIT2025AddinProject;
 using static Org.BouncyCastle.Math.EC.ECCurve;
+using DentalAddin;
 
 namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 {
@@ -194,6 +195,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         {
             try
             {
+
                 Type mainModuleType = ResolveMainModuleType();
                 if (mainModuleType != null)
                 {
@@ -368,7 +370,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             AppLogger.Log("StlFileProcessor: Process 시작");
             ResetPerRunState();
             Directory.CreateDirectory(_outputFolder);
-            Document document = EnsureDocument();
+            Document document = EnsureDocument(materialDiameter);
             if (document == null)
             {
                 AppLogger.Log("StlFileProcessor: 활성화된 ESPRIT 문서를 만들 수 없습니다.");
@@ -441,7 +443,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     AppLogger.Log($"StlFileProcessor: 백엔드 MaterialDiameter 요청={materialDiameter.Value:F3}");
                 }
-                CleanupGraphics(document);
                 document.Refresh();
                 Layer prevLayer = null;
                 try
@@ -620,13 +621,51 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log($"StlFileProcessor.TryResolveBackendPrcPath: 경로 조합 실패 - {ex.GetType().Name}:{ex.Message}");
                 return false;
             }
-            if (!File.Exists(resolved))
+            if (File.Exists(resolved))
             {
-                AppLogger.Log($"DentalAddin.TryResolveBackendPrcPath: PRC 파일 없음 - {resolved}");
+                AppLogger.Log($"DentalAddin.TryResolveBackendPrcPath: PRC 확인 완료 - subDir={subDir}, file={fileName}, resolved={resolved}");
+                return true;
+            }
+
+            try
+            {
+                string baseDirectory = Path.IsPathRooted(fileName)
+                    ? Path.GetDirectoryName(resolved)
+                    : Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", subDir);
+                if (string.IsNullOrWhiteSpace(baseDirectory) || !Directory.Exists(baseDirectory))
+                {
+                    AppLogger.Log($"DentalAddin.TryResolveBackendPrcPath: PRC 디렉터리 없음 - dir={baseDirectory}, file={fileName}");
+                    return false;
+                }
+
+                string targetName = NormalizeFileNameForComparison(Path.GetFileName(fileName));
+                foreach (string candidatePath in Directory.GetFiles(baseDirectory, "*.prc", SearchOption.TopDirectoryOnly))
+                {
+                    string candidateName = NormalizeFileNameForComparison(Path.GetFileName(candidatePath));
+                    if (string.Equals(candidateName, targetName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        resolved = candidatePath;
+                        AppLogger.Log($"DentalAddin.TryResolveBackendPrcPath: 정규화 fallback 매칭 성공 - requested={fileName}, resolved={resolved}");
+                        return true;
+                    }
+                }
+
+                AppLogger.Log($"DentalAddin.TryResolveBackendPrcPath: PRC 파일 없음 - requested={fileName}, attempted={resolved}, dir={baseDirectory}");
                 return false;
             }
-            AppLogger.Log($"DentalAddin.TryResolveBackendPrcPath: PRC 확인 완료 - subDir={subDir}, file={fileName}, resolved={resolved}");
-            return true;
+            catch (Exception ex)
+            {
+                AppLogger.Log($"DentalAddin.TryResolveBackendPrcPath: fallback 탐색 실패 - {ex.GetType().Name}:{ex.Message}");
+                return false;
+            }
+        }
+        private static string NormalizeFileNameForComparison(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+            return value.Trim().Normalize(NormalizationForm.FormC);
         }
         private void ResetDentalAddinMoveModuleState()
         {
@@ -1446,61 +1485,266 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             int initialCount = document.GraphicsCollection.Count;
             if (initialCount == 0) return;
 
-            // 역순 순회하되, 컬렉션 크기 변화를 고려하여 인덱스를 보정
-            int deletedCount = 0;
-            for (int i = initialCount; i >= 1; i--)
+            if (initialCount > 1000)
             {
-                try
+                int deletedSurfaceCount = CleanupSurfaceGraphics(document);
+                AppLogger.Log($"StlFileProcessor: CleanupGraphics 대량 모드 - count:{initialCount}, surface/stl 삭제:{deletedSurfaceCount}, 남음:{SafeCount(document?.GraphicsCollection)}");
+                return;
+            }
+
+            int totalDeletedCount = 0;
+            for (int pass = 1; pass <= 3; pass++)
+            {
+                int passInitialCount = document.GraphicsCollection.Count;
+                if (passInitialCount <= 0)
                 {
-                    int curCount = document.GraphicsCollection.Count;
-                    if (curCount <= 0) break;
-                    int idx = i > curCount ? curCount : i;
-                    if (idx <= 0) continue;
+                    break;
+                }
 
-                    dynamic obj = document.GraphicsCollection[idx];
-                    if (obj == null) continue;
-
-                    int rawType;
-                    try { rawType = Convert.ToInt32(obj.GraphicObjectType); }
-                    catch { continue; }
-
-                    espGraphicObjectType type = (espGraphicObjectType)rawType;
-                    bool shouldDelete =
-                        type == espGraphicObjectType.espOperation ||
-                        type == espGraphicObjectType.espFeatureChain ||
-                        type == espGraphicObjectType.espFreeFormFeature ||
-                        type == espGraphicObjectType.espFeatureSet ||
-                        type == espGraphicObjectType.espSTL_Model;
-                    if (!shouldDelete) continue;
-
+                int deletedCount = 0;
+                for (int i = passInitialCount; i >= 1; i--)
+                {
                     try
                     {
-                        obj.Delete();
-                        deletedCount++;
-                    }
-                    catch
-                    {
+                        int curCount = document.GraphicsCollection.Count;
+                        if (curCount <= 0) break;
+                        int idx = i > curCount ? curCount : i;
+                        if (idx <= 0) continue;
+
+                        dynamic obj = document.GraphicsCollection[idx];
+                        if (obj == null) continue;
+
+                        int rawType;
+                        try { rawType = Convert.ToInt32(obj.GraphicObjectType); }
+                        catch { continue; }
+
+                        espGraphicObjectType type = (espGraphicObjectType)rawType;
+                        bool shouldDelete =
+                            type == espGraphicObjectType.espOperation ||
+                            type == espGraphicObjectType.espFeatureChain ||
+                            type == espGraphicObjectType.espFreeFormFeature ||
+                            type == espGraphicObjectType.espFeatureSet ||
+                            type == espGraphicObjectType.espSurface ||
+                            type == espGraphicObjectType.espSTL_Model ||
+                            type == espGraphicObjectType.espUnknown;
+                        if (!shouldDelete) continue;
+
                         try
                         {
-                            var key = obj.Key;
-                            if (key != null)
-                            {
-                                document.GraphicsCollection.Remove(key);
-                                deletedCount++;
-                            }
+                            obj.Delete();
+                            deletedCount++;
                         }
-                        catch { /* ignore */ }
+                        catch
+                        {
+                            try
+                            {
+                                var key = obj.Key;
+                                if (key != null)
+                                {
+                                    document.GraphicsCollection.Remove(key);
+                                    deletedCount++;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogger.Log($"StlFileProcessor: CleanupGraphics 단일 객체 삭제 실패 - {ex.GetType().Name}:{ex.Message}");
                     }
                 }
-                catch (Exception ex)
+
+                totalDeletedCount += deletedCount;
+                try
                 {
-                    AppLogger.Log($"StlFileProcessor: CleanupGraphics 단일 객체 삭제 실패 - {ex.GetType().Name}:{ex.Message}");
+                    document.Refresh();
+                }
+                catch
+                {
+                }
+
+                AppLogger.Log($"StlFileProcessor: CleanupGraphics pass:{pass} - 시작:{passInitialCount}, 삭제됨:{deletedCount}, 남음:{SafeCount(document?.GraphicsCollection)}");
+                if (deletedCount == 0)
+                {
+                    break;
                 }
             }
 
-            if (deletedCount > 0)
+            if (totalDeletedCount > 0)
             {
-                AppLogger.Log($"StlFileProcessor: CleanupGraphics - 초기:{initialCount}, 삭제됨:{deletedCount}, 남음:{document.GraphicsCollection.Count}");
+                AppLogger.Log($"StlFileProcessor: CleanupGraphics - 초기:{initialCount}, 삭제됨:{totalDeletedCount}, 남음:{document.GraphicsCollection.Count}");
+            }
+        }
+
+        private static int CleanupSurfaceGraphics(Document document)
+        {
+            if (document?.GraphicsCollection == null)
+            {
+                return 0;
+            }
+
+            int deletedCount = 0;
+            for (int pass = 1; pass <= 2; pass++)
+            {
+                int passInitialCount = SafeCount(document.GraphicsCollection);
+                if (passInitialCount <= 0)
+                {
+                    break;
+                }
+
+                int passDeletedCount = 0;
+                for (int i = passInitialCount; i >= 1; i--)
+                {
+                    try
+                    {
+                        int curCount = SafeCount(document.GraphicsCollection);
+                        if (curCount <= 0)
+                        {
+                            break;
+                        }
+
+                        int idx = i > curCount ? curCount : i;
+                        if (idx <= 0)
+                        {
+                            continue;
+                        }
+
+                        dynamic obj = document.GraphicsCollection[idx];
+                        if (obj == null)
+                        {
+                            continue;
+                        }
+
+                        int rawType;
+                        try
+                        {
+                            rawType = Convert.ToInt32(obj.GraphicObjectType, CultureInfo.InvariantCulture);
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+
+                        if (rawType != (int)espGraphicObjectType.espSurface && rawType != (int)espGraphicObjectType.espSTL_Model)
+                        {
+                            continue;
+                        }
+
+                        try
+                        {
+                            obj.Delete();
+                            passDeletedCount++;
+                        }
+                        catch
+                        {
+                            try
+                            {
+                                var key = obj.Key;
+                                if (key != null)
+                                {
+                                    document.GraphicsCollection.Remove(key);
+                                    passDeletedCount++;
+                                }
+                            }
+                            catch
+                            {
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogger.Log($"StlFileProcessor: CleanupSurfaceGraphics 단일 객체 삭제 실패 - {ex.GetType().Name}:{ex.Message}");
+                    }
+                }
+
+                deletedCount += passDeletedCount;
+                try
+                {
+                    document.Refresh();
+                }
+                catch
+                {
+                }
+
+                AppLogger.Log($"StlFileProcessor: CleanupSurfaceGraphics pass:{pass} - 시작:{passInitialCount}, 삭제됨:{passDeletedCount}, 남음:{SafeCount(document?.GraphicsCollection)}");
+                if (passDeletedCount == 0)
+                {
+                    break;
+                }
+            }
+
+            return deletedCount;
+        }
+        private static void LogGraphicsTypeSummary(Document document, string context, int maxTypes = 12)
+        {
+            if (document?.GraphicsCollection == null)
+            {
+                AppLogger.Log($"{context} - GraphicsCollection null");
+                return;
+            }
+            try
+            {
+                var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+                int total = document.GraphicsCollection.Count;
+                for (int i = 1; i <= total; i++)
+                {
+                    object raw = null;
+                    try { raw = document.GraphicsCollection[i]; } catch { continue; }
+                    if (raw == null) continue;
+                    string key = "unknown";
+                    try
+                    {
+                        int rawType = Convert.ToInt32(((dynamic)raw).GraphicObjectType, CultureInfo.InvariantCulture);
+                        key = Enum.IsDefined(typeof(espGraphicObjectType), rawType)
+                            ? ((espGraphicObjectType)rawType).ToString()
+                            : $"type:{rawType}";
+                    }
+                    catch
+                    {
+                    }
+                    counts[key] = counts.TryGetValue(key, out int count) ? count + 1 : 1;
+                }
+                string summary = string.Join(", ",
+                    counts.OrderByDescending(pair => pair.Value)
+                        .ThenBy(pair => pair.Key, StringComparer.Ordinal)
+                        .Take(Math.Max(1, maxTypes))
+                        .Select(pair => $"{pair.Key}:{pair.Value}"));
+                AppLogger.Log($"{context} - GraphicsSummary total:{total}{(string.IsNullOrWhiteSpace(summary) ? string.Empty : $", {summary}")}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"{context} - GraphicsSummary 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private static void RemoveDentalAddinLayers(Document document)
+        {
+            if (document?.Layers == null)
+            {
+                return;
+            }
+
+            string[] layerNames = new[]
+            {
+                "Boundry",
+                "TurningLayer",
+                "RoughMillingLayer",
+                "RotateCenter",
+                "GeoTemp",
+                "FreeFormLayer",
+                "FaceDrill",
+                "TurnOperation",
+                "RoughMillingOperation",
+                "FreeFormMill",
+                "RoughFreeFormMill",
+                "CompositeMill",
+                "EndTurning",
+                StlImportLayerName,
+            };
+
+            foreach (string layerName in layerNames)
+            {
+                RemoveLayerIfExists(document, layerName);
             }
         }
 
@@ -1595,6 +1839,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     AppLogger.Log($"StlFileProcessor: FeatureSets 초기화 실패 - {ex.GetType().Name}:{ex.Message}");
                 }
 
+                try
+                {
+                    RemoveDentalAddinLayers(document);
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Log($"StlFileProcessor: DentalAddin 레이어 초기화 실패 - {ex.GetType().Name}:{ex.Message}");
+                }
+
                 // 마지막으로 그래픽 컬렉션 정리 (STL/오퍼레이션/피처 잔존 방지)
                 try
                 {
@@ -1607,6 +1860,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
                 document.Refresh();
                 AppLogger.Log($"StlFileProcessor: 초기화 후 - Ops:{SafeCount(document?.Operations)}, Chains:{SafeCount(document?.FeatureChains)}, FreeForms:{SafeCount(document?.FreeFormFeatures)}, Graphics:{SafeCount(document?.GraphicsCollection)}");
+                LogGraphicsTypeSummary(document, "StlFileProcessor: 초기화 후");
             }
             catch (Exception ex)
             {
@@ -1636,15 +1890,46 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return -1;
             }
         }
-        private Document EnsureDocument()
+        private static int ResolveTemplateDiameter(double? backendMaterialDiameter)
+        {
+            int[] supported = new[] { 6, 8, 10, 12, 14 };
+            double target = (backendMaterialDiameter.HasValue && backendMaterialDiameter.Value > 0)
+                ? backendMaterialDiameter.Value
+                : 6.0;
+            int best = supported[0];
+            double bestDiff = Math.Abs(target - best);
+            for (int i = 1; i < supported.Length; i++)
+            {
+                double diff = Math.Abs(target - supported[i]);
+                if (diff < bestDiff)
+                {
+                    best = supported[i];
+                    bestDiff = diff;
+                }
+            }
+            return best;
+        }
+        private static string ResolveTemplatePath(int templateDiameter)
+        {
+            string templateDir = Path.Combine(AppConfig.AddInRootDirectory, "Templates");
+            return Path.Combine(templateDir, $"Hanwha_D{templateDiameter}.est");
+        }
+        private void TryMergeTemplateDocument(Document document, double? backendMaterialDiameter)
+        {
+            int templateDiameter = ResolveTemplateDiameter(backendMaterialDiameter);
+            string templatePath = ResolveTemplatePath(templateDiameter);
+            AppLogger.Log($"StlFileProcessor: 템플릿 병합 비활성화 - MergeFile 사용 안 함 ({templatePath})");
+        }
+        private Document EnsureDocument(double? backendMaterialDiameter)
         {
             Document existing = Connect.CurrentDocument;
-            if (existing != null)
+            if (existing == null)
             {
-                return existing;
+                int templateDiameter = ResolveTemplateDiameter(backendMaterialDiameter);
+                AppLogger.Log($"StlFileProcessor: 활성 문서가 없습니다. Hanwha_D{templateDiameter} 템플릿을 수동으로 연 뒤 다시 실행해주세요.");
+                return null;
             }
-            AppLogger.Log("StlFileProcessor: 활성 문서가 없습니다. Hanwha_D6 템플릿을 수동으로 연 뒤 다시 실행해주세요.");
-            return null;
+            return existing;
         }
         private void FitActiveWindow(Document document)
         {
@@ -1775,12 +2060,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 InvokeMoveSTL(mainModuleType);
                 
                 AppLogger.Log("DentalAddin: Emerge 실행 시작 - IGS 서피스 Merge 및 Translate");
-                InvokeEmerge(mainModuleType, document);
-                AppLogger.Log("DentalAddin: Emerge 실행 완료");
-                
                 TryApplyCompositeSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ);
+                NormalizeCriticalFeatureChainNames(document);
                 // ApplyAdditionalStlShift(document, mainModuleType, AppConfig.DefaultStlShift);
                 AppLogger.Log("DentalAddin: MoveSTL 실행 완료");
+                CleanupLegacyTurningProfiles(document);
                 AppLogger.Log("DentalAddin: Main 실행 시작");
                 bool searchToolInvoked = TryInvokeMainModuleMethod(mainModuleType, "SearchTool", false);
                 AppLogger.Log(searchToolInvoked
@@ -2525,6 +2809,114 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 throw;
             }
             return true;
+        }
+        private static double? TryGetFeatureChainMaxX(FeatureChain chain)
+        {
+            if (chain == null)
+            {
+                return null;
+            }
+            try
+            {
+                double length = chain.Length;
+                if (length < 0)
+                {
+                    return null;
+                }
+                double step = Math.Max(0.05, length / 600.0);
+                double maxX = double.NegativeInfinity;
+                for (double t = 0.0; t <= length; t += step)
+                {
+                    Point point = chain.PointAlong(t);
+                    if (point == null)
+                    {
+                        continue;
+                    }
+                    double x = point.X;
+                    if (double.IsNaN(x) || double.IsInfinity(x))
+                    {
+                        continue;
+                    }
+                    if (x > maxX)
+                    {
+                        maxX = x;
+                    }
+                }
+                Point endPoint = chain.PointAlong(length);
+                if (endPoint != null && !double.IsNaN(endPoint.X) && !double.IsInfinity(endPoint.X) && endPoint.X > maxX)
+                {
+                    maxX = endPoint.X;
+                }
+                return double.IsNegativeInfinity(maxX) ? (double?)null : maxX;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        private static void NormalizeCriticalFeatureChainNames(Document document)
+        {
+            if (document?.FeatureChains == null)
+            {
+                return;
+            }
+            try
+            {
+                for (int i = 1; i <= document.FeatureChains.Count; i++)
+                {
+                    FeatureChain chain = document.FeatureChains[i];
+                    if (chain == null)
+                    {
+                        continue;
+                    }
+                    if (string.IsNullOrWhiteSpace(chain.Name))
+                    {
+                        chain.Name = $"FeatureChain_{i}"; // 빈 이름 방지
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"DentalAddin: FeatureChain 이름 정규화 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+        private static void CleanupLegacyTurningProfiles(Document document)
+        {
+            if (document?.FeatureChains == null)
+            {
+                return;
+            }
+            try
+            {
+                var toRemove = new List<int>();
+                for (int i = 1; i <= document.FeatureChains.Count; i++)
+                {
+                    FeatureChain chain = document.FeatureChains[i];
+                    string name = chain?.Name ?? string.Empty;
+                    if (name.StartsWith("TurningProfile", StringComparison.OrdinalIgnoreCase))
+                    {
+                        toRemove.Add(i);
+                    }
+                }
+                if (toRemove.Count > 0)
+                {
+                    for (int i = toRemove.Count - 1; i >= 0; i--)
+                    {
+                        try
+                        {
+                            document.FeatureChains.Remove(toRemove[i]);
+                        }
+                        catch
+                        {
+                        }
+                    }
+                    AppLogger.Log($"DentalAddin: Main 시작 전 잔여 TurningProfile 제거 - count:{toRemove.Count}");
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"DentalAddin: 잔여 TurningProfile 제거 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
         }
         private void EnsureCompositeTool(Type mainModuleType, Document document)
         {

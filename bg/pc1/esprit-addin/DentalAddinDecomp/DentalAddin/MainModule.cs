@@ -3938,9 +3938,7 @@ namespace DentalAddin
             int finishingMethod = (NumCombobox != null && NumCombobox.Length > 1) ? NumCombobox[1] : 0;
             if (finishingMethod == 1)
             {
-                DentalLogger.Log("FreeFormMill - FinishingMethod==1, Emerge/Composite2 실행");
-                Emerge();
-                DentalLogger.Log("FreeFormMill - Emerge 완료");
+                DentalLogger.Log("FreeFormMill - FinishingMethod==1, Composite2 실행");
                 Composite2();
                 DentalLogger.Log("FreeFormMill - Composite2 완료");
             }
