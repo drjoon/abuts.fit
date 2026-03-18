@@ -6,6 +6,24 @@ import {
 } from "../utils/request";
 import { toast as toastFn, useToast } from "@/shared/hooks/use-toast";
 
+const inFlightSignedUrlMap = new Map<string, Promise<string>>();
+const inFlightBlobMap = new Map<string, Promise<Blob>>();
+
+function getOrCreateInFlight<T>(
+  map: Map<string, Promise<T>>,
+  key: string,
+  factory: () => Promise<T>,
+) {
+  const existing = map.get(key);
+  if (existing) return existing;
+
+  const promise = factory().finally(() => {
+    map.delete(key);
+  });
+  map.set(key, promise);
+  return promise;
+}
+
 type PreviewLoaderParams = {
   token: string | null;
   isCamStage: boolean;
@@ -66,12 +84,28 @@ export function usePreviewLoader({
             type: blob.type || "model/stl",
           });
 
+        const fetchSignedUrl = async (path: string) => {
+          const dedupeKey = `signed-url:${path}`;
+          return getOrCreateInFlight(
+            inFlightSignedUrlMap,
+            dedupeKey,
+            async () => {
+              const res = await fetch(path, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (!res.ok) throw new Error(`signed url failed: ${path}`);
+              const body = await res.json();
+              return String(body?.data?.url || "").trim();
+            },
+          );
+        };
+
         let cacheHitCount = 0;
         let cacheMissCount = 0;
 
         const fetchAsFileWithCache = async (
           cacheKey: string | null,
-          signedUrl: string,
+          signedUrlOrResolver: string | (() => Promise<string>),
           filename: string,
           opts?: { disableCache?: boolean },
         ) => {
@@ -86,9 +120,21 @@ export function usePreviewLoader({
           }
 
           cacheMissCount += 1;
-          const r = await fetch(signedUrl);
-          if (!r.ok) throw new Error("file fetch failed");
-          const blob = await r.blob();
+          const signedUrl =
+            typeof signedUrlOrResolver === "function"
+              ? await signedUrlOrResolver()
+              : signedUrlOrResolver;
+          if (!signedUrl) throw new Error("signed url missing");
+          const blobDedupeKey = `blob:${cacheKey || signedUrl}`;
+          const blob = await getOrCreateInFlight(
+            inFlightBlobMap,
+            blobDedupeKey,
+            async () => {
+              const r = await fetch(signedUrl);
+              if (!r.ok) throw new Error("file fetch failed");
+              return r.blob();
+            },
+          );
 
           if (!disableCache && cacheKey) {
             try {
@@ -121,15 +167,6 @@ export function usePreviewLoader({
             ? `${originalCacheKeyBase}:${originalCacheVersion}`
             : originalCacheKeyBase;
 
-        const originalUrlRes = await fetch(
-          `/api/requests/${req._id}/original-file-url`,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-        if (!originalUrlRes.ok) throw new Error("original url failed");
-        const originalUrlBody = await originalUrlRes.json();
-        const originalSignedUrl = originalUrlBody?.data?.url;
-        if (!originalSignedUrl) throw new Error("no original url");
-
         const previewStageKey = getReviewStageKeyByTab({
           stage: tabStage,
           isCamStage,
@@ -137,50 +174,53 @@ export function usePreviewLoader({
         });
         const disableStlCache = false;
 
-        const originalFile = await fetchAsFileWithCache(
-          originalCacheKey,
-          originalSignedUrl,
-          originalName,
-          { disableCache: disableStlCache },
-        );
-
-        let camFile: File | null = null;
         const hasCamFile = !!req.caseInfos?.camFile?.s3Key;
+        const shouldUseSingleLeftStl = isCamStage;
 
-        if (hasCamFile) {
-          const camName =
-            req.caseInfos?.camFile?.filePath ||
-            req.caseInfos?.camFile?.originalName ||
-            originalName;
+        const originalFilePromise: Promise<File | null> = shouldUseSingleLeftStl
+          ? Promise.resolve(null)
+          : fetchAsFileWithCache(
+              originalCacheKey,
+              () =>
+                fetchSignedUrl(`/api/requests/${req._id}/original-file-url`),
+              originalName,
+              { disableCache: disableStlCache },
+            );
 
-          // filled.stl이 동일 s3Key로 교체되는 경우가 있어, 버전 값을 포함해 캐시 무효화
-          const camCacheKeyBase = req.caseInfos?.camFile?.s3Key || null;
-          const camCacheVersion =
-            req.caseInfos?.camFile?.fileSize ||
-            req.caseInfos?.camFile?.uploadedAt;
-          const camCacheKey =
-            camCacheKeyBase && camCacheVersion
-              ? `${camCacheKeyBase}:${camCacheVersion}`
-              : camCacheKeyBase;
-          const camUrlRes = await fetch(
-            `/api/requests/${req._id}/cam-file-url`,
-            {
-              headers: { Authorization: `Bearer ${token}` },
-            },
-          );
-          if (camUrlRes.ok) {
-            const camUrlBody = await camUrlRes.json();
-            const camSignedUrl = camUrlBody?.data?.url;
-            if (camSignedUrl) {
-              camFile = await fetchAsFileWithCache(
+        const camFilePromise: Promise<File | null> = hasCamFile
+          ? (() => {
+              const camName =
+                req.caseInfos?.camFile?.filePath ||
+                req.caseInfos?.camFile?.originalName ||
+                originalName;
+              const camCacheKeyBase = req.caseInfos?.camFile?.s3Key || null;
+              const camCacheVersion =
+                req.caseInfos?.camFile?.fileSize ||
+                req.caseInfos?.camFile?.uploadedAt;
+              const camCacheKey =
+                camCacheKeyBase && camCacheVersion
+                  ? `${camCacheKeyBase}:${camCacheVersion}`
+                  : camCacheKeyBase;
+              return fetchAsFileWithCache(
                 camCacheKey,
-                camSignedUrl,
+                () => fetchSignedUrl(`/api/requests/${req._id}/cam-file-url`),
                 camName,
                 { disableCache: disableStlCache },
-              );
-            }
-          }
-        }
+              ).catch(() => null);
+            })()
+          : Promise.resolve(null);
+
+        const leftStlPromise: Promise<File | null> = shouldUseSingleLeftStl
+          ? hasCamFile
+            ? camFilePromise
+            : fetchAsFileWithCache(
+                originalCacheKey,
+                () =>
+                  fetchSignedUrl(`/api/requests/${req._id}/original-file-url`),
+                originalName,
+                { disableCache: disableStlCache },
+              )
+          : originalFilePromise;
 
         const resolveFinishLine = async () => {
           const casePoints = Array.isArray(req.caseInfos?.finishLine?.points)
@@ -212,67 +252,65 @@ export function usePreviewLoader({
 
         const finishLineResult = await resolveFinishLine();
 
-        // CAM / 생산 탭에서 NC 프리뷰를 보여주기 위해 NC를 읽어온다.
-        if (isCamStage || isMachiningStage) {
-          const ncMeta = req.caseInfos?.ncFile;
-          if (ncMeta?.s3Key) {
-            const ncUrlRes = await fetch(
-              `/api/requests/${req._id}/nc-file-url`,
-              { headers: { Authorization: `Bearer ${token}` } },
-            );
-            if (ncUrlRes.ok) {
-              const ncUrlBody = await ncUrlRes.json();
-              const ncSignedUrl = ncUrlBody?.data?.url;
-              if (ncSignedUrl) {
+        // CAM / 가공 탭에서 NC 프리뷰를 보여주기 위해 NC를 읽어온다.
+        const ncPromise =
+          isCamStage || isMachiningStage
+            ? (async () => {
+                const ncMeta = req.caseInfos?.ncFile;
+                if (!ncMeta?.s3Key) return;
                 const ncName =
                   ncMeta?.filePath || ncMeta?.originalName || "program.nc";
-                const r = await fetch(ncSignedUrl);
-                if (r.ok) {
-                  const buf = await r.arrayBuffer();
-                  const text = decodeNcText(buf);
-                  setPreviewNcText(text);
-                  setPreviewNcName(ncName);
-                }
-              }
-            }
-          }
-        }
+                const ncCacheVersion = ncMeta?.fileSize || ncMeta?.uploadedAt;
+                const ncCacheKey =
+                  ncMeta?.s3Key && ncCacheVersion
+                    ? `${ncMeta.s3Key}:${ncCacheVersion}`
+                    : ncMeta?.s3Key || null;
+                const ncFile = await fetchAsFileWithCache(
+                  ncCacheKey,
+                  () => fetchSignedUrl(`/api/requests/${req._id}/nc-file-url`),
+                  ncName,
+                );
+                const buf = await ncFile.arrayBuffer();
+                const text = decodeNcText(buf);
+                setPreviewNcText(text);
+                setPreviewNcName(ncName);
+              })()
+            : Promise.resolve();
 
-        // 생산/발송/추적관리 탭: stageFiles 이미지 URL도 불러온다.
-        if (
+        const stagePromise =
           previewStageKey === "machining" ||
           previewStageKey === "packing" ||
           previewStageKey === "shipping" ||
           previewStageKey === "tracking"
-        ) {
-          // 발송 탭에서는 포장 단계(stage="packing")의 이미지를 재사용한다.
-          const effectiveStageKey =
-            previewStageKey === "shipping" ? "packing" : previewStageKey;
-
-          const stageMeta = req.caseInfos?.stageFiles?.[effectiveStageKey];
-          if (stageMeta?.s3Key) {
-            const stageUrlRes = await fetch(
-              `/api/requests/${
-                req._id
-              }/stage-file-url?stage=${encodeURIComponent(effectiveStageKey)}`,
-              { headers: { Authorization: `Bearer ${token}` } },
-            );
-            if (stageUrlRes.ok) {
-              const stageUrlBody = await stageUrlRes.json();
-              const signedUrl = stageUrlBody?.data?.url;
-              if (signedUrl) {
+            ? (async () => {
+                const effectiveStageKey =
+                  previewStageKey === "shipping" ? "packing" : previewStageKey;
+                const stageMeta =
+                  req.caseInfos?.stageFiles?.[effectiveStageKey];
+                if (!stageMeta?.s3Key) return;
+                const signedUrl = await fetchSignedUrl(
+                  `/api/requests/${req._id}/stage-file-url?stage=${encodeURIComponent(
+                    effectiveStageKey,
+                  )}`,
+                ).catch(() => "");
+                if (!signedUrl) return;
                 setPreviewStageUrl(signedUrl);
                 setPreviewStageName(
                   stageMeta?.filePath || `${effectiveStageKey}-file`,
                 );
-              }
-            }
-          }
-        }
+              })()
+            : Promise.resolve();
+
+        const [leftStlFile, rightStlFile] = await Promise.all([
+          leftStlPromise,
+          shouldUseSingleLeftStl ? Promise.resolve(null) : camFilePromise,
+          ncPromise,
+          stagePromise,
+        ]).then(([leftStl, rightStl]) => [leftStl, rightStl]);
 
         setPreviewFiles({
-          original: originalFile,
-          cam: camFile,
+          original: leftStlFile,
+          cam: rightStlFile,
           title,
           request: req,
           finishLinePoints: finishLineResult.points,

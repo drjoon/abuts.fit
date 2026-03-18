@@ -341,7 +341,11 @@ export async function getNcFileUrl(req, res) {
         .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
     }
 
-    const request = await Request.findById(id);
+    const request = await Request.findById(id)
+      .select({
+        caseInfos: 1,
+      })
+      .lean();
     if (!request) {
       return res
         .status(404)
