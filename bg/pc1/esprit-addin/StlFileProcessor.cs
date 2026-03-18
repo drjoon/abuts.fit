@@ -1487,8 +1487,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
             if (initialCount > 1000)
             {
-                int deletedSurfaceCount = CleanupSurfaceGraphics(document);
-                AppLogger.Log($"StlFileProcessor: CleanupGraphics 대량 모드 - count:{initialCount}, surface/stl 삭제:{deletedSurfaceCount}, 남음:{SafeCount(document?.GraphicsCollection)}");
+                int deletedSurfaceCount = CleanupTargetGraphics(document);
+                AppLogger.Log($"StlFileProcessor: CleanupGraphics 대량 모드 - count:{initialCount}, line/surface/segment/stl 삭제:{deletedSurfaceCount}, 남음:{SafeCount(document?.GraphicsCollection)}");
                 return;
             }
 
@@ -1576,104 +1576,129 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
-        private static int CleanupSurfaceGraphics(Document document)
+        private static int CleanupTargetGraphics(Document document)
         {
             if (document?.GraphicsCollection == null)
             {
                 return 0;
             }
 
-            int deletedCount = 0;
-            for (int pass = 1; pass <= 2; pass++)
+            int totalDeleted = 0;
+            int initialCount = document.GraphicsCollection.Count;
+            var targetTypes = new HashSet<int>
             {
-                int passInitialCount = SafeCount(document.GraphicsCollection);
-                if (passInitialCount <= 0)
-                {
-                    break;
-                }
+                (int)espGraphicObjectType.espLine,
+                (int)espGraphicObjectType.espSurface,
+                (int)espGraphicObjectType.espSegment,
+                (int)espGraphicObjectType.espSTL_Model
+            };
 
-                int passDeletedCount = 0;
-                for (int i = passInitialCount; i >= 1; i--)
+            AppLogger.Log($"StlFileProcessor: CleanupTargetGraphics 시작 - 초기 count:{initialCount}");
+
+            // Pass 1: 역순으로 순회하며 삭제 시도
+            for (int i = initialCount; i >= 1; i--)
+            {
+                try
                 {
+                    int currentCount = document.GraphicsCollection.Count;
+                    if (currentCount <= 0 || i > currentCount)
+                    {
+                        continue;
+                    }
+
+                    dynamic obj = null;
                     try
                     {
-                        int curCount = SafeCount(document.GraphicsCollection);
-                        if (curCount <= 0)
-                        {
-                            break;
-                        }
-
-                        int idx = i > curCount ? curCount : i;
-                        if (idx <= 0)
-                        {
-                            continue;
-                        }
-
-                        dynamic obj = document.GraphicsCollection[idx];
-                        if (obj == null)
-                        {
-                            continue;
-                        }
-
-                        int rawType;
-                        try
-                        {
-                            rawType = Convert.ToInt32(obj.GraphicObjectType, CultureInfo.InvariantCulture);
-                        }
-                        catch
-                        {
-                            continue;
-                        }
-
-                        if (rawType != (int)espGraphicObjectType.espSurface && rawType != (int)espGraphicObjectType.espSTL_Model)
-                        {
-                            continue;
-                        }
-
-                        try
-                        {
-                            obj.Delete();
-                            passDeletedCount++;
-                        }
-                        catch
-                        {
-                            try
-                            {
-                                var key = obj.Key;
-                                if (key != null)
-                                {
-                                    document.GraphicsCollection.Remove(key);
-                                    passDeletedCount++;
-                                }
-                            }
-                            catch
-                            {
-                            }
-                        }
+                        obj = document.GraphicsCollection[i];
                     }
                     catch (Exception ex)
                     {
-                        AppLogger.Log($"StlFileProcessor: CleanupSurfaceGraphics 단일 객체 삭제 실패 - {ex.GetType().Name}:{ex.Message}");
+                        AppLogger.Log($"StlFileProcessor: CleanupTargetGraphics - 인덱스 {i} 접근 실패: {ex.Message}");
+                        continue;
+                    }
+
+                    if (obj == null)
+                    {
+                        continue;
+                    }
+
+                    int rawType;
+                    try
+                    {
+                        rawType = Convert.ToInt32(obj.GraphicObjectType, CultureInfo.InvariantCulture);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    if (!targetTypes.Contains(rawType))
+                    {
+                        continue;
+                    }
+
+                    string typeName = ((espGraphicObjectType)rawType).ToString();
+                    string objKey = null;
+                    try
+                    {
+                        objKey = obj.Key?.ToString();
+                    }
+                    catch
+                    {
+                    }
+
+                    bool deleted = false;
+                    string deleteMethod = "none";
+
+                    // 시도 1: obj.Delete()
+                    try
+                    {
+                        obj.Delete();
+                        deleted = true;
+                        deleteMethod = "obj.Delete()";
+                        totalDeleted++;
+                    }
+                    catch (Exception ex1)
+                    {
+                        // 시도 2: GraphicsCollection.Remove(index)
+                        try
+                        {
+                            document.GraphicsCollection.Remove(i);
+                            deleted = true;
+                            deleteMethod = "Remove(index)";
+                            totalDeleted++;
+                        }
+                        catch (Exception ex2)
+                        {
+                            AppLogger.Log($"StlFileProcessor: CleanupTargetGraphics - 삭제 실패 idx:{i}, type:{typeName}, key:{objKey ?? "null"}");
+                            AppLogger.Log($"  Delete() 실패: {ex1.Message}");
+                            AppLogger.Log($"  Remove(index) 실패: {ex2.Message}");
+                        }
+                    }
+
+                    if (deleted && totalDeleted <= 5)
+                    {
+                        AppLogger.Log($"StlFileProcessor: CleanupTargetGraphics - 삭제 성공 idx:{i}, type:{typeName}, method:{deleteMethod}");
                     }
                 }
-
-                deletedCount += passDeletedCount;
-                try
+                catch (Exception ex)
                 {
-                    document.Refresh();
-                }
-                catch
-                {
-                }
-
-                AppLogger.Log($"StlFileProcessor: CleanupSurfaceGraphics pass:{pass} - 시작:{passInitialCount}, 삭제됨:{passDeletedCount}, 남음:{SafeCount(document?.GraphicsCollection)}");
-                if (passDeletedCount == 0)
-                {
-                    break;
+                    AppLogger.Log($"StlFileProcessor: CleanupTargetGraphics - 인덱스 {i} 처리 중 예외: {ex.GetType().Name}:{ex.Message}");
                 }
             }
 
-            return deletedCount;
+            try
+            {
+                document.Refresh();
+            }
+            catch
+            {
+            }
+
+            int finalCount = SafeCount(document.GraphicsCollection);
+            AppLogger.Log($"StlFileProcessor: CleanupTargetGraphics 완료 - 초기:{initialCount}, 삭제:{totalDeleted}, 최종:{finalCount}");
+
+            return totalDeleted;
         }
         private static void LogGraphicsTypeSummary(Document document, string context, int maxTypes = 12)
         {
