@@ -13,7 +13,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { useReferralData } from "@/pages/requestor/referralGroups/hooks/useReferralData";
 import { ReferralNetworkChart } from "@/features/referral/components/ReferralNetworkChart";
 
-export const SalesmanReferralPage = () => {
+export const DevopsReferralPage = () => {
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"link" | "dashboard">("link");
@@ -56,7 +56,7 @@ export const SalesmanReferralPage = () => {
             onClick={() => setActiveTab("link")}
             className={`py-4 px-1 font-medium text-sm border-b-2 transition-colors ${
               activeTab === "link"
-                ? "border-emerald-600 text-emerald-600"
+                ? "border-violet-600 text-violet-600"
                 : "border-transparent text-gray-600 hover:text-gray-900"
             }`}
           >
@@ -66,7 +66,7 @@ export const SalesmanReferralPage = () => {
             onClick={() => setActiveTab("dashboard")}
             className={`py-4 px-1 font-medium text-sm border-b-2 transition-colors ${
               activeTab === "dashboard"
-                ? "border-emerald-600 text-emerald-600"
+                ? "border-violet-600 text-violet-600"
                 : "border-transparent text-gray-600 hover:text-gray-900"
             }`}
           >
@@ -91,7 +91,7 @@ export const SalesmanReferralPage = () => {
               <CardContent className="space-y-6">
                 {!isReferralEligible ? (
                   <div className="rounded-lg bg-blue-50 border border-blue-100 p-4 text-sm text-blue-700">
-                    영업자 또는 개발운영사 계정에서 확인할 수 있습니다.
+                    개발운영사 계정에서 확인할 수 있습니다.
                   </div>
                 ) : (
                   <>
@@ -128,7 +128,7 @@ export const SalesmanReferralPage = () => {
                         소개 혜택
                       </div>
                       <p className="text-sm text-slate-600">
-                        직접 소개 5% + 간접 소개 2.5% 수수료 지급
+                        영업자가 없는 의뢰자 계정의 기본 소개자로 등록됩니다.
                       </p>
                     </div>
 
@@ -136,12 +136,12 @@ export const SalesmanReferralPage = () => {
                     <div className="rounded-lg bg-slate-50 border border-slate-200 p-4">
                       <div className="text-xs text-slate-600 space-y-1">
                         <p>
-                          - 직접 소개한 의뢰자의 유료 매출의 5%를 수수료로
-                          지급합니다.
+                          - 영업자 소개 없이 가입한 의뢰자는 자동으로 개발운영사
+                          소개로 등록됩니다.
                         </p>
                         <p>
-                          - 간접 소개한 의뢰자(직접 소개한 사람이 다시 소개한
-                          의뢰자)의 유료 매출의 2.5%를 수수료로 지급합니다.
+                          - 직접 소개한 의뢰자의 유료 매출의 5%를 수수료로
+                          지급합니다.
                         </p>
                         <p>
                           - 수수료는 사업자 기준으로 매일 자정(00:00)
@@ -163,7 +163,7 @@ export const SalesmanReferralPage = () => {
               <Card className="border-gray-200">
                 <CardContent className="pt-6">
                   <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-                    영업자 계정에서 확인할 수 있습니다.
+                    개발운영사 계정에서 확인할 수 있습니다.
                   </div>
                 </CardContent>
               </Card>
@@ -242,8 +242,8 @@ export const SalesmanReferralPage = () => {
                 ) : (
                   <ReferralNetworkChart
                     data={treeData}
-                    maxDepth={2}
-                    title="소개 네트워크 (직접 + 간접)"
+                    maxDepth={1}
+                    title="소개 네트워크 (직접 소개만)"
                   />
                 )}
               </>

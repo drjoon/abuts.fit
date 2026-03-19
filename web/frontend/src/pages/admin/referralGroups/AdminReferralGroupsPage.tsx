@@ -21,6 +21,7 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { SnapshotRecalcAllButton } from "@/shared/components/SnapshotRecalcAllButton";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore, periodToRangeQuery } from "@/store/usePeriodStore";
+import { ReferralNetworkChart } from "@/features/referral/components/ReferralNetworkChart";
 
 const PERIOD_LABEL: Record<string, string> = {
   "7d": "최근 7일",
@@ -855,59 +856,68 @@ export default function AdminReferralGroupsPage() {
           </CardContent>
         </Card>
 
-        {/* 열 2: 계층도 */}
+        {/* 열 2: 트리 */}
         <Card className="h-full flex flex-col min-h-0">
           <CardHeader className="py-3">
-            <CardTitle className="text-base">계층도</CardTitle>
+            <CardTitle className="text-base">트리</CardTitle>
+            {effectiveLeaderId && treeData?.tree ? (
+              <CardDescription className="text-[11px]">
+                {treeData.tree.business ||
+                  treeData.tree.name ||
+                  treeData.tree.email ||
+                  ""}
+                {treeData.tree.businessAnchorId
+                  ? ` (anchor: ${treeData.tree.businessAnchorId})`
+                  : ""}
+              </CardDescription>
+            ) : null}
           </CardHeader>
-          <CardContent className="flex flex-col min-h-0 flex-1">
+          <CardContent className="flex flex-col min-h-0 flex-1 overflow-y-auto pr-1 space-y-4">
             {isTreeLoading ? (
               <div className="text-sm text-muted-foreground">로딩중...</div>
-            ) : !treeData?.tree ? (
+            ) : !effectiveLeaderId || !treeData?.tree ? (
               <div className="text-sm text-muted-foreground">
                 그룹을 선택해주세요.
               </div>
             ) : (
-              <div
-                ref={treeScrollRef}
-                className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-1"
-              >
-                <div className="space-y-2">
-                  {visibleTreeRows.map(({ node, depth }) => (
-                    <TreeNode
-                      key={String(node._id)}
-                      node={node}
-                      depth={depth}
-                      onSelect={(n) => setSelectedNode(n)}
-                    />
-                  ))}
-
-                  {visibleTreeRows.length < flattenedTree.length ? (
-                    <div
-                      ref={treeSentinelRef}
-                      className="h-8"
-                      aria-hidden="true"
-                    />
-                  ) : null}
-                  {visibleTreeRows.length < flattenedTree.length ? (
-                    <div className="pb-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                        onClick={() =>
-                          setTreeVisibleCount((prev) =>
-                            Math.min(prev + 10, flattenedTree.length),
-                          )
-                        }
-                      >
-                        더 보기
-                      </Button>
-                    </div>
-                  ) : null}
+              <>
+                {/* 소개 네트워크 차트 */}
+                <div className="border rounded-lg p-4 bg-white">
+                  <ReferralNetworkChart
+                    data={treeData.tree}
+                    title="소개 네트워크 (전체)"
+                  />
                 </div>
-              </div>
+
+                {/* 트리 목록 */}
+                <div className="relative">
+                  <div className="space-y-0.5">
+                    {flattenedTree.slice(0, treeVisibleCount).map((item) => (
+                      <TreeNode
+                        key={item.node._id}
+                        node={item.node}
+                        depth={item.depth}
+                        onSelect={setSelectedNode}
+                      />
+                    ))}
+                    {treeVisibleCount < flattenedTree.length ? (
+                      <div className="pt-2 flex justify-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setTreeVisibleCount((prev) =>
+                              Math.min(prev + 10, flattenedTree.length),
+                            )
+                          }
+                        >
+                          더 보기
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>

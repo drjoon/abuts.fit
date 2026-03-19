@@ -12,6 +12,7 @@ import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 import { Copy, Check } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useReferralData } from "./hooks/useReferralData";
+import { ReferralNetworkChart } from "@/features/referral/components/ReferralNetworkChart";
 
 function fmtMoney(n: number) {
   const v = Number(n || 0);
@@ -57,6 +58,8 @@ export const RequestorReferralPage = () => {
     loadingRequestor,
     directMembers,
     loadingDirectMembers,
+    treeData,
+    loadingTree,
   } = useReferralData();
 
   const handleCopyLink = async () => {
@@ -189,8 +192,7 @@ export const RequestorReferralPage = () => {
                           매일 자정(00:00) 업데이트됩니다.
                         </p>
                         <p>
-                          - 소개 정책은 의뢰자, 영업자, 개발운영사에게
-                          적용됩니다.
+                          - 직접 소개한 사업자와 함께 그룹 할인이 적용됩니다.
                         </p>
                       </div>
                       <Button
@@ -265,8 +267,8 @@ export const RequestorReferralPage = () => {
                             <div className="text-xs text-muted-foreground">
                               - 신규 가입 이벤트 기간 중에는 90일간 10,000원으로
                               고정됩니다.
-                              <br />- 소개 정책은 의뢰자와 영업자에게만
-                              적용됩니다.
+                              <br />- 직접 소개한 사업자들과 주문량을 합산하여
+                              할인받을 수 있습니다.
                             </div>
                           </div>
                           <div className="flex justify-end">
@@ -345,6 +347,24 @@ export const RequestorReferralPage = () => {
                     )}
                   </CardContent>
                 </Card>
+
+                {/* 소개 네트워크 차트 */}
+                {loadingTree ? (
+                  <Card className="border-gray-200">
+                    <CardHeader>
+                      <CardTitle className="text-base">소개 네트워크</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Skeleton className="h-[500px]" />
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <ReferralNetworkChart
+                    data={treeData}
+                    maxDepth={1}
+                    title="소개 네트워크 (직접 소개만)"
+                  />
+                )}
               </>
             )}
           </div>

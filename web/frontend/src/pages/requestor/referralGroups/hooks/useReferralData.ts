@@ -29,6 +29,18 @@ export type DirectMemberRow = {
   last30DaysOrders?: number;
 };
 
+export type ReferralTreeNode = {
+  _id: string;
+  role?: "requestor" | "salesman" | "devops";
+  name?: string;
+  email?: string;
+  business?: string;
+  businessAnchorId?: string;
+  active?: boolean;
+  lastMonthOrders?: number;
+  children?: ReferralTreeNode[];
+};
+
 const buildReferralSignupLink = (referralCode: string) => {
   const code = String(referralCode || "")
     .trim()
@@ -48,6 +60,9 @@ export const useReferralData = () => {
 
   const [directMembers, setDirectMembers] = useState<DirectMemberRow[]>([]);
   const [loadingDirectMembers, setLoadingDirectMembers] = useState(false);
+
+  const [treeData, setTreeData] = useState<ReferralTreeNode | null>(null);
+  const [loadingTree, setLoadingTree] = useState(false);
 
   const isReferralEligible =
     user?.role === "requestor" ||
@@ -120,6 +135,32 @@ export const useReferralData = () => {
       .finally(() => setLoadingDirectMembers(false));
   }, [isReferralEligible, toast, token]);
 
+  useEffect(() => {
+    if (!token || !isReferralEligible || !user?.id) return;
+
+    setLoadingTree(true);
+    request<any>({
+      path: `/api/admin/referral-groups/${user.id}/tree`,
+      method: "GET",
+      token,
+    })
+      .then((res) => {
+        const body: any = res.data || {};
+        if (!res.ok || !body?.success) {
+          throw new Error(body?.message || "소개 트리 조회에 실패했습니다.");
+        }
+        setTreeData((body.data?.tree || null) as ReferralTreeNode | null);
+      })
+      .catch((err) => {
+        toast({
+          title: "오류",
+          description: (err as any)?.message || "다시 시도해주세요.",
+          variant: "destructive",
+        });
+      })
+      .finally(() => setLoadingTree(false));
+  }, [isReferralEligible, toast, token, user?.id]);
+
   return {
     isReferralEligible,
     referralCode,
@@ -128,5 +169,7 @@ export const useReferralData = () => {
     loadingRequestor,
     directMembers,
     loadingDirectMembers,
+    treeData,
+    loadingTree,
   };
 };
