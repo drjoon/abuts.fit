@@ -1,12 +1,13 @@
 import { Types } from "mongoose";
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
+import ShippingPackage from "../../models/shippingPackage.model.js";
 import PricingReferralStatsSnapshot from "../../models/pricingReferralStatsSnapshot.model.js";
 import {
   getThisMonthStartYmdInKst,
   getLast30DaysRangeUtc,
 } from "../requests/utils.js";
-import { getTodayYmdInKst } from "../../utils/krBusinessDays.js";
+import { getTodayYmdInKst, toKstYmd } from "../../utils/krBusinessDays.js";
 import { computeVolumeEffectiveUnitPrice } from "./admin.shared.controller.js";
 import { buildReferralLeaderAggregation } from "./adminReferral.aggregation.js";
 
@@ -33,6 +34,23 @@ function getAdminReferralCache(key) {
 
 function setAdminReferralCache(key, value) {
   adminReferralCache.set(key, { ts: Date.now(), value });
+}
+
+function buildShippingRequestCountByBusinessKey(rows) {
+  const map = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const businessKey = String(row?.businessAnchorId || "").trim();
+    if (!businessKey) continue;
+    const count = Array.isArray(row?.requestIds)
+      ? new Set(
+          row.requestIds
+            .map((value) => String(value || "").trim())
+            .filter(Boolean),
+        ).size
+      : 0;
+    map.set(businessKey, Number(map.get(businessKey) || 0) + count);
+  }
+  return map;
 }
 
 function normalizeReferralLeaders(leaders) {
@@ -344,16 +362,30 @@ export async function getReferralGroups(req, res) {
 export async function getReferralGroupTree(req, res) {
   try {
     const { leaderId } = req.params;
+    const requestingUserId = String(req.user?._id || req.user?.id || "");
+    const requestingUserRole = String(req.user?.role || "");
+
+    if (!Types.ObjectId.isValid(leaderId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 리더 ID입니다." });
+    }
+
+    // 본인 또는 admin만 접근 가능
+    if (
+      requestingUserRole !== "admin" &&
+      String(leaderId) !== requestingUserId
+    ) {
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+    }
+
     const cacheKey = `referral-group-tree:v4:${leaderId}`;
     const refresh = String(req.query.refresh || "") === "1";
     if (!refresh) {
       const cached = getAdminReferralCache(cacheKey);
       if (cached) return res.status(200).json(cached);
-    }
-    if (!Types.ObjectId.isValid(leaderId)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "유효하지 않은 리더 ID입니다." });
     }
 
     const leader = await User.findById(leaderId)
@@ -452,6 +484,20 @@ export async function getReferralGroupTree(req, res) {
     const range30 = getLast30DaysRangeUtc();
     const start = range30?.start;
     const end = range30?.end;
+    const startYmd = start ? toKstYmd(start) : null;
+    const endYmd = end ? toKstYmd(end) : null;
+
+    const shippingRows =
+      memberBusinessAnchorIds.length && startYmd && endYmd
+        ? await ShippingPackage.find({
+            businessAnchorId: { $in: memberBusinessAnchorIds },
+            shipDateYmd: { $gte: startYmd, $lte: endYmd },
+          })
+            .select({ _id: 0, businessAnchorId: 1, requestIds: 1 })
+            .lean()
+        : [];
+    const shippingOrderCountByBusinessAnchorId =
+      buildShippingRequestCountByBusinessKey(shippingRows);
 
     const businessStatsRows =
       memberBusinessAnchorIds.length && start && end
@@ -517,8 +563,9 @@ export async function getReferralGroupTree(req, res) {
     const nodes = members.map((u) => ({
       ...u,
       lastMonthOrders: Number(
-        businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
-          ?.lastMonthOrders || 0,
+        shippingOrderCountByBusinessAnchorId.get(
+          String(u?.businessAnchorId || ""),
+        ) || 0,
       ),
       lastMonthPaidOrders: Number(
         businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))

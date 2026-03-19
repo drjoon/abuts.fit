@@ -91,7 +91,9 @@ router.get(
 router.get(
   "/my/pricing-referral-stats",
   authenticate,
-  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
+  authorize(["requestor", "devops", "admin"], {
+    requestorRoles: ["owner", "staff"],
+  }),
   requestController.getMyPricingReferralStats,
 );
 
@@ -99,7 +101,9 @@ router.get(
 router.get(
   "/my/referral-direct-members",
   authenticate,
-  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
+  authorize(["requestor", "devops", "admin"], {
+    requestorRoles: ["owner", "staff"],
+  }),
   requestController.getMyReferralDirectMembers,
 );
 

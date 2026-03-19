@@ -8,6 +8,10 @@ export type RequestorReferralStats = {
   myLast30DaysOrders?: number;
   groupTotalOrders?: number;
   groupMemberCount?: number;
+  referralBusinessCount?: number;
+  referralBusinessOrders?: number;
+  selfBusinessOrders?: number;
+  statsMode?: "group" | "referral";
   effectiveUnitPrice?: number;
   baseUnitPrice?: number;
   discountAmount?: number;
@@ -136,22 +140,37 @@ export const useReferralData = () => {
   }, [isReferralEligible, toast, token]);
 
   useEffect(() => {
-    if (!token || !isReferralEligible || !user?.id) return;
+    if (!token || !isReferralEligible || !user?.id) {
+      console.log("[useReferralData] 트리 로딩 스킵:", {
+        token: !!token,
+        isReferralEligible,
+        userId: user?.id,
+      });
+      return;
+    }
 
+    console.log("[useReferralData] 트리 로딩 시작:", {
+      userId: user.id,
+      role: user.role,
+    });
     setLoadingTree(true);
     request<any>({
-      path: `/api/admin/referral-groups/${user.id}/tree`,
+      path: `/api/referral-groups/${user.id}/tree`,
       method: "GET",
       token,
     })
       .then((res) => {
+        console.log("[useReferralData] 트리 응답:", res);
         const body: any = res.data || {};
         if (!res.ok || !body?.success) {
           throw new Error(body?.message || "소개 트리 조회에 실패했습니다.");
         }
-        setTreeData((body.data?.tree || null) as ReferralTreeNode | null);
+        const tree = (body.data?.tree || null) as ReferralTreeNode | null;
+        console.log("[useReferralData] 트리 데이터 설정:", tree);
+        setTreeData(tree);
       })
       .catch((err) => {
+        console.error("[useReferralData] 트리 로딩 에러:", err);
         toast({
           title: "오류",
           description: (err as any)?.message || "다시 시도해주세요.",
@@ -159,7 +178,7 @@ export const useReferralData = () => {
         });
       })
       .finally(() => setLoadingTree(false));
-  }, [isReferralEligible, toast, token, user?.id]);
+  }, [isReferralEligible, toast, token, user?.id, user?.role]);
 
   return {
     isReferralEligible,

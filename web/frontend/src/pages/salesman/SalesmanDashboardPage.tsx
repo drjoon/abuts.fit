@@ -93,13 +93,6 @@ export const SalesmanDashboardPage = () => {
   const referralSalesmanDescription = isDevops
     ? "내 소개 코드로 연결된 영업자입니다."
     : "내가 직접 소개한 영업자입니다.";
-  const referralLink = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    const origin = window.location.origin;
-    const code = String(user?.referralCode || "").trim();
-    if (!code) return "";
-    return `${origin}/signup/referral?ref=${encodeURIComponent(code)}`;
-  }, [user?.referralCode]);
   const [data, setData] = useState<ApiDashboard | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -135,9 +128,16 @@ export const SalesmanDashboardPage = () => {
 
   if (!user) return null;
 
-  const referralCode = String(
-    data?.referralCode || user.referralCode || "",
-  ).trim();
+  const referralCode = String(data?.referralCode || user.referralCode || "")
+    .trim()
+    .toUpperCase();
+  const normalizedReferralCode = /^[A-Z]{3}$/.test(referralCode)
+    ? referralCode
+    : "";
+  const referralLink =
+    typeof window !== "undefined" && normalizedReferralCode
+      ? `${window.location.origin}/signup/referral?ref=${encodeURIComponent(normalizedReferralCode)}`
+      : "";
 
   const overview = data?.overview || ({} as any);
 
@@ -236,7 +236,7 @@ export const SalesmanDashboardPage = () => {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-4xl font-mono font-bold tracking-widest">
-                    {referralCode || "-"}
+                    {normalizedReferralCode || (loading ? "..." : "-")}
                   </div>
                   <Button
                     type="button"

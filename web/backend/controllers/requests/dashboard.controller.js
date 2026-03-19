@@ -34,13 +34,6 @@ const ymdToKstMidnight = (ymd) => {
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
-const getUniqueRequestIdCount = (requestIds) => {
-  if (!Array.isArray(requestIds) || requestIds.length === 0) return 0;
-  return new Set(
-    requestIds.map((value) => String(value || "").trim()).filter(Boolean),
-  ).size;
-};
-
 const __requestPerfCache = new Map();
 
 const getCacheValue = (key) => {
@@ -66,10 +59,47 @@ const buildShippingRequestCountByBusinessKey = (rows) => {
   for (const row of Array.isArray(rows) ? rows : []) {
     const businessKey = String(row?.businessAnchorId || "").trim();
     if (!businessKey) continue;
-    const count = getUniqueRequestIdCount(row?.requestIds);
+    const count = Array.isArray(row?.requestIds)
+      ? new Set(
+          row.requestIds
+            .map((value) => String(value || "").trim())
+            .filter(Boolean),
+        ).size
+      : 0;
     map.set(businessKey, Number(map.get(businessKey) || 0) + count);
   }
   return map;
+};
+
+const getShippingOrderCountsByBusinessAnchorIds = async ({
+  businessAnchorIds,
+  startYmd,
+  endYmd,
+}) => {
+  const orgKeys = Array.from(
+    new Set(
+      (businessAnchorIds || [])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean),
+    ),
+  );
+
+  if (!orgKeys.length) {
+    return new Map();
+  }
+
+  const rows = await ShippingPackage.find({
+    businessAnchorId: {
+      $in: orgKeys
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id)),
+    },
+    shipDateYmd: { $gte: startYmd, $lte: endYmd },
+  })
+    .select({ _id: 0, businessAnchorId: 1, requestIds: 1 })
+    .lean();
+
+  return buildShippingRequestCountByBusinessKey(rows);
 };
 
 const getRequestEstimatedShipYmd = ({ request, fallbackMap }) => {
@@ -1447,10 +1477,14 @@ export async function getMyPricingReferralStats(req, res) {
     let freshGroupTotalOrders = Number(cachedSnapshot?.groupTotalOrders || 0);
     let myLastMonthOrders = 0;
     let groupMemberIds = [];
+    let referralBusinessCount = 0;
+    let referralBusinessOrders = 0;
+    let selfBusinessOrders = 0;
+    let statsMode = role === "requestor" ? "group" : "referral";
 
     if (role === "requestor") {
       const leaderBusinessAnchorId = String(me?.businessAnchorId || "");
-      const shouldComputeRequestorGroup = !cachedSnapshot;
+      const shouldComputeRequestorGroup = true;
 
       if (shouldComputeRequestorGroup) {
         const referredRequestors =
@@ -1471,20 +1505,11 @@ export async function getMyPricingReferralStats(req, res) {
 
         groupMemberCount = orgKeys.length;
         groupMemberIds = orgKeys.map((id) => String(id));
-        const shippedBusinessRows = orgKeys.length
-          ? await ShippingPackage.find({
-              businessAnchorId: {
-                $in: orgKeys
-                  .filter((id) => Types.ObjectId.isValid(id))
-                  .map((id) => new Types.ObjectId(id)),
-              },
-              shipDateYmd: { $gte: last30StartYmd, $lte: todayYmd },
-            })
-              .select({ _id: 0, businessAnchorId: 1, requestIds: 1 })
-              .lean()
-          : [];
-        const countMap =
-          buildShippingRequestCountByBusinessKey(shippedBusinessRows);
+        const countMap = await getShippingOrderCountsByBusinessAnchorIds({
+          businessAnchorIds: orgKeys,
+          startYmd: last30StartYmd,
+          endYmd: todayYmd,
+        });
         freshGroupTotalOrders = orgKeys.reduce(
           (acc, id) => acc + Number(countMap.get(String(id)) || 0),
           0,
@@ -1492,20 +1517,21 @@ export async function getMyPricingReferralStats(req, res) {
         myLastMonthOrders = Number(
           countMap.get(String(leaderBusinessAnchorId)) || 0,
         );
+        referralBusinessCount = groupMemberCount;
+        referralBusinessOrders = freshGroupTotalOrders;
+        selfBusinessOrders = myLastMonthOrders;
       } else {
-        const myShippingRows = Types.ObjectId.isValid(leaderBusinessAnchorId)
-          ? await ShippingPackage.find({
-              businessAnchorId: new Types.ObjectId(leaderBusinessAnchorId),
-              shipDateYmd: { $gte: last30StartYmd, $lte: todayYmd },
-            })
-              .select({ _id: 0, businessAnchorId: 1, requestIds: 1 })
-              .lean()
-          : [];
-        const myCountMap =
-          buildShippingRequestCountByBusinessKey(myShippingRows);
+        const myCountMap = await getShippingOrderCountsByBusinessAnchorIds({
+          businessAnchorIds: [leaderBusinessAnchorId],
+          startYmd: last30StartYmd,
+          endYmd: todayYmd,
+        });
         myLastMonthOrders = Number(
           myCountMap.get(String(leaderBusinessAnchorId)) || 0,
         );
+        referralBusinessCount = 1;
+        referralBusinessOrders = myLastMonthOrders;
+        selfBusinessOrders = myLastMonthOrders;
       }
     } else {
       const refBusinessAnchorId = String(me?.businessAnchorId || "").trim();
@@ -1520,32 +1546,35 @@ export async function getMyPricingReferralStats(req, res) {
               .lean()
           : [];
 
-      const baseMemberIds = [requestorId];
-      const rawMemberIds = [
-        ...baseMemberIds,
-        ...(directChildren || []).map((c) => c._id).filter(Boolean),
-      ];
-      groupMemberIds = rawMemberIds.map((id) => String(id));
-      groupMemberCount = groupMemberIds.length;
+      const directChildBusinessAnchorIds = Array.from(
+        new Set(
+          (directChildren || [])
+            .map((child) => String(child?.businessAnchorId || "").trim())
+            .filter(Boolean),
+        ),
+      );
+      const shippingCountMap = await getShippingOrderCountsByBusinessAnchorIds({
+        businessAnchorIds: [
+          refBusinessAnchorId,
+          ...directChildBusinessAnchorIds,
+        ],
+        startYmd: last30StartYmd,
+        endYmd: todayYmd,
+      });
 
-      [freshGroupTotalOrders, myLastMonthOrders] = await Promise.all([
-        groupMemberIds.length
-          ? Request.countDocuments({
-              requestor: { $in: rawMemberIds },
-              manufacturerStage: {
-                $in: ["shipping", "포장.발송", "tracking", "추적관리"],
-              },
-              createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
-            })
-          : Promise.resolve(0),
-        Request.countDocuments({
-          requestor: requestorId,
-          manufacturerStage: {
-            $in: ["shipping", "포장.발송", "tracking", "추적관리"],
-          },
-          createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
-        }),
-      ]);
+      selfBusinessOrders = Number(
+        shippingCountMap.get(String(refBusinessAnchorId)) || 0,
+      );
+      referralBusinessCount = directChildBusinessAnchorIds.length;
+      referralBusinessOrders = directChildBusinessAnchorIds.reduce(
+        (acc, id) => acc + Number(shippingCountMap.get(String(id)) || 0),
+        0,
+      );
+
+      myLastMonthOrders = selfBusinessOrders;
+      freshGroupTotalOrders = referralBusinessOrders;
+      groupMemberCount = referralBusinessCount;
+      groupMemberIds = directChildBusinessAnchorIds.map(String);
     }
 
     const user = me;
@@ -1610,6 +1639,10 @@ export async function getMyPricingReferralStats(req, res) {
       lastMonthEnd,
       myLastMonthOrders,
       groupTotalOrders: totalLastMonthOrders,
+      referralBusinessCount,
+      referralBusinessOrders,
+      selfBusinessOrders,
+      statsMode,
       totalOrders,
       baseUnitPrice,
       discountPerOrder,

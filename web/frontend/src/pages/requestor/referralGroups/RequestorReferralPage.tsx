@@ -214,7 +214,7 @@ export const RequestorReferralPage = () => {
 
         {/* 소개 대시보드 탭 */}
         {activeTab === "dashboard" && (
-          <div className="p-4 space-y-4">
+          <div className="p-3 space-y-3">
             {!isReferralEligible ? (
               <Card className="border-gray-200">
                 <CardContent className="pt-6">
@@ -234,18 +234,18 @@ export const RequestorReferralPage = () => {
                   </CardHeader>
                   <CardContent>
                     {loadingRequestor ? (
-                      <div className="grid gap-3 md:grid-cols-4">
-                        <Skeleton className="h-24" />
-                        <Skeleton className="h-24" />
-                        <Skeleton className="h-24" />
-                        <Skeleton className="h-24" />
+                      <div className="grid gap-2 md:grid-cols-4">
+                        <Skeleton className="h-20" />
+                        <Skeleton className="h-20" />
+                        <Skeleton className="h-20" />
+                        <Skeleton className="h-20" />
                       </div>
                     ) : (
-                      <div className="grid gap-3 md:grid-cols-5">
+                      <div className="grid gap-2 md:grid-cols-5">
                         <MetricCard
-                          title="직접 소개 사업자 수"
-                          value={`${requestorMembers.toLocaleString()}명`}
-                          subtitle="내 사업자 + 직접 소개"
+                          title="그룹 사업자 수"
+                          value={`${requestorMembers.toLocaleString()}개소`}
+                          subtitle="본인 포함 그룹 전체"
                         />
                         <MetricCard
                           title="사업자 그룹 합산 (최근 30일)"
@@ -288,66 +288,6 @@ export const RequestorReferralPage = () => {
                   </CardContent>
                 </Card>
 
-                {/* 직접 소개 사업자 */}
-                <Card className="border-gray-200">
-                  <CardHeader>
-                    <CardTitle className="text-base">
-                      직접 소개 사업자
-                    </CardTitle>
-                    <CardDescription>
-                      내가 속한 사업자와 내가 직접 소개한 사업자만 표시합니다.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {loadingDirectMembers ? (
-                      <div className="grid gap-3 md:grid-cols-4">
-                        <Skeleton className="h-20" />
-                        <Skeleton className="h-20" />
-                        <Skeleton className="h-20" />
-                        <Skeleton className="h-20" />
-                      </div>
-                    ) : directMembers.length === 0 ? (
-                      <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-                        아직 직접 소개 사업자가 없습니다.
-                      </div>
-                    ) : (
-                      <div className="grid gap-3 md:grid-cols-4">
-                        {directMembers.map((m) => {
-                          const label = String(
-                            m.business || m.name || m.email || "-",
-                          );
-                          return (
-                            <div
-                              key={m._id}
-                              className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="truncate text-sm font-semibold">
-                                    {label}
-                                  </div>
-                                  <div className="truncate text-xs text-muted-foreground">
-                                    {m.email || ""}
-                                  </div>
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  최근 30일{" "}
-                                  {Number(
-                                    m.last30DaysOrders ??
-                                      m.lastMonthOrders ??
-                                      0,
-                                  ).toLocaleString()}
-                                  건
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
                 {/* 소개 네트워크 차트 */}
                 {loadingTree ? (
                   <Card className="border-gray-200">
@@ -355,7 +295,7 @@ export const RequestorReferralPage = () => {
                       <CardTitle className="text-base">소개 네트워크</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <Skeleton className="h-[500px]" />
+                      <Skeleton className="h-[320px]" />
                     </CardContent>
                   </Card>
                 ) : (
@@ -363,6 +303,9 @@ export const RequestorReferralPage = () => {
                     data={treeData}
                     maxDepth={1}
                     title="소개 네트워크 (직접 소개만)"
+                    visibleRoles={["requestor"]}
+                    legendRoles={[]}
+                    chartHeight={320}
                   />
                 )}
               </>

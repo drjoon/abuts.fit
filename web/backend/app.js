@@ -232,6 +232,7 @@ import manufacturerRoutes from "./modules/manufacturer/manufacturer.routes.js";
 import cncMachineRoutes from "./modules/cnc/cncMachine.routes.js";
 import salesmanRoutes from "./modules/salesman/salesman.routes.js";
 import snapshotRoutes from "./modules/snapshots/snapshot.routes.js";
+import referralGroupsRoutes from "./modules/referralGroups/referralGroups.routes.js";
 
 // 라우트 설정
 app.use("/api/auth", authRoutes);
@@ -262,6 +263,7 @@ app.use("/api/manufacturer", manufacturerRoutes);
 app.use("/api/cnc-machines", cncMachineRoutes);
 app.use("/api/salesman", salesmanRoutes);
 app.use("/api/snapshots", snapshotRoutes);
+app.use("/api/referral-groups", referralGroupsRoutes);
 // 호환: 프런트에서 /api/cnc/machines/... 로 호출하는 경우도 지원
 app.use("/api/cnc/machines", cncMachineRoutes);
 

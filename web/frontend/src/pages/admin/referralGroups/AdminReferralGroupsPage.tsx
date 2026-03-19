@@ -520,7 +520,9 @@ export default function AdminReferralGroupsPage() {
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <CardTitle className="text-base">의뢰자 그룹</CardTitle>
+              <CardTitle className="text-base">
+                의뢰자 할인 네트워크 현황
+              </CardTitle>
               {roleBadge("requestor")}
             </div>
           </CardHeader>
@@ -595,7 +597,9 @@ export default function AdminReferralGroupsPage() {
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 flex-wrap">
-                <CardTitle className="text-base">소개자 그룹</CardTitle>
+                <CardTitle className="text-base">
+                  소개자 네트워크 현황
+                </CardTitle>
                 <div className="flex items-center gap-1">
                   {roleBadge("salesman")}
                   {roleBadge("devops")}
@@ -678,12 +682,12 @@ export default function AdminReferralGroupsPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-3 flex-1 min-h-0">
-        {/* 열 1: 그룹 목록 */}
+        {/* 열 1: 리더 목록 */}
         <Card className="h-full flex flex-col min-h-0">
           <CardHeader className="py-3">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 flex-wrap">
-                <CardTitle className="text-base">그룹 목록</CardTitle>
+                <CardTitle className="text-base">리더 목록</CardTitle>
               </div>
               <div className="flex items-center gap-1">
                 <Button
@@ -770,7 +774,7 @@ export default function AdminReferralGroupsPage() {
                 <div className="text-sm text-muted-foreground">로딩중...</div>
               ) : filteredGroups.length === 0 ? (
                 <div className="text-sm text-muted-foreground">
-                  표시할 그룹이 없습니다.
+                  표시할 리더가 없습니다.
                 </div>
               ) : (
                 visibleGroups.map((g) => {
@@ -856,10 +860,10 @@ export default function AdminReferralGroupsPage() {
           </CardContent>
         </Card>
 
-        {/* 열 2: 트리 */}
+        {/* 열 2: 소개 네트워크 */}
         <Card className="h-full flex flex-col min-h-0">
           <CardHeader className="py-3">
-            <CardTitle className="text-base">트리</CardTitle>
+            <CardTitle className="text-base">소개 네트워크</CardTitle>
             {effectiveLeaderId && treeData?.tree ? (
               <CardDescription className="text-[11px]">
                 {treeData.tree.business ||
@@ -877,7 +881,7 @@ export default function AdminReferralGroupsPage() {
               <div className="text-sm text-muted-foreground">로딩중...</div>
             ) : !effectiveLeaderId || !treeData?.tree ? (
               <div className="text-sm text-muted-foreground">
-                그룹을 선택해주세요.
+                리더를 선택해주세요.
               </div>
             ) : (
               <>
@@ -885,11 +889,13 @@ export default function AdminReferralGroupsPage() {
                 <div className="border rounded-lg p-4 bg-white">
                   <ReferralNetworkChart
                     data={treeData.tree}
-                    title="소개 네트워크 (전체)"
+                    title="선택한 리더의 소개 네트워크"
+                    legendRoles={["requestor", "salesman", "devops"]}
+                    chartHeight={320}
                   />
                 </div>
 
-                {/* 트리 목록 */}
+                {/* 네트워크 목록 */}
                 <div className="relative">
                   <div className="space-y-0.5">
                     {flattenedTree.slice(0, treeVisibleCount).map((item) => (
@@ -941,11 +947,11 @@ export default function AdminReferralGroupsPage() {
               <div className="text-sm text-muted-foreground">로딩중...</div>
             ) : !effectiveLeaderId || !treeData?.tree ? (
               <div className="text-sm text-muted-foreground">
-                그룹을 선택해주세요.
+                리더를 선택해주세요.
               </div>
             ) : !isCommissionLeader(String(treeData.tree.role || "")) ? (
               <div className="text-sm text-muted-foreground">
-                소개자 그룹만 수수료가 표시됩니다.
+                소개자 리더 선택 시 수수료가 표시됩니다.
               </div>
             ) : (
               <>

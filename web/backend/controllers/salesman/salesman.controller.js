@@ -102,7 +102,7 @@ export async function getSalesmanLedger(req, res) {
     res.set("x-abuts-handler", "salesman.getSalesmanLedger");
 
     const me = req.user;
-    if (!me || me.role !== "salesman") {
+    if (!me || (me.role !== "salesman" && me.role !== "devops")) {
       return res.status(403).json({
         success: false,
         message: "접근 권한이 없습니다.",
@@ -258,7 +258,7 @@ export async function getSalesmanDashboard(req, res) {
     res.set("x-abuts-handler", "salesman.getSalesmanDashboard");
 
     const me = req.user;
-    if (!me || me.role !== "salesman") {
+    if (!me || (me.role !== "salesman" && me.role !== "devops")) {
       return res.status(403).json({
         success: false,
         message: "접근 권한이 없습니다.",

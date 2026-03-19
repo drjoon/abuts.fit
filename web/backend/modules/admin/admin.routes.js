@@ -205,7 +205,11 @@ router.get("/pricing-stats/users", getPricingStatsByUser);
 
 // 리퍼럴 그룹
 router.get("/referral-groups", getReferralGroups);
-router.get("/referral-groups/:leaderId", getReferralGroupTree);
+router.get(
+  "/referral-groups/:leaderId/tree",
+  authorize(["admin", "requestor", "salesman", "devops"]),
+  getReferralGroupTree,
+);
 
 // 리퍼럴 스냅샷
 router.get("/referral-snapshot/status", getReferralSnapshotStatus);

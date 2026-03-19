@@ -158,7 +158,7 @@ export const SalesmanReferralPage = () => {
 
         {/* 소개 대시보드 탭 */}
         {activeTab === "dashboard" && (
-          <div className="p-4 space-y-4">
+          <div className="p-3 space-y-3">
             {!isReferralEligible ? (
               <Card className="border-gray-200">
                 <CardContent className="pt-6">
@@ -169,66 +169,6 @@ export const SalesmanReferralPage = () => {
               </Card>
             ) : (
               <>
-                {/* 직접 소개 사업자 */}
-                <Card className="border-gray-200">
-                  <CardHeader>
-                    <CardTitle className="text-base">
-                      직접 소개 사업자
-                    </CardTitle>
-                    <CardDescription>
-                      내가 직접 소개한 사업자를 표시합니다.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {loadingDirectMembers ? (
-                      <div className="grid gap-3 md:grid-cols-4">
-                        <Skeleton className="h-20" />
-                        <Skeleton className="h-20" />
-                        <Skeleton className="h-20" />
-                        <Skeleton className="h-20" />
-                      </div>
-                    ) : directMembers.length === 0 ? (
-                      <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-                        아직 직접 소개 사업자가 없습니다.
-                      </div>
-                    ) : (
-                      <div className="grid gap-3 md:grid-cols-4">
-                        {directMembers.map((m) => {
-                          const label = String(
-                            m.business || m.name || m.email || "-",
-                          );
-                          return (
-                            <div
-                              key={m._id}
-                              className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="truncate text-sm font-semibold">
-                                    {label}
-                                  </div>
-                                  <div className="truncate text-xs text-muted-foreground">
-                                    {m.email || ""}
-                                  </div>
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  최근 30일{" "}
-                                  {Number(
-                                    m.last30DaysOrders ??
-                                      m.lastMonthOrders ??
-                                      0,
-                                  ).toLocaleString()}
-                                  건
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
                 {/* 소개 네트워크 차트 */}
                 {loadingTree ? (
                   <Card className="border-gray-200">
@@ -236,14 +176,17 @@ export const SalesmanReferralPage = () => {
                       <CardTitle className="text-base">소개 네트워크</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <Skeleton className="h-[500px]" />
+                      <Skeleton className="h-[320px]" />
                     </CardContent>
                   </Card>
                 ) : (
                   <ReferralNetworkChart
                     data={treeData}
                     maxDepth={2}
-                    title="소개 네트워크 (직접 + 간접)"
+                    title="내 소개 네트워크"
+                    visibleRoles={["requestor", "salesman"]}
+                    legendRoles={["requestor", "salesman"]}
+                    chartHeight={320}
                   />
                 )}
               </>
