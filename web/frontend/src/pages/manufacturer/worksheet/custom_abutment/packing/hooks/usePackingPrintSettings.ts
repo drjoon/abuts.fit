@@ -74,7 +74,7 @@ export const usePackingPrintSettings = ({
       }
       const nextDpi = Number(data?.data?.dpi);
       if (Number.isFinite(nextDpi) && nextDpi > 0) setPackLabelDpi(nextDpi);
-      else setPackLabelDpi(203);
+      else setPackLabelDpi(600);
 
       const nextDots = data?.data?.label?.dots;
       if (

@@ -220,14 +220,15 @@ const resolvePackZplSize = (payload) => {
   }
 
   const paperProfile = String(payload?.paperProfile || "").trim();
-  const dpi = Number(payload?.dpi) || 203;
+  const dpi = Number(payload?.dpi) || PACK_LABEL_DPI;
   if (paperProfile === "PACK_80x65") {
     // landscape layout (80mm width x 65mm height)
     return { pw: mmToDots(80, dpi), ll: mmToDots(65, dpi) };
   }
 
-  // Default: 80x65mm @ 203DPI = 640x520 dots
-  return { pw: 640, ll: 520 };
+  // Default: 80x65mm @ 600DPI (PACK_LABEL_DPI) = 1890x1535 dots
+  const defaultDpi = PACK_LABEL_DPI;
+  return { pw: mmToDots(80, defaultDpi), ll: mmToDots(65, defaultDpi) };
 };
 
 const buildPackingLabelZpl = (payload) => {

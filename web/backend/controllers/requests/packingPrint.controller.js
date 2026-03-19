@@ -22,7 +22,7 @@ const PACK_PAPER_OPTIONS = String(
   .map((v) => String(v || "").trim())
   .filter(Boolean);
 
-const PACK_LABEL_DPI = Number(process.env.PACK_LABEL_DPI || 203);
+const PACK_LABEL_DPI = Number(process.env.PACK_LABEL_DPI);
 const PACK_LABEL_DESIGN_DPI = 203;
 
 const mmToDots = (mm, dpi) => {
@@ -49,7 +49,7 @@ export async function getPackPrintSettings(req, res) {
   const dpi =
     Number.isFinite(PACK_LABEL_DPI) && PACK_LABEL_DPI > 0
       ? PACK_LABEL_DPI
-      : 203;
+      : 600;
 
   const paperDefault = PACK_PAPER_DEFAULT || null;
   const paperOptions = PACK_PAPER_OPTIONS;
@@ -320,7 +320,7 @@ export async function printPackPackingLabel(req, res) {
     const dpi =
       Number.isFinite(PACK_LABEL_DPI) && PACK_LABEL_DPI > 0
         ? PACK_LABEL_DPI
-        : 203;
+        : 600;
     payload.dpi = dpi;
 
     if (payload.paperProfile === "PACK_65x80") {
