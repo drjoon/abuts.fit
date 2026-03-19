@@ -57,10 +57,59 @@ if not defined NSSM_EXE (
   call :InstallNSSM
   call :RefreshNSSMDetected
 )
-if defined NSSM_EXE if not exist "%NSSM_EXE" (
+if defined NSSM_EXE if not exist "%NSSM_EXE%" (
   echo [WARN] NSSM path appears invalid: %NSSM_EXE%
   set "NSSM_EXE="
 )
+
+REM Check and install npm dependencies
+echo.
+echo Checking npm dependencies...
+if not exist "%BASEDIR%node_modules" (
+  echo npm dependencies not found. Installing...
+  if defined NODE_EXE (
+    REM Get npm path from Node.js directory
+    for %%i in ("%NODE_EXE%") do set "NODE_DIR=%%~dpi"
+    set "NPM_EXE=!NODE_DIR!npm.cmd"
+    if exist "!NPM_EXE!" (
+      echo Running: !NPM_EXE! install --include=optional
+      call "!NPM_EXE!" install --include=optional
+      if !errorlevel! neq 0 (
+        echo npm install failed with exit code !errorlevel!
+        pause
+        exit /b 1
+      )
+    ) else (
+      echo npm.cmd not found. Trying global npm...
+      npm install --include=optional
+      if !errorlevel! neq 0 (
+        echo npm install failed with exit code !errorlevel!
+        pause
+        exit /b 1
+      )
+    )
+  ) else (
+    echo Node.js not found. Cannot install dependencies.
+    echo Please install Node.js and run this script again.
+    pause
+    exit /b 1
+  )
+) else (
+  echo npm dependencies already installed. Checking for sharp module...
+  if not exist "%BASEDIR%node_modules\sharp" (
+    echo sharp module missing. Reinstalling with optional dependencies...
+    if defined NODE_EXE (
+      for %%i in ("%NODE_EXE%") do set "NODE_DIR=%%~dpi"
+      set "NPM_EXE=!NODE_DIR!npm.cmd"
+      if exist "!NPM_EXE!" (
+        call "!NPM_EXE!" install --include=optional sharp
+      ) else (
+        npm install --include=optional sharp
+      )
+    )
+  )
+)
+echo.
 
 :menu
 echo ============================================

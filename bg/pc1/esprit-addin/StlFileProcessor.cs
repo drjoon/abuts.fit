@@ -366,6 +366,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null)
         {
 
+            // _espApp.new("template path")
+
             AppLogger.BeginRun();
             AppLogger.Log("StlFileProcessor: Process 시작");
             ResetPerRunState();

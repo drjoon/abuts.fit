@@ -57,7 +57,9 @@ if [[ ! -f "$ENV_FILE" ]]; then
   error "환경 파일을 찾을 수 없습니다: $ENV_FILE"
 fi
 
-command -v eb >/dev/null 2>&1 || error "Elastic Beanstalk CLI(eb)가 설치되어 있지 않습니다."
+# miniforge의 eb를 명시적으로 사용
+EB_CMD="/Users/joonholee/miniforge3/bin/eb"
+command -v "$EB_CMD" >/dev/null 2>&1 || error "Elastic Beanstalk CLI(eb)가 설치되어 있지 않습니다: $EB_CMD"
 
 restore_backend_node_modules() {
   if [[ -d "$BACKEND_NODE_MODULES_BACKUP_DIR" && ! -d "$BACKEND_NODE_MODULES_DIR" ]]; then
@@ -171,7 +173,15 @@ fi
 
 if [[ -n "$ENV_HASH" && "$ENV_HASH" != "$PREV_ENV_HASH" ]]; then
   info "EBS 환경변수 변경 감지 → setenv 실행"
-  (cd "$WEB_DIR" && eb setenv "${ENV_ARGS[@]}") || error "환경변수 설정 실패"
+  
+  # CloudFormation 4KB 제한 때문에 환경변수를 배치로 나누어 설정
+  BATCH_SIZE=50
+  for ((i=0; i<${#ENV_ARGS[@]}; i+=BATCH_SIZE)); do
+    BATCH=("${ENV_ARGS[@]:$i:$BATCH_SIZE}")
+    info "환경변수 배치 설정 ($((i/BATCH_SIZE + 1))/$((${#ENV_ARGS[@]}/BATCH_SIZE + 1)))"
+    (cd "$WEB_DIR" && "$EB_CMD" setenv "${BATCH[@]}") || error "환경변수 설정 실패 (배치 $((i/BATCH_SIZE + 1)))"
+  done
+  
   printf '%s' "$ENV_HASH" > "$ENV_HASH_FILE"
 else
   info "EBS 환경변수 변경 없음 → setenv 스킵"
@@ -190,7 +200,7 @@ if [[ -d "$FRONTEND_NODE_MODULES_DIR" ]]; then
   mv "$FRONTEND_NODE_MODULES_DIR" "$FRONTEND_NODE_MODULES_BACKUP_DIR"
 fi
 
-(cd "$WEB_DIR" && eb deploy --label "$TIMESTAMP" --message "Deploy $TIMESTAMP ($ENV_MODE)") || error "eb deploy 실패"
+(cd "$WEB_DIR" && "$EB_CMD" deploy --label "$TIMESTAMP" --message "Deploy $TIMESTAMP ($ENV_MODE)") || error "eb deploy 실패"
 
 restore_backend_node_modules
 

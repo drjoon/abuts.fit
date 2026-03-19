@@ -280,6 +280,7 @@ const buildPackingLabelZpl = (payload) => {
   const SELLER_ADDR = process.env.PACK_SELLER_ADDR;
   const SELLER_TEL = process.env.PACK_SELLER_TEL;
   const MANUAL_QR_LABEL = process.env.PACK_MANUAL_QR_LABEL;
+  const MANUFACTURER_LABEL = "제조업자";
 
   const qrProductData = safeText(
     JSON.stringify({
@@ -627,19 +628,30 @@ const requireSecret = (req, res) => {
 };
 
 const server = http.createServer(async (req, res) => {
-  if (!req.url) {
-    return jsonResponse(res, 400, { success: false, message: "Invalid URL" });
+  try {
+    if (!req.url) {
+      return jsonResponse(res, 400, { success: false, message: "Invalid URL" });
+    }
+
+    if (req.method === "OPTIONS") {
+      return jsonResponse(res, 204, { success: true });
+    }
+
+    if (!requireIpAllowed(req, res)) return;
+
+    if (!requireSecret(req, res)) return;
+
+    log("request", { method: req.method, url: req.url });
+  } catch (error) {
+    log("request-handler-error", {
+      message: error.message,
+      stack: error.stack,
+    });
+    return jsonResponse(res, 500, {
+      success: false,
+      message: "Internal server error",
+    });
   }
-
-  if (req.method === "OPTIONS") {
-    return jsonResponse(res, 204, { success: true });
-  }
-
-  if (!requireIpAllowed(req, res)) return;
-
-  if (!requireSecret(req, res)) return;
-
-  log("request", { method: req.method, url: req.url });
 
   if (req.url === "/health" && req.method === "GET") {
     return jsonResponse(res, 200, {
@@ -781,6 +793,24 @@ const server = http.createServer(async (req, res) => {
   return jsonResponse(res, 404, { success: false, message: "Not Found" });
 });
 
+server.on("error", (err) => {
+  log("server-error", { message: err.message, code: err.code });
+  console.error("[pack-server] server error:", err);
+  process.exit(1);
+});
+
+process.on("uncaughtException", (err) => {
+  log("uncaught-exception", { message: err.message, stack: err.stack });
+  console.error("[pack-server] uncaught exception:", err);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  log("unhandled-rejection", { reason: String(reason) });
+  console.error("[pack-server] unhandled rejection:", reason);
+});
+
 server.listen(PORT, () => {
+  log("server-started", { port: PORT, allowOrigin: ALLOW_ORIGIN });
   console.log(`Pack print server running on http://localhost:${PORT}`);
 });

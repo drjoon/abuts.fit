@@ -40,6 +40,7 @@ import sys
 from pathlib import Path
 import subprocess
 import os
+import shlex
 
 env_path = Path(sys.argv[1])
 env_name = sys.argv[2]
@@ -99,12 +100,62 @@ max_len = 4096
 safe_threshold = max_len - 200
 
 if payload_len > max_len:
-    print(f"[ERROR] 환경변수 문자열 길이({payload_len}b)가 CloudFormation 한계({max_len}b)를 초과했습니다.", file=sys.stderr)
-    sys.exit(1)
+    print(f"[WARN] 단일 전송 시 CloudFormation 한계({max_len}b)를 초과할 수 있어 분할 전송을 사용합니다.")
 elif payload_len > safe_threshold:
     print(f"[WARN] 환경변수 문자열 길이({payload_len}b)가 한계에 근접했습니다.")
 else:
     print(f"[INFO] 환경변수 문자열 길이: {payload_len}b (한계 {max_len}b)")
 
-subprocess.run(["eb", "setenv", *pairs, "--environment", env_name], check=True)
+# 1) 현재 환경변수 조회 후, 불필요 키 제거(값 비우기)
+try:
+    print("[INFO] 기존 환경변수 조회: eb printenv")
+    out = subprocess.check_output(["eb", "printenv", "--environment", env_name], text=True)
+    current_lines = [ln.strip() for ln in out.splitlines() if ln.strip() and '=' in ln]
+    current_pairs = [ln for ln in current_lines if not ln.startswith('#')]
+    current_keys = set([ln.split('=', 1)[0].strip() for ln in current_pairs])
+except subprocess.CalledProcessError as e:
+    print("[WARN] 기존 환경변수를 가져오지 못했습니다. 건너뜁니다.")
+    current_keys = set()
+
+new_keys = set([p.split('=', 1)[0] for p in pairs])
+stale_keys = sorted(list(current_keys - new_keys))
+
+def chunk_and_apply(items, label="setenv"):
+    if not items:
+        return
+    batch = []
+    batch_len = 0
+    # 보수적으로 3000바이트 임계로 분할
+    limit = 3000
+    def flush():
+        if not batch:
+            return
+        print(f"[INFO] eb {label} 배치 전송: {len(batch)}개")
+        cmd = ["eb", "setenv", *batch, "--environment", env_name]
+        # 디버그용 요약 출력
+        preview = ' '.join([mask_pair(x) for x in batch[:3]])
+        if len(batch) > 3:
+            preview += f" ...(+{len(batch)-3})"
+        print(f"        → {preview}")
+        subprocess.run(cmd, check=True)
+    for it in items:
+        add_len = len(it) + 1  # comma/space 여유
+        if batch and (batch_len + add_len) > limit:
+            flush()
+            batch = []
+            batch_len = 0
+        batch.append(it)
+        batch_len += add_len
+    flush()
+
+# 먼저 불필요한 키 제거 (KEY= 형태)
+if stale_keys:
+    print(f"[INFO] 제거 대상 키 수: {len(stale_keys)}")
+    removals = [f"{k}=" for k in stale_keys]
+    chunk_and_apply(removals, label="unsetenv")
+else:
+    print("[INFO] 제거할 기존 키 없음")
+
+# 다음으로 새 변수들을 분할 전송
+chunk_and_apply(pairs, label="setenv")
 PY

@@ -37,6 +37,8 @@ function Get-NssmPath {
     $fromPath = (where.exe nssm 2>$null | Select-Object -First 1)
     if ($fromPath) { return $fromPath }
   } catch {}
+  
+  Write-Warning "NSSM not found in standard locations. Searched: $($candidates -join ', ')"
   return $Current
 }
 
@@ -132,22 +134,41 @@ switch ($Action) {
 
     try { & $NssmPath stop $ServiceName 2>$null | Out-Null } catch {}
     try { & $NssmPath remove $ServiceName confirm 2>$null | Out-Null } catch {}
+    
+    Write-Host "Installing service with NSSM..."
     & $NssmPath install $ServiceName $NodePath "app.js" | Out-Null
     & $NssmPath set $ServiceName AppDirectory $scriptDir | Out-Null
-    & $NssmPath reset $ServiceName AppStdout | Out-Null
-    & $NssmPath reset $ServiceName AppStderr | Out-Null
-    & $NssmPath reset $ServiceName AppRotateFiles | Out-Null
-    & $NssmPath reset $ServiceName AppRotateOnline | Out-Null
-    & $NssmPath reset $ServiceName AppRotateBytes | Out-Null
+    
+    # Set up logging
+    $stdoutLog = Join-Path $logDir "stdout.log"
+    $stderrLog = Join-Path $logDir "stderr.log"
+    & $NssmPath set $ServiceName AppStdout $stdoutLog | Out-Null
+    & $NssmPath set $ServiceName AppStderr $stderrLog | Out-Null
+    & $NssmPath set $ServiceName AppRotateFiles 1 | Out-Null
+    & $NssmPath set $ServiceName AppRotateOnline 1 | Out-Null
+    & $NssmPath set $ServiceName AppRotateBytes 1048576 | Out-Null
+    
     & $NssmPath set $ServiceName AppExit Default Restart | Out-Null
     & $NssmPath set $ServiceName AppThrottle 2000 | Out-Null
     & $NssmPath set $ServiceName Start SERVICE_AUTO_START | Out-Null
     & $NssmPath set $ServiceName AppRestartDelay 5000 | Out-Null
+    
+    Write-Host "Starting service..."
     & $NssmPath start $ServiceName | Out-Null
+    
+    Start-Sleep -Seconds 2
+    
     $status = & $NssmPath status $ServiceName
     Write-Host "Service '$ServiceName' installed. Status: $status"
+    
     if ($status -notmatch "SERVICE_RUNNING") {
       Write-Warning "Service is not running. Check application logs for details."
+      Write-Host "STDOUT Log: $stdoutLog"
+      Write-Host "STDERR Log: $stderrLog"
+      if (Test-Path $stderrLog) {
+        Write-Host "--- STDERR Content ---"
+        Get-Content $stderrLog -Tail 20
+      }
     }
   }
   "remove" {
