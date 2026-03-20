@@ -301,6 +301,57 @@ private static readonly Dictionary<string, MachineState> MachineStates
 = new Dictionary<string, MachineState>(StringComparer.OrdinalIgnoreCase);
 private static Timer _timer;
 private static int _tickRunning = 0;
+public static void ResetStartBackoff(string machineId)
+{
+if (string.IsNullOrWhiteSpace(machineId)) return;
+lock (StateLock)
+{
+if (MachineStates.TryGetValue(machineId, out var state))
+{
+state.LastStartFailJobId = null;
+state.StartFailCount = 0;
+state.NextStartAttemptUtc = DateTime.MinValue;
+Console.WriteLine("[CncMachining] start backoff reset machine={0}", machineId);
+}
+}
+}
+public static void ResetIdleStateForQueueRefresh(string machineId)
+{
+if (string.IsNullOrWhiteSpace(machineId)) return;
+lock (StateLock)
+{
+if (MachineStates.TryGetValue(machineId, out var state))
+{
+state.PendingConsumeJobId = null;
+state.ConsumeFailCount = 0;
+state.NextConsumeAttemptUtc = DateTime.MinValue;
+state.CurrentJob = null;
+state.IsRunning = false;
+state.AwaitingStart = false;
+state.SawBusy = false;
+state.MockCompletionDueUtc = DateTime.MinValue;
+state.StartedAtUtc = DateTime.MinValue;
+Console.WriteLine("[CncMachining] idle state reset for queue refresh machine={0}", machineId);
+}
+}
+}
+public static void TriggerProcessNow(string machineId)
+{
+var mid = (machineId ?? string.Empty).Trim();
+if (string.IsNullOrEmpty(mid)) return;
+_ = Task.Run(async () =>
+{
+try
+{
+Console.WriteLine("[CncMachining] immediate process trigger machine={0}", mid);
+await ProcessMachine(mid);
+}
+catch (Exception ex)
+{
+Console.WriteLine("[CncMachining] immediate process trigger failed machine={0} err={1}", mid, ex.Message);
+}
+});
+}
 public static void Start()
 {
 if (_timer != null) return;
@@ -430,6 +481,12 @@ Interlocked.Exchange(ref _tickRunning, 0);
 }
 private static async Task ProcessMachine(string machineId)
 {
+var mid = (machineId ?? string.Empty).Trim();
+if (string.IsNullOrEmpty(mid))
+{
+Console.WriteLine("[CncMachining] ProcessMachine early return: empty machineId");
+return;
+}
 MachineState state;
 lock (StateLock)
 {
@@ -452,61 +509,58 @@ MockCompletionDueUtc = DateTime.MinValue,
 MachineStates[machineId] = state;
 }
 }
-// 완료 후 consume(SSOT 큐 제거) 재시도 중이면 먼저 처리한다.
-// (consume 성공 전에는 동일 job 재시작을 막는다.)
+
 if (!string.IsNullOrEmpty(state.PendingConsumeJobId))
 {
-    var nowUtc = DateTime.UtcNow;
-    if (nowUtc < state.NextConsumeAttemptUtc)
-    {
-        return;
-    }
-    if (await TryConsumeBackendQueueJob(machineId, state.PendingConsumeJobId))
-    {
-        lock (StateLock)
-        {
-            state.PendingConsumeJobId = null;
-            state.ConsumeFailCount = 0;
-            state.NextConsumeAttemptUtc = DateTime.MinValue;
-            state.CurrentJob = null;
-            state.IsRunning = false;
-            state.AwaitingStart = false;
-            state.SawBusy = false;
-            state.MockCompletionDueUtc = DateTime.MinValue;
-        }
-        ForceSyncQueueFromBackend(machineId);
-    }
-    else
-    {
-        lock (StateLock)
-        {
-            state.ConsumeFailCount = Math.Min(10, state.ConsumeFailCount + 1);
-            var delaySec = Math.Min(60, 2 * state.ConsumeFailCount);
-            state.NextConsumeAttemptUtc = DateTime.UtcNow.AddSeconds(delaySec);
-        }
-    }
-    return;
+var nowUtc = DateTime.UtcNow;
+if (nowUtc < state.NextConsumeAttemptUtc)
+{
+return;
 }
-// 슬롯 동기화 폴링은 하지 않는다. (항상 O4000만 사용)
-// 1. 현재 가공 중인지 확인
+if (await TryConsumeBackendQueueJob(machineId, state.PendingConsumeJobId))
+{
+lock (StateLock)
+{
+state.PendingConsumeJobId = null;
+state.ConsumeFailCount = 0;
+state.NextConsumeAttemptUtc = DateTime.MinValue;
+state.CurrentJob = null;
+state.IsRunning = false;
+state.AwaitingStart = false;
+state.SawBusy = false;
+state.MockCompletionDueUtc = DateTime.MinValue;
+}
+ForceSyncQueueFromBackend(machineId);
+}
+else
+{
+lock (StateLock)
+{
+state.ConsumeFailCount = Math.Min(10, state.ConsumeFailCount + 1);
+var delaySec = Math.Min(60, 2 * state.ConsumeFailCount);
+state.NextConsumeAttemptUtc = DateTime.UtcNow.AddSeconds(delaySec);
+}
+}
+return;
+}
+
 if (state.IsRunning)
 {
-// tick notify (bridge -> backend) throttled
 try
 {
-    var nowUtcSnapshot = DateTime.UtcNow;
-    var shouldTick = state.CurrentJob != null && (state.LastTickNotifyAtUtc == DateTime.MinValue || (nowUtcSnapshot - state.LastTickNotifyAtUtc) >= TimeSpan.FromSeconds(1));
-    if (shouldTick)
-    {
-        lock (StateLock)
-        {
-            state.LastTickNotifyAtUtc = nowUtcSnapshot;
-        }
-        _ = Task.Run(async () => await NotifyMachiningTick(state.CurrentJob, machineId, "RUNNING", null));
-    }
+var nowUtcSnapshot = DateTime.UtcNow;
+var shouldTick = state.CurrentJob != null && (state.LastTickNotifyAtUtc == DateTime.MinValue || (nowUtcSnapshot - state.LastTickNotifyAtUtc) >= TimeSpan.FromSeconds(1));
+if (shouldTick)
+{
+lock (StateLock)
+{
+state.LastTickNotifyAtUtc = nowUtcSnapshot;
+}
+_ = Task.Run(async () => await NotifyMachiningTick(state.CurrentJob, machineId, "RUNNING", null));
+}
 }
 catch { }
-// Alarm(Mode1) 기반 실패 감지 (알람이 1개 이상이면 실패로 간주)
+
 if (state.CurrentJob != null)
 {
 if (!Config.MockCncMachining)
@@ -552,7 +606,7 @@ Console.WriteLine("[CncMachining] alarm read failed machine={0} err={1}", machin
 }
 }
 }
-// 가공 완료 체크
+
 var nowUtc = DateTime.UtcNow;
 var mockDone = false;
 if (Config.MockCncMachining)
@@ -582,7 +636,8 @@ _ = Task.Run(() => NotifyMachiningCompleted(state.CurrentJob, machineId));
 ForceSyncQueueFromBackend(machineId);
 return;
 }
-// 1.5) 프로그램은 올려놨지만 실제 busy 시작 전인 상태
+}
+
 if (state.AwaitingStart && state.CurrentJob != null)
 {
 if (!Config.MockCncMachining)
@@ -644,7 +699,7 @@ return;
 }
 return;
 }
-// 2. Idle 상태: 새 작업 시작
+
 try
 {
 await SyncQueueFromBackend(machineId, true);
@@ -680,8 +735,6 @@ return;
 var started = await StartNewJob(machineId, state, nextJob);
 if (started)
 {
-// 로컬에서는 시작된 job을 큐에서 제거해서 재시작을 막는다.
-// 백엔드 SSOT 큐 제거는 완료 시점에 수행한다.
 _ = CncJobQueue.TryRemove(machineId, nextJob.id);
 lock (StateLock)
 {
@@ -692,7 +745,6 @@ state.NextStartAttemptUtc = DateTime.MinValue;
 }
 else
 {
-// 시작 실패: SSOT(백엔드) 큐는 유지. 브리지에서만 백오프로 재시도한다.
 Console.WriteLine("[CncMachining] start failed (will retry) machine={0} jobId={1} file={2}",
 machineId,
 nextJob.id,
@@ -704,7 +756,6 @@ state.LastStartFailJobId = nextJob.id;
 state.StartFailCount = Math.Min(10, state.StartFailCount + 1);
 var delaySec = Math.Min(60, 2 * state.StartFailCount);
 state.NextStartAttemptUtc = DateTime.UtcNow.AddSeconds(delaySec);
-}
 }
 }
 }
@@ -748,18 +799,6 @@ private static async Task<bool> StartNewJob(string machineId, MachineState state
 {
 try
 {
-    try
-    {
-        var envMock = (Environment.GetEnvironmentVariable("MOCK_CNC_MACHINING_ENABLED") ?? string.Empty).Trim();
-        Console.WriteLine(
-            "[CncMachining] start check machine={0} jobId={1} Config.MockCncMachining={2} env.MOCK_CNC_MACHINING_ENABLED={3}",
-            machineId,
-            job?.id,
-            Config.MockCncMachining,
-            string.IsNullOrEmpty(envMock) ? "(empty)" : envMock
-        );
-    }
-    catch { }
 // MOCK 모드: 장비 호출을 모두 건너뛰고 성공 처리
 if (Config.MockCncMachining)
 {
@@ -900,14 +939,17 @@ state.StartedAtUtc = DateTime.MinValue;
 state.ProductCountBefore = 0;
 state.SawBusy = false;
 }
-    // 원격 가공 허용(allowJobStart/allowRemoteStart)이 true이고,
-    // 자동 가공 플래그(allowAutoMachining)가 true일 때만 자동 Start 신호를 보낸다.
+    // 정책 구분:
+    // - allowAutoMachining: 작업 페이지 의뢰건 자동 가공 허용 플래그
+    // - allowJobStart: 장비 페이지 수동/샘플 가공 시작 허용 플래그
+    // 의뢰건 자동 가공 경로는 allowJobStart에 의해 막히면 안 되므로,
+    // 브리지의 자동 Start 신호는 allowAutoMachining 기준으로만 판단한다.
     var flags = await GetMachineFlagsFromBackend(machineId);
     var allowRemoteStart = flags != null && flags.AllowJobStart;
     var allowAutoStart = flags != null && flags.AllowAutoMachining;
     Console.WriteLine("[CncMachining] flags check machine={0} jobId={1} allowRemoteStart={2} allowAutoStart={3} flagsNull={4}", 
         machineId, job?.id, allowRemoteStart, allowAutoStart, flags == null);
-    if (allowRemoteStart && allowAutoStart)
+    if (allowAutoStart)
     {
         if (!TryStartSignal(machineId, out var startErr))
         {
@@ -916,10 +958,6 @@ state.SawBusy = false;
             return false;
         }
         Console.WriteLine("[CncMachining] start signal sent machine={0}", machineId);
-    }
-    else if (!allowRemoteStart)
-    {
-        Console.WriteLine("[CncMachining] auto-start blocked (allowRemoteStart=false) machine={0} jobId={1}", machineId, job?.id);
     }
     else if (!allowAutoStart)
     {

@@ -522,9 +522,27 @@ export async function triggerNextAutoMachiningAfterComplete({
             body: JSON.stringify({ paused: false }),
           },
         );
+        invalidateBridgeFlagsCache(mid).catch(() => {});
+        try {
+          const q = await fetchBridgeQueueFromBridge(mid);
+          if (q.ok) {
+            await saveBridgeQueueSnapshot(mid, q.jobs);
+          }
+        } catch {
+          // ignore
+        }
         return;
       }
       if (found?.id) {
+        invalidateBridgeFlagsCache(mid).catch(() => {});
+        try {
+          const q = await fetchBridgeQueueFromBridge(mid);
+          if (q.ok) {
+            await saveBridgeQueueSnapshot(mid, q.jobs);
+          }
+        } catch {
+          // ignore
+        }
         return;
       }
     } catch {

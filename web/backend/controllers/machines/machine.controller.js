@@ -37,6 +37,31 @@ function ensureBridgeConfigured(res) {
   return true;
 }
 
+async function buildOfflineMachineStatusPayload() {
+  const machines = await Machine.find({}).select({ uid: 1, name: 1 }).lean();
+  const list = (Array.isArray(machines) ? machines : [])
+    .map((m) => {
+      const uid = String(m?.uid || "").trim();
+      if (!uid) return null;
+      return {
+        uid,
+        name: String(m?.name || uid).trim() || uid,
+        status: "offline",
+        currentProgram: null,
+        nextProgram: null,
+        alarms: [],
+        bridgeOffline: true,
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    success: true,
+    machines: list,
+    bridgeOffline: true,
+  };
+}
+
 // GET /api/machines - 현재 사용자(제조사/관리자)의 장비 목록
 export async function getMachines(req, res) {
   try {
@@ -71,8 +96,18 @@ export async function getAllMachineStatusProxy(req, res) {
     });
     const data = await response.json().catch(() => ({}));
 
-    if (!includeAlarms || !response.ok || data?.success === false) {
-      res.status(response.status).json(data);
+    if (!response.ok || data?.success === false) {
+      const offline = await buildOfflineMachineStatusPayload().catch(() => ({
+        success: true,
+        machines: [],
+        bridgeOffline: true,
+      }));
+      res.status(200).json(offline);
+      return;
+    }
+
+    if (!includeAlarms) {
+      res.status(200).json(data);
       return;
     }
 
@@ -120,10 +155,12 @@ export async function getAllMachineStatusProxy(req, res) {
     });
   } catch (error) {
     console.error("getAllMachineStatusProxy error", error);
-    res.status(500).json({
-      success: false,
-      message: "status proxy failed",
-    });
+    const offline = await buildOfflineMachineStatusPayload().catch(() => ({
+      success: true,
+      machines: [],
+      bridgeOffline: true,
+    }));
+    res.status(200).json(offline);
   }
 }
 
@@ -203,12 +240,32 @@ export async function getMachineStatusProxy(req, res) {
       { headers: withBridgeHeaders() },
     );
     const data = await response.json().catch(() => ({}));
-    res.status(response.status).json(data);
+    if (!response.ok || data?.success === false) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          machineId: String(uid || "").trim(),
+          status: "offline",
+          currentProgram: null,
+          nextProgram: null,
+          alarms: [],
+          bridgeOffline: true,
+        },
+      });
+    }
+    res.status(200).json(data);
   } catch (error) {
     console.error("getMachineStatusProxy error", error);
-    res.status(500).json({
-      result: -1,
-      message: "status proxy failed",
+    res.status(200).json({
+      success: true,
+      data: {
+        machineId: String(uid || "").trim(),
+        status: "offline",
+        currentProgram: null,
+        nextProgram: null,
+        alarms: [],
+        bridgeOffline: true,
+      },
     });
   }
 }
@@ -569,6 +626,11 @@ export async function upsertMachine(req, res) {
     } = req.body;
     const finalUid = uid;
     const displayName = name || finalUid;
+
+    // 정책 구분:
+    // - allowAutoMachining: 작업 페이지 의뢰건 자동 가공 허용 플래그
+    // - allowJobStart: 장비 페이지 수동/샘플 가공 시작 허용 플래그
+    // 자동 가공 ON/OFF 저장 시에는 allowJobStart를 별도 의미로 유지한다.
 
     if (!finalUid) {
       return res.status(400).json({

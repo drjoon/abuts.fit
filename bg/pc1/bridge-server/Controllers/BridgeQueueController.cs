@@ -39,6 +39,9 @@ namespace HiLinkBridgeWebApi48.Controllers
                 }
 
                 CncJobQueue.ReplaceQueue(mid, list);
+                CncMachining.ResetStartBackoff(mid);
+                CncMachining.ResetIdleStateForQueueRefresh(mid);
+                CncMachining.TriggerProcessNow(mid);
                 return Request.CreateResponse(HttpStatusCode.OK, new { success = true, data = CncJobQueue.Snapshot(mid) });
             }
             catch (Exception ex)
@@ -79,6 +82,11 @@ namespace HiLinkBridgeWebApi48.Controllers
                 if (!CncJobQueue.TrySetPaused(mid, jid, paused, out var updated) || updated == null)
                 {
                     return Request.CreateResponse(HttpStatusCode.NotFound, new { success = false, message = "job not found" });
+                }
+
+                if (!paused)
+                {
+                    CncMachining.ResetStartBackoff(mid);
                 }
 
                 return Request.CreateResponse(HttpStatusCode.OK, new { success = true, data = updated });

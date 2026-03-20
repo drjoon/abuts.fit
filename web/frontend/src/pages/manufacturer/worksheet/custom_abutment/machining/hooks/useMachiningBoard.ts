@@ -109,8 +109,11 @@ export const useMachiningBoard = ({
             name: target.name,
             ip: target.ip,
             port: target.port,
-            // 자동가공 설정은 allowAutoMachining만 변경하고,
-            // 원격가공 허용(allowJobStart)은 현재 설정을 그대로 유지한다.
+            // 정책 구분:
+            // - allowAutoMachining: 작업 페이지 의뢰건 자동 가공 허용
+            // - allowJobStart: 장비 페이지 수동/샘플 가공 시작 허용
+            // 따라서 작업 페이지 자동가공 토글은 allowAutoMachining만 변경하고,
+            // allowJobStart는 건드리지 않는다.
             allowJobStart: target.allowJobStart !== false,
             allowProgramDelete: target.allowProgramDelete === true,
             allowRequestAssign: target.allowRequestAssign !== false,

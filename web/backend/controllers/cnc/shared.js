@@ -272,7 +272,9 @@ export async function saveBridgeQueueSnapshot(machineId, jobs, options = {}) {
                 : null,
             createdAtUtc: j.createdAtUtc ? new Date(j.createdAtUtc) : null,
             source: j.source != null ? String(j.source).trim() : "",
-            paused: j.paused === true,
+            paused:
+              j.paused === true &&
+              (typeof j.priority === "number" ? j.priority : 2) === 1,
             allowAutoStart:
               j.allowAutoStart === true ||
               ((typeof j.priority === "number" ? j.priority : null) === 1 &&

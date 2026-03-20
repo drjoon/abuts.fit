@@ -285,6 +285,7 @@ export async function saveJobProgramCode(req, res) {
             "abuts-fit",
           fileSize: contentBuffer.length,
           contentType: "application/octet-stream",
+          paused: false,
         };
       },
     );
