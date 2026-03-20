@@ -213,6 +213,80 @@ export async function getMachineStatusProxy(req, res) {
   }
 }
 
+export async function getMachineInfoProxy(req, res) {
+  const { uid } = req.params;
+  try {
+    if (!ensureBridgeConfigured(res)) return;
+
+    const [statusResponse, activeProgramResponse, alarmResponse] =
+      await Promise.all([
+        fetch(
+          `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(uid)}/status`,
+          {
+            headers: withBridgeHeaders(),
+          },
+        ),
+        fetch(
+          `${BRIDGE_BASE}/api/cnc/programs/active?machines=${encodeURIComponent(uid)}`,
+          {
+            method: "GET",
+            headers: withBridgeHeaders(),
+          },
+        ),
+        fetch(
+          `${BRIDGE_BASE}/api/cnc/alarms?machines=${encodeURIComponent(uid)}&headType=1`,
+          {
+            method: "GET",
+            headers: withBridgeHeaders(),
+          },
+        ),
+      ]);
+
+    const statusBody = await statusResponse.json().catch(() => ({}));
+    const activeProgramBody = await activeProgramResponse
+      .json()
+      .catch(() => ({}));
+    const alarmBody = await alarmResponse.json().catch(() => ({}));
+
+    const status = statusBody?.data?.status ?? statusBody?.status ?? null;
+
+    const activeItem = Array.isArray(activeProgramBody?.results)
+      ? activeProgramBody.results.find(
+          (row) =>
+            String(row?.machineId || "").trim() === String(uid || "").trim(),
+        )
+      : null;
+    const activeProgram = activeItem?.data ?? null;
+
+    const alarmItem = Array.isArray(alarmBody?.results)
+      ? alarmBody.results.find(
+          (row) =>
+            String(row?.machineId || "").trim() === String(uid || "").trim(),
+        )
+      : null;
+    const alarms = Array.isArray(alarmItem?.data?.alarms)
+      ? alarmItem.data.alarms
+      : [];
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        machineId: uid,
+        status,
+        activeProgram,
+        alarms,
+      },
+    });
+  } catch (error) {
+    console.error("getMachineInfoProxy error", error);
+    return res.status(500).json({
+      success: false,
+      message: "machine info proxy failed",
+      error: error.message,
+    });
+  }
+}
+
 // POST /api/machines/:uid/alarm - 알람 조회 프록시
 export async function getMachineAlarmProxy(req, res) {
   const { uid } = req.params;

@@ -31,104 +31,39 @@ export function useCncDashboardMachineInfo({ token, toast }: Params) {
       setMachineInfoAlarms([]);
 
       try {
-        const fetchRawDirect = async (
-          dataType: string,
-          payload: any = null,
-        ) => {
-          const res = await apiFetch({
-            path: `/api/machines/${encodeURIComponent(uid)}/raw`,
-            method: "POST",
-            token,
-            jsonBody: {
-              uid,
-              dataType,
-              payload,
-              bypassCooldown: true,
-            },
-          });
-          const body = res.data ?? {};
-          if (!res.ok || (body as any)?.success === false) {
-            const msg =
-              (body as any)?.message ||
-              (body as any)?.error ||
-              `${dataType} 호출 실패 (HTTP ${res.status})`;
-            throw new Error(msg);
-          }
-          return body;
-        };
-
-        const [progMainRes, progSubRes, alarmRes] = await Promise.all([
-          fetchRawDirect("GetMachineActivateProgInfo", { headType: 1 }),
-          fetchRawDirect("GetMachineActivateProgInfo", { headType: 2 }),
-          apiFetch({
-            path: `/api/machines/${encodeURIComponent(uid)}/alarm`,
-            method: "POST",
-            token,
-            jsonBody: { headType: 1 },
-          }).then((res) => {
-            const body = res.data ?? {};
-            if (!res.ok || (body as any)?.success === false) {
-              const msg =
-                (body as any)?.message ||
-                (body as any)?.error ||
-                `alarm 호출 실패 (HTTP ${res.status})`;
-              throw new Error(msg);
-            }
-            return body;
-          }),
-        ]);
-
-        const pickProg = (res: any) => {
-          const raw = res && (res.data ?? res);
-          const data = raw?.data ?? raw;
-          return (
-            data?.machineCurrentProgInfo ??
-            (data &&
-            (data.mainProgramName ||
-              data.subProgramName ||
-              data.MainProgramName ||
-              data.SubProgramName)
-              ? {
-                  mainProgramName:
-                    data.mainProgramName ?? data.MainProgramName ?? null,
-                  mainProgramComment:
-                    data.mainProgramComment ?? data.MainProgramComment ?? null,
-                  subProgramName:
-                    data.subProgramName ?? data.SubProgramName ?? null,
-                  subProgramComment:
-                    data.subProgramComment ?? data.SubProgramComment ?? null,
-                }
-              : null)
-          );
-        };
-
-        const mainInfo = pickProg(progMainRes);
-        const subInfo = pickProg(progSubRes);
-
-        const curInfo = {
-          mainProgramName: mainInfo?.mainProgramName ?? null,
-          mainProgramComment: mainInfo?.mainProgramComment ?? null,
-          subProgramName:
-            subInfo?.subProgramName ?? subInfo?.mainProgramName ?? null,
-          subProgramComment:
-            subInfo?.subProgramComment ?? subInfo?.mainProgramComment ?? null,
-        };
-
-        const hasAny =
-          curInfo.mainProgramName ||
-          curInfo.subProgramName ||
-          mainInfo ||
-          subInfo;
-        if (!hasAny) {
+        const res = await apiFetch({
+          path: `/api/machines/${encodeURIComponent(uid)}/info`,
+          method: "GET",
+          token,
+        });
+        const body: any = res.data ?? {};
+        if (!res.ok || body?.success === false) {
           throw new Error(
-            "GetMachineActivateProgInfo 응답이 비어있습니다.(프록시/브리지 설정 확인)",
+            body?.message ||
+              body?.error ||
+              `장비 정보 조회 실패 (HTTP ${res.status})`,
           );
         }
-        setMachineInfoProgram(curInfo);
 
-        const a = (alarmRes && (alarmRes.data ?? alarmRes)) as any;
-        const list = a?.alarms;
-        setMachineInfoAlarms(Array.isArray(list) ? list : []);
+        const data = body?.data ?? {};
+        const active = data?.activeProgram ?? null;
+        const curInfo = active
+          ? {
+              mainProgramName:
+                active?.MainProgramName ?? active?.mainProgramName ?? null,
+              mainProgramComment:
+                active?.MainProgramComment ??
+                active?.mainProgramComment ??
+                null,
+              subProgramName:
+                active?.SubProgramName ?? active?.subProgramName ?? null,
+              subProgramComment:
+                active?.SubProgramComment ?? active?.subProgramComment ?? null,
+            }
+          : null;
+
+        setMachineInfoProgram(curInfo);
+        setMachineInfoAlarms(Array.isArray(data?.alarms) ? data.alarms : []);
       } catch (e: any) {
         setMachineInfoError(e?.message ?? "알 수 없는 오류");
       } finally {
