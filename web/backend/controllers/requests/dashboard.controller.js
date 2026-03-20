@@ -16,7 +16,6 @@ import {
   getLast30DaysRangeUtc,
   normalizeKoreanBusinessDay,
 } from "./utils.js";
-import { computeShippingPriority } from "./shippingPriority.utils.js";
 import {
   getRequestPerfCacheValue,
   setRequestPerfCacheValue,
@@ -757,11 +756,12 @@ export async function getMyDashboardSummary(req, res) {
             .sort({ createdAt: -1 })
             .limit(10)
             .lean(),
-          getRequestorDashboardRiskSummaryData({
-            businessAnchorId,
-            periodKey: period,
+          getDashboardRiskSummaryData({
+            cacheKey: `dashboard-risk-summary:requestor:${businessAnchorId}:${String(period)}`,
             riskRequestFilter,
             debug,
+            role: "requestor",
+            populateRelated: false,
           }),
         ]);
 
