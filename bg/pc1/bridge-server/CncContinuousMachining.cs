@@ -1095,18 +1095,56 @@ private static bool TryGetMachineAlarms(string machineId, out List<object> alarm
     error = null;
     try
     {
-        if (!Mode1Api.TryGetMachineAlarmInfo(machineId, 1, out var info, out var err))
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var headTypes = new short[] { 1, 2 };
+        string lastErr = null;
+        var anySuccess = false;
+
+        foreach (var headType in headTypes)
         {
-            error = err;
-            return false;
-        }
-        if (info.alarmArray != null)
-        {
+            if (!Mode1Api.TryGetMachineAlarmInfo(machineId, headType, out var info, out var err))
+            {
+                lastErr = err;
+                Console.WriteLine("[CncMachining] alarm read failed machine={0} headType={1} err={2}", machineId, headType, err);
+                continue;
+            }
+
+            anySuccess = true;
+            var count = info.alarmArray != null ? info.alarmArray.Length : 0;
+            Console.WriteLine("[CncMachining] alarm read ok machine={0} headType={1} count={2}", machineId, headType, count);
+
+            if (info.alarmArray == null) continue;
+
             foreach (var a in info.alarmArray)
             {
-                alarms.Add(new { type = a.type, no = a.no });
+                var key = string.Format("{0}:{1}", a.type, a.no);
+                if (!seen.Add(key)) continue;
+                alarms.Add(new { type = a.type, no = a.no, headType = headType });
             }
         }
+
+        if (!anySuccess)
+        {
+            error = lastErr;
+            return false;
+        }
+
+        if (alarms.Count == 0)
+        {
+            if (Mode1Api.TryGetMachineStatus(machineId, out var status, out var statusErr))
+            {
+                if (status == MachineStatusType.Alarm)
+                {
+                    Console.WriteLine("[CncMachining] alarm fallback by machine status machine={0} status={1}", machineId, status);
+                    alarms.Add(new { type = (short)(-1), no = (short)(-1), headType = (short)1, source = "MachineStatusType.Alarm" });
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(statusErr))
+            {
+                Console.WriteLine("[CncMachining] alarm status fallback read failed machine={0} err={1}", machineId, statusErr);
+            }
+        }
+
         return true;
     }
     catch (Exception ex)
