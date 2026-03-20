@@ -51,7 +51,7 @@ export const MailboxGrid = ({
   const [selectedGroupIdx, setSelectedGroupIdx] = useState(0);
   const [isRequestingPickup, setIsRequestingPickup] = useState(false);
   const [activeHeaderAction, setActiveHeaderAction] = useState<
-    "print" | "pickup" | null
+    "print" | "pickup" | "mock" | null
   >(null);
   const [failedMailboxes, setFailedMailboxes] = useState<Set<string>>(
     new Set(),
@@ -452,6 +452,53 @@ export const MailboxGrid = ({
       toast({
         title: modifyOnly ? "운송장 재출력 실패" : "운송장 출력 실패",
         description: resolveHanjinFailureMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setIsRequestingPickup(false);
+      setActiveHeaderAction(null);
+    }
+  };
+
+  const handleMockPickupComplete = async () => {
+    const mailboxAddresses = Array.from(
+      new Set(
+        occupiedAddresses
+          .map((address) => String(address || "").trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (!mailboxAddresses.length) {
+      toast({
+        title: "MOCK 집하 대상 없음",
+        description: "집하 완료로 반영할 우편함이 없습니다.",
+      });
+      return;
+    }
+
+    setIsRequestingPickup(true);
+    setActiveHeaderAction("mock");
+    try {
+      const response = await request<any>({
+        path: "/api/requests/shipping/hanjin/mock-pickup-complete",
+        method: "POST",
+        jsonBody: { mailboxAddresses },
+      });
+      const body = response.data as any;
+      if (!response.ok || !body?.success) {
+        throw new Error(body?.message || "MOCK 집하 처리에 실패했습니다.");
+      }
+
+      toast({
+        title: "MOCK 집하 완료",
+        description: `${Number(body?.data?.pickedUpCount || 0)}개 우편함을 집하 완료로 반영했습니다.`,
+      });
+    } catch (error) {
+      toast({
+        title: "MOCK 집하 실패",
+        description:
+          error instanceof Error ? error.message : "MOCK 집하에 실패했습니다.",
         variant: "destructive",
       });
     } finally {
@@ -994,6 +1041,16 @@ export const MailboxGrid = ({
       variant: "white" as const,
       onClick: () => {
         void handleTemporaryReset();
+      },
+    },
+    {
+      label: "MOCK 집하",
+      loading: activeHeaderAction === "mock" && isRequestingPickup,
+      loadingLabel: "집하 중...",
+      disabled: !hasAnyOccupiedMailbox,
+      variant: "white" as const,
+      onClick: () => {
+        void handleMockPickupComplete();
       },
     },
   ];

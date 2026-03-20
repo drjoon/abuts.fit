@@ -48,13 +48,13 @@ export const normalizeTrackingEvents = (events) => {
 };
 
 export const isTrackingStageEligible = (deliveryInfo) => {
-  const deliveredAt = deliveryInfo?.deliveredAt
-    ? new Date(deliveryInfo.deliveredAt)
+  const pickedUpAt = deliveryInfo?.pickedUpAt
+    ? new Date(deliveryInfo.pickedUpAt)
     : null;
-  if (deliveredAt && !Number.isNaN(deliveredAt.getTime())) return true;
+  if (pickedUpAt && !Number.isNaN(pickedUpAt.getTime())) return true;
 
   const code = String(deliveryInfo?.tracking?.lastStatusCode || "").trim();
-  return ["11", "14", "31", "32", "63", "66", "92"].includes(code);
+  return code === "11";
 };
 
 export const buildTrackingStatusLabel = (deliveryInfo) => {

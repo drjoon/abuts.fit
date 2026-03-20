@@ -118,8 +118,6 @@ export const TrackingInquiryPage = () => {
   const onScrollRef = useRef<(() => void) | null>(null);
   const [loading, setLoading] = useState(false);
   const [syncingTracking, setSyncingTracking] = useState(false);
-  const [cancellingAll, setCancellingAll] = useState(false);
-  const [mockPickingUp, setMockPickingUp] = useState(false);
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
   const [expandedBoxes, setExpandedBoxes] = useState<Set<string>>(new Set());
   // Network pagination per stage (tracking)
@@ -735,8 +733,16 @@ export const TrackingInquiryPage = () => {
 
   const shippingRows = useMemo(() => {
     const only = baseFiltered.filter((r) => {
+      const stage = String(r.manufacturerStage || "").trim();
       const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-      return Boolean(di.trackingNumber || di.shippedAt || di.deliveredAt);
+      return (
+        stage === "추적관리" ||
+        Boolean(
+          di.pickedUpAt ||
+          di.deliveredAt ||
+          di.tracking?.lastStatusCode === "11",
+        )
+      );
     });
 
     // 우편함 단위로 그룹핑
@@ -829,99 +835,6 @@ export const TrackingInquiryPage = () => {
     });
   }, []);
 
-  const resolveCancelableMailboxAddresses = useCallback((): string[] => {
-    const prePickupRows = shippingRows.filter((row) => {
-      const di = normalizeDeliveryInfo(row.deliveryInfoRef);
-      const status = getShippingStatus(row);
-      const statusCode = Number(di?.tracking?.lastStatusCode || 0);
-      const hasPickupReservation = Boolean(
-        di.trackingNumber || di.shippedAt || di?.tracking?.lastStatusText,
-      );
-      return (
-        hasPickupReservation &&
-        !di.deliveredAt &&
-        status !== "예약취소" &&
-        (!Number.isFinite(statusCode) || statusCode < 11)
-      );
-    });
-
-    return Array.from(
-      new Set(
-        prePickupRows.flatMap((box) => {
-          const di = normalizeDeliveryInfo(box.deliveryInfoRef);
-          const trackingNumber = String(di.trackingNumber || "").trim();
-          if (!trackingNumber) return [];
-
-          // 박스의 의뢰건들에서 mailboxAddress 추출
-          const requests = (box as any)?.requests || [];
-          return requests
-            .map((req: any) => String(req?.mailboxAddress || "").trim())
-            .filter(Boolean);
-        }),
-      ),
-    );
-  }, [shippingRows]);
-
-  const cancelPickupByMailboxes = useCallback(
-    async (mailboxAddresses: string[]): Promise<string[]> => {
-      const targets = Array.from(
-        new Set(
-          mailboxAddresses
-            .map((value) => String(value || "").trim())
-            .filter(Boolean),
-        ),
-      );
-      if (!targets.length) {
-        throw new Error("취소 가능한 우편함 정보가 없습니다.");
-      }
-
-      const response = await request<any>({
-        path: "/api/requests/shipping/hanjin/pickup-cancel",
-        method: "POST",
-        jsonBody: { mailboxAddresses: targets },
-      });
-      const body = response.data as any;
-      if (!response.ok || !body?.success) {
-        throw new Error(body?.message || "택배 취소에 실패했습니다.");
-      }
-      return targets;
-    },
-    [],
-  );
-
-  const bulkCancelableMailboxes = useMemo(() => {
-    return resolveCancelableMailboxAddresses();
-  }, [resolveCancelableMailboxAddresses, shippingRows]);
-
-  const handleCancelAllPickup = useCallback(async () => {
-    if (!bulkCancelableMailboxes.length) {
-      toast({
-        title: "집하 전 취소 대상 없음",
-        description: "집하 전 취소 가능한 접수 건이 없습니다.",
-      });
-      return;
-    }
-    setCancellingAll(true);
-    try {
-      const canceled = await cancelPickupByMailboxes(bulkCancelableMailboxes);
-      toast({
-        title: "집하 전 택배 접수 취소 완료",
-        description: `${canceled.length}개 우편함 접수를 취소했습니다.`,
-      });
-    } catch (error) {
-      toast({
-        title: "집하 전 택배 접수 취소 실패",
-        description:
-          error instanceof Error
-            ? error.message
-            : "집하 전 택배 접수 취소에 실패했습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setCancellingAll(false);
-    }
-  }, [bulkCancelableMailboxes, cancelPickupByMailboxes, toast]);
-
   const handleSyncTracking = useCallback(async () => {
     if (!shippingRows.length) {
       toast({
@@ -959,87 +872,6 @@ export const TrackingInquiryPage = () => {
       setSyncingTracking(false);
     }
   }, [shippingRows, toast]);
-
-  const handleMockPickupComplete = useCallback(async () => {
-    if (!shippingRows.length) {
-      toast({
-        title: "MOCK 집하 대상 없음",
-        description: "집하 처리할 배송건이 없습니다.",
-      });
-      return;
-    }
-
-    // 박스 내 모든 의뢰건의 requestId 추출
-    const requestIds: string[] = [];
-    for (const box of shippingRows) {
-      const boxRequests = (box as any)?.requests || [];
-      for (const req of boxRequests) {
-        const rid = String(req?.requestId || "").trim();
-        if (rid) requestIds.push(rid);
-      }
-    }
-
-    if (!requestIds.length) {
-      toast({
-        title: "MOCK 집하 대상 없음",
-        description: "집하 처리할 의뢰건이 없습니다.",
-      });
-      return;
-    }
-
-    setMockPickingUp(true);
-    try {
-      const response = await request<any>({
-        path: "/api/requests/shipping/hanjin/mock-pickup-complete",
-        method: "POST",
-        jsonBody: { requestIds },
-      });
-      const body = response.data as any;
-      if (!response.ok || !body?.success) {
-        throw new Error(body?.message || "MOCK 집하 처리에 실패했습니다.");
-      }
-      toast({
-        title: "MOCK 집하 완료",
-        description: `${Number(body?.data?.pickedUpCount || 0)}건을 집하 완료로 반영했습니다.`,
-      });
-
-      // 성공 후 데이터 새로고침 - 백엔드에서 저장된 trackingNumber를 로드
-      console.log("[DEBUG] MOCK 집하 성공 - 데이터 새로고침 시작");
-      pageRef.current = 1;
-      hasMoreRef.current = true;
-      const url = new URL("/api/requests/all", window.location.origin);
-      url.searchParams.set("page", String(pageRef.current));
-      url.searchParams.set("limit", String(PAGE_LIMIT));
-      url.searchParams.set("view", "worksheet");
-      url.searchParams.set("worksheetProfile", "tracking");
-      url.searchParams.set("includeTotal", "0");
-      url.searchParams.set("includeDelivery", "1");
-      const res = await fetch(url.pathname + url.search, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const refreshBody: any = await res.json().catch(() => ({}));
-      if (res.ok && refreshBody?.success !== false) {
-        const list = Array.isArray(refreshBody?.data?.requests)
-          ? refreshBody.data.requests
-          : [];
-        setRequests(list);
-        console.log(
-          "[DEBUG] 데이터 새로고침 완료 - 새로운 의뢰건 수:",
-          list.length,
-        );
-      }
-    } catch (error) {
-      toast({
-        title: "MOCK 집하 실패",
-        description:
-          error instanceof Error ? error.message : "MOCK 집하에 실패했습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setMockPickingUp(false);
-    }
-  }, [shippingRows, toast, token, PAGE_LIMIT]);
 
   const currentRows =
     tab === "process"
@@ -1125,30 +957,6 @@ export const TrackingInquiryPage = () => {
               />
             </div>
             <div className="flex items-center gap-2">
-              {tab === "shipping" && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="px-4"
-                  onClick={handleMockPickupComplete}
-                  disabled={mockPickingUp || !shippingRows.length}
-                >
-                  {mockPickingUp ? "MOCK 집하 중..." : "MOCK 집하"}
-                </Button>
-              )}
-              {tab === "shipping" && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="px-4"
-                  onClick={handleCancelAllPickup}
-                  disabled={cancellingAll || !bulkCancelableMailboxes.length}
-                >
-                  {cancellingAll
-                    ? "집하전 택배 접수 취소 중..."
-                    : "집하전 택배 접수 취소"}
-                </Button>
-              )}
               {tab === "shipping" && (
                 <Button
                   variant="outline"
@@ -1341,9 +1149,13 @@ export const TrackingInquiryPage = () => {
                 const status = getShippingStatus(box);
                 const requestCount = (box as any)?.requestCount || 1;
                 const requests = (box as any)?.requests || [];
-                const requestIds = requests
-                  .map((r: any) => String(r?.requestId || "").trim())
-                  .filter(Boolean);
+                const firstRequest = requests[0] || {};
+                const mailboxCode = String(
+                  box.mailboxAddress || box.boxKey || "",
+                ).trim();
+                const requestorBusiness = String(
+                  firstRequest?.requestor?.business || "",
+                ).trim();
                 const boxId = String(box._id || box.trackingNumber);
                 const isExpanded = expandedBoxes.has(boxId);
 
@@ -1397,7 +1209,8 @@ export const TrackingInquiryPage = () => {
                             {status}
                           </span>
                           <span className="text-sm text-gray-600">
-                            {formatDateTime(pickedUpAt) || "-"}
+                            {mailboxCode || "-"}
+                            {requestorBusiness ? ` / ${requestorBusiness}` : ""}
                           </span>
                         </div>
                         <div className="flex items-center gap-3">
@@ -1413,7 +1226,7 @@ export const TrackingInquiryPage = () => {
 
                     {isExpanded && (
                       <div className="border-t bg-gray-50 p-4 space-y-3">
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                           <div>
                             <div className="text-xs text-gray-500 mb-1">
                               접수(발송)
@@ -1438,14 +1251,6 @@ export const TrackingInquiryPage = () => {
                               {formatDateTime(deliveredAt) || "-"}
                             </div>
                           </div>
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1">
-                              추적상태
-                            </div>
-                            <div className="text-sm font-medium">
-                              {di.tracking?.lastStatusText || "-"}
-                            </div>
-                          </div>
                         </div>
 
                         {requests.length > 0 && (
@@ -1453,7 +1258,7 @@ export const TrackingInquiryPage = () => {
                             <div className="text-xs text-gray-500 mb-2 font-medium">
                               포함된 의뢰
                             </div>
-                            <div className="space-y-1">
+                            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                               {requests.map((req: any) => {
                                 const ci: any = req.caseInfos || {};
                                 return (
@@ -1463,6 +1268,9 @@ export const TrackingInquiryPage = () => {
                                   >
                                     <div className="font-medium">
                                       {req.requestId || "-"}
+                                    </div>
+                                    <div className="text-xs text-gray-600">
+                                      {ci.clinicName || "-"}
                                     </div>
                                     <div className="text-xs text-gray-600">
                                       {ci.patientName || "-"} /{" "}
