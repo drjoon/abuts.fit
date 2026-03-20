@@ -588,6 +588,43 @@ export async function normalizeRequestForResponse(requestDoc) {
   return obj;
 }
 
+export async function normalizeWorksheetRequestForResponse(requestDoc) {
+  if (!requestDoc) return requestDoc;
+  const obj =
+    typeof requestDoc.toObject === "function"
+      ? requestDoc.toObject()
+      : { ...requestDoc };
+  const ci = obj.caseInfos || {};
+  obj.caseInfos = await normalizeCaseInfosImplantFields(ci, false);
+  normalizeProductionScheduleDiameter(obj);
+
+  if (obj?.lotNumber && typeof obj.lotNumber === "object") {
+    const valueRaw = canonicalizeLotNumberValue(obj.lotNumber.value);
+    if (valueRaw) {
+      obj.lotNumber.value = valueRaw;
+    }
+  }
+
+  const deliveryInfo =
+    obj?.deliveryInfoRef && typeof obj.deliveryInfoRef === "object"
+      ? obj.deliveryInfoRef
+      : null;
+  obj.shippingWorkflow = resolveShippingWorkflowState({
+    requestLike: obj,
+    deliveryInfo,
+  });
+  if (deliveryInfo) {
+    const deliveryMeta = deriveDeliveryMetaFields(deliveryInfo);
+    obj.wasPickedUp = deliveryMeta.wasPickedUp;
+    obj.pickupStatusCode = deliveryMeta.pickupStatusCode;
+    obj.pickupStatusText = deliveryMeta.pickupStatusText;
+    obj.pickupCanceled = deliveryMeta.pickupCanceled;
+    obj.deliveryMeta = deliveryMeta;
+  }
+
+  return obj;
+}
+
 export function ensureReviewByStageDefaults(request) {
   if (!request) return;
   request.caseInfos = request.caseInfos || {};

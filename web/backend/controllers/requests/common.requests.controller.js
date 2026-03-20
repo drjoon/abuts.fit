@@ -16,6 +16,7 @@ import {
   applyStatusMapping,
   canAccessRequestAsRequestor,
   normalizeRequestForResponse,
+  normalizeWorksheetRequestForResponse,
   ensureLotNumberForMachining,
   ensureFinishedLotNumberForPacking,
   buildRequestorOrgScopeFilter,
@@ -345,8 +346,7 @@ export async function getAllRequests(req, res) {
     if (view !== "full") {
       query = query
         .select(worksheetSelect)
-        .populate("requestor", "name business")
-        .populate("businessAnchorId", "name metadata");
+        .populate("requestor", "name business");
       if (includeDelivery) {
         // 배송 정보가 필요한 경우에만 최소 필드로 populate
         query = query.populate(
@@ -354,7 +354,6 @@ export async function getAllRequests(req, res) {
           "shippedAt pickedUpAt deliveredAt carrier trackingNumber updatedAt tracking",
         );
       }
-      // businessAnchorId는 이미 populate되므로 추가 작업 불필요
     } else {
       query = query
         .select("-messages")
@@ -366,19 +365,86 @@ export async function getAllRequests(req, res) {
     const rawRequests = await query.lean();
 
     const now = new Date();
+    const isWorksheetView = view === "worksheet";
     const requests = await Promise.all(
       rawRequests.map(async (r) => {
         const shippingPriority = await computeShippingPriority({
           request: r,
           now,
         });
-        const normalized = await normalizeRequestForResponse(r);
+        const normalized = isWorksheetView
+          ? await normalizeWorksheetRequestForResponse(r)
+          : await normalizeRequestForResponse(r);
         return {
           ...normalized,
           shippingPriority,
         };
       }),
     );
+
+    if (isWorksheetView) {
+      const requestorAnchorIds = Array.from(
+        new Set(
+          requests
+            .map((item) => {
+              const raw = item?.businessAnchorId;
+              if (!raw) return "";
+              if (typeof raw === "object" && raw?._id) {
+                return String(raw._id || "").trim();
+              }
+              return String(raw || "").trim();
+            })
+            .filter((id) => Types.ObjectId.isValid(id)),
+        ),
+      );
+
+      const businesses = requestorAnchorIds.length
+        ? await Business.find({
+            businessAnchorId: {
+              $in: requestorAnchorIds.map((id) => new Types.ObjectId(id)),
+            },
+          })
+            .select({ businessAnchorId: 1, name: 1, extracted: 1 })
+            .lean()
+        : [];
+
+      const businessMap = new Map(
+        businesses.map((row) => [String(row?.businessAnchorId || ""), row]),
+      );
+
+      for (const item of requests) {
+        const raw = item?.businessAnchorId;
+        const anchorId =
+          raw && typeof raw === "object" && raw?._id
+            ? String(raw._id || "").trim()
+            : String(raw || "").trim();
+        if (!anchorId) continue;
+
+        const requestorOrgDoc = businessMap.get(anchorId);
+        if (!requestorOrgDoc) continue;
+
+        const extracted =
+          requestorOrgDoc.extracted &&
+          typeof requestorOrgDoc.extracted === "object"
+            ? requestorOrgDoc.extracted
+            : undefined;
+        const orgName =
+          typeof requestorOrgDoc.name === "string"
+            ? requestorOrgDoc.name.trim()
+            : "";
+        const companyName =
+          typeof extracted?.companyName === "string"
+            ? extracted.companyName.trim()
+            : "";
+
+        item.business = {
+          _id: anchorId,
+          name: orgName || companyName || undefined,
+          extracted,
+        };
+        item.requestorBusinessAnchor = item.business;
+      }
+    }
 
     // 전체 의뢰 수 (요청 시에만 계산)
     const includeTotal =
