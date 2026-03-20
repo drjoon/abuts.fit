@@ -594,6 +594,10 @@ export async function normalizeWorksheetRequestForResponse(requestDoc) {
     typeof requestDoc.toObject === "function"
       ? requestDoc.toObject()
       : { ...requestDoc };
+  if (obj?.businessAnchorId && typeof obj.businessAnchorId === "object") {
+    obj.business = obj.businessAnchorId;
+    obj.requestorBusinessAnchor = obj.businessAnchorId;
+  }
   const ci = obj.caseInfos || {};
   obj.caseInfos = await normalizeCaseInfosImplantFields(ci, false);
   normalizeProductionScheduleDiameter(obj);

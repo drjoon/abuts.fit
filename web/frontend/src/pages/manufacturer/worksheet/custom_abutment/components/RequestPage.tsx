@@ -124,6 +124,9 @@ export const RequestPage = ({
           url.searchParams.set("page", String(pageRef.current));
           url.searchParams.set("limit", String(PAGE_LIMIT));
           url.searchParams.set("view", "worksheet");
+          if (tabStage === "shipping") {
+            url.searchParams.set("worksheetProfile", "shipping");
+          }
           url.searchParams.set("includeTotal", "0");
           if (tabStage === "shipping" || tabStage === "tracking") {
             url.searchParams.set("includeDelivery", "1");

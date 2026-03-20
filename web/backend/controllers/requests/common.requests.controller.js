@@ -346,11 +346,36 @@ export async function getAllRequests(req, res) {
       "manufacturerStage",
       "createdAt",
       "lotNumber",
+      "mailboxAddress",
       "businessAnchorId",
       "referenceIds",
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
+      "requestor",
+      "deliveryInfoRef",
+    ].join(" ");
+
+    const worksheetShippingSelect = [
+      "requestId",
+      "manufacturerStage",
+      "createdAt",
+      "lotNumber",
+      "mailboxAddress",
+      "shippingWorkflow",
+      "shippingLabelPrinted",
+      "businessAnchorId",
+      "referenceIds",
+      "description",
+      "caseInfos.clinicName",
+      "caseInfos.patientName",
+      "caseInfos.tooth",
+      "caseInfos.connectionDiameter",
+      "caseInfos.implantManufacturer",
+      "caseInfos.implantBrand",
+      "caseInfos.implantFamily",
+      "caseInfos.implantType",
+      "timeline.estimatedShipYmd",
       "requestor",
       "deliveryInfoRef",
     ].join(" ");
@@ -362,10 +387,19 @@ export async function getAllRequests(req, res) {
       const selectedProjection =
         view === "worksheet" && worksheetProfile === "tracking"
           ? worksheetTrackingSelect
-          : worksheetSelect;
+          : view === "worksheet" && worksheetProfile === "shipping"
+            ? worksheetShippingSelect
+            : worksheetSelect;
+      const requestorPopulateSelect =
+        view === "worksheet" && worksheetProfile === "shipping"
+          ? "name business address addressText zipCode"
+          : "name business";
       query = query
         .select(selectedProjection)
-        .populate("requestor", "name business");
+        .populate("requestor", requestorPopulateSelect);
+      if (view === "worksheet" && worksheetProfile === "shipping") {
+        query = query.populate("businessAnchorId", "name extracted");
+      }
       if (includeDelivery) {
         // 배송 정보가 필요한 경우에만 최소 필드로 populate
         query = query.populate(

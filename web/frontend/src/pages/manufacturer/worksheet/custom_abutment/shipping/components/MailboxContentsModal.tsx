@@ -105,8 +105,16 @@ export const MailboxContentsModal = ({
     (primaryRequest as any)?.requestorBusinessAnchor ||
     (primaryRequest as any)?.requestorBusinessAnchorId ||
     null;
+  const requestBusinessAnchorIdRaw =
+    (primaryRequest as any)?.businessAnchorId ||
+    (primaryRequest as any)?.requestor?.businessAnchorId ||
+    null;
   const businessAnchorId = String(
-    requestorBusinessAnchor?._id || requestorBusinessAnchor || "",
+    requestBusinessAnchorIdRaw?._id ||
+      requestBusinessAnchorIdRaw ||
+      requestorBusinessAnchor?._id ||
+      requestorBusinessAnchor ||
+      "",
   ).trim();
   const initialAddress = String(
     requestorBusinessAnchor?.extracted?.address ||
