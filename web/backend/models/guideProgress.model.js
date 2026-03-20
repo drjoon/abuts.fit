@@ -42,37 +42,12 @@ guideProgressSchema.index({ user: 1, tourId: 1 }, { unique: true });
 guideProgressSchema.statics.getDefaultSteps = (tourIdRaw) => {
   const tourId = String(tourIdRaw || "").trim();
 
-  if (tourId === "requestor-onboarding") {
-    return [
-      "requestor.account.profileImage",
-      "requestor.phone.number",
-      "requestor.phone.code",
-      "requestor.business.licenseUpload",
-      "requestor.business.companyName",
-      "requestor.business.representativeName",
-      "requestor.business.phoneNumber",
-      "requestor.business.businessNumber",
-      "requestor.business.businessType",
-      "requestor.business.businessItem",
-      "requestor.business.email",
-      "requestor.business.address",
-    ].map((stepId) => ({ stepId, status: "pending", doneAt: null }));
-  }
-
-  if (tourId === "requestor-wizard") {
+  if (tourId === "shared-onboarding-wizard") {
     return [
       "wizard.profile",
       "wizard.phone",
       "wizard.role",
       "wizard.business",
-    ].map((stepId) => ({ stepId, status: "pending", doneAt: null }));
-  }
-
-  if (tourId === "requestor-new-request") {
-    return [
-      "requestor.new_request.upload",
-      "requestor.new_request.details",
-      "requestor.new_request.shipping",
     ].map((stepId) => ({ stepId, status: "pending", doneAt: null }));
   }
 

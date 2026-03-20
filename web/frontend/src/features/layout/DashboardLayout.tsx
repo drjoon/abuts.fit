@@ -168,105 +168,31 @@ export const DashboardLayout = () => {
   const [bootstrappingAuth, setBootstrappingAuth] = useState(false);
   const [bootstrappedOnce, setBootstrappedOnce] = useState(false);
   const [sidebarProfileImage, setSidebarProfileImage] = useState<string>("");
-  const [onboardingGateLoading, setOnboardingGateLoading] = useState(false);
-  const [serverOnboardingFinished, setServerOnboardingFinished] = useState<
-    boolean | null
-  >(null);
 
   const isWizardRoute = location.pathname.startsWith("/dashboard/wizard");
   const onboardingCompleted = Boolean(user?.onboardingWizardCompleted);
   const shouldForceOnboarding =
     user?.role !== undefined &&
     ["requestor", "salesman", "manufacturer", "admin", "devops"].includes(
-      user.role,
+      user?.role,
     );
-
-  useEffect(() => {
-    if (!token) {
-      setServerOnboardingFinished(null);
-      setOnboardingGateLoading(false);
-      return;
-    }
-    if (!user || !user.id) {
-      setServerOnboardingFinished(null);
-      return;
-    }
-    if (!shouldForceOnboarding) {
-      setServerOnboardingFinished(true);
-      setOnboardingGateLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadOnboardingProgress = async () => {
-      try {
-        setOnboardingGateLoading(true);
-        const res = await apiFetch<any>({
-          path: "/api/guide-progress/requestor-onboarding",
-          method: "GET",
-          token,
-        });
-        if (cancelled) return;
-        if (!res.ok) {
-          setServerOnboardingFinished(onboardingCompleted);
-          return;
-        }
-        const body: any = res.data || {};
-        const data = body.data || body;
-        setServerOnboardingFinished(Boolean(data?.finishedAt));
-      } catch {
-        if (!cancelled) {
-          setServerOnboardingFinished(onboardingCompleted);
-        }
-      } finally {
-        if (!cancelled) {
-          setOnboardingGateLoading(false);
-        }
-      }
-    };
-
-    void loadOnboardingProgress();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [onboardingCompleted, shouldForceOnboarding, token, user]);
-
-  useEffect(() => {
-    if (!token) return;
-    const unsubscribe = onAppEvent((evt) => {
-      if (evt.type !== "guide-progress:updated") return;
-      const payload = evt.data || {};
-      if (payload?.tourId !== "requestor-onboarding") return;
-      setServerOnboardingFinished(Boolean(payload?.finishedAt));
-      setOnboardingGateLoading(false);
-    });
-    return () => {
-      unsubscribe?.();
-    };
-  }, [token]);
 
   useEffect(() => {
     if (!token) return;
     if (!user || !user.id) return;
     if (!shouldForceOnboarding) return;
     if (isWizardRoute) return;
-    if (onboardingGateLoading) return;
-    if (serverOnboardingFinished === null) return;
-    if (serverOnboardingFinished) return;
+    if (onboardingCompleted) return;
 
     navigate("/dashboard/wizard?mode=account", { replace: true });
   }, [
     isWizardRoute,
     navigate,
-    onboardingGateLoading,
-    serverOnboardingFinished,
+    onboardingCompleted,
     shouldForceOnboarding,
     token,
     user,
   ]);
-
   useEffect(() => {
     if (bootstrappedOnce) return;
     if (!token) {
@@ -604,18 +530,6 @@ export const DashboardLayout = () => {
   }
 
   if (!token || !user || !user.id) {
-    return null;
-  }
-
-  if (!isWizardRoute && shouldForceOnboarding && onboardingGateLoading) {
-    return null;
-  }
-
-  if (
-    !isWizardRoute &&
-    shouldForceOnboarding &&
-    serverOnboardingFinished === false
-  ) {
     return null;
   }
 

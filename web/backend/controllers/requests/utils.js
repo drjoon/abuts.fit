@@ -56,6 +56,43 @@ export const SHIPPING_WORKFLOW_LABELS = {
   [SHIPPING_WORKFLOW_CODES.ERROR]: "에러",
 };
 
+const __requestorOrgScopeCache = new Map();
+const __requestorOrgScopeInFlight = new Map();
+
+const getRequestorOrgScopeCached = (key) => {
+  const hit = __requestorOrgScopeCache.get(key);
+  if (!hit) return null;
+  if (typeof hit.expiresAt !== "number" || hit.expiresAt <= Date.now()) {
+    __requestorOrgScopeCache.delete(key);
+    return null;
+  }
+  return hit.value;
+};
+
+const setRequestorOrgScopeCached = (key, value, ttlMs) => {
+  __requestorOrgScopeCache.set(key, {
+    value,
+    expiresAt: Date.now() + ttlMs,
+  });
+  return value;
+};
+
+const withRequestorOrgScopeInFlight = async (key, factory) => {
+  const existing = __requestorOrgScopeInFlight.get(key);
+  if (existing) return existing;
+
+  const promise = Promise.resolve()
+    .then(factory)
+    .finally(() => {
+      if (__requestorOrgScopeInFlight.get(key) === promise) {
+        __requestorOrgScopeInFlight.delete(key);
+      }
+    });
+
+  __requestorOrgScopeInFlight.set(key, promise);
+  return promise;
+};
+
 export function resolveShippingWorkflowState({ requestLike, deliveryInfo }) {
   const saved =
     requestLike?.shippingWorkflow &&
@@ -170,31 +207,45 @@ export async function buildRequestorOrgScopeFilter(req) {
     return req._requestorOrgScopeFilter;
   }
 
-  const org = await Business.findOne({
-    businessAnchorId: new Types.ObjectId(orgId),
-  })
-    .select({ owner: 1, owners: 1, members: 1 })
-    .lean();
-
-  if (!org) {
-    req._requestorOrgScopeFilter = { requestor: req.user._id };
+  const cacheKey = `requestor-org-scope:${String(req.user?._id || "")}:${orgId}`;
+  const cached = getRequestorOrgScopeCached(cacheKey);
+  if (cached) {
+    req._requestorOrgScopeFilter = cached;
     return req._requestorOrgScopeFilter;
   }
 
-  const ownerId = String(org.owner || "");
-  const ownerIds = Array.isArray(org.owners) ? org.owners.map(String) : [];
-  const memberIdsRaw = Array.isArray(org.members) ? org.members : [];
-  const memberIds = [ownerId, ...ownerIds, ...memberIdsRaw]
-    .map((id) => String(id))
-    .filter((id) => Types.ObjectId.isValid(id));
+  const built = await withRequestorOrgScopeInFlight(cacheKey, async () => {
+    const org = await Business.findOne({
+      businessAnchorId: new Types.ObjectId(orgId),
+    })
+      .select({ owner: 1, owners: 1, members: 1 })
+      .lean();
 
-  const memberObjectIds = memberIds.map((id) => new Types.ObjectId(id));
-  req._requestorOrgScopeFilter = {
-    $or: [
-      { businessAnchorId: new Types.ObjectId(orgId) },
-      { requestor: { $in: memberObjectIds } },
-    ],
-  };
+    if (!org) {
+      return { requestor: req.user._id };
+    }
+
+    const ownerId = String(org.owner || "");
+    const ownerIds = Array.isArray(org.owners) ? org.owners.map(String) : [];
+    const memberIdsRaw = Array.isArray(org.members) ? org.members : [];
+    const memberIds = [ownerId, ...ownerIds, ...memberIdsRaw]
+      .map((id) => String(id))
+      .filter((id) => Types.ObjectId.isValid(id));
+
+    const memberObjectIds = memberIds.map((id) => new Types.ObjectId(id));
+    return {
+      $or: [
+        { businessAnchorId: new Types.ObjectId(orgId) },
+        { requestor: { $in: memberObjectIds } },
+      ],
+    };
+  });
+
+  req._requestorOrgScopeFilter = setRequestorOrgScopeCached(
+    cacheKey,
+    built,
+    60 * 1000,
+  );
   return req._requestorOrgScopeFilter;
 }
 

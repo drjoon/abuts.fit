@@ -39,6 +39,7 @@ const ESPRIT_BASE =
   "http://localhost:8001";
 
 const __myRequestsCache = new Map();
+const __myRequestsInFlight = new Map();
 
 const getMyRequestsCacheValue = (key) => {
   const hit = __myRequestsCache.get(key);
@@ -56,6 +57,22 @@ const setMyRequestsCacheValue = (key, value, ttlMs) => {
     expiresAt: Date.now() + ttlMs,
   });
   return value;
+};
+
+const withMyRequestsInFlight = async (key, factory) => {
+  const existing = __myRequestsInFlight.get(key);
+  if (existing) return existing;
+
+  const promise = Promise.resolve()
+    .then(factory)
+    .finally(() => {
+      if (__myRequestsInFlight.get(key) === promise) {
+        __myRequestsInFlight.delete(key);
+      }
+    });
+
+  __myRequestsInFlight.set(key, promise);
+  return promise;
 };
 
 const BRIDGE_PROCESS_BASE =
@@ -442,37 +459,38 @@ export async function getMyRequests(req, res) {
       sort.createdAt = -1; // 기본 정렬: 최신순
     }
 
-    const [rawRequests, total] = await Promise.all([
-      Request.find(filter)
-        .select({
-          _id: 1,
-          requestId: 1,
-          createdAt: 1,
-          title: 1,
-          description: 1,
-          manufacturerStage: 1,
-          caseInfos: 1,
-        })
-        .sort(sort)
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Request.countDocuments(filter),
-    ]);
+    const responseData = await withMyRequestsInFlight(cacheKey, async () => {
+      const [rawRequests, total] = await Promise.all([
+        Request.find(filter)
+          .select({
+            _id: 1,
+            requestId: 1,
+            createdAt: 1,
+            title: 1,
+            description: 1,
+            manufacturerStage: 1,
+            caseInfos: 1,
+          })
+          .sort(sort)
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        Request.countDocuments(filter),
+      ]);
 
-    const requests = rawRequests;
+      const built = {
+        requests: rawRequests,
+        pagination: {
+          total,
+          page,
+          limit,
+          pages: Math.ceil(total / limit),
+        },
+      };
 
-    const responseData = {
-      requests,
-      pagination: {
-        total,
-        page,
-        limit,
-        pages: Math.ceil(total / limit),
-      },
-    };
-
-    setMyRequestsCacheValue(cacheKey, responseData, 15 * 1000);
+      setMyRequestsCacheValue(cacheKey, built, 15 * 1000);
+      return built;
+    });
 
     res.status(200).json({
       success: true,

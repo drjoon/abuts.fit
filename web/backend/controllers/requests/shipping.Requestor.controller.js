@@ -23,6 +23,7 @@ import {
 } from "./shipping.Requestor.helpers.js";
 
 const __bulkShippingCache = new Map();
+const __bulkShippingInFlight = new Map();
 
 const getBulkCacheValue = (key) => {
   const hit = __bulkShippingCache.get(key);
@@ -40,6 +41,22 @@ const setBulkCacheValue = (key, value, ttlMs) => {
     expiresAt: Date.now() + ttlMs,
   });
   return value;
+};
+
+const withBulkInFlight = async (key, factory) => {
+  const existing = __bulkShippingInFlight.get(key);
+  if (existing) return existing;
+
+  const promise = Promise.resolve()
+    .then(factory)
+    .finally(() => {
+      if (__bulkShippingInFlight.get(key) === promise) {
+        __bulkShippingInFlight.delete(key);
+      }
+    });
+
+  __bulkShippingInFlight.set(key, promise);
+  return promise;
 };
 
 export async function updateMyShippingMode(req, res) {
@@ -197,8 +214,11 @@ export async function getMyBulkShipping(req, res) {
       });
     }
 
-    const data = await buildBulkShippingCandidates(req);
-    setBulkCacheValue(cacheKey, data, 15 * 1000);
+    const data = await withBulkInFlight(cacheKey, async () => {
+      const built = await buildBulkShippingCandidates(req);
+      setBulkCacheValue(cacheKey, built, 15 * 1000);
+      return built;
+    });
 
     return res.status(200).json({
       success: true,

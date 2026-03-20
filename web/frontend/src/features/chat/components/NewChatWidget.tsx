@@ -55,6 +55,7 @@ export const NewChatWidget = () => {
   useEffect(() => {
     const load = async () => {
       if (!user || !isAuthenticated) return;
+      if (!isOpen) return;
       if (supportRoomDisabled) return;
       setLoading(true);
       setError(null);
@@ -68,7 +69,7 @@ export const NewChatWidget = () => {
         if (!roomRes.ok) {
           const body: any = roomRes.data || {};
           const message = String(
-            body?.message || "지원 채팅방을 불러오지 못했습니다."
+            body?.message || "지원 채팅방을 불러오지 못했습니다.",
           );
           if ([401, 403, 404].includes(roomRes.status)) {
             setSupportRoomDisabled(true);
@@ -112,7 +113,7 @@ export const NewChatWidget = () => {
     };
 
     void load();
-  }, [supportRoomDisabled, user, isAuthenticated, token]);
+  }, [isOpen, supportRoomDisabled, user, isAuthenticated, token]);
 
   const roomId = room?._id;
   const {
@@ -131,11 +132,11 @@ export const NewChatWidget = () => {
   }, [isOpen, isMinimized, messages.length, messagesLoading]);
 
   const myIdCandidates = useMemo(() => {
-    const ids = [user?.mockUserId, user?.id]
+    const ids = [(user as any)?.mockUserId, user?.id]
       .map((x) => String(x || "").trim())
       .filter(Boolean);
     return new Set(ids);
-  }, [user?.mockUserId, user?.id]);
+  }, [(user as any)?.mockUserId, user?.id]);
 
   useEffect(() => {
     if (isOpen) return;
@@ -146,6 +147,7 @@ export const NewChatWidget = () => {
     if (!token || !isAuthenticated) return;
     if (isOpen) return;
     if (supportRoomDisabled) return;
+    if (!roomId) return;
 
     const tick = async () => {
       if (document.visibilityState !== "visible") return;
@@ -172,7 +174,7 @@ export const NewChatWidget = () => {
 
     const id = window.setInterval(tick, 60000);
     return () => window.clearInterval(id);
-  }, [token, isAuthenticated, isOpen, supportRoomDisabled]);
+  }, [roomId, token, isAuthenticated, isOpen, supportRoomDisabled]);
 
   useEffect(() => {
     const refreshRoomUnread = async () => {

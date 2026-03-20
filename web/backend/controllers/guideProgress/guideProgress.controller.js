@@ -1,10 +1,9 @@
 import GuideProgress from "../../models/guideProgress.model.js";
-import User from "../../models/user.model.js";
-import Business from "../../models/business.model.js";
 import { emitAppEventToUser } from "../../socket.js";
 
 const GUIDE_PROGRESS_EVENT = "guide-progress:updated";
 const __guideProgressCache = new Map();
+const __guideProgressInFlight = new Map();
 
 const getGuideProgressCacheValue = (key) => {
   const hit = __guideProgressCache.get(key);
@@ -22,6 +21,26 @@ const setGuideProgressCacheValue = (key, value, ttlMs) => {
     expiresAt: Date.now() + ttlMs,
   });
   return value;
+};
+
+const clearGuideProgressCacheValue = (key) => {
+  __guideProgressCache.delete(key);
+};
+
+const withGuideProgressInFlight = async (key, factory) => {
+  const existing = __guideProgressInFlight.get(key);
+  if (existing) return existing;
+
+  const promise = Promise.resolve()
+    .then(factory)
+    .finally(() => {
+      if (__guideProgressInFlight.get(key) === promise) {
+        __guideProgressInFlight.delete(key);
+      }
+    });
+
+  __guideProgressInFlight.set(key, promise);
+  return promise;
 };
 
 const emitGuideProgressUpdated = (userId, doc) => {
@@ -45,90 +64,6 @@ const recalcFinishedAt = (steps) => {
   return allDone ? new Date() : null;
 };
 
-const normalizeDigits = (input) => String(input || "").replace(/\D/g, "");
-
-const normalizeBusinessNumber = (input) => {
-  const digits = normalizeDigits(input);
-  if (digits.length !== 10) return "";
-  return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
-};
-
-const normalizePhoneNumber = (input) => {
-  const digits = normalizeDigits(input);
-  if (!digits.startsWith("0")) return "";
-  if (digits.startsWith("02")) {
-    if (digits.length === 9)
-      return `02-${digits.slice(2, 5)}-${digits.slice(5)}`;
-    if (digits.length === 10)
-      return `02-${digits.slice(2, 6)}-${digits.slice(6)}`;
-    return "";
-  }
-  if (digits.length === 10) {
-    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
-  }
-  if (digits.length === 11) {
-    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
-  }
-  return "";
-};
-
-const isValidEmail = (input) => {
-  const v = String(input || "").trim();
-  if (!v) return false;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-};
-
-const isValidAddress = (input) => String(input || "").trim().length >= 5;
-
-const computeRequestorOnboardingDoneMap = ({ user, organization }) => {
-  const done = {};
-
-  done["requestor.account.profileImage"] = Boolean(
-    String(user?.profileImage || "").trim(),
-  );
-
-  const phoneVerifiedAt = user?.phoneVerifiedAt
-    ? new Date(user.phoneVerifiedAt)
-    : null;
-  const phoneSentAt = user?.phoneVerification?.sentAt
-    ? new Date(user.phoneVerification.sentAt)
-    : null;
-
-  done["requestor.phone.number"] = Boolean(phoneVerifiedAt || phoneSentAt);
-  done["requestor.phone.code"] = Boolean(phoneVerifiedAt);
-
-  done["requestor.business.licenseUpload"] = Boolean(
-    String(organization?.businessLicense?.s3Key || "").trim() ||
-    String(organization?.businessLicense?.originalName || "").trim() ||
-    String(organization?.businessLicense?.fileId || "").trim(),
-  );
-
-  done["requestor.business.companyName"] =
-    String(organization?.name || "").trim().length >= 2;
-
-  const ex = organization?.extracted || {};
-  done["requestor.business.representativeName"] =
-    String(ex?.representativeName || "").trim().length >= 2;
-  done["requestor.business.phoneNumber"] = Boolean(
-    normalizePhoneNumber(String(ex?.phoneNumber || "").trim()),
-  );
-  done["requestor.business.businessNumber"] = Boolean(
-    normalizeBusinessNumber(String(ex?.businessNumber || "").trim()),
-  );
-  done["requestor.business.businessType"] =
-    String(ex?.businessType || "").trim().length >= 2;
-  done["requestor.business.businessItem"] =
-    String(ex?.businessItem || "").trim().length >= 2;
-  done["requestor.business.email"] = isValidEmail(
-    String(ex?.email || "").trim(),
-  );
-  done["requestor.business.address"] = isValidAddress(
-    String(ex?.address || "").trim(),
-  );
-
-  return done;
-};
-
 export async function getGuideProgress(req, res) {
   try {
     const tourId = normalizeTourId(req.params?.tourId);
@@ -149,86 +84,18 @@ export async function getGuideProgress(req, res) {
       });
     }
 
-    const doc = await GuideProgress.ensureForUser(req.user._id, tourId);
+    const responseData = await withGuideProgressInFlight(cacheKey, async () => {
+      const doc = await GuideProgress.ensureForUser(req.user._id, tourId);
 
-    if (tourId === "requestor-onboarding") {
-      const user = await User.findById(req.user._id)
-        .select({
-          profileImage: 1,
-          phoneVerifiedAt: 1,
-          phoneVerification: 1,
-          businessId: 1,
-        })
-        .lean();
-      const business = user?.businessId
-        ? await Business.findById(user.businessId)
-            .select({ name: 1, extracted: 1, businessLicense: 1 })
-            .lean()
-        : null;
-
-      const doneMap = computeRequestorOnboardingDoneMap({
-        user,
-        organization: business,
-      });
-      const defaultSteps = GuideProgress.getDefaultSteps(tourId);
-      const prevSteps = Array.isArray(doc.steps) ? doc.steps : [];
-
-      const nextSteps = defaultSteps.map((s) => {
-        const stepId = String(s?.stepId || "").trim();
-        const prev = prevSteps.find(
-          (p) => String(p?.stepId || "").trim() === stepId,
-        );
-        const isDone = Boolean(doneMap[stepId]);
-        return {
-          stepId,
-          status: isDone ? "done" : "pending",
-          doneAt: isDone ? prev?.doneAt || new Date() : null,
-        };
-      });
-
-      const nextFinishedAt = recalcFinishedAt(nextSteps);
-      const normalizedFinishedAt = nextFinishedAt
-        ? doc.finishedAt || nextFinishedAt
-        : null;
-      const prevSerialized = JSON.stringify(
-        (Array.isArray(doc.steps) ? doc.steps : []).map((step) => ({
-          stepId: String(step?.stepId || "").trim(),
-          status: String(step?.status || "pending"),
-          doneAt: step?.doneAt ? new Date(step.doneAt).toISOString() : null,
-        })),
-      );
-      const nextSerialized = JSON.stringify(
-        nextSteps.map((step) => ({
-          stepId: String(step?.stepId || "").trim(),
-          status: String(step?.status || "pending"),
-          doneAt: step?.doneAt ? new Date(step.doneAt).toISOString() : null,
-        })),
-      );
-      const prevFinishedAt = doc.finishedAt
-        ? new Date(doc.finishedAt).toISOString()
-        : null;
-      const nextFinishedAtIso = normalizedFinishedAt
-        ? new Date(normalizedFinishedAt).toISOString()
-        : null;
-
-      if (
-        prevSerialized !== nextSerialized ||
-        prevFinishedAt !== nextFinishedAtIso
-      ) {
-        doc.steps = nextSteps;
-        doc.finishedAt = normalizedFinishedAt;
-        await doc.save();
-        emitGuideProgressUpdated(req.user?._id, doc);
-      }
-    }
-
-    const responseData = {
-      tourId: doc.tourId,
-      steps: doc.steps || [],
-      finishedAt: doc.finishedAt || null,
-      updatedAt: doc.updatedAt,
-    };
-    setGuideProgressCacheValue(cacheKey, responseData, 30 * 1000);
+      const built = {
+        tourId: doc.tourId,
+        steps: doc.steps || [],
+        finishedAt: doc.finishedAt || null,
+        updatedAt: doc.updatedAt,
+      };
+      setGuideProgressCacheValue(cacheKey, built, 30 * 1000);
+      return built;
+    });
 
     return res.status(200).json({
       success: true,
@@ -311,6 +178,9 @@ export async function patchGuideStep(req, res) {
     doc.steps = normalizedSteps;
     doc.finishedAt = recalcFinishedAt(normalizedSteps);
     await doc.save();
+    clearGuideProgressCacheValue(
+      `guide-progress:${String(req.user?._id || "")}:${tourId}`,
+    );
     emitGuideProgressUpdated(req.user?._id, doc);
 
     return res.status(200).json({
@@ -345,6 +215,9 @@ export async function resetGuideProgress(req, res) {
     doc.steps = GuideProgress.getDefaultSteps(tourId);
     doc.finishedAt = null;
     await doc.save();
+    clearGuideProgressCacheValue(
+      `guide-progress:${String(req.user?._id || "")}:${tourId}`,
+    );
     emitGuideProgressUpdated(req.user?._id, doc);
 
     return res.status(200).json({

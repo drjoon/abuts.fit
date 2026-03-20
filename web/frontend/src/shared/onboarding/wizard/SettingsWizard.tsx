@@ -35,7 +35,7 @@ type BackendGuideProgress = {
   finishedAt?: string | null;
 };
 
-const WIZARD_TOUR_ID = "requestor-wizard";
+const WIZARD_TOUR_ID = "shared-onboarding-wizard";
 
 const STEP_GUIDE_IDS: Record<WizardStepId, string> = {
   profile: "wizard.profile",

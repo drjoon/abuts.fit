@@ -8,7 +8,6 @@ import { Types } from "mongoose";
 import {
   buildRequestorOrgScopeFilter,
   buildRequestorOrgFilter,
-  getDeliveryEtaLeadDays,
   normalizeCaseInfosImplantFields,
   addKoreanBusinessDays,
   getTodayYmdInKst,
@@ -101,22 +100,55 @@ const getShippingOrderCountsByBusinessAnchorIds = async ({
     ),
   );
 
-  if (!orgKeys.length) {
-    return new Map();
+  if (orgKeys.length === 0 || !startYmd || !endYmd) return new Map();
+
+  const validObjectIds = orgKeys
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+
+  const cacheKey = `shipping-order-counts:${startYmd}:${endYmd}:${orgKeys
+    .slice()
+    .sort()
+    .join(",")}`;
+  const cached = getCacheValue(cacheKey);
+  if (cached instanceof Map) {
+    return cached;
   }
 
-  const rows = await ShippingPackage.find({
-    businessAnchorId: {
-      $in: orgKeys
-        .filter((id) => Types.ObjectId.isValid(id))
-        .map((id) => new Types.ObjectId(id)),
+  const rows = await ShippingPackage.aggregate([
+    {
+      $match: {
+        businessAnchorId: { $in: orgKeys.map((id) => new Types.ObjectId(id)) },
+        shipDateYmd: { $gte: startYmd, $lte: endYmd },
+      },
     },
-    shipDateYmd: { $gte: startYmd, $lte: endYmd },
-  })
-    .select({ _id: 0, businessAnchorId: 1, requestIds: 1 })
-    .lean();
+    {
+      $unwind: {
+        path: "$requestIds",
+        preserveNullAndEmptyArrays: false,
+      },
+    },
+    {
+      $group: {
+        _id: {
+          businessAnchorId: "$businessAnchorId",
+          requestId: "$requestIds",
+        },
+      },
+    },
+    {
+      $group: {
+        _id: "$_id.businessAnchorId",
+        count: { $sum: 1 },
+      },
+    },
+  ]);
 
-  return buildShippingRequestCountByBusinessKey(rows);
+  const countMap = new Map(
+    rows.map((row) => [String(row._id || "").trim(), Number(row.count || 0)]),
+  );
+  setCacheValue(cacheKey, countMap, 60 * 1000);
+  return countMap;
 };
 
 const getRequestEstimatedShipYmd = ({ request, fallbackMap }) => {
@@ -156,9 +188,14 @@ const findReferredRequestorUsersByReferrerAnchorId = async (
 ) => {
   const businessAnchorIdStr = String(businessAnchorId || "").trim();
   if (!Types.ObjectId.isValid(businessAnchorIdStr)) return [];
+  const cacheKey = `referred-requestors:${businessAnchorIdStr}`;
+  const cached = getCacheValue(cacheKey);
+  if (Array.isArray(cached)) {
+    return cached;
+  }
   const anchorObjectId = new Types.ObjectId(businessAnchorIdStr);
 
-  return User.find({
+  const rows = await User.find({
     active: true,
     role: "requestor",
     businessAnchorId: { $exists: true, $ne: null },
@@ -175,6 +212,9 @@ const findReferredRequestorUsersByReferrerAnchorId = async (
     })
     .sort({ createdAt: -1 })
     .lean();
+
+  setCacheValue(cacheKey, rows, 60 * 1000);
+  return rows;
 };
 
 /**
@@ -662,574 +702,578 @@ export async function getMyDashboardSummary(req, res) {
       }
     }
 
-    const requestFilter = buildRequestorOrgFilter(req);
+    const responseData = await withInFlight(summaryCacheKey, async () => {
+      const requestFilter = buildRequestorOrgFilter(req);
 
-    const dateFilter = buildDateFilter(period);
+      const dateFilter = buildDateFilter(period);
 
-    // 집계 쿼리로 사업자 범위 통계와 최근 의뢰를 병렬로 조회
-    const [
-      deliveryLeadDays,
-      statsResult,
-      recentRequestsResult,
-      shippingPackageRows,
-    ] = await Promise.all([
-      getDeliveryEtaLeadDays(),
-      Request.aggregate([
-        {
-          $match: {
-            ...requestFilter,
-            ...dateFilter,
-            "caseInfos.implantBrand": { $exists: true, $ne: "" },
-          },
-        },
-        {
-          $addFields: {
-            normalizedStage: {
-              $let: {
-                vars: {
-                  stage: { $ifNull: ["$manufacturerStage", ""] },
-                },
-                in: {
-                  $switch: {
-                    branches: [
-                      {
-                        case: { $eq: ["$$stage", "취소"] },
-                        then: "cancel",
-                      },
-                      {
-                        case: {
-                          $in: ["$$stage", ["tracking", "추적관리"]],
-                        },
-                        then: "tracking",
-                      },
-                      {
-                        case: {
-                          $in: ["$$stage", ["shipping", "포장.발송"]],
-                        },
-                        then: "shipping",
-                      },
-                      {
-                        case: {
-                          $in: ["$$stage", ["packing", "세척.패킹"]],
-                        },
-                        then: "packing",
-                      },
-                      {
-                        case: {
-                          $in: ["$$stage", ["machining", "가공"]],
-                        },
-                        then: "machining",
-                      },
-                      {
-                        case: {
-                          $in: ["$$stage", ["cam", "CAM"]],
-                        },
-                        then: "cam",
-                      },
-                    ],
-                    default: "request",
-                  },
-                },
-              },
-            },
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            total: { $sum: 1 },
-            canceledCount: {
-              $sum: {
-                $cond: [{ $eq: ["$manufacturerStage", "취소"] }, 1, 0],
-              },
-            },
-            trackingCount: {
-              $sum: {
-                $cond: [{ $eq: ["$normalizedStage", "tracking"] }, 1, 0],
-              },
-            },
-            requestCount: {
-              $sum: {
-                $cond: [{ $eq: ["$normalizedStage", "request"] }, 1, 0],
-              },
-            },
-            camCount: {
-              $sum: {
-                $cond: [{ $eq: ["$normalizedStage", "cam"] }, 1, 0],
-              },
-            },
-            machiningCount: {
-              $sum: {
-                $cond: [{ $eq: ["$normalizedStage", "machining"] }, 1, 0],
-              },
-            },
-            packingCount: {
-              $sum: {
-                $cond: [{ $eq: ["$normalizedStage", "packing"] }, 1, 0],
-              },
-            },
-            shippingCount: {
-              $sum: {
-                $cond: [{ $eq: ["$normalizedStage", "shipping"] }, 1, 0],
-              },
-            },
-          },
-        },
-      ]),
-      Request.find({
+      const riskRequestFilter = {
         ...requestFilter,
-        "caseInfos.implantBrand": { $exists: true, $ne: "" },
-        manufacturerStage: { $ne: "취소" },
-      })
-        .select({
-          _id: 1,
-          requestId: 1,
-          title: 1,
-          manufacturerStage: 1,
-          createdAt: 1,
-          caseInfos: 1,
-          timeline: 1,
-          productionSchedule: 1,
-          shippingMode: 1,
-          finalShipping: 1,
-          originalShipping: 1,
-          deliveryInfoRef: 1,
-          price: 1,
-        })
-        .sort({ createdAt: -1 })
-        .limit(10)
-        .populate("requestor", "name organization")
-        .lean(),
-      Request.aggregate([
-        {
-          $match: {
-            ...requestFilter,
-            ...dateFilter,
-            "caseInfos.implantBrand": { $exists: true, $ne: "" },
-            manufacturerStage: { $ne: "취소" },
-          },
+        manufacturerStage: {
+          $in: [
+            "request",
+            "cam",
+            "machining",
+            "packing",
+            "shipping",
+            "의뢰",
+            "CAM",
+            "가공",
+            "세척.패킹",
+            "포장.발송",
+          ],
         },
-        {
-          $project: {
-            manufacturerStage: 1,
-            shippingPackageId: 1,
-          },
-        },
-        {
-          $addFields: {
-            stageBucket: {
-              $switch: {
-                branches: [
-                  {
-                    case: {
-                      $in: ["$manufacturerStage", ["tracking", "추적관리"]],
-                    },
-                    then: "tracking",
-                  },
-                  {
-                    case: {
-                      $in: ["$manufacturerStage", ["shipping", "포장.발송"]],
-                    },
-                    then: "shipping",
-                  },
-                ],
-                default: null,
-              },
-            },
-          },
-        },
-        {
-          $match: {
-            stageBucket: { $in: ["shipping", "tracking"] },
-          },
-        },
-        {
-          $group: {
-            _id: "$stageBucket",
-            productCount: { $sum: 1 },
-            packageIds: {
-              $addToSet: {
-                $cond: [
-                  {
-                    $and: [
-                      { $ne: ["$shippingPackageId", null] },
-                      { $ne: ["$shippingPackageId", ""] },
-                    ],
-                  },
-                  "$shippingPackageId",
-                  "$$REMOVE",
-                ],
-              },
-            },
-          },
-        },
-      ]),
-    ]);
-
-    const stats = statsResult[0] || {
-      total: 0,
-      canceledCount: 0,
-      trackingCount: 0,
-      requestCount: 0,
-      camCount: 0,
-      machiningCount: 0,
-      packingCount: 0,
-      shippingCount: 0,
-    };
-
-    const shippingPackageStatsMap = new Map(
-      (Array.isArray(shippingPackageRows) ? shippingPackageRows : []).map(
-        (row) => {
-          const packageIds = Array.isArray(row?.packageIds)
-            ? row.packageIds
-                .map((value) => String(value || "").trim())
-                .filter(Boolean)
-            : [];
-          return [
-            String(row?._id || "").trim(),
-            {
-              productCount: Number(row?.productCount || 0),
-              packageCount: new Set(packageIds).size,
-            },
-          ];
-        },
-      ),
-    );
-
-    const shippingCounts = shippingPackageStatsMap.get("shipping") || {
-      productCount: Number(stats.shippingCount || 0),
-      packageCount: 0,
-    };
-    const trackingCounts = shippingPackageStatsMap.get("tracking") || {
-      productCount: Number(stats.trackingCount || 0),
-      packageCount: 0,
-    };
-
-    if (debug) {
-      console.info("[REQUESTOR_DASHBOARD_STAGE_COUNTS]", {
-        userId: req.user?._id ? String(req.user._id) : null,
-        requestFilter,
-        statsShippingCount: Number(stats.shippingCount || 0),
-        statsTrackingCount: Number(stats.trackingCount || 0),
-        shippingProductCount: Number(shippingCounts.productCount || 0),
-        shippingPackageCount: Number(shippingCounts.packageCount || 0),
-        trackingProductCount: Number(trackingCounts.productCount || 0),
-        trackingPackageCount: Number(trackingCounts.packageCount || 0),
-      });
-    }
-
-    // '포장.발송'은 shipping, '추적관리'는 tracking으로 분리.
-    const shippingTotal = Number(shippingCounts.productCount || 0);
-    const trackingTotal = Number(trackingCounts.productCount || 0);
-
-    const totalActive =
-      stats.requestCount +
-        stats.camCount +
-        stats.machiningCount +
-        stats.packingCount +
-        shippingTotal +
-        trackingTotal || 1;
-
-    const manufacturingSummary = {
-      totalActive,
-      stages: [
-        { key: "request", label: "의뢰", count: stats.requestCount },
-        { key: "cam", label: "CAM", count: stats.camCount },
-        { key: "machining", label: "가공", count: stats.machiningCount },
-        { key: "packing", label: "세척.패킹", count: stats.packingCount },
-        { key: "shipping", label: "포장.발송", count: shippingTotal },
-        { key: "tracking", label: "추적관리", count: trackingTotal },
-      ].map((s) => ({
-        ...s,
-        percent: totalActive ? Math.round((s.count / totalActive) * 100) : 0,
-      })),
-    };
-
-    // Risk Summary: 지연 위험 요약 (시각 기반)
-    const { calculateRiskSummary } = await import("./production.utils.js");
-    const activeRequests = await Request.find({
-      ...requestFilter,
-      manufacturerStage: {
-        $in: [
-          "request",
-          "cam",
-          "machining",
-          "packing",
-          "shipping",
-          "의뢰",
-          "CAM",
-          "가공",
-          "세척.패킹",
-          "포장.발송",
+        productionSchedule: { $exists: true, $ne: null },
+        $or: [
+          { "timeline.originalEstimatedShipYmd": { $exists: true, $ne: "" } },
+          { "timeline.estimatedShipYmd": { $exists: true, $ne: "" } },
         ],
-      },
-      productionSchedule: { $exists: true, $ne: null },
-      $or: [
-        { "timeline.originalEstimatedShipYmd": { $exists: true, $ne: "" } },
-        { "timeline.estimatedShipYmd": { $exists: true, $ne: "" } },
-      ],
-    })
-      .select(
-        "requestId title manufacturerStage productionSchedule caseInfos createdAt timeline shippingMode finalShipping originalShipping",
-      )
-      .lean();
-
-    const riskSummary = calculateRiskSummary(activeRequests);
-
-    // 직경별 통계 실제 집계
-
-    const recentRequestFallbackYmds = Array.from(
-      new Set(
-        (recentRequestsResult || [])
-          .map((r) => {
-            const timeline = r?.timeline || {};
-            const hasTimelineEstimate =
-              (typeof timeline.nextEstimatedShipYmd === "string" &&
-                timeline.nextEstimatedShipYmd.trim()) ||
-              (typeof timeline.estimatedShipYmd === "string" &&
-                timeline.estimatedShipYmd.trim()) ||
-              (typeof timeline.originalEstimatedShipYmd === "string" &&
-                timeline.originalEstimatedShipYmd.trim());
-            const pickup = r?.productionSchedule?.scheduledShipPickup;
-            if (hasTimelineEstimate || pickup) {
-              return null;
-            }
-            return toKstYmd(r?.createdAt) || getTodayYmdInKst();
-          })
-          .filter(Boolean),
-      ),
-    );
-
-    const fallbackEstimatedShipYmdMap = new Map(
-      await Promise.all(
-        recentRequestFallbackYmds.map(async (createdYmd) => {
-          const baseYmd = await normalizeKoreanBusinessDay({ ymd: createdYmd });
-          const estimatedShipYmd = await addKoreanBusinessDays({
-            startYmd: baseYmd,
-            days: 1,
-          });
-          return [createdYmd, estimatedShipYmd];
-        }),
-      ),
-    );
-
-    const recentRequests = (recentRequestsResult || []).map((r) => ({
-      ...r,
-      caseInfos: r.caseInfos || {},
-      estimatedShipYmd: getRequestEstimatedShipYmd({
-        request: r,
-        fallbackMap: fallbackEstimatedShipYmdMap,
-      }),
-    }));
-
-    const recentRequestsData = recentRequests.map((r) => {
-      const ci = r.caseInfos || {};
-
-      return {
-        _id: r._id,
-        requestId: r.requestId,
-        title: r.title,
-        manufacturerStage: r.manufacturerStage,
-        date: r.createdAt ? toKstYmd(r.createdAt) || "" : "",
-        estimatedShipYmd: r.estimatedShipYmd || null,
-        originalEstimatedShipYmd:
-          r.timeline?.originalEstimatedShipYmd || r.estimatedShipYmd || null,
-        nextEstimatedShipYmd:
-          r.timeline?.nextEstimatedShipYmd || r.estimatedShipYmd || null,
-        patientName: ci.patientName || "",
-        tooth: ci.tooth || "",
-        caseInfos: ci,
-        requestor: r.requestor || null,
-        deliveryInfoRef: r.deliveryInfoRef || null,
-        price: r.price || null,
-        createdAt: r.createdAt,
       };
-    });
 
-    const inProgress =
-      stats.camCount + stats.machiningCount + stats.packingCount;
-
-    const responseData = {
-      stats: {
-        totalRequests: stats.requestCount,
-        totalRequestsChange: "+0%",
-        inProgress,
-        inProgressChange: "+0%",
-        inCam: stats.camCount,
-        inCamChange: "+0%",
-        inProduction: stats.machiningCount,
-        inProductionChange: "+0%",
-        inPacking: stats.packingCount,
-        inPackingChange: "+0%",
-        inShipping: shippingTotal,
-        inShippingBoxes: shippingCounts.packageCount,
-        inShippingChange: "+0%",
-        inTracking: trackingTotal,
-        inTrackingBoxes: trackingCounts.packageCount,
-        inTrackingChange: "+0%",
-        canceled: stats.canceledCount,
-        canceledChange: "+0%",
-        tracking: trackingTotal,
-        doneOrCanceled: trackingTotal + stats.canceledCount,
-        doneOrCanceledChange: "+0%",
-      },
-      manufacturingSummary,
-      riskSummary,
-      recentRequests: recentRequestsData,
-    };
-
-    if (debug) {
-      const riskStageBreakdownMap = new Map();
-      for (const request of activeRequests || []) {
-        const manufacturerStage = String(
-          request?.manufacturerStage || "",
-        ).trim();
-        const timeline = request?.timeline || {};
-        const originalEstimatedShipYmd = String(
-          timeline?.originalEstimatedShipYmd ||
-            timeline?.estimatedShipYmd ||
-            "",
-        ).trim();
-        const nextEstimatedShipYmd = String(
-          timeline?.nextEstimatedShipYmd || originalEstimatedShipYmd || "",
-        ).trim();
-        const key = `${manufacturerStage}__${originalEstimatedShipYmd}__${nextEstimatedShipYmd}`;
-        const prev = riskStageBreakdownMap.get(key) || {
-          manufacturerStage,
-          originalEstimatedShipYmd,
-          nextEstimatedShipYmd,
-          count: 0,
-          sampleRequestIds: [],
-        };
-        prev.count += 1;
-        if (
-          prev.sampleRequestIds.length < 5 &&
-          request?.requestId &&
-          !prev.sampleRequestIds.includes(String(request.requestId))
-        ) {
-          prev.sampleRequestIds.push(String(request.requestId));
-        }
-        riskStageBreakdownMap.set(key, prev);
-      }
-
-      const stageBreakdown = await Request.aggregate([
-        {
-          $match: {
-            ...requestFilter,
-            "caseInfos.implantBrand": { $exists: true, $ne: "" },
-            manufacturerStage: { $ne: "취소" },
+      const [
+        statsResult,
+        recentRequestsResult,
+        shippingPackageRows,
+        activeRequests,
+      ] = await Promise.all([
+        Request.aggregate([
+          {
+            $match: {
+              ...requestFilter,
+              ...dateFilter,
+              "caseInfos.implantBrand": { $exists: true, $ne: "" },
+            },
           },
-        },
-        {
-          $addFields: {
-            normalizedStage: {
-              $let: {
-                vars: {
-                  stage: { $ifNull: ["$manufacturerStage", ""] },
-                },
-                in: {
-                  $switch: {
-                    branches: [
-                      {
-                        case: {
-                          $in: ["$$stage", ["tracking", "추적관리"]],
+          {
+            $addFields: {
+              normalizedStage: {
+                $let: {
+                  vars: {
+                    stage: { $ifNull: ["$manufacturerStage", ""] },
+                  },
+                  in: {
+                    $switch: {
+                      branches: [
+                        {
+                          case: { $eq: ["$$stage", "취소"] },
+                          then: "cancel",
                         },
-                        then: "tracking",
-                      },
-                      {
-                        case: {
-                          $in: ["$$stage", ["shipping", "포장.발송"]],
+                        {
+                          case: {
+                            $in: ["$$stage", ["tracking", "추적관리"]],
+                          },
+                          then: "tracking",
                         },
-                        then: "shipping",
-                      },
-                      {
-                        case: {
-                          $in: ["$$stage", ["packing", "세척.패킹"]],
+                        {
+                          case: {
+                            $in: ["$$stage", ["shipping", "포장.발송"]],
+                          },
+                          then: "shipping",
                         },
-                        then: "packing",
-                      },
-                      {
-                        case: {
-                          $in: ["$$stage", ["machining", "가공"]],
+                        {
+                          case: {
+                            $in: ["$$stage", ["packing", "세척.패킹"]],
+                          },
+                          then: "packing",
                         },
-                        then: "machining",
-                      },
-                      {
-                        case: {
-                          $in: ["$$stage", ["cam", "CAM"]],
+                        {
+                          case: {
+                            $in: ["$$stage", ["machining", "가공"]],
+                          },
+                          then: "machining",
                         },
-                        then: "cam",
-                      },
-                    ],
-                    default: "request",
+                        {
+                          case: {
+                            $in: ["$$stage", ["cam", "CAM"]],
+                          },
+                          then: "cam",
+                        },
+                      ],
+                      default: "request",
+                    },
                   },
                 },
               },
             },
           },
-        },
-        {
-          $group: {
-            _id: {
-              manufacturerStage: "$manufacturerStage",
-              normalizedStage: "$normalizedStage",
+          {
+            $group: {
+              _id: null,
+              total: { $sum: 1 },
+              canceledCount: {
+                $sum: {
+                  $cond: [{ $eq: ["$manufacturerStage", "취소"] }, 1, 0],
+                },
+              },
+              trackingCount: {
+                $sum: {
+                  $cond: [{ $eq: ["$normalizedStage", "tracking"] }, 1, 0],
+                },
+              },
+              requestCount: {
+                $sum: {
+                  $cond: [{ $eq: ["$normalizedStage", "request"] }, 1, 0],
+                },
+              },
+              camCount: {
+                $sum: {
+                  $cond: [{ $eq: ["$normalizedStage", "cam"] }, 1, 0],
+                },
+              },
+              machiningCount: {
+                $sum: {
+                  $cond: [{ $eq: ["$normalizedStage", "machining"] }, 1, 0],
+                },
+              },
+              packingCount: {
+                $sum: {
+                  $cond: [{ $eq: ["$normalizedStage", "packing"] }, 1, 0],
+                },
+              },
+              shippingCount: {
+                $sum: {
+                  $cond: [{ $eq: ["$normalizedStage", "shipping"] }, 1, 0],
+                },
+              },
             },
-            count: { $sum: 1 },
           },
-        },
-        { $sort: { count: -1 } },
-        { $limit: 50 },
+        ]),
+        Request.find({
+          ...requestFilter,
+          "caseInfos.implantBrand": { $exists: true, $ne: "" },
+          manufacturerStage: { $ne: "취소" },
+        })
+          .select({
+            _id: 1,
+            requestId: 1,
+            title: 1,
+            manufacturerStage: 1,
+            createdAt: 1,
+            caseInfos: 1,
+            timeline: 1,
+            productionSchedule: 1,
+            shippingMode: 1,
+            finalShipping: 1,
+            originalShipping: 1,
+            deliveryInfoRef: 1,
+            price: 1,
+          })
+          .sort({ createdAt: -1 })
+          .limit(10)
+          .lean(),
+        Request.aggregate([
+          {
+            $match: {
+              ...requestFilter,
+              ...dateFilter,
+              "caseInfos.implantBrand": { $exists: true, $ne: "" },
+              manufacturerStage: { $ne: "취소" },
+            },
+          },
+          {
+            $project: {
+              manufacturerStage: 1,
+              shippingPackageId: 1,
+            },
+          },
+          {
+            $addFields: {
+              stageBucket: {
+                $switch: {
+                  branches: [
+                    {
+                      case: {
+                        $in: ["$manufacturerStage", ["tracking", "추적관리"]],
+                      },
+                      then: "tracking",
+                    },
+                    {
+                      case: {
+                        $in: ["$manufacturerStage", ["shipping", "포장.발송"]],
+                      },
+                      then: "shipping",
+                    },
+                  ],
+                  default: null,
+                },
+              },
+            },
+          },
+          {
+            $match: {
+              stageBucket: { $in: ["shipping", "tracking"] },
+            },
+          },
+          {
+            $group: {
+              _id: "$stageBucket",
+              productCount: { $sum: 1 },
+              packageIds: {
+                $addToSet: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $ne: ["$shippingPackageId", null] },
+                        { $ne: ["$shippingPackageId", ""] },
+                      ],
+                    },
+                    "$shippingPackageId",
+                    "$$REMOVE",
+                  ],
+                },
+              },
+            },
+          },
+        ]),
+        Request.find(riskRequestFilter)
+          .select(
+            "requestId title manufacturerStage productionSchedule caseInfos createdAt timeline shippingMode finalShipping originalShipping",
+          )
+          .lean(),
       ]);
 
-      responseData.debug = {
-        period,
-        stageBreakdown,
-        riskQuery: {
-          totalMatched: Array.isArray(activeRequests)
-            ? activeRequests.length
-            : 0,
-          delayedCount: Number(riskSummary?.delayedCount || 0),
-          warningCount: Number(riskSummary?.warningCount || 0),
-          stageBreakdown: Array.from(riskStageBreakdownMap.values()).sort(
-            (a, b) => Number(b?.count || 0) - Number(a?.count || 0),
-          ),
-          delayedItems: Array.isArray(riskSummary?.items)
-            ? riskSummary.items
-                .filter((item) => item?.riskLevel === "danger")
-                .slice(0, 20)
-                .map((item) => ({
-                  requestId: String(item?.requestId || ""),
-                  manufacturerStage: String(item?.manufacturerStage || ""),
-                  originalEstimatedShipYmd: String(
-                    item?.originalEstimatedShipYmd || item?.dueDate || "",
-                  ),
-                  nextEstimatedShipYmd: String(
-                    item?.nextEstimatedShipYmd || "",
-                  ),
-                }))
-            : [],
-          warningItems: Array.isArray(riskSummary?.items)
-            ? riskSummary.items
-                .filter((item) => item?.riskLevel !== "danger")
-                .slice(0, 20)
-                .map((item) => ({
-                  requestId: String(item?.requestId || ""),
-                  manufacturerStage: String(item?.manufacturerStage || ""),
-                  originalEstimatedShipYmd: String(
-                    item?.originalEstimatedShipYmd || item?.dueDate || "",
-                  ),
-                  nextEstimatedShipYmd: String(
-                    item?.nextEstimatedShipYmd || "",
-                  ),
-                }))
-            : [],
-        },
+      const stats = statsResult[0] || {
+        total: 0,
+        canceledCount: 0,
+        trackingCount: 0,
+        requestCount: 0,
+        camCount: 0,
+        machiningCount: 0,
+        packingCount: 0,
+        shippingCount: 0,
       };
-    }
 
-    if (!debug) {
-      setCacheValue(summaryCacheKey, responseData, 15 * 1000);
-    }
+      const shippingPackageStatsMap = new Map(
+        (Array.isArray(shippingPackageRows) ? shippingPackageRows : []).map(
+          (row) => {
+            const packageIds = Array.isArray(row?.packageIds)
+              ? row.packageIds
+                  .map((value) => String(value || "").trim())
+                  .filter(Boolean)
+              : [];
+            return [
+              String(row?._id || "").trim(),
+              {
+                productCount: Number(row?.productCount || 0),
+                packageCount: new Set(packageIds).size,
+              },
+            ];
+          },
+        ),
+      );
+
+      const shippingCounts = shippingPackageStatsMap.get("shipping") || {
+        productCount: Number(stats.shippingCount || 0),
+        packageCount: 0,
+      };
+      const trackingCounts = shippingPackageStatsMap.get("tracking") || {
+        productCount: Number(stats.trackingCount || 0),
+        packageCount: 0,
+      };
+
+      if (debug) {
+        console.info("[REQUESTOR_DASHBOARD_STAGE_COUNTS]", {
+          userId: req.user?._id ? String(req.user._id) : null,
+          requestFilter,
+          statsShippingCount: Number(stats.shippingCount || 0),
+          statsTrackingCount: Number(stats.trackingCount || 0),
+          shippingProductCount: Number(shippingCounts.productCount || 0),
+          shippingPackageCount: Number(shippingCounts.packageCount || 0),
+          trackingProductCount: Number(trackingCounts.productCount || 0),
+          trackingPackageCount: Number(trackingCounts.packageCount || 0),
+        });
+      }
+
+      // '포장.발송'은 shipping, '추적관리'는 tracking으로 분리.
+      const shippingTotal = Number(shippingCounts.productCount || 0);
+      const trackingTotal = Number(trackingCounts.productCount || 0);
+
+      const totalActive =
+        stats.requestCount +
+          stats.camCount +
+          stats.machiningCount +
+          stats.packingCount +
+          shippingTotal +
+          trackingTotal || 1;
+
+      const manufacturingSummary = {
+        totalActive,
+        stages: [
+          { key: "request", label: "의뢰", count: stats.requestCount },
+          { key: "cam", label: "CAM", count: stats.camCount },
+          { key: "machining", label: "가공", count: stats.machiningCount },
+          { key: "packing", label: "세척.패킹", count: stats.packingCount },
+          { key: "shipping", label: "포장.발송", count: shippingTotal },
+          { key: "tracking", label: "추적관리", count: trackingTotal },
+        ].map((s) => ({
+          ...s,
+          percent: totalActive ? Math.round((s.count / totalActive) * 100) : 0,
+        })),
+      };
+
+      // Risk Summary: 지연 위험 요약 (시각 기반)
+      const { calculateRiskSummary } = await import("./production.utils.js");
+      const riskSummary = calculateRiskSummary(activeRequests);
+
+      // 직경별 통계 실제 집계
+
+      const recentRequestFallbackYmds = Array.from(
+        new Set(
+          (recentRequestsResult || [])
+            .map((r) => {
+              const timeline = r?.timeline || {};
+              const hasTimelineEstimate =
+                (typeof timeline.nextEstimatedShipYmd === "string" &&
+                  timeline.nextEstimatedShipYmd.trim()) ||
+                (typeof timeline.estimatedShipYmd === "string" &&
+                  timeline.estimatedShipYmd.trim()) ||
+                (typeof timeline.originalEstimatedShipYmd === "string" &&
+                  timeline.originalEstimatedShipYmd.trim());
+              const pickup = r?.productionSchedule?.scheduledShipPickup;
+              if (hasTimelineEstimate || pickup) {
+                return null;
+              }
+              return toKstYmd(r?.createdAt) || getTodayYmdInKst();
+            })
+            .filter(Boolean),
+        ),
+      );
+
+      const fallbackEstimatedShipYmdMap = new Map(
+        await Promise.all(
+          recentRequestFallbackYmds.map(async (createdYmd) => {
+            const baseYmd = await normalizeKoreanBusinessDay({
+              ymd: createdYmd,
+            });
+            const estimatedShipYmd = await addKoreanBusinessDays({
+              startYmd: baseYmd,
+              days: 1,
+            });
+            return [createdYmd, estimatedShipYmd];
+          }),
+        ),
+      );
+
+      const recentRequests = (recentRequestsResult || []).map((r) => ({
+        ...r,
+        caseInfos: r.caseInfos || {},
+        estimatedShipYmd: getRequestEstimatedShipYmd({
+          request: r,
+          fallbackMap: fallbackEstimatedShipYmdMap,
+        }),
+      }));
+
+      const recentRequestsData = recentRequests.map((r) => {
+        const ci = r.caseInfos || {};
+
+        return {
+          _id: r._id,
+          requestId: r.requestId,
+          title: r.title,
+          manufacturerStage: r.manufacturerStage,
+          date: r.createdAt ? toKstYmd(r.createdAt) || "" : "",
+          estimatedShipYmd: r.estimatedShipYmd || null,
+          originalEstimatedShipYmd:
+            r.timeline?.originalEstimatedShipYmd || r.estimatedShipYmd || null,
+          nextEstimatedShipYmd:
+            r.timeline?.nextEstimatedShipYmd || r.estimatedShipYmd || null,
+          patientName: ci.patientName || "",
+          tooth: ci.tooth || "",
+          caseInfos: ci,
+          requestor: r.requestor || null,
+          deliveryInfoRef: r.deliveryInfoRef || null,
+          price: r.price || null,
+          createdAt: r.createdAt,
+        };
+      });
+
+      const inProgress =
+        stats.camCount + stats.machiningCount + stats.packingCount;
+
+      const responseData = {
+        stats: {
+          totalRequests: stats.requestCount,
+          totalRequestsChange: "+0%",
+          inProgress,
+          inProgressChange: "+0%",
+          inCam: stats.camCount,
+          inCamChange: "+0%",
+          inProduction: stats.machiningCount,
+          inProductionChange: "+0%",
+          inPacking: stats.packingCount,
+          inPackingChange: "+0%",
+          inShipping: shippingTotal,
+          inShippingBoxes: shippingCounts.packageCount,
+          inShippingChange: "+0%",
+          inTracking: trackingTotal,
+          inTrackingBoxes: trackingCounts.packageCount,
+          inTrackingChange: "+0%",
+          canceled: stats.canceledCount,
+          canceledChange: "+0%",
+          tracking: trackingTotal,
+          doneOrCanceled: trackingTotal + stats.canceledCount,
+          doneOrCanceledChange: "+0%",
+        },
+        manufacturingSummary,
+        riskSummary,
+        recentRequests: recentRequestsData,
+      };
+
+      if (debug) {
+        const riskStageBreakdownMap = new Map();
+        for (const request of activeRequests || []) {
+          const manufacturerStage = String(
+            request?.manufacturerStage || "",
+          ).trim();
+          const timeline = request?.timeline || {};
+          const originalEstimatedShipYmd = String(
+            timeline?.originalEstimatedShipYmd ||
+              timeline?.estimatedShipYmd ||
+              "",
+          ).trim();
+          const nextEstimatedShipYmd = String(
+            timeline?.nextEstimatedShipYmd || originalEstimatedShipYmd || "",
+          ).trim();
+          const key = `${manufacturerStage}__${originalEstimatedShipYmd}__${nextEstimatedShipYmd}`;
+          const prev = riskStageBreakdownMap.get(key) || {
+            manufacturerStage,
+            originalEstimatedShipYmd,
+            nextEstimatedShipYmd,
+            count: 0,
+            sampleRequestIds: [],
+          };
+          prev.count += 1;
+          if (
+            prev.sampleRequestIds.length < 5 &&
+            request?.requestId &&
+            !prev.sampleRequestIds.includes(String(request.requestId))
+          ) {
+            prev.sampleRequestIds.push(String(request.requestId));
+          }
+          riskStageBreakdownMap.set(key, prev);
+        }
+
+        const stageBreakdown = await Request.aggregate([
+          {
+            $match: {
+              ...requestFilter,
+              "caseInfos.implantBrand": { $exists: true, $ne: "" },
+              manufacturerStage: { $ne: "취소" },
+            },
+          },
+          {
+            $addFields: {
+              normalizedStage: {
+                $let: {
+                  vars: {
+                    stage: { $ifNull: ["$manufacturerStage", ""] },
+                  },
+                  in: {
+                    $switch: {
+                      branches: [
+                        {
+                          case: {
+                            $in: ["$$stage", ["tracking", "추적관리"]],
+                          },
+                          then: "tracking",
+                        },
+                        {
+                          case: {
+                            $in: ["$$stage", ["shipping", "포장.발송"]],
+                          },
+                          then: "shipping",
+                        },
+                        {
+                          case: {
+                            $in: ["$$stage", ["packing", "세척.패킹"]],
+                          },
+                          then: "packing",
+                        },
+                        {
+                          case: {
+                            $in: ["$$stage", ["machining", "가공"]],
+                          },
+                          then: "machining",
+                        },
+                        {
+                          case: {
+                            $in: ["$$stage", ["cam", "CAM"]],
+                          },
+                          then: "cam",
+                        },
+                      ],
+                      default: "request",
+                    },
+                  },
+                },
+              },
+            },
+          },
+          {
+            $group: {
+              _id: {
+                manufacturerStage: "$manufacturerStage",
+                normalizedStage: "$normalizedStage",
+              },
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { count: -1 } },
+          { $limit: 50 },
+        ]);
+
+        responseData.debug = {
+          period,
+          stageBreakdown,
+          riskQuery: {
+            totalMatched: Array.isArray(activeRequests)
+              ? activeRequests.length
+              : 0,
+            delayedCount: Number(riskSummary?.delayedCount || 0),
+            warningCount: Number(riskSummary?.warningCount || 0),
+            stageBreakdown: Array.from(riskStageBreakdownMap.values()).sort(
+              (a, b) => Number(b?.count || 0) - Number(a?.count || 0),
+            ),
+            delayedItems: Array.isArray(riskSummary?.items)
+              ? riskSummary.items
+                  .filter((item) => item?.riskLevel === "danger")
+                  .slice(0, 20)
+                  .map((item) => ({
+                    requestId: String(item?.requestId || ""),
+                    manufacturerStage: String(item?.manufacturerStage || ""),
+                    originalEstimatedShipYmd: String(
+                      item?.originalEstimatedShipYmd || item?.dueDate || "",
+                    ),
+                    nextEstimatedShipYmd: String(
+                      item?.nextEstimatedShipYmd || "",
+                    ),
+                  }))
+              : [],
+            warningItems: Array.isArray(riskSummary?.items)
+              ? riskSummary.items
+                  .filter((item) => item?.riskLevel !== "danger")
+                  .slice(0, 20)
+                  .map((item) => ({
+                    requestId: String(item?.requestId || ""),
+                    manufacturerStage: String(item?.manufacturerStage || ""),
+                    originalEstimatedShipYmd: String(
+                      item?.originalEstimatedShipYmd || item?.dueDate || "",
+                    ),
+                    nextEstimatedShipYmd: String(
+                      item?.nextEstimatedShipYmd || "",
+                    ),
+                  }))
+              : [],
+          },
+        };
+      }
+
+      if (!debug) {
+        setCacheValue(summaryCacheKey, responseData, 15 * 1000);
+      }
+
+      return responseData;
+    });
 
     return res.status(200).json({
       success: true,
@@ -1470,16 +1514,19 @@ export async function getMyPricingReferralStats(req, res) {
         throw new Error("날짜 계산에 실패했습니다.");
       }
 
-      const me = await User.findById(requestorId)
-        .select({
-          businessAnchorId: 1,
-          role: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          active: 1,
-          approvedAt: 1,
-        })
-        .lean();
+      const me =
+        String(req.user?._id || "") === String(requestorId || "")
+          ? req.user
+          : await User.findById(requestorId)
+              .select({
+                businessAnchorId: 1,
+                role: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                active: 1,
+                approvedAt: 1,
+              })
+              .lean();
       const role = String(me?.role || req.user?.role || "requestor");
       const myBusinessAnchorId = String(me?.businessAnchorId || "");
       const snapshotBusinessAnchorObjectId =
@@ -1489,25 +1536,11 @@ export async function getMyPricingReferralStats(req, res) {
           ? new Types.ObjectId(myBusinessAnchorId)
           : null;
 
-      const cachedSnapshot = snapshotBusinessAnchorObjectId
-        ? await PricingReferralStatsSnapshot.findOne({
-            businessAnchorId: snapshotBusinessAnchorObjectId,
-            ymd,
-          })
-            .select({
-              businessAnchorId: 1,
-              leaderUserId: 1,
-              groupMemberCount: 1,
-              groupTotalOrders: 1,
-              computedAt: 1,
-            })
-            .lean()
-        : null;
-
       // 누락 감지: 오늘 스냅샷이 없으면 당일 자정 기준 30일로 즉시 계산 (워커 장애 복구)
-      const snapshotMissing = !cachedSnapshot;
-      let groupMemberCount = Number(cachedSnapshot?.groupMemberCount || 0);
-      let freshGroupTotalOrders = Number(cachedSnapshot?.groupTotalOrders || 0);
+      let cachedSnapshot = null;
+      let snapshotMissing = true;
+      let groupMemberCount = 0;
+      let freshGroupTotalOrders = 0;
       let myLastMonthOrders = 0;
       let groupMemberIds = [];
       let referralBusinessCount = 0;
@@ -1520,39 +1553,75 @@ export async function getMyPricingReferralStats(req, res) {
         const shouldComputeRequestorGroup = true;
 
         if (shouldComputeRequestorGroup) {
-          const referredRequestors =
-            await findReferredRequestorUsersByReferrerAnchorId(
-              leaderBusinessAnchorId,
+          cachedSnapshot = snapshotBusinessAnchorObjectId
+            ? await PricingReferralStatsSnapshot.findOne({
+                businessAnchorId: snapshotBusinessAnchorObjectId,
+                ymd,
+              })
+                .select({
+                  businessAnchorId: 1,
+                  leaderUserId: 1,
+                  groupMemberCount: 1,
+                  groupTotalOrders: 1,
+                  computedAt: 1,
+                })
+                .lean()
+            : null;
+          snapshotMissing = !cachedSnapshot;
+          groupMemberCount = Number(cachedSnapshot?.groupMemberCount || 0);
+          freshGroupTotalOrders = Number(cachedSnapshot?.groupTotalOrders || 0);
+
+          if (cachedSnapshot && !snapshotMissing) {
+            const myCountMap = await getShippingOrderCountsByBusinessAnchorIds({
+              businessAnchorIds: [leaderBusinessAnchorId],
+              startYmd: last30StartYmd,
+              endYmd: todayYmd,
+            });
+            myLastMonthOrders = Number(
+              myCountMap.get(String(leaderBusinessAnchorId)) || 0,
+            );
+            groupMemberCount = Number(cachedSnapshot.groupMemberCount || 0);
+            freshGroupTotalOrders = Number(
+              cachedSnapshot.groupTotalOrders || 0,
+            );
+            referralBusinessCount = groupMemberCount;
+            referralBusinessOrders = freshGroupTotalOrders;
+            selfBusinessOrders = myLastMonthOrders;
+          } else {
+            const referredRequestors =
+              await findReferredRequestorUsersByReferrerAnchorId(
+                leaderBusinessAnchorId,
+              );
+            const orgKeys = Array.from(
+              new Set(
+                [
+                  leaderBusinessAnchorId,
+                  ...(referredRequestors || []).map((u) =>
+                    String(u.businessAnchorId || ""),
+                  ),
+                ].filter(Boolean),
+              ),
             );
 
-          const orgKeys = Array.from(
-            new Set(
-              [
-                leaderBusinessAnchorId,
-                ...(referredRequestors || []).map((u) =>
-                  String(u.businessAnchorId || ""),
-                ),
-              ].filter(Boolean),
-            ),
-          );
-
-          groupMemberCount = orgKeys.length;
-          groupMemberIds = orgKeys.map((id) => String(id));
-          const countMap = await getShippingOrderCountsByBusinessAnchorIds({
-            businessAnchorIds: orgKeys,
-            startYmd: last30StartYmd,
-            endYmd: todayYmd,
-          });
-          freshGroupTotalOrders = orgKeys.reduce(
-            (acc, id) => acc + Number(countMap.get(String(id)) || 0),
-            0,
-          );
-          myLastMonthOrders = Number(
-            countMap.get(String(leaderBusinessAnchorId)) || 0,
-          );
-          referralBusinessCount = groupMemberCount;
-          referralBusinessOrders = freshGroupTotalOrders;
-          selfBusinessOrders = myLastMonthOrders;
+            groupMemberCount = orgKeys.length;
+            groupMemberIds = orgKeys.map((id) => String(id));
+            const countMap = await getShippingOrderCountsByBusinessAnchorIds({
+              businessAnchorIds: orgKeys,
+              startYmd: last30StartYmd,
+              endYmd: todayYmd,
+            });
+            myLastMonthOrders = Number(
+              countMap.get(String(leaderBusinessAnchorId)) || 0,
+            );
+            freshGroupTotalOrders = orgKeys.reduce(
+              (acc, id) => acc + Number(countMap.get(String(id)) || 0),
+              0,
+            );
+            referralBusinessCount = groupMemberCount;
+            referralBusinessOrders = freshGroupTotalOrders;
+            selfBusinessOrders = myLastMonthOrders;
+            groupMemberIds = orgKeys.map(String);
+          }
         } else {
           const myCountMap = await getShippingOrderCountsByBusinessAnchorIds({
             businessAnchorIds: [leaderBusinessAnchorId],

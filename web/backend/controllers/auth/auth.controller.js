@@ -1,6 +1,5 @@
 import User from "../../models/user.model.js";
 import SignupVerification from "../../models/signupVerification.model.js";
-import GuideProgress from "../../models/guideProgress.model.js";
 import Business from "../../models/business.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
@@ -635,14 +634,6 @@ async function register(req, res) {
 
     const user = new User(userDoc);
     await user.save();
-
-    if (normalizedRole === "requestor") {
-      try {
-        await GuideProgress.ensureForUser(user._id, "requestor-onboarding");
-      } catch (e) {
-        console.error("[register] GuideProgress.ensureForUser failed", e);
-      }
-    }
 
     if (normalizedRole === "requestor" && !socialProvider) {
       try {

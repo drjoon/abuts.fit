@@ -4,6 +4,7 @@ import Chat from "../../models/chat.model.js";
 import User from "../../models/user.model.js";
 
 const __chatPerfCache = new Map();
+const __chatInFlight = new Map();
 
 const getChatPerfCacheValue = (key) => {
   const hit = __chatPerfCache.get(key);
@@ -21,6 +22,22 @@ const setChatPerfCacheValue = (key, value, ttlMs) => {
     expiresAt: Date.now() + ttlMs,
   });
   return value;
+};
+
+const withChatInFlight = async (key, factory) => {
+  const existing = __chatInFlight.get(key);
+  if (existing) return existing;
+
+  const promise = Promise.resolve()
+    .then(factory)
+    .finally(() => {
+      if (__chatInFlight.get(key) === promise) {
+        __chatInFlight.delete(key);
+      }
+    });
+
+  __chatInFlight.set(key, promise);
+  return promise;
 };
 
 /**
@@ -150,118 +167,116 @@ export async function getSupportRoom(req, res) {
       });
     }
 
-    // 지원 채팅은 admin 계정 중 1명을 사용
-    let admin = getChatPerfCacheValue("support-room:admin");
-    if (!admin) {
-      admin = await User.findOne({ role: "admin", active: true })
-        .select({ _id: 1 })
-        .lean();
-      if (admin?._id) {
-        setChatPerfCacheValue("support-room:admin", admin, 5 * 60 * 1000);
+    const enriched = await withChatInFlight(roomCacheKey, async () => {
+      let admin = getChatPerfCacheValue("support-room:admin");
+      if (!admin) {
+        admin = await User.findOne({ role: "admin", active: true })
+          .select({ _id: 1 })
+          .lean();
+        if (admin?._id) {
+          setChatPerfCacheValue("support-room:admin", admin, 5 * 60 * 1000);
+        }
       }
-    }
 
-    if (!admin?._id) {
-      return res.status(404).json({
-        success: false,
-        message: "지원 채팅을 위한 관리자 계정을 찾을 수 없습니다.",
-      });
-    }
+      if (!admin?._id) {
+        const error = new Error(
+          "지원 채팅을 위한 관리자 계정을 찾을 수 없습니다.",
+        );
+        error.statusCode = 404;
+        throw error;
+      }
 
-    const participants = [userId, admin._id];
+      const participants = [userId, admin._id];
 
-    // 기존 direct 룸이 있으면 재사용
-    const existing = await ChatRoom.findOne({
-      participants: { $all: participants, $size: 2 },
-      roomType: "direct",
-      isArchived: false,
-    })
-      .populate("participants", "name email role organization")
-      .lean();
+      const existing = await ChatRoom.findOne({
+        participants: { $all: participants, $size: 2 },
+        roomType: "direct",
+        isArchived: false,
+      })
+        .populate("participants", "name email role organization")
+        .lean();
 
-    const enrichRoom = async (room) => {
-      // 집계 쿼리로 unreadCount와 lastMessage를 한 번에 조회
-      const [stats] = await Chat.aggregate([
-        { $match: { roomId: room._id, isDeleted: false } },
-        {
-          $facet: {
-            unread: [
-              {
-                $match: {
-                  sender: { $ne: userId },
-                  "readBy.userId": { $ne: userId },
+      const enrichRoom = async (room) => {
+        const [stats] = await Chat.aggregate([
+          { $match: { roomId: room._id, isDeleted: false } },
+          {
+            $facet: {
+              unread: [
+                {
+                  $match: {
+                    sender: { $ne: userId },
+                    "readBy.userId": { $ne: userId },
+                  },
                 },
-              },
-              { $count: "count" },
-            ],
-            lastMessage: [
-              { $sort: { createdAt: -1 } },
-              { $limit: 1 },
-              {
-                $lookup: {
-                  from: "users",
-                  localField: "sender",
-                  foreignField: "_id",
-                  as: "sender",
+                { $count: "count" },
+              ],
+              lastMessage: [
+                { $sort: { createdAt: -1 } },
+                { $limit: 1 },
+                {
+                  $lookup: {
+                    from: "users",
+                    localField: "sender",
+                    foreignField: "_id",
+                    as: "sender",
+                  },
                 },
-              },
-              { $unwind: "$sender" },
-              {
-                $project: {
-                  _id: 1,
-                  content: 1,
-                  createdAt: 1,
-                  "sender._id": 1,
-                  "sender.name": 1,
-                  "sender.role": 1,
+                { $unwind: "$sender" },
+                {
+                  $project: {
+                    _id: 1,
+                    content: 1,
+                    createdAt: 1,
+                    "sender._id": 1,
+                    "sender.name": 1,
+                    "sender.role": 1,
+                  },
                 },
-              },
-            ],
+              ],
+            },
           },
-        },
-      ]);
+        ]);
 
-      const unreadCount = stats?.unread?.[0]?.count || 0;
-      const lastMessage = stats?.lastMessage?.[0] || null;
-
-      return {
-        ...room,
-        unreadCount,
-        lastMessage,
+        return {
+          ...room,
+          unreadCount: stats?.unread?.[0]?.count || 0,
+          lastMessage: stats?.lastMessage?.[0] || null,
+        };
       };
-    };
 
-    if (existing) {
-      const enriched = await enrichRoom(existing);
-      setChatPerfCacheValue(roomCacheKey, enriched, 15 * 1000);
-      return res.status(200).json({
-        success: true,
-        data: enriched,
+      if (existing) {
+        const enrichedExisting = await enrichRoom(existing);
+        setChatPerfCacheValue(roomCacheKey, enrichedExisting, 15 * 1000);
+        return enrichedExisting;
+      }
+
+      const room = await ChatRoom.create({
+        participants,
+        roomType: "direct",
+        title: "어벗츠.핏 고객지원",
+        status: "active",
       });
-    }
 
-    const room = await ChatRoom.create({
-      participants,
-      roomType: "direct",
-      title: "어벗츠.핏 고객지원",
-      status: "active",
+      const populated = await ChatRoom.findById(room._id)
+        .populate("participants", "name email role organization")
+        .lean();
+
+      const enrichedCreated = await enrichRoom(populated);
+      setChatPerfCacheValue(roomCacheKey, enrichedCreated, 15 * 1000);
+      return enrichedCreated;
     });
 
-    const populated = await ChatRoom.findById(room._id)
-      .populate("participants", "name email role organization")
-      .lean();
-
-    const enriched = await enrichRoom(populated);
-    setChatPerfCacheValue(roomCacheKey, enriched, 15 * 1000);
-
-    return res.status(201).json({
+    return res.status(200).json({
       success: true,
       data: enriched,
     });
   } catch (error) {
-    return res.status(500).json({
+    return res.status(error?.statusCode || 500).json({
       success: false,
-      message: "지원 채팅방 생성/조회 중 오류가 발생했습니다.",
+      message:
+        error?.statusCode && error?.message
+          ? error.message
+          : "지원 채팅방 생성/조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

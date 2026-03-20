@@ -18,13 +18,33 @@ import {
 } from "./utils.js";
 
 const __cache = new Map();
+const __inFlight = new Map();
 const memo = async ({ key, ttlMs, fn }) => {
   const now = Date.now();
   const hit = __cache.get(key);
   if (hit && typeof hit.expiresAt === "number" && hit.expiresAt > now) {
     return hit.value;
   }
-  const value = await fn();
+
+  const existing = __inFlight.get(key);
+  if (existing) {
+    return existing;
+  }
+
+  const promise = Promise.resolve()
+    .then(fn)
+    .then((value) => {
+      __cache.set(key, { value, expiresAt: now + ttlMs });
+      return value;
+    })
+    .finally(() => {
+      if (__inFlight.get(key) === promise) {
+        __inFlight.delete(key);
+      }
+    });
+
+  __inFlight.set(key, promise);
+  const value = await promise;
   __cache.set(key, { value, expiresAt: now + ttlMs });
   return value;
 };
@@ -414,8 +434,10 @@ export async function buildShippingEstimate(req) {
 }
 
 export async function buildBulkShippingCandidates(req) {
-  const requestFilter = await buildRequestorOrgScopeFilter(req);
-  const leadDays = await getDeliveryEtaLeadDays();
+  const [requestFilter, leadDays] = await Promise.all([
+    buildRequestorOrgScopeFilter(req),
+    getDeliveryEtaLeadDays(),
+  ]);
   const effectiveLeadDays = {
     ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
     ...(leadDays || {}),
@@ -437,6 +459,7 @@ export async function buildBulkShippingCandidates(req) {
 
   const todayYmd = getTodayYmdInKst();
   const diameterCache = new Map();
+  const estimatedShipYmdsBySignature = new Map();
 
   const getExpressShipYmd = async (maxDiameter) => {
     const key = String(maxDiameter ?? "-");
@@ -461,6 +484,21 @@ export async function buildBulkShippingCandidates(req) {
     const maxDiameter = ci.maxDiameter;
     const mode = r.shippingMode || "normal";
     const createdYmd = toKstYmd(r.createdAt) || todayYmd;
+    const pickup = r.productionSchedule?.scheduledShipPickup;
+    const pickupYmd = pickup ? toKstYmd(pickup) : null;
+    const requestedShipYmd = toKstYmd(r.requestedShipDate);
+    const signature = [
+      mode,
+      String(maxDiameter ?? ""),
+      createdYmd,
+      pickupYmd || "",
+      requestedShipYmd || "",
+    ].join(":");
+
+    const cachedSignature = estimatedShipYmdsBySignature.get(signature);
+    if (cachedSignature) {
+      return cachedSignature;
+    }
 
     const normalize = (ymd) =>
       memo({
@@ -482,26 +520,29 @@ export async function buildBulkShippingCandidates(req) {
       const days = resolveExpressShipLeadDays(maxDiameter);
       const originalRaw = await addBiz({ startYmd: createdYmd, days });
       const nextRaw = await addBiz({ startYmd: clampStart(createdYmd), days });
-      return {
+      const result = {
         original: await normalize(originalRaw),
         next: await normalize(nextRaw),
       };
+      estimatedShipYmdsBySignature.set(signature, result);
+      return result;
     }
 
-    const pickup = r.productionSchedule?.scheduledShipPickup;
-    const pickupYmd = pickup ? toKstYmd(pickup) : null;
     if (pickupYmd) {
       const original = await normalize(pickupYmd);
       const next = pickupYmd < todayYmd ? await normalize(todayYmd) : original;
-      return { original, next };
+      const result = { original, next };
+      estimatedShipYmdsBySignature.set(signature, result);
+      return result;
     }
 
-    const requestedShipYmd = toKstYmd(r.requestedShipDate);
     if (requestedShipYmd) {
       const original = await normalize(requestedShipYmd);
       const next =
         requestedShipYmd < todayYmd ? await normalize(todayYmd) : original;
-      return { original, next };
+      const result = { original, next };
+      estimatedShipYmdsBySignature.set(signature, result);
+      return result;
     }
 
     const leadDays = resolveNormalLeadDays(maxDiameter);
@@ -510,10 +551,12 @@ export async function buildBulkShippingCandidates(req) {
       startYmd: clampStart(createdYmd),
       days: leadDays,
     });
-    return {
+    const result = {
       original: await normalize(originalRaw),
       next: await normalize(nextRaw),
     };
+    estimatedShipYmdsBySignature.set(signature, result);
+    return result;
   };
 
   const requests = await Request.find({
@@ -566,25 +609,31 @@ export async function buildBulkShippingCandidates(req) {
     };
   };
 
-  const [pre, post, waiting] = await Promise.all([
-    Promise.all(
-      requests
-        .filter((r) => REQUEST_STAGE_GROUPS.pre.includes(r.manufacturerStage))
-        .map(mapItem),
-    ),
-    Promise.all(
-      requests
-        .filter((r) => REQUEST_STAGE_GROUPS.post.includes(r.manufacturerStage))
-        .map(mapItem),
-    ),
-    Promise.all(
-      requests
-        .filter((r) =>
-          REQUEST_STAGE_GROUPS.waiting.includes(r.manufacturerStage),
-        )
-        .map(mapItem),
-    ),
-  ]);
+  const mapped = await Promise.all(
+    requests.map(async (request) => ({
+      request,
+      item: await mapItem(request),
+    })),
+  );
+
+  const pre = [];
+  const post = [];
+  const waiting = [];
+
+  for (const row of mapped) {
+    const stage = row?.request?.manufacturerStage;
+    if (REQUEST_STAGE_GROUPS.pre.includes(stage)) {
+      pre.push(row.item);
+      continue;
+    }
+    if (REQUEST_STAGE_GROUPS.post.includes(stage)) {
+      post.push(row.item);
+      continue;
+    }
+    if (REQUEST_STAGE_GROUPS.waiting.includes(stage)) {
+      waiting.push(row.item);
+    }
+  }
 
   return { pre, post, waiting };
 }

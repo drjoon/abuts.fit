@@ -2,6 +2,10 @@ import { useEffect, useState, useCallback } from "react";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { MembershipStatus } from "@/shared/components/business/types";
+import {
+  invalidateBusinessMeCache,
+  loadBusinessMeCached,
+} from "./businessMeCache";
 
 interface JoinRequest {
   businessId: string;
@@ -32,21 +36,15 @@ export const useMembershipManagement = (
     const load = async () => {
       try {
         if (!props.token) return;
-        const res = await request<any>({
-          path: `/api/businesses/me?businessType=${encodeURIComponent(
-            props.businessType,
-          )}`,
-          method: "GET",
+        const data = await loadBusinessMeCached({
           token: props.token,
+          businessType: props.businessType,
         });
 
-        if (!res.ok) {
+        if (!data) {
           setJoinRequestsLoaded(true);
           return;
         }
-
-        const body: any = res.data || {};
-        const data = body.data || body;
         const next = (data?.membership || "none") as MembershipStatus;
         setMembership(next);
         setJoinRequestsLoaded(true);
@@ -102,18 +100,16 @@ export const useMembershipManagement = (
   const refreshMembership = useCallback(async () => {
     if (!props.token) return;
     try {
-      const res = await request<any>({
-        path: `/api/businesses/me?businessType=${encodeURIComponent(
-          props.businessType,
-        )}`,
-        method: "GET",
+      invalidateBusinessMeCache({
         token: props.token,
+        businessType: props.businessType,
       });
-
-      if (!res.ok) return;
-
-      const body: any = res.data || {};
-      const data = body.data || body;
+      const data = await loadBusinessMeCached({
+        token: props.token,
+        businessType: props.businessType,
+        force: true,
+      });
+      if (!data) return;
       const next = (data?.membership || "none") as MembershipStatus;
       setMembership(next);
     } catch {}

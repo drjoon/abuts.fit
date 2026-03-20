@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   LicenseExtracted,
@@ -19,6 +18,7 @@ import {
   formatBusinessNumberInput,
   formatPhoneNumberInput,
 } from "./validations";
+import { loadBusinessMeCached } from "./businessMeCache";
 
 interface UseBusinessDataManagementProps {
   token?: string;
@@ -112,19 +112,12 @@ export const useBusinessDataManagement = (
     const load = async () => {
       try {
         if (!props.token) return;
-        const res = await request<any>({
-          path: `/api/businesses/me?businessType=${encodeURIComponent(
-            props.businessType,
-          )}`,
-          method: "GET",
+        const data = await loadBusinessMeCached({
           token: props.token,
+          businessType: props.businessType,
         });
-
-        if (!res.ok) return;
+        if (!data) return;
         if (resetVersionRef.current !== loadVersion) return;
-
-        const body: any = res.data || {};
-        const data = body.data || body;
         const next = (data?.membership || "none") as MembershipStatus;
 
         const localDraft = latestDraftRef.current;
