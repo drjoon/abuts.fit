@@ -11,7 +11,9 @@ export function useCncDashboardMachineInfo({ token, toast }: Params) {
   const [machineInfoOpen, setMachineInfoOpen] = useState(false);
   const [machineInfoLoading, setMachineInfoLoading] = useState(false);
   const [machineInfoError, setMachineInfoError] = useState<string | null>(null);
-  const [machineInfoProgram, setMachineInfoProgram] = useState<any | null>(null);
+  const [machineInfoProgram, setMachineInfoProgram] = useState<any | null>(
+    null,
+  );
   const [machineInfoAlarms, setMachineInfoAlarms] = useState<
     { type: number; no: number }[]
   >([]);
@@ -29,7 +31,10 @@ export function useCncDashboardMachineInfo({ token, toast }: Params) {
       setMachineInfoAlarms([]);
 
       try {
-        const fetchRawDirect = async (dataType: string, payload: any = null) => {
+        const fetchRawDirect = async (
+          dataType: string,
+          payload: any = null,
+        ) => {
           const res = await apiFetch({
             path: `/api/machines/${encodeURIComponent(uid)}/raw`,
             method: "POST",
@@ -53,8 +58,8 @@ export function useCncDashboardMachineInfo({ token, toast }: Params) {
         };
 
         const [progMainRes, progSubRes, alarmRes] = await Promise.all([
-          fetchRawDirect("GetActivateProgInfo", 1),
-          fetchRawDirect("GetActivateProgInfo", 2),
+          fetchRawDirect("GetActivateProgInfo", { headType: 1 }),
+          fetchRawDirect("GetActivateProgInfo", { headType: 2 }),
           apiFetch({
             path: `/api/machines/${encodeURIComponent(uid)}/alarm`,
             method: "POST",
@@ -104,15 +109,16 @@ export function useCncDashboardMachineInfo({ token, toast }: Params) {
           mainProgramName: mainInfo?.mainProgramName ?? null,
           mainProgramComment: mainInfo?.mainProgramComment ?? null,
           subProgramName:
-            subInfo?.subProgramName ??
-            subInfo?.mainProgramName ??
-            null,
+            subInfo?.subProgramName ?? subInfo?.mainProgramName ?? null,
           subProgramComment:
             subInfo?.subProgramComment ?? subInfo?.mainProgramComment ?? null,
         };
 
         const hasAny =
-          curInfo.mainProgramName || curInfo.subProgramName || mainInfo || subInfo;
+          curInfo.mainProgramName ||
+          curInfo.subProgramName ||
+          mainInfo ||
+          subInfo;
         if (!hasAny) {
           throw new Error(
             "GetActivateProgInfo 응답이 비어있습니다.(쿨다운/프록시/브리지 설정 확인)",

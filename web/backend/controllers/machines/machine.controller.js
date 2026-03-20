@@ -218,20 +218,6 @@ export async function getMachineAlarmProxy(req, res) {
   const { uid } = req.params;
   try {
     if (!ensureBridgeConfigured(res)) return;
-
-    const fetchWithTimeout = async (url, options, timeoutMs = 15000) => {
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        return await fetch(url, {
-          ...(options || {}),
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(id);
-      }
-    };
-
     const headType =
       typeof req.body?.headType === "number"
         ? req.body.headType
@@ -239,14 +225,29 @@ export async function getMachineAlarmProxy(req, res) {
           ? req.body.payload.headType
           : 1;
 
-    const url = `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(
+    const url = `${BRIDGE_BASE}/api/cnc/alarms?machines=${encodeURIComponent(
       uid,
-    )}/alarms?headType=${encodeURIComponent(headType)}`;
-    const response = await fetchWithTimeout(url, {
+    )}&headType=${encodeURIComponent(headType)}`;
+    const response = await fetch(url, {
       method: "GET",
       headers: withBridgeHeaders(),
     });
     const data = await response.json().catch(() => ({}));
+
+    if (response.ok && data?.success === true && Array.isArray(data?.results)) {
+      const item = data.results.find(
+        (row) =>
+          String(row?.machineId || "").trim() === String(uid || "").trim(),
+      );
+      return res.status(200).json(
+        item || {
+          success: true,
+          machineId: uid,
+          data: { headType, alarms: [] },
+        },
+      );
+    }
+
     res.status(response.status).json(data);
   } catch (error) {
     console.error("getMachineAlarmProxy error", error);
@@ -361,14 +362,31 @@ export async function callRawProxy(req, res) {
         typeof req.body?.payload?.headType === "number"
           ? req.body.payload.headType
           : 1;
-      const url = `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(
+      const url = `${BRIDGE_BASE}/api/cnc/alarms?machines=${encodeURIComponent(
         uid,
-      )}/alarms?headType=${encodeURIComponent(headType)}`;
+      )}&headType=${encodeURIComponent(headType)}`;
       const response = await fetch(url, {
         method: "GET",
         headers: withBridgeHeaders(),
       });
       const data = await response.json().catch(() => ({}));
+      if (
+        response.ok &&
+        data?.success === true &&
+        Array.isArray(data?.results)
+      ) {
+        const item = data.results.find(
+          (row) =>
+            String(row?.machineId || "").trim() === String(uid || "").trim(),
+        );
+        return res.status(200).json(
+          item || {
+            success: true,
+            machineId: uid,
+            data: { headType, alarms: [] },
+          },
+        );
+      }
       return res.status(response.status).json(data);
     }
 
