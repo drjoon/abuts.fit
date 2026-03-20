@@ -105,7 +105,7 @@ export const RequestorPricingReferralPolicyCard = () => {
   const groupMemberCount = data.groupMemberCount ?? 0;
 
   const totalOrders = groupTotalOrders;
-  const targetOrdersForMaxDiscount = 500;
+  const targetOrdersForMaxDiscount = 250;
   const progressValue = targetOrdersForMaxDiscount
     ? Math.min(100, (totalOrders / targetOrdersForMaxDiscount) * 100)
     : 0;
@@ -153,7 +153,7 @@ export const RequestorPricingReferralPolicyCard = () => {
       }
       toast({
         title: "복사 완료",
-        description: "추천 링크를 클립보드에 복사했습니다.",
+        description: "소개 링크를 클립보드에 복사했습니다.",
       });
     } catch {
       toast({
@@ -184,7 +184,7 @@ export const RequestorPricingReferralPolicyCard = () => {
                 onClick={handleCopyReferralLink}
                 disabled={!referralLink}
               >
-                내 사업자 추천 링크 복사
+                내 사업자 소개 링크 복사
               </Button>
               <Button
                 type="button"
