@@ -375,6 +375,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return;
             }
             EnsureCleanDocument(document);
+
+            document = ResetDocument(document, materialDiameter);
+            if (document == null)
+            {
+                AppLogger.Log("StlFileProcessor: 템플릿 문서 초기화에 실패했습니다.");
+                return;
+            }
+
             // ResetAllDentalAddinStaticFields();
             RemoveLayerIfExists(document, StlImportLayerName);
             double effectiveFrontLimit = frontLimitX ?? throw new InvalidOperationException("FrontPoint from backend is missing");
@@ -486,7 +494,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     AppLogger.Log($"StlFileProcessor: NC file generation failed - ncFilePath is empty");
                 }
-                ResetDocumentAfterRun(document, materialDiameter);
+                
                 AppLogger.Log($"StlFileProcessor: 완료 - {stlPath}");
             }
             catch (Exception ex)
@@ -1939,11 +1947,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             return Path.Combine(templateDir, $"Hanwha_D{templateDiameter}.est");
         }
 
-        private void ResetDocumentAfterRun(Document document, double? backendMaterialDiameter)
+        private Document ResetDocument(Document document, double? backendMaterialDiameter)
         {
             if (document == null)
             {
-                return;
+                return null;
             }
 
             string tempEspPath = null;
@@ -1957,16 +1965,20 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log($"StlFileProcessor: 임시 ESP 저장 완료 - {tempEspPath}");
 
                 _espApp.New(templatePath);
-                AppLogger.Log($"StlFileProcessor: 작업 종료 후 새 템플릿 문서 초기화 - {templatePath}");
+                Document resetDocument = Connect.CurrentDocument;
+                AppLogger.Log($"StlFileProcessor: 리셋용 템플릿 문서 오픈 완료 - {templatePath}");
+                return resetDocument;
             }
             catch (Exception ex)
             {
-                AppLogger.Log($"StlFileProcessor: 작업 종료 후 문서 초기화 실패 - {ex.GetType().Name}:{ex.Message}");
+                AppLogger.Log($"StlFileProcessor: 리셋용 템플릿 문서 오픈 실패 - {ex.GetType().Name}:{ex.Message}");
             }
             finally
             {
                 TryDeleteTemporaryEspFile(tempEspPath);
             }
+
+            return null;
         }
 
         private static string BuildTempEspSavePath()
