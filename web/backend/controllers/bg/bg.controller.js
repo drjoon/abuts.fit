@@ -111,15 +111,19 @@ const buildStoredFileMeta = ({
   fileSize,
   uploadedAt,
 } = {}) => {
-  const safePath = path.basename(String(filePath || ""));
+  const safePath = String(filePath || "")
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "");
+  const safeName = path.basename(safePath);
   const meta = {
     filePath: safePath,
-    originalName: originalName || safePath,
+    originalName: originalName || safeName,
     uploadedAt: uploadedAt || new Date(),
   };
   if (s3Key) meta.s3Key = s3Key;
   if (s3Url) meta.s3Url = s3Url;
-  if (typeof fileSize === "number") meta.fileSize = fileSize;
+  if (Number.isFinite(Number(fileSize))) meta.fileSize = Number(fileSize);
   return meta;
 };
 
@@ -373,9 +377,16 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   let s3Info = null;
   if (status === "success") {
     const resolvedOriginalName = originalFileName || fileName;
+    const canonicalBgFilePath =
+      sourceStep === "3-nc" && String(fileName || "").trim()
+        ? `3-nc/${String(fileName || "")
+            .trim()
+            .replace(/\\/g, "/")
+            .replace(/^\/+/, "")}`
+        : fileName;
     if (incomingS3Key && incomingS3Url) {
       s3Info = buildStoredFileMeta({
-        filePath: fileName,
+        filePath: canonicalBgFilePath,
         originalName: resolvedOriginalName,
         s3Key: incomingS3Key,
         s3Url: incomingS3Url,
@@ -425,7 +436,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           contentType,
         );
         s3Info = buildStoredFileMeta({
-          filePath: fileName,
+          filePath: canonicalBgFilePath,
           originalName: resolvedOriginalName,
           s3Key: uploaded.key,
           s3Url: uploaded.location,
@@ -482,11 +493,13 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           });
         break;
 
-      case "3-nc":
+      case "3-nc": {
+        const ncStoredName = String(fileName || "").trim();
+        const ncBridgePath = ncStoredName ? `3-nc/${ncStoredName}` : "";
         updateData["caseInfos.ncFile"] =
           s3Info ||
           buildStoredFileMeta({
-            filePath: fileName,
+            filePath: ncBridgePath || fileName,
             originalName: resolvedOriginalName,
             uploadedAt: now,
           });
@@ -507,6 +520,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         updateData["caseInfos.reviewByStage.request.reason"] = "";
         updateData["caseInfos.reviewByStage.request.updatedAt"] = now;
         break;
+      }
 
       case "cnc-preload":
         updateData["productionSchedule.ncPreload"] = {

@@ -102,9 +102,20 @@ namespace HiLinkBridgeWebApi48
             var env = Get("BRIDGE_STORE_ROOT", @"C:\Users\user\abuts.fit\bg\storage\3-direct");
             if (!string.IsNullOrEmpty(env))
             {
-                return Path.GetFullPath(env);
+                var full = Path.GetFullPath(env);
+                var leaf = Path.GetFileName(full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                if (string.Equals(leaf, "3-direct", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(leaf, "3-nc", StringComparison.OrdinalIgnoreCase))
+                {
+                    var parent = Path.GetDirectoryName(full);
+                    if (!string.IsNullOrWhiteSpace(parent))
+                    {
+                        return Path.GetFullPath(parent);
+                    }
+                }
+                return full;
             }
-            return Path.GetFullPath(Path.Combine(BaseDirectory, "..", "..", "storage", "3-direct"));
+            return Path.GetFullPath(Path.Combine(BaseDirectory, "..", "..", "storage"));
         }
         private static string TrimBase(string value, string fallback)
         {

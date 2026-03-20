@@ -1238,7 +1238,15 @@ return (false, error);
 }
 }
 var content = File.ReadAllText(fullPath);
-// NC 파일 content 전처리: 상단에 OXXXX 프로그램 헤더가 없으면 삽입
+var previewLines = (content ?? string.Empty)
+.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
+.Take(2)
+.Select(x => x ?? string.Empty)
+.ToArray();
+var preview1 = previewLines.Length > 0 ? previewLines[0] : string.Empty;
+var preview2 = previewLines.Length > 1 ? previewLines[1] : string.Empty;
+Console.WriteLine("[CncMachining] upload source machine={0} jobId={1} path={2}", machineId, job?.id, fullPath);
+Console.WriteLine("[CncMachining] upload source first-lines machine={0} jobId={1} line1={2} line2={3}", machineId, job?.id, preview1, preview2);
 var processedContent = EnsureProgramHeader(content, slotNo);
 var info = new UpdateMachineProgramInfo
 {

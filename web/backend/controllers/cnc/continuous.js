@@ -23,6 +23,30 @@ function buildStoredNcS3Key(requestId, fileName) {
   return `requests/${rid}/3-nc/${safeName}`;
 }
 
+function buildRequestNcBridgePath(fileName) {
+  const safeName =
+    sanitizeS3KeySegment(String(fileName || "").trim()) || "program.nc";
+  return `3-nc/${safeName}`;
+}
+
+function buildDirectBridgePath({ machineId, originalFileName }) {
+  const base = makeCncUploadFilePath({
+    machineId,
+    originalFilename: originalFileName,
+  });
+  const extMatch = String(originalFileName).match(/\.(nc|txt)$/i);
+  const ext = extMatch ? String(extMatch[0]).toLowerCase() : ".nc";
+  return `3-direct/${base}${ext}`;
+}
+
+function resolveRequestNcBridgePath({ currentPath, requestedPath, fileName }) {
+  const current = String(currentPath || "").trim();
+  const requested = String(requestedPath || "").trim();
+  if (/^3-nc\//i.test(current)) return current;
+  if (/^3-nc\//i.test(requested)) return requested;
+  return buildRequestNcBridgePath(fileName);
+}
+
 async function uploadNcContentToBridgeStore({ bridgePath, content }) {
   const storeUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge-store/upload`;
   const { resp, json } = await callBridgeJson({
@@ -106,13 +130,10 @@ export async function uploadAndEnqueueContinuousForMachine(req, res) {
       return res.status(400).json({ success: false, message: "empty file" });
     }
 
-    const extMatch = String(originalFileName).match(/\.(nc|txt)$/i);
-    const ext = extMatch ? String(extMatch[0]).toLowerCase() : ".nc";
-    const base = makeCncUploadFilePath({
+    const bridgePath = buildDirectBridgePath({
       machineId: mid,
-      originalFilename: originalFileName,
+      originalFileName,
     });
-    const bridgePath = `${base}${ext}`;
 
     const storeUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge-store/upload`;
     const { resp: storeResp, json: storeBody } = await callBridgeJson({
@@ -223,15 +244,22 @@ export async function saveJobProgramCode(req, res) {
     }
 
     const currentNc = request?.caseInfos?.ncFile || {};
-    const filePath =
-      String(currentNc?.filePath || "").trim() ||
-      requestedBridgePath ||
-      `${requestId}.nc`;
     const fileName =
       String(currentNc?.fileName || "").trim() ||
-      (filePath ? filePath.split(/[\/\\]/).pop() : "") ||
+      (requestedBridgePath ? requestedBridgePath.split(/[\/\\]/).pop() : "") ||
+      (String(currentNc?.filePath || "").trim()
+        ? String(currentNc?.filePath || "")
+            .trim()
+            .split(/[\/\\]/)
+            .pop()
+        : "") ||
       originalFileName ||
       "program.nc";
+    const filePath = resolveRequestNcBridgePath({
+      currentPath: currentNc?.filePath,
+      requestedPath: requestedBridgePath,
+      fileName,
+    });
     const resolvedOriginalFileName =
       originalFileName ||
       String(currentNc?.originalName || "").trim() ||
@@ -289,7 +317,7 @@ export async function saveJobProgramCode(req, res) {
         };
       },
     );
-    await saveBridgeQueueSnapshot(mid, jobs, { skipBridgeSync: true });
+    await saveBridgeQueueSnapshot(mid, jobs);
 
     return res.status(200).json({
       success: true,
@@ -655,18 +683,27 @@ export async function getBridgeContinuousState(req, res) {
 
     const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(
       mid,
-    )}/continuous/state`;
+    )}`;
 
     try {
-      const resp = await fetch(url, {
-        method: "GET",
-        headers: withBridgeHeaders(),
-      });
+      const resp = await fetch(
+        `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/continuous/state?machines=${encodeURIComponent(mid)}`,
+        {
+          method: "GET",
+          headers: withBridgeHeaders(),
+        },
+      );
       const body = await resp.json().catch(() => ({}));
       if (resp.ok && body?.success !== false) {
+        const resultItem = Array.isArray(body?.results)
+          ? body.results.find(
+              (item) => String(item?.machineId || "").trim() === mid,
+            )
+          : null;
+        const resultData = resultItem?.data ?? null;
         return res
           .status(200)
-          .json({ success: true, data: body?.data ?? body });
+          .json({ success: true, data: resultData ?? body?.data ?? body });
       }
     } catch (bridgeErr) {
       console.warn(

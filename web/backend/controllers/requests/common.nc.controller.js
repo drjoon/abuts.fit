@@ -160,6 +160,15 @@ function makeDirectRootNcName({ requestId, fileName }) {
   return `${head}.nc`;
 }
 
+function makeRequestNcBridgePath(fileName) {
+  const normalized = String(fileName || "")
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/^3-nc\//i, "");
+  return `3-nc/${normalized || "program.nc"}`;
+}
+
 async function uploadNcToBridgeStore({
   requestId,
   s3Key,
@@ -183,7 +192,7 @@ async function uploadNcToBridgeStore({
   const relPath =
     String(storeScope || "") === "direct_root"
       ? makeDirectRootNcName({ requestId, fileName: normalizedName })
-      : `nc/${String(requestId || "").trim()}/${normalizedName}`;
+      : makeRequestNcBridgePath(normalizedName);
   const resp = await fetch(`${BRIDGE_BASE}/api/bridge-store/upload`, {
     method: "POST",
     headers: withBridgeHeaders({ "Content-Type": "application/json" }),
@@ -240,7 +249,13 @@ export async function ensureNcFileOnBridgeStoreByRequestId(req, res) {
     let bridgePath =
       storeScope === "direct_root"
         ? requestedBridgePath
-        : existingPath || requestedBridgePath;
+        : /^3-nc\//i.test(existingPath)
+          ? existingPath
+          : /^3-nc\//i.test(requestedBridgePath)
+            ? requestedBridgePath
+            : makeRequestNcBridgePath(
+                fileName || existingPath || requestedBridgePath,
+              );
 
     if (!bridgePath) {
       const pushed = await uploadNcToBridgeStore({
@@ -271,10 +286,8 @@ export async function ensureNcFileOnBridgeStoreByRequestId(req, res) {
     try {
       request.caseInfos = request.caseInfos || {};
       request.caseInfos.ncFile = request.caseInfos.ncFile || {};
-      if (!request.caseInfos.ncFile.filePath) {
-        request.caseInfos.ncFile.filePath = bridgePath;
-        await request.save();
-      }
+      request.caseInfos.ncFile.filePath = bridgePath;
+      await request.save();
     } catch {
       // no-op
     }

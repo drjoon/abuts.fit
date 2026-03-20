@@ -4,7 +4,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Web.Http;
-
+using Hi_Link.Libraries.Model;
 namespace HiLinkBridgeWebApi48.Controllers
 {
     [RoutePrefix("api/cnc")]
@@ -19,10 +19,8 @@ namespace HiLinkBridgeWebApi48.Controllers
             {
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machines parameter is required" });
             }
-
             var machineIds = BridgeShared.ParseMachineIds(machines);
             var results = new List<object>();
-
             foreach (var machineId in machineIds)
             {
                 if (BridgeShared.IsMockCncMachiningEnabled())
@@ -35,7 +33,6 @@ namespace HiLinkBridgeWebApi48.Controllers
                     });
                     continue;
                 }
-
                 if (!Mode1Api.TryGetMachineAlarmInfo(machineId, headType, out var data, out var err))
                 {
                     results.Add(new
@@ -46,7 +43,6 @@ namespace HiLinkBridgeWebApi48.Controllers
                     });
                     continue;
                 }
-
                 var alarms = new List<object>();
                 if (data.alarmArray != null)
                 {
@@ -55,7 +51,20 @@ namespace HiLinkBridgeWebApi48.Controllers
                         alarms.Add(new { type = a.type, no = a.no });
                     }
                 }
-
+                if (alarms.Count == 0)
+                {
+                    if (Mode1Api.TryGetMachineStatus(machineId, out var status, out var statusErr))
+                    {
+                        if (status == MachineStatusType.Alarm)
+                        {
+                            alarms.Add(new { type = -1, no = -1, source = "MachineStatusType.Alarm" });
+                        }
+                    }
+                    else if (!string.IsNullOrWhiteSpace(statusErr))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[AlarmsController] status fallback read failed machine={machineId} err={statusErr}");
+                    }
+                }
                 results.Add(new
                 {
                     machineId = machineId,
@@ -63,7 +72,6 @@ namespace HiLinkBridgeWebApi48.Controllers
                     data = new { headType = data.headType, alarms }
                 });
             }
-
             return Request.CreateResponse(HttpStatusCode.OK, new
             {
                 success = true,
