@@ -364,9 +364,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public Esprit.PMTab exTab;
         public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null)
         {
-
-            // _espApp.New(ResolveTemplatePath(ResolveTemplateDiameter(materialDiameter)));
-
             AppLogger.BeginRun();
             AppLogger.Log("StlFileProcessor: Process 시작");
             ResetPerRunState();
@@ -378,7 +375,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return;
             }
             EnsureCleanDocument(document);
-            ResetAllDentalAddinStaticFields();
+            // ResetAllDentalAddinStaticFields();
             RemoveLayerIfExists(document, StlImportLayerName);
             double effectiveFrontLimit = frontLimitX ?? throw new InvalidOperationException("FrontPoint from backend is missing");
             double effectiveBackLimit = backLimitX ?? DefaultBackLimitX;
@@ -489,6 +486,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     AppLogger.Log($"StlFileProcessor: NC file generation failed - ncFilePath is empty");
                 }
+                ResetDocumentAfterRun(document, materialDiameter);
                 AppLogger.Log($"StlFileProcessor: 완료 - {stlPath}");
             }
             catch (Exception ex)
@@ -1940,6 +1938,64 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             string templateDir = Path.Combine(AppConfig.AddInRootDirectory, "Templates");
             return Path.Combine(templateDir, $"Hanwha_D{templateDiameter}.est");
         }
+
+        private void ResetDocumentAfterRun(Document document, double? backendMaterialDiameter)
+        {
+            if (document == null)
+            {
+                return;
+            }
+
+            string tempEspPath = null;
+            try
+            {
+                int templateDiameter = ResolveTemplateDiameter(backendMaterialDiameter);
+                string templatePath = ResolveTemplatePath(templateDiameter);
+                tempEspPath = BuildTempEspSavePath();
+
+                document.SaveAs(tempEspPath);
+                AppLogger.Log($"StlFileProcessor: 임시 ESP 저장 완료 - {tempEspPath}");
+
+                _espApp.New(templatePath);
+                AppLogger.Log($"StlFileProcessor: 작업 종료 후 새 템플릿 문서 초기화 - {templatePath}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"StlFileProcessor: 작업 종료 후 문서 초기화 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+            finally
+            {
+                TryDeleteTemporaryEspFile(tempEspPath);
+            }
+        }
+
+        private static string BuildTempEspSavePath()
+        {
+            string fileName = $"abuts-esprit-reset-{Guid.NewGuid():N}.esp";
+            return Path.Combine(Path.GetTempPath(), fileName);
+        }
+
+        private static void TryDeleteTemporaryEspFile(string tempEspPath)
+        {
+            if (string.IsNullOrWhiteSpace(tempEspPath))
+            {
+                return;
+            }
+
+            try
+            {
+                if (File.Exists(tempEspPath))
+                {
+                    File.Delete(tempEspPath);
+                    AppLogger.Log($"StlFileProcessor: 임시 ESP 삭제 완료 - {tempEspPath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"StlFileProcessor: 임시 ESP 삭제 실패 - {tempEspPath} ({ex.GetType().Name}:{ex.Message})");
+            }
+        }
+
         private void TryMergeTemplateDocument(Document document, double? backendMaterialDiameter)
         {
             int templateDiameter = ResolveTemplateDiameter(backendMaterialDiameter);
