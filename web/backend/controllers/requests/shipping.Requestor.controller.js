@@ -21,44 +21,12 @@ import {
   buildShippingPackagesSummary,
   ensureShippingPackageForPickup,
 } from "./shipping.Requestor.helpers.js";
-import { recomputePricingReferralSnapshotsForAffectedAnchorId } from "../../services/pricingReferralSnapshot.service.js";
-
-const __bulkShippingCache = new Map();
-const __bulkShippingInFlight = new Map();
-
-const getBulkCacheValue = (key) => {
-  const hit = __bulkShippingCache.get(key);
-  if (!hit) return null;
-  if (typeof hit.expiresAt !== "number" || hit.expiresAt <= Date.now()) {
-    __bulkShippingCache.delete(key);
-    return null;
-  }
-  return hit.value;
-};
-
-const setBulkCacheValue = (key, value, ttlMs) => {
-  __bulkShippingCache.set(key, {
-    value,
-    expiresAt: Date.now() + ttlMs,
-  });
-  return value;
-};
-
-const withBulkInFlight = async (key, factory) => {
-  const existing = __bulkShippingInFlight.get(key);
-  if (existing) return existing;
-
-  const promise = Promise.resolve()
-    .then(factory)
-    .finally(() => {
-      if (__bulkShippingInFlight.get(key) === promise) {
-        __bulkShippingInFlight.delete(key);
-      }
-    });
-
-  __bulkShippingInFlight.set(key, promise);
-  return promise;
-};
+import { triggerPricingSnapshotForBusinessAnchorId } from "../../services/requestSnapshotTriggers.service.js";
+import {
+  getBulkShippingCacheValue,
+  setBulkShippingCacheValue,
+  withBulkShippingInFlight,
+} from "../../services/requestDashboardCache.service.js";
 
 export async function updateMyShippingMode(req, res) {
   try {
@@ -143,6 +111,20 @@ export async function updateMyShippingMode(req, res) {
           await req.save();
         }
 
+        const affectedBusinessAnchorIds = Array.from(
+          new Set(
+            requests
+              .map((request) => String(request?.businessAnchorId || "").trim())
+              .filter(Boolean),
+          ),
+        );
+        for (const businessAnchorId of affectedBusinessAnchorIds) {
+          triggerPricingSnapshotForBusinessAnchorId(
+            businessAnchorId,
+            "update-shipping-mode",
+          );
+        }
+
         console.log(`[Fire&Forget] Updated ${requests.length} shipping modes`);
       } catch (err) {
         console.error("[Fire&Forget] Error in shipping mode update:", err);
@@ -206,7 +188,7 @@ export async function getMyBulkShipping(req, res) {
     const cacheKey = `bulk-shipping:${String(req.user?._id || "")}:${String(
       req.user?.businessAnchorId || "",
     )}`;
-    const cached = getBulkCacheValue(cacheKey);
+    const cached = getBulkShippingCacheValue(cacheKey);
     if (cached) {
       return res.status(200).json({
         success: true,
@@ -215,9 +197,9 @@ export async function getMyBulkShipping(req, res) {
       });
     }
 
-    const data = await withBulkInFlight(cacheKey, async () => {
+    const data = await withBulkShippingInFlight(cacheKey, async () => {
       const built = await buildBulkShippingCandidates(req);
-      setBulkCacheValue(cacheKey, built, 15 * 1000);
+      setBulkShippingCacheValue(cacheKey, built, 15 * 1000);
       return built;
     });
 
@@ -332,14 +314,10 @@ export async function registerShipment(req, res) {
     }
 
     if (affectedBusinessAnchorId) {
-      void recomputePricingReferralSnapshotsForAffectedAnchorId(
+      triggerPricingSnapshotForBusinessAnchorId(
         affectedBusinessAnchorId,
-      ).catch((error) => {
-        console.error(
-          "[pricingReferralSnapshot] registerShipment recompute failed",
-          error,
-        );
-      });
+        "register-shipment",
+      );
     }
 
     return res.status(200).json({
@@ -397,14 +375,10 @@ export async function createMyBulkShipping(req, res) {
       ),
     );
     for (const businessAnchorId of affectedBusinessAnchorIds) {
-      void recomputePricingReferralSnapshotsForAffectedAnchorId(
+      triggerPricingSnapshotForBusinessAnchorId(
         businessAnchorId,
-      ).catch((error) => {
-        console.error(
-          "[pricingReferralSnapshot] createMyBulkShipping recompute failed",
-          error,
-        );
-      });
+        "create-bulk-shipping",
+      );
     }
 
     return res.status(200).json({

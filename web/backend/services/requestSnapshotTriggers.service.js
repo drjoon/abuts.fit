@@ -1,10 +1,19 @@
 import { Types } from "mongoose";
 import User from "../models/user.model.js";
-import { recomputePricingReferralSnapshotForLeaderAnchorId, recomputePricingReferralSnapshotsForAffectedAnchorId } from "./pricingReferralSnapshot.service.js";
+import {
+  recomputePricingReferralSnapshotForLeaderAnchorId,
+  recomputePricingReferralSnapshotsForAffectedAnchorId,
+} from "./pricingReferralSnapshot.service.js";
+import { invalidateDashboardAndBulkCachesForBusinessAnchorId } from "./requestDashboardCache.service.js";
 
-export const triggerPricingSnapshotForBusinessAnchorId = (businessAnchorId, reason = "") => {
+export const triggerPricingSnapshotForBusinessAnchorId = (
+  businessAnchorId,
+  reason = "",
+) => {
   const anchorId = String(businessAnchorId || "").trim();
   if (!Types.ObjectId.isValid(anchorId)) return;
+
+  invalidateDashboardAndBulkCachesForBusinessAnchorId(anchorId);
 
   void recomputePricingReferralSnapshotsForAffectedAnchorId(anchorId).catch(
     (error) => {
@@ -16,7 +25,10 @@ export const triggerPricingSnapshotForBusinessAnchorId = (businessAnchorId, reas
   );
 };
 
-export const triggerPricingSnapshotForReferrerAnchorId = (referrerAnchorId, reason = "") => {
+export const triggerPricingSnapshotForReferrerAnchorId = (
+  referrerAnchorId,
+  reason = "",
+) => {
   const anchorId = String(referrerAnchorId || "").trim();
   if (!Types.ObjectId.isValid(anchorId)) return;
 
@@ -30,13 +42,19 @@ export const triggerPricingSnapshotForReferrerAnchorId = (referrerAnchorId, reas
   );
 };
 
-export const triggerPricingSnapshotForRequestDoc = (requestDoc, reason = "") => {
+export const triggerPricingSnapshotForRequestDoc = (
+  requestDoc,
+  reason = "",
+) => {
   const businessAnchorId = String(requestDoc?.businessAnchorId || "").trim();
   if (!Types.ObjectId.isValid(businessAnchorId)) return;
   triggerPricingSnapshotForBusinessAnchorId(businessAnchorId, reason);
 };
 
-export const triggerPricingSnapshotForUserDoc = async (userDoc, reason = "") => {
+export const triggerPricingSnapshotForUserDoc = async (
+  userDoc,
+  reason = "",
+) => {
   const businessAnchorId = String(userDoc?.businessAnchorId || "").trim();
   const referredByAnchorId = String(userDoc?.referredByAnchorId || "").trim();
 

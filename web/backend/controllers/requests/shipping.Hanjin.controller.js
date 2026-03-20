@@ -35,7 +35,7 @@ import {
   persistPrintedMailboxState,
 } from "./shipping.MailboxRealtime.helpers.js";
 import { startHanjinTrackingPoll } from "./shipping.TrackingPoller.js";
-import { recomputePricingReferralSnapshotsForAffectedAnchorId } from "../../services/pricingReferralSnapshot.service.js";
+import { triggerPricingSnapshotForBusinessAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 
 const buildDeliveryUpdatedEventRequest = (
   requestDoc,
@@ -557,14 +557,10 @@ async function finalizeMailboxPickupShipment({
   }
 
   if (affectedBusinessAnchorId) {
-    void recomputePricingReferralSnapshotsForAffectedAnchorId(
+    triggerPricingSnapshotForBusinessAnchorId(
       affectedBusinessAnchorId,
-    ).catch((error) => {
-      console.error(
-        "[pricingReferralSnapshot] finalizeMailboxPickupShipment recompute failed",
-        error,
-      );
-    });
+      "finalize-mailbox-pickup",
+    );
   }
 
   return { updatedIds, eventItems };
