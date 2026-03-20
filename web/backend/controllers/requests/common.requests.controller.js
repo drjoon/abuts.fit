@@ -249,6 +249,7 @@ export async function getAllRequests(req, res) {
 
     // 뷰 및 포함 항목 옵션
     const view = String(req.query.view || "").trim(); // e.g. 'worksheet'
+    const worksheetProfile = String(req.query.worksheetProfile || "").trim();
     const includeDelivery =
       String(req.query.includeDelivery || "").toLowerCase() === "1" ||
       String(req.query.includeDelivery || "").toLowerCase() === "true";
@@ -340,12 +341,30 @@ export async function getAllRequests(req, res) {
       "requestor",
     ].join(" ");
 
+    const worksheetTrackingSelect = [
+      "requestId",
+      "manufacturerStage",
+      "createdAt",
+      "lotNumber",
+      "businessAnchorId",
+      "referenceIds",
+      "caseInfos.clinicName",
+      "caseInfos.patientName",
+      "caseInfos.tooth",
+      "requestor",
+      "deliveryInfoRef",
+    ].join(" ");
+
     let query = Request.find(filter).sort(sort).skip(skip).limit(limit);
 
     // default to lightweight projection unless explicitly requesting full view
     if (view !== "full") {
+      const selectedProjection =
+        view === "worksheet" && worksheetProfile === "tracking"
+          ? worksheetTrackingSelect
+          : worksheetSelect;
       query = query
-        .select(worksheetSelect)
+        .select(selectedProjection)
         .populate("requestor", "name business");
       if (includeDelivery) {
         // 배송 정보가 필요한 경우에만 최소 필드로 populate

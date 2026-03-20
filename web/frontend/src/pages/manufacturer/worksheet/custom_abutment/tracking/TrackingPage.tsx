@@ -166,6 +166,7 @@ export const TrackingInquiryPage = () => {
         url.searchParams.set("page", String(pageRef.current));
         url.searchParams.set("limit", String(PAGE_LIMIT));
         url.searchParams.set("view", "worksheet");
+        url.searchParams.set("worksheetProfile", "tracking");
         url.searchParams.set("includeTotal", "0");
         url.searchParams.set("includeDelivery", "1");
         const res = await fetch(url.pathname + url.search, {
@@ -244,6 +245,7 @@ export const TrackingInquiryPage = () => {
         url.searchParams.set("page", String(pageRef.current));
         url.searchParams.set("limit", String(PAGE_LIMIT));
         url.searchParams.set("view", "worksheet");
+        url.searchParams.set("worksheetProfile", "tracking");
         url.searchParams.set("includeTotal", "0");
         url.searchParams.set("includeDelivery", "1");
         const res = await fetch(url.pathname + url.search, {
@@ -995,6 +997,7 @@ export const TrackingInquiryPage = () => {
       url.searchParams.set("page", String(pageRef.current));
       url.searchParams.set("limit", String(PAGE_LIMIT));
       url.searchParams.set("view", "worksheet");
+      url.searchParams.set("worksheetProfile", "tracking");
       url.searchParams.set("includeTotal", "0");
       url.searchParams.set("includeDelivery", "1");
       const res = await fetch(url.pathname + url.search, {
