@@ -165,6 +165,9 @@ async function runMonthlySnapshot() {
         acc + Number(ordersByAnchorId.get(String(anchorId)) || 0),
       0,
     );
+    const selfBusinessOrders = Number(
+      ordersByAnchorId.get(String(leaderAnchorId)) || 0,
+    );
     const snapshotBusinessId =
       leader?.businessId && Types.ObjectId.isValid(String(leader.businessId))
         ? new Types.ObjectId(String(leader.businessId))
@@ -180,6 +183,7 @@ async function runMonthlySnapshot() {
           leaderUserId: leader._id,
           groupMemberCount: memberCount,
           groupTotalOrders,
+          selfBusinessOrders,
           computedAt: new Date(),
         },
       },

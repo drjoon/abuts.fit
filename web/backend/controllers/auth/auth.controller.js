@@ -19,6 +19,7 @@ import {
   logSecurityEvent,
   logAuthFailure,
 } from "../../controllers/admin/admin.shared.controller.js";
+import { triggerPricingSnapshotForUserDoc } from "../../services/requestSnapshotTriggers.service.js";
 import { sendEmail } from "../../utils/email.util.js";
 import { getFrontendBaseUrl } from "../../utils/url.util.js";
 
@@ -645,6 +646,8 @@ async function register(req, res) {
         console.error("[register] consumeSignupVerifications failed", e);
       }
     }
+
+    await triggerPricingSnapshotForUserDoc(user, "auth-register");
 
     // 비밀번호 제외한 사용자 정보 반환
     const freshUser = await User.findById(user._id).select("-password");

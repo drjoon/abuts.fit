@@ -35,6 +35,7 @@ import {
   persistPrintedMailboxState,
 } from "./shipping.MailboxRealtime.helpers.js";
 import { startHanjinTrackingPoll } from "./shipping.TrackingPoller.js";
+import { recomputePricingReferralSnapshotsForAffectedAnchorId } from "../../services/pricingReferralSnapshot.service.js";
 
 const buildDeliveryUpdatedEventRequest = (
   requestDoc,
@@ -397,6 +398,7 @@ async function finalizeMailboxPickupShipment({
     requests: list,
     actorUserId,
   });
+  const affectedBusinessAnchorId = String(pkg?.businessAnchorId || "").trim();
   // 중복 에러인 경우 trackingNumber 추출 안 함 (아직 실제 접수가 아니므로)
   const trackingNumber = isDuplicate
     ? null
@@ -552,6 +554,17 @@ async function finalizeMailboxPickupShipment({
 
   if (requestUpdateOps.length) {
     await Request.bulkWrite(requestUpdateOps);
+  }
+
+  if (affectedBusinessAnchorId) {
+    void recomputePricingReferralSnapshotsForAffectedAnchorId(
+      affectedBusinessAnchorId,
+    ).catch((error) => {
+      console.error(
+        "[pricingReferralSnapshot] finalizeMailboxPickupShipment recompute failed",
+        error,
+      );
+    });
   }
 
   return { updatedIds, eventItems };

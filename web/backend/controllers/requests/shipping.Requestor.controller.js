@@ -21,6 +21,7 @@ import {
   buildShippingPackagesSummary,
   ensureShippingPackageForPickup,
 } from "./shipping.Requestor.helpers.js";
+import { recomputePricingReferralSnapshotsForAffectedAnchorId } from "../../services/pricingReferralSnapshot.service.js";
 
 const __bulkShippingCache = new Map();
 const __bulkShippingInFlight = new Map();
@@ -269,6 +270,7 @@ export async function registerShipment(req, res) {
       requests,
       actorUserId: req.user?._id || null,
     });
+    const affectedBusinessAnchorId = String(pkg?.businessAnchorId || "").trim();
 
     const updatedIds = [];
 
@@ -329,6 +331,17 @@ export async function registerShipment(req, res) {
       updatedIds.push(r.requestId);
     }
 
+    if (affectedBusinessAnchorId) {
+      void recomputePricingReferralSnapshotsForAffectedAnchorId(
+        affectedBusinessAnchorId,
+      ).catch((error) => {
+        console.error(
+          "[pricingReferralSnapshot] registerShipment recompute failed",
+          error,
+        );
+      });
+    }
+
     return res.status(200).json({
       success: true,
       message: `${updatedIds.length}건의 의뢰가 발송 처리되었습니다.`,
@@ -374,6 +387,24 @@ export async function createMyBulkShipping(req, res) {
     for (const r of requests) {
       applyStatusMapping(r, "발송");
       await r.save();
+    }
+
+    const affectedBusinessAnchorIds = Array.from(
+      new Set(
+        requests
+          .map((request) => String(request?.businessAnchorId || "").trim())
+          .filter(Boolean),
+      ),
+    );
+    for (const businessAnchorId of affectedBusinessAnchorIds) {
+      void recomputePricingReferralSnapshotsForAffectedAnchorId(
+        businessAnchorId,
+      ).catch((error) => {
+        console.error(
+          "[pricingReferralSnapshot] createMyBulkShipping recompute failed",
+          error,
+        );
+      });
     }
 
     return res.status(200).json({

@@ -1563,6 +1563,7 @@ export async function getMyPricingReferralStats(req, res) {
                   leaderUserId: 1,
                   groupMemberCount: 1,
                   groupTotalOrders: 1,
+                  selfBusinessOrders: 1,
                   computedAt: 1,
                 })
                 .lean()
@@ -1572,14 +1573,7 @@ export async function getMyPricingReferralStats(req, res) {
           freshGroupTotalOrders = Number(cachedSnapshot?.groupTotalOrders || 0);
 
           if (cachedSnapshot && !snapshotMissing) {
-            const myCountMap = await getShippingOrderCountsByBusinessAnchorIds({
-              businessAnchorIds: [leaderBusinessAnchorId],
-              startYmd: last30StartYmd,
-              endYmd: todayYmd,
-            });
-            myLastMonthOrders = Number(
-              myCountMap.get(String(leaderBusinessAnchorId)) || 0,
-            );
+            myLastMonthOrders = Number(cachedSnapshot.selfBusinessOrders || 0);
             groupMemberCount = Number(cachedSnapshot.groupMemberCount || 0);
             freshGroupTotalOrders = Number(
               cachedSnapshot.groupTotalOrders || 0,

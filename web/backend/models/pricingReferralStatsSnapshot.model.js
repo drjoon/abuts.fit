@@ -33,6 +33,10 @@ const pricingReferralStatsSnapshotSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    selfBusinessOrders: {
+      type: Number,
+      default: 0,
+    },
     computedAt: {
       type: Date,
       default: null,

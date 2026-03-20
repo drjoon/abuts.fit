@@ -22,6 +22,7 @@ import {
 import { getRequestorOrgId } from "./utils.js";
 import { calculateInitialProductionSchedule } from "./production.utils.js";
 import { getManufacturerLeadTimesUtil } from "../businesses/leadTime.controller.js";
+import { triggerPricingSnapshotForRequestDoc } from "../../services/requestSnapshotTriggers.service.js";
 
 /**
  * 새 의뢰 생성
@@ -716,6 +717,7 @@ export async function createRequest(req, res) {
 
     // [변경] 생산 시작(CAM 승인) 시점에 크레딧을 차감하므로, 의뢰 생성 시점의 SPEND 로직을 제거합니다.
     await newRequest.save();
+    triggerPricingSnapshotForRequestDoc(newRequest, "request-created");
 
     // [추가] Rhino 서버 업로드 시도 (병렬 처리)
     // S3 업로드 여부와 상관없이 Rhino 서버로 파일을 보내 즉시 처리를 시작하게 함

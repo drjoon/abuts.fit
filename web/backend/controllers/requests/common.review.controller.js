@@ -30,6 +30,7 @@ import {
   chooseMachineForCamMachining,
 } from "./common.review.machine.js";
 import { triggerEspritForNc } from "./common.review.esprit.js";
+import { triggerPricingSnapshotForRequestDoc } from "../../services/requestSnapshotTriggers.service.js";
 
 // Emit worksheet stage changed event
 
@@ -724,6 +725,13 @@ export async function updateReviewStatusByStage(req, res) {
       await request.save({ session });
       resultRequest = request;
     });
+
+    triggerPricingSnapshotForRequestDoc(
+      resultRequest,
+      `review-status:${String(status || "").trim()}:${String(
+        effectiveStage || "",
+      ).trim()}`,
+    );
 
     const responseData = {
       _id: String(resultRequest?._id || ""),
