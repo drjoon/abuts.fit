@@ -1,6 +1,7 @@
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useCallback, useMemo, useState } from "react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -636,6 +637,58 @@ export const MachiningQueueBoard = ({
                           {getLotShortCode(item)}
                         </Badge>
                       ) : null}
+                      <div className="ml-auto flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
+                            String(item.requestId || "").trim()
+                              ? ""
+                              : "opacity-30 cursor-not-allowed"
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const rid = String(item.requestId || "").trim();
+                            if (!rid) return;
+                            void rollbackRequestInQueue(
+                              "unassigned",
+                              rid,
+                              item.requestMongoId,
+                            );
+                          }}
+                          disabled={!String(item.requestId || "").trim()}
+                          title="CAM으로 되돌리기"
+                        >
+                          <ArrowLeft className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
+                            Number((item as any)?.rollbackCount || 0) > 0 &&
+                            String(item.requestMongoId || "").trim()
+                              ? ""
+                              : "opacity-30 cursor-not-allowed"
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const rollbackCount = Number(
+                              (item as any)?.rollbackCount || 0,
+                            );
+                            const id = String(item.requestMongoId || "").trim();
+                            if (rollbackCount <= 0) return;
+                            if (!id) return;
+                            void approveMachiningFromRollback(id);
+                          }}
+                          disabled={
+                            !(
+                              Number((item as any)?.rollbackCount || 0) > 0 &&
+                              String(item.requestMongoId || "").trim()
+                            )
+                          }
+                          title="재가공 없이 승인"
+                        >
+                          <ArrowRight className="h-3 w-3" />
+                        </button>
+                      </div>
                     </div>
                     <div className="mt-1 text-[14px] font-extrabold text-slate-900 leading-tight">
                       <MachiningRequestLabel

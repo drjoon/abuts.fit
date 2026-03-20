@@ -19,11 +19,10 @@ function isAssignableMachine({
   ignoreAllowAssign,
   mockCncMachiningEnabled,
 }) {
-  const online = isMachineOnlineStatus(machineMeta?.lastStatus?.status);
   const assignAllowed = ignoreAllowAssign
     ? true
     : machineMeta?.allowRequestAssign !== false;
-  return assignAllowed && (online || mockCncMachiningEnabled === true);
+  return assignAllowed;
 }
 
 // Machine compatibility metadata builder
@@ -349,7 +348,6 @@ export async function chooseMachineForCamMachining({
   });
 
   if (reserveAssignment) {
-    // 동시 요청 경쟁 상태 방지: 실제 배정 경로에서만 lastAssignmentAt 업데이트
     const now = new Date();
     const updateQuery = Machine.updateOne(
       { uid: chosen.machineId },
@@ -367,6 +365,7 @@ export async function chooseMachineForCamMachining({
     queuePosition,
     diameterGroup: toDiameterGroup(chosen.availableDia),
     diameter: chosen.availableDia,
+    ok: true,
   };
 }
 
@@ -396,7 +395,12 @@ export async function ensureMachineCompatibilityOrThrow({
   }
 
   try {
-    const selection = await screenCamMachineForRequest({ request });
+    const selection = await chooseMachineForCamMachining({
+      request,
+      requireCeil: true,
+      reserveAssignment: false,
+      session,
+    });
     if (!selection?.ok) {
       const err = new Error(
         selection?.reason ||

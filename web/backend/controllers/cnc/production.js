@@ -25,11 +25,7 @@ function isMachineOnlineStatus(status) {
 }
 
 function isAssignableMachine({ machineMeta, mockCncMachiningEnabled }) {
-  const online = isMachineOnlineStatus(machineMeta?.lastStatus?.status);
-  return (
-    machineMeta?.allowRequestAssign !== false &&
-    (online || mockCncMachiningEnabled === true)
-  );
+  return machineMeta?.allowRequestAssign !== false;
 }
 
 function normalizeTargetGroupSet(targetDiameterGroups) {
