@@ -4,6 +4,8 @@ import {
   recomputePricingReferralSnapshotForLeaderAnchorId,
   recomputePricingReferralSnapshotsForAffectedAnchorId,
 } from "./pricingReferralSnapshot.service.js";
+import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "./bulkShippingSnapshot.service.js";
+import { recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId } from "./requestorDashboardSummarySnapshot.service.js";
 import { invalidateDashboardAndBulkCachesForBusinessAnchorId } from "./requestDashboardCache.service.js";
 
 export const triggerPricingSnapshotForBusinessAnchorId = (
@@ -23,6 +25,24 @@ export const triggerPricingSnapshotForBusinessAnchorId = (
       );
     },
   );
+
+  void recomputeBulkShippingSnapshotForBusinessAnchorId(anchorId).catch(
+    (error) => {
+      console.error(
+        `[bulkShippingSnapshot] triggerPricingSnapshotForBusinessAnchorId failed${reason ? ` (${reason})` : ""}`,
+        error,
+      );
+    },
+  );
+
+  void recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(
+    anchorId,
+  ).catch((error) => {
+    console.error(
+      `[requestorDashboardSummarySnapshot] triggerPricingSnapshotForBusinessAnchorId failed${reason ? ` (${reason})` : ""}`,
+      error,
+    );
+  });
 };
 
 export const triggerPricingSnapshotForReferrerAnchorId = (

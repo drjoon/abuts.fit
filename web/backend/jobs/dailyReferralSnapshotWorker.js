@@ -17,6 +17,8 @@ import Request from "../models/request.model.js";
 import PricingReferralStatsSnapshot from "../models/pricingReferralStatsSnapshot.model.js";
 import ManufacturerCreditLedger from "../models/manufacturerCreditLedger.model.js";
 import ManufacturerDailySettlementSnapshot from "../models/manufacturerDailySettlementSnapshot.model.js";
+import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../services/bulkShippingSnapshot.service.js";
+import { recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId } from "../services/requestorDashboardSummarySnapshot.service.js";
 import {
   getTodayYmdInKst,
   getYesterdayYmdInKst,
@@ -199,6 +201,37 @@ async function runDailySnapshot(ymd, range) {
   console.log(
     `[${new Date().toISOString()}] Daily referral snapshot completed. Upserted ${upsertCount} snapshots for ymd=${ymd}.`,
   );
+
+  try {
+    const requestorAnchors = await User.find({
+      role: "requestor",
+      active: true,
+      businessAnchorId: { $ne: null },
+    })
+      .select({ businessAnchorId: 1 })
+      .lean();
+
+    const requestorBusinessAnchorIds = Array.from(
+      new Set(
+        (requestorAnchors || [])
+          .map((row) => String(row?.businessAnchorId || "").trim())
+          .filter((id) => Types.ObjectId.isValid(id)),
+      ),
+    );
+
+    for (const businessAnchorId of requestorBusinessAnchorIds) {
+      await recomputeBulkShippingSnapshotForBusinessAnchorId(businessAnchorId);
+      await recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(
+        businessAnchorId,
+      );
+    }
+
+    console.log(
+      `[${new Date().toISOString()}] Requestor dashboard snapshots warmed up for ${requestorBusinessAnchorIds.length} business anchors.`,
+    );
+  } catch (e) {
+    console.error("[requestorDashboardSnapshotWarmup] failed:", e);
+  }
 
   // 제조사 일별 정산 스냅샷 (전일분)
   try {

@@ -2,6 +2,8 @@ import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.mode
 import ManufacturerDailySettlementSnapshot from "../../models/manufacturerDailySettlementSnapshot.model.js";
 import PricingReferralStatsSnapshot from "../../models/pricingReferralStatsSnapshot.model.js";
 import AdminSalesmanCreditsOverviewSnapshot from "../../models/adminSalesmanCreditsOverviewSnapshot.model.js";
+import BulkShippingSnapshot from "../../models/bulkShippingSnapshot.model.js";
+import RequestorDashboardSummarySnapshot from "../../models/requestorDashboardSummarySnapshot.model.js";
 import {
   getTodayYmdInKst,
   getYesterdayYmdInKst,
@@ -123,16 +125,25 @@ export async function getAdminSnapshotsStatus(req, res) {
       });
     }
 
-    const [referralLatest, creditLatest] = await Promise.all([
-      PricingReferralStatsSnapshot.findOne({ ymd })
-        .sort({ computedAt: -1 })
-        .select({ computedAt: 1, ymd: 1 })
-        .lean(),
-      AdminSalesmanCreditsOverviewSnapshot.findOne({ ymd, periodKey: "30d" })
-        .sort({ computedAt: -1 })
-        .select({ computedAt: 1, ymd: 1, periodKey: 1 })
-        .lean(),
-    ]);
+    const [referralLatest, creditLatest, bulkLatest, requestorDashboardLatest] =
+      await Promise.all([
+        PricingReferralStatsSnapshot.findOne({ ymd })
+          .sort({ computedAt: -1 })
+          .select({ computedAt: 1, ymd: 1 })
+          .lean(),
+        AdminSalesmanCreditsOverviewSnapshot.findOne({ ymd, periodKey: "30d" })
+          .sort({ computedAt: -1 })
+          .select({ computedAt: 1, ymd: 1, periodKey: 1 })
+          .lean(),
+        BulkShippingSnapshot.findOne({ ymd })
+          .sort({ computedAt: -1 })
+          .select({ computedAt: 1, ymd: 1 })
+          .lean(),
+        RequestorDashboardSummarySnapshot.findOne({ ymd, periodKey: "30d" })
+          .sort({ computedAt: -1 })
+          .select({ computedAt: 1, ymd: 1, periodKey: 1 })
+          .lean(),
+      ]);
 
     const referralAt = referralLatest?.computedAt
       ? new Date(referralLatest.computedAt)
@@ -140,20 +151,41 @@ export async function getAdminSnapshotsStatus(req, res) {
     const creditAt = creditLatest?.computedAt
       ? new Date(creditLatest.computedAt)
       : null;
+    const bulkAt = bulkLatest?.computedAt
+      ? new Date(bulkLatest.computedAt)
+      : null;
+    const requestorDashboardAt = requestorDashboardLatest?.computedAt
+      ? new Date(requestorDashboardLatest.computedAt)
+      : null;
 
-    const lastComputedAt =
-      referralAt && creditAt
-        ? new Date(Math.max(referralAt.getTime(), creditAt.getTime()))
-        : referralAt || creditAt || null;
+    const computedCandidates = [
+      referralAt,
+      creditAt,
+      bulkAt,
+      requestorDashboardAt,
+    ].filter(Boolean);
+    const lastComputedAt = computedCandidates.length
+      ? new Date(
+          Math.max(...computedCandidates.map((value) => value.getTime())),
+        )
+      : null;
 
     return res.status(200).json({
       success: true,
       data: {
         lastComputedAt: lastComputedAt ? lastComputedAt.toISOString() : null,
         baseYmd: ymd,
-        snapshotMissing: !referralLatest || !creditLatest,
+        snapshotMissing:
+          !referralLatest ||
+          !creditLatest ||
+          !bulkLatest ||
+          !requestorDashboardLatest,
         referralLastComputedAt: referralAt ? referralAt.toISOString() : null,
         creditLastComputedAt: creditAt ? creditAt.toISOString() : null,
+        bulkShippingLastComputedAt: bulkAt ? bulkAt.toISOString() : null,
+        requestorDashboardLastComputedAt: requestorDashboardAt
+          ? requestorDashboardAt.toISOString()
+          : null,
       },
     });
   } catch (error) {

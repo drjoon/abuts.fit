@@ -434,10 +434,27 @@ export async function buildShippingEstimate(req) {
 }
 
 export async function buildBulkShippingCandidates(req) {
-  const [requestFilter, leadDays] = await Promise.all([
-    buildRequestorOrgScopeFilter(req),
-    getDeliveryEtaLeadDays(),
-  ]);
+  const requestFilter = await buildRequestorOrgScopeFilter(req);
+  return buildBulkShippingCandidatesByFilter({ requestFilter });
+}
+
+export async function buildBulkShippingCandidatesForBusinessAnchorId(
+  businessAnchorId,
+) {
+  const anchorId = String(businessAnchorId || "").trim();
+  if (!Types.ObjectId.isValid(anchorId)) {
+    return { pre: [], post: [], waiting: [] };
+  }
+
+  return buildBulkShippingCandidatesByFilter({
+    requestFilter: {
+      businessAnchorId: new Types.ObjectId(anchorId),
+    },
+  });
+}
+
+async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
+  const leadDays = await getDeliveryEtaLeadDays();
   const effectiveLeadDays = {
     ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
     ...(leadDays || {}),

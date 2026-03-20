@@ -23,6 +23,10 @@ import {
 } from "./shipping.Requestor.helpers.js";
 import { triggerPricingSnapshotForBusinessAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import {
+  getBulkShippingSnapshotForBusinessAnchorId,
+  recomputeBulkShippingSnapshotForBusinessAnchorId,
+} from "../../services/bulkShippingSnapshot.service.js";
+import {
   getBulkShippingCacheValue,
   setBulkShippingCacheValue,
   withBulkShippingInFlight,
@@ -185,8 +189,9 @@ export async function getShippingEstimate(req, res) {
 
 export async function getMyBulkShipping(req, res) {
   try {
+    const businessAnchorId = String(req.user?.businessAnchorId || "").trim();
     const cacheKey = `bulk-shipping:${String(req.user?._id || "")}:${String(
-      req.user?.businessAnchorId || "",
+      businessAnchorId,
     )}`;
     const cached = getBulkShippingCacheValue(cacheKey);
     if (cached) {
@@ -198,7 +203,30 @@ export async function getMyBulkShipping(req, res) {
     }
 
     const data = await withBulkShippingInFlight(cacheKey, async () => {
-      const built = await buildBulkShippingCandidates(req);
+      const snapshot = businessAnchorId
+        ? await getBulkShippingSnapshotForBusinessAnchorId(businessAnchorId)
+        : null;
+
+      if (snapshot) {
+        const snapshotted = {
+          pre: Array.isArray(snapshot.pre) ? snapshot.pre : [],
+          post: Array.isArray(snapshot.post) ? snapshot.post : [],
+          waiting: Array.isArray(snapshot.waiting) ? snapshot.waiting : [],
+        };
+        setBulkShippingCacheValue(cacheKey, snapshotted, 15 * 1000);
+        return snapshotted;
+      }
+
+      const recomputed = businessAnchorId
+        ? await recomputeBulkShippingSnapshotForBusinessAnchorId(
+            businessAnchorId,
+          )
+        : await buildBulkShippingCandidates(req);
+      const built = {
+        pre: Array.isArray(recomputed?.pre) ? recomputed.pre : [],
+        post: Array.isArray(recomputed?.post) ? recomputed.post : [],
+        waiting: Array.isArray(recomputed?.waiting) ? recomputed.waiting : [],
+      };
       setBulkShippingCacheValue(cacheKey, built, 15 * 1000);
       return built;
     });

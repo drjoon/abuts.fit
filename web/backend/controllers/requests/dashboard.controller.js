@@ -22,6 +22,11 @@ import {
   setRequestPerfCacheValue,
   withRequestPerfInFlight,
 } from "../../services/requestDashboardCache.service.js";
+import {
+  getRequestorDashboardSummarySnapshot,
+  recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId,
+} from "../../services/requestorDashboardSummarySnapshot.service.js";
+import { getDashboardRiskSummaryData } from "../../services/dashboardRiskSummary.service.js";
 
 function getLastMonthRangeUtc() {
   const now = new Date();
@@ -683,8 +688,27 @@ export async function getMyDashboardSummary(req, res) {
       summaryCacheKey,
       async () => {
         const requestFilter = buildRequestorOrgFilter(req);
+        const businessAnchorId = String(
+          req.user?.businessAnchorId || "",
+        ).trim();
 
         const dateFilter = buildDateFilter(period);
+
+        const summarySnapshot =
+          !debug && businessAnchorId
+            ? (await getRequestorDashboardSummarySnapshot({
+                businessAnchorId,
+                periodKey: period,
+              })) ||
+              ((
+                await recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(
+                  businessAnchorId,
+                )
+              ).find(
+                (row) => String(row?.periodKey || "") === String(period),
+              ) ??
+                null)
+            : null;
 
         const riskRequestFilter = {
           ...requestFilter,
@@ -709,114 +733,7 @@ export async function getMyDashboardSummary(req, res) {
           ],
         };
 
-        const [
-          statsResult,
-          recentRequestsResult,
-          shippingPackageRows,
-          activeRequests,
-        ] = await Promise.all([
-          Request.aggregate([
-            {
-              $match: {
-                ...requestFilter,
-                ...dateFilter,
-                "caseInfos.implantBrand": { $exists: true, $ne: "" },
-              },
-            },
-            {
-              $addFields: {
-                normalizedStage: {
-                  $let: {
-                    vars: {
-                      stage: { $ifNull: ["$manufacturerStage", ""] },
-                    },
-                    in: {
-                      $switch: {
-                        branches: [
-                          {
-                            case: { $eq: ["$$stage", "취소"] },
-                            then: "cancel",
-                          },
-                          {
-                            case: {
-                              $in: ["$$stage", ["tracking", "추적관리"]],
-                            },
-                            then: "tracking",
-                          },
-                          {
-                            case: {
-                              $in: ["$$stage", ["shipping", "포장.발송"]],
-                            },
-                            then: "shipping",
-                          },
-                          {
-                            case: {
-                              $in: ["$$stage", ["packing", "세척.패킹"]],
-                            },
-                            then: "packing",
-                          },
-                          {
-                            case: {
-                              $in: ["$$stage", ["machining", "가공"]],
-                            },
-                            then: "machining",
-                          },
-                          {
-                            case: {
-                              $in: ["$$stage", ["cam", "CAM"]],
-                            },
-                            then: "cam",
-                          },
-                        ],
-                        default: "request",
-                      },
-                    },
-                  },
-                },
-              },
-            },
-            {
-              $group: {
-                _id: null,
-                total: { $sum: 1 },
-                canceledCount: {
-                  $sum: {
-                    $cond: [{ $eq: ["$manufacturerStage", "취소"] }, 1, 0],
-                  },
-                },
-                trackingCount: {
-                  $sum: {
-                    $cond: [{ $eq: ["$normalizedStage", "tracking"] }, 1, 0],
-                  },
-                },
-                requestCount: {
-                  $sum: {
-                    $cond: [{ $eq: ["$normalizedStage", "request"] }, 1, 0],
-                  },
-                },
-                camCount: {
-                  $sum: {
-                    $cond: [{ $eq: ["$normalizedStage", "cam"] }, 1, 0],
-                  },
-                },
-                machiningCount: {
-                  $sum: {
-                    $cond: [{ $eq: ["$normalizedStage", "machining"] }, 1, 0],
-                  },
-                },
-                packingCount: {
-                  $sum: {
-                    $cond: [{ $eq: ["$normalizedStage", "packing"] }, 1, 0],
-                  },
-                },
-                shippingCount: {
-                  $sum: {
-                    $cond: [{ $eq: ["$normalizedStage", "shipping"] }, 1, 0],
-                  },
-                },
-              },
-            },
-          ]),
+        const [recentRequestsResult, riskData] = await Promise.all([
           Request.find({
             ...requestFilter,
             "caseInfos.implantBrand": { $exists: true, $ne: "" },
@@ -840,164 +757,32 @@ export async function getMyDashboardSummary(req, res) {
             .sort({ createdAt: -1 })
             .limit(10)
             .lean(),
-          Request.aggregate([
-            {
-              $match: {
-                ...requestFilter,
-                ...dateFilter,
-                "caseInfos.implantBrand": { $exists: true, $ne: "" },
-                manufacturerStage: { $ne: "취소" },
-              },
-            },
-            {
-              $project: {
-                manufacturerStage: 1,
-                shippingPackageId: 1,
-              },
-            },
-            {
-              $addFields: {
-                stageBucket: {
-                  $switch: {
-                    branches: [
-                      {
-                        case: {
-                          $in: ["$manufacturerStage", ["tracking", "추적관리"]],
-                        },
-                        then: "tracking",
-                      },
-                      {
-                        case: {
-                          $in: [
-                            "$manufacturerStage",
-                            ["shipping", "포장.발송"],
-                          ],
-                        },
-                        then: "shipping",
-                      },
-                    ],
-                    default: null,
-                  },
-                },
-              },
-            },
-            {
-              $match: {
-                stageBucket: { $in: ["shipping", "tracking"] },
-              },
-            },
-            {
-              $group: {
-                _id: "$stageBucket",
-                productCount: { $sum: 1 },
-                packageIds: {
-                  $addToSet: {
-                    $cond: [
-                      {
-                        $and: [
-                          { $ne: ["$shippingPackageId", null] },
-                          { $ne: ["$shippingPackageId", ""] },
-                        ],
-                      },
-                      "$shippingPackageId",
-                      "$$REMOVE",
-                    ],
-                  },
-                },
-              },
-            },
-          ]),
-          Request.find(riskRequestFilter)
-            .select(
-              "requestId title manufacturerStage productionSchedule caseInfos createdAt timeline shippingMode finalShipping originalShipping",
-            )
-            .lean(),
+          getRequestorDashboardRiskSummaryData({
+            businessAnchorId,
+            periodKey: period,
+            riskRequestFilter,
+            debug,
+          }),
         ]);
 
-        const stats = statsResult[0] || {
-          total: 0,
-          canceledCount: 0,
-          trackingCount: 0,
-          requestCount: 0,
-          camCount: 0,
-          machiningCount: 0,
-          packingCount: 0,
-          shippingCount: 0,
+        const snapshotStats = summarySnapshot?.stats || null;
+        const snapshotManufacturingSummary =
+          summarySnapshot?.manufacturingSummary || null;
+        const snapshotRecentRequests = Array.isArray(
+          summarySnapshot?.recentRequests,
+        )
+          ? summarySnapshot.recentRequests
+          : null;
+
+        const activeRequests = Array.isArray(riskData?.activeRequests)
+          ? riskData.activeRequests
+          : [];
+        const riskSummary = riskData?.riskSummary || {
+          delayedCount: 0,
+          warningCount: 0,
+          onTimeRate: 100,
+          items: [],
         };
-
-        const shippingPackageStatsMap = new Map(
-          (Array.isArray(shippingPackageRows) ? shippingPackageRows : []).map(
-            (row) => {
-              const packageIds = Array.isArray(row?.packageIds)
-                ? row.packageIds
-                    .map((value) => String(value || "").trim())
-                    .filter(Boolean)
-                : [];
-              return [
-                String(row?._id || "").trim(),
-                {
-                  productCount: Number(row?.productCount || 0),
-                  packageCount: new Set(packageIds).size,
-                },
-              ];
-            },
-          ),
-        );
-
-        const shippingCounts = shippingPackageStatsMap.get("shipping") || {
-          productCount: Number(stats.shippingCount || 0),
-          packageCount: 0,
-        };
-        const trackingCounts = shippingPackageStatsMap.get("tracking") || {
-          productCount: Number(stats.trackingCount || 0),
-          packageCount: 0,
-        };
-
-        if (debug) {
-          console.info("[REQUESTOR_DASHBOARD_STAGE_COUNTS]", {
-            userId: req.user?._id ? String(req.user._id) : null,
-            requestFilter,
-            statsShippingCount: Number(stats.shippingCount || 0),
-            statsTrackingCount: Number(stats.trackingCount || 0),
-            shippingProductCount: Number(shippingCounts.productCount || 0),
-            shippingPackageCount: Number(shippingCounts.packageCount || 0),
-            trackingProductCount: Number(trackingCounts.productCount || 0),
-            trackingPackageCount: Number(trackingCounts.packageCount || 0),
-          });
-        }
-
-        // '포장.발송'은 shipping, '추적관리'는 tracking으로 분리.
-        const shippingTotal = Number(shippingCounts.productCount || 0);
-        const trackingTotal = Number(trackingCounts.productCount || 0);
-
-        const totalActive =
-          stats.requestCount +
-            stats.camCount +
-            stats.machiningCount +
-            stats.packingCount +
-            shippingTotal +
-            trackingTotal || 1;
-
-        const manufacturingSummary = {
-          totalActive,
-          stages: [
-            { key: "request", label: "의뢰", count: stats.requestCount },
-            { key: "cam", label: "CAM", count: stats.camCount },
-            { key: "machining", label: "가공", count: stats.machiningCount },
-            { key: "packing", label: "세척.패킹", count: stats.packingCount },
-            { key: "shipping", label: "포장.발송", count: shippingTotal },
-            { key: "tracking", label: "추적관리", count: trackingTotal },
-          ].map((s) => ({
-            ...s,
-            percent: totalActive
-              ? Math.round((s.count / totalActive) * 100)
-              : 0,
-          })),
-        };
-
-        // Risk Summary: 지연 위험 요약 (시각 기반)
-        const { calculateRiskSummary } = await import("./production.utils.js");
-        const riskSummary = calculateRiskSummary(activeRequests);
 
         // 직경별 통계 실제 집계
 
@@ -1073,36 +858,36 @@ export async function getMyDashboardSummary(req, res) {
           };
         });
 
-        const inProgress =
-          stats.camCount + stats.machiningCount + stats.packingCount;
-
         const responseData = {
-          stats: {
-            totalRequests: stats.requestCount,
+          stats: snapshotStats || {
+            totalRequests: 0,
             totalRequestsChange: "+0%",
-            inProgress,
+            inProgress: 0,
             inProgressChange: "+0%",
-            inCam: stats.camCount,
+            inCam: 0,
             inCamChange: "+0%",
-            inProduction: stats.machiningCount,
+            inProduction: 0,
             inProductionChange: "+0%",
-            inPacking: stats.packingCount,
+            inPacking: 0,
             inPackingChange: "+0%",
-            inShipping: shippingTotal,
-            inShippingBoxes: shippingCounts.packageCount,
+            inShipping: 0,
+            inShippingBoxes: 0,
             inShippingChange: "+0%",
-            inTracking: trackingTotal,
-            inTrackingBoxes: trackingCounts.packageCount,
+            inTracking: 0,
+            inTrackingBoxes: 0,
             inTrackingChange: "+0%",
-            canceled: stats.canceledCount,
+            canceled: 0,
             canceledChange: "+0%",
-            tracking: trackingTotal,
-            doneOrCanceled: trackingTotal + stats.canceledCount,
+            tracking: 0,
+            doneOrCanceled: 0,
             doneOrCanceledChange: "+0%",
           },
-          manufacturingSummary,
+          manufacturingSummary: snapshotManufacturingSummary || {
+            totalActive: 0,
+            stages: [],
+          },
           riskSummary,
-          recentRequests: recentRequestsData,
+          recentRequests: snapshotRecentRequests || recentRequestsData,
         };
 
         if (debug) {
@@ -1280,6 +1065,8 @@ export async function getMyDashboardSummary(req, res) {
 export async function getDashboardRiskSummary(req, res) {
   try {
     const { period = "30d" } = req.query;
+    const debug =
+      process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
 
     const dateFilter = buildDateFilter(period);
 
@@ -1312,135 +1099,28 @@ export async function getDashboardRiskSummary(req, res) {
               $and: [baseFilter, await buildRequestorOrgScopeFilter(req)],
             };
 
-    const requests = await Request.find(filter)
-      .populate("requestor", "name organization")
-      .populate("caManufacturer", "name organization")
-      .populate("deliveryInfoRef")
-      .lean();
-
-    const now = new Date();
-    const delayedItems = [];
-    const warningItems = [];
-
-    for (const r of requests) {
-      if (!r) continue;
-
-      const pickedUpAt = r.deliveryInfoRef?.pickedUpAt
-        ? new Date(r.deliveryInfoRef.pickedUpAt)
-        : null;
-      const deliveredAt = r.deliveryInfoRef?.deliveredAt
-        ? new Date(r.deliveryInfoRef.deliveredAt)
-        : null;
-      const isDone =
-        String(r?.manufacturerStage || "").trim() === "추적관리" ||
-        Boolean(deliveredAt || pickedUpAt);
-      if (isDone) continue;
-
-      const stage = String(r.manufacturerStage || "").trim();
-      const isPreShip = ["의뢰", "CAM", "생산"].includes(stage);
-      if (!isPreShip) continue;
-
-      const sp = await computeShippingPriority({ request: r, now });
-      if (!sp) continue;
-
-      if (sp.level === "danger") {
-        delayedItems.push({ r, shippingPriority: sp });
-        continue;
-      }
-      if (sp.level === "warning") {
-        warningItems.push({ r, shippingPriority: sp });
-      }
-    }
-
-    const totalWithDeadline = delayedItems.length + warningItems.length;
-    const delayedCount = delayedItems.length;
-    const warningCount = warningItems.length;
-    const onTimeBase = Math.max(1, totalWithDeadline + 1);
-    const onTimeRate = Math.max(
-      0,
-      Math.min(
-        100,
-        Math.round(
-          ((onTimeBase - delayedCount - warningCount) / onTimeBase) * 100,
-        ),
-      ),
-    );
-
-    const toRiskItem = (entry, level) => {
-      const r = entry?.r || entry;
-      const sp = entry?.shippingPriority || null;
-      const ci = r?.caseInfos || {};
-
-      const requestorText =
-        r?.requestor?.business ||
-        r?.requestor?.organization ||
-        r?.requestor?.name ||
-        "";
-      const manufacturerText =
-        r?.manufacturer?.business ||
-        r?.manufacturer?.organization ||
-        r?.manufacturer?.name ||
-        "";
-
-      const secondaryText =
-        req.user?.role === "manufacturer"
-          ? requestorText
-          : [requestorText, manufacturerText].filter(Boolean).join(" → ");
-
-      const title =
-        (r?.title || "").trim() ||
-        [ci.patientName, ci.tooth].filter(Boolean).join(" ") ||
-        r?.requestId ||
-        "";
-
-      const message =
-        level === "danger"
-          ? `출고 마감(15:00) 기준 처리 지연 위험이 매우 큽니다. ${
-              sp?.label || ""
-            }`.trim()
-          : `출고 마감(15:00)이 임박했습니다. ${sp?.label || ""}`.trim();
-
-      return {
-        id: r?.requestId,
-        title,
-        manufacturer: secondaryText,
-        riskLevel: level,
-        dueDate: sp?.deadlineAt || null,
-        message,
-        caseInfos: r?.caseInfos || {},
-        shippingPriority: sp || undefined,
-      };
-    };
-
-    const riskItems = [
-      ...delayedItems
-        .slice()
-        .sort(
-          (a, b) =>
-            (b?.shippingPriority?.score || 0) -
-            (a?.shippingPriority?.score || 0),
-        )
-        .slice(0, 5) // 지연 최대 5건
-        .map((entry) => toRiskItem(entry, "danger")),
-      ...warningItems
-        .slice()
-        .sort(
-          (a, b) =>
-            (b?.shippingPriority?.score || 0) -
-            (a?.shippingPriority?.score || 0),
-        )
-        .slice(0, 5) // 주의 최대 5건
-        .map((entry) => toRiskItem(entry, "warning")),
-    ];
+    const cacheScope =
+      role === "requestor"
+        ? String(req.user?.businessAnchorId || "").trim()
+        : role === "manufacturer"
+          ? String(req.user?._id || "").trim()
+          : "admin";
+    const riskData = await getDashboardRiskSummaryData({
+      cacheKey: `dashboard-risk-summary:${role}:${cacheScope}:${String(period)}`,
+      riskRequestFilter: filter,
+      debug,
+      role,
+      populateRelated: role !== "requestor",
+    });
 
     return res.status(200).json({
       success: true,
       data: {
-        riskSummary: {
-          delayedCount,
-          warningCount,
-          onTimeRate,
-          items: riskItems,
+        riskSummary: riskData?.riskSummary || {
+          delayedCount: 0,
+          warningCount: 0,
+          onTimeRate: 100,
+          items: [],
         },
       },
     });
