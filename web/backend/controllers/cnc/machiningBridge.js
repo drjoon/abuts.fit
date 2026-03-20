@@ -971,7 +971,11 @@ export async function recordMachiningTickForBridge(req, res) {
       .trim()
       .toUpperCase();
 
-    if (requestId) {
+    // AWAITING_START는 준비 중 상태로, 경과시간은 0으로 유지
+    if (phaseUpper === "AWAITING_START") {
+      startedAt = now;
+      elapsedSeconds = 0;
+    } else if (requestId) {
       const existing = await Request.findOne({ requestId }).select({
         productionSchedule: 1,
         requestId: 1,

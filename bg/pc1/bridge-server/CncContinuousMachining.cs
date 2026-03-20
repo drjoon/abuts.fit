@@ -654,7 +654,48 @@ return;
 
 if (state.AwaitingStart && state.CurrentJob != null)
 {
-if (!Config.MockCncMachining)
+// awaiting-start 상태에서도 주기적으로 tick 전송 (준비 중 상태 표시)
+try
+{
+var nowUtcSnapshot = DateTime.UtcNow;
+var shouldTickAwaiting = state.CurrentJob != null && (state.LastTickNotifyAtUtc == DateTime.MinValue || (nowUtcSnapshot - state.LastTickNotifyAtUtc) >= TimeSpan.FromSeconds(2));
+if (shouldTickAwaiting)
+{
+lock (StateLock)
+{
+state.LastTickNotifyAtUtc = nowUtcSnapshot;
+}
+_ = Task.Run(async () => await NotifyMachiningTick(state.CurrentJob, machineId, "AWAITING_START", null));
+}
+}
+catch { }
+
+// busy 상태 체크를 먼저 수행 (가장 빠른 시작 감지)
+if (TryGetMachineBusy(machineId, out var awaitingBusy) && awaitingBusy)
+{
+var prodCountBefore = 0;
+TryGetProductCount(machineId, out prodCountBefore);
+lock (StateLock)
+{
+state.IsRunning = true;
+state.AwaitingStart = false;
+state.StartedAtUtc = DateTime.UtcNow;
+state.ProductCountBefore = prodCountBefore;
+state.SawBusy = true;
+state.AwaitingStartSinceUtc = DateTime.MinValue;
+state.LastAwaitingStartSignalUtc = DateTime.MinValue;
+}
+Console.WriteLine("[CncMachining] detected start machine={0} jobId={1} slot=O{2}", machineId, state.CurrentJob?.id, state.CurrentSlot);
+_ = Task.Run(() => NotifyMachiningStarted(state.CurrentJob, machineId));
+return;
+}
+
+var awaitingElapsed = state.AwaitingStartSinceUtc == DateTime.MinValue
+    ? TimeSpan.Zero
+    : (DateTime.UtcNow - state.AwaitingStartSinceUtc);
+
+// 알람 체크는 15초 이상 경과 시에만 수행 (불필요한 지연 방지)
+if (!Config.MockCncMachining && awaitingElapsed >= TimeSpan.FromSeconds(15))
 {
 if (TryGetMachineAlarms(machineId, out var awaitingAlarms, out var awaitingAlarmErr))
 {
@@ -698,34 +739,9 @@ state.NextConsumeAttemptUtc = DateTime.MinValue;
 return;
 }
 }
-else
-{
-Console.WriteLine("[CncMachining] awaiting-start alarm read failed machine={0} err={1}", machineId, awaitingAlarmErr);
-}
-}
-if (TryGetMachineBusy(machineId, out var awaitingBusy) && awaitingBusy)
-{
-var prodCountBefore = 0;
-TryGetProductCount(machineId, out prodCountBefore);
-lock (StateLock)
-{
-state.IsRunning = true;
-state.AwaitingStart = false;
-state.StartedAtUtc = DateTime.UtcNow;
-state.ProductCountBefore = prodCountBefore;
-state.SawBusy = true;
-state.AwaitingStartSinceUtc = DateTime.MinValue;
-state.LastAwaitingStartSignalUtc = DateTime.MinValue;
-}
-Console.WriteLine("[CncMachining] detected start machine={0} jobId={1} slot=O{2}", machineId, state.CurrentJob?.id, state.CurrentSlot);
-_ = Task.Run(() => NotifyMachiningStarted(state.CurrentJob, machineId));
-return;
 }
 
-var awaitingElapsed = state.AwaitingStartSinceUtc == DateTime.MinValue
-    ? TimeSpan.Zero
-    : (DateTime.UtcNow - state.AwaitingStartSinceUtc);
-if (awaitingElapsed >= TimeSpan.FromSeconds(5))
+if (awaitingElapsed >= TimeSpan.FromSeconds(20))
 {
 var stuckJob = state.CurrentJob;
 var stuckSlot = state.CurrentSlot;

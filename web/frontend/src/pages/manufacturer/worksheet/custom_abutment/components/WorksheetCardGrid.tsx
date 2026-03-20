@@ -319,8 +319,20 @@ export const WorksheetCardGrid = ({
 
         const machiningElapsedLabel = (() => {
           if (!isMachiningStage) return "";
-          const secRaw = (request as any)?.productionSchedule?.machiningProgress
-            ?.elapsedSeconds;
+          const progress = (request as any)?.productionSchedule
+            ?.machiningProgress;
+          const phase = String(progress?.phase || "")
+            .trim()
+            .toUpperCase();
+          const secRaw = progress?.elapsedSeconds;
+
+          if (phase === "AWAITING_START") {
+            return "가공 시작 준비중...";
+          }
+          if (phase === "COMPLETED") {
+            const elapsed = formatElapsed(secRaw);
+            return elapsed ? `가공 완료 (${elapsed})` : "가공 완료";
+          }
           return formatElapsed(secRaw);
         })();
         const realtimeBadge = String(

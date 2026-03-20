@@ -233,7 +233,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     ResetStaticField(mainModuleType, "Matrix3", new double[37]);
                     ResetStaticField(mainModuleType, "P", new int[37]);
                     ResetStaticField(mainModuleType, "Q", new int[9]);
-
                     ResetStaticField(mainModuleType, "SurfaceNumber", 0);
                     ResetStaticField(mainModuleType, "SurfaceNumber2", 0.0);
                     ResetStaticField(mainModuleType, "Jump", 0);
@@ -366,7 +365,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null)
         {
 
-            // _espApp.new("template path")
+            // _espApp.New(ResolveTemplatePath(ResolveTemplateDiameter(materialDiameter)));
 
             AppLogger.BeginRun();
             AppLogger.Log("StlFileProcessor: Process 시작");
