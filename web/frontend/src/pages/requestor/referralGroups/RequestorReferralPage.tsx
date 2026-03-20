@@ -56,11 +56,13 @@ export const RequestorReferralPage = () => {
     referralLink,
     requestorStats,
     loadingRequestor,
-    directMembers,
-    loadingDirectMembers,
     treeData,
     loadingTree,
-  } = useReferralData();
+  } = useReferralData({
+    fetchStats: activeTab === "dashboard",
+    fetchDirectMembers: false,
+    fetchTree: activeTab === "dashboard",
+  });
 
   const handleCopyLink = async () => {
     if (!referralLink) return;

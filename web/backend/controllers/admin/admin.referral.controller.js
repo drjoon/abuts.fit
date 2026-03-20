@@ -21,6 +21,7 @@ const REFERRAL_TREE_ROLES = ["requestor", "salesman", "devops"];
 const REFERRAL_REVENUE_OWNER_ROLES = new Set(["requestor", "devops"]);
 const REFERRAL_COMMISSION_LEADER_ROLES = new Set(["salesman", "devops"]);
 const adminReferralCache = new Map();
+const adminReferralInFlight = new Map();
 
 function getAdminReferralCache(key) {
   const hit = adminReferralCache.get(key);
@@ -34,6 +35,22 @@ function getAdminReferralCache(key) {
 
 function setAdminReferralCache(key, value) {
   adminReferralCache.set(key, { ts: Date.now(), value });
+}
+
+async function withAdminReferralInFlight(key, factory) {
+  const existing = adminReferralInFlight.get(key);
+  if (existing) return existing;
+
+  const promise = Promise.resolve()
+    .then(factory)
+    .finally(() => {
+      if (adminReferralInFlight.get(key) === promise) {
+        adminReferralInFlight.delete(key);
+      }
+    });
+
+  adminReferralInFlight.set(key, promise);
+  return promise;
 }
 
 function buildShippingRequestCountByBusinessKey(rows) {
@@ -51,6 +68,57 @@ function buildShippingRequestCountByBusinessKey(rows) {
     map.set(businessKey, Number(map.get(businessKey) || 0) + count);
   }
   return map;
+}
+
+async function getShippingRequestCountByBusinessAnchorIds({
+  businessAnchorIds,
+  startYmd,
+  endYmd,
+}) {
+  const validIds = Array.from(
+    new Set(
+      (businessAnchorIds || [])
+        .map((id) => String(id || "").trim())
+        .filter((id) => id && Types.ObjectId.isValid(id)),
+    ),
+  ).map((id) => new Types.ObjectId(id));
+
+  if (!validIds.length || !startYmd || !endYmd) {
+    return new Map();
+  }
+
+  const rows = await ShippingPackage.aggregate([
+    {
+      $match: {
+        businessAnchorId: { $in: validIds },
+        shipDateYmd: { $gte: startYmd, $lte: endYmd },
+      },
+    },
+    {
+      $unwind: {
+        path: "$requestIds",
+        preserveNullAndEmptyArrays: false,
+      },
+    },
+    {
+      $group: {
+        _id: {
+          businessAnchorId: "$businessAnchorId",
+          requestId: "$requestIds",
+        },
+      },
+    },
+    {
+      $group: {
+        _id: "$_id.businessAnchorId",
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  return new Map(
+    rows.map((row) => [String(row._id || "").trim(), Number(row.count || 0)]),
+  );
 }
 
 function normalizeReferralLeaders(leaders) {
@@ -362,6 +430,7 @@ export async function getReferralGroups(req, res) {
 export async function getReferralGroupTree(req, res) {
   try {
     const { leaderId } = req.params;
+    const lite = String(req.query.lite || "") === "1";
     const requestingUserId = String(req.user?._id || req.user?.id || "");
     const requestingUserRole = String(req.user?.role || "");
 
@@ -381,67 +450,15 @@ export async function getReferralGroupTree(req, res) {
         .json({ success: false, message: "권한이 없습니다." });
     }
 
-    const cacheKey = `referral-group-tree:v4:${leaderId}`;
+    const cacheKey = `referral-group-tree:v5:${leaderId}:lite=${lite ? 1 : 0}`;
     const refresh = String(req.query.refresh || "") === "1";
     if (!refresh) {
       const cached = getAdminReferralCache(cacheKey);
       if (cached) return res.status(200).json(cached);
     }
 
-    const leader = await User.findById(leaderId)
-      .select({
-        _id: 1,
-        role: 1,
-        requestorRole: 1,
-        name: 1,
-        email: 1,
-        business: 1,
-        businessAnchorId: 1,
-        active: 1,
-        createdAt: 1,
-        approvedAt: 1,
-        updatedAt: 1,
-        referredByAnchorId: 1,
-      })
-      .lean();
-
-    if (!leader || !REFERRAL_TREE_ROLES.includes(String(leader.role || ""))) {
-      return res
-        .status(404)
-        .json({ success: false, message: "리더를 찾을 수 없습니다." });
-    }
-
-    const leaderBusinessAnchorId = String(leader?.businessAnchorId || "");
-    if (!Types.ObjectId.isValid(leaderBusinessAnchorId)) {
-      return res.status(400).json({
-        success: false,
-        message: "리더의 사업자 정보가 없어 그룹 트리를 구성할 수 없습니다.",
-      });
-    }
-
-    const memberMap = new Map();
-    const queueBusinessAnchorIds = [leaderBusinessAnchorId];
-    const visitedParentBusinessAnchorIds = new Set();
-
-    memberMap.set(String(leader._id), leader);
-
-    while (queueBusinessAnchorIds.length) {
-      const frontier = queueBusinessAnchorIds.splice(0, 100);
-      const parentBusinessAnchorIds = frontier.filter(
-        (id) => id && !visitedParentBusinessAnchorIds.has(id),
-      );
-      if (!parentBusinessAnchorIds.length) continue;
-
-      parentBusinessAnchorIds.forEach((id) =>
-        visitedParentBusinessAnchorIds.add(id),
-      );
-      const parentBusinessAnchorObjectIds = parentBusinessAnchorIds.map(
-        (id) => new Types.ObjectId(id),
-      );
-      const children = await User.find({
-        referredByAnchorId: { $in: parentBusinessAnchorObjectIds },
-        role: { $in: REFERRAL_TREE_ROLES },
-      })
+    const payload = await withAdminReferralInFlight(cacheKey, async () => {
+      const leader = await User.findById(leaderId)
         .select({
           _id: 1,
           role: 1,
@@ -458,214 +475,271 @@ export async function getReferralGroupTree(req, res) {
         })
         .lean();
 
-      for (const child of children) {
-        memberMap.set(String(child._id), child);
-        const childBusinessAnchorId = String(child?.businessAnchorId || "");
+      if (!leader || !REFERRAL_TREE_ROLES.includes(String(leader.role || ""))) {
+        const error = new Error("리더를 찾을 수 없습니다.");
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const leaderBusinessAnchorId = String(leader?.businessAnchorId || "");
+      if (!Types.ObjectId.isValid(leaderBusinessAnchorId)) {
+        const error = new Error(
+          "리더의 사업자 정보가 없어 그룹 트리를 구성할 수 없습니다.",
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const descendantRows = await User.aggregate([
+        {
+          $match: {
+            _id: new Types.ObjectId(leaderId),
+          },
+        },
+        {
+          $graphLookup: {
+            from: "users",
+            startWith: "$businessAnchorId",
+            connectFromField: "businessAnchorId",
+            connectToField: "referredByAnchorId",
+            as: "descendants",
+            restrictSearchWithMatch: {
+              role: { $in: REFERRAL_TREE_ROLES },
+            },
+          },
+        },
+        {
+          $project: {
+            descendants: {
+              $map: {
+                input: "$descendants",
+                as: "user",
+                in: {
+                  _id: "$$user._id",
+                  role: "$$user.role",
+                  requestorRole: "$$user.requestorRole",
+                  name: "$$user.name",
+                  email: "$$user.email",
+                  business: "$$user.business",
+                  businessAnchorId: "$$user.businessAnchorId",
+                  active: "$$user.active",
+                  createdAt: "$$user.createdAt",
+                  approvedAt: "$$user.approvedAt",
+                  updatedAt: "$$user.updatedAt",
+                  referredByAnchorId: "$$user.referredByAnchorId",
+                },
+              },
+            },
+          },
+        },
+      ]);
+
+      const members = [
+        leader,
+        ...(descendantRows?.[0]?.descendants || []).filter(
+          (member) => String(member?._id || "") !== String(leader._id),
+        ),
+      ];
+
+      const memberBusinessAnchorIds = Array.from(
+        new Set(
+          (members || [])
+            .map((u) => String(u?.businessAnchorId || ""))
+            .filter((id) => id && Types.ObjectId.isValid(id)),
+        ),
+      ).map((id) => new Types.ObjectId(id));
+
+      const range30 = getLast30DaysRangeUtc();
+      const start = range30?.start;
+      const end = range30?.end;
+      const startYmd = start ? toKstYmd(start) : null;
+      const endYmd = end ? toKstYmd(end) : null;
+
+      const shippingOrderCountByBusinessAnchorId =
+        await getShippingRequestCountByBusinessAnchorIds({
+          businessAnchorIds: memberBusinessAnchorIds,
+          startYmd,
+          endYmd,
+        });
+
+      const businessStatsRows =
+        !lite && memberBusinessAnchorIds.length && start && end
+          ? await Request.aggregate([
+              {
+                $match: {
+                  businessAnchorId: { $in: memberBusinessAnchorIds },
+                  manufacturerStage: "추적관리",
+                  createdAt: { $gte: start, $lte: end },
+                },
+              },
+              {
+                $group: {
+                  _id: "$businessAnchorId",
+                  lastMonthOrders: { $sum: 1 },
+                  lastMonthPaidOrders: {
+                    $sum: {
+                      $cond: [
+                        { $gt: [{ $ifNull: ["$price.paidAmount", 0] }, 0] },
+                        1,
+                        0,
+                      ],
+                    },
+                  },
+                  lastMonthBonusOrders: {
+                    $sum: {
+                      $cond: [
+                        {
+                          $and: [
+                            {
+                              $gt: [{ $ifNull: ["$price.bonusAmount", 0] }, 0],
+                            },
+                            { $eq: [{ $ifNull: ["$price.paidAmount", 0] }, 0] },
+                          ],
+                        },
+                        1,
+                        0,
+                      ],
+                    },
+                  },
+                  lastMonthPaidRevenue: {
+                    $sum: { $ifNull: ["$price.paidAmount", 0] },
+                  },
+                  lastMonthBonusRevenue: {
+                    $sum: { $ifNull: ["$price.bonusAmount", 0] },
+                  },
+                },
+              },
+            ])
+          : [];
+
+      const businessStatsByBusinessAnchorId = new Map(
+        businessStatsRows.map((row) => [
+          String(row._id),
+          {
+            lastMonthOrders: Number(row.lastMonthOrders || 0),
+            lastMonthPaidOrders: Number(row.lastMonthPaidOrders || 0),
+            lastMonthBonusOrders: Number(row.lastMonthBonusOrders || 0),
+            lastMonthPaidRevenue: Number(row.lastMonthPaidRevenue || 0),
+            lastMonthBonusRevenue: Number(row.lastMonthBonusRevenue || 0),
+          },
+        ]),
+      );
+
+      const nodes = members.map((u) => ({
+        ...u,
+        lastMonthOrders: Number(
+          shippingOrderCountByBusinessAnchorId.get(
+            String(u?.businessAnchorId || ""),
+          ) || 0,
+        ),
+        lastMonthPaidOrders: Number(
+          businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
+            ?.lastMonthPaidOrders || 0,
+        ),
+        lastMonthBonusOrders: Number(
+          businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
+            ?.lastMonthBonusOrders || 0,
+        ),
+        lastMonthPaidRevenue: Number(
+          businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
+            ?.lastMonthPaidRevenue || 0,
+        ),
+        lastMonthBonusRevenue: Number(
+          businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
+            ?.lastMonthBonusRevenue || 0,
+        ),
+        referredByAnchorId: u.referredByAnchorId || null,
+        children: [],
+      }));
+      const nodeById = new Map(nodes.map((n) => [String(n._id), n]));
+      const representativeByBusinessAnchorId = new Map();
+      for (const node of nodes) {
+        const businessAnchorId = String(node?.businessAnchorId || "");
+        if (!businessAnchorId || !Types.ObjectId.isValid(businessAnchorId))
+          continue;
         if (
-          childBusinessAnchorId &&
-          Types.ObjectId.isValid(childBusinessAnchorId) &&
-          !visitedParentBusinessAnchorIds.has(childBusinessAnchorId)
+          businessAnchorId === leaderBusinessAnchorId &&
+          String(node._id) === String(leader._id)
         ) {
-          queueBusinessAnchorIds.push(childBusinessAnchorId);
+          representativeByBusinessAnchorId.set(businessAnchorId, node);
+          continue;
+        }
+        if (!representativeByBusinessAnchorId.has(businessAnchorId)) {
+          representativeByBusinessAnchorId.set(businessAnchorId, node);
         }
       }
-    }
+      for (const node of nodes) {
+        const parentBusinessAnchorId = node.referredByAnchorId
+          ? String(node.referredByAnchorId)
+          : null;
+        const parentNode = parentBusinessAnchorId
+          ? representativeByBusinessAnchorId.get(parentBusinessAnchorId)
+          : null;
+        const parentId = parentNode?._id ? String(parentNode._id) : null;
+        if (!parentId || !nodeById.has(parentId)) continue;
+        if (parentId === String(node._id)) continue;
+        nodeById.get(parentId).children.push(node);
+      }
 
-    const members = Array.from(memberMap.values());
-
-    const memberBusinessAnchorIds = Array.from(
-      new Set(
-        (members || [])
-          .map((u) => String(u?.businessAnchorId || ""))
-          .filter((id) => id && Types.ObjectId.isValid(id)),
-      ),
-    ).map((id) => new Types.ObjectId(id));
-
-    const range30 = getLast30DaysRangeUtc();
-    const start = range30?.start;
-    const end = range30?.end;
-    const startYmd = start ? toKstYmd(start) : null;
-    const endYmd = end ? toKstYmd(end) : null;
-
-    const shippingRows =
-      memberBusinessAnchorIds.length && startYmd && endYmd
-        ? await ShippingPackage.find({
-            businessAnchorId: { $in: memberBusinessAnchorIds },
-            shipDateYmd: { $gte: startYmd, $lte: endYmd },
-          })
-            .select({ _id: 0, businessAnchorId: 1, requestIds: 1 })
-            .lean()
-        : [];
-    const shippingOrderCountByBusinessAnchorId =
-      buildShippingRequestCountByBusinessKey(shippingRows);
-
-    const businessStatsRows =
-      memberBusinessAnchorIds.length && start && end
-        ? await Request.aggregate([
-            {
-              $match: {
-                businessAnchorId: { $in: memberBusinessAnchorIds },
-                manufacturerStage: "추적관리",
-                createdAt: { $gte: start, $lte: end },
-              },
-            },
-            {
-              $group: {
-                _id: "$businessAnchorId",
-                lastMonthOrders: { $sum: 1 },
-                lastMonthPaidOrders: {
-                  $sum: {
-                    $cond: [
-                      { $gt: [{ $ifNull: ["$price.paidAmount", 0] }, 0] },
-                      1,
-                      0,
-                    ],
-                  },
-                },
-                lastMonthBonusOrders: {
-                  $sum: {
-                    $cond: [
-                      {
-                        $and: [
-                          { $gt: [{ $ifNull: ["$price.bonusAmount", 0] }, 0] },
-                          { $eq: [{ $ifNull: ["$price.paidAmount", 0] }, 0] },
-                        ],
-                      },
-                      1,
-                      0,
-                    ],
-                  },
-                },
-                lastMonthPaidRevenue: {
-                  $sum: { $ifNull: ["$price.paidAmount", 0] },
-                },
-                lastMonthBonusRevenue: {
-                  $sum: { $ifNull: ["$price.bonusAmount", 0] },
-                },
-              },
-            },
-          ])
-        : [];
-
-    const businessStatsByBusinessAnchorId = new Map(
-      businessStatsRows.map((row) => [
-        String(row._id),
-        {
-          lastMonthOrders: Number(row.lastMonthOrders || 0),
-          lastMonthPaidOrders: Number(row.lastMonthPaidOrders || 0),
-          lastMonthBonusOrders: Number(row.lastMonthBonusOrders || 0),
-          lastMonthPaidRevenue: Number(row.lastMonthPaidRevenue || 0),
-          lastMonthBonusRevenue: Number(row.lastMonthBonusRevenue || 0),
-        },
-      ]),
-    );
-
-    const nodes = members.map((u) => ({
-      ...u,
-      lastMonthOrders: Number(
-        shippingOrderCountByBusinessAnchorId.get(
-          String(u?.businessAnchorId || ""),
-        ) || 0,
-      ),
-      lastMonthPaidOrders: Number(
-        businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
-          ?.lastMonthPaidOrders || 0,
-      ),
-      lastMonthBonusOrders: Number(
-        businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
-          ?.lastMonthBonusOrders || 0,
-      ),
-      lastMonthPaidRevenue: Number(
-        businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
-          ?.lastMonthPaidRevenue || 0,
-      ),
-      lastMonthBonusRevenue: Number(
-        businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
-          ?.lastMonthBonusRevenue || 0,
-      ),
-      referredByAnchorId: u.referredByAnchorId || null,
-      children: [],
-    }));
-    const nodeById = new Map(nodes.map((n) => [String(n._id), n]));
-    const representativeByBusinessAnchorId = new Map();
-    for (const node of nodes) {
-      const businessAnchorId = String(node?.businessAnchorId || "");
-      if (!businessAnchorId || !Types.ObjectId.isValid(businessAnchorId))
-        continue;
+      const rootNode = nodeById.get(String(leader._id)) || {
+        ...leader,
+        children: [],
+      };
       if (
-        businessAnchorId === leaderBusinessAnchorId &&
-        String(node._id) === String(leader._id)
+        !lite &&
+        REFERRAL_COMMISSION_LEADER_ROLES.has(String(rootNode.role || ""))
       ) {
-        representativeByBusinessAnchorId.set(businessAnchorId, node);
-        continue;
-      }
-      if (!representativeByBusinessAnchorId.has(businessAnchorId)) {
-        representativeByBusinessAnchorId.set(businessAnchorId, node);
-      }
-    }
-    for (const node of nodes) {
-      const parentBusinessAnchorId = node.referredByAnchorId
-        ? String(node.referredByAnchorId)
-        : null;
-      const parentNode = parentBusinessAnchorId
-        ? representativeByBusinessAnchorId.get(parentBusinessAnchorId)
-        : null;
-      const parentId = parentNode?._id ? String(parentNode._id) : null;
-      if (!parentId || !nodeById.has(parentId)) continue;
-      if (parentId === String(node._id)) continue;
-      nodeById.get(parentId).children.push(node);
-    }
-
-    const rootNode = nodeById.get(String(leader._id)) || {
-      ...leader,
-      children: [],
-    };
-    if (REFERRAL_COMMISSION_LEADER_ROLES.has(String(rootNode.role || ""))) {
-      const directChildren = Array.isArray(rootNode.children)
-        ? rootNode.children
-        : [];
-      let directCommissionAmount = 0;
-      let level1CommissionAmount = 0;
-      for (const child of directChildren) {
-        if (String(child?.role || "") === "requestor") {
-          directCommissionAmount += Math.round(
-            Number(child?.lastMonthPaidRevenue || 0) * 0.05,
-          );
-        } else if (
-          REFERRAL_COMMISSION_LEADER_ROLES.has(String(child?.role || ""))
-        ) {
-          const grandChildren = Array.isArray(child?.children)
-            ? child.children
-            : [];
-          for (const grandChild of grandChildren) {
-            if (String(grandChild?.role || "") !== "requestor") continue;
-            level1CommissionAmount += Math.round(
-              Number(grandChild?.lastMonthPaidRevenue || 0) * 0.025,
+        const directChildren = Array.isArray(rootNode.children)
+          ? rootNode.children
+          : [];
+        let directCommissionAmount = 0;
+        let level1CommissionAmount = 0;
+        for (const child of directChildren) {
+          if (String(child?.role || "") === "requestor") {
+            directCommissionAmount += Math.round(
+              Number(child?.lastMonthPaidRevenue || 0) * 0.05,
             );
+          } else if (
+            REFERRAL_COMMISSION_LEADER_ROLES.has(String(child?.role || ""))
+          ) {
+            const grandChildren = Array.isArray(child?.children)
+              ? child.children
+              : [];
+            for (const grandChild of grandChildren) {
+              if (String(grandChild?.role || "") !== "requestor") continue;
+              level1CommissionAmount += Math.round(
+                Number(grandChild?.lastMonthPaidRevenue || 0) * 0.025,
+              );
+            }
           }
         }
+        rootNode.directCommissionAmount = directCommissionAmount;
+        rootNode.level1CommissionAmount = level1CommissionAmount;
+        rootNode.commissionAmount =
+          Number(directCommissionAmount || 0) +
+          Number(level1CommissionAmount || 0);
       }
-      rootNode.directCommissionAmount = directCommissionAmount;
-      rootNode.level1CommissionAmount = level1CommissionAmount;
-      rootNode.commissionAmount =
-        Number(directCommissionAmount || 0) +
-        Number(level1CommissionAmount || 0);
-    }
 
-    const payload = {
-      success: true,
-      data: {
-        leader,
-        memberCount: nodes.length,
-        tree: rootNode,
-      },
-    };
-    if (!refresh) setAdminReferralCache(cacheKey, payload);
+      const payload = {
+        success: true,
+        data: {
+          leader,
+          memberCount: nodes.length,
+          tree: rootNode,
+        },
+      };
+      if (!refresh) setAdminReferralCache(cacheKey, payload);
+      return payload;
+    });
+
     return res.status(200).json(payload);
   } catch (error) {
-    return res.status(500).json({
+    return res.status(error?.statusCode || 500).json({
       success: false,
-      message: "소개 그룹 계층도 조회 중 오류가 발생했습니다.",
+      message:
+        error?.statusCode && error?.message
+          ? error.message
+          : "소개 그룹 계층도 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

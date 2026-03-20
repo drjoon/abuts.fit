@@ -18,14 +18,12 @@ export const SalesmanReferralPage = () => {
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"link" | "dashboard">("link");
 
-  const {
-    isReferralEligible,
-    referralLink,
-    directMembers,
-    loadingDirectMembers,
-    treeData,
-    loadingTree,
-  } = useReferralData();
+  const { isReferralEligible, referralLink, treeData, loadingTree } =
+    useReferralData({
+      fetchStats: false,
+      fetchDirectMembers: false,
+      fetchTree: activeTab === "dashboard",
+    });
 
   const handleCopyLink = async () => {
     if (!referralLink) return;

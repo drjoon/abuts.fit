@@ -32,7 +32,11 @@ export const DevopsReferralPage = () => {
     loadingDirectMembers,
     treeData,
     loadingTree,
-  } = useReferralData();
+  } = useReferralData({
+    fetchStats: true,
+    fetchDirectMembers: true,
+    fetchTree: true,
+  });
 
   const noSalesmanSignupCount = directMembers.length;
   const requestorOrders = Number(

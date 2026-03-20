@@ -20,6 +20,12 @@ export type RequestorReferralStats = {
   discountPerOrder?: number;
 };
 
+type UseReferralDataOptions = {
+  fetchStats?: boolean;
+  fetchDirectMembers?: boolean;
+  fetchTree?: boolean;
+};
+
 export type DirectMemberRow = {
   _id: string;
   name?: string;
@@ -54,9 +60,12 @@ const buildReferralSignupLink = (referralCode: string) => {
   return `${origin}/signup/referral?ref=${encodeURIComponent(code)}`;
 };
 
-export const useReferralData = () => {
+export const useReferralData = (options?: UseReferralDataOptions) => {
   const { user, token } = useAuthStore();
   const { toast } = useToast();
+  const fetchStats = options?.fetchStats ?? true;
+  const fetchDirectMembers = options?.fetchDirectMembers ?? true;
+  const fetchTree = options?.fetchTree ?? true;
 
   const [requestorStats, setRequestorStats] =
     useState<RequestorReferralStats | null>(null);
@@ -86,7 +95,7 @@ export const useReferralData = () => {
   }, [referralCode]);
 
   useEffect(() => {
-    if (!token || !isReferralEligible) return;
+    if (!token || !isReferralEligible || !fetchStats) return;
 
     setLoadingRequestor(true);
     request<any>({
@@ -109,10 +118,10 @@ export const useReferralData = () => {
         });
       })
       .finally(() => setLoadingRequestor(false));
-  }, [isReferralEligible, toast, token]);
+  }, [fetchStats, isReferralEligible, toast, token]);
 
   useEffect(() => {
-    if (!token || !isReferralEligible) return;
+    if (!token || !isReferralEligible || !fetchDirectMembers) return;
 
     setLoadingDirectMembers(true);
     request<any>({
@@ -137,10 +146,10 @@ export const useReferralData = () => {
         });
       })
       .finally(() => setLoadingDirectMembers(false));
-  }, [isReferralEligible, toast, token]);
+  }, [fetchDirectMembers, isReferralEligible, toast, token]);
 
   useEffect(() => {
-    if (!token || !isReferralEligible || !user?.id) {
+    if (!token || !isReferralEligible || !user?.id || !fetchTree) {
       console.log("[useReferralData] 트리 로딩 스킵:", {
         token: !!token,
         isReferralEligible,
@@ -155,7 +164,7 @@ export const useReferralData = () => {
     });
     setLoadingTree(true);
     request<any>({
-      path: `/api/referral-groups/${user.id}/tree`,
+      path: `/api/referral-groups/${user.id}/tree?lite=1`,
       method: "GET",
       token,
     })
@@ -178,7 +187,7 @@ export const useReferralData = () => {
         });
       })
       .finally(() => setLoadingTree(false));
-  }, [isReferralEligible, toast, token, user?.id, user?.role]);
+  }, [fetchTree, isReferralEligible, toast, token, user?.id, user?.role]);
 
   return {
     isReferralEligible,
