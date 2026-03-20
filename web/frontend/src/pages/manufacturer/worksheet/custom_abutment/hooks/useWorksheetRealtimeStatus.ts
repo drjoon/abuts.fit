@@ -64,6 +64,13 @@ export function useWorksheetRealtimeStatus({
     return "비동기 작업";
   };
 
+  const isNonBlockingAsyncFailure = (payload: any) => {
+    const action = String(payload?.action || "")
+      .trim()
+      .toLowerCase();
+    return action === "nc-bridge-cleanup";
+  };
+
   const applyRequestPatch = (
     prev: ManufacturerRequest[],
     nextRequest: ManufacturerRequest | null | undefined,
@@ -290,13 +297,16 @@ export function useWorksheetRealtimeStatus({
         case "request:async-action-failed": {
           const stageLabel = toStageLabel(payload?.stage);
           const actionLabel = toActionLabel(payload?.action);
+          const isNonBlocking = isNonBlockingAsyncFailure(payload);
           toast({
-            title: "비동기 작업 실패",
+            title: isNonBlocking ? "비동기 정리 지연" : "비동기 작업 실패",
             description: String(
-              payload?.message ||
-                `${stageLabel} 단계 ${actionLabel} 실패 (${requestId || ""})`,
+              isNonBlocking
+                ? `${actionLabel}가 지연되었습니다. 롤백은 완료되었고, 뒤정리는 재시도됩니다.`
+                : payload?.message ||
+                    `${stageLabel} 단계 ${actionLabel} 실패 (${requestId || ""})`,
             ).trim(),
-            variant: "destructive",
+            variant: isNonBlocking ? "default" : "destructive",
           });
           return;
         }

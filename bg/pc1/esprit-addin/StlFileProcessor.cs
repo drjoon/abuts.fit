@@ -1944,7 +1944,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private static string ResolveTemplatePath(int templateDiameter)
         {
             string templateDir = Path.Combine(AppConfig.AddInRootDirectory, "Templates");
-            return Path.Combine(templateDir, $"Hanwha_D{templateDiameter}.est");
+            // return Path.Combine(templateDir, $"Hanwha_D{templateDiameter}.est");
+            return Path.Combine(templateDir, $"Hanwha.est");
         }
 
         private Document ResetDocument(Document document, double? backendMaterialDiameter)
