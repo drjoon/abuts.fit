@@ -150,6 +150,22 @@
 - backend/controller, frontend consumer, `bg/` 연동 코드는 **`businessAnchorId` / `requestorBusinessAnchorId` 우선이 아니라 단일 기준**으로 사용합니다.
 - 새 코드에서는 `businessId`, `organizationId`, `requestorOrganizationId`, `referredByBusinessId` fallback이나 alias를 두지 않습니다.
 
+### 3.1.1 bridge-server CNC 연속가공 SSOT
+
+- `bridge-server`의 CNC 연속가공에서 **큐와 장비 플래그의 SSOT는 백엔드**입니다.
+- 브리지는 재시작 시 `InitialSyncFromBackendOnce()`로 **백엔드 최신 큐 스냅샷**을 먼저 복구한 뒤 동작해야 합니다.
+- 브리지는 `allowAutoMachining`, `allowJobStart` 같은 장비 플래그를 로컬 메모리나 프론트 상태로 추정하지 않고 **항상 백엔드 플래그 조회 결과 기준**으로 판단합니다.
+- idle 상태에서 다음 job이 있더라도 **`allowAutoMachining=false`이면 프리로드/활성화/자동시작을 진행하지 않습니다.**
+- 브리지는 다음 경계 이벤트에서 **강제 백엔드 재동기화**를 수행해야 합니다.
+  - 브리지 재시작 직후
+  - 가공 완료 직후
+  - alarm 감지 직후
+  - `allowAutoMachining=false`로 시작이 차단된 직후
+  - consume/queue 반영 재시도 성공 직후
+- `AwaitingStart`는 **프로그램만 올라간 상태일 뿐 실제 가공 중이 아닙니다.** 이 상태를 idle로 취급하면 안 됩니다.
+- `AwaitingStart` 상태에서도 장비 alarm을 계속 감지해야 하며, alarm 발생 시 즉시 실패 통보 후 백엔드 스냅샷을 다시 받아야 합니다.
+- real CNC 모드에서는 실제 busy/start가 확인되기 전까지 `STARTED/NOW PLAYING` 상태를 올리지 않습니다. **실제 시작 판정은 busy 전환 기준**입니다.
+
 ### 3.2 New Request 예외 규칙
 
 - 새 의뢰 작성 중에는 **로컬 스토리지 + IndexedDB**가 임시 SSOT입니다.

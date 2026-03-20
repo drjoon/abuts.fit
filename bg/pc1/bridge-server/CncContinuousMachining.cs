@@ -27,13 +27,23 @@ public bool AllowAutoMachining;
 public bool AllowJobStart;
 public DateTime FetchedAtUtc;
 }
+private static void ForceSyncQueueFromBackend(string machineId)
+{
+try
+{
+_ = Task.Run(async () => await SyncQueueFromBackend(machineId, true));
+}
+catch (Exception ex)
+{
+Console.WriteLine("[CncMachining] ForceSyncQueueFromBackend error machine={0} err={1}", machineId, ex.Message);
+}
+}
 private static async Task NotifyMachiningCompleted(CncJobItem job, string machineId)
 {
 try
 {
 var backend = GetBackendBase();
 if (string.IsNullOrEmpty(backend)) return;
-
 // legacy: register-file (best-effort)
 try
 {
@@ -66,7 +76,6 @@ catch (Exception regEx)
 {
     Console.WriteLine("[CncMachining] register-file notify failed machine={0} err={1}", machineId, regEx.Message);
 }
-
 // CNC machining completed notify (bridge -> backend)
 try
 {
@@ -245,7 +254,6 @@ private static Task<bool> DetectMachiningCompletion(string machineId, MachineSta
 private static readonly Dictionary<string, MachineFlags> MachineFlagsCache = new Dictionary<string, MachineFlags>(StringComparer.OrdinalIgnoreCase);
 private const int MACHINE_FLAGS_CACHE_SEC = 5;
 private const int BACKEND_SYNC_INTERVAL_SEC = 10;
-
 /// <summary>
 /// 특정 장비의 플래그 캐시를 무효화한다. 백엔드에서 플래그 변경 시 호출.
 /// </summary>
@@ -486,19 +494,18 @@ if (state.IsRunning)
 // tick notify (bridge -> backend) throttled
 try
 {
-    var nowUtc = DateTime.UtcNow;
-    var shouldTick = state.CurrentJob != null && (state.LastTickNotifyAtUtc == DateTime.MinValue || (nowUtc - state.LastTickNotifyAtUtc) >= TimeSpan.FromSeconds(1));
+    var nowUtcSnapshot = DateTime.UtcNow;
+    var shouldTick = state.CurrentJob != null && (state.LastTickNotifyAtUtc == DateTime.MinValue || (nowUtcSnapshot - state.LastTickNotifyAtUtc) >= TimeSpan.FromSeconds(1));
     if (shouldTick)
     {
         lock (StateLock)
         {
-            state.LastTickNotifyAtUtc = nowUtc;
+            state.LastTickNotifyAtUtc = nowUtcSnapshot;
         }
         _ = Task.Run(async () => await NotifyMachiningTick(state.CurrentJob, machineId, "RUNNING", null));
     }
 }
 catch { }
-
 // Alarm(Mode1) 기반 실패 감지 (알람이 1개 이상이면 실패로 간주)
 if (state.CurrentJob != null)
 {
@@ -692,6 +699,7 @@ state.NextStartAttemptUtc = DateTime.UtcNow.AddSeconds(delaySec);
 }
 }
 }
+}
 private static async Task<bool> CheckJobCompleted(string machineId, MachineState state)
 {
 try
@@ -744,7 +752,6 @@ try
         );
     }
     catch { }
-
 // MOCK 모드: 장비 호출을 모두 건너뛰고 성공 처리
 if (Config.MockCncMachining)
 {
@@ -774,10 +781,8 @@ if (Config.MockCncMachining)
         state.SawBusy = false;
         state.MockCompletionDueUtc = mockStartUtc + mockDuration;
     }
-
     // 시작 시점에 STARTED tick을 한 번 보내 로컬 타이머가 바로 시작되도록 한다.
     _ = Task.Run(() => NotifyMachiningTick(job, machineId, "STARTED", null));
-
     // 모의 가공 동안 5초마다 tick을 보내 경과시간을 프론트에 전달한다.
     _ = Task.Run(async () =>
     {
@@ -795,18 +800,15 @@ if (Config.MockCncMachining)
                         currentJobId = s.CurrentJob?.id;
                     }
                 }
-
                 if (!running || currentJobId != job?.id)
                 {
                     break;
                 }
-
                 try
                 {
                     _ = Task.Run(() => NotifyMachiningTick(job, machineId, "RUNNING", null));
                 }
                 catch { }
-
                 await Task.Delay(TimeSpan.FromSeconds(5));
             }
         }
@@ -863,7 +865,8 @@ if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
     Console.WriteLine("[CncMachining] handle error machine={0} jobId={1} slot=O{2} err={3}", machineId, job?.id, uploadSlot, errUp);
     return false;
 }
-var upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => HiLink.SetMachineProgramInfo(handle, dto), "SetMachineProgramInfo.CncMachining");
+// 활성화는 ProgramInfo가 아닌 ActivateProgNo API를 사용해야 한다
+var upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => HiLink.SetActivateProgram(handle, dto), "SetActivateProgram.CncMachining");
 if (upRc != 0)
 {
 Console.WriteLine("[CncMachining] activate failed machine={0} jobId={1} res={2} err={3}",
@@ -916,7 +919,6 @@ state.SawBusy = false;
     }
 Console.WriteLine("[CncMachining] start ready machine={0} slot=O{1}",
 machineId, state.CurrentSlot);
-
 return true;
 }
 catch (Exception ex)
@@ -1006,7 +1008,6 @@ private static bool TryGetMachineAlarms(string machineId, out List<object> alarm
         var headTypes = new short[] { 1, 2 };
         string lastErr = null;
         var anySuccess = false;
-
         foreach (var headType in headTypes)
         {
             if (!Mode1Api.TryGetMachineAlarmInfo(machineId, headType, out var info, out var err))
@@ -1015,13 +1016,10 @@ private static bool TryGetMachineAlarms(string machineId, out List<object> alarm
                 Console.WriteLine("[CncMachining] alarm read failed machine={0} headType={1} err={2}", machineId, headType, err);
                 continue;
             }
-
             anySuccess = true;
             var count = info.alarmArray != null ? info.alarmArray.Length : 0;
             Console.WriteLine("[CncMachining] alarm read ok machine={0} headType={1} count={2}", machineId, headType, count);
-
             if (info.alarmArray == null) continue;
-
             foreach (var a in info.alarmArray)
             {
                 var key = string.Format("{0}:{1}", a.type, a.no);
@@ -1029,13 +1027,11 @@ private static bool TryGetMachineAlarms(string machineId, out List<object> alarm
                 alarms.Add(new { type = a.type, no = a.no, headType = headType });
             }
         }
-
         if (!anySuccess)
         {
             error = lastErr;
             return false;
         }
-
         if (alarms.Count == 0)
         {
             if (Mode1Api.TryGetMachineStatus(machineId, out var status, out var statusErr))
@@ -1051,7 +1047,6 @@ private static bool TryGetMachineAlarms(string machineId, out List<object> alarm
                 Console.WriteLine("[CncMachining] alarm status fallback read failed machine={0} err={1}", machineId, statusErr);
             }
         }
-
         return true;
     }
     catch (Exception ex)
@@ -1723,14 +1718,12 @@ catch (Exception ex)
 Console.WriteLine("[CncMachining] NotifyMachiningStarted error: backend={0} err={1}", GetBackendBase(), ex);
 }
 }
-
 private static async Task NotifyMachiningTick(CncJobItem job, string machineId, string phase, string message = null)
 {
 try
 {
     var backend = GetBackendBase();
     if (string.IsNullOrEmpty(backend)) return;
-
     var startedAt = DateTime.MinValue;
     lock (StateLock)
     {
@@ -1741,7 +1734,6 @@ try
     }
     if (startedAt == DateTime.MinValue) startedAt = DateTime.UtcNow;
     var elapsedSeconds = Math.Max(0, (int)Math.Floor((DateTime.UtcNow - startedAt).TotalSeconds));
-
     var tickUrl = backend + "/cnc-machines/bridge/machining/tick/" + Uri.EscapeDataString(machineId);
     var tickPayload = new
     {
@@ -1779,7 +1771,6 @@ catch (Exception ex)
     Console.WriteLine("[CncMachining] NotifyMachiningTick error: backend={0} err={1}", GetBackendBase(), ex);
 }
 }
-
 private static async Task NotifyNcPreloadStatus(CncJobItem job, string machineId, string status, string error)
 {
 try
