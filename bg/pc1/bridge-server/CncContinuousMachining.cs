@@ -297,6 +297,8 @@ public string LastStartFailJobId;
 public int StartFailCount;
 public DateTime NextStartAttemptUtc;
 public DateTime MockCompletionDueUtc;
+public JObject UiSnapshot;
+public DateTime UiSnapshotUpdatedAt;
 }
 private static readonly object StateLock = new object();
 private static readonly Dictionary<string, MachineState> MachineStates
@@ -1406,6 +1408,7 @@ return;
 }
 var data = root["data"] as JArray;
 if (data == null) return;
+var uiSnapshot = root["uiSnapshot"] as JObject;
 var jobs = new List<CncJobItem>();
 foreach (var j in data)
 {
@@ -1477,6 +1480,28 @@ Console.WriteLine("[CncMachining] backend snapshot machine={0} jobs={1} sample=[
 }
 catch { }
 CncJobQueue.ReplaceQueue(mid, jobs);
+if (uiSnapshot != null)
+{
+lock (StateLock)
+{
+if (!MachineStates.TryGetValue(mid, out var uiState))
+{
+uiState = new MachineState
+{
+MachineId = mid,
+CurrentSlot = SLOT_A,
+UiSnapshot = uiSnapshot,
+UiSnapshotUpdatedAt = DateTime.UtcNow,
+};
+MachineStates[mid] = uiState;
+}
+else
+{
+uiState.UiSnapshot = uiSnapshot;
+uiState.UiSnapshotUpdatedAt = DateTime.UtcNow;
+}
+}
+}
 }
 catch (Exception ex)
 {
@@ -1966,7 +1991,9 @@ machineId = state.MachineId,
 currentSlot = state.CurrentSlot,
 isRunning = state.IsRunning,
 currentJob = state.CurrentJob?.fileName,
-elapsedSeconds = state.IsRunning ? (DateTime.UtcNow - state.StartedAtUtc).TotalSeconds : 0
+elapsedSeconds = state.IsRunning ? (DateTime.UtcNow - state.StartedAtUtc).TotalSeconds : 0,
+uiSnapshot = state.UiSnapshot,
+uiSnapshotUpdatedAt = state.UiSnapshotUpdatedAt == DateTime.MinValue ? (DateTime?)null : state.UiSnapshotUpdatedAt
 };
 }
 return null;

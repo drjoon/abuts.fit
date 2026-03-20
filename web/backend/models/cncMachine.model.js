@@ -115,6 +115,50 @@ const cncMachineSchema = new mongoose.Schema(
         default: null,
       },
     },
+    uiSnapshot: {
+      motorTemperatureRows: {
+        type: [
+          {
+            name: { type: String, trim: true, default: "" },
+            temperature: { type: Number, default: null },
+          },
+        ],
+        default: [],
+      },
+      toolLifeRows: {
+        type: [
+          {
+            toolNum: { type: Number, default: 0 },
+            useCount: { type: Number, default: 0 },
+            configCount: { type: Number, default: 0 },
+            warningCount: { type: Number, default: 0 },
+            use: { type: Boolean, default: true },
+          },
+        ],
+        default: [],
+      },
+      toolOffsetRows: {
+        type: [
+          {
+            toolNum: { type: Number, default: 0 },
+            geoX: { type: Number, default: 0 },
+            geoY: { type: Number, default: 0 },
+            geoZ: { type: Number, default: 0 },
+            geoR: { type: Number, default: 0 },
+            wearX: { type: Number, default: 0 },
+            wearY: { type: Number, default: 0 },
+            wearZ: { type: Number, default: 0 },
+            wearR: { type: Number, default: 0 },
+            tipL: { type: Number, default: 0 },
+          },
+        ],
+        default: [],
+      },
+      updatedAt: {
+        type: Date,
+        default: null,
+      },
+    },
     bridgeQueueSnapshot: {
       jobs: [
         {

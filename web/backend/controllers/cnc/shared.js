@@ -323,9 +323,10 @@ export async function saveBridgeQueueSnapshot(machineId, jobs, options = {}) {
 
 export async function getDbBridgeQueueSnapshot(machineId) {
   const mid = String(machineId || "").trim();
-  if (!mid) return { jobs: [], updatedAt: null, syncedAt: null };
+  if (!mid)
+    return { jobs: [], updatedAt: null, syncedAt: null, uiSnapshot: null };
   const machine = await CncMachine.findOne({ machineId: mid })
-    .select("bridgeQueueSnapshot bridgeQueueSyncedAt")
+    .select("bridgeQueueSnapshot bridgeQueueSyncedAt uiSnapshot")
     .lean();
   const snapshot = machine?.bridgeQueueSnapshot || null;
   const jobs = Array.isArray(snapshot?.jobs) ? snapshot.jobs : [];
@@ -370,7 +371,12 @@ export async function getDbBridgeQueueSnapshot(machineId) {
   const syncedAt = machine?.bridgeQueueSyncedAt
     ? new Date(machine.bridgeQueueSyncedAt)
     : null;
-  return { jobs: jobsWithMeta, updatedAt, syncedAt };
+  return {
+    jobs: jobsWithMeta,
+    updatedAt,
+    syncedAt,
+    uiSnapshot: machine?.uiSnapshot || null,
+  };
 }
 
 export async function fetchBridgeQueueFromBridge(machineId) {

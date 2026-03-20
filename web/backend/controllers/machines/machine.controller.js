@@ -13,7 +13,9 @@ const lastRawReadCall = new Map();
 import Machine from "../../models/machine.model.js";
 import Request from "../../models/request.model.js";
 import {
+  CncMachine,
   fetchBridgeQueueFromBridge,
+  getOrCreateCncMachine,
   saveBridgeQueueSnapshot,
   invalidateBridgeFlagsCache,
 } from "../../controllers/cnc/shared.js";
@@ -61,6 +63,147 @@ async function buildOfflineMachineStatusPayload() {
     machines: list,
     bridgeOffline: true,
   };
+}
+
+const UI_SNAPSHOT_READ_TYPES = new Set([
+  "GetMotorTemperature",
+  "GetToolLifeInfo",
+]);
+
+const UI_SNAPSHOT_WRITE_TYPES = new Set([
+  "UpdateMotorTemperature",
+  "UpdateToolLife",
+  "UpdateToolOffset",
+]);
+
+function normalizeNumeric(value, fallback = 0) {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeTemperatureRows(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  return list
+    .map((row, idx) => ({
+      name: String(row?.name || `T${idx + 1}`).trim(),
+      temperature:
+        row?.temperature == null
+          ? null
+          : normalizeNumeric(row?.temperature, null),
+    }))
+    .filter((row) => row.name);
+}
+
+function normalizeToolLifeRows(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  return list
+    .map((row, idx) => ({
+      toolNum: Math.max(1, normalizeNumeric(row?.toolNum, idx + 1)),
+      useCount: Math.max(0, normalizeNumeric(row?.useCount, 0)),
+      configCount: Math.max(0, normalizeNumeric(row?.configCount, 0)),
+      warningCount: Math.max(0, normalizeNumeric(row?.warningCount, 0)),
+      use: row?.use !== false,
+    }))
+    .filter((row) => Number.isFinite(row.toolNum));
+}
+
+function normalizeToolOffsetRows(payload) {
+  const list = Array.isArray(payload?.toolGeoOffsetArray)
+    ? payload.toolGeoOffsetArray
+    : [];
+  const wearList = Array.isArray(payload?.toolWearOffsetArray)
+    ? payload.toolWearOffsetArray
+    : [];
+  const tipList = Array.isArray(payload?.toolTipOffsetArray)
+    ? payload.toolTipOffsetArray
+    : [];
+  const maxLen = Math.max(list.length, wearList.length, tipList.length);
+  const rows = [];
+  for (let idx = 0; idx < maxLen; idx += 1) {
+    const geo = list[idx] || {};
+    const wear = wearList[idx] || {};
+    rows.push({
+      toolNum: Math.max(1, normalizeNumeric(geo?.no, idx + 1)),
+      geoX: normalizeNumeric(geo?.x, 0),
+      geoY: normalizeNumeric(geo?.y, 0),
+      geoZ: normalizeNumeric(geo?.z, 0),
+      geoR: normalizeNumeric(geo?.r, 0),
+      wearX: normalizeNumeric(wear?.x, 0),
+      wearY: normalizeNumeric(wear?.y, 0),
+      wearZ: normalizeNumeric(wear?.z, 0),
+      wearR: normalizeNumeric(wear?.r, 0),
+      tipL: normalizeNumeric(tipList[idx], 0),
+    });
+  }
+  return rows;
+}
+
+function snapshotToMotorTemperatureResponse(uiSnapshot) {
+  const rows = normalizeTemperatureRows(uiSnapshot?.motorTemperatureRows);
+  return {
+    success: true,
+    data: {
+      machineMotorTemperature: {
+        tempInfo: rows,
+      },
+    },
+  };
+}
+
+function snapshotToToolLifeResponse(uiSnapshot) {
+  const rows = normalizeToolLifeRows(uiSnapshot?.toolLifeRows);
+  return {
+    success: true,
+    data: {
+      machineToolLife: {
+        toolLife: rows,
+        toolLifeInfo: rows,
+      },
+    },
+  };
+}
+
+async function getCncUiSnapshot(machineId) {
+  const mid = String(machineId || "").trim();
+  if (!mid) return null;
+  const machine = await CncMachine.findOne({ machineId: mid })
+    .select("uiSnapshot")
+    .lean();
+  return machine?.uiSnapshot || null;
+}
+
+async function persistCncUiSnapshot(machineId, patch) {
+  const machine = await getOrCreateCncMachine(machineId);
+  if (!machine) return null;
+  const current =
+    machine.uiSnapshot && typeof machine.uiSnapshot.toObject === "function"
+      ? machine.uiSnapshot.toObject()
+      : machine.uiSnapshot || {};
+  machine.uiSnapshot = {
+    ...current,
+    ...(patch || {}),
+    updatedAt: new Date(),
+  };
+  await machine.save();
+  return machine.uiSnapshot;
+}
+
+function mergeRowsByKey(existingRows, incomingRows, keyFn) {
+  const existing = Array.isArray(existingRows) ? existingRows : [];
+  const incoming = Array.isArray(incomingRows) ? incomingRows : [];
+  const map = new Map();
+  for (const row of existing) {
+    const key = keyFn(row);
+    if (key == null || key === "") continue;
+    map.set(String(key), row);
+  }
+  for (const row of incoming) {
+    const key = keyFn(row);
+    if (key == null || key === "") continue;
+    const prev = map.get(String(key)) || {};
+    map.set(String(key), { ...prev, ...row });
+  }
+  return Array.from(map.values());
 }
 
 // GET /api/machines - 현재 사용자(제조사/관리자)의 장비 목록
@@ -595,8 +738,91 @@ export async function stopMachineProxy(req, res) {
 export async function callRawProxy(req, res) {
   const { uid } = req.params;
   try {
-    if (!ensureBridgeConfigured(res)) return;
     const dataType = req.body?.dataType;
+    const normalizedDataType = String(dataType || "").trim();
+
+    if (UI_SNAPSHOT_READ_TYPES.has(normalizedDataType)) {
+      const uiSnapshot = await getCncUiSnapshot(uid);
+      if (normalizedDataType === "GetMotorTemperature") {
+        return res
+          .status(200)
+          .json(snapshotToMotorTemperatureResponse(uiSnapshot));
+      }
+      if (normalizedDataType === "GetToolLifeInfo") {
+        return res.status(200).json(snapshotToToolLifeResponse(uiSnapshot));
+      }
+    }
+
+    if (UI_SNAPSHOT_WRITE_TYPES.has(normalizedDataType)) {
+      if (normalizedDataType === "UpdateMotorTemperature") {
+        const rows = normalizeTemperatureRows(
+          req.body?.payload?.machineMotorTemperature?.tempInfo ||
+            req.body?.payload?.tempInfo ||
+            req.body?.payload,
+        );
+        const current = await getCncUiSnapshot(uid);
+        const mergedRows = mergeRowsByKey(
+          current?.motorTemperatureRows,
+          rows,
+          (row) => row?.name,
+        );
+        const uiSnapshot = await persistCncUiSnapshot(uid, {
+          motorTemperatureRows: mergedRows,
+        });
+        return res.status(200).json({
+          success: true,
+          data: {
+            machineMotorTemperature: {
+              tempInfo: mergedRows,
+            },
+          },
+          uiSnapshot,
+        });
+      }
+
+      if (normalizedDataType === "UpdateToolLife") {
+        const rows = normalizeToolLifeRows(req.body?.payload);
+        const current = await getCncUiSnapshot(uid);
+        const mergedRows = mergeRowsByKey(
+          current?.toolLifeRows,
+          rows,
+          (row) => row?.toolNum,
+        );
+        const uiSnapshot = await persistCncUiSnapshot(uid, {
+          toolLifeRows: mergedRows,
+        });
+        return res.status(200).json({
+          success: true,
+          data: {
+            machineToolLife: {
+              toolLife: mergedRows,
+              toolLifeInfo: mergedRows,
+            },
+          },
+          uiSnapshot,
+        });
+      }
+
+      if (normalizedDataType === "UpdateToolOffset") {
+        const rows = normalizeToolOffsetRows(req.body?.payload || {});
+        const current = await getCncUiSnapshot(uid);
+        const mergedRows = mergeRowsByKey(
+          current?.toolOffsetRows,
+          rows,
+          (row) => row?.toolNum,
+        );
+        const uiSnapshot = await persistCncUiSnapshot(uid, {
+          toolOffsetRows: mergedRows,
+        });
+        return res.status(200).json({
+          success: true,
+          data: { toolOffsetRows: mergedRows },
+          uiSnapshot,
+        });
+      }
+    }
+
+    if (!ensureBridgeConfigured(res)) return;
 
     // 일관성: Alarm은 전용 엔드포인트로 처리
     if (String(dataType || "") === "GetMachineAlarmInfo") {

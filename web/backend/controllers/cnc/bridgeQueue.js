@@ -33,6 +33,7 @@ export async function getBridgeQueueForMachine(req, res) {
     return res.status(200).json({
       success: true,
       data: ordered,
+      uiSnapshot: snap.uiSnapshot || null,
       meta: {
         source: "db",
         updatedAt: snap.updatedAt ? snap.updatedAt.toISOString() : null,

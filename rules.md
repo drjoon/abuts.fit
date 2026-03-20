@@ -482,6 +482,10 @@
 - 실패 시 자동 재시도 대신 원인을 그대로 반환합니다.
 - 제조사별 더미 가공 설정(`dummySettings`)의 SSOT는 백엔드 DB입니다.
 - 더미 가공 스케줄 판단은 브리지가 폴링하지 않고 **백엔드 스케줄러가 DB를 읽어 수행**합니다.
+- CNC 장비 페이지의 **모터 온도/공구 수명/공구 오프셋 모달 데이터도 백엔드 DB 스냅샷 SSOT**로 처리합니다.
+  - 프론트는 브리지 직접 호출 실패로 모달 오픈이 막히면 안 됩니다.
+  - `GetMotorTemperature`, `GetToolLifeInfo`, `UpdateMotorTemperature`, `UpdateToolLife`, `UpdateToolOffset` 은 백엔드가 DB 스냅샷을 읽고/저장한 뒤 응답합니다.
+  - 브리지 재시동 시 `GET /cnc-machines/bridge/queue-snapshot/:machineId` 응답에 포함된 `uiSnapshot`도 함께 받아 메모리 상태를 복구합니다.
 - 더미 가공은 `enabled=true` 이고 현재 분에 일치하는 스케줄이 있을 때만 실행합니다.
 - 스케줄 시각의 더미 가공은 성공/실패와 무관하게 **해당 분에 1회만 시도**하고 자동 재시도하지 않습니다.
 - 브리지가 `mock` 모드면 실제 장비 제어 없이도 더미 가공 요청에 성공 응답을 반환해야 합니다.
