@@ -892,8 +892,6 @@ export async function recordMachiningTickForBridge(req, res) {
       .trim()
       .toUpperCase();
 
-    let existing = null;
-
     if (requestId) {
       const existing = await Request.findOne({ requestId }).select({
         productionSchedule: 1,
@@ -1061,7 +1059,6 @@ export async function recordMachiningTickForBridge(req, res) {
       }
       io.emit("cnc-machining-tick", payload);
 
-      // ALARM 상태일 때 별도 이벤트 발행
       if (phaseUpper === "ALARM") {
         console.log(
           `[bridge:machining:tick] ALARM detected, emitting cnc-machining-alarm event`,
@@ -1282,7 +1279,11 @@ export async function recordMachiningCompleteForBridge(req, res) {
         );
         console.warn(
           "[bridge:machining:complete] missing requestId, record saved",
-          JSON.stringify({ machineId: mid, jobId, bridgePath: bridgePathRaw }),
+          JSON.stringify({
+            machineId: mid,
+            jobId,
+            bridgePath: bridgePathRaw,
+          }),
         );
       }
     } else {
@@ -1333,7 +1334,11 @@ export async function recordMachiningCompleteForBridge(req, res) {
       );
       console.warn(
         "[bridge:machining:complete] missing requestId, record saved",
-        JSON.stringify({ machineId: mid, jobId, bridgePath: bridgePathRaw }),
+        JSON.stringify({
+          machineId: mid,
+          jobId,
+          bridgePath: bridgePathRaw,
+        }),
       );
     }
 
@@ -1494,6 +1499,7 @@ export async function recordMachiningFailForBridge(req, res) {
       jobId,
       bridgePath: bridgePathRaw,
     });
+    const now = new Date();
 
     await CncEvent.create({
       requestId: requestId || null,
@@ -1524,7 +1530,7 @@ export async function recordMachiningFailForBridge(req, res) {
           status: "FAILED",
           failReason: reason || "FAILED",
           alarms,
-          completedAt: new Date(),
+          completedAt: now,
         };
 
         const record = recordId
@@ -1545,6 +1551,29 @@ export async function recordMachiningFailForBridge(req, res) {
             { $set: { "productionSchedule.machiningRecord": record._id } },
           );
         }
+
+        await Request.updateOne(
+          { requestId },
+          {
+            $set: {
+              "productionSchedule.machiningProgress": {
+                machineId: mid,
+                jobId: jobId || null,
+                phase: "ALARM",
+                percent: null,
+                message: reason || "FAILED",
+                startedAt:
+                  request?.productionSchedule?.machiningProgress?.startedAt ||
+                  request?.productionSchedule?.actualMachiningStart ||
+                  now,
+                lastTickAt: now,
+                elapsedSeconds:
+                  request?.productionSchedule?.machiningProgress
+                    ?.elapsedSeconds ?? 0,
+              },
+            },
+          },
+        );
       } catch {
         // ignore
       }
@@ -1570,7 +1599,7 @@ export async function recordMachiningFailForBridge(req, res) {
               status: "FAILED",
               failReason: reason || "FAILED",
               alarms,
-              completedAt: new Date(),
+              completedAt: now,
               fileName: meta.fileName,
               originalFileName: meta.originalFileName,
             },
@@ -1580,6 +1609,34 @@ export async function recordMachiningFailForBridge(req, res) {
       } catch {
         // ignore
       }
+    }
+
+    try {
+      const io = getIO();
+      const payload = {
+        machineId: mid,
+        jobId: jobId || null,
+        requestId: requestId || null,
+        bridgePath: bridgePathRaw || null,
+        status: "FAILED",
+        reason: reason || "FAILED",
+        alarms,
+        failedAt: now,
+      };
+      if (jobId) {
+        io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-failed", payload);
+      }
+      io.emit("cnc-machining-failed", payload);
+      io.emit("cnc-machining-alarm", {
+        machineId: mid,
+        jobId: jobId || null,
+        requestId: requestId || null,
+        message: reason || "FAILED",
+        alarms,
+        alarmAt: now,
+      });
+    } catch {
+      // ignore
     }
 
     return res.status(200).json({ success: true });

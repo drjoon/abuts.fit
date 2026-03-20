@@ -342,6 +342,68 @@ export function onCncMachiningTick(
   };
 }
 
+export function onCncMachiningAlarm(
+  callback: (data: {
+    machineId: string;
+    jobId: string | null;
+    requestId: string | null;
+    message?: string | null;
+    alarms?: any[];
+    alarmAt: string;
+  }) => void,
+) {
+  const s = getSocket();
+  if (s) {
+    s.on("cnc-machining-alarm", callback);
+    return () => s.off("cnc-machining-alarm", callback);
+  }
+  let bound: Socket | null = null;
+  const timer = setInterval(() => {
+    const cur = getSocket();
+    if (cur) {
+      clearInterval(timer);
+      bound = cur;
+      cur.on("cnc-machining-alarm", callback);
+    }
+  }, 100);
+  return () => {
+    clearInterval(timer);
+    bound?.off("cnc-machining-alarm", callback);
+  };
+}
+
+export function onCncMachiningFailed(
+  callback: (data: {
+    machineId: string;
+    jobId: string | null;
+    requestId: string | null;
+    bridgePath?: string | null;
+    status: "FAILED";
+    reason?: string | null;
+    alarms?: any[];
+    failedAt: string;
+  }) => void,
+) {
+  const s = getSocket();
+  if (s) {
+    s.on("cnc-machining-failed", callback);
+    return () => s.off("cnc-machining-failed", callback);
+  }
+  let bound: Socket | null = null;
+  const timer = setInterval(() => {
+    const cur = getSocket();
+    if (cur) {
+      clearInterval(timer);
+      bound = cur;
+      cur.on("cnc-machining-failed", callback);
+    }
+  }, 100);
+  return () => {
+    clearInterval(timer);
+    bound?.off("cnc-machining-failed", callback);
+  };
+}
+
 // CNC 장비 설정 변경 이벤트 리스너
 export function onCncMachineSettingsChanged(
   callback: (data: { machineId: string; settings: any }) => void,

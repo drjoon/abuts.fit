@@ -169,27 +169,28 @@ try
 {
 var backend = GetBackendBase();
 if (string.IsNullOrEmpty(backend)) return;
-var url = backend + "/bg/register-file";
-var canonical = string.IsNullOrWhiteSpace(job?.originalFileName)
-? job?.fileName
-: job.originalFileName;
+var url = backend + "/cnc-machines/bridge/machining/fail/" + Uri.EscapeDataString(machineId);
 var payload = new
 {
-sourceStep = "cnc",
-fileName = job?.fileName,
-originalFileName = canonical,
 requestId = job?.requestId,
-status = "failed",
-metadata = new { machineId = machineId, error = error, alarms = alarms }
+jobId = job?.id,
+bridgePath = job?.bridgePath,
+reason = error,
+alarms = alarms ?? new List<object>()
 };
 var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
 using (var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url))
 {
 AddAuthHeader(req);
+AddSecretHeader(req);
 req.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
 using (var resp = await Http.SendAsync(req))
 {
-_ = await resp.Content.ReadAsStringAsync();
+var body = await resp.Content.ReadAsStringAsync();
+if (!resp.IsSuccessStatusCode)
+{
+Console.WriteLine("[CncMachining] NotifyMachiningFailed failed status={0} body={1}", (int)resp.StatusCode, body);
+}
 }
 }
 }
@@ -521,9 +522,10 @@ lock (StateLock)
 {
 state.LastMachiningFailJobId = jobId;
 }
+_ = Task.Run(() => NotifyMachiningTick(state.CurrentJob, machineId, "ALARM", Newtonsoft.Json.JsonConvert.SerializeObject(alarmList)));
 _ = Task.Run(() => NotifyMachiningFailed(state.CurrentJob, machineId, "alarm", alarmList));
 }
-Console.WriteLine("[CncMachining] machining failed by alarm machine={0} alarms={1}", machineId, alarmList.Count);
+Console.WriteLine("[CncMachining] machining failed by alarm machine={0} alarms={1}", machineId, Newtonsoft.Json.JsonConvert.SerializeObject(alarmList));
 lock (StateLock)
 {
 state.IsRunning = false;
@@ -687,9 +689,22 @@ _ = Task.Run(async () =>
             // 알람 체크
             if (TryGetMachineAlarms(machineId, out var alarms, out var alarmErr) && alarms.Count > 0)
             {
-                var alarmList = string.Join(", ", alarms.Select(a => $"type={a.GetType().GetProperty("type")?.GetValue(a)}/no={a.GetType().GetProperty("no")?.GetValue(a)}"));
-                Console.WriteLine("[CncMachining] ALARM detected machine={0} jobId={1} alarms={2}", machineId, job?.id, alarmList);
-                _ = Task.Run(() => NotifyMachiningTick(job, machineId, "ALARM", alarmList));
+                var alarmJson = Newtonsoft.Json.JsonConvert.SerializeObject(alarms);
+                Console.WriteLine("[CncMachining] ALARM detected machine={0} jobId={1} alarms={2}", machineId, job?.id, alarmJson);
+                _ = Task.Run(() => NotifyMachiningTick(job, machineId, "ALARM", alarmJson));
+                _ = Task.Run(() => NotifyMachiningFailed(job, machineId, "alarm", alarms));
+                lock (StateLock)
+                {
+                    if (MachineStates.TryGetValue(machineId, out var s) && string.Equals(s.CurrentJob?.id, job?.id, StringComparison.OrdinalIgnoreCase))
+                    {
+                        s.LastMachiningFailJobId = job?.id;
+                        s.IsRunning = false;
+                        s.AwaitingStart = false;
+                        s.CurrentJob = null;
+                        s.SawBusy = false;
+                        s.MockCompletionDueUtc = DateTime.MinValue;
+                    }
+                }
                 break;
             }
 

@@ -3,7 +3,9 @@ import { useSearchParams } from "react-router-dom";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   initializeSocket,
+  onCncMachiningAlarm,
   onCncMachiningCompleted,
+  onCncMachiningFailed,
   onCncMachiningTick,
   onCncMachiningStarted,
   onCncMachineSettingsChanged,
@@ -715,6 +717,58 @@ export const useMachiningBoard = ({
       void refreshProductionQueues();
     });
 
+    const clearMachiningRuntimeState = (mid: string) => {
+      setNowPlayingHintMap((prev) => {
+        const next = { ...prev };
+        delete next[mid];
+        return next;
+      });
+
+      delete machiningElapsedBaseRef.current[mid];
+      setMachiningElapsedSecondsMap((prev) => {
+        const next = { ...prev };
+        delete next[mid];
+        return next;
+      });
+    };
+
+    const offFailed = onCncMachiningFailed((data: any) => {
+      const mid = String(data?.machineId || "").trim();
+      if (!mid) return;
+
+      clearMachiningRuntimeState(mid);
+
+      toast({
+        title: `${mid} 가공 알람`,
+        description: String(
+          data?.reason || "CNC 알람으로 가공이 중단되었습니다.",
+        ),
+        variant: "destructive",
+      });
+
+      void refreshProductionQueues();
+      void refreshLastCompletedFromServer();
+    });
+
+    const offAlarm = onCncMachiningAlarm((data: any) => {
+      const mid = String(data?.machineId || "").trim();
+      if (!mid) return;
+
+      clearMachiningRuntimeState(mid);
+
+      const alarms = Array.isArray(data?.alarms) ? data.alarms : [];
+      const firstAlarm = alarms[0];
+      const alarmText = firstAlarm
+        ? `type=${String(firstAlarm?.type ?? "")}, no=${String(firstAlarm?.no ?? "")}`
+        : String(data?.message || "CNC 알람이 감지되었습니다.");
+
+      toast({
+        title: `${mid} CNC 알람 감지`,
+        description: alarmText,
+        variant: "destructive",
+      });
+    });
+
     const offSettingsChanged = onCncMachineSettingsChanged((data: any) => {
       const mid = String(data?.machineId || "").trim();
       if (!mid || !data?.settings) return;
@@ -748,11 +802,14 @@ export const useMachiningBoard = ({
       offStarted?.();
       offTick?.();
       offCompleted?.();
+      offFailed?.();
+      offAlarm?.();
       offSettingsChanged?.();
     };
   }, [
     refreshLastCompletedFromServer,
     refreshProductionQueues,
+    toast,
     token,
     setMachines,
   ]);
