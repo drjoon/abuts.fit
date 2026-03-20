@@ -502,7 +502,7 @@ export const useMachiningBoard = ({
     programSummary: null,
     callRaw,
     setError: setProgramEditorError,
-    fetchProgramList: async () => {},
+    fetchProgramList: refreshProductionQueues,
   });
 
   const loadProgramCodeForMachining = useCallback(

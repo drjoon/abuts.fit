@@ -239,15 +239,40 @@ export const useCncProgramEditor = ({
 
     const isJobProgram = !!(requestId || s3Key);
 
-    // SSOT 원칙상 프론트에서 브리지 파일시스템(bridge-store)에 직접 저장하지 않는다.
-    // 의뢰/업로드 기반 프로그램(job program)은 코드 편집을 허용하지 않는다.
     if (isJobProgram) {
-      throw new Error(
-        "SSOT 모드에서는 작업 프로그램 코드 편집을 지원하지 않습니다.",
-      );
-    }
+      if (!token) {
+        throw new Error("인증 정보가 없어 작업 프로그램을 저장할 수 없습니다.");
+      }
 
-    if (!isJobProgram && programNo != null) {
+      const bridgePath = String(prog?.bridgePath || "").trim();
+      const fileName =
+        String(prog?.fileName || "").trim() ||
+        (bridgePath ? bridgePath.split(/[\/\\]/).pop() : "") ||
+        String(prog?.originalFileName || prog?.name || "program.nc").trim();
+      const originalFileName = String(
+        prog?.originalFileName || prog?.name || fileName || "program.nc",
+      ).trim();
+
+      const res = await apiFetch({
+        path: `/api/cnc-machines/${encodeURIComponent(mid)}/job-program/save`,
+        method: "POST",
+        token,
+        jsonBody: {
+          requestId,
+          s3Key,
+          bridgePath,
+          fileName,
+          originalFileName,
+          code: normalizedCode,
+        },
+      });
+      const body: any = res.data ?? {};
+      if (!res.ok || body?.success === false) {
+        throw new Error(
+          body?.message || body?.error || "작업 프로그램 저장 실패",
+        );
+      }
+    } else if (programNo != null) {
       const payload = {
         headType,
         programNo,

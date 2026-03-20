@@ -10,9 +10,33 @@ import {
   cncUploadMulter,
   normalizeOriginalFilename,
   makeCncUploadFilePath,
+  sanitizeS3KeySegment,
 } from "./shared.js";
+import { uploadFileToS3 } from "../../utils/s3.utils.js";
 
 const REQUEST_ID_REGEX = /(\d{8}-[A-Z0-9]{6,10})/i;
+
+function buildStoredNcS3Key(requestId, fileName) {
+  const rid = String(requestId || "").trim();
+  const safeName =
+    sanitizeS3KeySegment(String(fileName || "").trim()) || "program.nc";
+  return `requests/${rid}/3-nc/${safeName}`;
+}
+
+async function uploadNcContentToBridgeStore({ bridgePath, content }) {
+  const storeUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge-store/upload`;
+  const { resp, json } = await callBridgeJson({
+    url: storeUrl,
+    method: "POST",
+    body: { path: bridgePath, content },
+  });
+  if (!resp.ok || json?.success === false) {
+    throw new Error(
+      String(json?.message || json?.error || "bridge-store upload failed"),
+    );
+  }
+  return String(json?.path || bridgePath || "").trim();
+}
 
 function normalizeBridgePath(p) {
   return String(p || "")
@@ -133,6 +157,129 @@ export async function uploadAndEnqueueContinuousForMachine(req, res) {
     return res.status(500).json({
       success: false,
       message: "continuous 업로드 처리 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function saveJobProgramCode(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    const requestId = String(req.body?.requestId || "").trim();
+    const code = String(req.body?.code ?? "");
+    const originalFileName = normalizeOriginalFilename(
+      String(req.body?.originalFileName || req.body?.fileName || "program.nc"),
+    );
+    const requestedBridgePath = String(req.body?.bridgePath || "").trim();
+    const requestedS3Key = String(req.body?.s3Key || "").trim();
+
+    if (!requestId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "requestId is required" });
+    }
+    if (!code.trim()) {
+      return res
+        .status(400)
+        .json({ success: false, message: "code is required" });
+    }
+
+    const request = await Request.findOne({ requestId });
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "request not found" });
+    }
+
+    const currentNc = request?.caseInfos?.ncFile || {};
+    const filePath =
+      String(currentNc?.filePath || "").trim() ||
+      requestedBridgePath ||
+      `${requestId}.nc`;
+    const fileName =
+      String(currentNc?.fileName || "").trim() ||
+      (filePath ? filePath.split(/[\/\\]/).pop() : "") ||
+      originalFileName ||
+      "program.nc";
+    const resolvedOriginalFileName =
+      originalFileName ||
+      String(currentNc?.originalName || "").trim() ||
+      fileName;
+    const s3Key =
+      requestedS3Key ||
+      currentNc?.s3Key ||
+      buildStoredNcS3Key(requestId, fileName);
+    const contentBuffer = Buffer.from(code, "utf8");
+
+    const uploaded = await uploadFileToS3(
+      contentBuffer,
+      s3Key,
+      "application/octet-stream",
+    );
+
+    const savedBridgePath = await uploadNcContentToBridgeStore({
+      bridgePath: filePath,
+      content: code,
+    });
+
+    request.caseInfos = request.caseInfos || {};
+    request.caseInfos.ncFile = {
+      ...(request.caseInfos.ncFile || {}),
+      fileName,
+      filePath: savedBridgePath,
+      originalName: resolvedOriginalFileName,
+      s3Key: uploaded.key,
+      s3Url: uploaded.location,
+      fileSize: contentBuffer.length,
+      uploadedAt: new Date(),
+    };
+    await request.save();
+
+    const snapshot = await getDbBridgeQueueSnapshot(mid);
+    const jobs = (Array.isArray(snapshot?.jobs) ? snapshot.jobs : []).map(
+      (job) => {
+        if (String(job?.requestId || "").trim() !== requestId) return job;
+        return {
+          ...job,
+          fileName,
+          originalFileName: resolvedOriginalFileName,
+          bridgePath: savedBridgePath,
+          s3Key: uploaded.key,
+          s3Bucket:
+            String(job?.s3Bucket || "").trim() ||
+            process.env.AWS_S3_BUCKET_NAME ||
+            "abuts-fit",
+          fileSize: contentBuffer.length,
+          contentType: "application/octet-stream",
+        };
+      },
+    );
+    await saveBridgeQueueSnapshot(mid, jobs);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        machineId: mid,
+        requestId,
+        fileName,
+        bridgePath: savedBridgePath,
+        s3Key: uploaded.key,
+        s3Url: uploaded.location,
+        fileSize: contentBuffer.length,
+      },
+    });
+  } catch (error) {
+    console.error("saveJobProgramCode error", error);
+    return res.status(500).json({
+      success: false,
+      message: "작업 프로그램 저장 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

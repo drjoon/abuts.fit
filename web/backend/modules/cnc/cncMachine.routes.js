@@ -195,6 +195,12 @@ router.post(
   cncMachineController.uploadAndEnqueueContinuousForMachine,
 );
 
+router.post(
+  "/:machineId/job-program/save",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.saveJobProgramCode,
+);
+
 router.get(
   "/:machineId/direct/presign-download",
   authorizeRoles("manufacturer", "admin"),

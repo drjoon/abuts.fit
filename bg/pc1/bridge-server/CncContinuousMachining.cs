@@ -645,6 +645,14 @@ return;
 return;
 }
 // 2. Idle 상태: 새 작업 시작
+try
+{
+await SyncQueueFromBackend(machineId, true);
+}
+catch (Exception syncEx)
+{
+Console.WriteLine("[CncMachining] idle force sync failed machine={0} err={1}", machineId, syncEx.Message);
+}
 var nextJob = CncJobQueue.Peek(machineId);
 if (nextJob == null)
 {
@@ -696,7 +704,6 @@ state.LastStartFailJobId = nextJob.id;
 state.StartFailCount = Math.Min(10, state.StartFailCount + 1);
 var delaySec = Math.Min(60, 2 * state.StartFailCount);
 state.NextStartAttemptUtc = DateTime.UtcNow.AddSeconds(delaySec);
-}
 }
 }
 }

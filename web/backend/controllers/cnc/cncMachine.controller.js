@@ -25,6 +25,7 @@ import {
   enqueueBridgeContinuousJobFromDb,
   getBridgeContinuousState,
   getJobResult,
+  saveJobProgramCode,
   uploadAndEnqueueContinuousForMachine,
   smartUpload,
 } from "../../controllers/cnc/continuous.js";
@@ -72,6 +73,7 @@ export {
   enqueueBridgeContinuousJob,
   enqueueBridgeContinuousJobFromDb,
   uploadAndEnqueueContinuousForMachine,
+  saveJobProgramCode,
   createCncDirectUploadPresign,
   enqueueCncDirectToDb,
   createCncDirectDownloadPresign,
