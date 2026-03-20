@@ -38,6 +38,30 @@ async function uploadNcContentToBridgeStore({ bridgePath, content }) {
   return String(json?.path || bridgePath || "").trim();
 }
 
+async function uploadNcContentToBridgeStoreBestEffort({ bridgePath, content }) {
+  try {
+    const savedPath = await uploadNcContentToBridgeStore({
+      bridgePath,
+      content,
+    });
+    return {
+      ok: true,
+      bridgePath: savedPath,
+      error: null,
+    };
+  } catch (error) {
+    console.warn("uploadNcContentToBridgeStoreBestEffort failed", {
+      bridgePath,
+      error: error?.message || String(error),
+    });
+    return {
+      ok: false,
+      bridgePath: String(bridgePath || "").trim(),
+      error: error?.message || "bridge-store upload failed",
+    };
+  }
+}
+
 function normalizeBridgePath(p) {
   return String(p || "")
     .trim()
@@ -224,10 +248,13 @@ export async function saveJobProgramCode(req, res) {
       "application/octet-stream",
     );
 
-    const savedBridgePath = await uploadNcContentToBridgeStore({
+    const bridgeStoreResult = await uploadNcContentToBridgeStoreBestEffort({
       bridgePath: filePath,
       content: code,
     });
+    const savedBridgePath = String(
+      bridgeStoreResult?.bridgePath || filePath || "",
+    ).trim();
 
     request.caseInfos = request.caseInfos || {};
     request.caseInfos.ncFile = {
@@ -261,7 +288,7 @@ export async function saveJobProgramCode(req, res) {
         };
       },
     );
-    await saveBridgeQueueSnapshot(mid, jobs);
+    await saveBridgeQueueSnapshot(mid, jobs, { skipBridgeSync: true });
 
     return res.status(200).json({
       success: true,
@@ -273,6 +300,10 @@ export async function saveJobProgramCode(req, res) {
         s3Key: uploaded.key,
         s3Url: uploaded.location,
         fileSize: contentBuffer.length,
+        bridgeStoreSynced: bridgeStoreResult.ok,
+        bridgeStoreError: bridgeStoreResult.ok
+          ? null
+          : String(bridgeStoreResult.error || ""),
       },
     });
   } catch (error) {

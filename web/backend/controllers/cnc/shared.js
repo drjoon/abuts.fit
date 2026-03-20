@@ -229,9 +229,10 @@ export function parseProgramNoFromFileName(fileName) {
   return Number.isFinite(n) ? n : null;
 }
 
-export async function saveBridgeQueueSnapshot(machineId, jobs) {
+export async function saveBridgeQueueSnapshot(machineId, jobs, options = {}) {
   const mid = String(machineId || "").trim();
   if (!mid) return null;
+  const skipBridgeSync = options?.skipBridgeSync === true;
 
   const safeJobs0 = Array.isArray(jobs)
     ? jobs
@@ -300,17 +301,19 @@ export async function saveBridgeQueueSnapshot(machineId, jobs) {
     bridgeQueueSyncedAt: now,
   });
 
-  try {
-    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/queue/${encodeURIComponent(
-      mid,
-    )}/replace`;
-    await fetch(url, {
-      method: "POST",
-      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ jobs: safeJobs }),
-    });
-  } catch {
-    // ignore
+  if (!skipBridgeSync) {
+    try {
+      const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/queue/${encodeURIComponent(
+        mid,
+      )}/replace`;
+      await fetch(url, {
+        method: "POST",
+        headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ jobs: safeJobs }),
+      });
+    } catch {
+      // ignore
+    }
   }
 
   return updated;

@@ -707,6 +707,7 @@ state.NextStartAttemptUtc = DateTime.UtcNow.AddSeconds(delaySec);
 }
 }
 }
+}
 private static async Task<bool> CheckJobCompleted(string machineId, MachineState state)
 {
 try
