@@ -58,8 +58,8 @@ export function useCncDashboardMachineInfo({ token, toast }: Params) {
         };
 
         const [progMainRes, progSubRes, alarmRes] = await Promise.all([
-          fetchRawDirect("GetActivateProgInfo", { headType: 1 }),
-          fetchRawDirect("GetActivateProgInfo", { headType: 2 }),
+          fetchRawDirect("GetMachineActivateProgInfo", { headType: 1 }),
+          fetchRawDirect("GetMachineActivateProgInfo", { headType: 2 }),
           apiFetch({
             path: `/api/machines/${encodeURIComponent(uid)}/alarm`,
             method: "POST",
@@ -121,7 +121,7 @@ export function useCncDashboardMachineInfo({ token, toast }: Params) {
           subInfo;
         if (!hasAny) {
           throw new Error(
-            "GetActivateProgInfo 응답이 비어있습니다.(쿨다운/프록시/브리지 설정 확인)",
+            "GetMachineActivateProgInfo 응답이 비어있습니다.(프록시/브리지 설정 확인)",
           );
         }
         setMachineInfoProgram(curInfo);
