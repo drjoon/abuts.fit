@@ -45,6 +45,10 @@ export const useCncMachines = () => {
           lastUpdated: m.lastStatus?.updatedAt
             ? new Date(m.lastStatus.updatedAt).toLocaleTimeString()
             : undefined,
+          startBlockedReason:
+            typeof m.startBlockedReason === "string"
+              ? m.startBlockedReason
+              : null,
           allowJobStart: m.allowJobStart !== false,
           allowProgramDelete: m.allowProgramDelete === true,
           allowRequestAssign: m.allowRequestAssign !== false,
@@ -194,6 +198,10 @@ export const useCncMachines = () => {
             lastUpdated: saved.lastStatus?.updatedAt
               ? new Date(saved.lastStatus.updatedAt).toLocaleTimeString()
               : undefined,
+            startBlockedReason:
+              typeof saved.startBlockedReason === "string"
+                ? saved.startBlockedReason
+                : null,
             allowJobStart: saved.allowJobStart !== false,
             allowProgramDelete: saved.allowProgramDelete === true,
             allowRequestAssign: saved.allowRequestAssign !== false,

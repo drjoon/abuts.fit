@@ -38,7 +38,7 @@ function ensureBridgeConfigured(res) {
 }
 
 async function buildOfflineMachineStatusPayload() {
-  const machines = await Machine.find({}).select({ uid: 1, name: 1 }).lean();
+  const machines = await Machine.find({}).sort({ name: 1, uid: 1 }).lean();
   const list = (Array.isArray(machines) ? machines : [])
     .map((m) => {
       const uid = String(m?.uid || "").trim();
@@ -50,6 +50,7 @@ async function buildOfflineMachineStatusPayload() {
         currentProgram: null,
         nextProgram: null,
         alarms: [],
+        startBlockedReason: null,
         bridgeOffline: true,
       };
     })
@@ -115,21 +116,36 @@ export async function getAllMachineStatusProxy(req, res) {
 
     const fetchAlarms = async (uid) => {
       try {
-        const alarmUrl = `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(
-          uid,
-        )}/alarms?headType=1`;
-        const alarmResp = await fetch(alarmUrl, {
-          method: "GET",
-          headers: withBridgeHeaders(),
-        });
-        const alarmBody = await alarmResp.json().catch(() => ({}));
-        const alarms =
-          (Array.isArray(alarmBody?.data?.alarms)
-            ? alarmBody.data.alarms
-            : null) ||
-          (Array.isArray(alarmBody?.alarms) ? alarmBody.alarms : null) ||
-          [];
-        return alarms;
+        const bodies = await Promise.all(
+          [1, 2].map(async (headType) => {
+            const alarmUrl = `${BRIDGE_BASE}/api/cnc/alarms?machines=${encodeURIComponent(
+              uid,
+            )}&headType=${encodeURIComponent(headType)}`;
+            const alarmResp = await fetch(alarmUrl, {
+              method: "GET",
+              headers: withBridgeHeaders(),
+            });
+            return alarmResp.json().catch(() => ({}));
+          }),
+        );
+        const seenAlarmKeys = new Set();
+        return bodies
+          .flatMap((alarmBody) => {
+            const item = Array.isArray(alarmBody?.results)
+              ? alarmBody.results.find(
+                  (row) =>
+                    String(row?.machineId || "").trim() ===
+                    String(uid || "").trim(),
+                )
+              : null;
+            return Array.isArray(item?.data?.alarms) ? item.data.alarms : [];
+          })
+          .filter((alarm) => {
+            const key = `${alarm?.type ?? ""}:${alarm?.no ?? ""}`;
+            if (seenAlarmKeys.has(key)) return false;
+            seenAlarmKeys.add(key);
+            return true;
+          });
       } catch {
         return [];
       }
@@ -141,10 +157,16 @@ export async function getAllMachineStatusProxy(req, res) {
         if (!uid) return m;
         const alarms = await fetchAlarms(uid);
         const hasAlarm = Array.isArray(alarms) && alarms.length > 0;
+        const startBlockedReason = hasAlarm
+          ? `알람으로 자동가공 시작 불가 (${alarms
+              .map((alarm) => `${alarm?.type ?? "?"}-${alarm?.no ?? "?"}`)
+              .join(", ")})`
+          : null;
         return {
           ...m,
           status: hasAlarm ? "ALARM" : m?.status,
           alarms,
+          startBlockedReason,
         };
       }),
     );
@@ -240,6 +262,41 @@ export async function getMachineStatusProxy(req, res) {
       { headers: withBridgeHeaders() },
     );
     const data = await response.json().catch(() => ({}));
+
+    const fetchAlarms = async () => {
+      try {
+        const bodies = await Promise.all(
+          [1, 2].map(async (headType) => {
+            const alarmResp = await fetchWithTimeout(
+              `${BRIDGE_BASE}/api/cnc/alarms?machines=${encodeURIComponent(uid)}&headType=${encodeURIComponent(headType)}`,
+              { method: "GET", headers: withBridgeHeaders() },
+            );
+            return alarmResp.json().catch(() => ({}));
+          }),
+        );
+        const seenAlarmKeys = new Set();
+        return bodies
+          .flatMap((alarmBody) => {
+            const item = Array.isArray(alarmBody?.results)
+              ? alarmBody.results.find(
+                  (row) =>
+                    String(row?.machineId || "").trim() ===
+                    String(uid || "").trim(),
+                )
+              : null;
+            return Array.isArray(item?.data?.alarms) ? item.data.alarms : [];
+          })
+          .filter((alarm) => {
+            const key = `${alarm?.type ?? ""}:${alarm?.no ?? ""}`;
+            if (seenAlarmKeys.has(key)) return false;
+            seenAlarmKeys.add(key);
+            return true;
+          });
+      } catch {
+        return [];
+      }
+    };
+
     if (!response.ok || data?.success === false) {
       return res.status(200).json({
         success: true,
@@ -249,11 +306,28 @@ export async function getMachineStatusProxy(req, res) {
           currentProgram: null,
           nextProgram: null,
           alarms: [],
+          startBlockedReason: null,
           bridgeOffline: true,
         },
       });
     }
-    res.status(200).json(data);
+
+    const alarms = await fetchAlarms();
+    const startBlockedReason = alarms.length
+      ? `알람으로 자동가공 시작 불가 (${alarms
+          .map((alarm) => `${alarm?.type ?? "?"}-${alarm?.no ?? "?"}`)
+          .join(", ")})`
+      : null;
+
+    res.status(200).json({
+      ...data,
+      data: {
+        ...(data?.data || {}),
+        machineId: String(data?.data?.machineId || uid || "").trim(),
+        alarms,
+        startBlockedReason,
+      },
+    });
   } catch (error) {
     console.error("getMachineStatusProxy error", error);
     res.status(200).json({
@@ -264,6 +338,7 @@ export async function getMachineStatusProxy(req, res) {
         currentProgram: null,
         nextProgram: null,
         alarms: [],
+        startBlockedReason: null,
         bridgeOffline: true,
       },
     });
@@ -275,35 +350,47 @@ export async function getMachineInfoProxy(req, res) {
   try {
     if (!ensureBridgeConfigured(res)) return;
 
-    const [statusResponse, activeProgramResponse, alarmResponse] =
-      await Promise.all([
-        fetch(
-          `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(uid)}/status`,
-          {
-            headers: withBridgeHeaders(),
-          },
-        ),
-        fetch(
-          `${BRIDGE_BASE}/api/cnc/programs/active?machines=${encodeURIComponent(uid)}`,
-          {
-            method: "GET",
-            headers: withBridgeHeaders(),
-          },
-        ),
-        fetch(
-          `${BRIDGE_BASE}/api/cnc/alarms?machines=${encodeURIComponent(uid)}&headType=1`,
-          {
-            method: "GET",
-            headers: withBridgeHeaders(),
-          },
-        ),
-      ]);
+    const [
+      statusResponse,
+      activeProgramResponse,
+      alarmResponse1,
+      alarmResponse2,
+    ] = await Promise.all([
+      fetch(
+        `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(uid)}/status`,
+        {
+          headers: withBridgeHeaders(),
+        },
+      ),
+      fetch(
+        `${BRIDGE_BASE}/api/cnc/programs/active?machines=${encodeURIComponent(uid)}`,
+        {
+          method: "GET",
+          headers: withBridgeHeaders(),
+        },
+      ),
+      fetch(
+        `${BRIDGE_BASE}/api/cnc/alarms?machines=${encodeURIComponent(uid)}&headType=1`,
+        {
+          method: "GET",
+          headers: withBridgeHeaders(),
+        },
+      ),
+      fetch(
+        `${BRIDGE_BASE}/api/cnc/alarms?machines=${encodeURIComponent(uid)}&headType=2`,
+        {
+          method: "GET",
+          headers: withBridgeHeaders(),
+        },
+      ),
+    ]);
 
     const statusBody = await statusResponse.json().catch(() => ({}));
     const activeProgramBody = await activeProgramResponse
       .json()
       .catch(() => ({}));
-    const alarmBody = await alarmResponse.json().catch(() => ({}));
+    const alarmBody1 = await alarmResponse1.json().catch(() => ({}));
+    const alarmBody2 = await alarmResponse2.json().catch(() => ({}));
 
     const status = statusBody?.data?.status ?? statusBody?.status ?? null;
 
@@ -315,15 +402,36 @@ export async function getMachineInfoProxy(req, res) {
       : null;
     const activeProgram = activeItem?.data ?? null;
 
-    const alarmItem = Array.isArray(alarmBody?.results)
-      ? alarmBody.results.find(
+    const alarmItem1 = Array.isArray(alarmBody1?.results)
+      ? alarmBody1.results.find(
           (row) =>
             String(row?.machineId || "").trim() === String(uid || "").trim(),
         )
       : null;
-    const alarms = Array.isArray(alarmItem?.data?.alarms)
-      ? alarmItem.data.alarms
+    const alarmItem2 = Array.isArray(alarmBody2?.results)
+      ? alarmBody2.results.find(
+          (row) =>
+            String(row?.machineId || "").trim() === String(uid || "").trim(),
+        )
+      : null;
+    const alarmList1 = Array.isArray(alarmItem1?.data?.alarms)
+      ? alarmItem1.data.alarms
       : [];
+    const alarmList2 = Array.isArray(alarmItem2?.data?.alarms)
+      ? alarmItem2.data.alarms
+      : [];
+    const seenAlarmKeys = new Set();
+    const alarms = [...alarmList1, ...alarmList2].filter((alarm) => {
+      const key = `${alarm?.type ?? ""}:${alarm?.no ?? ""}`;
+      if (seenAlarmKeys.has(key)) return false;
+      seenAlarmKeys.add(key);
+      return true;
+    });
+    const startBlockedReason = alarms.length
+      ? `알람으로 자동가공 시작 불가 (${alarms
+          .map((alarm) => `${alarm?.type ?? "?"}-${alarm?.no ?? "?"}`)
+          .join(", ")})`
+      : null;
 
     return res.status(200).json({
       success: true,
@@ -332,6 +440,7 @@ export async function getMachineInfoProxy(req, res) {
         status,
         activeProgram,
         alarms,
+        startBlockedReason,
       },
     });
   } catch (error) {
@@ -418,6 +527,7 @@ async function sendControl(uid, action, res) {
   try {
     const isStart = action === "start";
     const isStop = action === "stop";
+    const isReset = action === "reset";
     const shouldSendBody = isStart || isStop;
 
     const ioUidDefault = isStart ? 61 : isStop ? 62 : null;
@@ -441,16 +551,17 @@ async function sendControl(uid, action, res) {
         }
       : null;
 
-    const response = await fetch(
-      `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(uid)}/${action}`,
-      {
-        method: "POST",
-        headers: withBridgeHeaders(
-          shouldSendBody ? { "Content-Type": "application/json" } : {},
-        ),
-        body: shouldSendBody ? JSON.stringify(bodyForBridge) : undefined,
-      },
-    );
+    const bridgeUrl = isReset
+      ? `${BRIDGE_BASE}/api/cnc/reset?machines=${encodeURIComponent(uid)}`
+      : `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(uid)}/${action}`;
+
+    const response = await fetch(bridgeUrl, {
+      method: "POST",
+      headers: withBridgeHeaders(
+        shouldSendBody ? { "Content-Type": "application/json" } : {},
+      ),
+      body: shouldSendBody ? JSON.stringify(bodyForBridge) : undefined,
+    });
     const data = await response.json().catch(() => ({}));
     res.status(response.status).json(data);
   } catch (error) {

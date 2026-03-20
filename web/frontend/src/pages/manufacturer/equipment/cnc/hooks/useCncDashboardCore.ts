@@ -53,6 +53,10 @@ export const useCncDashboardCore = ({
         const statusRaw = String(
           body?.status || body?.data?.status || body?.machine?.status || "",
         ).trim();
+        const startBlockedReason =
+          typeof body?.data?.startBlockedReason === "string"
+            ? body.data.startBlockedReason
+            : null;
 
         setMachines((prev) => {
           return prev.map((m) =>
@@ -60,6 +64,7 @@ export const useCncDashboardCore = ({
               ? {
                   ...m,
                   status: statusRaw || "Unknown",
+                  startBlockedReason,
                   lastUpdated: new Date().toLocaleTimeString(),
                   lastCommand: "status",
                   lastError: null,
@@ -178,7 +183,16 @@ export const useCncDashboardCore = ({
         const map = new Map(
           list
             .filter((x) => x && x.uid)
-            .map((x) => [String(x.uid), String(x.status || "Unknown")]),
+            .map((x) => [
+              String(x.uid),
+              {
+                status: String(x.status || "Unknown"),
+                startBlockedReason:
+                  typeof x.startBlockedReason === "string"
+                    ? x.startBlockedReason
+                    : null,
+              },
+            ]),
         );
 
         setMachines((prev) =>
@@ -186,7 +200,9 @@ export const useCncDashboardCore = ({
             map.has(m.uid)
               ? {
                   ...m,
-                  status: map.get(m.uid) || m.status,
+                  status: map.get(m.uid)?.status || m.status,
+                  startBlockedReason:
+                    map.get(m.uid)?.startBlockedReason ?? null,
                   lastUpdated: new Date().toLocaleTimeString(),
                   lastCommand: "status",
                   lastError: null,

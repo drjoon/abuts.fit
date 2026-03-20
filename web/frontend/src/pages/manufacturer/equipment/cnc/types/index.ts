@@ -8,6 +8,7 @@ export interface Machine {
   lastUpdated?: string;
   lastCommand?: string;
   lastError?: string | null;
+  startBlockedReason?: string | null;
   allowJobStart?: boolean;
   allowProgramDelete?: boolean;
   allowRequestAssign?: boolean;

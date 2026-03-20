@@ -257,6 +257,56 @@ function formatRequestLabelForCompleted(reqDoc, fallbackRequestId) {
   return "-";
 }
 
+async function fetchMachineAlarmsFromBridge(machineId) {
+  const mid = String(machineId || "").trim();
+  if (!mid) return [];
+
+  const base =
+    process.env.BRIDGE_NODE_URL ||
+    process.env.BRIDGE_PROCESS_BASE ||
+    process.env.CNC_BRIDGE_BASE ||
+    process.env.BRIDGE_BASE ||
+    BRIDGE_BASE;
+  if (!base) return [];
+  const base0 = String(base).replace(/\/$/, "");
+
+  const results = await Promise.all(
+    [1, 2].map(async (headType) => {
+      try {
+        const resp = await fetch(
+          `${base0}/api/cnc/alarms?machines=${encodeURIComponent(mid)}&headType=${encodeURIComponent(headType)}`,
+          {
+            method: "GET",
+            headers: withBridgeHeaders(),
+          },
+        );
+        const body = await resp.json().catch(() => ({}));
+        if (
+          !resp.ok ||
+          body?.success !== true ||
+          !Array.isArray(body?.results)
+        ) {
+          return [];
+        }
+        const item = body.results.find(
+          (row) => String(row?.machineId || "").trim() === mid,
+        );
+        return Array.isArray(item?.data?.alarms) ? item.data.alarms : [];
+      } catch {
+        return [];
+      }
+    }),
+  );
+
+  const seen = new Set();
+  return results.flat().filter((alarm) => {
+    const key = `${alarm?.type ?? ""}:${alarm?.no ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export async function getLastCompletedMachiningMap(req, res) {
   try {
     const activeMachines = await CncMachine.find({ status: "active" })
@@ -400,6 +450,17 @@ export async function triggerNextAutoMachiningAfterComplete({
     if (m?.allowAutoMachining !== true) {
       console.log(
         `[bridge:auto-next] skip for ${mid}: allowAutoMachining is false`,
+      );
+      return;
+    }
+
+    const activeAlarms = await fetchMachineAlarmsFromBridge(mid);
+    if (activeAlarms.length > 0) {
+      console.log(
+        `[bridge:auto-next] skip for ${mid}: active alarms detected`,
+        {
+          alarms: activeAlarms,
+        },
       );
       return;
     }

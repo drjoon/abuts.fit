@@ -2,6 +2,8 @@ import { useCallback, useState } from "react";
 
 import { apiFetch } from "@/shared/api/apiClient";
 
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 interface Params {
   token: string | null;
   toast: (args: any) => void;
@@ -90,7 +92,54 @@ export function useCncDashboardMachineInfo({ token, toast }: Params) {
         );
       }
 
-      await openMachineInfo(machineInfoUid);
+      await wait(1200);
+
+      const infoRes = await apiFetch({
+        path: `/api/machines/${encodeURIComponent(machineInfoUid)}/info`,
+        method: "GET",
+        token,
+      });
+      const infoBody: any = infoRes.data ?? {};
+      if (!infoRes.ok || infoBody?.success === false) {
+        throw new Error(
+          infoBody?.message ||
+            infoBody?.error ||
+            `장비 정보 조회 실패 (HTTP ${infoRes.status})`,
+        );
+      }
+
+      const data = infoBody?.data ?? {};
+      const active = data?.activeProgram ?? null;
+      const curInfo = active
+        ? {
+            mainProgramName:
+              active?.MainProgramName ?? active?.mainProgramName ?? null,
+            mainProgramComment:
+              active?.MainProgramComment ?? active?.mainProgramComment ?? null,
+            subProgramName:
+              active?.SubProgramName ?? active?.subProgramName ?? null,
+            subProgramComment:
+              active?.SubProgramComment ?? active?.subProgramComment ?? null,
+          }
+        : null;
+      const nextAlarms = Array.isArray(data?.alarms) ? data.alarms : [];
+
+      setMachineInfoProgram(curInfo);
+      setMachineInfoAlarms(nextAlarms);
+
+      if (nextAlarms.length > 0) {
+        toast({
+          title: "장비 리셋 요청 완료",
+          description:
+            "리셋 신호는 전송됐지만 알람이 아직 남아 있습니다. 장비 상태를 확인한 뒤 관리자 조치가 필요할 수 있습니다.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "장비 리셋 요청 완료",
+          description: "알람 재조회 결과, 현재 남은 알람이 없습니다.",
+        });
+      }
     } catch (e: any) {
       toast({
         title: "알람 해제 실패",
