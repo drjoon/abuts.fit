@@ -712,6 +712,9 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                       <TableHead className="w-[320px] whitespace-nowrap">
                         사유
                       </TableHead>
+                      <TableHead className="w-[100px] whitespace-nowrap text-right">
+                        회수
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -739,6 +742,21 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                         </TableCell>
                         <TableCell className="w-[320px] whitespace-nowrap text-sm">
                           {String(row.overrideReason || "").trim() || "-"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8"
+                            disabled={Boolean(row.canceledAt)}
+                            onClick={() => {
+                              setSelectedCancelGrantId(String(row._id));
+                              setCancelGrantReason("");
+                              setFreeCreditMenu("grant-cancel");
+                            }}
+                          >
+                            {row.canceledAt ? "회수됨" : "회수"}
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
