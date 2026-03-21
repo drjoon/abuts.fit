@@ -109,6 +109,9 @@ export const AdminTaxInvoices = () => {
 
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
+  const [manualChargeOrderId, setManualChargeOrderId] = useState("");
+  const [manualCreating, setManualCreating] = useState(false);
+
   const statusTabs = useMemo(
     () =>
       [
@@ -229,8 +232,74 @@ export const AdminTaxInvoices = () => {
     setRejectReason("");
   };
 
+  const manualCreate = async () => {
+    const id = manualChargeOrderId.trim();
+    if (!id || !token) return;
+    setManualCreating(true);
+    try {
+      const res = await request<any>({
+        path: "/api/admin/tax-invoices/drafts/manual",
+        method: "POST",
+        token,
+        jsonBody: { chargeOrderId: id },
+      });
+      if (!res.ok) {
+        toast({
+          title: "드래프트 생성 실패",
+          description:
+            (res.data as any)?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+          duration: 5000,
+        });
+        return;
+      }
+      toast({ title: "수동 드래프트 생성 완료", duration: 3000 });
+      setManualChargeOrderId("");
+      await load();
+    } catch {
+      toast({
+        title: "드래프트 생성 실패",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+        duration: 5000,
+      });
+    } finally {
+      setManualCreating(false);
+    }
+  };
+
   return (
     <div className="p-4 space-y-4">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            수동 세금계산서 드래프트 생성
+          </CardTitle>
+          <CardDescription className="text-xs">
+            자동 생성에 실패한 경우 ChargeOrder ID로 수동 생성합니다.
+            (MATCHED/AUTO_MATCHED 상태만 가능)
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex gap-2">
+          <Input
+            placeholder="ChargeOrder ID"
+            value={manualChargeOrderId}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+              setManualChargeOrderId(e.target.value)
+            }
+            className="flex-1 placeholder:text-slate-300"
+          />
+          <Button
+            size="sm"
+            disabled={manualCreating || !manualChargeOrderId.trim()}
+            onClick={manualCreate}
+          >
+            {manualCreating ? "생성 중..." : "생성"}
+          </Button>
+        </CardContent>
+      </Card>
+
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList className="flex flex-wrap">
           {statusTabs.map((s) => (

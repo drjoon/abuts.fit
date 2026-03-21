@@ -5,6 +5,7 @@ import CreditLedger from "../models/creditLedger.model.js";
 import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import Business from "../models/business.model.js";
 import { emitCreditBalanceUpdatedToBusiness } from "./creditRealtime.js";
+import { enqueueTaxInvoiceIssue } from "./queueClient.js";
 
 export function extractDepositCodeFromText(text) {
   const raw = String(text || "");
@@ -157,8 +158,10 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
 
 async function matchTxWithOrder({ tx, order }) {
   const session = await mongoose.startSession();
+  let autoCreatedDraftId = null;
+
   try {
-    return await session.withTransaction(async () => {
+    const result = await session.withTransaction(async () => {
       const updatedTx = await BankTransaction.updateOne(
         { _id: tx._id, status: "NEW", chargeOrderId: null },
         {
@@ -221,7 +224,7 @@ async function matchTxWithOrder({ tx, order }) {
         });
       }
 
-      // 세금계산서 Draft 생성 (다음날 12시 일괄 발행용)
+      // 세금계산서 Draft 생성 (APPROVED 상태 → 자동발행 큐잉)
       const existingDraft = await TaxInvoiceDraft.findOne(
         { chargeOrderId: order._id },
         null,
@@ -243,7 +246,7 @@ async function matchTxWithOrder({ tx, order }) {
           })
           .lean({ session });
 
-        await TaxInvoiceDraft.create(
+        const [createdDraft] = await TaxInvoiceDraft.create(
           [
             {
               chargeOrderId: order._id,
@@ -267,10 +270,30 @@ async function matchTxWithOrder({ tx, order }) {
           ],
           { session },
         );
+        autoCreatedDraftId = createdDraft?._id ?? null;
       }
 
       return true;
     });
+
+    // 트랜잭션 성공 후: 새로 생성된 APPROVED 드래프트를 발행 큐에 자동 등록
+    if (result && autoCreatedDraftId) {
+      const corpNum = process.env.POPBILL_CORP_NUM || "";
+      if (corpNum) {
+        enqueueTaxInvoiceIssue({
+          draftId: String(autoCreatedDraftId),
+          corpNum,
+          priority: 5,
+        }).catch((err) => {
+          console.error(
+            "[autoMatch] enqueueTaxInvoiceIssue 실패:",
+            err.message,
+          );
+        });
+      }
+    }
+
+    return result;
   } finally {
     session.endSession();
   }

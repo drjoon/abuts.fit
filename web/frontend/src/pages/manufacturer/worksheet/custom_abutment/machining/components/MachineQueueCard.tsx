@@ -240,27 +240,23 @@ export const MachineQueueCard = ({
         onSelect?.();
       }}
     >
-      <div className="app-glass-card-content flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <div className="truncate text-[15px] font-extrabold text-slate-900">
-              {headerTitle}
-            </div>
-            <span
-              className={`h-3 w-3 shrink-0 rounded-full ${statusColor} ${
-                statusRefreshing ? "animate-pulse" : ""
-              }`}
-              title="장비 상태"
-            />
+      <div className="app-glass-card-content flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1 truncate text-[15px] font-extrabold text-slate-900">
+            {headerTitle}
           </div>
+          <span
+            className={`h-3 w-3 shrink-0 rounded-full ${statusColor} ${
+              statusRefreshing ? "animate-pulse" : ""
+            }`}
+            title="장비 상태"
+          />
         </div>
-      </div>
 
-      <div
-        className="app-glass-card-content mt-3 flex flex-col gap-3"
-        title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
-      >
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div
+          className="flex flex-wrap items-center justify-end gap-2"
+          title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
+        >
           <MaterialDiameterChip
             label={materialDiameterLabel || "-"}
             variant="circle"

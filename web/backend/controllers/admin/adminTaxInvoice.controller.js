@@ -1,5 +1,7 @@
 import TaxInvoiceDraft from "../../models/taxInvoiceDraft.model.js";
 import AdminAuditLog from "../../models/adminAuditLog.model.js";
+import ChargeOrder from "../../models/chargeOrder.model.js";
+import Business from "../../models/business.model.js";
 import {
   enqueueTaxInvoiceIssue,
   enqueueTaxInvoiceCancel,
@@ -151,7 +153,7 @@ export async function adminApproveTaxInvoiceDraft(req, res) {
         attemptCount: 0,
         lastAttemptAt: null,
       },
-    }
+    },
   );
 
   await writeAuditLog({
@@ -180,7 +182,7 @@ export async function adminRejectTaxInvoiceDraft(req, res) {
 
   await TaxInvoiceDraft.updateOne(
     { _id: id, status: { $ne: "SENT" } },
-    { $set: { status: "REJECTED", failReason: reason || null } }
+    { $set: { status: "REJECTED", failReason: reason || null } },
   );
 
   await writeAuditLog({
@@ -208,7 +210,7 @@ export async function adminCancelTaxInvoiceDraft(req, res) {
 
   await TaxInvoiceDraft.updateOne(
     { _id: id, status: { $ne: "SENT" } },
-    { $set: { status: "CANCELLED" } }
+    { $set: { status: "CANCELLED" } },
   );
 
   await writeAuditLog({
@@ -295,6 +297,95 @@ export async function adminGetTaxInvoiceStatus(req, res) {
     message:
       "직접 상태 조회 기능은 더 이상 지원되지 않습니다. DB 상태를 확인해주세요.",
   });
+}
+
+export async function adminManualCreateTaxInvoiceDraft(req, res) {
+  try {
+    const chargeOrderId = String(req.body?.chargeOrderId || "").trim();
+    if (!chargeOrderId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "chargeOrderId가 필요합니다." });
+    }
+
+    const order = await ChargeOrder.findById(chargeOrderId).lean();
+    if (!order) {
+      return res
+        .status(404)
+        .json({ success: false, message: "ChargeOrder를 찾을 수 없습니다." });
+    }
+
+    if (!["MATCHED", "AUTO_MATCHED"].includes(String(order.status))) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "입금 확인(MATCHED/AUTO_MATCHED) 상태의 주문만 수동 발행할 수 있습니다.",
+      });
+    }
+
+    const existing = await TaxInvoiceDraft.findOne({
+      chargeOrderId: order._id,
+    }).lean();
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: "이미 세금계산서 드래프트가 존재합니다.",
+        data: existing,
+      });
+    }
+
+    const org = await Business.findOne({
+      businessAnchorId: order.businessAnchorId,
+    })
+      .select({
+        "extracted.businessNumber": 1,
+        "extracted.companyName": 1,
+        "extracted.representativeName": 1,
+        "extracted.address": 1,
+        "extracted.businessType": 1,
+        "extracted.businessItem": 1,
+        "extracted.email": 1,
+        "extracted.phoneNumber": 1,
+      })
+      .lean();
+
+    const draft = await TaxInvoiceDraft.create({
+      chargeOrderId: order._id,
+      businessAnchorId: order.businessAnchorId,
+      status: "PENDING_APPROVAL",
+      supplyAmount: Number(order.supplyAmount),
+      vatAmount: Number(order.vatAmount || 0),
+      totalAmount: Number(order.amountTotal || 0),
+      buyer: {
+        bizNo: org?.extracted?.businessNumber || "",
+        corpName: org?.extracted?.companyName || "",
+        ceoName: org?.extracted?.representativeName || "",
+        addr: org?.extracted?.address || "",
+        bizType: org?.extracted?.businessType || "",
+        bizClass: org?.extracted?.businessItem || "",
+        contactEmail: org?.extracted?.email || "",
+        contactTel: org?.extracted?.phoneNumber || "",
+        contactName: org?.extracted?.representativeName || "",
+      },
+    });
+
+    await writeAuditLog({
+      req,
+      action: "TAX_INVOICE_DRAFT_MANUAL_CREATE",
+      refType: "TaxInvoiceDraft",
+      refId: draft._id,
+      details: { chargeOrderId: String(order._id) },
+    });
+
+    return res.status(201).json({ success: true, data: draft });
+  } catch (error) {
+    console.error("adminManualCreateTaxInvoiceDraft error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "수동 세금계산서 드래프트 생성 실패",
+      error: error.message,
+    });
+  }
 }
 
 export async function adminCancelIssuedTaxInvoice(req, res) {

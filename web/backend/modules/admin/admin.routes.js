@@ -86,6 +86,7 @@ import {
   adminIssueTaxInvoice,
   adminGetTaxInvoiceStatus,
   adminCancelIssuedTaxInvoice,
+  adminManualCreateTaxInvoiceDraft,
 } from "../../controllers/admin/adminTaxInvoice.controller.js";
 import { adminOverrideOrganizationVerification } from "../../controllers/admin/admin.organization.controller.js";
 import {
@@ -277,6 +278,7 @@ router.post(
 );
 
 // 세금계산서(드래프트) 관리
+router.post("/tax-invoices/drafts/manual", adminManualCreateTaxInvoiceDraft);
 router.get("/tax-invoices/drafts", adminListTaxInvoiceDrafts);
 router.get("/tax-invoices/drafts/:id", adminGetTaxInvoiceDraft);
 router.patch("/tax-invoices/drafts/:id", adminUpdateTaxInvoiceDraft);
