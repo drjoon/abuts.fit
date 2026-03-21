@@ -357,6 +357,9 @@ export const WorksheetCardGrid = ({
 
         const sp = request.shippingPriority;
         const urgency = String(sp?.level || "").trim();
+        const hasInsufficientShippingCredit = Boolean(
+          request.shippingCreditMeta?.insufficient,
+        );
         const deadlineInfo = getDeadlineInfo(
           request.createdAt,
           request.timeline?.estimatedShipYmd,
@@ -420,15 +423,17 @@ export const WorksheetCardGrid = ({
             className={`relative h-full border ${
               isSelected
                 ? "border-blue-500 bg-blue-50/40"
-                : isCompletedForCurrentStage
-                  ? "border-emerald-500 bg-emerald-50/30"
-                  : deadlineInfo
-                    ? deadlineInfo.borderClass
-                    : urgency === "danger"
-                      ? "border-rose-500 border-2"
-                      : urgency === "warning"
-                        ? "border-amber-500 border-2"
-                        : "border-slate-200"
+                : hasInsufficientShippingCredit
+                  ? "border-red-500 border-2 bg-red-50/40"
+                  : isCompletedForCurrentStage
+                    ? "border-emerald-500 bg-emerald-50/30"
+                    : deadlineInfo
+                      ? deadlineInfo.borderClass
+                      : urgency === "danger"
+                        ? "border-rose-500 border-2"
+                        : urgency === "warning"
+                          ? "border-amber-500 border-2"
+                          : "border-slate-200"
             } ${onToggleSelected ? "cursor-pointer" : ""}`}
             role={onToggleSelected ? "button" : undefined}
             aria-pressed={onToggleSelected ? isSelected : undefined}
@@ -537,6 +542,14 @@ export const WorksheetCardGrid = ({
                         className="border-emerald-400 text-emerald-700 bg-emerald-50"
                       >
                         신규 임플란트
+                      </Badge>
+                    )}
+                    {hasInsufficientShippingCredit && (
+                      <Badge
+                        variant="outline"
+                        className="border-red-300 bg-red-50 text-red-700"
+                      >
+                        배송비 부족
                       </Badge>
                     )}
                   </div>

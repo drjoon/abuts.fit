@@ -17,9 +17,37 @@ import {
   hasPickupCompleted,
   resolveTrackingSyncTargets,
   emitDeliveryUpdated,
+  syncHanjinTrackingPayload,
 } from "./shipping.Tracking.helpers.js";
 import { startHanjinTrackingPoll } from "./shipping.TrackingPoller.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
+
+function buildRequestsByMailbox(requests = []) {
+  const byMailbox = new Map();
+  for (const requestDoc of requests) {
+    const mailboxAddress = String(requestDoc?.mailboxAddress || "").trim();
+    if (!mailboxAddress) continue;
+    if (!byMailbox.has(mailboxAddress)) {
+      byMailbox.set(mailboxAddress, []);
+    }
+    byMailbox.get(mailboxAddress).push(requestDoc);
+  }
+  return byMailbox;
+}
+
+function resolveMailboxTrackingNumber(group = [], prefix, now) {
+  for (const requestDoc of group) {
+    const candidate = String(
+      requestDoc?.deliveryInfoRef?.trackingNumber || "",
+    ).trim();
+    if (candidate) return candidate;
+  }
+
+  const fallbackPackageId = String(
+    group?.[0]?.shippingPackageId || group?.[0]?.mailboxAddress || "BOX",
+  ).trim();
+  return `${prefix}-${fallbackPackageId}-${now.getTime()}`;
+}
 
 /**
  * MOCK 집하 완료 시뮬레이션 (Hanjin status code 11)
@@ -57,16 +85,7 @@ export async function mockHanjinPickupCompleted(req, res) {
     }
 
     const now = new Date();
-    const byMailbox = new Map();
-
-    for (const requestDoc of targetRequests) {
-      const mailboxAddress = String(requestDoc?.mailboxAddress || "").trim();
-      if (!mailboxAddress) continue;
-      if (!byMailbox.has(mailboxAddress)) {
-        byMailbox.set(mailboxAddress, []);
-      }
-      byMailbox.get(mailboxAddress).push(requestDoc);
-    }
+    const byMailbox = buildRequestsByMailbox(targetRequests);
 
     const results = [];
 
@@ -88,25 +107,11 @@ export async function mockHanjinPickupCompleted(req, res) {
         continue;
       }
 
-      let trackingNumber = "";
-      for (const requestDoc of group) {
-        const candidate = String(
-          requestDoc?.deliveryInfoRef?.trackingNumber || "",
-        ).trim();
-        if (candidate) {
-          trackingNumber = candidate;
-          break;
-        }
-      }
-
-      if (!trackingNumber) {
-        const fallbackPackageId = String(
-          group[0]?.shippingPackageId || mailboxAddress,
-        ).trim();
-        trackingNumber = `MOCK-${fallbackPackageId}-${now.getTime()}`;
-      }
-
+      const trackingNumber = resolveMailboxTrackingNumber(group, "MOCK", now);
       const processedRequestIds = [];
+      const deliverySaveJobs = [];
+      const requestSaveJobs = [];
+      const emitJobs = [];
 
       for (const requestDoc of group) {
         let deliveryInfo = requestDoc.deliveryInfoRef;
@@ -137,7 +142,7 @@ export async function mockHanjinPickupCompleted(req, res) {
         deliveryInfo.tracking.lastEventAt = now;
         deliveryInfo.tracking.lastSyncedAt = now;
         deliveryInfo.pickedUpAt = now;
-        await deliveryInfo.save();
+        deliverySaveJobs.push(deliveryInfo.save());
 
         requestDoc.manufacturerStage = "추적관리";
         requestDoc.status = "추적관리";
@@ -150,15 +155,21 @@ export async function mockHanjinPickupCompleted(req, res) {
           source: "hanjin-tracking-mock-pickup",
           updatedAt: now,
         });
-        await requestDoc.save();
+        requestSaveJobs.push(requestDoc.save());
 
-        await emitDeliveryUpdated(requestDoc, {
-          source: "hanjin-tracking-mock-pickup",
-          shippingStatusLabel: "집하완료",
-        });
+        emitJobs.push(
+          emitDeliveryUpdated(requestDoc, {
+            source: "hanjin-tracking-mock-pickup",
+            shippingStatusLabel: "집하완료",
+          }),
+        );
 
         processedRequestIds.push(requestDoc.requestId);
       }
+
+      await Promise.all(deliverySaveJobs);
+      await Promise.all(requestSaveJobs);
+      await Promise.allSettled(emitJobs);
 
       results.push({
         mailboxAddress,
@@ -189,6 +200,124 @@ export async function mockHanjinPickupCompleted(req, res) {
     return res.status(500).json({
       success: false,
       message: "MOCK 집하 처리 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function mockHanjinDeliveryCompleted(req, res) {
+  try {
+    const { mailboxAddresses = [] } = req.body || {};
+
+    const addressList = Array.isArray(mailboxAddresses)
+      ? mailboxAddresses
+          .map((value) => String(value || "").trim())
+          .filter(Boolean)
+      : [];
+
+    if (!addressList.length) {
+      return res.status(400).json({
+        success: false,
+        message: "mailboxAddresses가 필요합니다.",
+      });
+    }
+
+    const targetRequests = await Request.find({
+      mailboxAddress: { $in: addressList },
+    }).populate("deliveryInfoRef");
+
+    if (!targetRequests.length) {
+      return res.status(404).json({
+        success: false,
+        message: "MOCK 배송완료 처리할 우편함을 찾을 수 없습니다.",
+      });
+    }
+
+    const byMailbox = buildRequestsByMailbox(targetRequests);
+
+    const now = new Date();
+    const results = [];
+
+    for (const mailboxAddress of addressList) {
+      const group = byMailbox.get(mailboxAddress) || [];
+      if (!group.length) {
+        results.push({
+          mailboxAddress,
+          success: false,
+          skipped: true,
+          reason: "no_requests",
+          requestCount: 0,
+          processedCount: 0,
+        });
+        continue;
+      }
+
+      const trackingNumber = resolveMailboxTrackingNumber(
+        group,
+        "MOCK-DLV",
+        now,
+      );
+
+      const processedRequestIds = [];
+      const syncResults = await Promise.all(
+        group.map(async (requestDoc) => {
+          const result = await syncHanjinTrackingPayload({
+            payload: {
+              requestId: String(requestDoc._id || "").trim(),
+              trackingNumber,
+              carrier: String(
+                requestDoc?.deliveryInfoRef?.carrier || "hanjin",
+              ).trim(),
+              deliveredAt: now.toISOString(),
+              events: [
+                {
+                  statusCode: "66",
+                  statusText: "배송완료",
+                  occurredAt: now.toISOString(),
+                  location: "MOCK",
+                  description: "MOCK 배송완료 처리",
+                },
+              ],
+            },
+            headers: {},
+            enforceSecret: false,
+          });
+
+          if (result?.ok) {
+            processedRequestIds.push(String(requestDoc.requestId || "").trim());
+          }
+          return result;
+        }),
+      );
+
+      results.push({
+        mailboxAddress,
+        success: processedRequestIds.length > 0,
+        requestCount: group.length,
+        processedCount: processedRequestIds.length,
+        requestIds: processedRequestIds,
+        trackingNumber,
+        statusCode: "66",
+        statusText: "배송완료",
+        failedCount: syncResults.filter((item) => !item?.ok).length,
+      });
+    }
+
+    const deliveredCount = results.filter((item) => item.success).length;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        deliveredCount,
+        synced: results,
+        results,
+      },
+    });
+  } catch (error) {
+    console.error("Error in mockHanjinDeliveryCompleted:", error);
+    return res.status(500).json({
+      success: false,
+      message: "MOCK 배송완료 처리 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

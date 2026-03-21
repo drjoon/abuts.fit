@@ -1,6 +1,7 @@
 import mongoose, { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import Machine from "../../models/machine.model.js";
+import CncMachine from "../../models/cncMachine.model.js";
 import {
   applyStatusMapping,
   ensureLotNumberForMachining,
@@ -159,6 +160,21 @@ function runCamApprovePostProcessingInBackground({
       }
 
       if (!selectedMachineId) return;
+
+      request.lotNumber = request.lotNumber || {};
+      if (!request.lotNumber.material) {
+        const cncMachine = await CncMachine.findOne({
+          machineId: selectedMachineId,
+        })
+          .select({ currentMaterial: 1 })
+          .lean()
+          .catch(() => null);
+        const heatNo = String(cncMachine?.currentMaterial?.heatNo || "").trim();
+        if (heatNo) {
+          request.lotNumber.material = heatNo;
+          await request.save();
+        }
+      }
 
       const meta = await Machine.findOne({ uid: selectedMachineId })
         .select({ allowAutoMachining: 1, allowRequestAssign: 1 })
@@ -811,6 +827,7 @@ export async function updateReviewStatusByStage(req, res) {
       success: false,
       message: error.message || "검토 상태 변경 중 오류가 발생했습니다.",
       error: error.message,
+      payload: error?.payload || null,
     });
   } finally {
     session.endSession();

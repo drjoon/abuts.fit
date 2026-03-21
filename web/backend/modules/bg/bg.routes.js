@@ -10,6 +10,29 @@ import { requireBridgeIpAllowlist } from "../../middlewares/bridgeIpAllowlist.mi
 
 const router = Router();
 
+function allowPackingCaptureAccess(req, res, next) {
+  const hasBearerAuth = String(req.headers.authorization || "").startsWith(
+    "Bearer ",
+  );
+
+  if (hasBearerAuth) {
+    return authenticate(req, res, () => {
+      const role = String(req.user?.role || "").trim();
+      if (!["manufacturer", "admin"].includes(role)) {
+        return res.status(403).json({
+          success: false,
+          message: "이 작업을 수행할 권한이 없습니다.",
+        });
+      }
+      return next();
+    });
+  }
+
+  return requireBridgeIpAllowlist(req, res, () =>
+    requireBgWorkerSecret(req, res, next),
+  );
+}
+
 // 브리지 전용 엔드포인트: 시크릿 + IP 허용목록
 router.post(
   "/register-file",
@@ -38,8 +61,7 @@ router.post(
 );
 router.post(
   "/lot-capture/packing",
-  requireBridgeIpAllowlist,
-  requireBgWorkerSecret,
+  allowPackingCaptureAccess,
   handlePackingCapture,
 );
 router.get(

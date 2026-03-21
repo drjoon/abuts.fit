@@ -287,6 +287,13 @@ export interface RequestBase {
   };
 
   shippingPackageId?: string;
+  shippingCreditMeta?: {
+    insufficient?: boolean;
+    required?: number | null;
+    paidBalance?: number | null;
+    freeShippingCreditBalance?: number | null;
+    reason?: string | null;
+  } | null;
 }
 
 // RequestBase에서 공통적으로 사용할 ID 추출 헬퍼

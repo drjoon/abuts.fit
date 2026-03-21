@@ -18,6 +18,13 @@ let _apiKey = null;
 let _genAI = null;
 let _initialized = false;
 
+function toBool(value) {
+  const s = String(value || "")
+    .trim()
+    .toLowerCase();
+  return ["1", "true", "yes", "y", "on"].includes(s);
+}
+
 function getGenAI() {
   if (!_initialized) {
     _initialized = true;
@@ -37,6 +44,23 @@ function extractLotSuffix3(value) {
   const s = String(value || "").toUpperCase();
   const match = s.match(/[A-Z]{3}(?!.*[A-Z])/);
   return match ? match[0] : "";
+}
+
+async function findPackingRequestBySuffix(recognizedSuffix) {
+  const suffix = extractLotSuffix3(recognizedSuffix);
+  if (!suffix) return null;
+
+  const candidates = await Request.find({
+    status: { $ne: "취소" },
+    manufacturerStage: "세척.패킹",
+  }).sort({ createdAt: 1 });
+
+  return (
+    candidates.find(
+      (candidate) =>
+        extractLotSuffix3(String(candidate?.lotNumber?.value || "")) === suffix,
+    ) || null
+  );
 }
 
 async function recognizeLotNumberFromS3({ s3Key, originalName }) {
@@ -145,8 +169,15 @@ async function recognizeLotNumberFromS3({ s3Key, originalName }) {
 }
 
 export const handlePackingCapture = asyncHandler(async (req, res) => {
-  const { s3Key, s3Url, originalName, fileSize, recognizedSuffix, lotNumber } =
-    req.body || {};
+  const {
+    s3Key,
+    s3Url,
+    originalName,
+    fileSize,
+    recognizedSuffix,
+    lotNumber,
+    source,
+  } = req.body || {};
 
   const key = String(s3Key || "").trim();
   if (!key) {
@@ -159,13 +190,23 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   const providedSuffix = extractLotSuffix3(
     String(recognizedSuffix || "").trim() || providedLotNumber,
   );
-  const recognized = {
+  let recognized = {
     lotNumber: providedLotNumber || providedSuffix,
     confidence: providedSuffix ? "provided" : "missing",
     provider: providedSuffix ? "lot-server" : "none",
   };
 
-  const finalRecognizedSuffix = providedSuffix;
+  const packAiRecogEnabled = toBool(process.env.PACK_AI_RECOG);
+  if (!providedSuffix && packAiRecogEnabled) {
+    recognized = await recognizeLotNumberFromS3({
+      s3Key: key,
+      originalName: name,
+    });
+  }
+
+  const finalRecognizedSuffix = extractLotSuffix3(
+    String(recognized?.lotNumber || ""),
+  );
   console.log("[lot-capture] recognition result", {
     originalName: name,
     s3Key: key,
@@ -173,26 +214,42 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     recognizedSuffix: finalRecognizedSuffix,
     confidence: String(recognized?.confidence || "").trim() || "unknown",
     provider: String(recognized?.provider || "").trim() || "unknown",
+    packAiRecogEnabled,
   });
-  const request = await Request.findOne({
-    status: { $ne: "취소" },
-    manufacturerStage: "세척.패킹",
-  }).sort({ createdAt: 1 });
 
-  console.warn("[lot-capture] temporary fallback applied", {
-    recognizedSuffix: finalRecognizedSuffix || null,
-    matched: !!request,
-    matchedRequestId: request?.requestId || null,
-    matchedMongoId: request?._id ? String(request._id) : null,
-    matchedLotPart: String(request?.lotNumber?.value || "").trim() || null,
-  });
+  let request = null;
+  let reason = "";
+
+  if (finalRecognizedSuffix) {
+    request = await findPackingRequestBySuffix(finalRecognizedSuffix);
+    if (!request) {
+      reason = "no_suffix_match";
+    }
+  } else if (!packAiRecogEnabled) {
+    request = await Request.findOne({
+      status: { $ne: "취소" },
+      manufacturerStage: "세척.패킹",
+    }).sort({ createdAt: 1 });
+    reason = request ? "" : "no_packing_request";
+
+    console.warn("[lot-capture] temporary fallback applied", {
+      recognizedSuffix: finalRecognizedSuffix || null,
+      matched: !!request,
+      matchedRequestId: request?.requestId || null,
+      matchedMongoId: request?._id ? String(request._id) : null,
+      matchedLotPart: String(request?.lotNumber?.value || "").trim() || null,
+    });
+  } else {
+    reason = "no_recognized_suffix";
+  }
 
   if (!request) {
     console.warn("[lot-capture] no matching request found", {
       recognizedSuffix: finalRecognizedSuffix || null,
       originalName: name,
       s3Key: key,
-      temporaryFallback: true,
+      temporaryFallback: !packAiRecogEnabled,
+      reason,
     });
     return res.status(200).json(
       new ApiResponse(
@@ -202,9 +259,9 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
           recognized: recognized || null,
           matched: false,
           suffix: finalRecognizedSuffix || null,
-          reason: "no_packing_request",
+          reason: reason || "no_packing_request",
         },
-        "세척.패킹 의뢰가 없습니다.",
+        "일치하는 세척.패킹 의뢰를 찾지 못했습니다.",
       ),
     );
   }
@@ -223,7 +280,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     filePath: name,
     s3Key: key,
     s3Url: String(s3Url || "").trim() || "",
-    source: "worker",
+    source: String(source || "").trim() || "worker",
     uploadedBy: null,
     uploadedAt: new Date(),
   };
@@ -275,7 +332,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     clear: true,
     metadata: {
       recognizedSuffix: finalRecognizedSuffix || null,
-      temporaryFallback: true,
+      temporaryFallback: !packAiRecogEnabled && !finalRecognizedSuffix,
       autoPrintHandledBy: "frontend",
     },
   });

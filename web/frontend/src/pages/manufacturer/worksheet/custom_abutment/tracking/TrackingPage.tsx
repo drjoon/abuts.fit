@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
+import * as XLSX from "xlsx";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { generateModelNumber } from "@/utils/modelNumber";
@@ -118,6 +119,7 @@ export const TrackingInquiryPage = () => {
   const onScrollRef = useRef<(() => void) | null>(null);
   const [loading, setLoading] = useState(false);
   const [syncingTracking, setSyncingTracking] = useState(false);
+  const [mockDelivering, setMockDelivering] = useState(false);
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
   const [expandedBoxes, setExpandedBoxes] = useState<Set<string>>(new Set());
   // Network pagination per stage (tracking)
@@ -130,7 +132,7 @@ export const TrackingInquiryPage = () => {
   const defaultDateRangeByTab: Record<InquiryTab, DateRange> = {
     process: "recent30",
     shipping: "recent30",
-    udi: "lastMonth",
+    udi: "recent30",
   };
   const [dateRangeByTab, setDateRangeByTab] = useState<
     Record<InquiryTab, DateRange>
@@ -367,7 +369,7 @@ export const TrackingInquiryPage = () => {
       .filter((r) => {
         if (!fromDate && !toDate) return true;
         const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-        const base = di.shippedAt || di.deliveredAt || r.createdAt;
+        const base = di.deliveredAt || di.shippedAt || r.createdAt;
         if (!base) return false;
         const t = new Date(base);
         if (Number.isNaN(t.getTime())) return false;
@@ -426,7 +428,7 @@ export const TrackingInquiryPage = () => {
         "의뢰ID",
         "환자/치아",
         "생산",
-        "발송",
+        "상태",
         "발송날짜",
         "장비",
         "원재료",
@@ -436,16 +438,25 @@ export const TrackingInquiryPage = () => {
         .map((r) => {
           const ci: any = r.caseInfos || {};
           const lotMaterial = String(r.lotNumber?.material || "");
-          const lotValue = String(r.lotNumber?.value || "");
           const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-          const shippedDate = formatYmd(di.shippedAt || di.deliveredAt);
+          const shippedDate = formatYmd(di.deliveredAt || di.shippedAt);
+          const shippingStatus = di.deliveredAt
+            ? "배송완료"
+            : di.pickedUpAt
+              ? "집하완료"
+              : di.shippedAt
+                ? "발송완료"
+                : "-";
+          const machineLabel = String(
+            r.assignedMachine || r.productionSchedule?.assignedMachine || "",
+          ).trim();
           return `<tr>
             <td>${r.requestId || ""}</td>
             <td>${ci.patientName || ""} / ${ci.tooth || ""}</td>
             <td>가공·탈지·연마·검사·세척·포장</td>
-            <td>출하승인·발송</td>
+            <td>${shippingStatus}</td>
             <td>${shippedDate}</td>
-            <td>${r.assignedMachine || ""}</td>
+            <td>${machineLabel || "-"}</td>
             <td>${lotMaterial}</td>
             <td>${normalizeLotNumberLabel(r)}</td>
           </tr>`;
@@ -456,7 +467,7 @@ export const TrackingInquiryPage = () => {
       headers = [
         "의뢰ID",
         "환자/치아",
-        "발송일",
+        "배송완료일",
         "택배사",
         "송장번호",
         "원재료",
@@ -466,14 +477,16 @@ export const TrackingInquiryPage = () => {
         .map((r) => {
           const ci: any = r.caseInfos || {};
           const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-          const shippedAt = di.shippedAt || di.deliveredAt || "";
-          const shippedDate = shippedAt ? String(shippedAt).slice(0, 10) : "";
+          const deliveredAt = di.deliveredAt || "";
+          const deliveredDate = deliveredAt
+            ? String(deliveredAt).slice(0, 10)
+            : "";
           const lotMaterial = String(r.lotNumber?.material || "");
           const lotValue = String(r.lotNumber?.value || "");
           return `<tr>
             <td>${r.requestId || ""}</td>
             <td>${ci.patientName || ""} / ${ci.tooth || ""}</td>
-            <td>${shippedDate}</td>
+            <td>${deliveredDate}</td>
             <td>${di.carrier || ""}</td>
             <td>${di.trackingNumber || ""}</td>
             <td>${lotMaterial}</td>
@@ -562,127 +575,93 @@ export const TrackingInquiryPage = () => {
       return String(base).slice(0, 10) === ymd;
     });
 
-    const escapeCsv = (value: string) => {
-      if (value == null) return "";
-      const s = String(value);
-      if (/[",\n]/.test(s)) {
-        return '"' + s.replace(/"/g, '""') + '"';
-      }
-      return s;
-    };
-
-    const header = [
-      "기공소명",
-      "전화1",
-      "",
-      "전화2",
-      "",
-      "주소",
-      "박스수량",
-      "종류",
-      "",
-      "결제",
+    const sheetRows = [
+      [
+        "기공소명",
+        "전화1",
+        "",
+        "전화2",
+        "",
+        "주소",
+        "박스수량",
+        "종류",
+        "",
+        "결제",
+      ],
+      ...rows.map((box) => {
+        const firstRequest = (box as any)?.requests?.[0];
+        const ci: any = firstRequest?.caseInfos || {};
+        const name =
+          ci.clinicName ||
+          firstRequest?.requestor?.business ||
+          firstRequest?.requestor?.name ||
+          "";
+        const phone =
+          (ci as any)?.phone || firstRequest?.requestor?.phone || "";
+        const addr = (ci as any)?.address || "";
+        return [
+          name,
+          phone,
+          "",
+          phone,
+          addr,
+          "",
+          String(box.requestCount || 1),
+          "의료기기",
+          "",
+          "신용",
+        ];
+      }),
     ];
 
-    const csvRows: string[] = [];
-    csvRows.push(header.map(escapeCsv).join(","));
-
-    for (const box of rows) {
-      const di = normalizeDeliveryInfo(box.deliveryInfoRef);
-      // 박스의 첫 번째 의뢰건에서 정보 추출
-      const firstRequest = (box as any)?.requests?.[0];
-      const ci: any = firstRequest?.caseInfos || {};
-      const name =
-        ci.clinicName ||
-        firstRequest?.requestor?.business ||
-        firstRequest?.requestor?.name ||
-        "";
-      const phone = (ci as any)?.phone || firstRequest?.requestor?.phone || "";
-      const addr = (ci as any)?.address || "";
-      const cols = [
-        name,
-        phone,
-        "",
-        phone,
-        addr,
-        "",
-        String(box.requestCount || 1),
-        "의료기기",
-        "",
-        "신용",
-      ];
-
-      csvRows.push(cols.map(escapeCsv).join(","));
-    }
-
-    const csvContent = "\uFEFF" + csvRows.join("\n");
-
-    const blob = new Blob([csvContent], {
-      type: "text/csv;charset=utf-8;",
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet(sheetRows);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "택배배송");
+    XLSX.writeFile(workbook, `애크로덴트-${ymd}.xlsx`, {
+      compression: true,
     });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `애크로덴트-${ymd}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   const handleDownloadUdi = () => {
-    const header = [
-      "의뢰ID",
-      "환자/치아",
-      "발송일",
-      "택배사",
-      "송장번호",
-      "원재료(Heat No.)",
-      "제조번호(CA)",
+    const todayStr = (toKstYmd(new Date()) || "").replace(/-/g, "");
+    const rows = [
+      [
+        "의뢰ID",
+        "환자/치아",
+        "배송완료일",
+        "택배사",
+        "송장번호",
+        "원재료(Heat No.)",
+        "제조번호(CA)",
+        "표시용 LOT",
+      ],
+      ...udiRows.map((r) => {
+        const ci: any = r.caseInfos || {};
+        const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+        const deliveredDate = di.deliveredAt
+          ? String(di.deliveredAt).slice(0, 10)
+          : "";
+        const lotMaterial = String(r.lotNumber?.material || "");
+        const lotValue = String(r.lotNumber?.value || "");
+        return [
+          r.requestId || "",
+          `${ci.patientName || ""} / ${ci.tooth || ""}`,
+          deliveredDate,
+          di.carrier || "",
+          di.trackingNumber || "",
+          lotMaterial,
+          lotValue,
+          normalizeLotNumberLabel(r),
+        ];
+      }),
     ];
 
-    const escapeCsv = (value: string) => {
-      if (value == null) return "";
-      const s = String(value);
-      if (/[\",\\n]/.test(s)) {
-        return '"' + s.replace(/"/g, '""') + '"';
-      }
-      return s;
-    };
-
-    const rows = udiRows.map((r) => {
-      const ci: any = r.caseInfos || {};
-      const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-      const shippedAt = di.shippedAt || di.deliveredAt || "";
-      const shippedDate = shippedAt ? String(shippedAt).slice(0, 10) : "";
-      const lotMaterial = String(r.lotNumber?.material || "");
-      const lotValue = String(r.lotNumber?.value || "");
-      return [
-        r.requestId || "",
-        `${ci.patientName || ""} / ${ci.tooth || ""}`,
-        shippedDate,
-        di.carrier || "",
-        di.trackingNumber || "",
-        lotMaterial,
-        lotValue,
-        normalizeLotNumberLabel(r),
-      ];
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "UDI신고");
+    XLSX.writeFile(workbook, `애크로덴트-UDI-${todayStr}.xlsx`, {
+      compression: true,
     });
-
-    const csvRows: string[] = [];
-    csvRows.push(header.map(escapeCsv).join(","));
-    rows.forEach((row) => csvRows.push(row.map(escapeCsv).join(",")));
-    const csvContent = "\uFEFF" + csvRows.join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const todayStr = (toKstYmd(new Date()) || "").replace(/-/g, "");
-    a.download = `애크로덴트-UDI-${todayStr}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   const processRows = useMemo(() => {
@@ -693,43 +672,27 @@ export const TrackingInquiryPage = () => {
     });
   }, [baseFiltered]);
 
-  const lastMonthRange = useMemo(() => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = today.getMonth();
-    const from = new Date(year, month - 1, 1);
-    const to = new Date(year, month, 0);
-    to.setHours(23, 59, 59, 999);
-    return { from, to };
-  }, []);
-
   const udiRows = useMemo(() => {
-    const { from, to } = lastMonthRange;
     return baseFiltered
       .filter((r) => {
         const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-        const base =
-          di.shippedAt ||
-          di.deliveredAt ||
-          r.createdAt ||
-          new Date().toISOString();
+        const base = di.deliveredAt;
+        if (!base) return false;
         const t = new Date(base);
         if (Number.isNaN(t.getTime())) return false;
-        return t >= from && t <= to;
+        if (fromDate && t < fromDate) return false;
+        if (toDate && t > toDate) return false;
+        return true;
       })
       .slice()
       .sort((a, b) => {
         const da = normalizeDeliveryInfo(a.deliveryInfoRef);
         const db = normalizeDeliveryInfo(b.deliveryInfoRef);
-        const aTime = new Date(
-          da.shippedAt || da.deliveredAt || a.createdAt || 0,
-        ).getTime();
-        const bTime = new Date(
-          db.shippedAt || db.deliveredAt || b.createdAt || 0,
-        ).getTime();
+        const aTime = new Date(da.deliveredAt || a.createdAt || 0).getTime();
+        const bTime = new Date(db.deliveredAt || b.createdAt || 0).getTime();
         return bTime - aTime;
       });
-  }, [baseFiltered, lastMonthRange]);
+  }, [baseFiltered, fromDate, toDate]);
 
   const shippingRows = useMemo(() => {
     const only = baseFiltered.filter((r) => {
@@ -873,6 +836,56 @@ export const TrackingInquiryPage = () => {
     }
   }, [shippingRows, toast]);
 
+  const handleMockDeliveryComplete = useCallback(async () => {
+    const mailboxAddresses = Array.from(
+      new Set(
+        shippingRows
+          .filter((row: any) => {
+            const di = normalizeDeliveryInfo(row.deliveryInfoRef);
+            return !di.deliveredAt;
+          })
+          .map((row: any) => String(row.mailboxAddress || "").trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (!mailboxAddresses.length) {
+      toast({
+        title: "처리할 배송건 없음",
+        description: "배송완료 처리할 우편함이 없습니다.",
+      });
+      return;
+    }
+
+    setMockDelivering(true);
+    try {
+      const response = await request<any>({
+        path: "/api/requests/shipping/hanjin/mock-delivery-complete",
+        method: "POST",
+        jsonBody: { mailboxAddresses },
+      });
+      const body = response.data as any;
+      if (!response.ok || !body?.success) {
+        throw new Error(body?.message || "MOCK 배송완료 처리에 실패했습니다.");
+      }
+      toast({
+        title: "MOCK 배송완료 처리 완료",
+        description: `${Number(body?.data?.deliveredCount || 0)}개 우편함을 배송완료 처리했습니다.`,
+      });
+    } catch (error) {
+      toast({
+        title: "MOCK 배송완료 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "MOCK 배송완료 처리에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setMockDelivering(false);
+    }
+  }, [shippingRows, toast]);
+
   const currentRows =
     tab === "process"
       ? processRows
@@ -962,6 +975,17 @@ export const TrackingInquiryPage = () => {
                   variant="outline"
                   size="sm"
                   className="px-4"
+                  onClick={handleMockDeliveryComplete}
+                  disabled={mockDelivering || syncingTracking}
+                >
+                  {mockDelivering ? "처리 중..." : "MOCK 배송완료"}
+                </Button>
+              )}
+              {tab === "shipping" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="px-4"
                   onClick={handleSyncTracking}
                   disabled={syncingTracking}
                 >
@@ -1003,7 +1027,7 @@ export const TrackingInquiryPage = () => {
                     <TableHead className="text-center">의뢰ID</TableHead>
                     <TableHead className="text-center">환자/치아</TableHead>
                     <TableHead className="text-center">생산</TableHead>
-                    <TableHead className="text-center">발송</TableHead>
+                    <TableHead className="text-center">상태</TableHead>
                     <TableHead className="text-center">발송날짜</TableHead>
                     <TableHead className="text-center">장비</TableHead>
                     <TableHead className="text-center">원재료</TableHead>
@@ -1015,8 +1039,19 @@ export const TrackingInquiryPage = () => {
                     const ci: any = r.caseInfos || {};
                     const di = normalizeDeliveryInfo(r.deliveryInfoRef);
                     const shippedDate = formatYmd(
-                      di.shippedAt || di.deliveredAt,
+                      di.deliveredAt || di.shippedAt,
                     );
+                    const shippingStatus = di.deliveredAt
+                      ? "배송완료"
+                      : di.pickedUpAt
+                        ? "집하완료"
+                        : di.shippedAt
+                          ? "발송완료"
+                          : "-";
+                    const machineLabel =
+                      r.assignedMachine ||
+                      r.productionSchedule?.assignedMachine ||
+                      "-";
                     return (
                       <TableRow key={String(r._id || r.requestId)}>
                         <TableCell className="font-medium">
@@ -1050,8 +1085,9 @@ export const TrackingInquiryPage = () => {
                             ))}
                           </div>
                         </TableCell>
+                        <TableCell>{shippingStatus}</TableCell>
                         <TableCell>{shippedDate}</TableCell>
-                        <TableCell>{r.assignedMachine || "-"}</TableCell>
+                        <TableCell>{machineLabel}</TableCell>
                         <TableCell>{r.lotNumber?.material || "-"}</TableCell>
                         <TableCell>{normalizeLotNumberLabel(r)}</TableCell>
                       </TableRow>
@@ -1085,7 +1121,7 @@ export const TrackingInquiryPage = () => {
                   <TableRow>
                     <TableHead>의뢰ID</TableHead>
                     <TableHead>환자/치아</TableHead>
-                    <TableHead>발송일</TableHead>
+                    <TableHead>배송완료일</TableHead>
                     <TableHead>택배사</TableHead>
                     <TableHead>송장번호</TableHead>
                     <TableHead>원재료</TableHead>
@@ -1096,10 +1132,13 @@ export const TrackingInquiryPage = () => {
                   {udiRows.slice(0, visibleCount).map((r) => {
                     const ci: any = r.caseInfos || {};
                     const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-                    const shippedAt = di.shippedAt || di.deliveredAt || "";
-                    const shippedDate = shippedAt
-                      ? String(shippedAt).slice(0, 10)
+                    const deliveredAt = di.deliveredAt || "";
+                    const deliveredDate = deliveredAt
+                      ? String(deliveredAt).slice(0, 10)
                       : "-";
+                    const trackingNumber = String(
+                      di.trackingNumber || "",
+                    ).trim();
                     return (
                       <TableRow key={String(r._id || r.requestId)}>
                         <TableCell className="font-medium">
@@ -1108,9 +1147,14 @@ export const TrackingInquiryPage = () => {
                         <TableCell>
                           {ci.patientName || "-"} / {ci.tooth || "-"}
                         </TableCell>
-                        <TableCell>{shippedDate}</TableCell>
+                        <TableCell>{deliveredDate}</TableCell>
                         <TableCell>{di.carrier || "-"}</TableCell>
-                        <TableCell>{di.trackingNumber || "-"}</TableCell>
+                        <TableCell
+                          className="max-w-[180px] truncate"
+                          title={trackingNumber || "-"}
+                        >
+                          {trackingNumber || "-"}
+                        </TableCell>
                         <TableCell>{r.lotNumber?.material || "-"}</TableCell>
                         <TableCell>{normalizeLotNumberLabel(r)}</TableCell>
                       </TableRow>
@@ -1122,7 +1166,7 @@ export const TrackingInquiryPage = () => {
                         colSpan={7}
                         className="text-center text-muted-foreground"
                       >
-                        지난달 발송 내역이 없습니다.
+                        배송완료 내역이 없습니다.
                       </TableCell>
                     </TableRow>
                   )}

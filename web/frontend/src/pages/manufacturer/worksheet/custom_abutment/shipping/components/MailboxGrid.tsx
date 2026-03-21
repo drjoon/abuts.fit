@@ -489,6 +489,11 @@ export const MailboxGrid = ({
         throw new Error(body?.message || "MOCK 집하 처리에 실패했습니다.");
       }
 
+      applyWorkflowOverrideForMailboxes(mailboxAddresses, {
+        code: "picked_up",
+        label: "집하완료",
+      });
+
       toast({
         title: "MOCK 집하 완료",
         description: `${Number(body?.data?.pickedUpCount || 0)}개 우편함을 집하 완료로 반영했습니다.`,

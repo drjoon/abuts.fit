@@ -8,21 +8,13 @@ import {
   type SetStateAction,
 } from "react";
 import { onAppEvent } from "@/shared/realtime/socket";
-import {
-  deriveStageForFilter,
-  type ManufacturerRequest,
-} from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import { type ManufacturerRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
-
-const IS_SIMULATION_MODE = true;
 
 export const usePackingCapture = ({
   token,
   requests,
   toast,
-  uploadStageFile,
-  updateReviewStatus,
-  fetchRequestsList,
   setRequests,
   previewOpen,
   previewFiles,
@@ -32,12 +24,6 @@ export const usePackingCapture = ({
   token?: string | null;
   requests: ManufacturerRequest[];
   toast: (opts: any) => void;
-  uploadStageFile: (opts: any) => Promise<void>;
-  updateReviewStatus: (opts: any) => Promise<void>;
-  fetchRequestsList: (
-    silent?: boolean,
-    append?: boolean,
-  ) => Promise<ManufacturerRequest[] | null>;
   setRequests: Dispatch<SetStateAction<ManufacturerRequest[]>>;
   previewOpen: boolean;
   previewFiles: any;
@@ -118,7 +104,7 @@ export const usePackingCapture = ({
         await Promise.allSettled(
           uploadResult.map(async (uploaded, index) => {
             try {
-              const resizedFile = resizedFiles[index] ?? imageFiles[index];
+              const uploadedMeta = (uploaded || {}) as any;
               if (!uploaded?.key) {
                 toast({
                   title: "이미지 업로드에 실패했습니다",
@@ -127,103 +113,54 @@ export const usePackingCapture = ({
                 });
                 return;
               }
-              let rawLot = "";
-              let matchingRequest: ManufacturerRequest | undefined;
-              if (IS_SIMULATION_MODE) {
-                await new Promise((resolve) => setTimeout(resolve, 800));
-                matchingRequest =
-                  requests.find(
-                    (r) => deriveStageForFilter(r) === "세척.패킹",
-                  ) || requests[0];
-                rawLot = extractLotSuffix3(matchingRequest?.lotNumber?.value);
-              } else {
-                const aiRes = await fetch("/api/ai/recognize-lot-number", {
-                  method: "POST",
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({
-                    s3Key: uploaded.key,
-                    originalName: uploaded.originalName,
-                  }),
-                });
-                if (!aiRes.ok) {
-                  toast({
-                    title: "LOT 번호 인식에 실패했습니다",
-                    description: "AI 인식 서버 응답이 올바르지 않습니다.",
-                    variant: "destructive",
-                  });
-                  return;
-                }
-                const aiData = await aiRes.json();
-                rawLot = aiData?.data?.lotNumber || "";
-              }
-              if (IS_SIMULATION_MODE && !matchingRequest) {
-                toast({
-                  title: "승인할 의뢰가 없습니다",
-                  description: "세척·패킹 단계 의뢰를 먼저 불러와주세요.",
-                  variant: "destructive",
-                });
-                return;
-              }
-              const recognizedSuffix = extractLotSuffix3(rawLot || "");
-              if (!IS_SIMULATION_MODE && !recognizedSuffix) {
-                toast({
-                  title: "LOT 코드를 인식하지 못했습니다",
-                  description:
-                    "이미지 내 영문 대문자 3글자가 보이도록 다시 촬영해주세요.",
-                  variant: "destructive",
-                });
-                return;
-              }
-              if (!matchingRequest) {
-                matchingRequest = requests.find(
-                  (req) =>
-                    extractLotSuffix3(String(req.lotNumber?.value || "")) ===
-                    recognizedSuffix,
+              const captureRes = await fetch("/api/bg/lot-capture/packing", {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  s3Key: uploaded.key,
+                  s3Url: uploadedMeta.url || uploadedMeta.s3Url || "",
+                  originalName: uploaded.originalName,
+                  fileSize:
+                    uploadedMeta.fileSize || imageFiles[index]?.size || 0,
+                  source: "manual",
+                }),
+              });
+              const captureData = await captureRes.json().catch(() => ({}));
+              if (!captureRes.ok || captureData?.success === false) {
+                throw new Error(
+                  captureData?.message || "세척·포장 캡쳐 처리에 실패했습니다.",
                 );
               }
-              if (!matchingRequest) {
+
+              if (!captureData?.data?.matched) {
+                const reason = String(captureData?.data?.reason || "").trim();
+                const recognizedSuffix = extractLotSuffix3(
+                  String(captureData?.data?.suffix || ""),
+                );
                 toast({
-                  title: "누락",
-                  description: `일치하는 의뢰 없음: ${recognizedSuffix}`,
+                  title: "일치하는 의뢰를 찾지 못했습니다",
+                  description:
+                    reason === "no_recognized_suffix"
+                      ? "이미지 내 영문 대문자 3글자가 보이도록 다시 촬영해주세요."
+                      : recognizedSuffix
+                        ? `일치하는 의뢰 없음: ${recognizedSuffix}`
+                        : "세척.패킹 의뢰를 찾지 못했습니다.",
+                  variant: "destructive",
                 });
                 return;
               }
-              setRequests((prev) =>
-                prev.map((req) => {
-                  if (
-                    String(req.requestId || "").trim() !==
-                    String(matchingRequest?.requestId || "").trim()
-                  ) {
-                    return req;
-                  }
-                  return {
-                    ...req,
-                    realtimeProgress: {
-                      badge: "각인 인식 대기중",
-                      startedAt: new Date().toISOString(),
-                      elapsedSeconds: 0,
-                      tone: "amber",
-                    },
-                  };
-                }),
+
+              const recognizedSuffix = extractLotSuffix3(
+                String(captureData?.data?.suffix || ""),
               );
-              await uploadStageFile({
-                req: matchingRequest,
-                stage: "packing",
-                file: resizedFile || imageFiles[index] || imageFiles[0],
-                source: "manual",
-              });
-              await updateReviewStatus({
-                req: matchingRequest,
-                status: "APPROVED",
-                stageOverride: "packing",
-              });
               toast({
-                title: "세척·포장 완료",
-                description: `LOT 코드 ${recognizedSuffix} 의뢰를 발송 단계로 이동했습니다.`,
+                title: "세척·포장 처리 완료",
+                description: recognizedSuffix
+                  ? `LOT 코드 ${recognizedSuffix} 의뢰를 발송 단계로 이동했습니다.`
+                  : "세척·포장 처리 결과를 반영했습니다.",
               });
             } catch (error) {
               toast({
@@ -251,16 +188,12 @@ export const usePackingCapture = ({
     },
     [
       extractLotSuffix3,
-      fetchRequestsList,
       handleOpenPreview,
       previewFiles.request,
       previewOpen,
-      requests,
       setRequests,
       toast,
       token,
-      updateReviewStatus,
-      uploadStageFile,
       uploadToS3,
       resizeImageFile,
     ],
@@ -324,7 +257,8 @@ export const usePackingCapture = ({
             ...eventRequest,
             requestor: eventRequest.requestor || currentRequest.requestor,
             requestorBusiness:
-              eventRequest.requestorBusiness || currentRequest.requestorBusiness,
+              eventRequest.requestorBusiness ||
+              currentRequest.requestorBusiness,
             requestorOrganization:
               eventRequest.requestorOrganization ||
               currentRequest.requestorOrganization,

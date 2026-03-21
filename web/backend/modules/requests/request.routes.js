@@ -222,6 +222,13 @@ router.post(
   requestController.mockHanjinPickupCompleted,
 );
 
+router.post(
+  "/shipping/hanjin/mock-delivery-complete",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.mockHanjinDeliveryCompleted,
+);
+
 // 패킹 라벨 프린터 목록 조회 (pack-server 프록시)
 router.get(
   "/packing/printers",
