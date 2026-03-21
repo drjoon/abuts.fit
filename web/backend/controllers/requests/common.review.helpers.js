@@ -309,11 +309,7 @@ export async function ensureShippingFeeSpendOnPackingApprove({
 
   const shipDateYmd = getTodayYmdInKst();
   const pkg = await ShippingPackage.findOneAndUpdate(
-    {
-      businessAnchorId,
-      shipDateYmd,
-      mailboxAddress,
-    },
+    { businessAnchorId, shipDateYmd, mailboxAddress },
     {
       $setOnInsert: {
         businessAnchorId,

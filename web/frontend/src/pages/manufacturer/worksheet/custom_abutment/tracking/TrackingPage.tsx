@@ -711,10 +711,11 @@ export const TrackingInquiryPage = () => {
     // 우편함 단위로 그룹핑
     const boxMap = new Map<string, ManufacturerRequest[]>();
     for (const r of only) {
-      const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+      const shippingPackageId = String(r?.shippingPackageId || "").trim();
       const mailboxAddress = String(r?.mailboxAddress || "").trim();
       const fallbackRequestId = String(r?.requestId || r?._id || "").trim();
-      const boxKey = mailboxAddress || `request:${fallbackRequestId}`;
+      const boxKey =
+        shippingPackageId || mailboxAddress || `request:${fallbackRequestId}`;
       if (!boxMap.has(boxKey)) {
         boxMap.set(boxKey, []);
       }
@@ -725,10 +726,14 @@ export const TrackingInquiryPage = () => {
     const boxes = Array.from(boxMap.entries()).map(([boxKey, requests]) => {
       const firstRequest = requests[0];
       const di = normalizeDeliveryInfo(firstRequest.deliveryInfoRef);
+      const shippingPackageId = String(
+        firstRequest?.shippingPackageId || "",
+      ).trim();
       const mailboxAddress = String(firstRequest?.mailboxAddress || "").trim();
       const trackingNumber = String(di?.trackingNumber || "").trim() || null;
       return {
         boxKey,
+        shippingPackageId,
         mailboxAddress,
         trackingNumber,
         carrier: di.carrier,
@@ -837,22 +842,35 @@ export const TrackingInquiryPage = () => {
   }, [shippingRows, toast]);
 
   const handleMockDeliveryComplete = useCallback(async () => {
-    const mailboxAddresses = Array.from(
+    const shippingPackageIds = Array.from(
       new Set(
         shippingRows
           .filter((row: any) => {
             const di = normalizeDeliveryInfo(row.deliveryInfoRef);
             return !di.deliveredAt;
           })
+          .map((row: any) => String(row.shippingPackageId || "").trim())
+          .filter(Boolean),
+      ),
+    );
+    const mailboxAddresses = Array.from(
+      new Set(
+        shippingRows
+          .filter((row: any) => {
+            const di = normalizeDeliveryInfo(row.deliveryInfoRef);
+            return (
+              !di.deliveredAt && !String(row.shippingPackageId || "").trim()
+            );
+          })
           .map((row: any) => String(row.mailboxAddress || "").trim())
           .filter(Boolean),
       ),
     );
 
-    if (!mailboxAddresses.length) {
+    if (!shippingPackageIds.length && !mailboxAddresses.length) {
       toast({
         title: "처리할 배송건 없음",
-        description: "배송완료 처리할 우편함이 없습니다.",
+        description: "배송완료 처리할 배송 박스가 없습니다.",
       });
       return;
     }
@@ -862,7 +880,7 @@ export const TrackingInquiryPage = () => {
       const response = await request<any>({
         path: "/api/requests/shipping/hanjin/mock-delivery-complete",
         method: "POST",
-        jsonBody: { mailboxAddresses },
+        jsonBody: { shippingPackageIds, mailboxAddresses },
       });
       const body = response.data as any;
       if (!response.ok || !body?.success) {
@@ -870,7 +888,7 @@ export const TrackingInquiryPage = () => {
       }
       toast({
         title: "MOCK 배송완료 처리 완료",
-        description: `${Number(body?.data?.deliveredCount || 0)}개 우편함을 배송완료 처리했습니다.`,
+        description: `${Number(body?.data?.deliveredCount || 0)}개 배송 박스를 배송완료 처리했습니다.`,
       });
     } catch (error) {
       toast({

@@ -156,6 +156,10 @@
 - requestor 크레딧과 수수료 장부의 기본 귀속 단위는 **사업자**입니다. 대표/직원 개별 사용자 잔액처럼 분산 관리하지 않습니다.
 - `ChargeOrder`, `CreditLedger`, `TaxInvoiceDraft`, `ShippingPackage` 등 금전/정산/배송 귀속 모델은 **`businessAnchorId` 기준**으로 쿼리/기록합니다.
 - 배송비, 각종 사용 수수료, 환불, 보너스도 가능하면 **사업자 기준 ledger key / ref key** 로 일관되게 기록합니다.
+- 배송 박스의 canonical SSOT는 **`shippingPackageId`** 입니다.
+- `mailboxAddress`는 물리 우편함 위치일 뿐 박스 identity가 아니며, 운송장/집하/배송완료/추적관리 집계 키로 단독 사용하지 않습니다.
+- 세척.패킹에서 포장.발송으로 승인되는 시점에 **배송 날짜 batch별 `shippingPackageId`** 를 생성하고, 이후 읽기 경로(포장.발송, MOCK 집하, MOCK 배송완료, 추적관리)는 그 저장된 `shippingPackageId`만 사용합니다.
+- 같은 `mailboxAddress`가 다른 날짜에 다시 배정되더라도, 그날 새로 생성된 `shippingPackageId`가 다르면 **반드시 다른 박스** 로 취급합니다.
 - requestor 크레딧 변동(CHARGE, BONUS, SPEND, REFUND, ADJUST)은 가능하면 모두 `credit:balance-updated` 실시간 이벤트를 함께 발행해 헤더와 대시보드가 즉시 동기화되게 합니다.
 - 크레딧 실시간 반영도 전체 페이지 refetch 대신 **헤더/관련 카드 숫자만 국소 patch**하는 것을 기본으로 합니다.
 - backend/controller, frontend consumer, `bg/` 연동 코드는 **`businessAnchorId` / `requestorBusinessAnchorId` 우선이 아니라 단일 기준**으로 사용합니다.

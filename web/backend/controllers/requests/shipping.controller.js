@@ -22,15 +22,37 @@ import {
 import { startHanjinTrackingPoll } from "./shipping.TrackingPoller.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 
-function buildRequestsByMailbox(requests = []) {
-  const byMailbox = new Map();
+function resolveShippingBoxKey(requestDoc) {
+  const shippingPackageId = String(requestDoc?.shippingPackageId || "").trim();
+  if (shippingPackageId) return `pkg:${shippingPackageId}`;
+  const mailboxAddress = String(requestDoc?.mailboxAddress || "").trim();
+  if (mailboxAddress) return `mailbox:${mailboxAddress}`;
+  return "";
+}
+
+function buildRequestsByShippingBox(requests = []) {
+  const byBox = new Map();
   for (const requestDoc of requests) {
-    const mailboxAddress = String(requestDoc?.mailboxAddress || "").trim();
+    const boxKey = resolveShippingBoxKey(requestDoc);
+    if (!boxKey) continue;
+    if (!byBox.has(boxKey)) {
+      byBox.set(boxKey, []);
+    }
+    byBox.get(boxKey).push(requestDoc);
+  }
+  return byBox;
+}
+
+function buildShippingBoxesByMailbox(requests = []) {
+  const byMailbox = new Map();
+  const byBox = buildRequestsByShippingBox(requests);
+  for (const group of byBox.values()) {
+    const mailboxAddress = String(group?.[0]?.mailboxAddress || "").trim();
     if (!mailboxAddress) continue;
     if (!byMailbox.has(mailboxAddress)) {
       byMailbox.set(mailboxAddress, []);
     }
-    byMailbox.get(mailboxAddress).push(requestDoc);
+    byMailbox.get(mailboxAddress).push(group);
   }
   return byMailbox;
 }
@@ -72,6 +94,7 @@ export async function mockHanjinPickupCompleted(req, res) {
 
     const targetRequests = await Request.find({
       mailboxAddress: { $in: addressList },
+      manufacturerStage: "포장.발송",
     })
       .populate("requestor", "name business phoneNumber address")
       .populate("businessAnchorId", "name metadata")
@@ -85,17 +108,17 @@ export async function mockHanjinPickupCompleted(req, res) {
     }
 
     const now = new Date();
-    const byMailbox = buildRequestsByMailbox(targetRequests);
+    const boxesByMailbox = buildShippingBoxesByMailbox(targetRequests);
 
     const results = [];
 
     console.log(
-      `[MOCK_PICKUP] Found ${byMailbox.size} mailboxes with ${targetRequests.length} requests`,
+      `[MOCK_PICKUP] Found ${boxesByMailbox.size} mailboxes with ${targetRequests.length} requests`,
     );
 
     for (const mailboxAddress of addressList) {
-      const group = byMailbox.get(mailboxAddress) || [];
-      if (!group.length) {
+      const groups = boxesByMailbox.get(mailboxAddress) || [];
+      if (!groups.length) {
         results.push({
           mailboxAddress,
           success: false,
@@ -107,80 +130,88 @@ export async function mockHanjinPickupCompleted(req, res) {
         continue;
       }
 
-      const trackingNumber = resolveMailboxTrackingNumber(group, "MOCK", now);
-      const processedRequestIds = [];
-      const deliverySaveJobs = [];
-      const requestSaveJobs = [];
-      const emitJobs = [];
+      for (const group of groups) {
+        const trackingNumber = resolveMailboxTrackingNumber(group, "MOCK", now);
+        const processedRequestIds = [];
+        const deliverySaveJobs = [];
+        const requestSaveJobs = [];
+        const emitJobs = [];
+        const shippingPackageId = String(
+          group?.[0]?.shippingPackageId || "",
+        ).trim();
 
-      for (const requestDoc of group) {
-        let deliveryInfo = requestDoc.deliveryInfoRef;
+        for (const requestDoc of group) {
+          let deliveryInfo = requestDoc.deliveryInfoRef;
 
-        if (!deliveryInfo || typeof deliveryInfo === "string") {
-          const refId =
-            typeof deliveryInfo === "string" ? deliveryInfo : deliveryInfo?._id;
-          if (refId) {
-            deliveryInfo = await DeliveryInfo.findById(refId);
+          if (!deliveryInfo || typeof deliveryInfo === "string") {
+            const refId =
+              typeof deliveryInfo === "string"
+                ? deliveryInfo
+                : deliveryInfo?._id;
+            if (refId) {
+              deliveryInfo = await DeliveryInfo.findById(refId);
+            }
           }
-        }
 
-        if (!deliveryInfo) {
+          if (!deliveryInfo) {
+            console.log(
+              `[MOCK_PICKUP] SKIP: no deliveryInfo for mailbox=${mailboxAddress}, requestId=${requestDoc.requestId}`,
+            );
+            continue;
+          }
+
           console.log(
-            `[MOCK_PICKUP] SKIP: no deliveryInfo for mailbox=${mailboxAddress}, requestId=${requestDoc.requestId}`,
+            `[MOCK_PICKUP] processing mailbox=${mailboxAddress}, requestId=${requestDoc.requestId}, trackingNumber=${trackingNumber}`,
           );
-          continue;
+
+          deliveryInfo.trackingNumber = trackingNumber;
+          deliveryInfo.tracking = deliveryInfo.tracking || {};
+          deliveryInfo.tracking.lastStatusCode = "11";
+          deliveryInfo.tracking.lastStatusText = "집하완료";
+          deliveryInfo.tracking.lastEventAt = now;
+          deliveryInfo.tracking.lastSyncedAt = now;
+          deliveryInfo.pickedUpAt = now;
+          deliverySaveJobs.push(deliveryInfo.save());
+
+          requestDoc.manufacturerStage = "추적관리";
+          requestDoc.status = "추적관리";
+          applyShippingWorkflowState(requestDoc, {
+            code: SHIPPING_WORKFLOW_CODES.PICKED_UP,
+            label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.PICKED_UP],
+            pickedUpAt: now,
+            trackingStatusCode: "11",
+            trackingStatusText: "집하완료",
+            source: "hanjin-tracking-mock-pickup",
+            updatedAt: now,
+          });
+          requestSaveJobs.push(requestDoc.save());
+
+          emitJobs.push(
+            emitDeliveryUpdated(requestDoc, {
+              source: "hanjin-tracking-mock-pickup",
+              shippingStatusLabel: "집하완료",
+            }),
+          );
+
+          processedRequestIds.push(requestDoc.requestId);
         }
 
-        console.log(
-          `[MOCK_PICKUP] processing mailbox=${mailboxAddress}, requestId=${requestDoc.requestId}, trackingNumber=${trackingNumber}`,
-        );
+        await Promise.all(deliverySaveJobs);
+        await Promise.all(requestSaveJobs);
+        await Promise.allSettled(emitJobs);
 
-        deliveryInfo.trackingNumber = trackingNumber;
-        deliveryInfo.tracking = deliveryInfo.tracking || {};
-        deliveryInfo.tracking.lastStatusCode = "11";
-        deliveryInfo.tracking.lastStatusText = "집하완료";
-        deliveryInfo.tracking.lastEventAt = now;
-        deliveryInfo.tracking.lastSyncedAt = now;
-        deliveryInfo.pickedUpAt = now;
-        deliverySaveJobs.push(deliveryInfo.save());
-
-        requestDoc.manufacturerStage = "추적관리";
-        requestDoc.status = "추적관리";
-        applyShippingWorkflowState(requestDoc, {
-          code: SHIPPING_WORKFLOW_CODES.PICKED_UP,
-          label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.PICKED_UP],
-          pickedUpAt: now,
-          trackingStatusCode: "11",
-          trackingStatusText: "집하완료",
-          source: "hanjin-tracking-mock-pickup",
-          updatedAt: now,
+        results.push({
+          mailboxAddress,
+          shippingPackageId: shippingPackageId || null,
+          success: processedRequestIds.length > 0,
+          requestCount: group.length,
+          processedCount: processedRequestIds.length,
+          requestIds: processedRequestIds,
+          trackingNumber,
+          statusCode: "11",
+          statusText: "집하완료",
         });
-        requestSaveJobs.push(requestDoc.save());
-
-        emitJobs.push(
-          emitDeliveryUpdated(requestDoc, {
-            source: "hanjin-tracking-mock-pickup",
-            shippingStatusLabel: "집하완료",
-          }),
-        );
-
-        processedRequestIds.push(requestDoc.requestId);
       }
-
-      await Promise.all(deliverySaveJobs);
-      await Promise.all(requestSaveJobs);
-      await Promise.allSettled(emitJobs);
-
-      results.push({
-        mailboxAddress,
-        success: processedRequestIds.length > 0,
-        requestCount: group.length,
-        processedCount: processedRequestIds.length,
-        requestIds: processedRequestIds,
-        trackingNumber,
-        statusCode: "11",
-        statusText: "집하완료",
-      });
     }
 
     const pickedUpCount = results.filter((item) => item.success).length;
@@ -207,42 +238,67 @@ export async function mockHanjinPickupCompleted(req, res) {
 
 export async function mockHanjinDeliveryCompleted(req, res) {
   try {
-    const { mailboxAddresses = [] } = req.body || {};
+    const { mailboxAddresses = [], shippingPackageIds = [] } = req.body || {};
 
     const addressList = Array.isArray(mailboxAddresses)
       ? mailboxAddresses
           .map((value) => String(value || "").trim())
           .filter(Boolean)
       : [];
+    const packageIdList = Array.isArray(shippingPackageIds)
+      ? shippingPackageIds
+          .map((value) => String(value || "").trim())
+          .filter((value) => Types.ObjectId.isValid(value))
+      : [];
 
-    if (!addressList.length) {
+    if (!addressList.length && !packageIdList.length) {
       return res.status(400).json({
         success: false,
-        message: "mailboxAddresses가 필요합니다.",
+        message: "shippingPackageIds 또는 mailboxAddresses가 필요합니다.",
       });
     }
 
-    const targetRequests = await Request.find({
-      mailboxAddress: { $in: addressList },
-    }).populate("deliveryInfoRef");
+    const targetRequests = await Request.find(
+      packageIdList.length
+        ? {
+            shippingPackageId: {
+              $in: packageIdList.map((value) => new Types.ObjectId(value)),
+            },
+          }
+        : {
+            mailboxAddress: { $in: addressList },
+            manufacturerStage: "추적관리",
+          },
+    ).populate("deliveryInfoRef");
 
     if (!targetRequests.length) {
       return res.status(404).json({
         success: false,
-        message: "MOCK 배송완료 처리할 우편함을 찾을 수 없습니다.",
+        message: "MOCK 배송완료 처리할 배송 박스를 찾을 수 없습니다.",
       });
     }
 
-    const byMailbox = buildRequestsByMailbox(targetRequests);
+    const byBox = buildRequestsByShippingBox(targetRequests);
 
     const now = new Date();
     const results = [];
 
-    for (const mailboxAddress of addressList) {
-      const group = byMailbox.get(mailboxAddress) || [];
+    const targetBoxKeys = packageIdList.length
+      ? packageIdList.map((value) => `pkg:${value}`)
+      : addressList.flatMap((mailboxAddress) => {
+          const groups =
+            buildShippingBoxesByMailbox(targetRequests).get(mailboxAddress) ||
+            [];
+          return groups.map((group) => resolveShippingBoxKey(group?.[0]));
+        });
+
+    for (const boxKey of Array.from(new Set(targetBoxKeys.filter(Boolean)))) {
+      const group = byBox.get(boxKey) || [];
       if (!group.length) {
         results.push({
-          mailboxAddress,
+          shippingPackageId: boxKey.startsWith("pkg:")
+            ? boxKey.replace(/^pkg:/, "")
+            : null,
           success: false,
           skipped: true,
           reason: "no_requests",
@@ -251,6 +307,11 @@ export async function mockHanjinDeliveryCompleted(req, res) {
         });
         continue;
       }
+
+      const mailboxAddress = String(group?.[0]?.mailboxAddress || "").trim();
+      const shippingPackageId = String(
+        group?.[0]?.shippingPackageId || "",
+      ).trim();
 
       const trackingNumber = resolveMailboxTrackingNumber(
         group,
@@ -292,6 +353,7 @@ export async function mockHanjinDeliveryCompleted(req, res) {
 
       results.push({
         mailboxAddress,
+        shippingPackageId: shippingPackageId || null,
         success: processedRequestIds.length > 0,
         requestCount: group.length,
         processedCount: processedRequestIds.length,
