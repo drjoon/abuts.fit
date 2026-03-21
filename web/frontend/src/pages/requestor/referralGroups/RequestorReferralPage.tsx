@@ -178,8 +178,8 @@ export const RequestorReferralPage = () => {
                         소개 혜택
                       </div>
                       <p className="text-sm text-slate-600">
-                        본인과 직접 소개한 사업자의 최근 30일 주문량을 합산하여
-                        단가 계산
+                        본인과 소개한 사업자의 최근 30일 주문량을 합산하여 단가
+                        계산
                       </p>
                     </div>
 
@@ -193,9 +193,7 @@ export const RequestorReferralPage = () => {
                           - 주문량 집계는 사용자 개인이 아니라 사업자 기준으로
                           매일 자정(00:00) 업데이트됩니다.
                         </p>
-                        <p>
-                          - 직접 소개한 사업자와 함께 그룹 할인이 적용됩니다.
-                        </p>
+                        <p>- 소개한 사업자와 함께 그룹 할인이 적용됩니다.</p>
                       </div>
                       <Button
                         type="button"
@@ -269,7 +267,7 @@ export const RequestorReferralPage = () => {
                             <div className="text-xs text-muted-foreground">
                               - 신규 가입 이벤트 기간 중에는 90일간 10,000원으로
                               고정됩니다.
-                              <br />- 직접 소개한 사업자들과 주문량을 합산하여
+                              <br />- 소개한 사업자들과 주문량을 합산하여
                               할인받을 수 있습니다.
                             </div>
                           </div>
@@ -304,7 +302,7 @@ export const RequestorReferralPage = () => {
                   <ReferralNetworkChart
                     data={treeData}
                     maxDepth={1}
-                    title="소개 네트워크 (직접 소개만)"
+                    title="소개 네트워크 (소개만)"
                     visibleRoles={["requestor"]}
                     legendRoles={[]}
                     chartHeight={320}

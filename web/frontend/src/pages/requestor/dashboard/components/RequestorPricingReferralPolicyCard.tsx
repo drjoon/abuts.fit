@@ -216,7 +216,7 @@ export const RequestorPricingReferralPolicyCard = () => {
                 </div>
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-md text-slate-600">
-                    직접 소개 사업자 수(내 사업자 포함)
+                    소개 사업자 수(내 사업자 포함)
                   </span>
                   <span className="text-lg font-semibold text-foreground">
                     {groupMemberCount}개소
@@ -228,7 +228,7 @@ export const RequestorPricingReferralPolicyCard = () => {
             <div className="mt-2 space-y-1.5">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-md text-slate-600">
-                  사업자 주문 합계(내 사업자+직접 소개 사업자)
+                  사업자 주문 합계(내 사업자+소개 사업자)
                 </span>
                 <span className="text-lg font-semibold text-foreground">
                   {totalOrders.toLocaleString()}건

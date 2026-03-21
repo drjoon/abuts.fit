@@ -132,9 +132,7 @@ export const useReferralData = (options?: UseReferralDataOptions) => {
       .then((res) => {
         const body: any = res.data || {};
         if (!res.ok || !body?.success) {
-          throw new Error(
-            body?.message || "직접 소개 사업자 조회에 실패했습니다.",
-          );
+          throw new Error(body?.message || "소개 사업자 조회에 실패했습니다.");
         }
         setDirectMembers((body.data?.members || []) as DirectMemberRow[]);
       })

@@ -1144,7 +1144,7 @@ export async function getMyPricingReferralStats(req, res) {
     const requestorId = req.user._id;
     const debug =
       process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
-    const statsCacheKey = `pricing-referral-stats:${String(
+    const statsCacheKey = `pricing-referral-stats:v2:${String(
       req.user?._id || "",
     )}:${String(req.user?.businessAnchorId || "")}`;
 
@@ -1220,6 +1220,23 @@ export async function getMyPricingReferralStats(req, res) {
         if (role === "requestor") {
           const leaderBusinessAnchorId = String(me?.businessAnchorId || "");
           const shouldComputeRequestorGroup = true;
+          const referredRequestors =
+            await findReferredRequestorUsersByReferrerAnchorId(
+              leaderBusinessAnchorId,
+            );
+          const orgKeys = Array.from(
+            new Set(
+              [
+                leaderBusinessAnchorId,
+                ...(referredRequestors || []).map((u) =>
+                  String(u.businessAnchorId || ""),
+                ),
+              ].filter(Boolean),
+            ),
+          );
+
+          groupMemberCount = orgKeys.length;
+          groupMemberIds = orgKeys.map((id) => String(id));
 
           if (shouldComputeRequestorGroup) {
             cachedSnapshot = snapshotBusinessAnchorObjectId
@@ -1238,7 +1255,6 @@ export async function getMyPricingReferralStats(req, res) {
                   .lean()
               : null;
             snapshotMissing = !cachedSnapshot;
-            groupMemberCount = Number(cachedSnapshot?.groupMemberCount || 0);
             freshGroupTotalOrders = Number(
               cachedSnapshot?.groupTotalOrders || 0,
             );
@@ -1247,7 +1263,6 @@ export async function getMyPricingReferralStats(req, res) {
               myLastMonthOrders = Number(
                 cachedSnapshot.selfBusinessOrders || 0,
               );
-              groupMemberCount = Number(cachedSnapshot.groupMemberCount || 0);
               freshGroupTotalOrders = Number(
                 cachedSnapshot.groupTotalOrders || 0,
               );
@@ -1255,23 +1270,6 @@ export async function getMyPricingReferralStats(req, res) {
               referralBusinessOrders = freshGroupTotalOrders;
               selfBusinessOrders = myLastMonthOrders;
             } else {
-              const referredRequestors =
-                await findReferredRequestorUsersByReferrerAnchorId(
-                  leaderBusinessAnchorId,
-                );
-              const orgKeys = Array.from(
-                new Set(
-                  [
-                    leaderBusinessAnchorId,
-                    ...(referredRequestors || []).map((u) =>
-                      String(u.businessAnchorId || ""),
-                    ),
-                  ].filter(Boolean),
-                ),
-              );
-
-              groupMemberCount = orgKeys.length;
-              groupMemberIds = orgKeys.map((id) => String(id));
               const countMap = await getShippingOrderCountsByBusinessAnchorIds({
                 businessAnchorIds: orgKeys,
                 startYmd: last30StartYmd,
@@ -1287,7 +1285,6 @@ export async function getMyPricingReferralStats(req, res) {
               referralBusinessCount = groupMemberCount;
               referralBusinessOrders = freshGroupTotalOrders;
               selfBusinessOrders = myLastMonthOrders;
-              groupMemberIds = orgKeys.map(String);
             }
           } else {
             const myCountMap = await getShippingOrderCountsByBusinessAnchorIds({
