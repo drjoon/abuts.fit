@@ -293,6 +293,123 @@ const buildLpArgs = ({ filePath, printer, title, paperProfile, raw }) => {
   return args;
 };
 
+/**
+ * 시스템 한글 TrueType 폰트 경로를 반환한다. 없으면 null.
+ * ^A0N 같은 ZPL 기본 폰트는 한글 글리프가 없으므로,
+ * 한글이 포함된 ZPL은 이 폰트를 이용해 PDF로 렌더링 후 출력한다.
+ */
+const findKoreanFontPath = () => {
+  const candidates = isWindows
+    ? [
+        "C:\\Windows\\Fonts\\malgun.ttf",
+        "C:\\Windows\\Fonts\\gulim.ttc",
+        "C:\\Windows\\Fonts\\batang.ttc",
+        "C:\\Windows\\Fonts\\NanumGothic.ttf",
+      ]
+    : [
+        "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+      ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch {
+      // ignore
+    }
+  }
+  return null;
+};
+
+/**
+ * ZPL 문자열에서 텍스트/바코드 필드를 파싱해 렌더링 요소 배열로 반환한다.
+ * ZPL 좌표계: 좌상단 원점, 단위는 dot(1/203 inch).
+ */
+const parseZplForPdf = (zpl) => {
+  const elements = [];
+  const s = String(zpl || "");
+  // 텍스트: ^FO{x},{y}^A0N,{h},{w}^FD{text}^FS
+  const textRe = /\^FO(\d+),(\d+)\^A0N,(\d+),(\d+)\^FD([^^]*)\^FS/g;
+  let m;
+  while ((m = textRe.exec(s)) !== null) {
+    const text = String(m[5] || "").trim();
+    if (text) {
+      elements.push({
+        type: "text",
+        x: +m[1],
+        y: +m[2],
+        h: +m[3],
+        w: +m[4],
+        text,
+      });
+    }
+  }
+  // 바코드: ^FO{x},{y}^BY{n},{r},{h}^BCN^FD{data}^FS
+  const barRe = /\^FO(\d+),(\d+)\^BY\d+,[\d.]+,(\d+)\^BCN\^FD([^^]*)\^FS/g;
+  while ((m = barRe.exec(s)) !== null) {
+    const data = String(m[4] || "").trim();
+    if (data) {
+      elements.push({ type: "barcode", x: +m[1], y: +m[2], h: +m[3], data });
+    }
+  }
+  return elements;
+};
+
+/**
+ * ZPL을 파싱해 pdfkit + 한글 폰트로 PDF를 생성한다.
+ * ZPL 좌표(dot, 203dpi) → PDF 포인트(72dpi)로 변환.
+ * 한글이 포함된 Hanjin 운송장 라벨에 사용한다.
+ */
+const renderZplAsKoreanPdf = async (zpl, pdfPath, koreanFontPath) => {
+  const PDFDocument = require("pdfkit");
+  const bwipjs = require("bwip-js");
+  const DOT_TO_PT = 72 / 203;
+  const pwMatch = String(zpl).match(/\^PW(\d+)/i);
+  const llMatch = String(zpl).match(/\^LL(\d+)/i);
+  const pageW = Number(pwMatch ? pwMatch[1] : 1218) * DOT_TO_PT;
+  const pageH = Number(llMatch ? llMatch[1] : 812) * DOT_TO_PT;
+  const doc = new PDFDocument({ size: [pageW, pageH], margin: 0 });
+  if (koreanFontPath) {
+    doc.registerFont("Korean", koreanFontPath);
+    doc.font("Korean");
+  }
+  const stream = fs.createWriteStream(pdfPath);
+  doc.pipe(stream);
+  const elements = parseZplForPdf(zpl);
+  for (const el of elements) {
+    const px = el.x * DOT_TO_PT;
+    const py = el.y * DOT_TO_PT;
+    if (el.type === "text") {
+      const fontSize = Math.max(6, el.h * DOT_TO_PT * 0.85);
+      if (koreanFontPath) doc.font("Korean");
+      try {
+        doc.fontSize(fontSize).text(el.text, px, py, { lineBreak: false });
+      } catch {
+        // 렌더링 실패는 무시하고 계속
+      }
+    } else if (el.type === "barcode") {
+      try {
+        const barcodeH = Math.max(24, el.h * DOT_TO_PT);
+        const buf = await bwipjs.toBuffer({
+          bcid: "code128",
+          text: el.data,
+          scale: 2,
+          height: Math.round(barcodeH / 4),
+          includetext: false,
+        });
+        doc.image(buf, px, py, { height: barcodeH });
+      } catch (e) {
+        log("barcode:render-error", { data: el.data, error: e.message });
+      }
+    }
+  }
+  doc.end();
+  return new Promise((resolve, reject) => {
+    stream.on("finish", resolve);
+    stream.on("error", reject);
+  });
+};
+
 const printFile = ({ filePath, printer, title, paperProfile, raw = false }) =>
   new Promise((resolve, reject) => {
     if (isWindows && raw) {
@@ -428,88 +545,54 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
+      // 한글 포함 ZPL: 시스템 한글 폰트로 PDF 렌더링 후 출력한다.
+      // ^A0N 등 ZPL 기본 폰트는 한글 글리프를 포함하지 않으므로,
+      // raw ZPL 또는 pdfkit 기본 폰트로 출력하면 한글이 깨진다.
+      const koreanFontPath = findKoreanFontPath();
+      if (/[\uAC00-\uD7A3]/.test(zpl) && koreanFontPath) {
+        log("print-zpl:korean-pdf", { printer, title, font: koreanFontPath });
+        const pdfPath = path.join(
+          os.tmpdir(),
+          `hanjin-label-${Date.now()}-${Math.random().toString(16).slice(2)}.pdf`,
+        );
+        try {
+          await renderZplAsKoreanPdf(zpl, pdfPath, koreanFontPath);
+          await printFile({
+            filePath: pdfPath,
+            printer,
+            title,
+            paperProfile,
+            raw: false,
+          });
+          log("print-zpl:done", { printer, title, printMode: "korean-pdf" });
+          return jsonResponse(res, 200, {
+            success: true,
+            printMode: "korean-pdf",
+          });
+        } catch (error) {
+          log("print-zpl:korean-pdf:error", { message: error.message });
+          return jsonResponse(res, 500, {
+            success: false,
+            message: error.message,
+          });
+        } finally {
+          fs.unlink(pdfPath, () => undefined);
+        }
+      }
+
       const tempPath = await writeTextToTemp(zpl, "zpl");
 
       log("print-zpl:queued", { printer, title, printMode });
 
       try {
-        if (printMode === "pdf") {
-          const PDFDocument = require("pdfkit");
-          const bwipjs = require("bwip-js");
-
-          const pdfPath = path.join(
-            os.tmpdir(),
-            `hanjin-label-${Date.now()}-${Math.random().toString(16).slice(2)}.pdf`,
-          );
-
-          log("print-zpl:pdf-convert", { title });
-
-          try {
-            // PDF 문서 생성 (4x6 인치, 203 DPI)
-            const doc = new PDFDocument({
-              size: [288, 432],
-              margin: 0,
-            });
-
-            const stream = fs.createWriteStream(pdfPath);
-            doc.pipe(stream);
-
-            // ZPL에서 바코드 데이터 추출 (간단한 정규식)
-            const barcodeMatch = zpl.match(/\^FD(\d+)\^FS/);
-            const barcodeData = barcodeMatch
-              ? barcodeMatch[1]
-              : "0000000000000";
-
-            // 바코드 생성
-            const barcodeImg = await bwipjs.toBuffer({
-              bcid: "code128",
-              text: barcodeData,
-              scale: 2,
-              height: 10,
-              includetext: true,
-              textxalign: "center",
-            });
-
-            // PDF에 바코드 이미지 추가
-            doc.image(barcodeImg, 50, 100, { width: 200 });
-
-            // 텍스트 추가 (ZPL 텍스트 필드 추출)
-            doc.fontSize(24).text(barcodeData, 50, 50);
-            doc.fontSize(14).text("한진택배 1588-0011", 50, 320);
-
-            doc.end();
-
-            await new Promise((resolve, reject) => {
-              stream.on("finish", resolve);
-              stream.on("error", reject);
-            });
-
-            log("print-zpl:pdf-done", { title });
-
-            await printFile({
-              filePath: pdfPath,
-              printer,
-              title,
-              paperProfile,
-              raw: false,
-            });
-
-            fs.unlink(pdfPath, () => undefined);
-            log("print-zpl:done", { printer, title, printMode: "pdf" });
-          } catch (error) {
-            fs.unlink(pdfPath, () => undefined);
-            throw error;
-          }
-        } else {
-          await printFile({
-            filePath: tempPath,
-            printer,
-            title,
-            paperProfile,
-            raw: true,
-          });
-          log("print-zpl:done", { printer, title, printMode: "raw" });
-        }
+        await printFile({
+          filePath: tempPath,
+          printer,
+          title,
+          paperProfile,
+          raw: true,
+        });
+        log("print-zpl:done", { printer, title, printMode: "raw" });
       } finally {
         fs.unlink(tempPath, () => undefined);
       }
