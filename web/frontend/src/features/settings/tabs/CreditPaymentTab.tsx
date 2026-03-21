@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { Copy } from "lucide-react";
 
 type Props = {
   userData: {
@@ -201,45 +202,14 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     }
   }, [pendingExpiresAtMs, pendingNow, pendingOrder]);
 
-  const pendingPanel = pendingOrder ? (
-    <div className="relative mt-4 space-y-1 rounded-lg border border-gray-200 bg-white/70 p-3 text-sm">
-      {pendingRemainingLabel ? (
-        <div className="absolute right-3 top-3 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-          남은시간 {pendingRemainingLabel}
-        </div>
-      ) : null}
-
-      <div className="font-medium">입금 대기중</div>
-      <div>
-        입금계좌: {pendingOrder.depositAccount.bankName}{" "}
-        {pendingOrder.depositAccount.accountNumber}
-      </div>
-      <div>예금주: {pendingOrder.depositAccount.holderName}</div>
-      <div>
-        입금금액(부가세 포함):{" "}
-        <span className="font-semibold">
-          {Number(pendingOrder.amountTotal || 0).toLocaleString()}원
-        </span>
-      </div>
-
-      <div className="border-t border-dashed border-gray-200 pt-2 mt-2" />
-      <div className="rounded-md border-2 border-red-400 bg-red-50 px-3 py-2.5 text-sm">
-        <div className="flex items-start gap-2">
-          <span className="text-lg">⚠️</span>
-          <div className="flex-1">
-            <div className="font-bold text-red-900 text-base mb-1">
-              입금자명에 반드시 입금자코드 "{pendingOrder.depositCode}"를
-              입력해주세요!
-            </div>
-            <div className="text-red-800 space-y-0.5">
-              <div>• 입금자명에 코드만 적어도 무방합니다.</div>
-              <div>• 입금 확인 후 자동으로 크레딧이 충전됩니다.</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  ) : null;
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ title: `${label} 복사됨` });
+    } catch {
+      // ignore
+    }
+  };
 
   const [selectedSupply, setSelectedSupply] = useState<number>(500000);
   const [selectedPlan, setSelectedPlan] = useState<"1m" | "3m">("1m");
@@ -557,246 +527,375 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     }
   };
 
+  const statusLabel: Record<string, { text: string; cls: string }> = {
+    PENDING: { text: "입금 대기", cls: "bg-amber-100 text-amber-700" },
+    DONE: { text: "충전 완료", cls: "bg-blue-100 text-blue-700" },
+    MATCHED: { text: "충전 완료", cls: "bg-blue-100 text-blue-700" },
+    EXPIRED: { text: "만료", cls: "bg-gray-100 text-gray-500" },
+    CANCELED: { text: "취소", cls: "bg-gray-100 text-gray-500" },
+    REFUND_REQUESTED: {
+      text: "환불 신청",
+      cls: "bg-orange-100 text-orange-700",
+    },
+    REFUNDED: { text: "환불 완료", cls: "bg-gray-100 text-gray-500" },
+  };
+
   return (
     <Card className="app-glass-card app-glass-card--lg">
       <CardHeader>
-        <CardTitle>크레딧 충전</CardTitle>
+        <CardTitle>크레딧 결제</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* 잔액 요약 */}
         {!isFirstCharge && (
-          <>
-            <div className="app-surface app-surface--panel p-4">
-              <div className="text-sm text-muted-foreground">보유 크레딧</div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                <div>
-                  <div className="text-xs text-muted-foreground">
-                    총 보유(공급가)
-                  </div>
-                  <div className="text-2xl font-semibold">
-                    {loadingBalance ? "..." : `${balance.toLocaleString()}원`}
-                  </div>
+          <div className="app-surface app-surface--panel p-4">
+            <div className="text-sm text-muted-foreground mb-3">
+              보유 크레딧
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <div className="text-xs text-muted-foreground">
+                  총 보유(공급가)
                 </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">
-                    구매 크레딧(공급가)
-                  </div>
-                  <div className="text-lg font-semibold">
-                    {loadingBalance
-                      ? "..."
-                      : `${paidBalance.toLocaleString()}원`}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">
-                    무료 크레딧(공급가)
-                  </div>
-                  <div className="text-lg font-semibold">
-                    {loadingBalance
-                      ? "..."
-                      : `${bonusBalance.toLocaleString()}원`}
-                  </div>
+                <div className="text-2xl font-semibold">
+                  {loadingBalance ? "..." : `${balance.toLocaleString()}원`}
                 </div>
               </div>
-              <div className="mt-3 text-xs text-muted-foreground">
-                결제는 크레딧 차감으로 진행되며, 부가세는 충전 시점에 포함되어
-                결제됩니다.
+              <div>
+                <div className="text-xs text-muted-foreground">구매 크레딧</div>
+                <div className="text-lg font-semibold">
+                  {loadingBalance ? "..." : `${paidBalance.toLocaleString()}원`}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">무료 크레딧</div>
+                <div className="text-lg font-semibold">
+                  {loadingBalance
+                    ? "..."
+                    : `${bonusBalance.toLocaleString()}원`}
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 text-xs text-muted-foreground">
+              결제는 크레딧 차감으로 진행되며, 부가세는 충전 시점에 포함됩니다.
+            </div>
+          </div>
+        )}
+
+        {/* 입금 대기중 — 충전하기 후 전체 폭으로 표시 */}
+        {pendingOrder && (
+          <div className="rounded-xl border-2 border-blue-200 bg-blue-50/60 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+                </span>
+                <span className="font-semibold text-base">입금 대기중</span>
+              </div>
+              {pendingRemainingLabel && (
+                <span className="text-sm font-medium text-amber-700 bg-amber-100 rounded-full px-3 py-1">
+                  {pendingRemainingLabel} 남음
+                </span>
+              )}
+            </div>
+
+            {/* 입금 금액 */}
+            <div className="rounded-lg bg-white border border-blue-100 p-4 text-center">
+              <div className="text-xs text-muted-foreground mb-1">
+                입금 금액 (부가세 포함)
+              </div>
+              <div className="text-3xl font-bold text-blue-700">
+                {Number(pendingOrder.amountTotal || 0).toLocaleString()}원
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                공급가 {Number(pendingOrder.supplyAmount || 0).toLocaleString()}
+                원 + VAT {Number(pendingOrder.vatAmount || 0).toLocaleString()}
+                원
               </div>
             </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-lg font-medium">충전 내역</div>
-                <PeriodFilter value={ordersPeriod} onChange={setOrdersPeriod} />
+            {/* 계좌 정보 */}
+            <div className="rounded-lg bg-white border border-blue-100 p-4 space-y-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                입금 계좌
               </div>
-              {loadingOrders ? (
-                <div className="text-sm text-muted-foreground">
-                  불러오는 중...
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs text-muted-foreground">
+                    {pendingOrder.depositAccount.bankName}
+                  </div>
+                  <div className="text-xl font-bold tracking-wide">
+                    {pendingOrder.depositAccount.accountNumber}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    예금주 {pendingOrder.depositAccount.holderName}
+                  </div>
                 </div>
-              ) : filteredOrders.length === 0 ? (
-                <div className="text-sm text-muted-foreground">
-                  해당 기간에 충전 내역이 없습니다.
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    copyToClipboard(
+                      pendingOrder.depositAccount.accountNumber,
+                      "계좌번호",
+                    )
+                  }
+                >
+                  <Copy className="h-3.5 w-3.5 mr-1.5" />
+                  복사
+                </Button>
+              </div>
+            </div>
+
+            {/* 입금자코드 — 가장 중요 */}
+            <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-4">
+              <div className="text-sm font-semibold text-amber-900 mb-3">
+                입금자명에 아래 코드를 반드시 입력해주세요
+              </div>
+              <div className="flex items-center justify-between bg-white rounded-lg border border-amber-200 px-4 py-3">
+                <span className="text-2xl font-bold tracking-widest text-amber-700">
+                  {pendingOrder.depositCode}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    copyToClipboard(pendingOrder.depositCode, "입금코드")
+                  }
+                >
+                  <Copy className="h-3.5 w-3.5 mr-1.5" />
+                  복사
+                </Button>
+              </div>
+              <div className="mt-2 space-y-1 text-xs text-amber-800">
+                <div>• 입금자명에 코드만 적어도 무방합니다.</div>
+                <div>• 입금 확인 후 자동으로 크레딧이 충전됩니다.</div>
+              </div>
+            </div>
+
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                const found = orders.find(
+                  (o) => String((o as any)._id || "") === pendingOrder.id,
+                );
+                if (found?._id) cancelOrder(String(found._id));
+                else setPendingOrder(null);
+              }}
+            >
+              입금 취소
+            </Button>
+          </div>
+        )}
+
+        {/* 충전 폼 — 입금 대기 없을 때만 표시 */}
+        {!pendingOrder && (
+          <div className="space-y-4">
+            {isFirstCharge ? (
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="app-surface app-surface--panel space-y-2 p-4">
+                  <div className="text-sm font-semibold">첫 충전 안내</div>
+                  <div className="text-sm text-muted-foreground">
+                    가입 후 첫 충전은 50만원(공급가)으로 진행됩니다.
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      충전 크레딧(공급가)
+                    </span>
+                    <span className="font-semibold">500,000원</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">VAT(10%)</span>
+                    <span className="font-semibold">50,000원</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-semibold">
+                    <span>결제금액</span>
+                    <span className="text-primary">550,000원</span>
+                  </div>
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  {filteredOrders.slice(0, 10).map((o) => {
-                    const canCancel = o.status === "PENDING";
-
-                    const orderDate = formatKoreanDate(
-                      o.createdAt || o.matchedAt || null,
-                    );
-                    const shortId = formatOrderShortId(String(o._id || ""));
-
-                    return (
-                      <div
-                        key={String(o._id || shortId || orderDate)}
-                        className="app-surface app-surface--panel p-3"
+                <div className="app-surface app-surface--panel flex flex-col justify-between gap-4 p-4">
+                  <div>
+                    <div className="text-xs text-muted-foreground">
+                      결제금액 (부가세 포함)
+                    </div>
+                    <div className="text-3xl font-bold text-primary mt-1">
+                      55만원
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    className="w-full"
+                    onClick={handleCharge}
+                    disabled={creatingOrder}
+                  >
+                    {creatingOrder ? "요청 중..." : "충전하기"}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="app-surface app-surface--panel space-y-3 p-4">
+                  <div className="text-sm font-semibold">충전 금액 선택</div>
+                  <div className="text-xs text-muted-foreground">
+                    최근 3개월 사용량 기반 추천 충전액입니다.
+                  </div>
+                  <RadioGroup
+                    value={selectedPlan}
+                    onValueChange={(v) => {
+                      if (v === "3m" || v === "1m") setSelectedPlan(v);
+                    }}
+                    className="grid gap-2"
+                  >
+                    <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 cursor-pointer hover:border-primary/50 transition-colors">
+                      <RadioGroupItem value="1m" id="credit-plan-1m" />
+                      <Label
+                        htmlFor="credit-plan-1m"
+                        className="flex w-full items-baseline justify-between cursor-pointer"
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="space-y-0.5">
-                            <div className="text-sm font-medium">
-                              크레딧 충전
-                              {orderDate ? ` · ${orderDate}` : ""}
-                              {shortId ? ` · 참조 ${shortId}` : ""}
-                            </div>
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            {o.status}
-                          </div>
+                        <span>1개월 추천</span>
+                        <span className="font-semibold">
+                          {oneMonthSupply.toLocaleString()}원
+                        </span>
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 cursor-pointer hover:border-primary/50 transition-colors">
+                      <RadioGroupItem value="3m" id="credit-plan-3m" />
+                      <Label
+                        htmlFor="credit-plan-3m"
+                        className="flex w-full items-baseline justify-between cursor-pointer"
+                      >
+                        <span>3개월 추천</span>
+                        <span className="font-semibold">
+                          {threeMonthsSupply.toLocaleString()}원
+                        </span>
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                  <div className="text-xs text-muted-foreground">
+                    {loadingInsights
+                      ? "추천 정보를 계산하는 중..."
+                      : spendInsights?.estimatedDaysFor500k
+                        ? `50만원(공급가) 예상 소진: 약 ${spendInsights.estimatedDaysFor500k}일`
+                        : "최근 사용 내역이 부족하여 예상 소진일을 계산할 수 없습니다."}
+                  </div>
+                </div>
+
+                <div className="app-surface app-surface--panel flex flex-col justify-between gap-4 p-4">
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">
+                      결제금액 (부가세 포함)
+                    </div>
+                    <div className="text-3xl font-bold text-primary">
+                      {totalAmount.toLocaleString()}원
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      공급가 {supplyAmount.toLocaleString()}원 + VAT{" "}
+                      {roundVat(supplyAmount).toLocaleString()}원
+                    </div>
+                  </div>
+                  {paidBalance > 0 && (
+                    <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                      환불 시 구매 크레딧(공급가)만 환불되며, 무료 크레딧은
+                      환불되지 않습니다.
+                    </div>
+                  )}
+                  <Button
+                    type="button"
+                    className="w-full"
+                    onClick={handleCharge}
+                    disabled={creatingOrder}
+                  >
+                    {creatingOrder ? "요청 중..." : "충전하기"}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 충전 내역 */}
+        {!isFirstCharge && (
+          <div className="space-y-3">
+            <Separator />
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-base font-semibold">충전 내역</div>
+              <PeriodFilter value={ordersPeriod} onChange={setOrdersPeriod} />
+            </div>
+            {loadingOrders ? (
+              <div className="text-sm text-muted-foreground">
+                불러오는 중...
+              </div>
+            ) : filteredOrders.length === 0 ? (
+              <div className="text-sm text-muted-foreground">
+                해당 기간에 충전 내역이 없습니다.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {filteredOrders.slice(0, 10).map((o) => {
+                  const canCancel = o.status === "PENDING";
+                  const orderDate = formatKoreanDate(
+                    o.createdAt || o.matchedAt || null,
+                  );
+                  const shortId = formatOrderShortId(String(o._id || ""));
+                  const sl = statusLabel[o.status] ?? {
+                    text: o.status,
+                    cls: "bg-gray-100 text-gray-500",
+                  };
+
+                  return (
+                    <div
+                      key={String(o._id || shortId || orderDate)}
+                      className="app-surface app-surface--panel p-3"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-medium">
+                          크레딧 충전{orderDate ? ` · ${orderDate}` : ""}
+                          {shortId ? ` · ${shortId}` : ""}
                         </div>
-                        <div className="mt-1 text-sm">
-                          결제금액(부가세 포함):{" "}
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full font-medium ${sl.cls}`}
+                        >
+                          {sl.text}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex items-center justify-between">
+                        <div className="text-sm">
+                          결제금액{" "}
                           <span className="font-semibold">
                             {Number(o.amountTotal || 0).toLocaleString()}원
                           </span>
                         </div>
                         {o.depositCode && (
-                          <div className="mt-2 text-sm text-muted-foreground">
-                            입금코드: {o.depositCode}
-                          </div>
-                        )}
-                        {o.expiresAt && (
-                          <div className="mt-1 text-sm text-muted-foreground">
-                            만료일: {formatKoreanDate(o.expiresAt)}
-                          </div>
-                        )}
-
-                        {canCancel && (
-                          <div className="mt-3">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => cancelOrder(String(o._id || ""))}
-                            >
-                              주문 취소
-                            </Button>
+                          <div className="text-xs text-muted-foreground">
+                            코드 {o.depositCode}
                           </div>
                         )}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-              <div className="text-xs text-muted-foreground">
-                입금 확인 후 자동 충전됩니다.
+                      {canCancel && (
+                        <div className="mt-3">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => cancelOrder(String(o._id || ""))}
+                          >
+                            주문 취소
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
+            )}
+            <div className="text-xs text-muted-foreground">
+              입금 확인 후 자동 충전됩니다.
             </div>
-          </>
+          </div>
         )}
-
-        <div className="space-y-4">
-          {isFirstCharge ? (
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="app-surface app-surface--panel space-y-2 p-4">
-                <div className="text-sm font-medium">첫 충전</div>
-                <div className="text-sm text-muted-foreground">
-                  가입 후 첫 충전은 50만원(공급가)으로 진행됩니다.
-                </div>
-                <div className="text-sm">
-                  충전 크레딧(공급가):{" "}
-                  <span className="font-semibold">50만원</span>
-                </div>
-                <div className="text-sm">
-                  결제금액(부가세 포함):{" "}
-                  <span className="font-semibold">55만원</span>
-                </div>
-              </div>
-
-              <div className="app-surface app-surface--panel space-y-3 p-4">
-                <div className="text-xs text-muted-foreground">결제금액</div>
-                <div className="text-3xl font-bold text-primary">55만원</div>
-                <Button
-                  type="button"
-                  className="w-full"
-                  onClick={handleCharge}
-                  disabled={creatingOrder}
-                >
-                  {creatingOrder ? "요청 중..." : "충전하기"}
-                </Button>
-
-                {pendingPanel}
-              </div>
-            </div>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="app-surface app-surface--panel space-y-3 p-4">
-                <div className="text-sm text-muted-foreground">
-                  최근 3개월 사용량 기반 추천 충전액입니다.
-                </div>
-
-                <RadioGroup
-                  value={selectedPlan}
-                  onValueChange={(v) => {
-                    if (v === "3m" || v === "1m") setSelectedPlan(v);
-                  }}
-                  className="grid gap-2"
-                >
-                  <div className="flex items-center gap-3 rounded-md border border-gray-200 bg-white px-3 py-2">
-                    <RadioGroupItem value="1m" id="credit-plan-1m" />
-                    <Label
-                      htmlFor="credit-plan-1m"
-                      className="flex w-full items-baseline justify-between"
-                    >
-                      <span>1개월 추천</span>
-                      <span className="font-semibold">
-                        {oneMonthSupply.toLocaleString()}원
-                      </span>
-                    </Label>
-                  </div>
-                  <div className="flex items-center gap-3 rounded-md border border-gray-200 bg-white px-3 py-2">
-                    <RadioGroupItem value="3m" id="credit-plan-3m" />
-                    <Label
-                      htmlFor="credit-plan-3m"
-                      className="flex w-full items-baseline justify-between"
-                    >
-                      <span>3개월 추천</span>
-                      <span className="font-semibold">
-                        {threeMonthsSupply.toLocaleString()}원
-                      </span>
-                    </Label>
-                  </div>
-                </RadioGroup>
-
-                <div className="text-xs text-muted-foreground">
-                  {loadingInsights
-                    ? "추천 정보를 계산하는 중..."
-                    : spendInsights?.estimatedDaysFor500k
-                      ? `50만원(공급가) 예상 소진: 약 ${spendInsights.estimatedDaysFor500k}일`
-                      : "최근 사용 내역이 부족하여 예상 소진일을 계산할 수 없습니다."}
-                </div>
-              </div>
-
-              <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
-                <div className="text-xs text-muted-foreground">결제금액</div>
-                <div className="text-3xl font-bold text-primary">
-                  {totalAmount.toLocaleString()}원
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  공급가 {supplyAmount.toLocaleString()}원 + VAT
-                  {roundVat(supplyAmount).toLocaleString()}원
-                </div>
-
-                {paidBalance > 0 && (
-                  <div className="text-xs text-muted-foreground">
-                    환불: 계좌해지시 남아있는 구매 크레딧(공급가)만 환불되며,
-                    무료 크레딧(공급가)은 환불되지 않습니다. VAT는 잔액 비율대로
-                    환불됩니다.
-                  </div>
-                )}
-
-                <Button
-                  type="button"
-                  className="w-full"
-                  onClick={handleCharge}
-                  disabled={creatingOrder}
-                >
-                  {creatingOrder ? "요청 중..." : "충전하기"}
-                </Button>
-
-                {pendingPanel}
-              </div>
-            </div>
-          )}
-        </div>
       </CardContent>
     </Card>
   );
