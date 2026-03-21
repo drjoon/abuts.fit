@@ -669,7 +669,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         : step === "3-nc"
           ? "NC 생성 완료"
           : step === "cnc"
-            ? "가공 완료"
+            ? "가공 시작 반영"
             : step === "cnc-preload"
               ? "NC 프리로드 완료"
               : "BG 처리 완료";
@@ -944,7 +944,9 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           workType: ci.workType || "",
           lotNumber: lotValue,
           // esprit-addin에서 공정 PRC를 선택하기 위한 의뢰별 설정
-          // 값이 없으면 addin에서 폴백(AppConfig) 경로를 쓰되, 가능한 한 백엔드에서 내려준다.
+          // 공정 PRC 파일명 규칙은 백엔드가 소유한다.
+          // 값이 비어 있으면 addin이 임의 폴백하지 않고 공정을 중단해야 하므로,
+          // 여기서는 백엔드에 저장된 값만 그대로 전달한다.
           faceHolePrcFileName: ci.faceHolePrcFileName || "",
           connectionPrcFileName: ci.connectionPrcFileName || "",
           finishLine:
@@ -958,14 +960,15 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
   );
 });
 
-// Rhino 서버가 재기동될 때 input 폴더에 없는 원본 STL 목록을 넘겨주기 위한 API
+// Rhino 서버 재기동 시 backend pending-stl SSOT를 기준으로 입력 STL 캐시를 복구하기 위한 API
 // GET /api/bg/pending-stl
 // 조건: 요청이 취소가 아니고, caseInfos.file은 있으나 camFile이 없는 건
 export const listPendingStl = asyncHandler(async (req, res) => {
   const requests = await Request.find({
     manufacturerStage: { $ne: "취소" },
     // "승인한 것만" BG가 처리하도록 제한
-    // (esprit/rhino 등 BG 프로그램 재기동 시 pending을 복구할 때 전체를 쓸어가지 않게 함)
+    // rhino-server는 startup 시 이 목록만 읽어 로컬 입력 캐시를 복구하므로,
+    // 승인/명령되지 않은 건이 섞이면 안 된다.
     "caseInfos.reviewByStage.request.status": "APPROVED",
     "caseInfos.file.filePath": { $exists: true, $ne: null },
     $or: [
@@ -1008,9 +1011,8 @@ export const listPendingStl = asyncHandler(async (req, res) => {
 export const listPendingNc = asyncHandler(async (_req, res) => {
   const requests = await Request.find({
     manufacturerStage: { $ne: "취소" },
-    // "승인한 것만" NC 생성 대상으로 포함
-    // esprit-addin은 재기동 시 pending-nc 목록을 복구(enqueue)하므로,
-    // 승인/명령되지 않은 건까지 자동 처리되는 것을 방지한다.
+    // endpoint는 유지하지만, 현재 esprit-addin startup path는 pending-nc 복구를 사용하지 않는다.
+    // 그래도 수동/진단 용도로 호출될 수 있으므로 승인된 건만 내려야 한다.
     "caseInfos.reviewByStage.request.status": "APPROVED",
     "caseInfos.camFile.filePath": { $exists: true, $ne: null },
     $or: [
