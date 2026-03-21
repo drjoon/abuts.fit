@@ -3,6 +3,7 @@ import User from "../../models/user.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import PricingReferralStatsSnapshot from "../../models/pricingReferralStatsSnapshot.model.js";
 import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import Machine from "../../models/machine.model.js";
 import { Types } from "mongoose";
 import {
@@ -160,33 +161,43 @@ const findReferredRequestorUsersByReferrerAnchorId = async (
 ) => {
   const businessAnchorIdStr = String(businessAnchorId || "").trim();
   if (!Types.ObjectId.isValid(businessAnchorIdStr)) return [];
-  const cacheKey = `referred-requestors:${businessAnchorIdStr}`;
+  const cacheKey = `referred-requestor-business-anchors:v2:${businessAnchorIdStr}`;
   const cached = getRequestPerfCacheValue(cacheKey);
   if (Array.isArray(cached)) {
     return cached;
   }
   const anchorObjectId = new Types.ObjectId(businessAnchorIdStr);
 
-  const rows = await User.find({
-    active: true,
-    role: "requestor",
-    businessAnchorId: { $exists: true, $ne: null },
+  // 소개 관계의 canonical SSOT는 User가 아니라 BusinessAnchor.referredByAnchorId다.
+  // 여기서 user를 따라가면 같은 사업자에 속한 여러 사용자가 중복 집계되어
+  // 3개여야 할 소개 사업자 수가 29개처럼 부풀 수 있다.
+  // 따라서 read-path에서는 business-level edge만 읽고, write는 anchor 생성/attach
+  // 이벤트 시점에서만 확정되도록 유지한다.
+  const rows = await BusinessAnchor.find({
     referredByAnchorId: anchorObjectId,
+    businessType: "requestor",
   })
     .select({
       _id: 1,
       name: 1,
-      email: 1,
-      business: 1,
-      businessAnchorId: 1,
+      metadata: 1,
       createdAt: 1,
-      approvedAt: 1,
     })
     .sort({ createdAt: -1 })
     .lean();
 
-  setRequestPerfCacheValue(cacheKey, rows, 60 * 1000);
-  return rows;
+  const normalizedRows = (rows || []).map((row) => ({
+    _id: row?._id,
+    name: row?.name || "",
+    email: row?.metadata?.email || "",
+    business: row?.name || "",
+    businessAnchorId: row?._id,
+    createdAt: row?.createdAt || null,
+    approvedAt: row?.createdAt || null,
+  }));
+
+  setRequestPerfCacheValue(cacheKey, normalizedRows, 60 * 1000);
+  return normalizedRows;
 };
 
 /**
@@ -389,7 +400,7 @@ export async function getAssignedDashboardSummary(req, res) {
 export async function getMyReferralDirectMembers(req, res) {
   try {
     const requestorUserId = req.user?._id;
-    const directMembersCacheKey = `referral-direct-members:${String(
+    const directMembersCacheKey = `referral-direct-members:v2:${String(
       req.user?._id || "",
     )}:${String(req.user?.businessAnchorId || "")}`;
     const cachedDirectMembers = getRequestPerfCacheValue(directMembersCacheKey);
@@ -434,203 +445,114 @@ export async function getMyReferralDirectMembers(req, res) {
 
         const role = String(requestor?.role || req.user?.role || "requestor");
 
-        if (role === "salesman" || role === "devops") {
-          const refAnchorId = String(requestor?.businessAnchorId || "").trim();
-          const refAnchorFilter =
-            refAnchorId && Types.ObjectId.isValid(refAnchorId)
-              ? { referredByAnchorId: new Types.ObjectId(refAnchorId) }
-              : { _id: null };
-          const [directRequestors, directSalesmen] = await Promise.all([
-            User.find({
-              ...refAnchorFilter,
-              active: true,
-              role: "requestor",
+        // 이 API도 user row가 아니라 business anchor row만 읽어야 한다.
+        // 동일 사업자의 owner/member user를 동시에 읽으면 소개 사업자 수와 목록이
+        // 모두 부풀어 보이므로, direct members는 항상 unique business anchor 기준이다.
+        const leaderAnchorId = String(requestor?.businessAnchorId || "").trim();
+        const childBusinessTypes =
+          role === "requestor"
+            ? ["requestor"]
+            : ["requestor", "salesman", "devops"];
+        const directChildAnchors =
+          leaderAnchorId && Types.ObjectId.isValid(leaderAnchorId)
+            ? await BusinessAnchor.find({
+                referredByAnchorId: new Types.ObjectId(leaderAnchorId),
+                businessType: { $in: childBusinessTypes },
+              })
+                .select({ _id: 1, name: 1, metadata: 1, createdAt: 1 })
+                .sort({ createdAt: -1 })
+                .lean()
+            : [];
+
+        const orgPairs = [];
+        if (role === "requestor" && leaderAnchorId) {
+          orgPairs.push([
+            leaderAnchorId,
+            { orgKey: leaderAnchorId, businessAnchorId: leaderAnchorId },
+          ]);
+        }
+        (directChildAnchors || []).forEach((anchor) => {
+          const businessAnchorId = String(anchor?._id || "").trim();
+          if (!businessAnchorId) return;
+          orgPairs.push([
+            businessAnchorId,
+            { orgKey: businessAnchorId, businessAnchorId },
+          ]);
+        });
+
+        const orgRows = Array.from(new Map(orgPairs).values());
+
+        const orgAnchorIds = orgRows
+          .map((row) => row.businessAnchorId)
+          .filter((id) => id && Types.ObjectId.isValid(id));
+        const orgs = orgAnchorIds.length
+          ? await Business.find({
+              businessAnchorId: {
+                $in: orgAnchorIds.map((id) => new Types.ObjectId(id)),
+              },
             })
               .select({
                 _id: 1,
-                name: 1,
-                email: 1,
-                business: 1,
                 businessAnchorId: 1,
+                name: 1,
+                extracted: 1,
                 createdAt: 1,
-                approvedAt: 1,
               })
-              .sort({ createdAt: -1 })
-              .lean(),
-            User.find({
-              ...refAnchorFilter,
-              active: true,
-              role: { $in: ["salesman", "devops"] },
-            })
-              .select({ _id: 1, name: 1, email: 1, business: 1, createdAt: 1 })
-              .sort({ createdAt: -1 })
-              .lean(),
-          ]);
+              .lean()
+          : [];
+        orgs.forEach((o) => {
+          const orgKey = String(o?.businessAnchorId || "").trim();
+          if (!orgKey) return;
+          orgByKey.set(orgKey, o);
+        });
 
-          const orgRows = Array.from(
-            new Map(
-              (directRequestors || [])
-                .map((u) => {
-                  const businessAnchorId = String(
-                    u?.businessAnchorId || "",
-                  ).trim();
-                  if (!businessAnchorId) return null;
-                  return [
-                    businessAnchorId,
-                    { orgKey: businessAnchorId, businessAnchorId },
-                  ];
-                })
-                .filter(Boolean),
-            ).values(),
-          );
-
-          const orgAnchorIds = orgRows
-            .map((row) => row.businessAnchorId)
-            .filter((id) => id && Types.ObjectId.isValid(id));
-          const orgs = orgAnchorIds.length
-            ? await Business.find({
-                businessAnchorId: {
-                  $in: orgAnchorIds.map((id) => new Types.ObjectId(id)),
-                },
-              })
-                .select({
-                  _id: 1,
-                  businessAnchorId: 1,
-                  name: 1,
-                  extracted: 1,
-                  createdAt: 1,
-                })
-                .lean()
-            : [];
-          orgs.forEach((o) => {
-            const orgKey = String(o?.businessAnchorId || "").trim();
-            if (!orgKey) return;
-            orgByKey.set(orgKey, o);
-          });
-
-          const anchorOrderRows = orgAnchorIds.length
-            ? await Request.aggregate([
-                {
-                  $match: {
-                    businessAnchorId: {
-                      $in: orgAnchorIds.map((id) => new Types.ObjectId(id)),
-                    },
-                    manufacturerStage: "추적관리",
-                    createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
+        const anchorOrderRows = orgAnchorIds.length
+          ? await Request.aggregate([
+              {
+                $match: {
+                  businessAnchorId: {
+                    $in: orgAnchorIds.map((id) => new Types.ObjectId(id)),
                   },
+                  manufacturerStage: "추적관리",
+                  createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
                 },
-                { $group: { _id: "$businessAnchorId", count: { $sum: 1 } } },
-              ])
-            : [];
-          anchorOrderRows.forEach((r) =>
-            ordersByOrgKey.set(String(r._id), Number(r.count || 0)),
-          );
+              },
+              { $group: { _id: "$businessAnchorId", count: { $sum: 1 } } },
+            ])
+          : [];
+        anchorOrderRows.forEach((r) =>
+          ordersByOrgKey.set(String(r._id), Number(r.count || 0)),
+        );
 
-          const orgMembers = orgRows.map(({ orgKey }) => {
-            const org = orgByKey.get(orgKey) || {};
-            return {
-              _id: orgKey,
-              business: org?.name || "",
-              email: org?.extracted?.email || "",
-              createdAt: org?.createdAt || null,
-              last30DaysOrders: ordersByOrgKey.get(orgKey) || 0,
-              lastMonthOrders: ordersByOrgKey.get(orgKey) || 0,
-            };
-          });
+        const anchorById = new Map(
+          (directChildAnchors || []).map((anchor) => [
+            String(anchor?._id || ""),
+            anchor,
+          ]),
+        );
 
-          const salesmanMembers = (directSalesmen || []).map((u) => ({
-            _id: u._id,
-            name: u.name || "",
-            email: u.email || "",
-            business: u.business || "",
-            createdAt: u.createdAt || null,
-            last30DaysOrders: 0,
-            lastMonthOrders: 0,
-          }));
+        const orgMembers = orgRows.map(({ orgKey }) => {
+          const org = orgByKey.get(orgKey) || {};
+          const anchor = anchorById.get(orgKey) || {};
+          return {
+            _id: orgKey,
+            business: org?.name || anchor?.name || requestor?.business || "",
+            email:
+              org?.extracted?.email ||
+              anchor?.metadata?.email ||
+              requestor?.email ||
+              "",
+            createdAt:
+              org?.createdAt ||
+              anchor?.createdAt ||
+              requestor?.createdAt ||
+              null,
+            last30DaysOrders: ordersByOrgKey.get(orgKey) || 0,
+            lastMonthOrders: ordersByOrgKey.get(orgKey) || 0,
+          };
+        });
 
-          members = [...orgMembers, ...salesmanMembers];
-        } else {
-          const leaderAnchorId = String(
-            requestor?.businessAnchorId || "",
-          ).trim();
-          const referredRequestors =
-            await findReferredRequestorUsersByReferrerAnchorId(leaderAnchorId);
-
-          // 내 사업자 + 내가 직접 소개한 사업자를 모두 포함
-          const orgPairs = [];
-          if (leaderAnchorId) {
-            orgPairs.push([
-              leaderAnchorId,
-              { orgKey: leaderAnchorId, businessAnchorId: leaderAnchorId },
-            ]);
-          }
-          (referredRequestors || []).forEach((u) => {
-            const businessAnchorId = String(u?.businessAnchorId || "").trim();
-            if (!businessAnchorId) return;
-            orgPairs.push([
-              businessAnchorId,
-              { orgKey: businessAnchorId, businessAnchorId },
-            ]);
-          });
-
-          const orgRows = Array.from(new Map(orgPairs).values());
-
-          const orgAnchorIds = orgRows
-            .map((row) => row.businessAnchorId)
-            .filter((id) => id && Types.ObjectId.isValid(id));
-          const orgs = orgAnchorIds.length
-            ? await Business.find({
-                businessAnchorId: {
-                  $in: orgAnchorIds.map((id) => new Types.ObjectId(id)),
-                },
-              })
-                .select({
-                  _id: 1,
-                  businessAnchorId: 1,
-                  name: 1,
-                  extracted: 1,
-                  createdAt: 1,
-                })
-                .lean()
-            : [];
-          orgs.forEach((o) => {
-            const orgKey = String(o?.businessAnchorId || "").trim();
-            if (!orgKey) return;
-            orgByKey.set(orgKey, o);
-          });
-
-          const anchorOrderRows = orgAnchorIds.length
-            ? await Request.aggregate([
-                {
-                  $match: {
-                    businessAnchorId: {
-                      $in: orgAnchorIds.map((id) => new Types.ObjectId(id)),
-                    },
-                    manufacturerStage: "추적관리",
-                    createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
-                  },
-                },
-                { $group: { _id: "$businessAnchorId", count: { $sum: 1 } } },
-              ])
-            : [];
-          anchorOrderRows.forEach((r) =>
-            ordersByOrgKey.set(String(r._id), Number(r.count || 0)),
-          );
-
-          const orgMembers = orgRows.map(({ orgKey }) => {
-            const org = orgByKey.get(orgKey) || {};
-            return {
-              _id: orgKey,
-              business: org?.name || "",
-              email: org?.extracted?.email || "",
-              createdAt: org?.createdAt || null,
-              last30DaysOrders: ordersByOrgKey.get(orgKey) || 0,
-              lastMonthOrders: ordersByOrgKey.get(orgKey) || 0,
-            };
-          });
-
-          members = [...orgMembers];
-        }
+        members = [...orgMembers];
 
         const responseData = {
           members,
@@ -658,6 +580,7 @@ export async function getMyReferralDirectMembers(req, res) {
     });
   }
 }
+
 /**
  * 내 대시보드 요약 (의뢰자용)
  * @route GET /api/requests/my/dashboard-summary
@@ -1144,7 +1067,7 @@ export async function getMyPricingReferralStats(req, res) {
     const requestorId = req.user._id;
     const debug =
       process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
-    const statsCacheKey = `pricing-referral-stats:v2:${String(
+    const statsCacheKey = `pricing-referral-stats:v4:${String(
       req.user?._id || "",
     )}:${String(req.user?.businessAnchorId || "")}`;
 
@@ -1220,19 +1143,17 @@ export async function getMyPricingReferralStats(req, res) {
         if (role === "requestor") {
           const leaderBusinessAnchorId = String(me?.businessAnchorId || "");
           const shouldComputeRequestorGroup = true;
-          const referredRequestors =
+          const referredBusinessAnchors =
             await findReferredRequestorUsersByReferrerAnchorId(
               leaderBusinessAnchorId,
             );
           const orgKeys = Array.from(
-            new Set(
-              [
-                leaderBusinessAnchorId,
-                ...(referredRequestors || []).map((u) =>
-                  String(u.businessAnchorId || ""),
-                ),
-              ].filter(Boolean),
-            ),
+            new Set([
+              leaderBusinessAnchorId,
+              ...(referredBusinessAnchors || [])
+                .map((anchor) => String(anchor?.businessAnchorId || ""))
+                .filter(Boolean),
+            ]),
           );
 
           groupMemberCount = orgKeys.length;
@@ -1298,24 +1219,24 @@ export async function getMyPricingReferralStats(req, res) {
             referralBusinessCount = 1;
             referralBusinessOrders = myLastMonthOrders;
             selfBusinessOrders = myLastMonthOrders;
+            freshGroupTotalOrders = myLastMonthOrders;
           }
         } else {
           const refBusinessAnchorId = String(me?.businessAnchorId || "").trim();
           const directChildren =
             refBusinessAnchorId && Types.ObjectId.isValid(refBusinessAnchorId)
-              ? await User.find({
+              ? await BusinessAnchor.find({
                   referredByAnchorId: new Types.ObjectId(refBusinessAnchorId),
-                  active: true,
-                  role: { $in: ["requestor", "salesman", "devops"] },
+                  businessType: { $in: ["requestor", "salesman", "devops"] },
                 })
-                  .select({ _id: 1, businessAnchorId: 1 })
+                  .select({ _id: 1 })
                   .lean()
               : [];
 
           const directChildBusinessAnchorIds = Array.from(
             new Set(
               (directChildren || [])
-                .map((child) => String(child?.businessAnchorId || "").trim())
+                .map((child) => String(child?._id || "").trim())
                 .filter(Boolean),
             ),
           );

@@ -58,6 +58,7 @@ export const RequestorReferralPage = () => {
     loadingRequestor,
     treeData,
     loadingTree,
+    treeMemberCount,
   } = useReferralData({
     fetchStats: activeTab === "dashboard",
     fetchDirectMembers: false,
@@ -90,7 +91,7 @@ export const RequestorReferralPage = () => {
       0,
   );
   const requestorGroupOrders = Number(requestorStats?.groupTotalOrders || 0);
-  const requestorMembers = Number(requestorStats?.groupMemberCount || 0);
+  const requestorMembers = Number(treeMemberCount || 0);
   const requestorUnitPrice = Number(
     requestorStats?.effectiveUnitPrice ||
       requestorStats?.baseUnitPrice ||
@@ -129,16 +130,16 @@ export const RequestorReferralPage = () => {
       <div className="flex-1 min-h-0 overflow-y-auto">
         {/* 소개 링크 탭 */}
         {activeTab === "link" && (
-          <div className="flex items-center justify-center min-h-full p-4 bg-gradient-to-br from-slate-50 to-slate-100">
-            <Card className="w-full max-w-md border-slate-200 shadow-lg">
-              <CardHeader className="space-y-2">
+          <div className="flex items-start justify-center min-h-full p-6 bg-transparent">
+            <Card className="w-full max-w-5xl border-slate-200 shadow-2xl bg-white">
+              <CardHeader className="space-y-2 px-8 pt-8 pb-4">
                 <CardTitle className="text-2xl">내 사업자 소개 링크</CardTitle>
                 <p className="text-sm text-slate-600">
                   이 링크를 공유하고 새로운 사업자를 소개하세요.
                 </p>
               </CardHeader>
 
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-8 px-8 pb-8">
                 {!isReferralEligible ? (
                   <div className="rounded-lg bg-blue-50 border border-blue-100 p-4 text-sm text-blue-700">
                     의뢰자 계정에서 확인할 수 있습니다.
@@ -150,18 +151,18 @@ export const RequestorReferralPage = () => {
                       <label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
                         소개 링크
                       </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <textarea
                           value={referralLink}
                           readOnly
-                          className="flex-1 px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-mono text-slate-600"
+                          rows={2}
+                          className="min-w-0 flex-1 resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm sm:text-base font-mono leading-6 text-slate-700 break-all"
                         />
                         <Button
                           onClick={handleCopyLink}
                           variant="outline"
                           size="sm"
-                          className="px-3"
+                          className="px-3 shrink-0"
                         >
                           {copied ? (
                             <Check className="w-4 h-4 text-green-600" />
@@ -233,7 +234,7 @@ export const RequestorReferralPage = () => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    {loadingRequestor ? (
+                    {loadingRequestor || loadingTree ? (
                       <div className="grid gap-2 md:grid-cols-4">
                         <Skeleton className="h-20" />
                         <Skeleton className="h-20" />

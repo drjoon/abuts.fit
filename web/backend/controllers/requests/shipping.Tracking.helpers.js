@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import User from "../../models/user.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import Business from "../../models/business.model.js";
 import SalesmanLedger from "../../models/salesmanLedger.model.js";
 import { emitAppEventToRoles } from "../../socket.js";
@@ -485,11 +486,24 @@ export const syncHanjinTrackingPayload = async ({
         const requestor = await User.findById(
           new Types.ObjectId(requestorIdRaw),
         )
-          .select({ _id: 1, role: 1, referredByAnchorId: 1 })
+          .select({ _id: 1, role: 1, businessAnchorId: 1 })
           .lean();
 
-        const referredByAnchorIdRaw = requestor?.referredByAnchorId
-          ? String(requestor.referredByAnchorId)
+        const requestorBusinessAnchorIdRaw = request?.businessAnchorId
+          ? String(request.businessAnchorId)
+          : requestor?.businessAnchorId
+            ? String(requestor.businessAnchorId)
+            : "";
+        const requestorAnchor =
+          requestorBusinessAnchorIdRaw &&
+          Types.ObjectId.isValid(requestorBusinessAnchorIdRaw)
+            ? await BusinessAnchor.findById(requestorBusinessAnchorIdRaw)
+                .select({ referredByAnchorId: 1 })
+                .lean()
+            : null;
+
+        const referredByAnchorIdRaw = requestorAnchor?.referredByAnchorId
+          ? String(requestorAnchor.referredByAnchorId)
           : "";
 
         let directSalesman = null;
@@ -502,7 +516,7 @@ export const syncHanjinTrackingPayload = async ({
             role: "salesman",
             active: true,
           })
-            .select({ _id: 1, role: 1, referredByAnchorId: 1 })
+            .select({ _id: 1, role: 1, businessAnchorId: 1 })
             .lean();
 
           if (referrerOwner) {
@@ -531,18 +545,29 @@ export const syncHanjinTrackingPayload = async ({
           }
 
           const directSalesmanBusinessAnchorIdRaw =
-            directSalesman?.referredByAnchorId
-              ? String(directSalesman.referredByAnchorId)
+            directSalesman?.businessAnchorId
+              ? String(directSalesman.businessAnchorId)
+              : "";
+          const directSalesmanAnchor =
+            directSalesmanBusinessAnchorIdRaw &&
+            Types.ObjectId.isValid(directSalesmanBusinessAnchorIdRaw)
+              ? await BusinessAnchor.findById(directSalesmanBusinessAnchorIdRaw)
+                  .select({ referredByAnchorId: 1 })
+                  .lean()
+              : null;
+          const parentSalesmanBusinessAnchorIdRaw =
+            directSalesmanAnchor?.referredByAnchorId
+              ? String(directSalesmanAnchor.referredByAnchorId)
               : "";
 
           let parentSalesman = null;
           if (
-            directSalesmanBusinessAnchorIdRaw &&
-            Types.ObjectId.isValid(directSalesmanBusinessAnchorIdRaw)
+            parentSalesmanBusinessAnchorIdRaw &&
+            Types.ObjectId.isValid(parentSalesmanBusinessAnchorIdRaw)
           ) {
             const parentOwner = await User.findOne({
               businessAnchorId: new Types.ObjectId(
-                directSalesmanBusinessAnchorIdRaw,
+                parentSalesmanBusinessAnchorIdRaw,
               ),
               role: "salesman",
               active: true,

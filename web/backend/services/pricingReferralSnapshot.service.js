@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import User from "../models/user.model.js";
+import BusinessAnchor from "../models/businessAnchor.model.js";
 import ShippingPackage from "../models/shippingPackage.model.js";
 import PricingReferralStatsSnapshot from "../models/pricingReferralStatsSnapshot.model.js";
 import {
@@ -114,22 +115,21 @@ export const recomputePricingReferralSnapshotForLeaderAnchorId = async (
   const ymd = endYmd;
   if (!startYmd || !endYmd || !ymd) return null;
 
-  const directChildren = await User.find({
+  // 소개 관계 SSOT는 BusinessAnchor.referredByAnchorId 하나만 사용한다.
+  // snapshot이 user row를 읽으면 같은 사업자의 owner/member가 중복 포함되어
+  // memberCount와 groupTotalOrders가 다시 부풀 수 있으므로 business anchor만 읽는다.
+  const directChildren = await BusinessAnchor.find({
     referredByAnchorId: new Types.ObjectId(leaderAnchorId),
-    role: { $in: ["requestor", "salesman", "devops"] },
-    active: true,
-    businessAnchorId: { $ne: null },
+    businessType: { $in: ["requestor", "salesman", "devops"] },
   })
-    .select({ businessAnchorId: 1 })
+    .select({ _id: 1 })
     .lean();
 
   const groupAnchorIds = Array.from(
     new Set(
       [
         leaderAnchorId,
-        ...(directChildren || []).map((row) =>
-          String(row?.businessAnchorId || "").trim(),
-        ),
+        ...(directChildren || []).map((row) => String(row?._id || "").trim()),
       ].filter((id) => Types.ObjectId.isValid(id)),
     ),
   );
@@ -183,21 +183,15 @@ export const recomputePricingReferralSnapshotsForAffectedAnchorId = async (
   const anchorId = String(businessAnchorId || "").trim();
   if (!Types.ObjectId.isValid(anchorId)) return [];
 
-  const sameAnchorUsers = await User.find({
-    businessAnchorId: new Types.ObjectId(anchorId),
-    active: true,
-  })
+  const currentAnchor = await BusinessAnchor.findById(anchorId)
     .select({ referredByAnchorId: 1 })
     .lean();
 
   const leaderAnchorIds = Array.from(
     new Set(
-      [
-        anchorId,
-        ...(sameAnchorUsers || []).map((row) =>
-          String(row?.referredByAnchorId || "").trim(),
-        ),
-      ].filter((id) => Types.ObjectId.isValid(id)),
+      [anchorId, String(currentAnchor?.referredByAnchorId || "").trim()].filter(
+        (id) => Types.ObjectId.isValid(id),
+      ),
     ),
   );
 

@@ -154,20 +154,17 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
   );
 
   const [directRequestors, childSalesmen] = await Promise.all([
-    User.find({
-      role: "requestor",
+    BusinessAnchor.find({
+      businessType: "requestor",
       referredByAnchorId: { $in: salesmanBusinessAnchorObjectIds },
-      active: true,
-      businessAnchorId: { $ne: null },
     })
-      .select({ _id: 1, referredByAnchorId: 1, businessAnchorId: 1 })
+      .select({ _id: 1, referredByAnchorId: 1 })
       .lean(),
-    User.find({
-      role: { $in: REFERRAL_LEADER_ROLES },
+    BusinessAnchor.find({
+      businessType: { $in: REFERRAL_LEADER_ROLES },
       referredByAnchorId: { $in: salesmanBusinessAnchorObjectIds },
-      active: true,
     })
-      .select({ _id: 1, referredByAnchorId: 1, businessAnchorId: 1 })
+      .select({ _id: 1, referredByAnchorId: 1 })
       .lean(),
   ]);
 
@@ -178,9 +175,7 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
 
   for (const childSalesman of childSalesmen || []) {
     const childSalesmanId = normalizeObjectIdString(childSalesman?._id);
-    const childBusinessAnchorId = normalizeObjectIdString(
-      childSalesman?.businessAnchorId,
-    );
+    const childBusinessAnchorId = normalizeObjectIdString(childSalesman?._id);
     const parentBusinessAnchorId = normalizeObjectIdString(
       childSalesman?.referredByAnchorId,
     );
@@ -206,17 +201,15 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
   }
 
   const level1Requestors = childSalesmanBusinessAnchorIds.length
-    ? await User.find({
-        role: "requestor",
+    ? await BusinessAnchor.find({
+        businessType: "requestor",
         referredByAnchorId: {
           $in: childSalesmanBusinessAnchorIds.map(
             (id) => new Types.ObjectId(id),
           ),
         },
-        active: true,
-        businessAnchorId: { $ne: null },
       })
-        .select({ _id: 1, referredByAnchorId: 1, businessAnchorId: 1 })
+        .select({ _id: 1, referredByAnchorId: 1 })
         .lean()
     : [];
 
@@ -227,7 +220,7 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
     );
     const salesmanId =
       salesmanIdByBusinessAnchorId.get(parentBusinessAnchorId) || "";
-    const businessAnchorId = normalizeObjectIdString(user?.businessAnchorId);
+    const businessAnchorId = normalizeObjectIdString(user?._id);
     addToSetMap(directOrgIdsBySalesmanId, salesmanId, businessAnchorId);
   }
 
@@ -240,7 +233,7 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
       leaderSalesmanIdByChildSalesmanBusinessAnchorId.get(
         childSalesmanBusinessAnchorId,
       ) || "";
-    const businessAnchorId = normalizeObjectIdString(user?.businessAnchorId);
+    const businessAnchorId = normalizeObjectIdString(user?._id);
     addToSetMap(level1OrgIdsBySalesmanId, salesmanId, businessAnchorId);
   }
 

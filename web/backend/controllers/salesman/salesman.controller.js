@@ -1,5 +1,6 @@
 import Request from "../../models/request.model.js";
 import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import SalesmanLedger from "../../models/salesmanLedger.model.js";
 import { Types } from "mongoose";
@@ -310,35 +311,32 @@ export async function getSalesmanDashboard(req, res) {
       String(myBusinessAnchorId),
     );
 
-    const referredRequestors = await User.find({
+    const referredRequestors = await BusinessAnchor.find({
       referredByAnchorId: myBusinessAnchorObjectId,
-      role: "requestor",
-      active: true,
+      businessType: "requestor",
     })
-      .select({ _id: 1, businessAnchorId: 1 })
+      .select({ _id: 1 })
       .lean();
 
-    const referredSalesmen = await User.find({
+    const referredSalesmen = await BusinessAnchor.find({
       referredByAnchorId: myBusinessAnchorObjectId,
-      role: "salesman",
-      active: true,
+      businessType: "salesman",
     })
-      .select({ _id: 1, name: 1, businessAnchorId: 1 })
+      .select({ _id: 1, name: 1 })
       .lean();
 
     const referredSalesmanBusinessAnchorIds = (referredSalesmen || [])
-      .map((u) => u?.businessAnchorId)
+      .map((u) => u?._id)
       .filter((id) => id && Types.ObjectId.isValid(String(id)));
 
     const level1Requestors =
       referredSalesmanBusinessAnchorIds.length === 0
         ? []
-        : await User.find({
+        : await BusinessAnchor.find({
             referredByAnchorId: { $in: referredSalesmanBusinessAnchorIds },
-            role: "requestor",
-            active: true,
+            businessType: "requestor",
           })
-            .select({ _id: 1, businessAnchorId: 1 })
+            .select({ _id: 1 })
             .lean();
 
     const referralSalesmanCount = referredSalesmanBusinessAnchorIds.length;
@@ -349,12 +347,12 @@ export async function getSalesmanDashboard(req, res) {
 
     const directOrgIdSet = new Set(
       (referredRequestors || [])
-        .map((u) => (u?.businessAnchorId ? String(u.businessAnchorId) : ""))
+        .map((u) => (u?._id ? String(u._id) : ""))
         .filter(Boolean),
     );
     const level1OrgIdSet = new Set(
       (level1Requestors || [])
-        .map((u) => (u?.businessAnchorId ? String(u.businessAnchorId) : ""))
+        .map((u) => (u?._id ? String(u._id) : ""))
         .filter(Boolean),
     );
     const organizationAnchorIds = Array.from(

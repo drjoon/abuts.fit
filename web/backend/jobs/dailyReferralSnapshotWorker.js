@@ -13,6 +13,7 @@
 import "../bootstrap/env.js";
 import mongoose, { Types } from "mongoose";
 import User from "../models/user.model.js";
+import BusinessAnchor from "../models/businessAnchor.model.js";
 import Request from "../models/request.model.js";
 import PricingReferralStatsSnapshot from "../models/pricingReferralStatsSnapshot.model.js";
 import ManufacturerCreditLedger from "../models/manufacturerCreditLedger.model.js";
@@ -92,30 +93,26 @@ async function runDailySnapshot(ymd, range) {
     .filter((id) => Types.ObjectId.isValid(id))
     .map((id) => new Types.ObjectId(id));
 
-  const directChildren = await User.find({
+  const directChildren = await BusinessAnchor.find({
     referredByAnchorId: { $in: leaderAnchorIds },
-    role: { $in: ["requestor", "salesman", "devops"] },
-    active: true,
-    businessAnchorId: { $ne: null },
+    businessType: { $in: ["requestor", "salesman", "devops"] },
   })
     .select({
       _id: 1,
       referredByAnchorId: 1,
-      businessAnchorId: 1,
-      businessId: 1,
-      role: 1,
     })
     .lean();
 
-  const childUsersByLeaderAnchorId = new Map();
   const childAnchorIdsByLeaderAnchorId = new Map();
-  for (const user of directChildren) {
-    const leaderAnchorId = String(user?.referredByAnchorId || "");
-    const childAnchorId = String(user?.businessAnchorId || "");
+  const childCountByLeaderAnchorId = new Map();
+  for (const anchor of directChildren) {
+    const leaderAnchorId = String(anchor?.referredByAnchorId || "");
+    const childAnchorId = String(anchor?._id || "");
     if (!leaderAnchorId) continue;
-    const users = childUsersByLeaderAnchorId.get(leaderAnchorId) || [];
-    users.push(user);
-    childUsersByLeaderAnchorId.set(leaderAnchorId, users);
+    childCountByLeaderAnchorId.set(
+      leaderAnchorId,
+      Number(childCountByLeaderAnchorId.get(leaderAnchorId) || 0) + 1,
+    );
     if (Types.ObjectId.isValid(childAnchorId)) {
       const anchorSet =
         childAnchorIdsByLeaderAnchorId.get(leaderAnchorId) || new Set();
@@ -128,7 +125,7 @@ async function runDailySnapshot(ymd, range) {
     new Set(
       [
         ...leaders.map((leader) => String(leader?.businessAnchorId || "")),
-        ...directChildren.map((user) => String(user?.businessAnchorId || "")),
+        ...directChildren.map((anchor) => String(anchor?._id || "")),
       ].filter((id) => Types.ObjectId.isValid(id)),
     ),
   ).map((id) => new Types.ObjectId(id));
@@ -160,8 +157,8 @@ async function runDailySnapshot(ymd, range) {
     const leaderAnchorId = String(leader?.businessAnchorId || "");
     if (!Types.ObjectId.isValid(leaderAnchorId)) continue;
 
-    const children = childUsersByLeaderAnchorId.get(leaderAnchorId) || [];
-    const memberCount = 1 + children.length;
+    const memberCount =
+      1 + Number(childCountByLeaderAnchorId.get(leaderAnchorId) || 0);
     const groupAnchorIds = new Set([
       leaderAnchorId,
       ...Array.from(childAnchorIdsByLeaderAnchorId.get(leaderAnchorId) || []),

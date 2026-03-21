@@ -14,6 +14,17 @@
 - 새 파일/새 컴포넌트/새 훅 생성이 필요해 보이더라도, 기존 구조를 재사용하기 어렵다면 **먼저 사용자 승인**을 받습니다.
 - 파일이 커지면 바로 분리합니다. 컴포넌트/훅/컨트롤러는 **800줄 이하**를 유지합니다.
 - 결정된 정책은 우회하지 않습니다. 임시 폴백, 이중 경로, 레거시 alias를 남기지 않습니다.
+- SSOT로 관리하는 값은 **읽을 때 계산하지 않고**, 오직 해당 값을 바꾸는 **이벤트가 발생한 시점에만 write** 합니다.
+  - 예: `소개 사업자 수`는 읽기 시 재계산하지 않고, 내 사업자를 소개자로 한 가입 완료 이벤트가 발생하면 그 순간 SSOT를 업데이트합니다.
+  - read 경로는 저장된 SSOT를 그대로 읽기만 하고, 집계/계산/보정 로직을 덧씌우지 않습니다.
+  - 소개 관계의 canonical SSOT는 현재 **`BusinessAnchor.referredByAnchorId` 단일 필드**입니다.
+    - 별도 `소개 목록` 컬렉션을 추가하고 싶다면, 기존 `BusinessAnchor.referredByAnchorId`를 대체하는 **전면 migration**이 함께 있어야 합니다.
+    - 기존 필드와 새 컬렉션을 병행 저장하는 방식은 소개 관계 SSOT를 2개로 만드는 것이므로 허용하지 않습니다.
+- 코드가 헷갈릴 수 있는 부분, 특히 SSOT write 트리거와 이벤트 경계가 중요한 부분에는 **상세 주석**을 꼭 남깁니다.
+  - 왜 이 시점에 write하는지
+  - 어떤 이벤트가 SSOT를 갱신하는지
+  - read 경로에서 계산하지 않는 이유가 무엇인지
+    를 읽는 사람이 바로 이해할 수 있게 적습니다.
 
 ### 1.1 파일 크기 관리 (800줄 정책)
 
@@ -149,6 +160,17 @@
 - 크레딧 실시간 반영도 전체 페이지 refetch 대신 **헤더/관련 카드 숫자만 국소 patch**하는 것을 기본으로 합니다.
 - backend/controller, frontend consumer, `bg/` 연동 코드는 **`businessAnchorId` / `requestorBusinessAnchorId` 우선이 아니라 단일 기준**으로 사용합니다.
 - 새 코드에서는 `businessId`, `organizationId`, `requestorOrganizationId`, `referredByBusinessId` fallback이나 alias를 두지 않습니다.
+
+### 3.1.2 SSOT write-on-event 원칙
+
+- `소개 사업자 수`, `그룹 멤버 수`, `직계 멤버 수`처럼 읽을 때 계산하고 싶어지는 값은 **반드시 하나의 canonical SSOT 필드**로 둡니다.
+- 그 SSOT는 **이벤트 발생 시점에만 갱신**합니다.
+  - 예: requestor가 자신의 소개 링크로 가입 완료되면, 그 순간 소개자/피소개자 관계와 그룹 멤버 SSOT를 함께 write합니다.
+  - 예: 멤버 탈퇴/비활성화/사업자 전환처럼 관계가 바뀌는 이벤트도 write 트리거에 포함합니다.
+  - 소개 관계 write 트리거는 **referrer 입력 시점만으로 끝나지 않을 수 있습니다.** child `businessAnchorId`가 아직 없으면, 실제 `BusinessAnchor` 생성/attach 이벤트에서 canonical 관계를 최종 확정합니다.
+  - 따라서 소개 수/그룹 멤버 수/소개 트리는 `User.referredByAnchorId`가 아니라 **`BusinessAnchor.referredByAnchorId`만 읽습니다.**
+- read API, 카드 렌더링, 통계 조회에서는 SSOT를 다시 계산하지 않습니다.
+- 필요한 경우 배치/백필은 허용하지만, 그 목적은 **SSOT를 복구/정렬**하는 것이지 read-path 계산을 대체하는 것이 아닙니다.
 
 ### 3.1.1 bridge-server CNC 연속가공 SSOT
 

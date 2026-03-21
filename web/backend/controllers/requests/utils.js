@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
 import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import LotCounter from "../../models/lotCounter.model.js";
 import {
@@ -812,7 +813,9 @@ export async function computePriceForRequest({
     createdAt: { $gte: last30Cutoff },
   });
 
-  // 추천인 합산: 내 business anchor를 referredByAnchorId로 가진 사용자들의 최근 30일 주문량을 합산
+  // 추천 관계의 canonical SSOT는 BusinessAnchor.referredByAnchorId다.
+  // 할인 계산도 user가 아니라 직접 소개된 사업자 anchor의 주문량을 합산해야
+  // 같은 사업자의 여러 사용자가 중복 반영되지 않는다.
   const myBusinessAnchorId =
     requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))
       ? new Types.ObjectId(String(requestorOrgId))
@@ -820,19 +823,20 @@ export async function computePriceForRequest({
 
   let referralLast30DaysOrders = 0;
   if (myBusinessAnchorId) {
-    const referredUsers = await User.find({
+    const referredAnchors = await BusinessAnchor.find({
       referredByAnchorId: myBusinessAnchorId,
-      active: true,
-      role: "requestor",
+      businessType: "requestor",
     })
       .select({ _id: 1 })
       .lean();
 
-    const referredUserIds = referredUsers.map((u) => u._id).filter(Boolean);
+    const referredBusinessAnchorIds = (referredAnchors || [])
+      .map((anchor) => anchor?._id)
+      .filter(Boolean);
 
-    referralLast30DaysOrders = referredUserIds.length
+    referralLast30DaysOrders = referredBusinessAnchorIds.length
       ? await Request.countDocuments({
-          requestor: { $in: referredUserIds },
+          businessAnchorId: { $in: referredBusinessAnchorIds },
           manufacturerStage: { $ne: "취소" },
           createdAt: { $gte: last30Cutoff },
         })

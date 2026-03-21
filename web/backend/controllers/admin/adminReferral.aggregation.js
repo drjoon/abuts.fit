@@ -1,5 +1,5 @@
 import { Types } from "mongoose";
-import User from "../../models/user.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import Request from "../../models/request.model.js";
 
 const REFERRAL_LEADER_ROLES = ["requestor", "salesman", "devops"];
@@ -42,22 +42,20 @@ export async function buildReferralLeaderAggregation({
   );
 
   const [directCounts, directChildren] = await Promise.all([
-    User.aggregate([
+    BusinessAnchor.aggregate([
       {
         $match: {
           referredByAnchorId: { $in: leaderBusinessAnchorObjectIds },
-          active: true,
-          role: { $in: REFERRAL_CHILD_ROLES },
+          businessType: { $in: REFERRAL_CHILD_ROLES },
         },
       },
       { $group: { _id: "$referredByAnchorId", count: { $sum: 1 } } },
     ]),
-    User.find({
+    BusinessAnchor.find({
       referredByAnchorId: { $in: leaderBusinessAnchorObjectIds },
-      role: { $in: REFERRAL_CHILD_ROLES },
-      active: true,
+      businessType: { $in: REFERRAL_CHILD_ROLES },
     })
-      .select({ _id: 1, referredByAnchorId: 1, businessAnchorId: 1 })
+      .select({ _id: 1, referredByAnchorId: 1, businessType: 1 })
       .lean(),
   ]);
 
@@ -70,20 +68,18 @@ export async function buildReferralLeaderAggregation({
 
   const childIdsByLeaderBusinessAnchorId = new Map();
   const childBusinessAnchorIdsByLeaderBusinessAnchorId = new Map();
-  for (const user of directChildren || []) {
+  for (const anchor of directChildren || []) {
     const leaderBusinessAnchorId = normalizeObjectIdString(
-      user?.referredByAnchorId,
+      anchor?.referredByAnchorId,
     );
     if (!leaderBusinessAnchorId) continue;
 
     const childIds =
       childIdsByLeaderBusinessAnchorId.get(leaderBusinessAnchorId) || [];
-    childIds.push(String(user?._id || ""));
+    childIds.push(String(anchor?._id || ""));
     childIdsByLeaderBusinessAnchorId.set(leaderBusinessAnchorId, childIds);
 
-    const childBusinessAnchorId = normalizeObjectIdString(
-      user?.businessAnchorId,
-    );
+    const childBusinessAnchorId = normalizeObjectIdString(anchor?._id);
     if (!childBusinessAnchorId) continue;
 
     const businessAnchorIds =
@@ -100,7 +96,9 @@ export async function buildReferralLeaderAggregation({
   const relevantBusinessAnchorIds = Array.from(
     new Set(
       [...(leaders || []), ...(directChildren || [])]
-        .map((user) => normalizeObjectIdString(user?.businessAnchorId))
+        .map((row) =>
+          normalizeObjectIdString(row?.businessAnchorId || row?._id),
+        )
         .filter(Boolean),
     ),
   );

@@ -30,8 +30,41 @@ export const RequestorPricingReferralPolicyCard = () => {
     return `${origin}/signup/referral?ref=${encodeURIComponent(referralCode)}`;
   }, [referralCode]);
 
+  const {
+    data: referralTree,
+    isLoading: isTreeLoading,
+    isFetching: isTreeFetching,
+    isError: isTreeError,
+  } = useQuery({
+    queryKey: ["requestor-referral-tree-member-count", user?.id || ""],
+    queryFn: async () => {
+      if (!user?.id) {
+        throw new Error("사용자 정보를 불러오지 못했습니다.");
+      }
+      const res = await apiFetch<any>({
+        path: `/api/referral-groups/${user.id}/tree?lite=1`,
+        method: "GET",
+        token,
+      });
+      if (!res.ok || !res.data?.success) {
+        const errorMsg =
+          res.data?.message ||
+          res.data?.error ||
+          "소개 트리 조회에 실패했습니다.";
+        throw new Error(errorMsg);
+      }
+      return res.data.data;
+    },
+    enabled: Boolean(token && user && user.role === "requestor"),
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+  });
+
   const { data, isLoading, isFetching, isError, error } = useQuery({
-    queryKey: ["requestor-pricing-referral-stats"],
+    queryKey: ["requestor-pricing-referral-stats", "v4"],
     queryFn: async () => {
       const res = await apiFetch<any>({
         path: "/api/requests/my/pricing-referral-stats",
@@ -61,7 +94,8 @@ export const RequestorPricingReferralPolicyCard = () => {
     refetchOnWindowFocus: false,
   });
 
-  const shouldShowSkeleton = (isLoading || isFetching) && !data;
+  const shouldShowSkeleton =
+    isLoading || isFetching || isTreeLoading || isTreeFetching;
 
   if (shouldShowSkeleton) {
     return (
@@ -80,7 +114,7 @@ export const RequestorPricingReferralPolicyCard = () => {
     );
   }
 
-  if (isError) {
+  if (isError || isTreeError) {
     return (
       <Card className="app-glass-card app-glass-card--lg">
         <CardHeader>
@@ -88,7 +122,10 @@ export const RequestorPricingReferralPolicyCard = () => {
             가격 & 소개 정책
           </CardTitle>
           <CardDescription className="text-sm text-destructive">
-            {(error as Error)?.message || "정보를 불러오지 못했습니다."}
+            {(isError
+              ? (error as Error)?.message
+              : (referralTree as any)?.message) ||
+              "정보를 불러오지 못했습니다."}
           </CardDescription>
         </CardHeader>
       </Card>
@@ -102,7 +139,7 @@ export const RequestorPricingReferralPolicyCard = () => {
   const myLast30DaysOrders =
     data.myLastMonthOrders ?? data.myLast30DaysOrders ?? 0;
   const groupTotalOrders = data.groupTotalOrders ?? 0;
-  const groupMemberCount = data.groupMemberCount ?? 0;
+  const groupMemberCount = Number(referralTree?.memberCount || 0);
 
   const totalOrders = groupTotalOrders;
   const targetOrdersForMaxDiscount = 250;

@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import User from "../../models/user.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import Request from "../../models/request.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import PricingReferralStatsSnapshot from "../../models/pricingReferralStatsSnapshot.model.js";
@@ -158,6 +159,35 @@ function normalizeReferralLeaders(leaders) {
     const bCreatedAt = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
     return bCreatedAt - aCreatedAt;
   });
+}
+
+function pickRepresentativeUser(users) {
+  const rows = Array.isArray(users) ? users : [];
+  if (!rows.length) return null;
+  return [...rows].sort((a, b) => {
+    const score = (user) => {
+      const role = String(user?.role || "");
+      if (
+        role === "requestor" &&
+        String(user?.requestorRole || "") === "owner"
+      ) {
+        return 0;
+      }
+      if (role === "salesman") return 1;
+      if (role === "devops") return 2;
+      if (role === "requestor") return 3;
+      return 9;
+    };
+    const scoreDiff = score(a) - score(b);
+    if (scoreDiff !== 0) return scoreDiff;
+    const aCreatedAt = a?.createdAt
+      ? new Date(a.createdAt).getTime()
+      : Number.MAX_SAFE_INTEGER;
+    const bCreatedAt = b?.createdAt
+      ? new Date(b.createdAt).getTime()
+      : Number.MAX_SAFE_INTEGER;
+    return aCreatedAt - bCreatedAt;
+  })[0];
 }
 
 export async function getReferralGroups(req, res) {
@@ -450,7 +480,7 @@ export async function getReferralGroupTree(req, res) {
         .json({ success: false, message: "권한이 없습니다." });
     }
 
-    const cacheKey = `referral-group-tree:v5:${leaderId}:lite=${lite ? 1 : 0}`;
+    const cacheKey = `referral-group-tree:v6:${leaderId}:lite=${lite ? 1 : 0}`;
     const refresh = String(req.query.refresh || "") === "1";
     if (!refresh) {
       const cached = getAdminReferralCache(cacheKey);
@@ -490,21 +520,42 @@ export async function getReferralGroupTree(req, res) {
         throw error;
       }
 
-      const descendantRows = await User.aggregate([
+      // 트리의 canonical node는 User가 아니라 BusinessAnchor다.
+      // user 그래프를 타면 같은 사업자에 속한 여러 user가 한 트리에 중복 포함되어
+      // memberCount가 29처럼 부풀 수 있으므로 business-level edge만 읽는다.
+      const leaderAnchor = await BusinessAnchor.findById(leaderBusinessAnchorId)
+        .select({
+          _id: 1,
+          businessType: 1,
+          name: 1,
+          metadata: 1,
+          referredByAnchorId: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          status: 1,
+        })
+        .lean();
+      if (!leaderAnchor) {
+        const error = new Error("리더 사업자 정보를 찾을 수 없습니다.");
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const descendantRows = await BusinessAnchor.aggregate([
         {
           $match: {
-            _id: new Types.ObjectId(leaderId),
+            _id: new Types.ObjectId(leaderBusinessAnchorId),
           },
         },
         {
           $graphLookup: {
-            from: "users",
-            startWith: "$businessAnchorId",
-            connectFromField: "businessAnchorId",
+            from: "businessanchors",
+            startWith: "$_id",
+            connectFromField: "_id",
             connectToField: "referredByAnchorId",
             as: "descendants",
             restrictSearchWithMatch: {
-              role: { $in: REFERRAL_TREE_ROLES },
+              businessType: { $in: REFERRAL_TREE_ROLES },
             },
           },
         },
@@ -513,20 +564,16 @@ export async function getReferralGroupTree(req, res) {
             descendants: {
               $map: {
                 input: "$descendants",
-                as: "user",
+                as: "anchor",
                 in: {
-                  _id: "$$user._id",
-                  role: "$$user.role",
-                  requestorRole: "$$user.requestorRole",
-                  name: "$$user.name",
-                  email: "$$user.email",
-                  business: "$$user.business",
-                  businessAnchorId: "$$user.businessAnchorId",
-                  active: "$$user.active",
-                  createdAt: "$$user.createdAt",
-                  approvedAt: "$$user.approvedAt",
-                  updatedAt: "$$user.updatedAt",
-                  referredByAnchorId: "$$user.referredByAnchorId",
+                  _id: "$$anchor._id",
+                  businessType: "$$anchor.businessType",
+                  name: "$$anchor.name",
+                  metadata: "$$anchor.metadata",
+                  referredByAnchorId: "$$anchor.referredByAnchorId",
+                  createdAt: "$$anchor.createdAt",
+                  updatedAt: "$$anchor.updatedAt",
+                  status: "$$anchor.status",
                 },
               },
             },
@@ -534,20 +581,52 @@ export async function getReferralGroupTree(req, res) {
         },
       ]);
 
-      const members = [
-        leader,
+      const anchorMembers = [
+        leaderAnchor,
         ...(descendantRows?.[0]?.descendants || []).filter(
-          (member) => String(member?._id || "") !== String(leader._id),
+          (anchor) => String(anchor?._id || "") !== String(leaderAnchor._id),
         ),
       ];
 
       const memberBusinessAnchorIds = Array.from(
         new Set(
-          (members || [])
-            .map((u) => String(u?.businessAnchorId || ""))
+          (anchorMembers || [])
+            .map((u) => String(u?._id || ""))
             .filter((id) => id && Types.ObjectId.isValid(id)),
         ),
       ).map((id) => new Types.ObjectId(id));
+
+      const representativeUsers = memberBusinessAnchorIds.length
+        ? await User.find({
+            businessAnchorId: { $in: memberBusinessAnchorIds },
+            active: true,
+            role: { $in: REFERRAL_TREE_ROLES },
+          })
+            .select({
+              _id: 1,
+              role: 1,
+              requestorRole: 1,
+              name: 1,
+              email: 1,
+              business: 1,
+              businessAnchorId: 1,
+              active: 1,
+              createdAt: 1,
+              approvedAt: 1,
+              updatedAt: 1,
+            })
+            .lean()
+        : [];
+
+      const representativeUsersByBusinessAnchorId = new Map();
+      for (const row of representativeUsers || []) {
+        const businessAnchorId = String(row?.businessAnchorId || "").trim();
+        if (!businessAnchorId) continue;
+        const list =
+          representativeUsersByBusinessAnchorId.get(businessAnchorId) || [];
+        list.push(row);
+        representativeUsersByBusinessAnchorId.set(businessAnchorId, list);
+      }
 
       const range30 = getLast30DaysRangeUtc();
       const start = range30?.start;
@@ -625,64 +704,73 @@ export async function getReferralGroupTree(req, res) {
         ]),
       );
 
-      const nodes = members.map((u) => ({
-        ...u,
-        lastMonthOrders: Number(
-          shippingOrderCountByBusinessAnchorId.get(
-            String(u?.businessAnchorId || ""),
-          ) || 0,
-        ),
-        lastMonthPaidOrders: Number(
-          businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
-            ?.lastMonthPaidOrders || 0,
-        ),
-        lastMonthBonusOrders: Number(
-          businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
-            ?.lastMonthBonusOrders || 0,
-        ),
-        lastMonthPaidRevenue: Number(
-          businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
-            ?.lastMonthPaidRevenue || 0,
-        ),
-        lastMonthBonusRevenue: Number(
-          businessStatsByBusinessAnchorId.get(String(u?.businessAnchorId || ""))
-            ?.lastMonthBonusRevenue || 0,
-        ),
-        referredByAnchorId: u.referredByAnchorId || null,
-        children: [],
-      }));
+      const nodes = anchorMembers.map((anchor) => {
+        const businessAnchorId = String(anchor?._id || "");
+        const representative = pickRepresentativeUser(
+          representativeUsersByBusinessAnchorId.get(businessAnchorId) || [],
+        );
+        return {
+          _id: businessAnchorId,
+          role: representative?.role || anchor?.businessType || "requestor",
+          requestorRole: representative?.requestorRole || null,
+          name: representative?.name || anchor?.name || "",
+          email: representative?.email || anchor?.metadata?.email || "",
+          business: representative?.business || anchor?.name || "",
+          businessAnchorId,
+          active:
+            representative?.active ??
+            (String(anchor?.status || "") !== "inactive" &&
+              String(anchor?.status || "") !== "merged"),
+          createdAt: representative?.createdAt || anchor?.createdAt || null,
+          approvedAt: representative?.approvedAt || null,
+          updatedAt: representative?.updatedAt || anchor?.updatedAt || null,
+          referredByAnchorId: anchor?.referredByAnchorId || null,
+          lastMonthOrders: Number(
+            shippingOrderCountByBusinessAnchorId.get(businessAnchorId) || 0,
+          ),
+          lastMonthPaidOrders: Number(
+            businessStatsByBusinessAnchorId.get(businessAnchorId)
+              ?.lastMonthPaidOrders || 0,
+          ),
+          lastMonthBonusOrders: Number(
+            businessStatsByBusinessAnchorId.get(businessAnchorId)
+              ?.lastMonthBonusOrders || 0,
+          ),
+          lastMonthPaidRevenue: Number(
+            businessStatsByBusinessAnchorId.get(businessAnchorId)
+              ?.lastMonthPaidRevenue || 0,
+          ),
+          lastMonthBonusRevenue: Number(
+            businessStatsByBusinessAnchorId.get(businessAnchorId)
+              ?.lastMonthBonusRevenue || 0,
+          ),
+          children: [],
+        };
+      });
       const nodeById = new Map(nodes.map((n) => [String(n._id), n]));
-      const representativeByBusinessAnchorId = new Map();
-      for (const node of nodes) {
-        const businessAnchorId = String(node?.businessAnchorId || "");
-        if (!businessAnchorId || !Types.ObjectId.isValid(businessAnchorId))
-          continue;
-        if (
-          businessAnchorId === leaderBusinessAnchorId &&
-          String(node._id) === String(leader._id)
-        ) {
-          representativeByBusinessAnchorId.set(businessAnchorId, node);
-          continue;
-        }
-        if (!representativeByBusinessAnchorId.has(businessAnchorId)) {
-          representativeByBusinessAnchorId.set(businessAnchorId, node);
-        }
-      }
       for (const node of nodes) {
         const parentBusinessAnchorId = node.referredByAnchorId
           ? String(node.referredByAnchorId)
           : null;
-        const parentNode = parentBusinessAnchorId
-          ? representativeByBusinessAnchorId.get(parentBusinessAnchorId)
-          : null;
-        const parentId = parentNode?._id ? String(parentNode._id) : null;
-        if (!parentId || !nodeById.has(parentId)) continue;
-        if (parentId === String(node._id)) continue;
-        nodeById.get(parentId).children.push(node);
+        if (!parentBusinessAnchorId || !nodeById.has(parentBusinessAnchorId))
+          continue;
+        if (parentBusinessAnchorId === String(node._id)) continue;
+        nodeById.get(parentBusinessAnchorId).children.push(node);
       }
 
-      const rootNode = nodeById.get(String(leader._id)) || {
-        ...leader,
+      const rootNode = nodeById.get(String(leaderBusinessAnchorId)) || {
+        _id: leaderBusinessAnchorId,
+        role: leader?.role || "requestor",
+        requestorRole: leader?.requestorRole || null,
+        name: leader?.name || leaderAnchor?.name || "",
+        email: leader?.email || leaderAnchor?.metadata?.email || "",
+        business: leader?.business || leaderAnchor?.name || "",
+        businessAnchorId: leaderBusinessAnchorId,
+        active: leader?.active ?? true,
+        createdAt: leader?.createdAt || leaderAnchor?.createdAt || null,
+        approvedAt: leader?.approvedAt || null,
+        updatedAt: leader?.updatedAt || leaderAnchor?.updatedAt || null,
+        referredByAnchorId: leaderAnchor?.referredByAnchorId || null,
         children: [],
       };
       if (

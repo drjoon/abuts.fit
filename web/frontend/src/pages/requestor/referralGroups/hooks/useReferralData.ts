@@ -51,6 +51,10 @@ export type ReferralTreeNode = {
   children?: ReferralTreeNode[];
 };
 
+export const getReferralTreeMemberCount = (
+  treeMemberCount?: number | null,
+): number => Number(treeMemberCount || 0);
+
 const buildReferralSignupLink = (referralCode: string) => {
   const code = String(referralCode || "")
     .trim()
@@ -76,6 +80,7 @@ export const useReferralData = (options?: UseReferralDataOptions) => {
 
   const [treeData, setTreeData] = useState<ReferralTreeNode | null>(null);
   const [loadingTree, setLoadingTree] = useState(false);
+  const [treeMemberCount, setTreeMemberCount] = useState<number | null>(null);
 
   const isReferralEligible =
     user?.role === "requestor" ||
@@ -173,8 +178,10 @@ export const useReferralData = (options?: UseReferralDataOptions) => {
           throw new Error(body?.message || "소개 트리 조회에 실패했습니다.");
         }
         const tree = (body.data?.tree || null) as ReferralTreeNode | null;
+        const memberCount = Number(body.data?.memberCount || 0);
         console.log("[useReferralData] 트리 데이터 설정:", tree);
         setTreeData(tree);
+        setTreeMemberCount(memberCount);
       })
       .catch((err) => {
         console.error("[useReferralData] 트리 로딩 에러:", err);
@@ -197,5 +204,6 @@ export const useReferralData = (options?: UseReferralDataOptions) => {
     loadingDirectMembers,
     treeData,
     loadingTree,
+    treeMemberCount,
   };
 };

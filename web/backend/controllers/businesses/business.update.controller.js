@@ -1,4 +1,5 @@
 import Business from "../../models/business.model.js";
+import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
@@ -23,6 +24,10 @@ import {
   grantWelcomeBonusIfEligible,
   grantFreeShippingCreditIfEligible,
 } from "./business.bonus.util.js";
+import {
+  triggerPricingSnapshotForBusinessAnchorId,
+  triggerPricingSnapshotForReferrerAnchorId,
+} from "../../services/requestSnapshotTriggers.service.js";
 
 async function ensureBusinessAnchorForBusiness({
   business,
@@ -99,6 +104,25 @@ async function ensureBusinessAnchorForBusiness({
   const anchorId = anchor?._id || existingAnchor?._id || null;
   if (!anchorId) return null;
 
+  if (
+    !existingAnchor?.referredByAnchorId &&
+    referredByAnchorId &&
+    Types.ObjectId.isValid(String(referredByAnchorId))
+  ) {
+    await BusinessAnchor.updateOne(
+      {
+        _id: anchorId,
+        referredByAnchorId: null,
+      },
+      {
+        $set: {
+          referredByAnchorId,
+          defaultReferralAnchorId: referredByAnchorId,
+        },
+      },
+    );
+  }
+
   await Business.updateOne(
     { _id: business._id },
     { $set: { businessAnchorId: anchorId } },
@@ -111,6 +135,17 @@ async function ensureBusinessAnchorForBusiness({
     await User.updateOne(
       { _id: userId },
       { $set: { businessId: business._id, businessAnchorId: anchorId } },
+    );
+  }
+
+  // 소개 관계의 SSOT는 business anchor write 시점에 확정한다.
+  // 회원가입 시점에는 referrer만 저장될 수 있고 child businessAnchorId는 아직 없을 수 있으므로,
+  // 실제 anchor가 생성/attach된 이벤트에서만 부모/자식 스냅샷을 갱신한다.
+  triggerPricingSnapshotForBusinessAnchorId(anchorId, "business-anchor-linked");
+  if (Types.ObjectId.isValid(String(referredByAnchorId || ""))) {
+    triggerPricingSnapshotForReferrerAnchorId(
+      referredByAnchorId,
+      "business-anchor-linked",
     );
   }
 
