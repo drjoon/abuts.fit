@@ -519,10 +519,68 @@ export async function getReferralGroupTree(req, res) {
         throw error;
       }
 
+      // 소개 트리는 하위(descendants)만 보면 자식 사업자 페이지에서 부모(우리기공소)가 빠진다.
+      // 따라서 현재 리더의 최상위 소개자까지 거슬러 올라간 뒤, 그 anchor를 루트로 트리를 구성한다.
+      // 이렇게 해야
+      // - 우리기공소 페이지: 우리 + 직접 소개된 사업자들
+      // - 자식 사업자 페이지: 우리기공소 + 자기 자신
+      // 형태로 일관되게 보인다.
+      const rootAnchorRows = await BusinessAnchor.aggregate([
+        {
+          $match: {
+            _id: new Types.ObjectId(leaderBusinessAnchorId),
+          },
+        },
+        {
+          $graphLookup: {
+            from: "businessanchors",
+            startWith: "$referredByAnchorId",
+            connectFromField: "referredByAnchorId",
+            connectToField: "_id",
+            as: "ancestors",
+          },
+        },
+        {
+          $project: {
+            self: 1,
+            ancestors: {
+              $map: {
+                input: "$ancestors",
+                as: "anchor",
+                in: {
+                  _id: "$$anchor._id",
+                  businessType: "$$anchor.businessType",
+                  name: "$$anchor.name",
+                  metadata: "$$anchor.metadata",
+                  referredByAnchorId: "$$anchor.referredByAnchorId",
+                  createdAt: "$$anchor.createdAt",
+                  updatedAt: "$$anchor.updatedAt",
+                  status: "$$anchor.status",
+                },
+              },
+            },
+          },
+        },
+      ]);
+
+      const currentAnchorRow = rootAnchorRows?.[0] || null;
+      const ancestorChain = Array.isArray(currentAnchorRow?.ancestors)
+        ? [...currentAnchorRow.ancestors]
+        : [];
       // 트리의 canonical node는 User가 아니라 BusinessAnchor다.
       // user 그래프를 타면 같은 사업자에 속한 여러 user가 한 트리에 중복 포함되어
       // memberCount가 29처럼 부풀 수 있으므로 business-level edge만 읽는다.
-      const leaderAnchor = await BusinessAnchor.findById(leaderBusinessAnchorId)
+      const rootAnchorCandidate =
+        ancestorChain.sort(
+          (a, b) =>
+            new Date(a?.createdAt || 0).getTime() -
+            new Date(b?.createdAt || 0).getTime(),
+        )[0] || null;
+      const rootBusinessAnchorId = String(
+        rootAnchorCandidate?._id || leaderBusinessAnchorId,
+      );
+
+      const leaderAnchor = await BusinessAnchor.findById(rootBusinessAnchorId)
         .select({
           _id: 1,
           businessType: 1,
@@ -540,10 +598,12 @@ export async function getReferralGroupTree(req, res) {
         throw error;
       }
 
+      const rootAnchor = rootAnchorCandidate || leaderAnchor;
+
       const descendantRows = await BusinessAnchor.aggregate([
         {
           $match: {
-            _id: new Types.ObjectId(leaderBusinessAnchorId),
+            _id: new Types.ObjectId(rootBusinessAnchorId),
           },
         },
         {
@@ -757,18 +817,28 @@ export async function getReferralGroupTree(req, res) {
         nodeById.get(parentBusinessAnchorId).children.push(node);
       }
 
-      const rootNode = nodeById.get(String(leaderBusinessAnchorId)) || {
-        _id: leaderBusinessAnchorId,
-        role: leader?.role || "requestor",
-        requestorRole: leader?.requestorRole || null,
-        name: leader?.name || leaderAnchor?.name || "",
-        email: leader?.email || leaderAnchor?.metadata?.email || "",
-        business: leader?.business || leaderAnchor?.name || "",
-        businessAnchorId: leaderBusinessAnchorId,
-        active: leader?.active ?? true,
-        createdAt: leader?.createdAt || leaderAnchor?.createdAt || null,
-        approvedAt: leader?.approvedAt || null,
-        updatedAt: leader?.updatedAt || leaderAnchor?.updatedAt || null,
+      const rootLeaderUser =
+        String(rootBusinessAnchorId) === String(leaderBusinessAnchorId)
+          ? leader
+          : representativeUsersByBusinessAnchorId.get(
+              rootBusinessAnchorId,
+            )?.[0] || null;
+
+      const rootNode = nodeById.get(String(rootBusinessAnchorId)) || {
+        _id: rootBusinessAnchorId,
+        role: rootLeaderUser?.role || leaderAnchor?.businessType || "requestor",
+        requestorRole: rootLeaderUser?.requestorRole || null,
+        name: rootLeaderUser?.name || leaderAnchor?.name || "",
+        email: rootLeaderUser?.email || leaderAnchor?.metadata?.email || "",
+        business: rootLeaderUser?.business || leaderAnchor?.name || "",
+        businessAnchorId: rootBusinessAnchorId,
+        active:
+          rootLeaderUser?.active ??
+          (String(leaderAnchor?.status || "") !== "inactive" &&
+            String(leaderAnchor?.status || "") !== "merged"),
+        createdAt: rootLeaderUser?.createdAt || leaderAnchor?.createdAt || null,
+        approvedAt: rootLeaderUser?.approvedAt || null,
+        updatedAt: rootLeaderUser?.updatedAt || leaderAnchor?.updatedAt || null,
         referredByAnchorId: leaderAnchor?.referredByAnchorId || null,
         children: [],
       };
