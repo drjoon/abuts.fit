@@ -47,7 +47,20 @@ export const useMachiningBoard = ({
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const { machines, setMachines } = useCncMachines();
+  const {
+    machines,
+    setMachines,
+    form,
+    setForm,
+    addModalOpen,
+    setAddModalOpen,
+    addModalMode,
+    setAddModalMode,
+    handleChange,
+    handleEditMachine,
+    handleDeleteMachine,
+    handleAddMachine,
+  } = useCncMachines();
   const { callRaw } = useCncRaw();
   const statusByUid = useMachineStatusStore((s) => s.statusByUid);
   const refreshStatuses = useMachineStatusStore((s) => s.refresh);
@@ -1147,6 +1160,16 @@ export const useMachiningBoard = ({
     machines,
     mergedMachines,
     filteredMachines,
+    form,
+    setForm,
+    addModalOpen,
+    setAddModalOpen,
+    addModalMode,
+    setAddModalMode,
+    handleChange,
+    handleEditMachine,
+    handleDeleteMachine,
+    handleAddMachine,
     statusByUid,
     machineStatusMap,
     queueMap,

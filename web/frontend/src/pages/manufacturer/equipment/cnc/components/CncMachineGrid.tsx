@@ -8,7 +8,9 @@ interface CncMachineGridProps {
   machines: Machine[];
   workUid: string;
   loading: boolean;
+  tempHealthMap: Record<string, "ok" | "warn" | "alarm" | "unknown">;
   tempTooltipMap: Record<string, string>;
+  toolHealthMap: Record<string, "ok" | "warn" | "alarm" | "unknown">;
   toolTooltipMap: Record<string, string>;
   programSummary: { current?: any; list?: any[] } | null;
   machiningElapsedSecondsMap?: Record<string, number>;
@@ -71,7 +73,9 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   machines,
   workUid,
   loading,
+  tempHealthMap,
   tempTooltipMap,
+  toolHealthMap,
   toolTooltipMap,
   programSummary,
   machiningElapsedSecondsMap,
@@ -172,6 +176,8 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
             lastCompleted={lastCompletedMap?.[m.uid] ?? null}
             machiningRecordSummary={machiningRecordSummaryMap?.[m.uid] ?? null}
             worksheetQueueCount={worksheetQueueCount}
+            tempHealth={tempHealthMap[m.uid] ?? "unknown"}
+            toolHealth={toolHealthMap[m.uid] ?? "unknown"}
             tempTooltip={tempTooltipMap[m.uid] ?? ""}
             toolTooltip={toolTooltipMap[m.uid] ?? ""}
             currentProg={displayCurrent}

@@ -1,6 +1,6 @@
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -12,15 +12,45 @@ import {
 } from "@/components/ui/dialog";
 import { ToastAction } from "@/components/ui/toast";
 import { CncEventLogModal } from "@/features/cnc/components/CncEventLogModal";
+import { useCncRaw } from "@/features/manufacturer/cnc/hooks/useCncRaw";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { CncProgramEditorPanel } from "@/pages/manufacturer/equipment/cnc/components/CncProgramEditorPanel";
 import { CncPlaylistDrawer } from "@/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer";
 import { CompletedMachiningRecordsModal } from "@/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal";
+import { CncMachineManagerModal } from "@/pages/manufacturer/equipment/cnc/components/CncMachineManagerModal";
+import { CncTempDetailModal } from "@/pages/manufacturer/equipment/cnc/components/CncTempDetailModal";
+import { CncToolStatusModal } from "@/pages/manufacturer/equipment/cnc/components/CncToolStatusModal";
+import { useCncDashboardMachineInfo } from "@/pages/manufacturer/equipment/cnc/hooks/useCncDashboardMachineInfo";
+import { useCncTempPanel } from "@/pages/manufacturer/equipment/cnc/hooks/useCncTempPanel";
+import { useCncToolPanels } from "@/pages/manufacturer/equipment/cnc/hooks/useCncToolPanels";
+import { useCncWriteGuard } from "@/pages/manufacturer/equipment/cnc/hooks/useCncWriteGuard";
 import { MachineQueueCard } from "./components/MachineQueueCard";
-import type { MachineStatus, QueueItem } from "./types";
+import type { MachineActionLevel, MachineStatus, QueueItem } from "./types";
 import { useMachiningBoard } from "./hooks/useMachiningBoard";
 import { CncMaterialModal } from "@/pages/manufacturer/equipment/cnc/components/CncMaterialModal";
 import { MachiningRequestLabel } from "./components/MachiningRequestLabel";
 import { buildLabelExtraProps } from "./utils/label";
+
+const resolveMachineActionLevel = (
+  level?: string | null,
+): MachineActionLevel => {
+  if (level === "alarm") return "alarm";
+  if (level === "warn") return "warn";
+  if (level === "ok") return "ok";
+  if (level === "disabled") return "disabled";
+  return "unknown";
+};
+
+const buildToolSummaryTooltip = (summary: any) => {
+  const dueTools = Array.isArray(summary?.dueTools) ? summary.dueTools : [];
+  if (dueTools.length === 0) return "공구 수명, 교체 확인";
+  const head = dueTools
+    .slice(0, 3)
+    .map((item: any) => `#${item.toolNum}`)
+    .join(", ");
+  const suffix = dueTools.length > 3 ? ` 외 ${dueTools.length - 3}개` : "";
+  return `교체 임박 ${head}${suffix}`;
+};
 
 export const MachiningQueueBoard = ({
   searchQuery,
@@ -30,12 +60,37 @@ export const MachiningQueueBoard = ({
   const { token } = useAuthStore();
   const { toast } = useToast();
   const board = useMachiningBoard({ token });
+  const { callRaw } = useCncRaw();
+  const { ensureCncWriteAllowed, PinModal } = useCncWriteGuard();
   const [activeMachineId, setActiveMachineId] = useState<string | null>(null);
   const [unassignedModalOpen, setUnassignedModalOpen] = useState(false);
+  const [panelError, setPanelError] = useState<string | null>(null);
+  const [tempHealthMap, setTempHealthMap] = useState<
+    Record<string, MachineActionLevel>
+  >({});
+  const [tempTooltipMap, setTempTooltipMap] = useState<Record<string, string>>(
+    {},
+  );
+  const [toolHealthMap, setToolHealthMap] = useState<
+    Record<string, MachineActionLevel>
+  >({});
+  const [toolTooltipMap, setToolTooltipMap] = useState<Record<string, string>>(
+    {},
+  );
+  const [toolWorkUid, setToolWorkUid] = useState("");
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const {
     machines,
     filteredMachines,
+    form,
+    addModalOpen,
+    setAddModalOpen,
+    addModalMode,
+    handleChange,
+    handleEditMachine,
+    handleDeleteMachine,
+    handleAddMachine,
     statusByUid,
     machineStatusMap,
     queueMap,
@@ -88,6 +143,118 @@ export const MachiningQueueBoard = ({
     rollbackRequestInQueue,
     approveMachiningFromRollback,
   } = board;
+
+  const {
+    machineInfoOpen,
+    setMachineInfoOpen,
+    machineInfoLoading,
+    machineInfoError,
+    machineInfoClearing,
+    machineInfoProgram,
+    machineInfoAlarms,
+    openMachineInfo,
+    clearMachineAlarms,
+  } = useCncDashboardMachineInfo({ token, toast });
+
+  const { tempModalOpen, tempModalBody, setTempModalOpen, openTempDetail } =
+    useCncTempPanel({
+      callRaw,
+      setError: setPanelError,
+      setTempHealth: (uid, level) => {
+        setTempHealthMap((prev) => ({
+          ...prev,
+          [uid]: resolveMachineActionLevel(level),
+        }));
+      },
+      setTempTooltip: (uid, msg) => {
+        setTempTooltipMap((prev) => ({ ...prev, [uid]: msg }));
+      },
+    });
+
+  const {
+    modalOpen,
+    modalTitle,
+    modalBody,
+    toolLifeDirty,
+    setModalOpen,
+    openToolDetail,
+    openToolOffsetEditor,
+    handleToolLifeSaveConfirm,
+  } = useCncToolPanels({
+    workUid: toolWorkUid,
+    callRaw,
+    ensureCncWriteAllowed,
+    setError: setPanelError,
+    setToolHealth: (level) => {
+      if (!toolWorkUid) return;
+      setToolHealthMap((prev) => ({
+        ...prev,
+        [toolWorkUid]: resolveMachineActionLevel(level),
+      }));
+    },
+    setToolTooltip: (msg) => {
+      if (!toolWorkUid) return;
+      setToolTooltipMap((prev) => ({ ...prev, [toolWorkUid]: msg }));
+    },
+  });
+
+  useEffect(() => {
+    if (!panelError) return;
+    toast({
+      title: "CNC 작업 실패",
+      description: panelError,
+      variant: "destructive",
+    });
+  }, [panelError, toast]);
+
+  const openToolStatusForMachine = useCallback(
+    async (machine: any) => {
+      const uid = String(machine?.uid || "").trim();
+      if (!uid) return;
+      setToolWorkUid(uid);
+      try {
+        const res = await callRaw(uid, "GetToolLifeInfo");
+        const data: any = res?.data ?? res;
+        const toolLife =
+          data?.machineToolLife?.toolLife ??
+          data?.machineToolLife?.toolLifeInfo ??
+          [];
+        const toolingSummary =
+          data?.machineToolLife?.toolingSummary ||
+          machine?.toolingSummary ||
+          null;
+        const replacementHistory =
+          data?.machineToolLife?.replacementHistory ||
+          machine?.tooling?.replacementHistory ||
+          [];
+        const observations =
+          data?.machineToolLife?.observations ||
+          machine?.tooling?.observations ||
+          [];
+        const level = resolveMachineActionLevel(toolingSummary?.alertLevel);
+        setToolHealthMap((prev) => ({ ...prev, [uid]: level }));
+        setToolTooltipMap((prev) => ({
+          ...prev,
+          [uid]: buildToolSummaryTooltip(toolingSummary),
+        }));
+        openToolDetail(toolLife, level as any, {
+          toolingSummary,
+          replacementHistory,
+          observations,
+        });
+      } catch (e: any) {
+        setPanelError(e?.message || "공구 상태 조회 중 오류가 발생했습니다.");
+      }
+    },
+    [callRaw, openToolDetail],
+  );
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!form?.uid) return;
+    await handleDeleteMachine(form.uid);
+    setDeleteConfirmOpen(false);
+    setAddModalOpen(false);
+  }, [form?.uid, handleDeleteMachine, setAddModalOpen]);
 
   const requestToggleMachineAuto = useCallback(
     (uid: string, next: boolean) => {
@@ -306,6 +473,15 @@ export const MachiningQueueBoard = ({
               return startedAt > 0 && completedAt <= 0;
             });
 
+          const toolSummary = (m as any)?.toolingSummary || null;
+          const toolHealth =
+            toolHealthMap[m.uid] ||
+            resolveMachineActionLevel(toolSummary?.alertLevel || null);
+          const toolTooltip =
+            toolTooltipMap[m.uid] || buildToolSummaryTooltip(toolSummary);
+          const tempHealth = tempHealthMap[m.uid] || "unknown";
+          const tempTooltip = tempTooltipMap[m.uid] || "온도 정보 확인";
+
           return (
             <MachineQueueCard
               key={m.uid}
@@ -362,10 +538,126 @@ export const MachiningQueueBoard = ({
                 setMaterialModalTarget(m);
                 setMaterialModalOpen(true);
               }}
+              onOpenMachineInfo={() => {
+                void openMachineInfo(m.uid);
+              }}
+              onOpenQueueManager={() => openReservationForMachine(m.uid)}
+              onOpenTemperature={() => {
+                void openTempDetail(m.uid);
+              }}
+              onOpenToolStatus={() => {
+                void openToolStatusForMachine(m);
+              }}
+              onOpenSettings={() => {
+                handleEditMachine(m);
+              }}
+              tempHealth={tempHealth}
+              toolHealth={toolHealth}
+              tempTooltip={tempTooltip}
+              toolTooltip={toolTooltip}
             />
           );
         })}
       </div>
+
+      <CncTempDetailModal
+        open={tempModalOpen}
+        body={tempModalBody}
+        onRequestClose={() => setTempModalOpen(false)}
+      />
+
+      <CncToolStatusModal
+        open={modalOpen}
+        title={modalTitle}
+        body={modalBody}
+        toolLifeDirty={toolLifeDirty}
+        health={
+          toolHealthMap[toolWorkUid] === "alarm"
+            ? "alarm"
+            : toolHealthMap[toolWorkUid] === "warn"
+              ? "warn"
+              : toolHealthMap[toolWorkUid] === "ok"
+                ? "ok"
+                : "unknown"
+        }
+        onRequestClose={() => setModalOpen(false)}
+        onOpenToolOffsetEditor={() => openToolOffsetEditor()}
+        onSave={handleToolLifeSaveConfirm}
+      />
+
+      <Dialog open={machineInfoOpen} onOpenChange={setMachineInfoOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>현재 프로그램 / 알람 정보</DialogTitle>
+            <DialogDescription>
+              장비의 현재 프로그램과 알람 상태를 확인합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 text-sm text-slate-700">
+            {machineInfoLoading ? (
+              <div className="text-slate-500">불러오는 중…</div>
+            ) : machineInfoError ? (
+              <div className="text-red-600">{machineInfoError}</div>
+            ) : (
+              <>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="text-xs font-semibold text-slate-500">
+                    현재 프로그램
+                  </div>
+                  <div className="mt-1 text-sm font-extrabold text-slate-900">
+                    {machineInfoProgram?.programName ||
+                      machineInfoProgram?.programNo ||
+                      "-"}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs font-semibold text-slate-500">
+                      알람
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void clearMachineAlarms();
+                      }}
+                      disabled={machineInfoClearing}
+                      className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                    >
+                      {machineInfoClearing ? "해제 중..." : "알람 해제"}
+                    </button>
+                  </div>
+                  {Array.isArray(machineInfoAlarms) &&
+                  machineInfoAlarms.length > 0 ? (
+                    <div className="space-y-2 max-h-64 overflow-auto">
+                      {machineInfoAlarms.map((alarm: any, idx: number) => (
+                        <div
+                          key={`${String(alarm?.code || idx)}`}
+                          className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700"
+                        >
+                          <div className="font-semibold text-slate-900">
+                            {alarm?.code ||
+                              alarm?.alarmNo ||
+                              `Alarm ${idx + 1}`}
+                          </div>
+                          <div className="mt-1">
+                            {alarm?.message ||
+                              alarm?.description ||
+                              "알람 메시지 없음"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-500">
+                      현재 알람이 없습니다.
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <CompletedMachiningRecordsModal
         open={completedModalOpen}
@@ -709,6 +1001,29 @@ export const MachiningQueueBoard = ({
           </div>
         </DialogContent>
       </Dialog>
+
+      <CncMachineManagerModal
+        open={addModalOpen}
+        mode={addModalMode}
+        form={form}
+        loading={false}
+        onChange={handleChange}
+        onRequestClose={() => setAddModalOpen(false)}
+        onSubmit={(snapshot) => void handleAddMachine(snapshot)}
+        onRequestDelete={() => setDeleteConfirmOpen(true)}
+      />
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title="장비 삭제"
+        description={`${String(form?.name || form?.uid || "")} 장비를 삭제합니다. 계속할까요?`}
+        confirmLabel="삭제"
+        cancelLabel="취소"
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setDeleteConfirmOpen(false)}
+      />
+
+      {PinModal}
     </div>
   );
 };

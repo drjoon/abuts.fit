@@ -4,16 +4,27 @@ import {
   CncMachine,
   Machine,
 } from "./shared.js";
+import { buildToolingSummary } from "./tooling.js";
 
 export async function getMachines(req, res) {
   try {
-    const machines = await CncMachine.find({ status: "active" }).sort({
-      machineId: 1,
-    });
+    const machines = await CncMachine.find({ status: "active" })
+      .sort({
+        machineId: 1,
+      })
+      .lean();
+
+    const data = (Array.isArray(machines) ? machines : []).map((machine) => ({
+      ...machine,
+      toolingSummary: buildToolingSummary({
+        toolLifeRows: machine?.uiSnapshot?.toolLifeRows,
+        tooling: machine?.tooling,
+      }),
+    }));
 
     res.status(200).json({
       success: true,
-      data: machines,
+      data,
     });
   } catch (error) {
     console.error("Error in getMachines:", error);

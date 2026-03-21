@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
-import { useToast } from "@/shared/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
+import { CncMachineActionButtons } from "@/features/manufacturer/cnc/components/CncMachineActionButtons";
 import { MaterialDiameterChip } from "@/features/manufacturer/cnc/components/MaterialDiameterChip";
 import { getMachineStatusDotClass } from "@/pages/manufacturer/equipment/cnc/lib/machineStatus";
 import {
@@ -88,6 +88,15 @@ export const MachineQueueCard = ({
   nowPlayingHint,
   onOpenCompleted,
   onOpenMaterial,
+  onOpenMachineInfo,
+  onOpenQueueManager,
+  onOpenTemperature,
+  onOpenToolStatus,
+  onOpenSettings,
+  tempHealth,
+  toolHealth,
+  tempTooltip,
+  toolTooltip,
   isActive,
   onSelect,
   onRollbackNowPlaying,
@@ -95,8 +104,6 @@ export const MachineQueueCard = ({
   onRollbackCompleted,
   onApproveFromRollback,
 }: MachineQueueCardProps) => {
-  useToast();
-
   const machiningQueueAll = (Array.isArray(queue) ? queue : []).filter((q) =>
     isMachiningStatus(q),
   );
@@ -247,11 +254,13 @@ export const MachineQueueCard = ({
             />
           </div>
         </div>
+      </div>
 
-        <div
-          className="flex items-center gap-2 justify-end shrink-0"
-          title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
-        >
+      <div
+        className="app-glass-card-content mt-3 flex flex-col gap-3"
+        title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
+      >
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <MaterialDiameterChip
             label={materialDiameterLabel || "-"}
             variant="circle"
@@ -304,6 +313,35 @@ export const MachineQueueCard = ({
               }`}
             />
           </button>
+        </div>
+
+        <div className="flex justify-end">
+          <CncMachineActionButtons
+            tempLevel={tempHealth}
+            toolLevel={toolHealth}
+            tempTooltip={tempTooltip}
+            toolTooltip={toolTooltip}
+            onInfoClick={(e) => {
+              e.stopPropagation();
+              onOpenMachineInfo?.();
+            }}
+            onQueueClick={(e) => {
+              e.stopPropagation();
+              onOpenQueueManager?.();
+            }}
+            onTempClick={(e) => {
+              e.stopPropagation();
+              onOpenTemperature?.();
+            }}
+            onToolClick={(e) => {
+              e.stopPropagation();
+              onOpenToolStatus?.();
+            }}
+            onSettingsClick={(e) => {
+              e.stopPropagation();
+              onOpenSettings?.();
+            }}
+          />
         </div>
       </div>
 

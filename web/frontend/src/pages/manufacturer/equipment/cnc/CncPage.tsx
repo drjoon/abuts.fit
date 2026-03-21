@@ -31,6 +31,7 @@ export const CncDashboardPageView = (props: any) => {
     setGlobalDummyEnabled,
     setGlobalRemoteEnabled,
     handleBackgroundRefresh,
+    tempHealthMap,
     tempTooltipMap,
     toolTooltipMap,
     toolHealthMap,
@@ -259,7 +260,9 @@ export const CncDashboardPageView = (props: any) => {
                   setMaterialModalTarget(machine);
                   setMaterialModalOpen(true);
                 }}
+                tempHealthMap={tempHealthMap}
                 tempTooltipMap={tempTooltipMap}
+                toolHealthMap={toolHealthMap}
                 toolTooltipMap={toolTooltipMap}
                 programSummary={programSummary}
                 machiningElapsedSecondsMap={machiningElapsedSecondsMap}
@@ -358,9 +361,21 @@ export const CncDashboardPageView = (props: any) => {
                       data?.machineToolLife?.toolLife ??
                       data?.machineToolLife?.toolLifeInfo ??
                       [];
+                    const toolingSummary =
+                      data?.machineToolLife?.toolingSummary;
+                    const replacementHistory =
+                      data?.machineToolLife?.replacementHistory ?? [];
+                    const observations =
+                      data?.machineToolLife?.observations ?? [];
 
                     let level: HealthLevel = "unknown";
-                    if (Array.isArray(toolLife) && toolLife.length) {
+                    if (toolingSummary?.alertLevel === "alarm") {
+                      level = "alarm";
+                    } else if (toolingSummary?.alertLevel === "warn") {
+                      level = "warn";
+                    } else if (toolingSummary?.alertLevel === "ok") {
+                      level = "ok";
+                    } else if (Array.isArray(toolLife) && toolLife.length) {
                       let anyAlarm = false;
                       let anyWarn = false;
                       for (const t of toolLife) {
@@ -380,14 +395,21 @@ export const CncDashboardPageView = (props: any) => {
                       else level = "ok";
                     }
 
+                    updateToolHealth(machine.uid, level);
                     updateToolTooltip(
                       machine.uid,
-                      Array.isArray(toolLife) && toolLife.length
-                        ? `공구 ${toolLife.length}개 상태 조회 완료`
-                        : "공구 정보가 없습니다.",
+                      toolingSummary
+                        ? `경고 ${Number(toolingSummary?.warningCount || 0)} / 교체필요 ${Number(toolingSummary?.alarmCount || 0)}`
+                        : Array.isArray(toolLife) && toolLife.length
+                          ? `공구 ${toolLife.length}개 상태 조회 완료`
+                          : "공구 정보가 없습니다.",
                     );
 
-                    openToolDetail(toolLife, level);
+                    openToolDetail(toolLife, level, {
+                      toolingSummary,
+                      replacementHistory,
+                      observations,
+                    });
                   } catch (e: any) {
                     const msg = e?.message ?? "공구 상세 조회 중 오류";
                     setError(msg);

@@ -570,6 +570,7 @@ export const EquipmentPage = () => {
         setGlobalDummyEnabled={materials.setGlobalDummyEnabled}
         setGlobalRemoteEnabled={setGlobalRemoteEnabled}
         handleBackgroundRefresh={handleBackgroundRefresh}
+        tempHealthMap={tempHealthMap}
         tempTooltipMap={tempTooltipMap}
         toolTooltipMap={toolTooltipMap}
         toolHealthMap={toolHealthMap}

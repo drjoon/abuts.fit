@@ -19,6 +19,13 @@ import {
   saveBridgeQueueSnapshot,
   invalidateBridgeFlagsCache,
 } from "../../controllers/cnc/shared.js";
+import {
+  appendToolLifeObservations,
+  appendToolReplacementHistory,
+  buildToolingSummary,
+  buildToolReplacementUpdate,
+  normalizeToolLifeRows,
+} from "../../controllers/cnc/tooling.js";
 
 function withBridgeHeaders(extra = {}) {
   const base = {};
@@ -73,6 +80,7 @@ const UI_SNAPSHOT_READ_TYPES = new Set([
 const UI_SNAPSHOT_WRITE_TYPES = new Set([
   "UpdateMotorTemperature",
   "UpdateToolLife",
+  "RecordToolReplacement",
   "UpdateToolOffset",
 ]);
 
@@ -92,19 +100,6 @@ function normalizeTemperatureRows(rows) {
           : normalizeNumeric(row?.temperature, null),
     }))
     .filter((row) => row.name);
-}
-
-function normalizeToolLifeRows(rows) {
-  const list = Array.isArray(rows) ? rows : [];
-  return list
-    .map((row, idx) => ({
-      toolNum: Math.max(1, normalizeNumeric(row?.toolNum, idx + 1)),
-      useCount: Math.max(0, normalizeNumeric(row?.useCount, 0)),
-      configCount: Math.max(0, normalizeNumeric(row?.configCount, 0)),
-      warningCount: Math.max(0, normalizeNumeric(row?.warningCount, 0)),
-      use: row?.use !== false,
-    }))
-    .filter((row) => Number.isFinite(row.toolNum));
 }
 
 function normalizeToolOffsetRows(payload) {
@@ -150,14 +145,22 @@ function snapshotToMotorTemperatureResponse(uiSnapshot) {
   };
 }
 
-function snapshotToToolLifeResponse(uiSnapshot) {
+function snapshotToToolLifeResponse(uiSnapshot, tooling) {
   const rows = normalizeToolLifeRows(uiSnapshot?.toolLifeRows);
+  const toolingSummary = buildToolingSummary({ toolLifeRows: rows, tooling });
   return {
     success: true,
     data: {
       machineToolLife: {
         toolLife: rows,
         toolLifeInfo: rows,
+        toolingSummary,
+        replacementHistory: Array.isArray(tooling?.replacementHistory)
+          ? tooling.replacementHistory
+          : [],
+        observations: Array.isArray(tooling?.observations)
+          ? tooling.observations
+          : [],
       },
     },
   };
@@ -170,6 +173,18 @@ async function getCncUiSnapshot(machineId) {
     .select("uiSnapshot")
     .lean();
   return machine?.uiSnapshot || null;
+}
+
+async function getCncToolingState(machineId) {
+  const mid = String(machineId || "").trim();
+  if (!mid) return { uiSnapshot: null, tooling: null };
+  const machine = await CncMachine.findOne({ machineId: mid })
+    .select("uiSnapshot tooling")
+    .lean();
+  return {
+    uiSnapshot: machine?.uiSnapshot || null,
+    tooling: machine?.tooling || null,
+  };
 }
 
 async function persistCncUiSnapshot(machineId, patch) {
@@ -186,6 +201,40 @@ async function persistCncUiSnapshot(machineId, patch) {
   };
   await machine.save();
   return machine.uiSnapshot;
+}
+
+async function persistCncToolingState(
+  machineId,
+  { uiSnapshotPatch, toolingPatch },
+) {
+  const machine = await getOrCreateCncMachine(machineId);
+  if (!machine) return { uiSnapshot: null, tooling: null };
+  const currentUiSnapshot =
+    machine.uiSnapshot && typeof machine.uiSnapshot.toObject === "function"
+      ? machine.uiSnapshot.toObject()
+      : machine.uiSnapshot || {};
+  const currentTooling =
+    machine.tooling && typeof machine.tooling.toObject === "function"
+      ? machine.tooling.toObject()
+      : machine.tooling || {};
+  if (uiSnapshotPatch) {
+    machine.uiSnapshot = {
+      ...currentUiSnapshot,
+      ...uiSnapshotPatch,
+      updatedAt: new Date(),
+    };
+  }
+  if (toolingPatch) {
+    machine.tooling = {
+      ...currentTooling,
+      ...toolingPatch,
+    };
+  }
+  await machine.save();
+  return {
+    uiSnapshot: machine.uiSnapshot || null,
+    tooling: machine.tooling || null,
+  };
 }
 
 function mergeRowsByKey(existingRows, incomingRows, keyFn) {
@@ -742,14 +791,16 @@ export async function callRawProxy(req, res) {
     const normalizedDataType = String(dataType || "").trim();
 
     if (UI_SNAPSHOT_READ_TYPES.has(normalizedDataType)) {
-      const uiSnapshot = await getCncUiSnapshot(uid);
+      const { uiSnapshot, tooling } = await getCncToolingState(uid);
       if (normalizedDataType === "GetMotorTemperature") {
         return res
           .status(200)
           .json(snapshotToMotorTemperatureResponse(uiSnapshot));
       }
       if (normalizedDataType === "GetToolLifeInfo") {
-        return res.status(200).json(snapshotToToolLifeResponse(uiSnapshot));
+        return res
+          .status(200)
+          .json(snapshotToToolLifeResponse(uiSnapshot, tooling));
       }
     }
 
@@ -782,14 +833,33 @@ export async function callRawProxy(req, res) {
 
       if (normalizedDataType === "UpdateToolLife") {
         const rows = normalizeToolLifeRows(req.body?.payload);
-        const current = await getCncUiSnapshot(uid);
+        const current = await getCncToolingState(uid);
         const mergedRows = mergeRowsByKey(
-          current?.toolLifeRows,
+          current?.uiSnapshot?.toolLifeRows,
           rows,
           (row) => row?.toolNum,
         );
-        const uiSnapshot = await persistCncUiSnapshot(uid, {
+        const nextObservations = appendToolLifeObservations({
+          previousRows: current?.uiSnapshot?.toolLifeRows,
+          nextRows: mergedRows,
+          existingObservations: current?.tooling?.observations,
+          observedAt: new Date(),
+          source: "UpdateToolLife",
+        });
+        const nextState = await persistCncToolingState(uid, {
+          uiSnapshotPatch: { toolLifeRows: mergedRows },
+          toolingPatch: {
+            observations: nextObservations,
+            replacementHistory: Array.isArray(
+              current?.tooling?.replacementHistory,
+            )
+              ? current.tooling.replacementHistory
+              : [],
+          },
+        });
+        const toolingSummary = buildToolingSummary({
           toolLifeRows: mergedRows,
+          tooling: nextState.tooling,
         });
         return res.status(200).json({
           success: true,
@@ -797,9 +867,69 @@ export async function callRawProxy(req, res) {
             machineToolLife: {
               toolLife: mergedRows,
               toolLifeInfo: mergedRows,
+              toolingSummary,
+              replacementHistory: Array.isArray(
+                nextState?.tooling?.replacementHistory,
+              )
+                ? nextState.tooling.replacementHistory
+                : [],
+              observations: Array.isArray(nextState?.tooling?.observations)
+                ? nextState.tooling.observations
+                : [],
             },
           },
-          uiSnapshot,
+          uiSnapshot: nextState.uiSnapshot,
+          tooling: nextState.tooling,
+        });
+      }
+
+      if (normalizedDataType === "RecordToolReplacement") {
+        const current = await getCncToolingState(uid);
+        const currentRows = normalizeToolLifeRows(
+          current?.uiSnapshot?.toolLifeRows,
+        );
+        const { replacementRecord, nextRows, observedAt } =
+          buildToolReplacementUpdate({
+            currentRows,
+            payload: req.body?.payload || {},
+            user: req.user || null,
+          });
+        const nextHistory = appendToolReplacementHistory(
+          current?.tooling?.replacementHistory,
+          replacementRecord,
+        );
+        const nextObservations = appendToolLifeObservations({
+          previousRows: currentRows,
+          nextRows,
+          existingObservations: current?.tooling?.observations,
+          observedAt,
+          source: "RecordToolReplacement",
+        });
+        const nextState = await persistCncToolingState(uid, {
+          uiSnapshotPatch: { toolLifeRows: nextRows },
+          toolingPatch: {
+            observations: nextObservations,
+            replacementHistory: nextHistory,
+          },
+        });
+        const toolingSummary = buildToolingSummary({
+          toolLifeRows: nextRows,
+          tooling: nextState.tooling,
+        });
+        return res.status(200).json({
+          success: true,
+          data: {
+            machineToolLife: {
+              toolLife: nextRows,
+              toolLifeInfo: nextRows,
+              toolingSummary,
+              replacementHistory: nextHistory,
+              observations: nextObservations,
+            },
+            replacementRecord,
+          },
+          uiSnapshot: nextState.uiSnapshot,
+          tooling: nextState.tooling,
         });
       }
 

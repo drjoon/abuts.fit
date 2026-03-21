@@ -159,6 +159,47 @@ const cncMachineSchema = new mongoose.Schema(
         default: null,
       },
     },
+    tooling: {
+      observations: {
+        type: [
+          {
+            toolNum: { type: Number, default: 0 },
+            useCount: { type: Number, default: 0 },
+            configCount: { type: Number, default: 0 },
+            warningCount: { type: Number, default: 0 },
+            use: { type: Boolean, default: true },
+            source: { type: String, trim: true, default: "snapshot" },
+            observedAt: { type: Date, default: Date.now },
+          },
+        ],
+        default: [],
+      },
+      replacementHistory: {
+        type: [
+          {
+            toolNum: { type: Number, default: 0 },
+            kind: {
+              type: String,
+              enum: ["normal", "abnormal"],
+              default: "normal",
+            },
+            note: { type: String, trim: true, default: "" },
+            observedUseCount: { type: Number, default: 0 },
+            observedConfigCount: { type: Number, default: 0 },
+            observedWarningCount: { type: Number, default: 0 },
+            predictedReplacementUseCount: { type: Number, default: 0 },
+            createdAt: { type: Date, default: Date.now },
+            createdBy: {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: "User",
+              default: null,
+            },
+            createdByName: { type: String, trim: true, default: "" },
+          },
+        ],
+        default: [],
+      },
+    },
     bridgeQueueSnapshot: {
       jobs: [
         {

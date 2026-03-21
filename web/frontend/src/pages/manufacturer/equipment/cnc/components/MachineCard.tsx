@@ -1,19 +1,6 @@
 import { generateModelNumber } from "@/utils/modelNumber";
 import React, { useEffect, useRef, useState } from "react";
-import {
-  Thermometer,
-  Wrench,
-  Settings,
-  Info,
-  X,
-  ListChecks,
-  Pause,
-  Play,
-  Cylinder,
-  Layers,
-  Plus,
-  Minus,
-} from "lucide-react";
+import { X, Pause, Play, Cylinder, Plus, Minus } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +11,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useMachineStatusStore } from "@/store/useMachineStatusStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { MaterialDiameterChip } from "@/features/manufacturer/cnc/components/MaterialDiameterChip";
+import { CncMachineActionButtons } from "@/features/manufacturer/cnc/components/CncMachineActionButtons";
 import { Machine } from "@/pages/manufacturer/equipment/cnc/types";
 import {
   getMachineStatusDotClass,
@@ -73,6 +61,8 @@ interface MachineCardProps {
     elapsedSeconds?: number;
   } | null;
   worksheetQueueCount?: number;
+  tempHealth?: HealthLevel;
+  toolHealth?: HealthLevel;
   tempTooltip: string;
   toolTooltip: string;
   currentProg: any | null;
@@ -135,6 +125,8 @@ export const MachineCard = (props: MachineCardProps) => {
     lastCompleted,
     machiningRecordSummary,
     worksheetQueueCount,
+    tempHealth = "unknown",
+    toolHealth = "unknown",
     tempTooltip,
     toolTooltip,
     currentProg,
@@ -807,50 +799,23 @@ export const MachineCard = (props: MachineCardProps) => {
           >
             <Cylinder className="h-3.5 w-3.5" />
           </button>
-          <button
-            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
-            onClick={onInfoClick}
-            title="현재 프로그램/알람 정보"
-            disabled={loading || !onInfoClick}
-          >
-            <Info className="h-3.5 w-3.5" />
-          </button>
-          <button
-            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm disabled:opacity-40"
-            onClick={(e) => {
+          <CncMachineActionButtons
+            loading={loading}
+            tempLevel={tempHealth}
+            toolLevel={toolHealth}
+            tempTooltip={tempTooltip}
+            toolTooltip={toolTooltip}
+            onInfoClick={onInfoClick}
+            onQueueClick={(e) => {
               e.stopPropagation();
               const next = !queueAdminOpen;
               setQueueAdminOpen(next);
               if (next) void loadQueueAdmin();
             }}
-            title="큐 관리"
-            disabled={loading}
-          >
-            <ListChecks className="h-3.5 w-3.5" />
-          </button>
-          <button
-            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm"
-            onClick={onTempClick}
-            title={tempTooltip || "소재 정보 확인"}
-            disabled={loading}
-          >
-            <Thermometer className="h-3.5 w-3.5" />
-          </button>
-          <button
-            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm"
-            onClick={onToolClick}
-            title={toolTooltip || "공구 수명, 교체 확인"}
-            disabled={loading}
-          >
-            <Wrench className="h-3.5 w-3.5" />
-          </button>
-          <button
-            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm"
-            onClick={onEditClick}
-            title="장비 설정"
-          >
-            <Settings className="h-3.5 w-3.5" />
-          </button>
+            onTempClick={onTempClick}
+            onToolClick={onToolClick}
+            onSettingsClick={onEditClick}
+          />
         </div>
       </div>
 
