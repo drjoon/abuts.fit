@@ -22,6 +22,7 @@ import {
   filterAndSortRequests,
   mergeTransientRealtimeProgress,
   isPrePickupShippingVisible,
+  shouldShowRequestInIncludeCompleted,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering";
 import {
   usePagination,
@@ -261,52 +262,54 @@ export const RequestPage = ({
     await fetchRequests();
   });
 
+  const currentStageForTab = isMachiningStage
+    ? "가공"
+    : isCamStage
+      ? "CAM"
+      : tabStage === "shipping"
+        ? "포장.발송"
+        : tabStage === "tracking"
+          ? "추적관리"
+          : "의뢰";
+  const currentStageOrder = stageOrder[currentStageForTab] ?? 0;
+
   const matchesCurrentPage = useCallback(
     (req: ManufacturerRequest) => {
       if (filterRequests) {
         return filterRequests(req);
       }
+      if (showCompleted && tabStage !== "tracking") {
+        return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
+      }
       const stage = deriveStageForFilter(req);
       if (tabStage === "request") {
-        return showCompleted
-          ? [
-              "의뢰",
-              "CAM",
-              "가공",
-              "세척.패킹",
-              "포장.발송",
-              "추적관리",
-            ].includes(stage)
-          : stage === "의뢰";
+        return stage === "의뢰";
       }
       if (isCamStage) {
-        return showCompleted
-          ? ["CAM", "가공", "세척.패킹", "포장.발송", "추적관리"].includes(
-              stage,
-            )
-          : stage === "CAM";
+        return stage === "CAM";
       }
       if (isMachiningStage) {
-        return showCompleted
-          ? ["가공", "세척.패킹", "포장.발송", "추적관리"].includes(stage)
-          : stage === "가공";
+        return stage === "가공";
       }
       if (tabStage === "packing") {
-        return showCompleted
-          ? ["세척.패킹", "포장.발송", "추적관리"].includes(stage)
-          : stage === "세척.패킹";
+        return stage === "세척.패킹";
       }
       if (tabStage === "shipping") {
-        return showCompleted
-          ? ["포장.발송", "추적관리"].includes(stage)
-          : stage === "포장.발송";
+        return stage === "포장.발송";
       }
       if (tabStage === "tracking") {
         return stage === "추적관리";
       }
       return true;
     },
-    [filterRequests, isCamStage, isMachiningStage, showCompleted, tabStage],
+    [
+      currentStageOrder,
+      filterRequests,
+      isCamStage,
+      isMachiningStage,
+      showCompleted,
+      tabStage,
+    ],
   );
 
   useEffect(() => {
@@ -463,17 +466,6 @@ export const RequestPage = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     void fetchRequestsCore(false, false);
   }, [tabStage, showCompleted]);
-
-  const currentStageForTab = isMachiningStage
-    ? "가공"
-    : isCamStage
-      ? "CAM"
-      : tabStage === "shipping"
-        ? "포장.발송"
-        : tabStage === "tracking"
-          ? "추적관리"
-          : "의뢰";
-  const currentStageOrder = stageOrder[currentStageForTab] ?? 0;
 
   const { filteredBase, filteredAndSorted, getFilteredAndSortedRequests } =
     useRequestFiltering(

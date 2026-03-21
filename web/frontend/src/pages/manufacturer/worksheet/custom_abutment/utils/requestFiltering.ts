@@ -4,6 +4,52 @@ import {
   stageOrder,
 } from "./request";
 
+function getKstTodayYmd(): string {
+  const now = new Date();
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
+}
+
+function resolveTrackingStatusCode(req: ManufacturerRequest): number | null {
+  const deliveryInfo =
+    req.deliveryInfoRef && typeof req.deliveryInfoRef === "object"
+      ? (req.deliveryInfoRef as any)
+      : null;
+  const candidates = [
+    deliveryInfo?.tracking?.lastStatusCode,
+    req.deliveryMeta?.pickupStatusCode,
+    req.pickupStatusCode,
+  ];
+  for (const candidate of candidates) {
+    const value = Number(candidate);
+    if (Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+export function hasPickupCompleted(req: ManufacturerRequest): boolean {
+  const deliveryInfo =
+    req.deliveryInfoRef && typeof req.deliveryInfoRef === "object"
+      ? (req.deliveryInfoRef as any)
+      : null;
+  const statusCode = resolveTrackingStatusCode(req);
+  return Boolean(
+    deliveryInfo?.pickedUpAt ||
+    req.deliveryMeta?.pickedUp ||
+    req.deliveryMeta?.wasPickedUp ||
+    req.wasPickedUp ||
+    (statusCode != null && statusCode >= 11),
+  );
+}
+
+export function isSameDayPrePickupWorksheetRequest(
+  req: ManufacturerRequest,
+): boolean {
+  const estimatedShipYmd = String(req.timeline?.estimatedShipYmd || "").trim();
+  if (!estimatedShipYmd) return false;
+  return estimatedShipYmd === getKstTodayYmd() && !hasPickupCompleted(req);
+}
+
 // Check if request is pre-pickup shipping visible
 export function isPrePickupShippingVisible(req: ManufacturerRequest): boolean {
   const stage = String(req.manufacturerStage || "").trim();
@@ -11,7 +57,7 @@ export function isPrePickupShippingVisible(req: ManufacturerRequest): boolean {
     req.deliveryInfoRef && typeof req.deliveryInfoRef === "object"
       ? (req.deliveryInfoRef as any)
       : null;
-  const statusCode = Number(di?.tracking?.lastStatusCode || 0);
+  const statusCode = resolveTrackingStatusCode(req);
   const isCanceled =
     String(di?.tracking?.lastStatusText || "").trim() === "예약취소";
   const hasPickupReservation = Boolean(
@@ -22,8 +68,19 @@ export function isPrePickupShippingVisible(req: ManufacturerRequest): boolean {
     hasPickupReservation &&
     !di?.deliveredAt &&
     !isCanceled &&
-    (!Number.isFinite(statusCode) || statusCode < 11)
+    (statusCode == null || statusCode < 11)
   );
+}
+
+export function shouldShowRequestInIncludeCompleted(
+  req: ManufacturerRequest,
+  currentStageOrder: number,
+): boolean {
+  const stage = deriveStageForFilter(req);
+  const order = stageOrder[stage] ?? 0;
+  if (order < currentStageOrder) return false;
+  if (order === currentStageOrder) return true;
+  return isSameDayPrePickupWorksheetRequest(req);
 }
 
 // Filter requests by stage and completion status
@@ -38,18 +95,25 @@ export function filterRequestsByStage(
     if (tabStage === "shipping") {
       return requests.filter((req) => {
         if (isPrePickupShippingVisible(req)) return true;
-        if (!filterRequests) return true;
-        try {
-          return filterRequests(req);
-        } catch {
-          return false;
+        if (filterRequests) {
+          try {
+            if (filterRequests(req)) return true;
+          } catch {
+            return false;
+          }
         }
+        return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
       });
     }
     return requests.filter((req) => {
-      const stage = deriveStageForFilter(req);
-      const order = stageOrder[stage] ?? 0;
-      return order >= currentStageOrder;
+      if (filterRequests) {
+        try {
+          if (filterRequests(req)) return true;
+        } catch {
+          return false;
+        }
+      }
+      return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
     });
   }
 

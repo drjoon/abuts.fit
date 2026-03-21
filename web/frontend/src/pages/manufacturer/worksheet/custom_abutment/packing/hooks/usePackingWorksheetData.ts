@@ -5,6 +5,7 @@ import {
   getDiameterBucketIndex,
   stageOrder,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import { shouldShowRequestInIncludeCompleted } from "@/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering";
 import { type DiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 import { type WorksheetQueueItem } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
 
@@ -160,11 +161,9 @@ export const usePackingWorksheetData = ({
 
   const filteredBase = useMemo(() => {
     if (showCompleted) {
-      return requests.filter((req) => {
-        const stage = deriveStageForFilter(req);
-        const order = stageOrder[stage] ?? 0;
-        return order >= currentStageOrder;
-      });
+      return requests.filter((req) =>
+        shouldShowRequestInIncludeCompleted(req, currentStageOrder),
+      );
     }
     return requests.filter((req) => deriveStageForFilter(req) === "세척.패킹");
   }, [currentStageOrder, requests, showCompleted]);

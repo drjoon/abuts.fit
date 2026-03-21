@@ -17,6 +17,7 @@ import {
   type ManufacturerRequest,
   deriveStageForFilter,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import { shouldShowRequestInIncludeCompleted } from "@/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering";
 import { WorksheetCardGrid } from "../../components/WorksheetCardGrid";
 import { PreviewModal } from "../../components/PreviewModal";
 import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers";
@@ -152,13 +153,12 @@ export const PackingPageContent = ({
 
   const matchesCurrentPage = useCallback(
     (req: ManufacturerRequest) => {
-      const stage = deriveStageForFilter(req);
       if (showCompleted) {
-        return ["세척.패킹", "포장.발송", "추적관리"].includes(stage);
+        return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
       }
-      return stage === "세척.패킹";
+      return deriveStageForFilter(req) === "세척.패킹";
     },
-    [showCompleted],
+    [currentStageOrder, showCompleted],
   );
 
   const {
@@ -326,11 +326,10 @@ export const PackingPageContent = ({
       const latestList = Array.isArray(refreshed) ? refreshed : requests;
       const latestFilteredAndSorted = latestList
         .filter((req) => {
-          const stage = deriveStageForFilter(req);
           if (showCompleted) {
-            return ["세척.패킹", "포장.발송", "추적관리"].includes(stage);
+            return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
           }
-          return stage === "세척.패킹";
+          return deriveStageForFilter(req) === "세척.패킹";
         })
         .filter((request) => {
           const caseInfos = request.caseInfos || {};
@@ -379,6 +378,7 @@ export const PackingPageContent = ({
       handleOpenPreview,
       requests,
       setPreviewOpen,
+      currentStageOrder,
       showCompleted,
       worksheetSearch,
     ],
