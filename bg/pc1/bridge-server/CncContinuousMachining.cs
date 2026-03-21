@@ -1800,6 +1800,9 @@ job?.requestId,
 "indigo",
 new { machineId = machineId, fileName = job?.fileName, jobId = job?.id }
 ));
+// register-file(sourceStep=cnc)는 BG 산출물 bookkeeping / 이벤트 적재용 보조 통지다.
+// canonical 가공 시작 신호는 아래 machining/start 콜백이며,
+// backend는 그 콜백을 기준으로 request 상태 전이와 가공 진행 추적을 시작해야 한다.
 var url = backend + "/bg/register-file";
 var canonical = string.IsNullOrWhiteSpace(job?.originalFileName)
 ? job?.fileName
