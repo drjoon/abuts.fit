@@ -54,7 +54,7 @@ export const SalesmanReferralPage = () => {
             onClick={() => setActiveTab("link")}
             className={`py-4 px-1 font-medium text-sm border-b-2 transition-colors ${
               activeTab === "link"
-                ? "border-emerald-600 text-emerald-600"
+                ? "border-blue-600 text-blue-600"
                 : "border-transparent text-gray-600 hover:text-gray-900"
             }`}
           >
@@ -64,7 +64,7 @@ export const SalesmanReferralPage = () => {
             onClick={() => setActiveTab("dashboard")}
             className={`py-4 px-1 font-medium text-sm border-b-2 transition-colors ${
               activeTab === "dashboard"
-                ? "border-emerald-600 text-emerald-600"
+                ? "border-blue-600 text-blue-600"
                 : "border-transparent text-gray-600 hover:text-gray-900"
             }`}
           >
@@ -112,7 +112,7 @@ export const SalesmanReferralPage = () => {
                           className="px-3"
                         >
                           {copied ? (
-                            <Check className="w-4 h-4 text-green-600" />
+                            <Check className="w-4 h-4 text-blue-600" />
                           ) : (
                             <Copy className="w-4 h-4" />
                           )}

@@ -795,10 +795,6 @@ async function login(req, res) {
 
     // 비밀번호 확인
     try {
-      console.log(
-        `로그인 시도: ${normalizedEmail}, 비밀번호 길이: ${password?.length}`,
-      );
-
       // 비밀번호가 있는지 확인
       if (!user.password) {
         console.error("사용자 객체에 비밀번호가 없습니다.");
@@ -809,7 +805,6 @@ async function login(req, res) {
       }
 
       const isPasswordValid = await user.comparePassword(password);
-      console.log(`비밀번호 검증 결과: ${isPasswordValid}`);
 
       if (!isPasswordValid) {
         await logSecurityEvent({

@@ -35,6 +35,7 @@ export const RequestorPricingReferralPolicyCard = () => {
     isLoading: isTreeLoading,
     isFetching: isTreeFetching,
     isError: isTreeError,
+    error: treeError,
   } = useQuery({
     queryKey: ["requestor-referral-tree-member-count", user?.id || ""],
     queryFn: async () => {
@@ -76,12 +77,6 @@ export const RequestorPricingReferralPolicyCard = () => {
           res.data?.message ||
           res.data?.error ||
           "가격/소개 통계 조회에 실패했습니다.";
-        console.error("[RequestorPricingReferralPolicyCard] API Error:", {
-          ok: res.ok,
-          status: res.status,
-          message: errorMsg,
-          data: res.data,
-        });
         throw new Error(errorMsg);
       }
       return res.data.data;
@@ -124,8 +119,7 @@ export const RequestorPricingReferralPolicyCard = () => {
           <CardDescription className="text-sm text-destructive">
             {(isError
               ? (error as Error)?.message
-              : (referralTree as any)?.message) ||
-              "정보를 불러오지 못했습니다."}
+              : (treeError as Error)?.message) || "정보를 불러오지 못했습니다."}
           </CardDescription>
         </CardHeader>
       </Card>

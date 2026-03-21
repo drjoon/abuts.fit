@@ -42,7 +42,7 @@ export const MailboxGrid = ({
   );
   const shelfGroups = useMemo(() => {
     const groups = [];
-    for (let i = 0; i < Math.min(9, shelfNames.length); i += 3) {
+    for (let i = 0; i < shelfNames.length; i += 3) {
       groups.push(shelfNames.slice(i, i + 3));
     }
     return groups;
@@ -101,7 +101,7 @@ export const MailboxGrid = ({
   } = useMailboxPrintSettings();
 
   const shelfRows = ["1", "2", "3", "4"];
-  const binCols = ["A", "B", "C"];
+  const binCols = ["A", "B", "C", "D"];
   const binRows = ["1", "2", "3", "4"];
 
   const addressMap = useMemo(() => {
@@ -114,7 +114,7 @@ export const MailboxGrid = ({
       }
     }
     return map;
-  }, [requests, workflowOverrideByRequestId]);
+  }, [requests]);
 
   const clearWorkflowOverridesForMailboxes = (mailboxAddresses: string[]) => {
     const targetMailboxSet = new Set(
@@ -531,7 +531,7 @@ export const MailboxGrid = ({
       }
     }
   }, [selectedGroupIdx, shelfGroups]);
-  const allShelvesToShow = shelfNames.slice(0, 9);
+  const allShelvesToShow = shelfNames;
   const occupiedAddresses = useMemo(() => {
     return Array.from(addressMap.keys());
   }, [addressMap]);

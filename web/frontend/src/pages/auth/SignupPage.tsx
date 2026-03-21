@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -22,6 +22,7 @@ import { SignupWizardAccountStep } from "./signup/SignupWizardAccountStep";
 export const SignupPage = () => {
   type SignupRole = "requestor" | "salesman";
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
 
   const referralCode = useMemo(() => {
@@ -29,6 +30,9 @@ export const SignupPage = () => {
     const code = ref && ref.trim().length > 0 ? ref.trim() : undefined;
     return code;
   }, [searchParams]);
+  const isReferralSignupRoute = location.pathname === "/signup/referral";
+  const oauthReturnTo =
+    referralCode || isReferralSignupRoute ? "/signup/referral" : "/signup";
 
   const { token, user, loginWithToken, logout } = useAuthStore();
   const [formData, setFormData] = useState({
@@ -110,7 +114,7 @@ export const SignupPage = () => {
   const goSocialSignup = useCallback(
     (provider: "google" | "kakao") => {
       sessionStorage.setItem("oauthIntent", "signup");
-      sessionStorage.setItem("oauthReturnTo", "/signup");
+      sessionStorage.setItem("oauthReturnTo", oauthReturnTo);
       sessionStorage.setItem("oauthSignupRole", signupRole);
       if (referralCode) {
         sessionStorage.setItem("oauthSignupRef", referralCode);
@@ -119,8 +123,19 @@ export const SignupPage = () => {
       }
       window.location.href = oauthStartUrl(provider);
     },
-    [oauthStartUrl, referralCode, signupRole],
+    [oauthReturnTo, oauthStartUrl, referralCode, signupRole],
   );
+
+  useEffect(() => {
+    if (location.pathname === "/signup" && referralCode) {
+      navigate(`/signup/referral${location.search}`, { replace: true });
+      return;
+    }
+
+    if (location.pathname === "/signup/referral" && !referralCode) {
+      navigate(`/signup${location.search}`, { replace: true });
+    }
+  }, [location.pathname, location.search, navigate, referralCode]);
 
   useEffect(() => {
     if (!isSocialNewMode) return;
@@ -330,7 +345,7 @@ export const SignupPage = () => {
   const isValidEmail = useCallback((email: string) => {
     const e = String(email || "").trim();
     if (!e) return false;
-    return /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/.test(e);
+    return /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(e);
   }, []);
 
   const normalizedEmail = useMemo(
@@ -580,7 +595,6 @@ export const SignupPage = () => {
       setIsLoading(false);
     }
   }, [
-    formData.confirmPassword,
     formData.email,
     formData.name,
     formData.password,
@@ -588,6 +602,7 @@ export const SignupPage = () => {
     isSocialCompleteMode,
     isSocialNewMode,
     loginWithToken,
+    markSetupWizardRequired,
     navigate,
     referralCode,
     signupRole,
@@ -595,6 +610,7 @@ export const SignupPage = () => {
     token,
     toast,
     user,
+    validateAccountInfo,
   ]);
 
   useEffect(() => {
@@ -680,7 +696,7 @@ export const SignupPage = () => {
         });
       }
     },
-    [isEmailValidValue, normalizedEmail, submitSignup, toast],
+    [isEmailValidValue, normalizedEmail, signupSessionId, submitSignup, toast],
   );
 
   const refreshEmailVerificationStatus = useCallback(async () => {
@@ -738,7 +754,7 @@ export const SignupPage = () => {
     } finally {
       setIsEmailStatusChecking(false);
     }
-  }, [isEmailValidValue, normalizedEmail, toast]);
+  }, [isEmailValidValue, normalizedEmail, signupSessionId, toast]);
 
   const handleEditEmail = useCallback(() => {
     setEmailVerifiedAt(null);

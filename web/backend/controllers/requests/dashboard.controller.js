@@ -400,7 +400,7 @@ export async function getAssignedDashboardSummary(req, res) {
 export async function getMyReferralDirectMembers(req, res) {
   try {
     const requestorUserId = req.user?._id;
-    const directMembersCacheKey = `referral-direct-members:v2:${String(
+    const directMembersCacheKey = `referral-direct-members:v3:${String(
       req.user?._id || "",
     )}:${String(req.user?.businessAnchorId || "")}`;
     const cachedDirectMembers = getRequestPerfCacheValue(directMembersCacheKey);
@@ -450,9 +450,7 @@ export async function getMyReferralDirectMembers(req, res) {
         // 모두 부풀어 보이므로, direct members는 항상 unique business anchor 기준이다.
         const leaderAnchorId = String(requestor?.businessAnchorId || "").trim();
         const childBusinessTypes =
-          role === "requestor"
-            ? ["requestor"]
-            : ["requestor", "salesman", "devops"];
+          role === "salesman" ? ["requestor", "salesman"] : ["requestor"];
         const directChildAnchors =
           leaderAnchorId && Types.ObjectId.isValid(leaderAnchorId)
             ? await BusinessAnchor.find({
@@ -534,19 +532,21 @@ export async function getMyReferralDirectMembers(req, res) {
         const orgMembers = orgRows.map(({ orgKey }) => {
           const org = orgByKey.get(orgKey) || {};
           const anchor = anchorById.get(orgKey) || {};
+          const isLeaderRow = orgKey === leaderAnchorId;
           return {
             _id: orgKey,
-            business: org?.name || anchor?.name || requestor?.business || "",
+            business:
+              org?.name ||
+              anchor?.name ||
+              (isLeaderRow ? requestor?.business || "" : ""),
             email:
               org?.extracted?.email ||
               anchor?.metadata?.email ||
-              requestor?.email ||
-              "",
+              (isLeaderRow ? requestor?.email || "" : ""),
             createdAt:
               org?.createdAt ||
               anchor?.createdAt ||
-              requestor?.createdAt ||
-              null,
+              (isLeaderRow ? requestor?.createdAt || null : null),
             last30DaysOrders: ordersByOrgKey.get(orgKey) || 0,
             lastMonthOrders: ordersByOrgKey.get(orgKey) || 0,
           };
@@ -1067,7 +1067,7 @@ export async function getMyPricingReferralStats(req, res) {
     const requestorId = req.user._id;
     const debug =
       process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
-    const statsCacheKey = `pricing-referral-stats:v4:${String(
+    const statsCacheKey = `pricing-referral-stats:v5:${String(
       req.user?._id || "",
     )}:${String(req.user?.businessAnchorId || "")}`;
 
@@ -1222,11 +1222,13 @@ export async function getMyPricingReferralStats(req, res) {
           }
         } else {
           const refBusinessAnchorId = String(me?.businessAnchorId || "").trim();
+          const directChildBusinessTypes =
+            role === "salesman" ? ["requestor", "salesman"] : ["requestor"];
           const directChildren =
             refBusinessAnchorId && Types.ObjectId.isValid(refBusinessAnchorId)
               ? await BusinessAnchor.find({
                   referredByAnchorId: new Types.ObjectId(refBusinessAnchorId),
-                  businessType: { $in: ["requestor", "salesman", "devops"] },
+                  businessType: { $in: directChildBusinessTypes },
                 })
                   .select({ _id: 1 })
                   .lean()

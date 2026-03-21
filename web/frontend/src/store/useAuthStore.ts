@@ -117,7 +117,6 @@ export const useAuthStore = create<AuthState>((set, get) => {
           const message = String(
             json?.message || "로그인에 실패했습니다. 다시 시도해주세요.",
           );
-          console.error("[login] API error:", message);
           return { success: false, message };
         }
 
@@ -128,10 +127,6 @@ export const useAuthStore = create<AuthState>((set, get) => {
           : null;
         const normalizedUser = normalizeApiUser(data?.user);
         if (!token || !normalizedUser) {
-          console.error("[login] Missing token or user:", {
-            token: !!token,
-            user: !!normalizedUser,
-          });
           return {
             success: false,
             message: "로그인 처리에 필요한 정보가 누락되었습니다.",
@@ -143,9 +138,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
           if (refreshToken)
             localStorage.setItem(AUTH_REFRESH_TOKEN_KEY, refreshToken);
           localStorage.setItem(AUTH_USER_KEY, JSON.stringify(normalizedUser));
-          console.log("[login] Tokens saved to localStorage");
-        } catch (err) {
-          console.error("[login] localStorage save failed:", err);
+        } catch {
           return {
             success: false,
             message:
@@ -161,8 +154,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         });
 
         return { success: true };
-      } catch (err) {
-        console.error("[login] Unexpected error:", err);
+      } catch {
         return {
           success: false,
           message: "로그인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",

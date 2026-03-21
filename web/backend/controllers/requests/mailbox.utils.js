@@ -23,10 +23,6 @@ export async function allocateVirtualMailboxAddress(requestorOrgId) {
     }
   }
 
-  console.log(
-    `[MAILBOX_ALLOCATION] 요청된 의뢰자 조직 ID: ${requestorOrgId || "N/A"}`,
-  );
-
   // 현재 '세척.패킹' 및 '포장.발송' 단계에 있는 의뢰들의 할당된 우편함 조회
   const activeRequests = await Request.find({
     manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
@@ -35,10 +31,6 @@ export async function allocateVirtualMailboxAddress(requestorOrgId) {
     .select("mailboxAddress businessAnchorId")
     .lean();
 
-  console.log(
-    `[MAILBOX_ALLOCATION] 현재 포장.발송 단계 의뢰 수: ${activeRequests.length}`,
-  );
-
   // 같은 의뢰자가 이미 할당받은 우편함이 있는지 확인
   if (requestorOrgId) {
     const requestorOrgIdStr = requestorOrgId.toString();
@@ -46,21 +38,10 @@ export async function allocateVirtualMailboxAddress(requestorOrgId) {
     for (const r of activeRequests) {
       const orgId = r.businessAnchorId?.toString() || "";
 
-      console.log(
-        `[MAILBOX_ALLOCATION] 비교 중 - 요청: ${requestorOrgIdStr}, 기존: ${orgId || "N/A"}, 우편함: ${r.mailboxAddress}`,
-      );
-
       if (orgId && orgId === requestorOrgIdStr) {
-        console.log(
-          `[MAILBOX_ALLOCATION] ✅ 기존 우편함 재사용: ${r.mailboxAddress} (의뢰자: ${requestorOrgIdStr})`,
-        );
         return r.mailboxAddress;
       }
     }
-
-    console.log(
-      `[MAILBOX_ALLOCATION] 해당 의뢰자의 기존 우편함 없음, 새로 할당 필요`,
-    );
   }
 
   // 사용 중인 우편함 주소 목록
@@ -74,10 +55,6 @@ export async function allocateVirtualMailboxAddress(requestorOrgId) {
   if (!availableAddress) {
     throw new Error("할당 가능한 빈 우편함이 없습니다.");
   }
-
-  console.log(
-    `[MAILBOX_ALLOCATION] 새 우편함 할당: ${availableAddress} (의뢰자: ${requestorOrgId || "N/A"})`,
-  );
 
   return availableAddress;
 }

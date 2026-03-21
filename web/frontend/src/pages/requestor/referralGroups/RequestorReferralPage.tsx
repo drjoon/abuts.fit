@@ -165,7 +165,7 @@ export const RequestorReferralPage = () => {
                           className="px-3 shrink-0"
                         >
                           {copied ? (
-                            <Check className="w-4 h-4 text-green-600" />
+                            <Check className="w-4 h-4 text-blue-600" />
                           ) : (
                             <Copy className="w-4 h-4" />
                           )}

@@ -4,7 +4,13 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppLayout } from "@/features/layout/AppLayout";
 import { LoadingScreen } from "@/shared/ui/feedback/LoadingScreen";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useLocation,
+} from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { NewChatWidget } from "@/features/chat/components/NewChatWidget";
 import { Suspense, lazy, useEffect } from "react";
@@ -205,6 +211,36 @@ const PaymentsRoute = () => {
   return <Navigate to="/dashboard" replace />;
 };
 
+const SignupEntryRoute = () => {
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const referralCode = String(searchParams.get("ref") || "").trim();
+
+  if (!referralCode) {
+    return <SignupPage />;
+  }
+
+  const nextSearch = searchParams.toString();
+  return (
+    <Navigate
+      to={`/signup/referral${nextSearch ? `?${nextSearch}` : ""}`}
+      replace
+    />
+  );
+};
+
+const ReferRoute = () => {
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const referralCode = String(searchParams.get("ref") || "").trim();
+  const nextPath = referralCode ? "/signup/referral" : "/signup";
+  const nextSearch = searchParams.toString();
+
+  return (
+    <Navigate to={`${nextPath}${nextSearch ? `?${nextSearch}` : ""}`} replace />
+  );
+};
+
 const App = () => {
   const { token, loginWithToken, logout } = useAuthStore();
 
@@ -233,8 +269,8 @@ const App = () => {
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/login" element={<LoginPage />} />
-                <Route path="/signup" element={<SignupPage />} />
-                <Route path="/refer" element={<SignupPage />} />
+                <Route path="/signup" element={<SignupEntryRoute />} />
+                <Route path="/refer" element={<ReferRoute />} />
                 <Route path="/signup/referral" element={<SignupPage />} />
                 <Route path="/signup/staff" element={<SignupStaffPage />} />
                 <Route

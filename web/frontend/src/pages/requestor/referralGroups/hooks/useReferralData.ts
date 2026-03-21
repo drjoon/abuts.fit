@@ -153,18 +153,9 @@ export const useReferralData = (options?: UseReferralDataOptions) => {
 
   useEffect(() => {
     if (!token || !isReferralEligible || !user?.id || !fetchTree) {
-      console.log("[useReferralData] 트리 로딩 스킵:", {
-        token: !!token,
-        isReferralEligible,
-        userId: user?.id,
-      });
       return;
     }
 
-    console.log("[useReferralData] 트리 로딩 시작:", {
-      userId: user.id,
-      role: user.role,
-    });
     setLoadingTree(true);
     request<any>({
       path: `/api/referral-groups/${user.id}/tree?lite=1`,
@@ -172,19 +163,16 @@ export const useReferralData = (options?: UseReferralDataOptions) => {
       token,
     })
       .then((res) => {
-        console.log("[useReferralData] 트리 응답:", res);
         const body: any = res.data || {};
         if (!res.ok || !body?.success) {
           throw new Error(body?.message || "소개 트리 조회에 실패했습니다.");
         }
         const tree = (body.data?.tree || null) as ReferralTreeNode | null;
         const memberCount = Number(body.data?.memberCount || 0);
-        console.log("[useReferralData] 트리 데이터 설정:", tree);
         setTreeData(tree);
         setTreeMemberCount(memberCount);
       })
       .catch((err) => {
-        console.error("[useReferralData] 트리 로딩 에러:", err);
         toast({
           title: "오류",
           description: (err as any)?.message || "다시 시도해주세요.",
