@@ -6,6 +6,9 @@ export const normalizeBusinessNumber = (input: string): string => {
 
 export const normalizePhoneNumber = (input: string): string => {
   const digits = String(input || "").replace(/\D/g, "");
+  if (digits.length === 8 && !digits.startsWith("0")) {
+    return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  }
   if (!digits.startsWith("0")) return "";
   if (digits.startsWith("02")) {
     if (digits.length === 9)
@@ -49,10 +52,16 @@ export const formatBusinessNumberInput = (input: string): string => {
 };
 
 export const formatPhoneNumberInput = (input: string): string => {
-  const digits = String(input || "")
-    .replace(/\D/g, "")
-    .slice(0, 11);
-  if (!digits) return "";
+  const raw = String(input || "").replace(/\D/g, "");
+  if (!raw) return "";
+
+  if (!raw.startsWith("0")) {
+    const digits = raw.slice(0, 8);
+    if (digits.length <= 4) return digits;
+    return joinWithDash(digits.slice(0, 4), digits.slice(4));
+  }
+
+  const digits = raw.slice(0, 11);
   if (digits.startsWith("02")) {
     if (digits.length <= 2) return digits;
     if (digits.length <= 5) {
@@ -72,7 +81,7 @@ export const formatPhoneNumberInput = (input: string): string => {
     return joinWithDash(
       digits.slice(0, 3),
       digits.slice(3, 6),
-      digits.slice(6)
+      digits.slice(6),
     );
   }
   return joinWithDash(digits.slice(0, 3), digits.slice(3, 7), digits.slice(7));

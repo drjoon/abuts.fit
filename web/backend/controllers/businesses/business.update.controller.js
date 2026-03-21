@@ -682,11 +682,13 @@ export async function updateMyBusiness(req, res) {
         const welcomeBonusAmount = await grantWelcomeBonusIfEligible({
           businessId: created._id,
           userId: req.user._id,
+          userRole: req.user.role,
         });
         const freeShippingCreditAmount =
           await grantFreeShippingCreditIfEligible({
             businessId: created._id,
             userId: req.user._id,
+            userRole: req.user.role,
           });
 
         return res.json({
@@ -859,11 +861,13 @@ export async function updateMyBusiness(req, res) {
     const granted = await grantWelcomeBonusIfEligible({
       businessId: business._id,
       userId: req.user._id,
+      userRole: req.user.role,
     });
 
     const freeShippingGranted = await grantFreeShippingCreditIfEligible({
       businessId: business._id,
       userId: req.user._id,
+      userRole: req.user.role,
     });
 
     return res.json({

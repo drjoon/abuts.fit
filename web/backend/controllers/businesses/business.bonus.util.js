@@ -93,8 +93,13 @@ async function ensureBonusGrant({
   return grant;
 }
 
-export async function grantWelcomeBonusIfEligible({ businessId, userId }) {
+export async function grantWelcomeBonusIfEligible({
+  businessId,
+  userId,
+  userRole,
+}) {
   if (!businessId) return null;
+  if (userRole !== "requestor") return null;
   const businessNumber = formatBusinessNumber(userId?.businessNumber || null);
   const business = await BonusGrant.db
     .model("Business")
@@ -152,8 +157,10 @@ export async function grantWelcomeBonusIfEligible({ businessId, userId }) {
 export async function grantFreeShippingCreditIfEligible({
   businessId,
   userId,
+  userRole,
 }) {
   if (!businessId) return null;
+  if (userRole !== "requestor") return null;
   const business = await BonusGrant.db
     .model("Business")
     .findById(businessId)

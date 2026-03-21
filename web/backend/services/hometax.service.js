@@ -115,6 +115,9 @@ export async function verifyBusinessNumber({
     };
   }
 
+  // 2) 상태조회를 즉시 병렬 시작 (진위확인과 동시 실행으로 속도 개선)
+  const statusPromise = callHometax("/v1/status", { b_no: [digits] });
+
   // 1) 진위확인: 대표자명 + 개업일자가 있을 때만 시도 (누락 시 malformed 에러 방지)
   let vItem = null;
   let validMsg = "";
@@ -177,9 +180,8 @@ export async function verifyBusinessNumber({
     }
   }
 
-  // 2) 상태조회: 휴업/폐업 여부 체크
-  const statusPayload = { b_no: [digits] };
-  const statusResp = await callHometax("/v1/status", statusPayload);
+  // 2) 상태조회 결과 수집 (이미 병렬로 시작됨)
+  const statusResp = await statusPromise;
   if (!statusResp.ok) {
     return {
       verified: false,

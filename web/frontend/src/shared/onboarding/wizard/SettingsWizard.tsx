@@ -424,7 +424,13 @@ export const SettingsWizard = ({
             variant="ghost"
             className="text-slate-500 hover:text-slate-900"
             type="button"
-            onClick={() => navigate("/")}
+            onClick={() => {
+              if (currentStep === "business" && validationState.passed) {
+                onWizardComplete();
+              } else {
+                navigate("/");
+              }
+            }}
           >
             홈으로 돌아가기
           </Button>

@@ -220,8 +220,9 @@ export const BusinessTab = ({
   const handleSave = async () => {
     const savingToast = toast({
       title: "저장 중...",
-      description: "사업자 정보를 확인하고 있습니다.",
-      duration: 3000,
+      description:
+        "사업자 정보를 검증하는 중입니다. 최대 10초 정도 소요될 수 있습니다.",
+      duration: 60000,
     });
 
     const { success, verification } = await handleSaveImpl({

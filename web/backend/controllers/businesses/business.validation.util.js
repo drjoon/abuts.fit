@@ -22,10 +22,15 @@ export function normalizeBusinessNumber(input) {
 
 export function normalizePhoneNumber(input) {
   const digits = String(input || "").replace(/\D/g, "");
+  if (digits.length === 8 && !digits.startsWith("0")) {
+    return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  }
   if (!digits.startsWith("0")) return "";
   if (digits.startsWith("02")) {
-    if (digits.length === 9) return `02-${digits.slice(2, 5)}-${digits.slice(5)}`;
-    if (digits.length === 10) return `02-${digits.slice(2, 6)}-${digits.slice(6)}`;
+    if (digits.length === 9)
+      return `02-${digits.slice(2, 5)}-${digits.slice(5)}`;
+    if (digits.length === 10)
+      return `02-${digits.slice(2, 6)}-${digits.slice(6)}`;
     return "";
   }
   if (digits.length === 10) {
@@ -58,7 +63,11 @@ export function isDuplicateKeyError(err) {
   const code = err?.code;
   const name = String(err?.name || "");
   const msg = String(err?.message || "");
-  return code === 11000 || name.includes("MongoServerError") || msg.includes("E11000");
+  return (
+    code === 11000 ||
+    name.includes("MongoServerError") ||
+    msg.includes("E11000")
+  );
 }
 
 export function shallowEquals(a, b) {

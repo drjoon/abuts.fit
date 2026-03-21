@@ -5,7 +5,7 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { SettingsWizard } from "./wizard/SettingsWizard";
 
 export const SharedOnboardingWizardPage = () => {
-  const { user, token, setUser } = useAuthStore();
+  const { user, token, setUser, loginWithToken } = useAuthStore();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -31,14 +31,7 @@ export const SharedOnboardingWizardPage = () => {
         jsonBody: { onboardingWizardCompleted: true },
       });
       if (!res.ok) return;
-      const body = res.data || {};
-      const data = body.data || body;
-      setUser({
-        ...user,
-        onboardingWizardCompleted: Boolean(
-          data?.onboardingWizardCompleted ?? true,
-        ),
-      });
+      await loginWithToken(token);
     } catch {
       // ignore
     }
