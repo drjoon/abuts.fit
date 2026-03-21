@@ -131,7 +131,7 @@ export const RequestorReferralPage = () => {
         {/* 소개 링크 탭 */}
         {activeTab === "link" && (
           <div className="flex items-start justify-center min-h-full p-6 bg-transparent">
-            <Card className="w-full max-w-5xl border-slate-200 shadow-2xl bg-white">
+            <Card className="w-full  border-slate-200">
               <CardHeader className="space-y-2 px-8 pt-8 pb-4">
                 <CardTitle className="text-2xl">내 사업자 소개 링크</CardTitle>
                 <p className="text-sm text-slate-600">
@@ -139,7 +139,7 @@ export const RequestorReferralPage = () => {
                 </p>
               </CardHeader>
 
-              <CardContent className="space-y-8 px-8 pb-8">
+              <CardContent className="space-y-2 px-8 pb-8">
                 {!isReferralEligible ? (
                   <div className="rounded-lg bg-blue-50 border border-blue-100 p-4 text-sm text-blue-700">
                     의뢰자 계정에서 확인할 수 있습니다.
@@ -160,32 +160,28 @@ export const RequestorReferralPage = () => {
                         />
                         <Button
                           onClick={handleCopyLink}
-                          variant="outline"
+                          variant="default"
                           size="sm"
                           className="px-3 shrink-0"
                         >
                           {copied ? (
-                            <Check className="w-4 h-4 text-blue-600" />
+                            <Check className="w-4 h-4 text-blue-100" />
                           ) : (
-                            <Copy className="w-4 h-4" />
+                            <Copy className="w-4 h-4 " />
                           )}
                         </Button>
                       </div>
                     </div>
 
-                    {/* 혜택 안내 */}
-                    <div className="space-y-3">
+                    {/* 정책 안내 */}
+                    <div className="space-y-3 pt-4">
                       <div className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
-                        소개 혜택
+                        소개 정책
                       </div>
-                      <p className="text-sm text-slate-600">
-                        본인과 소개한 사업자의 최근 30일 주문량을 합산하여 단가
-                        계산
-                      </p>
                     </div>
 
                     {/* 정책 안내 */}
-                    <div className="rounded-lg bg-slate-50 border border-slate-200 p-4">
+                    <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 flex justify-between">
                       <div className="text-xs text-slate-600 space-y-1">
                         <p>
                           - 최근 30일 사업자 주문량 기준으로 단가가 적용됩니다.
@@ -198,7 +194,7 @@ export const RequestorReferralPage = () => {
                       </div>
                       <Button
                         type="button"
-                        variant="ghost"
+                        variant="default"
                         size="sm"
                         className="mt-3 text-xs h-8"
                         onClick={() => setPolicyOpen(true)}
@@ -303,7 +299,7 @@ export const RequestorReferralPage = () => {
                   <ReferralNetworkChart
                     data={treeData}
                     maxDepth={1}
-                    title="소개 네트워크 (소개만)"
+                    title="소개 네트워크"
                     visibleRoles={["requestor"]}
                     legendRoles={[]}
                     chartHeight={320}
