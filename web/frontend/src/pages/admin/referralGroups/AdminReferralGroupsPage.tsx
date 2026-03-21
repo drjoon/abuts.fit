@@ -22,6 +22,18 @@ import { SnapshotRecalcAllButton } from "@/shared/components/SnapshotRecalcAllBu
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore, periodToRangeQuery } from "@/store/usePeriodStore";
 import { ReferralNetworkChart } from "@/features/referral/components/ReferralNetworkChart";
+import { useToast } from "@/shared/hooks/use-toast";
+import { request } from "@/shared/api/apiClient";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const PERIOD_LABEL: Record<string, string> = {
   "7d": "최근 7일",
@@ -207,6 +219,7 @@ const TreeNode = ({
 
 export default function AdminReferralGroupsPage() {
   const { token } = useAuthStore();
+  const { toast } = useToast();
   const { period } = usePeriodStore();
   const queryClient = useQueryClient();
   const isDev = import.meta.env.DEV;
@@ -216,6 +229,8 @@ export default function AdminReferralGroupsPage() {
   >("all");
   const [selectedLeaderId, setSelectedLeaderId] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<ApiTreeNode | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ApiTreeNode | null>(null);
+  const [deletingUser, setDeletingUser] = useState(false);
   const [visibleCount, setVisibleCount] = useState(6);
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   const listSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -504,6 +519,39 @@ export default function AdminReferralGroupsPage() {
   }, [indirectReferralRequestors]);
 
   const totalCommissionSum = directCommissionSum + indirectCommissionSum;
+
+  const deleteUserWithBusiness = async (node: ApiTreeNode) => {
+    if (!token) return false;
+    setDeletingUser(true);
+    try {
+      const res = await request<any>({
+        path: `/api/admin/users/${encodeURIComponent(String(node._id || ""))}/with-business`,
+        method: "DELETE",
+        token,
+      });
+      if (!res.ok || !res.data?.success) {
+        toast({
+          title: "사업자 포함 계정 삭제 실패",
+          description: res.data?.message || res.data?.error || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+        return false;
+      }
+      toast({
+        title: "사업자 포함 계정 삭제 완료",
+        description: `${node.business || node.name || node.email || "선택한 계정"} 계정과 연결 사업자를 삭제했습니다.`,
+      });
+      setDeleteTarget(null);
+      setSelectedNode(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin-referral-groups", period] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-referral-group-tree"] }),
+      ]);
+      return true;
+    } finally {
+      setDeletingUser(false);
+    }
+  };
 
   return (
     <div className="h-screen max-h-screen overflow-hidden p-4 flex flex-col gap-4">
@@ -1163,10 +1211,50 @@ export default function AdminReferralGroupsPage() {
                   {selectedNode.createdAt || "-"}
                 </div>
               </div>
+              <div className="pt-3 flex justify-end">
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={deletingUser}
+                  onClick={() => setDeleteTarget(selectedNode)}
+                >
+                  사업자 포함 계정 삭제
+                </Button>
+              </div>
             </div>
           ) : null}
         </DialogContent>
       </Dialog>
+      <AlertDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !deletingUser) {
+            setDeleteTarget(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>사업자 포함 계정을 삭제할까요?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget?.business || deleteTarget?.name || deleteTarget?.email || "선택한 계정"} 계정과 연결된 사업자, 그리고 안전 조건을 만족하는 경우 business anchor까지 함께 삭제합니다. 다른 계정이나 하위 참조가 남아 있으면 삭제가 거부됩니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingUser}>취소</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async (event) => {
+                event.preventDefault();
+                if (!deleteTarget || deletingUser) return;
+                await deleteUserWithBusiness(deleteTarget);
+              }}
+            >
+              {deletingUser ? "삭제 중..." : "삭제"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

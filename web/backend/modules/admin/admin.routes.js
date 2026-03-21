@@ -16,6 +16,7 @@ import {
   getUserById,
   updateUser,
   deleteUser,
+  deleteUserWithBusiness,
   toggleUserActive,
   changeUserRole,
   approveUser,
@@ -121,6 +122,7 @@ router.post("/users", createUser);
 router.get("/users/:id", getUserById);
 router.put("/users/:id", updateUser);
 router.delete("/users/:id", deleteUser);
+router.delete("/users/:id/with-business", deleteUserWithBusiness);
 router.patch("/users/:id/toggle-active", toggleUserActive);
 router.patch("/users/:id/change-role", changeUserRole);
 router.post("/users/:id/approve", approveUser);

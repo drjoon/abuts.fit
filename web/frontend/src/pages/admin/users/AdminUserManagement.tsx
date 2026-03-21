@@ -28,6 +28,7 @@ import {
   Building2,
   FileText,
   Eye,
+  Trash2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -46,6 +47,16 @@ import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const getRoleLabel = (role: string) => {
   switch (role) {
@@ -227,6 +238,8 @@ export const AdminUserManagement = () => {
   const [hasMore, setHasMore] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<UiUserRow | null>(null);
+  const [deletingUser, setDeletingUser] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const listContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -361,6 +374,44 @@ export const AdminUserManagement = () => {
       return true;
     },
     [toast, token],
+  );
+
+  const deleteUserWithBusiness = useCallback(
+    async (user: UiUserRow) => {
+      if (!token) return false;
+      setDeletingUser(true);
+      try {
+        const res = await request<any>({
+          path: `/api/admin/users/${encodeURIComponent(user.id)}/with-business`,
+          method: "DELETE",
+          token,
+        });
+        if (!res.ok || !res.data?.success) {
+          toast({
+            title: "사업자 포함 계정 삭제 실패",
+            description:
+              res.data?.message ||
+              res.data?.error ||
+              "잠시 후 다시 시도해주세요.",
+            variant: "destructive",
+          });
+          return false;
+        }
+        toast({
+          title: "사업자 포함 계정 삭제 완료",
+          description: `${user.name} 계정과 연결 사업자를 삭제했습니다.`,
+        });
+        setDeleteTarget(null);
+        setDetailOpen(false);
+        setSelectedUser(null);
+        setSelectedUserId(null);
+        await fetchUsers(1, false);
+        return true;
+      } finally {
+        setDeletingUser(false);
+      }
+    },
+    [fetchUsers, toast, token],
   );
 
   useEffect(() => {
@@ -807,6 +858,13 @@ export const AdminUserManagement = () => {
                           <Eye className="mr-2 h-4 w-4" />
                           상세보기
                         </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => setDeleteTarget(user)}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          사업자 포함 계정 삭제
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -1109,11 +1167,49 @@ export const AdminUserManagement = () => {
                   >
                     닫기
                   </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={deletingUser}
+                    onClick={() => setDeleteTarget(selectedUser)}
+                  >
+                    사업자 포함 계정 삭제
+                  </Button>
                 </div>
               </div>
             )}
           </DialogContent>
         </Dialog>
+        <AlertDialog
+          open={Boolean(deleteTarget)}
+          onOpenChange={(open) => {
+            if (!open && !deletingUser) {
+              setDeleteTarget(null);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>사업자 포함 계정을 삭제할까요?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {deleteTarget?.name || "선택한 사용자"} 계정과 연결된 사업자, 그리고 안전 조건을 만족하는 경우 business anchor까지 함께 삭제합니다. 다른 계정이나 하위 참조가 남아 있으면 삭제가 거부됩니다.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deletingUser}>취소</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={async (event) => {
+                  event.preventDefault();
+                  if (!deleteTarget || deletingUser) return;
+                  await deleteUserWithBusiness(deleteTarget);
+                }}
+              >
+                {deletingUser ? "삭제 중..." : "삭제"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

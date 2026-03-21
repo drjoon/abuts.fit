@@ -2,7 +2,12 @@ import { Types } from "mongoose";
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { generateRandomPassword } from "./admin.shared.controller.js";
+import {
+  triggerPricingSnapshotForReferrerAnchorId,
+  triggerPricingSnapshotForUserDoc,
+} from "../../services/requestSnapshotTriggers.service.js";
 
 export async function getAllUsers(req, res) {
   try {
@@ -362,12 +367,10 @@ export async function toggleUserActive(req, res) {
         .json({ success: false, message: "사용자를 찾을 수 없습니다." });
     }
     if (user._id.equals(req.user._id)) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "자기 자신을 비활성화할 수 없습니다.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "자기 자신을 비활성화할 수 없습니다.",
+      });
     }
     user.active = !user.active;
     if (user.active && !user.approvedAt) user.approvedAt = new Date();
@@ -414,12 +417,10 @@ export async function changeUserRole(req, res) {
     }
     const isSelf = user._id.equals(req.user._id);
     if (isSelf && role !== user.role) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "자기 자신의 역할을 변경할 수 없습니다.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "자기 자신의 역할을 변경할 수 없습니다.",
+      });
     }
     if (isSelf) {
       if (
@@ -470,38 +471,204 @@ export async function changeUserRole(req, res) {
   }
 }
 
+const ensureValidDeleteTarget = async ({ userId, adminId }) => {
+  if (!Types.ObjectId.isValid(userId)) {
+    return {
+      status: 400,
+      body: { success: false, message: "유효하지 않은 사용자 ID입니다." },
+    };
+  }
+  if (String(userId) === String(adminId)) {
+    return {
+      status: 400,
+      body: { success: false, message: "자기 자신을 삭제할 수 없습니다." },
+    };
+  }
+  const user = await User.findById(userId);
+  if (!user) {
+    return {
+      status: 404,
+      body: { success: false, message: "사용자를 찾을 수 없습니다." },
+    };
+  }
+  return { user };
+};
+
+const deleteUserCore = async ({ user, includeBusiness }) => {
+  const deletedUserSummary = {
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    businessId: user.businessId || null,
+    businessAnchorId: user.businessAnchorId || null,
+  };
+  const userId = user._id;
+  const businessId = user.businessId;
+  const businessAnchorId = user.businessAnchorId;
+  const referredByAnchorId = user.referredByAnchorId;
+
+  if (businessId) {
+    await Business.updateMany(
+      {},
+      {
+        $pull: {
+          owners: userId,
+          members: userId,
+          joinRequests: { user: userId },
+        },
+      },
+    );
+  }
+
+  let deletedBusiness = null;
+  let deletedBusinessAnchor = null;
+
+  if (includeBusiness) {
+    if (!businessId || !Types.ObjectId.isValid(String(businessId))) {
+      throw new Error("사업자가 연결되지 않은 계정입니다.");
+    }
+
+    const business = await Business.findById(businessId);
+    if (!business) {
+      throw new Error("연결된 사업자를 찾을 수 없습니다.");
+    }
+
+    const linkedUsers = await User.countDocuments({
+      _id: { $ne: userId },
+      businessId: business._id,
+    });
+    if (linkedUsers > 0) {
+      throw new Error(
+        "다른 계정도 이 사업자에 연결되어 있어 사업자 포함 삭제를 진행할 수 없습니다.",
+      );
+    }
+
+    if (
+      Array.isArray(business.joinRequests) &&
+      business.joinRequests.some(
+        (row) => String(row?.user || "") !== String(userId),
+      )
+    ) {
+      throw new Error(
+        "다른 계정의 가입 신청이 남아 있어 사업자 포함 삭제를 진행할 수 없습니다.",
+      );
+    }
+
+    deletedBusiness = {
+      _id: business._id,
+      name: business.name,
+      businessAnchorId: business.businessAnchorId || null,
+    };
+
+    if (businessAnchorId && Types.ObjectId.isValid(String(businessAnchorId))) {
+      const anchorLinkedUsers = await User.countDocuments({
+        _id: { $ne: userId },
+        businessAnchorId,
+      });
+      const anchorLinkedBusinesses = await Business.countDocuments({
+        _id: { $ne: business._id },
+        businessAnchorId,
+      });
+      const childAnchors = await BusinessAnchor.countDocuments({
+        referredByAnchorId: businessAnchorId,
+      });
+
+      if (
+        anchorLinkedUsers > 0 ||
+        anchorLinkedBusinesses > 0 ||
+        childAnchors > 0
+      ) {
+        throw new Error(
+          "다른 데이터가 이 business anchor를 참조하고 있어 사업자 포함 삭제를 완료할 수 없습니다.",
+        );
+      }
+
+      const anchor = await BusinessAnchor.findById(businessAnchorId)
+        .select({ _id: 1, name: 1 })
+        .lean();
+      if (anchor?._id) {
+        deletedBusinessAnchor = {
+          _id: anchor._id,
+          name: anchor.name,
+        };
+        await BusinessAnchor.deleteOne({ _id: businessAnchorId });
+      }
+    }
+
+    await Business.deleteOne({ _id: business._id });
+  }
+  await User.updateOne(
+    { _id: userId },
+    { $set: { active: false, deletedAt: new Date() } },
+  );
+  await User.deleteOne({ _id: userId });
+
+  if (Types.ObjectId.isValid(String(referredByAnchorId || ""))) {
+    triggerPricingSnapshotForReferrerAnchorId(
+      String(referredByAnchorId),
+      includeBusiness ? "admin-delete-user-with-business" : "admin-delete-user",
+    );
+  }
+  await triggerPricingSnapshotForUserDoc(
+    {
+      businessAnchorId,
+      referredByAnchorId,
+    },
+    includeBusiness ? "admin-delete-user-with-business" : "admin-delete-user",
+  );
+
+  return {
+    deletedUser: deletedUserSummary,
+    deletedBusiness,
+    deletedBusinessAnchor,
+  };
+};
+
+export async function deleteUserWithBusiness(req, res) {
+  try {
+    const userId = req.params.id;
+    const adminId = req.user.id;
+    const validation = await ensureValidDeleteTarget({ userId, adminId });
+    if (!validation.user) {
+      return res.status(validation.status).json(validation.body);
+    }
+
+    const result = await deleteUserCore({
+      user: validation.user,
+      includeBusiness: true,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "사용자와 연결된 사업자가 성공적으로 삭제되었습니다.",
+      data: result,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "사업자 포함 계정 삭제 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export async function deleteUser(req, res) {
   try {
     const userId = req.params.id;
     const adminId = req.user.id;
-    if (!Types.ObjectId.isValid(userId)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
+    const validation = await ensureValidDeleteTarget({ userId, adminId });
+    if (!validation.user) {
+      return res.status(validation.status).json(validation.body);
     }
-    if (userId.toString() === adminId.toString()) {
-      return res
-        .status(400)
-        .json({ success: false, message: "자기 자신을 삭제할 수 없습니다." });
-    }
-    const deletedUser = await User.findByIdAndUpdate(
-      userId,
-      { active: false, deletedAt: new Date() },
-      { new: true },
-    );
-    if (!deletedUser) {
-      return res
-        .status(404)
-        .json({ success: false, message: "사용자를 찾을 수 없습니다." });
-    }
-    const { handleReferralGroupLeaderChange } =
-      await import("../request/utils.js");
-    await handleReferralGroupLeaderChange(userId);
-    await User.findByIdAndDelete(userId);
+    const result = await deleteUserCore({
+      user: validation.user,
+      includeBusiness: false,
+    });
     res.status(200).json({
       success: true,
       message: "사용자가 성공적으로 삭제되었습니다.",
-      data: deletedUser,
+      data: result,
     });
   } catch (error) {
     res.status(500).json({
