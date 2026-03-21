@@ -117,6 +117,53 @@ const sidebarItems = {
   ],
 } as const;
 
+type SidebarItem = { icon: any; label: string; href: string };
+
+type SidebarSection = {
+  title: string;
+  items: SidebarItem[];
+};
+
+const adminSidebarSections: SidebarSection[] = [
+  {
+    title: "운영",
+    items: [
+      { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
+      { icon: Users, label: "사용자", href: "/dashboard/users" },
+      { icon: Users2, label: "소개그룹", href: "/dashboard/referral-groups" },
+    ],
+  },
+  {
+    title: "재무",
+    items: [
+      { icon: Wallet, label: "크레딧", href: "/dashboard/credits" },
+      { icon: Wallet, label: "정산", href: "/dashboard/payments" },
+      { icon: FileText, label: "세금계산서", href: "/dashboard/tax-invoices" },
+    ],
+  },
+  {
+    title: "소통",
+    items: [
+      { icon: FileText, label: "의뢰", href: "/dashboard/monitoring" },
+      {
+        icon: MessageSquare,
+        label: "채팅",
+        href: "/dashboard/chat-management",
+      },
+      { icon: Send, label: "메시지", href: "/dashboard/sms" },
+      { icon: Mail, label: "메일", href: "/dashboard/mail" },
+      { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
+    ],
+  },
+  {
+    title: "관리",
+    items: [
+      { icon: Shield, label: "보안", href: "/dashboard/security-settings" },
+      { icon: Settings, label: "설정", href: "/dashboard/settings" },
+    ],
+  },
+];
+
 const getRoleLabel = (role: string) => {
   switch (role) {
     case "requestor":
@@ -493,12 +540,13 @@ export const DashboardLayout = () => {
     };
   }, [location.pathname, location.search, navigate, toast, token, user]);
 
-  type SidebarItem = { icon: any; label: string; href: string };
   const baseMenuItems = (sidebarItems[user.role as keyof typeof sidebarItems] ||
     []) as unknown as SidebarItem[];
   const menuItems = (() => {
     return baseMenuItems;
   })();
+
+  const adminMenuSections = user.role === "admin" ? adminSidebarSections : null;
 
   const resolvedMenuItems = (() => {
     return menuItems;
@@ -584,47 +632,101 @@ export const DashboardLayout = () => {
             )}
           </button>
 
-          <nav className="flex-1 p-3 lg:p-4">
-            <ul className="space-y-1 lg:space-y-2">
-              {resolvedMenuItems.map((item) => {
-                const isRootDashboard = item.href === "/dashboard";
-                const isActive = isRootDashboard
-                  ? location.pathname === item.href
-                  : location.pathname === item.href ||
-                    location.pathname.startsWith(`${item.href}/`);
+          <nav className="hover-scrollbar flex-1 overflow-y-auto p-3 lg:p-4">
+            {adminMenuSections ? (
+              <div className="space-y-4 lg:space-y-5">
+                {adminMenuSections.map((section) => (
+                  <div key={section.title} className="space-y-2">
+                    {!isCollapsed && (
+                      <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">
+                        {section.title}
+                      </div>
+                    )}
+                    <ul className="space-y-1 lg:space-y-2">
+                      {section.items.map((item) => {
+                        const isRootDashboard = item.href === "/dashboard";
+                        const isActive = isRootDashboard
+                          ? location.pathname === item.href
+                          : location.pathname === item.href ||
+                            location.pathname.startsWith(`${item.href}/`);
 
-                return (
-                  <li key={item.href}>
-                    <Button
-                      variant="ghost"
-                      className={`w-full h-9 lg:h-10 text-sm lg:text-base transition-all ${
-                        isCollapsed
-                          ? "justify-center px-2"
-                          : "justify-start px-3 lg:px-4"
-                      } ${
-                        isActive
-                          ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-                      }`}
-                      onClick={() => {
-                        navigate(item.href);
-                        setIsOpen(false);
-                      }}
-                      aria-current={isActive ? "page" : undefined}
-                    >
-                      <item.icon
-                        className={`h-4 w-4 flex-shrink-0 ${
-                          isCollapsed ? "" : "mr-2 lg:mr-3"
+                        return (
+                          <li key={item.href}>
+                            <Button
+                              variant="ghost"
+                              className={`w-full h-9 lg:h-10 text-sm lg:text-base transition-all ${
+                                isCollapsed
+                                  ? "justify-center px-2"
+                                  : "justify-start px-3 lg:px-4"
+                              } ${
+                                isActive
+                                  ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
+                                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                              }`}
+                              onClick={() => {
+                                navigate(item.href);
+                                setIsOpen(false);
+                              }}
+                              aria-current={isActive ? "page" : undefined}
+                            >
+                              <item.icon
+                                className={`h-4 w-4 flex-shrink-0 ${
+                                  isCollapsed ? "" : "mr-2 lg:mr-3"
+                                }`}
+                              />
+                              {!isCollapsed && (
+                                <span className="truncate">{item.label}</span>
+                              )}
+                            </Button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <ul className="space-y-1 lg:space-y-2">
+                {resolvedMenuItems.map((item) => {
+                  const isRootDashboard = item.href === "/dashboard";
+                  const isActive = isRootDashboard
+                    ? location.pathname === item.href
+                    : location.pathname === item.href ||
+                      location.pathname.startsWith(`${item.href}/`);
+
+                  return (
+                    <li key={item.href}>
+                      <Button
+                        variant="ghost"
+                        className={`w-full h-9 lg:h-10 text-sm lg:text-base transition-all ${
+                          isCollapsed
+                            ? "justify-center px-2"
+                            : "justify-start px-3 lg:px-4"
+                        } ${
+                          isActive
+                            ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
                         }`}
-                      />
-                      {!isCollapsed && (
-                        <span className="truncate">{item.label}</span>
-                      )}
-                    </Button>
-                  </li>
-                );
-              })}
-            </ul>
+                        onClick={() => {
+                          navigate(item.href);
+                          setIsOpen(false);
+                        }}
+                        aria-current={isActive ? "page" : undefined}
+                      >
+                        <item.icon
+                          className={`h-4 w-4 flex-shrink-0 ${
+                            isCollapsed ? "" : "mr-2 lg:mr-3"
+                          }`}
+                        />
+                        {!isCollapsed && (
+                          <span className="truncate">{item.label}</span>
+                        )}
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </nav>
 
           <div className="p-3 lg:p-4 space-y-2">
