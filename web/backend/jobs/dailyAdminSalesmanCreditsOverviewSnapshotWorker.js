@@ -198,42 +198,39 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
   // 수수료/매출 집계는 조직 단위
   const directOrgIdsBySalesmanBusinessAnchorId = new Map();
   for (const u of directRequestors || []) {
-    const sBusinessId = String(u?.referredByAnchorId || "");
+    const sAnchorId = String(u?.referredByAnchorId || "");
     const orgId = u?._id ? String(u._id) : "";
-    if (!sBusinessId || !orgId) continue;
+    if (!sAnchorId || !orgId) continue;
     const set =
-      directOrgIdsBySalesmanBusinessAnchorId.get(sBusinessId) || new Set();
+      directOrgIdsBySalesmanBusinessAnchorId.get(sAnchorId) || new Set();
     set.add(orgId);
-    directOrgIdsBySalesmanBusinessAnchorId.set(sBusinessId, set);
+    directOrgIdsBySalesmanBusinessAnchorId.set(sAnchorId, set);
   }
 
   const level1OrgIdsBySalesmanBusinessAnchorId = new Map();
   const requestorOrgIdsByChildSalesmanBusinessAnchorId = new Map();
   for (const u of level1Requestors || []) {
-    const childSBusinessId = String(u?.referredByAnchorId || "");
-    const leaderSBusinessId = String(
+    const childSAnchorId = String(u?.referredByAnchorId || "");
+    const leaderSAnchorId = String(
       leaderBusinessAnchorIdByChildSalesmanBusinessAnchorId.get(
-        childSBusinessId,
+        childSAnchorId,
       ) || "",
     );
     const orgId = u?._id ? String(u._id) : "";
     if (!orgId) continue;
-    if (leaderSBusinessId) {
+    if (leaderSAnchorId) {
       const set =
-        level1OrgIdsBySalesmanBusinessAnchorId.get(leaderSBusinessId) ||
+        level1OrgIdsBySalesmanBusinessAnchorId.get(leaderSAnchorId) ||
         new Set();
       set.add(orgId);
-      level1OrgIdsBySalesmanBusinessAnchorId.set(leaderSBusinessId, set);
+      level1OrgIdsBySalesmanBusinessAnchorId.set(leaderSAnchorId, set);
     }
-    if (childSBusinessId) {
+    if (childSAnchorId) {
       const set2 =
-        requestorOrgIdsByChildSalesmanBusinessAnchorId.get(childSBusinessId) ||
+        requestorOrgIdsByChildSalesmanBusinessAnchorId.get(childSAnchorId) ||
         new Set();
       set2.add(orgId);
-      requestorOrgIdsByChildSalesmanBusinessAnchorId.set(
-        childSBusinessId,
-        set2,
-      );
+      requestorOrgIdsByChildSalesmanBusinessAnchorId.set(childSAnchorId, set2);
     }
   }
 
@@ -303,7 +300,7 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
   // 전체 수수료(유료 매출 기준) - 직접(5%) + 간접(2.5%)
   let directCommissionTotal = 0;
   for (const [
-    sBusinessId,
+    sAnchorId,
     orgSet,
   ] of directOrgIdsBySalesmanBusinessAnchorId.entries()) {
     let paid = 0;
@@ -316,12 +313,12 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
   // 간접: 자식 영업자의 direct 커미션 합 * 50%
   let indirectCommissionTotal = 0;
   for (const child of childSalesmen || []) {
-    const childSBusinessId = String(child?._id || "");
-    const parentSBusinessId = String(child?.referredByAnchorId || "");
-    if (!childSBusinessId || !parentSBusinessId) continue;
+    const childSAnchorId = String(child?._id || "");
+    const parentSAnchorId = String(child?.referredByAnchorId || "");
+    if (!childSAnchorId || !parentSAnchorId) continue;
 
     const orgSet =
-      requestorOrgIdsByChildSalesmanBusinessAnchorId.get(childSBusinessId) ||
+      requestorOrgIdsByChildSalesmanBusinessAnchorId.get(childSAnchorId) ||
       new Set();
     let paid = 0;
     for (const oid of orgSet) {

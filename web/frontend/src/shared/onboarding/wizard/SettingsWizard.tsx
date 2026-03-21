@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
-import { apiFetch } from "@/shared/api/apiClient";
-import { onAppEvent } from "@/shared/realtime/socket";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
@@ -23,34 +21,6 @@ interface SettingsWizardProps {
 export type WizardStepId = "profile" | "phone" | "role" | "business";
 
 const STEP_ORDER: WizardStepId[] = ["profile", "phone", "role", "business"];
-
-type GuideProgressStep = {
-  stepId: string;
-  status: string;
-  doneAt?: string | null;
-};
-
-type BackendGuideProgress = {
-  steps?: GuideProgressStep[];
-  finishedAt?: string | null;
-};
-
-const WIZARD_TOUR_ID = "shared-onboarding-wizard";
-
-const STEP_GUIDE_IDS: Record<WizardStepId, string> = {
-  profile: "wizard.profile",
-  phone: "wizard.phone",
-  role: "wizard.role",
-  business: "wizard.business",
-};
-
-const GUIDE_TO_STEP = Object.entries(STEP_GUIDE_IDS).reduce(
-  (acc, [step, guide]) => {
-    acc[guide] = step as WizardStepId;
-    return acc;
-  },
-  {} as Record<string, WizardStepId>,
-);
 
 const createStepCompletionState = (): Record<WizardStepId, boolean> => ({
   profile: false,
@@ -135,9 +105,9 @@ export const SettingsWizard = ({
     legacyStepStorageKey,
     stepStorageKey,
   ]);
-  const [progress, setProgress] = useState<BackendGuideProgress | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [currentStep, setCurrentStep] = useState<WizardStepId | null>(null);
+  const [currentStep, setCurrentStep] = useState<WizardStepId | null>(
+    () => readStoredStep() || "profile",
+  );
   const [selectedRole, setSelectedRole] = useState<"owner" | "member" | null>(
     () => {
       if (typeof window === "undefined") return null;
@@ -213,76 +183,6 @@ export const SettingsWizard = ({
   }, []);
 
   useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-
-    const fetchOnce = async () => {
-      try {
-        setLoading(true);
-        const res = await apiFetch<any>({
-          path: `/api/guide-progress/${WIZARD_TOUR_ID}`,
-          method: "GET",
-          token,
-        });
-        if (cancelled) return;
-        if (!res.ok) return;
-        const body: any = res.data || {};
-        const data = body.data || body;
-        setProgress(data);
-      } catch {
-        // ignore
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    void fetchOnce();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
-
-  useEffect(() => {
-    if (!token) return;
-    const unsubscribe = onAppEvent((evt) => {
-      if (evt.type !== "guide-progress:updated") return;
-      const payload = evt.data || {};
-      if (payload?.tourId !== WIZARD_TOUR_ID) return;
-      setProgress(payload);
-      setLoading(false);
-    });
-    return () => {
-      unsubscribe?.();
-    };
-  }, [token]);
-
-  useEffect(() => {
-    if (!progress?.steps) return;
-    const nextCompleted = createStepCompletionState();
-    progress.steps.forEach((entry) => {
-      const stepId = GUIDE_TO_STEP[entry.stepId];
-      if (stepId) {
-        nextCompleted[stepId] = entry.status === "done";
-      }
-    });
-    setStepCompleted(nextCompleted);
-    setCurrentStep((prev) => {
-      const storedStep = readStoredStep();
-      if (storedStep && !nextCompleted[storedStep]) return storedStep;
-      const firstIncomplete = STEP_ORDER.find((step) => !nextCompleted[step]);
-      if (firstIncomplete) return firstIncomplete;
-      return prev ?? "business";
-    });
-  }, [progress?.steps, readStoredStep]);
-
-  useEffect(() => {
-    if (progress?.finishedAt) {
-      onWizardComplete();
-    }
-  }, [onWizardComplete, progress?.finishedAt]);
-
-  useEffect(() => {
     if (!currentStep) return;
     const nextStep = STEP_ORDER.find((step) => !stepCompleted[step]);
     if (!nextStep) return;
@@ -305,25 +205,6 @@ export const SettingsWizard = ({
     window.localStorage.setItem(roleStorageKey, selectedRole);
     window.localStorage.setItem(fallbackRoleStorageKey, selectedRole);
   }, [fallbackRoleStorageKey, roleStorageKey, selectedRole]);
-
-  const markGuideStep = useCallback(
-    async (step: WizardStepId, done: boolean) => {
-      if (!token) return;
-      const remoteStepId = STEP_GUIDE_IDS[step];
-      if (!remoteStepId) return;
-      try {
-        await apiFetch({
-          path: `/api/guide-progress/${WIZARD_TOUR_ID}/steps/${encodeURIComponent(remoteStepId)}`,
-          method: "PATCH",
-          token,
-          jsonBody: { done },
-        });
-      } catch (error) {
-        console.warn("[wizard] step sync failed", step, error);
-      }
-    },
-    [token],
-  );
 
   const handleNext = useCallback(async () => {
     if (!currentStep) return;
@@ -398,7 +279,6 @@ export const SettingsWizard = ({
       if (prev[step]) return prev;
       return { ...prev, [step]: true };
     });
-    void markGuideStep(step, true);
     if (options?.autoAdvance && step !== "business") {
       void handleNext();
     }

@@ -446,8 +446,8 @@ export const CncDashboardPageView = (props: any) => {
                     setResetTarget(target);
                     setResetConfirmOpen(true);
                   } else if (action === "stop") {
-                    const ok = window.confirm("현재 가공을 정지할까요?");
-                    if (ok) void sendControlCommand(uid, "stop");
+                    setStopTargetUid(uid);
+                    setStopConfirmOpen(true);
                   }
                 }}
                 onOpenReservationList={(machine) => {
@@ -745,6 +745,22 @@ export const CncDashboardPageView = (props: any) => {
         }
         onReplace={handleReplaceMaterial}
         onAdd={handleAddMaterial}
+      />
+      <ConfirmDialog
+        open={stopConfirmOpen}
+        title="가공 정지"
+        description="현재 가공을 정지할까요?"
+        confirmLabel="정지"
+        cancelLabel="취소"
+        onConfirm={() => {
+          if (stopTargetUid) void sendControlCommand(stopTargetUid, "stop");
+          setStopConfirmOpen(false);
+          setStopTargetUid(null);
+        }}
+        onCancel={() => {
+          setStopConfirmOpen(false);
+          setStopTargetUid(null);
+        }}
       />
     </div>
   );

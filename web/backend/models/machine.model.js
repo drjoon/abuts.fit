@@ -18,6 +18,12 @@ const machineSchema = new mongoose.Schema(
       ref: "Business",
       required: false,
     },
+    manufacturerBusinessAnchorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BusinessAnchor",
+      default: null,
+      index: true,
+    },
     name: {
       type: String,
       trim: true,

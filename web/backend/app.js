@@ -218,7 +218,6 @@ import aiRoutes from "./modules/ai/ai.routes.js";
 import parseLogRoutes from "./modules/parselogs/parseLog.routes.js";
 import filenameRuleRoutes from "./modules/filenameRules/filenameRule.routes.js";
 import businessRoutes from "./modules/businesses/business.routes.js";
-import guideProgressRoutes from "./modules/guideProgress/guideProgress.routes.js";
 import rhinoRoutes from "./modules/rhino/rhino.routes.js";
 import bgRoutes from "./modules/bg/bg.routes.js";
 import clinicRoutes from "./modules/clinic/clinic.routes.js";
@@ -248,7 +247,6 @@ app.use("/api/ai", aiRoutes);
 app.use("/api/parse-logs", parseLogRoutes);
 app.use("/api/filename-rules", filenameRuleRoutes);
 app.use("/api/businesses", businessRoutes);
-app.use("/api/guide-progress", guideProgressRoutes);
 app.use("/api/rhino", rhinoRoutes);
 app.use("/api/bg", bgRoutes);
 

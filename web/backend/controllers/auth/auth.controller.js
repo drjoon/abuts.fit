@@ -121,18 +121,11 @@ async function resolveDefaultDevopsReferrer() {
 }
 
 async function resolveReferrerTargets({
-  referredByUserId,
   referredByEmail,
   referredByReferralCode,
   socialToken,
   signupRole,
 }) {
-  if (referredByUserId) {
-    throw new Error(
-      "referredByUserId는 레거시 필드입니다. referredByReferralCode 또는 referredByEmail을 사용하세요.",
-    );
-  }
-
   let resolvedReferralCode = String(referredByReferralCode || "")
     .trim()
     .toUpperCase();
@@ -507,7 +500,6 @@ async function register(req, res) {
       password,
       role,
       requestorType,
-      referredByUserId,
       referredByEmail,
       referredByReferralCode,
       socialProvider,
@@ -549,7 +541,6 @@ async function register(req, res) {
     let referredByAnchorId = null;
     try {
       const referrerTargets = await resolveReferrerTargets({
-        referredByUserId,
         referredByEmail,
         referredByReferralCode,
         socialToken,

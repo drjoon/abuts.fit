@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
-import { GuideFocus } from "@/shared/ui/GuideFocus";
 import {
   BusinessData,
   LicenseExtracted,
@@ -326,7 +325,7 @@ export const BusinessForm = ({
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="space-y-2">
             <Label htmlFor="repName">대표자명</Label>
-            <GuideFocus className="rounded-xl p-1">
+            <div className="relative rounded-xl p-1">
               <Input
                 id="repName"
                 ref={repNameRef}
@@ -366,7 +365,7 @@ export const BusinessForm = ({
                   onAutoSave?.();
                 }}
               />
-            </GuideFocus>
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="startDate">개업연월일</Label>
@@ -413,7 +412,7 @@ export const BusinessForm = ({
           </div>
           <div className="space-y-2">
             <Label htmlFor="orgName">사업자명</Label>
-            <GuideFocus className="rounded-xl p-1">
+            <div className="relative rounded-xl p-1">
               <Input
                 id="orgName"
                 ref={companyNameRef}
@@ -448,11 +447,11 @@ export const BusinessForm = ({
                   onAutoSave?.();
                 }}
               />
-            </GuideFocus>
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="orgPhone">전화번호</Label>
-            <GuideFocus className="rounded-xl p-1">
+            <div className="relative rounded-xl p-1">
               <Input
                 id="orgPhone"
                 ref={phoneRef}
@@ -492,12 +491,12 @@ export const BusinessForm = ({
                   onAutoSave?.();
                 }}
               />
-            </GuideFocus>
+            </div>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="bizNo">사업자등록번호</Label>
-            <GuideFocus className="rounded-xl p-1">
+            <div className="relative rounded-xl p-1">
               <Input
                 ref={bizNoRef}
                 id="bizNo"
@@ -540,11 +539,11 @@ export const BusinessForm = ({
                   onAutoSave?.();
                 }}
               />
-            </GuideFocus>
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="bizType">업태</Label>
-            <GuideFocus className="rounded-xl p-1">
+            <div className="relative rounded-xl p-1">
               <Input
                 id="bizType"
                 ref={bizTypeRef}
@@ -581,11 +580,11 @@ export const BusinessForm = ({
                   onAutoSave?.();
                 }}
               />
-            </GuideFocus>
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="bizItem">종목</Label>
-            <GuideFocus className="rounded-xl p-1">
+            <div className="relative rounded-xl p-1">
               <Input
                 id="bizItem"
                 ref={bizItemRef}
@@ -622,11 +621,11 @@ export const BusinessForm = ({
                   onAutoSave?.();
                 }}
               />
-            </GuideFocus>
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="taxEmail">세금계산서 이메일</Label>
-            <GuideFocus className="rounded-xl p-1">
+            <div className="relative rounded-xl p-1">
               <Input
                 id="taxEmail"
                 type="email"
@@ -667,13 +666,13 @@ export const BusinessForm = ({
                   onAutoSave?.();
                 }}
               />
-            </GuideFocus>
+            </div>
           </div>
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="address">주소</Label>
-          <GuideFocus className="rounded-xl p-1">
+          <div className="relative rounded-xl p-1">
             {addressPromptActive && (
               <div className="mb-3 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                 <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
@@ -820,12 +819,12 @@ export const BusinessForm = ({
                 />
               </div>
             </div>
-          </GuideFocus>
+          </div>
         </div>
       </div>
 
       <div className="space-y-2">
-        <GuideFocus className="rounded-xl p-1">
+        <div className="relative rounded-xl p-1">
           <div className="flex justify-end">
             <Button
               type="button"
@@ -847,7 +846,7 @@ export const BusinessForm = ({
               {successNote}
             </p>
           )}
-        </GuideFocus>
+        </div>
       </div>
     </div>
   );

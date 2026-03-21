@@ -20,6 +20,12 @@ const bonusGrantSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    businessAnchorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BusinessAnchor",
+      default: null,
+      index: true,
+    },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

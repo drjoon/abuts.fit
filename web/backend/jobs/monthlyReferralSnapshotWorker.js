@@ -78,7 +78,7 @@ async function runMonthlySnapshot() {
     active: true,
     businessAnchorId: { $ne: null },
   })
-    .select({ _id: 1, role: 1, businessId: 1, businessAnchorId: 1 })
+    .select({ _id: 1, role: 1, businessAnchorId: 1 })
     .lean();
 
   if (!leaders.length) {
@@ -165,19 +165,13 @@ async function runMonthlySnapshot() {
     const selfBusinessOrders = Number(
       ordersByAnchorId.get(String(leaderAnchorId)) || 0,
     );
-    const snapshotBusinessId =
-      leader?.businessId && Types.ObjectId.isValid(String(leader.businessId))
-        ? new Types.ObjectId(String(leader.businessId))
-        : null;
     const snapshotBusinessAnchorId = new Types.ObjectId(leaderAnchorId);
 
     await PricingReferralStatsSnapshot.findOneAndUpdate(
       { businessAnchorId: snapshotBusinessAnchorId, ymd },
       {
         $set: {
-          businessId: snapshotBusinessId,
           businessAnchorId: snapshotBusinessAnchorId,
-          leaderUserId: leader._id,
           groupMemberCount: memberCount,
           groupTotalOrders,
           selfBusinessOrders,

@@ -5,6 +5,12 @@ const implantPresetSchema = new mongoose.Schema(
     businessId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Business",
+      default: null,
+      index: true,
+    },
+    businessAnchorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BusinessAnchor",
       required: true,
       index: true,
     },

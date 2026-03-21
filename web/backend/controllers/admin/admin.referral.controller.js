@@ -234,7 +234,6 @@ export async function getReferralGroups(req, res) {
     const snapshots = await PricingReferralStatsSnapshot.find({ ymd })
       .select({
         businessAnchorId: 1,
-        leaderUserId: 1,
         groupMemberCount: 1,
         groupTotalOrders: 1,
         computedAt: 1,
@@ -896,7 +895,6 @@ export async function recalcReferralSnapshot() {
         {
           $set: {
             businessAnchorId: snapshotBusinessAnchorId,
-            leaderUserId: leader._id,
             groupMemberCount: memberCount,
             groupTotalOrders,
             computedAt,

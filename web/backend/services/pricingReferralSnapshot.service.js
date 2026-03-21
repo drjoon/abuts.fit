@@ -158,7 +158,6 @@ export const recomputePricingReferralSnapshotForLeaderAnchorId = async (
       $set: {
         businessId: snapshotBusinessId,
         businessAnchorId: snapshotBusinessAnchorId,
-        leaderUserId: leader._id,
         groupMemberCount: groupAnchorIds.length,
         groupTotalOrders,
         selfBusinessOrders,

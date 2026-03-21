@@ -83,8 +83,7 @@ async function progressStages() {
       applyStatusMapping(req, "세척.패킹");
       if (!req.mailboxAddress) {
         try {
-          const requestorOrgId =
-            req.businessId || req.requestor?.businessId;
+          const requestorOrgId = req.businessAnchorId;
           req.mailboxAddress =
             await allocateVirtualMailboxAddress(requestorOrgId);
         } catch (error) {

@@ -4,7 +4,7 @@ const clinicSchema = new mongoose.Schema(
   {
     businessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Business",
+      ref: "BusinessAnchor",
       required: true,
       index: true,
     },

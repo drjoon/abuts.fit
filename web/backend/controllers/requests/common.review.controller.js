@@ -520,24 +520,24 @@ export async function updateReviewStatusByStage(req, res) {
         }
 
         {
-          const requestBusinessIdStr = request.businessAnchorId
+          const requestAnchorIdStr = request.businessAnchorId
             ? String(request.businessAnchorId)
             : "";
-          const requestorUserBusinessIdStr = request.requestor?.businessAnchorId
+          const requestorUserAnchorIdStr = request.requestor?.businessAnchorId
             ? String(request.requestor.businessAnchorId)
             : "";
           if (
-            requestBusinessIdStr &&
-            requestorUserBusinessIdStr &&
-            requestBusinessIdStr !== requestorUserBusinessIdStr
+            requestAnchorIdStr &&
+            requestorUserAnchorIdStr &&
+            requestAnchorIdStr !== requestorUserAnchorIdStr
           ) {
             console.error("[REQUEST_BUSINESS_MISMATCH_ON_REVIEW]", {
               requestId: request.requestId,
               requestMongoId: String(request._id),
               effectiveStage,
               status,
-              businessAnchorId: requestBusinessIdStr,
-              requestorUserBusinessAnchorId: requestorUserBusinessIdStr,
+              businessAnchorId: requestAnchorIdStr,
+              requestorUserBusinessAnchorId: requestorUserAnchorIdStr,
               requestorUserId: request.requestor?._id
                 ? String(request.requestor._id)
                 : null,

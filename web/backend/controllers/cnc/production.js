@@ -47,10 +47,7 @@ export async function resolveManufacturerMachineScope(req) {
   }
 
   const machineFilter = {
-    $or: [
-      { manufacturerBusinessId: req.user.businessId },
-      { manufacturer: req.user._id },
-    ],
+    manufacturerBusinessAnchorId: req.user.businessAnchorId,
   };
 
   const ownedMachines = await Machine.find(machineFilter)

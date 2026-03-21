@@ -1,7 +1,6 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Upload, X, ShieldCheck, RotateCcw } from "lucide-react";
-import { GuideFocus } from "@/shared/ui/GuideFocus";
 import { Label } from "@/components/ui/label";
 import type { LicenseStatus, MembershipStatus } from "./types";
 import { useToast } from "@/shared/hooks/use-toast";

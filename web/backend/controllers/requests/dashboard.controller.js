@@ -1167,7 +1167,6 @@ export async function getMyPricingReferralStats(req, res) {
                 })
                   .select({
                     businessAnchorId: 1,
-                    leaderUserId: 1,
                     groupMemberCount: 1,
                     groupTotalOrders: 1,
                     selfBusinessOrders: 1,
