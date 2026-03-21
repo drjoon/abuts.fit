@@ -103,12 +103,7 @@ export const MailboxShelfGrid = ({
                   {shelf}
                   {sRow}
                 </div>
-                <div
-                  className="grid gap-1 bg-slate-100 p-1 rounded-md"
-                  style={{
-                    gridTemplateColumns: `repeat(${binCols.length}, minmax(0, 1fr))`,
-                  }}
-                >
+                <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-md">
                   {binCols.map((bCol) => (
                     <div key={bCol} className="flex flex-col gap-1">
                       {binRows.map((bRow) => {
@@ -179,8 +174,8 @@ export const MailboxShelfGrid = ({
                                   ${isOccupied ? "cursor-pointer hover:shadow-md" : ""}
                                 `}
                                 style={{
-                                  width: "48px",
-                                  height: "56px",
+                                  width: "62px",
+                                  height: "44px",
                                   touchAction: "manipulation",
                                 }}
                               >
@@ -242,7 +237,7 @@ export const MailboxShelfGrid = ({
                                                   ? "text-red-700"
                                                   : "text-slate-700"
                                       }`}
-                                      style={{ fontSize: "16px" }}
+                                      style={{ fontSize: "18px" }}
                                       aria-label={`${address} 내용 보기`}
                                     >
                                       {items.length}

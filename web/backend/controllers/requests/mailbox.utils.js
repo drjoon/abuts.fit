@@ -1,14 +1,12 @@
 export async function allocateVirtualMailboxAddress(requestorOrgId) {
   const { default: Request } = await import("../../models/request.model.js");
 
-  // 선반(Shelf)은 A부터 X까지 알파벳 (A-C, D-F, ... 식으로 3개씩 묶음)
-  const shelfNames = Array.from({ length: 24 }, (_, i) =>
-    String.fromCharCode(65 + i),
-  ); // A ~ X
+  // 선반(Shelf)은 실제 운용 중인 A부터 I까지 9개를 사용한다.
+  const shelfNames = ["A", "B", "C", "D", "E", "F", "G", "H", "I"];
   // 선반 내 수직 위치(Row)는 1, 2, 3, 4 (위에서부터 1번. 사진의 2번째 줄이 1번, 맨 아랫줄이 4번)
   const shelfRows = ["1", "2", "3", "4"];
-  // 플라스틱 박스(Bin) 내 열(Col)은 4개 (A, B, C, D)
-  const binCols = ["A", "B", "C", "D"];
+  // 플라스틱 박스(Bin) 내 열(Col)은 3개 (A, B, C)
+  const binCols = ["A", "B", "C"];
   // 플라스틱 박스(Bin) 내 행(Row)은 4개 (1, 2, 3, 4)
   const binRows = ["1", "2", "3", "4"];
 

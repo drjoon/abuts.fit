@@ -16,6 +16,8 @@ import { MailboxShelfGroupTabs } from "./MailboxShelfGroupTabs";
 import { MailboxStickyHeader } from "./MailboxStickyHeader";
 import { useMailboxPrintSettings } from "./useMailboxPrintSettings";
 
+const MAILBOX_SHELF_NAMES = ["A", "B", "C", "D", "E", "F", "G", "H", "I"];
+
 type MailboxPickupStatus =
   | "none"
   | "printed"
@@ -37,16 +39,13 @@ export const MailboxGrid = ({
   onMailboxError,
 }: MailboxGridProps) => {
   const { toast } = useToast();
-  const shelfNames = Array.from({ length: 24 }, (_, i) =>
-    String.fromCharCode(65 + i),
-  );
   const shelfGroups = useMemo(() => {
     const groups = [];
-    for (let i = 0; i < shelfNames.length; i += 3) {
-      groups.push(shelfNames.slice(i, i + 3));
+    for (let i = 0; i < MAILBOX_SHELF_NAMES.length; i += 3) {
+      groups.push(MAILBOX_SHELF_NAMES.slice(i, i + 3));
     }
     return groups;
-  }, [shelfNames]);
+  }, []);
 
   const [selectedGroupIdx, setSelectedGroupIdx] = useState(0);
   const [isRequestingPickup, setIsRequestingPickup] = useState(false);
@@ -101,7 +100,7 @@ export const MailboxGrid = ({
   } = useMailboxPrintSettings();
 
   const shelfRows = ["1", "2", "3", "4"];
-  const binCols = ["A", "B", "C", "D"];
+  const binCols = ["A", "B", "C"];
   const binRows = ["1", "2", "3", "4"];
 
   const addressMap = useMemo(() => {
@@ -531,7 +530,7 @@ export const MailboxGrid = ({
       }
     }
   }, [selectedGroupIdx, shelfGroups]);
-  const allShelvesToShow = shelfNames;
+  const allShelvesToShow = MAILBOX_SHELF_NAMES;
   const occupiedAddresses = useMemo(() => {
     return Array.from(addressMap.keys());
   }, [addressMap]);
