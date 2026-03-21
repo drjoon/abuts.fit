@@ -47,9 +47,22 @@ const statusLabelMap: Record<string, string> = {
 };
 
 const typeLabelMap: Record<string, string> = {
-  general: "일반 문의",
-  business_registration: "사업자등록 문의",
-  user_registration: "사용자등록 문의",
+  manufacturing: "의뢰/제작",
+  delivery: "배송",
+  billing: "청구/결제",
+  account: "계정/사업자",
+  order_intake: "의뢰 접수",
+  cam_machining: "CAM/가공",
+  equipment: "장비/소프트웨어",
+  settlement: "정산",
+  referral_commission: "소개/수당",
+  operation: "운영",
+  system: "시스템/서비스",
+  partnership: "파트너십",
+  general: "일반",
+  other: "기타",
+  business_registration: "사업자등록",
+  user_registration: "사용자등록",
 };
 
 export const AdminBusinessRegistrationInquiryPage = () => {
@@ -57,9 +70,7 @@ export const AdminBusinessRegistrationInquiryPage = () => {
   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "resolved">(
     "open",
   );
-  const [typeFilter, setTypeFilter] = useState<
-    "all" | "general" | "business_registration" | "user_registration"
-  >("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [items, setItems] = useState<BusinessRegistrationInquiry[]>([]);
@@ -277,15 +288,7 @@ export const AdminBusinessRegistrationInquiryPage = () => {
               </Tabs>
               <Tabs
                 value={typeFilter}
-                onValueChange={(value) =>
-                  setTypeFilter(
-                    value as
-                      | "all"
-                      | "general"
-                      | "business_registration"
-                      | "user_registration",
-                  )
-                }
+                onValueChange={(value) => setTypeFilter(value)}
               >
                 <TabsList className="gap-2">
                   <TabsTrigger value="all">전체</TabsTrigger>

@@ -2,7 +2,7 @@ import { request } from "@/shared/api/apiClient";
 
 export type BusinessRegistrationInquiry = {
   _id: string;
-  type?: "general" | "business_registration" | "user_registration";
+  type?: string;
   subject?: string;
   message?: string;
   user?: {
@@ -49,7 +49,7 @@ type ApiEnvelope<T> = {
 
 export async function fetchBusinessRegistrationInquiries(params?: {
   status?: "open" | "resolved";
-  type?: "general" | "business_registration" | "user_registration";
+  type?: string;
   limit?: number;
 }) {
   const search = new URLSearchParams();
