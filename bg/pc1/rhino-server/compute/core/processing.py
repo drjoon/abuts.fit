@@ -4,20 +4,12 @@ import time
 import uuid
 from pathlib import Path
 import os
-import json
-import re
 import requests
 from . import settings
 from . import state
 from .logger import log
 from .rhino_runner import run_rhino_python
-# metadata sidecar 파일은 더 이상 사용하지 않으므로 더미 함수만 남겨둔다.
-def _metadata_sidecar_path(_: Path) -> Path:
-    raise RuntimeError("metadata sidecar files are no longer supported")
-def load_cached_metadata(_: Path) -> dict:
-    return {}
-def save_cached_metadata(_: Path, __: dict) -> None:
-    return
+
 def notify_runtime_status(item: dict | None, *, source: str, stage: str, status: str, label: str, tone: str | None = None, clear: bool = False, metadata: dict | None = None) -> None:
     try:
         backend_url = os.getenv("BACKEND_BASE", "").rstrip("/")
@@ -49,6 +41,7 @@ def notify_runtime_status(item: dict | None, *, source: str, stage: str, status:
         )
     except Exception as e:
         log(f"runtime-status notify failed: {e}")
+
 def upload_via_presign(out_path: Path, original_name: str, item: dict) -> bool:
     try:
         backend_url = os.getenv("BACKEND_BASE", "").rstrip("/")
@@ -118,6 +111,7 @@ def upload_via_presign(out_path: Path, original_name: str, item: dict) -> bool:
     except Exception as e:
         log(f"Presign upload exception: {e}")
         return False
+
 def fetch_pending_stl_list() -> list[dict]:
     import os
     backend = os.getenv("BACKEND_BASE", "").rstrip("/")
@@ -144,9 +138,11 @@ def fetch_pending_stl_list() -> list[dict]:
     except Exception as e:
         log(f"pending-stl fetch error: {e}")
         return []
+
 def _compose_input_filename(file_name: str, _: str | None) -> str:
     # 백엔드 파일명을 그대로 사용 (경로/특수문자만 sanitize)
     return settings.sanitize_filename(Path(file_name).name)
+
 def download_original_to_input(item: dict) -> bool:
     import os
     backend = os.getenv("BACKEND_BASE", "").rstrip("/")
@@ -174,36 +170,11 @@ def download_original_to_input(item: dict) -> bool:
     except Exception as e:
         log(f"original-file fetch error: {e}")
         return False
-def backend_should_process_source_step(source_step: str, file_name: str) -> bool:
-    """백엔드에 처리 상태를 확인하여 미처리일 때만 True 반환"""
-    try:
-        recover_always = os.getenv("RHINO_RECOVER_ALWAYS", "").lower() in ("1", "true", "yes")
-        if recover_always:
-            return True
-        backend_url = os.getenv("BACKEND_BASE", "")
-        if not backend_url:
-            return False
-        base = backend_url.rstrip("/")
-        url = f"{base}/bg/file-status"
-        res = requests.get(
-            url,
-            params={"sourceStep": source_step, "filePath": file_name, "force": "true"},
-            timeout=5,
-            headers=settings.bridge_headers(),
-        )
-        if res.status_code != 200:
-            return False
-        body = res.json() if res.content else {}
-        data = body.get("data") if isinstance(body, dict) else None
-        if isinstance(data, dict):
-            return bool(data.get("shouldProcess"))
-        return bool(body.get("shouldProcess"))
-    except Exception as e:
-        log(f"Recover status check failed: {e}")
-        return False
+
 def canonicalize_input_name(original: str) -> str:
     # 백엔드 파일명을 그대로 사용 (경로/특수문자만 sanitize)
     return settings.sanitize_filename(Path(original).name)
+
 async def process_single_stl(p: Path, force_reprocess: bool = False):
     if isinstance(p, str):
         p = Path(p)
@@ -400,6 +371,7 @@ async def process_single_stl(p: Path, force_reprocess: bool = False):
         finally:
             with state.in_flight_lock:
                 state.in_flight.discard(p.name)
+
 async def recover_unprocessed_files() -> None:
     try:
         settings.ensure_dirs()
@@ -429,6 +401,9 @@ async def recover_unprocessed_files() -> None:
                 break
             return
         # 운영 모드: SSOT(백엔드)에서 내려준 목록만 처리
+        # rhino-server는 재기동 시 로컬 디렉토리를 임의 재계산하지 않는다.
+        # 처리 대상의 canonical 목록은 백엔드 pending-stl 응답이며,
+        # 로컬 파일은 그 목록을 실행하기 위한 임시 입력 캐시로만 사용한다.
         pending = fetch_pending_stl_list()
         if not pending:
             log("Pending STL from backend: 0")

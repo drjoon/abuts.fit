@@ -27,24 +27,15 @@ public bool AllowAutoMachining;
 public bool AllowJobStart;
 public DateTime FetchedAtUtc;
 }
-private static void ForceSyncQueueFromBackend(string machineId)
-{
-try
-{
-_ = Task.Run(async () => await SyncQueueFromBackend(machineId, true));
-}
-catch (Exception ex)
-{
-Console.WriteLine("[CncMachining] ForceSyncQueueFromBackend error machine={0} err={1}", machineId, ex.Message);
-}
-}
 private static async Task NotifyMachiningCompleted(CncJobItem job, string machineId)
 {
 try
 {
 var backend = GetBackendBase();
 if (string.IsNullOrEmpty(backend)) return;
-// legacy: register-file (best-effort)
+// register-file(sourceStep=cnc)는 BG 산출물 bookkeeping / 이벤트 적재용 보조 통지다.
+// request stage 전이와 생산 큐 진행의 canonical 완료 신호는 아래 machining/complete 콜백이며,
+// backend는 그 콜백을 기준으로만 상태 전이와 후속 자동 진행을 판단해야 한다.
 try
 {
     var url = backend + "/bg/register-file";

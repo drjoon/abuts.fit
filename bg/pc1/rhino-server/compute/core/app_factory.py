@@ -16,12 +16,6 @@ from .routes_api import router as api_router
 def create_app():
     app = FastAPI(title="abuts.fit rhino worker")
 
-    allow_ips_raw = settings.os.getenv("RHINO_ALLOW_IPS", "").strip()
-    allow_ips = {
-        ip.strip()
-        for ip in allow_ips_raw.split(",")
-        if ip and ip.strip()
-    }
     shared_secret = settings.os.getenv("RHINO_SHARED_SECRET", "").strip()
     if not shared_secret:
         shared_secret = settings.os.getenv("BRIDGE_SHARED_SECRET", "").strip()
@@ -138,6 +132,8 @@ def create_app():
             settings.purge_old_storage(days=15)
         except Exception:
             pass
+        # startup recovery는 backend pending 목록을 읽고 로컬 입력 캐시를 채우는 I/O 작업이라
+        # FastAPI 메인 루프를 막지 않도록 별도 thread에서 시작한다.
         start_recovery_thread()
 
     return app, socket_app

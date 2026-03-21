@@ -1,5 +1,4 @@
 const http = require("http");
-const https = require("https");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -256,43 +255,6 @@ const printRawZplWindows = ({ filePath, printer, title }) =>
       },
     );
   });
-
-const downloadToTemp = (url) =>
-  new Promise((resolve, reject) => {
-    const tempPath = path.join(
-      os.tmpdir(),
-      `hanjin-label-${Date.now()}-${Math.random().toString(16).slice(2)}.pdf`,
-    );
-    const fileStream = fs.createWriteStream(tempPath);
-    const client = url.startsWith("https") ? https : http;
-    const request = client.get(url, (response) => {
-      if (response.statusCode !== 200) {
-        fileStream.close();
-        fs.unlink(tempPath, () => undefined);
-        return reject(new Error(`Download failed: ${response.statusCode}`));
-      }
-      response.pipe(fileStream);
-      fileStream.on("finish", () => {
-        fileStream.close();
-        resolve(tempPath);
-      });
-    });
-    request.on("error", (err) => {
-      fileStream.close();
-      fs.unlink(tempPath, () => undefined);
-      reject(err);
-    });
-  });
-
-const writeBase64ToTemp = async (base64) => {
-  const tempPath = path.join(
-    os.tmpdir(),
-    `hanjin-label-${Date.now()}-${Math.random().toString(16).slice(2)}.pdf`,
-  );
-  const data = Buffer.from(base64, "base64");
-  await fs.promises.writeFile(tempPath, data);
-  return tempPath;
-};
 
 const writeTextToTemp = async (text, ext) => {
   const tempPath = path.join(

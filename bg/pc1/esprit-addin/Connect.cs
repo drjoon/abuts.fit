@@ -796,9 +796,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
             {
 
-                var serverRef = _httpServer;
-
-                Task.Run(() => RecoverPendingNcToQueue(serverRef));
+                // 정책상 pending-nc 복구는 수행하지 않으므로,
+                // 여기서는 별도 background task를 띄우지 않고 startup 검증/TTL purge만 즉시 수행한다.
+                RecoverPendingNcToQueue(_httpServer);
 
             }
 

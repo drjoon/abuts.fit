@@ -57,6 +57,10 @@ const PROCESS_RETRY_DELAY_MS = Math.max(
   0,
   Number(process.env.LOT_PROCESS_RETRY_DELAY_MS || 1000),
 );
+const RESCAN_INTERVAL_MS = Math.max(
+  0,
+  Number(process.env.LOT_RESCAN_INTERVAL_MS || 0),
+);
 
 const inflightFiles = new Set();
 
@@ -459,19 +463,25 @@ async function main() {
     logLine(`[lot-server] watcher ready (${WATCH_DIR})`);
   });
 
-  setInterval(() => {
-    fs.readdir(WATCH_DIR, { withFileTypes: true })
-      .then((entries) => {
-        for (const ent of entries) {
-          if (!ent.isFile()) continue;
-          const full = path.join(WATCH_DIR, ent.name);
-          handleNewImage(full).catch(() => {});
-        }
-      })
-      .catch((err) => {
-        logLine(`[lot-server] rescan failed: ${err?.message || err}`);
-      });
-  }, 3 * 1000);
+  // 운영 기본 경로는 watcher + startup scan이다.
+  // 전체 디렉토리 재스캔은 네트워크 드라이브/특수 환경에서만 쓰는 진단용 fallback이라
+  // 기본값은 비활성화하고, 필요할 때만 env로 켠다.
+  if (RESCAN_INTERVAL_MS > 0) {
+    setInterval(() => {
+      fs.readdir(WATCH_DIR, { withFileTypes: true })
+        .then((entries) => {
+          for (const ent of entries) {
+            if (!ent.isFile()) continue;
+            const full = path.join(WATCH_DIR, ent.name);
+            handleNewImage(full).catch(() => {});
+          }
+        })
+        .catch((err) => {
+          logLine(`[lot-server] rescan failed: ${err?.message || err}`);
+        });
+    }, RESCAN_INTERVAL_MS);
+    logLine(`[lot-server] fallback rescan enabled: ${RESCAN_INTERVAL_MS}ms`);
+  }
 
   logLine(`[lot-server] watching: ${WATCH_DIR}`);
   logLine(`[lot-server] backend: ${BACKEND_BASE}`);

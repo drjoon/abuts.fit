@@ -3,8 +3,6 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { execFile } = require("child_process");
-const fetch = require("node-fetch");
-const sharp = require("sharp");
 
 function loadLocalEnv() {
   const envPath = path.resolve(process.cwd(), "local.env");
@@ -136,7 +134,7 @@ const listPrinters = () =>
         "} elseif (Get-Command Get-WmiObject -ErrorAction SilentlyContinue) {",
         "  Get-WmiObject Win32_Printer | Select-Object -ExpandProperty Name",
         "} else {",
-        '  throw \"No printer query cmdlets available\"',
+        '  throw "No printer query cmdlets available"',
         "}",
       ].join("; ");
 
@@ -385,91 +383,6 @@ const buildPackingLabelZpl = (payload) => {
 
     "^XZ",
   ].join("\n");
-};
-
-const convertZplToRotatedImage = async (zpl, dpi) => {
-  // Labelary API로 ZPL을 PNG 이미지로 변환
-  const labelaryUrl = `http://api.labelary.com/v1/printers/${dpi}dpi/labels/3.15x2.56/0/`;
-  const response = await fetch(labelaryUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: zpl,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Labelary API failed: ${response.status}`);
-  }
-
-  const imageBuffer = await response.buffer();
-
-  // sharp로 이미지를 90도 회전 (시계 반대 방향)
-  const rotatedBuffer = await sharp(imageBuffer).rotate(-90).toBuffer();
-
-  return rotatedBuffer;
-};
-
-const convertImageToZplGfa = async (imageBuffer, dpi) => {
-  // 이미지를 흑백 1-bit로 변환
-  const { data, info } = await sharp(imageBuffer)
-    .greyscale()
-    .threshold(128)
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-
-  const width = info.width;
-  const height = info.height;
-  const bytesPerRow = Math.ceil(width / 8);
-
-  // GFA 헥스 데이터 생성
-  let hexData = "";
-  for (let y = 0; y < height; y++) {
-    let rowData = "";
-    for (let x = 0; x < bytesPerRow; x++) {
-      let byte = 0;
-      for (let bit = 0; bit < 8; bit++) {
-        const pixelX = x * 8 + bit;
-        if (pixelX < width) {
-          const pixelIndex = y * width + pixelX;
-          // 0 = 검은색 (출력), 255 = 흰색 (출력 안함)
-          if (data[pixelIndex] === 0) {
-            byte |= 1 << (7 - bit);
-          }
-        }
-      }
-      rowData += byte.toString(16).toUpperCase().padStart(2, "0");
-    }
-    hexData += rowData;
-  }
-
-  // ZPL GFA 명령 생성
-  const totalBytes = bytesPerRow * height;
-  const gfaCommand = `^GFA,${totalBytes},${totalBytes},${bytesPerRow},${hexData}`;
-
-  return { gfaCommand, width, height };
-};
-
-const buildRotatedZpl = async (originalZpl, dpi) => {
-  // 원본 ZPL을 이미지로 변환 후 90도 회전
-  const rotatedImageBuffer = await convertZplToRotatedImage(originalZpl, dpi);
-
-  // 회전된 이미지를 ZPL GFA로 변환
-  const { gfaCommand, width, height } = await convertImageToZplGfa(
-    rotatedImageBuffer,
-    dpi,
-  );
-
-  // 최종 ZPL 생성 (가로 모드)
-  const finalZpl = [
-    "^XA",
-    `^PW${width}`,
-    `^LL${height}`,
-    "^LH0,0",
-    "^FO0,0",
-    gfaCommand,
-    "^XZ",
-  ].join("\n");
-
-  return finalZpl;
 };
 
 const writeZplToTemp = async (zpl) => {
