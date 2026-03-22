@@ -161,30 +161,48 @@ const findReferredRequestorUsersByReferrerAnchorId = async (
 ) => {
   const businessAnchorIdStr = String(businessAnchorId || "").trim();
   if (!Types.ObjectId.isValid(businessAnchorIdStr)) return [];
-  const cacheKey = `referred-requestor-business-anchors:v2:${businessAnchorIdStr}`;
+  const cacheKey = `referred-requestor-business-anchors:v3:${businessAnchorIdStr}`;
   const cached = getRequestPerfCacheValue(cacheKey);
   if (Array.isArray(cached)) {
     return cached;
   }
   const anchorObjectId = new Types.ObjectId(businessAnchorIdStr);
 
-  // 소개 관계의 canonical SSOT는 User가 아니라 BusinessAnchor.referredByAnchorId다.
-  // 여기서 user를 따라가면 같은 사업자에 속한 여러 사용자가 중복 집계되어
-  // 3개여야 할 소개 사업자 수가 29개처럼 부풀 수 있다.
-  // 따라서 read-path에서는 business-level edge만 읽고, write는 anchor 생성/attach
-  // 이벤트 시점에서만 확정되도록 유지한다.
-  const rows = await BusinessAnchor.find({
-    referredByAnchorId: anchorObjectId,
-    businessType: "requestor",
-  })
-    .select({
-      _id: 1,
-      name: 1,
-      metadata: 1,
-      createdAt: 1,
-    })
-    .sort({ createdAt: -1 })
+  const selfAnchor = await BusinessAnchor.findById(anchorObjectId)
+    .select({ _id: 1, referredByAnchorId: 1 })
     .lean();
+  if (!selfAnchor) return [];
+
+  const parentAnchorId = String(selfAnchor?.referredByAnchorId || "").trim();
+  const [parentAnchor, childRows] = await Promise.all([
+    Types.ObjectId.isValid(parentAnchorId)
+      ? BusinessAnchor.findOne({
+          _id: new Types.ObjectId(parentAnchorId),
+          businessType: "requestor",
+        })
+          .select({
+            _id: 1,
+            name: 1,
+            metadata: 1,
+            createdAt: 1,
+          })
+          .lean()
+      : null,
+    BusinessAnchor.find({
+      referredByAnchorId: anchorObjectId,
+      businessType: "requestor",
+    })
+      .select({
+        _id: 1,
+        name: 1,
+        metadata: 1,
+        createdAt: 1,
+      })
+      .sort({ createdAt: -1 })
+      .lean(),
+  ]);
+
+  const rows = [parentAnchor, ...(childRows || [])].filter(Boolean);
 
   const normalizedRows = (rows || []).map((row) => ({
     _id: row?._id,
@@ -1067,7 +1085,7 @@ export async function getMyPricingReferralStats(req, res) {
     const requestorId = req.user._id;
     const debug =
       process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
-    const statsCacheKey = `pricing-referral-stats:v5:${String(
+    const statsCacheKey = `pricing-referral-stats:v6:${String(
       req.user?._id || "",
     )}:${String(req.user?.businessAnchorId || "")}`;
 
@@ -1179,7 +1197,15 @@ export async function getMyPricingReferralStats(req, res) {
               cachedSnapshot?.groupTotalOrders || 0,
             );
 
-            if (cachedSnapshot && !snapshotMissing) {
+            const snapshotMemberCountMatches =
+              Number(cachedSnapshot?.groupMemberCount || 0) ===
+              groupMemberCount;
+
+            if (
+              cachedSnapshot &&
+              !snapshotMissing &&
+              snapshotMemberCountMatches
+            ) {
               myLastMonthOrders = Number(
                 cachedSnapshot.selfBusinessOrders || 0,
               );

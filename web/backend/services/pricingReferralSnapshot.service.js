@@ -10,6 +10,8 @@ import {
 } from "../utils/krBusinessDays.js";
 
 const LEADER_ROLES = new Set(["requestor", "salesman", "devops"]);
+const REQUESTOR_GROUP_TYPES = ["requestor"];
+const REFERRAL_GROUP_TYPES = ["requestor", "salesman", "devops"];
 
 const getOrderCountMapByBusinessAnchorIds = async ({
   businessAnchorIds,
@@ -98,6 +100,51 @@ const resolveLeaderUserByAnchorId = async (businessAnchorId) => {
   return rows[0] || null;
 };
 
+export const getDirectReferralCircleAnchorIds = async (
+  businessAnchorId,
+  options = {},
+) => {
+  const anchorId = String(businessAnchorId || "").trim();
+  if (!Types.ObjectId.isValid(anchorId)) return [];
+
+  const allowedBusinessTypes = Array.isArray(options?.allowedBusinessTypes)
+    ? options.allowedBusinessTypes
+    : REFERRAL_GROUP_TYPES;
+
+  const selfAnchor = await BusinessAnchor.findById(anchorId)
+    .select({ _id: 1, referredByAnchorId: 1, businessType: 1 })
+    .lean();
+  if (!selfAnchor) return [];
+
+  const parentAnchorId = String(selfAnchor?.referredByAnchorId || "").trim();
+  const [parentAnchor, directChildren] = await Promise.all([
+    Types.ObjectId.isValid(parentAnchorId)
+      ? BusinessAnchor.findById(parentAnchorId)
+          .select({ _id: 1, businessType: 1 })
+          .lean()
+      : null,
+    BusinessAnchor.find({
+      referredByAnchorId: new Types.ObjectId(anchorId),
+      businessType: { $in: allowedBusinessTypes },
+    })
+      .select({ _id: 1 })
+      .lean(),
+  ]);
+
+  const ids = new Set([anchorId]);
+  if (
+    parentAnchor &&
+    allowedBusinessTypes.includes(String(parentAnchor?.businessType || ""))
+  ) {
+    ids.add(String(parentAnchor._id));
+  }
+  for (const row of directChildren || []) {
+    const childId = String(row?._id || "").trim();
+    if (Types.ObjectId.isValid(childId)) ids.add(childId);
+  }
+  return Array.from(ids);
+};
+
 export const recomputePricingReferralSnapshotForLeaderAnchorId = async (
   businessAnchorId,
 ) => {
@@ -118,21 +165,26 @@ export const recomputePricingReferralSnapshotForLeaderAnchorId = async (
   // 소개 관계 SSOT는 BusinessAnchor.referredByAnchorId 하나만 사용한다.
   // snapshot이 user row를 읽으면 같은 사업자의 owner/member가 중복 포함되어
   // memberCount와 groupTotalOrders가 다시 부풀 수 있으므로 business anchor만 읽는다.
-  const directChildren = await BusinessAnchor.find({
-    referredByAnchorId: new Types.ObjectId(leaderAnchorId),
-    businessType: { $in: ["requestor", "salesman", "devops"] },
-  })
-    .select({ _id: 1 })
-    .lean();
-
-  const groupAnchorIds = Array.from(
-    new Set(
-      [
-        leaderAnchorId,
-        ...(directChildren || []).map((row) => String(row?._id || "").trim()),
-      ].filter((id) => Types.ObjectId.isValid(id)),
-    ),
-  );
+  const groupAnchorIds =
+    leader?.role === "requestor"
+      ? await getDirectReferralCircleAnchorIds(leaderAnchorId, {
+          allowedBusinessTypes: REQUESTOR_GROUP_TYPES,
+        })
+      : Array.from(
+          new Set(
+            [
+              leaderAnchorId,
+              ...(
+                await BusinessAnchor.find({
+                  referredByAnchorId: new Types.ObjectId(leaderAnchorId),
+                  businessType: { $in: REFERRAL_GROUP_TYPES },
+                })
+                  .select({ _id: 1 })
+                  .lean()
+              ).map((row) => String(row?._id || "").trim()),
+            ].filter((id) => Types.ObjectId.isValid(id)),
+          ),
+        );
 
   const countMap = await getOrderCountMapByBusinessAnchorIds({
     businessAnchorIds: groupAnchorIds,
@@ -183,16 +235,22 @@ export const recomputePricingReferralSnapshotsForAffectedAnchorId = async (
   if (!Types.ObjectId.isValid(anchorId)) return [];
 
   const currentAnchor = await BusinessAnchor.findById(anchorId)
-    .select({ referredByAnchorId: 1 })
+    .select({ referredByAnchorId: 1, businessType: 1 })
     .lean();
 
-  const leaderAnchorIds = Array.from(
-    new Set(
-      [anchorId, String(currentAnchor?.referredByAnchorId || "").trim()].filter(
-        (id) => Types.ObjectId.isValid(id),
-      ),
-    ),
-  );
+  const leaderAnchorIds =
+    String(currentAnchor?.businessType || "") === "requestor"
+      ? await getDirectReferralCircleAnchorIds(anchorId, {
+          allowedBusinessTypes: REQUESTOR_GROUP_TYPES,
+        })
+      : Array.from(
+          new Set(
+            [
+              anchorId,
+              String(currentAnchor?.referredByAnchorId || "").trim(),
+            ].filter((id) => Types.ObjectId.isValid(id)),
+          ),
+        );
 
   const results = await Promise.all(
     leaderAnchorIds.map((leaderAnchorId) =>

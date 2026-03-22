@@ -20,6 +20,7 @@ import ManufacturerCreditLedger from "../models/manufacturerCreditLedger.model.j
 import ManufacturerDailySettlementSnapshot from "../models/manufacturerDailySettlementSnapshot.model.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../services/bulkShippingSnapshot.service.js";
 import { recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId } from "../services/requestorDashboardSummarySnapshot.service.js";
+import { getDirectReferralCircleAnchorIds } from "../services/pricingReferralSnapshot.service.js";
 import {
   getTodayYmdInKst,
   getYesterdayYmdInKst,
@@ -92,6 +93,21 @@ async function runDailySnapshot(ymd, range) {
     .map((leader) => String(leader?.businessAnchorId || ""))
     .filter((id) => Types.ObjectId.isValid(id))
     .map((id) => new Types.ObjectId(id));
+  const requestorCircleAnchorIdsByLeaderAnchorId = new Map(
+    await Promise.all(
+      leaders
+        .filter((leader) => String(leader?.role || "") === "requestor")
+        .map(async (leader) => {
+          const leaderAnchorId = String(leader?.businessAnchorId || "").trim();
+          const circleIds = leaderAnchorId
+            ? await getDirectReferralCircleAnchorIds(leaderAnchorId, {
+                allowedBusinessTypes: ["requestor"],
+              })
+            : [];
+          return [leaderAnchorId, circleIds];
+        }),
+    ),
+  );
 
   const directChildren = await BusinessAnchor.find({
     referredByAnchorId: { $in: leaderAnchorIds },
@@ -126,6 +142,7 @@ async function runDailySnapshot(ymd, range) {
       [
         ...leaders.map((leader) => String(leader?.businessAnchorId || "")),
         ...directChildren.map((anchor) => String(anchor?._id || "")),
+        ...Array.from(requestorCircleAnchorIdsByLeaderAnchorId.values()).flat(),
       ].filter((id) => Types.ObjectId.isValid(id)),
     ),
   ).map((id) => new Types.ObjectId(id));
@@ -157,12 +174,22 @@ async function runDailySnapshot(ymd, range) {
     const leaderAnchorId = String(leader?.businessAnchorId || "");
     if (!Types.ObjectId.isValid(leaderAnchorId)) continue;
 
-    const memberCount =
-      1 + Number(childCountByLeaderAnchorId.get(leaderAnchorId) || 0);
-    const groupAnchorIds = new Set([
-      leaderAnchorId,
-      ...Array.from(childAnchorIdsByLeaderAnchorId.get(leaderAnchorId) || []),
-    ]);
+    const isRequestorLeader = String(leader?.role || "") === "requestor";
+    const requestorCircleAnchorIds =
+      requestorCircleAnchorIdsByLeaderAnchorId.get(leaderAnchorId) || [];
+    const groupAnchorIds = new Set(
+      isRequestorLeader
+        ? requestorCircleAnchorIds
+        : [
+            leaderAnchorId,
+            ...Array.from(
+              childAnchorIdsByLeaderAnchorId.get(leaderAnchorId) || [],
+            ),
+          ],
+    );
+    const memberCount = isRequestorLeader
+      ? groupAnchorIds.size
+      : 1 + Number(childCountByLeaderAnchorId.get(leaderAnchorId) || 0);
     const groupTotalOrders = Array.from(groupAnchorIds).reduce(
       (acc, anchorId) =>
         acc + Number(ordersByAnchorId.get(String(anchorId)) || 0),

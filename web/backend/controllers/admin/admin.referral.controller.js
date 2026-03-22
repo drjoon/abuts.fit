@@ -11,6 +11,7 @@ import {
 import { getTodayYmdInKst, toKstYmd } from "../../utils/krBusinessDays.js";
 import { computeVolumeEffectiveUnitPrice } from "./admin.shared.controller.js";
 import { buildReferralLeaderAggregation } from "./adminReferral.aggregation.js";
+import { getDirectReferralCircleAnchorIds } from "../../services/pricingReferralSnapshot.service.js";
 
 const ADMIN_REFERRAL_CACHE_TTL_MS = 60 * 60 * 1000;
 const REFERRAL_LEADER_ROLE_FILTER = [
@@ -201,7 +202,7 @@ export async function getReferralGroups(req, res) {
       : "";
     if (!refresh) {
       const cached = getAdminReferralCache(
-        `referral-groups:v4${cacheKeySuffix}`,
+        `referral-groups:v6${cacheKeySuffix}`,
       );
       if (cached) return res.status(200).json(cached);
     }
@@ -266,6 +267,23 @@ export async function getReferralGroups(req, res) {
         .filter((row) => String(row?.businessAnchorId || ""))
         .map((row) => [String(row?.businessAnchorId || ""), row]),
     );
+    const requestorCircleBusinessAnchorIdsByLeaderBusinessAnchorId = new Map(
+      await Promise.all(
+        leaders
+          .filter((leader) => String(leader?.role || "") === "requestor")
+          .map(async (leader) => {
+            const leaderBusinessAnchorId = String(
+              leader?.businessAnchorId || "",
+            ).trim();
+            const circleIds = leaderBusinessAnchorId
+              ? await getDirectReferralCircleAnchorIds(leaderBusinessAnchorId, {
+                  allowedBusinessTypes: ["requestor"],
+                })
+              : [];
+            return [leaderBusinessAnchorId, circleIds];
+          }),
+      ),
+    );
 
     const groups = leaders.map((leader) => {
       const leaderBusinessAnchorId = String(leader?.businessAnchorId || "");
@@ -281,15 +299,28 @@ export async function getReferralGroups(req, res) {
           leaderBusinessAnchorId,
         ) || [],
       );
+      const requestorCircleBusinessAnchorIds =
+        requestorCircleBusinessAnchorIdsByLeaderBusinessAnchorId.get(
+          leaderBusinessAnchorId,
+        ) || [];
 
       let groupTotalOrders = 0;
       let groupRevenueAmount = 0;
       let groupBonusAmount = 0;
       if (REFERRAL_REVENUE_OWNER_ROLES.has(role)) {
+        groupTotalOrders = snapshot
+          ? Number(snapshot?.groupTotalOrders || 0)
+          : requestorCircleBusinessAnchorIds.reduce(
+              (acc, businessAnchorId) =>
+                acc +
+                Number(
+                  ordersByBusinessAnchorId.get(String(businessAnchorId)) || 0,
+                ),
+              0,
+            );
         const businessStats = leaderBusinessAnchorId
           ? requestorBusinessStatsByBusinessAnchorId.get(leaderBusinessAnchorId)
           : null;
-        groupTotalOrders = Number(businessStats?.orderCount || 0);
         groupRevenueAmount = Number(businessStats?.revenueAmount || 0);
         groupBonusAmount = Number(businessStats?.bonusAmount || 0);
       } else {
@@ -333,8 +364,15 @@ export async function getReferralGroups(req, res) {
 
       return {
         leader,
-        memberCount: directCount + 1,
-        groupMemberCount: snapshotGroupMemberCount || directCount + 1,
+        memberCount: REFERRAL_REVENUE_OWNER_ROLES.has(role)
+          ? snapshotGroupMemberCount ||
+            requestorCircleBusinessAnchorIds.length ||
+            directCount + 1
+          : directCount + 1,
+        groupMemberCount:
+          snapshotGroupMemberCount ||
+          requestorCircleBusinessAnchorIds.length ||
+          directCount + 1,
         groupTotalOrders,
         groupRevenueAmount,
         groupBonusAmount,
@@ -445,7 +483,7 @@ export async function getReferralGroups(req, res) {
     };
 
     if (!refresh)
-      setAdminReferralCache(`referral-groups:v4${cacheKeySuffix}`, payload);
+      setAdminReferralCache(`referral-groups:v6${cacheKeySuffix}`, payload);
     return res.status(200).json(payload);
   } catch (error) {
     return res.status(500).json({
@@ -479,7 +517,7 @@ export async function getReferralGroupTree(req, res) {
         .json({ success: false, message: "권한이 없습니다." });
     }
 
-    const cacheKey = `referral-group-tree:v8:${leaderId}:lite=${lite ? 1 : 0}`;
+    const cacheKey = `referral-group-tree:v10:${leaderId}:lite=${lite ? 1 : 0}`;
     const refresh = String(req.query.refresh || "") === "1";
     if (!refresh) {
       const cached = getAdminReferralCache(cacheKey);
@@ -542,53 +580,83 @@ export async function getReferralGroupTree(req, res) {
         throw error;
       }
 
+      const isRequestorCircleGroup = String(leader?.role || "") === "requestor";
       let anchorMembers;
-      // 소개 리더 뷰: 자신(root) + 모든 하위 사업자
-      const descendantRows = await BusinessAnchor.aggregate([
-        {
-          $match: {
-            _id: new Types.ObjectId(rootBusinessAnchorId),
-          },
-        },
-        {
-          $graphLookup: {
-            from: "businessanchors",
-            startWith: "$_id",
-            connectFromField: "_id",
-            connectToField: "referredByAnchorId",
-            as: "descendants",
-            restrictSearchWithMatch: {
-              businessType: { $in: REFERRAL_TREE_ROLES },
+      if (isRequestorCircleGroup) {
+        const circleAnchorIds = await getDirectReferralCircleAnchorIds(
+          rootBusinessAnchorId,
+          { allowedBusinessTypes: ["requestor"] },
+        );
+        const circleAnchorObjectIds = circleAnchorIds.map(
+          (id) => new Types.ObjectId(id),
+        );
+        const circleAnchors = circleAnchorObjectIds.length
+          ? await BusinessAnchor.find({ _id: { $in: circleAnchorObjectIds } })
+              .select({
+                _id: 1,
+                businessType: 1,
+                name: 1,
+                metadata: 1,
+                referredByAnchorId: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                status: 1,
+              })
+              .lean()
+          : [];
+        const anchorById = new Map(
+          circleAnchors.map((anchor) => [String(anchor?._id || ""), anchor]),
+        );
+        anchorMembers = circleAnchorIds
+          .map((id) => anchorById.get(String(id)))
+          .filter(Boolean);
+      } else {
+        const descendantRows = await BusinessAnchor.aggregate([
+          {
+            $match: {
+              _id: new Types.ObjectId(rootBusinessAnchorId),
             },
           },
-        },
-        {
-          $project: {
-            descendants: {
-              $map: {
-                input: "$descendants",
-                as: "anchor",
-                in: {
-                  _id: "$$anchor._id",
-                  businessType: "$$anchor.businessType",
-                  name: "$$anchor.name",
-                  metadata: "$$anchor.metadata",
-                  referredByAnchorId: "$$anchor.referredByAnchorId",
-                  createdAt: "$$anchor.createdAt",
-                  updatedAt: "$$anchor.updatedAt",
-                  status: "$$anchor.status",
+          {
+            $graphLookup: {
+              from: "businessanchors",
+              startWith: "$_id",
+              connectFromField: "_id",
+              connectToField: "referredByAnchorId",
+              as: "descendants",
+              restrictSearchWithMatch: {
+                businessType: { $in: REFERRAL_TREE_ROLES },
+              },
+            },
+          },
+          {
+            $project: {
+              descendants: {
+                $map: {
+                  input: "$descendants",
+                  as: "anchor",
+                  in: {
+                    _id: "$$anchor._id",
+                    businessType: "$$anchor.businessType",
+                    name: "$$anchor.name",
+                    metadata: "$$anchor.metadata",
+                    referredByAnchorId: "$$anchor.referredByAnchorId",
+                    createdAt: "$$anchor.createdAt",
+                    updatedAt: "$$anchor.updatedAt",
+                    status: "$$anchor.status",
+                  },
                 },
               },
             },
           },
-        },
-      ]);
-      anchorMembers = [
-        leaderAnchor,
-        ...(descendantRows?.[0]?.descendants || []).filter(
-          (anchor) => String(anchor?._id || "") !== String(leaderAnchor._id),
-        ),
-      ];
+        ]);
+        anchorMembers = [
+          leaderAnchor,
+          ...(descendantRows?.[0]?.descendants || []).filter(
+            (anchor) => String(anchor?._id || "") !== String(leaderAnchor._id),
+          ),
+        ];
+      }
 
       const memberBusinessAnchorIds = Array.from(
         new Set(
@@ -750,14 +818,23 @@ export async function getReferralGroupTree(req, res) {
         };
       });
       const nodeById = new Map(nodes.map((n) => [String(n._id), n]));
-      for (const node of nodes) {
-        const parentBusinessAnchorId = node.referredByAnchorId
-          ? String(node.referredByAnchorId)
-          : null;
-        if (!parentBusinessAnchorId || !nodeById.has(parentBusinessAnchorId))
-          continue;
-        if (parentBusinessAnchorId === String(node._id)) continue;
-        nodeById.get(parentBusinessAnchorId).children.push(node);
+      if (isRequestorCircleGroup) {
+        const rootNodeForCircle = nodeById.get(String(rootBusinessAnchorId));
+        if (rootNodeForCircle) {
+          rootNodeForCircle.children = nodes.filter(
+            (node) => String(node._id) !== String(rootBusinessAnchorId),
+          );
+        }
+      } else {
+        for (const node of nodes) {
+          const parentBusinessAnchorId = node.referredByAnchorId
+            ? String(node.referredByAnchorId)
+            : null;
+          if (!parentBusinessAnchorId || !nodeById.has(parentBusinessAnchorId))
+            continue;
+          if (parentBusinessAnchorId === String(node._id)) continue;
+          nodeById.get(parentBusinessAnchorId).children.push(node);
+        }
       }
 
       const effectiveRootAnchor = leaderAnchor;
