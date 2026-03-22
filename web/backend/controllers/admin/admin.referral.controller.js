@@ -479,7 +479,7 @@ export async function getReferralGroupTree(req, res) {
         .json({ success: false, message: "권한이 없습니다." });
     }
 
-    const cacheKey = `referral-group-tree:v7:${leaderId}:lite=${lite ? 1 : 0}`;
+    const cacheKey = `referral-group-tree:v8:${leaderId}:lite=${lite ? 1 : 0}`;
     const refresh = String(req.query.refresh || "") === "1";
     if (!refresh) {
       const cached = getAdminReferralCache(cacheKey);
@@ -520,8 +520,8 @@ export async function getReferralGroupTree(req, res) {
       }
 
       // 트리의 canonical node는 User가 아니라 BusinessAnchor다.
-      // self 기준으로 보여주어야 현재 보고 있는 사업자를 중심으로 멤버 구성이 달라진다.
-      // 따라서 루트는 최상위 ancestor가 아니라 요청한 리더 자신의 businessAnchorId로 고정한다.
+      // 각 계정은 항상 자기 자신의 사업자를 루트로 본다.
+      // 따라서 루트는 상위 소개자 ancestor가 아니라 요청한 리더의 businessAnchorId다.
       const rootBusinessAnchorId = String(leaderBusinessAnchorId);
 
       const leaderAnchor = await BusinessAnchor.findById(rootBusinessAnchorId)
@@ -542,91 +542,53 @@ export async function getReferralGroupTree(req, res) {
         throw error;
       }
 
-      // 의뢰자가 다른 의뢰자에게 소개받은 경우 → 소개자를 root로, 자신을 child로 보여준다.
-      // (잔아트: referredByAnchorId=우리기공소 → 우리기공소+잔아트 2개소)
-      let groupContextReferrerAnchor = null;
-      const leaderReferredByAnchorIdStr = leaderAnchor?.referredByAnchorId
-        ? String(leaderAnchor.referredByAnchorId)
-        : null;
-      if (
-        leaderReferredByAnchorIdStr &&
-        Types.ObjectId.isValid(leaderReferredByAnchorIdStr)
-      ) {
-        const candidateReferrerAnchor = await BusinessAnchor.findById(
-          new Types.ObjectId(leaderReferredByAnchorIdStr),
-        )
-          .select({
-            _id: 1,
-            businessType: 1,
-            name: 1,
-            metadata: 1,
-            referredByAnchorId: 1,
-            createdAt: 1,
-            updatedAt: 1,
-            status: 1,
-          })
-          .lean();
-        if (candidateReferrerAnchor?.businessType === "requestor") {
-          groupContextReferrerAnchor = candidateReferrerAnchor;
-        }
-      }
-
-      const effectiveRootBusinessAnchorId = groupContextReferrerAnchor
-        ? String(groupContextReferrerAnchor._id)
-        : rootBusinessAnchorId;
-
       let anchorMembers;
-      if (groupContextReferrerAnchor) {
-        // 그룹 멤버 뷰: 소개자(root) + 자신(child)
-        anchorMembers = [groupContextReferrerAnchor, leaderAnchor];
-      } else {
-        // 소개 리더 뷰: 자신(root) + 모든 하위 사업자
-        const descendantRows = await BusinessAnchor.aggregate([
-          {
-            $match: {
-              _id: new Types.ObjectId(rootBusinessAnchorId),
+      // 소개 리더 뷰: 자신(root) + 모든 하위 사업자
+      const descendantRows = await BusinessAnchor.aggregate([
+        {
+          $match: {
+            _id: new Types.ObjectId(rootBusinessAnchorId),
+          },
+        },
+        {
+          $graphLookup: {
+            from: "businessanchors",
+            startWith: "$_id",
+            connectFromField: "_id",
+            connectToField: "referredByAnchorId",
+            as: "descendants",
+            restrictSearchWithMatch: {
+              businessType: { $in: REFERRAL_TREE_ROLES },
             },
           },
-          {
-            $graphLookup: {
-              from: "businessanchors",
-              startWith: "$_id",
-              connectFromField: "_id",
-              connectToField: "referredByAnchorId",
-              as: "descendants",
-              restrictSearchWithMatch: {
-                businessType: { $in: REFERRAL_TREE_ROLES },
-              },
-            },
-          },
-          {
-            $project: {
-              descendants: {
-                $map: {
-                  input: "$descendants",
-                  as: "anchor",
-                  in: {
-                    _id: "$$anchor._id",
-                    businessType: "$$anchor.businessType",
-                    name: "$$anchor.name",
-                    metadata: "$$anchor.metadata",
-                    referredByAnchorId: "$$anchor.referredByAnchorId",
-                    createdAt: "$$anchor.createdAt",
-                    updatedAt: "$$anchor.updatedAt",
-                    status: "$$anchor.status",
-                  },
+        },
+        {
+          $project: {
+            descendants: {
+              $map: {
+                input: "$descendants",
+                as: "anchor",
+                in: {
+                  _id: "$$anchor._id",
+                  businessType: "$$anchor.businessType",
+                  name: "$$anchor.name",
+                  metadata: "$$anchor.metadata",
+                  referredByAnchorId: "$$anchor.referredByAnchorId",
+                  createdAt: "$$anchor.createdAt",
+                  updatedAt: "$$anchor.updatedAt",
+                  status: "$$anchor.status",
                 },
               },
             },
           },
-        ]);
-        anchorMembers = [
-          leaderAnchor,
-          ...(descendantRows?.[0]?.descendants || []).filter(
-            (anchor) => String(anchor?._id || "") !== String(leaderAnchor._id),
-          ),
-        ];
-      }
+        },
+      ]);
+      anchorMembers = [
+        leaderAnchor,
+        ...(descendantRows?.[0]?.descendants || []).filter(
+          (anchor) => String(anchor?._id || "") !== String(leaderAnchor._id),
+        ),
+      ];
 
       const memberBusinessAnchorIds = Array.from(
         new Set(
@@ -798,16 +760,11 @@ export async function getReferralGroupTree(req, res) {
         nodeById.get(parentBusinessAnchorId).children.push(node);
       }
 
-      const effectiveRootAnchor = groupContextReferrerAnchor || leaderAnchor;
-      const rootLeaderUser =
-        String(effectiveRootBusinessAnchorId) === String(leaderBusinessAnchorId)
-          ? leader
-          : representativeUsersByBusinessAnchorId.get(
-              effectiveRootBusinessAnchorId,
-            )?.[0] || null;
+      const effectiveRootAnchor = leaderAnchor;
+      const rootLeaderUser = leader;
 
-      const rootNode = nodeById.get(String(effectiveRootBusinessAnchorId)) || {
-        _id: effectiveRootBusinessAnchorId,
+      const rootNode = nodeById.get(String(rootBusinessAnchorId)) || {
+        _id: rootBusinessAnchorId,
         role:
           rootLeaderUser?.role ||
           effectiveRootAnchor?.businessType ||
@@ -817,7 +774,7 @@ export async function getReferralGroupTree(req, res) {
         email:
           rootLeaderUser?.email || effectiveRootAnchor?.metadata?.email || "",
         business: rootLeaderUser?.business || effectiveRootAnchor?.name || "",
-        businessAnchorId: effectiveRootBusinessAnchorId,
+        businessAnchorId: rootBusinessAnchorId,
         active:
           rootLeaderUser?.active ??
           (String(effectiveRootAnchor?.status || "") !== "inactive" &&
