@@ -146,7 +146,9 @@ export async function findOrCreateOrganization({
   ownerId,
   memberIds = [],
   extracted = {},
-  skipBusinessAnchorCreation = false,
+  // 시딩은 실제 사업자등록이 아니므로 기본적으로 BusinessAnchor를 생성하지 않는다.
+  // 가짜 BusinessAnchor가 생성되면 소개 관계(referredByAnchorId)가 실 anchor와 어긋나는 버그가 발생한다.
+  skipBusinessAnchorCreation = true,
 }) {
   let organization = await Business.findOne({
     organizationType,
@@ -249,16 +251,17 @@ export async function findOrCreateOrganization({
 }
 
 export async function attachUserToOrganization(userId, organization) {
-  await User.updateOne(
-    { _id: userId },
-    {
-      $set: {
-        businessId: organization._id,
-        business: organization.name,
-        businessAnchorId: organization.businessAnchorId || null,
-      },
-    },
-  );
+  // businessAnchorId는 실제 사업자등록 후에만 세팅한다.
+  // organization에 businessAnchorId가 없으면(시딩 등) 기존 User.businessAnchorId를 유지해야
+  // 실제 등록 후 시딩이 재실행되어도 실 anchor가 null로 덮어씌워지지 않는다.
+  const setFields = {
+    businessId: organization._id,
+    business: organization.name,
+  };
+  if (organization.businessAnchorId) {
+    setFields.businessAnchorId = organization.businessAnchorId;
+  }
+  await User.updateOne({ _id: userId }, { $set: setFields });
 }
 
 export function createObjectId() {
