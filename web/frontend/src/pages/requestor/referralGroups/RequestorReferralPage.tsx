@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 import { Copy, Check } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
+import { useAuthStore } from "@/store/useAuthStore";
 import { useReferralData } from "./hooks/useReferralData";
 import { ReferralNetworkChart } from "@/features/referral/components/ReferralNetworkChart";
 
@@ -46,6 +47,7 @@ function MetricCard({
 
 export const RequestorReferralPage = () => {
   const { toast } = useToast();
+  const { user } = useAuthStore();
   const [policyOpen, setPolicyOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"link" | "dashboard">("link");
   const [copied, setCopied] = useState(false);
@@ -301,6 +303,7 @@ export const RequestorReferralPage = () => {
                     maxDepth={1}
                     title="소개 네트워크"
                     mode="radial-group"
+                    currentBusinessAnchorId={user?.businessAnchorId || null}
                     visibleRoles={["requestor"]}
                     legendRoles={[]}
                     chartHeight={320}

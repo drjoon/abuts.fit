@@ -39,6 +39,7 @@ type ReferralNetworkChartProps = {
   legendRoles?: ReferralRole[];
   chartHeight?: number;
   mode?: "tree" | "radial-tree" | "radial-group";
+  currentBusinessAnchorId?: string | null;
 };
 
 export function ReferralNetworkChart({
@@ -49,6 +50,7 @@ export function ReferralNetworkChart({
   legendRoles = ["requestor", "salesman", "devops"],
   chartHeight = 500,
   mode = "tree",
+  currentBusinessAnchorId,
 }: ReferralNetworkChartProps) {
   const gradientId = useId().replace(/:/g, "");
   const shadowId = `${gradientId}-shadow`;
@@ -83,12 +85,18 @@ export function ReferralNetworkChart({
       id: node._id,
       name: String(node.business || node.name || node.email || node._id).trim(),
       role,
+      businessAnchorId: node.businessAnchorId
+        ? String(node.businessAnchorId)
+        : null,
       orders: Number(node.lastMonthOrders || 0),
       children: children.length ? children : [],
     };
   };
 
   const root = data ? transformNode(data) : null;
+  const focalBusinessAnchorId = currentBusinessAnchorId
+    ? String(currentBusinessAnchorId)
+    : null;
 
   type LayoutNode = {
     id: string;
@@ -122,6 +130,37 @@ export function ReferralNetworkChart({
       (sum: number, child: any) => sum + countLeaves(child),
       0,
     );
+  };
+
+  const collectVisibleNodes = (node: any): any[] => {
+    const out: any[] = [node];
+    for (const child of node.children || []) {
+      out.push(...collectVisibleNodes(child));
+    }
+    return out;
+  };
+
+  const centerRadialGroupOnBusiness = (treeRoot: any) => {
+    if (!treeRoot || !focalBusinessAnchorId) return treeRoot;
+    const visibleNodes = collectVisibleNodes(treeRoot);
+    const focalNode =
+      visibleNodes.find(
+        (node) =>
+          String(node?.businessAnchorId || "") === focalBusinessAnchorId,
+      ) || null;
+
+    if (!focalNode) return treeRoot;
+    if (String(focalNode.id) === String(treeRoot.id)) return treeRoot;
+
+    return {
+      ...focalNode,
+      children: visibleNodes
+        .filter((node) => String(node.id) !== String(focalNode.id))
+        .map((node) => ({
+          ...node,
+          children: [],
+        })),
+    };
   };
 
   const buildRadialGroupLayout = (layoutRoot: any) => {
@@ -348,12 +387,15 @@ export function ReferralNetworkChart({
     };
   };
 
-  const layout = root
+  const layoutRoot =
+    root && mode === "radial-group" ? centerRadialGroupOnBusiness(root) : root;
+
+  const layout = layoutRoot
     ? mode === "radial-group"
-      ? buildRadialGroupLayout(root)
+      ? buildRadialGroupLayout(layoutRoot)
       : mode === "radial-tree"
-        ? buildRadialTreeLayout(root)
-        : buildTreeLayout(root)
+        ? buildRadialTreeLayout(layoutRoot)
+        : buildTreeLayout(layoutRoot)
     : null;
 
   const fitLayout = (source: { nodes: LayoutNode[]; links: LayoutLink[] }) => {
@@ -451,7 +493,7 @@ export function ReferralNetworkChart({
   const fillColor = (role: ReferralRole, isRoot: boolean) =>
     isRoot ? "#2563eb" : ROLE_COLOR[role];
 
-  if (!root || !fittedLayout) {
+  if (!layoutRoot || !fittedLayout) {
     return (
       <Card className="shadow-sm">
         <CardHeader className="pb-2">

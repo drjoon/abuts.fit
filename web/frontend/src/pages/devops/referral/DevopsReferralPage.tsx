@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReferralData } from "@/pages/requestor/referralGroups/hooks/useReferralData";
 import { ReferralNetworkChart } from "@/features/referral/components/ReferralNetworkChart";
+import { useAuthStore } from "@/store/useAuthStore";
 
 function MetricCard({
   title,
@@ -24,6 +25,7 @@ function MetricCard({
 }
 
 export const DevopsReferralPage = () => {
+  const { user } = useAuthStore();
   const {
     isReferralEligible,
     requestorStats,
@@ -128,6 +130,7 @@ export const DevopsReferralPage = () => {
                   maxDepth={1}
                   title="내 소개 네트워크"
                   mode="radial-group"
+                  currentBusinessAnchorId={user?.businessAnchorId || null}
                   visibleRoles={["requestor"]}
                   legendRoles={[]}
                   chartHeight={320}
