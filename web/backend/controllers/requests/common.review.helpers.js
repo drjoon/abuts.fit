@@ -398,6 +398,8 @@ export async function ensureShippingFeeRefundOnShippingRollback({
 }) {
   if (!request?._id || !request?.shippingPackageId) return;
 
+  const shippingPackageId = request.shippingPackageId;
+
   const businessAnchorId =
     request.businessAnchorId || request.requestor?.businessAnchorId;
   if (!businessAnchorId) return;
@@ -411,17 +413,44 @@ export async function ensureShippingFeeRefundOnShippingRollback({
     uniqueKey: { $in: spendKeys },
     type: "SPEND",
     refType: "SHIPPING_PACKAGE",
-    refId: request.shippingPackageId,
+    refId: shippingPackageId,
   })
     .select({ amount: 1, uniqueKey: 1 })
     .session(session || null)
     .lean();
+
+  const updatedPackage = await ShippingPackage.findOneAndUpdate(
+    { _id: shippingPackageId },
+    {
+      $pull: {
+        requestIds: request._id,
+      },
+    },
+    {
+      new: true,
+      session,
+      projection: { _id: 1, requestIds: 1 },
+    },
+  ).lean();
+
+  if (
+    updatedPackage?._id &&
+    (!Array.isArray(updatedPackage.requestIds) ||
+      !updatedPackage.requestIds.length)
+  ) {
+    await ShippingPackage.deleteOne({ _id: updatedPackage._id }).session(
+      session || null,
+    );
+  }
+
+  request.shippingPackageId = null;
+
   if (!spendRow?.uniqueKey) return;
 
   const refundAmount = Math.abs(Number(spendRow.amount || 0));
   if (!Number.isFinite(refundAmount) || refundAmount <= 0) return;
 
-  const refundKey = `shippingPackage:${String(request.shippingPackageId)}:shipping_fee_refund:${cycle}`;
+  const refundKey = `shippingPackage:${String(shippingPackageId)}:shipping_fee_refund:${cycle}`;
   const result = await CreditLedger.updateOne(
     { uniqueKey: refundKey },
     {
@@ -431,7 +460,7 @@ export async function ensureShippingFeeRefundOnShippingRollback({
         type: "REFUND",
         amount: refundAmount,
         refType: "SHIPPING_PACKAGE",
-        refId: request.shippingPackageId,
+        refId: shippingPackageId,
         uniqueKey: refundKey,
       },
     },
@@ -444,7 +473,7 @@ export async function ensureShippingFeeRefundOnShippingRollback({
     businessAnchorId,
     balanceDelta: refundAmount,
     reason: "shipping_fee_refund",
-    refId: request.shippingPackageId,
+    refId: shippingPackageId,
   });
 }
 

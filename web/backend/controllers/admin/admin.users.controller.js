@@ -4,10 +4,7 @@ import Request from "../../models/request.model.js";
 import Business from "../../models/business.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { generateRandomPassword } from "./admin.shared.controller.js";
-import {
-  triggerPricingSnapshotForReferrerAnchorId,
-  triggerPricingSnapshotForUserDoc,
-} from "../../services/requestSnapshotTriggers.service.js";
+import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
 
 export async function getAllUsers(req, res) {
   try {
@@ -604,19 +601,15 @@ const deleteUserCore = async ({ user, includeBusiness }) => {
   );
   await User.deleteOne({ _id: userId });
 
-  if (Types.ObjectId.isValid(String(referredByAnchorId || ""))) {
-    triggerPricingSnapshotForReferrerAnchorId(
+  if (
+    includeBusiness &&
+    Types.ObjectId.isValid(String(referredByAnchorId || ""))
+  ) {
+    emitReferralMembershipChanged(
       String(referredByAnchorId),
-      includeBusiness ? "admin-delete-user-with-business" : "admin-delete-user",
+      "admin-delete-user-with-business",
     );
   }
-  await triggerPricingSnapshotForUserDoc(
-    {
-      businessAnchorId,
-      referredByAnchorId,
-    },
-    includeBusiness ? "admin-delete-user-with-business" : "admin-delete-user",
-  );
 
   return {
     deletedUser: deletedUserSummary,

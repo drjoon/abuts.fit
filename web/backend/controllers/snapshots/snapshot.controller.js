@@ -1,6 +1,6 @@
 import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
 import ManufacturerDailySettlementSnapshot from "../../models/manufacturerDailySettlementSnapshot.model.js";
-import PricingReferralStatsSnapshot from "../../models/pricingReferralStatsSnapshot.model.js";
+import PricingReferralRolling30dAggregate from "../../models/pricingReferralRolling30dAggregate.model.js";
 import AdminSalesmanCreditsOverviewSnapshot from "../../models/adminSalesmanCreditsOverviewSnapshot.model.js";
 import BulkShippingSnapshot from "../../models/bulkShippingSnapshot.model.js";
 import RequestorDashboardSummarySnapshot from "../../models/requestorDashboardSummarySnapshot.model.js";
@@ -127,7 +127,7 @@ export async function getAdminSnapshotsStatus(req, res) {
 
     const [referralLatest, creditLatest, bulkLatest, requestorDashboardLatest] =
       await Promise.all([
-        PricingReferralStatsSnapshot.findOne({ ymd })
+        PricingReferralRolling30dAggregate.findOne({ ymd })
           .sort({ computedAt: -1 })
           .select({ computedAt: 1, ymd: 1 })
           .lean(),

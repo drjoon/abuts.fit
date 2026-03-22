@@ -742,12 +742,14 @@ export async function updateReviewStatusByStage(req, res) {
       resultRequest = request;
     });
 
-    triggerPricingSnapshotForRequestDoc(
-      resultRequest,
-      `review-status:${String(status || "").trim()}:${String(
-        effectiveStage || "",
-      ).trim()}`,
-    );
+    if (String(effectiveStage || "").trim() === "shipping") {
+      triggerPricingSnapshotForRequestDoc(
+        resultRequest,
+        `review-status:${String(status || "").trim()}:${String(
+          effectiveStage || "",
+        ).trim()}`,
+      );
+    }
 
     const responseData = {
       _id: String(resultRequest?._id || ""),

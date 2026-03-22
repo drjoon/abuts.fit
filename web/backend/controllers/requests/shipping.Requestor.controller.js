@@ -115,20 +115,6 @@ export async function updateMyShippingMode(req, res) {
           await req.save();
         }
 
-        const affectedBusinessAnchorIds = Array.from(
-          new Set(
-            requests
-              .map((request) => String(request?.businessAnchorId || "").trim())
-              .filter(Boolean),
-          ),
-        );
-        for (const businessAnchorId of affectedBusinessAnchorIds) {
-          triggerPricingSnapshotForBusinessAnchorId(
-            businessAnchorId,
-            "update-shipping-mode",
-          );
-        }
-
         console.log(`[Fire&Forget] Updated ${requests.length} shipping modes`);
       } catch (err) {
         console.error("[Fire&Forget] Error in shipping mode update:", err);
@@ -393,20 +379,6 @@ export async function createMyBulkShipping(req, res) {
     for (const r of requests) {
       applyStatusMapping(r, "발송");
       await r.save();
-    }
-
-    const affectedBusinessAnchorIds = Array.from(
-      new Set(
-        requests
-          .map((request) => String(request?.businessAnchorId || "").trim())
-          .filter(Boolean),
-      ),
-    );
-    for (const businessAnchorId of affectedBusinessAnchorIds) {
-      triggerPricingSnapshotForBusinessAnchorId(
-        businessAnchorId,
-        "create-bulk-shipping",
-      );
     }
 
     return res.status(200).json({

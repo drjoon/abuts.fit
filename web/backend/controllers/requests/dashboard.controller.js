@@ -1,7 +1,5 @@
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
-import ShippingPackage from "../../models/shippingPackage.model.js";
-import PricingReferralStatsSnapshot from "../../models/pricingReferralStatsSnapshot.model.js";
 import Business from "../../models/business.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import Machine from "../../models/machine.model.js";
@@ -13,7 +11,6 @@ import {
   addKoreanBusinessDays,
   getTodayYmdInKst,
   toKstYmd,
-  getThisMonthStartYmdInKst,
   getLast30DaysRangeUtc,
   normalizeKoreanBusinessDay,
 } from "./utils.js";
@@ -27,6 +24,12 @@ import {
   recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId,
 } from "../../services/requestorDashboardSummarySnapshot.service.js";
 import { getDashboardRiskSummaryData } from "../../services/dashboardRiskSummary.service.js";
+import {
+  getPricingReferralRolling30dAggregateByBusinessAnchorId,
+  recomputePricingReferralSnapshotForLeaderAnchorId,
+  getStoredRequestorDirectCircleMembershipByAnchorId,
+} from "../../services/pricingReferralSnapshot.service.js";
+import { getPricingReferralOrderCountMapByBusinessAnchorIds } from "../../services/pricingReferralOrderBucket.service.js";
 
 function getLastMonthRangeUtc() {
   const now = new Date();
@@ -41,23 +44,6 @@ const ymdToKstMidnight = (ymd) => {
   if (!ymd) return null;
   const d = new Date(`${ymd}T00:00:00+09:00`);
   return Number.isNaN(d.getTime()) ? null : d;
-};
-
-const buildShippingRequestCountByBusinessKey = (rows) => {
-  const map = new Map();
-  for (const row of Array.isArray(rows) ? rows : []) {
-    const businessKey = String(row?.businessAnchorId || "").trim();
-    if (!businessKey) continue;
-    const count = Array.isArray(row?.requestIds)
-      ? new Set(
-          row.requestIds
-            .map((value) => String(value || "").trim())
-            .filter(Boolean),
-        ).size
-      : 0;
-    map.set(businessKey, Number(map.get(businessKey) || 0) + count);
-  }
-  return map;
 };
 
 const getShippingOrderCountsByBusinessAnchorIds = async ({
@@ -75,10 +61,6 @@ const getShippingOrderCountsByBusinessAnchorIds = async ({
 
   if (orgKeys.length === 0 || !startYmd || !endYmd) return new Map();
 
-  const validObjectIds = orgKeys
-    .filter((id) => Types.ObjectId.isValid(id))
-    .map((id) => new Types.ObjectId(id));
-
   const cacheKey = `shipping-order-counts:${startYmd}:${endYmd}:${orgKeys
     .slice()
     .sort()
@@ -88,38 +70,11 @@ const getShippingOrderCountsByBusinessAnchorIds = async ({
     return cached;
   }
 
-  const rows = await ShippingPackage.aggregate([
-    {
-      $match: {
-        businessAnchorId: { $in: orgKeys.map((id) => new Types.ObjectId(id)) },
-        shipDateYmd: { $gte: startYmd, $lte: endYmd },
-      },
-    },
-    {
-      $unwind: {
-        path: "$requestIds",
-        preserveNullAndEmptyArrays: false,
-      },
-    },
-    {
-      $group: {
-        _id: {
-          businessAnchorId: "$businessAnchorId",
-          requestId: "$requestIds",
-        },
-      },
-    },
-    {
-      $group: {
-        _id: "$_id.businessAnchorId",
-        count: { $sum: 1 },
-      },
-    },
-  ]);
-
-  const countMap = new Map(
-    rows.map((row) => [String(row._id || "").trim(), Number(row.count || 0)]),
-  );
+  const countMap = await getPricingReferralOrderCountMapByBusinessAnchorIds({
+    businessAnchorIds: orgKeys,
+    startYmd,
+    endYmd,
+  });
   setRequestPerfCacheValue(cacheKey, countMap, 60 * 1000);
   return countMap;
 };
@@ -154,68 +109,6 @@ const getRequestEstimatedShipYmd = ({ request, fallbackMap }) => {
 
   const createdYmd = toKstYmd(request?.createdAt) || getTodayYmdInKst();
   return fallbackMap.get(createdYmd) || createdYmd;
-};
-
-const findReferredRequestorUsersByReferrerAnchorId = async (
-  businessAnchorId,
-) => {
-  const businessAnchorIdStr = String(businessAnchorId || "").trim();
-  if (!Types.ObjectId.isValid(businessAnchorIdStr)) return [];
-  const cacheKey = `referred-requestor-business-anchors:v3:${businessAnchorIdStr}`;
-  const cached = getRequestPerfCacheValue(cacheKey);
-  if (Array.isArray(cached)) {
-    return cached;
-  }
-  const anchorObjectId = new Types.ObjectId(businessAnchorIdStr);
-
-  const selfAnchor = await BusinessAnchor.findById(anchorObjectId)
-    .select({ _id: 1, referredByAnchorId: 1 })
-    .lean();
-  if (!selfAnchor) return [];
-
-  const parentAnchorId = String(selfAnchor?.referredByAnchorId || "").trim();
-  const [parentAnchor, childRows] = await Promise.all([
-    Types.ObjectId.isValid(parentAnchorId)
-      ? BusinessAnchor.findOne({
-          _id: new Types.ObjectId(parentAnchorId),
-          businessType: "requestor",
-        })
-          .select({
-            _id: 1,
-            name: 1,
-            metadata: 1,
-            createdAt: 1,
-          })
-          .lean()
-      : null,
-    BusinessAnchor.find({
-      referredByAnchorId: anchorObjectId,
-      businessType: "requestor",
-    })
-      .select({
-        _id: 1,
-        name: 1,
-        metadata: 1,
-        createdAt: 1,
-      })
-      .sort({ createdAt: -1 })
-      .lean(),
-  ]);
-
-  const rows = [parentAnchor, ...(childRows || [])].filter(Boolean);
-
-  const normalizedRows = (rows || []).map((row) => ({
-    _id: row?._id,
-    name: row?.name || "",
-    email: row?.metadata?.email || "",
-    business: row?.name || "",
-    businessAnchorId: row?._id,
-    createdAt: row?.createdAt || null,
-    approvedAt: row?.createdAt || null,
-  }));
-
-  setRequestPerfCacheValue(cacheKey, normalizedRows, 60 * 1000);
-  return normalizedRows;
 };
 
 /**
@@ -1138,16 +1031,8 @@ export async function getMyPricingReferralStats(req, res) {
                 })
                 .lean();
         const role = String(me?.role || req.user?.role || "requestor");
-        const myBusinessAnchorId = String(me?.businessAnchorId || "");
-        const snapshotBusinessAnchorObjectId =
-          role === "requestor" &&
-          myBusinessAnchorId &&
-          Types.ObjectId.isValid(myBusinessAnchorId)
-            ? new Types.ObjectId(myBusinessAnchorId)
-            : null;
-
         // 누락 감지: 오늘 스냅샷이 없으면 당일 자정 기준 30일로 즉시 계산 (워커 장애 복구)
-        let cachedSnapshot = null;
+        let cachedRollingAggregate = null;
         let snapshotMissing = true;
         let groupMemberCount = 0;
         let freshGroupTotalOrders = 0;
@@ -1160,92 +1045,47 @@ export async function getMyPricingReferralStats(req, res) {
 
         if (role === "requestor") {
           const leaderBusinessAnchorId = String(me?.businessAnchorId || "");
-          const shouldComputeRequestorGroup = true;
-          const referredBusinessAnchors =
-            await findReferredRequestorUsersByReferrerAnchorId(
+          const storedMembership =
+            await getStoredRequestorDirectCircleMembershipByAnchorId(
               leaderBusinessAnchorId,
             );
-          const orgKeys = Array.from(
-            new Set([
-              leaderBusinessAnchorId,
-              ...(referredBusinessAnchors || [])
-                .map((anchor) => String(anchor?.businessAnchorId || ""))
-                .filter(Boolean),
-            ]),
+
+          groupMemberIds = (storedMembership?.memberAnchorIds || []).map(
+            String,
           );
 
-          groupMemberCount = orgKeys.length;
-          groupMemberIds = orgKeys.map((id) => String(id));
-
-          if (shouldComputeRequestorGroup) {
-            cachedSnapshot = snapshotBusinessAnchorObjectId
-              ? await PricingReferralStatsSnapshot.findOne({
-                  businessAnchorId: snapshotBusinessAnchorObjectId,
-                  ymd,
-                })
-                  .select({
-                    businessAnchorId: 1,
-                    groupMemberCount: 1,
-                    groupTotalOrders: 1,
-                    selfBusinessOrders: 1,
-                    computedAt: 1,
-                  })
-                  .lean()
-              : null;
-            snapshotMissing = !cachedSnapshot;
-            freshGroupTotalOrders = Number(
-              cachedSnapshot?.groupTotalOrders || 0,
+          cachedRollingAggregate =
+            await getPricingReferralRolling30dAggregateByBusinessAnchorId(
+              leaderBusinessAnchorId,
+              ymd,
             );
-
-            const snapshotMemberCountMatches =
-              Number(cachedSnapshot?.groupMemberCount || 0) ===
-              groupMemberCount;
-
-            if (
-              cachedSnapshot &&
-              !snapshotMissing &&
-              snapshotMemberCountMatches
-            ) {
-              myLastMonthOrders = Number(
-                cachedSnapshot.selfBusinessOrders || 0,
-              );
-              freshGroupTotalOrders = Number(
-                cachedSnapshot.groupTotalOrders || 0,
-              );
-              referralBusinessCount = groupMemberCount;
-              referralBusinessOrders = freshGroupTotalOrders;
-              selfBusinessOrders = myLastMonthOrders;
-            } else {
-              const countMap = await getShippingOrderCountsByBusinessAnchorIds({
-                businessAnchorIds: orgKeys,
-                startYmd: last30StartYmd,
-                endYmd: todayYmd,
-              });
-              myLastMonthOrders = Number(
-                countMap.get(String(leaderBusinessAnchorId)) || 0,
-              );
-              freshGroupTotalOrders = orgKeys.reduce(
-                (acc, id) => acc + Number(countMap.get(String(id)) || 0),
-                0,
-              );
-              referralBusinessCount = groupMemberCount;
-              referralBusinessOrders = freshGroupTotalOrders;
-              selfBusinessOrders = myLastMonthOrders;
-            }
-          } else {
-            const myCountMap = await getShippingOrderCountsByBusinessAnchorIds({
-              businessAnchorIds: [leaderBusinessAnchorId],
-              startYmd: last30StartYmd,
-              endYmd: todayYmd,
-            });
-            myLastMonthOrders = Number(
-              myCountMap.get(String(leaderBusinessAnchorId)) || 0,
+          if (!cachedRollingAggregate && leaderBusinessAnchorId) {
+            await recomputePricingReferralSnapshotForLeaderAnchorId(
+              leaderBusinessAnchorId,
             );
-            referralBusinessCount = 1;
-            referralBusinessOrders = myLastMonthOrders;
-            selfBusinessOrders = myLastMonthOrders;
-            freshGroupTotalOrders = myLastMonthOrders;
+            cachedRollingAggregate =
+              await getPricingReferralRolling30dAggregateByBusinessAnchorId(
+                leaderBusinessAnchorId,
+                ymd,
+              );
           }
+
+          snapshotMissing = !cachedRollingAggregate;
+          groupMemberCount = Number(
+            storedMembership?.memberCount ||
+              cachedRollingAggregate?.groupMemberCount ||
+              groupMemberIds.length ||
+              0,
+          );
+          myLastMonthOrders = Number(
+            cachedRollingAggregate?.selfBusinessOrders30d || 0,
+          );
+          freshGroupTotalOrders = Number(
+            cachedRollingAggregate?.groupTotalOrders30d || 0,
+          );
+          referralBusinessCount = groupMemberCount;
+          referralBusinessOrders = freshGroupTotalOrders;
+          selfBusinessOrders = myLastMonthOrders;
         } else {
           const refBusinessAnchorId = String(me?.businessAnchorId || "").trim();
           const directChildBusinessTypes =
@@ -1386,11 +1226,13 @@ export async function getMyPricingReferralStats(req, res) {
                     : null,
                   groupMemberIds: groupMemberIds.map(String),
                   ymd,
-                  snapshot: cachedSnapshot
+                  snapshot: cachedRollingAggregate
                     ? {
-                        groupMemberCount: cachedSnapshot.groupMemberCount,
-                        groupTotalOrders: cachedSnapshot.groupTotalOrders,
-                        computedAt: cachedSnapshot.computedAt,
+                        groupMemberCount:
+                          cachedRollingAggregate.groupMemberCount,
+                        groupTotalOrders:
+                          cachedRollingAggregate.groupTotalOrders30d,
+                        computedAt: cachedRollingAggregate.computedAt,
                       }
                     : null,
                 },

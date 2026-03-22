@@ -27,7 +27,6 @@ import {
 } from "./utils.js";
 import { computeShippingPriority } from "./shippingPriority.utils.js";
 import { getAllProductionQueues } from "../cnc/shared.js";
-import { triggerPricingSnapshotForRequestDoc } from "../../services/requestSnapshotTriggers.service.js";
 import s3Utils, {
   deleteFileFromS3,
   getSignedUrl as getSignedUrlForS3Key,
@@ -897,10 +896,6 @@ export async function updateRequestStatus(req, res) {
     // 신속배송(express) 모드 제거됨
 
     await request.save();
-    triggerPricingSnapshotForRequestDoc(
-      request,
-      `request-stage-change:${String(manufacturerStage || "").trim()}`,
-    );
 
     res.status(200).json({
       success: true,

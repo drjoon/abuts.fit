@@ -63,6 +63,25 @@ const businessAnchorSchema = new mongoose.Schema(
       businessCategory: { type: String, default: "" },
       startDate: { type: String, default: "" },
     },
+    referralMembershipAggregate: {
+      requestorDirectCircleAnchorIds: {
+        type: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "BusinessAnchor",
+          },
+        ],
+        default: [],
+      },
+      requestorDirectCircleMemberCount: {
+        type: Number,
+        default: 0,
+      },
+      updatedAt: {
+        type: Date,
+        default: null,
+      },
+    },
   },
   {
     timestamps: true,

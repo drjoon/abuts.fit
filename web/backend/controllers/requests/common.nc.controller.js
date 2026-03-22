@@ -11,7 +11,6 @@ import {
 } from "./utils.js";
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
 import { triggerEspritForNc } from "./common.review.esprit.js";
-import { triggerPricingSnapshotForRequestDoc } from "../../services/requestSnapshotTriggers.service.js";
 
 function assertAndClaimManufacturerRequestAccess({ req, request }) {
   if (req?.user?.role !== "manufacturer") return;
@@ -583,7 +582,6 @@ export async function saveNcFileAndMoveToMachining(req, res) {
     request.manufacturerStage = "가공";
 
     await request.save();
-    triggerPricingSnapshotForRequestDoc(request, "enter-machining");
 
     return res.status(200).json({
       success: true,

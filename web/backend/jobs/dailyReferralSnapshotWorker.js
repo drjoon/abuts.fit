@@ -1,9 +1,9 @@
 /**
  * 매일 KST 00:00에 실행되는 리퍼럴 그룹 스냅샷 재계산 워커.
  *
- * 오늘 자정(KST 00:00) 기준 직전 30일 완료 의뢰를 집계하여
- * 각 그룹 리더의 groupTotalOrders / groupMemberCount 를
- * PricingReferralStatsSnapshot에 upsert한다.
+ * 오늘 자정(KST 00:00) 기준 직전 30일 주문 집계를 재조정하여
+ * 각 그룹 리더의 rolling 30일 리퍼럴 집계를
+ * PricingReferralRolling30dAggregate에 반영한다.
  * 이 스냅샷이 당일 의뢰 단가 계산의 기준이 된다.
  *
  * 누락 방지: 매 1분마다 KST 자정 여부를 확인하고,
@@ -13,19 +13,19 @@
 import "../bootstrap/env.js";
 import mongoose, { Types } from "mongoose";
 import User from "../models/user.model.js";
-import BusinessAnchor from "../models/businessAnchor.model.js";
-import Request from "../models/request.model.js";
-import PricingReferralStatsSnapshot from "../models/pricingReferralStatsSnapshot.model.js";
+import PricingReferralRolling30dAggregate from "../models/pricingReferralRolling30dAggregate.model.js";
+import ShippingPackage from "../models/shippingPackage.model.js";
+import PricingReferralDailyOrderBucket from "../models/pricingReferralDailyOrderBucket.model.js";
 import ManufacturerCreditLedger from "../models/manufacturerCreditLedger.model.js";
 import ManufacturerDailySettlementSnapshot from "../models/manufacturerDailySettlementSnapshot.model.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../services/bulkShippingSnapshot.service.js";
 import { recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId } from "../services/requestorDashboardSummarySnapshot.service.js";
-import { getDirectReferralCircleAnchorIds } from "../services/pricingReferralSnapshot.service.js";
+import { recomputePricingReferralSnapshotForLeaderAnchorId } from "../services/pricingReferralSnapshot.service.js";
+import { recomputePricingReferralDailyOrderBucketsForBusinessAnchorId } from "../services/pricingReferralOrderBucket.service.js";
 import {
   getTodayYmdInKst,
   getYesterdayYmdInKst,
   getTodayMidnightUtcInKst,
-  getLast30DaysRangeUtc,
 } from "../utils/krBusinessDays.js";
 
 function kstYmdToUtcRange(ymd) {
@@ -50,11 +50,13 @@ function isMidnightKst() {
  * 리더가 1명 이상 있고 스냅샷이 하나도 없으면 누락으로 판단.
  */
 async function isTodaySnapshotMissing(ymd) {
-  const count = await PricingReferralStatsSnapshot.countDocuments({ ymd });
+  const count = await PricingReferralRolling30dAggregate.countDocuments({
+    ymd,
+  });
   return count === 0;
 }
 
-async function runDailySnapshot(ymd, range) {
+async function runDailySnapshot(ymd) {
   const mongoUri = process.env.MONGODB_URI;
   if (!mongoUri) {
     console.error("[dailyReferralSnapshot] MONGODB_URI is not set");
@@ -69,8 +71,6 @@ async function runDailySnapshot(ymd, range) {
   console.log(
     `[${new Date().toISOString()}] Daily referral snapshot started for ymd=${ymd}`,
   );
-
-  const { start: rangeStart, end: rangeEnd } = range;
 
   const leaders = await User.find({
     $or: [
@@ -89,131 +89,42 @@ async function runDailySnapshot(ymd, range) {
     return;
   }
 
-  const leaderAnchorIds = leaders
-    .map((leader) => String(leader?.businessAnchorId || ""))
-    .filter((id) => Types.ObjectId.isValid(id))
-    .map((id) => new Types.ObjectId(id));
-  const requestorCircleAnchorIdsByLeaderAnchorId = new Map(
-    await Promise.all(
+  const leaderAnchorIds = Array.from(
+    new Set(
       leaders
-        .filter((leader) => String(leader?.role || "") === "requestor")
-        .map(async (leader) => {
-          const leaderAnchorId = String(leader?.businessAnchorId || "").trim();
-          const circleIds = leaderAnchorId
-            ? await getDirectReferralCircleAnchorIds(leaderAnchorId, {
-                allowedBusinessTypes: ["requestor"],
-              })
-            : [];
-          return [leaderAnchorId, circleIds];
-        }),
+        .map((leader) => String(leader?.businessAnchorId || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id)),
     ),
   );
 
-  const directChildren = await BusinessAnchor.find({
-    referredByAnchorId: { $in: leaderAnchorIds },
-    businessType: { $in: ["requestor", "salesman", "devops"] },
-  })
-    .select({
-      _id: 1,
-      referredByAnchorId: 1,
-    })
-    .lean();
+  const packageAnchorIds = (await ShippingPackage.distinct("businessAnchorId"))
+    .map((value) => String(value || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id));
+  const bucketAnchorIds = (
+    await PricingReferralDailyOrderBucket.distinct("businessAnchorId")
+  )
+    .map((value) => String(value || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id));
 
-  const childAnchorIdsByLeaderAnchorId = new Map();
-  const childCountByLeaderAnchorId = new Map();
-  for (const anchor of directChildren) {
-    const leaderAnchorId = String(anchor?.referredByAnchorId || "");
-    const childAnchorId = String(anchor?._id || "");
-    if (!leaderAnchorId) continue;
-    childCountByLeaderAnchorId.set(
-      leaderAnchorId,
-      Number(childCountByLeaderAnchorId.get(leaderAnchorId) || 0) + 1,
+  const orderAnchorIds = Array.from(
+    new Set(
+      [...packageAnchorIds, ...bucketAnchorIds].filter((id) =>
+        Types.ObjectId.isValid(id),
+      ),
+    ),
+  );
+
+  for (const businessAnchorId of orderAnchorIds) {
+    await recomputePricingReferralDailyOrderBucketsForBusinessAnchorId(
+      businessAnchorId,
     );
-    if (Types.ObjectId.isValid(childAnchorId)) {
-      const anchorSet =
-        childAnchorIdsByLeaderAnchorId.get(leaderAnchorId) || new Set();
-      anchorSet.add(childAnchorId);
-      childAnchorIdsByLeaderAnchorId.set(leaderAnchorId, anchorSet);
-    }
   }
 
-  const relevantAnchorIds = Array.from(
-    new Set(
-      [
-        ...leaders.map((leader) => String(leader?.businessAnchorId || "")),
-        ...directChildren.map((anchor) => String(anchor?._id || "")),
-        ...Array.from(requestorCircleAnchorIdsByLeaderAnchorId.values()).flat(),
-      ].filter((id) => Types.ObjectId.isValid(id)),
-    ),
-  ).map((id) => new Types.ObjectId(id));
-
-  const requestRows = relevantAnchorIds.length
-    ? await Request.aggregate([
-        {
-          $match: {
-            businessAnchorId: { $in: relevantAnchorIds },
-            manufacturerStage: "추적관리",
-            createdAt: { $gte: rangeStart, $lte: rangeEnd },
-          },
-        },
-        {
-          $group: {
-            _id: "$businessAnchorId",
-            orderCount: { $sum: 1 },
-          },
-        },
-      ])
-    : [];
-
-  const ordersByAnchorId = new Map(
-    requestRows.map((row) => [String(row._id), Number(row.orderCount || 0)]),
-  );
-
   let upsertCount = 0;
-  for (const leader of leaders) {
-    const leaderAnchorId = String(leader?.businessAnchorId || "");
-    if (!Types.ObjectId.isValid(leaderAnchorId)) continue;
-
-    const isRequestorLeader = String(leader?.role || "") === "requestor";
-    const requestorCircleAnchorIds =
-      requestorCircleAnchorIdsByLeaderAnchorId.get(leaderAnchorId) || [];
-    const groupAnchorIds = new Set(
-      isRequestorLeader
-        ? requestorCircleAnchorIds
-        : [
-            leaderAnchorId,
-            ...Array.from(
-              childAnchorIdsByLeaderAnchorId.get(leaderAnchorId) || [],
-            ),
-          ],
-    );
-    const memberCount = isRequestorLeader
-      ? groupAnchorIds.size
-      : 1 + Number(childCountByLeaderAnchorId.get(leaderAnchorId) || 0);
-    const groupTotalOrders = Array.from(groupAnchorIds).reduce(
-      (acc, anchorId) =>
-        acc + Number(ordersByAnchorId.get(String(anchorId)) || 0),
-      0,
-    );
-    const selfBusinessOrders = Number(
-      ordersByAnchorId.get(String(leaderAnchorId)) || 0,
-    );
-    const snapshotBusinessAnchorId = new Types.ObjectId(leaderAnchorId);
-
-    await PricingReferralStatsSnapshot.findOneAndUpdate(
-      { businessAnchorId: snapshotBusinessAnchorId, ymd },
-      {
-        $set: {
-          businessAnchorId: snapshotBusinessAnchorId,
-          groupMemberCount: memberCount,
-          groupTotalOrders,
-          selfBusinessOrders,
-          computedAt: new Date(),
-        },
-      },
-      { upsert: true, new: false },
-    );
-    upsertCount++;
+  for (const leaderAnchorId of leaderAnchorIds) {
+    const result =
+      await recomputePricingReferralSnapshotForLeaderAnchorId(leaderAnchorId);
+    if (result) upsertCount++;
   }
 
   console.log(
@@ -343,9 +254,8 @@ let lastRunYmd = null;
 async function loop() {
   try {
     const ymd = getTodayYmdInKst();
-    const range = getLast30DaysRangeUtc();
 
-    if (!ymd || !range) {
+    if (!ymd) {
       setTimeout(loop, INTERVAL_MS);
       return;
     }
@@ -353,7 +263,7 @@ async function loop() {
     // 자정 타이밍에 실행 (중복 방지)
     if (isMidnightKst() && lastRunYmd !== ymd) {
       lastRunYmd = ymd;
-      await runDailySnapshot(ymd, range);
+      await runDailySnapshot(ymd);
     } else if (lastRunYmd !== ymd) {
       // 자정이 아니더라도 오늘 스냅샷이 누락된 경우 재계산 (워커 장애 복구)
       const missing = await isTodaySnapshotMissing(ymd);
@@ -362,7 +272,7 @@ async function loop() {
           `[dailyReferralSnapshot] Snapshot missing for ymd=${ymd}, running fallback.`,
         );
         lastRunYmd = ymd;
-        await runDailySnapshot(ymd, range);
+        await runDailySnapshot(ymd);
       }
     }
   } catch (err) {

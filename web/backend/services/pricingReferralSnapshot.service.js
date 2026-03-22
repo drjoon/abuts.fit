@@ -1,8 +1,8 @@
 import { Types } from "mongoose";
 import User from "../models/user.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
-import ShippingPackage from "../models/shippingPackage.model.js";
-import PricingReferralStatsSnapshot from "../models/pricingReferralStatsSnapshot.model.js";
+import PricingReferralRolling30dAggregate from "../models/pricingReferralRolling30dAggregate.model.js";
+import { getPricingReferralOrderCountMapByBusinessAnchorIds } from "./pricingReferralOrderBucket.service.js";
 import {
   getLast30DaysRangeUtc,
   getTodayYmdInKst,
@@ -12,59 +12,16 @@ import {
 const LEADER_ROLES = new Set(["requestor", "salesman", "devops"]);
 const REQUESTOR_GROUP_TYPES = ["requestor"];
 const REFERRAL_GROUP_TYPES = ["requestor", "salesman", "devops"];
+const ACTIVE_MEMBERSHIP_STATUSES = ["active", "verified"];
 
-const getOrderCountMapByBusinessAnchorIds = async ({
-  businessAnchorIds,
-  startYmd,
-  endYmd,
-}) => {
-  const anchorIds = Array.from(
+const normalizeAnchorIds = (anchorIds) =>
+  Array.from(
     new Set(
-      (businessAnchorIds || [])
+      (anchorIds || [])
         .map((id) => String(id || "").trim())
         .filter((id) => Types.ObjectId.isValid(id)),
     ),
   );
-
-  if (!anchorIds.length || !startYmd || !endYmd) {
-    return new Map();
-  }
-
-  const rows = await ShippingPackage.aggregate([
-    {
-      $match: {
-        businessAnchorId: {
-          $in: anchorIds.map((id) => new Types.ObjectId(id)),
-        },
-        shipDateYmd: { $gte: startYmd, $lte: endYmd },
-      },
-    },
-    {
-      $unwind: {
-        path: "$requestIds",
-        preserveNullAndEmptyArrays: false,
-      },
-    },
-    {
-      $group: {
-        _id: {
-          businessAnchorId: "$businessAnchorId",
-          requestId: "$requestIds",
-        },
-      },
-    },
-    {
-      $group: {
-        _id: "$_id.businessAnchorId",
-        count: { $sum: 1 },
-      },
-    },
-  ]);
-
-  return new Map(
-    rows.map((row) => [String(row?._id || "").trim(), Number(row?.count || 0)]),
-  );
-};
 
 const resolveLeaderUserByAnchorId = async (businessAnchorId) => {
   const anchorId = String(businessAnchorId || "").trim();
@@ -99,6 +56,166 @@ const resolveLeaderUserByAnchorId = async (businessAnchorId) => {
 
   return rows[0] || null;
 };
+
+const buildRequestorDirectCircleAnchorIds = async (businessAnchorId) => {
+  const anchorId = String(businessAnchorId || "").trim();
+  if (!Types.ObjectId.isValid(anchorId)) return [];
+
+  const selfAnchor = await BusinessAnchor.findById(anchorId)
+    .select({ _id: 1, referredByAnchorId: 1, businessType: 1, status: 1 })
+    .lean();
+  if (!selfAnchor) return [];
+
+  const normalizedBusinessType = String(selfAnchor?.businessType || "").trim();
+  const normalizedStatus = String(selfAnchor?.status || "").trim();
+  if (
+    normalizedBusinessType !== "requestor" ||
+    !ACTIVE_MEMBERSHIP_STATUSES.includes(normalizedStatus)
+  ) {
+    return [];
+  }
+
+  const parentAnchorId = String(selfAnchor?.referredByAnchorId || "").trim();
+  const [parentAnchor, directChildren] = await Promise.all([
+    Types.ObjectId.isValid(parentAnchorId)
+      ? BusinessAnchor.findOne({
+          _id: new Types.ObjectId(parentAnchorId),
+          businessType: "requestor",
+          status: { $in: ACTIVE_MEMBERSHIP_STATUSES },
+        })
+          .select({ _id: 1 })
+          .lean()
+      : null,
+    BusinessAnchor.find({
+      referredByAnchorId: new Types.ObjectId(anchorId),
+      businessType: "requestor",
+      status: { $in: ACTIVE_MEMBERSHIP_STATUSES },
+    })
+      .select({ _id: 1 })
+      .lean(),
+  ]);
+
+  return normalizeAnchorIds([
+    anchorId,
+    String(parentAnchor?._id || "").trim(),
+    ...(directChildren || []).map((row) => String(row?._id || "").trim()),
+  ]);
+};
+
+export const rebuildRequestorDirectCircleMembershipAggregateForAnchorId =
+  async (businessAnchorId) => {
+    const anchorId = String(businessAnchorId || "").trim();
+    if (!Types.ObjectId.isValid(anchorId)) return [];
+
+    const memberAnchorIds = await buildRequestorDirectCircleAnchorIds(anchorId);
+
+    await BusinessAnchor.updateOne(
+      { _id: new Types.ObjectId(anchorId) },
+      {
+        $set: {
+          "referralMembershipAggregate.requestorDirectCircleAnchorIds":
+            memberAnchorIds.map((id) => new Types.ObjectId(id)),
+          "referralMembershipAggregate.requestorDirectCircleMemberCount":
+            memberAnchorIds.length,
+          "referralMembershipAggregate.updatedAt": new Date(),
+        },
+      },
+    );
+
+    return memberAnchorIds;
+  };
+
+export const getStoredRequestorDirectCircleMembershipByAnchorId = async (
+  businessAnchorId,
+) => {
+  const anchorId = String(businessAnchorId || "").trim();
+  if (!Types.ObjectId.isValid(anchorId)) {
+    return {
+      memberAnchorIds: [],
+      memberCount: 0,
+      updatedAt: null,
+    };
+  }
+
+  const anchor = await BusinessAnchor.findById(anchorId)
+    .select({ referralMembershipAggregate: 1 })
+    .lean();
+
+  const memberAnchorIds = normalizeAnchorIds(
+    anchor?.referralMembershipAggregate?.requestorDirectCircleAnchorIds || [],
+  );
+
+  return {
+    memberAnchorIds,
+    memberCount: Number(
+      anchor?.referralMembershipAggregate?.requestorDirectCircleMemberCount ||
+        memberAnchorIds.length ||
+        0,
+    ),
+    updatedAt: anchor?.referralMembershipAggregate?.updatedAt || null,
+  };
+};
+
+export const getPricingReferralRolling30dAggregateByBusinessAnchorId = async (
+  businessAnchorId,
+  ymd = getTodayYmdInKst(),
+) => {
+  const anchorId = String(businessAnchorId || "").trim();
+  if (!Types.ObjectId.isValid(anchorId) || !ymd) return null;
+
+  return PricingReferralRolling30dAggregate.findOne({
+    businessAnchorId: new Types.ObjectId(anchorId),
+    ymd,
+  })
+    .select({
+      businessId: 1,
+      businessAnchorId: 1,
+      ymd: 1,
+      startYmd: 1,
+      endYmd: 1,
+      groupMemberCount: 1,
+      groupTotalOrders30d: 1,
+      selfBusinessOrders30d: 1,
+      computedAt: 1,
+    })
+    .lean();
+};
+
+export const rebuildRequestorDirectCircleMembershipAggregatesForAffectedAnchorId =
+  async (businessAnchorId) => {
+    const anchorId = String(businessAnchorId || "").trim();
+    if (!Types.ObjectId.isValid(anchorId)) return [];
+
+    const currentAnchor = await BusinessAnchor.findById(anchorId)
+      .select({ _id: 1, referredByAnchorId: 1, businessType: 1 })
+      .lean();
+    if (!currentAnchor) return [];
+
+    const childRequestors = await BusinessAnchor.find({
+      referredByAnchorId: new Types.ObjectId(anchorId),
+      businessType: "requestor",
+    })
+      .select({ _id: 1 })
+      .lean();
+
+    const affectedRequestorAnchorIds = normalizeAnchorIds([
+      String(currentAnchor?.businessType || "").trim() === "requestor"
+        ? anchorId
+        : "",
+      String(currentAnchor?.referredByAnchorId || "").trim(),
+      ...(childRequestors || []).map((row) => String(row?._id || "").trim()),
+    ]);
+
+    await Promise.all(
+      affectedRequestorAnchorIds.map((requestorAnchorId) =>
+        rebuildRequestorDirectCircleMembershipAggregateForAnchorId(
+          requestorAnchorId,
+        ),
+      ),
+    );
+
+    return affectedRequestorAnchorIds;
+  };
 
 export const getDirectReferralCircleAnchorIds = async (
   businessAnchorId,
@@ -167,9 +284,9 @@ export const recomputePricingReferralSnapshotForLeaderAnchorId = async (
   // memberCount와 groupTotalOrders가 다시 부풀 수 있으므로 business anchor만 읽는다.
   const groupAnchorIds =
     leader?.role === "requestor"
-      ? await getDirectReferralCircleAnchorIds(leaderAnchorId, {
-          allowedBusinessTypes: REQUESTOR_GROUP_TYPES,
-        })
+      ? await rebuildRequestorDirectCircleMembershipAggregateForAnchorId(
+          leaderAnchorId,
+        )
       : Array.from(
           new Set(
             [
@@ -186,7 +303,7 @@ export const recomputePricingReferralSnapshotForLeaderAnchorId = async (
           ),
         );
 
-  const countMap = await getOrderCountMapByBusinessAnchorIds({
+  const countMap = await getPricingReferralOrderCountMapByBusinessAnchorIds({
     businessAnchorIds: groupAnchorIds,
     startYmd,
     endYmd,
@@ -204,15 +321,18 @@ export const recomputePricingReferralSnapshotForLeaderAnchorId = async (
       : null;
   const snapshotBusinessAnchorId = new Types.ObjectId(leaderAnchorId);
 
-  await PricingReferralStatsSnapshot.findOneAndUpdate(
+  await PricingReferralRolling30dAggregate.findOneAndUpdate(
     { businessAnchorId: snapshotBusinessAnchorId, ymd },
     {
       $set: {
         businessId: snapshotBusinessId,
         businessAnchorId: snapshotBusinessAnchorId,
+        ymd,
+        startYmd,
+        endYmd,
         groupMemberCount: groupAnchorIds.length,
-        groupTotalOrders,
-        selfBusinessOrders,
+        groupTotalOrders30d: groupTotalOrders,
+        selfBusinessOrders30d: selfBusinessOrders,
         computedAt: new Date(),
       },
     },
@@ -240,9 +360,9 @@ export const recomputePricingReferralSnapshotsForAffectedAnchorId = async (
 
   const leaderAnchorIds =
     String(currentAnchor?.businessType || "") === "requestor"
-      ? await getDirectReferralCircleAnchorIds(anchorId, {
-          allowedBusinessTypes: REQUESTOR_GROUP_TYPES,
-        })
+      ? await rebuildRequestorDirectCircleMembershipAggregatesForAffectedAnchorId(
+          anchorId,
+        )
       : Array.from(
           new Set(
             [
