@@ -12,8 +12,13 @@ import {
   recomputePricingReferralSnapshotForLeaderAnchorId,
 } from "../../services/pricingReferralSnapshot.service.js";
 import { getPricingReferralOrderCountMapByBusinessAnchorIds } from "../../services/pricingReferralOrderBucket.service.js";
+import {
+  clearAdminReferralCaches,
+  getAdminReferralCache,
+  setAdminReferralCache,
+  withAdminReferralInFlight,
+} from "../../services/adminReferralCache.service.js";
 
-const ADMIN_REFERRAL_CACHE_TTL_MS = 60 * 60 * 1000;
 const REFERRAL_LEADER_ROLE_FILTER = [
   { role: "salesman" },
   { role: "devops" },
@@ -22,38 +27,6 @@ const REFERRAL_LEADER_ROLE_FILTER = [
 const REFERRAL_TREE_ROLES = ["requestor", "salesman", "devops"];
 const REFERRAL_REVENUE_OWNER_ROLES = new Set(["requestor", "devops"]);
 const REFERRAL_COMMISSION_LEADER_ROLES = new Set(["salesman", "devops"]);
-const adminReferralCache = new Map();
-const adminReferralInFlight = new Map();
-
-function getAdminReferralCache(key) {
-  const hit = adminReferralCache.get(key);
-  if (!hit) return null;
-  if (Date.now() - hit.ts > ADMIN_REFERRAL_CACHE_TTL_MS) {
-    adminReferralCache.delete(key);
-    return null;
-  }
-  return hit.value;
-}
-
-function setAdminReferralCache(key, value) {
-  adminReferralCache.set(key, { ts: Date.now(), value });
-}
-
-async function withAdminReferralInFlight(key, factory) {
-  const existing = adminReferralInFlight.get(key);
-  if (existing) return existing;
-
-  const promise = Promise.resolve()
-    .then(factory)
-    .finally(() => {
-      if (adminReferralInFlight.get(key) === promise) {
-        adminReferralInFlight.delete(key);
-      }
-    });
-
-  adminReferralInFlight.set(key, promise);
-  return promise;
-}
 
 async function getShippingRequestCountByBusinessAnchorIds({
   businessAnchorIds,
@@ -491,37 +464,40 @@ export async function getReferralGroupTree(req, res) {
         .json({ success: false, message: "권한이 없습니다." });
     }
 
-    const cacheKey = `referral-group-tree:v10:${leaderId}:lite=${lite ? 1 : 0}`;
     const refresh = String(req.query.refresh || "") === "1";
+    const leader = await User.findById(leaderId)
+      .select({
+        _id: 1,
+        role: 1,
+        requestorRole: 1,
+        name: 1,
+        email: 1,
+        business: 1,
+        businessAnchorId: 1,
+        active: 1,
+        createdAt: 1,
+        approvedAt: 1,
+        updatedAt: 1,
+        referredByAnchorId: 1,
+      })
+      .lean();
+
+    if (!leader || !REFERRAL_TREE_ROLES.includes(String(leader.role || ""))) {
+      const error = new Error("리더를 찾을 수 없습니다.");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const leaderBusinessAnchorIdForCache = String(
+      leader?.businessAnchorId || "",
+    ).trim();
+    const cacheKey = `referral-group-tree:v11:${leaderId}:anchor=${leaderBusinessAnchorIdForCache}:lite=${lite ? 1 : 0}`;
     if (!refresh) {
       const cached = getAdminReferralCache(cacheKey);
       if (cached) return res.status(200).json(cached);
     }
 
     const payload = await withAdminReferralInFlight(cacheKey, async () => {
-      const leader = await User.findById(leaderId)
-        .select({
-          _id: 1,
-          role: 1,
-          requestorRole: 1,
-          name: 1,
-          email: 1,
-          business: 1,
-          businessAnchorId: 1,
-          active: 1,
-          createdAt: 1,
-          approvedAt: 1,
-          updatedAt: 1,
-          referredByAnchorId: 1,
-        })
-        .lean();
-
-      if (!leader || !REFERRAL_TREE_ROLES.includes(String(leader.role || ""))) {
-        const error = new Error("리더를 찾을 수 없습니다.");
-        error.statusCode = 404;
-        throw error;
-      }
-
       const leaderBusinessAnchorId = String(leader?.businessAnchorId || "");
       if (!Types.ObjectId.isValid(leaderBusinessAnchorId)) {
         const error = new Error(
@@ -911,7 +887,7 @@ export async function recalcReferralSnapshot() {
   const leaders = normalizeReferralLeaders(rawLeaders);
 
   if (!leaders.length) {
-    adminReferralCache.clear();
+    clearAdminReferralCaches();
     return { success: true, upsertCount: 0, ymd, computedAt: new Date() };
   }
 
@@ -931,7 +907,7 @@ export async function recalcReferralSnapshot() {
     if (result) upsertCount += 1;
   }
 
-  adminReferralCache.clear();
+  clearAdminReferralCaches();
   return { success: true, upsertCount, ymd, computedAt };
 }
 

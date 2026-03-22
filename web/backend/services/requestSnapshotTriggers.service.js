@@ -5,6 +5,7 @@ import { recomputePricingReferralDailyOrderBucketsForBusinessAnchorId } from "./
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "./bulkShippingSnapshot.service.js";
 import { recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId } from "./requestorDashboardSummarySnapshot.service.js";
 import { invalidateDashboardAndBulkCachesForBusinessAnchorId } from "./requestDashboardCache.service.js";
+import { invalidateAdminReferralCachesForBusinessAnchorId } from "./adminReferralCache.service.js";
 
 const normalizeAnchorId = (value) => String(value || "").trim();
 
@@ -16,6 +17,7 @@ const refreshPricingReferralAggregateForAnchorId = (
   if (!Types.ObjectId.isValid(anchorId)) return;
 
   invalidateDashboardAndBulkCachesForBusinessAnchorId(anchorId);
+  invalidateAdminReferralCachesForBusinessAnchorId(anchorId);
 
   void recomputePricingReferralSnapshotsForAffectedAnchorId(anchorId)
     .then((results) => {
@@ -32,6 +34,7 @@ const refreshPricingReferralAggregateForAnchorId = (
 
       for (const affectedAnchorId of affectedAnchorIds) {
         invalidateDashboardAndBulkCachesForBusinessAnchorId(affectedAnchorId);
+        invalidateAdminReferralCachesForBusinessAnchorId(affectedAnchorId);
       }
 
       return Promise.all(
