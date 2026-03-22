@@ -120,9 +120,10 @@
 ### 2.5 소개 네트워크 의미 규칙
 
 - `requestor`의 소개는 **그룹 할인 네트워크**입니다.
-  - 본인 사업자와 본인이 직접 소개한 사업자만 같은 그룹으로 봅니다.
-  - 그룹 전체는 동일한 할인율을 적용받습니다.
-  - 간접 소개는 그룹 할인에 포함하지 않습니다.
+  - direct circle 기준은 **본인 + 본인을 직접 소개한 사업자 1단계 + 본인이 직접 소개한 사업자 1단계** 입니다.
+  - 위 direct circle 멤버는 **모두 같은 소개 할인**을 적용받습니다.
+  - **2단계 이상 간접 소개는 제외**합니다.
+  - 예: 내 소개자의 다른 소개 사업자는 내 그룹이 아닙니다.
 - `salesman`, `devops`의 소개는 **소개 사업자 네트워크**입니다.
   - 그룹 할인 개념이 아니라, 내가 소개한 하위 사업자/소개자를 보는 개념입니다.
   - 통계는 기본적으로 `소개 사업자 수`, `소개 사업자 주문합`, `내 사업자 주문수`를 분리해서 다룹니다.
@@ -172,9 +173,36 @@
   - 예: requestor가 자신의 소개 링크로 가입 완료되면, 그 순간 소개자/피소개자 관계와 그룹 멤버 SSOT를 함께 write합니다.
   - 예: 멤버 탈퇴/비활성화/사업자 전환처럼 관계가 바뀌는 이벤트도 write 트리거에 포함합니다.
   - 소개 관계 write 트리거는 **referrer 입력 시점만으로 끝나지 않을 수 있습니다.** child `businessAnchorId`가 아직 없으면, 실제 `BusinessAnchor` 생성/attach 이벤트에서 canonical 관계를 최종 확정합니다.
+  - requestor 소개 그룹 SSOT는 **direct circle(부모 1단계 + 본인 + 자식 1단계)** 기준으로 유지합니다.
+  - rolling 30일 주문합처럼 시간 경과만으로도 값이 바뀌는 집계는 **write-on-event + 일자 경계 rollover/reconcile** 방식으로 유지합니다.
   - 따라서 소개 수/그룹 멤버 수/소개 트리는 `User.referredByAnchorId`가 아니라 **`BusinessAnchor.referredByAnchorId`만 읽습니다.**
-- read API, 카드 렌더링, 통계 조회에서는 SSOT를 다시 계산하지 않습니다.
-- 필요한 경우 배치/백필은 허용하지만, 그 목적은 **SSOT를 복구/정렬**하는 것이지 read-path 계산을 대체하는 것이 아닙니다.
+  - read API, 카드 렌더링, 통계 조회에서는 SSOT를 다시 계산하지 않습니다.
+  - 필요한 경우 배치/백필은 허용하지만, 그 목적은 **SSOT를 복구/정렬**하는 것이지 read-path 계산을 대체하는 것이 아닙니다.
+- requestor 할인/주문합 집계는 **조회 시 계산**이 아니라 **materialized aggregate**로 유지합니다.
+  - 관계 집계는 `BusinessAnchor.referredByAnchorId` 기준의 **direct circle membership aggregate** 를 사용합니다.
+  - 주문 집계는 사업자별 **일자 bucket aggregate** 를 기본 단위로 사용하고, rolling 30일 값은 그 bucket 합으로 유지합니다.
+  - read path는 aggregate를 그대로 읽고, 집계가 비어 있다고 해서 레거시 실시간 전체 재계산으로 되돌아가지 않습니다.
+- requestor direct circle aggregate에 영향을 주는 canonical 이벤트는 다음과 같습니다.
+  - `BusinessAnchor` 생성/attach
+  - `BusinessAnchor.referredByAnchorId` 변경
+  - `BusinessAnchor.businessType` 변경
+  - `BusinessAnchor.status` 변경(`active`, `inactive`, `merged`)
+  - 사업자 삭제, anchor 삭제, 사업자 재연결/이관
+- requestor rolling 30일 주문합 aggregate에 영향을 주는 canonical 이벤트는 다음과 같습니다.
+  - `shippingPackageId` 기준 request의 박스 편입/제거
+  - `shipDateYmd` 변경
+  - 배송 완료/취소/롤백처럼 **박스 기준 주문합 포함 여부**가 바뀌는 이벤트
+  - 사업자 변경 등으로 `businessAnchorId` 귀속이 바뀌는 이벤트
+- 다음 이벤트는 requestor rolling 주문합 aggregate의 canonical source로 직접 삼지 않습니다.
+  - 단순 `request-created`
+  - 단순 `enter-machining`
+  - aggregate 포함 여부를 바꾸지 않는 일반 공정 이동
+- event-driven aggregate는 **idempotent event 처리**를 기본으로 합니다.
+  - 같은 이벤트를 두 번 받아도 결과가 같아야 합니다.
+  - 가능하면 `eventKey` 또는 source document version 기준으로 중복 반영을 막습니다.
+  - 실패 복구를 위해 aggregate는 anchor 단위 targeted rebuild가 가능해야 합니다.
+- 배치 작업은 제거 대상이 아니라 역할이 축소되는 대상입니다.
+  - 전체 read-path 계산을 대신하지 않고, **자정 rollover**, **누락 복구**, **reconcile/backfill** 만 담당합니다.
 
 ### 3.1.1 bridge-server CNC 연속가공 SSOT
 
