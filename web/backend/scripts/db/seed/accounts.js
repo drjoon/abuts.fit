@@ -97,6 +97,7 @@ async function ensureBusinessFromSpec(spec, ownerId) {
   if (!spec) return null;
   const business = await findOrCreateOrganization({
     organizationType: spec.type,
+    businessAnchorType: spec.businessAnchorType,
     name: spec.name,
     ownerId,
     memberIds: [],

@@ -4,7 +4,7 @@ const businessSchema = new mongoose.Schema(
   {
     businessType: {
       type: String,
-      enum: ["requestor", "salesman", "manufacturer", "devops"],
+      enum: ["requestor", "salesman", "manufacturer", "devops", "admin"],
       default: "requestor",
       index: true,
     },

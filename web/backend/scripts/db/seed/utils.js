@@ -141,6 +141,7 @@ export async function findOrCreateUser(doc) {
 
 export async function findOrCreateOrganization({
   organizationType,
+  businessAnchorType,
   name,
   ownerId,
   memberIds = [],
@@ -162,7 +163,7 @@ export async function findOrCreateOrganization({
       { businessNumberNormalized },
       {
         $set: {
-          businessType: organizationType,
+          businessType: businessAnchorType || organizationType,
           name,
           status: "verified",
           primaryContactUserId: ownerId || null,

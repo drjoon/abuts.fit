@@ -48,22 +48,22 @@ async function run() {
     //     .filter(Boolean),
     // });
 
-    const bulkResult = await seedBulkAccounts();
-    if (bulkResult) {
-      await persistJsonFile(
-        BULK_OUTPUT_PATH,
-        {
-          generatedAt: new Date().toISOString(),
-          requestors: bulkResult.requestors,
-          salesmen: bulkResult.salesmen,
-        },
-        "bulk account credentials",
-      );
-      console.log("[db] seed-account bulk users", {
-        requestorCount: bulkResult.requestors.length,
-        salesmanCount: bulkResult.salesmen.length,
-      });
-    }
+    // const bulkResult = await seedBulkAccounts();
+    // if (bulkResult) {
+    //   await persistJsonFile(
+    //     BULK_OUTPUT_PATH,
+    //     {
+    //       generatedAt: new Date().toISOString(),
+    //       requestors: bulkResult.requestors,
+    //       salesmen: bulkResult.salesmen,
+    //     },
+    //     "bulk account credentials",
+    //   );
+    //   console.log("[db] seed-account bulk users", {
+    //     requestorCount: bulkResult.requestors.length,
+    //     salesmanCount: bulkResult.salesmen.length,
+    //   });
+    // }
   } finally {
     await disconnectDb();
   }
