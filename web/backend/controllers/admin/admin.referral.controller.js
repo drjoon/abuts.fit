@@ -542,54 +542,91 @@ export async function getReferralGroupTree(req, res) {
         throw error;
       }
 
-      const rootAnchor = leaderAnchor;
+      // 의뢰자가 다른 의뢰자에게 소개받은 경우 → 소개자를 root로, 자신을 child로 보여준다.
+      // (잔아트: referredByAnchorId=우리기공소 → 우리기공소+잔아트 2개소)
+      let groupContextReferrerAnchor = null;
+      const leaderReferredByAnchorIdStr = leaderAnchor?.referredByAnchorId
+        ? String(leaderAnchor.referredByAnchorId)
+        : null;
+      if (
+        leaderReferredByAnchorIdStr &&
+        Types.ObjectId.isValid(leaderReferredByAnchorIdStr)
+      ) {
+        const candidateReferrerAnchor = await BusinessAnchor.findById(
+          new Types.ObjectId(leaderReferredByAnchorIdStr),
+        )
+          .select({
+            _id: 1,
+            businessType: 1,
+            name: 1,
+            metadata: 1,
+            referredByAnchorId: 1,
+            createdAt: 1,
+            updatedAt: 1,
+            status: 1,
+          })
+          .lean();
+        if (candidateReferrerAnchor?.businessType === "requestor") {
+          groupContextReferrerAnchor = candidateReferrerAnchor;
+        }
+      }
 
-      const descendantRows = await BusinessAnchor.aggregate([
-        {
-          $match: {
-            _id: new Types.ObjectId(rootBusinessAnchorId),
-          },
-        },
-        {
-          $graphLookup: {
-            from: "businessanchors",
-            startWith: "$_id",
-            connectFromField: "_id",
-            connectToField: "referredByAnchorId",
-            as: "descendants",
-            restrictSearchWithMatch: {
-              businessType: { $in: REFERRAL_TREE_ROLES },
+      const effectiveRootBusinessAnchorId = groupContextReferrerAnchor
+        ? String(groupContextReferrerAnchor._id)
+        : rootBusinessAnchorId;
+
+      let anchorMembers;
+      if (groupContextReferrerAnchor) {
+        // 그룹 멤버 뷰: 소개자(root) + 자신(child)
+        anchorMembers = [groupContextReferrerAnchor, leaderAnchor];
+      } else {
+        // 소개 리더 뷰: 자신(root) + 모든 하위 사업자
+        const descendantRows = await BusinessAnchor.aggregate([
+          {
+            $match: {
+              _id: new Types.ObjectId(rootBusinessAnchorId),
             },
           },
-        },
-        {
-          $project: {
-            descendants: {
-              $map: {
-                input: "$descendants",
-                as: "anchor",
-                in: {
-                  _id: "$$anchor._id",
-                  businessType: "$$anchor.businessType",
-                  name: "$$anchor.name",
-                  metadata: "$$anchor.metadata",
-                  referredByAnchorId: "$$anchor.referredByAnchorId",
-                  createdAt: "$$anchor.createdAt",
-                  updatedAt: "$$anchor.updatedAt",
-                  status: "$$anchor.status",
+          {
+            $graphLookup: {
+              from: "businessanchors",
+              startWith: "$_id",
+              connectFromField: "_id",
+              connectToField: "referredByAnchorId",
+              as: "descendants",
+              restrictSearchWithMatch: {
+                businessType: { $in: REFERRAL_TREE_ROLES },
+              },
+            },
+          },
+          {
+            $project: {
+              descendants: {
+                $map: {
+                  input: "$descendants",
+                  as: "anchor",
+                  in: {
+                    _id: "$$anchor._id",
+                    businessType: "$$anchor.businessType",
+                    name: "$$anchor.name",
+                    metadata: "$$anchor.metadata",
+                    referredByAnchorId: "$$anchor.referredByAnchorId",
+                    createdAt: "$$anchor.createdAt",
+                    updatedAt: "$$anchor.updatedAt",
+                    status: "$$anchor.status",
+                  },
                 },
               },
             },
           },
-        },
-      ]);
-
-      const anchorMembers = [
-        leaderAnchor,
-        ...(descendantRows?.[0]?.descendants || []).filter(
-          (anchor) => String(anchor?._id || "") !== String(leaderAnchor._id),
-        ),
-      ];
+        ]);
+        anchorMembers = [
+          leaderAnchor,
+          ...(descendantRows?.[0]?.descendants || []).filter(
+            (anchor) => String(anchor?._id || "") !== String(leaderAnchor._id),
+          ),
+        ];
+      }
 
       const memberBusinessAnchorIds = Array.from(
         new Set(
@@ -761,29 +798,36 @@ export async function getReferralGroupTree(req, res) {
         nodeById.get(parentBusinessAnchorId).children.push(node);
       }
 
+      const effectiveRootAnchor = groupContextReferrerAnchor || leaderAnchor;
       const rootLeaderUser =
-        String(rootBusinessAnchorId) === String(leaderBusinessAnchorId)
+        String(effectiveRootBusinessAnchorId) === String(leaderBusinessAnchorId)
           ? leader
           : representativeUsersByBusinessAnchorId.get(
-              rootBusinessAnchorId,
+              effectiveRootBusinessAnchorId,
             )?.[0] || null;
 
-      const rootNode = nodeById.get(String(rootBusinessAnchorId)) || {
-        _id: rootBusinessAnchorId,
-        role: rootLeaderUser?.role || leaderAnchor?.businessType || "requestor",
+      const rootNode = nodeById.get(String(effectiveRootBusinessAnchorId)) || {
+        _id: effectiveRootBusinessAnchorId,
+        role:
+          rootLeaderUser?.role ||
+          effectiveRootAnchor?.businessType ||
+          "requestor",
         requestorRole: rootLeaderUser?.requestorRole || null,
-        name: rootLeaderUser?.name || leaderAnchor?.name || "",
-        email: rootLeaderUser?.email || leaderAnchor?.metadata?.email || "",
-        business: rootLeaderUser?.business || leaderAnchor?.name || "",
-        businessAnchorId: rootBusinessAnchorId,
+        name: rootLeaderUser?.name || effectiveRootAnchor?.name || "",
+        email:
+          rootLeaderUser?.email || effectiveRootAnchor?.metadata?.email || "",
+        business: rootLeaderUser?.business || effectiveRootAnchor?.name || "",
+        businessAnchorId: effectiveRootBusinessAnchorId,
         active:
           rootLeaderUser?.active ??
-          (String(leaderAnchor?.status || "") !== "inactive" &&
-            String(leaderAnchor?.status || "") !== "merged"),
-        createdAt: rootLeaderUser?.createdAt || leaderAnchor?.createdAt || null,
+          (String(effectiveRootAnchor?.status || "") !== "inactive" &&
+            String(effectiveRootAnchor?.status || "") !== "merged"),
+        createdAt:
+          rootLeaderUser?.createdAt || effectiveRootAnchor?.createdAt || null,
         approvedAt: rootLeaderUser?.approvedAt || null,
-        updatedAt: rootLeaderUser?.updatedAt || leaderAnchor?.updatedAt || null,
-        referredByAnchorId: leaderAnchor?.referredByAnchorId || null,
+        updatedAt:
+          rootLeaderUser?.updatedAt || effectiveRootAnchor?.updatedAt || null,
+        referredByAnchorId: effectiveRootAnchor?.referredByAnchorId || null,
         children: [],
       };
       if (

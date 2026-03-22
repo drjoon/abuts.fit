@@ -145,9 +145,6 @@ export function ReferralNetworkChart({
           if (childCount === 1) {
             x = 0;
             y = -radius;
-          } else if (childCount === 2) {
-            x = index === 1 ? -radius * 0.88 : radius * 0.88;
-            y = 0;
           } else {
             const angleIndex = index - 1;
             const angle =
@@ -178,7 +175,7 @@ export function ReferralNetworkChart({
           },
           label: {
             show: true,
-            color: isRoot ? "#ffffff" : "#0f172a",
+            color: "#0f172a",
             fontSize: isRoot ? 14 : 12,
             fontWeight: isRoot ? 800 : 700,
             lineHeight: 15,

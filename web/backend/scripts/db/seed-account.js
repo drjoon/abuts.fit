@@ -41,12 +41,12 @@ async function run() {
       );
     }
 
-    const defaultResult = await seedDefaultAccounts();
-    console.log("[db] seed-account default users", {
-      emails: Object.values(defaultResult.users || {})
-        .map((user) => user?.email)
-        .filter(Boolean),
-    });
+    // const defaultResult = await seedDefaultAccounts();
+    // console.log("[db] seed-account default users", {
+    //   emails: Object.values(defaultResult.users || {})
+    //     .map((user) => user?.email)
+    //     .filter(Boolean),
+    // });
 
     const bulkResult = await seedBulkAccounts();
     if (bulkResult) {

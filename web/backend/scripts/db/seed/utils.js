@@ -125,6 +125,11 @@ export async function createSalesmen({
 export async function findOrCreateUser(doc) {
   const existing = await User.findOne({ email: doc.email });
   if (existing) {
+    // 이미 사업자 온보딩이 완료된 계정(businessAnchorId 존재)은 시딩이 덮어쓰지 않는다.
+    // 사용자가 데모 이메일로 실계정을 만든 경우 등 의도치 않은 데이터 손상 방지.
+    if (existing.businessAnchorId && !doc.businessAnchorId) {
+      return existing;
+    }
     Object.entries(doc).forEach(([key, value]) => {
       existing[key] = value;
     });
