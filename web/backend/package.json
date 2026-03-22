@@ -12,6 +12,7 @@
     "test:coverage": "NODE_ENV=test jest --coverage",
     "db:reset": "cross-env ENV_FILE=local.env node scripts/db/reset.js",
     "db:seed-account": "cross-env ENV_FILE=local.env node scripts/db/seed-account.js",
+    "db:reset-password": "cross-env ENV_FILE=local.env node scripts/db/reset-password.js",
     "db:seed-data": "cross-env ENV_FILE=local.env node scripts/db/seed-data.js",
     "db:implant-preset": "cross-env ENV_FILE=local.env node scripts/db/implant-preset.js",
     "worker:monthly-referral-snapshot": "cross-env ENV_FILE=local.env node jobs/dailyReferralSnapshotWorker.js",
