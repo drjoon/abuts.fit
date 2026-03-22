@@ -229,10 +229,13 @@ async function resolveReferrerTargets({
   };
 }
 
+// $ 는 .env 파일의 변수 확장 문자이므로 비밀번호에 사용하지 않는다.
+// 이 규칙은 시딩(PASSWORD_ALPHABET), 회원가입, 비밀번호 재설정 모두에 동일하게 적용한다.
 const isStrongPassword = (password) => {
   const p = String(password || "");
   if (p.length < 10) return false;
-  if (!/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(p)) return false;
+  if (p.includes("$")) return false;
+  if (!/[!@#%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(p)) return false;
   return true;
 };
 
@@ -525,7 +528,8 @@ async function register(req, res) {
     if (!socialProvider && !isStrongPassword(password)) {
       return res.status(400).json({
         success: false,
-        message: "비밀번호는 10자 이상이며 특수문자를 포함해야 합니다.",
+        message:
+          "비밀번호는 10자 이상이며 특수문자(!@#%^&* 등)를 포함해야 합니다. $는 사용할 수 없습니다.",
       });
     }
 
@@ -1138,7 +1142,8 @@ async function resetPassword(req, res) {
       await logAuthFailure(req, "RESET_PASSWORD_WEAK_PASSWORD");
       return res.status(400).json({
         success: false,
-        message: "비밀번호는 10자 이상이며 특수문자를 포함해야 합니다.",
+        message:
+          "비밀번호는 10자 이상이며 특수문자(!@#%^&* 등)를 포함해야 합니다. $는 사용할 수 없습니다.",
       });
     }
 

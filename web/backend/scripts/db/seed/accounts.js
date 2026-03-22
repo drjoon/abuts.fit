@@ -54,8 +54,9 @@ async function grantRequestorSeedCredit({
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// $ 제외: .env 파일에서 변수 확장 문자로 해석되어 escape 처리가 필요해지므로 사용하지 않는다.
 const PASSWORD_ALPHABET =
-  "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz0123456789!@#$%^&*()-_=+";
+  "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz0123456789!@#%^&*()-_=+";
 const ESSENTIAL_ACCOUNTS_CONFIG_PATH = path.join(
   __dirname,
   ".essential-accounts.config.json",
@@ -184,16 +185,16 @@ export async function seedEssentialAccounts() {
 
 export async function seedDefaultAccounts() {
   const passwords = {
-    requestorOwner: "Rq!8zY#4fQ@7nC5$",
-    requestorStaff: "Rs!9xT#5gA@6mD4$",
-    manufacturerOwner: "Mo!7vL#6pR@3sB8$",
-    manufacturerStaff: "Ms!5kP#8wQ@2nZ7$",
-    adminOwner: "Ao!6fN#9rV@4cH2$",
-    adminStaff: "As!4mJ#7tK@9pW3$",
-    salesmanOwner: "So!8qL#3mV@6pK2$",
-    salesmanStaff: "Ss!7wN#4cX@5rT1$",
-    devopsOwner: "Do!6vP#9xS@4nZ1$",
-    devopsStaff: "Ds!5mQ#7kV@3rB2$",
+    requestorOwner: "Rq!8zY#4fQ@7nC5!",
+    requestorStaff: "Rs!9xT#5gA@6mD4!",
+    manufacturerOwner: "Mo!7vL#6pR@3sB8!",
+    manufacturerStaff: "Ms!5kP#8wQ@2nZ7!",
+    adminOwner: "Ao!6fN#9rV@4cH2!",
+    adminStaff: "As!4mJ#7tK@9pW3!",
+    salesmanOwner: "So!8qL#3mV@6pK2!",
+    salesmanStaff: "Ss!7wN#4cX@5rT1!",
+    devopsOwner: "Do!6vP#9xS@4nZ1!",
+    devopsStaff: "Ds!5mQ#7kV@3rB2!",
   };
 
   const requestorOwner = await findOrCreateUser({
