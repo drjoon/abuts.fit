@@ -532,7 +532,10 @@ export default function AdminReferralGroupsPage() {
       if (!res.ok || !res.data?.success) {
         toast({
           title: "사업자 포함 계정 삭제 실패",
-          description: res.data?.message || res.data?.error || "잠시 후 다시 시도해주세요.",
+          description:
+            res.data?.message ||
+            res.data?.error ||
+            "잠시 후 다시 시도해주세요.",
           variant: "destructive",
         });
         return false;
@@ -544,8 +547,12 @@ export default function AdminReferralGroupsPage() {
       setDeleteTarget(null);
       setSelectedNode(null);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["admin-referral-groups", period] }),
-        queryClient.invalidateQueries({ queryKey: ["admin-referral-group-tree"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["admin-referral-groups", period],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["admin-referral-group-tree"],
+        }),
       ]);
       return true;
     } finally {
@@ -934,12 +941,13 @@ export default function AdminReferralGroupsPage() {
             ) : (
               <>
                 {/* 소개 네트워크 차트 */}
-                <div className="border rounded-lg p-4 bg-white">
+                <div className="border rounded-lg p-4 bg-white min-h-[520px]">
                   <ReferralNetworkChart
                     data={treeData.tree}
                     title="선택한 리더의 소개 네트워크"
+                    mode="radial-tree"
                     legendRoles={["requestor", "salesman", "devops"]}
-                    chartHeight={320}
+                    chartHeight={430}
                   />
                 </div>
 
@@ -1237,7 +1245,13 @@ export default function AdminReferralGroupsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>사업자 포함 계정을 삭제할까요?</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteTarget?.business || deleteTarget?.name || deleteTarget?.email || "선택한 계정"} 계정과 연결된 사업자, 그리고 안전 조건을 만족하는 경우 business anchor까지 함께 삭제합니다. 다른 계정이나 하위 참조가 남아 있으면 삭제가 거부됩니다.
+              {deleteTarget?.business ||
+                deleteTarget?.name ||
+                deleteTarget?.email ||
+                "선택한 계정"}{" "}
+              계정과 연결된 사업자, 그리고 안전 조건을 만족하는 경우 business
+              anchor까지 함께 삭제합니다. 다른 계정이나 하위 참조가 남아 있으면
+              삭제가 거부됩니다.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

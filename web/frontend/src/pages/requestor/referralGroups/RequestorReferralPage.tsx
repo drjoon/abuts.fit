@@ -300,6 +300,7 @@ export const RequestorReferralPage = () => {
                     data={treeData}
                     maxDepth={1}
                     title="소개 네트워크"
+                    mode="radial-group"
                     visibleRoles={["requestor"]}
                     legendRoles={[]}
                     chartHeight={320}

@@ -169,12 +169,12 @@ export const SalesmanReferralPage = () => {
               <>
                 {/* 소개 네트워크 차트 */}
                 {loadingTree ? (
-                  <Card className="border-gray-200">
+                  <Card className="border-gray-200 min-h-[520px]">
                     <CardHeader>
                       <CardTitle className="text-base">소개 네트워크</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <Skeleton className="h-[320px]" />
+                      <Skeleton className="h-[430px]" />
                     </CardContent>
                   </Card>
                 ) : (
@@ -182,9 +182,10 @@ export const SalesmanReferralPage = () => {
                     data={treeData}
                     maxDepth={2}
                     title="내 소개 네트워크"
+                    mode="radial-tree"
                     visibleRoles={["requestor", "salesman"]}
                     legendRoles={["requestor", "salesman"]}
-                    chartHeight={320}
+                    chartHeight={430}
                   />
                 )}
               </>

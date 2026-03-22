@@ -479,7 +479,7 @@ export async function getReferralGroupTree(req, res) {
         .json({ success: false, message: "권한이 없습니다." });
     }
 
-    const cacheKey = `referral-group-tree:v6:${leaderId}:lite=${lite ? 1 : 0}`;
+    const cacheKey = `referral-group-tree:v7:${leaderId}:lite=${lite ? 1 : 0}`;
     const refresh = String(req.query.refresh || "") === "1";
     if (!refresh) {
       const cached = getAdminReferralCache(cacheKey);
@@ -519,66 +519,10 @@ export async function getReferralGroupTree(req, res) {
         throw error;
       }
 
-      // 소개 트리는 하위(descendants)만 보면 자식 사업자 페이지에서 부모(우리기공소)가 빠진다.
-      // 따라서 현재 리더의 최상위 소개자까지 거슬러 올라간 뒤, 그 anchor를 루트로 트리를 구성한다.
-      // 이렇게 해야
-      // - 우리기공소 페이지: 우리 + 직접 소개된 사업자들
-      // - 자식 사업자 페이지: 우리기공소 + 자기 자신
-      // 형태로 일관되게 보인다.
-      const rootAnchorRows = await BusinessAnchor.aggregate([
-        {
-          $match: {
-            _id: new Types.ObjectId(leaderBusinessAnchorId),
-          },
-        },
-        {
-          $graphLookup: {
-            from: "businessanchors",
-            startWith: "$referredByAnchorId",
-            connectFromField: "referredByAnchorId",
-            connectToField: "_id",
-            as: "ancestors",
-          },
-        },
-        {
-          $project: {
-            self: 1,
-            ancestors: {
-              $map: {
-                input: "$ancestors",
-                as: "anchor",
-                in: {
-                  _id: "$$anchor._id",
-                  businessType: "$$anchor.businessType",
-                  name: "$$anchor.name",
-                  metadata: "$$anchor.metadata",
-                  referredByAnchorId: "$$anchor.referredByAnchorId",
-                  createdAt: "$$anchor.createdAt",
-                  updatedAt: "$$anchor.updatedAt",
-                  status: "$$anchor.status",
-                },
-              },
-            },
-          },
-        },
-      ]);
-
-      const currentAnchorRow = rootAnchorRows?.[0] || null;
-      const ancestorChain = Array.isArray(currentAnchorRow?.ancestors)
-        ? [...currentAnchorRow.ancestors]
-        : [];
       // 트리의 canonical node는 User가 아니라 BusinessAnchor다.
-      // user 그래프를 타면 같은 사업자에 속한 여러 user가 한 트리에 중복 포함되어
-      // memberCount가 29처럼 부풀 수 있으므로 business-level edge만 읽는다.
-      const rootAnchorCandidate =
-        ancestorChain.sort(
-          (a, b) =>
-            new Date(a?.createdAt || 0).getTime() -
-            new Date(b?.createdAt || 0).getTime(),
-        )[0] || null;
-      const rootBusinessAnchorId = String(
-        rootAnchorCandidate?._id || leaderBusinessAnchorId,
-      );
+      // self 기준으로 보여주어야 현재 보고 있는 사업자를 중심으로 멤버 구성이 달라진다.
+      // 따라서 루트는 최상위 ancestor가 아니라 요청한 리더 자신의 businessAnchorId로 고정한다.
+      const rootBusinessAnchorId = String(leaderBusinessAnchorId);
 
       const leaderAnchor = await BusinessAnchor.findById(rootBusinessAnchorId)
         .select({
@@ -598,7 +542,7 @@ export async function getReferralGroupTree(req, res) {
         throw error;
       }
 
-      const rootAnchor = rootAnchorCandidate || leaderAnchor;
+      const rootAnchor = leaderAnchor;
 
       const descendantRows = await BusinessAnchor.aggregate([
         {
