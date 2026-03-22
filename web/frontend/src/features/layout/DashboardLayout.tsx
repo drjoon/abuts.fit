@@ -223,7 +223,9 @@ export const DashboardLayout = () => {
   const [sidebarProfileImage, setSidebarProfileImage] = useState<string>("");
 
   const isWizardRoute = location.pathname.startsWith("/dashboard/wizard");
-  const onboardingCompleted = Boolean(user?.onboardingWizardCompleted);
+  const onboardingCompleted = Boolean(
+    user?.onboardingWizardCompleted || user?.businessVerified,
+  );
   const shouldForceOnboarding =
     user?.role !== undefined &&
     ["requestor", "salesman", "manufacturer", "admin", "devops"].includes(
