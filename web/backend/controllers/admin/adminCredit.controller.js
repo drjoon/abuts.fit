@@ -142,11 +142,15 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
   const balanceAmount = normalizeNumber(
     earnedAmount - paidOutAmount + adjustedAmount,
   );
-  const { directOrgIdsBySalesmanId, level1OrgIdsBySalesmanId, revenueByOrgId } =
-    await buildSalesmanReferralAggregation({
-      salesmanIds,
-      range,
-    });
+  const {
+    salesmenById,
+    directOrgIdsBySalesmanId,
+    level1OrgIdsBySalesmanId,
+    revenueByOrgId,
+  } = await buildSalesmanReferralAggregation({
+    salesmanIds,
+    range,
+  });
 
   let paidRevenueAmount = 0;
   let bonusRevenueAmount = 0;
@@ -167,7 +171,9 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
   }
 
   let indirectAmount = 0;
-  for (const orgSet of level1OrgIdsBySalesmanId.values()) {
+  for (const [sid, orgSet] of level1OrgIdsBySalesmanId.entries()) {
+    const salesmanRole = String(salesmenById?.get(sid)?.role || "");
+    if (salesmanRole === "devops") continue;
     let rev = 0;
     for (const oid of orgSet || []) {
       rev += Number(revenueByOrgId.get(String(oid))?.revenueAmount || 0);
@@ -1096,9 +1102,10 @@ export async function adminGetSalesmanCredits(req, res) {
       const bonus30d = directBonus30d + level1Bonus30d;
       const orders30d = directOrders30d + level1Orders30d;
       const myCommission30d = Math.round(directRevenue30d * commissionRate);
-      const level1Commission30d = Math.round(
-        level1Revenue30d * commissionRate * 0.5,
-      ); // 2.5%
+      const isDevops = String(s?.role || "") === "devops";
+      const level1Commission30d = isDevops
+        ? 0
+        : Math.round(level1Revenue30d * commissionRate * 0.5); // 2.5%
       const commission30d = myCommission30d + level1Commission30d;
       const anchorId = String(s?.businessAnchorId || "");
       const anchor = anchorById.get(anchorId) || null;

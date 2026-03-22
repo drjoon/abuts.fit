@@ -70,7 +70,6 @@ const sidebarItems = {
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
-    { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   manufacturer: [

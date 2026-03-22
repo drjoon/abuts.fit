@@ -149,14 +149,18 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
     earnedAmount - paidOutAmount + adjustedAmount,
   );
 
-  // 영업자들의 businessAnchorId 조회
-  const salesmanBusinessAnchorIds = (
-    await User.find({ _id: { $in: salesmanObjectIds } })
-      .select({ businessAnchorId: 1 })
-      .lean()
-  )
+  // 영업자들의 businessAnchorId 및 role 조회
+  const salesmanUsers = await User.find({ _id: { $in: salesmanObjectIds } })
+    .select({ businessAnchorId: 1, role: 1 })
+    .lean();
+  const salesmanBusinessAnchorIds = salesmanUsers
     .map((s) => s?.businessAnchorId)
     .filter((id) => id && Types.ObjectId.isValid(String(id)));
+  const roleByBusinessAnchorId = new Map(
+    salesmanUsers
+      .filter((s) => s?.businessAnchorId)
+      .map((s) => [String(s.businessAnchorId), String(s.role || "")]),
+  );
 
   // 직접 소개 의뢰자: salesmen -> requestor
   const directRequestors = await BusinessAnchor.find({
@@ -310,12 +314,15 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
     directCommissionTotal += paid * commissionRate;
   }
 
-  // 간접: 자식 영업자의 direct 커미션 합 * 50%
+  // 간접: 자식 영업자의 direct 커미션 합 * 50% (devops 부모는 제외)
   let indirectCommissionTotal = 0;
   for (const child of childSalesmen || []) {
     const childSAnchorId = String(child?._id || "");
     const parentSAnchorId = String(child?.referredByAnchorId || "");
     if (!childSAnchorId || !parentSAnchorId) continue;
+
+    const parentRole = roleByBusinessAnchorId.get(parentSAnchorId) || "";
+    if (parentRole === "devops") continue;
 
     const orgSet =
       requestorOrgIdsByChildSalesmanBusinessAnchorId.get(childSAnchorId) ||

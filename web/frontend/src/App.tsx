@@ -366,7 +366,6 @@ const App = () => {
                           "requestor",
                           "salesman",
                           "manufacturer",
-                          "devops",
                         ]}
                       >
                         {useAuthStore.getState().user?.role === "admin" ? (

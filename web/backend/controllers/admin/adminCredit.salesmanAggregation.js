@@ -56,7 +56,7 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
   );
 
   const salesmen = await User.find({ _id: { $in: salesmanObjectIds } })
-    .select({ _id: 1, businessAnchorId: 1, businessId: 1 })
+    .select({ _id: 1, businessAnchorId: 1, businessId: 1, role: 1 })
     .lean();
 
   const salesmanBusinessIds = Array.from(

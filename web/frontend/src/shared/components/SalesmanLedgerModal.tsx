@@ -37,6 +37,7 @@ export type SalesmanLedgerModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   salesmanId?: string | null;
+  title?: string;
   titleSuffix?: string;
   mode?: "admin" | "self";
 };
@@ -81,6 +82,7 @@ export const SalesmanLedgerModal = ({
   open,
   onOpenChange,
   salesmanId,
+  title,
   titleSuffix,
   mode,
 }: SalesmanLedgerModalProps) => {
@@ -201,7 +203,8 @@ export const SalesmanLedgerModal = ({
       <DialogContent className="w-[92vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader className="pb-2">
           <DialogTitle className="text-lg">
-            정산 내역{titleSuffix ? ` · ${titleSuffix}` : ""}
+            {title || "정산 내역"}
+            {titleSuffix ? ` · ${titleSuffix}` : ""}
           </DialogTitle>
         </DialogHeader>
 

@@ -818,6 +818,7 @@ export async function getReferralGroupTree(req, res) {
         !lite &&
         REFERRAL_COMMISSION_LEADER_ROLES.has(String(rootNode.role || ""))
       ) {
+        const isDevops = String(rootNode.role || "") === "devops";
         const directChildren = Array.isArray(rootNode.children)
           ? rootNode.children
           : [];
@@ -829,6 +830,7 @@ export async function getReferralGroupTree(req, res) {
               Number(child?.lastMonthPaidRevenue || 0) * 0.05,
             );
           } else if (
+            !isDevops &&
             REFERRAL_COMMISSION_LEADER_ROLES.has(String(child?.role || ""))
           ) {
             const grandChildren = Array.isArray(child?.children)

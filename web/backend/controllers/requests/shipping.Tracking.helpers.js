@@ -513,7 +513,7 @@ export const syncHanjinTrackingPayload = async ({
         ) {
           const referrerOwner = await User.findOne({
             businessAnchorId: new Types.ObjectId(referredByAnchorIdRaw),
-            role: "salesman",
+            role: { $in: ["salesman", "devops"] },
             active: true,
           })
             .select({ _id: 1, role: 1, businessAnchorId: 1 })

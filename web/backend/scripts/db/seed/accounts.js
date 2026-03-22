@@ -60,6 +60,10 @@ const ESSENTIAL_ACCOUNTS_CONFIG_PATH = path.join(
   __dirname,
   ".essential-accounts.config.json",
 );
+const ESSENTIAL_ACCOUNTS_OUTPUT_PATH = path.join(
+  __dirname,
+  ".essential-accounts.json",
+);
 const BULK_ACCOUNTS_CONFIG_PATH = path.join(
   __dirname,
   ".bulk-accounts.config.json",
@@ -85,12 +89,38 @@ async function readJsonConfig(filePath, label) {
   }
 }
 
+async function readJsonConfigIfExists(filePath, label) {
+  try {
+    const raw = await fs.readFile(filePath, "utf8");
+    return JSON.parse(raw);
+  } catch (err) {
+    if (err?.code === "ENOENT") {
+      return null;
+    }
+    throw new Error(
+      `[seed] ${label} 파일(${filePath})을 읽을 수 없습니다: ${err.message}`,
+    );
+  }
+}
+
 function ensureArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
 function pickRandom(items) {
   return items.length ? pick(items) : null;
+}
+
+function buildExistingEssentialAccountMap(output) {
+  const users = ensureArray(output?.users);
+  const map = new Map();
+
+  for (const user of users) {
+    if (!user?.email) continue;
+    map.set(user.email, user);
+  }
+
+  return map;
 }
 
 async function ensureBusinessFromSpec(spec, ownerId) {
@@ -111,11 +141,17 @@ export async function seedEssentialAccounts() {
     ESSENTIAL_ACCOUNTS_CONFIG_PATH,
     "필수 계정 설정",
   );
+  const existingOutput = await readJsonConfigIfExists(
+    ESSENTIAL_ACCOUNTS_OUTPUT_PATH,
+    "기존 필수 계정 결과",
+  );
+  const existingAccountMap = buildExistingEssentialAccountMap(existingOutput);
   const specs = ensureArray(config.accounts);
   const createdUsers = [];
 
   for (const spec of specs) {
-    const password = generateSecurePassword();
+    const existingAccount = existingAccountMap.get(spec.email);
+    const password = existingAccount?.password || generateSecurePassword();
     const user = await findOrCreateUser({
       name: spec.name,
       email: spec.email,

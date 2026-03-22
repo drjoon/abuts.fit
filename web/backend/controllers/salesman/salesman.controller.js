@@ -290,8 +290,9 @@ export async function getSalesmanDashboard(req, res) {
       month: now.getUTCMonth() + 1,
     };
 
+    const isDevops = me.role === "devops";
     const commissionRate = 0.05;
-    const indirectCommissionRate = commissionRate * 0.5;
+    const indirectCommissionRate = isDevops ? 0 : commissionRate * 0.5;
     const payoutDayOfMonth = 1;
 
     const { start, end } = getPeriodRangeUtc(period);
@@ -330,7 +331,7 @@ export async function getSalesmanDashboard(req, res) {
       .filter((id) => id && Types.ObjectId.isValid(String(id)));
 
     const level1Requestors =
-      referredSalesmanBusinessAnchorIds.length === 0
+      isDevops || referredSalesmanBusinessAnchorIds.length === 0
         ? []
         : await BusinessAnchor.find({
             referredByAnchorId: { $in: referredSalesmanBusinessAnchorIds },

@@ -79,6 +79,15 @@ export default function SalesmanPaymentsPage() {
     () => (Array.isArray(data?.organizations) ? data.organizations : []),
     [data?.organizations],
   );
+  const directCommissionLabel = isDevops ? "직접 분배" : "직접 소개 수수료";
+  const indirectCommissionLabel = isDevops ? "간접 분배" : "간접 소개 수수료";
+  const businessStageLabel = isDevops ? "연결 유형" : "소개 단계";
+  const businessStageDirectText = isDevops ? "직접 연결" : "직접 소개";
+  const businessStageIndirectText = isDevops ? "간접 연결" : "간접 소개";
+  const settlementGuideTitle = isDevops ? "분배 기준" : "영업자 정산 기준";
+  const ledgerButtonLabel = isDevops ? "정산 원장" : "정산 원장 보기";
+  const businessesTabLabel = isDevops ? "사업자 요약" : "사업자별 정산";
+  const policyTabLabel = isDevops ? "기준" : "정산 기준";
 
   if (!user || (user.role !== "salesman" && user.role !== "devops"))
     return null;
@@ -87,25 +96,34 @@ export default function SalesmanPaymentsPage() {
     <>
       <DashboardShell
         title={`${roleLabel} 정산`}
-        subtitle={`${roleLabel} 수수료와 정산 가능 금액을 확인하세요.`}
+        subtitle={
+          isDevops
+            ? "개발운영사 분배 현황과 지급 상태를 확인하세요."
+            : `${roleLabel} 수수료와 정산 가능 금액을 확인하세요.`
+        }
         headerRight={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <PeriodFilter value={period} onChange={setPeriod} />
             <Button
               type="button"
               variant="outline"
               onClick={() => setLedgerOpen(true)}
             >
-              정산 원장 보기
+              {ledgerButtonLabel}
             </Button>
           </div>
         }
+        statsGridClassName={
+          isDevops
+            ? "grid grid-cols-1 gap-3 md:grid-cols-2"
+            : "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4"
+        }
         stats={
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <>
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
-                  직접 소개 수수료
+                  {directCommissionLabel}
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-bold">
@@ -114,52 +132,73 @@ export default function SalesmanPaymentsPage() {
                   : `${formatMoney(overview.directCommissionAmount)}원`}
               </CardContent>
             </Card>
+            {!isDevops && (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    {indirectCommissionLabel}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="text-2xl font-bold">
+                  {loading
+                    ? "..."
+                    : `${formatMoney(overview.level1CommissionAmount)}원`}
+                </CardContent>
+              </Card>
+            )}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
-                  간접 소개 수수료
+                  기간 정산 예정액
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-2xl font-bold">
-                {loading
-                  ? "..."
-                  : `${formatMoney(overview.level1CommissionAmount)}원`}
+              <CardContent className="space-y-1">
+                <div className="text-2xl font-bold">
+                  {loading
+                    ? "..."
+                    : `${formatMoney(overview.payableGrossCommissionAmount)}원`}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  아직 지급되지 않은 누적 정산 금액
+                </div>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
-                  총 정산 가능액
+                  기간 지급 완료액
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-2xl font-bold">
-                {loading
-                  ? "..."
-                  : `${formatMoney(overview.payableGrossCommissionAmount)}원`}
+              <CardContent className="space-y-1">
+                <div className="text-2xl font-bold">
+                  {loading
+                    ? "..."
+                    : `${formatMoney(overview.paidNetCommissionAmount)}원`}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  지급 완료 처리된 정산 누적 금액
+                </div>
               </CardContent>
             </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">
-                  총 정산 완료액
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-bold">
-                {loading
-                  ? "..."
-                  : `${formatMoney(overview.paidNetCommissionAmount)}원`}
-              </CardContent>
-            </Card>
-          </div>
+          </>
         }
         mainLeft={
           <Tabs defaultValue="businesses" className="space-y-4">
-            <TabsList>
-              <TabsTrigger value="businesses">사업자별 정산</TabsTrigger>
-              <TabsTrigger value="policy">정산 정책</TabsTrigger>
+            <TabsList className="flex h-auto flex-wrap items-center gap-1 bg-transparent p-0">
+              <TabsTrigger value="businesses">{businessesTabLabel}</TabsTrigger>
+              <TabsTrigger value="policy">{policyTabLabel}</TabsTrigger>
             </TabsList>
             <TabsContent value="businesses">
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {organizations.length === 0 ? (
+                  <Card className="md:col-span-2 xl:col-span-3">
+                    <CardContent className="py-10 text-sm text-muted-foreground">
+                      {isDevops
+                        ? "선택한 기간에 표시할 대상 사업자가 없습니다."
+                        : "선택한 기간에 표시할 정산 대상 사업자가 없습니다."}
+                    </CardContent>
+                  </Card>
+                ) : null}
                 {organizations.map((org) => (
                   <Card key={String(org.businessAnchorId || org.name)}>
                     <CardHeader className="pb-3">
@@ -169,11 +208,13 @@ export default function SalesmanPaymentsPage() {
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
                       <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">소개 단계</span>
+                        <span className="text-muted-foreground">
+                          {businessStageLabel}
+                        </span>
                         <span>
                           {org.referralLevel === "level1"
-                            ? "간접 소개"
-                            : "직접 소개"}
+                            ? businessStageIndirectText
+                            : businessStageDirectText}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
@@ -205,45 +246,75 @@ export default function SalesmanPaymentsPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-base">정산 비율</CardTitle>
+                    <CardTitle className="text-base">
+                      {settlementGuideTitle}
+                    </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
                     <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">직접 소개</span>
+                      <span className="text-muted-foreground">직접 비율</span>
                       <span>
                         {Math.round(Number(data?.commissionRate || 0) * 100)}%
                       </span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">간접 소개</span>
-                      <span>
-                        {Math.round(
-                          Number(data?.indirectCommissionRate || 0) * 1000,
-                        ) / 10}
-                        %
-                      </span>
-                    </div>
+                    {!isDevops && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">간접 비율</span>
+                        <span>
+                          {Math.round(
+                            Number(data?.indirectCommissionRate || 0) * 1000,
+                          ) / 10}
+                          %
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">정산일</span>
                       <span>매월 {Number(data?.payoutDayOfMonth || 1)}일</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">집계 기준</span>
+                      <span>`businessAnchorId`</span>
                     </div>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-base">소개 코드</CardTitle>
+                    <CardTitle className="text-base">
+                      {isDevops ? "확인 안내" : "소개 코드"}
+                    </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">내 코드</span>
-                      <span className="font-mono font-semibold">
-                        {String(data?.referralCode || user.referralCode || "-")}
-                      </span>
-                    </div>
-                    <div className="text-muted-foreground">
-                      정산은 사업자 단위로 계산되며, 수수료 장부의 기준 키는
-                      `businessAnchorId`입니다.
-                    </div>
+                    {isDevops ? (
+                      <>
+                        <div className="text-muted-foreground">
+                          정산은 사업자 기준으로 집계되며, 예정액은 미지급
+                          누적만 표시합니다.
+                        </div>
+                        <div className="text-muted-foreground">
+                          계좌 정보는 설정 &gt; 수익 분배에서 관리합니다.
+                        </div>
+                        <div className="text-muted-foreground">
+                          소개자 미지정 가입 건은 운영 정책에 따라 네트워크에
+                          반영될 수 있습니다.
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">내 코드</span>
+                          <span className="font-mono font-semibold">
+                            {String(
+                              data?.referralCode || user.referralCode || "-",
+                            )}
+                          </span>
+                        </div>
+                        <div className="text-muted-foreground">
+                          정산은 사업자 단위로 계산되며, 수수료 장부의 기준 키는
+                          `businessAnchorId`입니다.
+                        </div>
+                      </>
+                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -257,6 +328,8 @@ export default function SalesmanPaymentsPage() {
         open={ledgerOpen}
         onOpenChange={setLedgerOpen}
         mode="self"
+        title={isDevops ? "정산 원장" : undefined}
+        titleSuffix={isDevops ? "개발운영사 정산 원장" : undefined}
       />
     </>
   );
