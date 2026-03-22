@@ -409,6 +409,33 @@
 - Guide Tour 기능은 더 이상 사용하지 않습니다.
 - 관련 코드와 문서는 제거합니다.
 
+### 5.6 코드 구조 및 파일 위치 규칙
+
+#### 역할별 폴더 분리
+
+- 각 역할(role)에 특화된 페이지/컴포넌트는 반드시 해당 역할의 폴더에만 작성합니다.
+  - `pages/salesman/` — 영업자 전용
+  - `pages/devops/` — 개발운영사 전용
+  - `pages/requestor/` — 의뢰자 전용
+  - `pages/admin/` — 관리자 전용
+  - `pages/manufacturer/` — 제조사 전용
+- 하나의 파일 안에서 `isDevops`, `isSalesman` 등의 플래그로 여러 역할 UI를 혼용하지 않습니다.
+  - 역할별로 별도 파일을 만들고, 공통 로직만 `shared/` 또는 `features/`로 추출합니다.
+
+#### 공통 코드 위치
+
+- 여러 역할이 공유하는 코드는 반드시 `features/` 또는 `shared/`에 작성합니다.
+  - `features/` — 도메인 특화 공통 로직: 훅, 비즈니스 로직, 타입 (예: `features/commission/`)
+  - `shared/` — 범용 UI 컴포넌트, API 클라이언트, 유틸리티, 공통 훅 (예: `shared/hooks/`, `shared/ui/`)
+- 백엔드도 동일 원칙: 역할 공통 로직은 `controllers/common/` 또는 `*.helpers.js` 파일로 분리합니다.
+
+#### 주석 필수 위치
+
+- 헷갈릴 수 있는 코드, 특히 다음 경우에는 반드시 상세 주석을 남깁니다.
+  - 역할별 수수료 계산 분기 (devops vs salesman 차이)
+  - SSOT write 트리거와 이벤트 경계
+  - 공통 훅/컴포넌트를 역할별로 다르게 사용하는 지점
+
 ## 6. Backend 규칙
 
 ### 6.1 공통

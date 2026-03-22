@@ -3,6 +3,7 @@ import { RequestorDashboardPage } from "../requestor/dashboard/RequestorDashboar
 import { ManufacturerDashboardPage } from "../manufacturer/dashboard/ManufacturerDashboardPage";
 import { AdminDashboardPage } from "../admin/dashboard/AdminDashboardPage";
 import { SalesmanDashboardPage } from "../salesman/SalesmanDashboardPage";
+import { DevopsDashboardPage } from "../devops/DevopsDashboardPage";
 
 export const DashboardHome = () => {
   const { user } = useAuthStore();
@@ -22,7 +23,7 @@ export const DashboardHome = () => {
   }
 
   if (user.role === "devops") {
-    return <SalesmanDashboardPage />;
+    return <DevopsDashboardPage />;
   }
 
   return <AdminDashboardPage />;

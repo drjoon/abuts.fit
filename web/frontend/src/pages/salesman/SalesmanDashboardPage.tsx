@@ -1,5 +1,11 @@
-import { useEffect, useState } from "react";
-import { request } from "@/shared/api/apiClient";
+/**
+ * 영업자(salesman) 전용 대시보드 페이지.
+ *
+ * 개발운영사(devops) 대시보드는 pages/devops/DevopsDashboardPage.tsx 참고.
+ * 공통 데이터 훅/타입은 features/commission/useCommissionDashboard.ts 참고.
+ */
+
+import { useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,101 +21,20 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-
-type ApiDashboard = {
-  ym: string;
-  period?: PeriodFilterValue | null;
-  commissionRate: number;
-  indirectCommissionRate?: number;
-  payoutDayOfMonth: number;
-  referralCode: string;
-  overview: {
-    referredBusinessCount?: number;
-    referredOrganizationCount: number;
-    monthRevenueAmount: number;
-    monthCommissionAmount: number;
-    directBusinessCount?: number;
-    level1BusinessCount?: number;
-    totalBusinessCount?: number;
-    directOrganizationCount?: number;
-    level1OrganizationCount?: number;
-    totalOrganizationCount?: number;
-    directCommissionAmount?: number;
-    level1CommissionAmount?: number;
-    totalCommissionAmount?: number;
-    payableGrossCommissionAmount?: number;
-    paidNetCommissionAmount?: number;
-  };
-  businesses?: Array<{
-    businessAnchorId?: string;
-    name: string;
-    monthRevenueAmount: number;
-    monthOrderCount: number;
-    monthCommissionAmount: number;
-    referralLevel?: "direct" | "level1";
-  }>;
-  organizations: Array<{
-    businessAnchorId?: string;
-    name: string;
-    monthRevenueAmount: number;
-    monthOrderCount: number;
-    monthCommissionAmount: number;
-    referralLevel?: "direct" | "level1";
-  }>;
-  referralSalesmen?: Array<{
-    userId: string;
-    name: string;
-  }>;
-};
-
-const formatMoney = (n: number) => {
-  const v = Number(n || 0);
-  try {
-    return v.toLocaleString("ko-KR");
-  } catch {
-    return String(v);
-  }
-};
+import {
+  useCommissionDashboard,
+  formatMoney,
+} from "@/features/commission/useCommissionDashboard";
 
 export const SalesmanDashboardPage = () => {
-  const { token, user } = useAuthStore();
+  const { user } = useAuthStore();
   const { toast } = useToast();
-  const isDevops = user?.role === "devops";
-  const roleLabel = isDevops ? "개발운영사" : "영업자";
-  const dashboardTitle = `${roleLabel} 대시보드`;
-  const policyButtonLabel = isDevops ? "분배 기준" : "의뢰자 정책";
-  const [data, setData] = useState<ApiDashboard | null>(null);
-  const [loading, setLoading] = useState(false);
 
   const [creditModalOpen, setCreditModalOpen] = useState(false);
   const [policyOpen, setPolicyOpen] = useState(false);
-
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
 
-  useEffect(() => {
-    if (!token) return;
-    setLoading(true);
-    request<any>({
-      path: `/api/salesman/dashboard?period=${encodeURIComponent(period)}`,
-      method: "GET",
-      token,
-    })
-      .then((res) => {
-        const body: any = res.data || {};
-        if (!res.ok || !body?.success) {
-          throw new Error(body?.message || "대시보드 조회에 실패했습니다.");
-        }
-        setData(body.data as ApiDashboard);
-      })
-      .catch((err) => {
-        toast({
-          title: "오류",
-          description: (err as any)?.message || "다시 시도해주세요.",
-          variant: "destructive",
-        });
-      })
-      .finally(() => setLoading(false));
-  }, [toast, token, period]);
+  const { data, loading } = useCommissionDashboard(period);
 
   if (!user) return null;
 
@@ -145,28 +70,12 @@ export const SalesmanDashboardPage = () => {
   const totalCommission = Number(
     overview.totalCommissionAmount || overview.monthCommissionAmount || 0,
   );
-  const businessSummaryTitle = isDevops ? "연결 의뢰자" : "소개 의뢰자";
-  const businessSummaryTooltip = isDevops
-    ? "개발운영사에 연결된 의뢰자 수 표시"
-    : "소개한 의뢰자 수 표시";
-  const totalBusinessLabel = isDevops ? "전체" : "합계 소개 의뢰자";
-  const directBusinessLabel = isDevops ? "직접" : "내 소개 의뢰자";
-  const level1BusinessLabel = isDevops ? "간접" : "간접 소개 의뢰자";
-  const pendingCommissionTitle = isDevops ? "정산 예정액" : "수수료 크레딧";
-  const paidCommissionTitle = isDevops ? "지급 완료액" : "지급된 수수료";
-  const directCommissionLabel = isDevops ? "직접 분배 (5%)" : "내 수수료 (5%)";
-  const indirectCommissionLabel = isDevops
-    ? "간접 분배 (2.5%)"
-    : "간접 소개 수수료 (2.5%)";
 
   const payableGross = Number(
     overview.payableGrossCommissionAmount || totalCommission || 0,
   );
   const paidNet = Number(overview.paidNetCommissionAmount || 0);
   const referralSalesmanCount = Number(overview.referralSalesmanCount || 0);
-  const walletButtonLabel = isDevops
-    ? `미지급: ${formatMoney(payableGross)}원`
-    : `보유 크레딧: ${formatMoney(payableGross)}원`;
 
   const referredBusinesses = (
     data?.businesses ||
@@ -181,7 +90,7 @@ export const SalesmanDashboardPage = () => {
   return (
     <TooltipProvider>
       <DashboardShell
-        title={dashboardTitle}
+        title="영업자 대시보드"
         subtitle=""
         headerRight={
           <div className="flex flex-wrap items-center gap-2">
@@ -193,7 +102,7 @@ export const SalesmanDashboardPage = () => {
               className="h-8"
               onClick={() => setPolicyOpen(true)}
             >
-              {policyButtonLabel}
+              의뢰자 정책
             </Button>
             <Button
               type="button"
@@ -202,119 +111,110 @@ export const SalesmanDashboardPage = () => {
               className="h-8"
               onClick={() => setCreditModalOpen(true)}
             >
-              {walletButtonLabel}
+              보유 크레딧: {formatMoney(payableGross)}원
             </Button>
           </div>
         }
-        statsGridClassName={
-          isDevops
-            ? "grid grid-cols-1 gap-2.5 p-3 md:grid-cols-3"
-            : "grid grid-cols-1 gap-2.5 p-3 sm:grid-cols-2 lg:grid-cols-4"
-        }
+        statsGridClassName="grid grid-cols-1 gap-2.5 p-3 sm:grid-cols-2 lg:grid-cols-4"
         stats={
           <>
-            {!isDevops ? (
-              <Card className="app-glass-card app-glass-card--lg border-2 border-indigo-500/70 overflow-visible">
-                <CardHeader className="pb-2">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <CardTitle className="text-sm font-semibold cursor-help flex items-center gap-1">
-                        <BadgeCheck className="h-4 w-4" />내 소개 코드
-                      </CardTitle>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      의뢰자 가입시 기입하는 내 코드
-                    </TooltipContent>
-                  </Tooltip>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-4xl font-mono font-bold tracking-widest">
-                      {normalizedReferralCode || (loading ? "..." : "-")}
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-9 border border-indigo-500 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 hover:border-indigo-600"
-                      disabled={!referralLink}
-                      onClick={async () => {
-                        try {
-                          if (!referralLink) return;
-                          await navigator.clipboard.writeText(referralLink);
-                          toast({
-                            title: "URL 복사됨",
-                            description: referralLink,
-                            duration: 2000,
-                          });
-                        } catch {
-                          toast({
-                            title: "복사 실패",
-                            description: "브라우저 권한을 확인해주세요.",
-                            variant: "destructive",
-                            duration: 3000,
-                          });
-                        }
-                      }}
-                    >
-                      <Copy className="h-4 w-4" />
-                      링크 복사
-                    </Button>
+            {/* 내 소개 코드 — 영업자 전용 */}
+            <Card className="app-glass-card app-glass-card--lg border-2 border-indigo-500/70 overflow-visible">
+              <CardHeader className="pb-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <CardTitle className="text-sm font-semibold cursor-help flex items-center gap-1">
+                      <BadgeCheck className="h-4 w-4" />내 소개 코드
+                    </CardTitle>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    의뢰자 가입시 기입하는 내 코드
+                  </TooltipContent>
+                </Tooltip>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-4xl font-mono font-bold tracking-widest">
+                    {normalizedReferralCode || (loading ? "..." : "-")}
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    내 소개 코드로 가입한 영업자 수: {referralSalesmanCount}명
-                  </div>
-                </CardContent>
-              </Card>
-            ) : null}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-9 border border-indigo-500 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 hover:border-indigo-600"
+                    disabled={!referralLink}
+                    onClick={async () => {
+                      try {
+                        if (!referralLink) return;
+                        await navigator.clipboard.writeText(referralLink);
+                        toast({
+                          title: "URL 복사됨",
+                          description: referralLink,
+                          duration: 2000,
+                        });
+                      } catch {
+                        toast({
+                          title: "복사 실패",
+                          description: "브라우저 권한을 확인해주세요.",
+                          variant: "destructive",
+                          duration: 3000,
+                        });
+                      }
+                    }}
+                  >
+                    <Copy className="h-4 w-4" />
+                    링크 복사
+                  </Button>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  내 소개 코드로 가입한 영업자 수: {referralSalesmanCount}명
+                </div>
+              </CardContent>
+            </Card>
 
+            {/* 소개 의뢰자 요약 — 직접/간접 모두 표시 */}
             <Card className="app-glass-card app-glass-card--lg overflow-visible">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <CardTitle className="text-sm font-semibold cursor-help flex items-center gap-1">
                       <Users className="h-4 w-4" />
-                      {businessSummaryTitle}
+                      소개 의뢰자
                     </CardTitle>
                   </TooltipTrigger>
-                  <TooltipContent>{businessSummaryTooltip}</TooltipContent>
+                  <TooltipContent>소개한 의뢰자 수 표시</TooltipContent>
                 </Tooltip>
               </CardHeader>
               <CardContent className="space-y-1.5">
                 <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="font-semibold">{totalBusinessLabel}</div>
+                  <div className="font-semibold">합계 소개 의뢰자</div>
                   <div className="text-base font-bold">
                     {totalBusinessCount} 개소
                   </div>
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="text-muted-foreground">
-                    {directBusinessLabel}
-                  </div>
+                  <div className="text-muted-foreground">내 소개 의뢰자</div>
                   <div className="font-semibold">
                     {directBusinessCount} 개소
                   </div>
                 </div>
-                {!isDevops && (
-                  <div className="flex items-baseline justify-between gap-2 text-sm">
-                    <div className="text-muted-foreground">
-                      {level1BusinessLabel}
-                    </div>
-                    <div className="font-semibold">
-                      {level1BusinessCount} 개소
-                    </div>
+                <div className="flex items-baseline justify-between gap-2 text-sm">
+                  <div className="text-muted-foreground">간접 소개 의뢰자</div>
+                  <div className="font-semibold">
+                    {level1BusinessCount} 개소
                   </div>
-                )}
+                </div>
               </CardContent>
             </Card>
 
+            {/* 수수료 크레딧 — 직접(5%) + 간접(2.5%) 합산 */}
             <Card className="app-glass-card app-glass-card--lg overflow-visible">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <CardTitle className="text-sm font-semibold cursor-help flex items-center gap-1">
                       <Coins className="h-4 w-4" />
-                      {pendingCommissionTitle}
+                      수수료 크레딧
                     </CardTitle>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -323,68 +223,42 @@ export const SalesmanDashboardPage = () => {
                 </Tooltip>
               </CardHeader>
               <CardContent className="space-y-1.5">
-                {isDevops ? (
-                  <>
-                    <div className="text-3xl font-bold">
-                      {formatMoney(payableGross)}원
-                    </div>
-                    <div className="space-y-1 text-sm">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-muted-foreground">
-                          직접 연결 (5%)
-                        </div>
-                        <div className="font-semibold">
-                          {formatMoney(directCommission)}원
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      최근 기준 누적 미지급 금액
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-baseline justify-between gap-2 text-sm">
-                      <div className="font-semibold">합계 수수료 (7.5%)</div>
-                      <div className="text-base font-bold">
-                        {formatMoney(payableGross)}원
-                      </div>
-                    </div>
-                    <div className="flex items-baseline justify-between gap-2 text-sm">
-                      <div className="text-muted-foreground">
-                        {directCommissionLabel}
-                      </div>
-                      <div className="font-semibold">
-                        {formatMoney(directCommission)}원
-                      </div>
-                    </div>
-                    {!isDevops && (
-                      <div className="flex items-baseline justify-between gap-2 text-sm">
-                        <div className="text-muted-foreground">
-                          {indirectCommissionLabel}
-                        </div>
-                        <div className="font-semibold">
-                          {formatMoney(level1Commission)}원
-                        </div>
-                      </div>
-                    )}
-                    <div className="text-xs text-muted-foreground">
-                      직접 소개한 의뢰자 매출의 5%를 기본 수수료로 받고, 내가
-                      직접 소개한 영업자가 다시 소개한 의뢰자 매출에 대해서는
-                      2.5%의 간접 소개 수수료를 추가로 받습니다.
-                    </div>
-                  </>
-                )}
+                <div className="flex items-baseline justify-between gap-2 text-sm">
+                  <div className="font-semibold">합계 수수료 (7.5%)</div>
+                  <div className="text-base font-bold">
+                    {formatMoney(payableGross)}원
+                  </div>
+                </div>
+                <div className="flex items-baseline justify-between gap-2 text-sm">
+                  <div className="text-muted-foreground">내 수수료 (5%)</div>
+                  <div className="font-semibold">
+                    {formatMoney(directCommission)}원
+                  </div>
+                </div>
+                <div className="flex items-baseline justify-between gap-2 text-sm">
+                  <div className="text-muted-foreground">
+                    간접 소개 수수료 (2.5%)
+                  </div>
+                  <div className="font-semibold">
+                    {formatMoney(level1Commission)}원
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  직접 소개한 의뢰자 매출의 5%를 기본 수수료로 받고, 내가 직접
+                  소개한 영업자가 다시 소개한 의뢰자 매출에 대해서는 2.5%의 간접
+                  소개 수수료를 추가로 받습니다.
+                </div>
               </CardContent>
             </Card>
 
+            {/* 지급된 수수료 */}
             <Card className="app-glass-card app-glass-card--lg overflow-visible">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <CardTitle className="text-sm font-semibold cursor-help flex items-center gap-1">
                       <Wallet className="h-4 w-4" />
-                      {paidCommissionTitle}
+                      지급된 수수료
                     </CardTitle>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -393,148 +267,117 @@ export const SalesmanDashboardPage = () => {
                 </Tooltip>
               </CardHeader>
               <CardContent className="space-y-1.5">
-                {isDevops ? (
-                  <>
-                    <div className="text-3xl font-bold">
-                      {formatMoney(paidNet)}원
-                    </div>
-                    <div className="space-y-1 text-sm">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-muted-foreground">상태</div>
-                        <div className="font-semibold">
-                          {paidNet > 0 ? "지급 반영" : "지급 내역 없음"}
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-muted-foreground">확인</div>
-                        <div className="font-semibold">원장 기준</div>
-                      </div>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      지급 완료 처리된 누적 금액
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-baseline justify-between gap-2 text-sm">
-                      <div className="font-semibold">합계 수수료 (7.5%)</div>
-                      <div className="text-base font-bold">
-                        {formatMoney(paidNet)}원
-                      </div>
-                    </div>
-                    <div className="flex items-baseline justify-between gap-2 text-sm">
-                      <div className="text-muted-foreground">
-                        {directCommissionLabel}
-                      </div>
-                      <div className="font-semibold">0원</div>
-                    </div>
-                    <div className="flex items-baseline justify-between gap-2 text-sm">
-                      <div className="text-muted-foreground">
-                        {indirectCommissionLabel}
-                      </div>
-                      <div className="font-semibold">0원</div>
-                    </div>
-                  </>
-                )}
+                <div className="flex items-baseline justify-between gap-2 text-sm">
+                  <div className="font-semibold">합계 수수료 (7.5%)</div>
+                  <div className="text-base font-bold">
+                    {formatMoney(paidNet)}원
+                  </div>
+                </div>
+                <div className="flex items-baseline justify-between gap-2 text-sm">
+                  <div className="text-muted-foreground">내 수수료 (5%)</div>
+                  <div className="font-semibold">0원</div>
+                </div>
+                <div className="flex items-baseline justify-between gap-2 text-sm">
+                  <div className="text-muted-foreground">
+                    간접 소개 수수료 (2.5%)
+                  </div>
+                  <div className="font-semibold">0원</div>
+                </div>
               </CardContent>
             </Card>
           </>
         }
         mainLeft={
-          isDevops ? null : (
-            <div className="space-y-3 p-3">
-              {loading ? (
+          <div className="space-y-3 p-3">
+            {loading ? (
+              <Card className="app-glass-card app-glass-card--lg">
+                <CardContent className="py-6 text-sm text-muted-foreground">
+                  불러오는 중...
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
                 <Card className="app-glass-card app-glass-card--lg">
-                  <CardContent className="py-6 text-sm text-muted-foreground">
-                    불러오는 중...
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-semibold">
+                      내 소개 의뢰자 ({directBusinesses.length}개소)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {directBusinesses.length === 0 ? (
+                      <div className="py-4 text-sm text-muted-foreground">
+                        내 소개 의뢰자가 없습니다.
+                      </div>
+                    ) : (
+                      <ul className="space-y-2">
+                        {directBusinesses.map((business) => (
+                          <li
+                            key={business.businessAnchorId || business.name}
+                            className="flex items-start gap-2"
+                          >
+                            <div className="mt-1 h-2 w-2 rounded-full bg-indigo-500" />
+                            <div className="flex-1">
+                              <div className="font-semibold text-sm">
+                                {business.name || "의뢰자"}
+                              </div>
+                              <div className="mt-0.5 pl-3 border-l text-xs text-muted-foreground space-y-0.5">
+                                <div>
+                                  매출:{" "}
+                                  {formatMoney(business.monthRevenueAmount)}원
+                                </div>
+                                <div>
+                                  수수료:{" "}
+                                  {formatMoney(business.monthCommissionAmount)}
+                                  원
+                                </div>
+                                <div>
+                                  완료 건수: {business.monthOrderCount}건
+                                </div>
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </CardContent>
                 </Card>
-              ) : (
-                <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-                  <Card className="app-glass-card app-glass-card--lg">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-semibold">
-                        내 소개 의뢰자 ({directBusinesses.length}개소)
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {directBusinesses.length === 0 ? (
-                        <div className="py-4 text-sm text-muted-foreground">
-                          내 소개 의뢰자가 없습니다.
-                        </div>
-                      ) : (
-                        <ul className="space-y-2">
-                          {directBusinesses.map((business) => (
-                            <li
-                              key={business.businessAnchorId || business.name}
-                              className="flex items-start gap-2"
-                            >
-                              <div className="mt-1 h-2 w-2 rounded-full bg-indigo-500" />
-                              <div className="flex-1">
-                                <div className="font-semibold text-sm">
-                                  {business.name || "의뢰자"}
-                                </div>
-                                <div className="mt-0.5 pl-3 border-l text-xs text-muted-foreground space-y-0.5">
-                                  <div>
-                                    매출:{" "}
-                                    {formatMoney(business.monthRevenueAmount)}원
-                                  </div>
-                                  <div>
-                                    수수료:{" "}
-                                    {formatMoney(
-                                      business.monthCommissionAmount,
-                                    )}
-                                    원
-                                  </div>
-                                  <div>
-                                    완료 건수: {business.monthOrderCount}건
-                                  </div>
-                                </div>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </CardContent>
-                  </Card>
 
-                  <Card className="app-glass-card app-glass-card--lg">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-semibold">
-                        직접 소개한 영업자 ({referralSalesmen.length}명)
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {referralSalesmen.length === 0 ? (
-                        <div className="py-4 text-sm text-muted-foreground">
-                          직접 소개한 영업자가 없습니다.
-                        </div>
-                      ) : (
-                        <ul className="space-y-2">
-                          {referralSalesmen.map((salesman) => (
-                            <li
-                              key={salesman.userId}
-                              className="flex items-start gap-2"
-                            >
-                              <div className="mt-1 h-2 w-2 rounded-full bg-indigo-500" />
-                              <div className="flex-1">
-                                <div className="font-semibold text-sm">
-                                  {salesman.name || "영업자"}
-                                </div>
-                                <div className="mt-0.5 pl-3 border-l text-xs text-muted-foreground">
-                                  내가 직접 소개한 영업자입니다.
-                                </div>
+                <Card className="app-glass-card app-glass-card--lg">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-semibold">
+                      직접 소개한 영업자 ({referralSalesmen.length}명)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {referralSalesmen.length === 0 ? (
+                      <div className="py-4 text-sm text-muted-foreground">
+                        직접 소개한 영업자가 없습니다.
+                      </div>
+                    ) : (
+                      <ul className="space-y-2">
+                        {referralSalesmen.map((salesman) => (
+                          <li
+                            key={salesman.userId}
+                            className="flex items-start gap-2"
+                          >
+                            <div className="mt-1 h-2 w-2 rounded-full bg-indigo-500" />
+                            <div className="flex-1">
+                              <div className="font-semibold text-sm">
+                                {salesman.name || "영업자"}
                               </div>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
-            </div>
-          )
+                              <div className="mt-0.5 pl-3 border-l text-xs text-muted-foreground">
+                                내가 직접 소개한 영업자입니다.
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </div>
         }
         mainRight={null}
       />
@@ -543,15 +386,12 @@ export const SalesmanDashboardPage = () => {
         open={creditModalOpen}
         onOpenChange={setCreditModalOpen}
         mode="self"
-        title={isDevops ? "정산 원장" : undefined}
-        titleSuffix={
-          isDevops ? "개발운영사 정산 원장" : "보유 크레딧 (미지급 수수료)"
-        }
+        titleSuffix="보유 크레딧 (미지급 수수료)"
       />
       <PricingPolicyDialog
         open={policyOpen}
         onOpenChange={setPolicyOpen}
-        variant={isDevops ? "devops" : "default"}
+        variant="default"
       />
     </TooltipProvider>
   );
