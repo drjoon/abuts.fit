@@ -59,7 +59,7 @@ export const SharedOnboardingWizardPage = () => {
   }
 
   if (user?.onboardingWizardCompleted) {
-    return null;
+    return <Navigate to="/dashboard" replace />;
   }
 
   return (
