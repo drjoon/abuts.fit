@@ -825,22 +825,35 @@ export const BusinessForm = ({
 
       <div className="space-y-2">
         <div className="relative rounded-xl p-1">
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              variant="default"
-              disabled={
-                disabled || (!isModified && (validationSucceeded || isVerified))
-              }
-              ref={submitRef}
-              onClick={() => {
-                onSave();
-                setIsModified(false);
-              }}
-            >
-              검증 후 제출
-            </Button>
-          </div>
+          {(() => {
+            const actionsNode = renderActions?.({ disabled }) ?? null;
+            const submitBtn = (
+              <Button
+                type="button"
+                variant="default"
+                disabled={
+                  disabled ||
+                  (!isModified && (validationSucceeded || isVerified))
+                }
+                ref={submitRef}
+                className={actionsNode ? "w-full" : undefined}
+                onClick={() => {
+                  onSave();
+                  setIsModified(false);
+                }}
+              >
+                검증 후 제출
+              </Button>
+            );
+            return actionsNode ? (
+              <div className="grid grid-cols-2 gap-2">
+                {actionsNode}
+                {submitBtn}
+              </div>
+            ) : (
+              <div className="flex justify-end">{submitBtn}</div>
+            );
+          })()}
           {successNote && (
             <p className="text-center text-xs font-semibold text-sky-600 flex justify-end mt-2">
               {successNote}

@@ -80,11 +80,27 @@ async function callHometax(path, payload) {
   ).trim();
   const url = `${baseUrl}${path}?serviceKey=${encodeURIComponent(serviceKey)}`;
 
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    const isTimeout = err instanceof Error && err.name === "AbortError";
+    return {
+      ok: false,
+      message: isTimeout
+        ? "홈택스 API 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요."
+        : `홈택스 API 연결 오류: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+  clearTimeout(timeoutId);
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
@@ -128,6 +144,7 @@ export async function verifyBusinessNumber({
 
     let attempts = 0;
     let lastValidationMessage = "";
+    let validateApiError = false; // validate API 서버 오류로 중단된 경우
     outer: for (const companyCandidate of companyCandidates) {
       for (const repCandidate of representativeCandidates) {
         if (attempts >= MAX_VALIDATE_ATTEMPTS) {
@@ -148,11 +165,16 @@ export async function verifyBusinessNumber({
 
         const validateResp = await callHometax("/v1/validate", validatePayload);
         if (!validateResp.ok) {
-          return {
-            verified: false,
-            provider: "hometax",
-            message: validateResp.message,
-          };
+          // validate API 서버 오류(일시적 장애 등)는 status-only 검증으로 fallback
+          // 진위확인 실패를 등록 차단 사유로 쓰지 않는다
+          console.warn(
+            "[hometax] validate API 서버 오류 — status-only fallback",
+            {
+              message: validateResp.message,
+            },
+          );
+          validateApiError = true;
+          break outer;
         }
 
         vItem = Array.isArray(validateResp.data?.data)
@@ -169,7 +191,13 @@ export async function verifyBusinessNumber({
       }
     }
 
-    if (representativeCandidates.length && companyCandidates.length && !vItem) {
+    // validate API 서버 오류로 중단된 경우에는 status-only 검증으로 fallback
+    if (
+      !validateApiError &&
+      representativeCandidates.length &&
+      companyCandidates.length &&
+      !vItem
+    ) {
       return {
         verified: false,
         provider: "hometax",

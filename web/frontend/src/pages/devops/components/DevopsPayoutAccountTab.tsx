@@ -185,9 +185,9 @@ export const DevopsPayoutAccountTab = () => {
           </div>
           <ul className="list-disc pl-5 space-y-1">
             <li>제조사(애크로덴트): 65</li>
-            <li>개발운영사(메이븐): 5</li>
+            <li>개발운영사(메이븐): 5~10</li>
             <li>영업자(법인/개인): 5~7.5</li>
-            <li>관리자(어벗츠): 나머지</li>
+            <li>관리자(어벗츠): 22.5~25</li>
           </ul>
           <div className="text-xs text-muted-foreground">
             분배비는 개발운영사 설정에서 관리하며, 필요 시 관리자와 협의 후

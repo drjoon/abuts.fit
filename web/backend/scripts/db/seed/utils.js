@@ -125,12 +125,12 @@ export async function createSalesmen({
 export async function findOrCreateUser(doc) {
   const existing = await User.findOne({ email: doc.email });
   if (existing) {
-    // 이미 사업자 온보딩이 완료된 계정(businessAnchorId 존재)은 시딩이 덮어쓰지 않는다.
-    // 사용자가 데모 이메일로 실계정을 만든 경우 등 의도치 않은 데이터 손상 방지.
-    if (existing.businessAnchorId && !doc.businessAnchorId) {
-      return existing;
-    }
+    // businessAnchorId/businessId 같은 사업자 귀속 필드는 이미 온보딩 완료된 계정을 덮어쓰지 않는다.
+    // 단, name/phoneNumber/role 같은 프로필 필드는 항상 spec 기준으로 업데이트한다.
+    // (이전 시딩에서 이름이 잘못 저장된 경우 재시딩으로 정정 가능하게 하기 위함)
+    const protectedFields = new Set(["businessAnchorId", "businessId"]);
     Object.entries(doc).forEach(([key, value]) => {
+      if (protectedFields.has(key) && existing[key] && !value) return;
       existing[key] = value;
     });
     await existing.save();

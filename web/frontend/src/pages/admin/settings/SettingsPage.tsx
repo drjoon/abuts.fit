@@ -8,10 +8,11 @@ import {
 import { AccountTab } from "@/features/settings/tabs/AccountTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
-import { User, Users, Bell, CreditCard } from "lucide-react";
+import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
+import { User, Users, Bell, CreditCard, Building2 } from "lucide-react";
 import { AdminCreditSettingsTab } from "@/features/settings/tabs/AdminCreditSettingsTab";
 
-type TabKey = "account" | "staff" | "notifications" | "payment";
+type TabKey = "account" | "business" | "staff" | "notifications" | "payment";
 
 export const AdminSettingsPage = () => {
   const { user } = useAuthStore();
@@ -24,6 +25,12 @@ export const AdminSettingsPage = () => {
         label: "계정",
         icon: User,
         content: <AccountTab userData={user} />,
+      },
+      {
+        key: "business",
+        label: "사업자",
+        icon: Building2,
+        content: <BusinessTab userData={user} />,
       },
       {
         key: "staff",
