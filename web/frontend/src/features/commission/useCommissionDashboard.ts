@@ -17,6 +17,8 @@ export type CommissionDashboardData = {
   ym: string;
   period?: PeriodFilterValue | null;
   commissionRate: number;
+  /** devops 전용: 영업자 미설정 의뢰자 수수료율 (= salesmanDirectRate) */
+  unaffiliatedCommissionRate?: number;
   /** devops의 경우 백엔드가 0으로 반환 */
   indirectCommissionRate?: number;
   payoutDayOfMonth: number;
@@ -35,6 +37,8 @@ export type CommissionDashboardData = {
     level1OrganizationCount?: number;
     totalOrganizationCount?: number;
     directCommissionAmount?: number;
+    /** devops 전용: 영업자 미설정 의뢰자 수수료 합계 */
+    unaffiliatedCommissionAmount?: number;
     /** devops의 경우 항상 0 */
     level1CommissionAmount?: number;
     totalCommissionAmount?: number;
@@ -47,8 +51,8 @@ export type CommissionDashboardData = {
     monthRevenueAmount: number;
     monthOrderCount: number;
     monthCommissionAmount: number;
-    /** devops의 경우 백엔드가 level1 항목을 반환하지 않으므로 항상 "direct" */
-    referralLevel?: "direct" | "level1";
+    /** devops: "direct"(직접소개) | "unaffiliated"(소개자없음) | salesman: "level1" */
+    referralLevel?: "direct" | "unaffiliated" | "level1";
   }>;
   organizations: Array<{
     businessAnchorId?: string;
@@ -56,7 +60,7 @@ export type CommissionDashboardData = {
     monthRevenueAmount: number;
     monthOrderCount: number;
     monthCommissionAmount: number;
-    referralLevel?: "direct" | "level1";
+    referralLevel?: "direct" | "unaffiliated" | "level1";
   }>;
   /** 영업자만 사용. devops는 빈 배열 반환 */
   referralSalesmen?: Array<{

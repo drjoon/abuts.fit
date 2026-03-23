@@ -514,6 +514,9 @@ export async function getSalesmanDashboard(req, res) {
     const directOrganizations = organizations.filter(
       (o) => o.referralLevel === "direct",
     );
+    const unaffiliatedOrganizations = organizations.filter(
+      (o) => o.referralLevel === "unaffiliated",
+    );
     const level1Organizations = organizations.filter(
       (o) => o.referralLevel === "level1",
     );
@@ -522,12 +525,18 @@ export async function getSalesmanDashboard(req, res) {
       (acc, o) => acc + Number(o.monthCommissionAmount || 0),
       0,
     );
+    const unaffiliatedCommissionAmount = unaffiliatedOrganizations.reduce(
+      (acc, o) => acc + Number(o.monthCommissionAmount || 0),
+      0,
+    );
     const level1CommissionAmount = level1Organizations.reduce(
       (acc, o) => acc + Number(o.monthCommissionAmount || 0),
       0,
     );
     const totalCommissionAmount =
-      directCommissionAmount + level1CommissionAmount;
+      directCommissionAmount +
+      unaffiliatedCommissionAmount +
+      level1CommissionAmount;
 
     const monthRevenueAmount = organizations.reduce(
       (acc, o) => acc + Number(o.monthRevenueAmount || 0),
@@ -544,6 +553,7 @@ export async function getSalesmanDashboard(req, res) {
             : null,
         period,
         commissionRate,
+        unaffiliatedCommissionRate,
         indirectCommissionRate,
         payoutDayOfMonth,
         referralCode: effectiveReferralCode,
@@ -555,6 +565,9 @@ export async function getSalesmanDashboard(req, res) {
           level1OrganizationCount: level1Organizations.length,
           totalOrganizationCount: organizations.length,
           directCommissionAmount: roundMoney(directCommissionAmount),
+          unaffiliatedCommissionAmount: roundMoney(
+            unaffiliatedCommissionAmount,
+          ),
           level1CommissionAmount: roundMoney(level1CommissionAmount),
           totalCommissionAmount: roundMoney(totalCommissionAmount),
           payableGrossCommissionAmount: roundMoney(totalCommissionAmount),
