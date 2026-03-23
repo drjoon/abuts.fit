@@ -291,7 +291,14 @@ export async function getSalesmanDashboard(req, res) {
     };
 
     const isDevops = me.role === "devops";
-    const commissionRate = 0.05;
+    // 개발운영사 수수료율은 설정에서 변경 가능 (rules.md 2.4), 기본값 5%
+    const commissionRate = isDevops
+      ? Number(me.devopsPayoutSettings?.baseCommissionRate || 0.05)
+      : 0.05;
+    // 영업자 미설정 의뢰자 수수료율 = 영업자 직접 소개율 (rules.md 2.4)
+    const unaffiliatedCommissionRate = isDevops
+      ? Number(me.devopsPayoutSettings?.salesmanDirectRate || 0.05)
+      : 0;
     const indirectCommissionRate = isDevops ? 0 : commissionRate * 0.5;
     const payoutDayOfMonth = 1;
 
@@ -330,6 +337,20 @@ export async function getSalesmanDashboard(req, res) {
       .map((u) => u?._id)
       .filter((id) => id && Types.ObjectId.isValid(String(id)));
 
+    // 개발운영사: 소개 영업자가 없는 의뢰자(referredByAnchorId=null)도 수수료 대상
+    // 영업자 소개가 없을 때 영업자 소개 수수료와 동일한 효과 (rules.md 2.4)
+    const unaffiliatedRequestors = isDevops
+      ? await BusinessAnchor.find({
+          businessType: "requestor",
+          $or: [
+            { referredByAnchorId: null },
+            { referredByAnchorId: { $exists: false } },
+          ],
+        })
+          .select({ _id: 1 })
+          .lean()
+      : [];
+
     const level1Requestors =
       isDevops || referredSalesmanBusinessAnchorIds.length === 0
         ? []
@@ -351,13 +372,19 @@ export async function getSalesmanDashboard(req, res) {
         .map((u) => (u?._id ? String(u._id) : ""))
         .filter(Boolean),
     );
+    // 개발운영사 전용: 영업자 미설정 의뢰자 별도 추적 (salesmanDirectRate 적용)
+    const unaffiliatedOrgIdSet = new Set(
+      (isDevops ? unaffiliatedRequestors : [])
+        .map((u) => (u?._id ? String(u._id) : ""))
+        .filter(Boolean),
+    );
     const level1OrgIdSet = new Set(
       (level1Requestors || [])
         .map((u) => (u?._id ? String(u._id) : ""))
         .filter(Boolean),
     );
     const organizationAnchorIds = Array.from(
-      new Set([...directOrgIdSet, ...level1OrgIdSet]),
+      new Set([...directOrgIdSet, ...unaffiliatedOrgIdSet, ...level1OrgIdSet]),
     );
 
     if (organizationAnchorIds.length === 0) {
@@ -458,7 +485,13 @@ export async function getSalesmanDashboard(req, res) {
         const orderCount = ordersByOrgId.get(idStr) || 0;
 
         const isDirect = directOrgIdSet.has(idStr);
-        const rate = isDirect ? commissionRate : indirectCommissionRate;
+        const isUnaffiliated = unaffiliatedOrgIdSet.has(idStr);
+        // 미설정 의뢰자: salesmanDirectRate, 직접 소개: commissionRate, 간접: indirectCommissionRate
+        const rate = isUnaffiliated
+          ? unaffiliatedCommissionRate
+          : isDirect
+            ? commissionRate
+            : indirectCommissionRate;
         const commissionAmount = roundMoney(revenueAmount * rate);
 
         return {
@@ -467,7 +500,11 @@ export async function getSalesmanDashboard(req, res) {
           monthRevenueAmount: revenueAmount,
           monthOrderCount: orderCount,
           monthCommissionAmount: commissionAmount,
-          referralLevel: isDirect ? "direct" : "level1",
+          referralLevel: isDirect
+            ? "direct"
+            : isUnaffiliated
+              ? "unaffiliated"
+              : "level1",
         };
       })
       .sort(

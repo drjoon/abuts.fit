@@ -100,6 +100,12 @@ const userSchema = new mongoose.Schema(
       holderName: { type: String, default: "" },
       updatedAt: { type: Date, default: null },
     },
+    devopsPayoutSettings: {
+      manufacturerRate: { type: Number, default: 0.65, min: 0, max: 1 },
+      baseCommissionRate: { type: Number, default: 0.05, min: 0, max: 1 },
+      salesmanDirectRate: { type: Number, default: 0.05, min: 0, max: 1 },
+      updatedAt: { type: Date, default: null },
+    },
     address: {
       street: String,
       city: String,

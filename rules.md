@@ -109,13 +109,38 @@
   - 프론트 관리자 크레딧 페이지(`AdminCreditPage`)와 관련 모달은 조직 선택/표시/실시간 동기화 시 **`businessAnchorId`만** 사용합니다.
   - 크레딧 생성 지점(`upsertBonusLedger`, bonus grant 등)은 `Business.businessAnchorId`를 조회하여 `CreditLedger.businessAnchorId`에 저장합니다.
 
-### 2.4 수익 분배 (매출 100 기준)
+### 2.4 수익 분배 (매출 100% 기준)
 
-- 제조사(애크로덴트): 65
-- 개발운영사(메이븐): 5~10
-- 영업자(법인/개인): 5~7.5
-- 관리자(어벗츠): 22.5~25
-- 분배 비율은 개발운영사 설정 화면에서 관리하며, 변경 시 본 문서를 먼저 갱신합니다.
+분배율은 `User.devopsPayoutSettings`에 저장되며, **개발운영사 설정 저장 이벤트**에서만 갱신합니다 (SSOT write-on-event).
+읽기 경로(대시보드/통계 조회)에서는 저장된 값을 그대로 사용하고, 재계산하지 않습니다.
+
+#### 저장 필드
+
+| 필드                                           | 기본값 | 의미                                                  |
+| ---------------------------------------------- | ------ | ----------------------------------------------------- |
+| `User.devopsPayoutSettings.manufacturerRate`   | 0.65   | 제조사 분배율                                         |
+| `User.devopsPayoutSettings.baseCommissionRate` | 0.05   | 개발운영사 직접 소개 수수료율                         |
+| `User.devopsPayoutSettings.salesmanDirectRate` | 0.05   | 영업자 직접 소개 수수료율 (미설정 보너스 기준도 동일) |
+
+#### 의뢰자 유형별 수수료 (거래 1건 기준)
+
+| 의뢰자 유형                                                   | 제조사             | 개발운영사                                  | 영업자                     | 관리자 |
+| ------------------------------------------------------------- | ------------------ | ------------------------------------------- | -------------------------- | ------ |
+| 개발운영사가 직접 소개 (`referredByAnchorId` = devops anchor) | `manufacturerRate` | `baseCommissionRate`                        | 0                          | 나머지 |
+| 소개자 없음 (`referredByAnchorId` = null)                     | `manufacturerRate` | `baseCommissionRate` + `salesmanDirectRate` | 0                          | 나머지 |
+| 영업자가 직접 소개                                            | `manufacturerRate` | 0                                           | `salesmanDirectRate`       | 나머지 |
+| 영업자 간접 소개 (하위 영업자 체인)                           | `manufacturerRate` | 0                                           | `salesmanDirectRate × 0.5` | 나머지 |
+
+> 영업자와 개발운영사 수수료는 동일 거래에 **중복 합산되지 않습니다.**
+
+#### 관리자 범위 (기본값 기준)
+
+- **최소** = 100 − `manufacturerRate` − `baseCommissionRate` − `salesmanDirectRate × 1.5` = 22.5%
+  (개발운영사 기본 + 영업자 최대 동시 발생)
+- **최대** = 100 − `manufacturerRate` − `baseCommissionRate` − `salesmanDirectRate` = 25%
+  (영업자 없음, 개발운영사 기본 + 미설정 보너스)
+
+분배 비율은 개발운영사 설정 화면에서 관리하며, 변경 시 본 문서를 먼저 갱신합니다.
 
 ### 2.5 소개 네트워크 의미 규칙
 

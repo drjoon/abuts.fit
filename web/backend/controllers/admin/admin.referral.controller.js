@@ -151,6 +151,7 @@ export async function getReferralGroups(req, res) {
         createdAt: 1,
         approvedAt: 1,
         updatedAt: 1,
+        devopsPayoutSettings: 1,
       })
       .sort({ createdAt: -1 })
       .lean();
@@ -305,8 +306,13 @@ export async function getReferralGroups(req, res) {
 
       const effectiveUnitPrice =
         computeVolumeEffectiveUnitPrice(groupTotalOrders);
+      // devops는 저장된 baseCommissionRate 사용 (rules.md 2.4 / SSOT write-on-event)
+      const leaderCommissionRate =
+        role === "devops"
+          ? Number(leader?.devopsPayoutSettings?.baseCommissionRate || 0.05)
+          : 0.05;
       const commissionAmount = REFERRAL_COMMISSION_LEADER_ROLES.has(role)
-        ? Math.round(groupRevenueAmount * 0.05)
+        ? Math.round(groupRevenueAmount * leaderCommissionRate)
         : 0;
 
       return {

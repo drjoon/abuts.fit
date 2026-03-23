@@ -381,6 +381,51 @@ async function updateProfile(req, res) {
       }
     }
 
+    if (
+      Object.prototype.hasOwnProperty.call(updateData, "devopsPayoutSettings")
+    ) {
+      const role = String(req.user?.role || "");
+      if (role !== "devops") {
+        delete updateData.devopsPayoutSettings;
+      } else {
+        const raw = updateData.devopsPayoutSettings;
+        const manufacturerRate = Number(raw?.manufacturerRate ?? 0.65);
+        const baseCommissionRate = Number(raw?.baseCommissionRate ?? 0.05);
+        const salesmanDirectRate = Number(raw?.salesmanDirectRate ?? 0.05);
+        const rates = [
+          manufacturerRate,
+          baseCommissionRate,
+          salesmanDirectRate,
+        ];
+        if (rates.some((r) => !Number.isFinite(r) || r < 0 || r > 1)) {
+          return res.status(400).json({
+            success: false,
+            message: "수수료율은 0~100% 범위여야 합니다.",
+          });
+        }
+        // 영업자와 개발운영사 수수료는 동일 거래에 중복 합산되지 않음 (rules.md 2.4)
+        // 최대 케이스 A: 영업자 없음 → 개발운영사 기본 + 미설정 보너스(=salesmanDirectRate)
+        // 최대 케이스 B: 개발운영사 기본 + 영업자 최대(×1.5)
+        const devopsMaxOnly = baseCommissionRate + salesmanDirectRate;
+        const devopsPlusSalesman =
+          baseCommissionRate + salesmanDirectRate * 1.5;
+        const maxTotal =
+          manufacturerRate + Math.max(devopsMaxOnly, devopsPlusSalesman);
+        if (maxTotal > 1) {
+          return res.status(400).json({
+            success: false,
+            message: `분배율 합계가 100%를 초과합니다. (현재 최대 ${Math.round(maxTotal * 100)}%)`,
+          });
+        }
+        updateData.devopsPayoutSettings = {
+          manufacturerRate,
+          baseCommissionRate,
+          salesmanDirectRate,
+          updatedAt: new Date(),
+        };
+      }
+    }
+
     if (Object.prototype.hasOwnProperty.call(updateData, "phoneNumber")) {
       const nextPhone = String(updateData.phoneNumber || "").trim();
       const prevPhone = String(req.user?.phoneNumber || "").trim();
