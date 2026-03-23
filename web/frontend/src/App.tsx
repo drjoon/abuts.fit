@@ -91,7 +91,6 @@ import AdminBusinessPage from "@/pages/admin/businesses/AdminBusinessPage";
 import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsPage";
 import AdminReferralGroupsPage from "@/pages/admin/referralGroups/AdminReferralGroupsPage";
 import SalesmanPaymentsPage from "@/pages/payments/SalesmanPaymentsPage";
-import DevopsPaymentsPage from "@/pages/devops/DevopsPaymentsPage";
 import AdminPaymentsPage from "@/pages/payments/AdminPaymentsPage";
 const ManufacturerDashboardPage = lazy(() =>
   import("./pages/manufacturer/dashboard/ManufacturerDashboardPage").then(
@@ -207,7 +206,7 @@ const PaymentsRoute = () => {
   if (!user) return <Navigate to="/dashboard" replace />;
   if (user.role === "manufacturer") return <ManufacturerPaymentPage />;
   if (user.role === "salesman") return <SalesmanPaymentsPage />;
-  if (user.role === "devops") return <DevopsPaymentsPage />;
+  if (user.role === "devops") return <Navigate to="/dashboard" replace />;
   if (user.role === "admin") return <AdminPaymentsPage />;
   return <Navigate to="/dashboard" replace />;
 };
