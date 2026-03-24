@@ -67,6 +67,9 @@ const DevopsSettingsPage = lazy(() =>
     default: m.DevopsSettingsPage,
   })),
 );
+const DevopsPaymentsPage = lazy(
+  () => import("./pages/devops/DevopsPaymentsPage"),
+);
 const SharedOnboardingWizardPage = lazy(() =>
   import("./shared/onboarding/SharedOnboardingWizardPage").then((m) => ({
     default: m.SharedOnboardingWizardPage,
@@ -206,9 +209,16 @@ const PaymentsRoute = () => {
   if (!user) return <Navigate to="/dashboard" replace />;
   if (user.role === "manufacturer") return <ManufacturerPaymentPage />;
   if (user.role === "salesman") return <SalesmanPaymentsPage />;
-  if (user.role === "devops") return <Navigate to="/dashboard" replace />;
+  if (user.role === "devops") return <DevopsPaymentsPage />;
   if (user.role === "admin") return <AdminPaymentsPage />;
   return <Navigate to="/dashboard" replace />;
+};
+
+const InquiriesRoute = () => {
+  const { user } = useAuthStore();
+  if (!user) return <Navigate to="/dashboard" replace />;
+  if (user.role === "admin") return <AdminInquiriesPage />;
+  return <InquiriesPage />;
 };
 
 const SignupEntryRoute = () => {
@@ -298,8 +308,22 @@ const App = () => {
                   }
                 >
                   <Route index element={<DashboardHome />} />
-                  <Route path="new-request" element={<NewRequestPage />} />
-                  <Route path="new-request/:id" element={<NewRequestPage />} />
+                  <Route
+                    path="new-request"
+                    element={
+                      <RoleProtectedRoute roles={["requestor"]}>
+                        <NewRequestPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="new-request/:id"
+                    element={
+                      <RoleProtectedRoute roles={["requestor"]}>
+                        <NewRequestPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
                   <Route
                     path="worksheet"
                     element={
@@ -332,22 +356,48 @@ const App = () => {
                       </RoleProtectedRoute>
                     }
                   />
-                  <Route path="users" element={<AdminUserManagement />} />
+                  <Route
+                    path="users"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminUserManagement />
+                      </RoleProtectedRoute>
+                    }
+                  />
                   {/* 호환용: 기존 경로 유지 */}
                   <Route
                     path="user-management"
-                    element={<AdminUserManagement />}
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminUserManagement />
+                      </RoleProtectedRoute>
+                    }
                   />
                   <Route
                     path="monitoring"
-                    element={<AdminRequestMonitoring />}
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminRequestMonitoring />
+                      </RoleProtectedRoute>
+                    }
                   />
                   {/* 호환용: 기존 경로 유지 */}
                   <Route
                     path="request-monitoring"
-                    element={<AdminRequestMonitoring />}
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminRequestMonitoring />
+                      </RoleProtectedRoute>
+                    }
                   />
-                  <Route path="mail" element={<AdminMailPage />} />
+                  <Route
+                    path="mail"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminMailPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
                   <Route
                     path="admin/inquiries"
                     element={
@@ -365,20 +415,28 @@ const App = () => {
                           "requestor",
                           "salesman",
                           "manufacturer",
+                          "devops",
                         ]}
                       >
-                        {useAuthStore.getState().user?.role === "admin" ? (
-                          <AdminInquiriesPage />
-                        ) : (
-                          <InquiriesPage />
-                        )}
+                        <InquiriesRoute />
                       </RoleProtectedRoute>
                     }
                   />
-                  <Route path="sms" element={<AdminSmsPage />} />
+                  <Route
+                    path="sms"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminSmsPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
                   <Route
                     path="chat-management"
-                    element={<AdminChatManagement />}
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminChatManagement />
+                      </RoleProtectedRoute>
+                    }
                   />
                   <Route
                     path="tax-invoices"
@@ -388,7 +446,14 @@ const App = () => {
                       </RoleProtectedRoute>
                     }
                   />
-                  <Route path="security-settings" element={<AdminSecurity />} />
+                  <Route
+                    path="security-settings"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminSecurity />
+                      </RoleProtectedRoute>
+                    }
+                  />
                   <Route
                     path="organization-verification"
                     element={
