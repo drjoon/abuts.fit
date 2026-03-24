@@ -179,7 +179,7 @@ export const RequestorReferralPage = () => {
                         className="rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-4 px-4 py-5 cursor-pointer hover:bg-slate-100 transition-colors"
                         onClick={() => void handleCopyCode()}
                       >
-                        <p className="text-sm font-mono text-slate-700 break-all leading-relaxed">
+                        <p className="text-4xl  font-mono text-slate-700 break-all leading-relaxed">
                           {referralCode || "—"}
                         </p>
                         <Button

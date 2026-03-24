@@ -125,12 +125,13 @@ export const SalesmanReferralPage = () => {
                         소개 코드
                       </label>
                       <div
-                        className="rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-4 px-6 py-5 cursor-pointer hover:bg-slate-100 transition-colors"
+                        className="rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-4 px-4 py-5 cursor-pointer hover:bg-slate-100 transition-colors"
                         onClick={() => void handleCopyCode()}
                       >
-                        <span className="text-4xl font-bold tracking-[0.2em] text-slate-900 select-all">
+                        <p className="text-4xl font-mono text-slate-700 break-all leading-relaxed">
                           {referralCode || "—"}
-                        </span>
+                        </p>
+
                         <Button
                           onClick={(e) => {
                             e.stopPropagation();
