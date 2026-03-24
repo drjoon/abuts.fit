@@ -23,8 +23,10 @@ import { triggerPricingSnapshotForUserDoc } from "../../services/requestSnapshot
 import { sendEmail } from "../../utils/email.util.js";
 import { getFrontendBaseUrl } from "../../utils/url.util.js";
 
-const createReferralCode = (length) => {
-  const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const createReferralCode = (length, alphaOnly = false) => {
+  const alphabet = alphaOnly
+    ? "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    : "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   let code = "";
   for (let i = 0; i < length; i += 1) {
     code += alphabet[crypto.randomInt(0, alphabet.length)];
@@ -32,9 +34,9 @@ const createReferralCode = (length) => {
   return code;
 };
 
-const ensureUniqueReferralCode = async (length) => {
+const ensureUniqueReferralCode = async (length, alphaOnly = false) => {
   for (let i = 0; i < 200; i += 1) {
-    const code = createReferralCode(length);
+    const code = createReferralCode(length, alphaOnly);
     const exists = await User.exists({ referralCode: code });
     if (!exists) return code;
   }
@@ -558,12 +560,8 @@ async function register(req, res) {
       });
     }
 
-    let referralCodeLength = 5;
-    if (normalizedRole === "salesman") {
-      referralCodeLength = 4;
-    } else if (normalizedRole === "devops") {
-      referralCodeLength = 5;
-    }
+    const referralCodeLength =
+      normalizedRole === "salesman" || normalizedRole === "devops" ? 3 : 5;
     const referralCode = await ensureUniqueReferralCode(referralCodeLength);
 
     if (

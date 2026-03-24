@@ -238,7 +238,7 @@ export async function getSalesmanLedger(req, res) {
 }
 
 function createReferralCode3() {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   const a = alphabet[crypto.randomInt(0, alphabet.length)];
   const b = alphabet[crypto.randomInt(0, alphabet.length)];
   const c = alphabet[crypto.randomInt(0, alphabet.length)];
@@ -267,7 +267,7 @@ export async function getSalesmanDashboard(req, res) {
     }
 
     let effectiveReferralCode = String(me.referralCode || "").trim();
-    if (!/^[A-Z]{3}$/.test(effectiveReferralCode)) {
+    if (!/^[A-Z0-9]{3}$/.test(effectiveReferralCode)) {
       try {
         effectiveReferralCode = await ensureUniqueReferralCode3();
         await User.updateOne(

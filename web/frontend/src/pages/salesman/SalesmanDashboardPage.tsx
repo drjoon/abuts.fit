@@ -42,7 +42,7 @@ export const SalesmanDashboardPage = () => {
   const referralCode = String(data?.referralCode || user.referralCode || "")
     .trim()
     .toUpperCase();
-  const normalizedReferralCode = /^[A-Z]{3}$/.test(referralCode)
+  const normalizedReferralCode = /^[A-Z0-9]{3}$/.test(referralCode)
     ? referralCode
     : "";
   const referralLink =
