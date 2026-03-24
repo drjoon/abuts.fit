@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
@@ -48,7 +49,12 @@ export const SignupPage = () => {
     "name" | "password" | "confirmPassword" | null
   >(null);
   const [signupRole, setSignupRole] = useState<SignupRole>("requestor");
-  const [wizardStep, setWizardStep] = useState<1 | 3 | 4>(1);
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(1);
+  const [manualReferralInput, setManualReferralInput] = useState("");
+  const [enteredReferralCode, setEnteredReferralCode] = useState<
+    string | undefined
+  >(undefined);
+  const [isValidatingReferral, setIsValidatingReferral] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState<"email" | null>(null);
   const [emailVerifiedAt, setEmailVerifiedAt] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -150,6 +156,8 @@ export const SignupPage = () => {
       switch (wizardStep) {
         case 1:
           return "회원 가입";
+        case 2:
+          return "소개자 코드";
         case 3:
           return "계정 정보";
         case 4:
@@ -171,7 +179,7 @@ export const SignupPage = () => {
 
   useEffect(() => {
     if (typeof referralCode !== "string") {
-      setReferrerInfo(null);
+      if (!enteredReferralCode) setReferrerInfo(null);
       return;
     }
 
@@ -210,20 +218,81 @@ export const SignupPage = () => {
       .catch(() => {
         setReferrerInfo(null);
       });
-  }, [referralCode, signupRole]);
+  }, [enteredReferralCode, referralCode, signupRole]);
+
+  const effectiveReferralCode = useMemo(
+    () => referralCode ?? enteredReferralCode,
+    [enteredReferralCode, referralCode],
+  );
 
   const allowedSignupRoles = useMemo<SignupRole[]>(() => {
-    if (typeof referralCode !== "string") return ["requestor", "salesman"];
+    if (typeof effectiveReferralCode !== "string")
+      return ["requestor", "salesman"];
     const roles = referrerInfo?.allowedSignupRoles || [];
     return roles.filter(
       (role): role is SignupRole => role === "requestor" || role === "salesman",
     );
-  }, [referralCode, referrerInfo]);
+  }, [effectiveReferralCode, referrerInfo]);
 
   const isSalesmanDisabled = useMemo(() => {
-    if (typeof referralCode !== "string") return false;
+    if (typeof effectiveReferralCode !== "string") return false;
     return !allowedSignupRoles.includes("salesman");
-  }, [allowedSignupRoles, referralCode]);
+  }, [allowedSignupRoles, effectiveReferralCode]);
+
+  const validateManualReferralCode = useCallback(async () => {
+    const code = manualReferralInput.trim();
+    if (!code) return;
+    setIsValidatingReferral(true);
+    try {
+      const res = await request<any>({
+        path: "/api/auth/referral/validate",
+        method: "POST",
+        jsonBody: { value: code },
+      });
+      const body: any = res.data || {};
+      if (res.ok && body?.success && body?.data) {
+        const nextAllowedSignupRoles = Array.isArray(
+          body.data.allowedSignupRoles,
+        )
+          ? body.data.allowedSignupRoles.filter(
+              (role: string): role is SignupRole =>
+                role === "requestor" || role === "salesman",
+            )
+          : [];
+        setReferrerInfo({
+          name: body.data.name,
+          business: body.data.businessName,
+          role: body.data.role === "salesman" ? "salesman" : "requestor",
+          allowedSignupRoles: nextAllowedSignupRoles,
+        });
+        setEnteredReferralCode(code);
+        if (
+          nextAllowedSignupRoles.length > 0 &&
+          !nextAllowedSignupRoles.includes(signupRole)
+        ) {
+          setSignupRole(nextAllowedSignupRoles[0]);
+        }
+        toast({
+          title: "소개자 확인",
+          description: `${body.data.businessName || body.data.name}에서 소개받으셨군요!`,
+        });
+      } else {
+        toast({
+          title: "유효하지 않은 소개 코드",
+          description: "소개 코드를 다시 확인해주세요.",
+          variant: "destructive",
+        });
+      }
+    } catch {
+      toast({
+        title: "오류",
+        description: "소개 코드 확인 중 문제가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsValidatingReferral(false);
+    }
+  }, [manualReferralInput, signupRole, toast]);
 
   // LocalStorage에서 폼 데이터 및 이메일 인증 정보 복구
   useEffect(() => {
@@ -482,7 +551,9 @@ export const SignupPage = () => {
             socialProvider: socialInfo.provider,
             socialProviderUserId: socialInfo.providerUserId,
             socialToken: sessionStorage.getItem("socialToken") || undefined,
-            ...(referralCode ? { referredByReferralCode: referralCode } : {}),
+            ...(effectiveReferralCode
+              ? { referredByReferralCode: effectiveReferralCode }
+              : {}),
           },
         });
 
@@ -557,7 +628,9 @@ export const SignupPage = () => {
           email: formData.email,
           password: formData.password,
           role: signupRole,
-          ...(referralCode ? { referredByReferralCode: referralCode } : {}),
+          ...(effectiveReferralCode
+            ? { referredByReferralCode: effectiveReferralCode }
+            : {}),
         },
       });
 
@@ -604,7 +677,7 @@ export const SignupPage = () => {
     loginWithToken,
     markSetupWizardRequired,
     navigate,
-    referralCode,
+    effectiveReferralCode,
     signupRole,
     socialInfo,
     token,
@@ -920,9 +993,89 @@ export const SignupPage = () => {
                         }}
                         onEmailClick={() => {
                           setSelectedMethod("email");
-                          setWizardStep(3);
+                          setWizardStep(referralCode ? 3 : 2);
                         }}
                       />
+                    </div>
+                  )}
+
+                  {wizardStep === 2 && (
+                    <div className="space-y-6">
+                      <p className="text-sm text-white/70">
+                        소개받으셨나요? 소개자 코드를 입력해주세요.{" "}
+                        <span className="text-white/40">(선택)</span>
+                      </p>
+                      {enteredReferralCode && referrerInfo ? (
+                        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5 space-y-1">
+                          <p className="text-xs text-white/50 uppercase tracking-wider">
+                            소개자 확인됨
+                          </p>
+                          <p className="font-semibold text-white">
+                            {referrerInfo.business || referrerInfo.name}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEnteredReferralCode(undefined);
+                              setManualReferralInput("");
+                              setReferrerInfo(null);
+                            }}
+                            className="text-xs text-white/50 hover:text-white/80 underline mt-1"
+                          >
+                            변경
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Input
+                            type="text"
+                            placeholder="소개 코드 입력"
+                            value={manualReferralInput}
+                            onChange={(e) =>
+                              setManualReferralInput(e.target.value)
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                void validateManualReferralCode();
+                              }
+                            }}
+                            disabled={isValidatingReferral}
+                            className="h-11 flex-1 border-white/10 bg-white/5 text-white placeholder:text-slate-300"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={
+                              isValidatingReferral ||
+                              !manualReferralInput.trim()
+                            }
+                            onClick={() => void validateManualReferralCode()}
+                            className="h-11 px-4 flex-shrink-0 border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
+                          >
+                            {isValidatingReferral ? "확인 중..." : "확인"}
+                          </Button>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setWizardStep(1)}
+                          className="h-11 border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
+                        >
+                          이전
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="hero"
+                          onClick={() => setWizardStep(3)}
+                          className="h-11"
+                        >
+                          {enteredReferralCode ? "다음" : "건너뛰기"}
+                        </Button>
+                      </div>
                     </div>
                   )}
 
@@ -933,7 +1086,7 @@ export const SignupPage = () => {
                       focusField={accountFocusField}
                       isLoading={isLoading}
                       onFormChange={handleChange}
-                      onPrevious={() => setWizardStep(1)}
+                      onPrevious={() => setWizardStep(referralCode ? 1 : 2)}
                       onNext={handleGoEmailStep}
                     />
                   )}
