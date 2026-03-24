@@ -19,23 +19,23 @@ import { useSocket } from "@/shared/hooks/useSocket";
 
 const Index = lazy(() => import("./pages/public/Index"));
 const LoginPage = lazy(() =>
-  import("./pages/auth/LoginPage").then((m) => ({ default: m.LoginPage })),
+  import("./features/auth/LoginPage").then((m) => ({ default: m.LoginPage })),
 );
 const SignupPage = lazy(() =>
-  import("./pages/auth/SignupPage").then((m) => ({ default: m.SignupPage })),
+  import("./features/auth/SignupPage").then((m) => ({ default: m.SignupPage })),
 );
 const SignupStaffPage = lazy(() =>
-  import("./pages/auth/SignupStaffPage").then((m) => ({
+  import("./features/auth/SignupStaffPage").then((m) => ({
     default: m.SignupStaffPage,
   })),
 );
 const ForgotPasswordPage = lazy(() =>
-  import("./pages/auth/ForgotPasswordPage").then((m) => ({
+  import("./features/auth/ForgotPasswordPage").then((m) => ({
     default: m.ForgotPasswordPage,
   })),
 );
 const ResetPasswordPage = lazy(() =>
-  import("./pages/auth/ResetPasswordPage").then((m) => ({
+  import("./features/auth/ResetPasswordPage").then((m) => ({
     default: m.ResetPasswordPage,
   })),
 );
@@ -45,7 +45,7 @@ const DashboardLayout = lazy(() =>
   })),
 );
 const DashboardHome = lazy(() =>
-  import("./pages/dashboard/DashboardHome").then((m) => ({
+  import("./features/dashboard/DashboardHome").then((m) => ({
     default: m.DashboardHome,
   })),
 );
@@ -58,7 +58,7 @@ const ManufacturerWorksheetPage = lazy(() =>
   })),
 );
 const SettingsPage = lazy(() =>
-  import("./pages/dashboard/SettingsPage").then((m) => ({
+  import("./features/dashboard/SettingsPage").then((m) => ({
     default: m.SettingsPage,
   })),
 );
@@ -90,8 +90,8 @@ import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
 import AdminBusinessPage from "@/pages/admin/businesses/AdminBusinessPage";
 import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsPage";
 import AdminReferralGroupsPage from "@/pages/admin/referralGroups/AdminReferralGroupsPage";
-import SalesmanPaymentsPage from "@/pages/payments/SalesmanPaymentsPage";
-import AdminPaymentsPage from "@/pages/payments/AdminPaymentsPage";
+import SalesmanPaymentsPage from "@/pages/salesman/SalesmanPaymentsPage";
+import AdminPaymentsPage from "@/pages/admin/AdminPaymentsPage";
 const ManufacturerDashboardPage = lazy(() =>
   import("./pages/manufacturer/dashboard/ManufacturerDashboardPage").then(
     (m) => ({ default: m.ManufacturerDashboardPage }),
@@ -116,7 +116,7 @@ const ContactPage = lazy(() =>
   })),
 );
 const OAuthCallbackPage = lazy(() =>
-  import("./pages/auth/OAuthCallbackPage").then((m) => ({
+  import("./features/auth/OAuthCallbackPage").then((m) => ({
     default: m.OAuthCallbackPage,
   })),
 );

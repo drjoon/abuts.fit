@@ -1,9 +1,9 @@
 import { useAuthStore } from "@/store/useAuthStore";
-import { AdminSettingsPage } from "../admin/settings/SettingsPage";
-import { ManufacturerSettingsPage } from "../manufacturer/settings/SettingsPage";
-import { RequestorSettingsPage } from "../requestor/settings/SettingsPage";
-import { SalesmanSettingsPage } from "../salesman/SalesmanSettingsPage";
-import { DevopsSettingsPage } from "../devops/DevopsSettingsPage";
+import { AdminSettingsPage } from "@/pages/admin/settings/SettingsPage";
+import { ManufacturerSettingsPage } from "@/pages/manufacturer/settings/SettingsPage";
+import { RequestorSettingsPage } from "@/pages/requestor/settings/SettingsPage";
+import { SalesmanSettingsPage } from "@/pages/salesman/SalesmanSettingsPage";
+import { DevopsSettingsPage } from "@/pages/devops/DevopsSettingsPage";
 
 export const SettingsPage = () => {
   const { user } = useAuthStore();

@@ -198,7 +198,7 @@ export async function seedDefaultAccounts() {
     });
   }
 
-  return { specs };
+  return { users: specs };
 }
 
 export async function seedBulkAccounts() {
