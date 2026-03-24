@@ -226,8 +226,8 @@ export function ReferralNetworkChart({
     const links: LayoutLink[] = [];
     const maxLayoutDepth = Math.max(1, Math.min(maxDepth, 4));
     const radiusStep = Math.min(
-      145,
-      Math.max(92, (Math.min(viewWidth, viewHeight) - 220) / maxLayoutDepth),
+      200,
+      Math.max(160, (Math.min(viewWidth, viewHeight) - 80) / maxLayoutDepth),
     );
 
     const placeNode = (
@@ -496,8 +496,8 @@ export function ReferralNetworkChart({
   if (!layoutRoot || !fittedLayout) {
     return (
       <Card className="shadow-sm">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base font-semibold text-slate-900">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-sm font-semibold text-slate-700">
             {title}
           </CardTitle>
         </CardHeader>
@@ -512,12 +512,12 @@ export function ReferralNetworkChart({
 
   return (
     <Card className="border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50/60 shadow-sm">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base font-semibold text-slate-900">
+      <CardHeader className="pb-4">
+        <CardTitle className="text-sm font-semibold text-slate-700">
           {title}
         </CardTitle>
       </CardHeader>
-      <CardContent className="pt-0">
+      <CardContent className="pt-2">
         <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white/80 shadow-inner">
           <svg
             viewBox={`0 0 ${viewWidth} ${viewHeight}`}

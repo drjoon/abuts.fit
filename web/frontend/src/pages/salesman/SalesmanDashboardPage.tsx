@@ -86,6 +86,17 @@ export const SalesmanDashboardPage = () => {
   const directBusinesses = referredBusinesses.filter(
     (business) => business.referralLevel !== "level1",
   );
+  const level1Businesses = referredBusinesses.filter(
+    (business) => business.referralLevel === "level1",
+  );
+  const directOrders = directBusinesses.reduce(
+    (sum, b) => sum + Number(b.monthOrderCount || 0),
+    0,
+  );
+  const level1Orders = level1Businesses.reduce(
+    (sum, b) => sum + Number(b.monthOrderCount || 0),
+    0,
+  );
   const referralSalesmen = data?.referralSalesmen || [];
 
   return (
@@ -125,7 +136,7 @@ export const SalesmanDashboardPage = () => {
             </Button>
           </div>
         }
-        statsGridClassName="grid grid-cols-1 gap-2.5 p-3 sm:grid-cols-2 lg:grid-cols-4"
+        statsGridClassName="grid grid-cols-1 gap-2.5 p-3 sm:grid-cols-2 lg:grid-cols-3"
         stats={
           <>
             {/* 내 소개 코드 — 영업자 전용 */}
@@ -183,7 +194,7 @@ export const SalesmanDashboardPage = () => {
             </Card>
 
             {/* 소개 의뢰자 요약 — 직접/간접 모두 표시 */}
-            <Card className="app-glass-card app-glass-card--lg overflow-visible">
+            {/* <Card className="app-glass-card app-glass-card--lg overflow-visible">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -215,7 +226,7 @@ export const SalesmanDashboardPage = () => {
                   </div>
                 </div>
               </CardContent>
-            </Card>
+            </Card> */}
 
             {/* 수수료 크레딧 — 직접(5%) + 간접(2.5%) 합산 */}
             <Card className="app-glass-card app-glass-card--lg overflow-visible">
@@ -294,7 +305,122 @@ export const SalesmanDashboardPage = () => {
         }
         mainLeft={
           <div className="space-y-3 p-3">
-            {loading ? (
+            {/* 소개 통계 요약 3-card */}
+            <Card className="app-glass-card app-glass-card--lg">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold">
+                  영업자 소개 통계
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <div className="grid gap-2 grid-cols-1 md:grid-cols-3">
+                    {[0, 1, 2].map((i) => (
+                      <div
+                        key={i}
+                        className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4 h-24 animate-pulse"
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid gap-2 grid-cols-1 md:grid-cols-3">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4 cursor-help">
+                          <div className="text-xs font-medium text-muted-foreground mb-3">
+                            직접 소개
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-xs text-muted-foreground">
+                                사업자 수
+                              </span>
+                              <span className="text-xl font-bold tabular-nums">
+                                {directBusinessCount.toLocaleString()}개소
+                              </span>
+                            </div>
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-xs text-muted-foreground">
+                                의뢰건수
+                              </span>
+                              <span className="text-base font-semibold tabular-nums">
+                                {directOrders.toLocaleString()}건
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        내가 직접 소개한 의뢰자 사업자 (5% 수수료 적용)
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4 cursor-help">
+                          <div className="text-xs font-medium text-muted-foreground mb-3">
+                            간접 소개
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-xs text-muted-foreground">
+                                사업자 수
+                              </span>
+                              <span className="text-xl font-bold tabular-nums">
+                                {level1BusinessCount.toLocaleString()}개소
+                              </span>
+                            </div>
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-xs text-muted-foreground">
+                                의뢰건수
+                              </span>
+                              <span className="text-base font-semibold tabular-nums">
+                                {level1Orders.toLocaleString()}건
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        소개한 영업자가 다시 소개한 의뢰자 사업자 (2.5% 수수료
+                        적용)
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4 cursor-help">
+                          <div className="text-xs font-medium text-muted-foreground mb-3">
+                            소개 영업자
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-xs text-muted-foreground">
+                                영업자 수
+                              </span>
+                              <span className="text-xl font-bold tabular-nums">
+                                {referralSalesmanCount.toLocaleString()}명
+                              </span>
+                            </div>
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-xs text-muted-foreground">
+                                의뢰건수
+                              </span>
+                              <span className="text-base font-semibold tabular-nums">
+                                {level1Orders.toLocaleString()}건
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        내가 직접 소개한 영업자 수와 그를 통해 들어온 의뢰건수
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* {loading ? (
               <Card className="app-glass-card app-glass-card--lg">
                 <CardContent className="py-6 text-sm text-muted-foreground">
                   불러오는 중...
@@ -378,7 +504,7 @@ export const SalesmanDashboardPage = () => {
                   </CardContent>
                 </Card>
               </div>
-            )}
+            )} */}
           </div>
         }
         mainRight={null}
