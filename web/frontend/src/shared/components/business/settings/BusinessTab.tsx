@@ -246,39 +246,42 @@ export const BusinessTab = ({
       duration: 60000,
     });
 
-    const { success, verification } = await handleSaveImpl({
-      token,
-      businessData: businessDataMgmt.businessData,
-      extracted: businessDataMgmt.extracted,
-      businessNumberLocked: businessDataMgmt.validationSucceeded,
-      membership: membershipMgmt.membership,
-      businessType,
-      businessLicense: {
-        fileId: businessDataMgmt.licenseFileId,
-        s3Key: businessDataMgmt.licenseS3Key,
-        originalName: businessDataMgmt.licenseFileName,
-      },
-      mockHeaders: {},
-      toast,
-      silent: false,
-      auto: false,
-      setErrors: businessDataMgmt.setErrors,
-      setBusinessData: businessDataMgmt.setBusinessData,
-      navigate,
-      nextPath: "",
-      onFocusFirstMissing: (key) => {
-        setFocusFieldKey(key);
-        setFocusFirstMissingSignal((v) => v + 1);
-      },
-    });
+    const { success, verification, welcomeBonusGranted, welcomeBonusAmount } =
+      await handleSaveImpl({
+        token,
+        businessData: businessDataMgmt.businessData,
+        extracted: businessDataMgmt.extracted,
+        businessNumberLocked: businessDataMgmt.validationSucceeded,
+        membership: membershipMgmt.membership,
+        businessType,
+        businessLicense: {
+          fileId: businessDataMgmt.licenseFileId,
+          s3Key: businessDataMgmt.licenseS3Key,
+          originalName: businessDataMgmt.licenseFileName,
+        },
+        mockHeaders: {},
+        toast,
+        silent: false,
+        auto: false,
+        setErrors: businessDataMgmt.setErrors,
+        setBusinessData: businessDataMgmt.setBusinessData,
+        navigate,
+        nextPath: "",
+        onFocusFirstMissing: (key) => {
+          setFocusFieldKey(key);
+          setFocusFirstMissingSignal((v) => v + 1);
+        },
+      });
 
     savingToast?.dismiss?.();
 
     if (success) {
-      toast({
-        title: "저장 완료",
-        description: "사업자 정보가 성공적으로 업데이트되었습니다.",
-      });
+      if (!(welcomeBonusGranted && (welcomeBonusAmount ?? 0) > 0)) {
+        toast({
+          title: "저장 완료",
+          description: "사업자 정보가 성공적으로 업데이트되었습니다.",
+        });
+      }
       setShowInquiryCta(false);
       await membershipMgmt.refreshMembership();
       if (token) {

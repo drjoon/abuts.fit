@@ -364,17 +364,6 @@ export const handleSave = async (
         title: "신규 사업자 등록 완료",
         description: `축하 크레딧 ${formatted}원이 자동 적립되었어요.`,
       });
-    } else if (!silent && !auto) {
-      toast({
-        title: "저장 완료",
-        description: "사업자 정보가 성공적으로 업데이트되었습니다.",
-      });
-      return {
-        success: true,
-        welcomeBonusGranted,
-        welcomeBonusAmount,
-        verification,
-      };
     }
 
     return {

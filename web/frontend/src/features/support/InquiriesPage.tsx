@@ -1,3 +1,6 @@
+// 문의 페이지는 requestor, salesman, admin 역할에서만 사용됩니다.
+// manufacturer(제조사)와 devops(개발운영사)는 문의 페이지가 불필요하며,
+// 사이드메뉴 및 라우트 접근에서 제외되어 있습니다.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -363,7 +366,6 @@ export const InquiriesPage = () => {
         {/* 새 문의 작성 탭 */}
         <TabsContent value="new">
           <Card>
-            
             <CardContent className="space-y-5 py-4">
               <div className="space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">

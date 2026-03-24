@@ -69,8 +69,6 @@ const sidebarItems = {
   devops: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
-    { icon: Wallet, label: "정산", href: "/dashboard/payments" },
-    { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   manufacturer: [
@@ -78,7 +76,6 @@ const sidebarItems = {
     { icon: ClipboardList, label: "작업", href: "/dashboard/worksheet" },
     { icon: Factory, label: "장비", href: "/dashboard/cnc" },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
-    { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   admin: [

@@ -303,8 +303,16 @@ export const BusinessForm = ({
     if (!postcode.embed) return;
     postcode.embed(container);
 
+    const setIframeLangKo = () => {
+      const iframe = container.querySelector("iframe");
+      if (iframe) iframe.setAttribute("lang", "ko");
+    };
+    requestAnimationFrame(setIframeLangKo);
+    const langTimer = setTimeout(setIframeLangKo, 300);
+
     return () => {
       container.innerHTML = "";
+      clearTimeout(langTimer);
     };
   }, [addressPromptActive, setBusinessData, setErrors]);
 
@@ -691,6 +699,7 @@ export const BusinessForm = ({
                 </div>
                 <div
                   ref={postcodeContainerRef}
+                  lang="ko"
                   className="min-h-[420px] w-full bg-white"
                 />
               </div>

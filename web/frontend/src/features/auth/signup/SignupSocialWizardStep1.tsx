@@ -143,7 +143,7 @@ export const SignupSocialWizardStep1 = ({
           disabled={isLoading}
           className="h-10"
         >
-          회원가입
+          다음
         </Button>
       </div>
     </form>

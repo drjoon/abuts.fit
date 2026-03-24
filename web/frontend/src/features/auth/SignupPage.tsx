@@ -168,6 +168,7 @@ export const SignupPage = () => {
     }
 
     if (isSocialNewMode) {
+      if (wizardStep === 2) return "소개자 코드";
       return "기본 정보";
     }
 
@@ -259,6 +260,18 @@ export const SignupPage = () => {
                 role === "requestor" || role === "salesman",
             )
           : [];
+        if (
+          nextAllowedSignupRoles.length > 0 &&
+          !nextAllowedSignupRoles.includes(signupRole)
+        ) {
+          const roleLabel = signupRole === "salesman" ? "영업자" : "의뢰자";
+          toast({
+            title: "소개 코드 불일치",
+            description: `이 소개 코드는 ${roleLabel} 가입에 사용할 수 없습니다.`,
+            variant: "destructive",
+          });
+          return;
+        }
         setReferrerInfo({
           name: body.data.name,
           business: body.data.businessName,
@@ -266,12 +279,6 @@ export const SignupPage = () => {
           allowedSignupRoles: nextAllowedSignupRoles,
         });
         setEnteredReferralCode(code);
-        if (
-          nextAllowedSignupRoles.length > 0 &&
-          !nextAllowedSignupRoles.includes(signupRole)
-        ) {
-          setSignupRole(nextAllowedSignupRoles[0]);
-        }
         toast({
           title: "소개자 확인",
           description: `${body.data.businessName || body.data.name}에서 소개받으셨군요!`,
@@ -1062,7 +1069,12 @@ export const SignupPage = () => {
                         <Button
                           type="button"
                           variant="outline"
-                          onClick={() => setWizardStep(1)}
+                          onClick={() => {
+                            setEnteredReferralCode(undefined);
+                            setManualReferralInput("");
+                            if (!referralCode) setReferrerInfo(null);
+                            setWizardStep(1);
+                          }}
                           className="h-11 border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
                         >
                           이전
@@ -1118,8 +1130,100 @@ export const SignupPage = () => {
                       isLoading={isLoading}
                       onFormChange={handleChange}
                       onPrevious={() => navigate("/login")}
-                      onNext={submitSignup}
+                      onNext={() =>
+                        referralCode ? void submitSignup() : setWizardStep(2)
+                      }
                     />
+                  )}
+
+                  {wizardStep === 2 && (
+                    <div className="space-y-6">
+                      <p className="text-sm text-white/70">
+                        소개받으셨나요? 소개자 코드를 입력해주세요.{" "}
+                        <span className="text-white/40">(선택)</span>
+                      </p>
+                      {enteredReferralCode && referrerInfo ? (
+                        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5 space-y-1">
+                          <p className="text-xs text-white/50 uppercase tracking-wider">
+                            소개자 확인됨
+                          </p>
+                          <p className="font-semibold text-white">
+                            {referrerInfo.business || referrerInfo.name}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEnteredReferralCode(undefined);
+                              setManualReferralInput("");
+                              setReferrerInfo(null);
+                            }}
+                            className="text-xs text-white/50 hover:text-white/80 underline mt-1"
+                          >
+                            변경
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Input
+                            type="text"
+                            placeholder="소개 코드 입력"
+                            value={manualReferralInput}
+                            onChange={(e) =>
+                              setManualReferralInput(e.target.value)
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                void validateManualReferralCode();
+                              }
+                            }}
+                            disabled={isValidatingReferral}
+                            className="h-11 flex-1 border-white/10 bg-white/5 text-white placeholder:text-slate-300"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={
+                              isValidatingReferral ||
+                              !manualReferralInput.trim()
+                            }
+                            onClick={() => void validateManualReferralCode()}
+                            className="h-11 px-4 flex-shrink-0 border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
+                          >
+                            {isValidatingReferral ? "확인 중..." : "확인"}
+                          </Button>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setEnteredReferralCode(undefined);
+                            setManualReferralInput("");
+                            if (!referralCode) setReferrerInfo(null);
+                            setWizardStep(1);
+                          }}
+                          className="h-11 border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
+                        >
+                          이전
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="hero"
+                          disabled={isLoading}
+                          onClick={() => void submitSignup()}
+                          className="h-11"
+                        >
+                          {isLoading
+                            ? "가입 중..."
+                            : enteredReferralCode
+                              ? "가입하기"
+                              : "건너뛰기"}
+                        </Button>
+                      </div>
+                    </div>
                   )}
                 </>
               )}

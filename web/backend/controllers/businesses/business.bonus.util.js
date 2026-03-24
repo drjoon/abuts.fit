@@ -127,7 +127,8 @@ export async function grantWelcomeBonusIfEligible({
     amount,
   });
 
-  if (!grant?._id || grant.creditLedgerId) return grant?.amount || null;
+  if (!grant?._id) return null;
+  if (grant.creditLedgerId) return null;
 
   const ledgerId = await upsertBonusLedger({
     businessId,
@@ -188,7 +189,7 @@ export async function grantFreeShippingCreditIfEligible({
   });
 
   if (!grant?._id) return null;
-  if (grant.creditLedgerId) return grant.amount || amount;
+  if (grant.creditLedgerId) return null;
 
   const ledgerId = await upsertBonusLedger({
     businessId,

@@ -67,9 +67,6 @@ const DevopsSettingsPage = lazy(() =>
     default: m.DevopsSettingsPage,
   })),
 );
-const DevopsPaymentsPage = lazy(
-  () => import("./pages/devops/DevopsPaymentsPage"),
-);
 const SharedOnboardingWizardPage = lazy(() =>
   import("./shared/onboarding/SharedOnboardingWizardPage").then((m) => ({
     default: m.SharedOnboardingWizardPage,
@@ -209,7 +206,6 @@ const PaymentsRoute = () => {
   if (!user) return <Navigate to="/dashboard" replace />;
   if (user.role === "manufacturer") return <ManufacturerPaymentPage />;
   if (user.role === "salesman") return <SalesmanPaymentsPage />;
-  if (user.role === "devops") return <DevopsPaymentsPage />;
   if (user.role === "admin") return <AdminPaymentsPage />;
   return <Navigate to="/dashboard" replace />;
 };
@@ -410,13 +406,7 @@ const App = () => {
                     path="inquiries"
                     element={
                       <RoleProtectedRoute
-                        roles={[
-                          "admin",
-                          "requestor",
-                          "salesman",
-                          "manufacturer",
-                          "devops",
-                        ]}
+                        roles={["admin", "requestor", "salesman"]}
                       >
                         <InquiriesRoute />
                       </RoleProtectedRoute>
@@ -474,7 +464,7 @@ const App = () => {
                     path="payments"
                     element={
                       <RoleProtectedRoute
-                        roles={["manufacturer", "salesman", "devops", "admin"]}
+                        roles={["manufacturer", "salesman", "admin"]}
                       >
                         <PaymentsRoute />
                       </RoleProtectedRoute>

@@ -211,10 +211,17 @@ export async function verifyBusinessNumber({
   // 2) 상태조회 결과 수집 (이미 병렬로 시작됨)
   const statusResp = await statusPromise;
   if (!statusResp.ok) {
-    return {
-      verified: false,
-      provider: "hometax",
+    // status API 서버 오류(일시적 장애 등)는 등록을 차단하지 않는다
+    // validate API fallback과 동일한 정책: 홈택스 서버 장애 시 검증 우회
+    console.warn("[hometax] status API 서버 오류 — 검증 우회", {
       message: statusResp.message,
+    });
+    return {
+      verified: true,
+      provider: "hometax",
+      message:
+        "홈택스 상태 확인 서비스가 일시적으로 응답하지 않아 검증을 우회합니다.",
+      raw: { statusError: true },
     };
   }
 

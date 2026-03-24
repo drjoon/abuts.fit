@@ -182,25 +182,48 @@ export const useBusinessDataManagement = (
           phone: formatPhoneNumberInput(String(ex?.phoneNumber || "").trim()),
         });
 
+        // membership이 none인 경우, 서버에 없는 필드는 로컬 드래프트 값으로 보완
+        // (온보딩에서 입력 후 서버 저장 전에 설정 페이지로 이동한 경우 대비)
+        if (next === "none" && localDraft.payload?.businessData) {
+          const localBd = localDraft.payload.businessData;
+          if (!nextBusinessData.addressDetail && localBd.addressDetail)
+            nextBusinessData.addressDetail = localBd.addressDetail;
+          if (!nextBusinessData.zipCode && localBd.zipCode)
+            nextBusinessData.zipCode = localBd.zipCode;
+          if (!nextBusinessData.phone && localBd.phone)
+            nextBusinessData.phone = localBd.phone;
+        }
+
         setBusinessData(nextBusinessData);
 
         if (resetVersionRef.current !== loadVersion) return;
 
-        setExtracted(
-          normalizeExtracted({
-            companyName: String(ex?.companyName || "").trim() || businessName,
-            businessNumber: String(ex?.businessNumber || "").trim(),
-            address: String(ex?.address || "").trim(),
-            addressDetail: String(ex?.addressDetail || "").trim(),
-            zipCode: String(ex?.zipCode || "").trim(),
-            phoneNumber: String(ex?.phoneNumber || "").trim(),
-            email: String(ex?.email || "").trim(),
-            representativeName: String(ex?.representativeName || "").trim(),
-            businessType: String(ex?.businessType || "").trim(),
-            businessItem: String(ex?.businessItem || "").trim(),
-            startDate: String(ex?.startDate || "").trim(),
-          }),
-        );
+        const nextExtracted = normalizeExtracted({
+          companyName: String(ex?.companyName || "").trim() || businessName,
+          businessNumber: String(ex?.businessNumber || "").trim(),
+          address: String(ex?.address || "").trim(),
+          addressDetail: String(ex?.addressDetail || "").trim(),
+          zipCode: String(ex?.zipCode || "").trim(),
+          phoneNumber: String(ex?.phoneNumber || "").trim(),
+          email: String(ex?.email || "").trim(),
+          representativeName: String(ex?.representativeName || "").trim(),
+          businessType: String(ex?.businessType || "").trim(),
+          businessItem: String(ex?.businessItem || "").trim(),
+          startDate: String(ex?.startDate || "").trim(),
+        });
+
+        // membership이 none인 경우, extracted도 로컬 드래프트로 보완
+        if (next === "none" && localDraft.payload?.extracted) {
+          const localEx = localDraft.payload.extracted;
+          if (!nextExtracted.email && localEx.email)
+            nextExtracted.email = localEx.email;
+          if (!nextExtracted.representativeName && localEx.representativeName)
+            nextExtracted.representativeName = localEx.representativeName;
+          if (!nextExtracted.phoneNumber && localEx.phoneNumber)
+            nextExtracted.phoneNumber = localEx.phoneNumber;
+        }
+
+        setExtracted(nextExtracted);
 
         if (hasServerLicense) {
           setLicenseFileName(licName);

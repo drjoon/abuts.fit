@@ -67,6 +67,8 @@ export const RequestorReferralPage = () => {
     fetchTree: activeTab === "dashboard",
   });
 
+  const [codeCopied, setCodeCopied] = useState(false);
+
   const handleCopyLink = async () => {
     if (!referralLink) return;
     try {
@@ -76,6 +78,26 @@ export const RequestorReferralPage = () => {
       toast({
         title: "복사 완료",
         description: "소개 링크가 복사되었습니다.",
+        duration: 2000,
+      });
+    } catch {
+      toast({
+        title: "복사 실패",
+        description: "브라우저 권한을 확인해주세요.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCopyCode = async () => {
+    if (!referralCode) return;
+    try {
+      await navigator.clipboard.writeText(referralCode);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+      toast({
+        title: "복사 완료",
+        description: "소개 코드가 복사되었습니다.",
         duration: 2000,
       });
     } catch {
@@ -148,28 +170,67 @@ export const RequestorReferralPage = () => {
                   </div>
                 ) : (
                   <>
+                    {/* 소개 코드 */}
+                    <div className="space-y-2 pb-4">
+                      <label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                        소개 코드
+                      </label>
+                      <div
+                        className="rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-4 px-4 py-5 cursor-pointer hover:bg-slate-100 transition-colors"
+                        onClick={() => void handleCopyCode()}
+                      >
+                        <p className="text-sm font-mono text-slate-700 break-all leading-relaxed">
+                          {referralCode || "—"}
+                        </p>
+                        <Button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleCopyCode();
+                          }}
+                          variant="default"
+                          size="sm"
+                          className="px-4 text-xs h-8 gap-1.5 shrink-0"
+                        >
+                          {codeCopied ? (
+                            <>
+                              <Check className="w-4 h-4" />
+                              복사됨
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-4 h-4" />
+                              코드 복사
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+
                     {/* 소개 링크 */}
                     <div className="space-y-2">
                       <label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
                         소개 링크
                       </label>
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <textarea
-                          value={referralLink}
-                          readOnly
-                          rows={2}
-                          className="min-w-0 flex-1 resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm sm:text-base font-mono leading-6 text-slate-700 break-all"
-                        />
+                      <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 flex items-center justify-between gap-4">
+                        <p className="text-sm font-mono text-slate-700 break-all leading-relaxed">
+                          {referralLink}
+                        </p>
                         <Button
                           onClick={handleCopyLink}
                           variant="default"
                           size="sm"
-                          className="px-3 shrink-0"
+                          className="px-4 text-xs h-8 gap-1.5 shrink-0"
                         >
                           {copied ? (
-                            <Check className="w-4 h-4 text-blue-100" />
+                            <>
+                              <Check className="w-4 h-4" />
+                              복사됨
+                            </>
                           ) : (
-                            <Copy className="w-4 h-4 " />
+                            <>
+                              <Copy className="w-4 h-4" />
+                              링크 복사
+                            </>
                           )}
                         </Button>
                       </div>

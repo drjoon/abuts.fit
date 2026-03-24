@@ -622,6 +622,11 @@ export async function updateMyBusiness(req, res) {
             businessItem,
             businessType: businessTypeField,
             address,
+            addressDetail,
+            zipCode:
+              normalizedAddressFields?.zipCode != null
+                ? normalizedAddressFields.zipCode
+                : zipCode,
             email,
             phoneNumber,
             businessNumber,
