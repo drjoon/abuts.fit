@@ -32,6 +32,7 @@ export const SalesmanDashboardPage = () => {
 
   const [creditModalOpen, setCreditModalOpen] = useState(false);
   const [policyOpen, setPolicyOpen] = useState(false);
+  const [salesmanPolicyOpen, setSalesmanPolicyOpen] = useState(false);
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
 
   const { data, loading } = useCommissionDashboard(period);
@@ -103,6 +104,15 @@ export const SalesmanDashboardPage = () => {
               onClick={() => setPolicyOpen(true)}
             >
               의뢰자 정책
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={() => setSalesmanPolicyOpen(true)}
+            >
+              영업자 정책
             </Button>
             <Button
               type="button"
@@ -243,11 +253,6 @@ export const SalesmanDashboardPage = () => {
                     {formatMoney(level1Commission)}원
                   </div>
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  직접 소개한 의뢰자 매출의 5%를 기본 수수료로 받고, 내가 직접
-                  소개한 영업자가 다시 소개한 의뢰자 매출에 대해서는 2.5%의 간접
-                  소개 수수료를 추가로 받습니다.
-                </div>
               </CardContent>
             </Card>
 
@@ -365,9 +370,6 @@ export const SalesmanDashboardPage = () => {
                               <div className="font-semibold text-sm">
                                 {salesman.name || "영업자"}
                               </div>
-                              <div className="mt-0.5 pl-3 border-l text-xs text-muted-foreground">
-                                내가 직접 소개한 영업자입니다.
-                              </div>
                             </div>
                           </li>
                         ))}
@@ -392,6 +394,11 @@ export const SalesmanDashboardPage = () => {
         open={policyOpen}
         onOpenChange={setPolicyOpen}
         variant="default"
+      />
+      <PricingPolicyDialog
+        open={salesmanPolicyOpen}
+        onOpenChange={setSalesmanPolicyOpen}
+        variant="salesman"
       />
     </TooltipProvider>
   );

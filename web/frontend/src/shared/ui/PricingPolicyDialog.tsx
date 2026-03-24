@@ -12,7 +12,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  variant?: "default" | "devops";
+  variant?: "default" | "devops" | "salesman";
 };
 
 type LeadTimeRange = { minBusinessDays: number; maxBusinessDays: number };
@@ -93,10 +93,55 @@ export const PricingPolicyDialog = ({
           <DialogTitle>
             {variant === "devops"
               ? "개발운영사 분배 기준"
-              : "가격 & 소개 정책 안내"}
+              : variant === "salesman"
+                ? "영업자 수수료 정책"
+                : "가격 & 소개 정책 안내"}
           </DialogTitle>
           <DialogDescription asChild>
-            {variant === "devops" ? (
+            {variant === "salesman" ? (
+              <div className="space-y-4 pt-2 text-sm text-muted-foreground">
+                <section className="space-y-1">
+                  <h3 className="font-semibold text-foreground text-md">
+                    1. 직접 소개 수수료 (5%)
+                  </h3>
+                  <p>
+                    영업자가 <b>직접 소개한 의뢰자</b>의 유료 매출의 <b>5%</b>를
+                    수수료로 지급합니다.
+                  </p>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    <li>소개 관계 기준: 의뢰자 가입 시 입력한 영업자 코드</li>
+                    <li>유료 매출 기준: 의뢰 결제 완료 시점 기준 집계</li>
+                  </ul>
+                </section>
+
+                <section className="space-y-1">
+                  <h3 className="font-semibold text-foreground text-md">
+                    2. 간접 소개 수수료 (2.5%)
+                  </h3>
+                  <p>
+                    내가 직접 소개한 <b>영업자</b>가 소개한 의뢰자 매출의{" "}
+                    <b>2.5%</b>를 추가 수수료로 지급합니다.
+                  </p>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    <li>
+                      간접 소개는 1단계(직접 소개 영업자의 의뢰자)까지만 적용
+                    </li>
+                    <li>2단계 이상 간접 소개는 수수료 미적용</li>
+                  </ul>
+                </section>
+
+                <section className="space-y-1">
+                  <h3 className="font-semibold text-foreground text-md">
+                    3. 집계 및 지급
+                  </h3>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    <li>수수료는 사업자 기준으로 매일 자정(00:00) 업데이트</li>
+                    <li>지급 계좌는 설정 &gt; 결제에서 관리</li>
+                    <li>정산 원장은 보유 크레딧 모달에서 확인 가능</li>
+                  </ul>
+                </section>
+              </div>
+            ) : variant === "devops" ? (
               <div className="space-y-4 pt-2 text-sm text-muted-foreground">
                 <section className="space-y-1">
                   <h3 className="font-semibold text-foreground text-md">

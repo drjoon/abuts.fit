@@ -70,7 +70,7 @@ interface BusinessFormProps {
   setExtracted: React.Dispatch<React.SetStateAction<LicenseExtracted>>;
   setErrors: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   setCompanyNameTouched: (touched: boolean) => void;
-  onSave: () => void; // 제출(서버 저장)
+  onSave: () => void | Promise<void>; // 제출(서버 저장)
   onAutoSave?: () => void; // 블러/탭 시 로컬 draft 저장만
   autoOpenAddressSearchSignal?: number;
   focusFirstMissingSignal?: number;
@@ -106,6 +106,7 @@ export const BusinessForm = ({
 }: BusinessFormProps) => {
   const { toast } = useToast();
   const [isModified, setIsModified] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // validationSucceeded 또는 isVerified가 변경되면 isModified 초기화
   useEffect(() => {
@@ -842,16 +843,22 @@ export const BusinessForm = ({
                 variant="default"
                 disabled={
                   disabled ||
+                  isSaving ||
                   (!isModified && (validationSucceeded || isVerified))
                 }
                 ref={submitRef}
                 className={actionsNode ? "w-full" : undefined}
-                onClick={() => {
-                  onSave();
+                onClick={async () => {
+                  setIsSaving(true);
                   setIsModified(false);
+                  try {
+                    await onSave();
+                  } finally {
+                    setIsSaving(false);
+                  }
                 }}
               >
-                검증 후 제출
+                {isSaving ? "저장 중..." : "검증 후 제출"}
               </Button>
             );
             return actionsNode ? (

@@ -8,7 +8,7 @@ import { AccountTab } from "@/features/settings/tabs/AccountTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { RequestorSecurity } from "@/pages/requestor/settings/Security";
-import { SalesmanBusinessTab } from "./components/SalesmanBusinessTab";
+import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { SalesmanPayoutAccountTab } from "./components/SalesmanPayoutAccountTab";
 import { User, Building2, Landmark, Bell, Shield, Users } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -37,7 +37,7 @@ export const SalesmanSettingsPage = () => {
         key: "business",
         label: "사업자",
         icon: Building2,
-        content: <SalesmanBusinessTab />,
+        content: <BusinessTab userData={user} />,
       },
       {
         key: "staff",
