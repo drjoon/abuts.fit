@@ -145,80 +145,15 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
     <TabsContent value="free-credit" className="space-y-4">
       <Card>
         <CardHeader className="space-y-4">
-          <div className="space-y-4">
-            <div className="flex flex-col gap-2">
-              <CardTitle>무료 크레딧</CardTitle>
-              <CardDescription>
-                대상 사업자를 선택하고 지급, 지급 내역, 사용 내역을 메뉴별로
-                확인합니다.
-              </CardDescription>
-            </div>
-
-            <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
-              <div className="space-y-2">
-                <Label htmlFor="free-credit-business" className="text-sm">
-                  대상 사업자
-                </Label>
-                <div className="relative">
-                  <select
-                    id="free-credit-business"
-                    className="h-11 w-full appearance-none rounded-lg border border-input bg-background px-3 pr-10 text-sm"
-                    value={selectedBonusBusinessAnchorId}
-                    onChange={(e) =>
-                      setSelectedBonusBusinessAnchorId(e.target.value)
-                    }
-                  >
-                    <option value="">의뢰자 사업자 전체</option>
-                    {[...eligibleBusinesses]
-                      .sort((a, b) =>
-                        String(a.name || "").localeCompare(
-                          String(b.name || ""),
-                          "ko",
-                        ),
-                      )
-                      .map((business) => (
-                        <option key={business._id} value={business._id}>
-                          {formatBusinessSelectLabel(business)}
-                        </option>
-                      ))}
-                  </select>
-                  <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">
-                    <span className="text-xs">▼</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="free-credit-search" className="text-sm">
-                  검색
-                </Label>
-                <Input
-                  id="free-credit-search"
-                  className="h-11"
-                  value={bonusGrantSearch}
-                  onChange={(e) => setBonusGrantSearch(e.target.value)}
-                  placeholder="사업자번호, 사유, 구분"
-                />
-              </div>
-
-              <div className="flex items-end">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-11 px-4"
-                  onClick={loadBonusGrantHistory}
-                  disabled={loadingBonusGrantRows}
-                >
-                  {loadingBonusGrantRows ? "새로고침 중..." : "새로고침"}
-                </Button>
-              </div>
-            </div>
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-              무료 크레딧은 의뢰자 사업자에게만 지급할 수 있습니다.
-            </div>
+          <div className="flex flex-col gap-2">
+            <CardTitle>무료 크레딧</CardTitle>
+            <CardDescription>
+              대상 사업자를 선택하고 지급, 지급 내역, 사용 내역을 메뉴별로
+              확인합니다.
+            </CardDescription>
           </div>
 
-          <div className="flex flex-wrap gap-2 border-t pt-4">
+          <div className="flex flex-wrap items-center gap-2 border-t pt-4">
             <Button
               type="button"
               variant={freeCreditMenu === "grant" ? "default" : "outline"}
@@ -256,6 +191,21 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
               size="sm"
             >
               사용 내역
+            </Button>
+            <Input
+              className="h-8 w-48 text-sm"
+              value={bonusGrantSearch}
+              onChange={(e) => setBonusGrantSearch(e.target.value)}
+              placeholder="사업자번호, 사유, 구분"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-3"
+              onClick={loadBonusGrantHistory}
+              disabled={loadingBonusGrantRows}
+            >
+              {loadingBonusGrantRows ? "새로고침 중..." : "새로고침"}
             </Button>
           </div>
         </CardHeader>
