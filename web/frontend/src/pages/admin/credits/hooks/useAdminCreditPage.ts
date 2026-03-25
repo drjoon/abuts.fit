@@ -61,12 +61,6 @@ export function useAdminCreditPage() {
   const [salesmanOverview, setSalesmanOverview] =
     useState<SalesmanCreditsOverview | null>(null);
   const [loadingSalesmanOverview, setLoadingSalesmanOverview] = useState(false);
-  const [snapshotStatus, setSnapshotStatus] = useState<{
-    lastComputedAt: string | null;
-    baseYmd: string | null;
-    snapshotMissing?: boolean;
-  } | null>(null);
-  const [loadingSnapshotStatus, setLoadingSnapshotStatus] = useState(false);
   const [creditTab, setCreditTab] = useState<"requestor" | "salesman">(
     "requestor",
   );
@@ -189,27 +183,6 @@ export function useAdminCreditPage() {
       setSalesmanOverview(null);
     } finally {
       setLoadingSalesmanOverview(false);
-    }
-  };
-
-  const loadSnapshotStatus = async () => {
-    if (!token) return;
-    setLoadingSnapshotStatus(true);
-    try {
-      const res = await request<{
-        success: boolean;
-        data?: {
-          lastComputedAt: string | null;
-          baseYmd: string | null;
-          snapshotMissing?: boolean;
-        };
-      }>({ path: "/api/snapshots/admin-status", method: "GET", token });
-      if (res.ok && res.data?.success && res.data?.data)
-        setSnapshotStatus(res.data.data);
-    } catch {
-      setSnapshotStatus(null);
-    } finally {
-      setLoadingSnapshotStatus(false);
     }
   };
 
@@ -816,7 +789,6 @@ export function useAdminCreditPage() {
     setSalesmanHasMore(true);
     loadSalesmen({ reset: true });
     loadSalesmanOverview();
-    loadSnapshotStatus();
   }, [period, token]);
 
   useEffect(() => {
@@ -1047,8 +1019,6 @@ export function useAdminCreditPage() {
     setSalesmanHasMore,
     salesmanOverview,
     loadingSalesmanOverview,
-    snapshotStatus,
-    loadingSnapshotStatus,
     creditTab,
     setCreditTab,
     salesmanSortKey,
@@ -1135,7 +1105,6 @@ export function useAdminCreditPage() {
     txSentinelRef,
     loadStats,
     loadSalesmanOverview,
-    loadSnapshotStatus,
     loadSalesmen,
     loadOrganizations,
     loadChargeOrders,

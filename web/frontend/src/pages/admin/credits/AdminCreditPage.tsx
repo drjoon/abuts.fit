@@ -1,6 +1,5 @@
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
-import { SnapshotRecalcAllButton } from "@/shared/components/SnapshotRecalcAllButton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CreditLedgerModal } from "@/shared/components/CreditLedgerModal";
 import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
@@ -30,40 +29,6 @@ export default function AdminCreditPage() {
               </TabsTrigger>
             </TabsList>
             <PeriodFilter value={state.period} onChange={setPeriod} />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="text-xs text-muted-foreground text-right">
-              <div>
-                마지막 재계산{" "}
-                {state.loadingSnapshotStatus
-                  ? "..."
-                  : state.snapshotStatus?.lastComputedAt
-                    ? new Date(
-                        state.snapshotStatus.lastComputedAt,
-                      ).toLocaleString("ko-KR")
-                    : "-"}
-              </div>
-              <div>
-                기준{" "}
-                {state.snapshotStatus?.baseYmd
-                  ? `${state.snapshotStatus.baseYmd} 자정 기준 30일`
-                  : "-"}
-                {state.snapshotStatus?.snapshotMissing ? " · 누락" : ""}
-              </div>
-            </div>
-            <SnapshotRecalcAllButton
-              token={state.token}
-              periodKey="30d"
-              className="h-9"
-              onSuccess={async () => {
-                await Promise.all([
-                  state.loadSalesmanOverview(),
-                  state.loadSnapshotStatus(),
-                  state.loadSalesmen({ reset: true }),
-                ]);
-              }}
-            />
           </div>
         </div>
 

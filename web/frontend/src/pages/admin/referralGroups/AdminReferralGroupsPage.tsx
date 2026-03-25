@@ -18,7 +18,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { apiFetch } from "@/shared/api/apiClient";
-import { SnapshotRecalcAllButton } from "@/shared/components/SnapshotRecalcAllButton";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore, periodToRangeQuery } from "@/store/usePeriodStore";
 import { ReferralNetworkChart } from "@/features/referral/components/ReferralNetworkChart";
@@ -270,17 +269,6 @@ export default function AdminReferralGroupsPage() {
     },
     retry: false,
   });
-
-  const handleSnapshotSuccess = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({
-        queryKey: ["admin-referral-groups", period],
-      }),
-      queryClient.invalidateQueries({
-        queryKey: ["admin-referral-group-tree"],
-      }),
-    ]);
-  };
 
   const groups = groupList?.groups || [];
   const overview = groupList?.overview || null;
@@ -562,15 +550,6 @@ export default function AdminReferralGroupsPage() {
 
   return (
     <div className="h-screen max-h-screen overflow-hidden p-4 flex flex-col gap-4">
-      <div className="flex items-center justify-end gap-2">
-        <SnapshotRecalcAllButton
-          token={token}
-          periodKey={period}
-          className="h-9"
-          onSuccess={handleSnapshotSuccess}
-        />
-      </div>
-
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Card>
           <CardHeader className="pb-2">

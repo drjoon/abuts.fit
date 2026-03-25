@@ -1,20 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { apiFetch, request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { RequestorRiskSummaryCard } from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
-import { SnapshotRecalcAllButton } from "@/shared/components/SnapshotRecalcAllButton";
 import {
   Users,
   FileText,
   CheckCircle,
   AlertCircle,
   DollarSign,
-  RefreshCw,
   MessageSquare,
   Mail,
   MessageCircle,
@@ -68,34 +66,12 @@ const getAlertIcon = (type: string) => {
 export const AdminDashboardPage = () => {
   const { user, token } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
-  const queryClient = useQueryClient();
   const [pricingSummary, setPricingSummary] = useState<PricingSummary | null>(
     null,
   );
   const [pricingLoading, setPricingLoading] = useState(false);
 
   if (!user || user.role !== "admin") return null;
-
-  const { data: snapshotStatus, refetch: refetchSnapshotStatus } = useQuery({
-    queryKey: ["admin-shared-snapshot-status"],
-    enabled: Boolean(token),
-    queryFn: async () => {
-      const res = await apiFetch<{
-        success: boolean;
-        data?: {
-          lastComputedAt: string | null;
-          baseYmd: string | null;
-          snapshotMissing?: boolean;
-        };
-      }>({
-        path: `/api/snapshots/admin-status`,
-        method: "GET",
-        token,
-      });
-      return res.data?.data || null;
-    },
-    refetchInterval: 60000,
-  });
 
   const { data: riskSummaryResponse } = useQuery({
     queryKey: ["admin-dashboard-risk-summary", period],
@@ -311,7 +287,7 @@ export const AdminDashboardPage = () => {
         }
         stats={
           <>
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               {/* 카드1: 전체 사용자 / 전체 완료 주문 */}
               <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -409,68 +385,6 @@ export const AdminDashboardPage = () => {
                       </div>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-
-              {/* 카드3: 소개 및 크레딧 스냅샷 */}
-              <Card className="app-glass-card app-glass-card--lg">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    소개 및 크레딧 스냅샷
-                  </CardTitle>
-                  <RefreshCw className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="flex items-end justify-between gap-2">
-                    <div className="text-xs text-muted-foreground">
-                      마지막 재계산
-                    </div>
-                    <div className="text-sm font-semibold">
-                      {snapshotStatus?.lastComputedAt ? (
-                        new Date(snapshotStatus.lastComputedAt).toLocaleString(
-                          "ko-KR",
-                          {
-                            month: "2-digit",
-                            day: "2-digit",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          },
-                        )
-                      ) : (
-                        <span className="text-destructive">없음</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-end justify-between gap-2">
-                    <div className="text-xs text-muted-foreground">기준</div>
-                    <div className="text-xs text-muted-foreground">
-                      {snapshotStatus?.baseYmd
-                        ? `${snapshotStatus.baseYmd} 자정 기준 30일`
-                        : "-"}
-                      {snapshotStatus?.snapshotMissing && (
-                        <span className="ml-1 text-amber-500">⚠️ 누락</span>
-                      )}
-                    </div>
-                  </div>
-                  <SnapshotRecalcAllButton
-                    token={token}
-                    periodKey="30d"
-                    className="w-full h-7 text-xs mt-1"
-                    onSuccess={async () => {
-                      await refetchSnapshotStatus();
-                      await Promise.all([
-                        queryClient.invalidateQueries({
-                          queryKey: ["admin-referral-groups"],
-                        }),
-                        queryClient.invalidateQueries({
-                          queryKey: ["admin-referral-group-tree"],
-                        }),
-                        queryClient.invalidateQueries({
-                          queryKey: ["admin-dashboard-risk-summary", period],
-                        }),
-                      ]);
-                    }}
-                  />
                 </CardContent>
               </Card>
             </div>

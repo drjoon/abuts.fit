@@ -75,7 +75,7 @@ export default function AdminBusinessPage() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
 
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["admin-business-page", token],
     enabled: Boolean(token),
     queryFn: async () => {
@@ -151,10 +151,6 @@ export default function AdminBusinessPage() {
           <p className="text-sm text-muted-foreground">
             BusinessAnchor를 중심으로 사업자 연결 상태와 크레딧을 확인합니다.
           </p>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Anchor className="h-4 w-4" />
-          <span>{isFetching ? "새로고침 중" : "실시간 조회"}</span>
         </div>
       </div>
 
