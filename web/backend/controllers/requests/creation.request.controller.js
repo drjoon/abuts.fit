@@ -22,6 +22,7 @@ import {
 import { getRequestorOrgId } from "./utils.js";
 import { calculateInitialProductionSchedule } from "./production.utils.js";
 import { getManufacturerLeadTimesUtil } from "../businesses/leadTime.controller.js";
+import { emitAppEventToRoles } from "../../socket.js";
 
 /**
  * 새 의뢰 생성
@@ -738,6 +739,11 @@ export async function createRequest(req, res) {
       newRequest.caseInfos.file.filePath = bgFileName;
       await newRequest.save();
     }
+
+    emitAppEventToRoles(["admin"], "comm:badge-update", {
+      key: "request",
+      delta: 1,
+    });
 
     res.status(201).json({
       success: true,

@@ -145,6 +145,23 @@ export function initializeSocket(server) {
             });
           }
         });
+
+        // 참여 중인 admin 소켓에 채팅 배지 업데이트 이벤트 전송
+        if (socket.userRole !== "admin") {
+          for (const s of io.sockets.sockets.values()) {
+            if (
+              s.userRole === "admin" &&
+              s.userId !== socket.userId &&
+              room.participants.some((p) => p.toString() === s.userId)
+            ) {
+              emitAppEventToUser(s.userId, "comm:badge-update", {
+                key: "chat",
+                delta: 1,
+              });
+              break;
+            }
+          }
+        }
       } catch (error) {
         socket.emit("error", {
           message: "메시지 전송 중 오류가 발생했습니다.",

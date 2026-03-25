@@ -2,6 +2,7 @@ import { randomBytes } from "crypto";
 import { uploadFileToS3 } from "../../utils/s3.utils.js";
 import BusinessRegistrationInquiry from "../../models/businessRegistrationInquiry.model.js";
 import { resolveBusinessType } from "../businesses/businessRole.util.js";
+import { emitAppEventToRoles } from "../../socket.js";
 
 const buildUserSnapshot = (user) => ({
   name: String(user?.name || ""),
@@ -100,6 +101,11 @@ export async function createInquiry(req, res) {
       type: normalizedType,
       subject: trimmedSubject,
       message: trimmedMessage,
+    });
+
+    emitAppEventToRoles(["admin"], "comm:badge-update", {
+      key: "inquiry",
+      delta: 1,
     });
 
     return res.status(201).json({

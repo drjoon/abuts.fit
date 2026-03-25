@@ -96,6 +96,7 @@ import {
   adminCancelQueueTask,
 } from "../../controllers/admin/adminPopbillQueue.controller.js";
 import { adminOverrideOrganizationVerification } from "../../controllers/admin/admin.organization.controller.js";
+import { adminGetCommBadges } from "../../controllers/admin/adminCommBadges.controller.js";
 import {
   adminSendSms,
   adminListSms,
@@ -143,6 +144,9 @@ router.patch("/requests/:id/assign", assignManufacturer);
 
 // 대시보드 통계
 router.get("/dashboard", getDashboardStats);
+
+// 소통 메뉴 배지 카운트 (초기 로드용)
+router.get("/comm-badges", adminGetCommBadges);
 
 // 사업자등록 문의
 router.get(

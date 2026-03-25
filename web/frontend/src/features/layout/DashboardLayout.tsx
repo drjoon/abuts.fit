@@ -50,6 +50,7 @@ import {
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { onAppEvent } from "@/shared/realtime/socket";
+import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
 
 const sidebarItems = {
   requestor: [
@@ -550,6 +551,12 @@ export const DashboardLayout = () => {
 
   const adminMenuSections = user.role === "admin" ? adminSidebarSections : null;
 
+  const { getBadgeForHref, clearBadgeForPath } = useAdminCommBadges();
+
+  useEffect(() => {
+    clearBadgeForPath(location.pathname);
+  }, [location.pathname, clearBadgeForPath]);
+
   const resolvedMenuItems = (() => {
     return menuItems;
   })();
@@ -677,8 +684,22 @@ export const DashboardLayout = () => {
                                 }`}
                               />
                               {!isCollapsed && (
-                                <span className="truncate">{item.label}</span>
+                                <span className="truncate flex-1">
+                                  {item.label}
+                                </span>
                               )}
+                              {!isCollapsed &&
+                                (() => {
+                                  const badgeCount = getBadgeForHref(item.href);
+                                  return badgeCount > 0 ? (
+                                    <Badge
+                                      variant="destructive"
+                                      className="ml-auto h-5 min-w-[1.25rem] flex items-center justify-center px-1 text-[10px] font-semibold leading-none flex-shrink-0"
+                                    >
+                                      {badgeCount > 99 ? "99+" : badgeCount}
+                                    </Badge>
+                                  ) : null;
+                                })()}
                             </Button>
                           </li>
                         );
