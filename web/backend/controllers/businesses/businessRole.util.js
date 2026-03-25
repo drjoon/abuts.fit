@@ -7,7 +7,7 @@ export const BUSINESS_ALLOWED_ROLES = [
 
 export const BUSINESS_ALLOWED_ROLE_SET = new Set(BUSINESS_ALLOWED_ROLES);
 
-const ADMIN_FALLBACK_BUSINESS_TYPE = "requestor";
+const ADMIN_FALLBACK_BUSINESS_TYPE = "admin";
 
 export const resolveBusinessType = (user, preferredType) => {
   if (!user) return null;
@@ -53,20 +53,5 @@ export const assertBusinessRole = (req, res) => {
 };
 
 export const buildBusinessTypeFilter = (businessType) => {
-  if (!businessType) return {};
-  if (businessType === "requestor") {
-    return {
-      $or: [
-        { businessType: "requestor" },
-        {
-          $or: [
-            { businessType: { $exists: false } },
-            { businessType: "" },
-            { businessType: null },
-          ],
-        },
-      ],
-    };
-  }
   return { businessType };
 };
