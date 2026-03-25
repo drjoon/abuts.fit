@@ -20,20 +20,31 @@ export interface BusinessDraftPayload {
   updatedAt: number;
 }
 
-const getSetupModeStorageKey = (userId?: string | null): string | null => {
+const getSetupModeStorageKey = (
+  userId?: string | null,
+  businessType?: string | null,
+): string | null => {
   if (!userId) return null;
-  return `${SETUP_MODE_STORAGE_KEY}:${userId}`;
+  const suffix = businessType ? `:${businessType}` : "";
+  return `${SETUP_MODE_STORAGE_KEY}:${userId}${suffix}`;
 };
 
-const getBusinessDraftStorageKey = (userId?: string | null): string | null => {
+const getBusinessDraftStorageKey = (
+  userId?: string | null,
+  businessType?: string | null,
+): string | null => {
   if (!userId) return null;
-  return `${BUSINESS_DRAFT_STORAGE_KEY}:${userId}`;
+  const suffix = businessType ? `:${businessType}` : "";
+  return `${BUSINESS_DRAFT_STORAGE_KEY}:${userId}${suffix}`;
 };
 
-export const readStoredSetupMode = (userId?: string | null): SetupMode => {
+export const readStoredSetupMode = (
+  userId?: string | null,
+  businessType?: string | null,
+): SetupMode => {
   if (typeof window === "undefined") return null;
   try {
-    const storageKey = getSetupModeStorageKey(userId);
+    const storageKey = getSetupModeStorageKey(userId, businessType);
     if (!storageKey) return null;
     const raw = window.localStorage.getItem(storageKey);
     if (raw === "license" || raw === "search" || raw === "manual") return raw;
@@ -46,10 +57,11 @@ export const readStoredSetupMode = (userId?: string | null): SetupMode => {
 export const writeStoredSetupMode = (
   userId: string | null,
   mode: SetupMode,
+  businessType?: string | null,
 ): void => {
   if (typeof window === "undefined") return;
   try {
-    const storageKey = getSetupModeStorageKey(userId);
+    const storageKey = getSetupModeStorageKey(userId, businessType);
     if (!storageKey) return;
     if (!mode) {
       window.localStorage.removeItem(storageKey);
@@ -63,10 +75,11 @@ export const writeStoredSetupMode = (
 
 export const readStoredBusinessDraft = (
   userId?: string | null,
+  businessType?: string | null,
 ): BusinessDraftPayload | null => {
   if (typeof window === "undefined") return null;
   try {
-    const storageKey = getBusinessDraftStorageKey(userId);
+    const storageKey = getBusinessDraftStorageKey(userId, businessType);
     if (!storageKey) return null;
     const raw = window.localStorage.getItem(storageKey);
     if (!raw) return null;
@@ -85,10 +98,11 @@ export const readStoredBusinessDraft = (
 export const writeStoredBusinessDraft = (
   userId: string | null,
   payload: BusinessDraftPayload | null,
+  businessType?: string | null,
 ): void => {
   if (typeof window === "undefined") return;
   try {
-    const storageKey = getBusinessDraftStorageKey(userId);
+    const storageKey = getBusinessDraftStorageKey(userId, businessType);
     if (!storageKey) return;
     if (!payload) {
       window.localStorage.removeItem(storageKey);

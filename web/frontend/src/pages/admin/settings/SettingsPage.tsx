@@ -30,13 +30,13 @@ export const AdminSettingsPage = () => {
         key: "business",
         label: "사업자",
         icon: Building2,
-        content: <BusinessTab userData={user} />,
+        content: <BusinessTab userData={user} businessTypeOverride="admin" />,
       },
       {
         key: "staff",
         label: "임직원",
         icon: Users,
-        content: <StaffTab userData={user} />,
+        content: <StaffTab userData={user} businessTypeOverride="admin" />,
       },
       {
         key: "notifications",

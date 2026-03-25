@@ -84,7 +84,7 @@ export const useBusinessDataManagement = (
     if (props.membership !== "none") return;
     if (serverHydratedRef.current) return;
 
-    const draft = readStoredBusinessDraft(props.authUserId);
+    const draft = readStoredBusinessDraft(props.authUserId, props.businessType);
     if (!draft) return;
 
     const hasDraftLicense =
@@ -260,7 +260,7 @@ export const useBusinessDataManagement = (
     if (!props.authUserId) return;
     if (!props.allowLocalDraft) return;
     if (props.membership !== "none") {
-      writeStoredBusinessDraft(props.authUserId, null);
+      writeStoredBusinessDraft(props.authUserId, null, props.businessType);
     }
   }, [props.allowLocalDraft, props.authUserId, props.membership]);
 
@@ -305,11 +305,15 @@ export const useBusinessDataManagement = (
       latestDraftRef.current;
 
     if (!latestHasAnyLicense && !latestHasAnyData) {
-      writeStoredBusinessDraft(props.authUserId, null);
+      writeStoredBusinessDraft(props.authUserId, null, props.businessType);
       return;
     }
 
-    writeStoredBusinessDraft(props.authUserId, latestDraftRef.current.payload);
+    writeStoredBusinessDraft(
+      props.authUserId,
+      latestDraftRef.current.payload,
+      props.businessType,
+    );
   }, [
     props.allowLocalDraft,
     props.authUserId,
@@ -357,7 +361,7 @@ export const useBusinessDataManagement = (
     serverHydratedRef.current = false;
 
     if (props.authUserId && props.allowLocalDraft) {
-      writeStoredBusinessDraft(props.authUserId, null);
+      writeStoredBusinessDraft(props.authUserId, null, props.businessType);
     }
 
     requestAnimationFrame(() => {

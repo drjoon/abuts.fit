@@ -26,9 +26,10 @@ interface StaffTabProps {
     email?: string;
     name?: string;
   } | null;
+  businessTypeOverride?: string;
 }
 
-export const StaffTab = ({ userData }: StaffTabProps) => {
+export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
   const { toast } = useToast();
   const { token, user } = useAuthStore();
 
@@ -62,8 +63,9 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
   }, []);
 
   const businessType = useMemo(() => {
+    if (businessTypeOverride) return businessTypeOverride;
     return resolveBusinessType(user?.role || userData?.role, "requestor");
-  }, [user?.role, userData?.role]);
+  }, [businessTypeOverride, user?.role, userData?.role]);
 
   const refreshMembership = useCallback(async () => {
     if (!token) return;
