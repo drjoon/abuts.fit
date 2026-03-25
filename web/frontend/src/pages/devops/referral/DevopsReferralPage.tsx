@@ -129,11 +129,11 @@ export const DevopsReferralPage = () => {
                   data={treeData}
                   maxDepth={1}
                   title="내 소개 네트워크"
-                  mode="radial-group"
+                  mode="radial-tree"
                   currentBusinessAnchorId={user?.businessAnchorId || null}
                   visibleRoles={["requestor"]}
                   legendRoles={[]}
-                  chartHeight={320}
+                  chartHeight={420}
                 />
               )}
             </>

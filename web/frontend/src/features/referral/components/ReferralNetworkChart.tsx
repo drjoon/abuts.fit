@@ -230,18 +230,47 @@ export function ReferralNetworkChart({
       Math.max(160, (Math.min(viewWidth, viewHeight) - 80) / maxLayoutDepth),
     );
 
+    const D60 = Math.PI / 3;
+    const D90 = Math.PI / 2;
+
+    const getMolecularAngles = (
+      n: number,
+      incomingDir: number | null,
+    ): number[] => {
+      if (incomingDir === null) {
+        if (n === 1) return [0];
+        if (n === 2) return [-D60, D60];
+        if (n === 3) return [-D90, D90 - D60, D90 + D60];
+        if (n === 4) return [-2 * D60, -D60 / 2, D60 / 2, 2 * D60];
+        if (n === 5) return [-2 * D60, -D60, 0, D60, 2 * D60];
+        return Array.from({ length: n }, (_, i) => -2 * D60 + D60 * i);
+      }
+      if (n === 1) return [incomingDir];
+      if (n === 2) return [incomingDir - D60, incomingDir + D60];
+      if (n === 3)
+        return [incomingDir - 2 * D60, incomingDir, incomingDir + 2 * D60];
+      return Array.from(
+        { length: n },
+        (_, i) => incomingDir + (i - (n - 1) / 2) * D60,
+      );
+    };
+
     const placeNode = (
       node: any,
       depth: number,
-      startAngle: number,
-      endAngle: number,
+      angle: number,
+      incomingDir: number | null,
       parent?: LayoutNode,
     ): LayoutNode => {
-      const angle = depth === 0 ? -Math.PI / 2 : (startAngle + endAngle) / 2;
       const point =
         depth === 0
           ? { x: centerX, y: centerY }
-          : polar(radiusStep * depth, angle);
+          : parent
+            ? {
+                x: parent.x + Math.cos(angle) * radiusStep,
+                y: parent.y + Math.sin(angle) * radiusStep,
+              }
+            : polar(radiusStep, angle);
       const current: LayoutNode = {
         id: node.id,
         name: node.name,
@@ -266,24 +295,20 @@ export function ReferralNetworkChart({
         });
       }
 
-      if (node.children?.length) {
-        const totalWeight = node.children.reduce(
-          (sum: number, child: any) => sum + countLeaves(child),
-          0,
+      if (node.children?.length && depth < maxLayoutDepth) {
+        const childAngles = getMolecularAngles(
+          node.children.length,
+          depth === 0 ? null : angle,
         );
-        let cursor = startAngle;
-        node.children.forEach((child: any) => {
-          const childWeight = countLeaves(child);
-          const span = ((endAngle - startAngle) * childWeight) / totalWeight;
-          placeNode(child, depth + 1, cursor, cursor + span, current);
-          cursor += span;
+        node.children.forEach((child: any, i: number) => {
+          placeNode(child, depth + 1, childAngles[i], angle, current);
         });
       }
 
       return current;
     };
 
-    placeNode(layoutRoot, 0, -Math.PI / 2, Math.PI * 1.5);
+    placeNode(layoutRoot, 0, 0, null);
 
     return { nodes, links };
   };
@@ -402,19 +427,27 @@ export function ReferralNetworkChart({
     if (!source.nodes.length) return source;
 
     const padding = {
-      left: 72,
-      right: 72,
-      top: 68,
-      bottom: 84,
+      left: 60,
+      right: 60,
+      top: 46,
+      bottom: 50,
+    };
+
+    const estimateHalfLabelPx = (node: LayoutNode) => {
+      const maxChars = node.isRoot ? 13 : 11;
+      const pxPerChar = node.isRoot ? 9.5 : 8.5;
+      const chars = Math.min(maxChars, node.name?.length ?? 0);
+      return (chars * pxPerChar) / 2 + 8;
     };
 
     const bounds = source.nodes.reduce(
       (acc, node) => {
-        const topLabelExtra = node.isRoot && node.orders > 0 ? 34 : 10;
-        const bottomLabelExtra = 56;
+        const topLabelExtra = node.isRoot && node.orders > 0 ? 30 : 8;
+        const bottomLabelExtra = 40;
+        const halfLW = estimateHalfLabelPx(node);
         return {
-          minX: Math.min(acc.minX, node.x - node.r - 12),
-          maxX: Math.max(acc.maxX, node.x + node.r + 12),
+          minX: Math.min(acc.minX, node.x - Math.max(node.r + 10, halfLW)),
+          maxX: Math.max(acc.maxX, node.x + Math.max(node.r + 10, halfLW)),
           minY: Math.min(acc.minY, node.y - node.r - topLabelExtra),
           maxY: Math.max(acc.maxY, node.y + node.r + bottomLabelExtra),
         };

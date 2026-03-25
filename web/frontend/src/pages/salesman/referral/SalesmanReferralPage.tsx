@@ -124,19 +124,22 @@ export const SalesmanReferralPage = () => {
     }
   };
 
-  const directReferralBusinessCount = Number(
-    requestorStats?.referralBusinessCount ?? directMembers.length,
+  const directRequestorChildren = (treeData?.children || []).filter(
+    (c) => c.role === "requestor",
   );
-  const directReferralOrders = Number(
-    (requestorStats?.referralBusinessOrders ??
-      requestorStats?.groupTotalOrders) ||
-      0,
+  const directReferralBusinessCount = directRequestorChildren.length;
+  const directReferralOrders = directRequestorChildren.reduce(
+    (sum, c) => sum + Number(c.lastMonthOrders || 0),
+    0,
   );
-  const indirectReferralBusinessCount = Number(
-    requestorStats?.indirectReferralBusinessCount ?? 0,
-  );
-  const indirectReferralOrders = Number(
-    requestorStats?.indirectReferralBusinessOrders ?? 0,
+
+  const indirectRequestorChildren = (treeData?.children || [])
+    .flatMap((c) => c.children || [])
+    .filter((c) => c.role === "requestor");
+  const indirectReferralBusinessCount = indirectRequestorChildren.length;
+  const indirectReferralOrders = indirectRequestorChildren.reduce(
+    (sum, c) => sum + Number(c.lastMonthOrders || 0),
+    0,
   );
 
   const salesmanChildren = (treeData?.children || []).filter(
@@ -322,17 +325,17 @@ export const SalesmanReferralPage = () => {
                       ) : (
                         <div className="grid gap-2 grid-cols-1 md:grid-cols-3">
                           <MetricCard
-                            title="직접 소개"
+                            title="직접소개 의뢰자"
                             tooltip="내가 직접 소개한 의뢰자 사업자 (5% 수수료 적용)"
-                            primaryLabel="사업자 수"
+                            primaryLabel="의뢰자 수"
                             primaryValue={`${directReferralBusinessCount.toLocaleString()}개소`}
                             secondaryLabel="의뢰건수"
                             secondaryValue={`${directReferralOrders.toLocaleString()}건`}
                           />
                           <MetricCard
-                            title="간접 소개"
+                            title="간접 소개 의뢰자"
                             tooltip="소개한 영업자가 다시 소개한 의뢰자 사업자 (2.5% 수수료 적용)"
-                            primaryLabel="사업자 수"
+                            primaryLabel="의뢰자 수"
                             primaryValue={`${indirectReferralBusinessCount.toLocaleString()}개소`}
                             secondaryLabel="의뢰건수"
                             secondaryValue={`${indirectReferralOrders.toLocaleString()}건`}
@@ -340,8 +343,8 @@ export const SalesmanReferralPage = () => {
                           <MetricCard
                             title="소개 영업자"
                             tooltip="내가 직접 소개한 영업자 수와 그를 통해 들어온 의뢰건수"
-                            primaryLabel="영업자 수"
-                            primaryValue={`${salesmanCount.toLocaleString()}명`}
+                            primaryLabel="영업자"
+                            primaryValue={`${salesmanCount.toLocaleString()}개소`}
                             secondaryLabel="의뢰건수"
                             secondaryValue={`${salesmanIntroducedOrders.toLocaleString()}건`}
                           />
@@ -371,7 +374,7 @@ export const SalesmanReferralPage = () => {
                       currentBusinessAnchorId={user?.businessAnchorId || null}
                       visibleRoles={["requestor", "salesman"]}
                       legendRoles={["requestor", "salesman"]}
-                      chartHeight={430}
+                      chartHeight={560}
                     />
                   )}
                 </>

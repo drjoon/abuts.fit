@@ -947,7 +947,7 @@ export default function AdminReferralGroupsPage() {
                     title="선택한 리더의 소개 네트워크"
                     mode="radial-tree"
                     legendRoles={["requestor", "salesman", "devops"]}
-                    chartHeight={430}
+                    chartHeight={560}
                   />
                 </div>
 
