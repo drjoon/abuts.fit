@@ -68,3 +68,112 @@ export const listKakaoTemplates = async (CorpNum) => {
     });
   });
 };
+
+function formatDateYYYYMMDD(d) {
+  const date = d ? new Date(d) : new Date();
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${y}${m}${day}`;
+}
+
+export const buildTaxinvoiceObject = ({
+  draft,
+  mgtKey,
+  writeDate: writeDateOverride,
+}) => {
+  const buyer = draft.buyer || {};
+  const supplierCorpNum = (
+    process.env.POPBILL_SUPPLIER_CORP_NUM ||
+    process.env.POPBILL_CORP_NUM ||
+    ""
+  ).replace(/-/g, "");
+  const supplyAmt = String(Math.round(Number(draft.supplyAmount) || 0));
+  const taxAmt = String(Math.round(Number(draft.vatAmount) || 0));
+  const totalAmt = String(Math.round(Number(draft.totalAmount) || 0));
+
+  return {
+    writeDate: writeDateOverride
+      ? String(writeDateOverride).replace(/-/g, "").slice(0, 8)
+      : formatDateYYYYMMDD(draft.writeDate || draft.createdAt),
+    chargeDirection: "정과금",
+    issueType: "정발행",
+    purposeType: "영수",
+    issueTiming: "직접발행",
+    taxType: "과세",
+
+    invoicerCorpNum: supplierCorpNum,
+    invoicerMgtKey: mgtKey,
+    invoicerCorpName:
+      process.env.POPBILL_SUPPLIER_CORP_NAME || "어벗츠 주식회사",
+    invoicerCEOName: process.env.POPBILL_SUPPLIER_CEO_NAME || "",
+    invoicerAddr: process.env.POPBILL_SUPPLIER_ADDR || "",
+    invoicerBizType: process.env.POPBILL_SUPPLIER_BIZ_TYPE || "서비스업",
+    invoicerBizClass:
+      process.env.POPBILL_SUPPLIER_BIZ_CLASS || "소프트웨어 개발",
+    invoicerContactName: process.env.POPBILL_SUPPLIER_CONTACT_NAME || "",
+    invoicerEmail: process.env.POPBILL_SUPPLIER_EMAIL || "",
+    invoicerSMSSendYN: false,
+
+    invoiceeType: "사업자",
+    invoiceeCorpNum: (buyer.bizNo || "").replace(/-/g, ""),
+    invoiceeCorpName: buyer.corpName || "",
+    invoiceeCEOName: buyer.ceoName || "",
+    invoiceeAddr: buyer.addr || "",
+    invoiceeBizType: buyer.bizType || "",
+    invoiceeBizClass: buyer.bizClass || "",
+    invoiceeContactName1: buyer.contactName || "",
+    invoiceeEmail1: buyer.contactEmail || "",
+    invoiceeSMSSendYN: false,
+
+    supplyCostTotal: supplyAmt,
+    taxTotal: taxAmt,
+    totalAmount: totalAmt,
+
+    detailList: [
+      {
+        serialNum: 1,
+        purchaseDT: formatDateYYYYMMDD(draft.createdAt),
+        itemName: "치과기공소 솔루션 이용료",
+        qty: "1",
+        unitCost: supplyAmt,
+        supplyCost: supplyAmt,
+        tax: taxAmt,
+        remark: "",
+      },
+    ],
+  };
+};
+
+export const registIssueInvoice = ({ corpNum, taxinvoice }) => {
+  const cleanCorpNum = String(corpNum || "").replace(/-/g, "");
+  return new Promise((resolve, reject) => {
+    taxinvoiceService.registIssue(
+      cleanCorpNum,
+      taxinvoice,
+      false,
+      false,
+      "",
+      "",
+      "",
+      "",
+      (response) => resolve(response),
+      (error) => reject(error),
+    );
+  });
+};
+
+export const cancelIssuedInvoice = ({ corpNum, mgtKey, memo = "발행취소" }) => {
+  const cleanCorpNum = String(corpNum || "").replace(/-/g, "");
+  return new Promise((resolve, reject) => {
+    taxinvoiceService.cancelIssue(
+      cleanCorpNum,
+      "SELL",
+      mgtKey,
+      memo,
+      "",
+      (response) => resolve(response),
+      (error) => reject(error),
+    );
+  });
+};

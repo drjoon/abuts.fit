@@ -81,14 +81,20 @@ import {
   adminListTaxInvoiceDrafts,
   adminGetTaxInvoiceDraft,
   adminUpdateTaxInvoiceDraft,
-  adminApproveTaxInvoiceDraft,
-  adminRejectTaxInvoiceDraft,
   adminCancelTaxInvoiceDraft,
   adminIssueTaxInvoice,
   adminGetTaxInvoiceStatus,
   adminCancelIssuedTaxInvoice,
-  adminManualCreateTaxInvoiceDraft,
+  adminGetTaxInvoiceStats,
+  adminValidateBizNumber,
+  adminDirectIssueTaxInvoice,
 } from "../../controllers/admin/adminTaxInvoice.controller.js";
+import {
+  adminGetQueueStats,
+  adminListQueueTasks,
+  adminRetryQueueTask,
+  adminCancelQueueTask,
+} from "../../controllers/admin/adminPopbillQueue.controller.js";
 import { adminOverrideOrganizationVerification } from "../../controllers/admin/admin.organization.controller.js";
 import {
   adminSendSms,
@@ -282,16 +288,22 @@ router.post(
 );
 
 // 세금계산서(드래프트) 관리
-router.post("/tax-invoices/drafts/manual", adminManualCreateTaxInvoiceDraft);
+router.get("/tax-invoices/stats", adminGetTaxInvoiceStats);
 router.get("/tax-invoices/drafts", adminListTaxInvoiceDrafts);
 router.get("/tax-invoices/drafts/:id", adminGetTaxInvoiceDraft);
 router.patch("/tax-invoices/drafts/:id", adminUpdateTaxInvoiceDraft);
-router.post("/tax-invoices/drafts/:id/approve", adminApproveTaxInvoiceDraft);
-router.post("/tax-invoices/drafts/:id/reject", adminRejectTaxInvoiceDraft);
 router.post("/tax-invoices/drafts/:id/cancel", adminCancelTaxInvoiceDraft);
 router.post("/tax-invoices/drafts/:id/issue", adminIssueTaxInvoice);
 router.get("/tax-invoices/status", adminGetTaxInvoiceStatus);
 router.post("/tax-invoices/cancel", adminCancelIssuedTaxInvoice);
+router.post("/tax-invoices/validate-biz-number", adminValidateBizNumber);
+router.post("/tax-invoices/direct-issue", adminDirectIssueTaxInvoice);
+
+// 팝빌 큐 관리
+router.get("/popbill/queue/stats", adminGetQueueStats);
+router.get("/popbill/queue", adminListQueueTasks);
+router.post("/popbill/queue/:id/retry", adminRetryQueueTask);
+router.post("/popbill/queue/:id/cancel", adminCancelQueueTask);
 
 // 사업자 검증 수동 처리
 router.post(

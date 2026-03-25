@@ -5,8 +5,7 @@ const TaxInvoiceDraftSchema = new mongoose.Schema(
     chargeOrderId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ChargeOrder",
-      required: true,
-      unique: true,
+      default: null,
     },
     businessId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -16,8 +15,9 @@ const TaxInvoiceDraftSchema = new mongoose.Schema(
     businessAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "BusinessAnchor",
-      required: true,
+      default: null,
     },
+    writeDate: { type: String, default: null },
     status: {
       type: String,
       enum: [

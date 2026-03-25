@@ -710,9 +710,12 @@
 
 ### 6.6 세금계산서/팝빌
 
-- 입금 매칭 후 `TaxInvoiceDraft`를 만들고 관리자 승인 뒤 익일 배치 전송합니다.
-- 팝빌 작업은 web에서 직접 처리하지 않고 큐 + 전용 워커가 처리합니다.
-- 모든 큐 작업은 idempotency key를 둡니다.
+- 입금 매칭 후 `TaxInvoiceDraft`를 만들고 관리자 승인 뒤 팝빌 발행합니다.
+- **팝빌 `registIssue`는 동기 API**이므로 큐/워커 없이 컨트롤러에서 직접 호출합니다. 성공·실패가 즉시 반환됩니다.
+- 발행 성공 시 `TaxInvoiceDraft.status = SENT`, 실패 시 `FAILED`로 업데이트합니다.
+- 팝빌 웹훅은 발행 처리용이 아닌 이벤트 알림(매입처 수신 등)용입니다.
+- 공급자 정보는 `POPBILL_SUPPLIER_*` 환경변수에서 읽습니다. `POPBILL_CORP_NUM`의 대시(-)는 API 호출 전 제거합니다.
+- 관리 키(`mgtKey`)는 MongoDB ObjectId(`_id` 앞 24자)를 사용합니다.
 
 ### 6.7 한진 REST 인증
 
