@@ -83,7 +83,9 @@ export async function adminListChargeOrders(req, res) {
   const match = {};
   if (
     status &&
-    ["PENDING", "MATCHED", "EXPIRED", "CANCELED"].includes(status)
+    ["PENDING", "MATCHED", "AUTO_MATCHED", "EXPIRED", "CANCELED"].includes(
+      status,
+    )
   ) {
     match.status = status;
   }
@@ -91,6 +93,7 @@ export async function adminListChargeOrders(req, res) {
   const [items, total] = await Promise.all([
     ChargeOrder.find(match)
       .populate("adminApprovalBy", "name email")
+      .populate("businessAnchorId", "name metadata")
       .sort({ createdAt: -1, _id: -1 })
       .skip(skip)
       .limit(limit)
@@ -121,10 +124,10 @@ export async function adminApproveChargeOrder(req, res) {
     });
   }
 
-  if (!["PENDING", "AUTO_MATCHED"].includes(String(order.status))) {
+  if (!["PENDING", "AUTO_MATCHED", "MATCHED"].includes(String(order.status))) {
     return res.status(400).json({
       success: false,
-      message: "대기 또는 자동매칭 상태만 승인할 수 있습니다.",
+      message: "대기, 자동매칭, 또는 매칭완료 상태만 승인할 수 있습니다.",
     });
   }
   if (order.adminApprovalStatus !== "PENDING") {
@@ -220,10 +223,10 @@ export async function adminRejectChargeOrder(req, res) {
     });
   }
 
-  if (!["PENDING", "AUTO_MATCHED"].includes(String(order.status))) {
+  if (!["PENDING", "AUTO_MATCHED", "MATCHED"].includes(String(order.status))) {
     return res.status(400).json({
       success: false,
-      message: "대기 또는 자동매칭 상태만 거절할 수 있습니다.",
+      message: "대기, 자동매칭, 또는 매칭완료 상태만 거절할 수 있습니다.",
     });
   }
   if (order.adminApprovalStatus !== "PENDING") {

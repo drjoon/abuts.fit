@@ -3,6 +3,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatDate } from "../adminCredit.utils";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -39,24 +40,12 @@ type ChargeOrder = {
   isLocked: boolean;
   lockedAt?: string;
   lockedReason?: string;
-  businessAnchor?: {
+  businessAnchorId?: {
     _id: string;
-    companyName?: string;
     name?: string;
-  };
+    metadata?: { companyName?: string };
+  } | null;
 };
-
-function formatDate(dateStr?: string) {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("ko-KR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 export function AutoMatchVerificationTab() {
   const { token } = useAuthStore();
@@ -289,9 +278,10 @@ export function AutoMatchVerificationTab() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {typeof order.businessAnchor === "object"
-                        ? order.businessAnchor?.companyName ||
-                          order.businessAnchor?.name
+                      {typeof order.businessAnchorId === "object" &&
+                      order.businessAnchorId
+                        ? order.businessAnchorId?.metadata?.companyName ||
+                          order.businessAnchorId?.name
                         : "-"}
                     </TableCell>
                     <TableCell className="font-medium">

@@ -1,7 +1,13 @@
 import type { RefObject } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -55,8 +61,11 @@ export function RequestorOrdersTab(props: RequestorOrdersTabProps) {
       <Card>
         <CardHeader>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="text-sm text-muted-foreground">
-              승인 상태: 대기(PENDING), 승인(APPROVED), 거절(REJECTED)
+            <div>
+              <CardTitle>충전 주문</CardTitle>
+              <CardDescription>
+                입금 매칭된 주문을 승인하거나 거절합니다.
+              </CardDescription>
             </div>
             <div className="flex items-center justify-end gap-2">
               <Button
@@ -98,6 +107,20 @@ export function RequestorOrdersTab(props: RequestorOrdersTabProps) {
                 }}
               >
                 매칭완료
+              </Button>
+              <Button
+                variant={
+                  orderStatusFilter === "AUTO_MATCHED" ? "default" : "outline"
+                }
+                size="sm"
+                onClick={() => {
+                  setOrderStatusFilter("AUTO_MATCHED");
+                  setOrderSkip(0);
+                  setOrderHasMore(true);
+                  loadChargeOrders("AUTO_MATCHED", { reset: true });
+                }}
+              >
+                자동매칭
               </Button>
             </div>
           </div>
@@ -171,7 +194,8 @@ export function RequestorOrdersTab(props: RequestorOrdersTabProps) {
                           variant="outline"
                           disabled={
                             order.adminApprovalStatus !== "PENDING" ||
-                            order.status === "CANCELED"
+                            order.status === "CANCELED" ||
+                            order.status === "EXPIRED"
                           }
                           onClick={() => {
                             setSelectedOrder(order);
@@ -185,7 +209,8 @@ export function RequestorOrdersTab(props: RequestorOrdersTabProps) {
                           variant="destructive"
                           disabled={
                             order.adminApprovalStatus !== "PENDING" ||
-                            order.status === "CANCELED"
+                            order.status === "CANCELED" ||
+                            order.status === "EXPIRED"
                           }
                           onClick={() => {
                             setSelectedOrder(order);
