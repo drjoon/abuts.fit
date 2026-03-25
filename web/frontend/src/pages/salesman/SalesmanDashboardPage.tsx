@@ -76,7 +76,7 @@ export const SalesmanDashboardPage = () => {
     overview.payableGrossCommissionAmount || totalCommission || 0,
   );
   const paidNet = Number(overview.paidNetCommissionAmount || 0);
-  const referralSalesmanCount = Number(overview.referralSalesmanCount || 0);
+  const referralSalesmanCount = (data?.referralSalesmen || []).length;
 
   const referredBusinesses = (
     data?.businesses ||
@@ -188,7 +188,7 @@ export const SalesmanDashboardPage = () => {
                   </Button>
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  내 소개 코드로 가입한 영업자 수: {referralSalesmanCount}명
+                  내 소개 코드로 가입한 영업자: {referralSalesmanCount}개소
                 </div>
               </CardContent>
             </Card>
@@ -328,12 +328,12 @@ export const SalesmanDashboardPage = () => {
                       <TooltipTrigger asChild>
                         <div className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4 cursor-help">
                           <div className="text-xs font-medium text-muted-foreground mb-3">
-                            직접 소개
+                            직접소개 의뢰자
                           </div>
                           <div className="space-y-1.5">
                             <div className="flex items-baseline justify-between gap-2">
                               <span className="text-xs text-muted-foreground">
-                                사업자 수
+                                의뢰자 수
                               </span>
                               <span className="text-xl font-bold tabular-nums">
                                 {directBusinessCount.toLocaleString()}개소
@@ -358,12 +358,12 @@ export const SalesmanDashboardPage = () => {
                       <TooltipTrigger asChild>
                         <div className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4 cursor-help">
                           <div className="text-xs font-medium text-muted-foreground mb-3">
-                            간접 소개
+                            간접 소개 의뢰자
                           </div>
                           <div className="space-y-1.5">
                             <div className="flex items-baseline justify-between gap-2">
                               <span className="text-xs text-muted-foreground">
-                                사업자 수
+                                의뢰자 수
                               </span>
                               <span className="text-xl font-bold tabular-nums">
                                 {level1BusinessCount.toLocaleString()}개소
@@ -394,10 +394,10 @@ export const SalesmanDashboardPage = () => {
                           <div className="space-y-1.5">
                             <div className="flex items-baseline justify-between gap-2">
                               <span className="text-xs text-muted-foreground">
-                                영업자 수
+                                영업자
                               </span>
                               <span className="text-xl font-bold tabular-nums">
-                                {referralSalesmanCount.toLocaleString()}명
+                                {referralSalesmanCount.toLocaleString()}개소
                               </span>
                             </div>
                             <div className="flex items-baseline justify-between gap-2">
