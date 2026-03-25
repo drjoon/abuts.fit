@@ -241,7 +241,7 @@ export const PricingPolicyDialog = ({
                   </h3>
                   <p>
                     할인 단가는{" "}
-                    <b>나를 소개한 기공소 · 나 · 내가 직접 소개한 기공소</b>의
+                    <b>나를 소개한 기공소 + 나 + 내가 직접 소개한 기공소</b>의
                     최근 30일 주문량을 합산해 계산합니다.
                   </p>
                   <ul className="list-disc pl-4 space-y-0.5">
@@ -252,12 +252,10 @@ export const PricingPolicyDialog = ({
                     <li>
                       예: A가 B·C를 소개하고, B가 D를 소개한 경우
                       <ul className="list-disc pl-4 mt-0.5 space-y-0.5">
-                        <li>A · C: A+B+C 합산</li>
-                        <li>
-                          B: A+B+C+D 합산{" "}
-                          <span className="text-xs">(두 그룹 모두 속함)</span>
-                        </li>
-                        <li>D: B+D 합산</li>
+                        <li>A: A+B+C 합산 (자녀: B·C)</li>
+                        <li>B: A+B+D 합산 (부모: A, 자녀: D)</li>
+                        <li>C: A+C 합산 (부모: A, 자녀 없음)</li>
+                        <li>D: B+D 합산 (부모: B, 자녀 없음)</li>
                       </ul>
                     </li>
                   </ul>
