@@ -44,6 +44,14 @@ type Overview = {
   totalCommissionAmount?: number;
 };
 
+type ManufacturerSummary = {
+  anchorCount?: number;
+  periodEarnedAmount?: number;
+  periodPaidOutAmount?: number;
+  periodBalanceAmount?: number;
+  totalBalanceAmount?: number;
+};
+
 const formatMoney = (value?: number) =>
   Number(value || 0).toLocaleString("ko-KR");
 
@@ -144,6 +152,8 @@ export default function AdminPaymentsPage() {
   const { toast } = useToast();
   const [overview, setOverview] = useState<Overview | null>(null);
   const [rows, setRows] = useState<SalesmanRow[]>([]);
+  const [manufacturerSummary, setManufacturerSummary] =
+    useState<ManufacturerSummary | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -158,8 +168,13 @@ export default function AdminPaymentsPage() {
         method: "GET",
         token,
       }),
+      request<any>({
+        path: `/api/admin/credits/manufacturer/summary?period=${encodeURIComponent(period)}`,
+        method: "GET",
+        token,
+      }),
     ])
-      .then(([overviewRes, rowsRes]) => {
+      .then(([overviewRes, rowsRes, mfgRes]) => {
         if (!overviewRes.ok || !overviewRes.data?.success) {
           throw new Error(
             overviewRes.data?.message || "정산 overview 조회 실패",
@@ -174,6 +189,9 @@ export default function AdminPaymentsPage() {
             ? rowsRes.data.data.items
             : [],
         );
+        if (mfgRes.ok && mfgRes.data?.success) {
+          setManufacturerSummary(mfgRes.data.data || null);
+        }
       })
       .catch((error: any) => {
         toast({
@@ -335,18 +353,18 @@ export default function AdminPaymentsPage() {
               />
               <StaticInfoCard
                 title="제조사 앵커 수"
-                value={`${manufacturerGroups.length.toLocaleString()}개`}
+                value={`${(manufacturerSummary?.anchorCount ?? 0).toLocaleString()}개`}
                 description="BusinessAnchor 기준 제조사 수"
               />
               <StaticInfoCard
-                title="스냅샷 처리"
-                value="일별 집계"
-                description="전일 정산 스냅샷과 지급 이력을 누적 관리합니다."
+                title="기간 발생 수익"
+                value={`${formatMoney(manufacturerSummary?.periodEarnedAmount)}원`}
+                description="ManufacturerCreditLedger 기간 내 EARN 합계"
               />
               <StaticInfoCard
-                title="운영 메모"
-                value="수동 보정 가능"
-                description="환불/조정/지급은 별도 원장으로 추적합니다."
+                title="미정산 잔액 합계"
+                value={`${formatMoney(manufacturerSummary?.totalBalanceAmount)}원`}
+                description="제조사 전체 미지급 잔액 합계"
               />
             </div>
           </TabsContent>

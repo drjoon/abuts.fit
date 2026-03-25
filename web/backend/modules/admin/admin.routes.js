@@ -105,6 +105,7 @@ import {
   adminGetSalesmanCredits,
   adminGetSalesmanLedger,
   adminCreateSalesmanPayout,
+  adminGetManufacturerSummary,
 } from "../../controllers/admin/adminCredit.controller.js";
 import {
   adminListBusinessRegistrationInquiries,
@@ -156,6 +157,7 @@ router.get("/credits/stats", adminGetCreditStats);
 router.get("/credits/businesses", adminGetBusinessCredits);
 router.get("/credits/businesses/:id", adminGetBusinessCreditDetail);
 router.get("/credits/businesses/:id/ledger", adminGetBusinessLedger);
+router.get("/credits/manufacturer/summary", adminGetManufacturerSummary);
 router.get("/credits/salesmen/overview", adminGetSalesmanCreditsOverview);
 router.get("/credits/salesmen", adminGetSalesmanCredits);
 router.get("/credits/salesmen/:id/ledger", adminGetSalesmanLedger);

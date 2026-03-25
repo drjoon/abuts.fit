@@ -1,4 +1,5 @@
 import CreditLedger from "../../models/creditLedger.model.js";
+import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
 import BonusGrant from "../../models/bonusGrant.model.js";
 import ChargeOrder from "../../models/chargeOrder.model.js";
 import BankTransaction from "../../models/bankTransaction.model.js";
@@ -1185,6 +1186,91 @@ export async function adminGetSalesmanCredits(req, res) {
     return res.status(500).json({
       success: false,
       message: "영업자 크레딧 조회에 실패했습니다.",
+    });
+  }
+}
+
+export async function adminGetManufacturerSummary(req, res) {
+  try {
+    const periodKey = String(req.query.period || "30d").trim() || "30d";
+    const range = getPeriodRangeUtcFromPeriodKey(periodKey);
+
+    const [anchorCount, periodLedgerRows, allLedgerRows] = await Promise.all([
+      BusinessAnchor.countDocuments({ businessType: "manufacturer" }),
+      range
+        ? ManufacturerCreditLedger.aggregate([
+            {
+              $match: {
+                occurredAt: { $gte: range.start, $lte: range.end },
+              },
+            },
+            {
+              $group: {
+                _id: "$type",
+                total: { $sum: "$amount" },
+              },
+            },
+          ])
+        : Promise.resolve([]),
+      ManufacturerCreditLedger.aggregate([
+        {
+          $group: {
+            _id: { org: "$manufacturerOrganization", type: "$type" },
+            total: { $sum: "$amount" },
+          },
+        },
+      ]),
+    ]);
+
+    let periodEarnedAmount = 0;
+    let periodPaidOutAmount = 0;
+    let periodAdjustedAmount = 0;
+    for (const r of periodLedgerRows || []) {
+      const type = String(r?._id || "");
+      const total = normalizeNumber(r?.total || 0);
+      if (type === "EARN") periodEarnedAmount += total;
+      else if (type === "PAYOUT") periodPaidOutAmount += total;
+      else if (type === "ADJUST") periodAdjustedAmount += total;
+    }
+    const periodBalanceAmount = normalizeNumber(
+      periodEarnedAmount - periodPaidOutAmount + periodAdjustedAmount,
+    );
+
+    const balanceByOrg = new Map();
+    for (const r of allLedgerRows || []) {
+      const org = String(r?._id?.org || "");
+      const type = String(r?._id?.type || "");
+      const total = Number(r?.total || 0);
+      if (!org) continue;
+      const prev = balanceByOrg.get(org) || { earn: 0, payout: 0, adjust: 0 };
+      if (type === "EARN") prev.earn += total;
+      else if (type === "PAYOUT") prev.payout += total;
+      else if (type === "ADJUST") prev.adjust += total;
+      balanceByOrg.set(org, prev);
+    }
+    let totalBalanceAmount = 0;
+    for (const v of balanceByOrg.values()) {
+      totalBalanceAmount += Math.max(
+        0,
+        normalizeNumber(v.earn - v.payout + v.adjust),
+      );
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        anchorCount,
+        periodEarnedAmount,
+        periodPaidOutAmount,
+        periodBalanceAmount,
+        totalBalanceAmount,
+      },
+    });
+  } catch (error) {
+    console.error("adminGetManufacturerSummary error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "제조사 통계 조회에 실패했습니다.",
     });
   }
 }
