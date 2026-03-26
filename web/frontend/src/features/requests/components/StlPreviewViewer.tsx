@@ -121,13 +121,13 @@ export function StlPreviewViewer({
 
   // 백엔드 캐시된 메타데이터 동기화
   useEffect(() => {
-    if (resolvedMetadata && resolvedMetadata.maxDiameter) {
-      // 이미 상태에 값이 있으면 업데이트하지 않음 (중복 렌더링 방지)
-      if (maxDiameterState === resolvedMetadata.maxDiameter) {
-        return;
+    if (resolvedMetadata) {
+      if (
+        typeof resolvedMetadata.maxDiameter === "number" &&
+        Number.isFinite(resolvedMetadata.maxDiameter)
+      ) {
+        setMaxDiameterState(resolvedMetadata.maxDiameter);
       }
-
-      setMaxDiameterState(resolvedMetadata.maxDiameter);
 
       if (
         typeof resolvedMetadata.connectionDiameter === "number" &&
@@ -174,7 +174,6 @@ export function StlPreviewViewer({
     }
   }, [
     file.name,
-    maxDiameterState,
     resolvedMetadata?.maxDiameter,
     resolvedMetadata?.connectionDiameter,
     resolvedMetadata?.totalLength,
