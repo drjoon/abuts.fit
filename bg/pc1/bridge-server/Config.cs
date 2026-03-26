@@ -32,6 +32,7 @@ namespace HiLinkBridgeWebApi48
                     var line = (lineRaw ?? string.Empty).Trim();
                     if (line.Length == 0) continue;
                     if (line.StartsWith("#")) continue;
+
                     var eq = line.IndexOf('=');
                     if (eq <= 0) continue;
                     var key = line.Substring(0, eq).Trim();
