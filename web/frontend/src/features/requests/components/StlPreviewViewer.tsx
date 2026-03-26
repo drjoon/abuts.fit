@@ -70,6 +70,18 @@ export function StlPreviewViewer({
   const [error, setError] = useState<string | null>(null);
   const resolvedMetadata = metadata ?? fetchedMetadata;
 
+  const toValidPoint = (value: unknown) => {
+    if (!value || typeof value !== "object") return null;
+    const candidate = value as { x?: unknown; y?: unknown; z?: unknown };
+    const x = Number(candidate.x);
+    const y = Number(candidate.y);
+    const z = Number(candidate.z);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+      return null;
+    }
+    return { x, y, z };
+  };
+
   const disposeFrontPointMesh = () => {
     const existing = frontPointMeshRef.current;
     if (!existing) return;
@@ -148,10 +160,10 @@ export function StlPreviewViewer({
         setTaperAngleState(resolvedMetadata.taperAngle);
       }
       if (resolvedMetadata.tiltAxisVector !== undefined) {
-        setTiltAxisVectorState(resolvedMetadata.tiltAxisVector || null);
+        setTiltAxisVectorState(toValidPoint(resolvedMetadata.tiltAxisVector));
       }
       if (resolvedMetadata.frontPoint !== undefined) {
-        setFrontPointState(resolvedMetadata.frontPoint || null);
+        setFrontPointState(toValidPoint(resolvedMetadata.frontPoint));
       }
 
       // 콜백 호출
@@ -187,7 +199,8 @@ export function StlPreviewViewer({
   ]);
 
   useEffect(() => {
-    const point = resolvedMetadata?.frontPoint ?? frontPointState ?? null;
+    const pointFromMetadata = toValidPoint(resolvedMetadata?.frontPoint);
+    const point = pointFromMetadata ?? frontPointState ?? null;
     const scene = sceneRef.current;
     const scenePosition = point ? resolveFrontPointScenePosition(point) : null;
 
