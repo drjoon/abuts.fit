@@ -919,7 +919,7 @@ export async function updateRequestStatus(req, res) {
           requestId: request.requestId,
           businessAnchorId: anchorId,
         });
-        triggerDashboardSummaryRefreshForAnchorId(
+        await triggerDashboardSummaryRefreshForAnchorId(
           anchorId,
           `request-canceled:${request.requestId}`,
         );
@@ -1011,7 +1011,7 @@ export async function deleteRequest(req, res) {
         requestId: request.requestId,
         businessAnchorId: anchorId,
       });
-      triggerDashboardSummaryRefreshForAnchorId(
+      await triggerDashboardSummaryRefreshForAnchorId(
         anchorId,
         `request-deleted:${request.requestId}`,
       );

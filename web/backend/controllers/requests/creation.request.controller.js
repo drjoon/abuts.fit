@@ -750,9 +750,21 @@ export async function createRequest(req, res) {
       newRequest?.businessAnchorId || req.user?.businessAnchorId || "",
     ).trim();
     if (createdAnchorId) {
-      triggerDashboardSummaryRefreshForAnchorId(
+      console.log("[createRequest] Triggering dashboard refresh", {
+        businessAnchorId: createdAnchorId,
+        requestId: newRequest.requestId,
+      });
+      await triggerDashboardSummaryRefreshForAnchorId(
         createdAnchorId,
-        "request-created",
+        `request-created:${newRequest.requestId}`,
+      );
+    } else {
+      console.warn(
+        "[createRequest] No businessAnchorId for dashboard refresh",
+        {
+          requestId: newRequest.requestId,
+          userId: req.user?._id,
+        },
       );
     }
 

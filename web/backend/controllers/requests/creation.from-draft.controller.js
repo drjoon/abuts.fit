@@ -931,7 +931,7 @@ export async function createRequestsFromDraft(req, res) {
           createdCount: createdRequests.length,
           requestIds: createdRequests.map((r) => r.requestId),
         });
-        triggerDashboardSummaryRefreshForAnchorId(
+        await triggerDashboardSummaryRefreshForAnchorId(
           createdAnchorId,
           "request-created",
         );

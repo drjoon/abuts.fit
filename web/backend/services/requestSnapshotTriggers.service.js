@@ -12,6 +12,7 @@ import { invalidateDashboardAndBulkCachesForBusinessAnchorId } from "./requestDa
 import { invalidateAdminReferralCachesForBusinessAnchorId } from "./adminReferralCache.service.js";
 
 const normalizeAnchorId = (value) => String(value || "").trim();
+const __dashboardSummaryRefreshInFlight = new Map();
 
 const invalidateSalesmanAncestorTreeCachesForAnchorId = async (anchorId) => {
   const anchor = await BusinessAnchor.findById(anchorId)
@@ -177,22 +178,74 @@ export const triggerDashboardSummaryRefreshForAnchorId = (
   reason = "",
 ) => {
   const anchorId = normalizeAnchorId(businessAnchorId);
-  if (!Types.ObjectId.isValid(anchorId)) return;
+  if (!Types.ObjectId.isValid(anchorId)) return Promise.resolve(null);
 
-  invalidateDashboardAndBulkCachesForBusinessAnchorId(anchorId);
+  const previousRefresh =
+    __dashboardSummaryRefreshInFlight.get(anchorId) || Promise.resolve(null);
 
-  void invalidateTodayRequestorDashboardSummarySnapshotsForBusinessAnchorId(
-    anchorId,
-  )
-    .then(() =>
-      recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(anchorId),
-    )
+  const nextRefresh = previousRefresh
+    .catch(() => null)
+    .then(async () => {
+      console.info("[dashboardSnapshot] refresh start", {
+        anchorId,
+        reason,
+      });
+
+      const invalidatedBefore =
+        invalidateDashboardAndBulkCachesForBusinessAnchorId(anchorId);
+      console.info("[dashboardSnapshot] refresh invalidate before", {
+        anchorId,
+        reason,
+        invalidatedBefore,
+      });
+
+      await invalidateTodayRequestorDashboardSummarySnapshotsForBusinessAnchorId(
+        anchorId,
+      );
+      const results =
+        await recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(
+          anchorId,
+        );
+
+      const invalidatedAfter =
+        invalidateDashboardAndBulkCachesForBusinessAnchorId(anchorId);
+      console.info("[dashboardSnapshot] refresh complete", {
+        anchorId,
+        reason,
+        periods: Array.isArray(results)
+          ? results.map((row) => String(row?.periodKey || ""))
+          : [],
+        invalidatedAfter,
+      });
+
+      return results;
+    })
     .catch((error) => {
       console.error(
         `[requestorDashboardSummarySnapshot] triggerDashboardSummaryRefreshForAnchorId failed${reason ? ` (${reason})` : ""}`,
         error,
       );
+      throw error;
+    })
+    .finally(() => {
+      if (__dashboardSummaryRefreshInFlight.get(anchorId) === nextRefresh) {
+        __dashboardSummaryRefreshInFlight.delete(anchorId);
+      }
     });
+
+  __dashboardSummaryRefreshInFlight.set(anchorId, nextRefresh);
+  return nextRefresh;
+};
+
+export const waitForDashboardSummaryRefreshForAnchorId = async (
+  businessAnchorId,
+) => {
+  const anchorId = normalizeAnchorId(businessAnchorId);
+  if (!Types.ObjectId.isValid(anchorId)) return null;
+
+  const inFlightRefresh = __dashboardSummaryRefreshInFlight.get(anchorId);
+  if (!inFlightRefresh) return null;
+  return inFlightRefresh;
 };
 
 export const triggerPricingSnapshotForUserId = async (userId, reason = "") => {

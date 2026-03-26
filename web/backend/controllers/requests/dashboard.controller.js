@@ -31,7 +31,10 @@ import {
 } from "../../services/pricingReferralSnapshot.service.js";
 import { getPricingReferralOrderCountMapByBusinessAnchorIds } from "../../services/pricingReferralOrderBucket.service.js";
 import { ensureBusinessAnchorForBusiness } from "../businesses/business.update.controller.js";
-import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
+import {
+  triggerDashboardSummaryRefreshForAnchorId,
+  waitForDashboardSummaryRefreshForAnchorId,
+} from "../../services/requestSnapshotTriggers.service.js";
 
 function getLastMonthRangeUtc() {
   const now = new Date();
@@ -549,11 +552,16 @@ export async function getMyDashboardSummary(req, res) {
           userId: String(req.user._id),
           repairedId,
         });
-        triggerDashboardSummaryRefreshForAnchorId(
+        await triggerDashboardSummaryRefreshForAnchorId(
           repairedId,
           "businessAnchorId-repair",
         );
       }
+    }
+
+    const businessAnchorId = String(req.user?.businessAnchorId || "").trim();
+    if (!debug && businessAnchorId) {
+      await waitForDashboardSummaryRefreshForAnchorId(businessAnchorId);
     }
 
     const summaryCacheKey = `dashboard-summary:${String(
