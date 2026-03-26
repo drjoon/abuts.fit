@@ -136,7 +136,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     }
     const body: any = res.data || {};
     const data = body.data || body;
-    setStaff(Array.isArray(data?.staff) ? data.staff : []);
+    setStaff(Array.isArray(data?.staffMembers) ? data.staffMembers : []);
   }, [mockHeaders, businessType, token]);
 
   const refreshPending = useCallback(async () => {

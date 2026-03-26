@@ -405,9 +405,7 @@ export const SettingsWizard = ({
                         nextLoading ||
                         stepBusy ||
                         (currentStep === "role" && !selectedRole) ||
-                        (currentStep === "business" &&
-                          selectedRole === "owner" &&
-                          !validationState.passed)
+                        (currentStep === "business" && !validationState.passed)
                       }
                       className="w-20 h-11"
                     >

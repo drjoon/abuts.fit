@@ -47,10 +47,13 @@ import {
   Search,
   Sparkles,
   Share2,
+  Clock,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { onAppEvent } from "@/shared/realtime/socket";
 import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
+import { loadBusinessMeCached } from "@/shared/components/business/settings/business/businessMeCache";
+import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 
 const sidebarItems = {
   requestor: [
@@ -219,6 +222,9 @@ export const DashboardLayout = () => {
   const [bootstrappingAuth, setBootstrappingAuth] = useState(false);
   const [bootstrappedOnce, setBootstrappedOnce] = useState(false);
   const [sidebarProfileImage, setSidebarProfileImage] = useState<string>("");
+  const [pendingBusinessName, setPendingBusinessName] = useState<string | null>(
+    null,
+  );
 
   const isWizardRoute = location.pathname.startsWith("/dashboard/wizard");
   const onboardingCompleted = Boolean(
@@ -278,6 +284,31 @@ export const DashboardLayout = () => {
       }
     });
   }, [bootstrappedOnce, loginWithToken, logout, navigate, token, user]);
+
+  useEffect(() => {
+    if (!token || !user || !user.id) return;
+    if (isWizardRoute) return;
+    if (!onboardingCompleted) return;
+    if (user.role !== "requestor" && user.role !== "manufacturer") return;
+    if (user.businessVerified) return;
+
+    const businessType = resolveBusinessType(user.role);
+    if (!businessType) return;
+
+    loadBusinessMeCached({ token, businessType })
+      .then((data) => {
+        const membership = String(data?.membership || "");
+        if (membership === "pending") {
+          const name = String(
+            data?.business?.name || data?.business?.companyName || "",
+          ).trim();
+          setPendingBusinessName(name || "사업자");
+        } else {
+          setPendingBusinessName(null);
+        }
+      })
+      .catch(() => {});
+  }, [token, user, isWizardRoute, onboardingCompleted]);
 
   const refreshSidebarProfile = useCallback(async () => {
     if (!token) return;
@@ -597,6 +628,35 @@ export const DashboardLayout = () => {
     return (
       <div className="min-h-screen">
         <Outlet />
+      </div>
+    );
+  }
+
+  if (pendingBusinessName !== null) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <div className="max-w-md w-full space-y-6 text-center">
+          <div className="flex justify-center">
+            <div className="h-16 w-16 rounded-full bg-amber-50 flex items-center justify-center">
+              <Clock className="h-8 w-8 text-amber-600" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-semibold">승인 대기 중</h2>
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">
+                {pendingBusinessName}
+              </span>
+              의 대표자 승인을 기다리고 있습니다.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              승인이 완료되면 플랫폼을 정상적으로 이용하실 수 있습니다.
+            </p>
+          </div>
+          <Button variant="outline" onClick={handleLogout}>
+            로그아웃
+          </Button>
+        </div>
       </div>
     );
   }

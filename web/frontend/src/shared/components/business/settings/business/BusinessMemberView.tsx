@@ -1,6 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ShieldCheck } from "lucide-react";
+import { Clock, ShieldCheck } from "lucide-react";
 import { BusinessData, LicenseExtracted, LicenseStatus } from "./types";
 
 interface BusinessMemberViewProps {
@@ -9,6 +9,7 @@ interface BusinessMemberViewProps {
   isVerified: boolean;
   extracted: LicenseExtracted;
   businessData: BusinessData;
+  isPending?: boolean;
 }
 
 export const BusinessMemberView = ({
@@ -17,7 +18,30 @@ export const BusinessMemberView = ({
   isVerified,
   extracted,
   businessData,
+  isPending = false,
 }: BusinessMemberViewProps) => {
+  if (isPending) {
+    return (
+      <div className="space-y-4">
+        <div className="app-surface app-surface--panel space-y-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-amber-700">
+            <Clock className="h-4 w-4 shrink-0" />
+            승인 대기 중
+          </div>
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">
+              {currentBusinessName || "사업자"}
+            </span>
+            의 대표자 승인을 기다리고 있습니다.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            승인이 완료되면 플랫폼을 정상적으로 이용하실 수 있습니다.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="app-surface app-surface--panel text-xs text-muted-foreground">

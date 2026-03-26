@@ -214,17 +214,26 @@ export const BusinessTab = ({
 
   // 온보딩 검증 상태 업데이트
   useEffect(() => {
-    if (selectedRole === "owner" && registerValidationState) {
+    if (!registerValidationState) return;
+    if (selectedRole === "owner") {
       registerValidationState({
         passed:
           businessDataMgmt.validationSucceeded || businessDataMgmt.isVerified,
+        validating: false,
+      });
+    } else if (selectedRole === "member" && isOnboarding) {
+      // 직원 온보딩: 승인(member) 상태여야만 다음 단계 진행 가능
+      registerValidationState({
+        passed: membershipMgmt.membership === "member",
         validating: false,
       });
     }
   }, [
     businessDataMgmt.validationSucceeded,
     businessDataMgmt.isVerified,
+    membershipMgmt.membership,
     selectedRole,
+    isOnboarding,
     registerValidationState,
   ]);
 
@@ -703,6 +712,7 @@ export const BusinessTab = ({
                 isVerified={businessDataMgmt.isVerified}
                 extracted={businessDataMgmt.extracted}
                 businessData={businessDataMgmt.businessData}
+                isPending={membershipMgmt.membership === "pending"}
               />
             )}
 
