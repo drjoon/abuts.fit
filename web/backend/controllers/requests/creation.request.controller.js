@@ -23,6 +23,7 @@ import { getRequestorOrgId } from "./utils.js";
 import { calculateInitialProductionSchedule } from "./production.utils.js";
 import { getManufacturerLeadTimesUtil } from "../businesses/leadTime.controller.js";
 import { emitAppEventToRoles } from "../../socket.js";
+import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 
 /**
  * 새 의뢰 생성
@@ -744,6 +745,16 @@ export async function createRequest(req, res) {
       key: "request",
       delta: 1,
     });
+
+    const createdAnchorId = String(
+      newRequest?.businessAnchorId || req.user?.businessAnchorId || "",
+    ).trim();
+    if (createdAnchorId) {
+      triggerDashboardSummaryRefreshForAnchorId(
+        createdAnchorId,
+        "request-created",
+      );
+    }
 
     res.status(201).json({
       success: true,

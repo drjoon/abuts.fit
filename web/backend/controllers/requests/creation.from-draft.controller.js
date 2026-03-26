@@ -21,6 +21,7 @@ import {
   REQUEST_STAGE_ORDER,
 } from "./utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
+import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import {
   buildStandardStlFileName,
   getBusinessCreditBalanceBreakdown,
@@ -918,6 +919,18 @@ export async function createRequestsFromDraft(req, res) {
         t: Date.now() - startTime,
         created: createdRequests.length,
       });
+
+      const createdAnchorId = String(
+        createdRequests[0]?.businessAnchorId ||
+          req.user?.businessAnchorId ||
+          "",
+      ).trim();
+      if (createdAnchorId) {
+        triggerDashboardSummaryRefreshForAnchorId(
+          createdAnchorId,
+          "request-created",
+        );
+      }
     } catch (e) {
       const statusCode = Number(e?.statusCode || 0);
       if (statusCode === 402) {

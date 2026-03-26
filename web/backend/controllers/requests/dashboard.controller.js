@@ -502,6 +502,39 @@ export async function getMyDashboardSummary(req, res) {
     const userId = req.user?._id?.toString();
     const debug =
       process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
+
+    // User.businessAnchorId가 null인 경우 Business에서 조회하여 이 요청에서 즉시 사용
+    // (SSOT write-on-save가 누락된 레거시 계정 대응)
+    if (!req.user?.businessAnchorId && req.user?.businessId) {
+      const biz = await Business.findById(req.user.businessId)
+        .select({ businessAnchorId: 1 })
+        .lean();
+      const repairedId = String(biz?.businessAnchorId || "").trim();
+      if (repairedId && Types.ObjectId.isValid(repairedId)) {
+        req.user.businessAnchorId = repairedId;
+        const anchorOid = new Types.ObjectId(repairedId);
+        await Promise.all([
+          User.updateOne(
+            { _id: req.user._id },
+            { $set: { businessAnchorId: anchorOid } },
+          ),
+          Request.updateMany(
+            { requestor: req.user._id, businessAnchorId: null },
+            { $set: { businessAnchorId: anchorOid } },
+          ),
+        ]).catch((err) =>
+          console.error(
+            "[dashboard] businessAnchorId repair/backfill failed",
+            err,
+          ),
+        );
+        console.info("[dashboard] businessAnchorId repair complete", {
+          userId: String(req.user._id),
+          repairedId,
+        });
+      }
+    }
+
     const summaryCacheKey = `dashboard-summary:${String(
       req.user?._id || "",
     )}:${String(req.user?.businessAnchorId || "")}:${period}`;

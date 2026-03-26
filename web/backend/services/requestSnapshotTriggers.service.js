@@ -169,6 +169,25 @@ export const triggerPricingSnapshotForUserDoc = async (
   }
 };
 
+export const triggerDashboardSummaryRefreshForAnchorId = (
+  businessAnchorId,
+  reason = "",
+) => {
+  const anchorId = normalizeAnchorId(businessAnchorId);
+  if (!Types.ObjectId.isValid(anchorId)) return;
+
+  invalidateDashboardAndBulkCachesForBusinessAnchorId(anchorId);
+
+  void recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(
+    anchorId,
+  ).catch((error) => {
+    console.error(
+      `[requestorDashboardSummarySnapshot] triggerDashboardSummaryRefreshForAnchorId failed${reason ? ` (${reason})` : ""}`,
+      error,
+    );
+  });
+};
+
 export const triggerPricingSnapshotForUserId = async (userId, reason = "") => {
   const normalizedUserId = String(userId || "").trim();
   if (!Types.ObjectId.isValid(normalizedUserId)) return;
