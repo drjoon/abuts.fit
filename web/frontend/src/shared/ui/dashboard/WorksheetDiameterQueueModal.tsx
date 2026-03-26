@@ -152,13 +152,14 @@ export const WorksheetDiameterQueueModal = ({
       return;
     }
 
+    const stageText = String(processLabel || "").toLowerCase();
+    const isRequestStage =
+      stageText.includes("의뢰") || stageText.includes("request");
+
     setStlFile(null);
     setStlError(null);
     setStlLoading(true);
 
-    const stageText = String(processLabel || "").toLowerCase();
-    const isRequestStage =
-      stageText.includes("의뢰") || stageText.includes("request");
     const endpoint = isRequestStage ? "original-file-url" : "cam-file-url";
     const cacheKey = `stl:${activeItem.id}:${endpoint}`;
     const filename = isRequestStage
@@ -293,6 +294,9 @@ export const WorksheetDiameterQueueModal = ({
 
                 const line2 = (() => {
                   const parts: string[] = [];
+                  const stageText = String(processLabel || "").toLowerCase();
+                  const isRequestStage =
+                    stageText.includes("의뢰") || stageText.includes("request");
                   if (
                     typeof item.connectionDiameter === "number" &&
                     Number.isFinite(item.connectionDiameter)
@@ -308,6 +312,7 @@ export const WorksheetDiameterQueueModal = ({
                     parts.push(`최대 직경 ${item.maxDiameter.toFixed(3)}`);
                   }
                   if (
+                    !isRequestStage &&
                     typeof item.camDiameter === "number" &&
                     Number.isFinite(item.camDiameter)
                   ) {

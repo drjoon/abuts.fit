@@ -128,15 +128,31 @@ export function StlPreviewViewer({
       }
 
       setMaxDiameterState(resolvedMetadata.maxDiameter);
-      setConnectionDiameterState(resolvedMetadata.connectionDiameter || null);
-      setTotalLengthState(resolvedMetadata.totalLength || null);
-      setTaperAngleState(
-        resolvedMetadata.taperAngle !== undefined
-          ? resolvedMetadata.taperAngle
-          : null,
-      );
-      setTiltAxisVectorState(resolvedMetadata.tiltAxisVector || null);
-      setFrontPointState(resolvedMetadata.frontPoint || null);
+
+      if (
+        typeof resolvedMetadata.connectionDiameter === "number" &&
+        Number.isFinite(resolvedMetadata.connectionDiameter)
+      ) {
+        setConnectionDiameterState(resolvedMetadata.connectionDiameter);
+      }
+      if (
+        typeof resolvedMetadata.totalLength === "number" &&
+        Number.isFinite(resolvedMetadata.totalLength)
+      ) {
+        setTotalLengthState(resolvedMetadata.totalLength);
+      }
+      if (
+        typeof resolvedMetadata.taperAngle === "number" &&
+        Number.isFinite(resolvedMetadata.taperAngle)
+      ) {
+        setTaperAngleState(resolvedMetadata.taperAngle);
+      }
+      if (resolvedMetadata.tiltAxisVector !== undefined) {
+        setTiltAxisVectorState(resolvedMetadata.tiltAxisVector || null);
+      }
+      if (resolvedMetadata.frontPoint !== undefined) {
+        setFrontPointState(resolvedMetadata.frontPoint || null);
+      }
 
       // 콜백 호출
       if (

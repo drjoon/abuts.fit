@@ -210,9 +210,6 @@ async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks
         if not file_path:
             raise HTTPException(status_code=400, detail="STL file path not found in request")
         
-        if not finish_line_points:
-            raise HTTPException(status_code=400, detail="Finish line is required for metadata calculation")
-        
         # 로컬 STL 파일 경로 확인 (filled.stl 우선)
         safe_name = settings.sanitize_filename(Path(file_path).name)
         stl_path = settings.STORE_OUT_DIR / safe_name

@@ -212,6 +212,18 @@ async def process_single_stl(p: Path, force_reprocess: bool = False):
                     except Exception as e:
                         log(f"Force reprocess delete failed ({out_path}): {e}")
                 else:
+                    try:
+                        from .stl_metadata import calculate_and_register_metadata
+
+                        log(f"[process_single_stl] Output exists, registering STL metadata for {req_id}")
+                        calculate_and_register_metadata(
+                            out_path,
+                            req_id,
+                            None,  # requestMongoId는 백엔드에서 찾음
+                            None,
+                        )
+                    except Exception as e:
+                        log(f"[process_single_stl] Failed to register metadata from existing output: {e}")
                     if upload_via_presign(
                         out_path,
                         prefixed_input,
@@ -309,27 +321,24 @@ async def process_single_stl(p: Path, force_reprocess: bool = False):
                         log("[rhino-log tail]\n" + tail_snippet)
                 return
             
-            # STL 메타데이터 계산 (finish line이 있는 경우에만)
+            from .stl_metadata import calculate_and_register_metadata
+            finish_line_points = None
             if metadata.get("finishLine"):
-                from .stl_metadata import calculate_and_register_metadata
                 finish_line_points = metadata["finishLine"].get("points")
-                if finish_line_points:
-                    log(f"[process_single_stl] Calculating STL metadata for {req_id}")
-                    try:
-                        stl_metadata = calculate_and_register_metadata(
-                            out_path,
-                            req_id,
-                            None,  # requestMongoId는 백엔드에서 찾음
-                            finish_line_points,
-                        )
-                        if stl_metadata:
-                            # 메타데이터를 metadata dict에 병합
-                            metadata["stlMetadata"] = stl_metadata
-                            log(f"[process_single_stl] STL metadata calculated and registered for {req_id}")
-                    except Exception as e:
-                        log(f"[process_single_stl] Failed to calculate STL metadata: {e}")
-            else:
-                log(f"[process_single_stl] Skipping STL metadata calculation: no finish line for {req_id}")
+            log(f"[process_single_stl] Calculating STL metadata for {req_id}")
+            try:
+                stl_metadata = calculate_and_register_metadata(
+                    out_path,
+                    req_id,
+                    None,  # requestMongoId는 백엔드에서 찾음
+                    finish_line_points,
+                )
+                if stl_metadata:
+                    # 메타데이터를 metadata dict에 병합
+                    metadata["stlMetadata"] = stl_metadata
+                    log(f"[process_single_stl] STL metadata calculated and registered for {req_id}")
+            except Exception as e:
+                log(f"[process_single_stl] Failed to calculate STL metadata: {e}")
             
             if force_fill:
                 log("Force-fill 테스트 모드: presigned 업로드와 백엔드 통지를 생략합니다.")
