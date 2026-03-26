@@ -1016,6 +1016,7 @@ export async function createRequestsBulk(req, res) {
         Number(process.env.BULK_CREATE_CONCURRENCY) || DEFAULT_CONCURRENCY,
       ),
     );
+    let cursor = 0;
     const worker = async () => {
       while (true) {
         const i = cursor++;
