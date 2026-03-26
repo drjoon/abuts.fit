@@ -926,9 +926,22 @@ export async function createRequestsFromDraft(req, res) {
           "",
       ).trim();
       if (createdAnchorId) {
+        console.log("[createRequestsFromDraft] Triggering dashboard refresh", {
+          businessAnchorId: createdAnchorId,
+          createdCount: createdRequests.length,
+          requestIds: createdRequests.map((r) => r.requestId),
+        });
         triggerDashboardSummaryRefreshForAnchorId(
           createdAnchorId,
           "request-created",
+        );
+      } else {
+        console.warn(
+          "[createRequestsFromDraft] No businessAnchorId for dashboard refresh",
+          {
+            createdCount: createdRequests.length,
+            userId: req.user?._id,
+          },
         );
       }
     } catch (e) {

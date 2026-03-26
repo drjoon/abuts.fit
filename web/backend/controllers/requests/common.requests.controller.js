@@ -32,6 +32,7 @@ import s3Utils, {
   getSignedUrl as getSignedUrlForS3Key,
 } from "../../utils/s3.utils.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
+import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -868,11 +869,18 @@ export async function updateRequestStatus(req, res) {
       });
     }
 
-    // 취소는 의뢰/CAM 단계에서만 가능 (manufacturerStage도 허용 범위에 포함)
+    // 취소는 의뢰/CAM 단계에서만 가능
     if (manufacturerStage === "취소") {
-      const manufacturerStage = String(request.manufacturerStage || "").trim();
+      const currentStage = String(request.manufacturerStage || "").trim();
       const allowedCancelStages = ["의뢰", "CAM"];
-      const isStageAllowed = allowedCancelStages.includes(manufacturerStage);
+      const isStageAllowed = allowedCancelStages.includes(currentStage);
+
+      console.log("[updateManufacturerStage] Cancel validation", {
+        requestId: request.requestId,
+        currentStage,
+        allowedCancelStages,
+        isStageAllowed,
+      });
 
       if (!isStageAllowed) {
         return res.status(400).json({
@@ -896,6 +904,27 @@ export async function updateRequestStatus(req, res) {
     // 신속배송(express) 모드 제거됨
 
     await request.save();
+
+    console.log("[updateManufacturerStage] Stage updated", {
+      requestId: request.requestId,
+      newStage: manufacturerStage,
+      businessAnchorId: String(request.businessAnchorId || ""),
+    });
+
+    // 취소 시 대시보드 스냅샷 무효화
+    if (manufacturerStage === "취소") {
+      const anchorId = String(request.businessAnchorId || "").trim();
+      if (anchorId) {
+        console.log("[updateManufacturerStage] Triggering dashboard refresh", {
+          requestId: request.requestId,
+          businessAnchorId: anchorId,
+        });
+        triggerDashboardSummaryRefreshForAnchorId(
+          anchorId,
+          `request-canceled:${request.requestId}`,
+        );
+      }
+    }
 
     res.status(200).json({
       success: true,
@@ -968,6 +997,25 @@ export async function deleteRequest(req, res) {
 
     applyStatusMapping(request, "취소");
     await request.save();
+
+    console.log("[deleteRequest] Request deleted/canceled", {
+      requestId: request.requestId,
+      businessAnchorId: String(request.businessAnchorId || ""),
+      stageStatus,
+    });
+
+    // 대시보드 스냅샷 무효화
+    const anchorId = String(request.businessAnchorId || "").trim();
+    if (anchorId) {
+      console.log("[deleteRequest] Triggering dashboard refresh", {
+        requestId: request.requestId,
+        businessAnchorId: anchorId,
+      });
+      triggerDashboardSummaryRefreshForAnchorId(
+        anchorId,
+        `request-deleted:${request.requestId}`,
+      );
+    }
 
     res.status(200).json({
       success: true,
