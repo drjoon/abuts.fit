@@ -623,7 +623,6 @@ export async function getMyDashboardSummary(req, res) {
         const [recentRequestsResult, riskData] = await Promise.all([
           Request.find({
             ...requestFilter,
-            "caseInfos.implantBrand": { $exists: true, $ne: "" },
             manufacturerStage: { $ne: "취소" },
           })
             .select({
@@ -816,7 +815,6 @@ export async function getMyDashboardSummary(req, res) {
             {
               $match: {
                 ...requestFilter,
-                "caseInfos.implantBrand": { $exists: true, $ne: "" },
                 manufacturerStage: { $ne: "취소" },
               },
             },

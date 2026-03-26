@@ -82,6 +82,12 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
   };
   const dateFilter = buildDateFilter(normalizedPeriodKey);
 
+  console.info("[dashboardSnapshot] recompute start", {
+    anchorId,
+    periodKey: normalizedPeriodKey,
+    ymd,
+  });
+
   const [statsResult, shippingPackageRows, recentRequestsResult] =
     await Promise.all([
       Request.aggregate([
@@ -89,7 +95,6 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
           $match: {
             ...requestFilter,
             ...dateFilter,
-            "caseInfos.implantBrand": { $exists: true, $ne: "" },
           },
         },
         {
@@ -191,7 +196,6 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
           $match: {
             ...requestFilter,
             ...dateFilter,
-            "caseInfos.implantBrand": { $exists: true, $ne: "" },
             manufacturerStage: { $ne: "취소" },
           },
         },
@@ -252,7 +256,6 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
       ]),
       Request.find({
         ...requestFilter,
-        "caseInfos.implantBrand": { $exists: true, $ne: "" },
         manufacturerStage: { $ne: "취소" },
       })
         .select({
@@ -437,6 +440,14 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
     };
   });
 
+  console.info("[dashboardSnapshot] recompute result", {
+    anchorId,
+    periodKey: normalizedPeriodKey,
+    ymd,
+    totalRequests: snapshotStats.totalRequests,
+    requestCount: statsResult[0]?.requestCount,
+  });
+
   const snapshotBusinessAnchorId = new Types.ObjectId(anchorId);
   await RequestorDashboardSummarySnapshot.findOneAndUpdate(
     {
@@ -490,9 +501,14 @@ export const invalidateTodayRequestorDashboardSummarySnapshotsForBusinessAnchorI
     const ymd = getTodayYmdInKst();
     if (!ymd) return;
 
-    await RequestorDashboardSummarySnapshot.deleteMany({
+    const deleteResult = await RequestorDashboardSummarySnapshot.deleteMany({
       businessAnchorId: new Types.ObjectId(anchorId),
       ymd,
+    });
+    console.info("[dashboardSnapshot] invalidate deleteMany", {
+      anchorId,
+      ymd,
+      deleted: deleteResult.deletedCount,
     });
   };
 
