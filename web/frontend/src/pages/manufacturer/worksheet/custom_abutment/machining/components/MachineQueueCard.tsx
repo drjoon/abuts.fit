@@ -12,6 +12,7 @@ import {
 import type { MachineQueueCardProps, QueueItem } from "../types";
 import { buildLabelExtraProps, formatMachiningLabel } from "../utils/label";
 import { MachiningRequestLabel } from "./MachiningRequestLabel";
+import { getMachineStatusLabel } from "@/pages/manufacturer/equipment/cnc/lib/machineStatus";
 
 const isMachiningStatus = (slot?: QueueItem) => {
   const s = String(slot?.status || "").trim();
@@ -151,6 +152,7 @@ export const MachineQueueCard = ({
   );
 
   const statusColor = getMachineStatusDotClass(machineStatus?.status);
+  const statusLabel = getMachineStatusLabel(machineStatus?.status);
 
   const headerTitle = machineName || machineId;
 
@@ -241,31 +243,25 @@ export const MachineQueueCard = ({
       }}
     >
       <div className="app-glass-card-content flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <div className="min-w-0 flex-1 truncate text-[15px] font-extrabold text-slate-900">
-            {headerTitle}
-          </div>
-          <span
-            className={`h-3 w-3 shrink-0 rounded-full ${statusColor} ${
-              statusRefreshing ? "animate-pulse" : ""
-            }`}
-            title="장비 상태"
-          />
-        </div>
-
         <div
-          className="flex flex-wrap items-center justify-end gap-2"
+          className="flex flex-wrap items-center gap-2"
           title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
         >
-          <MaterialDiameterChip
-            label={materialDiameterLabel || "-"}
-            variant="circle"
-            title="소재 설정"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenMaterial?.();
-            }}
-          />
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div className="min-w-0 truncate text-[15px] font-extrabold text-slate-900">
+              {headerTitle}
+            </div>
+            <span
+              className={`h-3 w-3 shrink-0 rounded-full ${statusColor} ${
+                statusRefreshing ? "animate-pulse" : ""
+              }`}
+              title={`장비 상태: ${statusLabel}${
+                statusRefreshing ? " (갱신중)" : ""
+              }`}
+              aria-label={`장비 상태 ${statusLabel}`}
+            />
+          </div>
+
           <div className="text-[11px] font-extrabold text-slate-700">
             의뢰배정
           </div>
@@ -312,6 +308,15 @@ export const MachineQueueCard = ({
         </div>
 
         <div className="flex justify-end">
+          <MaterialDiameterChip
+            label={materialDiameterLabel || "-"}
+            variant="circle"
+            title="소재 설정"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenMaterial?.();
+            }}
+          />
           <CncMachineActionButtons
             tempLevel={tempHealth}
             toolLevel={toolHealth}

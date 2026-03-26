@@ -849,6 +849,13 @@ export const useMachiningBoard = ({
     }
   }, [machines, refreshStatuses, token]);
 
+  useEffect(() => {
+    if (!token) return;
+    if (!Array.isArray(machines) || machines.length === 0) return;
+
+    void refreshMachineStatuses();
+  }, [machines, refreshMachineStatuses, token]);
+
   const lastRefreshAtRef = useRef(0);
   const handleBoardClickCapture = useCallback(
     (event?: { target?: EventTarget | null }) => {
