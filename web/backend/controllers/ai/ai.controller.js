@@ -5,6 +5,7 @@ import {
   assertBusinessRole,
   buildBusinessTypeFilter,
 } from "../businesses/businessRole.util.js";
+import { ensureBusinessAnchorForBusiness } from "../businesses/business.update.controller.js";
 import s3Utils, { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
 
 // 지연 초기화: dotenv 로드 후 첫 호출 시 초기화
@@ -342,6 +343,28 @@ export async function parseBusinessLicense(req, res) {
         await Business.findByIdAndUpdate(businessMembershipId, {
           $set: normalizedBusinessNumber ? setWithBusinessNumber : baseSet,
         });
+        // BusinessAnchor 생성/동기화: 사업자등록번호가 추출된 경우 즉시 앵커 확보
+        if (normalizedBusinessNumber) {
+          const updatedBusiness = await Business.findById(businessMembershipId)
+            .select({ name: 1, extracted: 1, verification: 1 })
+            .lean();
+          if (updatedBusiness) {
+            const businessTypeForAnchor = String(
+              req.user?.role || "requestor",
+            ).trim();
+            ensureBusinessAnchorForBusiness({
+              business: updatedBusiness,
+              businessType: businessTypeForAnchor,
+              userId: req.user._id,
+              referredByAnchorId: null,
+            }).catch((err) =>
+              console.error(
+                "[AI] parseBusinessLicense ensureBusinessAnchor failed",
+                err,
+              ),
+            );
+          }
+        }
       } catch (e) {
         if (normalizedBusinessNumber && isDuplicateKeyError(e)) {
           const verificationOverride = {

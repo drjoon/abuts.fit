@@ -115,20 +115,6 @@ export async function seedEssentialAccounts() {
 export async function seedDefaultAccounts() {
   const specs = [
     {
-      name: "데모 의뢰자 대표",
-      email: "requestor.owner@demo.abuts.fit",
-      password: "Rq!8zY#4fQ@7nC5!",
-      role: "requestor",
-      phoneNumber: "01000000001",
-    },
-    {
-      name: "데모 의뢰자 직원",
-      email: "requestor.staff@demo.abuts.fit",
-      password: "Rs!9xT#5gA@6mD4!",
-      role: "requestor",
-      phoneNumber: "01000000002",
-    },
-    {
       name: "데모 제조사 대표",
       email: "manufacturer.owner@demo.abuts.fit",
       password: "Mo!7vL#6pR@3sB8!",
@@ -155,20 +141,6 @@ export async function seedDefaultAccounts() {
       password: "As!4mJ#7tK@9pW3!",
       role: "admin",
       phoneNumber: "01000000006",
-    },
-    {
-      name: "데모 영업자 대표",
-      email: "salesman.owner@demo.abuts.fit",
-      password: "So!8qL#3mV@6pK2!",
-      role: "salesman",
-      phoneNumber: "01000000007",
-    },
-    {
-      name: "데모 영업자 직원",
-      email: "salesman.staff@demo.abuts.fit",
-      password: "Ss!7wN#4cX@5rT1!",
-      role: "salesman",
-      phoneNumber: "01000000008",
     },
     {
       name: "데모 개발운영사 대표",

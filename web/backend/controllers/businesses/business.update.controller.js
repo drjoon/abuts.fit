@@ -26,7 +26,7 @@ import {
 } from "./business.bonus.util.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
 
-async function ensureBusinessAnchorForBusiness({
+export async function ensureBusinessAnchorForBusiness({
   business,
   businessType,
   userId,
