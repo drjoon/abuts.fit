@@ -208,7 +208,8 @@ export const WorksheetCardGrid = ({
         const progress = uploadProgress[request._id];
         const isUploading = uploading[request._id];
         const requestStageLabel = stageLabel;
-        const showCamDiameter = camMaterialDiameter != null;
+        const showCamDiameter =
+          camMaterialDiameter != null && currentStageOrder >= stageOrder["CAM"];
         const requestStageOrder = stageOrder[requestStageLabel] ?? 0;
         const isCompletedForCurrentStage =
           requestStageOrder > currentStageOrder;
