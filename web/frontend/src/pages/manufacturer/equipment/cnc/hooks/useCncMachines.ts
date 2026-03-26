@@ -12,6 +12,7 @@ export const useCncMachines = () => {
   const [form, setForm] = useState<MachineForm>({
     uid: "", // Hi-Link UID와 통합된 장비 식별자
     name: "M1", // 표시용 장비 이름
+    originalUid: "",
     ip: "192.168.0.10",
     allowJobStart: false,
     allowProgramDelete: false,
@@ -59,10 +60,12 @@ export const useCncMachines = () => {
 
       // 편집 모드에서 현재 폼이 가리키는 UID가 있으면, 방금 받은 백엔드 값으로 폼을 동기화
       if (addModalOpen && addModalMode === "edit" && form.uid) {
-        const fresh = mapped.find((m) => m.uid === form.uid);
+        const lookupUid = form.uid || form.originalUid;
+        const fresh = mapped.find((m) => m.uid === lookupUid);
         if (fresh) {
           setForm({
             uid: fresh.uid,
+            originalUid: fresh.uid,
             name: fresh.name,
             ip: fresh.ip ?? "",
             allowJobStart: fresh.allowJobStart !== false,
@@ -99,6 +102,7 @@ export const useCncMachines = () => {
   const handleEditMachine = (m: Machine) => {
     setForm({
       uid: m.uid,
+      originalUid: m.uid,
       name: m.name,
       ip: m.ip ?? "",
       allowJobStart: m.allowJobStart !== false,
@@ -168,6 +172,7 @@ export const useCncMachines = () => {
         token,
         jsonBody: {
           uid: submit.uid, // 장비 식별자(Hi-Link UID와 통합)
+          originalUid: submit.originalUid || undefined,
           name: submit.name, // 표시용 이름
           ip: submit.ip,
           port: 8193,
@@ -216,6 +221,7 @@ export const useCncMachines = () => {
         // 폼에도 저장된 값을 즉시 반영(편집 모드에서 초기화 방지)
         setForm({
           uid: saved.uid,
+          originalUid: addModalMode === "edit" ? saved.uid : "",
           name: saved.name ?? saved.uid,
           ip: saved.ip ?? "",
           allowJobStart: saved.allowJobStart !== false,
@@ -227,6 +233,26 @@ export const useCncMachines = () => {
 
       // 백엔드 기준으로도 동기화 (신뢰원)
       await loadMachinesFromBackend();
+
+      try {
+        const syncRes = await apiFetch({
+          path: "/api/machines/sync-bridge",
+          method: "POST",
+          token,
+        });
+        const syncBody: any = syncRes.data ?? {};
+        if (!syncRes.ok || syncBody?.success === false) {
+          throw new Error(syncBody?.message || "브리지 재동기화 실패");
+        }
+      } catch (syncError: any) {
+        toast({
+          title: "브리지 재동기화 경고",
+          description:
+            syncError?.message ||
+            "장비 설정은 저장됐지만 브리지 재동기화가 실패했습니다.",
+          variant: "destructive",
+        });
+      }
 
       toast({
         title: "장비 저장",

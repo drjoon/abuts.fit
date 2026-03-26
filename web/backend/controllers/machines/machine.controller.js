@@ -1078,6 +1078,7 @@ export async function upsertMachine(req, res) {
   try {
     const {
       uid,
+      originalUid,
       serial,
       ip,
       port,
@@ -1088,6 +1089,7 @@ export async function upsertMachine(req, res) {
       allowAutoMachining,
     } = req.body;
     const finalUid = uid;
+    const previousUid = String(originalUid || "").trim();
     const displayName = name || finalUid;
 
     // 정책 구분:
@@ -1100,6 +1102,68 @@ export async function upsertMachine(req, res) {
         success: false,
         message: "장비 UID(uid)는 필수입니다.",
       });
+    }
+
+    if (previousUid && previousUid !== finalUid) {
+      const conflict = await Machine.findOne({ uid: finalUid }).lean();
+      if (conflict) {
+        return res.status(409).json({
+          success: false,
+          message: `이미 등록된 장비 UID입니다: ${finalUid}`,
+        });
+      }
+
+      try {
+        await Machine.findOneAndDelete({ uid: previousUid });
+      } catch (deleteMachineError) {
+        console.warn(
+          "upsertMachine previous machine delete error",
+          deleteMachineError,
+        );
+      }
+
+      try {
+        await CncMachine.findOneAndDelete({ machineId: previousUid });
+      } catch (deleteCncError) {
+        console.warn(
+          "upsertMachine previous cnc snapshot delete error",
+          deleteCncError,
+        );
+      }
+
+      if (BRIDGE_BASE) {
+        try {
+          await fetch(
+            `${BRIDGE_BASE}/api/bridge-config/machines/${encodeURIComponent(
+              previousUid,
+            )}`,
+            { method: "DELETE", headers: withBridgeHeaders() },
+          );
+        } catch (bridgeConfigDeleteError) {
+          console.warn(
+            "upsertMachine previous bridge-config delete error",
+            bridgeConfigDeleteError,
+          );
+        }
+
+        try {
+          await fetch(
+            `${BRIDGE_BASE}/api/bridge/queue/${encodeURIComponent(previousUid)}/replace`,
+            {
+              method: "POST",
+              headers: withBridgeHeaders({
+                "Content-Type": "application/json",
+              }),
+              body: JSON.stringify({ jobs: [] }),
+            },
+          );
+        } catch (bridgeQueueReplaceError) {
+          console.warn(
+            "upsertMachine previous bridge queue replace error",
+            bridgeQueueReplaceError,
+          );
+        }
+      }
     }
 
     const normalizeBool = (v, fallback) => {
@@ -1195,6 +1259,32 @@ export async function deleteMachine(req, res) {
       return res
         .status(404)
         .json({ success: false, message: "장비를 찾을 수 없습니다." });
+    }
+
+    try {
+      await CncMachine.findOneAndDelete({ machineId: uid });
+    } catch (cncDeleteError) {
+      console.warn("deleteMachine cnc snapshot delete error", cncDeleteError);
+    }
+
+    // 브리지 서버 쪽 큐도 비운다. 이때 request rollback이 일어나면 안 되므로
+    // bridgeQueue.clear가 아니라 replace([])로만 정리한다.
+    if (BRIDGE_BASE) {
+      try {
+        await fetch(
+          `${BRIDGE_BASE}/api/bridge/queue/${encodeURIComponent(uid)}/replace`,
+          {
+            method: "POST",
+            headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ jobs: [] }),
+          },
+        );
+      } catch (bridgeQueueError) {
+        console.warn(
+          "deleteMachine bridge queue replace error",
+          bridgeQueueError,
+        );
+      }
     }
 
     // bridge-node 로컬 machines.json 에서도 제거 시도 (실패해도 무시)

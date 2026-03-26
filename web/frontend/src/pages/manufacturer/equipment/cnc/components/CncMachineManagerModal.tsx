@@ -52,6 +52,25 @@ export const CncMachineManagerModal = ({
           </div>
         </div>
         <div className="space-y-5">
+          {mode === "edit" && (
+            <div>
+              <label className="block text-sm font-medium mb-1.5 text-gray-700">
+                UID
+              </label>
+              <input
+                type="text"
+                value={form.uid}
+                onChange={(e) => onChange("uid", e.target.value)}
+                onBlur={() => scheduleSubmit()}
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-blue-500 focus:border-blue-500 transition"
+                placeholder="예: M5"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                UID를 변경하면 기존 UID의 브리지 스냅샷을 삭제하고 새 UID로
+                재동기화합니다.
+              </p>
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium mb-1.5 text-gray-700">
               장비 이름

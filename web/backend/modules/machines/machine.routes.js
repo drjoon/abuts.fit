@@ -3,6 +3,7 @@ import {
   getMachines,
   upsertMachine,
   deleteMachine,
+  syncBridgeMachines,
   getMachineStatusProxy,
   getMachineInfoProxy,
   getAllMachineStatusProxy,
@@ -46,6 +47,7 @@ const maybeAuth =
 
 // 제조사만 장비 목록/등록/삭제 및 제어 가능 (test 환경 제외)
 router.get("/", maybeAuth(["manufacturer"]), getMachines);
+router.post("/sync-bridge", maybeAuth(["manufacturer"]), syncBridgeMachines);
 router.post("/", maybeAuth(["manufacturer"]), upsertMachine);
 router.delete("/:uid", maybeAuth(["manufacturer"]), deleteMachine);
 

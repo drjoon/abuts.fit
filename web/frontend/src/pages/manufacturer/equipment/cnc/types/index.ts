@@ -42,6 +42,7 @@ export interface Machine {
 export interface MachineForm {
   uid: string; // 장비 식별자(Hi-Link UID와 통합)
   name: string; // 표시용 장비 이름
+  originalUid?: string; // 편집 시작 시점의 원래 UID
   ip: string;
   allowJobStart: boolean;
   allowProgramDelete: boolean;
