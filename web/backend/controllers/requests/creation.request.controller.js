@@ -598,14 +598,6 @@ export async function createRequest(req, res) {
       price: computedPrice,
     });
 
-    console.log("[CreateRequest] New request created:", {
-      requestId: newRequest.requestId,
-      userRole: req.user?.role,
-      userId: req.user?._id,
-      caManufacturer: newRequest.caManufacturer,
-      manufacturerStage: newRequest.manufacturerStage,
-    });
-
     // 원본 배송 옵션 저장
     newRequest.originalShipping = {
       mode: shippingMode,
@@ -750,10 +742,6 @@ export async function createRequest(req, res) {
       newRequest?.businessAnchorId || req.user?.businessAnchorId || "",
     ).trim();
     if (createdAnchorId) {
-      console.log("[createRequest] Triggering dashboard refresh", {
-        businessAnchorId: createdAnchorId,
-        requestId: newRequest.requestId,
-      });
       await triggerDashboardSummaryRefreshForAnchorId(
         createdAnchorId,
         `request-created:${newRequest.requestId}`,
@@ -800,8 +788,6 @@ export async function createRequest(req, res) {
  */
 export async function createRequestsBulk(req, res) {
   try {
-    const tStart = Date.now();
-    console.debug("[BulkCreate] start", { at: new Date().toISOString() });
     // 권한 및 조직/크레딧 검사
     if (req.user?.role === "requestor") {
       const orgId = getRequestorOrgId(req);
@@ -847,11 +833,9 @@ export async function createRequestsBulk(req, res) {
       }
     } catch {}
 
-    const tLead0 = Date.now();
     // 제조사 리드타임 1회 로드 (정적 import)
     const manufacturerSettings = await getManufacturerLeadTimesUtil();
     const leadTimes = manufacturerSettings?.leadTimes || {};
-    console.debug("[BulkCreate] leadTimes loaded", { ms: Date.now() - tLead0 });
     const enableDuplicateRequestCheck = Boolean(
       req.body && req.body.enableDuplicateRequestCheck,
     );
@@ -1032,12 +1016,6 @@ export async function createRequestsBulk(req, res) {
         Number(process.env.BULK_CREATE_CONCURRENCY) || DEFAULT_CONCURRENCY,
       ),
     );
-    console.debug("[BulkCreate] processing", {
-      count: items.length,
-      concurrency: CONCURRENCY,
-    });
-
-    let cursor = 0;
     const worker = async () => {
       while (true) {
         const i = cursor++;
@@ -1367,17 +1345,6 @@ export async function createRequestsBulk(req, res) {
             saveMs,
             totalMs,
           });
-          if (LOG_PER_ITEM) {
-            console.debug("[BulkCreate:item]", {
-              i,
-              normMs,
-              priceMs,
-              scheduleMs,
-              estimateMs,
-              saveMs,
-              totalMs,
-            });
-          }
           created.push(newRequest);
         } catch (e) {
           errors.push({
@@ -1392,66 +1359,25 @@ export async function createRequestsBulk(req, res) {
     const workers = Array.from({ length: CONCURRENCY }, () => worker());
     await Promise.all(workers);
 
-    console.debug("[BulkCreate] done", {
-      created: created.length,
-      errors: errors.length,
-      ms: Date.now() - tStart,
-    });
-
-    if (perItemStats.length > 0) {
-      const agg = perItemStats.reduce(
-        (a, s) => {
-          a.norm += s.normMs;
-          a.price += s.priceMs;
-          a.schedule += s.scheduleMs;
-          a.estimate += s.estimateMs;
-          a.save += s.saveMs;
-          a.total += s.totalMs;
-          a.maxNorm = Math.max(a.maxNorm, s.normMs);
-          a.maxPrice = Math.max(a.maxPrice, s.priceMs);
-          a.maxSchedule = Math.max(a.maxSchedule, s.scheduleMs);
-          a.maxEstimate = Math.max(a.maxEstimate, s.estimateMs);
-          a.maxSave = Math.max(a.maxSave, s.saveMs);
-          a.maxTotal = Math.max(a.maxTotal, s.totalMs);
-          a.count += 1;
-          return a;
-        },
-        {
-          norm: 0,
-          price: 0,
-          schedule: 0,
-          estimate: 0,
-          save: 0,
-          total: 0,
-          maxNorm: 0,
-          maxPrice: 0,
-          maxSchedule: 0,
-          maxEstimate: 0,
-          maxSave: 0,
-          maxTotal: 0,
-          count: 0,
-        },
-      );
-      const avg = (v) => Math.round((v / Math.max(1, agg.count)) * 100) / 100;
-      console.debug("[BulkCreate] stats", {
-        count: agg.count,
-        avgMs: {
-          norm: avg(agg.norm),
-          price: avg(agg.price),
-          schedule: avg(agg.schedule),
-          estimate: avg(agg.estimate),
-          save: avg(agg.save),
-          total: avg(agg.total),
-        },
-        maxMs: {
-          norm: agg.maxNorm,
-          price: agg.maxPrice,
-          schedule: agg.maxSchedule,
-          estimate: agg.maxEstimate,
-          save: agg.maxSave,
-          total: agg.maxTotal,
-        },
-      });
+    // Dashboard refresh trigger
+    if (created.length > 0) {
+      const createdAnchorId = String(
+        created[0]?.businessAnchorId || req.user?.businessAnchorId || "",
+      ).trim();
+      if (createdAnchorId) {
+        await triggerDashboardSummaryRefreshForAnchorId(
+          createdAnchorId,
+          `bulk-request-created:${created.length}`,
+        );
+      } else {
+        console.warn(
+          "[createRequestsBulk] No businessAnchorId for dashboard refresh",
+          {
+            createdCount: created.length,
+            userId: req.user?._id,
+          },
+        );
+      }
     }
 
     if (created.length > 0 && errors.length === 0) {

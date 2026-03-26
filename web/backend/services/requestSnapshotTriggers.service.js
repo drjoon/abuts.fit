@@ -178,7 +178,13 @@ export const triggerDashboardSummaryRefreshForAnchorId = (
   reason = "",
 ) => {
   const anchorId = normalizeAnchorId(businessAnchorId);
-  if (!Types.ObjectId.isValid(anchorId)) return Promise.resolve(null);
+  if (!Types.ObjectId.isValid(anchorId)) {
+    console.warn("[triggerDashboardSummaryRefresh] Invalid anchorId", {
+      businessAnchorId,
+      anchorId,
+    });
+    return Promise.resolve(null);
+  }
 
   const previousRefresh =
     __dashboardSummaryRefreshInFlight.get(anchorId) || Promise.resolve(null);
@@ -186,18 +192,7 @@ export const triggerDashboardSummaryRefreshForAnchorId = (
   const nextRefresh = previousRefresh
     .catch(() => null)
     .then(async () => {
-      console.info("[dashboardSnapshot] refresh start", {
-        anchorId,
-        reason,
-      });
-
-      const invalidatedBefore =
-        invalidateDashboardAndBulkCachesForBusinessAnchorId(anchorId);
-      console.info("[dashboardSnapshot] refresh invalidate before", {
-        anchorId,
-        reason,
-        invalidatedBefore,
-      });
+      invalidateDashboardAndBulkCachesForBusinessAnchorId(anchorId);
 
       await invalidateTodayRequestorDashboardSummarySnapshotsForBusinessAnchorId(
         anchorId,
@@ -207,16 +202,7 @@ export const triggerDashboardSummaryRefreshForAnchorId = (
           anchorId,
         );
 
-      const invalidatedAfter =
-        invalidateDashboardAndBulkCachesForBusinessAnchorId(anchorId);
-      console.info("[dashboardSnapshot] refresh complete", {
-        anchorId,
-        reason,
-        periods: Array.isArray(results)
-          ? results.map((row) => String(row?.periodKey || ""))
-          : [],
-        invalidatedAfter,
-      });
+      invalidateDashboardAndBulkCachesForBusinessAnchorId(anchorId);
 
       return results;
     })

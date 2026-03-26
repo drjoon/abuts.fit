@@ -5,7 +5,7 @@ import {
 } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useInView } from "react-intersection-observer";
-import { useOutletContext } from "react-router-dom";
+import { useLocation, useOutletContext } from "react-router-dom";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -71,6 +71,7 @@ type DashboardOutletContext = {
 export const RequestorDashboardPage = () => {
   const { user, token } = useAuthStore();
   const queryClient = useQueryClient();
+  const location = useLocation();
   const { toast } = useToast();
   const {
     creditBalance,
@@ -345,6 +346,14 @@ export const RequestorDashboardPage = () => {
     void refetchSummary();
     void refetchBulk();
   }, [queryClient, refetchBulk, refetchSummary]);
+
+  useEffect(() => {
+    const refreshDashboardAt = Number(
+      (location.state as any)?.refreshDashboardAt || 0,
+    );
+    if (!refreshDashboardAt) return;
+    refreshDashboard();
+  }, [location.state, refreshDashboard]);
 
   useEffect(() => {
     if (!token) return;

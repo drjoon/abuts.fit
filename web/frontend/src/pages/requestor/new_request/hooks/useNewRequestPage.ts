@@ -30,6 +30,21 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   const { user, token } = useAuthStore();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const navigateWithDashboardRefresh = useCallback(
+    (path: string) => {
+      if (path === "/dashboard") {
+        navigate(path, {
+          state: {
+            refreshDashboardAt: Date.now(),
+          },
+        });
+        return;
+      }
+
+      navigate(path);
+    },
+    [navigate],
+  );
 
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
   const [duplicatePrompt, setDuplicatePrompt] = useState<{
@@ -757,7 +772,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   // V3 제출 래퍼: 로컬에서 파일 가져와 S3 업로드 후 제출
   const { handleSubmit: submitNewRequest } = useNewRequestSubmit({
     token,
-    navigate,
+    navigate: navigateWithDashboardRefresh,
     files,
     setFiles,
     setSelectedPreviewIndex,
@@ -773,7 +788,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     existingRequestId,
     draftId,
     token,
-    navigate,
+    navigate: navigateWithDashboardRefresh,
     files,
     setFiles,
     clinicPresets,

@@ -180,12 +180,6 @@ export async function getAssignedDashboardSummary(req, res) {
         { caManufacturer: null },
         { caManufacturer: { $exists: false } },
       ];
-      console.log("[Dashboard] Manufacturer filter:", {
-        userId: req.user._id,
-        filter: baseFilter,
-        period,
-        dateFilter,
-      });
     }
 
     const [statsResult] = await Request.aggregate([
@@ -271,21 +265,6 @@ export async function getAssignedDashboardSummary(req, res) {
         },
       },
     ]);
-
-    console.log("[Dashboard] Assigned summary result", {
-      period,
-      dateFilter,
-      baseFilter,
-      totals: {
-        total: Number(statsResult?.total ?? 0) || 0,
-        tracking: Number(statsResult?.trackingCount ?? 0) || 0,
-        shipping: Number(statsResult?.shippingCount ?? 0) || 0,
-        packing: Number(statsResult?.packingCount ?? 0) || 0,
-        machining: Number(statsResult?.machiningCount ?? 0) || 0,
-        cam: Number(statsResult?.camCount ?? 0) || 0,
-        request: Number(statsResult?.requestCount ?? 0) || 0,
-      },
-    });
 
     return res.status(200).json({
       success: true,
@@ -548,10 +527,6 @@ export async function getMyDashboardSummary(req, res) {
             err,
           ),
         );
-        console.info("[dashboard] businessAnchorId repair complete", {
-          userId: String(req.user._id),
-          repairedId,
-        });
         await triggerDashboardSummaryRefreshForAnchorId(
           repairedId,
           "businessAnchorId-repair",
@@ -604,7 +579,6 @@ export async function getMyDashboardSummary(req, res) {
               ) ??
                 null)
             : null;
-
         const riskRequestFilter = {
           ...requestFilter,
           manufacturerStage: {
@@ -1266,28 +1240,6 @@ export async function getMyPricingReferralStats(req, res) {
             rule = "new_user_90days_fixed_10000";
             effectiveUnitPrice = 10000;
           }
-        }
-
-        if (debug) {
-          console.log("[pricing-referral-stats]", {
-            requestorId: String(requestorId),
-            now,
-            baseDate,
-            fixedUntil,
-            userDates: user
-              ? {
-                  createdAt: user.createdAt,
-                  updatedAt: user.updatedAt,
-                  approvedAt: user.approvedAt,
-                  active: user.active,
-                }
-              : null,
-            myLastMonthOrders,
-            totalOrders,
-            discountAmount,
-            effectiveUnitPrice,
-            rule,
-          });
         }
 
         const responseData = {
