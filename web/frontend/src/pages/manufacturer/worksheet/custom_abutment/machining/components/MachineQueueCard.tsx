@@ -308,15 +308,17 @@ export const MachineQueueCard = ({
         </div>
 
         <div className="flex justify-end">
-          <MaterialDiameterChip
-            label={materialDiameterLabel || "-"}
-            variant="circle"
-            title="소재 설정"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenMaterial?.();
-            }}
-          />
+          <div className="mr-2">
+            <MaterialDiameterChip
+              label={materialDiameterLabel || "-"}
+              variant="circle"
+              title="소재 설정"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenMaterial?.();
+              }}
+            />
+          </div>
           <CncMachineActionButtons
             tempLevel={tempHealth}
             toolLevel={toolHealth}
