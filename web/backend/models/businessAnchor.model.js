@@ -63,6 +63,18 @@ const businessAnchorSchema = new mongoose.Schema(
       businessCategory: { type: String, default: "" },
       startDate: { type: String, default: "" },
     },
+    payoutAccount: {
+      bankName: { type: String, default: "" },
+      accountNumber: { type: String, default: "" },
+      holderName: { type: String, default: "" },
+      updatedAt: { type: Date, default: null },
+    },
+    payoutRates: {
+      manufacturerRate: { type: Number, default: 0.65, min: 0, max: 1 },
+      baseCommissionRate: { type: Number, default: 0.05, min: 0, max: 1 },
+      salesmanDirectRate: { type: Number, default: 0.05, min: 0, max: 1 },
+      updatedAt: { type: Date, default: null },
+    },
     referralMembershipAggregate: {
       requestorDirectCircleAnchorIds: {
         type: [

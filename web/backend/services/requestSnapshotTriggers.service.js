@@ -4,7 +4,10 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import { recomputePricingReferralSnapshotsForAffectedAnchorId } from "./pricingReferralSnapshot.service.js";
 import { recomputePricingReferralDailyOrderBucketsForBusinessAnchorId } from "./pricingReferralOrderBucket.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "./bulkShippingSnapshot.service.js";
-import { recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId } from "./requestorDashboardSummarySnapshot.service.js";
+import {
+  recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId,
+  invalidateTodayRequestorDashboardSummarySnapshotsForBusinessAnchorId,
+} from "./requestorDashboardSummarySnapshot.service.js";
 import { invalidateDashboardAndBulkCachesForBusinessAnchorId } from "./requestDashboardCache.service.js";
 import { invalidateAdminReferralCachesForBusinessAnchorId } from "./adminReferralCache.service.js";
 
@@ -178,14 +181,18 @@ export const triggerDashboardSummaryRefreshForAnchorId = (
 
   invalidateDashboardAndBulkCachesForBusinessAnchorId(anchorId);
 
-  void recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(
+  void invalidateTodayRequestorDashboardSummarySnapshotsForBusinessAnchorId(
     anchorId,
-  ).catch((error) => {
-    console.error(
-      `[requestorDashboardSummarySnapshot] triggerDashboardSummaryRefreshForAnchorId failed${reason ? ` (${reason})` : ""}`,
-      error,
-    );
-  });
+  )
+    .then(() =>
+      recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(anchorId),
+    )
+    .catch((error) => {
+      console.error(
+        `[requestorDashboardSummarySnapshot] triggerDashboardSummaryRefreshForAnchorId failed${reason ? ` (${reason})` : ""}`,
+        error,
+      );
+    });
 };
 
 export const triggerPricingSnapshotForUserId = async (userId, reason = "") => {

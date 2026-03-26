@@ -482,6 +482,20 @@ export const recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId =
     return results.filter(Boolean);
   };
 
+export const invalidateTodayRequestorDashboardSummarySnapshotsForBusinessAnchorId =
+  async (businessAnchorId) => {
+    const anchorId = String(businessAnchorId || "").trim();
+    if (!Types.ObjectId.isValid(anchorId)) return;
+
+    const ymd = getTodayYmdInKst();
+    if (!ymd) return;
+
+    await RequestorDashboardSummarySnapshot.deleteMany({
+      businessAnchorId: new Types.ObjectId(anchorId),
+      ymd,
+    });
+  };
+
 export const getRequestorDashboardSummarySnapshot = async ({
   businessAnchorId,
   periodKey,

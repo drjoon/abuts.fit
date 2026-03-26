@@ -1,6 +1,7 @@
 import User from "../../models/user.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
 import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import crypto from "crypto";
 import { messageService } from "../../utils/popbill.util.js";
 import { Types } from "mongoose";
@@ -20,13 +21,44 @@ async function getProfile(req, res) {
       });
     }
 
-    const data = user;
+    const data = { ...user };
     const provider = data?.social?.provider;
     data.authMethods = {
       email: !provider,
       google: provider === "google",
       kakao: provider === "kakao",
     };
+
+    const anchorId = user.businessAnchorId;
+    if (anchorId && Types.ObjectId.isValid(String(anchorId))) {
+      const anchor = await BusinessAnchor.findById(anchorId)
+        .select({ payoutAccount: 1, payoutRates: 1 })
+        .lean();
+      if (anchor) {
+        let { payoutAccount, payoutRates } = anchor;
+
+        const legacyPayout = user.salesmanPayoutAccount;
+        if (!payoutAccount?.updatedAt && legacyPayout?.updatedAt) {
+          payoutAccount = legacyPayout;
+          void BusinessAnchor.updateOne(
+            { _id: new Types.ObjectId(String(anchorId)) },
+            { $set: { payoutAccount } },
+          ).catch(() => {});
+        }
+
+        const legacyRates = user.devopsPayoutSettings;
+        if (!payoutRates?.updatedAt && legacyRates?.updatedAt) {
+          payoutRates = legacyRates;
+          void BusinessAnchor.updateOne(
+            { _id: new Types.ObjectId(String(anchorId)) },
+            { $set: { payoutRates } },
+          ).catch(() => {});
+        }
+
+        data.salesmanPayoutAccount = payoutAccount || {};
+        data.devopsPayoutSettings = payoutRates || {};
+      }
+    }
 
     res.status(200).json({ success: true, data });
   } catch (error) {
@@ -356,8 +388,9 @@ async function updateProfile(req, res) {
         const accountNumber = accountNumberRaw.replace(/\s/g, "");
 
         const allEmpty = !bankName && !holderName && !accountNumber;
+        let payoutAccount;
         if (allEmpty) {
-          updateData.salesmanPayoutAccount = {
+          payoutAccount = {
             bankName: "",
             accountNumber: "",
             holderName: "",
@@ -370,14 +403,22 @@ async function updateProfile(req, res) {
               message: "계좌 정보(은행/계좌번호/예금주)를 모두 입력해주세요.",
             });
           }
-
-          updateData.salesmanPayoutAccount = {
+          payoutAccount = {
             bankName,
             accountNumber,
             holderName,
             updatedAt: new Date(),
           };
         }
+
+        const anchorId = req.user?.businessAnchorId;
+        if (anchorId && Types.ObjectId.isValid(String(anchorId))) {
+          await BusinessAnchor.updateOne(
+            { _id: new Types.ObjectId(String(anchorId)) },
+            { $set: { payoutAccount } },
+          );
+        }
+        delete updateData.salesmanPayoutAccount;
       }
     }
 
@@ -403,9 +444,6 @@ async function updateProfile(req, res) {
             message: "수수료율은 0~100% 범위여야 합니다.",
           });
         }
-        // 영업자와 개발운영사 수수료는 동일 거래에 중복 합산되지 않음 (rules.md 2.4)
-        // 최대 케이스 A: 영업자 없음 → 개발운영사 기본 + 미설정 보너스(=salesmanDirectRate)
-        // 최대 케이스 B: 개발운영사 기본 + 영업자 최대(×1.5)
         const devopsMaxOnly = baseCommissionRate + salesmanDirectRate;
         const devopsPlusSalesman =
           baseCommissionRate + salesmanDirectRate * 1.5;
@@ -417,12 +455,24 @@ async function updateProfile(req, res) {
             message: `분배율 합계가 100%를 초과합니다. (현재 최대 ${Math.round(maxTotal * 100)}%)`,
           });
         }
-        updateData.devopsPayoutSettings = {
-          manufacturerRate,
-          baseCommissionRate,
-          salesmanDirectRate,
-          updatedAt: new Date(),
-        };
+
+        const anchorId = req.user?.businessAnchorId;
+        if (anchorId && Types.ObjectId.isValid(String(anchorId))) {
+          await BusinessAnchor.updateOne(
+            { _id: new Types.ObjectId(String(anchorId)) },
+            {
+              $set: {
+                payoutRates: {
+                  manufacturerRate,
+                  baseCommissionRate,
+                  salesmanDirectRate,
+                  updatedAt: new Date(),
+                },
+              },
+            },
+          );
+        }
+        delete updateData.devopsPayoutSettings;
       }
     }
 

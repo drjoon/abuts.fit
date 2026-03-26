@@ -291,14 +291,20 @@ export async function getSalesmanDashboard(req, res) {
     };
 
     const isDevops = me.role === "devops";
-    // 개발운영사 수수료율은 설정에서 변경 가능 (rules.md 2.4), 기본값 5%
-    const commissionRate = isDevops
-      ? Number(me.devopsPayoutSettings?.baseCommissionRate || 0.05)
-      : 0.05;
-    // 영업자 미설정 의뢰자 수수료율 = 영업자 직접 소개율 (rules.md 2.4)
-    const unaffiliatedCommissionRate = isDevops
-      ? Number(me.devopsPayoutSettings?.salesmanDirectRate || 0.05)
-      : 0;
+    let commissionRate = 0.05;
+    let unaffiliatedCommissionRate = 0;
+
+    if (isDevops && me.businessAnchorId) {
+      const devopsAnchor = await BusinessAnchor.findById(me.businessAnchorId)
+        .select({ payoutRates: 1 })
+        .lean();
+      commissionRate = Number(
+        devopsAnchor?.payoutRates?.baseCommissionRate || 0.05,
+      );
+      unaffiliatedCommissionRate = Number(
+        devopsAnchor?.payoutRates?.salesmanDirectRate || 0.05,
+      );
+    }
     const indirectCommissionRate = isDevops ? 0 : commissionRate * 0.5;
     const payoutDayOfMonth = 1;
 

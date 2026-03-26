@@ -151,11 +151,30 @@ export async function getReferralGroups(req, res) {
         createdAt: 1,
         approvedAt: 1,
         updatedAt: 1,
-        devopsPayoutSettings: 1,
       })
       .sort({ createdAt: -1 })
       .lean();
     const leaders = normalizeReferralLeaders(rawLeaders);
+
+    const devopsLeaderAnchorIds = leaders
+      .filter(
+        (l) =>
+          String(l?.role || "") === "devops" &&
+          l?.businessAnchorId &&
+          Types.ObjectId.isValid(String(l.businessAnchorId)),
+      )
+      .map((l) => new Types.ObjectId(String(l.businessAnchorId)));
+    const devopsPayoutRatesByAnchorId = new Map();
+    if (devopsLeaderAnchorIds.length > 0) {
+      const devopsAnchors = await BusinessAnchor.find({
+        _id: { $in: devopsLeaderAnchorIds },
+      })
+        .select({ payoutRates: 1 })
+        .lean();
+      for (const anchor of devopsAnchors) {
+        devopsPayoutRatesByAnchorId.set(String(anchor._id), anchor.payoutRates);
+      }
+    }
 
     if (!leaders.length) {
       return res.status(200).json({ success: true, data: { groups: [] } });
@@ -309,7 +328,10 @@ export async function getReferralGroups(req, res) {
       // devops는 저장된 baseCommissionRate 사용 (rules.md 2.4 / SSOT write-on-event)
       const leaderCommissionRate =
         role === "devops"
-          ? Number(leader?.devopsPayoutSettings?.baseCommissionRate || 0.05)
+          ? Number(
+              devopsPayoutRatesByAnchorId.get(leaderBusinessAnchorId)
+                ?.baseCommissionRate || 0.05,
+            )
           : 0.05;
       const commissionAmount = REFERRAL_COMMISSION_LEADER_ROLES.has(role)
         ? Math.round(groupRevenueAmount * leaderCommissionRate)
