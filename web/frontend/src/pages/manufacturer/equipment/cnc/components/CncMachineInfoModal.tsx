@@ -11,7 +11,14 @@ interface CncMachineInfoModalProps {
     subProgramName?: string | null;
     subProgramComment?: string | null;
   } | null;
-  alarms: { type: number; no: number }[];
+  alarms: {
+    type: number;
+    no: number;
+    headType?: number | null;
+    message?: string | null;
+    displayText?: string | null;
+    source?: string | null;
+  }[];
   onClearAlarms?: () => void;
   onRequestClose: () => void;
 }
@@ -32,6 +39,15 @@ export const CncMachineInfoModal: React.FC<CncMachineInfoModalProps> = ({
   const mainComment = programInfo?.mainProgramComment ?? "-";
   const subName = programInfo?.subProgramName ?? "-";
   const subComment = programInfo?.subProgramComment ?? "-";
+
+  const formatAlarmHead = (headType?: number | null) => {
+    if (headType === 1) return "MAIN";
+    if (headType === 2) return "SUB";
+    if (typeof headType === "number" && Number.isFinite(headType)) {
+      return `HEAD${headType}`;
+    }
+    return "HEAD";
+  };
 
   return (
     <div
@@ -100,9 +116,21 @@ export const CncMachineInfoModal: React.FC<CncMachineInfoModalProps> = ({
                       {alarms.map((a, idx) => (
                         <div
                           key={`${a.type}-${a.no}-${idx}`}
-                          className="text-sm text-red-700"
+                          className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-800"
                         >
-                          {String(a.type)}-{String(a.no)}
+                          <div className="font-semibold">
+                            {a.displayText ||
+                              a.message ||
+                              `${formatAlarmHead(a.headType)} 알람`}
+                          </div>
+                          <div className="mt-1 text-xs text-red-700/90">
+                            type={String(a.type)} · no={String(a.no)}
+                          </div>
+                          {a.source ? (
+                            <div className="mt-1 text-[11px] text-red-600/80">
+                              source={a.source}
+                            </div>
+                          ) : null}
                         </div>
                       ))}
                     </div>

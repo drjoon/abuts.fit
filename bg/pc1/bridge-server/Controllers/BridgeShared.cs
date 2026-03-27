@@ -136,48 +136,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             });
         }
 
-        public static bool UploadProgramDataBlocking(string machineId, short headType, int slotNo, string processed, bool isNew, out string usedMode, out string error)
-        {
-            usedMode = null; error = null;
-            try
-            {
-                var bytes = Encoding.ASCII.GetByteCount(processed ?? string.Empty);
-                if (bytes > 512000) { error = $"program too large (bytes={bytes}, limit=512000)"; return false; }
-                if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp)) { error = errUp; return false; }
-                var info = new UpdateMachineProgramInfo { headType = headType, programNo = (short)slotNo, programData = processed, isNew = isNew };
-                var busyWaitMaxMs2 = 20000;
-                var busyStarted2 = DateTime.UtcNow;
-                short upRc = -1;
-                for (var attempt = 0; ; attempt++)
-                {
-                    upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle, info), "SetMachineProgramInfo.Blocking");
-                    if (upRc == 0) break;
-                    if (upRc == -1)
-                    {
-                        var elapsedMs = (int)(DateTime.UtcNow - busyStarted2).TotalMilliseconds;
-                        if (elapsedMs >= busyWaitMaxMs2) break;
-                        System.Threading.Thread.Sleep(1000);
-                        continue;
-                    }
-                    break;
-                }
-                if (upRc == -8)
-                {
-                    Mode1HandleStore.Invalidate(machineId);
-                    if (Mode1HandleStore.TryGetHandle(machineId, out var handle2, out var errUp2))
-                    {
-                        upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle2, info), "SetMachineProgramInfo.Blocking.retry");
-                        if (upRc == -8) Mode1HandleStore.Invalidate(machineId);
-                    }
-                    else { error = errUp2; return false; }
-                }
-                if (upRc == 0) { usedMode = "Mode1"; return true; }
-                var mode1Error = upRc == -1 ? $"SetMachineProgramInfo failed (rc=-1, EW_BUSY, waitedMs={(int)(DateTime.UtcNow - busyStarted2).TotalMilliseconds})" : $"SetMachineProgramInfo failed (rc={upRc})";
-                error = mode1Error;
-                return false;
-            }
-            catch (Exception ex) { error = ex.Message; return false; }
-        }
+        // duplicate/corrupted UploadProgramDataBlocking removed (see earlier valid implementation)
 
         public static bool TryVerifyProgramExistsByList(string machineId, short headType, int slotNo, out string error)
         {

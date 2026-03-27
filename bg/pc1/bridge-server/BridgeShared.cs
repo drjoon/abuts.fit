@@ -99,16 +99,38 @@ namespace HiLinkBridgeWebApi48
                 if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp)) { error = errUp; return false; }
                 var info = new UpdateMachineProgramInfo { headType = headType, programNo = (short)slotNo, programData = processed, isNew = isNew };
                 var busyWaitMaxMs2 = 20000;
+                var rc5RetryDelayMs = 1000;
+                var rc5RetryMaxAttempts = 3;
                 var busyStarted2 = DateTime.UtcNow;
                 short upRc = -1;
                 for (var attempt = 0; ; attempt++)
                 {
+                    var elapsedBeforeAttemptMs = (int)(DateTime.UtcNow - busyStarted2).TotalMilliseconds;
+                    Console.WriteLine("[SmartUpload] attempt start machine={0} headType={1} slot={2} attempt={3} elapsedMs={4}", machineId, headType, slotNo, attempt + 1, elapsedBeforeAttemptMs);
                     upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle, info), "SetMachineProgramInfo.Blocking");
+                    var elapsedAfterAttemptMs = (int)(DateTime.UtcNow - busyStarted2).TotalMilliseconds;
+                    Console.WriteLine("[SmartUpload] attempt done machine={0} headType={1} slot={2} attempt={3} rc={4} elapsedMs={5}", machineId, headType, slotNo, attempt + 1, upRc, elapsedAfterAttemptMs);
                     if (upRc == 0) break;
+                    if (upRc == 5)
+                    {
+                        if (attempt + 1 <= rc5RetryMaxAttempts && elapsedAfterAttemptMs < busyWaitMaxMs2)
+                        {
+                            Console.WriteLine("[SmartUpload] rc=5 retry machine={0} headType={1} slot={2} attempt={3} delayMs={4} elapsedMs={5}", machineId, headType, slotNo, attempt + 1, rc5RetryDelayMs, elapsedAfterAttemptMs);
+                            System.Threading.Thread.Sleep(rc5RetryDelayMs);
+                            continue;
+                        }
+                        Console.WriteLine("[SmartUpload] rc=5 retry exhausted machine={0} headType={1} slot={2} attempt={3} elapsedMs={4}", machineId, headType, slotNo, attempt + 1, elapsedAfterAttemptMs);
+                        break;
+                    }
                     if (upRc == -1)
                     {
-                        var elapsedMs = (int)(DateTime.UtcNow - busyStarted2).TotalMilliseconds;
-                        if (elapsedMs >= busyWaitMaxMs2) break;
+                        var elapsedMs = elapsedAfterAttemptMs;
+                        Console.WriteLine("[SmartUpload] rc=-1 busy wait machine={0} headType={1} slot={2} attempt={3} elapsedMs={4}", machineId, headType, slotNo, attempt + 1, elapsedMs);
+                        if (elapsedMs >= busyWaitMaxMs2)
+                        {
+                            Console.WriteLine("[SmartUpload] rc=-1 busy wait exhausted machine={0} headType={1} slot={2} attempt={3} elapsedMs={4}", machineId, headType, slotNo, attempt + 1, elapsedMs);
+                            break;
+                        }
                         System.Threading.Thread.Sleep(1000);
                         continue;
                     }
@@ -116,10 +138,12 @@ namespace HiLinkBridgeWebApi48
                 }
                 if (upRc == -8)
                 {
+                    Console.WriteLine("[SmartUpload] rc=-8 handle refresh machine={0} headType={1} slot={2}", machineId, headType, slotNo);
                     Mode1HandleStore.Invalidate(machineId);
                     if (Mode1HandleStore.TryGetHandle(machineId, out var handle2, out var errUp2))
                     {
                         upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle2, info), "SetMachineProgramInfo.Blocking.retry");
+                        Console.WriteLine("[SmartUpload] rc=-8 retry done machine={0} headType={1} slot={2} rc={3}", machineId, headType, slotNo, upRc);
                         if (upRc == -8) Mode1HandleStore.Invalidate(machineId);
                     }
                     else { error = errUp2; return false; }

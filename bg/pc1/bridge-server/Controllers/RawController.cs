@@ -73,7 +73,16 @@ namespace HiLinkBridgeWebApi48.Controllers
                 {
                     foreach (var a in data.alarmArray)
                     {
-                        alarms.Add(new { type = a.type, no = a.no });
+                        var headLabel = headType == 1 ? "MAIN" : headType == 2 ? "SUB" : $"HEAD{headType}";
+                        var displayText = $"{headLabel} 알람 (type={a.type}, no={a.no})";
+                        alarms.Add(new
+                        {
+                            type = a.type,
+                            no = a.no,
+                            headType = data.headType,
+                            message = displayText,
+                            displayText,
+                        });
                     }
                 }
 

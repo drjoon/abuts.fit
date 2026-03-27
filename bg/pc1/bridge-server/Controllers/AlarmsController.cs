@@ -10,6 +10,12 @@ namespace HiLinkBridgeWebApi48.Controllers
     [RoutePrefix("api/cnc")]
     public class AlarmsController : ApiController
     {
+        private static string GetAlarmDisplayText(short headType, short type, short no)
+        {
+            var headLabel = headType == 1 ? "MAIN" : headType == 2 ? "SUB" : $"HEAD{headType}";
+            return $"{headLabel} 알람 (type={type}, no={no})";
+        }
+
         // GET /api/cnc/alarms?machines=M3,M4,M5&headType=1
         [HttpGet]
         [Route("alarms")]
@@ -48,7 +54,14 @@ namespace HiLinkBridgeWebApi48.Controllers
                 {
                     foreach (var a in data.alarmArray)
                     {
-                        alarms.Add(new { type = a.type, no = a.no });
+                        alarms.Add(new
+                        {
+                            type = a.type,
+                            no = a.no,
+                            headType = data.headType,
+                            message = GetAlarmDisplayText((short)data.headType, (short)a.type, (short)a.no),
+                            displayText = GetAlarmDisplayText((short)data.headType, (short)a.type, (short)a.no),
+                        });
                     }
                 }
                 if (alarms.Count == 0)
@@ -57,7 +70,15 @@ namespace HiLinkBridgeWebApi48.Controllers
                     {
                         if (status == MachineStatusType.Alarm)
                         {
-                            alarms.Add(new { type = -1, no = -1, source = "MachineStatusType.Alarm" });
+                            alarms.Add(new
+                            {
+                                type = -1,
+                                no = -1,
+                                headType = data.headType,
+                                source = "MachineStatusType.Alarm",
+                                message = "장비 상태가 ALARM 입니다.",
+                                displayText = "장비 상태가 ALARM 입니다.",
+                            });
                         }
                     }
                     else if (!string.IsNullOrWhiteSpace(statusErr))

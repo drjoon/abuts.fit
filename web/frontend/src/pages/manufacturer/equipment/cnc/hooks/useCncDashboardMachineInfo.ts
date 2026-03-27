@@ -9,6 +9,15 @@ interface Params {
   toast: (args: any) => void;
 }
 
+interface MachineInfoAlarm {
+  type: number;
+  no: number;
+  headType?: number | null;
+  message?: string | null;
+  displayText?: string | null;
+  source?: string | null;
+}
+
 export function useCncDashboardMachineInfo({ token, toast }: Params) {
   const [machineInfoOpen, setMachineInfoOpen] = useState(false);
   const [machineInfoLoading, setMachineInfoLoading] = useState(false);
@@ -17,7 +26,7 @@ export function useCncDashboardMachineInfo({ token, toast }: Params) {
     null,
   );
   const [machineInfoAlarms, setMachineInfoAlarms] = useState<
-    { type: number; no: number }[]
+    MachineInfoAlarm[]
   >([]);
   const [machineInfoUid, setMachineInfoUid] = useState<string | null>(null);
   const [machineInfoClearing, setMachineInfoClearing] = useState(false);

@@ -22,11 +22,34 @@ private static readonly Regex FanucRegex = new Regex(@"O(\d{1,5})", RegexOptions
 private static readonly HttpClient BackendClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 private static readonly Dictionary<string, DateTime> LastBackendSyncUtc = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 private static readonly Dictionary<string, DateTime> LastSnapshotLogUtc = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+private static readonly Dictionary<string, DateTime> LastTickLogUtc = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+private const int TickLogIntervalSeconds = 30;
 private class MachineFlags
 {
 public bool AllowAutoMachining;
 public bool AllowJobStart;
 public DateTime FetchedAtUtc;
+}
+private static bool ShouldLogTickLine(string machineId, string jobId, string requestId, string phase, DateTime nowUtc)
+{
+var phaseKey = string.IsNullOrWhiteSpace(phase)
+    ? string.Empty
+    : phase.Trim().ToUpperInvariant();
+if (phaseKey == "ALARM" || phaseKey == "FAILED" || phaseKey == "COMPLETED") return true;
+var key = string.Join("|",
+    StringComparer.OrdinalIgnoreCase.Equals(machineId, null) ? string.Empty : machineId.Trim(),
+    StringComparer.OrdinalIgnoreCase.Equals(jobId, null) ? string.Empty : jobId.Trim(),
+    StringComparer.OrdinalIgnoreCase.Equals(requestId, null) ? string.Empty : requestId.Trim(),
+    phaseKey);
+lock (StateLock)
+{
+    if (!LastTickLogUtc.TryGetValue(key, out var lastLogUtc) || (nowUtc - lastLogUtc) >= TimeSpan.FromSeconds(TickLogIntervalSeconds))
+    {
+        LastTickLogUtc[key] = nowUtc;
+        return true;
+    }
+}
+return false;
 }
 private static async Task NotifyMachiningCompleted(CncJobItem job, string machineId)
 {
@@ -651,6 +674,12 @@ return;
 if (state.AwaitingStart && state.CurrentJob != null)
 {
 // awaiting-start 상태에서도 주기적으로 tick 전송 (준비 중 상태 표시)
+var awaitingSinceMs = state.AwaitingStartSinceUtc == DateTime.MinValue
+    ? -1
+    : (int)Math.Max(0, (DateTime.UtcNow - state.AwaitingStartSinceUtc).TotalMilliseconds);
+var lastStartSignalAgoMs = state.LastAwaitingStartSignalUtc == DateTime.MinValue
+    ? -1
+    : (int)Math.Max(0, (DateTime.UtcNow - state.LastAwaitingStartSignalUtc).TotalMilliseconds);
 try
 {
 var nowUtcSnapshot = DateTime.UtcNow;
@@ -662,6 +691,16 @@ lock (StateLock)
 state.LastTickNotifyAtUtc = nowUtcSnapshot;
 }
 _ = Task.Run(async () => await NotifyMachiningTick(state.CurrentJob, machineId, "AWAITING_START", null));
+if (ShouldLogTickLine(machineId, state.CurrentJob?.id, state.CurrentJob?.requestId, "AWAITING_START", nowUtcSnapshot))
+{
+Console.WriteLine(
+    "[CncMachining] awaiting-start tick machine={0} jobId={1} elapsedMs={2} lastStartSignalAgoMs={3}",
+    machineId,
+    state.CurrentJob?.id,
+    awaitingSinceMs,
+    lastStartSignalAgoMs
+);
+}
 }
 }
 catch { }
@@ -673,8 +712,9 @@ var prodCountBefore = 0;
 var hasProdCountBefore = TryGetProductCount(machineId, out prodCountBefore);
 if (!hasProdCountBefore)
 {
-    Console.WriteLine("[CncMachining] start count read failed machine={0} jobId={1}", machineId, state.CurrentJob?.id);
+Console.WriteLine("[CncMachining] start count read failed machine={0} jobId={1}", machineId, state.CurrentJob?.id);
 }
+Console.WriteLine("[CncMachining] start busy detected machine={0} jobId={1} slot=O{2} awaitingElapsedMs={3} lastStartSignalAgoMs={4}", machineId, state.CurrentJob?.id, state.CurrentSlot, awaitingSinceMs, lastStartSignalAgoMs);
 Console.WriteLine("[CncMachining] start count baseline machine={0} jobId={1} before={2} readOk={3}", machineId, state.CurrentJob?.id, prodCountBefore, hasProdCountBefore);
 lock (StateLock)
 {
@@ -686,7 +726,7 @@ state.SawBusy = true;
 state.AwaitingStartSinceUtc = DateTime.MinValue;
 state.LastAwaitingStartSignalUtc = DateTime.MinValue;
 }
-Console.WriteLine("[CncMachining] detected start machine={0} jobId={1} slot=O{2}", machineId, state.CurrentJob?.id, state.CurrentSlot);
+Console.WriteLine("[CncMachining] detected start machine={0} jobId={1} slot=O{2} awaitingElapsedMs={3} lastStartSignalAgoMs={4}", machineId, state.CurrentJob?.id, state.CurrentSlot, awaitingSinceMs, lastStartSignalAgoMs);
 _ = Task.Run(() => NotifyMachiningStarted(state.CurrentJob, machineId));
 return;
 }
@@ -874,6 +914,11 @@ private static async Task<bool> StartNewJob(string machineId, MachineState state
 {
 try
 {
+var sequenceStartedAt = DateTime.UtcNow;
+var awaitingSinceMs = state.AwaitingStartSinceUtc == DateTime.MinValue
+    ? -1
+    : (int)Math.Max(0, (DateTime.UtcNow - state.AwaitingStartSinceUtc).TotalMilliseconds);
+Console.WriteLine("[CncMachining] start sequence begin machine={0} jobId={1} file={2} slot=O{3} awaitingSinceMs={4}", machineId, job?.id, job?.fileName, SLOT_A, awaitingSinceMs);
 // MOCK 모드: 장비 호출을 모두 건너뛰고 성공 처리
 if (Config.MockCncMachining)
 {
@@ -904,6 +949,7 @@ if (Config.MockCncMachining)
         state.MockCompletionDueUtc = mockStartUtc + mockDuration;
     }
     // 시작 시점에 STARTED tick을 한 번 보내 로컬 타이머가 바로 시작되도록 한다.
+    Console.WriteLine("[CncMachining] MOCK start phase emit machine={0} jobId={1} phase=STARTED elapsedMs={2}", machineId, job?.id, (int)(DateTime.UtcNow - mockStartUtc).TotalMilliseconds);
     _ = Task.Run(() => NotifyMachiningTick(job, machineId, "STARTED", null));
     // 모의 가공 동안 5초마다 tick을 보내 경과시간을 프론트에 전달한다.
     _ = Task.Run(async () =>
@@ -947,6 +993,7 @@ if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var modeErr))
 Console.WriteLine("[CncMachining] edit mode failed machine={0} err={1}", machineId, modeErr);
 return false;
 }
+Console.WriteLine("[CncMachining] edit mode ok machine={0} jobId={1} settleMs=300", machineId, job?.id);
 await Task.Delay(300);
 Mode1HandleStore.Invalidate(machineId);
 // 2. 대상 슬롯에 기존 프로그램 삭제 후 업로드
@@ -972,6 +1019,7 @@ _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "FAILED", uploadErr ?? 
 return false;
 }
 _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "READY", null));
+Console.WriteLine("[CncMachining] upload completed machine={0} jobId={1} slot=O{2} elapsedMs={3}", machineId, job?.id, uploadSlot, (int)(DateTime.UtcNow - sequenceStartedAt).TotalMilliseconds);
 int expectedSubProgramNo = 0;
 if (TryGetActiveProgramNos(machineId, out var currentMainProgramNo, out var currentSubProgramNo, out var activeProgramErr))
 {
@@ -1004,6 +1052,7 @@ if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
     return false;
 }
 // 활성화는 ProgramInfo가 아닌 ActivateProgNo API를 사용해야 한다
+Console.WriteLine("[CncMachining] activate program begin machine={0} jobId={1} slot=O{2} mainProg={3} subProg={4}", machineId, job?.id, uploadSlot, activateProgNo, expectedSubProgramNo);
 var upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => HiLink.SetActivateProgram(handle, dto), "SetActivateProgram.CncMachining");
 if (upRc != 0)
 {
@@ -1038,12 +1087,15 @@ if (!Mode1Api.TrySetMachineMode(machineId, "AUTO", out var modeErr2))
 Console.WriteLine("[CncMachining] auto mode failed machine={0} err={1}", machineId, modeErr2);
 return false;
 }
+Console.WriteLine("[CncMachining] auto mode ok machine={0} jobId={1} settleMs=300", machineId, job?.id);
 await Task.Delay(300);
+Console.WriteLine("[CncMachining] waiting active program ready machine={0} jobId={1} timeoutMs=5000 expectedMain={2} expectedSub={3}", machineId, job?.id, activateProgNo, expectedSubProgramNo);
 if (!WaitForActiveProgramState(machineId, activateProgNo, expectedSubProgramNo, 5000, out var programReadyErr))
 {
     Console.WriteLine("[CncMachining] active program not ready machine={0} jobId={1} err={2}", machineId, job?.id, programReadyErr);
     return false;
 }
+Console.WriteLine("[CncMachining] active program ready machine={0} jobId={1} slot=O{2} elapsedMs={3}", machineId, job?.id, uploadSlot, (int)(DateTime.UtcNow - sequenceStartedAt).TotalMilliseconds);
 // Start는 여기서 보내지 않는다. (Now Playing으로 올라간 뒤 사용자가 Start)
 // 상태 업데이트
 lock (StateLock)
@@ -1193,7 +1245,9 @@ private static bool TryGetMachineAlarms(string machineId, out List<object> alarm
             {
                 var key = string.Format("{0}:{1}", a.type, a.no);
                 if (!seen.Add(key)) continue;
-                alarms.Add(new { type = a.type, no = a.no, headType = headType });
+                var headLabel = headType == 1 ? "MAIN" : headType == 2 ? "SUB" : string.Format("HEAD{0}", headType);
+                var displayText = string.Format("{0} 알람 (type={1}, no={2})", headLabel, a.type, a.no);
+                alarms.Add(new { type = a.type, no = a.no, headType = headType, message = displayText, displayText });
             }
         }
         if (!anySuccess)
@@ -1208,7 +1262,15 @@ private static bool TryGetMachineAlarms(string machineId, out List<object> alarm
                 if (status == MachineStatusType.Alarm)
                 {
                     Console.WriteLine("[CncMachining] alarm fallback by machine status machine={0} status={1}", machineId, status);
-                    alarms.Add(new { type = (short)(-1), no = (short)(-1), headType = (short)1, source = "MachineStatusType.Alarm" });
+                    alarms.Add(new
+                    {
+                        type = (short)(-1),
+                        no = (short)(-1),
+                        headType = (short)1,
+                        source = "MachineStatusType.Alarm",
+                        message = "장비 상태가 ALARM 입니다.",
+                        displayText = "장비 상태가 ALARM 입니다.",
+                    });
                 }
             }
             else if (!string.IsNullOrWhiteSpace(statusErr))
@@ -1810,24 +1872,30 @@ private static bool WaitForActiveProgramState(string machineId, int expectedMain
 {
     error = null;
     var started = DateTime.UtcNow;
+    var attempt = 0;
     var lastMainProgramNo = 0;
     var lastSubProgramNo = 0;
     string lastReadError = null;
 
     while ((DateTime.UtcNow - started).TotalMilliseconds < timeoutMs)
     {
+        attempt++;
         if (TryGetActiveProgramNos(machineId, out var currentMainProgramNo, out var currentSubProgramNo, out var currentReadError))
         {
             lastMainProgramNo = currentMainProgramNo;
             lastSubProgramNo = currentSubProgramNo;
             if (currentMainProgramNo == expectedMainProgramNo && (expectedSubProgramNo <= 0 || currentSubProgramNo == expectedSubProgramNo))
             {
+                Console.WriteLine("[CncMachining] active program ready machine={0} attempt={1} elapsedMs={2} main={3} sub={4}", machineId, attempt, (int)(DateTime.UtcNow - started).TotalMilliseconds, currentMainProgramNo, currentSubProgramNo);
                 return true;
             }
+
+            Console.WriteLine("[CncMachining] active program retry machine={0} attempt={1} elapsedMs={2} main={3} sub={4} expectedMain={5} expectedSub={6}", machineId, attempt, (int)(DateTime.UtcNow - started).TotalMilliseconds, currentMainProgramNo, currentSubProgramNo, expectedMainProgramNo, expectedSubProgramNo);
         }
         else
         {
             lastReadError = currentReadError;
+            Console.WriteLine("[CncMachining] active program read retry machine={0} attempt={1} elapsedMs={2} err={3}", machineId, attempt, (int)(DateTime.UtcNow - started).TotalMilliseconds, currentReadError);
         }
 
         Thread.Sleep(250);
@@ -1836,6 +1904,7 @@ private static bool WaitForActiveProgramState(string machineId, int expectedMain
     error = expectedSubProgramNo > 0
         ? $"active program not ready (expectedMain={expectedMainProgramNo}, expectedSub={expectedSubProgramNo}, lastMain={lastMainProgramNo}, lastSub={lastSubProgramNo}{(string.IsNullOrEmpty(lastReadError) ? string.Empty : ", readErr=" + lastReadError)})"
         : $"active program not ready (expectedMain={expectedMainProgramNo}, lastMain={lastMainProgramNo}, lastSub={lastSubProgramNo}{(string.IsNullOrEmpty(lastReadError) ? string.Empty : ", readErr=" + lastReadError)})";
+    Console.WriteLine("[CncMachining] active program wait timeout machine={0} elapsedMs={1} expectedMain={2} expectedSub={3} lastMain={4} lastSub={5} lastErr={6}", machineId, (int)(DateTime.UtcNow - started).TotalMilliseconds, expectedMainProgramNo, expectedSubProgramNo, lastMainProgramNo, lastSubProgramNo, lastReadError ?? "null");
     return false;
 }
 
@@ -1911,6 +1980,7 @@ private static async Task NotifyMachiningStarted(CncJobItem job, string machineI
 try
 {
 var backend = GetBackendBase();
+Console.WriteLine("[CncMachining] machining started notify machine={0} jobId={1} requestId={2} file={3}", machineId, job?.id, job?.requestId, job?.fileName);
 _ = Task.Run(() => NotifyRuntimeStatus(
 job?.requestId,
 "bridge-server",
@@ -2007,6 +2077,10 @@ try
     }
     if (startedAt == DateTime.MinValue) startedAt = DateTime.UtcNow;
     var elapsedSeconds = Math.Max(0, (int)Math.Floor((DateTime.UtcNow - startedAt).TotalSeconds));
+    if (ShouldLogTickLine(machineId, job?.id, job?.requestId, phase, DateTime.UtcNow))
+    {
+        Console.WriteLine("[CncMachining] tick emit machine={0} jobId={1} requestId={2} phase={3} elapsedSeconds={4} startedAt={5:o} tickAt={6:o}", machineId, job?.id, job?.requestId, phase, elapsedSeconds, startedAt, DateTime.UtcNow);
+    }
     var tickUrl = backend + "/cnc-machines/bridge/machining/tick/" + Uri.EscapeDataString(machineId);
     var tickPayload = new
     {

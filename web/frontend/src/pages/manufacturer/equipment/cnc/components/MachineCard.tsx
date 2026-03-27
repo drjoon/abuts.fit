@@ -1303,6 +1303,10 @@ export const MachineCard = (props: MachineCardProps) => {
 
                     if (isDummyEnabled) {
                       // smart/start 없이, bridge-queue에서 첫 작업을 unpause하여 연속 가공이 시작되도록 한다.
+                      const startClickedAt = Date.now();
+                      console.log(
+                        `[machine-card:start] click uid=${machine.uid} program=${dummyProgram || `O${String(progNo).padStart(4, "0")}`} at=${new Date(startClickedAt).toISOString()}`,
+                      );
                       const qRes = await fetch(
                         `/api/cnc-machines/${encodeURIComponent(machine.uid)}/bridge-queue`,
                         {
@@ -1387,6 +1391,9 @@ export const MachineCard = (props: MachineCardProps) => {
                       const startBody: any = await startRes
                         .json()
                         .catch(() => ({}));
+                      console.log(
+                        `[machine-card:start] response uid=${machine.uid} status=${startRes.status} elapsedMs=${Date.now() - startClickedAt} ok=${startRes.ok}`,
+                      );
                       if (!startRes.ok || startBody?.success === false) {
                         throw new Error(
                           startBody?.message ||

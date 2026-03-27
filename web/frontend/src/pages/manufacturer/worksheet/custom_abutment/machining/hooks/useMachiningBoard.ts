@@ -98,6 +98,8 @@ export const useMachiningBoard = ({
     machinesRef.current = machines;
   }, [machines]);
 
+  const lastAlarmToastAtRef = useRef<Record<string, number>>({});
+
   const updateMachineAuto = useCallback(
     async (uid: string, next: boolean) => {
       if (!token) return;
@@ -762,11 +764,24 @@ export const useMachiningBoard = ({
 
       clearMachiningRuntimeState(mid);
 
+      const alarms = Array.isArray(data?.alarms) ? data.alarms : [];
+      const alarmSummary = alarms.length
+        ? alarms
+            .slice(0, 3)
+            .map(
+              (alarm: any) =>
+                alarm?.displayText ||
+                alarm?.message ||
+                `type=${String(alarm?.type ?? "")}, no=${String(alarm?.no ?? "")}`,
+            )
+            .join(" / ")
+        : null;
+
       toast({
         title: `${mid} 가공 알람`,
-        description: String(
-          data?.reason || "CNC 알람으로 가공이 중단되었습니다.",
-        ),
+        description: alarmSummary
+          ? `${alarmSummary}${data?.reason ? ` · ${String(data.reason)}` : ""}`
+          : String(data?.reason || "CNC 알람으로 가공이 중단되었습니다."),
         variant: "destructive",
       });
 
@@ -781,10 +796,25 @@ export const useMachiningBoard = ({
       clearMachiningRuntimeState(mid);
 
       const alarms = Array.isArray(data?.alarms) ? data.alarms : [];
-      const firstAlarm = alarms[0];
-      const alarmText = firstAlarm
-        ? `type=${String(firstAlarm?.type ?? "")}, no=${String(firstAlarm?.no ?? "")}`
+      const alarmText = alarms.length
+        ? alarms
+            .slice(0, 3)
+            .map(
+              (alarm: any) =>
+                alarm?.displayText ||
+                alarm?.message ||
+                `type=${String(alarm?.type ?? "")}, no=${String(alarm?.no ?? "")}`,
+            )
+            .join(" / ")
         : String(data?.message || "CNC 알람이 감지되었습니다.");
+
+      const alarmToastKey = `${mid}:${alarmText}`;
+      const now = Date.now();
+      const lastAlarmToastAt = lastAlarmToastAtRef.current[alarmToastKey] ?? 0;
+      if (now - lastAlarmToastAt < 15000) {
+        return;
+      }
+      lastAlarmToastAtRef.current[alarmToastKey] = now;
 
       toast({
         title: `${mid} CNC 알람 감지`,

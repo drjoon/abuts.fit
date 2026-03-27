@@ -608,16 +608,36 @@ export async function getMachineInfoProxy(req, res) {
     const alarmList2 = Array.isArray(alarmItem2?.data?.alarms)
       ? alarmItem2.data.alarms
       : [];
+    const formatAlarmText = (alarm) => {
+      const headType = Number(alarm?.headType ?? alarm?.headtype ?? 1);
+      const headLabel =
+        headType === 1 ? "MAIN" : headType === 2 ? "SUB" : `HEAD${headType}`;
+      if (alarm?.displayText || alarm?.message) {
+        return String(alarm.displayText || alarm.message);
+      }
+      const type = alarm?.type ?? "?";
+      const no = alarm?.no ?? "?";
+      return `${headLabel} 알람 (type=${type}, no=${no})`;
+    };
     const seenAlarmKeys = new Set();
-    const alarms = [...alarmList1, ...alarmList2].filter((alarm) => {
-      const key = `${alarm?.type ?? ""}:${alarm?.no ?? ""}`;
-      if (seenAlarmKeys.has(key)) return false;
-      seenAlarmKeys.add(key);
-      return true;
-    });
+    const alarms = [...alarmList1, ...alarmList2]
+      .map((alarm) => ({
+        ...alarm,
+        displayText: formatAlarmText(alarm),
+        message: alarm?.message || formatAlarmText(alarm),
+      }))
+      .filter((alarm) => {
+        const key = `${alarm?.headType ?? ""}:${alarm?.type ?? ""}:${alarm?.no ?? ""}`;
+        if (seenAlarmKeys.has(key)) return false;
+        seenAlarmKeys.add(key);
+        return true;
+      });
     const startBlockedReason = alarms.length
       ? `알람으로 자동가공 시작 불가 (${alarms
-          .map((alarm) => `${alarm?.type ?? "?"}-${alarm?.no ?? "?"}`)
+          .map(
+            (alarm) =>
+              alarm?.displayText || `${alarm?.type ?? "?"}-${alarm?.no ?? "?"}`,
+          )
           .join(", ")})`
       : null;
 
@@ -718,6 +738,12 @@ async function sendControl(uid, action, res) {
     const isReset = action === "reset";
     const shouldSendBody = isStart || isStop;
 
+    if (isStart) {
+      console.log(
+        `[machine:start] proxy request uid=${uid} at=${new Date(now).toISOString()} ioUid=${typeof res.req?.body?.ioUid === "number" ? res.req.body.ioUid : 61} panelType=${typeof res.req?.body?.panelType === "number" ? res.req.body.panelType : 0} status=${typeof res.req?.body?.status === "number" ? res.req.body.status : 1}`,
+      );
+    }
+
     const ioUidDefault = isStart ? 61 : isStop ? 62 : null;
     const panelTypeDefault = 0;
     const statusDefault = 1;
@@ -751,6 +777,13 @@ async function sendControl(uid, action, res) {
       body: shouldSendBody ? JSON.stringify(bodyForBridge) : undefined,
     });
     const data = await response.json().catch(() => ({}));
+
+    if (isStart) {
+      console.log(
+        `[machine:start] proxy response uid=${uid} status=${response.status} elapsedMs=${Date.now() - now} ok=${response.ok}`,
+      );
+    }
+
     res.status(response.status).json(data);
   } catch (error) {
     console.error(`control proxy ${action} error`, error);

@@ -21,9 +21,12 @@ import {
 import { allocateVirtualMailboxAddress } from "../requests/mailbox.utils.js";
 
 const REQUEST_ID_REGEX = /(\d{8}-[A-Z0-9]{6,10})/i;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const STARTED_EMIT_TTL_MS = 30 * 1000;
 const startedEmitCache = new Map();
+const MACHINING_TICK_LOG_WINDOW_MS = 30 * 1000;
+const machiningTickLogCache = new Map();
 
 function makeStartedEmitKey({ machineId, jobId, requestId, bridgePath }) {
   return [
@@ -32,6 +35,54 @@ function makeStartedEmitKey({ machineId, jobId, requestId, bridgePath }) {
     String(requestId || "").trim(),
     String(bridgePath || "").trim(),
   ].join("|");
+}
+
+function makeMachiningTickLogKey({
+  machineId,
+  jobId,
+  requestId,
+  bridgePath,
+  phase,
+}) {
+  return [
+    String(machineId || "").trim(),
+    String(jobId || "").trim(),
+    String(requestId || "").trim(),
+    String(bridgePath || "").trim(),
+    String(phase || "")
+      .trim()
+      .toUpperCase(),
+  ].join("|");
+}
+
+function shouldLogMachiningTick({
+  machineId,
+  jobId,
+  requestId,
+  bridgePath,
+  phase,
+  nowMs = Date.now(),
+}) {
+  const phaseKey = String(phase || "")
+    .trim()
+    .toUpperCase();
+  if (!phaseKey) return false;
+  if (phaseKey === "ALARM" || phaseKey === "FAILED" || phaseKey === "COMPLETED")
+    return true;
+
+  const key = makeMachiningTickLogKey({
+    machineId,
+    jobId,
+    requestId,
+    bridgePath,
+    phase: phaseKey,
+  });
+  const last = machiningTickLogCache.get(key) || 0;
+  if (nowMs - last >= MACHINING_TICK_LOG_WINDOW_MS) {
+    machiningTickLogCache.set(key, nowMs);
+    return true;
+  }
+  return false;
 }
 
 export async function getCompletedMachiningRecords(req, res) {
@@ -300,7 +351,7 @@ async function fetchMachineAlarmsFromBridge(machineId) {
 
   const seen = new Set();
   return results.flat().filter((alarm) => {
-    const key = `${alarm?.type ?? ""}:${alarm?.no ?? ""}`;
+    const key = `${alarm?.headType ?? ""}:${alarm?.type ?? ""}:${alarm?.no ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -436,6 +487,12 @@ export async function triggerNextAutoMachiningAfterComplete({
   const mid = String(machineId || "").trim();
   if (!mid) return;
 
+  const startedAt = Date.now();
+  const settleDelayMs = 3000;
+  console.log(
+    `[bridge:auto-next] complete received machine=${mid} completedRequestId=${String(completedRequestId || "").trim() || "null"} settleDelayMs=${settleDelayMs}`,
+  );
+
   try {
     const m = await Machine.findOne({ $or: [{ uid: mid }, { name: mid }] })
       .select({
@@ -464,6 +521,14 @@ export async function triggerNextAutoMachiningAfterComplete({
       );
       return;
     }
+
+    console.log(
+      `[bridge:auto-next] settle delay start machine=${mid} delayMs=${settleDelayMs} elapsedMs=${Date.now() - startedAt}`,
+    );
+    await sleep(settleDelayMs);
+    console.log(
+      `[bridge:auto-next] settle delay done machine=${mid} delayMs=${settleDelayMs} elapsedMs=${Date.now() - startedAt}`,
+    );
 
     const pending = await Request.find({
       manufacturerStage: { $in: ["CAM", "가공"] },
@@ -535,7 +600,13 @@ export async function triggerNextAutoMachiningAfterComplete({
 
     console.log(
       `[bridge:auto-next] attempting to trigger ${requestId} on ${mid}`,
-      { bridgePath, fileName, originalFileName, hasS3Key: !!s3Key },
+      {
+        bridgePath,
+        fileName,
+        originalFileName,
+        hasS3Key: !!s3Key,
+        elapsedMs: Date.now() - startedAt,
+      },
     );
 
     if (!fileName || !bridgePath) {
@@ -565,6 +636,9 @@ export async function triggerNextAutoMachiningAfterComplete({
       );
       const qBody = await qResp.json().catch(() => ({}));
       const list = Array.isArray(qBody?.data) ? qBody.data : [];
+      console.log(
+        `[bridge:auto-next] queue snapshot inspected machine=${mid} requestId=${requestId} queueSize=${list.length} elapsedMs=${Date.now() - startedAt}`,
+      );
       const found = list.find((j) => {
         const rid = String(j?.requestId || "").trim();
         if (rid && rid === requestId) return true;
@@ -573,6 +647,9 @@ export async function triggerNextAutoMachiningAfterComplete({
         return false;
       });
       if (found?.id && found?.paused === true) {
+        console.log(
+          `[bridge:auto-next] existing paused job found machine=${mid} jobId=${String(found.id)} requestId=${requestId} elapsedMs=${Date.now() - startedAt}`,
+        );
         await fetch(
           `${base0}/api/bridge/queue/${encodeURIComponent(mid)}/${encodeURIComponent(
             String(found.id),
@@ -595,6 +672,9 @@ export async function triggerNextAutoMachiningAfterComplete({
         return;
       }
       if (found?.id) {
+        console.log(
+          `[bridge:auto-next] existing job already queued machine=${mid} jobId=${String(found.id)} requestId=${requestId} elapsedMs=${Date.now() - startedAt}`,
+        );
         invalidateBridgeFlagsCache(mid).catch(() => {});
         try {
           const q = await fetchBridgeQueueFromBridge(mid);
@@ -611,6 +691,9 @@ export async function triggerNextAutoMachiningAfterComplete({
     }
 
     const triggerUrl = `${base0}/api/bridge/process-file`;
+    console.log(
+      `[bridge:auto-next] process-file request machine=${mid} requestId=${requestId} fileName=${fileName} elapsedMs=${Date.now() - startedAt}`,
+    );
     const triggerResp = await fetch(triggerUrl, {
       method: "POST",
       headers: withBridgeHeaders({ "Content-Type": "application/json" }),
@@ -724,6 +807,11 @@ export async function recordMachiningStartForBridge(req, res) {
 
     const now = new Date();
     const startedAt = req.body?.startedAt ? new Date(req.body.startedAt) : now;
+    const bridgeDelayMs = Math.max(0, now.getTime() - startedAt.getTime());
+
+    console.log(
+      `[bridge:machining:start] received machine=${mid} jobId=${jobId || "null"} requestId=${requestIdRaw || requestId || "null"} bridgePath=${bridgePathRaw || "null"} startedAt=${startedAt.toISOString()} receivedAt=${now.toISOString()} bridgeDelayMs=${bridgeDelayMs}`,
+    );
 
     const recordQuery = requestId
       ? {
@@ -760,6 +848,10 @@ export async function recordMachiningStartForBridge(req, res) {
       { new: true, upsert: true },
     );
 
+    console.log(
+      `[bridge:machining:start] record saved machine=${mid} jobId=${jobId || "null"} requestId=${requestId || "null"} fileName=${meta.fileName || "null"} originalFileName=${meta.originalFileName || "null"}`,
+    );
+
     if (requestId) {
       const existing = await Request.findOne({ requestId }).select({
         productionSchedule: 1,
@@ -788,6 +880,10 @@ export async function recordMachiningStartForBridge(req, res) {
       }
       await Request.updateOne({ requestId }, update);
     }
+
+    console.log(
+      `[bridge:machining:start] emit start machine=${mid} jobId=${jobId || "null"} requestId=${requestId || "null"} elapsedSinceBridgeStartMs=${bridgeDelayMs}`,
+    );
 
     try {
       const key = makeStartedEmitKey({
@@ -917,19 +1013,6 @@ export async function recordMachiningTickForBridge(req, res) {
       : null;
     const message = req.body?.message ? String(req.body.message).trim() : "";
 
-    console.log(
-      "[bridge:machining:tick] incoming",
-      JSON.stringify({
-        machineId: mid,
-        jobId,
-        requestId: requestIdRaw,
-        bridgePath: bridgePathRaw,
-        phase,
-        percent,
-        message,
-      }),
-    );
-
     let requestId = requestIdRaw;
 
     const meta = await resolveJobMetaFromSnapshot({
@@ -962,16 +1045,6 @@ export async function recordMachiningTickForBridge(req, res) {
       requestId,
       bridgePath: bridgePathRaw,
     });
-    console.log(
-      "[bridge:machining:tick] resolved requestId",
-      JSON.stringify({
-        machineId: mid,
-        jobId,
-        requestId,
-        bridgePath: bridgePathRaw,
-      }),
-    );
-
     const now = new Date();
     let elapsedSeconds = 0;
     let startedAt = now;
@@ -1061,6 +1134,31 @@ export async function recordMachiningTickForBridge(req, res) {
       { new: true, upsert: true },
     );
 
+    const shouldLogTick = shouldLogMachiningTick({
+      machineId: mid,
+      jobId,
+      requestId,
+      bridgePath: bridgePathRaw,
+      phase,
+      nowMs: now.getTime(),
+    });
+
+    if (shouldLogTick) {
+      console.log(
+        "[bridge:machining:tick] summary",
+        JSON.stringify({
+          machineId: mid,
+          jobId,
+          requestId: requestId || null,
+          bridgePath: bridgePathRaw || null,
+          phase: phase || null,
+          percent,
+          elapsedSeconds,
+          startedAt,
+        }),
+      );
+    }
+
     try {
       if (phaseUpper === "STARTED") {
         const key = makeStartedEmitKey({
@@ -1130,19 +1228,6 @@ export async function recordMachiningTickForBridge(req, res) {
       await Request.updateOne({ requestId }, update);
     }
 
-    console.log(
-      "[bridge:machining:tick] updated record",
-      JSON.stringify({
-        machineId: mid,
-        requestId: requestId || null,
-        recordId: record?._id,
-        startedAt,
-        elapsedSeconds,
-        phase,
-        percent,
-      }),
-    );
-
     try {
       const io = getIO();
       const payload = {
@@ -1156,30 +1241,20 @@ export async function recordMachiningTickForBridge(req, res) {
         elapsedSeconds,
         tickAt: now,
       };
-      console.log(
-        "[bridge:machining:emit] cnc-machining-tick",
-        JSON.stringify({
-          machineId: mid,
-          jobId: jobId || null,
-          requestId: requestId || null,
-          bridgePath: bridgePathRaw || null,
-          phase: phase || null,
-          percent,
-          elapsedSeconds,
-        }),
-      );
       if (jobId) {
         io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-tick", payload);
       }
       io.emit("cnc-machining-tick", payload);
 
       if (phaseUpper === "ALARM") {
+        const alarms = await fetchMachineAlarmsFromBridge(mid);
         console.log(
           `[bridge:machining:tick] ALARM detected, emitting cnc-machining-alarm event`,
           {
             machineId: mid,
             requestId: requestId || null,
             message,
+            alarms,
           },
         );
         io.emit("cnc-machining-alarm", {
@@ -1187,6 +1262,7 @@ export async function recordMachiningTickForBridge(req, res) {
           jobId: jobId || null,
           requestId: requestId || null,
           message: message || null,
+          alarms,
           alarmAt: now,
         });
       }
@@ -1196,6 +1272,17 @@ export async function recordMachiningTickForBridge(req, res) {
 
     return res.status(200).json({ success: true });
   } catch (error) {
+    console.error(
+      "[bridge:machining:tick] failed",
+      JSON.stringify({
+        machineId: mid,
+        jobId,
+        requestId: requestIdRaw || null,
+        bridgePath: bridgePathRaw || null,
+        phase: phase || null,
+        error: error?.message || String(error),
+      }),
+    );
     return res.status(500).json({
       success: false,
       message: "machining tick 처리 중 오류가 발생했습니다.",
