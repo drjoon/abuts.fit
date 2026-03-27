@@ -49,6 +49,7 @@ namespace HiLinkBridgeWebApi48
                 }
 
                 Console.WriteLine("[init] machines.json 동기화 완료: 성공 {0}개, 실패 {1}개 (총 {2}개)", ok, fail, list.Count);
+                CncMachineSignalUtils.DumpPanelIoSnapshotAtStartup();
             }
             catch (Exception ex)
             {

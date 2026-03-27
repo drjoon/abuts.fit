@@ -170,8 +170,8 @@ namespace HiLinkBridgeWebApi48
                     : apiBase;
             }
         }
-        public static int CncStartIoUid => GetInt("CNC_START_IOUID", 0, 0, short.MaxValue);
-        public static int CncBusyIoUid => GetInt("CNC_BUSY_IOUID", 0, -1, short.MaxValue);
+        public static int CncStartIoUid => 61;
+        public static int CncBusyIoUid => 65;
         public static int CncJobAssumeMinutes => GetInt("CNC_JOB_ASSUME_MINUTES", 0, 1, 24 * 60);
     }
 }

@@ -805,6 +805,15 @@ export async function recordMachiningStartForBridge(req, res) {
           bridgePath: bridgePathRaw || null,
           startedAt,
         };
+        console.log(
+          "[bridge:machining:emit] cnc-machining-started",
+          JSON.stringify({
+            machineId: mid,
+            jobId: jobId || null,
+            requestId: requestId || null,
+            bridgePath: bridgePathRaw || null,
+          }),
+        );
         if (jobId) {
           io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-started", payload);
         }
@@ -1069,6 +1078,16 @@ export async function recordMachiningTickForBridge(req, res) {
             bridgePath: bridgePathRaw || null,
             startedAt: startedAt,
           };
+          console.log(
+            "[bridge:machining:emit] cnc-machining-started(from tick)",
+            JSON.stringify({
+              machineId: mid,
+              jobId: jobId || null,
+              requestId: requestId || null,
+              bridgePath: bridgePathRaw || null,
+              phase: phaseUpper,
+            }),
+          );
           if (jobId) {
             io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-started", payload);
           }
@@ -1137,6 +1156,18 @@ export async function recordMachiningTickForBridge(req, res) {
         elapsedSeconds,
         tickAt: now,
       };
+      console.log(
+        "[bridge:machining:emit] cnc-machining-tick",
+        JSON.stringify({
+          machineId: mid,
+          jobId: jobId || null,
+          requestId: requestId || null,
+          bridgePath: bridgePathRaw || null,
+          phase: phase || null,
+          percent,
+          elapsedSeconds,
+        }),
+      );
       if (jobId) {
         io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-tick", payload);
       }
@@ -1490,6 +1521,15 @@ export async function recordMachiningCompleteForBridge(req, res) {
         requestId: requestId || null,
         bridgePath: bridgePathRaw || null,
       };
+      console.log(
+        "[bridge:machining:emit] cnc-machining-completed",
+        JSON.stringify({
+          machineId: mid,
+          jobId: jobId || null,
+          requestId: requestId || null,
+          bridgePath: bridgePathRaw || null,
+        }),
+      );
       if (jobId) {
         io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-completed", payload);
       }
@@ -1498,7 +1538,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
       // ignore
     }
 
-    // 완료 이후 다음 작업 자동 트리거(베스트 에포트)
+    // ...
     try {
       void triggerNextAutoMachiningAfterComplete({
         machineId: mid,

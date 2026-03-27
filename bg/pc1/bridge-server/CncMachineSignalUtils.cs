@@ -2,11 +2,68 @@ using System;
 using System.Collections.Generic;
 using Hi_Link;
 using Hi_Link.Libraries.Model;
+using System.Text;
 
 namespace HiLinkBridgeWebApi48
 {
     internal static class CncMachineSignalUtils
     {
+        private static readonly object PanelIoDumpLock = new object();
+        private static readonly HashSet<string> PanelIoDumpedMachines = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        internal static void DumpPanelIoSnapshotAtStartup()
+        {
+            try
+            {
+                var machines = MachinesConfigStore.Load() ?? new List<HiLinkBridgeWebApi48.Models.MachineConfigItem>();
+                if (machines.Count == 0)
+                {
+                    Console.WriteLine("[CncSignal] startup panel io dump skipped: machines.json is empty");
+                    return;
+                }
+
+                Console.WriteLine("[CncSignal] startup panel io dump started machines={0}", machines.Count);
+                foreach (var machine in machines)
+                {
+                    var mid = (machine?.uid ?? string.Empty).Trim();
+                    if (string.IsNullOrEmpty(mid)) continue;
+
+                    if (!Mode1Api.TryGetMachineInfo(mid, out var machineInfo, out var infoError))
+                    {
+                        Console.WriteLine("[CncSignal] startup panel io dump failed machine={0} err={1}", mid, infoError);
+                        continue;
+                    }
+
+                    if (!Mode1Api.TryGetMachineAllOPInfo(mid, machineInfo.panelType, out var panelList, out var panelError))
+                    {
+                        Console.WriteLine("[CncSignal] startup panel io dump failed machine={0} panelType={1} err={2}", mid, machineInfo.panelType, panelError);
+                        continue;
+                    }
+
+                    var sb = new StringBuilder();
+                    if (panelList != null)
+                    {
+                        foreach (var io in panelList)
+                        {
+                            if (io == null) continue;
+                            if (sb.Length > 0) sb.Append(" | ");
+                            sb.Append(io.IOUID)
+                              .Append(':')
+                              .Append(io.IOName)
+                              .Append('=')
+                              .Append(io.Status);
+                        }
+                    }
+
+                    Console.WriteLine("[CncSignal] startup panel io snapshot machine={0} panelType={1} list={2}", mid, machineInfo.panelType, sb.ToString());
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[CncSignal] startup panel io dump error: {0}", ex.Message);
+            }
+        }
+
         internal static bool TryGetMachineBusy(string machineId, out bool isBusy)
         {
             isBusy = false;
@@ -26,6 +83,34 @@ namespace HiLinkBridgeWebApi48
                     return false;
                 }
                 if (panelList == null) return false;
+
+                var mid = (machineId ?? string.Empty).Trim();
+                var shouldDump = false;
+                lock (PanelIoDumpLock)
+                {
+                    if (!PanelIoDumpedMachines.Contains(mid))
+                    {
+                        PanelIoDumpedMachines.Add(mid);
+                        shouldDump = true;
+                    }
+                }
+                if (shouldDump)
+                {
+                    var sb = new StringBuilder();
+                    for (var i = 0; i < panelList.Count; i++)
+                    {
+                        var io = panelList[i];
+                        if (io == null) continue;
+                        if (sb.Length > 0) sb.Append(" | ");
+                        sb.Append(io.IOUID)
+                          .Append(':')
+                          .Append(io.IOName)
+                          .Append('=')
+                          .Append(io.Status);
+                    }
+                    Console.WriteLine("[CncSignal] panel io snapshot machine={0} panelType={1} list={2}", mid, panelType, sb.ToString());
+                }
+
                 foreach (var io in panelList)
                 {
                     if (io != null && io.IOUID == (short)busyIoUid)

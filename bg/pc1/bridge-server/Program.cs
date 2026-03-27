@@ -221,7 +221,6 @@ namespace HiLinkBridgeWebApi48
                 catch { }
                 MachinesInitializer.InitializeFromConfig();
                 CncMachining.Start();
-                // NcFileWatcher 미사용: 이벤트 기반(백엔드 트리거)으로 처리
                 Console.WriteLine("Initialization done. Press Enter to exit.");
                 _ = ThreadPool.QueueUserWorkItem(_ =>
                 {
