@@ -20,3 +20,5 @@
 - `C_START` is confirmed as `61` from the sample + runtime snapshot.
 - `busy` is still the important one to confirm, but `65 (IO_R_YELLOW)` is the current best candidate from the startup dump.
 - `CNC_START_IOUID` / `CNC_BUSY_IOUID` are now fixed in code (`61` / `65`) and were removed from `local.env`.
+- `TryStartSignal()` now uses the machine's real `panelType` from `GetMachineInfo` instead of hardcoded `0`.
+- When `CncMachineSignalUtils.TryGetMachineBusy()` finds IO `65`, it now logs the matched IO name/status so real-mode tests can confirm whether `IO_R_YELLOW` becomes `1` during machining.

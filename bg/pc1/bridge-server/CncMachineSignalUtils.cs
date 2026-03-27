@@ -74,12 +74,14 @@ namespace HiLinkBridgeWebApi48
 
                 if (!Mode1Api.TryGetMachineInfo(machineId, out var machineInfo, out var infoError))
                 {
+                    Console.WriteLine("[CncSignal] busy read failed machine={0} err={1}", (machineId ?? string.Empty).Trim(), infoError);
                     return false;
                 }
 
                 var panelType = machineInfo.panelType;
                 if (!Mode1Api.TryGetMachineAllOPInfo(machineId, panelType, out var panelList, out var error))
                 {
+                    Console.WriteLine("[CncSignal] busy read failed machine={0} panelType={1} err={2}", (machineId ?? string.Empty).Trim(), panelType, error);
                     return false;
                 }
                 if (panelList == null) return false;
@@ -116,6 +118,7 @@ namespace HiLinkBridgeWebApi48
                     if (io != null && io.IOUID == (short)busyIoUid)
                     {
                         isBusy = io.Status != 0;
+                        Console.WriteLine("[CncSignal] busy read machine={0} panelType={1} busyIoUid={2} busyIoName={3} busyIoStatus={4} isBusy={5}", mid, panelType, io.IOUID, io.IOName, io.Status, isBusy);
                         return true;
                     }
                 }

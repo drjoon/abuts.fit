@@ -1679,10 +1679,17 @@ return Config.BridgeStoreRoot;
 private static bool TryStartSignal(string machineId, out string error)
 {
 error = null;
+if (!Mode1Api.TryGetMachineInfo(machineId, out var machineInfo, out var infoError))
+{
+    error = infoError;
+    return false;
+}
+var panelType = machineInfo.panelType;
 var ioUid = Config.CncStartIoUid;
 if (ioUid < 0) ioUid = 0;
 if (ioUid > short.MaxValue) ioUid = 61;
-return Mode1Api.TrySetMachinePanelIO(machineId, 0, (short)ioUid, true, out error);
+Console.WriteLine("[CncMachining] start signal target machine={0} panelType={1} ioUid={2}", machineId, panelType, ioUid);
+return Mode1Api.TrySetMachinePanelIO(machineId, panelType, (short)ioUid, true, out error);
 }
 private static bool TryGetMachineBusy(string machineId, out bool isBusy)
 {
