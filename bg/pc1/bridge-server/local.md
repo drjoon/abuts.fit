@@ -23,3 +23,4 @@
 - `TryStartSignal()` now uses the machine's real `panelType` from `GetMachineInfo` instead of hardcoded `0`.
 - When `CncMachineSignalUtils.TryGetMachineBusy()` finds IO `65`, it now logs the matched IO name/status so real-mode tests can confirm whether `IO_R_YELLOW` becomes `1` during machining.
 - `ProcessMachine()` now returns immediately after the running branch so an already-running job cannot fall through into the idle start path and start the same job twice.
+- `TryStartSignal()` clears `F_SB` (single block) before sending `C_START`; M5 was starting with `F_SB=1`, which likely caused coolant-only behavior without continuous cutting.

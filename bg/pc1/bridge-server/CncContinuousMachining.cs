@@ -1687,6 +1687,23 @@ if (!Mode1Api.TryGetMachineInfo(machineId, out var machineInfo, out var infoErro
     return false;
 }
 var panelType = machineInfo.panelType;
+
+if (Mode1Api.TryGetMachineAllOPInfo(machineId, panelType, out var panelList, out var panelError))
+{
+    var singleBlock = panelList?.FirstOrDefault(x => x != null && string.Equals((x.IOName ?? string.Empty).Trim(), "F_SB", StringComparison.OrdinalIgnoreCase));
+    if (singleBlock != null && singleBlock.Status == 1)
+    {
+        Console.WriteLine("[CncMachining] clearing single block before start machine={0} panelType={1} ioUid={2} ioName={3} ioStatus={4}", machineId, panelType, singleBlock.IOUID, singleBlock.IOName, singleBlock.Status);
+        if (!Mode1Api.TrySetMachinePanelIO(machineId, panelType, singleBlock.IOUID, false, out var singleBlockErr))
+        {
+            error = "single block is enabled and could not be cleared: " + (singleBlockErr ?? panelError ?? string.Empty);
+            Console.WriteLine("[CncMachining] clear single block failed machine={0} err={1}", machineId, error);
+            return false;
+        }
+        Thread.Sleep(150);
+    }
+}
+
 var ioUid = Config.CncStartIoUid;
 if (ioUid < 0) ioUid = 0;
 if (ioUid > short.MaxValue) ioUid = 61;
