@@ -25,7 +25,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const STARTED_EMIT_TTL_MS = 30 * 1000;
 const startedEmitCache = new Map();
-const MACHINING_TICK_LOG_WINDOW_MS = 30 * 1000;
+const MACHINING_TICK_LOG_WINDOW_MS = 60 * 1000;
 const machiningTickLogCache = new Map();
 
 function makeStartedEmitKey({ machineId, jobId, requestId, bridgePath }) {
@@ -1145,16 +1145,13 @@ export async function recordMachiningTickForBridge(req, res) {
 
     if (shouldLogTick) {
       console.log(
-        "[bridge:machining:tick] summary",
+        "[bridge:machining:tick]",
         JSON.stringify({
           machineId: mid,
-          jobId,
-          requestId: requestId || null,
-          bridgePath: bridgePathRaw || null,
           phase: phase || null,
-          percent,
           elapsedSeconds,
-          startedAt,
+          jobId: jobId || null,
+          requestId: requestId || null,
         }),
       );
     }

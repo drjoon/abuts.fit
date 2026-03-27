@@ -939,13 +939,6 @@ export function useCncDashboardQueues({
         tickAtMs: Number.isFinite(tickAtMs) ? tickAtMs : Date.now(),
       };
       setNowPlayingMap((prev) => ({ ...prev, [mid]: true }));
-      setMachiningElapsedSecondsMap((prev) => {
-        if (prev[mid] == null) return prev;
-        const next = { ...prev };
-        delete next[mid];
-        return next;
-      });
-      delete machiningElapsedBaseRef.current[mid];
     });
 
     const stopFor = (mid: string) => {

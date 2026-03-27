@@ -8,7 +8,7 @@ namespace HiLinkBridgeWebApi48
     internal static class Mode1WorkerQueue
     {
         private static readonly ConcurrentDictionary<string, DateTime> _lastLogTimes = new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
-        private static readonly TimeSpan LogInterval = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan LogInterval = TimeSpan.FromSeconds(60);
 
         private class WorkItem
         {
@@ -76,10 +76,6 @@ namespace HiLinkBridgeWebApi48
                         try
                         {
                             var sw = System.Diagnostics.Stopwatch.StartNew();
-                            if (ShouldLog(item.Tag))
-                            {
-                                Console.WriteLine($"[Mode1WorkerQueue] {item.Tag} processing. queueSize={_queue.Count}");
-                            }
 
                             object result = null;
                             try
@@ -89,7 +85,7 @@ namespace HiLinkBridgeWebApi48
                             catch (Exception ex)
                             {
                                 sw.Stop();
-                                Console.WriteLine($"[Mode1WorkerQueue] {item.Tag} exception. elapsedMs={sw.ElapsedMilliseconds} error={ex.Message}");
+                                Console.WriteLine($"[Mode1WorkerQueue] {item.Tag} failed elapsedMs={sw.ElapsedMilliseconds} err={ex.Message}");
                                 item.Tcs.TrySetException(ex);
                                 continue;
                             }
@@ -97,7 +93,7 @@ namespace HiLinkBridgeWebApi48
                             sw.Stop();
                             if (ShouldLog(item.Tag))
                             {
-                                Console.WriteLine($"[Mode1WorkerQueue] {item.Tag} completed. elapsedMs={sw.ElapsedMilliseconds}");
+                                Console.WriteLine($"[Mode1WorkerQueue] {item.Tag} elapsedMs={sw.ElapsedMilliseconds}");
                             }
                             item.Tcs.TrySetResult(result);
                         }

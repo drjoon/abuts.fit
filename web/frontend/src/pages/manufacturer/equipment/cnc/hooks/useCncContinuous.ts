@@ -19,7 +19,10 @@ export const useCncContinuous = (machineId: string | null | undefined) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { socket } = useSocket();
-  const lastTickTimeRef = useRef<number>(0);
+  const elapsedBaseRef = useRef<{
+    elapsedSeconds: number;
+    tickAtMs: number;
+  } | null>(null);
   const localTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchState = useCallback(async () => {
@@ -45,6 +48,13 @@ export const useCncContinuous = (machineId: string | null | undefined) => {
       const data = body.data ?? body;
 
       if (data && typeof data === "object") {
+        const elapsedSeconds = Number.isFinite(Number(data.elapsedSeconds))
+          ? Math.max(0, Math.floor(Number(data.elapsedSeconds)))
+          : 0;
+        elapsedBaseRef.current = {
+          elapsedSeconds,
+          tickAtMs: Date.now(),
+        };
         setState({
           machineId: data.machineId ?? machineId,
           currentSlot: data.currentSlot ?? 3000,
@@ -52,11 +62,11 @@ export const useCncContinuous = (machineId: string | null | undefined) => {
           isRunning: data.isRunning === true,
           currentJob: data.currentJob ?? null,
           nextJob: data.nextJob ?? null,
-          elapsedSeconds: data.elapsedSeconds ?? 0,
+          elapsedSeconds,
         });
-        lastTickTimeRef.current = Date.now();
       } else {
         setState(null);
+        elapsedBaseRef.current = null;
       }
     } catch (e: any) {
       setError(e?.message ?? "연속가공 상태 조회 중 오류");
@@ -77,16 +87,26 @@ export const useCncContinuous = (machineId: string | null | undefined) => {
     const handleTick = (data: any) => {
       if (data?.machineId !== machineId) return;
 
+      const elapsedSeconds = Number.isFinite(Number(data?.elapsedSeconds))
+        ? Math.max(0, Math.floor(Number(data.elapsedSeconds)))
+        : null;
+      const tickAtMs = data?.tickAt
+        ? new Date(data.tickAt).getTime()
+        : Date.now();
+      if (elapsedSeconds != null) {
+        elapsedBaseRef.current = {
+          elapsedSeconds,
+          tickAtMs: Number.isFinite(tickAtMs) ? tickAtMs : Date.now(),
+        };
+      }
+
       setState((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
-          elapsedSeconds: data.elapsedSeconds ?? prev.elapsedSeconds,
           isRunning: data.isRunning ?? prev.isRunning,
         };
       });
-
-      lastTickTimeRef.current = Date.now();
     };
 
     const handleCompleted = (data: any) => {
@@ -118,7 +138,13 @@ export const useCncContinuous = (machineId: string | null | undefined) => {
     localTimerRef.current = setInterval(() => {
       setState((prev) => {
         if (!prev || !prev.isRunning) return prev;
-        const nextElapsed = prev.elapsedSeconds + 1;
+        const base = elapsedBaseRef.current;
+        if (!base) return prev;
+        const nextElapsed = Math.max(
+          0,
+          Math.floor(base.elapsedSeconds + (Date.now() - base.tickAtMs) / 1000),
+        );
+        if (nextElapsed === prev.elapsedSeconds) return prev;
         if (import.meta.env.DEV) {
           console.log("[cnc][elapsed]", {
             machineId: prev.machineId,

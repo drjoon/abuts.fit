@@ -23,7 +23,7 @@ private static readonly HttpClient BackendClient = new HttpClient { Timeout = Ti
 private static readonly Dictionary<string, DateTime> LastBackendSyncUtc = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 private static readonly Dictionary<string, DateTime> LastSnapshotLogUtc = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 private static readonly Dictionary<string, DateTime> LastTickLogUtc = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
-private const int TickLogIntervalSeconds = 30;
+private const int TickLogIntervalSeconds = 60;
 private class MachineFlags
 {
 public bool AllowAutoMachining;
@@ -245,10 +245,8 @@ private static Task<bool> DetectMachiningCompletion(string machineId, MachineSta
                 {
                     if (currentCount > state.ProductCountBefore)
                     {
-                        Console.WriteLine("[CncMachining] completion count check machine={0} jobId={1} before={2} after={3} delta={4}",
-                            machineId, state.CurrentJob?.id, state.ProductCountBefore, currentCount, currentCount - state.ProductCountBefore);
-                        Console.WriteLine("[CncMachining] production count increased machine={0} jobId={1} before={2} after={3}",
-                        machineId, state.CurrentJob?.id, state.ProductCountBefore, currentCount);
+                        Console.WriteLine("[CncMachining] completion confirmed machine={0} jobId={1} count={2}->{3}",
+                            machineId, state.CurrentJob?.id, state.ProductCountBefore, currentCount);
                         return Task.FromResult(true);
                     }
                 }
@@ -889,9 +887,7 @@ if (TryGetProductCount(machineId, out var currentCount))
 {
 if (currentCount > state.ProductCountBefore)
 {
-Console.WriteLine("[CncMachining] completion count check machine={0} jobId={1} before={2} after={3} delta={4}",
-machineId, state.CurrentJob?.id, state.ProductCountBefore, currentCount, currentCount - state.ProductCountBefore);
-Console.WriteLine("[CncMachining] production count increased machine={0} jobId={1} before={2} after={3}",
+Console.WriteLine("[CncMachining] completion confirmed machine={0} jobId={1} count={2}->{3}",
 machineId, state.CurrentJob?.id, state.ProductCountBefore, currentCount);
 return true;
 }
@@ -2082,7 +2078,7 @@ try
     var elapsedSeconds = Math.Max(0, (int)Math.Floor((DateTime.UtcNow - startedAt).TotalSeconds));
     if (ShouldLogTickLine(machineId, job?.id, job?.requestId, phase, DateTime.UtcNow))
     {
-        Console.WriteLine("[CncMachining] tick emit machine={0} jobId={1} requestId={2} phase={3} elapsedSeconds={4} startedAt={5:o} tickAt={6:o}", machineId, job?.id, job?.requestId, phase, elapsedSeconds, startedAt, DateTime.UtcNow);
+        Console.WriteLine("[CncMachining] tick machine={0} jobId={1} phase={2} elapsed={3}s", machineId, job?.id, phase, elapsedSeconds);
     }
     var tickUrl = backend + "/cnc-machines/bridge/machining/tick/" + Uri.EscapeDataString(machineId);
     var tickPayload = new
