@@ -15,7 +15,13 @@ namespace HiLinkBridgeWebApi48
                 var busyIoUid = Config.CncBusyIoUid;
                 if (busyIoUid < 0) return false;
 
-                if (!Mode1Api.TryGetMachineAllOPInfo(machineId, 0, out var panelList, out var error))
+                if (!Mode1Api.TryGetMachineInfo(machineId, out var machineInfo, out var infoError))
+                {
+                    return false;
+                }
+
+                var panelType = machineInfo.panelType;
+                if (!Mode1Api.TryGetMachineAllOPInfo(machineId, panelType, out var panelList, out var error))
                 {
                     return false;
                 }
