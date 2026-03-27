@@ -643,6 +643,8 @@ _ = Task.Run(() => NotifyMachiningCompleted(completedJob, machineId));
 _ = CncJobQueue.TryRemove(machineId, completedJob?.id);
 return;
 }
+
+return;
 }
 
 if (state.AwaitingStart && state.CurrentJob != null)

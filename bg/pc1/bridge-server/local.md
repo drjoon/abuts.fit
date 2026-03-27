@@ -22,3 +22,4 @@
 - `CNC_START_IOUID` / `CNC_BUSY_IOUID` are now fixed in code (`61` / `65`) and were removed from `local.env`.
 - `TryStartSignal()` now uses the machine's real `panelType` from `GetMachineInfo` instead of hardcoded `0`.
 - When `CncMachineSignalUtils.TryGetMachineBusy()` finds IO `65`, it now logs the matched IO name/status so real-mode tests can confirm whether `IO_R_YELLOW` becomes `1` during machining.
+- `ProcessMachine()` now returns immediately after the running branch so an already-running job cannot fall through into the idle start path and start the same job twice.
