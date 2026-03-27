@@ -76,6 +76,12 @@ namespace HiLinkBridgeWebApi48
             var mp = FindMachine(uid);
             if (mp == null)
             {
+                var machinesSnapshot = MachinesConfigStore.Load() ?? new System.Collections.Generic.List<HiLinkBridgeWebApi48.Models.MachineConfigItem>();
+                Console.WriteLine(
+                    "[Mode1HandleStore] machine not found for uid={0} machines.json count={1} snapshot={2}",
+                    uid,
+                    machinesSnapshot.Count,
+                    Newtonsoft.Json.JsonConvert.SerializeObject(machinesSnapshot, Newtonsoft.Json.Formatting.Indented));
                 error = $"machine not found for uid={uid}";
                 return false;
             }
@@ -106,7 +112,6 @@ namespace HiLinkBridgeWebApi48
 
             if (result != 0 || openedHandle == 0)
             {
-                Console.WriteLine($"[Mode1HandleStore] OpenMachineHandle failed. uid={uid} serial={serial} ip={ip} port={portU} result={result} handle={openedHandle} enable={enable}");
                 error = $"OpenMachineHandle failed (result={result})";
                 return false;
             }

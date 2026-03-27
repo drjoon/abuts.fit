@@ -33,6 +33,10 @@ namespace HiLinkBridgeWebApi48.Controllers
 
             try
             {
+                var incomingUid = (request.uid ?? string.Empty).Trim();
+                var incomingIp = (request.ip ?? string.Empty).Trim();
+                var incomingPort = request.port;
+
                 // Mode1 기반 브리지에서는 AddMachine API가 없으므로, machines.json 설정을 SSOT로 관리한다.
                 // 유효한 uid/ip/port 가 있으면 machines.json 설정을 갱신하고, Mode1HandleStore.TryGetHandle로 통신 검증만 수행한다.
                 if (!string.IsNullOrWhiteSpace(request.uid) && !string.IsNullOrWhiteSpace(request.ip) && request.port > 0)
@@ -50,6 +54,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 // 통신 검증
                 Mode1HandleStore.Invalidate(request.uid);
                 var ok = Mode1HandleStore.TryGetHandle(request.uid, out var _, out var err);
+
                 return Request.CreateResponse(HttpStatusCode.OK, new
                 {
                     success = ok,
