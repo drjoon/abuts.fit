@@ -50,6 +50,7 @@ export const useMachiningBoard = ({
   const {
     machines,
     setMachines,
+    machinesLoaded,
     form,
     setForm,
     addModalOpen,
@@ -486,6 +487,7 @@ export const useMachiningBoard = ({
         .map((m: any) => String(m?.uid || "").trim())
         .filter(Boolean),
     );
+    if (!machinesLoaded) return;
     const danglingQueueIds = Object.entries(queueMap || {})
       .map(([mid, list]) => ({
         machineId: String(mid || "").trim(),
@@ -494,15 +496,21 @@ export const useMachiningBoard = ({
           .map((item: any) => String(item?.requestId || "").trim())
           .filter(Boolean),
       }))
-      .filter((entry) => entry.machineId && !knownIds.has(entry.machineId));
+      .filter(
+        (entry) =>
+          entry.machineId &&
+          entry.machineId !== "unassigned" &&
+          !knownIds.has(entry.machineId),
+      );
 
     if (danglingQueueIds.length > 0) {
       console.warn("[MACHINING_BOARD] queue has unknown machine ids", {
         danglingQueueIds,
         knownMachineIds: Array.from(knownIds),
+        machinesLoaded,
       });
     }
-  }, [mergedMachines, queueMap]);
+  }, [machinesLoaded, mergedMachines, queueMap]);
 
   const {
     programEditorOpen,

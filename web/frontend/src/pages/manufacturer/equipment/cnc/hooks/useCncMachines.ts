@@ -7,6 +7,7 @@ import { Machine, MachineForm } from "@/pages/manufacturer/equipment/cnc/types";
 export const useCncMachines = () => {
   const { token } = useAuthStore();
   const [machines, setMachines] = useState<Machine[]>([]);
+  const [machinesLoaded, setMachinesLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<MachineForm>({
@@ -77,6 +78,8 @@ export const useCncMachines = () => {
       }
     } catch (e: any) {
       console.warn("loadMachinesFromBackend error", e?.message ?? e);
+    } finally {
+      setMachinesLoaded(true);
     }
   };
 
@@ -273,6 +276,7 @@ export const useCncMachines = () => {
   return {
     machines,
     setMachines,
+    machinesLoaded,
     loading,
     setLoading,
     error,
