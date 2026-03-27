@@ -33,7 +33,6 @@ export type DirectMemberRow = {
   name?: string;
   email?: string;
   business?: string;
-  organization?: string;
   active?: boolean;
   createdAt?: string;
   approvedAt?: string | null;

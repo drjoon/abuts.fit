@@ -28,7 +28,6 @@ type PricingUserRow = {
     name?: string;
     email?: string;
     business?: string;
-    organization?: string;
     role?: string;
     createdAt?: string;
   };

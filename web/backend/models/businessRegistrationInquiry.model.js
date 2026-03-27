@@ -21,7 +21,7 @@ const businessRegistrationInquirySchema = new mongoose.Schema(
       name: String,
       email: String,
       role: String,
-      organization: String,
+      business: String,
     },
     type: {
       type: String,

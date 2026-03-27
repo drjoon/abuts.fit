@@ -36,8 +36,8 @@ export const getDashboardRiskSummaryData = async ({
 
       if (populateRelated) {
         query = query
-          .populate("requestor", "name organization business")
-          .populate("caManufacturer", "name organization business")
+          .populate("requestor", "name business")
+          .populate("caManufacturer", "name business")
           .populate("deliveryInfoRef");
       }
 
@@ -96,16 +96,11 @@ export const getDashboardRiskSummaryData = async ({
         const ci = r?.caseInfos || {};
 
         const requestorText =
-          r?.requestor?.business ||
-          r?.requestor?.organization ||
-          r?.requestor?.name ||
-          "";
+          r?.requestor?.business || r?.requestor?.name || "";
         const manufacturerText =
           r?.manufacturer?.business ||
-          r?.manufacturer?.organization ||
           r?.manufacturer?.name ||
           r?.caManufacturer?.business ||
-          r?.caManufacturer?.organization ||
           r?.caManufacturer?.name ||
           "";
 

@@ -949,7 +949,7 @@ export const AdminUserManagement = () => {
         </Card>
 
         <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-          <DialogContent className="w-[min(1200px,calc(100vw-2rem))] max-h-[90vh] overflow-hidden p-0">
+          <DialogContent className="w-[min(1440px,calc(100vw-1.5rem))] max-w-none max-h-[92vh] overflow-hidden p-0">
             <div className="flex max-h-[90vh] flex-col overflow-hidden">
               <DialogHeader className="border-b px-6 py-5">
                 <DialogTitle className="text-lg">사용자 상세</DialogTitle>

@@ -12,7 +12,7 @@ describe("사용자 API 테스트", () => {
     email: "test@example.com",
     password: "password123",
     phoneNumber: "010-1234-5678",
-    organization: "테스트 회사",
+    business: "테스트 회사",
     role: "requestor",
     active: true,
   };
@@ -22,7 +22,7 @@ describe("사용자 API 테스트", () => {
     email: "manufacturer@example.com",
     password: "password123",
     phoneNumber: "010-9876-5432",
-    organization: "테스트 제조사",
+    business: "테스트 제조사",
     role: "manufacturer",
     active: true,
   };
@@ -32,7 +32,7 @@ describe("사용자 API 테스트", () => {
     email: "admin@example.com",
     password: "password123",
     phoneNumber: "010-1111-2222",
-    organization: "어벗츠핏",
+    business: "어벗츠핏",
     role: "admin",
     active: true,
   };
@@ -113,7 +113,7 @@ describe("사용자 API 테스트", () => {
       const updateData = {
         name: "수정된 이름",
         phoneNumber: "010-5555-6666",
-        organization: "수정된 회사",
+        business: "수정된 회사",
       };
 
       const response = await request(app)
@@ -126,7 +126,7 @@ describe("사용자 API 테스트", () => {
       expect(response.body.success).toBe(true);
       expect(response.body.data.name).toBe(updateData.name);
       expect(response.body.data.phoneNumber).toBe(updateData.phoneNumber);
-      expect(response.body.data.organization).toBe(updateData.organization);
+      expect(response.body.data.business).toBe(updateData.business);
       expect(response.body.data.email).toBe(testUser.email); // 이메일은 변경되지 않음
     });
 
@@ -167,7 +167,7 @@ describe("사용자 API 테스트", () => {
       expect(response.body.data).toHaveProperty("pagination");
       expect(response.body.data.manufacturers).toHaveLength(1);
       expect(response.body.data.manufacturers[0].email).toBe(
-        testManufacturer.email
+        testManufacturer.email,
       );
     });
 

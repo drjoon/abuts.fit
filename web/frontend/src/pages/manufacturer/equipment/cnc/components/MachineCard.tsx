@@ -527,7 +527,7 @@ export const MachineCard = (props: MachineCardProps) => {
   })();
 
   const requestInfo = (machine as any)?.requestInfo || {};
-  const business = requestInfo.business || requestInfo.organization || "";
+  const business = requestInfo.business || "";
   const clinic = requestInfo.clinicName || "";
   const patient = requestInfo.patientName || "미지정";
   const tooth = requestInfo.tooth || "-";
@@ -1377,6 +1377,7 @@ export const MachineCard = (props: MachineCardProps) => {
                         );
                       }
 
+                      const startClickedAt = Date.now();
                       const startRes = await fetch(
                         `/api/machines/${encodeURIComponent(machine.uid)}/start`,
                         {

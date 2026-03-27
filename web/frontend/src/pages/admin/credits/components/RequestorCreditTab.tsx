@@ -129,6 +129,10 @@ type RequestorCreditTabProps = {
 };
 
 export function RequestorCreditTab(props: RequestorCreditTabProps) {
+  const requestorBusinesses = props.businesses.filter(
+    (business) => business.businessType === "requestor",
+  );
+
   return (
     <>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
@@ -140,7 +144,7 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
             <div className="text-2xl font-bold">
               {props.loadingStats
                 ? "..."
-                : props.stats?.totalOrgs.toLocaleString() || 0}
+                : requestorBusinesses.length.toLocaleString()}
             </div>
           </CardContent>
         </Card>

@@ -9,7 +9,6 @@ const buildUserSnapshot = (user) => ({
   email: String(user?.email || ""),
   role: String(user?.role || ""),
   business: String(user?.business || ""),
-  organization: String(user?.organization || ""),
 });
 
 /**
@@ -223,7 +222,7 @@ export async function adminListBusinessRegistrationInquiries(req, res) {
     const inquiries = await BusinessRegistrationInquiry.find(filter)
       .sort({ createdAt: -1 })
       .limit(limit)
-      .populate("user", "name email role organization")
+      .populate("user", "name email role business")
       .lean();
     return res.json({ success: true, data: inquiries });
   } catch (error) {
@@ -242,7 +241,7 @@ export async function adminListBusinessRegistrationInquiries(req, res) {
 export async function adminGetBusinessRegistrationInquiry(req, res) {
   try {
     const inquiry = await BusinessRegistrationInquiry.findById(req.params.id)
-      .populate("user", "name email role organization")
+      .populate("user", "name email role business")
       .lean();
     if (!inquiry) {
       return res.status(404).json({
@@ -279,7 +278,7 @@ export async function adminResolveBusinessRegistrationInquiry(req, res) {
       { $set: update },
       { new: true },
     )
-      .populate("user", "name email role organization")
+      .populate("user", "name email role business")
       .lean();
     if (!inquiry) {
       return res.status(404).json({

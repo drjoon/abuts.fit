@@ -764,7 +764,7 @@ export async function adminGetCreditStats(req, res) {
       newBankTransactions,
       matchedBankTransactions,
     ] = await Promise.all([
-      Business.countDocuments(),
+      Business.countDocuments({ businessType: "requestor" }),
       ChargeOrder.countDocuments(),
       BankTransaction.countDocuments(),
       ChargeOrder.countDocuments({ status: "PENDING" }),

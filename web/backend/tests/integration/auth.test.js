@@ -10,7 +10,7 @@ describe("인증 API 테스트", () => {
     email: "test@example.com",
     password: "password123",
     phoneNumber: "010-1234-5678",
-    organization: "테스트 회사",
+    business: "테스트 회사",
     role: "requestor",
   };
 
@@ -33,7 +33,7 @@ describe("인증 API 테스트", () => {
         email: "new@example.com",
         password: "newpassword123",
         phoneNumber: "010-9876-5432",
-        organization: "신규 회사",
+        business: "신규 회사",
         role: "requestor",
       };
 

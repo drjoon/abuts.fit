@@ -11,16 +11,13 @@ export type BusinessRegistrationInquiry = {
     email?: string;
     role?: string;
     business?: string;
-    organization?: string;
   } | null;
   userSnapshot?: {
     name?: string;
     email?: string;
     role?: string;
     business?: string;
-    organization?: string;
   } | null;
-  organizationType?: string | null;
   businessAnchorId?: string | null;
   status?: "open" | "resolved";
   adminNote?: string;

@@ -13,7 +13,7 @@ describe.skip("의뢰 API 테스트", () => {
     email: "requestor@example.com",
     password: "password123",
     phoneNumber: "010-1234-5678",
-    organization: "테스트 회사",
+    business: "테스트 회사",
     role: "requestor",
     active: true,
   };
@@ -23,7 +23,7 @@ describe.skip("의뢰 API 테스트", () => {
     email: "manufacturer@example.com",
     password: "password123",
     phoneNumber: "010-9876-5432",
-    organization: "테스트 제조사",
+    business: "테스트 제조사",
     role: "manufacturer",
     active: true,
   };
@@ -33,7 +33,7 @@ describe.skip("의뢰 API 테스트", () => {
     email: "admin@example.com",
     password: "password123",
     phoneNumber: "010-1111-2222",
-    organization: "어벗츠핏",
+    business: "어벗츠핏",
     role: "admin",
     active: true,
   };
@@ -126,7 +126,7 @@ describe.skip("의뢰 API 테스트", () => {
       expect(response.body.data).toHaveProperty("_id");
       expect(response.body.data.title).toBe(newRequest.title);
       expect(response.body.data.requestor.toString()).toBe(
-        requestorId.toString()
+        requestorId.toString(),
       );
       expect(response.body.data.status).toBe("의뢰접수"); // 기본 상태
     });
@@ -190,7 +190,7 @@ describe.skip("의뢰 API 테스트", () => {
       expect(response.body.success).toBe(true);
       expect(response.body.data.requests).toHaveLength(1);
       expect(response.body.data.requests[0].requestor._id.toString()).toBe(
-        requestorId.toString()
+        requestorId.toString(),
       );
     });
 
@@ -404,7 +404,7 @@ describe.skip("의뢰 API 테스트", () => {
       // 응답 검증
       expect(response.body.success).toBe(true);
       expect(response.body.data.manufacturer.toString()).toBe(
-        manufacturerId.toString()
+        manufacturerId.toString(),
       );
     });
 

@@ -52,7 +52,7 @@ export async function getMyChatRooms(req, res) {
       participants: userId,
       isArchived: false,
     })
-      .populate("participants", "name email role organization")
+      .populate("participants", "name email role business")
       .populate("relatedRequestId", "requestId title")
       .sort({ lastMessageAt: -1 })
       .lean();
@@ -193,7 +193,7 @@ export async function getSupportRoom(req, res) {
         roomType: "direct",
         isArchived: false,
       })
-        .populate("participants", "name email role organization")
+        .populate("participants", "name email role business")
         .lean();
 
       const enrichRoom = async (room) => {
@@ -258,7 +258,7 @@ export async function getSupportRoom(req, res) {
       });
 
       const populated = await ChatRoom.findById(room._id)
-        .populate("participants", "name email role organization")
+        .populate("participants", "name email role business")
         .lean();
 
       const enrichedCreated = await enrichRoom(populated);
@@ -329,7 +329,7 @@ export async function createOrGetChatRoom(req, res) {
       },
       isArchived: false,
     })
-      .populate("participants", "name email role organization")
+      .populate("participants", "name email role business")
       .populate("relatedRequestId", "requestId title");
 
     if (existingRoom) {
@@ -352,7 +352,7 @@ export async function createOrGetChatRoom(req, res) {
     await newRoom.save();
 
     const populatedRoom = await ChatRoom.findById(newRoom._id)
-      .populate("participants", "name email role organization")
+      .populate("participants", "name email role business")
       .populate("relatedRequestId", "requestId title");
 
     res.status(201).json({
@@ -571,7 +571,7 @@ export async function updateChatRoomStatus(req, res) {
       { status },
       { new: true },
     )
-      .populate("participants", "name email role organization")
+      .populate("participants", "name email role business")
       .populate("relatedRequestId", "requestId title");
 
     if (!room) {
@@ -612,7 +612,7 @@ export async function getAllChatRooms(req, res) {
     }
 
     const rooms = await ChatRoom.find(filter)
-      .populate("participants", "name email role organization")
+      .populate("participants", "name email role business")
       .populate("relatedRequestId", "requestId title")
       .sort({ lastMessageAt: -1 })
       .skip(skip)
@@ -698,7 +698,7 @@ export async function searchUsers(req, res) {
     }
 
     const users = await User.find(filter)
-      .select("name email role organization")
+      .select("name email role business")
       .limit(20)
       .lean();
 

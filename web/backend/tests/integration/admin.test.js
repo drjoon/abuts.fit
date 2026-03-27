@@ -14,17 +14,17 @@ describe("관리자 API 테스트", () => {
     email: "admin@example.com",
     password: "password123",
     phoneNumber: "010-1111-2222",
-    organization: "어벗츠핏",
+    business: "어벗츠핏",
     role: "admin",
     active: true,
   };
 
   const testUser = {
-    name: "일반 사용자",
+    name: "테스트 사용자",
     email: "user@example.com",
     password: "password123",
     phoneNumber: "010-3333-4444",
-    organization: "테스트 회사",
+    business: "테스트 회사",
     role: "requestor",
     active: true,
   };
@@ -164,7 +164,7 @@ describe("관리자 API 테스트", () => {
     it("관리자 권한으로 사용자 정보 수정 성공", async () => {
       const updateData = {
         name: "수정된 이름",
-        organization: "수정된 회사",
+        business: "수정된 회사",
         role: "manufacturer",
         active: false,
       };
@@ -240,7 +240,7 @@ describe("관리자 API 테스트", () => {
       expect(response.body.data).toHaveProperty("pagination");
       expect(response.body.data.requests).toHaveLength(1);
       expect(response.body.data.requests[0]._id.toString()).toBe(
-        testRequestId.toString()
+        testRequestId.toString(),
       );
     });
 
@@ -293,10 +293,10 @@ describe("관리자 API 테스트", () => {
       expect(response.body.data).toHaveProperty("statusHistory");
       expect(response.body.data.statusHistory).toHaveLength(1);
       expect(response.body.data.statusHistory[0].status).toBe(
-        statusUpdate.status
+        statusUpdate.status,
       );
       expect(response.body.data.statusHistory[0].note).toBe(
-        statusUpdate.statusNote
+        statusUpdate.statusNote,
       );
     });
   });
@@ -325,7 +325,7 @@ describe("관리자 API 테스트", () => {
       // 응답 검증
       expect(response.body.success).toBe(true);
       expect(response.body.data.manufacturer.toString()).toBe(
-        manufacturer._id.toString()
+        manufacturer._id.toString(),
       );
     });
 
@@ -383,10 +383,10 @@ describe("관리자 API 테스트", () => {
       // 응답 검증
       expect(response.body.success).toBe(true);
       expect(response.body.data.maintenance.enabled).toBe(
-        settingsUpdate.maintenance.enabled
+        settingsUpdate.maintenance.enabled,
       );
       expect(response.body.data.maintenance.message).toBe(
-        settingsUpdate.maintenance.message
+        settingsUpdate.maintenance.message,
       );
     });
   });

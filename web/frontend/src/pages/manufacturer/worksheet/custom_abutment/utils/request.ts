@@ -4,7 +4,6 @@ export type ManufacturerRequest = RequestBase & {
   referenceIds?: string[];
   mailboxAddress?: string | null;
   requestorBusiness?: any;
-  requestorOrganization?: any;
   requestor?:
     | (RequestBase["requestor"] & {
         business?: string;

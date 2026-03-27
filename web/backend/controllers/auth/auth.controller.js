@@ -591,8 +591,6 @@ async function register(req, res) {
       }
     }
 
-    const effectiveOrganization = "";
-
     // 사용자 생성
     const isInstantApprove =
       normalizedRole === "requestor" ||
@@ -607,7 +605,6 @@ async function register(req, res) {
       requestorRole: normalizedRole === "requestor" ? "owner" : null,
       manufacturerRole: normalizedRole === "manufacturer" ? "owner" : null,
       adminRole: normalizedRole === "admin" ? "owner" : null,
-      organization: effectiveOrganization,
       referralCode,
       referredByAnchorId,
       onboardingWizardCompleted: false,

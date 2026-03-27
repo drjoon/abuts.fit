@@ -3,7 +3,7 @@ export interface RequestUserSummary {
   id?: string;
   name?: string;
   email?: string;
-  organization?: string;
+  business?: string;
   phone?: string;
   phoneNumber?: string;
   address?: {
@@ -210,14 +210,6 @@ export interface RequestBase {
 
   // 관계 정보 (간단 summary)
   requestor?: RequestUserSummary;
-  requestorOrganization?: {
-    _id?: string;
-    name?: string;
-    extracted?: {
-      phoneNumber?: string;
-      address?: string;
-    };
-  };
 
   // 백엔드 Request.caseInfos 매핑 (단일 케이스 기준)
   caseInfos?: RequestCaseInfos;

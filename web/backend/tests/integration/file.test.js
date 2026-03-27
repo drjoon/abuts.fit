@@ -15,7 +15,7 @@ describe("파일 업로드 API 테스트", () => {
     email: "requestor@example.com",
     password: "password123",
     phoneNumber: "010-1234-5678",
-    organization: "테스트 회사",
+    business: "테스트 회사",
     role: "requestor",
     active: true,
   };
@@ -25,7 +25,7 @@ describe("파일 업로드 API 테스트", () => {
     email: "admin@example.com",
     password: "password123",
     phoneNumber: "010-1111-2222",
-    organization: "어벗츠핏",
+    business: "어벗츠핏",
     role: "admin",
     active: true,
   };
@@ -112,10 +112,10 @@ describe("파일 업로드 API 테스트", () => {
       expect(response.body.data).toHaveProperty("_id");
       expect(response.body.data.originalName).toBe("test-file.txt");
       expect(response.body.data.uploadedBy.toString()).toBe(
-        requestorId.toString()
+        requestorId.toString(),
       );
       expect(response.body.data.relatedRequest.toString()).toBe(
-        requestId.toString()
+        requestId.toString(),
       );
     });
 
@@ -218,7 +218,7 @@ describe("파일 업로드 API 테스트", () => {
       expect(response.body.data).toHaveProperty("pagination");
       expect(response.body.data.files).toHaveLength(1);
       expect(response.body.data.files[0].originalName).toBe(
-        "existing-test-file.txt"
+        "existing-test-file.txt",
       );
     });
 
