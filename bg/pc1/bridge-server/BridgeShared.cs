@@ -162,32 +162,46 @@ namespace HiLinkBridgeWebApi48
             }
         }
 
-        public static bool TryGetProgramDataPreferMode1(string machineId, short headType, short programNo, out string programData, out string error)
+        public static bool TryReadProgramDataFromBridgeStore(string relativePath, out string programData, out string error)
         {
-            programData = null; error = null;
-            var gotAny = false; var mode1Data = (string)null; var mode1Err = (string)null;
+            programData = null;
+            error = null;
             try
             {
-                if (Mode1Api.TryGetProgDataInfo(machineId, headType, programNo, out var info, out var err))
+                var safePath = (relativePath ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(safePath))
                 {
-                    gotAny = true; mode1Data = info.programData ?? string.Empty;
-                    Console.WriteLine($"[DownloadProgram] Mode1 programData length={mode1Data.Length} uid={machineId} headType={headType} programNo={programNo}");
+                    error = "bridge-store path is required";
+                    return false;
                 }
-                else
+
+                var fullPath = GetSafeBridgeStorePath(safePath);
+                if (!File.Exists(fullPath))
                 {
-                    mode1Err = err;
-                    Console.WriteLine($"[DownloadProgram] Mode1 GetMachineProgramData failed uid={machineId} headType={headType} programNo={programNo} err={mode1Err}");
+                    error = $"bridge-store file not found: {safePath}";
+                    return false;
                 }
+
+                programData = File.ReadAllText(fullPath);
+                if (string.IsNullOrEmpty(programData))
+                {
+                    error = $"bridge-store file is empty: {safePath}";
+                    return false;
+                }
+                return true;
             }
             catch (Exception ex)
             {
-                mode1Err = ex.Message;
-                Console.WriteLine($"[DownloadProgram] Mode1 exception uid={machineId} headType={headType} programNo={programNo} ex={mode1Err}");
+                error = ex.Message;
+                return false;
             }
-            if (!gotAny) { error = mode1Err ?? "GetMachineProgramData failed"; return false; }
-            programData = mode1Data ?? string.Empty;
-            if (programData.Length == 0) { error = mode1Err ?? "GetMachineProgramData failed"; return false; }
-            return true;
+        }
+
+        public static bool TryGetProgramDataPreferMode1(string machineId, short headType, short programNo, out string programData, out string error)
+        {
+            programData = null;
+            error = "program data retrieval now uses bridge-store file paths only";
+            return false;
         }
 
         public static bool IsAlarm(string machineId, out string error)
@@ -212,7 +226,13 @@ namespace HiLinkBridgeWebApi48
                 if (c >= 32 && c <= 126) continue;
                 arr[i] = ' ';
             }
-            return new string(arr);
+            var sanitized = new string(arr);
+            return Regex.Replace(
+                sanitized,
+                @"^((?:[ \t]*N\d+[ \t]*)?[ \t]*/)\s+(?=\S)",
+                "$1",
+                RegexOptions.Multiline
+            );
         }
 
         public static bool IsMockCncMachiningEnabled() => Config.MockCncMachining;

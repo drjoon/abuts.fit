@@ -26,3 +26,4 @@
 - `TryStartSignal()` clears `F_SB` (single block) before sending `C_START`; M5 was starting with `F_SB=1`, which likely caused coolant-only behavior without continuous cutting.
 - Real-mode completion now requires `currentProdCount > ProductCountBefore` after `busy` falls to `0`; all time-based completion fallbacks were removed to avoid premature job switching.
 - `CheckJobCompleted()` now logs the start baseline count and the completion count delta so we can confirm whether the product counter really increments by `+1`.
+- Automatic CNC upload now mirrors the controller upload pipeline: `EnsurePercentAndHeaderSecondLine` + `EnsureProgramEnvelope` + `SanitizeProgramTextForCnc`, then `UploadProgramDataBlocking` with busy/delete retry. This should reduce `upload failed rc=5` during auto-next handoff.

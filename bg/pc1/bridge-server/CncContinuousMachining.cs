@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Hi_Link;
 using Hi_Link.Libraries.Model;
+using HiLinkBridgeWebApi48.Controllers;
 using Newtonsoft.Json.Linq;
 namespace HiLinkBridgeWebApi48
 {
@@ -971,6 +972,22 @@ _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "FAILED", uploadErr ?? 
 return false;
 }
 _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "READY", null));
+int expectedSubProgramNo = 0;
+if (TryGetActiveProgramNos(machineId, out var currentMainProgramNo, out var currentSubProgramNo, out var activeProgramErr))
+{
+    expectedSubProgramNo = currentSubProgramNo;
+    Console.WriteLine(
+        "[CncMachining] active program snapshot machine={0} jobId={1} main={2} sub={3}",
+        machineId,
+        job?.id,
+        currentMainProgramNo,
+        currentSubProgramNo
+    );
+}
+else if (!string.IsNullOrEmpty(activeProgramErr))
+{
+    Console.WriteLine("[CncMachining] active program snapshot read failed machine={0} jobId={1} err={2}", machineId, job?.id, activeProgramErr);
+}
 // 3. 활성화 (O4000은 메인 슬롯이므로 headType=1)
 // 더미 job: programNo로 직접 활성화
 short activateProgNo = job.kind == CncJobKind.Dummy && job.programNo.HasValue
@@ -994,6 +1011,27 @@ Console.WriteLine("[CncMachining] activate failed machine={0} jobId={1} res={2} 
 machineId, job?.id, upRc, errUp);
 return false;
 }
+if (expectedSubProgramNo > 0)
+{
+    var subDto = new UpdateMachineActivateProgNo
+    {
+        headType = 2,
+        programNo = (short)expectedSubProgramNo
+    };
+    var subRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => HiLink.SetActivateProgram(handle, subDto), "SetActivateProgram.CncMachining.sub");
+    if (subRc != 0)
+    {
+        Console.WriteLine(
+            "[CncMachining] sub activate failed machine={0} jobId={1} subProg={2} res={3}",
+            machineId,
+            job?.id,
+            expectedSubProgramNo,
+            subRc
+        );
+        return false;
+    }
+    Console.WriteLine("[CncMachining] sub program re-activated machine={0} jobId={1} subProg={2}", machineId, job?.id, expectedSubProgramNo);
+}
 // 4. Auto 모드 전환
 if (!Mode1Api.TrySetMachineMode(machineId, "AUTO", out var modeErr2))
 {
@@ -1001,6 +1039,11 @@ Console.WriteLine("[CncMachining] auto mode failed machine={0} err={1}", machine
 return false;
 }
 await Task.Delay(300);
+if (!WaitForActiveProgramState(machineId, activateProgNo, expectedSubProgramNo, 5000, out var programReadyErr))
+{
+    Console.WriteLine("[CncMachining] active program not ready machine={0} jobId={1} err={2}", machineId, job?.id, programReadyErr);
+    return false;
+}
 // Start는 여기서 보내지 않는다. (Now Playing으로 올라간 뒤 사용자가 Start)
 // 상태 업데이트
 lock (StateLock)
@@ -1180,181 +1223,170 @@ private static bool TryGetMachineAlarms(string machineId, out List<object> alarm
         error = ex.Message;
         return false;
     }
- }
+}
+
 private static async Task<(bool Success, string Error)> UploadProgramToSlot(string machineId, CncJobItem job, int slotNo)
 {
-string error = null;
-try
-{
-if (job == null) return (false, null);
-// 더미 job: 파일 업로드 없이 programNo로 직접 활성화
-if (job.kind == CncJobKind.Dummy)
-{
-if (!job.programNo.HasValue || job.programNo.Value <= 0)
-{
-Console.WriteLine("[CncMachining] dummy job invalid programNo machine={0} jobId={1}", machineId, job?.id);
-return (false, "invalid programNo for dummy job");
+    string error = null;
+    try
+    {
+        if (job == null) return (false, null);
+
+        // 더미 job: 파일 업로드 없이 programNo로 직접 활성화
+        if (job.kind == CncJobKind.Dummy)
+        {
+            if (!job.programNo.HasValue || job.programNo.Value <= 0)
+            {
+                Console.WriteLine("[CncMachining] dummy job invalid programNo machine={0} jobId={1}", machineId, job?.id);
+                return (false, "invalid programNo for dummy job");
+            }
+
+            Console.WriteLine("[CncMachining] dummy job skipping upload machine={0} jobId={1} programNo={2}", machineId, job?.id, job.programNo.Value);
+            return (true, null);
+        }
+
+        if (!TryResolveJobFilePath(job, out var fullPath, out var resolveErr))
+        {
+            Console.WriteLine("[CncMachining] file resolve failed: {0}", resolveErr);
+            error = resolveErr;
+            return (false, error);
+        }
+
+        if (!File.Exists(fullPath))
+        {
+            try
+            {
+                var dir0 = Path.GetDirectoryName(fullPath);
+                Console.WriteLine(
+                    "[CncMachining] file missing. machine={0} jobId={1} user={2} root={3} fullPath={4} dirExists={5}",
+                    machineId,
+                    job?.id,
+                    Environment.UserName,
+                    Path.GetFullPath(Config.BridgeStoreRoot),
+                    fullPath,
+                    string.IsNullOrEmpty(dir0) ? false : Directory.Exists(dir0)
+                );
+            }
+            catch { }
+
+            var resolved = TryResolveExistingPath(fullPath, out var existingPath);
+            if (resolved)
+            {
+                fullPath = existingPath;
+            }
+        }
+
+        if (!File.Exists(fullPath))
+        {
+            try
+            {
+                using (var fs = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                }
+            }
+            catch (Exception openErr)
+            {
+                Console.WriteLine(
+                    "[CncMachining] file open failed: machine={0} jobId={1} path={2} err={3}",
+                    machineId,
+                    job?.id,
+                    fullPath,
+                    openErr.Message
+                );
+            }
+
+            // 로컬 캐시에 없으면 S3에서 내려받아 캐시한다.
+            var downloaded = await TryDownloadAndCacheFromS3(machineId, job, fullPath);
+            if (!downloaded || !File.Exists(fullPath))
+            {
+                Console.WriteLine("[CncMachining] file not found: {0}", fullPath);
+                error = "file not found: " + fullPath;
+                return (false, error);
+            }
+        }
+
+        var content = File.ReadAllText(fullPath);
+        var enforcedContent = BridgeShared.EnsurePercentAndHeaderSecondLine(content, slotNo);
+        var processedContent = BridgeShared.SanitizeProgramTextForCnc(BridgeShared.EnsureProgramEnvelope(enforcedContent));
+        var processedPreviewLines = (processedContent ?? string.Empty)
+            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
+            .Take(2)
+            .Select(x => x ?? string.Empty)
+            .ToArray();
+        Console.WriteLine("[CncMachining] upload prepared machine={0} jobId={1} slot=O{2} bytes={3} line1={4} line2={5}",
+            machineId,
+            job?.id,
+            slotNo,
+            Encoding.ASCII.GetByteCount(processedContent ?? string.Empty),
+            processedPreviewLines.Length > 0 ? processedPreviewLines[0] : string.Empty,
+            processedPreviewLines.Length > 1 ? processedPreviewLines[1] : string.Empty);
+
+        // StartNewJob() already clears the target slot before calling this helper.
+        var uploaded = BridgeShared.UploadProgramDataBlocking(machineId, 1, slotNo, processedContent, true, out var usedMode, out var uploadErr);
+        if (!uploaded)
+        {
+            Console.WriteLine("[CncMachining] upload failed machine={0} jobId={1} slot=O{2} err={3}", machineId, job?.id, slotNo, uploadErr);
+            error = uploadErr ?? "upload failed";
+            return (false, error);
+        }
+
+        Console.WriteLine("[CncMachining] upload ok machine={0} jobId={1} slot=O{2} usedMode={3}", machineId, job?.id, slotNo, usedMode);
+        return (true, null);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("[CncMachining] upload error machine={0} jobId={1} slot=O{2} err={3}", machineId, job?.id, slotNo, ex.Message);
+        error = "exception: " + ex.Message;
+        return (false, error);
+    }
 }
-Console.WriteLine("[CncMachining] dummy job skipping upload machine={0} jobId={1} programNo={2}", machineId, job?.id, job.programNo.Value);
-return (true, null);
-}
-if (!TryResolveJobFilePath(job, out var fullPath, out var resolveErr))
-{
-Console.WriteLine("[CncMachining] file resolve failed: {0}", resolveErr);
-error = resolveErr;
-return (false, error);
-}
-if (!File.Exists(fullPath))
-{
-try
-{
-var dir0 = Path.GetDirectoryName(fullPath);
-Console.WriteLine(
-"[CncMachining] file missing. machine={0} jobId={1} user={2} root={3} fullPath={4} dirExists={5}",
-machineId,
-job?.id,
-Environment.UserName,
-Path.GetFullPath(Config.BridgeStoreRoot),
-fullPath,
-string.IsNullOrEmpty(dir0) ? false : Directory.Exists(dir0)
-);
-}
-catch { }
-var resolved = TryResolveExistingPath(fullPath, out var existingPath);
-if (resolved)
-{
-fullPath = existingPath;
-}
-}
-if (!File.Exists(fullPath))
-{
-try
-{
-using (var fs = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-{
-}
-}
-catch (Exception openErr)
-{
-Console.WriteLine(
-"[CncMachining] file open failed: machine={0} jobId={1} path={2} err={3}",
-machineId,
-job?.id,
-fullPath,
-openErr.Message
-);
-}
-// 로컬 캐시에 없으면 S3에서 내려받아 캐시한다.
-var downloaded = await TryDownloadAndCacheFromS3(machineId, job, fullPath);
-if (!downloaded || !File.Exists(fullPath))
-{
-Console.WriteLine("[CncMachining] file not found: {0}", fullPath);
-error = "file not found: " + fullPath;
-return (false, error);
-}
-}
-var content = File.ReadAllText(fullPath);
-var previewLines = (content ?? string.Empty)
-.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
-.Take(2)
-.Select(x => x ?? string.Empty)
-.ToArray();
-var preview1 = previewLines.Length > 0 ? previewLines[0] : string.Empty;
-var preview2 = previewLines.Length > 1 ? previewLines[1] : string.Empty;
-Console.WriteLine("[CncMachining] upload source machine={0} jobId={1} path={2}", machineId, job?.id, fullPath);
-Console.WriteLine("[CncMachining] upload source first-lines machine={0} jobId={1} line1={2} line2={3}", machineId, job?.id, preview1, preview2);
-var processedContent = EnsureProgramHeader(content, slotNo);
-var info = new UpdateMachineProgramInfo
-{
-headType = 1,
-programNo = (short)slotNo,
-programData = processedContent,
-isNew = true,
-};
-// CNC 메모리 제약 대응: 업로드 대상 슬롯(O4000)에 기존 프로그램이 있으면 삭제 후 업로드한다.
-try
-{
-if (!Mode1Api.TryDeleteMachineProgramInfo(machineId, 1, (short)slotNo, out var _, out var delErr))
-{
-if (!string.IsNullOrEmpty(delErr))
-{
-Console.WriteLine("[CncMachining] delete before upload ignored machine={0} jobId={1} slot=O{2} err={3}", machineId, job?.id, slotNo, delErr);
-}
-}
-else
-{
-Console.WriteLine("[CncMachining] delete before upload ok machine={0} jobId={1} slot=O{2}", machineId, job?.id, slotNo);
-}
-}
-catch { }
-if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
-{
-    Console.WriteLine("[CncMachining] handle error machine={0} jobId={1} slot=O{2} err={3}", machineId, job?.id, slotNo, errUp);
-    error = "handle error: " + errUp;
-    return (false, error);
-}
-var upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => HiLink.SetMachineProgramInfo(handle, info), "SetMachineProgramInfo.CncMachining");
-if (upRc != 0)
-{
-Console.WriteLine("[CncMachining] upload failed machine={0} jobId={1} slot=O{2} rc={3}", machineId, job?.id, slotNo, upRc);
-error = "upload failed rc=" + upRc;
-return (false, error);
-}
-Console.WriteLine("[CncMachining] upload ok machine={0} jobId={1} slot=O{2}", machineId, job?.id, slotNo);
-return (true, null);
-}
-catch (Exception ex)
-{
-Console.WriteLine("[CncMachining] upload error machine={0} jobId={1} slot=O{2} err={3}", machineId, job?.id, slotNo, ex.Message);
-error = "exception: " + ex.Message;
-return (false, error);
-}
-}
+
 private static bool TryResolveExistingPath(string expectedFullPath, out string existingFullPath)
 {
-existingFullPath = null;
-try
-{
-var dir = Path.GetDirectoryName(expectedFullPath);
-var file = Path.GetFileName(expectedFullPath);
-if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(file)) return false;
-if (!Directory.Exists(dir)) return false;
-var targetC = file.Normalize(NormalizationForm.FormC);
-IEnumerable<string> files;
-try
-{
-files = Directory.EnumerateFiles(dir);
+    existingFullPath = null;
+    try
+    {
+        var dir = Path.GetDirectoryName(expectedFullPath);
+        var file = Path.GetFileName(expectedFullPath);
+        if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(file)) return false;
+        if (!Directory.Exists(dir)) return false;
+        var targetC = file.Normalize(NormalizationForm.FormC);
+        IEnumerable<string> files;
+        try
+        {
+            files = Directory.EnumerateFiles(dir);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("[CncMachining] enumerate failed dir={0} err={1}", dir, ex.Message);
+            return false;
+        }
+        foreach (var p in files)
+        {
+            try
+            {
+                var f = Path.GetFileName(p);
+                if (string.Equals(f, file, StringComparison.OrdinalIgnoreCase))
+                {
+                    existingFullPath = p;
+                    return true;
+                }
+                if (string.Equals(f.Normalize(NormalizationForm.FormC), targetC, StringComparison.OrdinalIgnoreCase))
+                {
+                    existingFullPath = p;
+                    return true;
+                }
+            }
+            catch { }
+        }
+        return false;
+    }
+    catch
+    {
+        return false;
+    }
 }
-catch (Exception ex)
-{
-Console.WriteLine("[CncMachining] enumerate failed dir={0} err={1}", dir, ex.Message);
-return false;
-}
-foreach (var p in files)
-{
-try
-{
-var f = Path.GetFileName(p);
-if (string.Equals(f, file, StringComparison.OrdinalIgnoreCase))
-{
-existingFullPath = p;
-return true;
-}
-if (string.Equals(f.Normalize(NormalizationForm.FormC), targetC, StringComparison.OrdinalIgnoreCase))
-{
-existingFullPath = p;
-return true;
-}
-}
-catch { }
-}
-return false;
-}
-catch
-{
-return false;
-}
-}
+
 private static async Task SyncQueueFromBackend(string machineId, bool force = false)
 {
 try
@@ -1732,24 +1764,81 @@ private static bool TryGetProductCount(string machineId, out int count)
     Console.WriteLine("[CncMachining] productCount read failed machine={0}", machineId);
     return false;
 }
-private static int ParseActiveProgramNo(MachineProgramInfo info)
+
+private static int ParseProgramNoFromName(string name)
 {
-try
+    try
+    {
+        name = (name ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(name)) return 0;
+
+        var m = Regex.Match(name.ToUpperInvariant(), @"O(\d{1,5})");
+        if (m.Success && int.TryParse(m.Groups[1].Value, out var n) && n > 0) return n;
+
+        var digits = Regex.Match(name, @"(\d{1,5})");
+        if (digits.Success && int.TryParse(digits.Groups[1].Value, out var n2) && n2 > 0) return n2;
+    }
+    catch { }
+    return 0;
+}
+
+private static bool TryGetActiveProgramNos(string machineId, out int mainProgramNo, out int subProgramNo, out string error)
 {
-var name = (info.MainProgramName ?? string.Empty).Trim();
-if (string.IsNullOrEmpty(name))
+    mainProgramNo = 0;
+    subProgramNo = 0;
+    error = null;
+
+    try
+    {
+        if (!Mode1Api.TryGetActivateProgInfo(machineId, out var info, out error))
+        {
+            return false;
+        }
+
+        mainProgramNo = ParseProgramNoFromName(info.MainProgramName);
+        subProgramNo = ParseProgramNoFromName(info.SubProgramName);
+        return true;
+    }
+    catch (Exception ex)
+    {
+        error = ex.Message;
+        return false;
+    }
+}
+
+private static bool WaitForActiveProgramState(string machineId, int expectedMainProgramNo, int expectedSubProgramNo, int timeoutMs, out string error)
 {
-name = (info.SubProgramName ?? string.Empty).Trim();
+    error = null;
+    var started = DateTime.UtcNow;
+    var lastMainProgramNo = 0;
+    var lastSubProgramNo = 0;
+    string lastReadError = null;
+
+    while ((DateTime.UtcNow - started).TotalMilliseconds < timeoutMs)
+    {
+        if (TryGetActiveProgramNos(machineId, out var currentMainProgramNo, out var currentSubProgramNo, out var currentReadError))
+        {
+            lastMainProgramNo = currentMainProgramNo;
+            lastSubProgramNo = currentSubProgramNo;
+            if (currentMainProgramNo == expectedMainProgramNo && (expectedSubProgramNo <= 0 || currentSubProgramNo == expectedSubProgramNo))
+            {
+                return true;
+            }
+        }
+        else
+        {
+            lastReadError = currentReadError;
+        }
+
+        Thread.Sleep(250);
+    }
+
+    error = expectedSubProgramNo > 0
+        ? $"active program not ready (expectedMain={expectedMainProgramNo}, expectedSub={expectedSubProgramNo}, lastMain={lastMainProgramNo}, lastSub={lastSubProgramNo}{(string.IsNullOrEmpty(lastReadError) ? string.Empty : ", readErr=" + lastReadError)})"
+        : $"active program not ready (expectedMain={expectedMainProgramNo}, lastMain={lastMainProgramNo}, lastSub={lastSubProgramNo}{(string.IsNullOrEmpty(lastReadError) ? string.Empty : ", readErr=" + lastReadError)})";
+    return false;
 }
-if (string.IsNullOrEmpty(name)) return 0;
-var m = Regex.Match(name.ToUpperInvariant(), @"O(\d{1,5})");
-if (m.Success && int.TryParse(m.Groups[1].Value, out var n) && n > 0) return n;
-var digits = Regex.Match(name, @"(\d{1,5})");
-if (digits.Success && int.TryParse(digits.Groups[1].Value, out var n2) && n2 > 0) return n2;
-}
-catch { }
-return 0;
-}
+
 private static string GetBackendBase()
 {
 return Config.BackendBase;

@@ -36,7 +36,7 @@ namespace HiLinkBridgeWebApi48
                         || path.EndsWith("/programs/active", StringComparison.OrdinalIgnoreCase)
                         || path.EndsWith("/programs/list", StringComparison.OrdinalIgnoreCase)
                     );
-                if (logEnabled || !isNoise)
+                if (logEnabled && !isNoise)
                 {
                     Console.WriteLine("[BridgeAuth] {0} {1}", request.Method, request.RequestUri);
                 }
@@ -126,7 +126,10 @@ namespace HiLinkBridgeWebApi48
                 return tcs.Task;
             }
 
-            Console.WriteLine("[BridgeAuth] Authorized");
+            if (logEnabled)
+            {
+                Console.WriteLine("[BridgeAuth] Authorized");
+            }
             return base.SendAsync(request, cancellationToken);
         }
     }

@@ -118,6 +118,11 @@ const dbReady = connect(mongoUri)
     throw err;
   });
 
+const shouldSkipRequestLog = (req) => {
+  const path = String(req?.originalUrl || req?.url || "").split("?")[0];
+  return path.startsWith("/api/cnc/machines/bridge/machining/tick/");
+};
+
 // 기본 미들웨어
 // CNC/브리지 업로드에서 비교적 큰 텍스트 파일을 주고받기 위해 바디 용량 제한을 완화한다.
 app.use(json({ limit: "10mb" }));
@@ -168,7 +173,7 @@ app.use(
     },
   }),
 );
-app.use(morgan("dev"));
+app.use(morgan("dev", { skip: shouldSkipRequestLog }));
 
 // Rate Limiting 설정
 const limiter = rateLimit({

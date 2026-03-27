@@ -36,7 +36,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             var relPath = (req?.path ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(relPath))
             {
-                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "path is required" });
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "bridge-store path is required" });
             }
 
             var fullPath = BridgeShared.GetSafeBridgeStorePath(relPath);
@@ -157,62 +157,32 @@ namespace HiLinkBridgeWebApi48.Controllers
             {
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "programNo is required" });
             }
+            if (string.IsNullOrWhiteSpace(relPath))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "bridge-store path is required" });
+            }
+
+            if (!BridgeShared.TryReadProgramDataFromBridgeStore(relPath, out var programData, out var readErr))
+            {
+                return Request.CreateResponse(HttpStatusCode.NotFound, new { success = false, message = readErr ?? "bridge-store file not found" });
+            }
+
+            var length = (programData ?? string.Empty).Length;
 
             var machineIds = BridgeShared.ParseMachineIds(machines);
             var results = new List<object>();
 
             foreach (var machineId in machineIds)
             {
-                var cooldownKey = $"downloadProgram:{machineId}:{headType}:{programNo}";
-                if (BridgeShared.IsRawReadOnCooldown(cooldownKey))
-                {
-                    results.Add(new { machineId, success = false, message = "Too many requests" });
-                    continue;
-                }
-
                 var jobId = Guid.NewGuid().ToString("N");
-                Console.WriteLine($"[SmartDownload] jobId={jobId} accepted. machineId={machineId} headType={headType} programNo={programNo} path={relPath}");
+                Console.WriteLine($"[SmartDownload] jobId={jobId} accepted. machineId={machineId} headType={headType} programNo={programNo} path={relPath} source=bridge-store");
 
                 Task.Run(() =>
                 {
                     try
                     {
-                        if (!BridgeShared.TryGetProgramDataPreferMode1(machineId, headType, programNo, out var programData, out var error))
-                        {
-                            Console.WriteLine($"[SmartDownload] jobId={jobId} failed: {error}");
-                            BridgeShared.JobResults[jobId] = new JobResult
-                            {
-                                JobId = jobId,
-                                Status = "FAILED",
-                                Result = new { success = false, message = error ?? "GetMachineProgramData failed" },
-                                CreatedAtUtc = DateTime.UtcNow
-                            };
-                            return;
-                        }
-
-                        int length = (programData ?? string.Empty).Length;
-                        string savedPath = null;
-
-                        if (!string.IsNullOrWhiteSpace(relPath))
-                        {
-                            try
-                            {
-                                var fullPath = BridgeShared.GetSafeBridgeStorePath(relPath);
-                                var dir = Path.GetDirectoryName(fullPath);
-                                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                                {
-                                    Directory.CreateDirectory(dir);
-                                }
-                                File.WriteAllText(fullPath, programData ?? string.Empty, Encoding.ASCII);
-                                savedPath = relPath;
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"[SmartDownload] jobId={jobId} file write failed: {ex.Message}");
-                            }
-                        }
-
-                        Console.WriteLine($"[SmartDownload] jobId={jobId} completed. length={length} path={savedPath}");
+                        var savedPath = relPath;
+                        Console.WriteLine($"[SmartDownload] jobId={jobId} completed. length={length} path={savedPath} source=bridge-store");
 
                         var resultObj = new
                         {
@@ -223,19 +193,6 @@ namespace HiLinkBridgeWebApi48.Controllers
                             length,
                             warning = (string)null,
                         };
-
-                        if (!string.IsNullOrEmpty(error) && error.StartsWith("TRUNCATED:"))
-                        {
-                            resultObj = new
-                            {
-                                success = true,
-                                headType,
-                                slotNo = programNo,
-                                path = savedPath,
-                                length,
-                                warning = error,
-                            };
-                        }
 
                         BridgeShared.JobResults[jobId] = new JobResult
                         {
@@ -282,52 +239,21 @@ namespace HiLinkBridgeWebApi48.Controllers
             {
                 var programNo = slotNo.Value;
                 var relPath = (path ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(relPath))
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "bridge-store path is required" });
+                }
+
+                if (!BridgeShared.TryReadProgramDataFromBridgeStore(relPath, out var programData, out var readErr))
+                {
+                    return Request.CreateResponse(HttpStatusCode.NotFound, new { success = false, message = readErr ?? "bridge-store file not found" });
+                }
+
+                var length = (programData ?? string.Empty).Length;
 
                 foreach (var machineId in machineIds)
                 {
-                    var cooldownKey = $"downloadProgram:get:{machineId}:{headType}:{programNo}";
-                    if (BridgeShared.IsRawReadOnCooldown(cooldownKey))
-                    {
-                        results.Add(new { machineId, success = false, message = "Too many requests" });
-                        continue;
-                    }
-
-                    if (!BridgeShared.TryGetProgramDataPreferMode1(machineId, headType, programNo, out var programData, out var error))
-                    {
-                        results.Add(new { machineId, success = false, message = error ?? "GetMachineProgramData failed" });
-                        continue;
-                    }
-
-                    try
-                    {
-                        int length = (programData ?? string.Empty).Length;
-                        string savedPath = null;
-
-                        if (!string.IsNullOrWhiteSpace(relPath))
-                        {
-                            var fullPath = BridgeShared.GetSafeBridgeStorePath(relPath);
-                            var dir = Path.GetDirectoryName(fullPath);
-                            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                            {
-                                Directory.CreateDirectory(dir);
-                            }
-                            File.WriteAllText(fullPath, programData ?? string.Empty, Encoding.ASCII);
-                            savedPath = relPath;
-                        }
-
-                        if (!string.IsNullOrEmpty(error) && error.StartsWith("TRUNCATED:"))
-                        {
-                            results.Add(new { machineId, success = true, headType, slotNo = programNo, path = savedPath, length, warning = error });
-                        }
-                        else
-                        {
-                            results.Add(new { machineId, success = true, headType, slotNo = programNo, path = savedPath, length });
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        results.Add(new { machineId, success = false, message = ex.Message });
-                    }
+                    results.Add(new { machineId, success = true, headType, slotNo = programNo, path = relPath, length, message = "Program loaded from bridge-store" });
                 }
                 return Request.CreateResponse(HttpStatusCode.OK, new { success = true, results });
             }
@@ -700,47 +626,19 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "path is required" });
             }
 
+            if (!BridgeShared.TryReadProgramDataFromBridgeStore(relPath, out var programData, out var readErr))
+            {
+                return Request.CreateResponse(HttpStatusCode.NotFound, new { success = false, message = readErr ?? "bridge-store file not found" });
+            }
+
+            var length = (programData ?? string.Empty).Length;
+
             var machineIds = BridgeShared.ParseMachineIds(machines);
             var results = new List<object>();
 
             foreach (var machineId in machineIds)
             {
-                var cooldownKey = $"downloadProgram:{machineId}:{headType}:{programNo}";
-                if (BridgeShared.IsRawReadOnCooldown(cooldownKey))
-                {
-                    results.Add(new { machineId, success = false, message = "Too many requests" });
-                    continue;
-                }
-
-                if (!BridgeShared.TryGetProgramDataPreferMode1(machineId, headType, programNo, out var programData, out var error))
-                {
-                    results.Add(new { machineId, success = false, message = error ?? "GetMachineProgramData failed" });
-                    continue;
-                }
-
-                try
-                {
-                    var fullPath = BridgeShared.GetSafeBridgeStorePath(relPath);
-                    var dir = Path.GetDirectoryName(fullPath);
-                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                    {
-                        Directory.CreateDirectory(dir);
-                    }
-                    File.WriteAllText(fullPath, programData ?? string.Empty, Encoding.ASCII);
-
-                    if (!string.IsNullOrEmpty(error) && error.StartsWith("TRUNCATED:"))
-                    {
-                        results.Add(new { machineId, success = true, headType, slotNo = programNo, path = relPath, warning = error });
-                    }
-                    else
-                    {
-                        results.Add(new { machineId, success = true, headType, slotNo = programNo, path = relPath });
-                    }
-                }
-                catch (Exception ex)
-                {
-                    results.Add(new { machineId, success = false, message = ex.Message });
-                }
+                results.Add(new { machineId, success = true, headType, slotNo = programNo, path = relPath, length, message = "Program loaded from bridge-store" });
             }
 
             return Request.CreateResponse(HttpStatusCode.OK, new { success = true, results });
