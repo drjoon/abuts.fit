@@ -1,4 +1,4 @@
-export type SharedOnboardingStepId = "account" | "organization";
+export type SharedOnboardingStepId = "account" | "business";
 
 export type MembershipRole = "owner" | "member";
 
@@ -7,9 +7,9 @@ export interface SharedAccountDraft {
   email: string;
 }
 
-export interface SharedOrganizationDraft {
+export interface SharedBusinessDraft {
   membershipRole: MembershipRole;
-  organizationName: string;
+  businessName: string;
   businessNumber: string;
   representativeName: string;
   phoneNumber: string;

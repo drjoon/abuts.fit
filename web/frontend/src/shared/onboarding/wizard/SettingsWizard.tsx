@@ -64,9 +64,6 @@ export const SettingsWizard = ({
   const fallbackRoleStorageKey = useMemo(() => {
     return `onboarding:wizard-role:${businessType}:${mode}`;
   }, [businessType, mode]);
-  const legacyBusinessRoleStorageKey = useMemo(() => {
-    return `onboarding:wizard-role:${businessType}:organization:${storageIdentity}`;
-  }, [businessType, storageIdentity]);
   const stepStorageKey = useMemo(() => {
     return `onboarding:wizard-step:${businessType}:${mode}:${storageIdentity}`;
   }, [businessType, mode, storageIdentity]);
@@ -76,15 +73,11 @@ export const SettingsWizard = ({
   const fallbackStepStorageKey = useMemo(() => {
     return `onboarding:wizard-step:${businessType}:${mode}`;
   }, [businessType, mode]);
-  const legacyBusinessStepStorageKey = useMemo(() => {
-    return `onboarding:wizard-step:${businessType}:organization:${storageIdentity}`;
-  }, [businessType, storageIdentity]);
   const readStoredStep = useCallback(() => {
     if (typeof window === "undefined") return null;
     const raw =
       window.localStorage.getItem(stepStorageKey) ||
       window.localStorage.getItem(legacyStepStorageKey) ||
-      window.localStorage.getItem(legacyBusinessStepStorageKey) ||
       window.localStorage.getItem(fallbackStepStorageKey) ||
       "";
     const resolved = STEP_ORDER.includes(raw as WizardStepId)
@@ -94,17 +87,8 @@ export const SettingsWizard = ({
       window.localStorage.setItem(stepStorageKey, resolved);
       window.localStorage.removeItem(legacyStepStorageKey);
     }
-    if (raw === window.localStorage.getItem(legacyBusinessStepStorageKey)) {
-      window.localStorage.setItem(stepStorageKey, raw);
-      window.localStorage.removeItem(legacyBusinessStepStorageKey);
-    }
     return resolved;
-  }, [
-    fallbackStepStorageKey,
-    legacyBusinessStepStorageKey,
-    legacyStepStorageKey,
-    stepStorageKey,
-  ]);
+  }, [fallbackStepStorageKey, legacyStepStorageKey, stepStorageKey]);
   const [currentStep, setCurrentStep] = useState<WizardStepId | null>(
     () => readStoredStep() || "profile",
   );
@@ -114,7 +98,6 @@ export const SettingsWizard = ({
       const storedRole =
         window.localStorage.getItem(roleStorageKey) ||
         window.localStorage.getItem(legacyRoleStorageKey) ||
-        window.localStorage.getItem(legacyBusinessRoleStorageKey) ||
         window.localStorage.getItem(fallbackRoleStorageKey);
       return storedRole === "owner" || storedRole === "member"
         ? storedRole

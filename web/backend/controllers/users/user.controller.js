@@ -516,16 +516,16 @@ async function updateProfile(req, res) {
     }
 
     if (
-      Object.prototype.hasOwnProperty.call(updateData, "organization") &&
+      Object.prototype.hasOwnProperty.call(updateData, "business") &&
       req.user?.role === "requestor" &&
       req.user?.businessAnchorId
     ) {
-      const nextName = String(updateData.organization || "").trim();
+      const nextName = String(updateData.business || "").trim();
       const org = await Business.findOne({
         businessAnchorId: req.user.businessAnchorId,
       });
       if (!org || String(org.owner) !== String(req.user._id)) {
-        delete updateData.organization;
+        delete updateData.business;
       } else {
         if (nextName && nextName !== org.name) {
           const exists = await Business.findOne({
@@ -549,7 +549,6 @@ async function updateProfile(req, res) {
         }
 
         updateData.business = nextName || org.name;
-        delete updateData.organization;
       }
     }
 

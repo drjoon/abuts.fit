@@ -103,7 +103,6 @@ type ApiUser = {
   originalEmail?: string | null;
   role?: string;
   business?: string;
-  organization?: string;
   active?: boolean;
   approvedAt?: string | null;
   createdAt?: string;
@@ -111,7 +110,7 @@ type ApiUser = {
   totalRequests?: number;
   replacesUserId?: string | null;
   replacedByUserId?: string | null;
-  organizationInfo?: {
+  businessInfo?: {
     name?: string;
     businessLicense?: {
       fileId?: string | null;
@@ -152,7 +151,7 @@ type UiUserRow = {
   totalRequests?: number | null;
   replacesUserId?: string | null;
   replacedByUserId?: string | null;
-  organizationInfo?: ApiUser["organizationInfo"] | null;
+  businessInfo?: ApiUser["businessInfo"] | null;
   unresolvedBusiness?: boolean;
 };
 
@@ -164,6 +163,14 @@ const formatDate = (input?: string) => {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+};
+
+const getDisplayUserName = (user: Pick<UiUserRow, "name" | "businessInfo">) => {
+  const representativeName = String(
+    user.businessInfo?.extracted?.representativeName || "",
+  ).trim();
+  const accountName = String(user.name || "").trim();
+  return representativeName || accountName || "-";
 };
 
 const toUiUser = (u: ApiUser): UiUserRow => {
@@ -192,7 +199,7 @@ const toUiUser = (u: ApiUser): UiUserRow => {
         : null,
     replacesUserId: u.replacesUserId || null,
     replacedByUserId: u.replacedByUserId || null,
-    organizationInfo: u.organizationInfo || null,
+    businessInfo: u.businessInfo || null,
     unresolvedBusiness: Boolean(u.unresolvedBusiness),
   };
 };
@@ -377,12 +384,12 @@ export const AdminUserManagement = () => {
   );
 
   const deleteUserWithBusiness = useCallback(
-    async (user: UiUserRow) => {
+    async (targetUser: UiUserRow) => {
       if (!token) return false;
       setDeletingUser(true);
       try {
         const res = await request<any>({
-          path: `/api/admin/users/${encodeURIComponent(user.id)}/with-business`,
+          path: `/api/admin/users/${encodeURIComponent(targetUser.id)}/with-business`,
           method: "DELETE",
           token,
         });
@@ -399,7 +406,7 @@ export const AdminUserManagement = () => {
         }
         toast({
           title: "사업자 포함 계정 삭제 완료",
-          description: `${user.name} 계정과 연결 사업자를 삭제했습니다.`,
+          description: `${getDisplayUserName(targetUser)} 계정과 연결 사업자를 삭제했습니다.`,
         });
         setDeleteTarget(null);
         setDetailOpen(false);
@@ -440,7 +447,7 @@ export const AdminUserManagement = () => {
 
   useEffect(() => {
     const loadLicense = async () => {
-      const license = selectedUser?.organizationInfo?.businessLicense;
+      const license = selectedUser?.businessInfo?.businessLicense;
       if (!token || (!license?.fileId && !license?.s3Key)) {
         setLicenseUrl(null);
         return;
@@ -687,7 +694,9 @@ export const AdminUserManagement = () => {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <div className="font-medium">{user.name}</div>
+                      <div className="font-medium">
+                        {getDisplayUserName(user)}
+                      </div>
                       <div className="text-xs text-muted-foreground">
                         {user.companyName || "사업장 미등록"}
                       </div>
@@ -814,13 +823,13 @@ export const AdminUserManagement = () => {
                     <div className="flex items-center gap-3 min-w-0">
                       <Avatar className="shrink-0">
                         <AvatarFallback>
-                          {String(user.name || "?")[0]}
+                          {String(getDisplayUserName(user) || "?")[0]}
                         </AvatarFallback>
                       </Avatar>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-medium truncate max-w-[180px]">
-                            {user.name}
+                            {getDisplayUserName(user)}
                           </h3>
                           <Badge variant={getRoleBadgeVariant(user.role)}>
                             {getRoleLabel(user.role)}
@@ -835,11 +844,9 @@ export const AdminUserManagement = () => {
                         <p className="text-sm text-muted-foreground truncate">
                           {user.email}
                         </p>
-                        {user.companyName ? (
-                          <p className="text-xs text-muted-foreground truncate">
-                            {user.companyName}
-                          </p>
-                        ) : null}
+                        <p className="text-xs text-muted-foreground truncate">
+                          {user.businessInfo?.name || user.companyName || "-"}
+                        </p>
                       </div>
                     </div>
 
@@ -852,7 +859,11 @@ export const AdminUserManagement = () => {
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem
                           onClick={() =>
-                            handleUserAction("상세보기", user.id, user.name)
+                            handleUserAction(
+                              "상세보기",
+                              user.id,
+                              getDisplayUserName(user),
+                            )
                           }
                         >
                           <Eye className="mr-2 h-4 w-4" />
@@ -881,7 +892,11 @@ export const AdminUserManagement = () => {
                             size="sm"
                             className="h-8"
                             onClick={() =>
-                              handleUserAction("승인", user.id, user.name)
+                              handleUserAction(
+                                "승인",
+                                user.id,
+                                getDisplayUserName(user),
+                              )
                             }
                           >
                             승인
@@ -891,7 +906,11 @@ export const AdminUserManagement = () => {
                             variant="outline"
                             className="h-8"
                             onClick={() =>
-                              handleUserAction("거절", user.id, user.name)
+                              handleUserAction(
+                                "거절",
+                                user.id,
+                                getDisplayUserName(user),
+                              )
                             }
                           >
                             거절
@@ -908,7 +927,7 @@ export const AdminUserManagement = () => {
                             handleUserAction(
                               user.status === "active" ? "일시정지" : "활성화",
                               user.id,
-                              user.name,
+                              getDisplayUserName(user),
                             )
                           }
                         >
@@ -930,254 +949,321 @@ export const AdminUserManagement = () => {
         </Card>
 
         <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-          <DialogContent className="max-w-6xl w-full">
-            <DialogHeader>
-              <DialogTitle>사용자 상세</DialogTitle>
-            </DialogHeader>
+          <DialogContent className="w-[min(1200px,calc(100vw-2rem))] max-h-[90vh] overflow-hidden p-0">
+            <div className="flex max-h-[90vh] flex-col overflow-hidden">
+              <DialogHeader className="border-b px-6 py-5">
+                <DialogTitle className="text-lg">사용자 상세</DialogTitle>
+              </DialogHeader>
 
-            {loadingDetail || !selectedUser ? (
-              <div className="text-sm text-muted-foreground">
-                불러오는 중...
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <div className="text-muted-foreground">이름</div>
-                    <div className="font-medium">{selectedUser.name}</div>
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground">역할</div>
-                    <div className="font-medium">
-                      {getRoleLabel(selectedUser.role)}
+              {loadingDetail || !selectedUser ? (
+                <div className="px-6 py-8 text-sm text-muted-foreground">
+                  불러오는 중...
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto px-6 py-5">
+                  <div className="space-y-5">
+                    <Card className="border-slate-200/80 shadow-sm">
+                      <CardContent className="p-4 md:p-5">
+                        <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+                          <div className="space-y-4">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="text-2xl font-semibold tracking-tight">
+                                {getDisplayUserName(selectedUser)}
+                              </div>
+                              <Badge
+                                variant={getRoleBadgeVariant(selectedUser.role)}
+                              >
+                                {getRoleLabel(selectedUser.role)}
+                              </Badge>
+                              {getStatusBadge(selectedUser.status)}
+                              {selectedUser.unresolvedBusiness && (
+                                <Badge className="bg-amber-100 text-amber-700 border-amber-200">
+                                  사업자 확인 필요
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="grid gap-3 sm:grid-cols-2 text-sm">
+                              <div className="rounded-lg border bg-slate-50/70 p-3">
+                                <div className="text-xs text-muted-foreground">
+                                  계정명
+                                </div>
+                                <div className="mt-1 font-medium">
+                                  {selectedUser.name || "-"}
+                                </div>
+                              </div>
+                              <div className="rounded-lg border bg-slate-50/70 p-3">
+                                <div className="text-xs text-muted-foreground">
+                                  이메일
+                                </div>
+                                <div className="mt-1 break-all font-medium">
+                                  {selectedUser.email || "-"}
+                                </div>
+                              </div>
+                              <div className="rounded-lg border bg-slate-50/70 p-3">
+                                <div className="text-xs text-muted-foreground">
+                                  원본 이메일
+                                </div>
+                                <div className="mt-1 break-all font-medium">
+                                  {selectedUser.originalEmail || "-"}
+                                </div>
+                              </div>
+                              <div className="rounded-lg border bg-slate-50/70 p-3">
+                                <div className="text-xs text-muted-foreground">
+                                  사업자명
+                                </div>
+                                <div className="mt-1 font-medium">
+                                  {selectedUser.businessInfo?.name ||
+                                    selectedUser.companyName ||
+                                    "-"}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="rounded-lg border bg-white p-4">
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                              <div className="rounded-lg bg-muted/40 p-3">
+                                <div className="text-xs text-muted-foreground">
+                                  상태
+                                </div>
+                                <div className="mt-1 font-medium">
+                                  {getStatusBadge(selectedUser.status)}
+                                </div>
+                              </div>
+                              <div className="rounded-lg bg-muted/40 p-3">
+                                <div className="text-xs text-muted-foreground">
+                                  사업자 상태
+                                </div>
+                                <div className="mt-1 font-medium">
+                                  {selectedUser.unresolvedBusiness ? (
+                                    <Badge className="bg-amber-100 text-amber-700 border-amber-200">
+                                      확인 필요
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="outline">정상</Badge>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded-lg bg-muted/40 p-3">
+                                <div className="text-xs text-muted-foreground">
+                                  등록일
+                                </div>
+                                <div className="mt-1 font-medium">
+                                  {selectedUser.joinDate || "-"}
+                                </div>
+                              </div>
+                              <div className="rounded-lg bg-muted/40 p-3">
+                                <div className="text-xs text-muted-foreground">
+                                  마지막 로그인
+                                </div>
+                                <div className="mt-1 font-medium">
+                                  {selectedUser.lastLogin || "-"}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+                      <Card className="border-slate-200/80 shadow-sm">
+                        <CardHeader className="pb-4">
+                          <CardTitle className="text-sm">
+                            사업자등록증
+                          </CardTitle>
+                          <CardDescription>
+                            업로드된 이미지를 크게 확인할 수 있습니다.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          {licenseLoading && (
+                            <div className="flex min-h-[460px] items-center justify-center rounded-lg border bg-muted/20 text-sm text-muted-foreground">
+                              불러오는 중...
+                            </div>
+                          )}
+                          {!licenseLoading && licenseUrl && (
+                            <div className="overflow-hidden rounded-lg border bg-white">
+                              <img
+                                src={licenseUrl}
+                                alt="사업자등록증"
+                                className="h-[460px] w-full object-contain"
+                              />
+                            </div>
+                          )}
+                          {!licenseLoading && !licenseUrl && (
+                            <div className="flex min-h-[460px] items-center justify-center rounded-lg border bg-muted/20 text-sm text-muted-foreground">
+                              등록된 사업자등록증이 없습니다.
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+
+                      <Card className="border-slate-200/80 shadow-sm">
+                        <CardHeader className="pb-4">
+                          <CardTitle className="text-sm">
+                            추출된 사업자 정보
+                          </CardTitle>
+                          <CardDescription>
+                            사업자등록증에서 읽은 정보를 확인합니다.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          {selectedUser.businessInfo?.extracted ? (
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              {[
+                                [
+                                  "사업자명",
+                                  selectedUser.businessInfo.extracted
+                                    .companyName || "-",
+                                ],
+                                [
+                                  "대표자",
+                                  selectedUser.businessInfo.extracted
+                                    .representativeName || "-",
+                                ],
+                                [
+                                  "사업자번호",
+                                  selectedUser.businessInfo.extracted
+                                    .businessNumber || "-",
+                                ],
+                                [
+                                  "주소",
+                                  selectedUser.businessInfo.extracted.address ||
+                                    "-",
+                                ],
+                                [
+                                  "전화번호",
+                                  selectedUser.businessInfo.extracted
+                                    .phoneNumber || "-",
+                                ],
+                                [
+                                  "이메일",
+                                  selectedUser.businessInfo.extracted.email ||
+                                    "-",
+                                ],
+                                [
+                                  "업태/업종",
+                                  `${selectedUser.businessInfo.extracted.businessType || "-"}${selectedUser.businessInfo.extracted.businessItem ? ` / ${selectedUser.businessInfo.extracted.businessItem}` : ""}`,
+                                ],
+                                [
+                                  "개업일",
+                                  selectedUser.businessInfo.extracted
+                                    .startDate || "-",
+                                ],
+                              ].map(([label, value]) => (
+                                <div
+                                  key={label}
+                                  className="rounded-lg border bg-slate-50/70 p-3"
+                                >
+                                  <div className="text-xs text-muted-foreground">
+                                    {label}
+                                  </div>
+                                  <div className="mt-1 break-words text-sm font-medium text-foreground">
+                                    {value}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-sm text-muted-foreground">
+                              추출된 정보가 없습니다.
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
                     </div>
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground">이메일</div>
-                    <div className="font-medium break-all">
-                      {selectedUser.email}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground">원본 이메일</div>
-                    <div className="font-medium break-all">
-                      {selectedUser.originalEmail || "-"}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground">조직</div>
-                    <div className="font-medium">
-                      {selectedUser.companyName || "-"}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground">상태</div>
-                    <div className="font-medium">
-                      {getStatusBadge(selectedUser.status)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground">사업자 상태</div>
-                    <div className="font-medium">
-                      {selectedUser.unresolvedBusiness ? (
-                        <Badge className="bg-amber-100 text-amber-700 border-amber-200">
-                          확인 필요
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline">정상</Badge>
+
+                    <div className="flex flex-wrap gap-2 justify-end pb-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={loadingDetail}
+                        onClick={async () => {
+                          if (!selectedUser) return;
+                          const ok = await toggleUserActive(selectedUser.id);
+                          if (!ok) return;
+                          await fetchUsers();
+                          await fetchUserDetail(selectedUser.id);
+                        }}
+                      >
+                        {selectedUser.status === "active"
+                          ? "비활성화"
+                          : "활성화"}
+                      </Button>
+
+                      <Select
+                        value={selectedUser.role}
+                        onValueChange={async (v) => {
+                          if (!selectedUser) return;
+                          const ok = await changeUserRole(selectedUser.id, v);
+                          if (!ok) return;
+                          toast({
+                            title: "역할 변경 완료",
+                            description: `${getDisplayUserName(selectedUser)}님의 역할이 변경되었습니다.`,
+                          });
+                          await fetchUsers();
+                          await fetchUserDetail(selectedUser.id);
+                        }}
+                      >
+                        <SelectTrigger className="w-[160px]">
+                          <SelectValue placeholder="역할" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="requestor">의뢰자</SelectItem>
+                          <SelectItem value="salesman">영업자</SelectItem>
+                          <SelectItem value="devops">개발운영사</SelectItem>
+                          <SelectItem value="manufacturer">제조사</SelectItem>
+                          <SelectItem value="admin">관리자</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      {!!selectedUser.replacesUserId && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() =>
+                            fetchUserDetail(String(selectedUser.replacesUserId))
+                          }
+                          disabled={loadingDetail}
+                        >
+                          이전 계정
+                        </Button>
                       )}
+                      {!!selectedUser.replacedByUserId && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() =>
+                            fetchUserDetail(
+                              String(selectedUser.replacedByUserId),
+                            )
+                          }
+                          disabled={loadingDetail}
+                        >
+                          새 계정
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setDetailOpen(false)}
+                      >
+                        닫기
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        disabled={deletingUser}
+                        onClick={() => setDeleteTarget(selectedUser)}
+                      >
+                        사업자 포함 계정 삭제
+                      </Button>
                     </div>
                   </div>
                 </div>
-
-                <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
-                  <div className="space-y-3 rounded-lg border p-4">
-                    <div className="text-sm font-medium">사업자등록증</div>
-                    {licenseLoading && (
-                      <div className="text-sm text-muted-foreground">
-                        불러오는 중...
-                      </div>
-                    )}
-                    {!licenseLoading && licenseUrl && (
-                      <img
-                        src={licenseUrl}
-                        alt="사업자등록증"
-                        className="w-full rounded-md border object-contain"
-                      />
-                    )}
-                    {!licenseLoading && !licenseUrl && (
-                      <div className="text-sm text-muted-foreground">
-                        등록된 사업자등록증이 없습니다.
-                      </div>
-                    )}
-                  </div>
-                  <div className="space-y-3 rounded-lg border p-4">
-                    <div className="text-sm font-medium">
-                      추출된 사업자 정보
-                    </div>
-                    {selectedUser.organizationInfo?.extracted ? (
-                      <div className="grid gap-2 text-sm">
-                        <div className="grid grid-cols-[140px_1fr] gap-2">
-                          <span className="text-muted-foreground">
-                            사업자명
-                          </span>
-                          <span>
-                            {selectedUser.organizationInfo.extracted
-                              .companyName || "-"}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-[140px_1fr] gap-2">
-                          <span className="text-muted-foreground">대표자</span>
-                          <span>
-                            {selectedUser.organizationInfo.extracted
-                              .representativeName || "-"}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-[140px_1fr] gap-2">
-                          <span className="text-muted-foreground">
-                            사업자번호
-                          </span>
-                          <span>
-                            {selectedUser.organizationInfo.extracted
-                              .businessNumber || "-"}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-[140px_1fr] gap-2">
-                          <span className="text-muted-foreground">주소</span>
-                          <span>
-                            {selectedUser.organizationInfo.extracted.address ||
-                              "-"}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-[140px_1fr] gap-2">
-                          <span className="text-muted-foreground">
-                            전화번호
-                          </span>
-                          <span>
-                            {selectedUser.organizationInfo.extracted
-                              .phoneNumber || "-"}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-[140px_1fr] gap-2">
-                          <span className="text-muted-foreground">이메일</span>
-                          <span>
-                            {selectedUser.organizationInfo.extracted.email ||
-                              "-"}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-[140px_1fr] gap-2">
-                          <span className="text-muted-foreground">
-                            업태/업종
-                          </span>
-                          <span>
-                            {selectedUser.organizationInfo.extracted
-                              .businessType || "-"}
-                            {selectedUser.organizationInfo.extracted
-                              .businessItem
-                              ? ` / ${selectedUser.organizationInfo.extracted.businessItem}`
-                              : ""}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-[140px_1fr] gap-2">
-                          <span className="text-muted-foreground">개업일</span>
-                          <span>
-                            {selectedUser.organizationInfo.extracted
-                              .startDate || "-"}
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-sm text-muted-foreground">
-                        추출된 정보가 없습니다.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2 justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={loadingDetail}
-                    onClick={async () => {
-                      if (!selectedUser) return;
-                      const ok = await toggleUserActive(selectedUser.id);
-                      if (!ok) return;
-                      await fetchUsers();
-                      await fetchUserDetail(selectedUser.id);
-                    }}
-                  >
-                    {selectedUser.status === "active" ? "비활성화" : "활성화"}
-                  </Button>
-
-                  <Select
-                    value={selectedUser.role}
-                    onValueChange={async (v) => {
-                      if (!selectedUser) return;
-                      const ok = await changeUserRole(selectedUser.id, v);
-                      if (!ok) return;
-                      toast({
-                        title: "역할 변경 완료",
-                        description: `${selectedUser.name}님의 역할이 변경되었습니다.`,
-                      });
-                      await fetchUsers();
-                      await fetchUserDetail(selectedUser.id);
-                    }}
-                  >
-                    <SelectTrigger className="w-[160px]">
-                      <SelectValue placeholder="역할" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="requestor">의뢰자</SelectItem>
-                      <SelectItem value="salesman">영업자</SelectItem>
-                      <SelectItem value="devops">개발운영사</SelectItem>
-                      <SelectItem value="manufacturer">제조사</SelectItem>
-                      <SelectItem value="admin">관리자</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                  {!!selectedUser.replacesUserId && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() =>
-                        fetchUserDetail(String(selectedUser.replacesUserId))
-                      }
-                      disabled={loadingDetail}
-                    >
-                      이전 계정
-                    </Button>
-                  )}
-                  {!!selectedUser.replacedByUserId && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() =>
-                        fetchUserDetail(String(selectedUser.replacedByUserId))
-                      }
-                      disabled={loadingDetail}
-                    >
-                      새 계정
-                    </Button>
-                  )}
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setDetailOpen(false)}
-                  >
-                    닫기
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    disabled={deletingUser}
-                    onClick={() => setDeleteTarget(selectedUser)}
-                  >
-                    사업자 포함 계정 삭제
-                  </Button>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </DialogContent>
         </Dialog>
         <AlertDialog
@@ -1190,13 +1276,22 @@ export const AdminUserManagement = () => {
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>사업자 포함 계정을 삭제할까요?</AlertDialogTitle>
+              <AlertDialogTitle>
+                사업자 포함 계정을 삭제할까요?
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                {deleteTarget?.name || "선택한 사용자"} 계정과 연결된 사업자, 그리고 안전 조건을 만족하는 경우 business anchor까지 함께 삭제합니다. 다른 계정이나 하위 참조가 남아 있으면 삭제가 거부됩니다.
+                {deleteTarget
+                  ? getDisplayUserName(deleteTarget)
+                  : "선택한 사용자"}{" "}
+                계정과 연결된 사업자, 그리고 안전 조건을 만족하는 경우 business
+                anchor까지 함께 삭제합니다. 다른 계정이나 하위 참조가 남아
+                있으면 삭제가 거부됩니다.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={deletingUser}>취소</AlertDialogCancel>
+              <AlertDialogCancel disabled={deletingUser}>
+                취소
+              </AlertDialogCancel>
               <AlertDialogAction
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 onClick={async (event) => {
