@@ -390,7 +390,7 @@ try
 var backendBase = Config.BackendBase;
 if (string.IsNullOrEmpty(backendBase))
 {
-Console.WriteLine("[CncMachining] initial sync skipped: BACKEND_URL is empty");
+Console.WriteLine("[CncMachining] initial sync skipped: BACKEND_BASE is empty");
 return;
 }
 var list = MachinesConfigStore.Load() ?? new List<Models.MachineConfigItem>();

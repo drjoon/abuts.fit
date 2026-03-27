@@ -138,7 +138,7 @@ def _register_metadata_to_backend(
         성공 여부
     """
     try:
-        backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api").rstrip("/")
+        backend_url = os.getenv("BACKEND_BASE", "https://abuts.fit/api").rstrip("/")
         register_url = f"{backend_url}/bg/register-stl-metadata"
         
         payload = {

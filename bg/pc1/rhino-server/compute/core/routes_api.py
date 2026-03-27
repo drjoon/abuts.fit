@@ -181,7 +181,7 @@ async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks
         import requests
         
         # 백엔드에서 원본 STL 파일 경로 및 finish line 조회
-        backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api").rstrip("/")
+        backend_url = os.getenv("BACKEND_BASE", "https://abuts.fit/api").rstrip("/")
         
         # Request 메타 정보 조회
         meta_url = f"{backend_url}/bg/request-meta"

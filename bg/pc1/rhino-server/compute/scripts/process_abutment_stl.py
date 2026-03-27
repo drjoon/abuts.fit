@@ -49,7 +49,7 @@ def _post_finish_line(request_id: str, input_file_name: str, finish_line: dict):
         import System.Net.Http
         import System.Text
 
-        backend = os.environ.get("BACKEND_URL", "https://abuts.fit/api").rstrip("/")
+        backend = os.environ.get("BACKEND_BASE", "https://abuts.fit/api").rstrip("/")
         url = backend + "/bg/register-finish-line"
 
         payload = {
