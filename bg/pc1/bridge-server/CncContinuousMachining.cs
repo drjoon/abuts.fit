@@ -243,10 +243,10 @@ private static Task<bool> DetectMachiningCompletion(string machineId, MachineSta
                 // 2) 생산 수량 확인 (카운트 +1)
                 if (TryGetProductCount(machineId, out var currentCount))
                 {
-                    Console.WriteLine("[CncMachining] completion count check machine={0} jobId={1} before={2} after={3} delta={4}",
-                        machineId, state.CurrentJob?.id, state.ProductCountBefore, currentCount, currentCount - state.ProductCountBefore);
                     if (currentCount > state.ProductCountBefore)
                     {
+                        Console.WriteLine("[CncMachining] completion count check machine={0} jobId={1} before={2} after={3} delta={4}",
+                            machineId, state.CurrentJob?.id, state.ProductCountBefore, currentCount, currentCount - state.ProductCountBefore);
                         Console.WriteLine("[CncMachining] production count increased machine={0} jobId={1} before={2} after={3}",
                         machineId, state.CurrentJob?.id, state.ProductCountBefore, currentCount);
                         return Task.FromResult(true);
@@ -887,10 +887,10 @@ if (state.SawBusy && !busy)
 // 2) 생산 수량 확인 (카운트 +1)
 if (TryGetProductCount(machineId, out var currentCount))
 {
-Console.WriteLine("[CncMachining] completion count check machine={0} jobId={1} before={2} after={3} delta={4}",
-machineId, state.CurrentJob?.id, state.ProductCountBefore, currentCount, currentCount - state.ProductCountBefore);
 if (currentCount > state.ProductCountBefore)
 {
+Console.WriteLine("[CncMachining] completion count check machine={0} jobId={1} before={2} after={3} delta={4}",
+machineId, state.CurrentJob?.id, state.ProductCountBefore, currentCount, currentCount - state.ProductCountBefore);
 Console.WriteLine("[CncMachining] production count increased machine={0} jobId={1} before={2} after={3}",
 machineId, state.CurrentJob?.id, state.ProductCountBefore, currentCount);
 return true;
@@ -1239,7 +1239,10 @@ private static bool TryGetMachineAlarms(string machineId, out List<object> alarm
             }
             anySuccess = true;
             var count = info.alarmArray != null ? info.alarmArray.Length : 0;
-            Console.WriteLine("[CncMachining] alarm read ok machine={0} headType={1} count={2}", machineId, headType, count);
+            if (count > 0)
+            {
+                Console.WriteLine("[CncMachining] alarm read ok machine={0} headType={1} count={2}", machineId, headType, count);
+            }
             if (info.alarmArray == null) continue;
             foreach (var a in info.alarmArray)
             {

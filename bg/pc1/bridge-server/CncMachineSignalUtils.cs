@@ -10,6 +10,8 @@ namespace HiLinkBridgeWebApi48
     {
         private static readonly object PanelIoDumpLock = new object();
         private static readonly HashSet<string> PanelIoDumpedMachines = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object BusyReadLogLock = new object();
+        private static readonly Dictionary<string, bool> LastBusyReadState = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
         internal static void DumpPanelIoSnapshotAtStartup()
         {
@@ -118,7 +120,21 @@ namespace HiLinkBridgeWebApi48
                     if (io != null && io.IOUID == (short)busyIoUid)
                     {
                         isBusy = io.Status != 0;
-                        Console.WriteLine("[CncSignal] busy read machine={0} panelType={1} busyIoUid={2} busyIoName={3} busyIoStatus={4} isBusy={5}", mid, panelType, io.IOUID, io.IOName, io.Status, isBusy);
+                        var busyKey = string.Format("{0}|{1}|{2}", mid, panelType, io.IOUID);
+                        var shouldLogBusy = false;
+                        lock (BusyReadLogLock)
+                        {
+                            bool lastBusy;
+                            if (!LastBusyReadState.TryGetValue(busyKey, out lastBusy) || lastBusy != isBusy)
+                            {
+                                LastBusyReadState[busyKey] = isBusy;
+                                shouldLogBusy = true;
+                            }
+                        }
+                        if (shouldLogBusy)
+                        {
+                            Console.WriteLine("[CncSignal] busy read machine={0} panelType={1} busyIoUid={2} busyIoName={3} busyIoStatus={4} isBusy={5}", mid, panelType, io.IOUID, io.IOName, io.Status, isBusy);
+                        }
                         return true;
                     }
                 }

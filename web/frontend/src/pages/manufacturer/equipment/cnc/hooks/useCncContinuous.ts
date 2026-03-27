@@ -91,7 +91,9 @@ export const useCncContinuous = (machineId: string | null | undefined) => {
 
     const handleCompleted = (data: any) => {
       if (data?.machineId !== machineId) return;
-      void fetchState();
+      window.setTimeout(() => {
+        void fetchState();
+      }, 300);
     };
 
     socket.on("cnc-machining-tick", handleTick);
@@ -116,9 +118,18 @@ export const useCncContinuous = (machineId: string | null | undefined) => {
     localTimerRef.current = setInterval(() => {
       setState((prev) => {
         if (!prev || !prev.isRunning) return prev;
+        const nextElapsed = prev.elapsedSeconds + 1;
+        if (import.meta.env.DEV) {
+          console.log("[cnc][elapsed]", {
+            machineId: prev.machineId,
+            elapsedSeconds: nextElapsed,
+            currentJobId: prev.currentJob,
+            nextJobId: prev.nextJob,
+          });
+        }
         return {
           ...prev,
-          elapsedSeconds: prev.elapsedSeconds + 1,
+          elapsedSeconds: nextElapsed,
         };
       });
     }, 1000);

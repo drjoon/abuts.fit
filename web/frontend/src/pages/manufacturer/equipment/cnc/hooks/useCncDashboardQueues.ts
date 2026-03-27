@@ -316,11 +316,40 @@ export function useCncDashboardQueues({
   // 브리지 서버에서 가공 완료 후 자동으로 다음 작업을 시작하므로,
   // 프론트는 현재 작업만 제거하고 상태를 갱신한다.
   const handleMachiningCompleted = useCallback(
-    (uid: string) => {
+    (
+      uid: string,
+      completion?: {
+        requestId?: string | null;
+        jobId?: string | null;
+        bridgePath?: string | null;
+      },
+    ) => {
+      const completedRequestId = String(completion?.requestId || "").trim();
+      const completedJobId = String(completion?.jobId || "").trim();
+      const completedBridgePath = String(completion?.bridgePath || "").trim();
+
+      const matchesCompletedJob = (job: CncJobItem) => {
+        if (!job || typeof job !== "object") return false;
+        const jobId = String((job as any)?.id || "").trim();
+        const jobRequestId = String((job as any)?.requestId || "").trim();
+        const jobBridgePath = String((job as any)?.bridgePath || "").trim();
+
+        if (completedRequestId && jobRequestId === completedRequestId)
+          return true;
+        if (completedJobId && jobId === completedJobId) return true;
+        if (completedBridgePath && jobBridgePath === completedBridgePath)
+          return true;
+        return false;
+      };
+
       // 1) 현재 작업 제거
       setReservationJobsMap((prev) => {
         const jobs = prev[uid] || [];
-        const filtered = jobs.slice(1);
+        const completedIndex = jobs.findIndex(matchesCompletedJob);
+        const filtered =
+          completedIndex >= 0
+            ? jobs.filter((_, index) => index !== completedIndex)
+            : jobs.slice(1);
         if (filtered.length === 0) {
           const nextMap = { ...prev };
           delete nextMap[uid];
@@ -386,12 +415,11 @@ export function useCncDashboardQueues({
         tickAtMs: Number.isFinite(tickAtMs) ? tickAtMs : Date.now(),
       };
 
-      if (import.meta.env.DEV) {
-        console.log("[cnc][tick]", { machineId: mid, elapsedSeconds: elapsed });
-      }
       setMachiningElapsedSecondsMap((prev) => {
-        if (prev[mid] === elapsed) return prev;
-        return { ...prev, [mid]: elapsed };
+        if (prev[mid] == null) return prev;
+        const next = { ...prev };
+        delete next[mid];
+        return next;
       });
     });
 
@@ -462,12 +490,26 @@ export function useCncDashboardQueues({
       if (import.meta.env.DEV) {
         console.log("[cnc][completed]", { machineId: mid, data });
       }
-      handleMachiningCompleted(mid);
+      handleMachiningCompleted(mid, {
+        requestId: (data as any)?.requestId ?? null,
+        jobId: (data as any)?.jobId ?? null,
+        bridgePath: (data as any)?.bridgePath ?? null,
+      });
       setMachiningElapsedSecondsMap((prev) => {
         const next = { ...prev };
         delete next[mid];
         return next;
       });
+
+      window.setTimeout(() => {
+        void refreshStatusFor(mid);
+        void fetchProgramList();
+        const m = machinesRef.current.find((x) => x.uid === mid);
+        if (m) {
+          void loadBridgeQueueForMachine(m, { silent: true });
+        }
+        void refreshDbQueuesForAllMachines();
+      }, 300);
     });
 
     return () => {
@@ -896,15 +938,14 @@ export function useCncDashboardQueues({
         elapsedSeconds: elapsed,
         tickAtMs: Number.isFinite(tickAtMs) ? tickAtMs : Date.now(),
       };
-
-      if (import.meta.env.DEV) {
-        console.log("[cnc][tick]", { machineId: mid, elapsedSeconds: elapsed });
-      }
       setNowPlayingMap((prev) => ({ ...prev, [mid]: true }));
       setMachiningElapsedSecondsMap((prev) => {
-        if (prev[mid] === elapsed) return prev;
-        return { ...prev, [mid]: elapsed };
+        if (prev[mid] == null) return prev;
+        const next = { ...prev };
+        delete next[mid];
+        return next;
       });
+      delete machiningElapsedBaseRef.current[mid];
     });
 
     const stopFor = (mid: string) => {
