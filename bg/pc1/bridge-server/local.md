@@ -24,3 +24,5 @@
 - When `CncMachineSignalUtils.TryGetMachineBusy()` finds IO `65`, it now logs the matched IO name/status so real-mode tests can confirm whether `IO_R_YELLOW` becomes `1` during machining.
 - `ProcessMachine()` now returns immediately after the running branch so an already-running job cannot fall through into the idle start path and start the same job twice.
 - `TryStartSignal()` clears `F_SB` (single block) before sending `C_START`; M5 was starting with `F_SB=1`, which likely caused coolant-only behavior without continuous cutting.
+- Real-mode completion now requires `currentProdCount > ProductCountBefore` after `busy` falls to `0`; all time-based completion fallbacks were removed to avoid premature job switching.
+- `CheckJobCompleted()` now logs the start baseline count and the completion count delta so we can confirm whether the product counter really increments by `+1`.

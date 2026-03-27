@@ -219,6 +219,8 @@ private static Task<bool> DetectMachiningCompletion(string machineId, MachineSta
                 // 2) 생산 수량 확인 (카운트 +1)
                 if (TryGetProductCount(machineId, out var currentCount))
                 {
+                    Console.WriteLine("[CncMachining] completion count check machine={0} jobId={1} before={2} after={3} delta={4}",
+                        machineId, state.CurrentJob?.id, state.ProductCountBefore, currentCount, currentCount - state.ProductCountBefore);
                     if (currentCount > state.ProductCountBefore)
                     {
                         Console.WriteLine("[CncMachining] production count increased machine={0} jobId={1} before={2} after={3}",
@@ -226,14 +228,12 @@ private static Task<bool> DetectMachiningCompletion(string machineId, MachineSta
                         return Task.FromResult(true);
                     }
                 }
-                // 수량 확인이 실패하더라도, busy가 내려가면 일정 시간 후 완료로 간주
-                var elapsed = DateTime.UtcNow - state.StartedAtUtc;
-                if (elapsed > TimeSpan.FromMinutes(1)) return Task.FromResult(true);
+                else
+                {
+                    Console.WriteLine("[CncMachining] completion count read failed machine={0} jobId={1}", machineId, state.CurrentJob?.id);
+                }
             }
         }
-        // fallback: 일정 시간 지나면 완료로 간주
-        var elapsedFallback = DateTime.UtcNow - state.StartedAtUtc;
-        if (elapsedFallback > TimeSpan.FromMinutes(60)) return Task.FromResult(true);
         return Task.FromResult(false);
     }
     catch (Exception ex)
@@ -669,7 +669,12 @@ catch { }
 if (TryGetMachineBusy(machineId, out var awaitingBusy) && awaitingBusy)
 {
 var prodCountBefore = 0;
-TryGetProductCount(machineId, out prodCountBefore);
+var hasProdCountBefore = TryGetProductCount(machineId, out prodCountBefore);
+if (!hasProdCountBefore)
+{
+    Console.WriteLine("[CncMachining] start count read failed machine={0} jobId={1}", machineId, state.CurrentJob?.id);
+}
+Console.WriteLine("[CncMachining] start count baseline machine={0} jobId={1} before={2} readOk={3}", machineId, state.CurrentJob?.id, prodCountBefore, hasProdCountBefore);
 lock (StateLock)
 {
 state.IsRunning = true;
@@ -841,6 +846,8 @@ if (state.SawBusy && !busy)
 // 2) 생산 수량 확인 (카운트 +1)
 if (TryGetProductCount(machineId, out var currentCount))
 {
+Console.WriteLine("[CncMachining] completion count check machine={0} jobId={1} before={2} after={3} delta={4}",
+machineId, state.CurrentJob?.id, state.ProductCountBefore, currentCount, currentCount - state.ProductCountBefore);
 if (currentCount > state.ProductCountBefore)
 {
 Console.WriteLine("[CncMachining] production count increased machine={0} jobId={1} before={2} after={3}",
@@ -848,14 +855,12 @@ machineId, state.CurrentJob?.id, state.ProductCountBefore, currentCount);
 return true;
 }
 }
-// 수량 확인이 실패하더라도, busy가 내려가면 일정 시간 후 완료로 간주
-var elapsed = DateTime.UtcNow - state.StartedAtUtc;
-if (elapsed > TimeSpan.FromMinutes(1)) return true;
+else
+{
+Console.WriteLine("[CncMachining] completion count read failed machine={0} jobId={1}", machineId, state.CurrentJob?.id);
 }
 }
-// fallback: 일정 시간 지나면 완료로 간주
-var elapsedFallback = DateTime.UtcNow - state.StartedAtUtc;
-if (elapsedFallback > TimeSpan.FromMinutes(60)) return true;
+}
 return false;
 }
 catch (Exception ex)
