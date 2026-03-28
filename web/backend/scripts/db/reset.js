@@ -33,6 +33,7 @@ async function run() {
   }
 
   await runScript("implant-preset.js");
+  await runScript("seed-prc-mappings.js");
   await runScript("seed-account.js");
   await runScript("reset-password.js");
 }

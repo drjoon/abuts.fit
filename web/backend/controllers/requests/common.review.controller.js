@@ -617,7 +617,7 @@ export async function updateReviewStatusByStage(req, res) {
 
           // PRC 파일명은 의뢰자가 아니라, 관리자(의뢰 승인) 시점에 확정한다.
           // 누락 시 esprit-addin에서 OpenProcess("")로 크래시/불량 가공 위험이 있으므로 승인 자체를 막는다.
-          const prcFiles = resolvePrcFileNames(request.caseInfos || {});
+          const prcFiles = await resolvePrcFileNames(request.caseInfos || {});
           request.caseInfos.faceHolePrcFileName = prcFiles.faceHolePrcFileName;
           request.caseInfos.connectionPrcFileName =
             prcFiles.connectionPrcFileName;

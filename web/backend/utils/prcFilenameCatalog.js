@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import PrcMapping from "../models/prcMapping.model.js";
 import {
   getCanonicalManufacturerBrandKey,
   getPrcManufacturerKor,
@@ -153,12 +154,58 @@ export function loadPrcCatalog() {
   };
 }
 
-export function buildPrcFileNamesFromCatalog(
+/**
+ * DB에서 PRC 매핑 조회 (EBS 환경 대응)
+ */
+export async function getPrcFileNamesFromDb(manufacturer, brand, type, family) {
+  try {
+    const normalizedManufacturer = normalizeImplantManufacturer(manufacturer);
+    const normalizedBrand = normalizeImplantBrand(brand, manufacturer);
+    const normalizedType = normalizeImplantType(type);
+    const normalizedFamily = String(family || "").trim();
+
+    const mapping = await PrcMapping.findOne({
+      manufacturer: normalizedManufacturer,
+      brand: normalizedBrand,
+      family: normalizedFamily,
+      type: normalizedType,
+    })
+      .select({ faceHolePrcFileName: 1, connectionPrcFileName: 1 })
+      .lean();
+
+    if (mapping) {
+      return {
+        faceHolePrcFileName: mapping.faceHolePrcFileName || "",
+        connectionPrcFileName: mapping.connectionPrcFileName || "",
+      };
+    }
+  } catch (error) {
+    console.error("[getPrcFileNamesFromDb] DB 조회 실패:", error);
+  }
+  return { faceHolePrcFileName: "", connectionPrcFileName: "" };
+}
+
+/**
+ * PRC 파일명 조회 (DB 우선, 파일 시스템 fallback)
+ */
+export async function buildPrcFileNamesFromCatalog(
   manufacturer,
   brand,
   type,
   family,
 ) {
+  // 1. DB 조회 우선 (EBS 환경 대응)
+  const dbResult = await getPrcFileNamesFromDb(
+    manufacturer,
+    brand,
+    type,
+    family,
+  );
+  if (dbResult.faceHolePrcFileName && dbResult.connectionPrcFileName) {
+    return dbResult;
+  }
+
+  // 2. 파일 시스템 fallback (로컬 환경)
   const canonicalKey = getCanonicalManufacturerBrandKey(manufacturer, brand);
   const normalizedType = normalizeImplantType(type);
   const normalizedFamily = String(family || "").trim();

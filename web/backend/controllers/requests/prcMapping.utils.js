@@ -15,23 +15,28 @@ import {
 import { buildPrcFileNamesFromCatalog } from "../../utils/prcFilenameCatalog.js";
 
 /**
- * 임플란트 정보로 PRC 파일명 조회
+ * 임플란트 정보로 PRC 파일명 조회 (DB 우선)
  * @param {string} manufacturer - 제조사 (e.g. "OSSTEM", "DENTIS")
  * @param {string} brand - 브랜드 (e.g. "TS", "SuperLine")
  * @param {string} family - 패밀리 (e.g. "Regular", "Mini")
  * @param {string} type - 타입 (e.g. "Hex", "Non-Hex")
- * @returns {{ faceHolePrcFileName: string, connectionPrcFileName: string }}
+ * @returns {Promise<{ faceHolePrcFileName: string, connectionPrcFileName: string }>}
  */
-export function getPrcFileNamesByImplant(manufacturer, brand, family, type) {
-  return buildPrcFileNamesFromCatalog(manufacturer, brand, type, family);
+export async function getPrcFileNamesByImplant(
+  manufacturer,
+  brand,
+  family,
+  type,
+) {
+  return await buildPrcFileNamesFromCatalog(manufacturer, brand, type, family);
 }
 
 /**
- * caseInfos 객체로부터 PRC 파일명 자동 결정
+ * caseInfos 객체로부터 PRC 파일명 자동 결정 (DB 우선)
  * @param {object} caseInfos - Request.caseInfos
- * @returns {{ faceHolePrcFileName: string, connectionPrcFileName: string }}
+ * @returns {Promise<{ faceHolePrcFileName: string, connectionPrcFileName: string }>}
  */
-export function resolvePrcFileNames(caseInfos) {
+export async function resolvePrcFileNames(caseInfos) {
   if (!caseInfos) {
     return { faceHolePrcFileName: "", connectionPrcFileName: "" };
   }
@@ -48,5 +53,5 @@ export function resolvePrcFileNames(caseInfos) {
     return { faceHolePrcFileName: "", connectionPrcFileName: "" };
   }
 
-  return getPrcFileNamesByImplant(manufacturer, brand, family, type);
+  return await getPrcFileNamesByImplant(manufacturer, brand, family, type);
 }
