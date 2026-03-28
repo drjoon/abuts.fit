@@ -226,7 +226,8 @@ export const MailboxGrid = ({
       });
       toast({
         title: modifyOnly ? "운송장 재출력 시작" : "운송장 출력 시작",
-        description: `${effectiveTargetAddresses.length}개 우편함의 운송장을 출력합니다.`,
+        description: `${effectiveTargetAddresses.length}개 우편함의 운송장을 출력합니다. 한진 API 응답까지 10초 이상 걸릴 수 있습니다.`,
+        duration: 8000,
       });
       const needsPickupBeforePrint = modifyOnly
         ? effectiveTargetAddresses.some((addr) => {

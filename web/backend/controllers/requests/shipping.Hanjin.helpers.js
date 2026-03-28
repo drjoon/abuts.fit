@@ -320,10 +320,23 @@ export const executeHanjinLabelPrint = async ({
   // payload는 address_list를 포함한 형식이어야 함
   const printPath = path.replace("{client_id}", HANJIN_CLIENT_ID);
 
+  const hanjinStartTime = Date.now();
+  console.log("[shipping][hanjin-print] requesting label print", {
+    mailboxCount: Array.isArray(payload?.address_list)
+      ? payload.address_list.length
+      : 0,
+  });
+
   const data = await hanjinService.requestPrintApi({
     path: printPath,
     method: "POST",
     data: payload,
+  });
+
+  const hanjinElapsedMs = Date.now() - hanjinStartTime;
+  console.log("[shipping][hanjin-print] received label response", {
+    elapsedMs: hanjinElapsedMs,
+    elapsedSec: (hanjinElapsedMs / 1000).toFixed(2),
   });
 
   const errorCount = Number(data?.error_cnt || data?.errorCnt || 0);

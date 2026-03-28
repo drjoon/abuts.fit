@@ -5,7 +5,7 @@ const clientId = String(process.env.HANJIN_CLIENT_ID || "").trim();
 const apiKey = String(process.env.HANJIN_API_KEY || "").trim();
 const secretKey = String(process.env.HANJIN_SECRET_KEY || "").trim();
 
-const DEFAULT_TIMEOUT_MS = Number(process.env.HANJIN_TIMEOUT_MS || 15000);
+const DEFAULT_TIMEOUT_MS = Number(process.env.HANJIN_TIMEOUT_MS || 30000);
 
 function sanitizeForLog(value) {
   if (value == null) return value;
@@ -120,6 +120,7 @@ async function requestHanjin({
     params,
   });
 
+  const startTime = Date.now();
   console.log("[hanjin] outbound request", {
     clientId,
     method,
@@ -144,11 +145,14 @@ async function requestHanjin({
         ...headers,
       },
     });
+    const elapsedMs = Date.now() - startTime;
     console.log("[hanjin] outbound response", {
       clientId,
       method,
       url,
       status: response.status,
+      elapsedMs,
+      elapsedSec: (elapsedMs / 1000).toFixed(2),
       data: sanitizeForLog(response.data),
     });
     return response.data;
