@@ -535,9 +535,10 @@ export async function getMyDashboardSummary(req, res) {
     }
 
     const businessAnchorId = String(req.user?.businessAnchorId || "").trim();
-    if (!debug && businessAnchorId) {
-      await waitForDashboardSummaryRefreshForAnchorId(businessAnchorId);
-    }
+    // 대시보드 갱신 대기 제거: 백그라운드 갱신 중에도 기존 캐시/스냅샷을 즉시 반환
+    // if (!debug && businessAnchorId) {
+    //   await waitForDashboardSummaryRefreshForAnchorId(businessAnchorId);
+    // }
 
     const summaryCacheKey = `dashboard-summary:${String(
       req.user?._id || "",

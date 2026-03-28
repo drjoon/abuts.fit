@@ -578,6 +578,21 @@ export const RequestorDashboardPage = () => {
       return;
     }
 
+    // 낙관적 UI 업데이트: 취소 요청 전 미리 화면에서 제거
+    queryClient.setQueryData<any>(summaryQueryKey, (prev) => {
+      if (!prev?.success || !prev?.data) return prev;
+      const recentRequests = prev.data.recentRequests || [];
+      return {
+        ...prev,
+        data: {
+          ...prev.data,
+          recentRequests: recentRequests.filter(
+            (r: any) => String(r._id || r.id) !== requestId,
+          ),
+        },
+      };
+    });
+
     try {
       const res = await apiFetch<any>({
         path: `/api/requests/${requestId}/status`,
@@ -600,6 +615,8 @@ export const RequestorDashboardPage = () => {
           variant: "destructive",
           duration: 3000,
         });
+        // 실패 시 롤백
+        refreshDashboard();
         return;
       }
 
@@ -614,7 +631,7 @@ export const RequestorDashboardPage = () => {
         }
       } catch {}
 
-      // UI는 즉시 해제하고, 데이터 갱신은 백그라운드에서 처리
+      // 백그라운드에서 최신 데이터 갱신
       refreshDashboard();
     } catch (error) {
       console.error("의뢰 취소 중 오류", error);
@@ -624,6 +641,8 @@ export const RequestorDashboardPage = () => {
         variant: "destructive",
         duration: 3000,
       });
+      // 에러 시 롤백
+      refreshDashboard();
     }
   };
 
