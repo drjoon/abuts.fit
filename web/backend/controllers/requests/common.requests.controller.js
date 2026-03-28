@@ -911,7 +911,7 @@ export async function updateRequestStatus(req, res) {
       businessAnchorId: String(request.businessAnchorId || ""),
     });
 
-    // 취소 시 대시보드 스냅샷 무효화
+    // 취소 시 대시보드 스냅샷 무효화 (백그라운드)
     if (manufacturerStage === "취소") {
       const anchorId = String(request.businessAnchorId || "").trim();
       if (anchorId) {
@@ -919,9 +919,14 @@ export async function updateRequestStatus(req, res) {
           requestId: request.requestId,
           businessAnchorId: anchorId,
         });
-        await triggerDashboardSummaryRefreshForAnchorId(
+        triggerDashboardSummaryRefreshForAnchorId(
           anchorId,
           `request-canceled:${request.requestId}`,
+        ).catch((err) =>
+          console.error(
+            `[updateManufacturerStage] Dashboard refresh failed for ${request.requestId}:`,
+            err,
+          ),
         );
       }
     }
@@ -1004,16 +1009,21 @@ export async function deleteRequest(req, res) {
       stageStatus,
     });
 
-    // 대시보드 스냅샷 무효화
+    // 대시보드 스냅샷 무효화 (백그라운드)
     const anchorId = String(request.businessAnchorId || "").trim();
     if (anchorId) {
       console.log("[deleteRequest] Triggering dashboard refresh", {
         requestId: request.requestId,
         businessAnchorId: anchorId,
       });
-      await triggerDashboardSummaryRefreshForAnchorId(
+      triggerDashboardSummaryRefreshForAnchorId(
         anchorId,
         `request-deleted:${request.requestId}`,
+      ).catch((err) =>
+        console.error(
+          `[deleteRequest] Dashboard refresh failed for ${request.requestId}:`,
+          err,
+        ),
       );
     }
 

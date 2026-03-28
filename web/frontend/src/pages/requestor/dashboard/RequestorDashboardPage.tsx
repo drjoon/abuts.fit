@@ -701,9 +701,11 @@ export const RequestorDashboardPage = () => {
       <DashboardShell
         title={`안녕하세요, ${user.name}님!`}
         subtitle={
-          insufficientShippingCredit
-            ? "배송비 크레딧 부족. 충전해주세요"
-            : "의뢰 현황을 확인하세요."
+          insufficientCredit
+            ? "크레딧 부족. 충전하시면 생산이 진행됩니다"
+            : insufficientShippingCredit
+              ? "배송비 크레딧 부족. 충전해주세요"
+              : "의뢰 현황을 확인하세요."
         }
         headerRight={
           <div className="flex flex-wrap items-center gap-2">
