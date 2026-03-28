@@ -22,6 +22,7 @@ import {
 } from "./utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
+import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services/bulkShippingSnapshot.service.js";
 import {
   buildStandardStlFileName,
   getBusinessCreditBalanceBreakdown,
@@ -935,6 +936,8 @@ export async function createRequestsFromDraft(req, res) {
           createdAnchorId,
           "request-created",
         );
+        // bulk shipping은 요약 스냅샷과 분리된 materialized snapshot이므로 별도로 갱신한다.
+        await recomputeBulkShippingSnapshotForBusinessAnchorId(createdAnchorId);
       } else {
         console.warn(
           "[createRequestsFromDraft] No businessAnchorId for dashboard refresh",

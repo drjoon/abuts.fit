@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import BulkShippingSnapshot from "../models/bulkShippingSnapshot.model.js";
 import { buildBulkShippingCandidatesForBusinessAnchorId } from "../controllers/requests/shipping.Requestor.helpers.js";
 import { getTodayYmdInKst } from "../controllers/requests/utils.js";
+import { invalidateDashboardAndBulkCachesForBusinessAnchorId } from "./requestDashboardCache.service.js";
 
 export const recomputeBulkShippingSnapshotForBusinessAnchorId = async (
   businessAnchorId,
@@ -11,6 +12,10 @@ export const recomputeBulkShippingSnapshotForBusinessAnchorId = async (
 
   const ymd = getTodayYmdInKst();
   if (!ymd) return null;
+
+  // bulk shipping은 DB snapshot과 in-memory cache를 같이 쓰므로,
+  // 재계산 전/후 모두 캐시를 무효화해야 stale snapshot 재삽입을 막을 수 있다.
+  invalidateDashboardAndBulkCachesForBusinessAnchorId(anchorId);
 
   const data = await buildBulkShippingCandidatesForBusinessAnchorId(anchorId);
   const snapshotBusinessAnchorId = new Types.ObjectId(anchorId);
@@ -29,6 +34,8 @@ export const recomputeBulkShippingSnapshotForBusinessAnchorId = async (
     },
     { upsert: true },
   );
+
+  invalidateDashboardAndBulkCachesForBusinessAnchorId(anchorId);
 
   return {
     businessAnchorId: anchorId,

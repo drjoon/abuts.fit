@@ -179,8 +179,15 @@ export async function getMyBulkShipping(req, res) {
     const cacheKey = `bulk-shipping:${String(req.user?._id || "")}:${String(
       businessAnchorId,
     )}`;
+    const hasBulkShippingItems = (value) => {
+      const pre = Array.isArray(value?.pre) ? value.pre : [];
+      const post = Array.isArray(value?.post) ? value.post : [];
+      const waiting = Array.isArray(value?.waiting) ? value.waiting : [];
+      return pre.length > 0 || post.length > 0 || waiting.length > 0;
+    };
+
     const cached = getBulkShippingCacheValue(cacheKey);
-    if (cached) {
+    if (cached && hasBulkShippingItems(cached)) {
       return res.status(200).json({
         success: true,
         data: cached,

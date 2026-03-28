@@ -24,6 +24,7 @@ import { calculateInitialProductionSchedule } from "./production.utils.js";
 import { getManufacturerLeadTimesUtil } from "../businesses/leadTime.controller.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
+import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services/bulkShippingSnapshot.service.js";
 
 /**
  * 새 의뢰 생성
@@ -746,6 +747,8 @@ export async function createRequest(req, res) {
         createdAnchorId,
         `request-created:${newRequest.requestId}`,
       );
+      // bulk shipping은 대시보드 요약과 별개 스냅샷이므로 새 의뢰 생성 직후 즉시 재계산한다.
+      await recomputeBulkShippingSnapshotForBusinessAnchorId(createdAnchorId);
     } else {
       console.warn(
         "[createRequest] No businessAnchorId for dashboard refresh",
@@ -1370,6 +1373,8 @@ export async function createRequestsBulk(req, res) {
           createdAnchorId,
           `bulk-request-created:${created.length}`,
         );
+        // bulk shipping 스냅샷은 별도 materialized snapshot이므로 다건 생성 후 함께 갱신한다.
+        await recomputeBulkShippingSnapshotForBusinessAnchorId(createdAnchorId);
       } else {
         console.warn(
           "[createRequestsBulk] No businessAnchorId for dashboard refresh",
