@@ -166,17 +166,6 @@ export const SettingsWizard = ({
   }, []);
 
   useEffect(() => {
-    if (!currentStep) return;
-    const nextStep = STEP_ORDER.find((step) => !stepCompleted[step]);
-    if (!nextStep) return;
-    const nextIndex = STEP_ORDER.indexOf(nextStep);
-    const currentIndex = STEP_ORDER.indexOf(currentStep);
-    if (currentIndex === -1 || currentIndex > nextIndex) {
-      setCurrentStep(nextStep);
-    }
-  }, [currentStep, stepCompleted]);
-
-  useEffect(() => {
     if (typeof window === "undefined" || !currentStep) return;
     window.localStorage.setItem(stepStorageKey, currentStep);
     window.localStorage.setItem(fallbackStepStorageKey, currentStep);

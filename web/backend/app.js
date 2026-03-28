@@ -143,6 +143,7 @@ app.use(
           "https://cdn.jsdelivr.net",
           "https://t1.daumcdn.net",
         ],
+        "frame-src": ["'self'", "https://postcode.map.kakao.com"],
         // S3 업로드/다운로드 허용
         "default-src": [
           "'self'",
