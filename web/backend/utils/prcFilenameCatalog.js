@@ -186,7 +186,7 @@ export async function getPrcFileNamesFromDb(manufacturer, brand, type, family) {
 }
 
 /**
- * PRC 파일명 조회 (DB 우선, 파일 시스템 fallback)
+ * PRC 파일명 조회 (DB 기반만 사용)
  */
 export async function buildPrcFileNamesFromCatalog(
   manufacturer,
@@ -194,28 +194,7 @@ export async function buildPrcFileNamesFromCatalog(
   type,
   family,
 ) {
-  // 1. DB 조회 우선 (EBS 환경 대응)
-  const dbResult = await getPrcFileNamesFromDb(
-    manufacturer,
-    brand,
-    type,
-    family,
-  );
-  if (dbResult.faceHolePrcFileName && dbResult.connectionPrcFileName) {
-    return dbResult;
-  }
-
-  // 2. 파일 시스템 fallback (로컬 환경)
-  const canonicalKey = getCanonicalManufacturerBrandKey(manufacturer, brand);
-  const normalizedType = normalizeImplantType(type);
-  const normalizedFamily = String(family || "").trim();
-  const catalog = loadPrcCatalog();
-  const connectionKey = `${canonicalKey}|${normalizedFamily}|${normalizedType}`;
-  const faceHoleKey = `${canonicalKey}|${normalizedType}`;
-  return {
-    faceHolePrcFileName: catalog.faceHoleMap.get(faceHoleKey) || "",
-    connectionPrcFileName: catalog.connectionMap.get(connectionKey) || "",
-  };
+  return await getPrcFileNamesFromDb(manufacturer, brand, type, family);
 }
 
 export function buildExpectedPrcFileName(
