@@ -114,7 +114,6 @@ export const useFileUpload = (
         handlers.onLicenseFileIdChange(first._id);
         handlers.onLicenseS3KeyChange(first.key || "");
 
-        const processingStartedAt = Date.now();
         const processingToast = toast({
           title: "AI 인식 중",
           description:
@@ -134,11 +133,6 @@ export const useFileUpload = (
         });
 
         if (res.ok) {
-          const waitMs = Math.max(0, 4500 - (Date.now() - processingStartedAt));
-          if (waitMs > 0) {
-            await new Promise((resolve) => setTimeout(resolve, waitMs));
-          }
-
           const body: any = res.data || {};
           const data = body.data || body;
           const nextExtracted = normalizeExtracted(data?.extracted || {});

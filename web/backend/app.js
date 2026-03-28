@@ -141,6 +141,7 @@ app.use(
           "'self'",
           "'unsafe-eval'",
           "https://cdn.jsdelivr.net",
+          "https://t1.daumcdn.net",
         ],
         // S3 업로드/다운로드 허용
         "default-src": [
@@ -158,6 +159,7 @@ app.use(
           "https://abuts-fit.s3.ap-south-1.amazonaws.com",
           "https://*.amazonaws.com",
           "https://cdn.jsdelivr.net",
+          "https://t1.daumcdn.net",
           ...(process.env.NODE_ENV === "development"
             ? ["http://localhost:8080", "ws://localhost:8080"]
             : []),
