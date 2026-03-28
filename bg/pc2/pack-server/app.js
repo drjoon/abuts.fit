@@ -281,34 +281,9 @@ const buildPackingLabelZpl = (payload) => {
   const MANUAL_QR_LABEL = process.env.PACK_MANUAL_QR_LABEL;
   const MANUFACTURER_LABEL = "제조업자";
 
-  const qrProductData = safeText(
-    JSON.stringify({
-      lotNumber,
-      manufacturingDate,
-      requestId: payload.requestId,
-    }),
-    180,
-  );
-  const qrManufacturerData = safeText(
-    JSON.stringify({
-      label: "제조업자",
-      name: COMPANY_NAME,
-      permit: `제조업허가 ${LICENSE_NO}`,
-      address: COMPANY_ADDR,
-      contact: COMPANY_TEL_FAX,
-    }),
-    180,
-  );
-  const qrSellerData = safeText(
-    JSON.stringify({
-      label: "판매업자",
-      name: SELLER_NAME,
-      permit: `제조업허가 ${SELLER_PERMIT}`,
-      address: SELLER_ADDR,
-      contact: SELLER_TEL,
-    }),
-    180,
-  );
+  const qrProductData = "https://abuts.fit/manual";
+  const qrManufacturerData = "https://acrodent.com";
+  const qrSellerData = "https://abuts.fit";
   const lotSuffix = String(lotNumber || "").slice(-3) || "-";
   const companyQrSize = 195;
   const companyQrPaddingX = 24;
