@@ -15,6 +15,7 @@
     "db:reset-password": "cross-env ENV_FILE=local.env node scripts/db/reset-password.js",
     "db:seed-data": "cross-env ENV_FILE=local.env node scripts/db/seed-data.js",
     "db:implant-preset": "cross-env ENV_FILE=local.env node scripts/db/implant-preset.js",
+    "db:seed-prc": "cross-env ENV_FILE=local.env node scripts/db/seed-prc-mappings.js",
     "worker:monthly-referral-snapshot": "cross-env ENV_FILE=local.env node jobs/dailyReferralSnapshotWorker.js",
     "worker:daily-admin-salesman-credits-overview-snapshot": "cross-env ENV_FILE=local.env node jobs/dailyAdminSalesmanCreditsOverviewSnapshotWorker.js"
   },

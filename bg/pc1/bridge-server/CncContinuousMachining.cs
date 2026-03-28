@@ -944,40 +944,9 @@ if (Config.MockCncMachining)
         state.SawBusy = false;
         state.MockCompletionDueUtc = mockStartUtc + mockDuration;
     }
-    // 시작 시점에 STARTED tick을 한 번 보내 로컬 타이머가 바로 시작되도록 한다.
-    Console.WriteLine("[CncMachining] MOCK start phase emit machine={0} jobId={1} phase=STARTED elapsedMs={2}", machineId, job?.id, (int)(DateTime.UtcNow - mockStartUtc).TotalMilliseconds);
-    _ = Task.Run(() => NotifyMachiningTick(job, machineId, "STARTED", null));
-    // 모의 가공 동안 5초마다 tick을 보내 경과시간을 프론트에 전달한다.
-    _ = Task.Run(async () =>
-    {
-        try
-        {
-            while (true)
-            {
-                bool running = false;
-                string currentJobId = null;
-                lock (StateLock)
-                {
-                    if (MachineStates.TryGetValue(machineId, out var s))
-                    {
-                        running = s.IsRunning;
-                        currentJobId = s.CurrentJob?.id;
-                    }
-                }
-                if (!running || currentJobId != job?.id)
-                {
-                    break;
-                }
-                try
-                {
-                    _ = Task.Run(() => NotifyMachiningTick(job, machineId, "RUNNING", null));
-                }
-                catch { }
-                await Task.Delay(TimeSpan.FromSeconds(5));
-            }
-        }
-        catch { }
-    });
+    // MOCK 모드: STARTED tick은 ProcessMachine의 기존 로직에서 1초 간격으로 전송되므로 여기서는 생략
+    // (중복 전송으로 인한 rate limit 방지)
+    _ = Task.Run(() => NotifyMachiningStarted(job, machineId));
     return true;
 }
 var uploadSlot = SLOT_A;
