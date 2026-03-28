@@ -329,18 +329,11 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
     });
   };
 
-  const qr1DataUrl = await QRCode.toDataURL(
-    JSON.stringify({
-      lotNumber: opts.lotNumber || "-",
-      manufacturingDate: dateOnly(opts.manufacturingDate),
-      requestId: opts.requestId || "-",
-    }),
-    {
-      errorCorrectionLevel: "M",
-      margin: 0,
-      width: Math.max(1, Math.round(64 * scale)),
-    },
-  );
+  const qr1DataUrl = await QRCode.toDataURL("https://abuts.fit/manual", {
+    errorCorrectionLevel: "L",
+    margin: 0,
+    width: Math.max(1, Math.round(144 * scale)),
+  });
   const qr1Img = new Image();
   await new Promise<void>((resolve, reject) => {
     qr1Img.onload = () => resolve();
@@ -348,20 +341,11 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
     qr1Img.src = qr1DataUrl;
   });
 
-  const qr2DataUrl = await QRCode.toDataURL(
-    JSON.stringify({
-      label: "제조업자",
-      name: COMPANY_NAME,
-      permit: `제조업허가 ${LICENSE_NO}`,
-      address: COMPANY_ADDR,
-      contact: COMPANY_TEL_FAX,
-    }),
-    {
-      errorCorrectionLevel: "M",
-      margin: 0,
-      width: Math.max(1, Math.round(64 * scale)),
-    },
-  );
+  const qr2DataUrl = await QRCode.toDataURL("https://acrodent.com", {
+    errorCorrectionLevel: "L",
+    margin: 0,
+    width: Math.max(1, Math.round(144 * scale)),
+  });
   const qr2Img = new Image();
   await new Promise<void>((resolve, reject) => {
     qr2Img.onload = () => resolve();
@@ -369,20 +353,11 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
     qr2Img.src = qr2DataUrl;
   });
 
-  const qr3DataUrl = await QRCode.toDataURL(
-    JSON.stringify({
-      label: "판매업자",
-      name: SELLER_NAME,
-      permit: `판매업허가 ${SELLER_PERMIT}`,
-      address: SELLER_ADDR,
-      contact: SELLER_TEL,
-    }),
-    {
-      errorCorrectionLevel: "M",
-      margin: 0,
-      width: Math.max(1, Math.round(64 * scale)),
-    },
-  );
+  const qr3DataUrl = await QRCode.toDataURL("https://abuts.fit", {
+    errorCorrectionLevel: "L",
+    margin: 0,
+    width: Math.max(1, Math.round(144 * scale)),
+  });
   const qr3Img = new Image();
   await new Promise<void>((resolve, reject) => {
     qr3Img.onload = () => resolve();

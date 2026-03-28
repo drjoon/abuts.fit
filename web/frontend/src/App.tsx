@@ -18,6 +18,7 @@ import { loadRulesFromBackend } from "@/shared/filename/filenameRules";
 import { useSocket } from "@/shared/hooks/useSocket";
 
 const Index = lazy(() => import("./pages/public/Index"));
+const ManualPage = lazy(() => import("./pages/public/ManualPage"));
 const LoginPage = lazy(() =>
   import("./features/auth/LoginPage").then((m) => ({ default: m.LoginPage })),
 );
@@ -285,6 +286,7 @@ const App = () => {
                 />
                 <Route path="/reset-password" element={<ResetPasswordPage />} />
                 <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
+                <Route path="/manual" element={<ManualPage />} />
                 <Route path="/help" element={<HelpPage />} />
                 <Route path="/contact" element={<ContactPage />} />
                 <Route path="/terms" element={<TermsPage />} />

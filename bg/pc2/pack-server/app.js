@@ -257,9 +257,9 @@ const buildPackingLabelZpl = (payload) => {
 
   const { pw, ll } = resolvePackZplSize(payload);
   const dpi = Number(payload?.dpi) || PACK_LABEL_DPI;
-  // 203DPI 기준으로 모든 좌표 계산 (프론트엔드 디자인과 동일)
-  // 80x65mm @ 203DPI = 640x520 dots
-  const baseDpi = 203;
+  // 600DPI 기준으로 모든 좌표 계산
+  // 80x65mm @ 600DPI = 1890x1535 dots
+  const baseDpi = 600;
   const scale = dpi / baseDpi;
   const S = (n) => Math.round(Number(n) * scale);
   const F = (n) => Math.max(1, Math.round(Number(n) * scale));
@@ -310,76 +310,76 @@ const buildPackingLabelZpl = (payload) => {
     180,
   );
   const lotSuffix = String(lotNumber || "").slice(-3) || "-";
-  const companyQrSize = 66;
-  const companyQrPaddingX = 8;
-  const companyQrPaddingTop = 8;
-  const companyTopTextWidth = 186;
-  const companyBottomTextWidth = 254;
-  const companyLineYs = [18, 42, 66, 90, 114];
+  const companyQrSize = 195;
+  const companyQrPaddingX = 24;
+  const companyQrPaddingTop = 24;
+  const companyTopTextWidth = 550;
+  const companyBottomTextWidth = 750;
+  const companyLineYs = [53, 124, 195, 266, 337];
 
-  // Layout: 80x65mm @ 203DPI = 640x520 dots (프론트엔드와 동일)
+  // Layout: 80x65mm @ 600DPI = 1890x1535 dots
   return [
     "^XA",
-    `^PW${pw || 640}`,
-    `^LL${ll || 520}`,
+    `^PW${pw || 1890}`,
+    `^LL${ll || 1535}`,
     "^LH0,0",
     "^CI28",
 
     // ===== TOP SECTION: 3-column header (mailbox, screw, lot) =====
-    `^FO${S(20)},${S(20)}^GB${S(498)},${S(50)},${T}^FS`,
-    `^FO${S(202)},${S(20)}^GB${T},${S(50)},${T}^FS`,
-    `^FO${S(362)},${S(20)}^GB${T},${S(50)},${T}^FS`,
-    `^FO${S(20)},${S(24)}^A0N,${F(48)},${F(48)}^FB${S(182)},1,0,C,0^FD${mailboxCode}^FS`,
-    `^FO${S(202)},${S(24)}^A0N,${F(48)},${F(48)}^FB${S(160)},1,0,C,0^FD${screwType}^FS`,
-    `^FO${S(362)},${S(24)}^A0N,${F(48)},${F(48)}^FB${S(156)},1,0,C,0^FD${lotSuffix}^FS`,
-    `^FO${S(533)},${S(24)}^BQN,2,${qrMag(4)}^FDLA,${qrProductData}^FS`,
-    `^FO${S(526)},${S(98)}^A0N,${F(10)},${F(10)}^FB${S(86)},1,0,C,0^FD${MANUAL_QR_LABEL}^FS`,
+    `^FO${S(59)},${S(59)}^GB${S(1470)},${S(148)},${T}^FS`,
+    `^FO${S(597)},${S(59)}^GB${T},${S(148)},${T}^FS`,
+    `^FO${S(1070)},${S(59)}^GB${T},${S(148)},${T}^FS`,
+    `^FO${S(59)},${S(71)}^A0N,${F(142)},${F(142)}^FB${S(538)},1,0,C,0^FD${mailboxCode}^FS`,
+    `^FO${S(597)},${S(71)}^A0N,${F(142)},${F(142)}^FB${S(473)},1,0,C,0^FD${screwType}^FS`,
+    `^FO${S(1070)},${S(71)}^A0N,${F(142)},${F(142)}^FB${S(459)},1,0,C,0^FD${lotSuffix}^FS`,
+    `^FO${S(1575)},${S(71)}^BQN,2,${qrMag(6)}^FDLA,${qrProductData}^FS`,
+    `^FO${S(1554)},${S(289)}^A0N,${F(30)},${F(30)}^FB${S(254)},1,0,C,0^FD${MANUAL_QR_LABEL}^FS`,
 
     // ===== SECTION 2: Lab name =====
-    `^FO${S(20)},${S(74)}^GB${S(498)},${S(46)},${T}^FS`,
-    `^FO${S(20)},${S(82)}^A0N,${F(36)},${F(36)}^FB${S(498)},1,0,C,0^FD${labName}^FS`,
+    `^FO${S(59)},${S(219)}^GB${S(1470)},${S(136)},${T}^FS`,
+    `^FO${S(59)},${S(243)}^A0N,${F(106)},${F(106)}^FB${S(1470)},1,0,C,0^FD${labName}^FS`,
 
     // ===== SECTION 3-8: Unified info table =====
-    `^FO${S(20)},${S(124)}^GB${S(600)},${S(226)},${T}^FS`,
-    `^FO${S(20)},${S(152)}^GB${S(600)},${T},${T}^FS`,
-    `^FO${S(20)},${S(180)}^GB${S(600)},${T},${T}^FS`,
-    `^FO${S(20)},${S(208)}^GB${S(600)},${T},${T}^FS`,
-    `^FO${S(360)},${S(208)}^GB${T},${S(152)},${T}^FS`,
-    `^FO${S(20)},${S(236)}^GB${S(600)},${T},${T}^FS`,
-    `^FO${S(20)},${S(264)}^GB${S(600)},${T},${T}^FS`,
-    `^FO${S(20)},${S(292)}^GB${S(600)},${T},${T}^FS`,
-    `^FO${S(20)},${S(320)}^GB${S(600)},${T},${T}^FS`,
-    `^FO${S(360)},${S(320)}^GB${T},${S(30)},${T}^FS`,
-    `^FO${S(20)},${S(132)}^A0N,${F(14)},${F(14)}^FB${S(600)},1,0,C,0^FD${clinicName} / ${patientName} / #${toothNumber}^FS`,
-    `^FO${S(20)},${S(160)}^A0N,${F(14)},${F(14)}^FB${S(600)},1,0,C,0^FD의뢰일: ${requestDate} / 제조일: ${manufacturingDate}^FS`,
-    `^FO${S(20)},${S(188)}^A0N,${F(14)},${F(14)}^FB${S(600)},1,0,C,0^FD${implantManufacturer} / ${implantSystem} / ${implantType}^FS`,
-    `^FO${S(20)},${S(217)}^A0N,${F(13)},${F(13)}^FB${S(340)},1,0,C,0^FD품    명 : ${PRODUCT_NAME}^FS`,
-    `^FO${S(360)},${S(217)}^A0N,${F(13)},${F(13)}^FB${S(260)},1,0,C,0^FD기기 구분 : 비멸균 의료기기^FS`,
-    `^FO${S(20)},${S(245)}^A0N,${F(13)},${F(13)}^FB${S(340)},1,0,C,0^FD모 델 명 : ${MODEL_NAME}^FS`,
-    `^FO${S(360)},${S(245)}^A0N,${F(13)},${F(13)}^FB${S(260)},1,0,C,0^FD품목허가 : ${LICENSE_NO}^FS`,
-    `^FO${S(20)},${S(273)}^A0N,${F(13)},${F(13)}^FB${S(340)},1,0,C,0^FD사용기한 : 해당없음^FS`,
-    `^FO${S(360)},${S(273)}^A0N,${F(13)},${F(13)}^FB${S(260)},1,0,C,0^FD포장단위 : 1SET^FS`,
-    `^FO${S(20)},${S(301)}^A0N,${F(13)},${F(13)}^FB${S(340)},1,0,C,0^FD제조번호 : ${lotNumber}^FS`,
-    `^FO${S(360)},${S(301)}^A0N,${F(13)},${F(13)}^FB${S(260)},1,0,C,0^FD제조일자 : ${manufacturingDate}^FS`,
-    `^FO${S(20)},${S(326)}^A0N,${F(13)},${F(13)}^FB${S(340)},1,0,C,0^FD사용방법, 주의사항 : 사용자 매뉴얼 참조^FS`,
-    `^FO${S(360)},${S(326)}^A0N,${F(13)},${F(13)}^FB${S(260)},1,0,C,0^FD보관방법 : 건조한 실온에서 보관^FS`,
+    `^FO${S(59)},${S(367)}^GB${S(1772)},${S(668)},${T}^FS`,
+    `^FO${S(59)},${S(449)}^GB${S(1772)},${T},${T}^FS`,
+    `^FO${S(59)},${S(532)},^GB${S(1772)},${T},${T}^FS`,
+    `^FO${S(59)},${S(615)}^GB${S(1772)},${T},${T}^FS`,
+    `^FO${S(1064)},${S(615)}^GB${T},${S(449)},${T}^FS`,
+    `^FO${S(59)},${S(698)}^GB${S(1772)},${T},${T}^FS`,
+    `^FO${S(59)},${S(780)}^GB${S(1772)},${T},${T}^FS`,
+    `^FO${S(59)},${S(863)}^GB${S(1772)},${T},${T}^FS`,
+    `^FO${S(59)},${S(946)}^GB${S(1772)},${T},${T}^FS`,
+    `^FO${S(1064)},${S(946)}^GB${T},${S(89)},${T}^FS`,
+    `^FO${S(59)},${S(390)}^A0N,${F(41)},${F(41)}^FB${S(1772)},1,0,C,0^FD${clinicName} / ${patientName} / #${toothNumber}^FS`,
+    `^FO${S(59)},${S(473)}^A0N,${F(41)},${F(41)}^FB${S(1772)},1,0,C,0^FD의뢰일: ${requestDate} / 제조일: ${manufacturingDate}^FS`,
+    `^FO${S(59)},${S(556)}^A0N,${F(41)},${F(41)}^FB${S(1772)},1,0,C,0^FD${implantManufacturer} / ${implantSystem} / ${implantType}^FS`,
+    `^FO${S(59)},${S(641)}^A0N,${F(38)},${F(38)}^FB${S(1005)},1,0,C,0^FD품    명 : ${PRODUCT_NAME}^FS`,
+    `^FO${S(1064)},${S(641)}^A0N,${F(38)},${F(38)}^FB${S(767)},1,0,C,0^FD기기 구분 : 비멸균 의료기기^FS`,
+    `^FO${S(59)},${S(724)}^A0N,${F(38)},${F(38)}^FB${S(1005)},1,0,C,0^FD모 델 명 : ${MODEL_NAME}^FS`,
+    `^FO${S(1064)},${S(724)}^A0N,${F(38)},${F(38)}^FB${S(767)},1,0,C,0^FD품목허가 : ${LICENSE_NO}^FS`,
+    `^FO${S(59)},${S(807)}^A0N,${F(38)},${F(38)}^FB${S(1005)},1,0,C,0^FD사용기한 : 해당없음^FS`,
+    `^FO${S(1064)},${S(807)}^A0N,${F(38)},${F(38)}^FB${S(767)},1,0,C,0^FD포장단위 : 1SET^FS`,
+    `^FO${S(59)},${S(889)}^A0N,${F(38)},${F(38)}^FB${S(1005)},1,0,C,0^FD제조번호 : ${lotNumber}^FS`,
+    `^FO${S(1064)},${S(889)}^A0N,${F(38)},${F(38)}^FB${S(767)},1,0,C,0^FD제조일자 : ${manufacturingDate}^FS`,
+    `^FO${S(59)},${S(963)}^A0N,${F(38)},${F(38)}^FB${S(1005)},1,0,C,0^FD사용방법, 주의사항 : 사용자 매뉴얼 참조^FS`,
+    `^FO${S(1064)},${S(963)}^A0N,${F(38)},${F(38)}^FB${S(767)},1,0,C,0^FD보관방법 : 건조한 실온에서 보관^FS`,
 
     // ===== SECTION 9: Manufacturer info (bottom left) =====
-    `^FO${S(20)},${S(372)}^GB${S(290)},${S(144)},${T}^FS`,
-    `^FO${S(26)},${S(372 + companyLineYs[0])}^A0N,${F(14)},${F(14)}^FD${MANUFACTURER_LABEL}^FS`,
-    `^FO${S(26)},${S(372 + companyLineYs[1])}^A0N,${F(12)},${F(12)}^FB${S(companyTopTextWidth)},1,0,L,0^FD${COMPANY_NAME}^FS`,
-    `^FO${S(26)},${S(372 + companyLineYs[2])}^A0N,${F(12)},${F(12)}^FB${S(companyTopTextWidth)},1,0,L,0^FD제조업허가 ${LICENSE_NO}^FS`,
-    `^FO${S(26)},${S(372 + companyLineYs[3])}^A0N,${F(12)},${F(12)}^FB${S(companyBottomTextWidth)},2,0,L,0^FD${COMPANY_ADDR}^FS`,
-    `^FO${S(20 + 290 - companyQrPaddingX - companyQrSize)},${S(372 + companyQrPaddingTop)}^BQN,2,${qrMag(4)}^FDLA,${qrManufacturerData}^FS`,
+    `^FO${S(59)},${S(1099)}^GB${S(857)},${S(425)},${T}^FS`,
+    `^FO${S(77)},${S(1099 + companyLineYs[0])}^A0N,${F(41)},${F(41)}^FD${MANUFACTURER_LABEL}^FS`,
+    `^FO${S(77)},${S(1099 + companyLineYs[1])}^A0N,${F(35)},${F(35)}^FB${S(companyTopTextWidth)},1,0,L,0^FD${COMPANY_NAME}^FS`,
+    `^FO${S(77)},${S(1099 + companyLineYs[2])}^A0N,${F(35)},${F(35)}^FB${S(companyTopTextWidth)},1,0,L,0^FD제조업허가 ${LICENSE_NO}^FS`,
+    `^FO${S(77)},${S(1099 + companyLineYs[3])}^A0N,${F(35)},${F(35)}^FB${S(companyBottomTextWidth)},2,0,L,0^FD${COMPANY_ADDR}^FS`,
+    `^FO${S(59 + 857 - companyQrPaddingX - companyQrSize)},${S(1099 + companyQrPaddingTop)}^BQN,2,${qrMag(6)}^FDLA,${qrManufacturerData}^FS`,
 
     // ===== SECTION 10: Seller info (bottom right) =====
-    `^FO${S(330)},${S(372)}^GB${S(290)},${S(144)},${T}^FS`,
-    `^FO${S(336)},${S(372 + companyLineYs[0])}^A0N,${F(14)},${F(14)}^FD판매업자^FS`,
-    `^FO${S(336)},${S(372 + companyLineYs[1])}^A0N,${F(12)},${F(12)}^FB${S(companyTopTextWidth)},1,0,L,0^FD${SELLER_NAME}^FS`,
-    `^FO${S(336)},${S(372 + companyLineYs[2])}^A0N,${F(12)},${F(12)}^FB${S(companyTopTextWidth)},1,0,L,0^FD${SELLER_PERMIT}^FS`,
-    `^FO${S(336)},${S(372 + companyLineYs[3])}^A0N,${F(12)},${F(12)}^FB${S(companyBottomTextWidth)},1,0,L,0^FD${SELLER_TEL}^FS`,
-    `^FO${S(336)},${S(372 + companyLineYs[4])}^A0N,${F(12)},${F(12)}^FB${S(companyBottomTextWidth)},2,0,L,0^FD${SELLER_ADDR}^FS`,
-    `^FO${S(330 + 290 - companyQrPaddingX - companyQrSize)},${S(372 + companyQrPaddingTop)}^BQN,2,${qrMag(4)}^FDLA,${qrSellerData}^FS`,
+    `^FO${S(975)},${S(1099)}^GB${S(857)},${S(425)},${T}^FS`,
+    `^FO${S(993)},${S(1099 + companyLineYs[0])}^A0N,${F(41)},${F(41)}^FD판매업자^FS`,
+    `^FO${S(993)},${S(1099 + companyLineYs[1])}^A0N,${F(35)},${F(35)}^FB${S(companyTopTextWidth)},1,0,L,0^FD${SELLER_NAME}^FS`,
+    `^FO${S(993)},${S(1099 + companyLineYs[2])}^A0N,${F(35)},${F(35)}^FB${S(companyTopTextWidth)},1,0,L,0^FD${SELLER_PERMIT}^FS`,
+    `^FO${S(993)},${S(1099 + companyLineYs[3])}^A0N,${F(35)},${F(35)}^FB${S(companyBottomTextWidth)},1,0,L,0^FD${SELLER_TEL}^FS`,
+    `^FO${S(993)},${S(1099 + companyLineYs[4])}^A0N,${F(35)},${F(35)}^FB${S(companyBottomTextWidth)},2,0,L,0^FD${SELLER_ADDR}^FS`,
+    `^FO${S(975 + 857 - companyQrPaddingX - companyQrSize)},${S(1099 + companyQrPaddingTop)}^BQN,2,${qrMag(6)}^FDLA,${qrSellerData}^FS`,
 
     "^XZ",
   ].join("\n");
