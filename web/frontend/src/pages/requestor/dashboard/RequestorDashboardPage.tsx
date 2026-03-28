@@ -245,72 +245,6 @@ export const RequestorDashboardPage = () => {
     enabled: !!token,
   });
 
-  // 의뢰비 충전 경고
-  // 의뢰, CAM 단계에 의뢰건이 있으면서 크레딧이 부족한지 확인
-  // 의뢰 결제: 유료 크레딧 + 무료 크레딧 모두 사용 가능
-  useEffect(() => {
-    if (
-      summaryResponse?.success &&
-      paidBalance !== null &&
-      bonusBalance !== null &&
-      systemSettings?.creditSettings
-    ) {
-      const stats = summaryResponse.data.stats ?? {};
-      const pricePerRequest =
-        systemSettings.creditSettings.minCreditForRequest || 10000;
-
-      // 의뢰, CAM 단계에 의뢰건이 있으면 경고
-      const inRequest = stats.totalRequests || 0;
-      const inCam = stats.inCam || 0;
-      const totalPendingRequests = inRequest + inCam;
-
-      // 의뢰 결제는 유료 + 무료 크레딧 합계로 판단
-      const availableForRequest = paidBalance + bonusBalance;
-      const requiredCredit = totalPendingRequests * pricePerRequest;
-
-      if (totalPendingRequests > 0 && availableForRequest < requiredCredit) {
-        setInsufficientCredit(true);
-      } else {
-        setInsufficientCredit(false);
-      }
-    }
-  }, [summaryResponse, paidBalance, bonusBalance, systemSettings]);
-
-  // 배송비 충전 경고
-  // 의뢰, CAM, 가공, 세척.패킹, 포장.발송 단계에 의뢰건이 있으면서
-  // 유료 크레딧이 배송비보다 적으면 경고
-  // 배송비 결제: 유료 크레딧만 사용 가능
-  useEffect(() => {
-    if (
-      summaryResponse?.success &&
-      paidBalance !== null &&
-      freeShippingCreditBalance !== null &&
-      systemSettings?.creditSettings
-    ) {
-      const stats = summaryResponse.data.stats ?? {};
-      const shippingFee = systemSettings.creditSettings.shippingFee || 3500;
-
-      // 의뢰, CAM, 가공, 세척.패킹, 포장.발송 단계의 의뢰건 합계
-      const inRequest = stats.totalRequests || 0;
-      const inCam = stats.inCam || 0;
-      const inProduction = stats.inProduction || 0;
-      const inPacking = stats.inPacking || 0;
-      const inShipping = stats.inShipping || 0;
-      const totalInProgress =
-        inRequest + inCam + inProduction + inPacking + inShipping;
-
-      // 유료 크레딧이 배송비보다 적으면 배송비 충전 경고
-      if (
-        totalInProgress > 0 &&
-        paidBalance + freeShippingCreditBalance < shippingFee
-      ) {
-        setInsufficientShippingCredit(true);
-      } else {
-        setInsufficientShippingCredit(false);
-      }
-    }
-  }, [freeShippingCreditBalance, paidBalance, summaryResponse, systemSettings]);
-
   const {
     data: bulkResponse,
     isLoading: isBulkLoading,
@@ -336,6 +270,69 @@ export const RequestorDashboardPage = () => {
     refetchOnWindowFocus: false,
     enabled: !!token,
   });
+
+  // 의뢰비 충전 경고
+  // 의뢰, CAM 단계에 의뢰건이 있으면서 크레딧이 부족한지 확인
+  // 의뢰비 결제: 유료 크레딧 + 무료 크레딧 사용 가능 (무료 배송비 크레딧은 사용 불가)
+  useEffect(() => {
+    if (
+      summaryResponse?.success &&
+      paidBalance !== null &&
+      bonusBalance !== null &&
+      systemSettings?.creditSettings
+    ) {
+      const stats = summaryResponse.data.stats ?? {};
+      const pricePerRequest =
+        systemSettings.creditSettings.minCreditForRequest || 10000;
+
+      // 의뢰, CAM 단계에 의뢰건이 있으면 경고
+      const inRequest = stats.totalRequests || 0;
+      const inCam = stats.inCam || 0;
+      const totalPendingRequests = inRequest + inCam;
+
+      // 의뢰비는 유료 크레딧 + 무료 크레딧 사용 가능
+      const availableForRequest = paidBalance + bonusBalance;
+      const requiredCredit = totalPendingRequests * pricePerRequest;
+
+      if (totalPendingRequests > 0 && availableForRequest < requiredCredit) {
+        setInsufficientCredit(true);
+      } else {
+        setInsufficientCredit(false);
+      }
+    }
+  }, [summaryResponse, paidBalance, bonusBalance, systemSettings]);
+
+  // 배송비 충전 경고
+  // 묶음 배송 건수를 기준으로 필요한 배송비 계산
+  // 배송비 결제: 유료 크레딧 + 무료 배송비 크레딧 사용 가능
+  useEffect(() => {
+    if (
+      bulkResponse?.success &&
+      paidBalance !== null &&
+      freeShippingCreditBalance !== null &&
+      systemSettings?.creditSettings
+    ) {
+      const shippingFeePerBox =
+        systemSettings.creditSettings.shippingFee || 3500;
+
+      // 묶음 배송 후보 건수 (실제 배송될 박스 수)
+      const bulkShippingCandidates = bulkResponse.data?.candidates || [];
+      const totalShippingBoxes = bulkShippingCandidates.length;
+
+      // 배송비는 유료 크레딧 + 무료 배송비 크레딧으로 결제
+      const availableForShipping = paidBalance + freeShippingCreditBalance;
+      const requiredShippingFee = totalShippingBoxes * shippingFeePerBox;
+
+      if (
+        totalShippingBoxes > 0 &&
+        availableForShipping < requiredShippingFee
+      ) {
+        setInsufficientShippingCredit(true);
+      } else {
+        setInsufficientShippingCredit(false);
+      }
+    }
+  }, [bulkResponse, freeShippingCreditBalance, paidBalance, systemSettings]);
 
   const refreshDashboard = useCallback(() => {
     void queryClient.invalidateQueries({
@@ -721,11 +718,13 @@ export const RequestorDashboardPage = () => {
       <DashboardShell
         title={`안녕하세요, ${user.name}님!`}
         subtitle={
-          insufficientCredit
-            ? "크레딧 부족. 충전하시면 생산이 진행됩니다"
-            : insufficientShippingCredit
-              ? "배송비 크레딧 부족. 충전해주세요"
-              : "의뢰 현황을 확인하세요."
+          insufficientCredit && insufficientShippingCredit
+            ? "의뢰비와 배송비 크레딧 부족. 충전해주세요"
+            : insufficientCredit
+              ? "의뢰비 크레딧 부족. 충전하시면 생산이 진행됩니다"
+              : insufficientShippingCredit
+                ? "배송비 크레딧 부족. 충전해주세요"
+                : "의뢰 현황을 확인하세요."
         }
         headerRight={
           <div className="flex flex-wrap items-center gap-2">
@@ -763,9 +762,11 @@ export const RequestorDashboardPage = () => {
                     className="bg-destructive text-destructive-foreground"
                   >
                     <p>
-                      {insufficientShippingCredit
-                        ? "배송비 크레딧이 부족합니다. 충전해주세요"
-                        : "크레딧을 추가 충전하시면 생산이 진행됩니다"}
+                      {insufficientCredit && insufficientShippingCredit
+                        ? "의뢰비와 배송비 크레딧이 모두 부족합니다"
+                        : insufficientCredit
+                          ? "의뢰비 크레딧이 부족합니다. 충전하시면 생산이 진행됩니다"
+                          : "배송비 크레딧이 부족합니다. 충전해주세요"}
                     </p>
                   </TooltipContent>
                 </Tooltip>
