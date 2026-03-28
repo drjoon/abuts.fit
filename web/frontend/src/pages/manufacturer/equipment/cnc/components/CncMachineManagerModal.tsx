@@ -1,5 +1,4 @@
 import type { MachineForm } from "@/pages/manufacturer/equipment/cnc/types";
-import { useRef } from "react";
 
 interface CncMachineManagerModalProps {
   open: boolean;
@@ -24,17 +23,6 @@ export const CncMachineManagerModal = ({
 }: CncMachineManagerModalProps) => {
   if (!open) return null;
 
-  const submitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scheduleSubmit = (snapshot?: MachineForm) => {
-    if (mode !== "edit") return;
-    if (submitTimeoutRef.current) {
-      clearTimeout(submitTimeoutRef.current);
-    }
-    submitTimeoutRef.current = setTimeout(() => {
-      void onSubmit(snapshot ?? form);
-    }, 400);
-  };
-
   return (
     <div
       className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
@@ -52,25 +40,6 @@ export const CncMachineManagerModal = ({
           </div>
         </div>
         <div className="space-y-5">
-          {mode === "edit" && (
-            <div>
-              <label className="block text-sm font-medium mb-1.5 text-gray-700">
-                UID
-              </label>
-              <input
-                type="text"
-                value={form.uid}
-                onChange={(e) => onChange("uid", e.target.value)}
-                onBlur={() => scheduleSubmit()}
-                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-blue-500 focus:border-blue-500 transition"
-                placeholder="예: M5"
-              />
-              <p className="mt-1 text-xs text-slate-500">
-                UID를 변경하면 기존 UID의 브리지 스냅샷을 삭제하고 새 UID로
-                재동기화합니다.
-              </p>
-            </div>
-          )}
           <div>
             <label className="block text-sm font-medium mb-1.5 text-gray-700">
               장비 이름
@@ -79,7 +48,6 @@ export const CncMachineManagerModal = ({
               type="text"
               value={form.name}
               onChange={(e) => onChange("name", e.target.value)}
-              onBlur={() => scheduleSubmit()}
               className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-blue-500 focus:border-blue-500 transition"
               placeholder="예: M1"
             />
@@ -92,7 +60,6 @@ export const CncMachineManagerModal = ({
               type="text"
               value={form.ip}
               onChange={(e) => onChange("ip", e.target.value)}
-              onBlur={() => scheduleSubmit()}
               className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-blue-500 focus:border-blue-500 transition"
               placeholder="예: 172.22.60.30"
             />
@@ -116,15 +83,13 @@ export const CncMachineManagerModal = ({
             >
               취소
             </button>
-            {mode === "create" && (
-              <button
-                onClick={() => void onSubmit()}
-                className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2.5 px-5 rounded-lg text-sm transition-colors"
-                disabled={loading}
-              >
-                {loading ? "처리 중..." : "추가"}
-              </button>
-            )}
+            <button
+              onClick={() => void onSubmit()}
+              className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2.5 px-5 rounded-lg text-sm transition-colors"
+              disabled={loading}
+            >
+              {loading ? "처리 중..." : mode === "create" ? "추가" : "저장"}
+            </button>
           </div>
         </div>
       </div>
