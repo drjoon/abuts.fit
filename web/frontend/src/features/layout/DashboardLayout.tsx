@@ -209,11 +209,13 @@ export const DashboardLayout = () => {
   const location = useLocation();
   const { toast } = useToast();
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
-  const [paidBalance, setPaidBalance] = useState<number | null>(null);
-  const [bonusBalance, setBonusBalance] = useState<number | null>(null);
-  const [freeShippingCreditBalance, setFreeShippingCreditBalance] = useState<
-    number | null
-  >(null);
+  const [paidCredit, setPaidCredit] = useState<number | null>(null);
+  const [bonusRequestCredit, setBonusRequestCredit] = useState<number | null>(
+    null,
+  );
+  const [bonusShippingCredit, setBonusShippingCredit] = useState<number | null>(
+    null,
+  );
   const [loadingCreditBalance, setLoadingCreditBalance] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -347,16 +349,16 @@ export const DashboardLayout = () => {
     if (!user) return;
     if (user.role !== "requestor") {
       setCreditBalance(null);
-      setPaidBalance(null);
-      setBonusBalance(null);
-      setFreeShippingCreditBalance(null);
+      setPaidCredit(null);
+      setBonusRequestCredit(null);
+      setBonusShippingCredit(null);
       return;
     }
     if (!(user as any).businessAnchorId) {
       setCreditBalance(null);
-      setPaidBalance(null);
-      setBonusBalance(null);
-      setFreeShippingCreditBalance(null);
+      setPaidCredit(null);
+      setBonusRequestCredit(null);
+      setBonusShippingCredit(null);
       return;
     }
 
@@ -369,24 +371,22 @@ export const DashboardLayout = () => {
       });
       if (!res.ok) {
         setCreditBalance(null);
-        setPaidBalance(null);
-        setBonusBalance(null);
-        setFreeShippingCreditBalance(null);
+        setPaidCredit(null);
+        setBonusRequestCredit(null);
+        setBonusShippingCredit(null);
         return;
       }
       const body: any = res.data || {};
       const data = body.data || body;
       setCreditBalance(Number(data?.balance ?? 0));
-      setPaidBalance(Number(data?.paidBalance ?? 0));
-      setBonusBalance(Number(data?.bonusBalance ?? 0));
-      setFreeShippingCreditBalance(
-        Number(data?.freeShippingCreditBalance ?? 0),
-      );
+      setPaidCredit(Number(data?.paidCredit ?? 0));
+      setBonusRequestCredit(Number(data?.bonusRequestCredit ?? 0));
+      setBonusShippingCredit(Number(data?.bonusShippingCredit ?? 0));
     } catch {
       setCreditBalance(null);
-      setPaidBalance(null);
-      setBonusBalance(null);
-      setFreeShippingCreditBalance(null);
+      setPaidCredit(null);
+      setBonusRequestCredit(null);
+      setBonusShippingCredit(null);
     } finally {
       setLoadingCreditBalance(false);
     }
@@ -1106,9 +1106,9 @@ export const DashboardLayout = () => {
                           showCompleted,
                           setShowCompleted,
                           creditBalance,
-                          paidBalance,
-                          bonusBalance,
-                          freeShippingCreditBalance,
+                          paidCredit,
+                          bonusRequestCredit,
+                          bonusShippingCredit,
                           loadingCreditBalance,
                         }}
                       />
