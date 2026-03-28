@@ -62,9 +62,9 @@ import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 type DashboardOutletContext = {
   creditBalance: number | null;
-  paidBalance: number | null;
-  bonusBalance: number | null;
-  freeShippingCreditBalance: number | null;
+  paidCredit: number | null;
+  bonusRequestCredit: number | null;
+  bonusShippingCredit: number | null;
   loadingCreditBalance: boolean;
 };
 
@@ -75,9 +75,9 @@ export const RequestorDashboardPage = () => {
   const { toast } = useToast();
   const {
     creditBalance,
-    paidBalance,
-    bonusBalance,
-    freeShippingCreditBalance,
+    paidCredit,
+    bonusRequestCredit,
+    bonusShippingCredit,
     loadingCreditBalance,
   } = useOutletContext<DashboardOutletContext>();
   const { data: systemSettings } = useSystemSettings();
@@ -273,12 +273,12 @@ export const RequestorDashboardPage = () => {
 
   // 의뢰비 충전 경고
   // 의뢰, CAM 단계에 의뢰건이 있으면서 크레딧이 부족한지 확인
-  // 의뢰비 결제: 유료 크레딧 + 무료 크레딧 사용 가능 (무료 배송비 크레딧은 사용 불가)
+  // 의뢰비 결제: 유료 크레딧 + 무료 의뢰비 크레딧 사용 가능 (무료 배송비 크레딧은 사용 불가)
   useEffect(() => {
     if (
       summaryResponse?.success &&
-      paidBalance !== null &&
-      bonusBalance !== null &&
+      paidCredit !== null &&
+      bonusRequestCredit !== null &&
       systemSettings?.creditSettings
     ) {
       const stats = summaryResponse.data.stats ?? {};
@@ -290,8 +290,8 @@ export const RequestorDashboardPage = () => {
       const inCam = stats.inCam || 0;
       const totalPendingRequests = inRequest + inCam;
 
-      // 의뢰비는 유료 크레딧 + 무료 크레딧 사용 가능
-      const availableForRequest = paidBalance + bonusBalance;
+      // 의뢰비는 유료 크레딧 + 무료 의뢰비 크레딧 사용 가능
+      const availableForRequest = paidCredit + bonusRequestCredit;
       const requiredCredit = totalPendingRequests * pricePerRequest;
 
       if (totalPendingRequests > 0 && availableForRequest < requiredCredit) {
@@ -300,7 +300,7 @@ export const RequestorDashboardPage = () => {
         setInsufficientCredit(false);
       }
     }
-  }, [summaryResponse, paidBalance, bonusBalance, systemSettings]);
+  }, [summaryResponse, paidCredit, bonusRequestCredit, systemSettings]);
 
   // 배송비 충전 경고
   // 묶음 배송 건수를 기준으로 필요한 배송비 계산
@@ -308,8 +308,8 @@ export const RequestorDashboardPage = () => {
   useEffect(() => {
     if (
       bulkResponse?.success &&
-      paidBalance !== null &&
-      freeShippingCreditBalance !== null &&
+      paidCredit !== null &&
+      bonusShippingCredit !== null &&
       systemSettings?.creditSettings
     ) {
       const shippingFeePerBox =
@@ -320,7 +320,7 @@ export const RequestorDashboardPage = () => {
       const totalShippingBoxes = bulkShippingCandidates.length;
 
       // 배송비는 유료 크레딧 + 무료 배송비 크레딧으로 결제
-      const availableForShipping = paidBalance + freeShippingCreditBalance;
+      const availableForShipping = paidCredit + bonusShippingCredit;
       const requiredShippingFee = totalShippingBoxes * shippingFeePerBox;
 
       if (
@@ -332,7 +332,7 @@ export const RequestorDashboardPage = () => {
         setInsufficientShippingCredit(false);
       }
     }
-  }, [bulkResponse, freeShippingCreditBalance, paidBalance, systemSettings]);
+  }, [bulkResponse, bonusShippingCredit, paidCredit, systemSettings]);
 
   const refreshDashboard = useCallback(() => {
     void queryClient.invalidateQueries({

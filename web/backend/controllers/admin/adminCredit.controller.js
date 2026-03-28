@@ -847,8 +847,8 @@ export async function adminGetCreditStats(req, res) {
 
     let totalSpentPaidAmount = 0;
     let totalSpentBonusAmount = 0;
-    let totalPaidBalance = 0;
-    let totalBonusBalance = 0;
+    let totalPaidCredit = 0;
+    let totalBonusRequestCredit = 0;
 
     for (const row of statsRows || []) {
       const chargedPaid = Number(row.chargedPaid || 0);
@@ -869,8 +869,8 @@ export async function adminGetCreditStats(req, res) {
 
       totalSpentPaidAmount += spentPaid;
       totalSpentBonusAmount += spentBonus;
-      totalPaidBalance += Math.max(0, chargedPaid + adjustSum - spentPaid);
-      totalBonusBalance += Math.max(0, chargedBonus - spentBonus);
+      totalPaidCredit += Math.max(0, chargedPaid + adjustSum - spentPaid);
+      totalBonusRequestCredit += Math.max(0, chargedBonus - spentBonus);
     }
 
     return res.json({
@@ -888,8 +888,11 @@ export async function adminGetCreditStats(req, res) {
         totalBonus,
         totalSpentPaidAmount: Math.max(0, Math.round(totalSpentPaidAmount)),
         totalSpentBonusAmount: Math.max(0, Math.round(totalSpentBonusAmount)),
-        totalPaidBalance: Math.max(0, Math.round(totalPaidBalance)),
-        totalBonusBalance: Math.max(0, Math.round(totalBonusBalance)),
+        totalPaidCredit: Math.max(0, Math.round(totalPaidCredit)),
+        totalBonusRequestCredit: Math.max(
+          0,
+          Math.round(totalBonusRequestCredit),
+        ),
         ledgerByType,
       },
     });
@@ -1631,13 +1634,13 @@ export async function adminGetBusinessCredits(req, res) {
         spentPaid = spentTotal - spentBonus;
       }
 
-      const paidBalance = chargedPaid + adjustSum - spentPaid;
-      const bonusBalance = chargedBonus - spentBonus;
+      const paidCredit = chargedPaid + adjustSum - spentPaid;
+      const bonusRequestCredit = chargedBonus - spentBonus;
 
       balanceMap[String(item._id)] = {
-        balance: Math.max(0, paidBalance + bonusBalance),
-        paidBalance: Math.max(0, paidBalance),
-        bonusBalance: Math.max(0, bonusBalance),
+        balance: Math.max(0, paidCredit + bonusRequestCredit),
+        paidCredit: Math.max(0, paidCredit),
+        bonusRequestCredit: Math.max(0, bonusRequestCredit),
         spentAmount: Math.max(0, spentTotal),
         chargedPaidAmount: Math.max(0, chargedPaid),
         chargedBonusAmount: Math.max(0, chargedBonus),
@@ -1652,8 +1655,8 @@ export async function adminGetBusinessCredits(req, res) {
       );
       const balanceInfo = balanceMap[lookupKey] || {
         balance: 0,
-        paidBalance: 0,
-        bonusBalance: 0,
+        paidCredit: 0,
+        bonusRequestCredit: 0,
         spentAmount: 0,
         chargedPaidAmount: 0,
         chargedBonusAmount: 0,
@@ -1678,8 +1681,8 @@ export async function adminGetBusinessCredits(req, res) {
 
     const sortedResult = [...result].sort(
       (a, b) =>
-        Number(b.paidBalance || 0) - Number(a.paidBalance || 0) ||
-        Number(b.bonusBalance || 0) - Number(a.bonusBalance || 0) ||
+        Number(b.paidCredit || 0) - Number(a.paidCredit || 0) ||
+        Number(b.bonusRequestCredit || 0) - Number(a.bonusRequestCredit || 0) ||
         String(a.name || "").localeCompare(String(b.name || ""), "ko"),
     );
 
@@ -1759,8 +1762,8 @@ export async function adminGetBusinessCreditDetail(req, res) {
       history.push({
         ...ledger,
         balanceAfter: Math.max(0, paid + bonus),
-        paidBalanceAfter: Math.max(0, paid),
-        bonusBalanceAfter: Math.max(0, bonus),
+        paidCreditAfter: Math.max(0, paid),
+        bonusRequestCreditAfter: Math.max(0, bonus),
       });
     }
 
@@ -1769,8 +1772,8 @@ export async function adminGetBusinessCreditDetail(req, res) {
       data: {
         business: org,
         balance: Math.max(0, paid + bonus),
-        paidBalance: Math.max(0, paid),
-        bonusBalance: Math.max(0, bonus),
+        paidCredit: Math.max(0, paid),
+        bonusRequestCredit: Math.max(0, bonus),
         spentAmount: Math.max(0, spent),
         history: history.reverse(),
       },

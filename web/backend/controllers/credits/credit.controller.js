@@ -161,14 +161,14 @@ async function getBalanceBreakdown(scope) {
     }
   }
 
-  const paidBalance = Math.max(0, Math.round(paid));
-  const bonusBalance = Math.max(0, Math.round(bonus));
-  const freeShippingCreditBalance = Math.max(0, Math.round(freeShippingCredit));
+  const paidCredit = Math.max(0, Math.round(paid));
+  const bonusRequestCredit = Math.max(0, Math.round(bonus));
+  const bonusShippingCredit = Math.max(0, Math.round(freeShippingCredit));
   return {
-    balance: paidBalance + bonusBalance,
-    paidBalance,
-    bonusBalance,
-    freeShippingCreditBalance,
+    balance: paidCredit + bonusRequestCredit,
+    paidCredit,
+    bonusRequestCredit,
+    bonusShippingCredit,
   };
 }
 

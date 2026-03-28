@@ -718,16 +718,16 @@ export async function createRequestsFromDraft(req, res) {
           }
         }
 
-        const { balance, paidBalance, bonusBalance } =
+        const { balance, paidCredit, bonusRequestCredit } =
           await getBusinessCreditBalanceBreakdown({
             businessAnchorId,
             session,
           });
-        console.log("[createRequestsFromDraft] credit check", {
+        console.log("[createRequestsFromDraft] Credit balance check", {
           t: Date.now() - startTime,
           balance,
-          paidBalance,
-          bonusBalance,
+          paidCredit,
+          bonusRequestCredit,
           required: totalSpendSupply,
         });
 

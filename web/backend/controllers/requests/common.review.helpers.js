@@ -13,9 +13,9 @@ async function getBusinessCreditBalance({ businessAnchorId, session }) {
   if (!businessAnchorId) {
     return {
       balance: 0,
-      paidBalance: 0,
-      bonusBalance: 0,
-      freeShippingCreditBalance: 0,
+      paidCredit: 0,
+      bonusRequestCredit: 0,
+      bonusShippingCredit: 0,
     };
   }
 
@@ -69,14 +69,14 @@ async function getBusinessCreditBalance({ businessAnchorId, session }) {
     }
   }
 
-  const paidBalance = Math.max(0, Math.round(paid));
-  const bonusBalance = Math.max(0, Math.round(bonus));
-  const freeShippingCreditBalance = Math.max(0, Math.round(freeShippingCredit));
+  const paidCredit = Math.max(0, Math.round(paid));
+  const bonusRequestCredit = Math.max(0, Math.round(bonus));
+  const bonusShippingCredit = Math.max(0, Math.round(freeShippingCredit));
   return {
-    balance: paidBalance + bonusBalance,
-    paidBalance,
-    bonusBalance,
-    freeShippingCreditBalance,
+    balance: paidCredit + bonusRequestCredit,
+    paidCredit,
+    bonusRequestCredit,
+    bonusShippingCredit,
   };
 }
 
@@ -338,18 +338,17 @@ export async function ensureShippingFeeSpendOnPackingApprove({
   const fee = Number(pkg.shippingFeeSupply || 0);
   if (!Number.isFinite(fee) || fee <= 0) return;
 
-  const { paidBalance, freeShippingCreditBalance } =
-    await getBusinessCreditBalance({
-      businessAnchorId,
-      session,
-    });
-  if (paidBalance + freeShippingCreditBalance < fee) {
+  const { paidCredit, bonusShippingCredit } = await getBusinessCreditBalance({
+    businessAnchorId,
+    session,
+  });
+  if (paidCredit + bonusShippingCredit < fee) {
     const err = new Error("의뢰자 잔액 부족으로 포장.발송 진입 불가");
     err.statusCode = 402;
     err.payload = {
       reason: "insufficient_credit_for_shipping",
-      paidBalance,
-      freeShippingCreditBalance,
+      paidCredit,
+      bonusShippingCredit,
       required: fee,
       requestId: request?._id ? String(request._id) : null,
       shippingPackageId: String(pkg._id),

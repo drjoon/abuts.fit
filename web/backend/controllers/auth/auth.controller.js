@@ -246,8 +246,8 @@ async function getBusinessCreditBalanceBreakdown(businessAnchorId) {
   if (!Types.ObjectId.isValid(normalizedBusinessAnchorId)) {
     return {
       balance: 0,
-      paidBalance: 0,
-      bonusBalance: 0,
+      paidCredit: 0,
+      bonusRequestCredit: 0,
     };
   }
 
@@ -292,12 +292,12 @@ async function getBusinessCreditBalanceBreakdown(businessAnchorId) {
     }
   }
 
-  const paidBalance = Math.max(0, Math.round(paid));
-  const bonusBalance = Math.max(0, Math.round(bonus));
+  const paidCredit = Math.max(0, Math.round(paid));
+  const bonusRequestCredit = Math.max(0, Math.round(bonus));
   return {
-    balance: paidBalance + bonusBalance,
-    paidBalance,
-    bonusBalance,
+    balance: paidCredit + bonusRequestCredit,
+    paidCredit,
+    bonusRequestCredit,
   };
 }
 
