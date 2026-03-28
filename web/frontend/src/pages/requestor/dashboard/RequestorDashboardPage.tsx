@@ -256,18 +256,19 @@ export const RequestorDashboardPage = () => {
       systemSettings?.creditSettings
     ) {
       const stats = summaryResponse.data.stats ?? {};
-      const minCredit =
+      const pricePerRequest =
         systemSettings.creditSettings.minCreditForRequest || 10000;
 
       // 의뢰, CAM 단계에 의뢰건이 있으면 경고
       const inRequest = stats.totalRequests || 0;
       const inCam = stats.inCam || 0;
-      const hasRequestOrCam = inRequest > 0 || inCam > 0;
+      const totalPendingRequests = inRequest + inCam;
 
       // 의뢰 결제는 유료 + 무료 크레딧 합계로 판단
       const availableForRequest = paidBalance + bonusBalance;
+      const requiredCredit = totalPendingRequests * pricePerRequest;
 
-      if (hasRequestOrCam && availableForRequest < minCredit) {
+      if (totalPendingRequests > 0 && availableForRequest < requiredCredit) {
         setInsufficientCredit(true);
       } else {
         setInsufficientCredit(false);
