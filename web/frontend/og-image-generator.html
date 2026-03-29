@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OG Image Generator</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      width: 1200px;
+      height: 630px;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      overflow: hidden;
+    }
+    
+    .container {
+      width: 100%;
+      height: 100%;
+      padding: 80px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 40px;
+    }
+    
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 20px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 999px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.35em;
+      color: rgba(255, 255, 255, 0.7);
+      width: fit-content;
+    }
+    
+    .dot {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: #6ee7b7;
+    }
+    
+    h1 {
+      font-size: 64px;
+      font-weight: 600;
+      line-height: 1.2;
+      color: white;
+      margin: 0;
+    }
+    
+    .description {
+      font-size: 24px;
+      line-height: 1.6;
+      color: rgba(255, 255, 255, 0.8);
+      max-width: 900px;
+    }
+    
+    .stats {
+      display: flex;
+      gap: 40px;
+      margin-top: 20px;
+    }
+    
+    .stat-card {
+      padding: 24px 32px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(20px);
+      border-radius: 16px;
+    }
+    
+    .stat-value {
+      font-size: 36px;
+      font-weight: 600;
+      color: white;
+      margin-bottom: 4px;
+    }
+    
+    .stat-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4em;
+      color: rgba(255, 255, 255, 0.6);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="badge">
+      <span>platform</span>
+      <span class="dot"></span>
+      <span>abuts.fit</span>
+    </div>
+    
+    <h1>
+      치과기공소와 제조사가 함께 쓰는<br>
+      디지털 제작 워크스페이스
+    </h1>
+    
+    <p class="description">
+      의뢰, 제조, 배송 과정을 하나의 실시간 스테이지로 정리해<br>
+      작업 흐름을 투명하게 공유합니다.
+    </p>
+    
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-value">1,500+</div>
+        <div class="stat-label">월간 케이스</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">24h 이내</div>
+        <div class="stat-label">평균 처리 시간</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">98.7%</div>
+        <div class="stat-label">동기화 성공률</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
