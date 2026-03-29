@@ -31,12 +31,14 @@ type MailboxGridProps = {
   requests: ManufacturerRequest[];
   onBoxClick?: (address: string, requests: ManufacturerRequest[]) => void;
   onMailboxError?: (address: string, message: string) => void;
+  onRefresh?: () => void | Promise<void>;
 };
 
 export const MailboxGrid = ({
   requests,
   onBoxClick,
   onMailboxError,
+  onRefresh,
 }: MailboxGridProps) => {
   const { toast } = useToast();
   const shelfGroups = useMemo(() => {
@@ -310,18 +312,15 @@ export const MailboxGrid = ({
       if (workflowRefreshMailboxAddresses.length > 0) {
         clearWorkflowOverridesForMailboxes(workflowRefreshMailboxAddresses);
       }
-      if (modifyOnly && effectiveTargetAddresses.length > 0) {
-        applyWorkflowOverrideForMailboxes(effectiveTargetAddresses, {
-          code: "accepted",
-          label: "접수",
-        });
-      }
 
-      const notifyPickupUpdated = () => {
+      const notifyPickupUpdated = async () => {
+        if (onRefresh) {
+          await onRefresh();
+        }
         if (!modifyOnly || pickupUpdatedMailboxAddresses.length === 0) return;
         toast({
           title: "택배 접수 업데이트 완료",
-          description: `${pickupUpdatedMailboxAddresses.length}개 우편함의 접수 정보를 갱신했습니다.`,
+          description: `${pickupUpdatedMailboxAddresses.length}개 우편함의 택배 접수가 업데이트되었습니다.`,
         });
       };
       const completedPrintCount =
@@ -347,7 +346,27 @@ export const MailboxGrid = ({
           return;
         }
 
-        if (Array.isArray((data as any)?.address_list)) {
+        // 재출력 시 address_list가 빈 배열일 수 있으므로 zplLabels 존재 여부도 체크
+        if (
+          Array.isArray((data as any)?.zplLabels) &&
+          (data as any).zplLabels.length > 0
+        ) {
+          await saveGeneratedWaybillPngs({
+            addressList: (data as any).address_list || [],
+            zplLabels: (data as any).zplLabels,
+          });
+          toast({
+            title: modifyOnly ? "운송장 재출력 완료" : "운송장 출력 완료",
+            description: completedPrintDescriptionImage,
+          });
+          notifyPickupUpdated();
+          return;
+        }
+
+        if (
+          Array.isArray((data as any)?.address_list) &&
+          (data as any).address_list.length > 0
+        ) {
           await saveGeneratedWaybillPngs({
             addressList: (data as any).address_list,
             zplLabels: (data as any).zplLabels,
@@ -770,6 +789,15 @@ export const MailboxGrid = ({
 
     setIsRequestingPickup(true);
     try {
+      console.log(
+        "[reset] before reset, requests:",
+        requests.map((r) => ({
+          id: r.requestId,
+          mailbox: r.mailboxAddress,
+          workflowCode: r.shippingWorkflow?.code,
+        })),
+      );
+
       await request<any>({
         path: "/api/requests/shipping/mailbox-reset-working-state",
         method: "POST",
@@ -778,9 +806,25 @@ export const MailboxGrid = ({
         },
       });
 
+      // 로컬 상태 초기화
       setMailboxChangeMeta({});
+      setWorkflowOverrideByRequestId({});
       clearWorkflowOverridesForMailboxes(occupiedAddresses);
       setFailedMailboxes(new Set());
+
+      // 백엔드 상태 다시 조회
+      if (onRefresh) {
+        await onRefresh();
+      }
+
+      console.log(
+        "[reset] after refresh, requests:",
+        requests.map((r) => ({
+          id: r.requestId,
+          mailbox: r.mailboxAddress,
+          workflowCode: r.shippingWorkflow?.code,
+        })),
+      );
 
       toast({
         title: "임시 리셋 완료",
@@ -855,10 +899,6 @@ export const MailboxGrid = ({
           .map((item: any) => String(item?.mailbox || "").trim())
           .filter(Boolean);
         if (successfulMailboxAddresses.length) {
-          applyWorkflowOverrideForMailboxes(successfulMailboxAddresses, {
-            code: "accepted",
-            label: "접수",
-          });
           setFailedMailboxes((prev) => {
             const next = new Set(prev);
             successfulMailboxAddresses.forEach((addr) => next.delete(addr));
@@ -871,6 +911,9 @@ export const MailboxGrid = ({
             failedMailboxAddresses.forEach((addr) => next.add(addr));
             return next;
           });
+        }
+        if (onRefresh) {
+          await onRefresh();
         }
         toast({
           title:
@@ -898,26 +941,6 @@ export const MailboxGrid = ({
           .filter((item: any) => item?.success === false)
           .map((item: any) => String(item?.mailbox || "").trim())
           .filter(Boolean);
-        const updatedIds = Array.isArray((cancelResponse as any)?.results)
-          ? (cancelResponse as any).results
-              .flatMap((item: any) =>
-                Array.isArray(item?.updatedIds) ? item.updatedIds : [],
-              )
-              .map((value: any) => String(value || "").trim())
-              .filter(Boolean)
-          : [];
-        if (updatedIds.length) {
-          setWorkflowOverrideByRequestId((prev) => {
-            const next = { ...prev };
-            updatedIds.forEach((requestId) => {
-              next[requestId] = {
-                code: "canceled",
-                label: "취소",
-              };
-            });
-            return next;
-          });
-        }
         setMailboxChangeMeta((prev) => {
           const next = { ...prev };
           successfulMailboxAddresses.forEach((address) => {
@@ -931,6 +954,9 @@ export const MailboxGrid = ({
           failedMailboxAddresses.forEach((addr) => next.add(addr));
           return next;
         });
+        if (onRefresh) {
+          await onRefresh();
+        }
         toast({
           title:
             failedMailboxAddresses.length > 0
@@ -961,44 +987,43 @@ export const MailboxGrid = ({
     }
   };
 
-  const canRequestPickup = occupiedAddresses.length > 0;
-
-  const canPrintLabels = acceptedAddresses.length > 0;
-
-  const hasAcceptedMailbox = acceptedAddresses.length > 0;
-
-  const canCancelPickup = acceptedAddresses.length > 0;
-
-  const hasPrintedMailbox = printedWorkflowAddresses.length > 0;
-
-  const hasAnyOccupiedMailbox = occupiedAddresses.length > 0;
+  // 백엔드 상태 기반 버튼 로직
+  const unprintedAddresses = occupiedAddresses.filter(
+    (addr) =>
+      !printedMailboxes.has(addr) &&
+      pickupRequestedMailboxes.get(addr) !== "printed",
+  );
 
   const changedPrintedAddresses = printedMailboxChanges
     .filter((item) => item.changed)
     .map((item) => item.address);
 
-  const shouldReprintChangedOnly =
-    hasPrintedMailbox &&
-    hasModifiedPrintedMailbox &&
-    changedPrintedAddresses.length > 0;
+  const hasPrintedMailbox = printedWorkflowAddresses.length > 0;
+  const hasUnprintedMailbox = unprintedAddresses.length > 0;
+  const hasChangedPrintedMailbox = changedPrintedAddresses.length > 0;
+  const hasAcceptedMailbox = acceptedAddresses.length > 0;
 
-  const canReprintChangedMailboxes = shouldReprintChangedOnly;
-
+  // 출력 버튼: 미출력 우편함이 있거나, 출력 후 변경된 우편함이 있으면 활성화
+  const canPrint = hasUnprintedMailbox || hasChangedPrintedMailbox;
   const printActionLabel = hasPrintedMailbox
     ? "🖨️ 운송장 재출력"
     : "🖨️ 운송장 출력";
 
+  // 접수 버튼: 출력된 우편함이 있으면 활성화 (접수 모드)
+  // 취소 버튼: 접수된 우편함이 있으면 활성화 (취소 모드)
+  const canPickup = hasPrintedMailbox && !hasAcceptedMailbox;
+  const canCancelPickup = hasAcceptedMailbox;
   const pickupActionLabel = hasAcceptedMailbox
     ? "↩️ 택배 취소"
     : "🚚 택배 접수";
-
   const pickupActionLoadingLabel = hasAcceptedMailbox
     ? "취소 중..."
     : "접수 중...";
-
   const pickupActionDisabled = hasAcceptedMailbox
     ? !canCancelPickup
-    : !canRequestPickup;
+    : !canPickup;
+
+  const hasAnyOccupiedMailbox = occupiedAddresses.length > 0;
 
   const actionButtons = [
     {
@@ -1015,26 +1040,18 @@ export const MailboxGrid = ({
       label: printActionLabel,
       loading: activeHeaderAction === "print" && isRequestingPickup,
       loadingLabel: "출력 중...",
-      disabled: hasPrintedMailbox
-        ? !canReprintChangedMailboxes
-        : !canPrintLabels,
+      disabled: !canPrint,
       variant: "blue" as const,
       onClick: () => {
-        if (hasPrintedMailbox) {
-          if (!canReprintChangedMailboxes) {
-            toast({
-              title: "재출력 불가",
-              description: "메일함 내용이 바뀐 경우에만 재출력할 수 있습니다.",
-              variant: "destructive",
-            });
-            return;
-          }
+        if (hasPrintedMailbox && hasChangedPrintedMailbox) {
+          // 재출력: 변경된 우편함만 출력
           void handlePrintOnly({
             targetAddresses: changedPrintedAddresses,
             modifyOnly: true,
           });
           return;
         }
+        // 최초 출력: 모든 우편함 출력
         void handlePrintOnly();
       },
     },

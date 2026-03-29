@@ -339,6 +339,16 @@ export const executeHanjinLabelPrint = async ({
     elapsedSec: (hanjinElapsedMs / 1000).toFixed(2),
   });
 
+  // 한진 API 응답 구조 확인
+  if (Array.isArray(data?.address_list) && data.address_list.length > 0) {
+    console.log("[hanjin][api-response] first address item keys:", {
+      keys: Object.keys(data.address_list[0]),
+      hasZpl:
+        "wbl_zpl" in data.address_list[0] || "zpl" in data.address_list[0],
+      sample: data.address_list[0],
+    });
+  }
+
   const errorCount = Number(data?.error_cnt || data?.errorCnt || 0);
   const addressList = Array.isArray(data?.address_list)
     ? data.address_list
@@ -786,36 +796,61 @@ const buildHanjinWblZplLabels = ({ addressList }) => {
         return "";
       }
 
-      // 한진 운송장 ZPL 라벨 생성 (4x6 인치, 203 DPI)
-      // 가로 모드, 한글 지원 (XPrinter)
-      // 첨2 레이아웃 기준
+      // 한진 운송장 ZPL 라벨 생성 (4x6 인치 가로, 203 DPI)
+      // Code Page 29 (한국어 KS X 1001)
+      // 정상 출력 이미지(첨1) 기준 레이아웃
+      const remark =
+        String(row?.remark || "").trim() || `${receiverName} / 1건`;
+      const mailboxCode = String(row?.mailbox_code || "").trim();
+      const today = new Date().toISOString().slice(0, 10);
+
       const zpl = `^XA
 ^MMT
-^CI28
+^CI29
 ^PW1218
 ^LL812
 ^PON
 ^LH0,0
-^FO20,20^A0N,28,28^FD운송장번호^FS
-^FO170,15^A0N,40,40^FD${wblNum}^FS
-^FO520,20^A0N,20,20^FDP.1  1/1^FS
-^FO920,20^A0N,18,18^FD한진택배 1588-0011^FS
-^FO20,80^A0N,110,110^FD${tmlNam}^FS
-^FO20,210^A0N,80,80^FD${domMid}^FS
-^FO20,300^A0N,70,70^FD${grpRnk}^FS
-^FO380,90^BY2,2,160^BCN^FD${wblNum}^FS
-^FO860,90^A0N,36,36^FD${domRgn}^FS
-^FO860,140^A0N,28,28^FD${sTemNam}^FS
-^FO860,175^A0N,28,28^FD${cenNam}^FS
-^FO980,90^BY3,3,320^BCN^FD${wblNum}^FS
-^FO20,450^A0N,24,24^FD${prtAdd}^FS
-^FO20,490^A0N,22,22^FD${receiverName}^FS
-^FO20,520^A0N,22,22^FD${receiverPhone}^FS
-^FO700,450^A0N,20,20^FD2026-03-13^FS
-^FO700,475^A0N,20,20^FDType:S^FS
-^FO20,610^A0N,20,20^FD비고  ${receiverName} / 1건^FS
-^FO700,640^BY2,2,80^BCN^FD${wblNum}^FS
+^FO30,20^A0N,24,24^FD운송장번호^FS
+^FO200,15^A0N,36,36^FD${wblNum}^FS
+^FO550,20^A0N,18,18^FDP.1  1/1^FS
+^FO950,20^A0N,18,18^FD한진택배 1588-0011^FS
+^FO30,70^GB1160,3,3^FS
+^FO30,90^A0N,120,120^FD${tmlNam}^FS
+^FO600,90^GB3,280,3^FS
+^FO620,90^A0N,28,28^FD도화정^FS
+^FO620,130^A0N,24,24^FD${domRgn}^FS
+^FO730,90^GB3,280,3^FS
+^FO750,90^A0N,28,28^FD권역^FS
+^FO750,130^A0N,40,40^FD${grpRnk}^FS
+^FO870,90^GB3,280,3^FS
+^FO890,90^A0N,28,28^FD구분^FS
+^FO890,130^A0N,24,24^FD${mailboxCode}^FS
+^FO30,230^A0N,80,80^FD${domMid}^FS
+^FO30,330^A0N,60,60^FD${sTemNam}^FS
+^FO30,380^GB1160,3,3^FS
+^FO30,400^A0N,22,22^FD패키지^FS
+^FO30,430^A0N,20,20^FD${prtAdd}^FS
+^FO750,400^BY2,2,140^BCN,140,N,N,N^FD${wblNum}^FS
+^FO30,590^GB1160,3,3^FS
+^FO30,610^A0N,22,22^FD패키지 수령^FS
+^FO30,640^A0N,20,20^FD${receiverName}^FS
+^FO30,670^A0N,20,20^FD${receiverPhone}^FS
+^FO950,610^A0N,18,18^FD${today}^FS
+^FO950,640^A0N,18,18^FDType:S^FS
+^FO30,710^A0N,18,18^FD의료기기  1/0^FS
+^FO30,740^GB1160,3,3^FS
+^FO30,760^A0N,20,20^FD비고  ${remark}^FS
+^FO950,760^BY2,2,40^BCN,40,N,N,N^FD${wblNum}^FS
 ^XZ`;
+
+      console.log("[hanjin][zpl] generated label", {
+        wblNum,
+        tmlNam,
+        domRgn,
+        mailboxCode,
+        zplPreview: zpl.slice(0, 200),
+      });
 
       return zpl;
     })

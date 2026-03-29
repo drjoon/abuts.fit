@@ -1,3 +1,13 @@
-[wbls-server] 2026-03-13T06:04:03.397Z request {"method":"GET","url":"/printers"}
-[wbls-server] 2026-03-13T06:04:03.399Z ip-check {"clientIp":"127.0.0.1","allowed":true,"allowedIps":["127.0.0.1","118.217.235.170","13.203.56.190","100.77.68.21"]}
-[wbls-server] 2026-03-13T06:04:03.569Z printers {"count":1}
+[wbls-server] 2026-03-29T00:04:02.134Z server:started {"host":"0.0.0.0","port":8005,"url":"http://0.0.0.0:8005","allowedIps":["*"],"platform":"darwin"}
+[wbls-server] 2026-03-29T00:05:30.124Z request:incoming {"method":"POST","url":"/print-zpl","clientIp":"127.0.0.1","remoteAddress":"127.0.0.1"}
+[wbls-server] 2026-03-29T00:05:30.213Z print-zpl:pdf-convert {"title":"Hanjin Waybill Label"}
+[wbls-server] 2026-03-29T00:05:30.305Z korean-font:register-failed {"path":"/System/Library/Fonts/AppleSDGothicNeo.ttc","error":"this.font.createSubset is not a function"}
+[wbls-server] 2026-03-29T00:05:30.313Z print-zpl:pdf-done {"title":"Hanjin Waybill Label"}
+[wbls-server] 2026-03-29T00:06:35.469Z request:incoming {"method":"POST","url":"/print-zpl","clientIp":"127.0.0.1","remoteAddress":"127.0.0.1"}
+[wbls-server] 2026-03-29T00:06:35.552Z print-zpl:pdf-convert {"title":"Hanjin Waybill Label"}
+[wbls-server] 2026-03-29T00:06:35.562Z korean-font:register-failed {"path":"/System/Library/Fonts/AppleSDGothicNeo.ttc","error":"this.font.createSubset is not a function"}
+[wbls-server] 2026-03-29T00:06:35.566Z print-zpl:pdf-done {"title":"Hanjin Waybill Label"}
+[wbls-server] 2026-03-29T00:13:41.836Z request:incoming {"method":"POST","url":"/print-zpl","clientIp":"127.0.0.1","remoteAddress":"127.0.0.1"}
+[wbls-server] 2026-03-29T00:13:41.953Z print-zpl:pdf-convert {"title":"Hanjin Waybill Label"}
+[wbls-server] 2026-03-29T00:13:41.964Z korean-font:register-failed {"path":"/System/Library/Fonts/AppleSDGothicNeo.ttc","error":"this.font.createSubset is not a function"}
+[wbls-server] 2026-03-29T00:13:41.967Z print-zpl:pdf-done {"title":"Hanjin Waybill Label"}

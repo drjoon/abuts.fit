@@ -658,6 +658,7 @@ export const RequestPage = ({
                       [key]: normalized,
                     }));
                   }}
+                  onRefresh={reloadRequests}
                 />
               </div>
             ) : isEmpty ? (

@@ -369,9 +369,18 @@ const renderZplAsKoreanPdf = async (zpl, pdfPath, koreanFontPath) => {
   const pageW = Number(pwMatch ? pwMatch[1] : 1218) * DOT_TO_PT;
   const pageH = Number(llMatch ? llMatch[1] : 812) * DOT_TO_PT;
   const doc = new PDFDocument({ size: [pageW, pageH], margin: 0 });
+  let hasKoreanFont = false;
   if (koreanFontPath) {
-    doc.registerFont("Korean", koreanFontPath);
-    doc.font("Korean");
+    try {
+      doc.registerFont("Korean", koreanFontPath);
+      doc.font("Korean");
+      hasKoreanFont = true;
+    } catch (e) {
+      log("korean-font:register-failed", {
+        path: koreanFontPath,
+        error: e.message,
+      });
+    }
   }
   const stream = fs.createWriteStream(pdfPath);
   doc.pipe(stream);
@@ -381,7 +390,13 @@ const renderZplAsKoreanPdf = async (zpl, pdfPath, koreanFontPath) => {
     const py = el.y * DOT_TO_PT;
     if (el.type === "text") {
       const fontSize = Math.max(6, el.h * DOT_TO_PT * 0.85);
-      if (koreanFontPath) doc.font("Korean");
+      if (hasKoreanFont) {
+        try {
+          doc.font("Korean");
+        } catch {
+          // 폰트 설정 실패 무시
+        }
+      }
       try {
         doc.fontSize(fontSize).text(el.text, px, py, { lineBreak: false });
       } catch {
@@ -496,7 +511,6 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (saveMode === "pdf") {
-        const tempPath = await writeTextToTemp(zpl, "zpl");
         const pdfPath = path.join(
           os.tmpdir(),
           `hanjin-label-${Date.now()}-${Math.random().toString(16).slice(2)}.pdf`,
@@ -505,21 +519,12 @@ const server = http.createServer(async (req, res) => {
         log("print-zpl:pdf-convert", { title });
 
         try {
-          await new Promise((resolve, reject) => {
-            const args = [tempPath, "-o", pdfPath];
-            execFile("zpl2pdf", args, (err, stdout, stderr) => {
-              if (err) {
-                log("print-zpl:pdf-convert-failed", { message: err.message });
-                return reject(new Error(stderr || err.message));
-              }
-              resolve(stdout);
-            });
-          });
+          const koreanFontPath = findKoreanFontPath();
+          await renderZplAsKoreanPdf(zpl, pdfPath, koreanFontPath);
 
           const pdfBuffer = await fs.promises.readFile(pdfPath);
           const base64Pdf = pdfBuffer.toString("base64");
 
-          fs.unlink(tempPath, () => undefined);
           fs.unlink(pdfPath, () => undefined);
 
           log("print-zpl:pdf-done", { title });
@@ -531,7 +536,6 @@ const server = http.createServer(async (req, res) => {
             filename: `${title}-${Date.now()}.pdf`,
           });
         } catch (error) {
-          fs.unlink(tempPath, () => undefined);
           fs.unlink(pdfPath, () => undefined);
           throw error;
         }
