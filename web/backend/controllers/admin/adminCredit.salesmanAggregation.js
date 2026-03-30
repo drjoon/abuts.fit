@@ -1,6 +1,5 @@
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
-import Business from "../../models/business.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { Types } from "mongoose";
 
@@ -67,16 +66,16 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
     ),
   ).map((id) => new Types.ObjectId(id));
 
-  const businesses = salesmanBusinessIds.length
-    ? await Business.find({ _id: { $in: salesmanBusinessIds } })
-        .select({ _id: 1, businessAnchorId: 1, extracted: 1 })
+  const salesmanAnchors = salesmanBusinessIds.length
+    ? await BusinessAnchor.find({ _id: { $in: salesmanBusinessIds } })
+        .select({ _id: 1, metadata: 1 })
         .lean()
     : [];
 
   const businessNumberNormalizedSet = new Set(
-    (businesses || [])
-      .map((business) =>
-        String(business?.extracted?.businessNumber || "")
+    (salesmanAnchors || [])
+      .map((anchor) =>
+        String(anchor?.metadata?.businessNumber || "")
           .replace(/\D/g, "")
           .trim(),
       )
