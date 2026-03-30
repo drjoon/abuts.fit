@@ -6,7 +6,7 @@ import Machine from "../../models/machine.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
-import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import User from "../../models/user.model.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
@@ -452,17 +452,17 @@ export async function getAllRequests(req, res) {
       );
 
       const businesses = requestorAnchorIds.length
-        ? await Business.find({
-            businessAnchorId: {
+        ? await BusinessAnchor.find({
+            _id: {
               $in: requestorAnchorIds.map((id) => new Types.ObjectId(id)),
             },
           })
-            .select({ businessAnchorId: 1, name: 1, extracted: 1 })
+            .select({ _id: 1, name: 1, metadata: 1 })
             .lean()
         : [];
 
       const businessMap = new Map(
-        businesses.map((row) => [String(row?.businessAnchorId || ""), row]),
+        businesses.map((row) => [String(row?._id || ""), row]),
       );
 
       for (const item of requests) {
