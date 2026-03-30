@@ -1,6 +1,5 @@
 import User from "../../models/user.model.js";
 import SignupVerification from "../../models/signupVerification.model.js";
-import Business from "../../models/business.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import {
@@ -104,10 +103,10 @@ async function resolveDefaultDevopsReferrer() {
     throw new Error("기본 소개 개발운영사 사업자 정보가 올바르지 않습니다.");
   }
 
-  const businessExists = await Business.exists({
-    _id: new Types.ObjectId(businessId),
+  const businessAnchorExists = await BusinessAnchor.exists({
+    _id: new Types.ObjectId(businessAnchorId),
   });
-  if (!businessExists) {
+  if (!businessAnchorExists) {
     throw new Error("기본 소개 개발운영사 사업자를 찾을 수 없습니다.");
   }
   const anchorExists = await BusinessAnchor.exists({
@@ -1235,15 +1234,13 @@ async function withdraw(req, res) {
 
     let isRequestorOwner = false;
     const businessAnchorId = user?.businessAnchorId || null;
-    let businessId = user.businessId || null;
-    if (user.role === "requestor" && businessId) {
-      const business = await Business.findById(businessId)
-        .select({ owner: 1 })
+    if (user.role === "requestor" && businessAnchorId) {
+      const anchor = await BusinessAnchor.findById(businessAnchorId)
+        .select({ primaryContactUserId: 1 })
         .lean();
-      if (!business) {
-        businessId = null;
-      } else {
-        isRequestorOwner = String(business.owner) === String(userId);
+      if (anchor) {
+        isRequestorOwner =
+          String(anchor.primaryContactUserId) === String(userId);
       }
     }
 

@@ -1,10 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
-import Business from "../../models/business.model.js";
-import {
-  assertBusinessRole,
-  buildBusinessTypeFilter,
-} from "../businesses/businessRole.util.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
+import { assertBusinessRole } from "../businesses/businessRole.util.js";
 import { ensureBusinessAnchorForBusiness } from "../businesses/business.update.controller.js";
 import s3Utils, { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
 
@@ -52,21 +49,20 @@ export async function parseBusinessLicense(req, res) {
 
     const businessMembershipId = String(req.user?.businessId || "").trim();
     const hasBusinessMembership = Boolean(businessMembershipId);
-    let business = null;
+    let anchor = null;
     if (hasBusinessMembership) {
-      const businessTypeFilter = buildBusinessTypeFilter(businessType);
-      business = await Business.findOne({
+      anchor = await BusinessAnchor.findOne({
         _id: businessMembershipId,
-        ...businessTypeFilter,
+        businessType,
       })
-        .select({ owner: 1, owners: 1 })
+        .select({ primaryContactUserId: 1, owners: 1 })
         .lean();
       const meId = String(req.user._id);
       const canUpload =
-        business &&
-        (String(business.owner) === meId ||
-          (Array.isArray(business.owners) &&
-            business.owners.some((c) => String(c) === meId)));
+        anchor &&
+        (String(anchor.primaryContactUserId) === meId ||
+          (Array.isArray(anchor.owners) &&
+            anchor.owners.some((c) => String(c) === meId)));
       if (!canUpload) {
         return res.status(403).json({
           success: false,
@@ -127,8 +123,8 @@ export async function parseBusinessLicense(req, res) {
           "GOOGLE_API_KEY가 설정되지 않아 사업자등록증 자동 인식이 비활성화되어 있습니다.",
       };
 
-      if (hasBusinessMembership && business?._id) {
-        await Business.findByIdAndUpdate(businessMembershipId, {
+      if (hasBusinessMembership && anchor?._id) {
+        await BusinessAnchor.findByIdAndUpdate(businessMembershipId, {
           $set: {
             businessLicense: {
               fileId: fileId || null,
@@ -338,33 +334,11 @@ export async function parseBusinessLicense(req, res) {
       },
     };
 
-    if (hasBusinessMembership && business?._id) {
+    if (hasBusinessMembership && anchor?._id) {
       try {
-        await Business.findByIdAndUpdate(businessMembershipId, {
+        await BusinessAnchor.findByIdAndUpdate(businessMembershipId, {
           $set: normalizedBusinessNumber ? setWithBusinessNumber : baseSet,
         });
-        // BusinessAnchor 생성/동기화: 사업자등록번호가 추출된 경우 즉시 앵커 확보
-        if (normalizedBusinessNumber) {
-          const updatedBusiness = await Business.findById(businessMembershipId)
-            .select({ name: 1, extracted: 1, verification: 1 })
-            .lean();
-          if (updatedBusiness) {
-            const businessTypeForAnchor = String(
-              req.user?.role || "requestor",
-            ).trim();
-            ensureBusinessAnchorForBusiness({
-              business: updatedBusiness,
-              businessType: businessTypeForAnchor,
-              userId: req.user._id,
-              referredByAnchorId: null,
-            }).catch((err) =>
-              console.error(
-                "[AI] parseBusinessLicense ensureBusinessAnchor failed",
-                err,
-              ),
-            );
-          }
-        }
       } catch (e) {
         if (normalizedBusinessNumber && isDuplicateKeyError(e)) {
           const verificationOverride = {
@@ -374,7 +348,7 @@ export async function parseBusinessLicense(req, res) {
               "사업자등록번호가 이미 등록되어 있어 자동 저장을 건너뛰었습니다. 사업자등록번호를 확인하거나, 기존 기공소에 가입 요청을 진행해주세요.",
           };
 
-          await Business.findByIdAndUpdate(businessMembershipId, {
+          await BusinessAnchor.findByIdAndUpdate(businessMembershipId, {
             $set: {
               ...baseSet,
               verification: {
