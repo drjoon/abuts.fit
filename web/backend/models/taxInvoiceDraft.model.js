@@ -7,15 +7,15 @@ const TaxInvoiceDraftSchema = new mongoose.Schema(
       ref: "ChargeOrder",
       default: null,
     },
-    businessId: {
+    userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Business",
-      default: null,
+      ref: "User",
+      required: true,
     },
     businessAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "BusinessAnchor",
-      default: null,
+      required: true,
     },
     writeDate: { type: String, default: null },
     status: {

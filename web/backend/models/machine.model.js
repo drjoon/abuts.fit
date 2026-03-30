@@ -13,10 +13,10 @@ const machineSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    manufacturerBusinessId: {
+    manufacturer: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Business",
-      required: false,
+      ref: "User",
+      required: true,
     },
     manufacturerBusinessAnchorId: {
       type: mongoose.Schema.Types.ObjectId,

@@ -94,24 +94,34 @@
 - business owner는 사업자를 생성/검증 요청하는 사용자 역할일 뿐, 사업자 생성 이후 관련 데이터의 canonical 귀속 주체는 **owner가 아니라 business 엔터티 자체**입니다.
 - 개인 사용자 기준 처리가 필요한 경우는 인증/세션/알림 수신 주체처럼 **사용자 자체가 엔터티인 기능**으로 한정합니다.
 
-### 2.3.2 BusinessAnchor 전환 원칙
+### 2.3.2 BusinessAnchor SSOT 원칙 (Business 컬렉션 완전 제거)
 
-- `BusinessAnchor`는 법적/정산/소개 기준 사업자의 **canonical SSOT** 입니다.
-- `BusinessAnchor.businessType`은 `requestor`, `salesman`, `manufacturer`, `devops`, `admin` 을 지원합니다.
-- `BusinessAnchor`의 natural key는 **정규화된 사업자등록번호(`businessNumberNormalized`)** 이고, DB PK는 Mongo `ObjectId` 를 유지합니다.
-- 소개 원본 DB의 canonical 관계는 `User.referredByBusinessId`가 아니라 **`BusinessAnchor.referredByAnchorId`** 방향으로 전환합니다.
+- `BusinessAnchor`는 **모든 사업자 데이터의 단일 SSOT**입니다 (법적 식별, 정산, 소개, 멤버십 통합).
+- **`Business` 컬렉션은 완전히 제거되었습니다.** 모든 사업자 관련 데이터는 `BusinessAnchor`에서 관리합니다.
+- `BusinessAnchor.businessType`은 `requestor`, `salesman`, `manufacturer`, `devops`, `admin`을 지원합니다.
+- `BusinessAnchor`의 natural key는 **정규화된 사업자등록번호(`businessNumberNormalized`)** 이고, DB PK는 Mongo `ObjectId`를 유지합니다.
+
+#### BusinessAnchor 필드 구조
+
+- **법적 식별**: `businessNumberNormalized`, `businessType`, `name`, `metadata` (companyName, address, representativeName 등)
+- **멤버십**: `primaryContactUserId` (주대표), `owners` (공동대표 배열), `members` (직원 배열), `joinRequests` (가입 신청 배열)
+- **정산**: `payoutAccount`, `payoutRates`
+- **소개**: `referredByAnchorId`, `defaultReferralAnchorId`, `referralMembershipAggregate`
+
+#### 핵심 원칙
+
+- 소개 관계의 canonical 키는 **`BusinessAnchor.referredByAnchorId`** 입니다.
 - 주문, 크레딧, 정산, 소개 스냅샷, 관리자 overview 스냅샷은 **`businessAnchorId` 기준** 집계/귀속을 기본으로 합니다.
-- `Business`는 멤버십/조직 UI/운영 컨테이너로만 남기고, 법적 식별/소개/정산 SSOT 책임은 `BusinessAnchor`로 이동합니다.
-- DB 리셋 전제 작업에서는 레거시 `businessId`, `organizationId`, `referredByBusinessId` 호환을 두지 않고 **`businessAnchorId` / `referredByAnchorId` 단일 소스**를 사용합니다.
-- 온보딩/사업자 설정 저장 시 사업자등록번호가 검증되면 **`BusinessAnchor`를 즉시 생성 또는 upsert** 하고, `Business.businessAnchorId` 및 해당 사업자 소속 `User.businessAnchorId`를 함께 동기화합니다.
+- `User.businessAnchorId`만 사용하며, 레거시 `User.businessId`는 제거되었습니다.
+- 온보딩/사업자 설정 저장 시 사업자등록번호가 검증되면 **`BusinessAnchor`를 즉시 생성 또는 upsert**하고, 해당 사업자 소속 `User.businessAnchorId`를 함께 동기화합니다.
 - **정말 필수적인 초기값 외에는 fallback을 추가하지 않습니다.** 값이 비어 있으면 프론트에 숨겨 문제를 드러내고, 저장/동기화의 근본 원인을 수정합니다.
-- 꼭 fallback 구현이 필요하면 **반드시 사용자 승인 후** 반영합니다.
-- 크레딧 및 집계 SSOT:
-  - `ChargeOrder`, `CreditLedger`, `TaxInvoiceDraft` 등 사업자 귀속 금전 모델의 canonical 키는 **`businessAnchorId`** 입니다.
-  - 크레딧 조회/집계/러닝밸런스 계산은 **항상 `businessAnchorId` 기준**으로 수행합니다.
-  - 백엔드 크레딧 관련 컨트롤러(`adminCredit.controller.js`, `creditLedger.controller.js`, `credit.controller.js` 등)의 쿼리/집계는 레거시 fallback 없이 `businessAnchorId`만 사용합니다.
-  - 프론트 관리자 크레딧 페이지(`AdminCreditPage`)와 관련 모달은 조직 선택/표시/실시간 동기화 시 **`businessAnchorId`만** 사용합니다.
-  - 크레딧 생성 지점(`upsertBonusLedger`, bonus grant 등)은 `Business.businessAnchorId`를 조회하여 `CreditLedger.businessAnchorId`에 저장합니다.
+
+#### 크레딧 및 집계 SSOT
+
+- `ChargeOrder`, `CreditLedger`, `TaxInvoiceDraft` 등 사업자 귀속 금전 모델의 canonical 키는 **`businessAnchorId`** 입니다.
+- 크레딧 조회/집계/러닝밸런스 계산은 **항상 `businessAnchorId` 기준**으로 수행합니다.
+- 백엔드 크레딧 관련 컨트롤러의 쿼리/집계는 `businessAnchorId`만 사용합니다.
+- 프론트 관리자 크레딧 페이지와 관련 모달은 조직 선택/표시/실시간 동기화 시 **`businessAnchorId`만** 사용합니다.
 
 ### 2.4 수익 분배 (매출 100% 기준)
 

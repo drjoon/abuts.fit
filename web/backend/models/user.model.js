@@ -78,12 +78,6 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    businessId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Business",
-      default: null,
-      index: true,
-    },
     businessAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "BusinessAnchor",

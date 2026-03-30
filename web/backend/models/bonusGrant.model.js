@@ -14,12 +14,6 @@ const bonusGrantSchema = new mongoose.Schema(
       index: true,
     },
     amount: { type: Number, required: true },
-    businessId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Business",
-      required: true,
-      index: true,
-    },
     businessAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "BusinessAnchor",

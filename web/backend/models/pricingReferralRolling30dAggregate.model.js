@@ -2,12 +2,6 @@ import mongoose from "mongoose";
 
 const pricingReferralRolling30dAggregateSchema = new mongoose.Schema(
   {
-    businessId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Business",
-      default: null,
-      index: true,
-    },
     businessAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "BusinessAnchor",

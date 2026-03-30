@@ -45,12 +45,6 @@ const businessAnchorSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
-    sourceBusinessId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Business",
-      default: null,
-      index: true,
-    },
     metadata: {
       companyName: { type: String, default: "" },
       representativeName: { type: String, default: "" },
@@ -94,6 +88,48 @@ const businessAnchorSchema = new mongoose.Schema(
         default: null,
       },
     },
+    owners: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        index: true,
+      },
+    ],
+    members: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        index: true,
+      },
+    ],
+    joinRequests: [
+      {
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        status: {
+          type: String,
+          enum: ["pending", "approved", "rejected"],
+          default: "pending",
+        },
+        requestedRole: {
+          type: String,
+          enum: ["representative", "staff"],
+          default: "staff",
+        },
+        approvedRole: {
+          type: String,
+          enum: ["representative", "staff", ""],
+          default: "",
+        },
+        createdAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
   },
   {
     timestamps: true,
@@ -101,7 +137,6 @@ const businessAnchorSchema = new mongoose.Schema(
 );
 
 businessAnchorSchema.index({ businessType: 1, name: 1 });
-businessAnchorSchema.index({ sourceBusinessId: 1 }, { sparse: true });
 businessAnchorSchema.index({ referredByAnchorId: 1, businessType: 1 });
 
 const BusinessAnchor = mongoose.model("BusinessAnchor", businessAnchorSchema);

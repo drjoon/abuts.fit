@@ -22,7 +22,6 @@ export async function checkBusinessNumberDuplicate(req, res) {
     const roleCheck = assertBusinessRole(req, res);
     if (!roleCheck) return;
     const { businessType } = roleCheck;
-    const typeFilter = buildBusinessTypeFilter(businessType);
 
     const businessNumberRaw = String(req.body?.businessNumber || "").trim();
     if (!businessNumberRaw) {
@@ -35,7 +34,7 @@ export async function checkBusinessNumberDuplicate(req, res) {
     const normalizeBusinessNumber = (input) => {
       const digits = String(input || "").replace(/\D/g, "");
       if (digits.length !== 10) return "";
-      return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
+      return digits;
     };
 
     const businessNumber = normalizeBusinessNumber(businessNumberRaw);
@@ -47,22 +46,24 @@ export async function checkBusinessNumberDuplicate(req, res) {
     }
 
     const freshUser = await User.findById(req.user._id)
-      .select({ businessId: 1, business: 1 })
+      .select({ businessAnchorId: 1 })
       .lean();
-    const effectiveBusinessId =
-      freshUser?.businessId || req.user.businessId || null;
+    const effectiveBusinessAnchorId =
+      freshUser?.businessAnchorId || req.user.businessAnchorId || null;
 
-    const existingBusiness = await Business.findOne({
-      ...typeFilter,
-      "extracted.businessNumber": businessNumber,
-      ...(effectiveBusinessId ? { _id: { $ne: effectiveBusinessId } } : {}),
+    const existingAnchor = await BusinessAnchor.findOne({
+      businessType,
+      businessNumberNormalized: businessNumber,
+      ...(effectiveBusinessAnchorId
+        ? { _id: { $ne: effectiveBusinessAnchorId } }
+        : {}),
     })
-      .select({ _id: 1, owner: 1 })
+      .select({ _id: 1, primaryContactUserId: 1 })
       .lean();
 
-    if (existingBusiness) {
+    if (existingAnchor) {
       const meId = String(req.user._id);
-      const existingOwnerId = String(existingBusiness.owner || "");
+      const existingOwnerId = String(existingAnchor.primaryContactUserId || "");
 
       if (existingOwnerId !== meId) {
         return res.status(409).json({
@@ -164,40 +165,38 @@ export async function updateBusinessShippingAddress(req, res) {
       zipCode,
     });
 
-    const business = await Business.findOne({
+    const anchor = await BusinessAnchor.findOne({
       _id: businessId,
-      ...buildBusinessTypeFilter("requestor"),
+      businessType: "requestor",
     });
 
-    if (!business) {
+    if (!anchor) {
       return res.status(404).json({
         success: false,
         message: "의뢰인 사업자를 찾을 수 없습니다.",
       });
     }
 
-    const nextExtracted = {
-      ...(business.extracted
-        ? business.extracted.toObject?.() || business.extracted
-        : {}),
+    const nextMetadata = {
+      ...(anchor.metadata || {}),
       address: normalizedAddressFields?.address || address,
       addressDetail,
       zipCode: normalizedAddressFields?.zipCode || zipCode,
     };
 
-    await Business.findByIdAndUpdate(business._id, {
+    await BusinessAnchor.findByIdAndUpdate(anchor._id, {
       $set: {
-        extracted: nextExtracted,
+        metadata: nextMetadata,
       },
     });
 
     return res.status(200).json({
       success: true,
       data: {
-        businessId: String(business._id),
-        address: nextExtracted.address || "",
-        addressDetail: nextExtracted.addressDetail || "",
-        zipCode: nextExtracted.zipCode || "",
+        businessId: String(anchor._id),
+        address: nextMetadata.address || "",
+        addressDetail: nextMetadata.addressDetail || "",
+        zipCode: nextMetadata.zipCode || "",
       },
     });
   } catch (error) {
@@ -217,64 +216,28 @@ export async function getMyBusiness(req, res) {
     if (!roleCheck) return;
     const { businessType } = roleCheck;
 
-    let businessName = String(req.user.business || "").trim();
     const freshUser = await User.findById(req.user._id)
-      .select({ businessId: 1, business: 1 })
+      .select({ businessAnchorId: 1, business: 1 })
       .lean();
-    const freshBusinessId = freshUser?.businessId || req.user.businessId;
-    const freshBusinessName = String(
-      freshUser?.business || req.user.business || "",
-    ).trim();
+    const businessAnchorId =
+      freshUser?.businessAnchorId || req.user.businessAnchorId;
 
-    let business = await findBusinessByAnchors({
-      businessType,
-      businessId: freshBusinessId,
-      businessNumber: "",
-      userId: req.user._id,
-      businessName: freshBusinessName || businessName,
-    });
-
-    console.info("[Business] getMyBusiness anchors", {
-      userId: String(req.user._id),
-      businessType,
-      tokenBusinessId: String(req.user.businessId || ""),
-      freshBusinessId: String(freshBusinessId || ""),
-      tokenBusinessName: String(req.user.business || ""),
-      freshBusinessName,
-      resolvedBusinessId: String(business?._id || ""),
-      resolvedBusinessName: String(business?.name || ""),
-    });
-
-    if (
-      !business &&
-      businessName &&
-      String(req.user.referralCode || "").startsWith("mock_")
-    ) {
-      try {
-        business = await Business.create({
-          businessType,
-          name: businessName,
-          owner: req.user._id,
-          owners: [],
-          members: [req.user._id],
-          joinRequests: [],
-        });
-        await User.findByIdAndUpdate(req.user._id, {
-          $set: {
-            businessId: business._id,
-            business: business.name,
-          },
-        });
-      } catch (error) {
-        return res.status(403).json({
-          success: false,
-          message: "내 사업자 생성 중 오류가 발생했습니다.",
-          error: error.message,
-        });
-      }
+    let anchor = null;
+    if (businessAnchorId) {
+      anchor = await BusinessAnchor.findOne({
+        _id: businessAnchorId,
+        businessType,
+      }).lean();
     }
 
-    if (!business) {
+    console.info("[BusinessAnchor] getMyBusiness", {
+      userId: String(req.user._id),
+      businessType,
+      businessAnchorId: String(businessAnchorId || ""),
+      found: !!anchor,
+    });
+
+    if (!anchor) {
       return res.json({
         success: true,
         data: {
@@ -282,30 +245,29 @@ export async function getMyBusiness(req, res) {
           business: null,
           hasBusinessNumber: false,
           businessVerified: false,
-          extracted: {},
-          businessLicense: {},
-          shippingPolicy: {},
+          metadata: {},
+          payoutAccount: {},
         },
       });
     }
 
-    const ownerId = String(business.owner);
     const meId = String(req.user._id);
+    const primaryContactId = String(anchor.primaryContactUserId || "");
     const isOwner =
-      Array.isArray(business.owners) &&
-      business.owners.some((c) => String(c) === meId);
+      Array.isArray(anchor.owners) &&
+      anchor.owners.some((c) => String(c) === meId);
 
     let membership = "none";
-    if (ownerId === meId || isOwner) {
+    if (primaryContactId === meId || isOwner) {
       membership = "owner";
     } else if (
-      Array.isArray(business.members) &&
-      business.members.some((m) => String(m) === meId)
+      Array.isArray(anchor.members) &&
+      anchor.members.some((m) => String(m) === meId)
     ) {
       membership = "member";
     } else if (
-      Array.isArray(business.joinRequests) &&
-      business.joinRequests.some(
+      Array.isArray(anchor.joinRequests) &&
+      anchor.joinRequests.some(
         (r) => String(r?.user) === meId && String(r?.status) === "pending",
       )
     ) {
@@ -313,13 +275,13 @@ export async function getMyBusiness(req, res) {
     }
 
     if (
-      req.user.businessId &&
+      req.user.businessAnchorId &&
       membership !== "owner" &&
       membership !== "member"
     ) {
       await User.findByIdAndUpdate(req.user._id, {
         $set: {
-          businessId: null,
+          businessAnchorId: null,
           business: "",
         },
       });
@@ -330,76 +292,47 @@ export async function getMyBusiness(req, res) {
           business: null,
           hasBusinessNumber: false,
           businessVerified: false,
-          extracted: {},
-          businessLicense: {},
-          shippingPolicy: business?.shippingPolicy || {},
+          metadata: {},
+          payoutAccount: {},
         },
       });
     }
 
     if (
-      !req.user.businessId &&
+      !req.user.businessAnchorId &&
       (membership === "owner" || membership === "member")
     ) {
       await User.findByIdAndUpdate(req.user._id, {
         $set: {
-          businessId: business._id,
-          business: business.name,
+          businessAnchorId: anchor._id,
+          business: anchor.name,
         },
       });
     }
 
     const safeBusiness = {
-      _id: business._id,
-      name: business.name,
-      owner: business.owner,
+      _id: anchor._id,
+      name: anchor.name,
+      owner: anchor.primaryContactUserId,
     };
 
     const businessNumber = String(
-      business?.extracted?.businessNumber || "",
+      anchor?.businessNumberNormalized || "",
     ).trim();
     const hasBusinessNumber = !!businessNumber;
-    const businessVerified = !!business?.verification?.verified;
-
-    const shippingPolicy = business?.shippingPolicy || {};
-    const safeShippingPolicy = { ...shippingPolicy };
-
-    console.info("[Business] getMyBusiness response", {
-      userId: String(req.user._id),
-      businessId: String(business?._id || ""),
-      membership,
-      name: String(business?.name || ""),
-      extracted: {
-        companyName: String(business?.extracted?.companyName || "").trim(),
-        businessNumber: String(
-          business?.extracted?.businessNumber || "",
-        ).trim(),
-        address: String(business?.extracted?.address || "").trim(),
-        addressDetail: String(business?.extracted?.addressDetail || "").trim(),
-        zipCode: String(business?.extracted?.zipCode || "").trim(),
-        phoneNumber: String(business?.extracted?.phoneNumber || "").trim(),
-        email: String(business?.extracted?.email || "").trim(),
-        representativeName: String(
-          business?.extracted?.representativeName || "",
-        ).trim(),
-        businessType: String(business?.extracted?.businessType || "").trim(),
-        businessItem: String(business?.extracted?.businessItem || "").trim(),
-        startDate: String(business?.extracted?.startDate || "").trim(),
-      },
-      businessVerified,
-    });
+    const businessVerified = anchor.status === "verified";
 
     return res.json({
       success: true,
       data: {
         membership,
         business: safeBusiness,
-        businessId: business?._id,
+        businessId: anchor._id,
         hasBusinessNumber,
         businessVerified,
-        extracted: business?.extracted || {},
-        businessLicense: business?.businessLicense || {},
-        shippingPolicy: safeShippingPolicy,
+        extracted: anchor?.metadata || {},
+        metadata: anchor?.metadata || {},
+        payoutAccount: anchor?.payoutAccount || {},
       },
     });
   } catch (error) {
@@ -475,25 +408,25 @@ export async function clearMyBusinessLicense(req, res) {
     const roleCheck = assertBusinessRole(req, res);
     if (!roleCheck) return;
     const { businessType } = roleCheck;
-    const typeFilter = buildBusinessTypeFilter(businessType);
 
-    if (!req.user.businessId) {
+    if (!req.user.businessAnchorId) {
       return res.status(200).json({
         success: true,
         data: { cleared: true },
       });
     }
 
-    const business = await Business.findOne({
-      _id: req.user.businessId,
-      ...typeFilter,
+    const anchor = await BusinessAnchor.findOne({
+      _id: req.user.businessAnchorId,
+      businessType,
     });
+
     const meId = String(req.user._id);
     const isOwner =
-      business &&
-      (String(business.owner) === meId ||
-        (Array.isArray(business.owners) &&
-          business.owners.some((c) => String(c) === meId)));
+      anchor &&
+      (String(anchor.primaryContactUserId) === meId ||
+        (Array.isArray(anchor.owners) &&
+          anchor.owners.some((c) => String(c) === meId)));
     if (!isOwner) {
       return res.status(403).json({
         success: false,
@@ -501,62 +434,37 @@ export async function clearMyBusinessLicense(req, res) {
       });
     }
 
-    const key = String(business?.businessLicense?.s3Key || "").trim();
-    if (key) {
-      try {
-        await s3Utils.deleteFileFromS3(key);
-      } catch {}
-    }
-
-    const fileId = String(business?.businessLicense?.fileId || "").trim();
-    if (fileId) {
-      try {
-        await File.findByIdAndDelete(fileId);
-      } catch {}
-    }
-
-    await Business.findByIdAndUpdate(req.user.businessId, {
+    await BusinessAnchor.findByIdAndUpdate(req.user.businessAnchorId, {
       $set: {
-        businessLicense: {
-          fileId: null,
-          s3Key: "",
-          originalName: "",
-          uploadedAt: null,
-        },
-        "extracted.companyName": "",
-        "extracted.address": "",
-        "extracted.zipCode": "",
-        "extracted.phoneNumber": "",
-        "extracted.email": "",
-        "extracted.representativeName": "",
-        "extracted.businessType": "",
-        "extracted.businessItem": "",
-        verification: {
-          verified: false,
-          provider: "",
-          message: "",
-          checkedAt: null,
-        },
+        "metadata.companyName": "",
+        "metadata.address": "",
+        "metadata.zipCode": "",
+        "metadata.phoneNumber": "",
+        "metadata.email": "",
+        "metadata.representativeName": "",
+        "metadata.businessItem": "",
+        "metadata.businessCategory": "",
+        "metadata.startDate": "",
+        status: "draft",
       },
       $unset: {
-        "extracted.businessNumber": "",
+        businessNumberNormalized: "",
       },
     });
 
     await User.updateMany(
-      { businessId: business._id },
+      { businessAnchorId: anchor._id },
       {
         $set: {
-          businessId: null,
+          businessAnchorId: null,
           business: "",
         },
       },
     );
-    await Business.findByIdAndDelete(business._id);
 
     return res.json({
       success: true,
-      data: { cleared: true, businessRemoved: true },
+      data: { cleared: true },
     });
   } catch (error) {
     console.error(
