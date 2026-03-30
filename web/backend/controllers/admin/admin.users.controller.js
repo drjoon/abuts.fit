@@ -302,6 +302,8 @@ export async function getUserById(req, res) {
             status: 1,
             businessLicense: 1,
             verification: 1,
+            extracted: 1,
+            metadata: 1,
           })
           .lean()
       : null;

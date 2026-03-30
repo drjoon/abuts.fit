@@ -951,9 +951,19 @@ async function getCurrentUser(req, res) {
       });
     }
 
+    // DB에서 최신 사용자 정보 조회 (businessAnchorId 등 업데이트된 정보 반영)
+    const freshUser = await User.findById(user._id).select("-password").lean();
+
+    if (!freshUser) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+
     res.status(200).json({
       success: true,
-      data: user,
+      data: freshUser,
     });
   } catch (error) {
     res.set("x-abuts-handler", "auth.getCurrentUser");

@@ -155,6 +155,8 @@ export const useBusinessDataManagement = (
 
         if (resetVersionRef.current !== loadVersion) return;
 
+        // 서버에 라이선스가 있으면 무조건 서버 데이터 적용 (저장 직후 케이스)
+        // membership이 none이고 서버에 아무 데이터도 없을 때만 로컬 유지
         if (
           next === "none" &&
           !hasServerLicense &&
@@ -169,6 +171,17 @@ export const useBusinessDataManagement = (
             hasLocalDraftData,
           });
           return;
+        }
+
+        // 서버에 라이선스가 있으면 로컬 상태를 서버 데이터로 덮어쓰기
+        if (hasServerLicense) {
+          console.info("[business-data] applying server license data", {
+            businessType: props.businessType,
+            membership: next,
+            serverLicenseName: licName,
+            serverLicenseFileId: nextLicenseFileId,
+            serverLicenseS3Key: nextLicenseS3Key,
+          });
         }
 
         const nextBusinessData = normalizeBusinessData({

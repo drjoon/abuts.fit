@@ -45,6 +45,10 @@ import { useBusinessSearch } from "@/shared/components/business/settings/busines
 import { useMembershipManagement } from "@/shared/components/business/settings/business/useMembershipManagement";
 import { useFileUpload } from "@/shared/components/business/settings/business/useFileUpload";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
+import {
+  invalidateBusinessMeCache,
+  loadBusinessMeCached,
+} from "@/shared/components/business/settings/business/businessMeCache";
 
 interface BusinessTabProps {
   userData?: {
@@ -292,10 +296,25 @@ export const BusinessTab = ({
         });
       }
       setShowInquiryCta(false);
+
+      // 캐시 무효화 및 서버 데이터 강제 재로드
+      invalidateBusinessMeCache({ token, businessType });
       await membershipMgmt.refreshMembership();
+
+      // 서버에서 최신 데이터 강제 로드 (businessLicense 포함)
       if (token) {
         await loginWithToken(token);
+        const freshData = await loadBusinessMeCached({
+          token,
+          businessType,
+          force: true,
+        });
+        console.info("[BusinessTab] force-reloaded business data after save", {
+          hasBusinessLicense: !!freshData?.businessLicense,
+          businessLicense: freshData?.businessLicense,
+        });
       }
+
       if (verification && typeof verification === "object") {
         businessDataMgmt.setIsVerified(!!verification.verified);
       }

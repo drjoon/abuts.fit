@@ -48,6 +48,38 @@
 
 ## 2. 저장소와 권한 기준
 
+### 2.0 인증 및 사용자 정보 동기화
+
+**JWT 토큰과 사용자 정보 불일치 문제:**
+
+- JWT 토큰은 발급 시점의 사용자 정보 스냅샷입니다.
+- 사용자 정보가 변경되어도 (예: `businessAnchorId` 업데이트) JWT 토큰은 변경되지 않습니다.
+- **해결 방법**: `/api/auth/me` 엔드포인트는 `req.user` (JWT 토큰 정보)를 그대로 반환하지 않고, **DB에서 최신 사용자 정보를 조회**하여 반환합니다.
+- 이를 통해 사업자등록증 업로드, 온보딩 완료 등으로 인한 사용자 정보 변경이 프론트엔드에 즉시 반영됩니다.
+
+**영향받는 API:**
+
+- `GET /api/auth/me` - DB 조회로 최신 정보 반환
+- `GET /api/requests/my/dashboard-summary` - `req.user.businessAnchorId` 필수
+- `GET /api/requests/my/bulk-shipping` - `req.user.businessAnchorId` 필수
+
+**프론트엔드 동기화:**
+
+- `useAuthStore`의 `loginWithToken` 함수가 `/api/auth/me`를 호출하여 최신 정보 반영
+- 사업자 정보 업데이트 후 프론트엔드는 자동으로 최신 사용자 정보를 받게 됨
+
+**사업자 정보 저장 후 데이터 동기화 (2026-03-31 버그 수정):**
+
+- **문제**: 온보딩 완료 후 사업자등록증 파일과 일부 필드가 화면에서 사라지는 버그 발생
+- **원인**:
+  1. `useBusinessDataManagement.ts`의 158-172번 라인에서 서버 데이터가 비어있고 로컬에 라이선스가 있을 때 서버 hydrate를 skip하는 로직이 저장 직후에도 작동
+  2. 백엔드 `updateMyBusiness`에서 업데이트 후 조회 시 `businessLicense` 필드를 select에 포함하지 않음
+- **해결**:
+  1. `useBusinessDataManagement.ts`: 서버에 `businessLicense`가 있으면 무조건 서버 데이터를 적용하도록 로직 추가 (176-185번 라인)
+  2. `business.update.controller.js`: 업데이트 후 조회 시 `businessLicense` 필드를 select에 포함 (748번 라인)
+  3. `BusinessTab.tsx`: 저장 성공 후 `invalidateBusinessMeCache` 호출 및 `force: true` 옵션으로 서버 데이터 강제 재로드 (301-316번 라인)
+- **핵심**: 저장 성공 후에는 로컬 상태보다 **서버 데이터를 우선**하여 SSOT 원칙 준수
+
 ### 2.1 저장소 구조
 
 - `web/`: 프론트엔드 + 백엔드 본체

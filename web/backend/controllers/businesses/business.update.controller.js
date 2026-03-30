@@ -745,7 +745,7 @@ export async function updateMyBusiness(req, res) {
       });
       await BusinessAnchor.findByIdAndUpdate(businessAnchor._id, update);
       const persistedAnchor = await BusinessAnchor.findById(businessAnchor._id)
-        .select({ name: 1, metadata: 1, status: 1 })
+        .select({ name: 1, metadata: 1, status: 1, businessLicense: 1 })
         .lean();
       console.info("[BusinessAnchor] updateMyBusiness persisted result", {
         businessAnchorId: String(
@@ -753,6 +753,7 @@ export async function updateMyBusiness(req, res) {
         ),
         name: String(persistedAnchor?.name || ""),
         metadata: persistedAnchor?.metadata || {},
+        businessLicense: persistedAnchor?.businessLicense || null,
         verified: persistedAnchor?.status === "verified",
       });
     } catch (e) {
