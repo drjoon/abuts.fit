@@ -79,10 +79,9 @@ async function resolveDefaultDevopsReferrer() {
   const defaultDevopsUser = await User.findOne({
     role: "devops",
     active: true,
-    businessId: { $ne: null },
     businessAnchorId: { $ne: null },
   })
-    .select({ _id: 1, businessId: 1, businessAnchorId: 1, createdAt: 1 })
+    .select({ _id: 1, businessAnchorId: 1, createdAt: 1 })
     .sort({ createdAt: 1, _id: 1 })
     .lean();
 
@@ -92,10 +91,6 @@ async function resolveDefaultDevopsReferrer() {
     );
   }
 
-  const businessId = String(defaultDevopsUser.businessId || "").trim();
-  if (!Types.ObjectId.isValid(businessId)) {
-    throw new Error("기본 소개 개발운영사 사업자 정보가 올바르지 않습니다.");
-  }
   const businessAnchorId = String(
     defaultDevopsUser.businessAnchorId || "",
   ).trim();
@@ -103,17 +98,11 @@ async function resolveDefaultDevopsReferrer() {
     throw new Error("기본 소개 개발운영사 사업자 정보가 올바르지 않습니다.");
   }
 
-  const businessAnchorExists = await BusinessAnchor.exists({
-    _id: new Types.ObjectId(businessAnchorId),
-  });
-  if (!businessAnchorExists) {
-    throw new Error("기본 소개 개발운영사 사업자를 찾을 수 없습니다.");
-  }
   const anchorExists = await BusinessAnchor.exists({
     _id: new Types.ObjectId(businessAnchorId),
   });
   if (!anchorExists) {
-    throw new Error("기본 소개 개발운영사 사업자 정보를 찾을 수 없습니다.");
+    throw new Error("기본 소개 개발운영사 사업자를 찾을 수 없습니다.");
   }
 
   return {
