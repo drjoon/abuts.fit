@@ -1,5 +1,5 @@
 import Request from "../../models/request.model.js";
-import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import { Types } from "mongoose";
 import {
@@ -174,9 +174,9 @@ async function resolveBusinessAnchorId(req) {
   const userId = req?.user?._id;
   if (!userId) return "";
 
-  const business = await Business.findOne({
+  const business = await BusinessAnchor.findOne({
     $or: [
-      { owner: userId },
+      { primaryContactUserId: userId },
       { owners: userId },
       { members: userId },
       {
@@ -188,8 +188,8 @@ async function resolveBusinessAnchorId(req) {
     .select({ businessAnchorId: 1 })
     .lean();
 
-  if (business?.businessAnchorId) {
-    return String(business.businessAnchorId);
+  if (business?._id) {
+    return String(business._id);
   }
 
   const requestWithBusinessAnchor = await Request.findOne({ requestor: userId })
@@ -372,8 +372,8 @@ export async function buildShippingEstimate(req) {
   try {
     const orgId = getRequestorOrgId(req);
     if (orgId && Types.ObjectId.isValid(orgId)) {
-      const business = await Business.findOne({
-        businessAnchorId: new Types.ObjectId(orgId),
+      const business = await BusinessAnchor.findOne({
+        _id: new Types.ObjectId(orgId),
       })
         .select({ "shippingPolicy.weeklyBatchDays": 1 })
         .lean();
