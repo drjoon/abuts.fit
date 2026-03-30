@@ -1516,7 +1516,7 @@ export async function adminGetBusinessCredits(req, res) {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const skip = Math.max(Number(req.query.skip) || 0, 0);
 
-    const orgs = await BusinessAnchor.find({ businessType: "requestor" })
+    const orgs = await BusinessAnchor.find({})
       .select({
         name: 1,
         primaryContactUserId: 1,
@@ -1842,9 +1842,7 @@ export async function adminGetBusinessCredits(req, res) {
         String(a.name || "").localeCompare(String(b.name || ""), "ko"),
     );
 
-    const total = await BusinessAnchor.countDocuments({
-      businessType: "requestor",
-    });
+    const total = await BusinessAnchor.countDocuments({});
 
     return res.json({
       success: true,
