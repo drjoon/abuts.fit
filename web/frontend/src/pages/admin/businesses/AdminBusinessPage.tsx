@@ -325,41 +325,26 @@ export default function AdminBusinessPage() {
                     </CardHeader>
 
                     <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
-                      {business.businessType === "requestor" ? (
-                        <>
-                          <div className="rounded-lg border p-3">
-                            <div className="text-xs text-muted-foreground">
-                              크레딧 소비액
-                            </div>
-                            <div className="mt-1 text-xl font-bold">
-                              {formatMoney(business.spentAmount || 0)}원
-                            </div>
-                          </div>
-                          <div className="rounded-lg border p-3">
-                            <div className="text-xs text-muted-foreground">
-                              크레딧 잔액
-                            </div>
-                            <div className="mt-1 text-xl font-bold">
-                              {formatMoney(business.balance)}원
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="rounded-lg border p-3">
-                            <div className="text-xs text-muted-foreground">
-                              미정산 잔액
-                            </div>
-                            <div className="mt-1 text-xl font-bold">-원</div>
-                          </div>
-                          <div className="rounded-lg border p-3">
-                            <div className="text-xs text-muted-foreground">
-                              정산 잔액
-                            </div>
-                            <div className="mt-1 text-xl font-bold">-원</div>
-                          </div>
-                        </>
-                      )}
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-muted-foreground">
+                          {business.businessType === "requestor"
+                            ? "크레딧 소비액"
+                            : "미정산 잔액"}
+                        </div>
+                        <div className="mt-1 text-xl font-bold">
+                          {formatMoney(business.spentAmount || 0)}원
+                        </div>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-muted-foreground">
+                          {business.businessType === "requestor"
+                            ? "크레딧 잔액"
+                            : "정산 잔액"}
+                        </div>
+                        <div className="mt-1 text-xl font-bold">
+                          {formatMoney(business.balance)}원
+                        </div>
+                      </div>
                     </CardContent>
                   </Card>
                 );
