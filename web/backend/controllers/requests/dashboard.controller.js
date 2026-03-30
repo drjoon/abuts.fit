@@ -1,6 +1,5 @@
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
-import Business from "../../models/business.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import Machine from "../../models/machine.model.js";
 import { Types } from "mongoose";
@@ -379,22 +378,21 @@ export async function getMyReferralDirectMembers(req, res) {
           .map((row) => row.businessAnchorId)
           .filter((id) => id && Types.ObjectId.isValid(id));
         const orgs = orgAnchorIds.length
-          ? await Business.find({
-              businessAnchorId: {
+          ? await BusinessAnchor.find({
+              _id: {
                 $in: orgAnchorIds.map((id) => new Types.ObjectId(id)),
               },
             })
               .select({
                 _id: 1,
-                businessAnchorId: 1,
                 name: 1,
-                extracted: 1,
+                metadata: 1,
                 createdAt: 1,
               })
               .lean()
           : [];
         orgs.forEach((o) => {
-          const orgKey = String(o?.businessAnchorId || "").trim();
+          const orgKey = String(o?._id || "").trim();
           if (!orgKey) return;
           orgByKey.set(orgKey, o);
         });
@@ -487,13 +485,9 @@ export async function getMyDashboardSummary(req, res) {
     const debug =
       process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
 
-    // User.businessAnchorId가 null인 경우 Business에서 조회/생성하여 이 요청에서 즉시 사용
-    // (SSOT write-on-save가 누락된 레거시 계정 대응)
-    if (!req.user?.businessAnchorId && req.user?.businessId) {
-      const biz = await Business.findById(req.user.businessId)
-        .select({ businessAnchorId: 1, name: 1, extracted: 1, verification: 1 })
-        .lean();
-      let repairedId = String(biz?.businessAnchorId || "").trim();
+    // User.businessAnchorId가 null인 경우 처리 (레거시 계정 대응)
+    if (!req.user?.businessAnchorId) {
+      let repairedId = "";
 
       // BusinessAnchor 자체가 없으면 생성 시도
       if (!repairedId || !Types.ObjectId.isValid(repairedId)) {
