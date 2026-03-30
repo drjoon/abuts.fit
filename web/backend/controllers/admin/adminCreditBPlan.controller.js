@@ -4,7 +4,7 @@ import BankTransaction from "../../models/bankTransaction.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import TaxInvoiceDraft from "../../models/taxInvoiceDraft.model.js";
 import AdminAuditLog from "../../models/adminAuditLog.model.js";
-import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import {
@@ -494,18 +494,18 @@ export async function adminManualMatch(req, res) {
         { session },
       );
       if (!existingDraft) {
-        const org = await Business.findOne({
-          businessAnchorId: order.businessAnchorId,
+        const org = await BusinessAnchor.findOne({
+          _id: order.businessAnchorId,
         })
           .select({
-            "extracted.businessNumber": 1,
-            "extracted.companyName": 1,
-            "extracted.representativeName": 1,
-            "extracted.address": 1,
-            "extracted.businessType": 1,
-            "extracted.businessItem": 1,
-            "extracted.email": 1,
-            "extracted.phoneNumber": 1,
+            "metadata.businessNumber": 1,
+            "metadata.companyName": 1,
+            "metadata.representativeName": 1,
+            "metadata.address": 1,
+            "metadata.businessType": 1,
+            "metadata.businessItem": 1,
+            "metadata.email": 1,
+            "metadata.phoneNumber": 1,
           })
           .lean({ session });
 
