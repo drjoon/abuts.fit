@@ -764,12 +764,14 @@ export async function computePriceForRequest({
   // updatedAt은 운영 중 자주 갱신될 수 있어 기준일로 사용하지 않는다.
   const baseDate = await (async () => {
     if (requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))) {
-      const org = await Business.findOne({
-        businessAnchorId: new Types.ObjectId(String(requestorOrgId)),
-      })
-        .select({ owner: 1 })
+      const org = await BusinessAnchor.findById(
+        new Types.ObjectId(String(requestorOrgId)),
+      )
+        .select({ primaryContactUserId: 1 })
         .lean();
-      const ownerId = org?.owner ? String(org.owner) : "";
+      const ownerId = org?.primaryContactUserId
+        ? String(org.primaryContactUserId)
+        : "";
       if (ownerId && Types.ObjectId.isValid(ownerId)) {
         const owner = await User.findById(ownerId)
           .select({ createdAt: 1, approvedAt: 1 })
