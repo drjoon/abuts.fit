@@ -565,25 +565,21 @@ async function register(req, res) {
       });
     }
 
-    if (normalizedRole === "requestor") {
-      if (!socialProvider) {
-        const ok = await assertSignupVerifications({
-          email: normalizedEmail,
+    // 모든 역할 이메일 인증 통일 (소셜 로그인 제외)
+    if (!socialProvider) {
+      const ok = await assertSignupVerifications({
+        email: normalizedEmail,
+      });
+      if (!ok) {
+        return res.status(400).json({
+          success: false,
+          message: "이메일 인증을 완료해주세요.",
         });
-        if (!ok) {
-          return res.status(400).json({
-            success: false,
-            message: "이메일 인증을 완료해주세요.",
-          });
-        }
       }
     }
 
-    // 사용자 생성
-    const isInstantApprove =
-      normalizedRole === "requestor" ||
-      normalizedRole === "salesman" ||
-      normalizedRole === "devops";
+    // 사용자 생성 - 모든 역할 즉시 승인 (통일된 가입/온보딩 플로우)
+    const isInstantApprove = true;
 
     const userDoc = {
       name,
@@ -596,9 +592,7 @@ async function register(req, res) {
       onboardingWizardCompleted: false,
       approvedAt: isInstantApprove ? new Date() : null,
       active: isInstantApprove,
-      ...(normalizedRole === "requestor" && !socialProvider
-        ? { isVerified: true }
-        : {}),
+      ...(!socialProvider ? { isVerified: true } : {}),
     };
 
     // 소셜 로그인 정보가 있으면 추가
@@ -612,7 +606,8 @@ async function register(req, res) {
     const user = new User(userDoc);
     await user.save();
 
-    if (normalizedRole === "requestor" && !socialProvider) {
+    // 모든 역할 이메일 인증 consume 처리 통일 (소셜 로그인 제외)
+    if (!socialProvider) {
       try {
         await consumeSignupVerifications({
           email: normalizedEmail,

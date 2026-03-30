@@ -209,62 +209,66 @@ export const SignupStaffPage = () => {
     }
   }, [isValidEmail, normalizedEmail, toast]);
 
-  const submitStaffSignup = useCallback(async () => {
-    if (!emailVerifiedAt) {
-      toast({
-        variant: "destructive",
-        description: "이메일 인증을 완료해주세요.",
-      });
-      return;
-    }
-    const payload = {
-      name: formData.name.trim(),
-      email: normalizedEmail,
-      password: formData.password,
-      role,
-    };
-
-    const res = await request<any>({
-      path: "/api/auth/register",
-      method: "POST",
-      jsonBody: payload,
-    });
-
-    const data: any = res.data || {};
-    if (!res.ok || !data?.success) {
-      throw new Error(data?.message || "회원가입에 실패했습니다.");
-    }
-
-    const authToken = data?.data?.token;
-    const refreshToken = data?.data?.refreshToken;
-    if (authToken) {
-      const ok = await loginWithToken(authToken, refreshToken);
-      if (!ok) {
+  const submitStaffSignup = useCallback(
+    async (verifiedAt?: Date) => {
+      const verified = verifiedAt || emailVerifiedAt;
+      if (!verified) {
         toast({
           variant: "destructive",
-          description: "로그인에 실패했습니다. 잠시 후 다시 시도해주세요.",
+          description: "이메일 인증을 완료해주세요.",
         });
         return;
       }
-      navigate("/wizard", { replace: true });
-    } else {
-      toast({
-        description:
-          data?.message ||
-          "가입 신청이 접수되었습니다. 승인 후 로그인 가능합니다.",
+      const payload = {
+        name: formData.name.trim(),
+        email: normalizedEmail,
+        password: formData.password,
+        role,
+      };
+
+      const res = await request<any>({
+        path: "/api/auth/register",
+        method: "POST",
+        jsonBody: payload,
       });
-      navigate("/login", { replace: true });
-    }
-  }, [
-    emailVerifiedAt,
-    formData.name,
-    formData.password,
-    loginWithToken,
-    navigate,
-    normalizedEmail,
-    role,
-    toast,
-  ]);
+
+      const data: any = res.data || {};
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.message || "회원가입에 실패했습니다.");
+      }
+
+      const authToken = data?.data?.token;
+      const refreshToken = data?.data?.refreshToken;
+      if (authToken) {
+        const ok = await loginWithToken(authToken, refreshToken);
+        if (!ok) {
+          toast({
+            variant: "destructive",
+            description: "로그인에 실패했습니다. 잠시 후 다시 시도해주세요.",
+          });
+          return;
+        }
+        navigate("/wizard", { replace: true });
+      } else {
+        toast({
+          description:
+            data?.message ||
+            "가입 신청이 접수되었습니다. 승인 후 로그인 가능합니다.",
+        });
+        navigate("/login", { replace: true });
+      }
+    },
+    [
+      emailVerifiedAt,
+      formData.name,
+      formData.password,
+      loginWithToken,
+      navigate,
+      normalizedEmail,
+      role,
+      toast,
+    ],
+  );
 
   const verifyEmailCode = useCallback(
     async (code: string) => {
@@ -300,7 +304,7 @@ export const SignupStaffPage = () => {
           title: "이메일 인증 완료",
           description: "계정 생성을 진행합니다.",
         });
-        await submitStaffSignup();
+        await submitStaffSignup(verifiedAt);
       } catch (err) {
         toast({
           variant: "destructive",
@@ -333,9 +337,10 @@ export const SignupStaffPage = () => {
         throw new Error(res.data?.message || "상태를 확인할 수 없습니다.");
       }
       if (payload.verified) {
-        setEmailVerifiedAt(new Date(payload.verifiedAt || Date.now()));
+        const verified = new Date(payload.verifiedAt || Date.now());
+        setEmailVerifiedAt(verified);
         toast({ description: "이메일 인증이 확인되었습니다." });
-        await submitStaffSignup();
+        await submitStaffSignup(verified);
       } else {
         toast({
           description: "메일의 '가입 확인' 버튼을 누른 뒤 다시 시도해주세요.",
