@@ -521,15 +521,18 @@ async function updateProfile(req, res) {
       req.user?.businessAnchorId
     ) {
       const nextName = String(updateData.business || "").trim();
-      const org = await Business.findOne({
-        businessAnchorId: req.user.businessAnchorId,
+      const anchor = await BusinessAnchor.findOne({
+        _id: req.user.businessAnchorId,
       });
-      if (!org || String(org.owner) !== String(req.user._id)) {
+      if (
+        !anchor ||
+        String(anchor.primaryContactUserId) !== String(req.user._id)
+      ) {
         delete updateData.business;
       } else {
-        if (nextName && nextName !== org.name) {
-          const exists = await Business.findOne({
-            _id: { $ne: org._id },
+        if (nextName && nextName !== anchor.name) {
+          const exists = await BusinessAnchor.findOne({
+            _id: { $ne: anchor._id },
             name: nextName,
           }).select({ _id: 1 });
           if (exists) {
@@ -539,16 +542,16 @@ async function updateProfile(req, res) {
             });
           }
 
-          org.name = nextName;
-          await org.save();
+          anchor.name = nextName;
+          await anchor.save();
 
           await User.updateMany(
-            { businessId: org._id },
+            { businessAnchorId: anchor._id },
             { $set: { business: nextName } },
           );
         }
 
-        updateData.business = nextName || org.name;
+        updateData.business = nextName || anchor.name;
       }
     }
 

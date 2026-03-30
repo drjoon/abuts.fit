@@ -1,11 +1,7 @@
-import Business from "../../models/business.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import { Types } from "mongoose";
-import {
-  assertBusinessRole,
-  buildBusinessTypeFilter,
-} from "./businessRole.util.js";
+import { assertBusinessRole } from "./businessRole.util.js";
 
 function readBusinessId(value) {
   return String(value || "").trim();
@@ -32,165 +28,62 @@ export async function requestJoinBusiness(req, res) {
       });
     }
 
-    // BusinessAnchor가 SSOT이므로 먼저 조회
-    let anchor = await BusinessAnchor.findOne({
+    const anchor = await BusinessAnchor.findOne({
       _id: businessId,
       businessType,
     });
 
-    // BusinessAnchor가 없으면 Business 조회 (레거시 호환)
-    let business = null;
     if (!anchor) {
-      business = await Business.findOne({
-        _id: businessId,
-        ...buildBusinessTypeFilter(businessType),
-      });
-
-      if (!business) {
-        return res.status(404).json({
-          success: false,
-          message: "사업자를 찾을 수 없습니다.",
-        });
-      }
-
-      // Business에 연결된 BusinessAnchor 조회
-      if (business.businessAnchorId) {
-        anchor = await BusinessAnchor.findById(business.businessAnchorId);
-      }
-    }
-
-    // BusinessAnchor가 있으면 연결된 Business 조회
-    if (anchor && !business) {
-      business = await Business.findOne({
-        businessAnchorId: anchor._id,
+      return res.status(404).json({
+        success: false,
+        message: "사업자를 찾을 수 없습니다.",
       });
     }
 
     const meId = String(req.user._id);
+    const anchorOwnerId = String(anchor.primaryContactUserId || "");
 
-    // BusinessAnchor 기준 검증
-    if (anchor) {
-      const anchorOwnerId = String(anchor.primaryContactUserId || "");
-      if (anchorOwnerId === meId) {
-        return res.status(409).json({
-          success: false,
-          message: "이미 대표자입니다.",
-        });
-      }
+    if (anchorOwnerId === meId) {
+      return res.status(409).json({
+        success: false,
+        message: "이미 대표자입니다.",
+      });
+    }
 
-      if (
-        Array.isArray(anchor.owners) &&
-        anchor.owners.some((o) => String(o) === meId)
-      ) {
-        return res.status(409).json({
-          success: false,
-          message: "이미 공동대표입니다.",
-        });
-      }
+    if (
+      Array.isArray(anchor.owners) &&
+      anchor.owners.some((o) => String(o) === meId)
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: "이미 공동대표입니다.",
+      });
+    }
 
-      if (
-        Array.isArray(anchor.members) &&
-        anchor.members.some((m) => String(m) === meId)
-      ) {
-        return res.status(409).json({
-          success: false,
-          message: "이미 소속되어 있습니다.",
-        });
-      }
+    if (
+      Array.isArray(anchor.members) &&
+      anchor.members.some((m) => String(m) === meId)
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: "이미 소속되어 있습니다.",
+      });
+    }
 
-      const existing = Array.isArray(anchor.joinRequests)
-        ? anchor.joinRequests.find((r) => String(r?.user) === meId)
-        : null;
+    const existing = Array.isArray(anchor.joinRequests)
+      ? anchor.joinRequests.find((r) => String(r?.user) === meId)
+      : null;
 
-      if (existing) {
-        existing.status = "pending";
-        await anchor.save();
-
-        // Business도 동기화
-        if (business) {
-          const businessExisting = Array.isArray(business.joinRequests)
-            ? business.joinRequests.find((r) => String(r?.user) === meId)
-            : null;
-          if (businessExisting) {
-            businessExisting.status = "pending";
-          } else {
-            business.joinRequests.push({
-              user: req.user._id,
-              status: "pending",
-            });
-          }
-          await business.save();
-        }
-
-        return res.json({ success: true, data: { status: "pending" } });
-      }
-
-      anchor.joinRequests.push({ user: req.user._id, status: "pending" });
+    if (existing) {
+      existing.status = "pending";
       await anchor.save();
-
-      // Business도 동기화
-      if (business) {
-        business.joinRequests.push({ user: req.user._id, status: "pending" });
-        await business.save();
-      }
-
-      return res
-        .status(201)
-        .json({ success: true, data: { status: "pending" } });
+      return res.json({ success: true, data: { status: "pending" } });
     }
 
-    // BusinessAnchor가 없으면 Business만 사용 (레거시)
-    if (business) {
-      if (
-        req.user.businessId &&
-        String(req.user.businessId) !== String(business._id)
-      ) {
-        return res.status(409).json({
-          success: false,
-          message: "이미 다른 사업자에 소속되어 있습니다.",
-        });
-      }
+    anchor.joinRequests.push({ user: req.user._id, status: "pending" });
+    await anchor.save();
 
-      const ownerId = String(business.owner);
-      if (ownerId === meId) {
-        return res.status(409).json({
-          success: false,
-          message: "이미 대표자입니다.",
-        });
-      }
-
-      if (
-        Array.isArray(business.members) &&
-        business.members.some((m) => String(m) === meId)
-      ) {
-        return res.status(409).json({
-          success: false,
-          message: "이미 소속되어 있습니다.",
-        });
-      }
-
-      const existing = Array.isArray(business.joinRequests)
-        ? business.joinRequests.find((r) => String(r?.user) === meId)
-        : null;
-
-      if (existing) {
-        existing.status = "pending";
-        await business.save();
-        return res.json({ success: true, data: { status: "pending" } });
-      }
-
-      business.joinRequests.push({ user: req.user._id, status: "pending" });
-      await business.save();
-
-      return res
-        .status(201)
-        .json({ success: true, data: { status: "pending" } });
-    }
-
-    return res.status(404).json({
-      success: false,
-      message: "사업자를 찾을 수 없습니다.",
-    });
+    return res.status(201).json({ success: true, data: { status: "pending" } });
   } catch (error) {
     return res.status(500).json({
       success: false,

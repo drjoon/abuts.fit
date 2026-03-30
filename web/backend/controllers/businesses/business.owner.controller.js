@@ -1,4 +1,3 @@
-import Business from "../../models/business.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import { Types } from "mongoose";
@@ -6,14 +5,7 @@ import {
   resolveOwnedBusiness,
   resolvePrimaryOwnedBusiness,
 } from "./business.utils.js";
-import {
-  assertBusinessRole,
-  buildBusinessTypeFilter,
-} from "./businessRole.util.js";
-
-function readUserBusinessId(user) {
-  return String(user?.businessId || "").trim();
-}
+import { assertBusinessRole } from "./businessRole.util.js";
 
 export async function getPendingJoinRequestsForOwner(req, res) {
   try {
@@ -21,53 +13,18 @@ export async function getPendingJoinRequestsForOwner(req, res) {
     if (!roleCheck) return;
     const { businessType } = roleCheck;
 
-    const myBusinessId = readUserBusinessId(req.user);
     const myBusinessAnchorId = String(req.user?.businessAnchorId || "").trim();
-
-    // BusinessAnchor가 SSOT이므로 먼저 조회
-    let anchor = null;
-    if (myBusinessAnchorId && Types.ObjectId.isValid(myBusinessAnchorId)) {
-      anchor = await BusinessAnchor.findOne({
-        _id: myBusinessAnchorId,
-        businessType,
-        $or: [{ primaryContactUserId: req.user._id }, { owners: req.user._id }],
-      })
-        .populate({
-          path: "joinRequests.user",
-          select: "name email",
-          match: { deletedAt: null },
-        })
-        .lean();
-    }
-
-    // BusinessAnchor가 있으면 우선 사용
-    if (anchor) {
-      const pending = (anchor.joinRequests || []).filter(
-        (r) => r?.status === "pending" && r?.user,
-      );
-
-      return res.json({
-        success: true,
-        data: {
-          businessId: anchor._id,
-          businessName: anchor.name,
-          joinRequests: pending,
-        },
-      });
-    }
-
-    // BusinessAnchor가 없으면 Business 조회 (레거시)
-    if (!myBusinessId) {
+    if (!myBusinessAnchorId || !Types.ObjectId.isValid(myBusinessAnchorId)) {
       return res.status(403).json({
         success: false,
         message: "사업자 정보가 설정되지 않았습니다.",
       });
     }
 
-    const business = await Business.findOne({
-      _id: myBusinessId,
-      ...buildBusinessTypeFilter(businessType),
-      $or: [{ owner: req.user._id }, { owners: req.user._id }],
+    const anchor = await BusinessAnchor.findOne({
+      _id: myBusinessAnchorId,
+      businessType,
+      $or: [{ primaryContactUserId: req.user._id }, { owners: req.user._id }],
     })
       .populate({
         path: "joinRequests.user",
@@ -76,22 +33,22 @@ export async function getPendingJoinRequestsForOwner(req, res) {
       })
       .lean();
 
-    if (!business) {
+    if (!anchor) {
       return res.status(404).json({
         success: false,
         message: "사업자를 찾을 수 없습니다.",
       });
     }
 
-    const pending = (business.joinRequests || []).filter(
+    const pending = (anchor.joinRequests || []).filter(
       (r) => r?.status === "pending" && r?.user,
     );
 
     return res.json({
       success: true,
       data: {
-        businessId: business._id,
-        businessName: business.name,
+        businessId: anchor._id,
+        businessName: anchor.name,
         joinRequests: pending,
       },
     });
@@ -174,8 +131,8 @@ export async function addOwner(req, res) {
     if (!roleCheck) return;
     const { businessType } = roleCheck;
 
-    const business = await resolvePrimaryOwnedBusiness(req, businessType);
-    if (!business) {
+    const anchor = await resolvePrimaryOwnedBusiness(req, businessType);
+    if (!anchor) {
       return res.status(403).json({
         success: false,
         message: "주대표 계정만 공동대표를 추가할 수 있습니다.",
@@ -189,11 +146,16 @@ export async function addOwner(req, res) {
 
     let targetUser = null;
     if (userIdRaw && Types.ObjectId.isValid(userIdRaw)) {
-      targetUser = await User.findById(userIdRaw).select({ role: 1, email: 1 });
+      targetUser = await User.findById(userIdRaw).select({
+        role: 1,
+        email: 1,
+        businessAnchorId: 1,
+      });
     } else if (emailRaw) {
       targetUser = await User.findOne({ email: emailRaw }).select({
         role: 1,
         email: 1,
+        businessAnchorId: 1,
       });
     }
 
@@ -212,7 +174,7 @@ export async function addOwner(req, res) {
     }
 
     const targetId = String(targetUser._id);
-    if (String(business.owner) === targetId) {
+    if (String(anchor.primaryContactUserId) === targetId) {
       return res.status(409).json({
         success: false,
         message: "이미 주대표입니다.",
@@ -220,8 +182,8 @@ export async function addOwner(req, res) {
     }
 
     if (
-      Array.isArray(business.owners) &&
-      business.owners.some((c) => String(c) === targetId)
+      Array.isArray(anchor.owners) &&
+      anchor.owners.some((c) => String(c) === targetId)
     ) {
       return res.status(409).json({
         success: false,
@@ -229,34 +191,37 @@ export async function addOwner(req, res) {
       });
     }
 
-    const existingBusinessId = String(targetUser.businessId || "");
-    if (existingBusinessId && existingBusinessId !== String(business._id)) {
+    const existingBusinessAnchorId = String(targetUser.businessAnchorId || "");
+    if (
+      existingBusinessAnchorId &&
+      existingBusinessAnchorId !== String(anchor._id)
+    ) {
       return res.status(409).json({
         success: false,
         message: "이미 다른 사업자에 소속되어 있습니다.",
       });
     }
 
-    if (!Array.isArray(business.owners)) business.owners = [];
-    business.owners.push(new Types.ObjectId(targetId));
+    if (!Array.isArray(anchor.owners)) anchor.owners = [];
+    anchor.owners.push(new Types.ObjectId(targetId));
 
-    if (!Array.isArray(business.members)) business.members = [];
-    if (!business.members.some((m) => String(m) === targetId)) {
-      business.members.push(new Types.ObjectId(targetId));
+    if (!Array.isArray(anchor.members)) anchor.members = [];
+    if (!anchor.members.some((m) => String(m) === targetId)) {
+      anchor.members.push(new Types.ObjectId(targetId));
     }
 
-    if (Array.isArray(business.joinRequests)) {
-      business.joinRequests = business.joinRequests.filter(
+    if (Array.isArray(anchor.joinRequests)) {
+      anchor.joinRequests = anchor.joinRequests.filter(
         (r) => String(r?.user) !== targetId,
       );
     }
 
-    await business.save();
+    await anchor.save();
 
     await User.findByIdAndUpdate(targetId, {
       $set: {
-        businessId: business._id,
-        business: business.name,
+        businessAnchorId: anchor._id,
+        business: anchor.name,
       },
     });
 
@@ -276,8 +241,8 @@ export async function removeOwner(req, res) {
     if (!roleCheck) return;
     const { businessType } = roleCheck;
 
-    const business = await resolvePrimaryOwnedBusiness(req, businessType);
-    if (!business) {
+    const anchor = await resolvePrimaryOwnedBusiness(req, businessType);
+    if (!anchor) {
       return res.status(403).json({
         success: false,
         message: "주대표 계정만 공동대표를 삭제할 수 있습니다.",
@@ -292,12 +257,12 @@ export async function removeOwner(req, res) {
       });
     }
 
-    const before = Array.isArray(business.owners) ? business.owners.length : 0;
-    business.owners = Array.isArray(business.owners)
-      ? business.owners.filter((c) => String(c) !== String(userId))
+    const before = Array.isArray(anchor.owners) ? anchor.owners.length : 0;
+    anchor.owners = Array.isArray(anchor.owners)
+      ? anchor.owners.filter((c) => String(c) !== String(userId))
       : [];
 
-    const after = business.owners.length;
+    const after = anchor.owners.length;
     if (before === after) {
       return res.status(404).json({
         success: false,
@@ -305,7 +270,7 @@ export async function removeOwner(req, res) {
       });
     }
 
-    await business.save();
+    await anchor.save();
 
     return res.json({ success: true, data: { removed: true } });
   } catch (error) {
@@ -443,87 +408,27 @@ export async function approveJoinRequest(req, res) {
     }
 
     const myBusinessAnchorId = String(req.user?.businessAnchorId || "").trim();
-
-    // BusinessAnchor가 SSOT이므로 먼저 조회
-    let anchor = null;
-    if (myBusinessAnchorId && Types.ObjectId.isValid(myBusinessAnchorId)) {
-      anchor = await BusinessAnchor.findOne({
-        _id: myBusinessAnchorId,
-        businessType,
-        $or: [{ primaryContactUserId: req.user._id }, { owners: req.user._id }],
+    if (!myBusinessAnchorId || !Types.ObjectId.isValid(myBusinessAnchorId)) {
+      return res.status(403).json({
+        success: false,
+        message: "사업자 정보가 설정되지 않았습니다.",
       });
     }
 
-    if (anchor) {
-      const joinRequest = (anchor.joinRequests || []).find(
-        (r) => String(r?.user) === userId && r?.status === "pending",
-      );
+    const anchor = await BusinessAnchor.findOne({
+      _id: myBusinessAnchorId,
+      businessType,
+      $or: [{ primaryContactUserId: req.user._id }, { owners: req.user._id }],
+    });
 
-      if (!joinRequest) {
-        return res.status(404).json({
-          success: false,
-          message: "대기 중인 소속 신청을 찾을 수 없습니다.",
-        });
-      }
-
-      joinRequest.status = "approved";
-
-      if (!Array.isArray(anchor.members)) anchor.members = [];
-      if (!anchor.members.some((m) => String(m) === userId)) {
-        anchor.members.push(new Types.ObjectId(userId));
-      }
-
-      await anchor.save();
-
-      // Business도 동기화
-      const business = await Business.findOne({
-        businessAnchorId: anchor._id,
-      });
-
-      if (business) {
-        const businessJoinRequest = (business.joinRequests || []).find(
-          (r) => String(r?.user) === userId && r?.status === "pending",
-        );
-
-        if (businessJoinRequest) {
-          businessJoinRequest.status = "approved";
-        }
-
-        if (!Array.isArray(business.members)) business.members = [];
-        if (!business.members.some((m) => String(m) === userId)) {
-          business.members.push(new Types.ObjectId(userId));
-        }
-
-        await business.save();
-
-        await User.findByIdAndUpdate(userId, {
-          $set: {
-            businessId: business._id,
-            business: business.name,
-            businessAnchorId: anchor._id,
-          },
-        });
-      } else {
-        await User.findByIdAndUpdate(userId, {
-          $set: {
-            businessAnchorId: anchor._id,
-          },
-        });
-      }
-
-      return res.json({ success: true, data: { approved: true } });
-    }
-
-    // BusinessAnchor가 없으면 Business만 사용 (레거시)
-    const business = await resolveOwnedBusiness(req, businessType);
-    if (!business) {
+    if (!anchor) {
       return res.status(403).json({
         success: false,
         message: "대표자 계정만 승인할 수 있습니다.",
       });
     }
 
-    const joinRequest = (business.joinRequests || []).find(
+    const joinRequest = (anchor.joinRequests || []).find(
       (r) => String(r?.user) === userId && r?.status === "pending",
     );
 
@@ -536,17 +441,17 @@ export async function approveJoinRequest(req, res) {
 
     joinRequest.status = "approved";
 
-    if (!Array.isArray(business.members)) business.members = [];
-    if (!business.members.some((m) => String(m) === userId)) {
-      business.members.push(new Types.ObjectId(userId));
+    if (!Array.isArray(anchor.members)) anchor.members = [];
+    if (!anchor.members.some((m) => String(m) === userId)) {
+      anchor.members.push(new Types.ObjectId(userId));
     }
 
-    await business.save();
+    await anchor.save();
 
     await User.findByIdAndUpdate(userId, {
       $set: {
-        businessId: business._id,
-        business: business.name,
+        businessAnchorId: anchor._id,
+        business: anchor.name,
       },
     });
 

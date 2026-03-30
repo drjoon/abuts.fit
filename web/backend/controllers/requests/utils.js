@@ -1,7 +1,6 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
-import Business from "../../models/business.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import LotCounter from "../../models/lotCounter.model.js";
@@ -216,20 +215,22 @@ export async function buildRequestorOrgScopeFilter(req) {
   }
 
   const built = await withRequestorOrgScopeInFlight(cacheKey, async () => {
-    const org = await Business.findOne({
-      businessAnchorId: new Types.ObjectId(orgId),
+    const anchor = await BusinessAnchor.findOne({
+      _id: new Types.ObjectId(orgId),
     })
-      .select({ owner: 1, owners: 1, members: 1 })
+      .select({ primaryContactUserId: 1, owners: 1, members: 1 })
       .lean();
 
-    if (!org) {
+    if (!anchor) {
       return { requestor: req.user._id };
     }
 
-    const ownerId = String(org.owner || "");
-    const ownerIds = Array.isArray(org.owners) ? org.owners.map(String) : [];
-    const memberIdsRaw = Array.isArray(org.members) ? org.members : [];
-    const memberIds = [ownerId, ...ownerIds, ...memberIdsRaw]
+    const primaryId = String(anchor.primaryContactUserId || "");
+    const ownerIds = Array.isArray(anchor.owners)
+      ? anchor.owners.map(String)
+      : [];
+    const memberIdsRaw = Array.isArray(anchor.members) ? anchor.members : [];
+    const memberIds = [primaryId, ...ownerIds, ...memberIdsRaw]
       .map((id) => String(id))
       .filter((id) => Types.ObjectId.isValid(id));
 
@@ -535,29 +536,28 @@ export async function normalizeRequestForResponse(requestDoc) {
     return String(requestorOrgRaw);
   })();
   if (requestorOrgId && Types.ObjectId.isValid(requestorOrgId)) {
-    const requestorOrgDoc = await Business.findOne({
-      businessAnchorId: new Types.ObjectId(requestorOrgId),
+    const requestorOrgDoc = await BusinessAnchor.findOne({
+      _id: new Types.ObjectId(requestorOrgId),
     })
-      .select({ name: 1, extracted: 1 })
+      .select({ name: 1, metadata: 1 })
       .lean();
     if (requestorOrgDoc) {
-      const extracted =
-        requestorOrgDoc.extracted &&
-        typeof requestorOrgDoc.extracted === "object"
-          ? requestorOrgDoc.extracted
+      const metadata =
+        requestorOrgDoc.metadata && typeof requestorOrgDoc.metadata === "object"
+          ? requestorOrgDoc.metadata
           : undefined;
       const orgName =
         typeof requestorOrgDoc.name === "string"
           ? requestorOrgDoc.name.trim()
           : "";
       const companyName =
-        typeof extracted?.companyName === "string"
-          ? extracted.companyName.trim()
+        typeof metadata?.companyName === "string"
+          ? metadata.companyName.trim()
           : "";
       obj.business = {
         _id: requestorOrgId,
         name: orgName || companyName || undefined,
-        extracted,
+        extracted: metadata,
       };
       obj.requestorBusinessAnchor = obj.business;
     }
