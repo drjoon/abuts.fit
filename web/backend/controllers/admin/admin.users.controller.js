@@ -1,7 +1,6 @@
 import { Types } from "mongoose";
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
-import Business from "../../models/business.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { generateRandomPassword } from "./admin.shared.controller.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
@@ -47,11 +46,11 @@ export async function getAllUsers(req, res) {
       .map((u) => u?.businessId)
       .filter((id) => Types.ObjectId.isValid(String(id)));
     const businesses = businessIds.length
-      ? await Business.find({ _id: { $in: businessIds } })
+      ? await BusinessAnchor.find({ _id: { $in: businessIds } })
           .select({
             name: 1,
             businessLicense: 1,
-            extracted: 1,
+            metadata: 1,
             verification: 1,
           })
           .lean()
@@ -270,7 +269,7 @@ export async function getUserById(req, res) {
         .json({ success: false, message: "사용자를 찾을 수 없습니다." });
     }
     const businessInfo = user?.businessId
-      ? await Business.findById(user.businessId)
+      ? await BusinessAnchor.findById(user.businessId)
           .select({
             name: 1,
             businessLicense: 1,
@@ -506,7 +505,7 @@ const deleteUserCore = async ({ user, includeBusiness }) => {
   const referredByAnchorId = user.referredByAnchorId;
 
   if (businessId) {
-    await Business.updateMany(
+    await BusinessAnchor.updateMany(
       {},
       {
         $pull: {
@@ -526,7 +525,7 @@ const deleteUserCore = async ({ user, includeBusiness }) => {
       throw new Error("사업자가 연결되지 않은 계정입니다.");
     }
 
-    const business = await Business.findById(businessId);
+    const business = await BusinessAnchor.findById(businessId);
     if (!business) {
       throw new Error("연결된 사업자를 찾을 수 없습니다.");
     }
@@ -555,16 +554,12 @@ const deleteUserCore = async ({ user, includeBusiness }) => {
     deletedBusiness = {
       _id: business._id,
       name: business.name,
-      businessAnchorId: business.businessAnchorId || null,
+      businessAnchorId: String(business._id),
     };
 
     if (businessAnchorId && Types.ObjectId.isValid(String(businessAnchorId))) {
       const anchorLinkedUsers = await User.countDocuments({
         _id: { $ne: userId },
-        businessAnchorId,
-      });
-      const anchorLinkedBusinesses = await Business.countDocuments({
-        _id: { $ne: business._id },
         businessAnchorId,
       });
       const childAnchors = await BusinessAnchor.countDocuments({
@@ -593,7 +588,7 @@ const deleteUserCore = async ({ user, includeBusiness }) => {
       }
     }
 
-    await Business.deleteOne({ _id: business._id });
+    await BusinessAnchor.deleteOne({ _id: business._id });
   }
   await User.updateOne(
     { _id: userId },
