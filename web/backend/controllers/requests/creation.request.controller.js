@@ -1,6 +1,6 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
-import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import {
   normalizeCaseInfosImplantFields,
   computePriceForRequest,
@@ -80,8 +80,8 @@ export async function createRequest(req, res) {
           try {
             const orgId = getRequestorOrgId(req);
             if (orgId && Types.ObjectId.isValid(orgId)) {
-              const org = await Business.findOne({
-                businessAnchorId: new Types.ObjectId(orgId),
+              const org = await BusinessAnchor.findOne({
+                _id: new Types.ObjectId(orgId),
               })
                 .select({ "shippingPolicy.weeklyBatchDays": 1 })
                 .lean();
@@ -311,8 +311,8 @@ export async function createRequest(req, res) {
           try {
             const orgId = getRequestorOrgId(req);
             if (orgId && Types.ObjectId.isValid(orgId)) {
-              const org = await Business.findOne({
-                businessAnchorId: new Types.ObjectId(orgId),
+              const org = await BusinessAnchor.findOne({
+                _id: new Types.ObjectId(orgId),
               })
                 .select({ "shippingPolicy.weeklyBatchDays": 1 })
                 .lean();
