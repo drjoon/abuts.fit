@@ -1,5 +1,4 @@
 import Request from "../../models/request.model.js";
-import Business from "../../models/business.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import SalesmanLedger from "../../models/salesmanLedger.model.js";
@@ -427,23 +426,19 @@ export async function getSalesmanDashboard(req, res) {
       });
     }
 
-    const orgDocs = await Business.find({
-      businessAnchorId: { $in: organizationAnchorIds },
+    const orgDocs = await BusinessAnchor.find({
+      _id: { $in: organizationAnchorIds },
     })
       .select({
         _id: 1,
-        businessAnchorId: 1,
         name: 1,
-        extracted: 1,
+        metadata: 1,
         verification: 1,
       })
       .lean();
 
     const orgNameById = new Map(
-      (orgDocs || []).map((o) => [
-        String(o.businessAnchorId || ""),
-        String(o.name || ""),
-      ]),
+      (orgDocs || []).map((o) => [String(o._id || ""), String(o.name || "")]),
     );
 
     const orgObjectIds = organizationAnchorIds

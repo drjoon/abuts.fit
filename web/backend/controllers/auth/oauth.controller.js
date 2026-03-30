@@ -1,7 +1,6 @@
 import crypto from "crypto";
 import User from "../../models/user.model.js";
 import { generateToken, generateRefreshToken } from "../../utils/jwt.util.js";
-import Business from "../../models/business.model.js";
 
 function getFrontendBaseUrl(req) {
   const configured = String(
