@@ -9,7 +9,6 @@ import { existsSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import mongoose, { connect } from "mongoose";
-import Business from "./models/business.model.js";
 import ChargeOrder from "./models/chargeOrder.model.js";
 import BankTransaction from "./models/bankTransaction.model.js";
 import Counter from "./models/counter.model.js";
