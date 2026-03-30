@@ -2,15 +2,16 @@ import { useCallback, useState } from "react";
 import { request } from "@/shared/api/apiClient";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { useToast } from "@/shared/hooks/use-toast";
+// SSOT: metadata 사용 (extracted 레거시 제거)
 import {
-  LicenseExtracted,
+  BusinessMetadata,
   BusinessData,
   LicenseStatus,
 } from "@/shared/components/business/types";
 import {
-  normalizeExtracted,
+  normalizeMetadata,
   normalizeBusinessData,
-  createEmptyExtracted,
+  createEmptyMetadata,
 } from "./businessStorage";
 import {
   formatBusinessNumberInput,
@@ -18,7 +19,7 @@ import {
 } from "./validations";
 
 interface FileUploadHandlers {
-  onExtractedChange: (extracted: LicenseExtracted) => void;
+  onMetadataChange: (metadata: BusinessMetadata) => void;
   onBusinessDataChange: (data: BusinessData) => void;
   onLicenseFileNameChange: (name: string) => void;
   onLicenseFileIdChange: (id: string) => void;
@@ -32,7 +33,7 @@ interface UseFileUploadProps {
   token?: string;
   membership: "none" | "owner" | "member" | "pending";
   setupMode: "license" | "search" | "manual" | null;
-  extracted: LicenseExtracted;
+  metadata: BusinessMetadata;
   businessData: BusinessData;
   companyNameTouched: boolean;
 }
@@ -136,26 +137,26 @@ export const useFileUpload = (
           const body: any = res.data || {};
           const data = body.data || body;
           // SSOT: metadata 사용 (extracted 레거시 제거)
-          const nextExtracted = normalizeExtracted(data?.metadata || {});
+          const nextMetadata = normalizeMetadata(data?.metadata || {});
           const verification = data?.verification;
-          const hasAnyExtracted = Object.values(nextExtracted || {}).some((v) =>
+          const hasAnyMetadata = Object.values(nextMetadata || {}).some((v) =>
             String(v || "").trim(),
           );
           const nextCompanyName = String(
-            nextExtracted?.companyName || "",
+            nextMetadata?.companyName || "",
           ).trim();
           const nextStartDate =
-            String(nextExtracted?.startDate || "").trim() ||
-            props.extracted.startDate;
+            String(nextMetadata?.startDate || "").trim() ||
+            props.metadata.startDate;
           const extractedBusinessNumber = String(
-            nextExtracted?.businessNumber || "",
+            nextMetadata?.businessNumber || "",
           ).trim();
           const formattedBusinessNumber = formatBusinessNumberInput(
             extractedBusinessNumber,
           );
 
           console.info("[business-upload] parse result", {
-            hasAnyExtracted,
+            hasAnyMetadata,
             hasBusinessNumber: Boolean(extractedBusinessNumber),
             verified: Boolean(data?.verification?.verified),
             statusCode: res.status,
@@ -184,11 +185,11 @@ export const useFileUpload = (
           }
 
           // 빈 인식 결과 체크
-          if (!hasAnyExtracted) {
+          if (!hasAnyMetadata) {
             const msg = String(verification?.message || "").trim();
-            handlers.onExtractedChange({
-              ...createEmptyExtracted(),
-              startDate: props.extracted.startDate,
+            handlers.onMetadataChange({
+              ...createEmptyMetadata(),
+              startDate: props.metadata.startDate,
             });
             handlers.onBusinessDataChange({
               ...props.businessData,
@@ -209,7 +210,7 @@ export const useFileUpload = (
             handlers.onIsVerifiedChange(false);
             handlers.onLicenseStatusChange("ready");
             console.info("[business-upload] fallback to manual form", {
-              reason: "empty_extracted",
+              reason: "empty_metadata",
               businessNumber: formattedBusinessNumber,
             });
             toast({
@@ -280,28 +281,26 @@ export const useFileUpload = (
 
           // 2. 모든 검증 통과 → 데이터 업데이트 및 입력 폼으로 전환
           // AI 파싱 결과에 없는 필드는 기존 값 유지
-          const newPhoneNumber = String(
-            nextExtracted?.phoneNumber || "",
-          ).trim();
-          const newEmail = String(nextExtracted?.email || "").trim();
-          const newAddress = String(nextExtracted?.address || "").trim();
+          const newPhoneNumber = String(nextMetadata?.phoneNumber || "").trim();
+          const newEmail = String(nextMetadata?.email || "").trim();
+          const newAddress = String(nextMetadata?.address || "").trim();
           const newAddressDetail = String(
-            nextExtracted?.addressDetail || "",
+            nextMetadata?.addressDetail || "",
           ).trim();
-          const newZipCode = String(nextExtracted?.zipCode || "").trim();
+          const newZipCode = String(nextMetadata?.zipCode || "").trim();
 
           // 기존 주소가 있으면 유지, 없으면 비우고 주소 검색 유도
           const hasExistingAddress = Boolean(props.businessData.address);
 
-          handlers.onExtractedChange({
-            ...nextExtracted,
-            address: hasExistingAddress ? props.extracted.address : "",
+          handlers.onMetadataChange({
+            ...nextMetadata,
+            address: hasExistingAddress ? props.metadata.address : "",
             addressDetail: hasExistingAddress
-              ? props.extracted.addressDetail
+              ? props.metadata.addressDetail
               : "",
-            zipCode: hasExistingAddress ? props.extracted.zipCode : "",
-            email: newEmail || props.extracted.email,
-            phoneNumber: newPhoneNumber || props.extracted.phoneNumber,
+            zipCode: hasExistingAddress ? props.metadata.zipCode : "",
+            email: newEmail || props.metadata.email,
+            phoneNumber: newPhoneNumber || props.metadata.phoneNumber,
             startDate: nextStartDate,
           });
 
@@ -310,7 +309,7 @@ export const useFileUpload = (
             companyName: props.companyNameTouched
               ? props.businessData.companyName
               : nextCompanyName || "",
-            owner: String(nextExtracted?.representativeName || "").trim(),
+            owner: String(nextMetadata?.representativeName || "").trim(),
             businessNumber: formattedBusinessNumber,
             // 기존 주소가 있으면 유지, 없으면 비우고 주소 검색 유도
             address: hasExistingAddress ? props.businessData.address : "",
@@ -323,8 +322,8 @@ export const useFileUpload = (
               ? formatPhoneNumberInput(newPhoneNumber)
               : props.businessData.phone,
             email: newEmail || props.businessData.email,
-            businessType: String(nextExtracted?.businessType || "").trim(),
-            businessItem: String(nextExtracted?.businessItem || "").trim(),
+            businessType: String(nextMetadata?.businessType || "").trim(),
+            businessItem: String(nextMetadata?.businessItem || "").trim(),
             startDate: nextStartDate,
           });
 

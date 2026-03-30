@@ -36,9 +36,9 @@ import {
   writeStoredSetupMode,
   readStoredBusinessDraft,
   writeStoredBusinessDraft,
-  createEmptyExtracted,
+  createEmptyMetadata,
   normalizeBusinessData,
-  normalizeExtracted,
+  normalizeMetadata,
 } from "@/shared/components/business/settings/business/businessStorage";
 import { useBusinessDataManagement } from "@/shared/components/business/settings/business/useBusinessDataManagement";
 import { useBusinessSearch } from "@/shared/components/business/settings/business/useBusinessSearch";
@@ -150,12 +150,12 @@ export const BusinessTab = ({
         token,
         membership: membershipMgmt.membership,
         setupMode,
-        extracted: businessDataMgmt.extracted,
+        metadata: businessDataMgmt.metadata,
         businessData: businessDataMgmt.businessData,
         companyNameTouched: businessDataMgmt.companyNameTouched,
       },
       {
-        onExtractedChange: businessDataMgmt.setExtracted,
+        onMetadataChange: businessDataMgmt.setMetadata,
         onBusinessDataChange: businessDataMgmt.setBusinessData,
         onLicenseFileNameChange: businessDataMgmt.setLicenseFileName,
         onLicenseFileIdChange: businessDataMgmt.setLicenseFileId,
@@ -263,7 +263,7 @@ export const BusinessTab = ({
       await handleSaveImpl({
         token,
         businessData: businessDataMgmt.businessData,
-        extracted: businessDataMgmt.extracted,
+        metadata: businessDataMgmt.metadata,
         businessNumberLocked: businessDataMgmt.validationSucceeded,
         membership: membershipMgmt.membership,
         businessType,
@@ -359,7 +359,7 @@ export const BusinessTab = ({
               businessDataMgmt.businessData.companyName || "",
             ).trim(),
             representativeName: String(
-              businessDataMgmt.extracted.representativeName || "",
+              businessDataMgmt.metadata.representativeName || "",
             ).trim(),
             businessNumber: String(
               businessDataMgmt.businessData.businessNumber || "",
@@ -368,19 +368,19 @@ export const BusinessTab = ({
               /\D/g,
               "",
             ),
-            email: String(businessDataMgmt.extracted.email || "").trim(),
+            email: String(businessDataMgmt.metadata.email || "").trim(),
             businessType: String(
-              businessDataMgmt.extracted.businessType || "",
+              businessDataMgmt.metadata.businessType || "",
             ).trim(),
             businessItem: String(
-              businessDataMgmt.extracted.businessItem || "",
+              businessDataMgmt.metadata.businessItem || "",
             ).trim(),
             address: String(businessDataMgmt.businessData.address || "").trim(),
             addressDetail: String(
               businessDataMgmt.businessData.addressDetail || "",
             ).trim(),
             startDate: String(
-              businessDataMgmt.extracted.startDate || "",
+              businessDataMgmt.metadata.startDate || "",
             ).replace(/\D/g, ""),
           },
           license: {
@@ -506,7 +506,7 @@ export const BusinessTab = ({
 
   const moveToInquiryPageForVerifiedBusiness = () => {
     const subject = "사업자 정보 변경 요청";
-    const message = `안녕하세요.\n이미 검증 및 등록 완료된 사업자 정보 변경을 요청드립니다.\n\n사업자명: ${String(businessDataMgmt.businessData.companyName || "").trim()}\n사업자등록번호: ${String(businessDataMgmt.businessData.businessNumber || "").trim()}\n대표자명: ${String(businessDataMgmt.extracted.representativeName || "").trim()}\n\n변경이 필요한 내용을 확인 후 처리 부탁드립니다.\n`;
+    const message = `안녕하세요.\n이미 검증 및 등록 완료된 사업자 정보 변경을 요청드립니다.\n\n사업자명: ${String(businessDataMgmt.businessData.companyName || "").trim()}\n사업자등록번호: ${String(businessDataMgmt.businessData.businessNumber || "").trim()}\n대표자명: ${String(businessDataMgmt.metadata.representativeName || "").trim()}\n\n변경이 필요한 내용을 확인 후 처리 부탁드립니다.\n`;
     navigate(
       `/dashboard/inquiries?type=general&subject=${encodeURIComponent(subject)}&message=${encodeURIComponent(message)}&focus=message`,
     );
@@ -664,13 +664,13 @@ export const BusinessTab = ({
                   setupMode === "manual") && (
                   <BusinessForm
                     businessData={businessDataMgmt.businessData}
-                    extracted={businessDataMgmt.extracted}
+                    metadata={businessDataMgmt.metadata}
                     errors={businessDataMgmt.errors}
                     licenseStatus={businessDataMgmt.licenseStatus}
                     membership={membershipMgmt.membership}
                     licenseDeleteLoading={licenseDeleteLoading}
                     setBusinessData={businessDataMgmt.setBusinessData}
-                    setExtracted={businessDataMgmt.setExtracted}
+                    setMetadata={businessDataMgmt.setMetadata}
                     setErrors={businessDataMgmt.setErrors}
                     setCompanyNameTouched={
                       businessDataMgmt.setCompanyNameTouched
@@ -694,7 +694,7 @@ export const BusinessTab = ({
                       if (!authUserId || !allowLocalDraft) return;
                       writeStoredBusinessDraft(authUserId, {
                         businessData: businessDataMgmt.businessData,
-                        extracted: businessDataMgmt.extracted,
+                        metadata: businessDataMgmt.metadata,
                         licenseFileName: businessDataMgmt.licenseFileName,
                         licenseFileId: businessDataMgmt.licenseFileId,
                         licenseS3Key: businessDataMgmt.licenseS3Key,
@@ -729,7 +729,7 @@ export const BusinessTab = ({
                 currentBusinessName={currentBusinessName}
                 licenseStatus={businessDataMgmt.licenseStatus}
                 isVerified={businessDataMgmt.isVerified}
-                extracted={businessDataMgmt.extracted}
+                metadata={businessDataMgmt.metadata}
                 businessData={businessDataMgmt.businessData}
                 isPending={membershipMgmt.membership === "pending"}
               />

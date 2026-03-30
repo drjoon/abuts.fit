@@ -117,20 +117,20 @@ export const MailboxContentsModal = ({
       "",
   ).trim();
   const initialAddress = String(
-    requestorBusinessAnchor?.extracted?.address ||
+    requestorBusinessAnchor?.metadata?.address ||
       (primaryRequest as any)?.requestor?.addressText ||
       (primaryRequest as any)?.requestor?.address?.roadAddress ||
       (primaryRequest as any)?.requestor?.address?.address1 ||
       "",
   ).trim();
   const initialAddressDetail = String(
-    requestorBusinessAnchor?.extracted?.addressDetail ||
+    requestorBusinessAnchor?.metadata?.addressDetail ||
       (primaryRequest as any)?.requestor?.address?.detailAddress ||
       (primaryRequest as any)?.requestor?.address?.address2 ||
       "",
   ).trim();
   const initialZipCode = String(
-    requestorBusinessAnchor?.extracted?.zipCode ||
+    requestorBusinessAnchor?.metadata?.zipCode ||
       (primaryRequest as any)?.requestor?.address?.postalCode ||
       (primaryRequest as any)?.requestor?.zipCode ||
       "",

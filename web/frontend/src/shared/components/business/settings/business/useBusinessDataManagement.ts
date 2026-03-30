@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
+// SSOT: metadata 사용 (extracted 레거시 제거)
 import {
-  LicenseExtracted,
+  BusinessMetadata,
   BusinessData,
   LicenseStatus,
   MembershipStatus,
@@ -10,8 +11,8 @@ import {
   readStoredBusinessDraft,
   writeStoredBusinessDraft,
   normalizeBusinessData,
-  normalizeExtracted,
-  createEmptyExtracted,
+  normalizeMetadata,
+  createEmptyMetadata,
   BusinessDraftPayload,
 } from "./businessStorage";
 import {
@@ -35,8 +36,8 @@ export const useBusinessDataManagement = (
   const [businessData, setBusinessData] = useState<BusinessData>(() =>
     normalizeBusinessData(),
   );
-  const [extracted, setExtracted] =
-    useState<LicenseExtracted>(createEmptyExtracted);
+  const [metadata, setMetadata] =
+    useState<BusinessMetadata>(createEmptyMetadata);
   const [licenseFileName, setLicenseFileName] = useState<string>("");
   const [licenseFileId, setLicenseFileId] = useState<string>("");
   const [licenseS3Key, setLicenseS3Key] = useState<string>("");
@@ -69,7 +70,7 @@ export const useBusinessDataManagement = (
 
   const applyStoredDraft = useCallback((draft: BusinessDraftPayload) => {
     setBusinessData(normalizeBusinessData(draft.businessData));
-    setExtracted(normalizeExtracted(draft.extracted));
+    setMetadata(normalizeMetadata(draft.metadata));
     setLicenseFileName(draft.licenseFileName);
     setLicenseFileId(draft.licenseFileId);
     setLicenseS3Key(draft.licenseS3Key);
@@ -212,7 +213,7 @@ export const useBusinessDataManagement = (
 
         if (resetVersionRef.current !== loadVersion) return;
 
-        const nextExtracted = normalizeExtracted({
+        const nextMetadata = normalizeMetadata({
           companyName: String(ex?.companyName || "").trim() || businessName,
           businessNumber: String(ex?.businessNumber || "").trim(),
           address: String(ex?.address || "").trim(),
@@ -226,18 +227,18 @@ export const useBusinessDataManagement = (
           startDate: String(ex?.startDate || "").trim(),
         });
 
-        // membership이 none인 경우, extracted도 로컬 드래프트로 보완
-        if (next === "none" && localDraft.payload?.extracted) {
-          const localEx = localDraft.payload.extracted;
-          if (!nextExtracted.email && localEx.email)
-            nextExtracted.email = localEx.email;
-          if (!nextExtracted.representativeName && localEx.representativeName)
-            nextExtracted.representativeName = localEx.representativeName;
-          if (!nextExtracted.phoneNumber && localEx.phoneNumber)
-            nextExtracted.phoneNumber = localEx.phoneNumber;
+        // membership이 none인 경우, metadata도 로컬 드래프트로 보완
+        if (next === "none" && localDraft.payload?.metadata) {
+          const localEx = localDraft.payload.metadata;
+          if (!nextMetadata.email && localEx.email)
+            nextMetadata.email = localEx.email;
+          if (!nextMetadata.representativeName && localEx.representativeName)
+            nextMetadata.representativeName = localEx.representativeName;
+          if (!nextMetadata.phoneNumber && localEx.phoneNumber)
+            nextMetadata.phoneNumber = localEx.phoneNumber;
         }
 
-        setExtracted(nextExtracted);
+        setMetadata(nextMetadata);
 
         if (hasServerLicense) {
           setLicenseFileName(licName);
@@ -290,7 +291,7 @@ export const useBusinessDataManagement = (
     Boolean(String(businessData.address || "").trim()) ||
     Boolean(String(businessData.addressDetail || "").trim()) ||
     Boolean(String(businessData.phone || "").trim()) ||
-    Object.values(extracted || {}).some((v) => Boolean(String(v || "").trim()));
+    Object.values(metadata || {}).some((v) => Boolean(String(v || "").trim()));
 
   latestDraftRef.current = {
     hasAnyLicense,
@@ -299,7 +300,7 @@ export const useBusinessDataManagement = (
       hasAnyLicense || hasAnyData
         ? {
             businessData,
-            extracted,
+            metadata,
             licenseFileName,
             licenseFileId,
             licenseS3Key,
@@ -332,7 +333,7 @@ export const useBusinessDataManagement = (
     props.allowLocalDraft,
     props.authUserId,
     businessData,
-    extracted,
+    metadata,
     isVerified,
     licenseFileId,
     licenseFileName,
@@ -350,7 +351,7 @@ export const useBusinessDataManagement = (
     setLicenseS3Key("");
     setLicenseStatus("missing");
     setIsVerified(false);
-    setExtracted(createEmptyExtracted());
+    setMetadata(createEmptyMetadata());
     setErrors({});
     setBusinessData({
       companyName: "",
@@ -386,8 +387,8 @@ export const useBusinessDataManagement = (
   return {
     businessData,
     setBusinessData,
-    extracted,
-    setExtracted,
+    metadata,
+    setMetadata,
     licenseFileName,
     setLicenseFileName,
     licenseFileId,

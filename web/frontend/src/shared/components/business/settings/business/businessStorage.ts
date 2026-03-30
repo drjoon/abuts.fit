@@ -1,5 +1,6 @@
+// SSOT: metadata 사용 (extracted 레거시 제거)
 import {
-  LicenseExtracted,
+  BusinessMetadata,
   BusinessData,
   LicenseStatus,
 } from "@/shared/components/business/types";
@@ -11,7 +12,7 @@ export type SetupMode = "license" | "search" | "manual" | null;
 
 export interface BusinessDraftPayload {
   businessData: BusinessData;
-  extracted: LicenseExtracted;
+  metadata: BusinessMetadata;
   licenseFileName: string;
   licenseFileId: string;
   licenseS3Key: string;
@@ -88,7 +89,7 @@ export const readStoredBusinessDraft = (
     return {
       ...parsed,
       businessData: normalizeBusinessData(parsed.businessData),
-      extracted: normalizeExtracted(parsed.extracted),
+      metadata: normalizeMetadata(parsed.metadata || parsed.extracted),
     };
   } catch {
     return null;
@@ -114,7 +115,7 @@ export const writeStoredBusinessDraft = (
   }
 };
 
-export const createEmptyExtracted = (): LicenseExtracted => ({
+export const createEmptyMetadata = (): BusinessMetadata => ({
   companyName: "",
   businessNumber: "",
   address: "",
@@ -144,10 +145,10 @@ export const normalizeBusinessData = (
   startDate: String(value?.startDate || "").trim(),
 });
 
-export const normalizeExtracted = (
-  value?: Partial<LicenseExtracted> | null,
-): LicenseExtracted => ({
-  ...createEmptyExtracted(),
+export const normalizeMetadata = (
+  value?: Partial<BusinessMetadata> | null,
+): BusinessMetadata => ({
+  ...createEmptyMetadata(),
   ...(value || {}),
   companyName: String(value?.companyName || "").trim(),
   businessNumber: String(value?.businessNumber || "").trim(),

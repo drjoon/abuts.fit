@@ -537,7 +537,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
             | "pending"
             | "none";
           const businessNumberRaw = String(
-            orgData?.extracted?.businessNumber || "",
+            orgData?.metadata?.businessNumber || "",
           ).trim();
           hasBusinessNumber = Boolean(businessNumberRaw);
         }

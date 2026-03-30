@@ -5,9 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
+// SSOT: metadata 사용 (metadata 레거시 제거)
 import {
   BusinessData,
-  LicenseExtracted,
+  BusinessMetadata,
   LicenseStatus,
   MembershipStatus,
   FieldKey,
@@ -61,13 +62,13 @@ const loadPostcodeScript = () => {
 
 interface BusinessFormProps {
   businessData: BusinessData;
-  extracted: LicenseExtracted;
+  metadata: BusinessMetadata;
   errors: Record<string, boolean>;
   licenseStatus: LicenseStatus;
   membership: MembershipStatus;
   licenseDeleteLoading: boolean;
   setBusinessData: React.Dispatch<React.SetStateAction<BusinessData>>;
-  setExtracted: React.Dispatch<React.SetStateAction<LicenseExtracted>>;
+  setMetadata: React.Dispatch<React.SetStateAction<BusinessMetadata>>;
   setErrors: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   setCompanyNameTouched: (touched: boolean) => void;
   onSave: () => void | Promise<void>; // 제출(서버 저장)
@@ -84,13 +85,13 @@ interface BusinessFormProps {
 
 export const BusinessForm = ({
   businessData,
-  extracted,
+  metadata,
   errors,
   licenseStatus,
   membership,
   licenseDeleteLoading,
   setBusinessData,
-  setExtracted,
+  setMetadata,
   setErrors,
   setCompanyNameTouched,
   onSave,
@@ -138,9 +139,9 @@ export const BusinessForm = ({
       {
         key: "repName",
         ref: repNameRef,
-        value: businessData.owner || extracted.representativeName,
+        value: businessData.owner || metadata.representativeName,
       },
-      { key: "startDate", ref: startDateRef, value: extracted.startDate },
+      { key: "startDate", ref: startDateRef, value: metadata.startDate },
       {
         key: "companyName",
         ref: companyNameRef,
@@ -148,9 +149,9 @@ export const BusinessForm = ({
       },
       { key: "phone", ref: phoneRef, value: businessData.phone },
       { key: "bizNo", ref: bizNoRef, value: businessData.businessNumber },
-      { key: "bizType", ref: bizTypeRef, value: extracted.businessType },
-      { key: "bizItem", ref: bizItemRef, value: extracted.businessItem },
-      { key: "email", ref: emailRef, value: extracted.email },
+      { key: "bizType", ref: bizTypeRef, value: metadata.businessType },
+      { key: "bizItem", ref: bizItemRef, value: metadata.businessItem },
+      { key: "email", ref: emailRef, value: metadata.email },
       { key: "address", ref: addressRef, value: businessData.address },
       {
         key: "addressDetail",
@@ -342,13 +343,13 @@ export const BusinessForm = ({
                   errors.representativeName &&
                     "border-destructive focus-visible:ring-destructive",
                 )}
-                value={businessData.owner || extracted.representativeName || ""}
+                value={businessData.owner || metadata.representativeName || ""}
                 onChange={(e) => {
                   setBusinessData((prev) => ({
                     ...prev,
                     owner: e.target.value,
                   }));
-                  setExtracted((prev) => ({
+                  setMetadata((prev) => ({
                     ...prev,
                     representativeName: e.target.value,
                   }));
@@ -358,7 +359,7 @@ export const BusinessForm = ({
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
                   const v = String(
-                    businessData.owner || extracted.representativeName || "",
+                    businessData.owner || metadata.representativeName || "",
                   ).trim();
                   const isNav =
                     e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
@@ -386,10 +387,10 @@ export const BusinessForm = ({
                 errors.startDate &&
                   "border-destructive focus-visible:ring-destructive",
               )}
-              value={extracted.startDate || ""}
+              value={metadata.startDate || ""}
               onChange={(e) => {
                 const nextValue = normalizeStartDate(e.target.value);
-                setExtracted((prev) => ({
+                setMetadata((prev) => ({
                   ...prev,
                   startDate: nextValue,
                 }));
@@ -403,7 +404,7 @@ export const BusinessForm = ({
               }}
               onKeyDown={(e) => {
                 if ((e.nativeEvent as any)?.isComposing) return;
-                const v = String(extracted.startDate || "").trim();
+                const v = String(metadata.startDate || "").trim();
                 const isNav =
                   e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
                 if (isNav && v) {
@@ -560,9 +561,9 @@ export const BusinessForm = ({
                   errors.businessType &&
                     "border-destructive focus-visible:ring-destructive",
                 )}
-                value={extracted.businessType || ""}
+                value={metadata.businessType || ""}
                 onChange={(e) => {
-                  setExtracted((prev) => ({
+                  setMetadata((prev) => ({
                     ...prev,
                     businessType: e.target.value,
                   }));
@@ -574,7 +575,7 @@ export const BusinessForm = ({
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
-                  const v = String(extracted.businessType || "").trim();
+                  const v = String(metadata.businessType || "").trim();
                   const isNav =
                     e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
                   if (isNav && v) {
@@ -601,9 +602,9 @@ export const BusinessForm = ({
                   errors.businessItem &&
                     "border-destructive focus-visible:ring-destructive",
                 )}
-                value={extracted.businessItem || ""}
+                value={metadata.businessItem || ""}
                 onChange={(e) => {
-                  setExtracted((prev) => ({
+                  setMetadata((prev) => ({
                     ...prev,
                     businessItem: e.target.value,
                   }));
@@ -615,7 +616,7 @@ export const BusinessForm = ({
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
-                  const v = String(extracted.businessItem || "").trim();
+                  const v = String(metadata.businessItem || "").trim();
                   const isNav =
                     e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
                   if (isNav && v) {
@@ -643,10 +644,10 @@ export const BusinessForm = ({
                   errors.email &&
                     "border-destructive focus-visible:ring-destructive",
                 )}
-                value={extracted.email || ""}
+                value={metadata.email || ""}
                 onChange={(e) => {
                   const nextValue = e.target.value;
-                  setExtracted((prev) => ({
+                  setMetadata((prev) => ({
                     ...prev,
                     email: e.target.value,
                   }));
@@ -656,7 +657,7 @@ export const BusinessForm = ({
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
-                  const v = String(extracted.email || "").trim();
+                  const v = String(metadata.email || "").trim();
                   const isNav =
                     e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
                   if (isNav && v) {

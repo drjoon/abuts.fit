@@ -1,5 +1,5 @@
-// 레거시: LicenseExtracted 타입 제거 (2026-03-31)
 // SSOT: BusinessMetadata 사용 (백엔드 metadata 필드와 동일)
+// extracted 레거시 완전 제거 (2026-03-31)
 export type BusinessMetadata = {
   companyName?: string;
   businessNumber?: string;
@@ -13,9 +13,6 @@ export type BusinessMetadata = {
   businessItem?: string; // 종목
   startDate?: string;
 };
-
-// 레거시 호환성 (deprecated)
-export type LicenseExtracted = BusinessMetadata;
 
 export type BusinessData = {
   companyName: string;

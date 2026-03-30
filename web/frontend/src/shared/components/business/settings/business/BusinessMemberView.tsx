@@ -1,13 +1,14 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Clock, ShieldCheck } from "lucide-react";
-import { BusinessData, LicenseExtracted, LicenseStatus } from "./types";
+// SSOT: metadata 사용 (extracted 레거시 제거)
+import { BusinessData, BusinessMetadata, LicenseStatus } from "./types";
 
 interface BusinessMemberViewProps {
   currentBusinessName: string;
   licenseStatus: LicenseStatus;
   isVerified: boolean;
-  extracted: LicenseExtracted;
+  metadata: BusinessMetadata;
   businessData: BusinessData;
   isPending?: boolean;
 }
@@ -16,7 +17,7 @@ export const BusinessMemberView = ({
   currentBusinessName,
   licenseStatus,
   isVerified,
-  extracted,
+  metadata,
   businessData,
   isPending = false,
 }: BusinessMemberViewProps) => {
@@ -64,7 +65,7 @@ export const BusinessMemberView = ({
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="space-y-2">
             <Label>대표자명</Label>
-            <Input value={extracted.representativeName || ""} readOnly />
+            <Input value={metadata.representativeName || ""} readOnly />
           </div>
           <div className="space-y-2">
             <Label>사업자명</Label>
@@ -80,15 +81,15 @@ export const BusinessMemberView = ({
           </div>
           <div className="space-y-2">
             <Label>업태</Label>
-            <Input value={extracted.businessType || ""} readOnly />
+            <Input value={metadata.businessType || ""} readOnly />
           </div>
           <div className="space-y-2">
             <Label>종목</Label>
-            <Input value={extracted.businessItem || ""} readOnly />
+            <Input value={metadata.businessItem || ""} readOnly />
           </div>
           <div className="space-y-2">
             <Label>세금계산서 이메일</Label>
-            <Input value={extracted.email || ""} readOnly />
+            <Input value={metadata.email || ""} readOnly />
           </div>
         </div>
 

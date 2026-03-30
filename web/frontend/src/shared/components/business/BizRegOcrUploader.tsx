@@ -6,6 +6,7 @@ import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 
+// SSOT: metadata 사용 (extracted 레거시 제거)
 export type BizRegExtracted = {
   businessNumber: string;
   companyName: string;
@@ -122,7 +123,8 @@ export function BizRegOcrUploader({ token, onExtracted }: Props) {
 
         const body: any = ocrRes.data || {};
         const data = body.data || body;
-        const extracted = data?.extracted || {};
+        // SSOT: metadata 사용 (extracted 레거시 제거)
+        const extracted = data?.metadata || {};
 
         const rawBizNo = String(extracted?.businessNumber || "")
           .replace(/-/g, "")

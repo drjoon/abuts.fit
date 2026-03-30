@@ -7,9 +7,10 @@ import {
   normalizeStartDate,
   isValidStartDate,
 } from "./validations";
+// SSOT: metadata 사용 (extracted 레거시 제거)
 import {
   BusinessData,
-  LicenseExtracted,
+  BusinessMetadata,
   MembershipStatus,
   FieldKey,
 } from "./types";
@@ -17,7 +18,7 @@ import {
 interface HandleSaveParams {
   token: string;
   businessData: BusinessData;
-  extracted: LicenseExtracted;
+  metadata: BusinessMetadata;
   businessNumberLocked?: boolean;
   membership?: MembershipStatus;
   businessType?: string;
@@ -59,7 +60,7 @@ export const handleSave = async (
   const {
     token,
     businessData,
-    extracted,
+    metadata,
     businessNumberLocked,
     membership,
     businessType,
@@ -86,16 +87,16 @@ export const handleSave = async (
     }
 
     const companyName = String(businessData.companyName || "").trim();
-    const repName = String(extracted.representativeName || "").trim();
+    const repName = String(metadata.representativeName || "").trim();
     const phoneNumberRaw = String(businessData.phone || "").trim();
     const businessNumberRaw = String(businessData.businessNumber || "").trim();
-    const businessType = String(extracted.businessType || "").trim();
-    const businessItem = String(extracted.businessItem || "").trim();
-    const taxEmail = String(extracted.email || "").trim();
+    const businessType = String(metadata.businessType || "").trim();
+    const businessItem = String(metadata.businessItem || "").trim();
+    const taxEmail = String(metadata.email || "").trim();
     const address = String(businessData.address || "").trim();
     const addressDetail = String(businessData.addressDetail || "").trim();
     const zipCode = String(businessData.zipCode || "").trim();
-    const startDateRaw = String(extracted.startDate || "").trim();
+    const startDateRaw = String(metadata.startDate || "").trim();
     const startDate = normalizeStartDate(startDateRaw);
 
     const normalizedBusinessNumber = normalizeBusinessNumber(businessNumberRaw);

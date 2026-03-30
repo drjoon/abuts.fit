@@ -1,5 +1,6 @@
+// SSOT: metadata 사용 (extracted 레거시 제거)
 export type {
-  LicenseExtracted,
+  BusinessMetadata,
   BusinessData,
   LicenseStatus,
   MembershipStatus,
