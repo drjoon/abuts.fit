@@ -1,4 +1,4 @@
-import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 
 export async function adminOverrideOrganizationVerification(req, res) {
   try {
@@ -6,7 +6,7 @@ export async function adminOverrideOrganizationVerification(req, res) {
     const verified = Boolean(req.body?.verified);
     const message = String(req.body?.message || "").trim();
 
-    const org = await Business.findById(orgId);
+    const org = await BusinessAnchor.findById(orgId);
     if (!org) {
       return res.status(404).json({
         success: false,
