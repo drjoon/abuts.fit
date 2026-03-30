@@ -1,7 +1,7 @@
 import mongoose, { Types } from "mongoose";
 import crypto from "crypto";
 import Request from "../../models/request.model.js";
-import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import DraftRequest from "../../models/draftRequest.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import {
@@ -802,7 +802,7 @@ export async function createRequestsFromDraft(req, res) {
           try {
             const orgId = getRequestorOrgId(req);
             if (orgId && Types.ObjectId.isValid(orgId)) {
-              const org = await Business.findById(orgId)
+              const org = await BusinessAnchor.findById(orgId)
                 .select({ "shippingPolicy.weeklyBatchDays": 1 })
                 .lean();
               requestorWeeklyBatchDays = Array.isArray(
