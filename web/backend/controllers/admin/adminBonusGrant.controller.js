@@ -1,5 +1,5 @@
 import { Types } from "mongoose";
-import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import BonusGrant from "../../models/bonusGrant.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
@@ -69,10 +69,10 @@ export async function adminOverrideWelcomeBonus(req, res) {
 
     let businessAnchorId = null;
     if (!businessId) {
-      const org = await Business.findOne({
-        "extracted.businessNumber": formatted,
+      const org = await BusinessAnchor.findOne({
+        "metadata.businessNumber": formatted,
       })
-        .select({ _id: 1, businessAnchorId: 1, businessType: 1, extracted: 1 })
+        .select({ _id: 1, businessType: 1, metadata: 1 })
         .lean();
       if (!org?._id) {
         return res.status(404).json({
@@ -87,10 +87,10 @@ export async function adminOverrideWelcomeBonus(req, res) {
         });
       }
       businessId = String(org._id);
-      businessAnchorId = org?.businessAnchorId || null;
+      businessAnchorId = String(org._id);
     } else {
-      const org = await Business.findById(businessId)
-        .select({ businessAnchorId: 1, businessType: 1, extracted: 1 })
+      const org = await BusinessAnchor.findById(businessId)
+        .select({ businessType: 1, metadata: 1 })
         .lean();
       if (!isRequestorBusiness(org)) {
         return res.status(400).json({
@@ -223,7 +223,7 @@ export async function adminListBonusGrants(req, res) {
       ),
     );
     const businesses = businessIds.length
-      ? await Business.find({
+      ? await BusinessAnchor.find({
           _id: {
             $in: businessIds.map((id) => new Types.ObjectId(id)),
           },
@@ -316,18 +316,13 @@ export async function adminCancelBonusGrant(req, res) {
     const businessId = String(grant.businessId || "").trim();
     let businessAnchorId = null;
     if (businessId && Types.ObjectId.isValid(businessId)) {
-      businessAnchorId =
-        (
-          await Business.findById(businessId)
-            .select({ businessAnchorId: 1 })
-            .lean()
-        )?.businessAnchorId || null;
+      businessAnchorId = businessId;
     }
     if (!businessAnchorId) {
-      const businessByNumber = await Business.findOne({
-        "extracted.businessNumber": formatBusinessNumber(grant.businessNumber),
+      const businessByNumber = await BusinessAnchor.findOne({
+        "metadata.businessNumber": formatBusinessNumber(grant.businessNumber),
       })
-        .select({ _id: 1, businessAnchorId: 1 })
+        .select({ _id: 1 })
         .lean();
       businessAnchorId = businessByNumber?.businessAnchorId || null;
     }
