@@ -1,12 +1,12 @@
 const MAX_RECENT = 100;
-const WINDOW_MS = 5000;
-const MAX_REPEAT = 5;
+const WINDOW_MS = 10000; // 5초 → 10초 (2배 완화)
+const MAX_REPEAT = 10; // 5회 → 10회 (2배 완화)
 
 const recentCalls = [];
 
 /**
  * 최근 100개 API 호출 기록을 유지하며,
- * 동일 (method + path) 호출이 5초 내 5회 이상이면 차단.
+ * 동일 (method + path) 호출이 10초 내 10회 이상이면 차단.
  */
 export function requestFloodBlocker(req, res, next) {
   const now = Date.now();
@@ -19,7 +19,7 @@ export function requestFloodBlocker(req, res, next) {
 
   // 현재 요청 이전의 동일 key 카운트
   const recentSame = recentCalls.filter(
-    (item) => item.key === key && now - item.ts <= WINDOW_MS
+    (item) => item.key === key && now - item.ts <= WINDOW_MS,
   );
 
   if (recentSame.length >= MAX_REPEAT - 1) {

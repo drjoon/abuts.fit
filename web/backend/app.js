@@ -180,9 +180,9 @@ app.use(morgan("dev", { skip: shouldSkipRequestLog }));
 
 // Rate Limiting 설정
 const limiter = rateLimit({
-  // 15분 기준, 대시보드/폴링 트래픽을 고려해 상당히 여유 있게 설정
-  windowMs: 15 * 60 * 1000,
-  max: 1000, // IP당 최대 요청 수 상향
+  // 30분 기준, 대시보드/폴링 트래픽을 고려해 상당히 여유 있게 설정 (2배 완화)
+  windowMs: 30 * 60 * 1000,
+  max: 2000, // IP당 최대 요청 수 상향 (2배 완화)
   standardHeaders: true,
   legacyHeaders: false,
   message: "너무 많은 요청이 발생했습니다. 잠시 후 다시 시도해주세요.",
