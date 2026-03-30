@@ -46,12 +46,12 @@ export async function parseBusinessLicense(req, res) {
     if (!roleCheck) return;
     const { businessType } = roleCheck;
 
-    const businessMembershipId = String(req.user?.businessId || "").trim();
-    const hasBusinessMembership = Boolean(businessMembershipId);
+    const businessAnchorId = String(req.user?.businessAnchorId || "").trim();
+    const hasBusinessAnchor = Boolean(businessAnchorId);
     let anchor = null;
-    if (hasBusinessMembership) {
+    if (hasBusinessAnchor) {
       anchor = await BusinessAnchor.findOne({
-        _id: businessMembershipId,
+        _id: businessAnchorId,
         businessType,
       })
         .select({ primaryContactUserId: 1, owners: 1 })
@@ -122,8 +122,8 @@ export async function parseBusinessLicense(req, res) {
           "GOOGLE_API_KEY가 설정되지 않아 사업자등록증 자동 인식이 비활성화되어 있습니다.",
       };
 
-      if (hasBusinessMembership && anchor?._id) {
-        await BusinessAnchor.findByIdAndUpdate(businessMembershipId, {
+      if (hasBusinessAnchor && anchor?._id) {
+        await BusinessAnchor.findByIdAndUpdate(businessAnchorId, {
           $set: {
             businessLicense: {
               fileId: fileId || null,
@@ -333,9 +333,9 @@ export async function parseBusinessLicense(req, res) {
       },
     };
 
-    if (hasBusinessMembership && anchor?._id) {
+    if (hasBusinessAnchor && anchor?._id) {
       try {
-        await BusinessAnchor.findByIdAndUpdate(businessMembershipId, {
+        await BusinessAnchor.findByIdAndUpdate(businessAnchorId, {
           $set: normalizedBusinessNumber ? setWithBusinessNumber : baseSet,
         });
       } catch (e) {
@@ -347,7 +347,7 @@ export async function parseBusinessLicense(req, res) {
               "사업자등록번호가 이미 등록되어 있어 자동 저장을 건너뛰었습니다. 사업자등록번호를 확인하거나, 기존 기공소에 가입 요청을 진행해주세요.",
           };
 
-          await BusinessAnchor.findByIdAndUpdate(businessMembershipId, {
+          await BusinessAnchor.findByIdAndUpdate(businessAnchorId, {
             $set: {
               ...baseSet,
               verification: {

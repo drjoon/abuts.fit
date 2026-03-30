@@ -6,15 +6,20 @@ const __adminReferralInFlight = new Map();
 export function getAdminReferralCache(key) {
   const hit = __adminReferralCache.get(key);
   if (!hit) return null;
-  if (Date.now() - hit.ts > ADMIN_REFERRAL_CACHE_TTL_MS) {
+  const ttl = hit.ttl || ADMIN_REFERRAL_CACHE_TTL_MS;
+  if (Date.now() - hit.ts > ttl) {
     __adminReferralCache.delete(key);
     return null;
   }
   return hit.value;
 }
 
-export function setAdminReferralCache(key, value) {
-  __adminReferralCache.set(key, { ts: Date.now(), value });
+export function setAdminReferralCache(
+  key,
+  value,
+  ttlMs = ADMIN_REFERRAL_CACHE_TTL_MS,
+) {
+  __adminReferralCache.set(key, { ts: Date.now(), value, ttl: ttlMs });
 }
 
 export async function withAdminReferralInFlight(key, factory) {

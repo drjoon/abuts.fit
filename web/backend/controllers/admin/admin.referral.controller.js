@@ -22,7 +22,7 @@ import {
 const REFERRAL_LEADER_ROLE_FILTER = [
   { role: "salesman" },
   { role: "devops" },
-  { role: "requestor", requestorRole: "owner" },
+  { role: "requestor", subRole: "owner" },
 ];
 const REFERRAL_TREE_ROLES = ["requestor", "salesman", "devops"];
 const REFERRAL_REVENUE_OWNER_ROLES = new Set(["requestor", "devops"]);
@@ -97,10 +97,7 @@ function pickRepresentativeUser(users) {
   return [...rows].sort((a, b) => {
     const score = (user) => {
       const role = String(user?.role || "");
-      if (
-        role === "requestor" &&
-        String(user?.requestorRole || "") === "owner"
-      ) {
+      if (role === "requestor" && String(user?.subRole || "") === "owner") {
         return 0;
       }
       if (role === "salesman") return 1;
@@ -142,7 +139,7 @@ export async function getReferralGroups(req, res) {
       .select({
         _id: 1,
         role: 1,
-        requestorRole: 1,
+        subRole: 1,
         name: 1,
         email: 1,
         business: 1,
@@ -156,6 +153,13 @@ export async function getReferralGroups(req, res) {
       .lean();
     const leaders = normalizeReferralLeaders(rawLeaders);
 
+    if (!leaders.length) {
+      return res.status(200).json({ success: true, data: { groups: [] } });
+    }
+
+    const ymd = getTodayYmdInKst();
+
+    // 병렬 처리: devops payout rates + rolling aggregates
     const devopsLeaderAnchorIds = leaders
       .filter(
         (l) =>
@@ -164,34 +168,27 @@ export async function getReferralGroups(req, res) {
           Types.ObjectId.isValid(String(l.businessAnchorId)),
       )
       .map((l) => new Types.ObjectId(String(l.businessAnchorId)));
-    const devopsPayoutRatesByAnchorId = new Map();
-    if (devopsLeaderAnchorIds.length > 0) {
-      const devopsAnchors = await BusinessAnchor.find({
-        _id: { $in: devopsLeaderAnchorIds },
-      })
-        .select({ payoutRates: 1 })
-        .lean();
-      for (const anchor of devopsAnchors) {
-        devopsPayoutRatesByAnchorId.set(String(anchor._id), anchor.payoutRates);
-      }
-    }
 
-    if (!leaders.length) {
-      return res.status(200).json({ success: true, data: { groups: [] } });
-    }
+    const [devopsAnchors, rollingAggregates] = await Promise.all([
+      devopsLeaderAnchorIds.length > 0
+        ? BusinessAnchor.find({ _id: { $in: devopsLeaderAnchorIds } })
+            .select({ payoutRates: 1 })
+            .lean()
+        : Promise.resolve([]),
+      PricingReferralRolling30dAggregate.find({ ymd })
+        .select({
+          businessAnchorId: 1,
+          groupMemberCount: 1,
+          groupTotalOrders30d: 1,
+          selfBusinessOrders30d: 1,
+          computedAt: 1,
+        })
+        .lean(),
+    ]);
 
-    const ymd = getTodayYmdInKst();
-    let rollingAggregates = await PricingReferralRolling30dAggregate.find({
-      ymd,
-    })
-      .select({
-        businessAnchorId: 1,
-        groupMemberCount: 1,
-        groupTotalOrders30d: 1,
-        selfBusinessOrders30d: 1,
-        computedAt: 1,
-      })
-      .lean();
+    const devopsPayoutRatesByAnchorId = new Map(
+      devopsAnchors.map((anchor) => [String(anchor._id), anchor.payoutRates]),
+    );
 
     const rollingAggregateAnchorIds = new Set(
       (rollingAggregates || [])
@@ -206,7 +203,8 @@ export async function getReferralGroups(req, res) {
       );
 
     if (missingLeaderAnchorIds.length) {
-      await Promise.all(
+      // 병렬로 스냅샷 재계산
+      const recomputeResults = await Promise.allSettled(
         missingLeaderAnchorIds.map((leaderBusinessAnchorId) =>
           recomputePricingReferralSnapshotForLeaderAnchorId(
             leaderBusinessAnchorId,
@@ -214,7 +212,10 @@ export async function getReferralGroups(req, res) {
         ),
       );
 
-      rollingAggregates = await PricingReferralRolling30dAggregate.find({ ymd })
+      // 재조회
+      const freshAggregates = await PricingReferralRolling30dAggregate.find({
+        ymd,
+      })
         .select({
           businessAnchorId: 1,
           groupMemberCount: 1,
@@ -223,6 +224,7 @@ export async function getReferralGroups(req, res) {
           computedAt: 1,
         })
         .lean();
+      rollingAggregates.push(...freshAggregates);
     }
 
     const now = new Date();
@@ -457,8 +459,14 @@ export async function getReferralGroups(req, res) {
       },
     };
 
-    if (!refresh)
-      setAdminReferralCache(`referral-groups:v6${cacheKeySuffix}`, payload);
+    if (!refresh) {
+      // 5분 TTL 캐시
+      setAdminReferralCache(
+        `referral-groups:v6${cacheKeySuffix}`,
+        payload,
+        300000, // 5분
+      );
+    }
     return res.status(200).json(payload);
   } catch (error) {
     return res.status(500).json({
@@ -497,7 +505,7 @@ export async function getReferralGroupTree(req, res) {
       .select({
         _id: 1,
         role: 1,
-        requestorRole: 1,
+        subRole: 1,
         name: 1,
         email: 1,
         business: 1,
@@ -525,7 +533,7 @@ export async function getReferralGroupTree(req, res) {
       if (cached) return res.status(200).json(cached);
     }
 
-    const payload = await withAdminReferralInFlight(cacheKey, async () => {
+    const computeTree = async () => {
       const leaderBusinessAnchorId = String(leader?.businessAnchorId || "");
       if (!Types.ObjectId.isValid(leaderBusinessAnchorId)) {
         const error = new Error(
@@ -653,7 +661,7 @@ export async function getReferralGroupTree(req, res) {
             .select({
               _id: 1,
               role: 1,
-              requestorRole: 1,
+              subRole: 1,
               name: 1,
               email: 1,
               business: 1,
@@ -760,7 +768,7 @@ export async function getReferralGroupTree(req, res) {
         return {
           _id: businessAnchorId,
           role: representative?.role || anchor?.businessType || "requestor",
-          requestorRole: representative?.requestorRole || null,
+          subRole: representative?.subRole || null,
           name: representative?.name || anchor?.name || "",
           email: representative?.email || anchor?.metadata?.email || "",
           business: representative?.business || anchor?.name || "",
@@ -824,7 +832,7 @@ export async function getReferralGroupTree(req, res) {
           rootLeaderUser?.role ||
           effectiveRootAnchor?.businessType ||
           "requestor",
-        requestorRole: rootLeaderUser?.requestorRole || null,
+        subRole: rootLeaderUser?.subRole || null,
         name: rootLeaderUser?.name || effectiveRootAnchor?.name || "",
         email:
           rootLeaderUser?.email || effectiveRootAnchor?.metadata?.email || "",
@@ -879,7 +887,7 @@ export async function getReferralGroupTree(req, res) {
           Number(level1CommissionAmount || 0);
       }
 
-      const payload = {
+      return {
         success: true,
         data: {
           leader,
@@ -887,9 +895,12 @@ export async function getReferralGroupTree(req, res) {
           tree: rootNode,
         },
       };
-      if (!refresh) setAdminReferralCache(cacheKey, payload);
-      return payload;
-    });
+    };
+
+    const payload = await withAdminReferralInFlight(cacheKey, computeTree);
+    if (!refresh) {
+      setAdminReferralCache(cacheKey, payload, 300000); // 5분 TTL
+    }
 
     return res.status(200).json(payload);
   } catch (error) {

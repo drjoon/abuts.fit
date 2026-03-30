@@ -383,9 +383,16 @@ export default function AdminReferralGroupsPage() {
     return all.find((g) => String(g?.leader?._id || "") === id) || null;
   }, [effectiveLeaderId, groups]);
 
+  // selectedLeaderId가 유효하지 않으면 초기화
+  useEffect(() => {
+    if (selectedLeaderId && !selectedGroupRow) {
+      setSelectedLeaderId(null);
+    }
+  }, [selectedLeaderId, selectedGroupRow]);
+
   const { data: treeData, isLoading: isTreeLoading } = useQuery({
     queryKey: ["admin-referral-group-tree", effectiveLeaderId],
-    enabled: Boolean(token && effectiveLeaderId),
+    enabled: Boolean(token && effectiveLeaderId && selectedGroupRow),
     queryFn: async () => {
       const res = await apiFetch<ApiGroupTreeResponse>({
         path: `/api/admin/referral-groups/${effectiveLeaderId}${isDev ? "?refresh=1" : ""}`,

@@ -314,6 +314,13 @@ export async function getSalesmanDashboard(req, res) {
       !myBusinessAnchorId ||
       !Types.ObjectId.isValid(String(myBusinessAnchorId))
     ) {
+      console.error("[getSalesmanDashboard] businessAnchorId 없음", {
+        userId: me?._id,
+        role: me?.role,
+        name: me?.name,
+        email: me?.email,
+        businessAnchorId: myBusinessAnchorId,
+      });
       return res.status(400).json({
         success: false,
         message: "사업자 정보가 없습니다.",

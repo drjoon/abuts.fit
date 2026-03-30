@@ -691,6 +691,14 @@ requestSchema.pre("save", async function (next) {
   }
 });
 
+// 성능 최적화를 위한 복합 인덱스
+requestSchema.index({
+  businessAnchorId: 1,
+  manufacturerStage: 1,
+  createdAt: -1,
+});
+requestSchema.index({ requestor: 1, status: 1 });
+
 // 의뢰 모델 생성
 const Request = mongoose.model("Request", requestSchema);
 

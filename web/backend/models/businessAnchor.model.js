@@ -57,6 +57,29 @@ const businessAnchorSchema = new mongoose.Schema(
       businessCategory: { type: String, default: "" },
       startDate: { type: String, default: "" },
     },
+    extracted: {
+      companyName: { type: String, default: "" },
+      businessNumber: { type: String, default: "" },
+      representativeName: { type: String, default: "" },
+      businessAddress: { type: String, default: "" },
+      businessType: { type: String, default: "" },
+      businessItem: { type: String, default: "" },
+      openDate: { type: String, default: "" },
+    },
+    verification: {
+      verified: { type: Boolean, default: false },
+      verifiedAt: { type: Date, default: null },
+      verifiedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+    },
+    businessLicense: {
+      s3Key: { type: String, default: "" },
+      fileId: { type: String, default: "" },
+      uploadedAt: { type: Date, default: null },
+    },
     payoutAccount: {
       bankName: { type: String, default: "" },
       accountNumber: { type: String, default: "" },

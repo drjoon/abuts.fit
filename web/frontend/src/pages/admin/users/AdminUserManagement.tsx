@@ -29,6 +29,7 @@ import {
   FileText,
   Eye,
   Trash2,
+  Download,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -102,6 +103,7 @@ type ApiUser = {
   email?: string;
   originalEmail?: string | null;
   role?: string;
+  subRole?: string | null;
   business?: string;
   active?: boolean;
   approvedAt?: string | null;
@@ -117,16 +119,26 @@ type ApiUser = {
       s3Key?: string | null;
       originalName?: string | null;
     } | null;
+    metadata?: {
+      companyName?: string;
+      representativeName?: string;
+      address?: string;
+      addressDetail?: string;
+      zipCode?: string;
+      phoneNumber?: string;
+      email?: string;
+      businessItem?: string;
+      businessCategory?: string;
+      startDate?: string;
+    } | null;
     extracted?: {
       companyName?: string;
       businessNumber?: string;
-      address?: string;
-      phoneNumber?: string;
-      email?: string;
       representativeName?: string;
+      businessAddress?: string;
       businessType?: string;
       businessItem?: string;
-      startDate?: string;
+      openDate?: string;
     } | null;
     verification?: {
       verified?: boolean;
@@ -144,6 +156,7 @@ type UiUserRow = {
   email: string;
   originalEmail: string;
   role: string;
+  subRole?: string | null;
   companyName: string;
   status: UiUserStatus;
   joinDate: string;
@@ -189,6 +202,7 @@ const toUiUser = (u: ApiUser): UiUserRow => {
     email,
     originalEmail,
     role: String(u.role || ""),
+    subRole: u.subRole || null,
     companyName: String(u.business || ""),
     status,
     joinDate: formatDate(u.createdAt),
@@ -223,6 +237,28 @@ const getStatusBadge = (status: string) => {
     default:
       return <Badge variant="outline">{status}</Badge>;
   }
+};
+
+const getSubRoleBadge = (user: Pick<UiUserRow, "subRole">) => {
+  const { subRole } = user;
+
+  if (!subRole) return null;
+
+  if (subRole === "owner") {
+    return (
+      <Badge className="bg-blue-100 text-blue-700 border-blue-200">대표</Badge>
+    );
+  }
+
+  if (subRole === "staff") {
+    return (
+      <Badge className="bg-slate-100 text-slate-600 border-slate-200">
+        직원
+      </Badge>
+    );
+  }
+
+  return null;
 };
 
 export const AdminUserManagement = () => {
@@ -569,7 +605,7 @@ export const AdminUserManagement = () => {
     <div className="flex flex-col h-full min-h-0 bg-gradient-subtle p-6">
       <div className="max-w-7xl w-full mx-auto space-y-6 flex-1 min-h-0 overflow-y-auto">
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -790,7 +826,7 @@ export const AdminUserManagement = () => {
               onClick={() => setSelectedStatus("pending")}
               size="sm"
             >
-              대기
+              승인대기
             </Button>
           </div>
         </div>
@@ -834,6 +870,7 @@ export const AdminUserManagement = () => {
                           <Badge variant={getRoleBadgeVariant(user.role)}>
                             {getRoleLabel(user.role)}
                           </Badge>
+                          {getSubRoleBadge(user)}
                           {getStatusBadge(user.status)}
                           {user.unresolvedBusiness && (
                             <Badge className="bg-amber-100 text-amber-700 border-amber-200">
@@ -1012,7 +1049,9 @@ export const AdminUserManagement = () => {
                                   사업자명
                                 </div>
                                 <div className="mt-1 font-medium">
-                                  {selectedUser.businessInfo?.name ||
+                                  {selectedUser.businessInfo?.extracted
+                                    ?.companyName ||
+                                    selectedUser.businessInfo?.name ||
                                     selectedUser.companyName ||
                                     "-"}
                                 </div>
@@ -1083,13 +1122,29 @@ export const AdminUserManagement = () => {
                             </div>
                           )}
                           {!licenseLoading && licenseUrl && (
-                            <div className="overflow-hidden rounded-lg border bg-white">
-                              <img
-                                src={licenseUrl}
-                                alt="사업자등록증"
-                                className="h-[460px] w-full object-contain"
-                              />
-                            </div>
+                            <>
+                              <div className="overflow-hidden rounded-lg border bg-white">
+                                <img
+                                  src={licenseUrl}
+                                  alt="사업자등록증"
+                                  className="h-[460px] w-full object-contain"
+                                />
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full"
+                                asChild
+                              >
+                                <a
+                                  href={licenseUrl}
+                                  download={`사업자등록증_${selectedUser?.businessInfo?.extracted?.companyName || selectedUser?.name || "download"}.jpg`}
+                                >
+                                  <Download className="mr-2 h-4 w-4" />
+                                  다운로드
+                                </a>
+                              </Button>
+                            </>
                           )}
                           {!licenseLoading && !licenseUrl && (
                             <div className="flex min-h-[460px] items-center justify-center rounded-lg border bg-muted/20 text-sm text-muted-foreground">
@@ -1109,47 +1164,59 @@ export const AdminUserManagement = () => {
                           </CardDescription>
                         </CardHeader>
                         <CardContent>
-                          {selectedUser.businessInfo?.extracted ? (
+                          {selectedUser.businessInfo ? (
                             <div className="grid gap-3 sm:grid-cols-2">
                               {[
                                 [
                                   "사업자명",
                                   selectedUser.businessInfo.extracted
-                                    .companyName || "-",
+                                    ?.companyName ||
+                                    selectedUser.businessInfo.metadata
+                                      ?.companyName ||
+                                    "-",
                                 ],
                                 [
                                   "대표자",
                                   selectedUser.businessInfo.extracted
-                                    .representativeName || "-",
+                                    ?.representativeName ||
+                                    selectedUser.businessInfo.metadata
+                                      ?.representativeName ||
+                                    "-",
                                 ],
                                 [
                                   "사업자번호",
                                   selectedUser.businessInfo.extracted
-                                    .businessNumber || "-",
+                                    ?.businessNumber || "-",
                                 ],
                                 [
                                   "주소",
-                                  selectedUser.businessInfo.extracted.address ||
+                                  selectedUser.businessInfo.extracted
+                                    ?.businessAddress ||
+                                    selectedUser.businessInfo.metadata
+                                      ?.address ||
                                     "-",
                                 ],
                                 [
                                   "전화번호",
-                                  selectedUser.businessInfo.extracted
-                                    .phoneNumber || "-",
+                                  selectedUser.businessInfo.metadata
+                                    ?.phoneNumber || "-",
                                 ],
                                 [
                                   "이메일",
-                                  selectedUser.businessInfo.extracted.email ||
+                                  selectedUser.businessInfo.metadata?.email ||
                                     "-",
                                 ],
                                 [
                                   "업태/업종",
-                                  `${selectedUser.businessInfo.extracted.businessType || "-"}${selectedUser.businessInfo.extracted.businessItem ? ` / ${selectedUser.businessInfo.extracted.businessItem}` : ""}`,
+                                  `${selectedUser.businessInfo.extracted?.businessType || "-"}${selectedUser.businessInfo.extracted?.businessItem || selectedUser.businessInfo.metadata?.businessItem ? ` / ${selectedUser.businessInfo.extracted?.businessItem || selectedUser.businessInfo.metadata?.businessItem}` : ""}`,
                                 ],
                                 [
                                   "개업일",
                                   selectedUser.businessInfo.extracted
-                                    .startDate || "-",
+                                    ?.openDate ||
+                                    selectedUser.businessInfo.metadata
+                                      ?.startDate ||
+                                    "-",
                                 ],
                               ].map(([label, value]) => (
                                 <div

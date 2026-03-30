@@ -52,15 +52,21 @@ export async function ensureBusinessAnchor({
         name,
         status: verified ? "verified" : "active",
         primaryContactUserId: userId || null,
-        "metadata.companyName": String(metadata.companyName || name || "").trim(),
-        "metadata.representativeName": String(metadata.representativeName || "").trim(),
+        "metadata.companyName": String(
+          metadata.companyName || name || "",
+        ).trim(),
+        "metadata.representativeName": String(
+          metadata.representativeName || "",
+        ).trim(),
         "metadata.address": String(metadata.address || "").trim(),
         "metadata.addressDetail": String(metadata.addressDetail || "").trim(),
         "metadata.zipCode": String(metadata.zipCode || "").trim(),
         "metadata.phoneNumber": String(metadata.phoneNumber || "").trim(),
         "metadata.email": String(metadata.email || "").trim(),
         "metadata.businessItem": String(metadata.businessItem || "").trim(),
-        "metadata.businessCategory": String(metadata.businessCategory || "").trim(),
+        "metadata.businessCategory": String(
+          metadata.businessCategory || "",
+        ).trim(),
         "metadata.startDate": String(metadata.startDate || "").trim(),
         "metadata.businessNumber": String(metadata.businessNumber || "").trim(),
       },
@@ -105,7 +111,9 @@ export async function ensureBusinessAnchor({
   if (userId) {
     await User.updateOne(
       { _id: userId },
-      { $set: { businessAnchorId: anchorId, business: name } },
+      {
+        $set: { businessAnchorId: anchorId, business: name, subRole: "owner" },
+      },
     );
   }
 
@@ -156,7 +164,9 @@ export async function updateMyBusiness(req, res) {
       businessName: effectiveBusinessName,
     });
 
-    const hasBusinessAnchor = Boolean(businessAnchor?._id || effectiveBusinessAnchorId);
+    const hasBusinessAnchor = Boolean(
+      businessAnchor?._id || effectiveBusinessAnchorId,
+    );
     console.info("[BusinessAnchor] updateMyBusiness", {
       userId: String(req.user._id),
       businessType,
@@ -252,7 +262,17 @@ export async function updateMyBusiness(req, res) {
       });
     }
 
-    if (isVerifiedBusiness && isBusinessNumberChanging) {
+    // 사업자등록증 업로드와 함께 사업자등록번호가 변경되는 경우는 허용
+    // (사업자등록증에서 추출한 번호가 더 정확함)
+    const isBusinessLicenseUpdate = Boolean(
+      businessLicense && (businessLicense.s3Key || businessLicense.fileId),
+    );
+
+    if (
+      isVerifiedBusiness &&
+      isBusinessNumberChanging &&
+      !isBusinessLicenseUpdate
+    ) {
       return res.status(400).json({
         success: false,
         reason: "business_number_locked",
@@ -299,7 +319,9 @@ export async function updateMyBusiness(req, res) {
       const meId = String(req.user._id);
 
       if (existingAnchorByNumber) {
-        const existingPrimaryContactId = String(existingAnchorByNumber.primaryContactUserId || "");
+        const existingPrimaryContactId = String(
+          existingAnchorByNumber.primaryContactUserId || "",
+        );
         const existingIsOwner =
           Array.isArray(existingAnchorByNumber.owners) &&
           existingAnchorByNumber.owners.some((c) => String(c) === meId);
@@ -307,7 +329,9 @@ export async function updateMyBusiness(req, res) {
           Array.isArray(existingAnchorByNumber.members) &&
           existingAnchorByNumber.members.some((m) => String(m) === meId);
         const isMyExistingAnchor =
-          existingPrimaryContactId === meId || existingIsOwner || existingIsMember;
+          existingPrimaryContactId === meId ||
+          existingIsOwner ||
+          existingIsMember;
 
         if (isMyExistingAnchor) {
           console.info(
@@ -337,9 +361,7 @@ export async function updateMyBusiness(req, res) {
             reason: "business_number_switch_requires_admin",
             userId: String(req.user._id),
             resolvedAnchorId: String(businessAnchor?._id || ""),
-            existingAnchorByNumberId: String(
-              existingAnchorByNumber?._id || "",
-            ),
+            existingAnchorByNumberId: String(existingAnchorByNumber?._id || ""),
             businessNumber,
           });
           return res.status(409).json({
@@ -349,7 +371,9 @@ export async function updateMyBusiness(req, res) {
               "기존 사업자에 연결된 상태에서는 사업자등록번호로 다른 사업자로 전환할 수 없습니다. 관리자에게 사업자 전환을 요청해주세요.",
           });
         }
-        const primaryContactId = String(existingAnchorByNumber.primaryContactUserId || "");
+        const primaryContactId = String(
+          existingAnchorByNumber.primaryContactUserId || "",
+        );
         const isOwner =
           Array.isArray(existingAnchorByNumber.owners) &&
           existingAnchorByNumber.owners.some((c) => String(c) === meId);
@@ -370,9 +394,7 @@ export async function updateMyBusiness(req, res) {
             reason: "duplicate_business_number",
             userId: String(req.user._id),
             resolvedAnchorId: String(businessAnchor?._id || ""),
-            existingAnchorByNumberId: String(
-              existingAnchorByNumber?._id || "",
-            ),
+            existingAnchorByNumberId: String(existingAnchorByNumber?._id || ""),
             businessNumber,
           });
           return res.status(409).json({
@@ -511,7 +533,9 @@ export async function updateMyBusiness(req, res) {
 
     if (!hasBusinessAnchor && attachToBusinessAnchor) {
       const priorLedgerCount = originalBusinessAnchorId
-        ? await CreditLedger.countDocuments({ businessAnchorId: originalBusinessAnchorId })
+        ? await CreditLedger.countDocuments({
+            businessAnchorId: originalBusinessAnchorId,
+          })
         : 0;
       console.error("[BUSINESS_ANCHOR_ATTACH_SWITCH]", {
         userId: String(req.user._id),
@@ -536,7 +560,10 @@ export async function updateMyBusiness(req, res) {
       const isMember =
         Array.isArray(attachToBusinessAnchor.members) &&
         attachToBusinessAnchor.members.some((m) => String(m) === meId);
-      if (!isMember && String(attachToBusinessAnchor.primaryContactUserId || "") !== meId) {
+      if (
+        !isMember &&
+        String(attachToBusinessAnchor.primaryContactUserId || "") !== meId
+      ) {
         await BusinessAnchor.findByIdAndUpdate(attachToBusinessAnchor._id, {
           $addToSet: { members: req.user._id },
         });
@@ -574,7 +601,9 @@ export async function updateMyBusiness(req, res) {
       }
 
       try {
-        const businessNumberNormalized = businessNumber.replace(/\D/g, "").trim();
+        const businessNumberNormalized = businessNumber
+          .replace(/\D/g, "")
+          .trim();
         const created = await BusinessAnchor.create({
           businessType,
           businessNumberNormalized,
@@ -635,7 +664,10 @@ export async function updateMyBusiness(req, res) {
           businessNumber,
         });
 
-        emitReferralMembershipChanged(createdAnchorId, "business-anchor-linked");
+        emitReferralMembershipChanged(
+          createdAnchorId,
+          "business-anchor-linked",
+        );
 
         const welcomeBonusAmount = await grantWelcomeBonusIfEligible({
           businessAnchorId: created._id,
@@ -655,7 +687,8 @@ export async function updateMyBusiness(req, res) {
             created: true,
             businessAnchorId: created._id,
             businessName: created.name,
-            verification: created.status === "verified" ? { verified: true } : null,
+            verification:
+              created.status === "verified" ? { verified: true } : null,
             welcomeBonusGranted: !!welcomeBonusAmount,
             welcomeBonusAmount: Number(welcomeBonusAmount || 0),
             freeShippingCreditGranted: !!freeShippingCreditAmount,
@@ -715,7 +748,9 @@ export async function updateMyBusiness(req, res) {
         .select({ name: 1, metadata: 1, status: 1 })
         .lean();
       console.info("[BusinessAnchor] updateMyBusiness persisted result", {
-        businessAnchorId: String(persistedAnchor?._id || businessAnchor?._id || ""),
+        businessAnchorId: String(
+          persistedAnchor?._id || businessAnchor?._id || "",
+        ),
         name: String(persistedAnchor?.name || ""),
         metadata: persistedAnchor?.metadata || {},
         verified: persistedAnchor?.status === "verified",

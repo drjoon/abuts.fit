@@ -294,7 +294,9 @@ export async function getProductionQueues(req, res) {
     console.log("[getProductionQueues] scope", {
       role: req?.user?.role,
       userId: req?.user?._id ? String(req.user._id) : null,
-      businessId: req?.user?.businessId ? String(req.user.businessId) : null,
+      businessAnchorId: req?.user?.businessAnchorId
+        ? String(req.user.businessAnchorId)
+        : null,
       requestFilter: scope.requestFilter,
       machineIds: scope.machineIds,
     });

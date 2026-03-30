@@ -42,48 +42,54 @@ export async function getAllUsers(req, res) {
     const userIds = users
       .map((u) => u?._id)
       .filter((id) => Types.ObjectId.isValid(String(id)));
-    const businessIds = users
-      .map((u) => u?.businessId)
+    const businessAnchorIds = users
+      .map((u) => u?.businessAnchorId)
       .filter((id) => Types.ObjectId.isValid(String(id)));
-    const businesses = businessIds.length
-      ? await BusinessAnchor.find({ _id: { $in: businessIds } })
-          .select({
-            name: 1,
-            businessLicense: 1,
-            metadata: 1,
-            verification: 1,
-          })
-          .lean()
-      : [];
+
+    // 병렬 처리: BusinessAnchor 조회 + Request 집계
+    const [businesses, requestCounts] = await Promise.all([
+      businessAnchorIds.length
+        ? BusinessAnchor.find({ _id: { $in: businessAnchorIds } })
+            .select({
+              name: 1,
+              status: 1,
+              businessLicense: 1,
+              verification: 1,
+            })
+            .lean()
+        : Promise.resolve([]),
+      userIds.length
+        ? Request.aggregate([
+            {
+              $match: {
+                requestor: { $in: userIds },
+                status: { $ne: "취소" },
+              },
+            },
+            {
+              $group: {
+                _id: "$requestor",
+                count: { $sum: 1 },
+              },
+            },
+          ])
+        : Promise.resolve([]),
+    ]);
+
     const businessMap = new Map(
       businesses.map((org) => [String(org._id), org]),
     );
-
-    const requestCounts = await Request.aggregate([
-      {
-        $match: {
-          requestor: { $in: userIds },
-          status: { $ne: "취소" },
-        },
-      },
-      {
-        $group: {
-          _id: "$requestor",
-          count: { $sum: 1 },
-        },
-      },
-    ]);
     const countMap = new Map(
       requestCounts.map((r) => [String(r._id), Number(r.count || 0)]),
     );
 
     const usersWithStats = users.map((u) => {
-      const businessInfo = businessMap.get(String(u.businessId || ""));
+      const businessInfo = businessMap.get(String(u.businessAnchorId || ""));
       const hasLicense =
         Boolean(businessInfo?.businessLicense?.s3Key) ||
         Boolean(businessInfo?.businessLicense?.fileId);
       const unresolvedBusiness =
-        hasLicense && businessInfo?.verification?.verified === false;
+        hasLicense && businessInfo?.status !== "verified";
       return {
         ...u,
         totalRequests: countMap.get(String(u._id)) || 0,
@@ -161,9 +167,7 @@ export async function createUser(req, res) {
       password: tempPassword,
       role,
       business,
-      requestorRole: role === "requestor" ? "owner" : null,
-      manufacturerRole: role === "manufacturer" ? "owner" : null,
-      adminRole: role === "admin" ? "owner" : null,
+      subRole: null, // 사업자 가입 완료 시 owner로 설정됨
       approvedAt,
       active,
     });
@@ -268,12 +272,35 @@ export async function getUserById(req, res) {
         .status(404)
         .json({ success: false, message: "사용자를 찾을 수 없습니다." });
     }
-    const businessInfo = user?.businessId
-      ? await BusinessAnchor.findById(user.businessId)
+
+    // businessAnchorId 결정: 직원인 경우 같은 business의 owner 계정에서 가져옴
+    let targetBusinessAnchorId = user.businessAnchorId;
+
+    if (!targetBusinessAnchorId && user.business) {
+      // 직원 계정이고 businessAnchorId가 없는 경우, 같은 business의 owner 찾기
+      const isStaff = user.subRole === "staff";
+
+      if (isStaff) {
+        const ownerUser = await User.findOne({
+          business: user.business,
+          subRole: "owner",
+          businessAnchorId: { $ne: null },
+        })
+          .select("businessAnchorId")
+          .lean();
+
+        if (ownerUser?.businessAnchorId) {
+          targetBusinessAnchorId = ownerUser.businessAnchorId;
+        }
+      }
+    }
+
+    const businessInfo = targetBusinessAnchorId
+      ? await BusinessAnchor.findById(targetBusinessAnchorId)
           .select({
             name: 1,
+            status: 1,
             businessLicense: 1,
-            extracted: 1,
             verification: 1,
           })
           .lean()
@@ -282,7 +309,8 @@ export async function getUserById(req, res) {
       Boolean(businessInfo?.businessLicense?.s3Key) ||
       Boolean(businessInfo?.businessLicense?.fileId);
     const unresolvedBusiness =
-      hasLicense && businessInfo?.verification?.verified === false;
+      hasLicense && businessInfo?.status !== "verified";
+
     res.status(200).json({
       success: true,
       data: {
@@ -388,12 +416,7 @@ export async function toggleUserActive(req, res) {
 export async function changeUserRole(req, res) {
   try {
     const userId = req.params.id;
-    const {
-      role,
-      requestorRole = null,
-      manufacturerRole = null,
-      adminRole = null,
-    } = req.body || {};
+    const { role, subRole = null } = req.body || {};
     if (!Types.ObjectId.isValid(userId)) {
       return res
         .status(400)
@@ -419,38 +442,16 @@ export async function changeUserRole(req, res) {
       });
     }
     if (isSelf) {
-      if (
-        (user.role === "admin" && adminRole && adminRole !== user.adminRole) ||
-        (user.role === "manufacturer" &&
-          manufacturerRole &&
-          manufacturerRole !== user.manufacturerRole) ||
-        (user.role === "requestor" &&
-          requestorRole &&
-          requestorRole !== user.requestorRole)
-      ) {
+      if (subRole && subRole !== user.subRole) {
         return res.status(400).json({
           success: false,
-          message: "자기 자신의 서브역할을 변경할 수 없습니다.",
+          message: "자신의 역할은 변경할 수 없습니다.",
         });
       }
     }
     user.role = role;
-    if (role === "admin") {
-      user.adminRole = adminRole || "owner";
-      user.manufacturerRole = null;
-      user.requestorRole = null;
-    } else if (role === "manufacturer") {
-      user.manufacturerRole = manufacturerRole || "owner";
-      user.adminRole = null;
-      user.requestorRole = null;
-    } else if (role === "devops") {
-      user.adminRole = null;
-      user.manufacturerRole = null;
-      user.requestorRole = null;
-    } else {
-      user.requestorRole = requestorRole || "owner";
-      user.adminRole = null;
-      user.manufacturerRole = null;
+    if (subRole !== undefined) {
+      user.subRole = subRole;
     }
     await user.save();
     res.status(200).json({
@@ -496,15 +497,13 @@ const deleteUserCore = async ({ user, includeBusiness }) => {
     name: user.name,
     email: user.email,
     role: user.role,
-    businessId: user.businessId || null,
     businessAnchorId: user.businessAnchorId || null,
   };
   const userId = user._id;
-  const businessId = user.businessId;
   const businessAnchorId = user.businessAnchorId;
   const referredByAnchorId = user.referredByAnchorId;
 
-  if (businessId) {
+  if (businessAnchorId) {
     await BusinessAnchor.updateMany(
       {},
       {
@@ -521,18 +520,21 @@ const deleteUserCore = async ({ user, includeBusiness }) => {
   let deletedBusinessAnchor = null;
 
   if (includeBusiness) {
-    if (!businessId || !Types.ObjectId.isValid(String(businessId))) {
+    if (
+      !businessAnchorId ||
+      !Types.ObjectId.isValid(String(businessAnchorId))
+    ) {
       throw new Error("사업자가 연결되지 않은 계정입니다.");
     }
 
-    const business = await BusinessAnchor.findById(businessId);
+    const business = await BusinessAnchor.findById(businessAnchorId);
     if (!business) {
       throw new Error("연결된 사업자를 찾을 수 없습니다.");
     }
 
     const linkedUsers = await User.countDocuments({
       _id: { $ne: userId },
-      businessId: business._id,
+      businessAnchorId: business._id,
     });
     if (linkedUsers > 0) {
       throw new Error(

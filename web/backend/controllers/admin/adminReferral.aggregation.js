@@ -41,30 +41,24 @@ export async function buildReferralLeaderAggregation({
     (id) => new Types.ObjectId(id),
   );
 
-  const [directCounts, directChildren] = await Promise.all([
-    BusinessAnchor.aggregate([
-      {
-        $match: {
-          referredByAnchorId: { $in: leaderBusinessAnchorObjectIds },
-          businessType: { $in: REFERRAL_CHILD_ROLES },
-        },
-      },
-      { $group: { _id: "$referredByAnchorId", count: { $sum: 1 } } },
-    ]),
-    BusinessAnchor.find({
-      referredByAnchorId: { $in: leaderBusinessAnchorObjectIds },
-      businessType: { $in: REFERRAL_CHILD_ROLES },
-    })
-      .select({ _id: 1, referredByAnchorId: 1, businessType: 1 })
-      .lean(),
-  ]);
+  // BusinessAnchor 조회를 한 번만 수행하고 count는 메모리에서 계산
+  const directChildren = await BusinessAnchor.find({
+    referredByAnchorId: { $in: leaderBusinessAnchorObjectIds },
+    businessType: { $in: REFERRAL_CHILD_ROLES },
+  })
+    .select({ _id: 1, referredByAnchorId: 1, businessType: 1 })
+    .lean();
 
-  const directCountByLeaderBusinessAnchorId = new Map(
-    (directCounts || []).map((row) => [
-      String(row?._id || ""),
-      Number(row?.count || 0),
-    ]),
-  );
+  // 메모리에서 count 계산
+  const directCountMap = new Map();
+  for (const child of directChildren) {
+    const parentId = String(child?.referredByAnchorId || "");
+    if (parentId) {
+      directCountMap.set(parentId, (directCountMap.get(parentId) || 0) + 1);
+    }
+  }
+
+  const directCountByLeaderBusinessAnchorId = directCountMap;
 
   const childIdsByLeaderBusinessAnchorId = new Map();
   const childBusinessAnchorIdsByLeaderBusinessAnchorId = new Map();

@@ -1456,7 +1456,7 @@ export async function adminGetBusinessCredits(req, res) {
     const ownerIds = Array.from(
       new Set(
         (orgs || [])
-          .map((o) => o?.owner)
+          .map((o) => o?.primaryContactUserId)
           .filter(Boolean)
           .map((id) => String(id)),
       ),
@@ -1549,16 +1549,17 @@ export async function adminGetBusinessCredits(req, res) {
       ),
     ).map((id) => new Types.ObjectId(String(id)));
 
+    // CreditLedger 집계: 무료 크레딧을 의뢰용과 배송비용으로 분리
+    // - bonusRequestCredit: 의뢰 결제만 가능 (배송비 결제 불가)
+    // - bonusShippingCredit: 배송비 결제만 가능 (의뢰 결제 불가)
+    // - paidCredit: 의뢰 + 배송비 모두 가능
     const ledgerData = orgAnchorIds.length
       ? await CreditLedger.aggregate([
-          {
-            $match: {
-              businessAnchorId: { $in: orgAnchorIds },
-            },
-          },
+          { $match: { businessAnchorId: { $in: orgAnchorIds } } },
           {
             $group: {
               _id: "$businessAnchorId",
+              // 유료 크레딧 충전 (CHARGE, REFUND)
               chargedPaid: {
                 $sum: {
                   $cond: [
@@ -1568,9 +1569,34 @@ export async function adminGetBusinessCredits(req, res) {
                   ],
                 },
               },
-              chargedBonus: {
+              // 무료 의뢰 크레딧 충전 (BONUS이지만 FREE_SHIPPING_CREDIT 아님)
+              chargedBonusRequest: {
                 $sum: {
-                  $cond: [{ $eq: ["$type", "BONUS"] }, { $abs: "$amount" }, 0],
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ["$type", "BONUS"] },
+                        { $ne: ["$refType", "FREE_SHIPPING_CREDIT"] },
+                      ],
+                    },
+                    { $abs: "$amount" },
+                    0,
+                  ],
+                },
+              },
+              // 무료 배송비 크레딧 충전 (BONUS + FREE_SHIPPING_CREDIT)
+              chargedBonusShipping: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ["$type", "BONUS"] },
+                        { $eq: ["$refType", "FREE_SHIPPING_CREDIT"] },
+                      ],
+                    },
+                    { $abs: "$amount" },
+                    0,
+                  ],
                 },
               },
               adjustSum: {
@@ -1592,10 +1618,31 @@ export async function adminGetBusinessCredits(req, res) {
                   ],
                 },
               },
-              spentBonusSum: {
+              // 무료 의뢰 크레딧 소비 (배송비가 아닌 의뢰 결제에 사용된 무료 크레딧)
+              spentBonusRequestSum: {
                 $sum: {
                   $cond: [
-                    { $eq: ["$type", "SPEND"] },
+                    {
+                      $and: [
+                        { $eq: ["$type", "SPEND"] },
+                        { $ne: ["$refType", "SHIPPING_PACKAGE"] },
+                      ],
+                    },
+                    { $ifNull: ["$spentBonusAmount", 0] },
+                    0,
+                  ],
+                },
+              },
+              // 무료 배송비 크레딧 소비 (배송비 결제에 사용된 무료 크레딧)
+              spentBonusShippingSum: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ["$type", "SPEND"] },
+                        { $eq: ["$refType", "SHIPPING_PACKAGE"] },
+                      ],
+                    },
                     { $ifNull: ["$spentBonusAmount", 0] },
                     0,
                   ],
@@ -1609,65 +1656,102 @@ export async function adminGetBusinessCredits(req, res) {
     const balanceMap = {};
     ledgerData.forEach((item) => {
       const chargedPaid = Number(item.chargedPaid || 0);
-      const chargedBonus = Number(item.chargedBonus || 0);
+      const chargedBonusRequest = Number(item.chargedBonusRequest || 0);
+      const chargedBonusShipping = Number(item.chargedBonusShipping || 0);
       const adjustSum = Number(item.adjustSum || 0);
       const spentTotal = Number(item.spentTotal || 0);
       const spentPaidRaw = Number(item.spentPaidSum || 0);
-      const spentBonusRaw = Number(item.spentBonusSum || 0);
+      const spentBonusRequestRaw = Number(item.spentBonusRequestSum || 0);
+      const spentBonusShippingRaw = Number(item.spentBonusShippingSum || 0);
 
-      // spentPaidAmount/spentBonusAmount가 저장된 경우 그걸 직접 사용
-      // 합이 spentTotal과 일치하면 신뢰, 아니면 전액 paid에서 차감으로 fallback
-      let spentPaid, spentBonus;
-      if (Math.round(spentPaidRaw + spentBonusRaw) === Math.round(spentTotal)) {
+      // CreditLedger에 spentPaidAmount/spentBonusAmount가 저장되어 있으면 그 값 사용
+      // 저장된 값이 없거나 합계가 맞지 않으면 fallback 로직 사용
+      const spentBonusTotal = spentBonusRequestRaw + spentBonusShippingRaw;
+      let spentPaid, spentBonusRequest, spentBonusShipping;
+
+      if (
+        Math.round(spentPaidRaw + spentBonusTotal) === Math.round(spentTotal)
+      ) {
+        // 저장된 값이 신뢰 가능한 경우 그대로 사용
         spentPaid = spentPaidRaw;
-        spentBonus = spentBonusRaw;
+        spentBonusRequest = spentBonusRequestRaw;
+        spentBonusShipping = spentBonusShippingRaw;
       } else {
-        // fallback: 보너스 우선 차감 시뮬레이션(단순 총액 기준)
-        spentBonus = Math.min(chargedBonus, spentTotal);
+        // fallback: 무료 크레딧 우선 차감 시뮬레이션
+        // (레거시 데이터나 spentPaidAmount/spentBonusAmount 미저장 케이스 대응)
+        const totalBonus = chargedBonusRequest + chargedBonusShipping;
+        const spentBonus = Math.min(totalBonus, spentTotal);
         spentPaid = spentTotal - spentBonus;
+
+        // 무료 의뢰/배송비 크레딧을 충전 비율대로 분배
+        if (totalBonus > 0) {
+          spentBonusRequest = spentBonus * (chargedBonusRequest / totalBonus);
+          spentBonusShipping = spentBonus * (chargedBonusShipping / totalBonus);
+        } else {
+          spentBonusRequest = 0;
+          spentBonusShipping = 0;
+        }
       }
 
+      // 최종 잔액 계산
+      // - paidCredit: 유료 크레딧 잔액 (의뢰 + 배송비 모두 사용 가능)
+      // - bonusRequestCredit: 무료 의뢰 크레딧 잔액 (의뢰만 사용 가능)
+      // - bonusShippingCredit: 무료 배송비 크레딧 잔액 (배송비만 사용 가능)
       const paidCredit = chargedPaid + adjustSum - spentPaid;
-      const bonusRequestCredit = chargedBonus - spentBonus;
+      const bonusRequestCredit = chargedBonusRequest - spentBonusRequest;
+      const bonusShippingCredit = chargedBonusShipping - spentBonusShipping;
 
       balanceMap[String(item._id)] = {
-        balance: Math.max(0, paidCredit + bonusRequestCredit),
+        balance: Math.max(
+          0,
+          paidCredit + bonusRequestCredit + bonusShippingCredit,
+        ),
         paidCredit: Math.max(0, paidCredit),
         bonusRequestCredit: Math.max(0, bonusRequestCredit),
+        bonusShippingCredit: Math.max(0, bonusShippingCredit),
         spentAmount: Math.max(0, spentTotal),
         chargedPaidAmount: Math.max(0, chargedPaid),
-        chargedBonusAmount: Math.max(0, chargedBonus),
+        chargedBonusRequestAmount: Math.max(0, chargedBonusRequest),
+        chargedBonusShippingAmount: Math.max(0, chargedBonusShipping),
         spentPaidAmount: Math.max(0, spentPaid),
-        spentBonusAmount: Math.max(0, spentBonus),
+        spentBonusRequestAmount: Math.max(0, spentBonusRequest),
+        spentBonusShippingAmount: Math.max(0, spentBonusShipping),
       };
     });
 
     const result = orgs.map((org) => {
-      const lookupKey = String(
-        resolvedAnchorIdByBusinessId.get(String(org?._id || "")) || "",
-      );
-      const balanceInfo = balanceMap[lookupKey] || {
+      const anchorId = String(org?._id || "");
+      const balanceInfo = balanceMap[anchorId] || {
         balance: 0,
         paidCredit: 0,
         bonusRequestCredit: 0,
+        bonusShippingCredit: 0,
         spentAmount: 0,
         chargedPaidAmount: 0,
-        chargedBonusAmount: 0,
+        chargedBonusRequestAmount: 0,
+        chargedBonusShippingAmount: 0,
         spentPaidAmount: 0,
-        spentBonusAmount: 0,
+        spentBonusRequestAmount: 0,
+        spentBonusShippingAmount: 0,
       };
 
-      const ownerInfo = ownerById.get(String(org?.owner || "")) || null;
+      const ownerInfo =
+        ownerById.get(String(org?.primaryContactUserId || "")) || null;
 
       return {
         _id: org._id,
-        businessAnchorId: lookupKey || org.businessAnchorId || null,
+        businessAnchorId: anchorId,
         businessType: String(org.businessType || "").trim(),
         name: org.name,
         ownerName: ownerInfo?.name || "",
         ownerEmail: ownerInfo?.email || "",
         companyName: org.extracted?.companyName || "",
         businessNumber: org.extracted?.businessNumber || "",
+        // 프론트엔드 호환: paidBalance, bonusBalance 필드 제공
+        paidBalance: balanceInfo.paidCredit, // 유료 잔액
+        bonusBalance:
+          balanceInfo.bonusRequestCredit + balanceInfo.bonusShippingCredit, // 무료 잔액 (의뢰용 + 배송비용)
+        // 상세 정보: bonusRequestCredit, bonusShippingCredit 등 모든 필드 포함
         ...balanceInfo,
       };
     });
@@ -1679,7 +1763,7 @@ export async function adminGetBusinessCredits(req, res) {
         String(a.name || "").localeCompare(String(b.name || ""), "ko"),
     );
 
-    const total = await Business.countDocuments();
+    const total = await BusinessAnchor.countDocuments();
 
     return res.json({
       success: true,

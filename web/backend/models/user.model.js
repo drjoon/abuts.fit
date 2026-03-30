@@ -30,17 +30,7 @@ const userSchema = new mongoose.Schema(
       enum: ["requestor", "manufacturer", "admin", "salesman", "devops"],
       default: "requestor",
     },
-    requestorRole: {
-      type: String,
-      enum: ["owner", "staff"],
-      default: null,
-    },
-    manufacturerRole: {
-      type: String,
-      enum: ["owner", "staff"],
-      default: null,
-    },
-    adminRole: {
+    subRole: {
       type: String,
       enum: ["owner", "staff"],
       default: null,

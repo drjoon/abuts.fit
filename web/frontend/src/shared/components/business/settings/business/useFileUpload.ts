@@ -278,11 +278,29 @@ export const useFileUpload = (
           }
 
           // 2. 모든 검증 통과 → 데이터 업데이트 및 입력 폼으로 전환
+          // AI 파싱 결과에 없는 필드는 기존 값 유지
+          const newPhoneNumber = String(
+            nextExtracted?.phoneNumber || "",
+          ).trim();
+          const newEmail = String(nextExtracted?.email || "").trim();
+          const newAddress = String(nextExtracted?.address || "").trim();
+          const newAddressDetail = String(
+            nextExtracted?.addressDetail || "",
+          ).trim();
+          const newZipCode = String(nextExtracted?.zipCode || "").trim();
+
+          // 기존 주소가 있으면 유지, 없으면 비우고 주소 검색 유도
+          const hasExistingAddress = Boolean(props.businessData.address);
+
           handlers.onExtractedChange({
             ...nextExtracted,
-            address: "",
-            addressDetail: "",
-            zipCode: "",
+            address: hasExistingAddress ? props.extracted.address : "",
+            addressDetail: hasExistingAddress
+              ? props.extracted.addressDetail
+              : "",
+            zipCode: hasExistingAddress ? props.extracted.zipCode : "",
+            email: newEmail || props.extracted.email,
+            phoneNumber: newPhoneNumber || props.extracted.phoneNumber,
             startDate: nextStartDate,
           });
 
@@ -293,13 +311,17 @@ export const useFileUpload = (
               : nextCompanyName || "",
             owner: String(nextExtracted?.representativeName || "").trim(),
             businessNumber: formattedBusinessNumber,
-            address: "",
-            addressDetail: "",
-            zipCode: "",
-            phone: formatPhoneNumberInput(
-              String(nextExtracted?.phoneNumber || "").trim(),
-            ),
-            email: String(nextExtracted?.email || "").trim(),
+            // 기존 주소가 있으면 유지, 없으면 비우고 주소 검색 유도
+            address: hasExistingAddress ? props.businessData.address : "",
+            addressDetail: hasExistingAddress
+              ? props.businessData.addressDetail
+              : "",
+            zipCode: hasExistingAddress ? props.businessData.zipCode : "",
+            // AI 파싱 결과에 값이 있으면 사용, 없으면 기존 값 유지
+            phone: newPhoneNumber
+              ? formatPhoneNumberInput(newPhoneNumber)
+              : props.businessData.phone,
+            email: newEmail || props.businessData.email,
             businessType: String(nextExtracted?.businessType || "").trim(),
             businessItem: String(nextExtracted?.businessItem || "").trim(),
             startDate: nextStartDate,
@@ -308,13 +330,16 @@ export const useFileUpload = (
           handlers.onIsVerifiedChange(!!data?.verification?.verified);
           handlers.onLicenseStatusChange("ready");
 
-          handlers.onAutoOpenAddressSearch();
-          toast({
-            title: "주소 확인이 필요합니다",
-            description:
-              "주소와 우편번호를 비워두었어요. 주소 검색 창에서 도로명 주소를 선택해주세요.",
-            duration: 3500,
-          });
+          // 기존 주소가 없는 경우에만 주소 검색 유도
+          if (!hasExistingAddress) {
+            handlers.onAutoOpenAddressSearch();
+            toast({
+              title: "주소 확인이 필요합니다",
+              description:
+                "주소와 우편번호를 비워두었어요. 주소 검색 창에서 도로명 주소를 선택해주세요.",
+              duration: 3500,
+            });
+          }
 
           // AI 인식 결과 확인 유도 토스트
           setTimeout(() => {

@@ -54,13 +54,29 @@
 - `bg/`: 운영 중인 백그라운드 서비스
 - `background/`: 레거시 참고용. **새 정책 반영 대상 아님**
 
-### 2.2 역할
+### 2.2 역할 (role + subRole)
 
-- `requestor`: 의뢰 생성/조회
-- `salesman`: 영업/소개/사업자 연결 관리
-- `devops`: 플랫폼 개발/운영(메이븐 주식회사, 단독 사업자 기본값)
-- `manufacturer`: 제조 공정 처리 (CA 제조사, 즉 CAM/가공을 담당하는 회사)
-- `admin`: 운영/지원/관리
+**User 역할 구조:**
+
+- `role`: 사용자의 주요 역할 (requestor | manufacturer | admin | salesman | devops)
+  - `requestor`: 의뢰 생성/조회
+  - `manufacturer`: 제조 공정 처리 (CA 제조사, 즉 CAM/가공을 담당하는 회사)
+  - `admin`: 운영/지원/관리
+  - `salesman`: 영업/소개/사업자 연결 관리
+  - `devops`: 플랫폼 개발/운영(메이븐 주식회사, 단독 사업자 기본값)
+
+- `subRole`: 사업자 내 역할 (owner | staff | null)
+  - `owner`: 사업자 대표 (사업자 등록 완료 시 자동 설정)
+  - `staff`: 사업자 직원 (대표가 승인한 소속 직원)
+  - `null`: 사업자 미가입 상태 (회원가입만 완료, 사업자 등록 미완료)
+
+**중요:**
+
+- `subRole`은 사업자 가입 완료 시에만 설정됩니다.
+- 회원가입 직후에는 `subRole = null` (사업자 미가입)
+- 사업자 등록 완료 시 `subRole = "owner"` 자동 설정
+- 직원으로 승인될 때 `subRole = "staff"` 자동 설정
+- 모든 role (requestor, manufacturer, admin, salesman, devops)에서 `subRole`을 동일하게 사용합니다
 
 ### 2.2.1 필드 명칭 구분
 
@@ -532,6 +548,22 @@
 
 - 관리자는 필요 시 **배송비 무료 크레딧**을 별도로 지급할 수 있습니다.
 - 배송비 무료 크레딧은 `BonusGrant.type = FREE_SHIPPING_CREDIT`로 기록하며, `CreditLedger.refType = FREE_SHIPPING_CREDIT`로 관리합니다.
+
+**CreditLedger 필드 구조 및 집계:**
+
+- `CreditLedger`는 `type`과 `refType`으로 크레딧 종류를 구분합니다.
+- **무료 의뢰 크레딧** (`bonusRequestCredit`):
+  - 충전: `type = "BONUS"` AND `refType ≠ "FREE_SHIPPING_CREDIT"`
+  - 소비: `type = "SPEND"` AND `refType ≠ "SHIPPING_PACKAGE"` AND `spentBonusAmount > 0`
+- **무료 배송비 크레딧** (`bonusShippingCredit`):
+  - 충전: `type = "BONUS"` AND `refType = "FREE_SHIPPING_CREDIT"`
+  - 소비: `type = "SPEND"` AND `refType = "SHIPPING_PACKAGE"` AND `spentBonusAmount > 0`
+- **유료 크레딧** (`paidCredit`):
+  - 충전: `type IN ["CHARGE", "REFUND"]`
+  - 조정: `type = "ADJUST"`
+  - 소비: `type = "SPEND"` AND `spentPaidAmount > 0`
+- **프론트엔드 표시용 무료 잔액** (`bonusBalance`): `bonusRequestCredit + bonusShippingCredit`
+- **총 잔액** (`balance`): `paidCredit + bonusRequestCredit + bonusShippingCredit`
 
 ### 6.3.3 크레딧 설정 (관리자)
 

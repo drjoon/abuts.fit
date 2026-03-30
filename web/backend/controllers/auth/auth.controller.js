@@ -590,9 +590,7 @@ async function register(req, res) {
       email: normalizedEmail,
       password: password || generateRandomPassword(),
       role: normalizedRole,
-      requestorRole: normalizedRole === "requestor" ? "owner" : null,
-      manufacturerRole: normalizedRole === "manufacturer" ? "owner" : null,
-      adminRole: normalizedRole === "admin" ? "owner" : null,
+      subRole: null, // 사업자 가입 완료 시 owner로 설정됨
       referralCode,
       referredByAnchorId,
       onboardingWizardCompleted: false,
