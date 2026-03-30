@@ -431,8 +431,9 @@ export async function getMyReferralDirectMembers(req, res) {
               org?.name ||
               anchor?.name ||
               (isLeaderRow ? requestor?.business || "" : ""),
+            // SSOT: metadata 사용 (extracted 레거시 제거)
             email:
-              org?.extracted?.email ||
+              org?.metadata?.email ||
               anchor?.metadata?.email ||
               (isLeaderRow ? requestor?.email || "" : ""),
             createdAt:

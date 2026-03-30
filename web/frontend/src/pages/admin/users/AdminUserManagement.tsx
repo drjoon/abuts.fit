@@ -121,16 +121,19 @@ type ApiUser = {
     } | null;
     metadata?: {
       companyName?: string;
+      businessNumber?: string;
       representativeName?: string;
       address?: string;
       addressDetail?: string;
       zipCode?: string;
       phoneNumber?: string;
       email?: string;
+      businessType?: string;
       businessItem?: string;
       businessCategory?: string;
       startDate?: string;
     } | null;
+    // SSOT: metadata 사용 (extracted 레거시 제거)
     extracted?: {
       companyName?: string;
       businessNumber?: string;
@@ -178,9 +181,10 @@ const formatDate = (input?: string) => {
   return `${y}-${m}-${day}`;
 };
 
+// SSOT: metadata 사용 (extracted 레거시 제거)
 const getDisplayUserName = (user: Pick<UiUserRow, "name" | "businessInfo">) => {
   const representativeName = String(
-    user.businessInfo?.extracted?.representativeName || "",
+    user.businessInfo?.metadata?.representativeName || "",
   ).trim();
   const accountName = String(user.name || "").trim();
   return representativeName || accountName || "-";
@@ -1049,7 +1053,7 @@ export const AdminUserManagement = () => {
                                   사업자명
                                 </div>
                                 <div className="mt-1 font-medium">
-                                  {selectedUser.businessInfo?.extracted
+                                  {selectedUser.businessInfo?.metadata
                                     ?.companyName ||
                                     selectedUser.businessInfo?.name ||
                                     selectedUser.companyName ||
@@ -1138,7 +1142,7 @@ export const AdminUserManagement = () => {
                               >
                                 <a
                                   href={licenseUrl}
-                                  download={`사업자등록증_${selectedUser?.businessInfo?.extracted?.companyName || selectedUser?.name || "download"}.jpg`}
+                                  download={`사업자등록증_${selectedUser?.businessInfo?.metadata?.companyName || selectedUser?.name || "download"}.jpg`}
                                 >
                                   <Download className="mr-2 h-4 w-4" />
                                   다운로드
@@ -1169,31 +1173,22 @@ export const AdminUserManagement = () => {
                               {[
                                 [
                                   "사업자명",
-                                  selectedUser.businessInfo.extracted
-                                    ?.companyName ||
-                                    selectedUser.businessInfo.metadata
-                                      ?.companyName ||
-                                    "-",
+                                  selectedUser.businessInfo.metadata
+                                    ?.companyName || "-",
                                 ],
                                 [
                                   "대표자",
-                                  selectedUser.businessInfo.extracted
-                                    ?.representativeName ||
-                                    selectedUser.businessInfo.metadata
-                                      ?.representativeName ||
-                                    "-",
+                                  selectedUser.businessInfo.metadata
+                                    ?.representativeName || "-",
                                 ],
                                 [
                                   "사업자번호",
-                                  selectedUser.businessInfo.extracted
+                                  selectedUser.businessInfo.metadata
                                     ?.businessNumber || "-",
                                 ],
                                 [
                                   "주소",
-                                  selectedUser.businessInfo.extracted
-                                    ?.businessAddress ||
-                                    selectedUser.businessInfo.metadata
-                                      ?.address ||
+                                  selectedUser.businessInfo.metadata?.address ||
                                     "-",
                                 ],
                                 [
@@ -1208,15 +1203,12 @@ export const AdminUserManagement = () => {
                                 ],
                                 [
                                   "업태/업종",
-                                  `${selectedUser.businessInfo.extracted?.businessType || "-"}${selectedUser.businessInfo.extracted?.businessItem || selectedUser.businessInfo.metadata?.businessItem ? ` / ${selectedUser.businessInfo.extracted?.businessItem || selectedUser.businessInfo.metadata?.businessItem}` : ""}`,
+                                  `${selectedUser.businessInfo.metadata?.businessType || "-"}${selectedUser.businessInfo.metadata?.businessItem ? ` / ${selectedUser.businessInfo.metadata?.businessItem}` : ""}`,
                                 ],
                                 [
                                   "개업일",
-                                  selectedUser.businessInfo.extracted
-                                    ?.openDate ||
-                                    selectedUser.businessInfo.metadata
-                                      ?.startDate ||
-                                    "-",
+                                  selectedUser.businessInfo.metadata
+                                    ?.startDate || "-",
                                 ],
                               ].map(([label, value]) => (
                                 <div

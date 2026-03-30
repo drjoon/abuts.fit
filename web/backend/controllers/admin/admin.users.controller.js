@@ -297,12 +297,12 @@ export async function getUserById(req, res) {
 
     const businessInfo = targetBusinessAnchorId
       ? await BusinessAnchor.findById(targetBusinessAnchorId)
+          // SSOT: metadata 사용 (extracted 레거시 제거)
           .select({
             name: 1,
             status: 1,
             businessLicense: 1,
             verification: 1,
-            extracted: 1,
             metadata: 1,
           })
           .lean()

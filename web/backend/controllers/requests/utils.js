@@ -554,10 +554,11 @@ export async function normalizeRequestForResponse(requestDoc) {
         typeof metadata?.companyName === "string"
           ? metadata.companyName.trim()
           : "";
+      // SSOT: metadata 사용 (extracted 레거시 제거)
       obj.business = {
         _id: requestorOrgId,
         name: orgName || companyName || undefined,
-        extracted: metadata,
+        metadata: metadata,
       };
       obj.requestorBusinessAnchor = obj.business;
     }

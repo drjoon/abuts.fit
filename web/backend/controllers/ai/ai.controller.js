@@ -139,6 +139,7 @@ export async function parseBusinessLicense(req, res) {
         });
       }
 
+      // SSOT: metadata로 응답 (extracted 레거시 제거)
       return res.json({
         success: true,
         data: {
@@ -147,7 +148,7 @@ export async function parseBusinessLicense(req, res) {
             s3Key: key,
             originalName: originalName || null,
           },
-          extracted,
+          metadata: extracted,
           verification,
         },
       });
@@ -301,6 +302,7 @@ export async function parseBusinessLicense(req, res) {
       );
     };
 
+    // SSOT: metadata 사용 (extracted 레거시 제거)
     const baseSet = {
       businessLicense: {
         fileId: fileId || null,
@@ -308,15 +310,13 @@ export async function parseBusinessLicense(req, res) {
         originalName: originalName || "",
         uploadedAt: new Date(),
       },
-      extracted: {
-        companyName: extracted.companyName,
-        address: extracted.address,
-        phoneNumber: extracted.phoneNumber,
-        email: extracted.email,
-        representativeName: extracted.representativeName,
-        businessType: extracted.businessType,
-        businessItem: extracted.businessItem,
-      },
+      "metadata.companyName": extracted.companyName,
+      "metadata.address": extracted.address,
+      "metadata.phoneNumber": extracted.phoneNumber,
+      "metadata.email": extracted.email,
+      "metadata.representativeName": extracted.representativeName,
+      "metadata.businessType": extracted.businessType,
+      "metadata.businessItem": extracted.businessItem,
       verification: {
         ...verification,
         checkedAt: new Date(),
@@ -325,12 +325,9 @@ export async function parseBusinessLicense(req, res) {
 
     const setWithBusinessNumber = {
       ...baseSet,
-      extracted: {
-        ...baseSet.extracted,
-        ...(normalizedBusinessNumber
-          ? { businessNumber: normalizedBusinessNumber }
-          : {}),
-      },
+      ...(normalizedBusinessNumber
+        ? { "metadata.businessNumber": normalizedBusinessNumber }
+        : {}),
     };
 
     if (hasBusinessAnchor && anchor?._id) {
@@ -365,8 +362,14 @@ export async function parseBusinessLicense(req, res) {
                 s3Key: key,
                 originalName: originalName || null,
               },
-              extracted: {
-                ...baseSet.extracted,
+              metadata: {
+                companyName: extracted.companyName,
+                address: extracted.address,
+                phoneNumber: extracted.phoneNumber,
+                email: extracted.email,
+                representativeName: extracted.representativeName,
+                businessType: extracted.businessType,
+                businessItem: extracted.businessItem,
                 businessNumber: "",
               },
               verification: {
@@ -387,7 +390,7 @@ export async function parseBusinessLicense(req, res) {
           s3Key: key,
           originalName: originalName || null,
         },
-        extracted: {
+        metadata: {
           ...extracted,
           businessNumber: normalizedBusinessNumber || "",
         },

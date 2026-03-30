@@ -476,24 +476,25 @@ export async function getAllRequests(req, res) {
         const requestorOrgDoc = businessMap.get(anchorId);
         if (!requestorOrgDoc) continue;
 
-        const extracted =
-          requestorOrgDoc.extracted &&
-          typeof requestorOrgDoc.extracted === "object"
-            ? requestorOrgDoc.extracted
+        // SSOT: metadata 사용 (extracted 레거시 제거)
+        const metadata =
+          requestorOrgDoc.metadata &&
+          typeof requestorOrgDoc.metadata === "object"
+            ? requestorOrgDoc.metadata
             : undefined;
         const orgName =
           typeof requestorOrgDoc.name === "string"
             ? requestorOrgDoc.name.trim()
             : "";
         const companyName =
-          typeof extracted?.companyName === "string"
-            ? extracted.companyName.trim()
+          typeof metadata?.companyName === "string"
+            ? metadata.companyName.trim()
             : "";
 
         item.business = {
           _id: anchorId,
           name: orgName || companyName || undefined,
-          extracted,
+          metadata,
         };
         item.requestorBusinessAnchor = item.business;
       }

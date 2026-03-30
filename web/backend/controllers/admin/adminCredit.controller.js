@@ -1516,11 +1516,12 @@ export async function adminGetBusinessCredits(req, res) {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const skip = Math.max(Number(req.query.skip) || 0, 0);
 
+    // SSOT: metadata 사용 (extracted 레거시 제거)
     const orgs = await BusinessAnchor.find({})
       .select({
         name: 1,
         primaryContactUserId: 1,
-        extracted: 1,
+        metadata: 1,
         businessAnchorId: 1,
         businessType: 1,
       })
@@ -1541,7 +1542,7 @@ export async function adminGetBusinessCredits(req, res) {
     const businessNumberNormalizedSet = new Set(
       (orgs || [])
         .map((org) =>
-          normalizeBusinessNumber(org?.extracted?.businessNumber || ""),
+          normalizeBusinessNumber(org?.metadata?.businessNumber || ""),
         )
         .filter(Boolean),
     );
@@ -1608,7 +1609,7 @@ export async function adminGetBusinessCredits(req, res) {
       const ownerInfo = ownerById.get(String(org?.owner || "")) || null;
       const ownerAnchorId = String(ownerInfo?.businessAnchorId || "").trim();
       const normalizedBusinessNumber = normalizeBusinessNumber(
-        org?.extracted?.businessNumber || "",
+        org?.metadata?.businessNumber || "",
       );
       const mappedAnchorId =
         directAnchorId ||
@@ -1824,8 +1825,8 @@ export async function adminGetBusinessCredits(req, res) {
         name: org.name,
         ownerName: ownerInfo?.name || "",
         ownerEmail: ownerInfo?.email || "",
-        companyName: org.extracted?.companyName || "",
-        businessNumber: org.extracted?.businessNumber || "",
+        companyName: org.metadata?.companyName || "",
+        businessNumber: org.metadata?.businessNumber || "",
         // 프론트엔드 호환: paidBalance, bonusBalance 필드 제공
         paidBalance: balanceInfo.paidCredit, // 유료 잔액
         bonusBalance:

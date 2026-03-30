@@ -8,9 +8,10 @@ import {
   loadCreditSettingsDefaults,
 } from "../../utils/creditSettingsDefaults.js";
 
+// SSOT: metadata 사용 (extracted 레거시 제거)
 const isRequestorBusiness = (businessDoc) => {
   const businessType = String(
-    businessDoc?.businessType || businessDoc?.extracted?.businessType || "",
+    businessDoc?.businessType || businessDoc?.metadata?.businessType || "",
   )
     .trim()
     .toLowerCase();

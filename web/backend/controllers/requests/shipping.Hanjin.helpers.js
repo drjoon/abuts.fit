@@ -150,22 +150,21 @@ const resolveBusinessOrganization = (request) => {
   return candidates.find((c) => c && typeof c === "object" && c._id) || null;
 };
 
+// SSOT: metadata 사용 (extracted 레거시 제거)
 const resolveOrganizationMeta = (business) => {
   if (!business || typeof business !== "object") return {};
-  return business.extracted && typeof business.extracted === "object"
-    ? business.extracted
-    : business.metadata && typeof business.metadata === "object"
-      ? business.metadata
-      : {};
+  return business.metadata && typeof business.metadata === "object"
+    ? business.metadata
+    : {};
 };
 
 const resolveRequestOrganizationName = (request) => {
   const requestor = request?.requestor || {};
   const business = resolveBusinessOrganization(request);
-  const extracted = resolveOrganizationMeta(business);
+  const metadata = resolveOrganizationMeta(business);
   return (
     business?.name ||
-    extracted?.companyName ||
+    metadata?.companyName ||
     requestor?.business ||
     request?.caseInfos?.clinicName ||
     requestor?.name ||
@@ -176,13 +175,13 @@ const resolveRequestOrganizationName = (request) => {
 const resolveReceiverZipSource = (request) => {
   const requestor = request?.requestor || {};
   const business = resolveBusinessOrganization(request);
-  const extracted = resolveOrganizationMeta(business);
+  const metadata = resolveOrganizationMeta(business);
   return (
     requestor?.address?.postalCode ||
     requestor?.zipCode ||
     requestor?.postalCode ||
-    extracted?.zipCode ||
-    extracted?.postalCode ||
+    metadata?.zipCode ||
+    metadata?.postalCode ||
     ""
   );
 };
@@ -190,14 +189,14 @@ const resolveReceiverZipSource = (request) => {
 const normalizeReceiverAddressForHanjin = (request) => {
   const requestor = request?.requestor || {};
   const business = resolveBusinessOrganization(request);
-  const extracted = resolveOrganizationMeta(business);
+  const metadata = resolveOrganizationMeta(business);
   const addressCandidates = [
     requestor?.addressText,
     requestor?.address?.roadAddress,
     requestor?.address?.address1,
     requestor?.address,
-    extracted?.address,
-    extracted?.address1,
+    metadata?.address,
+    metadata?.address1,
   ];
   return (
     addressCandidates
@@ -209,15 +208,15 @@ const normalizeReceiverAddressForHanjin = (request) => {
 const resolveReceiverDetailAddress = (request) => {
   const requestor = request?.requestor || {};
   const business = resolveBusinessOrganization(request);
-  const extracted = resolveOrganizationMeta(business);
+  const metadata = resolveOrganizationMeta(business);
   const candidates = [
     requestor?.address?.detailAddress,
     requestor?.address?.address2,
     requestor?.address?.detail,
     requestor?.detailAddress,
-    extracted?.addressDetail,
-    extracted?.detailAddress,
-    extracted?.address2,
+    metadata?.addressDetail,
+    metadata?.detailAddress,
+    metadata?.address2,
   ];
   const resolvedCandidate =
     candidates.map((value) => String(value || "").trim()).find(Boolean) || "";

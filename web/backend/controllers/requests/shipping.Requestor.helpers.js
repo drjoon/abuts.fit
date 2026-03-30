@@ -62,10 +62,11 @@ export const resolveRequestOrganizationName = (request) => {
           request.business._id
         ? request.business
         : {};
-  const extracted = requestorOrg?.extracted || {};
+  // SSOT: metadata 사용 (extracted 레거시 제거)
+  const metadata = requestorOrg?.metadata || {};
   return (
     requestorOrg?.name ||
-    extracted?.companyName ||
+    metadata?.companyName ||
     requestor?.business ||
     request?.caseInfos?.clinicName ||
     requestor?.name ||
