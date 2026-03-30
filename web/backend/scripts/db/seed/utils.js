@@ -1,7 +1,6 @@
 import crypto from "crypto";
 import mongoose from "mongoose";
 import User from "../../../models/user.model.js";
-import Business from "../../../models/business.model.js";
 import BusinessAnchor from "../../../models/businessAnchor.model.js";
 import { normalizeBusinessNumber } from "../../../utils/businessAnchor.utils.js";
 
@@ -150,18 +149,13 @@ export async function findOrCreateOrganization({
   // 가짜 BusinessAnchor가 생성되면 소개 관계(referredByAnchorId)가 실 anchor와 어긋나는 버그가 발생한다.
   skipBusinessAnchorCreation = true,
 }) {
-  let organization = await Business.findOne({
-    organizationType,
-    name,
-  });
-
   const businessNumberNormalized = normalizeBusinessNumber(
     extracted?.businessNumber || "",
   );
 
-  let businessAnchor = null;
+  let organization = null;
   if (!skipBusinessAnchorCreation && businessNumberNormalized) {
-    businessAnchor = await BusinessAnchor.findOneAndUpdate(
+    organization = await BusinessAnchor.findOneAndUpdate(
       { businessNumberNormalized },
       {
         $set: {
@@ -169,6 +163,8 @@ export async function findOrCreateOrganization({
           name,
           status: "verified",
           primaryContactUserId: ownerId || null,
+          owners: [ownerId].filter(Boolean),
+          members: [ownerId, ...memberIds].filter(Boolean),
           metadata: {
             companyName: String(extracted?.companyName || name || "").trim(),
             representativeName: String(
@@ -182,69 +178,89 @@ export async function findOrCreateOrganization({
             businessItem: String(extracted?.businessItem || "").trim(),
             businessCategory: String(extracted?.businessCategory || "").trim(),
             startDate: String(extracted?.startDate || "").trim(),
+            businessNumber: String(extracted?.businessNumber || "").trim(),
           },
+        },
+        $addToSet: {
+          owners: { $each: [ownerId].filter(Boolean) },
+          members: { $each: [ownerId, ...memberIds].filter(Boolean) },
         },
       },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
-  }
-
-  if (!organization) {
-    organization = await Business.create({
-      organizationType,
+  } else {
+    // skipBusinessAnchorCreation이 true인 경우, 기존 로직 유지를 위해 name으로 조회
+    organization = await BusinessAnchor.findOne({
       businessType: organizationType,
       name,
-      owner: ownerId,
-      owners: [],
-      members: [ownerId, ...memberIds],
-      joinRequests: [],
-      extracted,
-      businessAnchorId: skipBusinessAnchorCreation
-        ? organization?.businessAnchorId || null
-        : businessAnchor?._id || null,
     });
-  } else {
-    const nextMembers = [ownerId, ...memberIds].filter(Boolean);
-    const nextOwners = [ownerId].filter(Boolean);
-    await Business.updateOne(
-      { _id: organization._id },
-      {
-        $set: {
-          owner: ownerId,
-          name,
-          businessType: organizationType,
-          businessAnchorId: skipBusinessAnchorCreation
-            ? organization.businessAnchorId || null
-            : organization.businessAnchorId || businessAnchor?._id || null,
-          extracted: {
-            ...(organization.extracted || {}),
-            ...extracted,
+
+    if (!organization) {
+      organization = await BusinessAnchor.create({
+        businessType: organizationType,
+        name,
+        status: "verified",
+        primaryContactUserId: ownerId || null,
+        owners: [ownerId].filter(Boolean),
+        members: [ownerId, ...memberIds].filter(Boolean),
+        metadata: {
+          companyName: String(extracted?.companyName || name || "").trim(),
+          representativeName: String(
+            extracted?.representativeName || "",
+          ).trim(),
+          address: String(extracted?.address || "").trim(),
+          addressDetail: String(extracted?.addressDetail || "").trim(),
+          zipCode: String(extracted?.zipCode || "").trim(),
+          phoneNumber: String(extracted?.phoneNumber || "").trim(),
+          email: String(extracted?.email || "").trim(),
+          businessItem: String(extracted?.businessItem || "").trim(),
+          businessCategory: String(extracted?.businessCategory || "").trim(),
+          startDate: String(extracted?.startDate || "").trim(),
+          businessNumber: String(extracted?.businessNumber || "").trim(),
+        },
+      });
+    } else {
+      const nextMembers = [ownerId, ...memberIds].filter(Boolean);
+      const nextOwners = [ownerId].filter(Boolean);
+      await BusinessAnchor.updateOne(
+        { _id: organization._id },
+        {
+          $set: {
+            primaryContactUserId: ownerId,
+            name,
+            businessType: organizationType,
+            "metadata.companyName": String(
+              extracted?.companyName || name || "",
+            ).trim(),
+            "metadata.representativeName": String(
+              extracted?.representativeName || "",
+            ).trim(),
+            "metadata.address": String(extracted?.address || "").trim(),
+            "metadata.addressDetail": String(
+              extracted?.addressDetail || "",
+            ).trim(),
+            "metadata.zipCode": String(extracted?.zipCode || "").trim(),
+            "metadata.phoneNumber": String(extracted?.phoneNumber || "").trim(),
+            "metadata.email": String(extracted?.email || "").trim(),
+            "metadata.businessItem": String(
+              extracted?.businessItem || "",
+            ).trim(),
+            "metadata.businessCategory": String(
+              extracted?.businessCategory || "",
+            ).trim(),
+            "metadata.startDate": String(extracted?.startDate || "").trim(),
+            "metadata.businessNumber": String(
+              extracted?.businessNumber || "",
+            ).trim(),
+          },
+          $addToSet: {
+            owners: { $each: nextOwners },
+            members: { $each: nextMembers },
           },
         },
-        $addToSet: {
-          owners: { $each: nextOwners },
-          members: { $each: nextMembers },
-        },
-      },
-    );
-    organization = await Business.findById(organization._id);
-  }
-
-  if (
-    !skipBusinessAnchorCreation &&
-    businessAnchor &&
-    (!organization?.businessAnchorId ||
-      String(organization.businessAnchorId) !== String(businessAnchor._id))
-  ) {
-    await Business.updateOne(
-      { _id: organization._id },
-      {
-        $set: {
-          businessAnchorId: businessAnchor._id,
-        },
-      },
-    );
-    organization = await Business.findById(organization._id);
+      );
+      organization = await BusinessAnchor.findById(organization._id);
+    }
   }
 
   return organization;
