@@ -418,7 +418,7 @@ export default function AdminReferralGroupsPage() {
     enabled: Boolean(token && effectiveLeaderId && selectedGroupRow),
     queryFn: async () => {
       const res = await apiFetch<ApiGroupTreeResponse>({
-        path: `/api/admin/referral-groups/${effectiveLeaderId}${isDev ? "?refresh=1" : ""}`,
+        path: `/api/admin/referral-groups/${effectiveLeaderId}/tree`,
         method: "GET",
         token,
       });
@@ -580,7 +580,7 @@ export default function AdminReferralGroupsPage() {
 
   return (
     <div className="h-screen max-h-screen overflow-hidden p-4 flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 shrink-0">
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -668,21 +668,21 @@ export default function AdminReferralGroupsPage() {
               <div className="flex items-center gap-1">
                 <Button
                   type="button"
-                  variant={referrerTab === "salesman" ? "default" : "outline"}
+                  variant={referrerTab === "salesman" ? "default" : "ghost"}
                   size="sm"
                   onClick={() => setReferrerTab("salesman")}
-                  className="h-7 px-2"
+                  className="h-7 px-3"
                 >
-                  {roleBadge("salesman")}
+                  영업자
                 </Button>
                 <Button
                   type="button"
-                  variant={referrerTab === "devops" ? "default" : "outline"}
+                  variant={referrerTab === "devops" ? "default" : "ghost"}
                   size="sm"
                   onClick={() => setReferrerTab("devops")}
-                  className="h-7 px-2"
+                  className="h-7 px-3"
                 >
-                  {roleBadge("devops")}
+                  개발운영사
                 </Button>
               </div>
             </div>
@@ -851,49 +851,50 @@ export default function AdminReferralGroupsPage() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-3 flex-1 min-h-0">
-        {/* 열 1: 리더 목록 */}
-        <Card className="h-full flex flex-col min-h-0">
-          <CardHeader className="py-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <CardTitle className="text-base">리더 목록</CardTitle>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant={sortKey === "members" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setSortKey("members")}
-                >
-                  규모
-                </Button>
-                <Button
-                  type="button"
-                  variant={sortKey === "orders" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setSortKey("orders")}
-                >
-                  주문
-                </Button>
-                <Button
-                  type="button"
-                  variant={sortKey === "created" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setSortKey("created")}
-                >
-                  최신
-                </Button>
-              </div>
+      {/* 소개 네트워크 */}
+      <Card className="flex flex-col min-h-0 flex-1 overflow-hidden">
+        <CardHeader className="py-3 space-y-3 shrink-0">
+          {/* 상단 컨트롤 바 */}
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* 리더 선택 */}
+            <div className="flex items-center gap-2 flex-1 min-w-[300px]">
+              <span className="text-sm font-medium whitespace-nowrap">
+                리더
+              </span>
+              <select
+                value={effectiveLeaderId || ""}
+                onChange={(e) => {
+                  setSelectedLeaderId(e.target.value || null);
+                  setSelectedNode(null);
+                }}
+                className="flex-1 h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="">리더를 선택하세요</option>
+                {filteredGroups.map((g) => {
+                  const leader = g.leader || ({} as any);
+                  const displayName =
+                    leader.business ||
+                    leader.name ||
+                    leader.email ||
+                    leader._id;
+                  return (
+                    <option key={String(leader._id)} value={String(leader._id)}>
+                      {displayName} ({leader.role}) -{" "}
+                      {Number(g.memberCount || 0)}명
+                    </option>
+                  );
+                })}
+              </select>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-2 flex flex-col min-h-0 flex-1">
-            <div className="flex flex-wrap gap-2">
+
+            {/* 필터 */}
+            <div className="flex items-center gap-1">
               <Button
                 type="button"
                 variant={roleFilter === "all" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setRoleFilter("all")}
+                className="h-8"
               >
                 전체
               </Button>
@@ -902,6 +903,7 @@ export default function AdminReferralGroupsPage() {
                 variant={roleFilter === "requestor" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setRoleFilter("requestor")}
+                className="h-8"
               >
                 의뢰자
               </Button>
@@ -910,6 +912,7 @@ export default function AdminReferralGroupsPage() {
                 variant={roleFilter === "salesman" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setRoleFilter("salesman")}
+                className="h-8"
               >
                 영업자
               </Button>
@@ -918,361 +921,80 @@ export default function AdminReferralGroupsPage() {
                 variant={roleFilter === "devops" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setRoleFilter("devops")}
+                className="h-8"
               >
                 개발운영사
               </Button>
-              <Button
-                type="button"
-                variant={roleFilter === "referrer" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setRoleFilter("referrer")}
-              >
-                소개자
-              </Button>
             </div>
 
+            {/* 검색 */}
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="조직/이름/이메일 검색"
+              placeholder="검색..."
+              className="h-8 w-[200px]"
             />
-            <div
-              ref={listScrollRef}
-              className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-1"
-            >
-              {isGroupListLoading ? (
-                <div className="text-sm text-muted-foreground">로딩중...</div>
-              ) : filteredGroups.length === 0 ? (
-                <div className="text-sm text-muted-foreground">
-                  표시할 리더가 없습니다.
+          </div>
+
+          {/* 선택된 리더 정보 */}
+          {effectiveLeaderId && treeData?.tree ? (
+            <div className="flex items-start justify-between gap-4 p-3 rounded-lg bg-muted/30">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-semibold">
+                    {treeData.tree.business ||
+                      treeData.tree.name ||
+                      treeData.tree.email}
+                  </span>
+                  {roleBadge(treeData.tree.role)}
                 </div>
-              ) : (
-                visibleGroups.map((g) => {
-                  const leader = g.leader || ({} as any);
-                  const isSelected =
-                    String(leader._id) === String(effectiveLeaderId);
-                  const isReferrer = isCommissionLeader(
-                    String(leader.role || ""),
-                  );
-                  const orders = Number(g.groupTotalOrders || 0);
-                  const unit = Number(g.effectiveUnitPrice || 0);
-                  const commission = Number(g.commissionAmount || 0);
-                  const debugApplied = Boolean(
-                    (g as any)?.unitPriceDebug?.applied,
-                  );
-                  return (
-                    <button
-                      key={String(leader._id)}
-                      type="button"
-                      className={`w-full rounded-xl border p-2 text-left transition-colors ${
-                        isSelected ? "border-primary" : "border-border"
-                      }`}
-                      onClick={() => {
-                        setSelectedLeaderId(String(leader._id));
-                        setSelectedNode(null);
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold">
-                            {leader.business ||
-                              leader.name ||
-                              leader.email ||
-                              leader._id}
-                          </div>
-                          <div className="truncate text-xs text-muted-foreground">
-                            소개자 {leader.name || "-"}
-                          </div>
-                          <div className="mt-1 text-[11px] text-muted-foreground">
-                            {orders.toLocaleString()}건 ·{" "}
-                            {isReferrer ? "수수료" : "단가"}{" "}
-                            {formatMoney(isReferrer ? commission : unit)}원
-                          </div>
-                          {isDev && !isReferrer ? (
-                            <div className="mt-0.5 text-[10px] text-muted-foreground">
-                              debug: applied={String(debugApplied)}
-                            </div>
-                          ) : null}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {roleBadge(leader.role)}
-                          <Badge variant="outline">
-                            {Number(g.memberCount || 0)}
-                          </Badge>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })
+                <div className="text-xs text-muted-foreground">
+                  네트워크 {flattenedTree.length}명
+                  {isCommissionLeader(String(treeData.tree.role || "")) && (
+                    <>
+                      {" · "}직접 소개 {directReferralRequestors.length}개
+                      {" · "}간접 소개 {indirectReferralRequestors.length}개
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {isCommissionLeader(String(treeData.tree.role || "")) && (
+                <div className="text-right">
+                  <div className="text-lg font-bold">
+                    {formatMoney(totalCommissionSum)}원
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    직접 {formatMoney(directCommissionSum)} · 간접{" "}
+                    {formatMoney(indirectCommissionSum)}
+                  </div>
+                </div>
               )}
-
-              {visibleGroups.length < filteredGroups.length ? (
-                <div ref={listSentinelRef} className="h-8" aria-hidden="true" />
-              ) : null}
-              {visibleGroups.length < filteredGroups.length ? (
-                <div className="pb-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() =>
-                      setVisibleCount((prev) =>
-                        Math.min(prev + 6, filteredGroups.length),
-                      )
-                    }
-                  >
-                    더 보기
-                  </Button>
-                </div>
-              ) : null}
             </div>
-          </CardContent>
-        </Card>
+          ) : null}
+        </CardHeader>
 
-        {/* 열 2: 소개 네트워크 */}
-        <Card className="h-full flex flex-col min-h-0">
-          <CardHeader className="py-3">
-            <CardTitle className="text-base">소개 네트워크</CardTitle>
-            {effectiveLeaderId && treeData?.tree ? (
-              <CardDescription className="text-[11px]">
-                {treeData.tree.business ||
-                  treeData.tree.name ||
-                  treeData.tree.email ||
-                  ""}
-                {treeData.tree.businessAnchorId
-                  ? ` (anchor: ${treeData.tree.businessAnchorId})`
-                  : ""}
-              </CardDescription>
-            ) : null}
-          </CardHeader>
-          <CardContent className="flex flex-col min-h-0 flex-1 overflow-y-auto pr-1 space-y-4">
-            {isTreeLoading ? (
-              <div className="text-sm text-muted-foreground">로딩중...</div>
-            ) : !effectiveLeaderId || !treeData?.tree ? (
-              <div className="text-sm text-muted-foreground">
-                리더를 선택해주세요.
-              </div>
-            ) : (
-              <>
-                {/* 소개 네트워크 차트 */}
-                <div className="border rounded-lg p-4 bg-white min-h-[520px]">
-                  <ReferralNetworkChart
-                    data={treeData.tree}
-                    title="선택한 리더의 소개 네트워크"
-                    mode="radial-tree"
-                    legendRoles={["requestor", "salesman", "devops"]}
-                    chartHeight={560}
-                  />
-                </div>
-
-                {/* 네트워크 목록 */}
-                <div className="relative">
-                  <div className="space-y-0.5">
-                    {flattenedTree.slice(0, treeVisibleCount).map((item) => (
-                      <TreeNode
-                        key={item.node._id}
-                        node={item.node}
-                        depth={item.depth}
-                        onSelect={setSelectedNode}
-                      />
-                    ))}
-                    {treeVisibleCount < flattenedTree.length ? (
-                      <div className="pt-2 flex justify-center">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            setTreeVisibleCount((prev) =>
-                              Math.min(prev + 10, flattenedTree.length),
-                            )
-                          }
-                        >
-                          더 보기
-                        </Button>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* 열 3: 수수료 */}
-        <Card className="h-full flex flex-col min-h-0">
-          <CardHeader className="py-3">
-            <CardTitle className="text-base">수수료</CardTitle>
-            {effectiveLeaderId &&
-            treeData?.tree &&
-            isCommissionLeader(String(treeData.tree.role || "")) ? (
-              <CardDescription className="text-[11px]">
-                직접 5%: {formatMoney(directCommissionSum)}원 · 간접 2.5%:{" "}
-                {formatMoney(indirectCommissionSum)}원 · 합계:{" "}
-                {formatMoney(totalCommissionSum)}원
-              </CardDescription>
-            ) : null}
-          </CardHeader>
-          <CardContent className="flex flex-col min-h-0 flex-1 overflow-y-auto pr-1 space-y-4">
-            {isTreeLoading ? (
-              <div className="text-sm text-muted-foreground">로딩중...</div>
-            ) : !effectiveLeaderId || !treeData?.tree ? (
-              <div className="text-sm text-muted-foreground">
-                리더를 선택해주세요.
-              </div>
-            ) : !isCommissionLeader(String(treeData.tree.role || "")) ? (
-              <div className="text-sm text-muted-foreground">
-                소개자 리더 선택 시 수수료가 표시됩니다.
-              </div>
-            ) : (
-              <>
-                {/* 직접 소개 */}
-                <div>
-                  <div className="mb-2 flex items-center gap-2">
-                    <span className="text-sm font-semibold">직접 소개</span>
-                    <Badge className="bg-emerald-600 text-white hover:bg-emerald-600 text-[10px] px-1.5 py-0">
-                      5%
-                    </Badge>
-                    <span className="text-[11px] text-muted-foreground">
-                      {directReferralRequestors.length}개 조직
-                    </span>
-                  </div>
-                  {directReferralRequestors.length === 0 ? (
-                    <div className="text-xs text-muted-foreground pl-2">
-                      직접 소개한 의뢰자 없음
-                    </div>
-                  ) : (
-                    <div className="space-y-1 pl-2 border-l-2 border-emerald-200">
-                      {directReferralRequestors.map((r) => {
-                        const paidOrders = Number(r.lastMonthPaidOrders || 0);
-                        const bonusOrders = Number(r.lastMonthBonusOrders || 0);
-                        const paidRevenue = Number(r.lastMonthPaidRevenue || 0);
-                        const bonusRevenue = Number(
-                          r.lastMonthBonusRevenue || 0,
-                        );
-                        const commission = Math.round(paidRevenue * 0.05);
-                        return (
-                          <button
-                            key={String(r._id)}
-                            type="button"
-                            className="w-full text-left rounded-md hover:bg-muted/40 px-2 py-1"
-                            onClick={() => setSelectedNode(r)}
-                          >
-                            <div className="truncate text-sm font-medium">
-                              {r.business || r.name || r.email || r._id}
-                            </div>
-                            <div className="text-[11px] text-muted-foreground">
-                              유료 {paidOrders.toLocaleString()}건
-                              {bonusOrders > 0 ? (
-                                <span className="text-muted-foreground/60">
-                                  {" "}
-                                  ({bonusOrders.toLocaleString()}건 무료)
-                                </span>
-                              ) : null}
-                            </div>
-                            <div className="text-[11px] text-muted-foreground">
-                              유료 {formatMoney(paidRevenue)}원
-                              {bonusRevenue > 0 ? (
-                                <span className="text-muted-foreground/60">
-                                  {" "}
-                                  ({formatMoney(bonusRevenue)}원 무료)
-                                </span>
-                              ) : null}
-                            </div>
-                            {commission > 0 ? (
-                              <div className="text-[11px] font-semibold text-emerald-700">
-                                수수료 {formatMoney(commission)}원
-                              </div>
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* 간접 소개 */}
-                <div>
-                  <div className="mb-2 flex items-center gap-2">
-                    <span className="text-sm font-semibold">간접 소개</span>
-                    <Badge className="bg-blue-600 text-white hover:bg-blue-600 text-[10px] px-1.5 py-0">
-                      2.5%
-                    </Badge>
-                    <span className="text-[11px] text-muted-foreground">
-                      {indirectReferralRequestors.length}개 조직
-                    </span>
-                  </div>
-                  {indirectReferralRequestors.length === 0 ? (
-                    <div className="text-xs text-muted-foreground pl-2">
-                      간접 소개한 의뢰자 없음
-                    </div>
-                  ) : (
-                    <div className="space-y-3 pl-2 border-l-2 border-blue-200">
-                      {indirectReferralRequestors.map(
-                        ({ requestor: r, via }) => {
-                          const paidOrders = Number(r.lastMonthPaidOrders || 0);
-                          const bonusOrders = Number(
-                            r.lastMonthBonusOrders || 0,
-                          );
-                          const paidRevenue = Number(
-                            r.lastMonthPaidRevenue || 0,
-                          );
-                          const bonusRevenue = Number(
-                            r.lastMonthBonusRevenue || 0,
-                          );
-                          const commission = Math.round(paidRevenue * 0.025);
-                          return (
-                            <button
-                              key={String(r._id)}
-                              type="button"
-                              className="w-full text-left rounded-md hover:bg-muted/40 px-2 py-1"
-                              onClick={() => setSelectedNode(r)}
-                            >
-                              <div className="text-[10px] text-muted-foreground/70 mb-0.5">
-                                경유:{" "}
-                                {via.business ||
-                                  via.name ||
-                                  via.email ||
-                                  via._id}
-                              </div>
-                              <div className="truncate text-sm font-medium">
-                                {r.business || r.name || r.email || r._id}
-                              </div>
-                              <div className="text-[11px] text-muted-foreground">
-                                유료 {paidOrders.toLocaleString()}건
-                                {bonusOrders > 0 ? (
-                                  <span className="text-muted-foreground/60">
-                                    {" "}
-                                    ({bonusOrders.toLocaleString()}건 무료)
-                                  </span>
-                                ) : null}
-                              </div>
-                              <div className="text-[11px] text-muted-foreground">
-                                유료 {formatMoney(paidRevenue)}원
-                                {bonusRevenue > 0 ? (
-                                  <span className="text-muted-foreground/60">
-                                    {" "}
-                                    ({formatMoney(bonusRevenue)}원 무료)
-                                  </span>
-                                ) : null}
-                              </div>
-                              {commission > 0 ? (
-                                <div className="text-[11px] font-semibold text-blue-700">
-                                  수수료 {formatMoney(commission)}원
-                                </div>
-                              ) : null}
-                            </button>
-                          );
-                        },
-                      )}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+        <CardContent className="flex-1 min-h-0 flex items-center justify-center overflow-hidden">
+          {isTreeLoading ? (
+            <div className="text-muted-foreground">로딩중...</div>
+          ) : !effectiveLeaderId || !treeData?.tree ? (
+            <div className="text-center text-muted-foreground">
+              <div className="text-lg mb-2">👆</div>
+              <div>리더를 선택하면 소개 네트워크를 확인할 수 있습니다</div>
+            </div>
+          ) : (
+            <div className="w-full h-full">
+              <ReferralNetworkChart
+                data={treeData.tree}
+                title=""
+                mode="radial-tree"
+                legendRoles={["requestor", "salesman", "devops"]}
+                chartHeight={600}
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Dialog
         open={Boolean(selectedNode)}

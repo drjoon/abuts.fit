@@ -81,22 +81,22 @@ function pickRepresentativeUser(users) {
 export async function getReferralGroups(req, res) {
   try {
     const refresh = String(req.query.refresh || "") === "1";
-    const startDateRaw = String(req.query.startDate || "").trim();
-    const endDateRaw = String(req.query.endDate || "").trim();
-    const hasPeriodFilter = Boolean(startDateRaw || endDateRaw);
-    const cacheKeySuffix = hasPeriodFilter
-      ? `:${startDateRaw}:${endDateRaw}`
-      : "";
+    const { startDate, endDate } = req.query;
+    const startDateRaw = String(startDate || "").trim();
+    const endDateRaw = String(endDate || "").trim();
+
+    // 캐시 키 생성
+    const cacheKey = `referral-groups:v2:${startDate || ""}:${endDate || ""}`;
     if (!refresh) {
-      const cached = getAdminReferralCache(
-        `referral-groups:v7${cacheKeySuffix}`,
-      );
-      if (cached) return res.status(200).json(cached);
+      const cached = getAdminReferralCache(cacheKey);
+      if (cached) {
+        return res.status(200).json(cached);
+      }
     }
 
     // BusinessAnchor 기반 리더 조회 (SSOT)
     const rawLeaderAnchors = await BusinessAnchor.find({
-      $or: REFERRAL_LEADER_BUSINESS_TYPE_FILTER,
+      businessType: { $in: REFERRAL_TREE_ROLES },
     })
       .select({
         _id: 1,
@@ -197,8 +197,8 @@ export async function getReferralGroups(req, res) {
           Types.ObjectId.isValid(id) && !rollingAggregateAnchorIds.has(id),
       );
 
-    if (missingLeaderAnchorIds.length) {
-      // 병렬로 스냅샷 재계산
+    if (missingLeaderAnchorIds.length && refresh) {
+      // refresh=1일 때만 재계산 (성능 최적화)
       const recomputeResults = await Promise.allSettled(
         missingLeaderAnchorIds.map((leaderBusinessAnchorId) =>
           recomputePricingReferralSnapshotForLeaderAnchorId(
@@ -207,9 +207,12 @@ export async function getReferralGroups(req, res) {
         ),
       );
 
-      // 재조회
+      // 재조회 - 필요한 ID만
       const freshAggregates = await PricingReferralRolling30dAggregate.find({
         ymd,
+        businessAnchorId: {
+          $in: missingLeaderAnchorIds.map((id) => new Types.ObjectId(id)),
+        },
       })
         .select({
           businessAnchorId: 1,
@@ -499,7 +502,7 @@ export async function getReferralGroups(req, res) {
     if (!refresh) {
       // 5분 TTL 캐시
       setAdminReferralCache(
-        `referral-groups:v7${cacheKeySuffix}`,
+        cacheKey,
         payload,
         300000, // 5분
       );
@@ -527,83 +530,57 @@ export async function getReferralGroupTree(req, res) {
         .json({ success: false, message: "유효하지 않은 리더 ID입니다." });
     }
 
+    const refresh = String(req.query.refresh || "") === "1";
+
+    // BusinessAnchor 기반 조회 (SSOT)
+    const leaderAnchor = await BusinessAnchor.findById(leaderId)
+      .select({
+        _id: 1,
+        businessType: 1,
+        name: 1,
+        metadata: 1,
+        primaryContactUserId: 1,
+        referredByAnchorId: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        status: 1,
+      })
+      .lean();
+
+    if (
+      !leaderAnchor ||
+      !REFERRAL_TREE_ROLES.includes(String(leaderAnchor.businessType || ""))
+    ) {
+      const error = new Error("리더 사업자를 찾을 수 없습니다.");
+      error.statusCode = 404;
+      throw error;
+    }
+
     // 본인 또는 admin만 접근 가능
+    const primaryContactUserId = String(
+      leaderAnchor.primaryContactUserId || "",
+    );
     if (
       requestingUserRole !== "admin" &&
-      String(leaderId) !== requestingUserId
+      primaryContactUserId &&
+      primaryContactUserId !== requestingUserId
     ) {
       return res
         .status(403)
         .json({ success: false, message: "권한이 없습니다." });
     }
 
-    const refresh = String(req.query.refresh || "") === "1";
-    const leader = await User.findById(leaderId)
-      .select({
-        _id: 1,
-        role: 1,
-        subRole: 1,
-        name: 1,
-        email: 1,
-        business: 1,
-        businessAnchorId: 1,
-        active: 1,
-        createdAt: 1,
-        approvedAt: 1,
-        updatedAt: 1,
-        referredByAnchorId: 1,
-      })
-      .lean();
-
-    if (!leader || !REFERRAL_TREE_ROLES.includes(String(leader.role || ""))) {
-      const error = new Error("리더를 찾을 수 없습니다.");
-      error.statusCode = 404;
-      throw error;
-    }
-
-    const leaderBusinessAnchorIdForCache = String(
-      leader?.businessAnchorId || "",
-    ).trim();
-    const cacheKey = `referral-group-tree:v11:${leaderId}:anchor=${leaderBusinessAnchorIdForCache}:lite=${lite ? 1 : 0}`;
+    const cacheKey = `referral-group-tree:v12:${leaderId}:lite=${lite ? 1 : 0}`;
     if (!refresh) {
       const cached = getAdminReferralCache(cacheKey);
       if (cached) return res.status(200).json(cached);
     }
 
     const computeTree = async () => {
-      const leaderBusinessAnchorId = String(leader?.businessAnchorId || "");
-      if (!Types.ObjectId.isValid(leaderBusinessAnchorId)) {
-        const error = new Error(
-          "리더의 사업자 정보가 없어 그룹 트리를 구성할 수 없습니다.",
-        );
-        error.statusCode = 400;
-        throw error;
-      }
+      const rootBusinessAnchorId = String(leaderId);
 
-      // 트리의 canonical node는 User가 아니라 BusinessAnchor다.
-      // 각 계정은 항상 자기 자신의 사업자를 루트로 본다.
-      // 따라서 루트는 상위 소개자 ancestor가 아니라 요청한 리더의 businessAnchorId다.
-      const rootBusinessAnchorId = String(leaderBusinessAnchorId);
-
-      const leaderAnchor = await BusinessAnchor.findById(rootBusinessAnchorId)
-        .select({
-          _id: 1,
-          businessType: 1,
-          name: 1,
-          metadata: 1,
-          referredByAnchorId: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          status: 1,
-        })
-        .lean();
-      if (!leaderAnchor) {
-        const error = new Error("리더 사업자 정보를 찾을 수 없습니다.");
-        error.statusCode = 404;
-        throw error;
-      }
-
-      const isRequestorCircleGroup = String(leader?.role || "") === "requestor";
+      const isRequestorCircleGroup =
+        String(leaderAnchor?.businessType || "") === "requestor";
       let anchorMembers;
       if (isRequestorCircleGroup) {
         const circleAnchorIds = await getDirectReferralCircleAnchorIds(
@@ -860,31 +837,21 @@ export async function getReferralGroupTree(req, res) {
         }
       }
 
-      const effectiveRootAnchor = leaderAnchor;
-      const rootLeaderUser = leader;
-
       const rootNode = nodeById.get(String(rootBusinessAnchorId)) || {
         _id: rootBusinessAnchorId,
-        role:
-          rootLeaderUser?.role ||
-          effectiveRootAnchor?.businessType ||
-          "requestor",
-        subRole: rootLeaderUser?.subRole || null,
-        name: rootLeaderUser?.name || effectiveRootAnchor?.name || "",
-        email:
-          rootLeaderUser?.email || effectiveRootAnchor?.metadata?.email || "",
-        business: rootLeaderUser?.business || effectiveRootAnchor?.name || "",
+        role: leaderAnchor?.businessType || "requestor",
+        subRole: null,
+        name: leaderAnchor?.name || "",
+        email: leaderAnchor?.metadata?.email || "",
+        business: leaderAnchor?.name || "",
         businessAnchorId: rootBusinessAnchorId,
         active:
-          rootLeaderUser?.active ??
-          (String(effectiveRootAnchor?.status || "") !== "inactive" &&
-            String(effectiveRootAnchor?.status || "") !== "merged"),
-        createdAt:
-          rootLeaderUser?.createdAt || effectiveRootAnchor?.createdAt || null,
-        approvedAt: rootLeaderUser?.approvedAt || null,
-        updatedAt:
-          rootLeaderUser?.updatedAt || effectiveRootAnchor?.updatedAt || null,
-        referredByAnchorId: effectiveRootAnchor?.referredByAnchorId || null,
+          String(leaderAnchor?.status || "") !== "inactive" &&
+          String(leaderAnchor?.status || "") !== "merged",
+        createdAt: leaderAnchor?.createdAt || null,
+        approvedAt: null,
+        updatedAt: leaderAnchor?.updatedAt || null,
+        referredByAnchorId: leaderAnchor?.referredByAnchorId || null,
         children: [],
       };
       if (
@@ -927,7 +894,15 @@ export async function getReferralGroupTree(req, res) {
       return {
         success: true,
         data: {
-          leader,
+          leader: {
+            _id: leaderAnchor._id,
+            role: leaderAnchor.businessType,
+            name: leaderAnchor.name || "",
+            email: leaderAnchor.metadata?.email || "",
+            business: leaderAnchor.name || "",
+            businessAnchorId: leaderAnchor._id,
+            referredByAnchorId: leaderAnchor.referredByAnchorId,
+          },
           memberCount: nodes.length,
           tree: rootNode,
         },
