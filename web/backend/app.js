@@ -239,8 +239,10 @@ import cncMachineRoutes from "./modules/cnc/cncMachine.routes.js";
 import salesmanRoutes from "./modules/salesman/salesman.routes.js";
 import snapshotRoutes from "./modules/snapshots/snapshot.routes.js";
 import referralGroupsRoutes from "./modules/referralGroups/referralGroups.routes.js";
+import systemRoutes from "./modules/system/system.routes.js";
 
 // 라우트 설정
+app.use("/api/system", systemRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/requests/drafts", draftRequestRoutes);

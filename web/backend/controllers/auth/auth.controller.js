@@ -961,9 +961,16 @@ async function getCurrentUser(req, res) {
       });
     }
 
+    // DB 버전 추가 (프론트엔드 localStorage 초기화 판단용)
+    const { getDbVersion } = await import("../../config/dbVersion.js");
+    const dbVersion = getDbVersion();
+
     res.status(200).json({
       success: true,
-      data: freshUser,
+      data: {
+        ...freshUser,
+        dbVersion,
+      },
     });
   } catch (error) {
     res.set("x-abuts-handler", "auth.getCurrentUser");

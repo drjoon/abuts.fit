@@ -68,7 +68,7 @@
 - `useAuthStore`의 `loginWithToken` 함수가 `/api/auth/me`를 호출하여 최신 정보 반영
 - 사업자 정보 업데이트 후 프론트엔드는 자동으로 최신 사용자 정보를 받게 됨
 
-**사업자 정보 저장 후 데이터 동기화 (2026-03-31 버그 수정):**
+**사업자 정보 저장 후 데이터 동기화 (2026-03-31 버그 수정 #1):**
 
 - **문제**: 온보딩 완료 후 사업자등록증 파일과 일부 필드가 화면에서 사라지는 버그 발생
 - **원인**:
@@ -79,6 +79,19 @@
   2. `business.update.controller.js`: 업데이트 후 조회 시 `businessLicense` 필드를 select에 포함 (748번 라인)
   3. `BusinessTab.tsx`: 저장 성공 후 `invalidateBusinessMeCache` 호출 및 `force: true` 옵션으로 서버 데이터 강제 재로드 (301-316번 라인)
 - **핵심**: 저장 성공 후에는 로컬 상태보다 **서버 데이터를 우선**하여 SSOT 원칙 준수
+
+**온보딩 단계 건너뛰기 방지 (2026-03-31 버그 수정 #2):**
+
+- **문제**: DB 리셋 후 로그인 시 온보딩 1/4 단계가 아닌 4/4 단계로 바로 이동
+- **원인**: 브라우저 localStorage에 이전 온보딩 진행 상태가 남아있어서 복원됨
+- **해결**: DB 버전 기반 localStorage 초기화
+  1. **백엔드**: `/web/backend/config/dbVersion.js`에서 `DB_VERSION` 상수 관리
+  2. **백엔드**: `/web/backend/scripts/db/reset.js`가 DB 리셋 시 자동으로 버전 증가
+  3. **백엔드**: `/api/auth/me`에서 `dbVersion` 필드를 함께 반환
+  4. **프론트엔드**: `SettingsWizard.tsx`에서 localStorage의 `dbVersion`과 서버의 `dbVersion` 비교
+  5. **프론트엔드**: 버전이 다르면 온보딩 관련 localStorage 초기화 후 첫 단계부터 시작
+- **핵심**: 정상적인 온보딩 진행 중에는 localStorage 유지, DB 리셋 시에만 초기화
+- **DB 리셋 절차**: `node web/backend/scripts/db/reset.js` 실행 (DB 버전 자동 증가 + DB 리셋)
 
 ### 2.1 저장소 구조
 

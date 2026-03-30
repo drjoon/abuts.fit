@@ -73,8 +73,26 @@ export const SettingsWizard = ({
   const fallbackStepStorageKey = useMemo(() => {
     return `onboarding:wizard-step:${businessType}:${mode}`;
   }, [businessType, mode]);
+  const dbVersion = user?.dbVersion;
   const readStoredStep = useCallback(() => {
     if (typeof window === "undefined") return null;
+
+    // DB 버전이 다르면 저장된 단계를 무시하고 처음부터 시작
+    if (dbVersion !== window.localStorage.getItem("dbVersion")) {
+      // 이전 진행 상태 정리
+      try {
+        window.localStorage.removeItem(stepStorageKey);
+        window.localStorage.removeItem(legacyStepStorageKey);
+        window.localStorage.removeItem(fallbackStepStorageKey);
+        window.localStorage.removeItem(roleStorageKey);
+        window.localStorage.removeItem(legacyRoleStorageKey);
+        window.localStorage.removeItem(fallbackRoleStorageKey);
+      } catch {
+        // ignore
+      }
+      return null;
+    }
+
     const raw =
       window.localStorage.getItem(stepStorageKey) ||
       window.localStorage.getItem(legacyStepStorageKey) ||
@@ -88,13 +106,27 @@ export const SettingsWizard = ({
       window.localStorage.removeItem(legacyStepStorageKey);
     }
     return resolved;
-  }, [fallbackStepStorageKey, legacyStepStorageKey, stepStorageKey]);
+  }, [
+    dbVersion,
+    fallbackStepStorageKey,
+    legacyStepStorageKey,
+    stepStorageKey,
+    roleStorageKey,
+    legacyRoleStorageKey,
+    fallbackRoleStorageKey,
+  ]);
   const [currentStep, setCurrentStep] = useState<WizardStepId | null>(
     () => readStoredStep() || "profile",
   );
   const [selectedRole, setSelectedRole] = useState<"owner" | "member" | null>(
     () => {
       if (typeof window === "undefined") return null;
+
+      // DB 버전이 다르면 저장된 역할을 무시
+      if (dbVersion !== window.localStorage.getItem("dbVersion")) {
+        return null;
+      }
+
       const storedRole =
         window.localStorage.getItem(roleStorageKey) ||
         window.localStorage.getItem(legacyRoleStorageKey) ||
@@ -164,6 +196,13 @@ export const SettingsWizard = ({
   const handleValidate = useCallback(() => {
     validateActionRef.current?.();
   }, []);
+
+  // DB 버전 저장 (DB 리셋 감지용)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!dbVersion) return;
+    window.localStorage.setItem("dbVersion", dbVersion);
+  }, [dbVersion]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !currentStep) return;
