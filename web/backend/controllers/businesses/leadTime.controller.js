@@ -1,4 +1,4 @@
-import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 
 const DEFAULT_LEAD_TIMES = {
   d6: { minBusinessDays: 1, maxBusinessDays: 2 },
@@ -15,7 +15,7 @@ export async function getManufacturerLeadTimes(req, res) {
   try {
     res.set("x-abuts-handler", "leadTime.getManufacturerLeadTimes");
 
-    const latestManufacturer = await Business.findOne({
+    const latestManufacturer = await BusinessAnchor.findOne({
       businessType: "manufacturer",
       "shippingPolicy.leadTimes": { $exists: true },
     })
@@ -75,7 +75,7 @@ export async function getManufacturerLeadTimes(req, res) {
  */
 export async function getManufacturerLeadTimesUtil() {
   try {
-    const latestManufacturer = await Business.findOne({
+    const latestManufacturer = await BusinessAnchor.findOne({
       businessType: "manufacturer",
       "shippingPolicy.leadTimes": { $exists: true },
     })
