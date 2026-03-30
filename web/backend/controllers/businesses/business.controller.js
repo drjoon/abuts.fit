@@ -1,4 +1,3 @@
-import Business from "../../models/business.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import s3Utils from "../../utils/s3.utils.js";

@@ -1,6 +1,5 @@
 import User from "../../models/user.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
-import Business from "../../models/business.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import crypto from "crypto";
 import { messageService } from "../../utils/popbill.util.js";
