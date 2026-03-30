@@ -60,7 +60,7 @@ export function RequestorOrganizationsTab({
                   의뢰자가 없습니다.
                 </div>
               ) : (
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-2">
                   {[...requestorBusinesses]
                     .sort((a, b) => {
                       if (orgSortKey === "paidBalance") {
@@ -87,16 +87,30 @@ export function RequestorOrganizationsTab({
                       );
                     })
                     .map((business) => {
+                      const paidCredit = Number(business.paidCredit || 0);
+                      const bonusRequestCredit = Number(
+                        business.bonusRequestCredit || 0,
+                      );
+                      const bonusShippingCredit = Number(
+                        business.bonusShippingCredit || 0,
+                      );
                       const chargedPaid = Number(
                         business.chargedPaidAmount || 0,
                       );
-                      const chargedBonus = Number(
-                        business.chargedBonusAmount || 0,
+                      const chargedBonusRequest = Number(
+                        business.chargedBonusRequestAmount || 0,
+                      );
+                      const chargedBonusShipping = Number(
+                        business.chargedBonusShippingAmount || 0,
                       );
                       const spentPaid = Number(business.spentPaidAmount || 0);
-                      const spentBonus = Number(business.spentBonusAmount || 0);
-                      const paidRemain = Number(business.paidBalance || 0);
-                      const bonusRemain = Number(business.bonusBalance || 0);
+                      const spentBonusRequest = Number(
+                        business.spentBonusRequestAmount || 0,
+                      );
+                      const spentBonusShipping = Number(
+                        business.spentBonusShippingAmount || 0,
+                      );
+
                       return (
                         <Card
                           key={business._id}
@@ -121,53 +135,98 @@ export function RequestorOrganizationsTab({
                               </div>
                             </div>
                           </CardHeader>
-                          <CardContent className="grid grid-cols-2 gap-3 text-sm">
+                          <CardContent className="space-y-4 text-sm">
                             <div>
-                              <div className="text-muted-foreground">
-                                잔여크레딧(구매)
+                              <div className="text-xs font-semibold text-muted-foreground mb-2">
+                                잔여 크레딧
                               </div>
-                              <div className="font-semibold">
-                                {paidRemain.toLocaleString()}원
+                              <div className="grid grid-cols-3 gap-2">
+                                <div>
+                                  <div className="text-[11px] text-muted-foreground">
+                                    유료
+                                  </div>
+                                  <div className="font-semibold">
+                                    {paidCredit.toLocaleString()}원
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-[11px] text-muted-foreground">
+                                    무료·의뢰
+                                  </div>
+                                  <div className="font-semibold">
+                                    {bonusRequestCredit.toLocaleString()}원
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-[11px] text-muted-foreground">
+                                    무료·배송
+                                  </div>
+                                  <div className="font-semibold">
+                                    {bonusShippingCredit.toLocaleString()}원
+                                  </div>
+                                </div>
                               </div>
                             </div>
                             <div>
-                              <div className="text-muted-foreground">
-                                잔여크레딧(무료)
+                              <div className="text-xs font-semibold text-muted-foreground mb-2">
+                                충전 크레딧
                               </div>
-                              <div className="font-semibold">
-                                {bonusRemain.toLocaleString()}원
+                              <div className="grid grid-cols-3 gap-2">
+                                <div>
+                                  <div className="text-[11px] text-muted-foreground">
+                                    유료
+                                  </div>
+                                  <div className="font-medium">
+                                    {chargedPaid.toLocaleString()}원
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-[11px] text-muted-foreground">
+                                    무료·의뢰
+                                  </div>
+                                  <div className="font-medium">
+                                    {chargedBonusRequest.toLocaleString()}원
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-[11px] text-muted-foreground">
+                                    무료·배송
+                                  </div>
+                                  <div className="font-medium">
+                                    {chargedBonusShipping.toLocaleString()}원
+                                  </div>
+                                </div>
                               </div>
                             </div>
                             <div>
-                              <div className="text-muted-foreground">
-                                충전크레딧(구매)
+                              <div className="text-xs font-semibold text-muted-foreground mb-2">
+                                사용 크레딧
                               </div>
-                              <div className="font-medium">
-                                {chargedPaid.toLocaleString()}원
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-muted-foreground">
-                                충전크레딧(무료)
-                              </div>
-                              <div className="font-medium">
-                                {chargedBonus.toLocaleString()}원
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-muted-foreground">
-                                사용크레딧(구매)
-                              </div>
-                              <div className="font-medium">
-                                {spentPaid.toLocaleString()}원
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-muted-foreground">
-                                사용크레딧(무료)
-                              </div>
-                              <div className="font-medium">
-                                {spentBonus.toLocaleString()}원
+                              <div className="grid grid-cols-3 gap-2">
+                                <div>
+                                  <div className="text-[11px] text-muted-foreground">
+                                    유료
+                                  </div>
+                                  <div className="font-medium">
+                                    {spentPaid.toLocaleString()}원
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-[11px] text-muted-foreground">
+                                    무료·의뢰
+                                  </div>
+                                  <div className="font-medium">
+                                    {spentBonusRequest.toLocaleString()}원
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-[11px] text-muted-foreground">
+                                    무료·배송
+                                  </div>
+                                  <div className="font-medium">
+                                    {spentBonusShipping.toLocaleString()}원
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           </CardContent>

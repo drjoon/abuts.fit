@@ -108,24 +108,6 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
     ]),
   );
 
-  const resolvedBusinessAnchorIdByBusinessId = new Map();
-  for (const business of businesses || []) {
-    const businessId = normalizeObjectIdString(business?._id);
-    const directAnchorId = normalizeObjectIdString(business?.businessAnchorId);
-    const normalizedBusinessNumber = String(
-      business?.extracted?.businessNumber || "",
-    )
-      .replace(/\D/g, "")
-      .trim();
-    const resolvedAnchorId =
-      directAnchorId ||
-      String(anchorIdBySourceBusinessId.get(businessId) || "") ||
-      String(anchorIdByBusinessNumber.get(normalizedBusinessNumber) || "");
-    if (businessId) {
-      resolvedBusinessAnchorIdByBusinessId.set(businessId, resolvedAnchorId);
-    }
-  }
-
   const salesmenById = new Map(
     (salesmen || []).map((salesman) => [String(salesman?._id || ""), salesman]),
   );
@@ -134,10 +116,9 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
     (salesmen || [])
       .map((salesman) => {
         const salesmanId = normalizeObjectIdString(salesman?._id);
-        const businessId = normalizeObjectIdString(salesman?.businessId);
-        const businessAnchorId =
-          normalizeObjectIdString(salesman?.businessAnchorId) ||
-          String(resolvedBusinessAnchorIdByBusinessId.get(businessId) || "");
+        const businessAnchorId = normalizeObjectIdString(
+          salesman?.businessAnchorId,
+        );
         return salesmanId && businessAnchorId
           ? [businessAnchorId, salesmanId]
           : null;

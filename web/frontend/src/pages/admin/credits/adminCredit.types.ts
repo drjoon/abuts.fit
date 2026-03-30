@@ -40,10 +40,14 @@ export type CreditStats = {
   totalCharged: number;
   totalSpent: number;
   totalBonus: number;
+  totalBonusRequest?: number;
+  totalBonusShipping?: number;
   totalSpentPaidAmount?: number;
-  totalSpentBonusAmount?: number;
-  totalPaidBalance?: number;
-  totalBonusBalance?: number;
+  totalSpentBonusRequestAmount?: number;
+  totalSpentBonusShippingAmount?: number;
+  totalPaidCredit?: number;
+  totalBonusRequestCredit?: number;
+  totalBonusShippingCredit?: number;
 };
 
 export type SalesmanCreditRow = {
@@ -117,11 +121,18 @@ export type BusinessCredit = {
   balance: number;
   paidBalance: number;
   bonusBalance: number;
+  paidCredit?: number;
+  bonusRequestCredit?: number;
+  bonusShippingCredit?: number;
   spentAmount?: number;
   chargedPaidAmount?: number;
   chargedBonusAmount?: number;
+  chargedBonusRequestAmount?: number;
+  chargedBonusShippingAmount?: number;
   spentPaidAmount?: number;
   spentBonusAmount?: number;
+  spentBonusRequestAmount?: number;
+  spentBonusShippingAmount?: number;
 };
 
 export type ChargeOrder = {

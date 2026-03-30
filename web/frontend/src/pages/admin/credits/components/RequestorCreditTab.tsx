@@ -165,7 +165,12 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
               유료 {(props.stats?.totalCharged || 0).toLocaleString()}원
             </div>
             <div className="text-xs text-muted-foreground">
-              무료 {(props.stats?.totalBonus || 0).toLocaleString()}원
+              무료(의뢰){" "}
+              {(props.stats?.totalBonusRequest || 0).toLocaleString()}원
+            </div>
+            <div className="text-xs text-muted-foreground">
+              무료(배송){" "}
+              {(props.stats?.totalBonusShipping || 0).toLocaleString()}원
             </div>
           </CardContent>
         </Card>
@@ -178,15 +183,21 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
               {props.loadingStats
                 ? "..."
                 : `${(
-                    (props.stats?.totalPaidBalance || 0) +
-                    (props.stats?.totalBonusBalance || 0)
+                    (props.stats?.totalPaidCredit || 0) +
+                    (props.stats?.totalBonusRequestCredit || 0) +
+                    (props.stats?.totalBonusShippingCredit || 0)
                   ).toLocaleString()}원`}
             </div>
             <div className="text-xs text-muted-foreground">
-              유료 {(props.stats?.totalPaidBalance || 0).toLocaleString()}원
+              유료 {(props.stats?.totalPaidCredit || 0).toLocaleString()}원
             </div>
             <div className="text-xs text-muted-foreground">
-              무료 {(props.stats?.totalBonusBalance || 0).toLocaleString()}원
+              무료(의뢰){" "}
+              {(props.stats?.totalBonusRequestCredit || 0).toLocaleString()}원
+            </div>
+            <div className="text-xs text-muted-foreground">
+              무료(배송){" "}
+              {(props.stats?.totalBonusShippingCredit || 0).toLocaleString()}원
             </div>
           </CardContent>
         </Card>
@@ -204,7 +215,17 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
               유료 {(props.stats?.totalSpentPaidAmount || 0).toLocaleString()}원
             </div>
             <div className="text-xs text-muted-foreground">
-              무료 {(props.stats?.totalSpentBonusAmount || 0).toLocaleString()}
+              무료(의뢰){" "}
+              {(
+                props.stats?.totalSpentBonusRequestAmount || 0
+              ).toLocaleString()}
+              원
+            </div>
+            <div className="text-xs text-muted-foreground">
+              무료(배송){" "}
+              {(
+                props.stats?.totalSpentBonusShippingAmount || 0
+              ).toLocaleString()}
               원
             </div>
           </CardContent>
