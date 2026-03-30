@@ -1,5 +1,6 @@
 import BonusGrant from "../../models/bonusGrant.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import {
   CREDIT_SETTINGS_SCHEMA_DEFAULTS,
   loadCreditSettingsDefaults,
@@ -11,7 +12,6 @@ import {
 } from "./business.validation.util.js";
 
 async function upsertBonusLedger({
-  businessId,
   businessAnchorId,
   userId,
   amount,
@@ -23,13 +23,12 @@ async function upsertBonusLedger({
     { uniqueKey },
     {
       $setOnInsert: {
-        businessId,
         businessAnchorId: businessAnchorId || null,
         userId: userId || null,
         type: "BONUS",
         amount,
         refType,
-        refId: businessId,
+        refId: businessAnchorId,
         uniqueKey,
       },
     },
@@ -44,7 +43,7 @@ async function upsertBonusLedger({
 }
 
 async function ensureBonusGrant({
-  businessId,
+  businessAnchorId,
   userId,
   type,
   businessNumber,
@@ -64,7 +63,7 @@ async function ensureBonusGrant({
         type,
         businessNumber,
         amount,
-        businessId,
+        businessAnchorId,
         userId: userId || null,
         isOverride: false,
         source: "auto",
@@ -94,23 +93,20 @@ async function ensureBonusGrant({
 }
 
 export async function grantWelcomeBonusIfEligible({
-  businessId,
+  businessAnchorId,
   userId,
   userRole,
 }) {
-  if (!businessId) return null;
+  if (!businessAnchorId) return null;
   if (userRole !== "requestor") return null;
-  const businessNumber = formatBusinessNumber(userId?.businessNumber || null);
-  const business = await BonusGrant.db
-    .model("Business")
-    .findById(businessId)
-    .select({ businessType: 1, extracted: 1, businessAnchorId: 1 })
+  const businessAnchor = await BusinessAnchor.findById(businessAnchorId)
+    .select({ businessType: 1, metadata: 1 })
     .lean();
-  if (!business) return null;
-  if (String(business.businessType || "") !== "requestor") return null;
+  if (!businessAnchor) return null;
+  if (String(businessAnchor.businessType || "") !== "requestor") return null;
 
   const normalizedBusinessNumber = formatBusinessNumber(
-    business?.extracted?.businessNumber,
+    businessAnchor?.metadata?.businessNumber,
   );
   if (!normalizedBusinessNumber) return null;
 
@@ -120,7 +116,7 @@ export async function grantWelcomeBonusIfEligible({
     CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultWelcomeBonusCredit;
 
   const grant = await ensureBonusGrant({
-    businessId,
+    businessAnchorId,
     userId,
     type: "WELCOME_BONUS",
     businessNumber: normalizedBusinessNumber,
@@ -131,8 +127,7 @@ export async function grantWelcomeBonusIfEligible({
   if (grant.creditLedgerId) return null;
 
   const ledgerId = await upsertBonusLedger({
-    businessId,
-    businessAnchorId: business?.businessAnchorId || null,
+    businessAnchorId,
     userId,
     amount,
     refType: "WELCOME_BONUS",
@@ -146,7 +141,7 @@ export async function grantWelcomeBonusIfEligible({
   );
 
   await emitCreditBalanceUpdatedToBusiness({
-    businessAnchorId: business?.businessAnchorId || null,
+    businessAnchorId,
     balanceDelta: amount,
     reason: "welcome_bonus",
     refId: ledgerId,
@@ -156,22 +151,20 @@ export async function grantWelcomeBonusIfEligible({
 }
 
 export async function grantFreeShippingCreditIfEligible({
-  businessId,
+  businessAnchorId,
   userId,
   userRole,
 }) {
-  if (!businessId) return null;
+  if (!businessAnchorId) return null;
   if (userRole !== "requestor") return null;
-  const business = await BonusGrant.db
-    .model("Business")
-    .findById(businessId)
-    .select({ businessType: 1, extracted: 1, businessAnchorId: 1 })
+  const businessAnchor = await BusinessAnchor.findById(businessAnchorId)
+    .select({ businessType: 1, metadata: 1 })
     .lean();
-  if (!business) return null;
-  if (String(business.businessType || "") !== "requestor") return null;
+  if (!businessAnchor) return null;
+  if (String(businessAnchor.businessType || "") !== "requestor") return null;
 
   const normalizedBusinessNumber = formatBusinessNumber(
-    business?.extracted?.businessNumber,
+    businessAnchor?.metadata?.businessNumber,
   );
   if (!normalizedBusinessNumber) return null;
 
@@ -181,7 +174,7 @@ export async function grantFreeShippingCreditIfEligible({
     CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultFreeShippingCredit;
 
   const grant = await ensureBonusGrant({
-    businessId,
+    businessAnchorId,
     userId,
     type: "FREE_SHIPPING_CREDIT",
     businessNumber: normalizedBusinessNumber,
@@ -192,8 +185,7 @@ export async function grantFreeShippingCreditIfEligible({
   if (grant.creditLedgerId) return null;
 
   const ledgerId = await upsertBonusLedger({
-    businessId,
-    businessAnchorId: business?.businessAnchorId || null,
+    businessAnchorId,
     userId,
     amount,
     refType: "FREE_SHIPPING_CREDIT",
@@ -207,7 +199,7 @@ export async function grantFreeShippingCreditIfEligible({
   );
 
   await emitCreditBalanceUpdatedToBusiness({
-    businessAnchorId: business?.businessAnchorId || null,
+    businessAnchorId,
     balanceDelta: amount,
     reason: "free_shipping_credit",
     refId: ledgerId,

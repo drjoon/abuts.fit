@@ -26,6 +26,7 @@ import {
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
 
 // BusinessAnchor를 직접 생성/업데이트하는 헬퍼 함수
+// 레거시 Business 모델 동기화 로직 제거됨
 export async function ensureBusinessAnchor({
   businessNumberNormalized,
   businessType,
@@ -52,15 +53,21 @@ export async function ensureBusinessAnchor({
         name,
         status: verified ? "verified" : "active",
         primaryContactUserId: userId || null,
-        "metadata.companyName": String(metadata.companyName || name || "").trim(),
-        "metadata.representativeName": String(metadata.representativeName || "").trim(),
+        "metadata.companyName": String(
+          metadata.companyName || name || "",
+        ).trim(),
+        "metadata.representativeName": String(
+          metadata.representativeName || "",
+        ).trim(),
         "metadata.address": String(metadata.address || "").trim(),
         "metadata.addressDetail": String(metadata.addressDetail || "").trim(),
         "metadata.zipCode": String(metadata.zipCode || "").trim(),
         "metadata.phoneNumber": String(metadata.phoneNumber || "").trim(),
         "metadata.email": String(metadata.email || "").trim(),
         "metadata.businessItem": String(metadata.businessItem || "").trim(),
-        "metadata.businessCategory": String(metadata.businessCategory || "").trim(),
+        "metadata.businessCategory": String(
+          metadata.businessCategory || "",
+        ).trim(),
         "metadata.startDate": String(metadata.startDate || "").trim(),
         "metadata.businessNumber": String(metadata.businessNumber || "").trim(),
       },
@@ -139,45 +146,45 @@ export async function updateMyBusiness(req, res) {
     const shippingPolicyProvided = hasOwnKey(req.body, "shippingPolicy");
 
     const freshUser = await User.findById(req.user._id)
-      .select({ businessAnchorId: 1, business: 1, referredByAnchorId: 1 })
+      .select({ businessId: 1, business: 1, referredByAnchorId: 1 })
       .lean();
-    const effectiveBusinessAnchorId =
-      freshUser?.businessAnchorId || req.user.businessAnchorId || null;
+    const effectiveBusinessId =
+      freshUser?.businessId || req.user.businessId || null;
     const effectiveBusinessName = String(
       freshUser?.business || req.user.business || "",
     ).trim();
 
     const nextNameProvided = hasOwnKey(req.body, "name");
-    let businessAnchor = await findBusinessByAnchors({
+    let business = await findBusinessByAnchors({
       businessType,
-      businessId: effectiveBusinessAnchorId,
+      businessId: effectiveBusinessId,
       businessNumber: req.body?.businessNumber,
       userId: req.user._id,
       businessName: effectiveBusinessName,
     });
 
-    const hasBusinessAnchor = Boolean(businessAnchor?._id || effectiveBusinessAnchorId);
-    console.info("[BusinessAnchor] updateMyBusiness", {
+    const hasBusiness = Boolean(business?._id || effectiveBusinessId);
+    console.info("[Business] updateMyBusiness anchors", {
       userId: String(req.user._id),
       businessType,
-      tokenBusinessAnchorId: String(req.user.businessAnchorId || ""),
-      freshBusinessAnchorId: String(freshUser?.businessAnchorId || ""),
-      effectiveBusinessAnchorId: String(effectiveBusinessAnchorId || ""),
+      tokenBusinessId: String(req.user.businessId || ""),
+      freshBusinessId: String(freshUser?.businessId || ""),
+      effectiveBusinessId: String(effectiveBusinessId || ""),
       tokenBusinessName: String(req.user.business || ""),
       effectiveBusinessName,
-      resolvedBusinessAnchorId: String(businessAnchor?._id || ""),
-      resolvedBusinessName: String(businessAnchor?.name || ""),
+      resolvedBusinessId: String(business?._id || ""),
+      resolvedBusinessName: String(business?.name || ""),
       payloadBusinessNumber: String(req.body?.businessNumber || ""),
       payloadName: String(req.body?.name || ""),
     });
 
-    if (hasBusinessAnchor) {
+    if (hasBusiness) {
       const meId = String(req.user._id);
       const canEdit =
-        businessAnchor &&
-        (String(businessAnchor.primaryContactUserId) === meId ||
-          (Array.isArray(businessAnchor.owners) &&
-            businessAnchor.owners.some((c) => String(c) === meId)));
+        business &&
+        (String(business.owner) === meId ||
+          (Array.isArray(business.owners) &&
+            business.owners.some((c) => String(c) === meId)));
       const nonShippingProvided =
         hasOwnKey(req.body, "name") ||
         representativeNameProvided ||
@@ -230,13 +237,13 @@ export async function updateMyBusiness(req, res) {
       ? normalizeBusinessNumber(businessNumberRaw)
       : "";
     const currentBusinessNumber = formatBusinessNumber(
-      businessAnchor?.metadata?.businessNumber || "",
+      business?.extracted?.businessNumber || "",
     );
     const isBusinessNumberChanging =
       businessNumberProvided &&
       Boolean(businessNumber) &&
       currentBusinessNumber !== businessNumber;
-    const isVerifiedBusiness = businessAnchor?.status === "verified";
+    const isVerifiedBusiness = Boolean(business?.verification?.verified);
 
     if (phoneNumberRaw && !phoneNumber) {
       return res.status(400).json({
@@ -287,58 +294,57 @@ export async function updateMyBusiness(req, res) {
         ? await normalizeBusinessAddressFields({ address, zipCode })
         : null;
 
-    const originalBusinessAnchorId =
-      freshUser?.businessAnchorId || req.user.businessAnchorId || null;
-    let attachToBusinessAnchor = null;
+    const originalBusinessId =
+      freshUser?.businessId || req.user.businessId || null;
+    let attachToBusiness = null;
     if (businessNumber && isBusinessNumberChanging) {
-      const businessNumberNormalized = businessNumber.replace(/\D/g, "").trim();
-      const existingAnchorByNumber = await BusinessAnchor.findOne({
+      const existingBusinessByNumber = await Business.findOne({
         ...typeFilter,
-        businessNumberNormalized,
+        "extracted.businessNumber": businessNumber,
       });
       const meId = String(req.user._id);
 
-      if (existingAnchorByNumber) {
-        const existingPrimaryContactId = String(existingAnchorByNumber.primaryContactUserId || "");
+      if (existingBusinessByNumber) {
+        const existingOwnerId = String(existingBusinessByNumber.owner || "");
         const existingIsOwner =
-          Array.isArray(existingAnchorByNumber.owners) &&
-          existingAnchorByNumber.owners.some((c) => String(c) === meId);
+          Array.isArray(existingBusinessByNumber.owners) &&
+          existingBusinessByNumber.owners.some((c) => String(c) === meId);
         const existingIsMember =
-          Array.isArray(existingAnchorByNumber.members) &&
-          existingAnchorByNumber.members.some((m) => String(m) === meId);
-        const isMyExistingAnchor =
-          existingPrimaryContactId === meId || existingIsOwner || existingIsMember;
+          Array.isArray(existingBusinessByNumber.members) &&
+          existingBusinessByNumber.members.some((m) => String(m) === meId);
+        const isMyExistingBusiness =
+          existingOwnerId === meId || existingIsOwner || existingIsMember;
 
-        if (isMyExistingAnchor) {
+        if (isMyExistingBusiness) {
           console.info(
-            "[BusinessAnchor] updateMyBusiness same-anchor own anchor",
+            "[Business] updateMyBusiness same-business own business",
             {
               userId: meId,
-              currentResolvedAnchorId: String(businessAnchor?._id || ""),
-              existingAnchorByNumberId: String(
-                existingAnchorByNumber?._id || "",
+              currentResolvedBusinessId: String(business?._id || ""),
+              existingBusinessByNumberId: String(
+                existingBusinessByNumber?._id || "",
               ),
               businessNumber,
             },
           );
-          attachToBusinessAnchor = existingAnchorByNumber;
-          businessAnchor = existingAnchorByNumber;
+          attachToBusiness = existingBusinessByNumber;
+          business = existingBusinessByNumber;
         }
       }
 
       if (
-        existingAnchorByNumber &&
-        !attachToBusinessAnchor &&
-        (!businessAnchor ||
-          String(existingAnchorByNumber._id) !== String(businessAnchor._id))
+        existingBusinessByNumber &&
+        !attachToBusiness &&
+        (!business ||
+          String(existingBusinessByNumber._id) !== String(business._id))
       ) {
-        if (hasBusinessAnchor) {
-          console.info("[BusinessAnchor] updateMyBusiness conflict", {
+        if (hasBusiness) {
+          console.info("[Business] updateMyBusiness conflict", {
             reason: "business_number_switch_requires_admin",
             userId: String(req.user._id),
-            resolvedAnchorId: String(businessAnchor?._id || ""),
-            existingAnchorByNumberId: String(
-              existingAnchorByNumber?._id || "",
+            resolvedBusinessId: String(business?._id || ""),
+            existingBusinessByNumberId: String(
+              existingBusinessByNumber?._id || "",
             ),
             businessNumber,
           });
@@ -349,29 +355,29 @@ export async function updateMyBusiness(req, res) {
               "기존 사업자에 연결된 상태에서는 사업자등록번호로 다른 사업자로 전환할 수 없습니다. 관리자에게 사업자 전환을 요청해주세요.",
           });
         }
-        const primaryContactId = String(existingAnchorByNumber.primaryContactUserId || "");
+        const ownerId = String(existingBusinessByNumber.owner || "");
         const isOwner =
-          Array.isArray(existingAnchorByNumber.owners) &&
-          existingAnchorByNumber.owners.some((c) => String(c) === meId);
+          Array.isArray(existingBusinessByNumber.owners) &&
+          existingBusinessByNumber.owners.some((c) => String(c) === meId);
         const isMember =
-          Array.isArray(existingAnchorByNumber.members) &&
-          existingAnchorByNumber.members.some((m) => String(m) === meId);
+          Array.isArray(existingBusinessByNumber.members) &&
+          existingBusinessByNumber.members.some((m) => String(m) === meId);
 
-        if (primaryContactId === meId || isOwner || isMember) {
-          console.info("[BusinessAnchor] updateMyBusiness attachToAnchor", {
+        if (ownerId === meId || isOwner || isMember) {
+          console.info("[Business] updateMyBusiness attachToBusiness", {
             userId: String(req.user._id),
-            attachToAnchorId: String(existingAnchorByNumber?._id || ""),
+            attachToBusinessId: String(existingBusinessByNumber?._id || ""),
             businessNumber,
           });
-          attachToBusinessAnchor = existingAnchorByNumber;
-          businessAnchor = existingAnchorByNumber;
+          attachToBusiness = existingBusinessByNumber;
+          business = existingBusinessByNumber;
         } else {
-          console.info("[BusinessAnchor] updateMyBusiness conflict", {
+          console.info("[Business] updateMyBusiness conflict", {
             reason: "duplicate_business_number",
             userId: String(req.user._id),
-            resolvedAnchorId: String(businessAnchor?._id || ""),
-            existingAnchorByNumberId: String(
-              existingAnchorByNumber?._id || "",
+            resolvedBusinessId: String(business?._id || ""),
+            existingBusinessByNumberId: String(
+              existingBusinessByNumber?._id || "",
             ),
             businessNumber,
           });
@@ -396,33 +402,33 @@ export async function updateMyBusiness(req, res) {
       patch.businessLicense = businessLicense;
     }
 
-    const metadataPatch = {};
-    if (nextNameProvided) metadataPatch.companyName = nextName;
+    const extractedPatch = {};
+    if (nextNameProvided) extractedPatch.companyName = nextName;
     if (representativeNameProvided)
-      metadataPatch.representativeName = representativeName;
-    if (businessItemProvided) metadataPatch.businessItem = businessItem;
-    if (phoneNumberProvided) metadataPatch.phoneNumber = phoneNumber;
+      extractedPatch.representativeName = representativeName;
+    if (businessItemProvided) extractedPatch.businessItem = businessItem;
+    if (phoneNumberProvided) extractedPatch.phoneNumber = phoneNumber;
     if (businessTypeFieldProvided)
-      metadataPatch.businessCategory = businessTypeField;
-    if (emailProvided) metadataPatch.email = email;
+      extractedPatch.businessType = businessTypeField;
+    if (emailProvided) extractedPatch.email = email;
     if (addressProvided)
-      metadataPatch.address =
+      extractedPatch.address =
         normalizedAddressFields?.address != null
           ? normalizedAddressFields.address
           : address;
-    if (addressDetailProvided) metadataPatch.addressDetail = addressDetail;
+    if (addressDetailProvided) extractedPatch.addressDetail = addressDetail;
     if (zipCodeProvided)
-      metadataPatch.zipCode =
+      extractedPatch.zipCode =
         normalizedAddressFields?.zipCode != null
           ? normalizedAddressFields.zipCode
           : zipCode;
-    if (startDateProvided) metadataPatch.startDate = startDate;
+    if (startDateProvided) extractedPatch.startDate = startDate;
 
     if (businessNumberProvided) {
       if (!businessNumber) {
-        unsetPatch["metadata.businessNumber"] = 1;
+        unsetPatch["extracted.businessNumber"] = 1;
       } else {
-        metadataPatch.businessNumber = businessNumber;
+        extractedPatch.businessNumber = businessNumber;
       }
     }
 
@@ -463,22 +469,21 @@ export async function updateMyBusiness(req, res) {
       patch["shippingPolicy.updatedAt"] = new Date();
     }
 
-    if (businessNumber && !attachToBusinessAnchor) {
-      const businessNumberNormalized = businessNumber.replace(/\D/g, "").trim();
+    if (businessNumber && !attachToBusiness) {
       const query = {
-        businessNumberNormalized,
+        "extracted.businessNumber": businessNumber,
         ...typeFilter,
       };
-      if (businessAnchor?._id) {
-        query._id = { $ne: businessAnchor._id };
+      if (business?._id) {
+        query._id = { $ne: business._id };
       }
-      const dup = await BusinessAnchor.findOne(query).select({ _id: 1 }).lean();
+      const dup = await Business.findOne(query).select({ _id: 1 }).lean();
       if (dup) {
-        console.info("[BusinessAnchor] updateMyBusiness conflict", {
+        console.info("[Business] updateMyBusiness conflict", {
           reason: "duplicate_business_number_post_patch",
           userId: String(req.user._id),
-          resolvedAnchorId: String(businessAnchor?._id || ""),
-          duplicateAnchorId: String(dup?._id || ""),
+          resolvedBusinessId: String(business?._id || ""),
+          duplicateBusinessId: String(dup?._id || ""),
           businessNumber,
         });
         return res.status(409).json({
@@ -494,7 +499,7 @@ export async function updateMyBusiness(req, res) {
     if (businessNumber) {
       verificationResult = await verifyBusinessNumber({
         businessNumber,
-        companyName: nextName || businessAnchor?.name || "",
+        companyName: nextName || business?.name || "",
         representativeName,
         startDate,
       });
@@ -509,24 +514,24 @@ export async function updateMyBusiness(req, res) {
       }
     }
 
-    if (!hasBusinessAnchor && attachToBusinessAnchor) {
-      const priorLedgerCount = originalBusinessAnchorId
-        ? await CreditLedger.countDocuments({ businessAnchorId: originalBusinessAnchorId })
+    if (!hasBusiness && attachToBusiness) {
+      const priorLedgerCount = originalBusinessId
+        ? await CreditLedger.countDocuments({ businessId: originalBusinessId })
         : 0;
-      console.error("[BUSINESS_ANCHOR_ATTACH_SWITCH]", {
+      console.error("[BUSINESS_ATTACH_SWITCH]", {
         userId: String(req.user._id),
-        originalBusinessAnchorId: originalBusinessAnchorId
-          ? String(originalBusinessAnchorId)
+        originalBusinessId: originalBusinessId
+          ? String(originalBusinessId)
           : null,
-        nextBusinessAnchorId: String(attachToBusinessAnchor._id),
+        nextBusinessId: String(attachToBusiness._id),
         priorLedgerCount,
       });
       await User.findByIdAndUpdate(
         req.user._id,
         {
           $set: {
-            businessAnchorId: attachToBusinessAnchor._id,
-            business: attachToBusinessAnchor.name,
+            businessId: attachToBusiness._id,
+            business: attachToBusiness.name,
           },
         },
         { new: true },
@@ -534,28 +539,33 @@ export async function updateMyBusiness(req, res) {
 
       const meId = String(req.user._id);
       const isMember =
-        Array.isArray(attachToBusinessAnchor.members) &&
-        attachToBusinessAnchor.members.some((m) => String(m) === meId);
-      if (!isMember && String(attachToBusinessAnchor.primaryContactUserId || "") !== meId) {
-        await BusinessAnchor.findByIdAndUpdate(attachToBusinessAnchor._id, {
+        Array.isArray(attachToBusiness.members) &&
+        attachToBusiness.members.some((m) => String(m) === meId);
+      if (!isMember && String(attachToBusiness.owner || "") !== meId) {
+        await Business.findByIdAndUpdate(attachToBusiness._id, {
           $addToSet: { members: req.user._id },
         });
       }
 
-      const attachedAnchorId = attachToBusinessAnchor._id;
-      emitReferralMembershipChanged(attachedAnchorId, "business-anchor-linked");
+      const attachedAnchorId = await ensureBusinessAnchorForBusiness({
+        business: attachToBusiness,
+        businessType,
+        userId: req.user._id,
+        referredByAnchorId: freshUser?.referredByAnchorId || null,
+      });
 
       return res.json({
         success: true,
         data: {
           attached: true,
+          businessId: attachToBusiness._id,
           businessAnchorId: attachedAnchorId,
-          businessName: attachToBusinessAnchor.name,
+          businessName: attachToBusiness.name,
         },
       });
     }
 
-    if (!hasBusinessAnchor && !attachToBusinessAnchor) {
+    if (!hasBusiness && !attachToBusiness) {
       const requiredMissing =
         !nextName ||
         !representativeName ||
@@ -574,24 +584,21 @@ export async function updateMyBusiness(req, res) {
       }
 
       try {
-        const businessNumberNormalized = businessNumber.replace(/\D/g, "").trim();
-        const created = await BusinessAnchor.create({
+        const created = await Business.create({
           businessType,
-          businessNumberNormalized,
           name: nextName,
-          primaryContactUserId: req.user._id,
+          owner: req.user._id,
           owners: [],
           members: [req.user._id],
-          status: verificationResult?.verified ? "verified" : "active",
           ...(businessLicense &&
           (businessLicense.s3Key || businessLicense.originalName)
             ? { businessLicense }
             : {}),
-          metadata: {
+          extracted: {
             companyName: nextName,
             representativeName,
             businessItem,
-            businessCategory: businessTypeField,
+            businessType: businessTypeField,
             address,
             addressDetail,
             zipCode:
@@ -603,48 +610,57 @@ export async function updateMyBusiness(req, res) {
             businessNumber,
             startDate,
           },
-          referredByAnchorId: freshUser?.referredByAnchorId || null,
-          defaultReferralAnchorId: freshUser?.referredByAnchorId || null,
+          verification: verificationResult
+            ? {
+                verified: !!verificationResult.verified,
+                provider: verificationResult.provider || "hometax",
+                message: verificationResult.message || "",
+                checkedAt: new Date(),
+              }
+            : undefined,
         });
 
         await User.findByIdAndUpdate(
           req.user._id,
           {
             $set: {
-              businessAnchorId: created._id,
+              businessId: created._id,
               business: created.name,
             },
           },
           { new: true },
         );
 
-        const createdAnchorId = created._id;
+        const createdAnchorId = await ensureBusinessAnchorForBusiness({
+          business: created,
+          businessType,
+          userId: req.user._id,
+          referredByAnchorId: freshUser?.referredByAnchorId || null,
+        });
 
-        const priorLedgerCount = originalBusinessAnchorId
+        const priorLedgerCount = originalBusinessId
           ? await CreditLedger.countDocuments({
-              businessAnchorId: originalBusinessAnchorId,
+              businessId: originalBusinessId,
             })
           : 0;
-        console.error("[BUSINESS_ANCHOR_CREATED_AND_ATTACHED]", {
+        console.error("[BUSINESS_CREATED_AND_ATTACHED]", {
           userId: String(req.user._id),
-          originalBusinessAnchorId: originalBusinessAnchorId
-            ? String(originalBusinessAnchorId)
+          originalBusinessId: originalBusinessId
+            ? String(originalBusinessId)
             : null,
-          createdBusinessAnchorId: String(created._id),
+          createdBusinessId: String(created._id),
           priorLedgerCount,
           businessNumber,
         });
 
-        emitReferralMembershipChanged(createdAnchorId, "business-anchor-linked");
-
         const welcomeBonusAmount = await grantWelcomeBonusIfEligible({
-          businessAnchorId: created._id,
+          businessId: created._id,
           userId: req.user._id,
           userRole: req.user.role,
         });
         const freeShippingCreditAmount =
           await grantFreeShippingCreditIfEligible({
-            businessAnchorId: created._id,
+            businessId: created._id,
             userId: req.user._id,
             userRole: req.user.role,
           });
@@ -653,9 +669,10 @@ export async function updateMyBusiness(req, res) {
           success: true,
           data: {
             created: true,
-            businessAnchorId: created._id,
+            businessId: created._id,
+            businessAnchorId: createdAnchorId,
             businessName: created.name,
-            verification: created.status === "verified" ? { verified: true } : null,
+            verification: created.verification || null,
             welcomeBonusGranted: !!welcomeBonusAmount,
             welcomeBonusAmount: Number(welcomeBonusAmount || 0),
             freeShippingCreditGranted: !!freeShippingCreditAmount,
@@ -665,7 +682,7 @@ export async function updateMyBusiness(req, res) {
       } catch (e) {
         if (isDuplicateKeyError(e)) {
           const msg = String(e?.message || "");
-          if (msg.includes("businessNumberNormalized")) {
+          if (msg.includes("extracted.businessNumber")) {
             return res.status(409).json({
               success: false,
               reason: "duplicate_business_number",
@@ -679,22 +696,40 @@ export async function updateMyBusiness(req, res) {
     }
 
     if (verificationResult) {
-      patch.status = verificationResult.verified ? "verified" : "active";
+      patch.verification = {
+        verified: !!verificationResult.verified,
+        provider: verificationResult.provider || "hometax",
+        message: verificationResult.message || "",
+        checkedAt: new Date(),
+      };
     }
 
-    for (const [k, v] of Object.entries(metadataPatch)) {
-      patch[`metadata.${k}`] = v;
+    for (const [k, v] of Object.entries(extractedPatch)) {
+      patch[`extracted.${k}`] = v;
     }
 
     if (
       Object.keys(patch).length === 0 &&
       Object.keys(unsetPatch).length === 0
     ) {
+      const repairedAnchorId = await ensureBusinessAnchorForBusiness({
+        business: {
+          _id: business?._id,
+          name: business?.name || "",
+          extracted: business?.extracted || {},
+          verification: business?.verification || {},
+        },
+        businessType,
+        userId: req.user._id,
+        referredByAnchorId: freshUser?.referredByAnchorId || null,
+      });
+
       return res.json({
         success: true,
         data: {
           updated: false,
-          businessAnchorId: businessAnchor?._id || null,
+          businessAnchorId:
+            repairedAnchorId || business?.businessAnchorId || null,
         },
       });
     }
@@ -703,27 +738,68 @@ export async function updateMyBusiness(req, res) {
       const update = {};
       if (Object.keys(patch).length > 0) update.$set = patch;
       if (Object.keys(unsetPatch).length > 0) update.$unset = unsetPatch;
-      console.info("[BusinessAnchor] updateMyBusiness persist", {
+      console.info("[Business] updateMyBusiness persist", {
         userId: String(req.user._id),
-        businessAnchorId: String(businessAnchor?._id || ""),
+        businessId: String(business?._id || ""),
         patch,
-        metadataPatch,
+        extractedPatch,
         unsetPatch,
       });
-      await BusinessAnchor.findByIdAndUpdate(businessAnchor._id, update);
-      const persistedAnchor = await BusinessAnchor.findById(businessAnchor._id)
-        .select({ name: 1, metadata: 1, status: 1 })
+      await Business.findByIdAndUpdate(business._id, update);
+      const persistedBusiness = await Business.findById(business._id)
+        .select({ name: 1, extracted: 1, verification: 1, businessAnchorId: 1 })
         .lean();
-      console.info("[BusinessAnchor] updateMyBusiness persisted result", {
-        businessAnchorId: String(persistedAnchor?._id || businessAnchor?._id || ""),
-        name: String(persistedAnchor?.name || ""),
-        metadata: persistedAnchor?.metadata || {},
-        verified: persistedAnchor?.status === "verified",
+      console.info("[Business] updateMyBusiness persisted result", {
+        businessId: String(persistedBusiness?._id || business?._id || ""),
+        name: String(persistedBusiness?.name || ""),
+        extracted: {
+          companyName: String(
+            persistedBusiness?.extracted?.companyName || "",
+          ).trim(),
+          businessNumber: String(
+            persistedBusiness?.extracted?.businessNumber || "",
+          ).trim(),
+          address: String(persistedBusiness?.extracted?.address || "").trim(),
+          addressDetail: String(
+            persistedBusiness?.extracted?.addressDetail || "",
+          ).trim(),
+          zipCode: String(persistedBusiness?.extracted?.zipCode || "").trim(),
+          phoneNumber: String(
+            persistedBusiness?.extracted?.phoneNumber || "",
+          ).trim(),
+          email: String(persistedBusiness?.extracted?.email || "").trim(),
+          representativeName: String(
+            persistedBusiness?.extracted?.representativeName || "",
+          ).trim(),
+          businessType: String(
+            persistedBusiness?.extracted?.businessType || "",
+          ).trim(),
+          businessItem: String(
+            persistedBusiness?.extracted?.businessItem || "",
+          ).trim(),
+          startDate: String(
+            persistedBusiness?.extracted?.startDate || "",
+          ).trim(),
+        },
+        businessVerified: Boolean(persistedBusiness?.verification?.verified),
+      });
+
+      await ensureBusinessAnchorForBusiness({
+        business: {
+          _id: business._id,
+          name: persistedBusiness?.name || business?.name || "",
+          extracted: persistedBusiness?.extracted || business?.extracted || {},
+          verification:
+            persistedBusiness?.verification || business?.verification || {},
+        },
+        businessType,
+        userId: req.user._id,
+        referredByAnchorId: freshUser?.referredByAnchorId || null,
       });
     } catch (e) {
       if (isDuplicateKeyError(e)) {
         const msg = String(e?.message || "");
-        if (msg.includes("businessNumberNormalized")) {
+        if (msg.includes("extracted.businessNumber")) {
           return res.status(409).json({
             success: false,
             reason: "duplicate_business_number",
@@ -737,7 +813,7 @@ export async function updateMyBusiness(req, res) {
 
     if (nextName && String(req.user.business || "") !== nextName) {
       await User.updateMany(
-        { businessAnchorId: businessAnchor._id },
+        { businessId: business._id },
         {
           $set: {
             business: nextName,
@@ -746,23 +822,24 @@ export async function updateMyBusiness(req, res) {
       );
     } else {
       await User.updateMany(
-        { businessAnchorId: businessAnchor._id },
+        { businessId: business._id },
         {
           $set: {
-            business: String(businessAnchor?.name || nextName || "").trim(),
+            businessId: business._id,
+            business: String(business?.name || nextName || "").trim(),
           },
         },
       );
     }
 
     const granted = await grantWelcomeBonusIfEligible({
-      businessAnchorId: businessAnchor._id,
+      businessId: business._id,
       userId: req.user._id,
       userRole: req.user.role,
     });
 
     const freeShippingGranted = await grantFreeShippingCreditIfEligible({
-      businessAnchorId: businessAnchor._id,
+      businessId: business._id,
       userId: req.user._id,
       userRole: req.user.role,
     });
