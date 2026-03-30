@@ -1,5 +1,5 @@
 import Counter from "../models/counter.model.js";
-import Business from "../models/business.model.js";
+import BusinessAnchor from "../models/businessAnchor.model.js";
 import ChargeOrder from "../models/chargeOrder.model.js";
 
 const BUSINESS_DEPOSIT_CODE_COUNTER_KEY = "business.depositCode.v2";
@@ -38,7 +38,7 @@ export async function ensureOrganizationDepositCode(businessAnchorId) {
     throw new Error("businessAnchorId가 필요합니다.");
   }
 
-  const org = await Business.findOne({ businessAnchorId })
+  const org = await BusinessAnchor.findById(businessAnchorId)
     .select({ depositCode: 1 })
     .lean();
 
@@ -60,9 +60,9 @@ export async function ensureOrganizationDepositCode(businessAnchorId) {
 
     let result;
     try {
-      result = await Business.updateOne(
+      result = await BusinessAnchor.updateOne(
         {
-          businessAnchorId,
+          _id: businessAnchorId,
           $or: [{ depositCode: "" }, { depositCode: null }],
         },
         { $set: { depositCode } },
@@ -78,7 +78,7 @@ export async function ensureOrganizationDepositCode(businessAnchorId) {
       return { depositCode, created: true };
     }
 
-    const after = await Business.findOne({ businessAnchorId })
+    const after = await BusinessAnchor.findById(businessAnchorId)
       .select({ depositCode: 1 })
       .lean();
     const afterCode = String(after?.depositCode || "").trim();

@@ -3,7 +3,7 @@ import ChargeOrder from "../models/chargeOrder.model.js";
 import BankTransaction from "../models/bankTransaction.model.js";
 import CreditLedger from "../models/creditLedger.model.js";
 import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
-import Business from "../models/business.model.js";
+import BusinessAnchor from "../models/businessAnchor.model.js";
 import { emitCreditBalanceUpdatedToBusiness } from "./creditRealtime.js";
 import { enqueueTaxInvoiceIssue } from "./queueClient.js";
 
@@ -231,18 +231,16 @@ async function matchTxWithOrder({ tx, order }) {
         { session },
       );
       if (!existingDraft) {
-        const org = await Business.findOne({
-          businessAnchorId: order.businessAnchorId,
-        })
+        const org = await BusinessAnchor.findById(order.businessAnchorId)
           .select({
-            "extracted.businessNumber": 1,
-            "extracted.companyName": 1,
-            "extracted.representativeName": 1,
-            "extracted.address": 1,
-            "extracted.businessType": 1,
-            "extracted.businessItem": 1,
-            "extracted.email": 1,
-            "extracted.phoneNumber": 1,
+            "metadata.businessNumber": 1,
+            "metadata.companyName": 1,
+            "metadata.representativeName": 1,
+            "metadata.address": 1,
+            "metadata.businessType": 1,
+            "metadata.businessItem": 1,
+            "metadata.email": 1,
+            "metadata.phoneNumber": 1,
           })
           .lean({ session });
 
