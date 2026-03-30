@@ -70,15 +70,22 @@
 
 **사업자 정보 저장 후 데이터 동기화 (2026-03-31 버그 수정 #1):**
 
-- **문제**: 온보딩 완료 후 사업자등록증 파일과 일부 필드가 화면에서 사라지는 버그 발생
+- **문제**: 온보딩 완료 후 사업자등록증 및 필드 손실
 - **원인**:
-  1. `useBusinessDataManagement.ts`의 158-172번 라인에서 서버 데이터가 비어있고 로컬에 라이선스가 있을 때 서버 hydrate를 skip하는 로직이 저장 직후에도 작동
-  2. 백엔드 `updateMyBusiness`에서 업데이트 후 조회 시 `businessLicense` 필드를 select에 포함하지 않음
+  1. `business.update.controller.js`에서 업데이트 후 조회 시 `businessLicense` 필드를 select하지 않음
+  2. `BusinessAnchor` 모델에 `extracted`와 `metadata` 필드가 분리되어 있었으나, 생성 시 `extracted` 필드를 저장하지 않음
+  3. `useBusinessDataManagement.ts`에서 서버 데이터 hydrate 시 로컬 드래프트를 우선하는 로직
+  4. `BusinessTab.tsx`에서 저장 후 `businessMeCache`를 무효화하지 않아 stale 데이터 표시
 - **해결**:
-  1. `useBusinessDataManagement.ts`: 서버에 `businessLicense`가 있으면 무조건 서버 데이터를 적용하도록 로직 추가 (176-185번 라인)
-  2. `business.update.controller.js`: 업데이트 후 조회 시 `businessLicense` 필드를 select에 포함 (748번 라인)
-  3. `BusinessTab.tsx`: 저장 성공 후 `invalidateBusinessMeCache` 호출 및 `force: true` 옵션으로 서버 데이터 강제 재로드 (301-316번 라인)
-- **핵심**: 저장 성공 후에는 로컬 상태보다 **서버 데이터를 우선**하여 SSOT 원칙 준수
+  1. **extracted/metadata 통합**: `BusinessAnchor` 모델에서 `extracted` 필드 제거, `metadata`로 통합 관리
+     - AI 파싱 결과도 사용자 확인/검증을 거치므로 "추출"이 아닌 "검증된 메타데이터"
+     - `metadata`가 SSOT, 프론트엔드 호환성을 위해 `extracted`로도 alias하여 반환
+  2. `useBusinessDataManagement.ts`: 서버에 `businessLicense`가 있으면 무조건 서버 데이터를 적용하도록 로직 추가
+  3. `business.update.controller.js`: 업데이트 후 조회 시 `businessLicense` 필드를 select에 포함
+  4. `BusinessTab.tsx`: 저장 성공 후 `invalidateBusinessMeCache` 호출 및 `force: true` 옵션으로 서버 데이터 강제 재로드
+- **핵심**:
+  - 저장 성공 후에는 로컬 상태보다 **서버 데이터를 우선**하여 SSOT 원칙 준수
+  - AI 파싱 후 사용자 확인/검증을 거친 데이터는 `metadata`에 저장 (extracted 필드 사용 안 함)
 
 **온보딩 단계 건너뛰기 방지 (2026-03-31 버그 수정 #2):**
 
@@ -98,6 +105,31 @@
 - `web/`: 프론트엔드 + 백엔드 본체
 - `bg/`: 운영 중인 백그라운드 서비스
 - `background/`: 레거시 참고용. **새 정책 반영 대상 아님**
+
+### 2.1.1 BusinessAnchor extracted 필드 제거 정책 (2026-03-31)
+
+**배경:**
+
+- 기존: `BusinessAnchor` 모델에 `extracted`(AI 파싱 결과)와 `metadata`(사용자 입력) 필드가 분리
+- 문제: AI 파싱 후에도 사용자가 확인/검증하므로 "추출"과 "메타데이터"를 구분할 필요 없음
+
+**변경 사항:**
+
+- `BusinessAnchor.extracted` 필드 **완전 제거**
+- 모든 사업자 데이터는 `BusinessAnchor.metadata`에 저장
+- AI 파싱 결과도 사용자 확인/검증 후 `metadata`에 저장
+
+**프론트엔드 호환성:**
+
+- 프론트엔드에서 `extracted`를 사용하는 코드가 많음
+- 백엔드 `getMyBusiness` API는 `metadata`를 `extracted`로도 반환 (동일한 데이터)
+- 프론트엔드 코드는 수정 불필요 (`extracted` 사용 가능)
+
+**주의사항:**
+
+- 새로운 코드 작성 시 `BusinessAnchor.extracted` 필드 참조 금지
+- `metadata`만 사용할 것
+- 프론트엔드에서는 `extracted` 사용 가능 (백엔드에서 alias로 제공)
 
 ### 2.2 역할 (role + subRole)
 

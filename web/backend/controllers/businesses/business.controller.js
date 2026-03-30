@@ -321,12 +321,11 @@ export async function getMyBusiness(req, res) {
     const hasBusinessNumber = !!businessNumber;
     const businessVerified = anchor.status === "verified";
 
-    // extracted와 metadata를 병합하여 반환
-    // extracted 우선, metadata로 보완
-    const mergedData = {
-      ...anchor?.metadata,
-      ...anchor?.extracted,
-    };
+    // metadata를 extracted로도 반환 (프론트엔드 호환성)
+    // 주의: BusinessAnchor 모델에 extracted 필드는 없음 (2026-03-31 제거)
+    // AI 파싱 후 사용자 확인/검증을 거친 데이터이므로 metadata가 SSOT
+    // 프론트엔드에서 extracted를 사용하는 코드가 많아 호환성을 위해 동일한 데이터를 반환
+    const metadata = anchor?.metadata || {};
 
     return res.json({
       success: true,
@@ -336,8 +335,8 @@ export async function getMyBusiness(req, res) {
         businessId: anchor._id,
         hasBusinessNumber,
         businessVerified,
-        extracted: mergedData,
-        metadata: anchor?.metadata || {},
+        metadata,
+        extracted: metadata, // metadata와 동일 (프론트엔드 호환성)
         businessLicense: anchor?.businessLicense || null,
         payoutAccount: anchor?.payoutAccount || {},
       },

@@ -45,6 +45,9 @@ const businessAnchorSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    // 사업자 메타데이터 (AI 파싱 후 사용자 확인/검증을 거친 데이터)
+    // 주의: extracted 필드는 제거됨 (2026-03-31)
+    // AI 파싱 결과도 사용자 확인/검증을 거치므로 metadata가 SSOT
     metadata: {
       companyName: { type: String, default: "" },
       representativeName: { type: String, default: "" },
@@ -53,18 +56,10 @@ const businessAnchorSchema = new mongoose.Schema(
       zipCode: { type: String, default: "" },
       phoneNumber: { type: String, default: "" },
       email: { type: String, default: "" },
-      businessItem: { type: String, default: "" },
-      businessCategory: { type: String, default: "" },
+      businessItem: { type: String, default: "" }, // 종목
+      businessCategory: { type: String, default: "" }, // 업태
       startDate: { type: String, default: "" },
-    },
-    extracted: {
-      companyName: { type: String, default: "" },
       businessNumber: { type: String, default: "" },
-      representativeName: { type: String, default: "" },
-      businessAddress: { type: String, default: "" },
-      businessType: { type: String, default: "" },
-      businessItem: { type: String, default: "" },
-      openDate: { type: String, default: "" },
     },
     verification: {
       verified: { type: Boolean, default: false },
