@@ -1,6 +1,6 @@
 import ChargeOrder from "../../models/chargeOrder.model.js";
 import TaxInvoiceDraft from "../../models/taxInvoiceDraft.model.js";
-import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import {
   ensureOrganizationDepositCode,
   generateChargeOrderDepositCode,
@@ -327,8 +327,8 @@ export async function requestTaxInvoice(req, res) {
       });
     }
 
-    const business = await Business.findOne({ businessAnchorId });
-    if (!business) {
+    const anchor = await BusinessAnchor.findOne({ _id: businessAnchorId });
+    if (!anchor) {
       return res.status(404).json({
         success: false,
         message:
@@ -336,14 +336,14 @@ export async function requestTaxInvoice(req, res) {
       });
     }
 
-    const extracted = business.extracted || {};
+    const metadata = anchor.metadata || {};
     const buyer = {
-      bizNo: extracted.businessNumber || "",
-      corpName: extracted.companyName || "",
-      ceoName: extracted.ceoName || "",
-      addr: extracted.address || "",
-      bizType: extracted.businessType || "",
-      bizClass: extracted.businessCategory || "",
+      bizNo: anchor.businessNumberNormalized || "",
+      corpName: metadata.companyName || "",
+      ceoName: metadata.representativeName || "",
+      addr: metadata.address || "",
+      bizType: metadata.businessItem || "",
+      bizClass: metadata.businessCategory || "",
       contactName: req.user?.name || "",
       contactEmail: req.user?.email || "",
       contactTel: req.user?.phone || "",

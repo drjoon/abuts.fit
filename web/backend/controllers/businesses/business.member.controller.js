@@ -365,25 +365,24 @@ export async function getMyJoinRequests(req, res) {
     const roleCheck = assertBusinessRole(req, res);
     if (!roleCheck) return;
     const { businessType } = roleCheck;
-    const typeFilter = buildBusinessTypeFilter(businessType);
 
-    const businesses = await Business.find({
-      ...typeFilter,
+    const anchors = await BusinessAnchor.find({
+      businessType,
       "joinRequests.user": req.user._id,
     })
       .select({ name: 1, joinRequests: 1 })
       .lean();
 
     const meId = String(req.user._id);
-    const data = businesses
-      .map((business) => {
-        const jr = (business.joinRequests || []).find(
+    const data = anchors
+      .map((anchor) => {
+        const jr = (anchor.joinRequests || []).find(
           (r) => String(r?.user) === meId,
         );
         if (!jr) return null;
         return {
-          businessId: business._id,
-          businessName: business.name,
+          businessId: anchor._id,
+          businessName: anchor.name,
           status: jr.status,
           createdAt: jr.createdAt,
         };

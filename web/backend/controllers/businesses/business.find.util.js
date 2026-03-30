@@ -1,5 +1,4 @@
-import Business from "../../models/business.model.js";
-import { buildBusinessTypeFilter } from "./businessRole.util.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 
 export async function findBusinessByAnchors({
   businessType,
@@ -8,21 +7,19 @@ export async function findBusinessByAnchors({
   userId,
   businessName,
 }) {
-  const typeFilter = buildBusinessTypeFilter(businessType);
-
   if (businessId) {
-    const byId = await Business.findOne({
+    const byId = await BusinessAnchor.findOne({
       _id: businessId,
-      ...typeFilter,
+      businessType,
     });
     if (byId) return byId;
   }
 
   if (userId) {
-    const byMembership = await Business.findOne({
-      ...typeFilter,
+    const byMembership = await BusinessAnchor.findOne({
+      businessType,
       $or: [
-        { owner: userId },
+        { primaryContactUserId: userId },
         { owners: userId },
         { members: userId },
         { "joinRequests.user": userId },
@@ -33,21 +30,27 @@ export async function findBusinessByAnchors({
 
   const safeBusinessName = String(businessName || "").trim();
   if (safeBusinessName) {
-    const matches = await Business.find({
-      ...typeFilter,
+    const matches = await BusinessAnchor.find({
+      businessType,
       name: safeBusinessName,
-      $or: [{ owner: userId }, { owners: userId }, { members: userId }],
+      $or: [
+        { primaryContactUserId: userId },
+        { owners: userId },
+        { members: userId },
+      ],
     })
       .sort({ updatedAt: -1, createdAt: -1 })
       .limit(1);
     if (Array.isArray(matches) && matches[0]) return matches[0];
   }
 
-  const normalizedBusinessNumber = String(businessNumber || "").trim();
+  const normalizedBusinessNumber = String(businessNumber || "")
+    .replace(/\D/g, "")
+    .trim();
   if (normalizedBusinessNumber) {
-    const byBusinessNumber = await Business.findOne({
-      ...typeFilter,
-      "extracted.businessNumber": normalizedBusinessNumber,
+    const byBusinessNumber = await BusinessAnchor.findOne({
+      businessType,
+      businessNumberNormalized: normalizedBusinessNumber,
     });
     if (byBusinessNumber) return byBusinessNumber;
   }

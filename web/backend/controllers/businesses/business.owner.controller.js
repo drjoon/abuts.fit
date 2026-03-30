@@ -110,17 +110,17 @@ export async function getRepresentatives(req, res) {
     if (!roleCheck) return;
     const { businessType } = roleCheck;
 
-    const business = await resolveOwnedBusiness(req, businessType);
-    if (!business) {
+    const anchor = await resolveOwnedBusiness(req, businessType);
+    if (!anchor) {
       return res.status(403).json({
         success: false,
         message: "대표자 계정만 조회할 수 있습니다.",
       });
     }
 
-    const full = await Business.findById(business._id)
+    const full = await BusinessAnchor.findById(anchor._id)
       .populate({
-        path: "owner",
+        path: "primaryContactUserId",
         select: "name email",
         match: { deletedAt: null },
       })
@@ -129,15 +129,15 @@ export async function getRepresentatives(req, res) {
         select: "name email",
         match: { deletedAt: null },
       })
-      .select({ name: 1, owner: 1, owners: 1 })
+      .select({ name: 1, primaryContactUserId: 1, owners: 1 })
       .lean();
 
     const representatives = [];
-    if (full?.owner?._id || full?.owner) {
+    if (full?.primaryContactUserId?._id || full?.primaryContactUserId) {
       representatives.push({
-        _id: String(full.owner._id || full.owner),
-        name: String(full.owner.name || ""),
-        email: String(full.owner.email || ""),
+        _id: String(full.primaryContactUserId._id || full.primaryContactUserId),
+        name: String(full.primaryContactUserId.name || ""),
+        email: String(full.primaryContactUserId.email || ""),
       });
     }
     if (Array.isArray(full?.owners)) {
@@ -154,7 +154,7 @@ export async function getRepresentatives(req, res) {
     return res.json({
       success: true,
       data: {
-        businessId: String(full?._id || business._id),
+        businessId: String(full?._id || anchor._id),
         businessName: String(full?.name || ""),
         representatives,
       },
@@ -566,8 +566,8 @@ export async function rejectJoinRequest(req, res) {
     if (!roleCheck) return;
     const { businessType } = roleCheck;
 
-    const business = await resolveOwnedBusiness(req, businessType);
-    if (!business) {
+    const anchor = await resolveOwnedBusiness(req, businessType);
+    if (!anchor) {
       return res.status(403).json({
         success: false,
         message: "대표자 계정만 거절할 수 있습니다.",
@@ -582,7 +582,7 @@ export async function rejectJoinRequest(req, res) {
       });
     }
 
-    const joinRequest = (business.joinRequests || []).find(
+    const joinRequest = (anchor.joinRequests || []).find(
       (r) => String(r?.user) === userId && r?.status === "pending",
     );
 
@@ -594,7 +594,7 @@ export async function rejectJoinRequest(req, res) {
     }
 
     joinRequest.status = "rejected";
-    await business.save();
+    await anchor.save();
 
     return res.json({ success: true, data: { rejected: true } });
   } catch (error) {
@@ -612,8 +612,8 @@ export async function removeMember(req, res) {
     if (!roleCheck) return;
     const { businessType } = roleCheck;
 
-    const business = await resolveOwnedBusiness(req, businessType);
-    if (!business) {
+    const anchor = await resolveOwnedBusiness(req, businessType);
+    if (!anchor) {
       return res.status(403).json({
         success: false,
         message: "대표자 계정만 직원을 삭제할 수 있습니다.",
@@ -628,7 +628,7 @@ export async function removeMember(req, res) {
       });
     }
 
-    if (String(business.owner) === userId) {
+    if (String(anchor.primaryContactUserId) === userId) {
       return res.status(409).json({
         success: false,
         message: "주대표는 삭제할 수 없습니다.",
@@ -636,8 +636,8 @@ export async function removeMember(req, res) {
     }
 
     const isOwner =
-      Array.isArray(business.owners) &&
-      business.owners.some((c) => String(c) === userId);
+      Array.isArray(anchor.owners) &&
+      anchor.owners.some((c) => String(c) === userId);
     if (isOwner) {
       return res.status(409).json({
         success: false,
@@ -646,14 +646,12 @@ export async function removeMember(req, res) {
       });
     }
 
-    const before = Array.isArray(business.members)
-      ? business.members.length
-      : 0;
-    business.members = Array.isArray(business.members)
-      ? business.members.filter((m) => String(m) !== userId)
+    const before = Array.isArray(anchor.members) ? anchor.members.length : 0;
+    anchor.members = Array.isArray(anchor.members)
+      ? anchor.members.filter((m) => String(m) !== userId)
       : [];
 
-    const after = business.members.length;
+    const after = anchor.members.length;
     if (before === after) {
       return res.status(404).json({
         success: false,
@@ -661,10 +659,10 @@ export async function removeMember(req, res) {
       });
     }
 
-    await business.save();
+    await anchor.save();
 
     await User.findByIdAndUpdate(userId, {
-      $set: { businessId: null, business: "" },
+      $set: { businessAnchorId: null, business: "" },
     });
 
     return res.json({ success: true, data: { removed: true } });

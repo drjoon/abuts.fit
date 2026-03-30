@@ -1,7 +1,7 @@
 import CreditLedger from "../../models/creditLedger.model.js";
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
-import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 
 const __creditBalanceCache = new Map();
 
@@ -43,23 +43,19 @@ async function resolveCreditScopeIdentity(req) {
     return { businessAnchorId: "" };
   }
 
-  const business = await Business.findOne({
+  const anchor = await BusinessAnchor.findOne({
     $or: [
-      { owner: userId },
+      { primaryContactUserId: userId },
       { owners: userId },
       { members: userId },
-      {
-        "joinRequests.user": userId,
-        "joinRequests.status": "approved",
-      },
     ],
   })
-    .select({ businessAnchorId: 1 })
+    .select({ _id: 1 })
     .lean();
 
-  if (business?.businessAnchorId) {
-    const resolvedBusinessAnchorId = String(business?.businessAnchorId || "");
-    console.error("[CREDIT_BALANCE_SCOPE_RESOLVED] resolved from business", {
+  if (anchor?._id) {
+    const resolvedBusinessAnchorId = String(anchor._id);
+    console.error("[CREDIT_BALANCE_SCOPE_RESOLVED] resolved from anchor", {
       userId: String(userId),
       resolvedBusinessAnchorId,
       originalUserBusinessAnchorId: req.user?.businessAnchorId
