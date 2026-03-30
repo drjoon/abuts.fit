@@ -315,6 +315,16 @@ export const useFileUpload = (
               "주소와 우편번호를 비워두었어요. 주소 검색 창에서 도로명 주소를 선택해주세요.",
             duration: 3500,
           });
+
+          // AI 인식 결과 확인 유도 토스트
+          setTimeout(() => {
+            toast({
+              title: "AI 인식 결과를 확인해주세요",
+              description:
+                "사업자명, 전화번호, 이메일 등이 정확한지 확인하고 필요시 수정해주세요.",
+              duration: 5000,
+            });
+          }, 500);
           return;
         }
 
