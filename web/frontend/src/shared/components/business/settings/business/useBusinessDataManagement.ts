@@ -138,7 +138,8 @@ export const useBusinessDataManagement = (
         suppressPrefillRef.current = false;
 
         const businessName = String(data?.business?.name || "").trim();
-        const ex = data?.extracted || {};
+        // SSOT: metadata 사용 (extracted 레거시 제거)
+        const ex = data?.metadata || {};
         const lic = data?.businessLicense || {};
         const licName = String(lic?.originalName || "").trim();
         const nextLicenseFileId = String(lic?.fileId || "").trim();

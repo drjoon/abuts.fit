@@ -64,9 +64,7 @@ export async function ensureBusinessAnchor({
         "metadata.phoneNumber": String(metadata.phoneNumber || "").trim(),
         "metadata.email": String(metadata.email || "").trim(),
         "metadata.businessItem": String(metadata.businessItem || "").trim(),
-        "metadata.businessCategory": String(
-          metadata.businessCategory || "",
-        ).trim(),
+        "metadata.businessType": String(metadata.businessType || "").trim(),
         "metadata.startDate": String(metadata.startDate || "").trim(),
         "metadata.businessNumber": String(metadata.businessNumber || "").trim(),
       },
@@ -425,7 +423,7 @@ export async function updateMyBusiness(req, res) {
     if (businessItemProvided) metadataPatch.businessItem = businessItem;
     if (phoneNumberProvided) metadataPatch.phoneNumber = phoneNumber;
     if (businessTypeFieldProvided)
-      metadataPatch.businessCategory = businessTypeField;
+      metadataPatch.businessType = businessTypeField;
     if (emailProvided) metadataPatch.email = email;
     if (addressProvided)
       metadataPatch.address =
@@ -620,7 +618,7 @@ export async function updateMyBusiness(req, res) {
             companyName: nextName,
             representativeName,
             businessItem,
-            businessCategory: businessTypeField,
+            businessType: businessTypeField,
             address,
             addressDetail,
             zipCode:

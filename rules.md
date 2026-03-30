@@ -113,23 +113,26 @@
 - 기존: `BusinessAnchor` 모델에 `extracted`(AI 파싱 결과)와 `metadata`(사용자 입력) 필드가 분리
 - 문제: AI 파싱 후에도 사용자가 확인/검증하므로 "추출"과 "메타데이터"를 구분할 필요 없음
 
-**변경 사항:**
+**변경 사항 (SSOT 통합):**
 
-- `BusinessAnchor.extracted` 필드 **완전 제거**
-- 모든 사업자 데이터는 `BusinessAnchor.metadata`에 저장
-- AI 파싱 결과도 사용자 확인/검증 후 `metadata`에 저장
+1. **DB 모델**: `BusinessAnchor.extracted` 필드 **완전 제거**
+2. **SSOT**: 모든 사업자 데이터는 `BusinessAnchor.metadata`에 저장
+3. **백엔드 API**: `getMyBusiness`는 `metadata`만 반환 (extracted alias 제거)
+4. **프론트엔드**: `data.metadata` 사용 (extracted 레거시 제거)
+5. **타입 정의**: `BusinessMetadata` 타입 사용 (`LicenseExtracted`는 deprecated)
 
-**프론트엔드 호환성:**
+**레거시 제거 원칙:**
 
-- 프론트엔드에서 `extracted`를 사용하는 코드가 많음
-- 백엔드 `getMyBusiness` API는 `metadata`를 `extracted`로도 반환 (동일한 데이터)
-- 프론트엔드 코드는 수정 불필요 (`extracted` 사용 가능)
+- ❌ extracted 필드/alias 사용 금지
+- ✅ metadata가 유일한 SSOT
+- ✅ 흡수 통합 시 레거시 완전 제거, SSOT 기준으로 모두 교체
+- ✅ 향후 헷갈리지 않게 메모리, 룰, 주석에 명확히 기록
 
-**주의사항:**
+**필드명 통일:**
 
-- 새로운 코드 작성 시 `BusinessAnchor.extracted` 필드 참조 금지
-- `metadata`만 사용할 것
-- 프론트엔드에서는 `extracted` 사용 가능 (백엔드에서 alias로 제공)
+- `metadata.businessType`: 업태 (구 businessCategory)
+- `metadata.businessItem`: 종목
+- 프론트엔드와 백엔드 필드명 완전 통일
 
 ### 2.2 역할 (role + subRole)
 

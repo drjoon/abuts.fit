@@ -57,7 +57,7 @@ const businessAnchorSchema = new mongoose.Schema(
       phoneNumber: { type: String, default: "" },
       email: { type: String, default: "" },
       businessItem: { type: String, default: "" }, // 종목
-      businessCategory: { type: String, default: "" }, // 업태
+      businessType: { type: String, default: "" }, // 업태 (구 businessCategory)
       startDate: { type: String, default: "" },
       businessNumber: { type: String, default: "" },
     },

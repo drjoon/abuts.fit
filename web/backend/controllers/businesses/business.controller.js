@@ -321,10 +321,8 @@ export async function getMyBusiness(req, res) {
     const hasBusinessNumber = !!businessNumber;
     const businessVerified = anchor.status === "verified";
 
-    // metadata를 extracted로도 반환 (프론트엔드 호환성)
-    // 주의: BusinessAnchor 모델에 extracted 필드는 없음 (2026-03-31 제거)
-    // AI 파싱 후 사용자 확인/검증을 거친 데이터이므로 metadata가 SSOT
-    // 프론트엔드에서 extracted를 사용하는 코드가 많아 호환성을 위해 동일한 데이터를 반환
+    // SSOT: metadata만 반환 (extracted 레거시 제거, 2026-03-31)
+    // AI 파싱 후 사용자 확인/검증을 거친 데이터는 metadata에 저장
     const metadata = anchor?.metadata || {};
 
     return res.json({
@@ -335,8 +333,7 @@ export async function getMyBusiness(req, res) {
         businessId: anchor._id,
         hasBusinessNumber,
         businessVerified,
-        metadata,
-        extracted: metadata, // metadata와 동일 (프론트엔드 호환성)
+        metadata, // SSOT
         businessLicense: anchor?.businessLicense || null,
         payoutAccount: anchor?.payoutAccount || {},
       },
@@ -449,7 +446,7 @@ export async function clearMyBusinessLicense(req, res) {
         "metadata.email": "",
         "metadata.representativeName": "",
         "metadata.businessItem": "",
-        "metadata.businessCategory": "",
+        "metadata.businessType": "",
         "metadata.startDate": "",
         status: "draft",
       },

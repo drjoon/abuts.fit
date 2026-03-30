@@ -135,7 +135,8 @@ export const useFileUpload = (
         if (res.ok) {
           const body: any = res.data || {};
           const data = body.data || body;
-          const nextExtracted = normalizeExtracted(data?.extracted || {});
+          // SSOT: metadata 사용 (extracted 레거시 제거)
+          const nextExtracted = normalizeExtracted(data?.metadata || {});
           const verification = data?.verification;
           const hasAnyExtracted = Object.values(nextExtracted || {}).some((v) =>
             String(v || "").trim(),
