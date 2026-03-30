@@ -1,4 +1,5 @@
 import Business from "../../models/business.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import s3Utils from "../../utils/s3.utils.js";
 import File from "../../models/file.model.js";
@@ -429,30 +430,34 @@ export async function searchBusinesses(req, res) {
       rawType === "all"
         ? null
         : requestedType || resolveBusinessType(req.user, null);
-    const typeFilter = businessType
-      ? buildBusinessTypeFilter(businessType)
-      : {};
+    const typeFilter = businessType ? { businessType } : {};
 
     const q = String(req.query?.q || "").trim();
     if (!q) {
       return res.json({ success: true, data: [] });
     }
 
-    const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    const businesses = await Business.find({
+    // BusinessAnchor가 법적 식별/소개/정산 SSOT
+    // Business는 멤버십/조직 UI 컨테이너일 뿐이므로 검색 대상이 아님
+    const regex = new RegExp(q, "i");
+    const anchors = await BusinessAnchor.find({
       ...typeFilter,
-      $or: [{ name: regex }, { "extracted.representativeName": regex }],
+      $or: [
+        { name: regex },
+        { "metadata.companyName": regex },
+        { "metadata.representativeName": regex },
+      ],
     })
-      .select({ name: 1, extracted: 1 })
+      .select({ name: 1, metadata: 1, businessNumberNormalized: 1 })
       .limit(20)
       .lean();
 
-    const data = (businesses || []).map((b) => ({
-      _id: b._id,
-      name: b.name,
-      representativeName: b?.extracted?.representativeName || "",
-      businessNumber: b?.extracted?.businessNumber || "",
-      address: b?.extracted?.address || "",
+    const data = (anchors || []).map((a) => ({
+      _id: a._id,
+      name: a.name,
+      representativeName: a?.metadata?.representativeName || "",
+      businessNumber: a?.businessNumberNormalized || "",
+      address: a?.metadata?.address || "",
     }));
 
     return res.json({ success: true, data });
