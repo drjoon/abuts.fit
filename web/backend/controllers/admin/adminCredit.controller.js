@@ -4,7 +4,6 @@ import BonusGrant from "../../models/bonusGrant.model.js";
 import ChargeOrder from "../../models/chargeOrder.model.js";
 import BankTransaction from "../../models/bankTransaction.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
-import Business from "../../models/business.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import User from "../../models/user.model.js";
@@ -345,13 +344,7 @@ export async function adminGetBusinessLedger(req, res) {
         message: "사업자 ID가 올바르지 않습니다.",
       });
     }
-    const businessId = new Types.ObjectId(orgIdRaw);
-
-    // BusinessAnchor SSOT: Business에서 businessAnchorId 우선 조회
-    const org = await Business.findById(businessId)
-      .select({ businessAnchorId: 1 })
-      .lean();
-    const businessAnchorId = org?.businessAnchorId;
+    const businessAnchorId = new Types.ObjectId(orgIdRaw);
 
     const typeRaw = String(req.query.type || "")
       .trim()
@@ -1449,10 +1442,10 @@ export async function adminGetBusinessCredits(req, res) {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const skip = Math.max(Number(req.query.skip) || 0, 0);
 
-    const orgs = await Business.find({})
+    const orgs = await BusinessAnchor.find({})
       .select({
         name: 1,
-        owner: 1,
+        primaryContactUserId: 1,
         extracted: 1,
         businessAnchorId: 1,
         businessType: 1,
@@ -1709,8 +1702,8 @@ export async function adminGetBusinessCredits(req, res) {
 export async function adminGetBusinessCreditDetail(req, res) {
   try {
     const orgId = req.params.id;
-    const org = await Business.findById(orgId)
-      .select({ name: 1, extracted: 1, businessAnchorId: 1 })
+    const org = await BusinessAnchor.findById(orgId)
+      .select({ name: 1, metadata: 1 })
       .lean();
 
     if (!org) {
