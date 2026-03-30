@@ -2,7 +2,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { assertBusinessRole } from "../businesses/businessRole.util.js";
-import { ensureBusinessAnchorForBusiness } from "../businesses/business.update.controller.js";
 import s3Utils, { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
 
 // 지연 초기화: dotenv 로드 후 첫 호출 시 초기화

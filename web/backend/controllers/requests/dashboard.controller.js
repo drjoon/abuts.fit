@@ -29,7 +29,6 @@ import {
   getStoredRequestorDirectCircleMembershipByAnchorId,
 } from "../../services/pricingReferralSnapshot.service.js";
 import { getPricingReferralOrderCountMapByBusinessAnchorIds } from "../../services/pricingReferralOrderBucket.service.js";
-import { ensureBusinessAnchorForBusiness } from "../businesses/business.update.controller.js";
 import {
   triggerDashboardSummaryRefreshForAnchorId,
   waitForDashboardSummaryRefreshForAnchorId,
@@ -485,47 +484,12 @@ export async function getMyDashboardSummary(req, res) {
     const debug =
       process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
 
-    // User.businessAnchorId가 null인 경우 처리 (레거시 계정 대응)
+    // businessAnchorId가 없으면 에러 반환 (fallback 없이 버그 노출)
     if (!req.user?.businessAnchorId) {
-      let repairedId = "";
-
-      // BusinessAnchor 자체가 없으면 생성 시도
-      if (!repairedId || !Types.ObjectId.isValid(repairedId)) {
-        const created = await ensureBusinessAnchorForBusiness({
-          business: biz,
-          businessType: String(req.user?.role || "requestor"),
-          userId: req.user._id,
-          referredByAnchorId: null,
-        }).catch((err) => {
-          console.error("[dashboard] ensureBusinessAnchor failed", err);
-          return null;
-        });
-        repairedId = String(created || "").trim();
-      }
-
-      if (repairedId && Types.ObjectId.isValid(repairedId)) {
-        req.user.businessAnchorId = repairedId;
-        const anchorOid = new Types.ObjectId(repairedId);
-        await Promise.all([
-          User.updateOne(
-            { _id: req.user._id },
-            { $set: { businessAnchorId: anchorOid } },
-          ),
-          Request.updateMany(
-            { requestor: req.user._id, businessAnchorId: null },
-            { $set: { businessAnchorId: anchorOid } },
-          ),
-        ]).catch((err) =>
-          console.error(
-            "[dashboard] businessAnchorId repair/backfill failed",
-            err,
-          ),
-        );
-        await triggerDashboardSummaryRefreshForAnchorId(
-          repairedId,
-          "businessAnchorId-repair",
-        );
-      }
+      return res.status(400).json({
+        success: false,
+        message: "사업자 정보가 없습니다. 사업자 등록을 완료해주세요.",
+      });
     }
 
     const businessAnchorId = String(req.user?.businessAnchorId || "").trim();
