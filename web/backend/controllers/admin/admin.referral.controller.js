@@ -19,10 +19,10 @@ import {
   withAdminReferralInFlight,
 } from "../../services/adminReferralCache.service.js";
 
-const REFERRAL_LEADER_ROLE_FILTER = [
-  { role: "salesman" },
-  { role: "devops" },
-  { role: "requestor", subRole: "owner" },
+const REFERRAL_LEADER_BUSINESS_TYPE_FILTER = [
+  { businessType: "salesman" },
+  { businessType: "devops" },
+  { businessType: "requestor" },
 ];
 const REFERRAL_TREE_ROLES = ["requestor", "salesman", "devops"];
 const REFERRAL_REVENUE_OWNER_ROLES = new Set(["requestor", "devops"]);
@@ -49,45 +49,6 @@ async function getShippingRequestCountByBusinessAnchorIds({
     businessAnchorIds: validIds,
     startYmd,
     endYmd,
-  });
-}
-
-function normalizeReferralLeaders(leaders) {
-  const pickedByBusinessAnchorId = new Map();
-  const fallbackLeaders = [];
-
-  for (const leader of leaders || []) {
-    const businessAnchorId = String(leader?.businessAnchorId || "").trim();
-    if (!businessAnchorId || !Types.ObjectId.isValid(businessAnchorId)) {
-      fallbackLeaders.push(leader);
-      continue;
-    }
-
-    const current = pickedByBusinessAnchorId.get(businessAnchorId);
-    if (!current) {
-      pickedByBusinessAnchorId.set(businessAnchorId, leader);
-      continue;
-    }
-
-    const currentCreatedAt = current?.createdAt
-      ? new Date(current.createdAt).getTime()
-      : Number.POSITIVE_INFINITY;
-    const nextCreatedAt = leader?.createdAt
-      ? new Date(leader.createdAt).getTime()
-      : Number.POSITIVE_INFINITY;
-
-    if (nextCreatedAt < currentCreatedAt) {
-      pickedByBusinessAnchorId.set(businessAnchorId, leader);
-    }
-  }
-
-  return [
-    ...Array.from(pickedByBusinessAnchorId.values()),
-    ...fallbackLeaders,
-  ].sort((a, b) => {
-    const aCreatedAt = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
-    const bCreatedAt = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
-    return bCreatedAt - aCreatedAt;
   });
 }
 
@@ -128,30 +89,64 @@ export async function getReferralGroups(req, res) {
       : "";
     if (!refresh) {
       const cached = getAdminReferralCache(
-        `referral-groups:v6${cacheKeySuffix}`,
+        `referral-groups:v7${cacheKeySuffix}`,
       );
       if (cached) return res.status(200).json(cached);
     }
 
-    const rawLeaders = await User.find({
-      $or: REFERRAL_LEADER_ROLE_FILTER,
+    // BusinessAnchor 기반 리더 조회 (SSOT)
+    const rawLeaderAnchors = await BusinessAnchor.find({
+      $or: REFERRAL_LEADER_BUSINESS_TYPE_FILTER,
     })
       .select({
         _id: 1,
-        role: 1,
-        subRole: 1,
+        businessType: 1,
         name: 1,
-        email: 1,
-        business: 1,
-        businessAnchorId: 1,
-        active: 1,
+        businessNumberNormalized: 1,
+        metadata: 1,
+        primaryContactUserId: 1,
+        referredByAnchorId: 1,
         createdAt: 1,
-        approvedAt: 1,
         updatedAt: 1,
       })
       .sort({ createdAt: -1 })
       .lean();
-    const leaders = normalizeReferralLeaders(rawLeaders);
+
+    // 각 BusinessAnchor의 대표 사용자 정보 조회
+    const primaryContactUserIds = rawLeaderAnchors
+      .map((anchor) => anchor.primaryContactUserId)
+      .filter((id) => id && Types.ObjectId.isValid(String(id)));
+
+    const primaryContactUsers =
+      primaryContactUserIds.length > 0
+        ? await User.find({ _id: { $in: primaryContactUserIds } })
+            .select({ _id: 1, name: 1, email: 1, active: 1 })
+            .lean()
+        : [];
+
+    const userByIdMap = new Map(
+      primaryContactUsers.map((u) => [String(u._id), u]),
+    );
+
+    // BusinessAnchor + 대표 사용자 정보 결합
+    const leaders = rawLeaderAnchors.map((anchor) => {
+      const primaryUser = anchor.primaryContactUserId
+        ? userByIdMap.get(String(anchor.primaryContactUserId))
+        : null;
+      return {
+        _id: anchor._id,
+        businessAnchorId: anchor._id,
+        role: anchor.businessType,
+        business: anchor.name || anchor.metadata?.companyName || "",
+        businessNumber: anchor.businessNumberNormalized || "",
+        name: primaryUser?.name || "",
+        email: primaryUser?.email || "",
+        active: primaryUser?.active ?? true,
+        createdAt: anchor.createdAt,
+        updatedAt: anchor.updatedAt,
+        referredByAnchorId: anchor.referredByAnchorId,
+      };
+    });
 
     if (!leaders.length) {
       return res.status(200).json({ success: true, data: { groups: [] } });
@@ -359,15 +354,20 @@ export async function getReferralGroups(req, res) {
       };
     });
 
-    const requestorGroups = groups.filter((g) =>
-      REFERRAL_REVENUE_OWNER_ROLES.has(String(g?.leader?.role || "")),
+    const requestorGroups = groups.filter(
+      (g) => String(g?.leader?.role || "") === "requestor",
     );
-    const salesmanGroups = groups.filter((g) =>
-      REFERRAL_COMMISSION_LEADER_ROLES.has(String(g?.leader?.role || "")),
+    const salesmanGroups = groups.filter(
+      (g) => String(g?.leader?.role || "") === "salesman",
+    );
+    const devopsGroups = groups.filter(
+      (g) => String(g?.leader?.role || "") === "devops",
     );
 
     const requestorGroupCount = requestorGroups.length;
     const salesmanGroupCount = salesmanGroups.length;
+    const devopsGroupCount = devopsGroups.length;
+
     const requestorTotalAccounts = requestorGroups.reduce(
       (acc, g) => acc + Number(g.groupMemberCount || g.memberCount || 0),
       0,
@@ -376,6 +376,11 @@ export async function getReferralGroups(req, res) {
       (acc, g) => acc + Number(g.groupMemberCount || g.memberCount || 0),
       0,
     );
+    const devopsTotalAccounts = devopsGroups.reduce(
+      (acc, g) => acc + Number(g.groupMemberCount || g.memberCount || 0),
+      0,
+    );
+
     const requestorTotalRevenueAmount = requestorGroups.reduce(
       (acc, g) => acc + Number(g.groupRevenueAmount || 0),
       0,
@@ -388,6 +393,7 @@ export async function getReferralGroups(req, res) {
       (acc, g) => acc + Number(g.groupTotalOrders || 0),
       0,
     );
+
     const salesmanTotalReferredRevenueAmount = salesmanGroups.reduce(
       (acc, g) => acc + Number(g.groupRevenueAmount || 0),
       0,
@@ -401,6 +407,23 @@ export async function getReferralGroups(req, res) {
       0,
     );
     const salesmanTotalCommissionAmount = salesmanGroups.reduce(
+      (acc, g) => acc + Number(g.commissionAmount || 0),
+      0,
+    );
+
+    const devopsTotalReferredRevenueAmount = devopsGroups.reduce(
+      (acc, g) => acc + Number(g.groupRevenueAmount || 0),
+      0,
+    );
+    const devopsTotalReferredBonusAmount = devopsGroups.reduce(
+      (acc, g) => acc + Number(g.groupBonusAmount || 0),
+      0,
+    );
+    const devopsTotalReferralOrders = devopsGroups.reduce(
+      (acc, g) => acc + Number(g.groupTotalOrders || 0),
+      0,
+    );
+    const devopsTotalCommissionAmount = devopsGroups.reduce(
       (acc, g) => acc + Number(g.commissionAmount || 0),
       0,
     );
@@ -454,6 +477,20 @@ export async function getReferralGroups(req, res) {
             totalReferredBonusAmount: salesmanTotalReferredBonusAmount,
             totalReferralOrders: salesmanTotalReferralOrders,
           },
+          devops: {
+            groupCount: devopsGroupCount,
+            avgAccountsPerGroup: devopsGroupCount
+              ? Math.round(devopsTotalAccounts / devopsGroupCount)
+              : 0,
+            netNewGroups: 0,
+            avgCommissionPerGroup: devopsGroupCount
+              ? Math.round(devopsTotalCommissionAmount / devopsGroupCount)
+              : 0,
+            totalCommissionAmount: devopsTotalCommissionAmount,
+            totalReferredRevenueAmount: devopsTotalReferredRevenueAmount,
+            totalReferredBonusAmount: devopsTotalReferredBonusAmount,
+            totalReferralOrders: devopsTotalReferralOrders,
+          },
         },
         groups,
       },
@@ -462,7 +499,7 @@ export async function getReferralGroups(req, res) {
     if (!refresh) {
       // 5분 TTL 캐시
       setAdminReferralCache(
-        `referral-groups:v6${cacheKeySuffix}`,
+        `referral-groups:v7${cacheKeySuffix}`,
         payload,
         300000, // 5분
       );

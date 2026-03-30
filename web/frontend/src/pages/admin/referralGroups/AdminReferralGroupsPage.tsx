@@ -91,6 +91,16 @@ type ApiGroupListResponse = {
         totalReferredBonusAmount?: number;
         totalReferralOrders?: number;
       };
+      devops: {
+        groupCount: number;
+        avgAccountsPerGroup: number;
+        netNewGroups: number;
+        avgCommissionPerGroup: number;
+        totalCommissionAmount: number;
+        totalReferredRevenueAmount?: number;
+        totalReferredBonusAmount?: number;
+        totalReferralOrders?: number;
+      };
     };
     groups?: ApiGroupRow[];
   };
@@ -239,6 +249,9 @@ export default function AdminReferralGroupsPage() {
   const [sortKey, setSortKey] = useState<"members" | "orders" | "created">(
     "members",
   );
+  const [referrerTab, setReferrerTab] = useState<"salesman" | "devops">(
+    "salesman",
+  );
   const periodLabel = PERIOD_LABEL[period] || period;
 
   const { data: groupList, isLoading: isGroupListLoading } = useQuery({
@@ -294,6 +307,16 @@ export default function AdminReferralGroupsPage() {
   }, [
     overview?.salesman?.totalReferredRevenueAmount,
     overview?.salesman?.totalCommissionAmount,
+  ]);
+
+  const devopsCommissionRatio = useMemo(() => {
+    const revenue = Number(overview?.devops?.totalReferredRevenueAmount || 0);
+    const commission = Number(overview?.devops?.totalCommissionAmount || 0);
+    if (!revenue || revenue <= 0) return 0;
+    return (commission / revenue) * 100;
+  }, [
+    overview?.devops?.totalReferredRevenueAmount,
+    overview?.devops?.totalCommissionAmount,
   ]);
   const isCommissionLeader = (role?: string) =>
     ["salesman", "devops"].includes(String(role || ""));
@@ -641,83 +664,189 @@ export default function AdminReferralGroupsPage() {
                 <CardTitle className="text-base">
                   소개자 네트워크 현황
                 </CardTitle>
-                <div className="flex items-center gap-1">
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant={referrerTab === "salesman" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setReferrerTab("salesman")}
+                  className="h-7 px-2"
+                >
                   {roleBadge("salesman")}
+                </Button>
+                <Button
+                  type="button"
+                  variant={referrerTab === "devops" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setReferrerTab("devops")}
+                  className="h-7 px-2"
+                >
                   {roleBadge("devops")}
-                </div>
+                </Button>
               </div>
             </div>
           </CardHeader>
           <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3 text-right">
-            <div className="rounded-xl border p-3">
-              <div className="text-xs text-muted-foreground">
-                그룹수 / 의뢰건수
-              </div>
-              <div className="text-2xl font-semibold tracking-tight">
-                {Number(overview?.salesman?.groupCount || 0).toLocaleString()}
-                <span className="text-base font-normal text-muted-foreground mx-1">
-                  /
-                </span>
-                {Number(
-                  overview?.salesman?.totalReferralOrders || 0,
-                ).toLocaleString()}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                평균 계정수{" "}
-                {Number(
-                  overview?.salesman?.avgAccountsPerGroup || 0,
-                ).toLocaleString()}{" "}
-                · 순증가{" "}
-                {Number(overview?.salesman?.netNewGroups || 0).toLocaleString()}
-              </div>
-            </div>
-            <div className="rounded-xl border p-3">
-              <div className="text-xs text-muted-foreground">
-                그룹당 평균 수수료
-              </div>
-              <div className="text-2xl font-semibold tracking-tight">
-                {formatMoney(
-                  Number(overview?.salesman?.avgCommissionPerGroup || 0),
-                )}
-                원
-              </div>
-              <div className="text-xs text-muted-foreground">
-                유료 소개 매출 기준
-              </div>
-            </div>
-            <div className="rounded-xl border p-3 text-right">
-              <div className="text-xs text-muted-foreground">
-                소개 매출 총액
-              </div>
-              <div className="text-2xl font-semibold tracking-tight">
-                {formatMoney(
-                  Number(overview?.salesman?.totalReferredRevenueAmount || 0) +
-                    Number(overview?.salesman?.totalReferredBonusAmount || 0),
-                )}
-                원
-              </div>
-              <div className="text-xs text-muted-foreground">
-                유료{" "}
-                {formatMoney(
-                  Number(overview?.salesman?.totalReferredRevenueAmount || 0),
-                )}
-                원
-              </div>
-              <div className="text-xs text-muted-foreground">
-                무료{" "}
-                {formatMoney(
-                  Number(overview?.salesman?.totalReferredBonusAmount || 0),
-                )}
-                원
-              </div>
-              <div className="text-xs text-muted-foreground">
-                수수료{" "}
-                {formatMoney(
-                  Number(overview?.salesman?.totalCommissionAmount || 0),
-                )}
-                원 · 비율 {salesmanCommissionRatio.toFixed(1)}%
-              </div>
-            </div>
+            {referrerTab === "salesman" ? (
+              <>
+                <div className="rounded-xl border p-3">
+                  <div className="text-xs text-muted-foreground">
+                    그룹수 / 의뢰건수
+                  </div>
+                  <div className="text-2xl font-semibold tracking-tight">
+                    {Number(
+                      overview?.salesman?.groupCount || 0,
+                    ).toLocaleString()}
+                    <span className="text-base font-normal text-muted-foreground mx-1">
+                      /
+                    </span>
+                    {Number(
+                      overview?.salesman?.totalReferralOrders || 0,
+                    ).toLocaleString()}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    평균 계정수{" "}
+                    {Number(
+                      overview?.salesman?.avgAccountsPerGroup || 0,
+                    ).toLocaleString()}{" "}
+                    · 순증가{" "}
+                    {Number(
+                      overview?.salesman?.netNewGroups || 0,
+                    ).toLocaleString()}
+                  </div>
+                </div>
+                <div className="rounded-xl border p-3">
+                  <div className="text-xs text-muted-foreground">
+                    그룹당 평균 수수료
+                  </div>
+                  <div className="text-2xl font-semibold tracking-tight">
+                    {formatMoney(
+                      Number(overview?.salesman?.avgCommissionPerGroup || 0),
+                    )}
+                    원
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    유료 소개 매출 기준
+                  </div>
+                </div>
+                <div className="rounded-xl border p-3 text-right">
+                  <div className="text-xs text-muted-foreground">
+                    소개 매출 총액
+                  </div>
+                  <div className="text-2xl font-semibold tracking-tight">
+                    {formatMoney(
+                      Number(
+                        overview?.salesman?.totalReferredRevenueAmount || 0,
+                      ) +
+                        Number(
+                          overview?.salesman?.totalReferredBonusAmount || 0,
+                        ),
+                    )}
+                    원
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    유료{" "}
+                    {formatMoney(
+                      Number(
+                        overview?.salesman?.totalReferredRevenueAmount || 0,
+                      ),
+                    )}
+                    원
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    무료{" "}
+                    {formatMoney(
+                      Number(overview?.salesman?.totalReferredBonusAmount || 0),
+                    )}
+                    원
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    수수료{" "}
+                    {formatMoney(
+                      Number(overview?.salesman?.totalCommissionAmount || 0),
+                    )}
+                    원 · 비율 {salesmanCommissionRatio.toFixed(1)}%
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="rounded-xl border p-3">
+                  <div className="text-xs text-muted-foreground">
+                    그룹수 / 의뢰건수
+                  </div>
+                  <div className="text-2xl font-semibold tracking-tight">
+                    {Number(overview?.devops?.groupCount || 0).toLocaleString()}
+                    <span className="text-base font-normal text-muted-foreground mx-1">
+                      /
+                    </span>
+                    {Number(
+                      overview?.devops?.totalReferralOrders || 0,
+                    ).toLocaleString()}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    평균 계정수{" "}
+                    {Number(
+                      overview?.devops?.avgAccountsPerGroup || 0,
+                    ).toLocaleString()}{" "}
+                    · 순증가{" "}
+                    {Number(
+                      overview?.devops?.netNewGroups || 0,
+                    ).toLocaleString()}
+                  </div>
+                </div>
+                <div className="rounded-xl border p-3">
+                  <div className="text-xs text-muted-foreground">
+                    그룹당 평균 수수료
+                  </div>
+                  <div className="text-2xl font-semibold tracking-tight">
+                    {formatMoney(
+                      Number(overview?.devops?.avgCommissionPerGroup || 0),
+                    )}
+                    원
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    유료 소개 매출 기준
+                  </div>
+                </div>
+                <div className="rounded-xl border p-3 text-right">
+                  <div className="text-xs text-muted-foreground">
+                    소개 매출 총액
+                  </div>
+                  <div className="text-2xl font-semibold tracking-tight">
+                    {formatMoney(
+                      Number(
+                        overview?.devops?.totalReferredRevenueAmount || 0,
+                      ) +
+                        Number(overview?.devops?.totalReferredBonusAmount || 0),
+                    )}
+                    원
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    유료{" "}
+                    {formatMoney(
+                      Number(overview?.devops?.totalReferredRevenueAmount || 0),
+                    )}
+                    원
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    무료{" "}
+                    {formatMoney(
+                      Number(overview?.devops?.totalReferredBonusAmount || 0),
+                    )}
+                    원
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    수수료{" "}
+                    {formatMoney(
+                      Number(overview?.devops?.totalCommissionAmount || 0),
+                    )}
+                    원 · 비율 {devopsCommissionRatio.toFixed(1)}%
+                  </div>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
