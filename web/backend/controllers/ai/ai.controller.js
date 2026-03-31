@@ -3,6 +3,7 @@ import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { assertBusinessRole } from "../businesses/businessRole.util.js";
 import s3Utils, { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
+import sharp from "sharp";
 
 // 지연 초기화: dotenv 로드 후 첫 호출 시 초기화
 let _apiKey = null;
@@ -30,6 +31,78 @@ const getGenAI = () => {
   }
   return _genAI;
 };
+
+/**
+ * 이미지 전처리: 토큰 다이어트를 위한 리사이징 및 최적화
+ * - 문서 인식(사업자등록증): 1024px 이하 + 그레이스케일 + JPG 압축
+ * - 로트넘버 인식: 1024px 이하 + 그레이스케일 + JPG 압축
+ * @param {Buffer} buffer - 원본 이미지 버퍼
+ * @param {Object} options - 전처리 옵션
+ * @param {number} options.maxWidth - 최대 너비 (기본: 1024)
+ * @param {boolean} options.grayscale - 그레이스케일 변환 여부 (기본: true)
+ * @param {number} options.quality - JPG 압축 품질 (기본: 85)
+ * @returns {Promise<{buffer: Buffer, mimeType: string}>}
+ */
+async function preprocessImageForGemini(buffer, options = {}) {
+  const { maxWidth = 1024, grayscale = true, quality = 85 } = options;
+
+  try {
+    let pipeline = sharp(buffer);
+
+    // 메타데이터 조회하여 현재 크기 확인
+    const metadata = await pipeline.metadata();
+    const originalWidth = metadata.width || 0;
+    const originalHeight = metadata.height || 0;
+
+    console.log("[AI] preprocessImage: original size", {
+      width: originalWidth,
+      height: originalHeight,
+      format: metadata.format,
+    });
+
+    // 리사이징 (너비가 maxWidth 초과 시에만)
+    if (originalWidth > maxWidth) {
+      pipeline = pipeline.resize(maxWidth, null, {
+        fit: "inside",
+        withoutEnlargement: true,
+      });
+      console.log("[AI] preprocessImage: resizing to max width", maxWidth);
+    }
+
+    // 그레이스케일 변환 (문서 인식에는 색상 정보 불필요)
+    if (grayscale) {
+      pipeline = pipeline.grayscale();
+      console.log("[AI] preprocessImage: converting to grayscale");
+    }
+
+    // JPG 포맷으로 변환 및 압축
+    const processedBuffer = await pipeline
+      .jpeg({ quality, mozjpeg: true })
+      .toBuffer();
+
+    const reduction = (
+      ((buffer.length - processedBuffer.length) / buffer.length) *
+      100
+    ).toFixed(1);
+
+    console.log("[AI] preprocessImage: optimization complete", {
+      originalSize: buffer.length,
+      processedSize: processedBuffer.length,
+      reduction: `${reduction}%`,
+    });
+
+    return {
+      buffer: processedBuffer,
+      mimeType: "image/jpeg",
+    };
+  } catch (error) {
+    console.error("[AI] preprocessImage: failed, using original", error);
+    // 전처리 실패 시 원본 반환
+    const mimeType =
+      buffer[0] === 0x89 && buffer[1] === 0x50 ? "image/png" : "image/jpeg";
+    return { buffer, mimeType };
+  }
+}
 
 export async function parseBusinessLicense(req, res) {
   try {
@@ -176,12 +249,15 @@ export async function parseBusinessLicense(req, res) {
         temperature: 0.2,
       },
     });
-    const imageBase64 = buffer.toString("base64");
-    const mimeType = String(originalName || "")
-      .toLowerCase()
-      .endsWith(".png")
-      ? "image/png"
-      : "image/jpeg";
+
+    // 이미지 전처리: 토큰 다이어트 (리사이징 + 그레이스케일 + 압축)
+    const { buffer: processedBuffer, mimeType } =
+      await preprocessImageForGemini(buffer, {
+        maxWidth: 1024,
+        grayscale: true,
+        quality: 85,
+      });
+    const imageBase64 = processedBuffer.toString("base64");
 
     const prompt =
       "너는 한국 사업자등록증 이미지를 읽어 필요한 정보를 JSON으로만 추출하는 도우미야.\n" +
@@ -703,12 +779,14 @@ export async function recognizeLotNumber(req, res) {
       },
     });
 
-    const imageBase64 = buffer.toString("base64");
-    const mimeType = String(originalName || "")
-      .toLowerCase()
-      .endsWith(".png")
-      ? "image/png"
-      : "image/jpeg";
+    // 이미지 전처리: 토큰 다이어트 (리사이징 + 그레이스케일 + 압축)
+    const { buffer: processedBuffer, mimeType } =
+      await preprocessImageForGemini(buffer, {
+        maxWidth: 1024,
+        grayscale: true,
+        quality: 85,
+      });
+    const imageBase64 = processedBuffer.toString("base64");
 
     const prompt =
       "너는 치과 임플란트 어벗먼트(또는 유사한 금속 부품) 생산 이미지에서 각인된 시리얼 코드를 읽어 JSON으로 추출하는 도우미야.\n" +

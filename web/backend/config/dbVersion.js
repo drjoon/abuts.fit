@@ -24,7 +24,7 @@
  * DB 리셋 시 이 값을 증가시키세요.
  * 프론트엔드는 이 버전을 확인하여 localStorage 초기화 여부를 결정합니다.
  */
-export const DB_VERSION = "5";
+export const DB_VERSION = "6";
 
 /**
  * DB 버전을 반환하는 헬퍼 함수
