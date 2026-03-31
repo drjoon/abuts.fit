@@ -286,6 +286,9 @@ export const AdminUserManagement = () => {
   const [totalCount, setTotalCount] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<UiUserRow | null>(null);
+  const [deleteType, setDeleteType] = useState<"user-only" | "with-business">(
+    "with-business",
+  );
   const [deletingUser, setDeletingUser] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const listContainerRef = useRef<HTMLDivElement | null>(null);
@@ -447,6 +450,44 @@ export const AdminUserManagement = () => {
         toast({
           title: "사업자 포함 계정 삭제 완료",
           description: `${getDisplayUserName(targetUser)} 계정과 연결 사업자를 삭제했습니다.`,
+        });
+        setDeleteTarget(null);
+        setDetailOpen(false);
+        setSelectedUser(null);
+        setSelectedUserId(null);
+        await fetchUsers(1, false);
+        return true;
+      } finally {
+        setDeletingUser(false);
+      }
+    },
+    [fetchUsers, toast, token],
+  );
+
+  const deleteUserOnly = useCallback(
+    async (targetUser: UiUserRow) => {
+      if (!token) return false;
+      setDeletingUser(true);
+      try {
+        const res = await request<any>({
+          path: `/api/admin/users/${encodeURIComponent(targetUser.id)}`,
+          method: "DELETE",
+          token,
+        });
+        if (!res.ok || !res.data?.success) {
+          toast({
+            title: "사용자 삭제 실패",
+            description:
+              res.data?.message ||
+              res.data?.error ||
+              "잠시 후 다시 시도해주세요.",
+            variant: "destructive",
+          });
+          return false;
+        }
+        toast({
+          title: "사용자 삭제 완료",
+          description: `${getDisplayUserName(targetUser)} 계정을 삭제했습니다. (사업자는 유지됨)`,
         });
         setDeleteTarget(null);
         setDetailOpen(false);
@@ -912,7 +953,20 @@ export const AdminUserManagement = () => {
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive focus:text-destructive"
-                          onClick={() => setDeleteTarget(user)}
+                          onClick={() => {
+                            setDeleteTarget(user);
+                            setDeleteType("user-only");
+                          }}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          사용자만 삭제
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => {
+                            setDeleteTarget(user);
+                            setDeleteType("with-business");
+                          }}
                         >
                           <Trash2 className="mr-2 h-4 w-4" />
                           사업자 포함 계정 삭제
@@ -1312,9 +1366,24 @@ export const AdminUserManagement = () => {
                       </Button>
                       <Button
                         type="button"
+                        variant="outline"
+                        className="text-destructive hover:text-destructive"
+                        disabled={deletingUser}
+                        onClick={() => {
+                          setDeleteTarget(selectedUser);
+                          setDeleteType("user-only");
+                        }}
+                      >
+                        사용자만 삭제
+                      </Button>
+                      <Button
+                        type="button"
                         variant="destructive"
                         disabled={deletingUser}
-                        onClick={() => setDeleteTarget(selectedUser)}
+                        onClick={() => {
+                          setDeleteTarget(selectedUser);
+                          setDeleteType("with-business");
+                        }}
                       >
                         사업자 포함 계정 삭제
                       </Button>
@@ -1336,15 +1405,29 @@ export const AdminUserManagement = () => {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
-                사업자 포함 계정을 삭제할까요?
+                {deleteType === "user-only"
+                  ? "사용자만 삭제할까요?"
+                  : "사업자 포함 계정을 삭제할까요?"}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {deleteTarget
-                  ? getDisplayUserName(deleteTarget)
-                  : "선택한 사용자"}{" "}
-                계정과 연결된 사업자, 그리고 안전 조건을 만족하는 경우 business
-                anchor까지 함께 삭제합니다. 다른 계정이나 하위 참조가 남아
-                있으면 삭제가 거부됩니다.
+                {deleteType === "user-only" ? (
+                  <>
+                    {deleteTarget
+                      ? getDisplayUserName(deleteTarget)
+                      : "선택한 사용자"}{" "}
+                    계정만 삭제합니다. 연결된 사업자는 유지되며, 다른 계정이
+                    해당 사업자를 계속 사용할 수 있습니다.
+                  </>
+                ) : (
+                  <>
+                    {deleteTarget
+                      ? getDisplayUserName(deleteTarget)
+                      : "선택한 사용자"}{" "}
+                    계정과 연결된 사업자, 그리고 안전 조건을 만족하는 경우
+                    business anchor까지 함께 삭제합니다. 다른 계정이나 하위
+                    참조가 남아 있으면 삭제가 거부됩니다.
+                  </>
+                )}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -1356,7 +1439,11 @@ export const AdminUserManagement = () => {
                 onClick={async (event) => {
                   event.preventDefault();
                   if (!deleteTarget || deletingUser) return;
-                  await deleteUserWithBusiness(deleteTarget);
+                  if (deleteType === "user-only") {
+                    await deleteUserOnly(deleteTarget);
+                  } else {
+                    await deleteUserWithBusiness(deleteTarget);
+                  }
                 }}
               >
                 {deletingUser ? "삭제 중..." : "삭제"}

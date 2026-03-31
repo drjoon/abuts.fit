@@ -62,13 +62,12 @@ export const SignupPage = () => {
     location.pathname === "/signup/staff" ? "manufacturer" : "requestor",
   );
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(() => {
-    // /signup/staff에서 소셜 로그인 후 돌아온 경우(mode=social_new) 소개자 코드 건너뛰기
+    // 소셜 로그인 후 돌아온 경우(mode=social_new)는 기본 정보 입력부터 시작
     const mode = (searchParams.get("mode") || "").trim();
     const isSocialNewMode = mode === "social_new";
-    const isStaffSignupRoute = location.pathname === "/signup/staff";
 
-    if (isStaffSignupRoute && isSocialNewMode) {
-      return 3; // 소개자 코드 건너뛰고 계정 정보 입력으로
+    if (isSocialNewMode) {
+      return 1; // 소셜 모드: 기본 정보 입력부터 시작
     }
     return 1;
   });
@@ -400,6 +399,10 @@ export const SignupPage = () => {
   useEffect(() => {
     if (!isSocialNewMode) return;
     const socialToken = sessionStorage.getItem("socialToken");
+    console.log(
+      "[signup-social] socialToken:",
+      socialToken ? "exists" : "missing",
+    );
     if (!socialToken) return;
 
     const decodeJwtPayload = (token: string) => {
@@ -417,14 +420,17 @@ export const SignupPage = () => {
     };
 
     const payload = decodeJwtPayload(socialToken);
+    console.log("[signup-social] decoded payload:", payload);
     if (!payload) return;
 
-    setSocialInfo({
+    const socialInfoData = {
       email: payload.email || "",
       name: payload.name || "",
       provider: payload.provider || "",
       providerUserId: payload.providerUserId || "",
-    });
+    };
+    console.log("[signup-social] setting socialInfo:", socialInfoData);
+    setSocialInfo(socialInfoData);
     setFormData((prev) => ({
       ...prev,
       name: payload.name || "",
@@ -1236,9 +1242,15 @@ export const SignupPage = () => {
                       isLoading={isLoading}
                       onFormChange={handleChange}
                       onPrevious={() => navigate("/login")}
-                      onNext={() =>
-                        referralCode ? void submitSignup() : setWizardStep(2)
-                      }
+                      onNext={() => {
+                        // staff 경로는 소개 코드 불필요, 바로 가입
+                        if (isStaffSignupRoute) {
+                          void submitSignup();
+                          return;
+                        }
+                        // 소개 코드가 있으면 바로 가입, 없으면 소개 코드 입력 단계로
+                        referralCode ? void submitSignup() : setWizardStep(2);
+                      }}
                     />
                   )}
 
