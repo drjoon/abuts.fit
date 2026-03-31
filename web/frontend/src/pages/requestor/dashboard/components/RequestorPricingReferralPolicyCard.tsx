@@ -43,7 +43,7 @@ export const RequestorPricingReferralPolicyCard = () => {
         throw new Error("사용자 정보를 불러오지 못했습니다.");
       }
       const res = await apiFetch<any>({
-        path: `/api/referral-groups/${user.id}/tree?lite=1`,
+        path: `/api/referral-groups/${user.businessAnchorId}/tree?lite=1`,
         method: "GET",
         token,
       });

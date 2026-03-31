@@ -27,6 +27,24 @@ dbReady
   .then(async () => {
     console.log("MongoDB 연결 준비 완료");
 
+    // subRole null 사용자 자동 수정 (1회성)
+    (async () => {
+      try {
+        const User = (await import("./models/user.model.js")).default;
+        const result = await User.updateMany(
+          { businessAnchorId: { $ne: null }, subRole: null },
+          { $set: { subRole: "owner" } },
+        );
+        if (result.modifiedCount > 0) {
+          console.log(
+            `[subRole fix] ${result.modifiedCount}명의 사용자 subRole을 'owner'로 업데이트했습니다.`,
+          );
+        }
+      } catch (error) {
+        console.error("[subRole fix] 오류:", error.message);
+      }
+    })();
+
     // 캐시 워밍 실행
     await warmupCache();
 

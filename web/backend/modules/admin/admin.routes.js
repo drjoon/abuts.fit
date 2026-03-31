@@ -44,6 +44,7 @@ import {
 } from "../../controllers/admin/admin.settings.controller.js";
 import { getAllFiles } from "../../controllers/admin/admin.files.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
+import { fixSubRole } from "../../controllers/admin/admin.fixSubRole.controller.js";
 import {
   adminListBankTransactions,
   adminListChargeOrders,
@@ -272,6 +273,13 @@ router.post("/mails/:id/restore-to-sent", adminRestoreToSent);
 router.post("/mails/trash/empty", adminEmptyTrash);
 router.post("/mails/spam/empty", adminEmptySpam);
 router.post("/mails/sent/empty", adminEmptySent);
+
+// subRole 수정 (임시 유틸리티)
+router.post(
+  "/fix-subrole",
+  authorize(["admin"], { subRoles: ["owner"] }),
+  fixSubRole,
+);
 
 // 보너스 지급 내역 / 예외 지급
 router.get("/bonus-grants", adminListBonusGrants);

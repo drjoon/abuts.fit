@@ -116,6 +116,13 @@ export const BusinessForm = ({
     }
   }, [validationSucceeded, isVerified]);
 
+  // 사업자등록증 업로드 시 isModified를 true로 설정 (AI 인식 실패 시도 포함)
+  useEffect(() => {
+    if (licenseStatus === "ready" || licenseStatus === "error") {
+      setIsModified(true);
+    }
+  }, [licenseStatus]);
+
   const repNameRef = useRef<HTMLInputElement | null>(null);
   const startDateRef = useRef<HTMLInputElement | null>(null);
   const companyNameRef = useRef<HTMLInputElement | null>(null);

@@ -153,13 +153,19 @@ export const useReferralData = (options?: UseReferralDataOptions) => {
   }, [fetchDirectMembers, isReferralEligible, toast, token]);
 
   useEffect(() => {
-    if (!token || !isReferralEligible || !user?.id || !fetchTree) {
+    if (
+      !token ||
+      !isReferralEligible ||
+      !user?.id ||
+      !user?.businessAnchorId ||
+      !fetchTree
+    ) {
       return;
     }
 
     setLoadingTree(true);
     request<any>({
-      path: `/api/referral-groups/${user.id}/tree?lite=1`,
+      path: `/api/referral-groups/${user.businessAnchorId}/tree?lite=1`,
       method: "GET",
       token,
     })
@@ -181,7 +187,14 @@ export const useReferralData = (options?: UseReferralDataOptions) => {
         });
       })
       .finally(() => setLoadingTree(false));
-  }, [fetchTree, isReferralEligible, toast, token, user?.id, user?.role]);
+  }, [
+    fetchTree,
+    isReferralEligible,
+    toast,
+    token,
+    user?.businessAnchorId,
+    user?.role,
+  ]);
 
   return {
     isReferralEligible,

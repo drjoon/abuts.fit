@@ -133,6 +133,14 @@ export const authorize = (roles = [], options = {}) => {
     // SSOT: subRole 체크 (모든 역할에 대해 통합된 subRoles 옵션 사용)
     const { subRoles } = options;
     if (Array.isArray(subRoles) && subRoles.length > 0) {
+      console.log("[authorize] subRole check:", {
+        path: req.path,
+        userId: req.user._id,
+        role: req.user.role,
+        subRole: req.user.subRole,
+        requiredSubRoles: subRoles,
+        hasSubRole: subRoles.includes(req.user.subRole),
+      });
       if (!subRoles.includes(req.user.subRole)) {
         return res.status(403).json({
           success: false,

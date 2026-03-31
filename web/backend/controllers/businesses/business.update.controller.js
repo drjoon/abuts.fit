@@ -549,6 +549,7 @@ export async function updateMyBusiness(req, res) {
           $set: {
             businessAnchorId: attachToBusinessAnchor._id,
             business: attachToBusinessAnchor.name,
+            subRole: "owner",
           },
         },
         { new: true },
@@ -640,6 +641,7 @@ export async function updateMyBusiness(req, res) {
             $set: {
               businessAnchorId: created._id,
               business: created.name,
+              subRole: "owner",
             },
           },
           { new: true },
