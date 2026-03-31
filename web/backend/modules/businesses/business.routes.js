@@ -69,24 +69,18 @@ router.delete(
 );
 
 // 가입 요청/탈퇴: 일반 기능 (직원도 가입 요청 취소/탈퇴는 가능해야 함)
-router.post(
-  "/join-requests",
-  businessController.requestJoinBusiness,
-);
+router.post("/join-requests", businessController.requestJoinBusiness);
 router.post(
   "/join-requests/:businessId/cancel",
-  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
   businessController.cancelJoinRequest,
 );
 router.post(
   "/join-requests/:businessId/leave",
-  authorize(["requestor", "salesman", "manufacturer", "admin"]),
+  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
   businessController.leaveBusiness,
 );
-router.get(
-  "/join-requests/me",
-  businessController.getMyJoinRequests,
-);
+router.get("/join-requests/me", businessController.getMyJoinRequests);
 
 // 직원 관리 (가입 승인/거절/목록/삭제)
 router.get(

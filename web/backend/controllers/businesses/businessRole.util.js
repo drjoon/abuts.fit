@@ -2,6 +2,7 @@ export const BUSINESS_ALLOWED_ROLES = [
   "requestor",
   "salesman",
   "manufacturer",
+  "admin",
   "devops",
 ];
 
