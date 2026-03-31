@@ -115,12 +115,29 @@ export const SettingsWizard = ({
     legacyRoleStorageKey,
     fallbackRoleStorageKey,
   ]);
-  const [currentStep, setCurrentStep] = useState<WizardStepId | null>(
-    () => readStoredStep() || "profile",
-  );
+  const [currentStep, setCurrentStep] = useState<WizardStepId | null>(() => {
+    // 직원 신청 후 승인 대기 중이면 business 단계(4/4) 유지
+    const hasPendingJoinRequest =
+      user?.role === "manufacturer" ||
+      user?.role === "admin" ||
+      user?.role === "devops";
+    if (hasPendingJoinRequest && !user?.onboardingWizardCompleted) {
+      return "business";
+    }
+    return readStoredStep() || "profile";
+  });
   const [selectedRole, setSelectedRole] = useState<"owner" | "member" | null>(
     () => {
       if (typeof window === "undefined") return null;
+
+      // 직원 신청 후 승인 대기 중이면 member 역할 유지
+      const hasPendingJoinRequest =
+        user?.role === "manufacturer" ||
+        user?.role === "admin" ||
+        user?.role === "devops";
+      if (hasPendingJoinRequest && !user?.onboardingWizardCompleted) {
+        return "member";
+      }
 
       // DB 버전이 다르면 저장된 역할을 무시
       if (dbVersion !== window.localStorage.getItem("dbVersion")) {
