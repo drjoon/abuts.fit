@@ -25,11 +25,6 @@ const LoginPage = lazy(() =>
 const SignupPage = lazy(() =>
   import("./features/auth/SignupPage").then((m) => ({ default: m.SignupPage })),
 );
-const SignupStaffPage = lazy(() =>
-  import("./features/auth/SignupStaffPage").then((m) => ({
-    default: m.SignupStaffPage,
-  })),
-);
 const ForgotPasswordPage = lazy(() =>
   import("./features/auth/ForgotPasswordPage").then((m) => ({
     default: m.ForgotPasswordPage,
@@ -279,7 +274,7 @@ const App = () => {
                 <Route path="/signup" element={<SignupEntryRoute />} />
                 <Route path="/refer" element={<ReferRoute />} />
                 <Route path="/signup/referral" element={<SignupPage />} />
-                <Route path="/signup/staff" element={<SignupStaffPage />} />
+                <Route path="/signup/staff" element={<SignupPage />} />
                 <Route
                   path="/forgot-password"
                   element={<ForgotPasswordPage />}

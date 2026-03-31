@@ -21,7 +21,12 @@ import { SignupSocialWizardStep1 } from "./signup/SignupSocialWizardStep1";
 import { SignupWizardAccountStep } from "./signup/SignupWizardAccountStep";
 
 export const SignupPage = () => {
-  type SignupRole = "requestor" | "salesman";
+  type SignupRole =
+    | "requestor"
+    | "salesman"
+    | "manufacturer"
+    | "admin"
+    | "devops";
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -32,8 +37,13 @@ export const SignupPage = () => {
     return code;
   }, [searchParams]);
   const isReferralSignupRoute = location.pathname === "/signup/referral";
+  const isStaffSignupRoute = location.pathname === "/signup/staff";
   const oauthReturnTo =
-    referralCode || isReferralSignupRoute ? "/signup/referral" : "/signup";
+    referralCode || isReferralSignupRoute
+      ? "/signup/referral"
+      : isStaffSignupRoute
+        ? "/signup/staff"
+        : "/signup";
 
   const { token, user, loginWithToken, logout } = useAuthStore();
   const [formData, setFormData] = useState({
@@ -48,7 +58,9 @@ export const SignupPage = () => {
   const [accountFocusField, setAccountFocusField] = useState<
     "name" | "password" | "confirmPassword" | null
   >(null);
-  const [signupRole, setSignupRole] = useState<SignupRole>("requestor");
+  const [signupRole, setSignupRole] = useState<SignupRole>(
+    location.pathname === "/signup/staff" ? "manufacturer" : "requestor",
+  );
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(1);
   const [manualReferralInput, setManualReferralInput] = useState("");
   const [enteredReferralCode, setEnteredReferralCode] = useState<
@@ -92,7 +104,7 @@ export const SignupPage = () => {
   } | null>(null);
   const markSetupWizardRequired = useCallback(
     (role?: string | null) => {
-      if (role !== "requestor" && role !== "salesman") return false;
+      // 모든 역할 온보딩 위저드 필요
       setShowSetupConfirm(true);
       navigate("/dashboard/wizard?mode=account", { replace: true });
       return true;
@@ -197,7 +209,11 @@ export const SignupPage = () => {
           )
             ? body.data.allowedSignupRoles.filter(
                 (role: string): role is SignupRole =>
-                  role === "requestor" || role === "salesman",
+                  role === "requestor" ||
+                  role === "salesman" ||
+                  role === "manufacturer" ||
+                  role === "admin" ||
+                  role === "devops",
               )
             : [];
           setReferrerInfo({
@@ -227,13 +243,23 @@ export const SignupPage = () => {
   );
 
   const allowedSignupRoles = useMemo<SignupRole[]>(() => {
+    // /signup/staff 경로는 제조사/개발운영사/관리자만 허용
+    if (isStaffSignupRoute) {
+      return ["manufacturer", "devops", "admin"];
+    }
+    // /signup 경로는 의뢰자/영업자만 허용
     if (typeof effectiveReferralCode !== "string")
       return ["requestor", "salesman"];
     const roles = referrerInfo?.allowedSignupRoles || [];
     return roles.filter(
-      (role): role is SignupRole => role === "requestor" || role === "salesman",
+      (role): role is SignupRole =>
+        role === "requestor" ||
+        role === "salesman" ||
+        role === "manufacturer" ||
+        role === "admin" ||
+        role === "devops",
     );
-  }, [effectiveReferralCode, referrerInfo]);
+  }, [effectiveReferralCode, referrerInfo, isStaffSignupRoute]);
 
   const isSalesmanDisabled = useMemo(() => {
     if (typeof effectiveReferralCode !== "string") return false;
@@ -257,7 +283,11 @@ export const SignupPage = () => {
         )
           ? body.data.allowedSignupRoles.filter(
               (role: string): role is SignupRole =>
-                role === "requestor" || role === "salesman",
+                role === "requestor" ||
+                role === "salesman" ||
+                role === "manufacturer" ||
+                role === "admin" ||
+                role === "devops",
             )
           : [];
         if (
@@ -946,36 +976,74 @@ export const SignupPage = () => {
                 <>
                   {wizardStep === 1 && (
                     <div className="space-y-6">
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setSignupRole("requestor")}
-                          className={`h-10 rounded-md border text-sm font-medium transition-colors ${
-                            signupRole === "requestor"
-                              ? "border-white/10 bg-white/15 text-white"
-                              : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
-                          }`}
-                        >
-                          의뢰자
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (isSalesmanDisabled) return;
-                            setSignupRole("salesman");
-                          }}
-                          disabled={isSalesmanDisabled}
-                          className={`h-10 rounded-md border text-sm font-medium transition-colors ${
-                            signupRole === "salesman"
-                              ? "border-white/10 bg-white/15 text-white"
-                              : isSalesmanDisabled
-                                ? "cursor-not-allowed border-white/10 bg-white/5 text-white/35"
+                      {isStaffSignupRoute ? (
+                        <div className="grid grid-cols-3 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSignupRole("manufacturer")}
+                            className={`h-10 rounded-md border text-sm font-medium transition-colors ${
+                              signupRole === "manufacturer"
+                                ? "border-white/10 bg-white/15 text-white"
                                 : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
-                          }`}
-                        >
-                          영업자
-                        </button>
-                      </div>
+                            }`}
+                          >
+                            제조사
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSignupRole("devops")}
+                            className={`h-10 rounded-md border text-sm font-medium transition-colors ${
+                              signupRole === "devops"
+                                ? "border-white/10 bg-white/15 text-white"
+                                : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                            }`}
+                          >
+                            개발운영사
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSignupRole("admin")}
+                            className={`h-10 rounded-md border text-sm font-medium transition-colors ${
+                              signupRole === "admin"
+                                ? "border-white/10 bg-white/15 text-white"
+                                : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                            }`}
+                          >
+                            관리자
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSignupRole("requestor")}
+                            className={`h-10 rounded-md border text-sm font-medium transition-colors ${
+                              signupRole === "requestor"
+                                ? "border-white/10 bg-white/15 text-white"
+                                : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                            }`}
+                          >
+                            의뢰자
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isSalesmanDisabled) return;
+                              setSignupRole("salesman");
+                            }}
+                            disabled={isSalesmanDisabled}
+                            className={`h-10 rounded-md border text-sm font-medium transition-colors ${
+                              signupRole === "salesman"
+                                ? "border-white/10 bg-white/15 text-white"
+                                : isSalesmanDisabled
+                                  ? "cursor-not-allowed border-white/10 bg-white/5 text-white/35"
+                                  : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                            }`}
+                          >
+                            영업자
+                          </button>
+                        </div>
+                      )}
                       {signupRole === "requestor" && (
                         <p className="text-sm text-white/70">
                           치과기공소 혹은 치과병의원
@@ -984,6 +1052,21 @@ export const SignupPage = () => {
                       {signupRole === "salesman" && (
                         <p className="text-sm text-white/70 text-right">
                           영업하는 개인사업자 혹은 법인
+                        </p>
+                      )}
+                      {signupRole === "manufacturer" && (
+                        <p className="text-sm text-white/70">
+                          워크시트, 생산장비, 출하 관리 권한을 제공합니다.
+                        </p>
+                      )}
+                      {signupRole === "devops" && (
+                        <p className="text-sm text-white/70">
+                          시스템 개발 및 운영 관리 권한을 제공합니다.
+                        </p>
+                      )}
+                      {signupRole === "admin" && (
+                        <p className="text-sm text-white/70">
+                          요청 모니터링, 정산, 조직 관리 기능을 포함합니다.
                         </p>
                       )}
 
@@ -1000,7 +1083,10 @@ export const SignupPage = () => {
                         }}
                         onEmailClick={() => {
                           setSelectedMethod("email");
-                          setWizardStep(referralCode ? 3 : 2);
+                          // /signup/staff는 소개자 코드 불필요, 바로 계정 정보 입력으로
+                          setWizardStep(
+                            isStaffSignupRoute || referralCode ? 3 : 2,
+                          );
                         }}
                       />
                     </div>
@@ -1098,7 +1184,11 @@ export const SignupPage = () => {
                       focusField={accountFocusField}
                       isLoading={isLoading}
                       onFormChange={handleChange}
-                      onPrevious={() => setWizardStep(referralCode ? 1 : 2)}
+                      onPrevious={() =>
+                        setWizardStep(
+                          isStaffSignupRoute || referralCode ? 1 : 2,
+                        )
+                      }
                       onNext={handleGoEmailStep}
                     />
                   )}

@@ -448,12 +448,13 @@ export async function approveJoinRequest(req, res) {
 
     await anchor.save();
 
-    // 직원으로 승인
+    // 직원으로 승인 및 온보딩 완료 처리
     await User.findByIdAndUpdate(userId, {
       $set: {
         businessAnchorId: anchor._id,
         business: anchor.name,
         subRole: "staff",
+        onboardingWizardCompleted: true,
       },
     });
 

@@ -589,7 +589,7 @@ async function register(req, res) {
       subRole: null, // 사업자 가입 완료 시 owner로 설정됨
       referralCode,
       referredByAnchorId,
-      onboardingWizardCompleted: false,
+      onboardingWizardCompleted: false, // 모든 역할 온보딩 필요
       approvedAt: isInstantApprove ? new Date() : null,
       active: isInstantApprove,
       ...(!socialProvider ? { isVerified: true } : {}),
