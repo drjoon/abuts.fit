@@ -175,7 +175,12 @@ export async function getShippingEstimate(req, res) {
 
 export async function getMyBulkShipping(req, res) {
   try {
-    const businessAnchorId = String(req.user?.businessAnchorId || "").trim();
+    // JWT 토큰이 아닌 DB에서 최신 businessAnchorId 조회 (온보딩 완료 직후 대응)
+    const User = (await import("../../models/user.model.js")).default;
+    const freshUser = await User.findById(req.user?._id)
+      .select({ businessAnchorId: 1 })
+      .lean();
+    const businessAnchorId = String(freshUser?.businessAnchorId || "").trim();
     const cacheKey = `bulk-shipping:${String(req.user?._id || "")}:${String(
       businessAnchorId,
     )}`;

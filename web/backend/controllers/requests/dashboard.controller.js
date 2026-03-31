@@ -485,15 +485,19 @@ export async function getMyDashboardSummary(req, res) {
     const debug =
       process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
 
-    // businessAnchorId가 없으면 에러 반환 (fallback 없이 버그 노출)
-    if (!req.user?.businessAnchorId) {
+    // JWT 토큰이 아닌 DB에서 최신 businessAnchorId 조회 (온보딩 완료 직후 대응)
+    const freshUser = await User.findById(userId)
+      .select({ businessAnchorId: 1 })
+      .lean();
+
+    if (!freshUser?.businessAnchorId) {
       return res.status(400).json({
         success: false,
         message: "사업자 정보가 없습니다. 사업자 등록을 완료해주세요.",
       });
     }
 
-    const businessAnchorId = String(req.user?.businessAnchorId || "").trim();
+    const businessAnchorId = String(freshUser.businessAnchorId || "").trim();
     // 대시보드 갱신 대기 제거: 백그라운드 갱신 중에도 기존 캐시/스냅샷을 즉시 반환
     // if (!debug && businessAnchorId) {
     //   await waitForDashboardSummaryRefreshForAnchorId(businessAnchorId);
