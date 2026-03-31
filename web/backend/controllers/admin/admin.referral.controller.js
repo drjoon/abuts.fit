@@ -556,15 +556,20 @@ export async function getReferralGroupTree(req, res) {
       throw error;
     }
 
-    // 본인 또는 admin만 접근 가능
+    // 본인(대표 또는 직원) 또는 admin만 접근 가능
     const primaryContactUserId = String(
       leaderAnchor.primaryContactUserId || "",
     );
-    if (
-      requestingUserRole !== "admin" &&
-      primaryContactUserId &&
-      primaryContactUserId !== requestingUserId
-    ) {
+    const requestingUserBusinessAnchorId = String(
+      req.user?.businessAnchorId || "",
+    );
+    const isOwner =
+      primaryContactUserId && primaryContactUserId === requestingUserId;
+    const isStaffOfSameBusiness =
+      requestingUserBusinessAnchorId &&
+      requestingUserBusinessAnchorId === String(leaderId);
+
+    if (requestingUserRole !== "admin" && !isOwner && !isStaffOfSameBusiness) {
       return res
         .status(403)
         .json({ success: false, message: "권한이 없습니다." });

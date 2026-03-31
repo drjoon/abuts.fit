@@ -272,6 +272,7 @@ const App = () => {
                 <Route path="/" element={<Index />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/signup" element={<SignupEntryRoute />} />
+                <Route path="/signup/start" element={<SignupPage />} />
                 <Route path="/refer" element={<ReferRoute />} />
                 <Route path="/signup/referral" element={<SignupPage />} />
                 <Route path="/signup/staff" element={<SignupPage />} />

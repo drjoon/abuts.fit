@@ -168,8 +168,14 @@ export const SignupPage = () => {
   useEffect(() => {
     if (!isSocialNewMode) return;
     const role = String(searchParams.get("role") || "").trim();
-    if (role === "salesman" || role === "requestor") {
-      setSignupRole(role);
+    if (
+      role === "salesman" ||
+      role === "requestor" ||
+      role === "devops" ||
+      role === "manufacturer" ||
+      role === "admin"
+    ) {
+      setSignupRole(role as SignupRole);
     }
   }, [isSocialNewMode, searchParams]);
 
