@@ -24,7 +24,7 @@ router.use(authorize(["manufacturer", "admin"]));
 router.get(
   "/management-status",
   authorize(["manufacturer", "admin"], {
-    manufacturerRoles: ["owner", "staff"],
+    subRoles: ["owner", "staff"],
   }),
   getManagementStatus,
 );
@@ -32,14 +32,14 @@ router.get(
 // 입금 내역 기록 (금전 관련: manufacturer owner만)
 router.post(
   "/payments",
-  authorize(["manufacturer", "admin"], { manufacturerRoles: ["owner"] }),
+  authorize(["manufacturer", "admin"], { subRoles: ["owner"] }),
   recordManufacturerPayment,
 );
 // 조회는 staff 가능
 router.get(
   "/payments",
   authorize(["manufacturer", "admin"], {
-    manufacturerRoles: ["owner", "staff"],
+    subRoles: ["owner", "staff"],
   }),
   listManufacturerPayments,
 );
@@ -48,7 +48,7 @@ router.get(
 router.get(
   "/credits/ledger",
   authorize(["manufacturer", "admin"], {
-    manufacturerRoles: ["owner", "staff"],
+    subRoles: ["owner", "staff"],
   }),
   getManufacturerCreditLedger,
 );
@@ -57,7 +57,7 @@ router.get(
 router.get(
   "/credits/daily-snapshots",
   authorize(["manufacturer", "admin"], {
-    manufacturerRoles: ["owner", "staff"],
+    subRoles: ["owner", "staff"],
   }),
   getManufacturerDailySettlementSnapshots,
 );
@@ -66,14 +66,14 @@ router.get(
 router.get(
   "/credits/daily-snapshots/status",
   authorize(["manufacturer", "admin"], {
-    manufacturerRoles: ["owner", "staff"],
+    subRoles: ["owner", "staff"],
   }),
   getManufacturerDailySettlementSnapshotStatus,
 );
 router.post(
   "/credits/daily-snapshots/recalc",
   authorize(["manufacturer", "admin"], {
-    manufacturerRoles: ["owner", "staff"],
+    subRoles: ["owner", "staff"],
   }),
   triggerManufacturerDailySettlementSnapshotRecalc,
 );
@@ -82,7 +82,7 @@ router.post(
 router.post(
   "/messages/urgent",
   authorize(["manufacturer", "admin"], {
-    manufacturerRoles: ["owner", "staff"],
+    subRoles: ["owner", "staff"],
   }),
   sendUrgentMessage,
 );
@@ -91,14 +91,14 @@ router.post(
 router.post(
   "/phone/send-code",
   authorize(["manufacturer", "admin"], {
-    manufacturerRoles: ["owner", "staff"],
+    subRoles: ["owner", "staff"],
   }),
   sendVerificationCode,
 );
 router.post(
   "/phone/verify-code",
   authorize(["manufacturer", "admin"], {
-    manufacturerRoles: ["owner", "staff"],
+    subRoles: ["owner", "staff"],
   }),
   verifyCode,
 );

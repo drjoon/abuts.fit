@@ -176,12 +176,12 @@ router.get("/credits/b-plan/charge-orders", adminListChargeOrders);
 router.get("/credits/b-plan/bank-transactions", adminListBankTransactions);
 router.post(
   "/credits/b-plan/bank-transactions/upsert",
-  authorize(["admin"], { adminRoles: ["owner"] }),
+  authorize(["admin"], { subRoles: ["owner"] }),
   adminUpsertBankTransaction,
 );
 router.post(
   "/credits/b-plan/match",
-  authorize(["admin"], { adminRoles: ["owner"] }),
+  authorize(["admin"], { subRoles: ["owner"] }),
   adminManualMatch,
 );
 router.get(
@@ -190,27 +190,27 @@ router.get(
 );
 router.post(
   "/credits/b-plan/charge-orders/verify",
-  authorize(["admin"], { adminRoles: ["owner"] }),
+  authorize(["admin"], { subRoles: ["owner"] }),
   adminVerifyChargeOrder,
 );
 router.post(
   "/credits/b-plan/charge-orders/lock",
-  authorize(["admin"], { adminRoles: ["owner"] }),
+  authorize(["admin"], { subRoles: ["owner"] }),
   adminLockChargeOrder,
 );
 router.post(
   "/credits/b-plan/charge-orders/unlock",
-  authorize(["admin"], { adminRoles: ["owner"] }),
+  authorize(["admin"], { subRoles: ["owner"] }),
   adminUnlockChargeOrder,
 );
 router.post(
   "/credits/b-plan/charge-orders/:id/approve",
-  authorize(["admin"], { adminRoles: ["owner"] }),
+  authorize(["admin"], { subRoles: ["owner"] }),
   adminApproveChargeOrder,
 );
 router.post(
   "/credits/b-plan/charge-orders/:id/reject",
-  authorize(["admin"], { adminRoles: ["owner"] }),
+  authorize(["admin"], { subRoles: ["owner"] }),
   adminRejectChargeOrder,
 );
 
@@ -230,7 +230,7 @@ router.get(
 router.get("/referral-snapshot/status", getReferralSnapshotStatus);
 router.post(
   "/referral-snapshot/recalc",
-  authorize(["admin"], { adminRoles: ["owner"] }),
+  authorize(["admin"], { subRoles: ["owner"] }),
   triggerReferralSnapshotRecalc,
 );
 
@@ -277,17 +277,17 @@ router.post("/mails/sent/empty", adminEmptySent);
 router.get("/bonus-grants", adminListBonusGrants);
 router.post(
   "/bonus-grants/welcome-bonus/override",
-  authorize(["admin"], { adminRoles: ["owner"] }),
+  authorize(["admin"], { subRoles: ["owner"] }),
   adminOverrideWelcomeBonus,
 );
 router.post(
   "/bonus-grants/free-shipping-credit/grant",
-  authorize(["admin"], { adminRoles: ["owner"] }),
+  authorize(["admin"], { subRoles: ["owner"] }),
   adminGrantFreeShippingCredit,
 );
 router.post(
   "/bonus-grants/:id/cancel",
-  authorize(["admin"], { adminRoles: ["owner"] }),
+  authorize(["admin"], { subRoles: ["owner"] }),
   adminCancelBonusGrant,
 );
 

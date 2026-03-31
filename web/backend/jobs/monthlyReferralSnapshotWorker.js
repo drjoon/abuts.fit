@@ -70,7 +70,7 @@ async function runMonthlySnapshot() {
     $or: [
       { role: "salesman" },
       { role: "devops" },
-      { role: "requestor", requestorRole: "owner" },
+      { role: "requestor", subRole: "owner" },
     ],
     active: true,
     businessAnchorId: { $ne: null },

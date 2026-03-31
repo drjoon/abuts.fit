@@ -107,7 +107,7 @@ export const authenticate = async (req, res, next) => {
 /**
  * 권한 확인 미들웨어
  * @param {Array<string>} roles - 허용된 역할 배열
- * @param {{adminRoles?: string[], manufacturerRoles?: string[], requestorRoles?: string[]}} options
+ * @param {{subRoles?: string[]}} options - subRole 체크 옵션 (owner, staff)
  */
 export const authorize = (roles = [], options = {}) => {
   return (req, res, next) => {
@@ -130,41 +130,15 @@ export const authorize = (roles = [], options = {}) => {
       });
     }
 
-    const { adminRoles, manufacturerRoles, requestorRoles } = options;
-    if (
-      req.user.role === "admin" &&
-      Array.isArray(adminRoles) &&
-      adminRoles.length > 0 &&
-      !adminRoles.includes(req.user.adminRole)
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "이 작업을 수행할 권한이 없습니다.",
-      });
-    }
-
-    if (
-      req.user.role === "manufacturer" &&
-      Array.isArray(manufacturerRoles) &&
-      manufacturerRoles.length > 0 &&
-      !manufacturerRoles.includes(req.user.manufacturerRole)
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "이 작업을 수행할 권한이 없습니다.",
-      });
-    }
-
-    if (
-      req.user.role === "requestor" &&
-      Array.isArray(requestorRoles) &&
-      requestorRoles.length > 0 &&
-      !requestorRoles.includes(req.user.requestorRole)
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "이 작업을 수행할 권한이 없습니다.",
-      });
+    // SSOT: subRole 체크 (모든 역할에 대해 통합된 subRoles 옵션 사용)
+    const { subRoles } = options;
+    if (Array.isArray(subRoles) && subRoles.length > 0) {
+      if (!subRoles.includes(req.user.subRole)) {
+        return res.status(403).json({
+          success: false,
+          message: "이 작업을 수행할 권한이 없습니다.",
+        });
+      }
     }
 
     next();

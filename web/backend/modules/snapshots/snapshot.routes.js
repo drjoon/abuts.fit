@@ -10,14 +10,13 @@ const router = Router();
 router.use(authenticate);
 router.use(
   authorize(["admin", "manufacturer"], {
-    adminRoles: ["owner"],
-    manufacturerRoles: ["owner", "staff"],
+    subRoles: ["owner", "staff"],
   }),
 );
 
 router.get(
   "/admin-status",
-  authorize(["admin"], { adminRoles: ["owner"] }),
+  authorize(["admin"], { subRoles: ["owner"] }),
   getAdminSnapshotsStatus,
 );
 router.post("/recalc-all", recalcAllSnapshots);

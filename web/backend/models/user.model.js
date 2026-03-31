@@ -173,20 +173,8 @@ const userSchema = new mongoose.Schema(
   },
 );
 
-// 역할별 서브역할 필수 검사
-userSchema.pre("validate", function (next) {
-  const role = this.role;
-  if (role === "requestor" && !this.requestorRole) {
-    this.requestorRole = "owner";
-  }
-  if (role === "manufacturer" && !this.manufacturerRole) {
-    this.manufacturerRole = "owner";
-  }
-  if (role === "admin" && !this.adminRole) {
-    this.adminRole = "owner";
-  }
-  next();
-});
+// SSOT: subRole 사용 (requestorRole, manufacturerRole, adminRole 레거시 제거)
+// subRole은 사업자 등록 완료 시 자동으로 'owner'로 설정됨
 
 // 비밀번호 저장 전 해싱
 userSchema.pre("save", async function (next) {

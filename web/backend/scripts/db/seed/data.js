@@ -59,7 +59,7 @@ export async function seedRequestData({ count = 50 } = {}) {
     .lean();
 
   const requestors = requestorUsers.filter(
-    (user) => user.requestorRole === "owner" || !user.requestorRole,
+    (user) => user.subRole === "owner" || !user.subRole,
   );
   const requestorPool = requestors.length ? requestors : requestorUsers;
   if (!requestorPool.length) {

@@ -35,7 +35,7 @@ const resolveLeaderUserByAnchorId = async (businessAnchorId) => {
     .select({
       _id: 1,
       role: 1,
-      requestorRole: 1,
+      subRole: 1,
       businessId: 1,
       businessAnchorId: 1,
     })
@@ -44,7 +44,7 @@ const resolveLeaderUserByAnchorId = async (businessAnchorId) => {
   if (!rows.length) return null;
 
   const requestorOwner = rows.find(
-    (row) => row?.role === "requestor" && row?.requestorRole === "owner",
+    (row) => row?.role === "requestor" && row?.subRole === "owner",
   );
   if (requestorOwner) return requestorOwner;
 

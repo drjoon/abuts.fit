@@ -8,7 +8,7 @@ import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 router.post(
   "/",
   authenticate,
-  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
   requestController.createRequest,
 );
 
@@ -16,7 +16,7 @@ router.post(
 router.post(
   "/bulk",
   authenticate,
-  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
   requestController.createRequestsBulk,
 );
 
@@ -24,7 +24,7 @@ router.post(
 router.post(
   "/from-draft",
   authenticate,
-  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
   requestController.createRequestsFromDraft,
 );
 
@@ -51,7 +51,7 @@ router.get(
 router.get(
   "/my",
   authenticate,
-  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
   requestController.getMyRequests,
 );
 
@@ -59,7 +59,7 @@ router.get(
 router.get(
   "/my/dashboard-summary",
   authenticate,
-  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
   requestController.getMyDashboardSummary,
 );
 
@@ -75,7 +75,7 @@ router.get(
 router.get(
   "/my/shipping-packages",
   authenticate,
-  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
   requestController.getMyShippingPackagesSummary,
 );
 
@@ -92,7 +92,7 @@ router.get(
   "/my/pricing-referral-stats",
   authenticate,
   authorize(["requestor", "salesman", "devops", "admin"], {
-    requestorRoles: ["owner", "staff"],
+    subRoles: ["owner", "staff"],
   }),
   requestController.getMyPricingReferralStats,
 );
@@ -102,7 +102,7 @@ router.get(
   "/my/referral-direct-members",
   authenticate,
   authorize(["requestor", "salesman", "devops", "admin"], {
-    requestorRoles: ["owner", "staff"],
+    subRoles: ["owner", "staff"],
   }),
   requestController.getMyReferralDirectMembers,
 );
@@ -111,7 +111,7 @@ router.get(
 router.get(
   "/my/check-duplicate",
   authenticate,
-  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
   requestController.checkDuplicateCaseInfo,
 );
 
@@ -119,7 +119,7 @@ router.get(
 router.get(
   "/my/bulk-shipping",
   authenticate,
-  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
   requestController.getMyBulkShipping,
 );
 
@@ -135,7 +135,7 @@ router.get(
 router.patch(
   "/my/shipping-mode",
   authenticate,
-  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
   requestController.updateMyShippingMode,
 );
 
@@ -143,7 +143,7 @@ router.patch(
 router.post(
   "/my/bulk-shipping",
   authenticate,
-  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
   requestController.createMyBulkShipping,
 );
 

@@ -184,6 +184,28 @@
 - 직원으로 승인될 때 `subRole = "staff"` 자동 설정
 - 모든 role (requestor, manufacturer, admin, salesman, devops)에서 `subRole`을 동일하게 사용합니다
 
+**레거시 필드 제거 (2026-03-31):**
+
+- ❌ **`requestorRole`, `manufacturerRole`, `adminRole` 필드 완전 제거**
+  - User 모델에서 레거시 필드 자동 설정 로직 제거
+  - 모든 컨트롤러, 서비스, 워커에서 레거시 필드 사용 제거
+  - 라우터 미들웨어에서 레거시 옵션 파라미터 제거
+- ✅ **`subRole`이 유일한 SSOT**
+  - `authorize` 미들웨어는 `subRoles` 옵션만 사용
+  - 모든 역할에 대해 통합된 `subRoles` 체크 적용
+  - DB 쿼리는 `subRole` 필드만 사용
+- ✅ **변경된 파일 목록**:
+  - `models/user.model.js`: 레거시 필드 자동 설정 로직 제거
+  - `middlewares/auth.middleware.js`: `authorize` 함수 `subRoles` 옵션으로 통합
+  - `modules/requests/request.routes.js`: 모든 라우트 `subRoles` 옵션 사용
+  - `modules/admin/admin.routes.js`: 모든 라우트 `subRoles` 옵션 사용
+  - `modules/manufacturer/manufacturer.routes.js`: 모든 라우트 `subRoles` 옵션 사용
+  - `modules/snapshots/snapshot.routes.js`: 모든 라우트 `subRoles` 옵션 사용
+  - `services/pricingReferralSnapshot.service.js`: `subRole` 필드 사용
+  - `scripts/db/seed/data.js`: `subRole` 필드 사용
+  - `jobs/monthlyReferralSnapshotWorker.js`: `subRole` 필드 사용
+  - `jobs/dailyReferralSnapshotWorker.js`: `subRole` 필드 사용
+
 ### 2.2.1 필드 명칭 구분
 
 - **`implantManufacturer`**: 임플란트 브랜드 (OSSTEM, Straumann 등)
