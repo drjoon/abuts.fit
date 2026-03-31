@@ -77,8 +77,19 @@ export const SettingsWizard = ({
   const readStoredStep = useCallback(() => {
     if (typeof window === "undefined") return null;
 
+    const localDbVersion = window.localStorage.getItem("dbVersion");
+    console.log("[wizard-readStoredStep] dbVersion check:", {
+      userDbVersion: dbVersion,
+      localDbVersion,
+      match: dbVersion === localDbVersion,
+    });
+
     // DB 버전이 다르면 저장된 단계를 무시하고 처음부터 시작
-    if (dbVersion !== window.localStorage.getItem("dbVersion")) {
+    // 단, dbVersion이 undefined일 때는 체크하지 않음 (초기 로딩 중)
+    if (dbVersion && dbVersion !== localDbVersion) {
+      console.warn(
+        "[wizard-readStoredStep] DB version mismatch, clearing localStorage",
+      );
       // 이전 진행 상태 정리
       try {
         window.localStorage.removeItem(stepStorageKey);
@@ -99,18 +110,30 @@ export const SettingsWizard = ({
       return null;
     }
 
+    // fallbackStepStorageKey를 우선 사용 (storageIdentity 무관)
     const raw =
+      window.localStorage.getItem(fallbackStepStorageKey) ||
       window.localStorage.getItem(stepStorageKey) ||
       window.localStorage.getItem(legacyStepStorageKey) ||
-      window.localStorage.getItem(fallbackStepStorageKey) ||
       "";
+
+    console.log("[wizard-readStoredStep] reading from localStorage:", {
+      fallbackStepStorageKey,
+      stepStorageKey,
+      raw,
+      isValid: STEP_ORDER.includes(raw as WizardStepId),
+    });
+
     const resolved = STEP_ORDER.includes(raw as WizardStepId)
       ? (raw as WizardStepId)
       : null;
 
     // 유효하지 않은 단계가 저장되어 있으면 localStorage 정리
     if (!resolved && raw) {
-      console.warn("[wizard] Invalid step in localStorage:", raw);
+      console.warn(
+        "[wizard-readStoredStep] Invalid step in localStorage:",
+        raw,
+      );
       try {
         window.localStorage.removeItem(stepStorageKey);
         window.localStorage.removeItem(legacyStepStorageKey);
@@ -124,6 +147,8 @@ export const SettingsWizard = ({
       window.localStorage.setItem(stepStorageKey, resolved);
       window.localStorage.removeItem(legacyStepStorageKey);
     }
+
+    console.log("[wizard-readStoredStep] resolved step:", resolved);
     return resolved;
   }, [
     dbVersion,
@@ -235,10 +260,17 @@ export const SettingsWizard = ({
     window.localStorage.setItem("dbVersion", dbVersion);
   }, [dbVersion]);
 
+  // currentStep 변경 시 localStorage에 저장
+  // fallbackStepStorageKey를 우선 저장하여 storageIdentity 변경에도 단계 유지
   useEffect(() => {
     if (typeof window === "undefined" || !currentStep) return;
-    window.localStorage.setItem(stepStorageKey, currentStep);
+    console.log("[wizard-save] saving currentStep to localStorage:", {
+      currentStep,
+      fallbackStepStorageKey,
+      stepStorageKey,
+    });
     window.localStorage.setItem(fallbackStepStorageKey, currentStep);
+    window.localStorage.setItem(stepStorageKey, currentStep);
   }, [currentStep, fallbackStepStorageKey, stepStorageKey]);
 
   useEffect(() => {
