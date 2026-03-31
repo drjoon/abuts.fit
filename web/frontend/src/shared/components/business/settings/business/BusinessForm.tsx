@@ -713,20 +713,7 @@ export const BusinessForm = ({
                 />
               </div>
             )}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <div className="md:col-span-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full"
-                  disabled={disabled}
-                  onClick={() => {
-                    void handleOpenAddressSearch();
-                  }}
-                >
-                  주소 검색
-                </Button>
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="md:col-span-1">
                 <Input
                   id="address"
@@ -736,7 +723,10 @@ export const BusinessForm = ({
                       "border-destructive focus-visible:ring-destructive",
                   )}
                   value={businessData.address}
-                  placeholder="주소1 (정규화된 도로명 주소)"
+                  placeholder="주소1 (정규화된 도로명 주소) - 클릭하여 검색"
+                  onClick={() => {
+                    void handleOpenAddressSearch();
+                  }}
                   onChange={(e) => {
                     setBusinessData((prev) => ({
                       ...prev,
