@@ -87,6 +87,12 @@ export const SettingsWizard = ({
         window.localStorage.removeItem(roleStorageKey);
         window.localStorage.removeItem(legacyRoleStorageKey);
         window.localStorage.removeItem(fallbackRoleStorageKey);
+        // 모든 onboarding 관련 키 삭제
+        Object.keys(window.localStorage).forEach((key) => {
+          if (key.includes("onboarding") || key.includes("wizard")) {
+            window.localStorage.removeItem(key);
+          }
+        });
       } catch {
         // ignore
       }
@@ -101,6 +107,19 @@ export const SettingsWizard = ({
     const resolved = STEP_ORDER.includes(raw as WizardStepId)
       ? (raw as WizardStepId)
       : null;
+
+    // 유효하지 않은 단계가 저장되어 있으면 localStorage 정리
+    if (!resolved && raw) {
+      console.warn("[wizard] Invalid step in localStorage:", raw);
+      try {
+        window.localStorage.removeItem(stepStorageKey);
+        window.localStorage.removeItem(legacyStepStorageKey);
+        window.localStorage.removeItem(fallbackStepStorageKey);
+      } catch {
+        // ignore
+      }
+    }
+
     if (resolved && raw === window.localStorage.getItem(legacyStepStorageKey)) {
       window.localStorage.setItem(stepStorageKey, resolved);
       window.localStorage.removeItem(legacyStepStorageKey);
@@ -117,7 +136,18 @@ export const SettingsWizard = ({
   ]);
   const [currentStep, setCurrentStep] = useState<WizardStepId | null>(() => {
     // DB 버전 체크 후 localStorage에 저장된 단계 또는 첫 단계부터 시작
-    return readStoredStep() || "profile";
+    const stored = readStoredStep();
+    const initial = stored || "profile";
+    console.log("[wizard-init] currentStep:", {
+      stored,
+      initial,
+      dbVersion,
+      localDbVersion:
+        typeof window !== "undefined"
+          ? window.localStorage.getItem("dbVersion")
+          : null,
+    });
+    return initial;
   });
   const [selectedRole, setSelectedRole] = useState<"owner" | "member" | null>(
     () => {

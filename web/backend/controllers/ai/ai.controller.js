@@ -250,12 +250,12 @@ export async function parseBusinessLicense(req, res) {
       },
     });
 
-    // 이미지 전처리: 토큰 다이어트 (리사이징 + 그레이스케일 + 압축)
+    // 이미지 전처리: 인식 정확도 우선 (원본 해상도 유지, 그레이스케일 + 고품질 압축)
     const { buffer: processedBuffer, mimeType } =
       await preprocessImageForGemini(buffer, {
-        maxWidth: 1024,
+        maxWidth: 4096, // 원본 해상도 유지 (대부분의 스캔 이미지보다 큰 값)
         grayscale: true,
-        quality: 85,
+        quality: 95, // 고품질 압축으로 텍스트 선명도 유지
       });
     const imageBase64 = processedBuffer.toString("base64");
 
@@ -779,12 +779,12 @@ export async function recognizeLotNumber(req, res) {
       },
     });
 
-    // 이미지 전처리: 토큰 다이어트 (리사이징 + 그레이스케일 + 압축)
+    // 이미지 전처리: 인식 정확도 우선 (원본 해상도 유지, 그레이스케일 + 고품질 압축)
     const { buffer: processedBuffer, mimeType } =
       await preprocessImageForGemini(buffer, {
-        maxWidth: 1024,
+        maxWidth: 4096, // 원본 해상도 유지 (대부분의 스캔 이미지보다 큰 값)
         grayscale: true,
-        quality: 85,
+        quality: 95, // 고품질 압축으로 텍스트 선명도 유지
       });
     const imageBase64 = processedBuffer.toString("base64");
 

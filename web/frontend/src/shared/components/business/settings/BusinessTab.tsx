@@ -94,15 +94,17 @@ export const BusinessTab = ({
     allowLocalDraft,
   });
 
-  const businessSearch = useBusinessSearch({
-    token,
-    businessType,
-    membership: "none",
-  });
-
   const membershipMgmt = useMembershipManagement({
     token,
     businessType,
+  });
+
+  // businessSearch는 membershipMgmt.membership을 사용해야 함
+  // membership이 "none"일 때만 검색 활성화
+  const businessSearch = useBusinessSearch({
+    token,
+    businessType,
+    membership: membershipMgmt.membership,
   });
 
   const [setupMode, setSetupMode] = useState<
