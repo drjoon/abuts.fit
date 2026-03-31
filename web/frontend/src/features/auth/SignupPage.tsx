@@ -61,7 +61,17 @@ export const SignupPage = () => {
   const [signupRole, setSignupRole] = useState<SignupRole>(
     location.pathname === "/signup/staff" ? "manufacturer" : "requestor",
   );
-  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(1);
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(() => {
+    // /signup/staff에서 소셜 로그인 후 돌아온 경우(mode=social_new) 소개자 코드 건너뛰기
+    const mode = (searchParams.get("mode") || "").trim();
+    const isSocialNewMode = mode === "social_new";
+    const isStaffSignupRoute = location.pathname === "/signup/staff";
+
+    if (isStaffSignupRoute && isSocialNewMode) {
+      return 3; // 소개자 코드 건너뛰고 계정 정보 입력으로
+    }
+    return 1;
+  });
   const [manualReferralInput, setManualReferralInput] = useState("");
   const [enteredReferralCode, setEnteredReferralCode] = useState<
     string | undefined
