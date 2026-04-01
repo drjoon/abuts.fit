@@ -601,6 +601,41 @@
 - 기본 패턴은 `flex flex-col h-full min-h-0` 입니다.
 - 스크롤은 각 섹션 내부의 `flex-1 min-h-0 overflow-auto`로 가둡니다.
 
+#### 5.2.1 반응형 디자인 정책
+
+**대시보드 통계 카드 그리드:**
+
+- 모바일 (기본): 1열
+- sm (≥ 640px): 2열
+- md (≥ 768px): 4열
+- xl (≥ 1280px): 6열
+- 기본 클래스: `grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-2.5`
+- 위치: `/web/frontend/src/shared/ui/dashboard/DashboardShell.tsx`
+
+**대시보드 중앙 카드 섹션 (topSection):**
+
+- 모바일 (기본): 1열
+- lg (≥ 1024px): 2열
+- xl (≥ 1280px): 3열
+- 기본 클래스: `grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 items-stretch`
+- 적용 대상:
+  - 의뢰자 대시보드: 가격 정책, 발송 요약, 묶음 배송 카드
+  - 제조사 대시보드: 소재, 공구, 장비, 제품 관리 카드
+
+**통계 카드 텍스트 크기:**
+
+- 카드 제목: `text-sm sm:text-md`
+- 통계 값: `text-lg sm:text-xl md:text-2xl`
+- 변화율 텍스트: `text-xs` + `truncate`
+- 아이콘: `flex-shrink-0` 추가하여 텍스트 넘침 방지
+
+**텍스트 간결화 원칙:**
+
+- 공백 최소화: `+0% / +0%` → `+0%/+0%`
+- 단위 축약: `0건/0박스` → `0/0박`
+- 라벨 축약: `전 기간 대비` → `전기간대비`
+- 말줄임표: 긴 텍스트에 `truncate` 클래스 적용
+
 ### 5.3 스타일
 
 - 전체 UI는 중립적인 glass 톤을 유지하고, 강조는 파란색 계열만 사용합니다.

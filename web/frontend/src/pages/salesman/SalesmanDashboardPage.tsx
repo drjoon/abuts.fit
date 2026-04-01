@@ -155,7 +155,7 @@ export const SalesmanDashboardPage = () => {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-4xl font-mono font-bold tracking-widest">
+                  <div className="text-2xl sm:text-3xl md:text-4xl font-mono font-bold tracking-widest">
                     {normalizedReferralCode || (loading ? "..." : "-")}
                   </div>
                   <Button
@@ -244,9 +244,9 @@ export const SalesmanDashboardPage = () => {
                 </Tooltip>
               </CardHeader>
               <CardContent className="space-y-1.5">
-                <div className="flex items-baseline justify-between gap-2 text-sm">
+                <div className="flex items-baseline justify-between gap-2 text-xs sm:text-sm">
                   <div className="font-semibold">합계 수수료 (7.5%)</div>
-                  <div className="text-base font-bold">
+                  <div className="text-sm sm:text-base font-bold">
                     {formatMoney(payableGross)}원
                   </div>
                 </div>

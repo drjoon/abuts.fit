@@ -214,7 +214,7 @@ export const ManufacturerDashboardPage = () => {
         }
         topSection={
           <div className="space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-stretch">
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 items-stretch">
               {managementCards.map((item) => (
                 <Card
                   key={item.key}
@@ -266,13 +266,15 @@ export const ManufacturerDashboardPage = () => {
                 className="app-glass-card app-glass-card--lg"
               >
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
+                  <CardTitle className="text-sm sm:text-md font-medium text-foreground">
                     {stat.label}
                   </CardTitle>
-                  <stat.icon className="h-4 w-4 text-muted-foreground" />
+                  <stat.icon className="h-4 w-4 text-slate-600 flex-shrink-0" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{stat.value}</div>
+                  <div className="text-lg sm:text-xl md:text-2xl font-bold text-foreground whitespace-nowrap tracking-tight">
+                    {stat.value}
+                  </div>
                   {stat.hint && (
                     <p className="text-xs text-muted-foreground">{stat.hint}</p>
                   )}

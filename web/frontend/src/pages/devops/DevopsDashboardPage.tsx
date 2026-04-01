@@ -72,7 +72,7 @@ export const DevopsDashboardPage = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
-                <div className="text-2xl font-bold">
+                <div className="text-lg sm:text-xl md:text-2xl font-bold">
                   {loading
                     ? "..."
                     : `${formatMoney(overview.directCommissionAmount)}원`}
@@ -96,7 +96,7 @@ export const DevopsDashboardPage = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
-                <div className="text-2xl font-bold">
+                <div className="text-lg sm:text-xl md:text-2xl font-bold">
                   {loading
                     ? "..."
                     : `${formatMoney(overview.unaffiliatedCommissionAmount)}원`}
@@ -115,7 +115,7 @@ export const DevopsDashboardPage = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
-                <div className="text-2xl font-bold">
+                <div className="text-lg sm:text-xl md:text-2xl font-bold">
                   {loading
                     ? "..."
                     : `${formatMoney(overview.payableGrossCommissionAmount)}원`}
@@ -134,7 +134,7 @@ export const DevopsDashboardPage = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
-                <div className="text-2xl font-bold">
+                <div className="text-lg sm:text-xl md:text-2xl font-bold">
                   {loading
                     ? "..."
                     : `${formatMoney(overview.paidNetCommissionAmount)}원`}

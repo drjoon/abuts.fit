@@ -28,7 +28,7 @@ export const DashboardShell = ({
 
   const effectiveStatsGridClassName =
     statsGridClassName ||
-    "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5";
+    "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-2.5";
 
   return (
     <div className="p-3 space-y-3">

@@ -301,7 +301,7 @@ export const AdminDashboardPage = () => {
                     <div className="text-xs text-muted-foreground">
                       전체 의뢰자
                     </div>
-                    <div className="text-2xl font-bold">
+                    <div className="text-lg sm:text-xl md:text-2xl font-bold">
                       {(
                         adminDashboardResponse?.data?.userStats?.total ?? 0
                       ).toLocaleString()}

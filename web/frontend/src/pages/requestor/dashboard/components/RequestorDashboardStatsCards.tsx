@@ -52,17 +52,17 @@ export const RequestorDashboardStatsCards = ({
             onClick={() => onCardClick?.(stat)}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-md font-medium text-foreground">
+              <CardTitle className="text-sm sm:text-md font-medium text-foreground">
                 {stat.label}
               </CardTitle>
-              <Icon className="h-4 w-4 text-slate-600" />
+              <Icon className="h-4 w-4 text-slate-600 flex-shrink-0" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-foreground whitespace-nowrap tracking-tight">
+              <div className="text-lg sm:text-xl md:text-2xl font-bold text-foreground whitespace-nowrap tracking-tight">
                 {stat.value}
               </div>
               {stat.change && (
-                <p className="text-xs text-slate-600">
+                <p className="text-xs text-slate-600 truncate">
                   <span
                     className={
                       String(stat.change).includes("-")
@@ -72,7 +72,7 @@ export const RequestorDashboardStatsCards = ({
                   >
                     {stat.change}
                   </span>{" "}
-                  전 기간 대비
+                  전기간대비
                 </p>
               )}
             </CardContent>
