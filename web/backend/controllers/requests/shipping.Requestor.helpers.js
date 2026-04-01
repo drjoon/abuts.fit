@@ -369,39 +369,12 @@ export async function buildShippingEstimate(req) {
   }
 
   const todayYmd = getTodayYmdInKst();
-  let requestorWeeklyBatchDays = [];
-  try {
-    const orgId = getRequestorOrgId(req);
-    if (orgId && Types.ObjectId.isValid(orgId)) {
-      const business = await BusinessAnchor.findOne({
-        _id: new Types.ObjectId(orgId),
-      })
-        .select({ "shippingPolicy.weeklyBatchDays": 1 })
-        .lean();
-      requestorWeeklyBatchDays = Array.isArray(
-        org?.shippingPolicy?.weeklyBatchDays,
-      )
-        ? org.shippingPolicy.weeklyBatchDays
-        : [];
-    }
-  } catch {}
-
-  if (mode === "normal" && requestorWeeklyBatchDays.length === 0) {
-    throw Object.assign(
-      new Error(
-        "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
-      ),
-      { statusCode: 400 },
-    );
-  }
 
   const { calculateInitialProductionSchedule } =
     await import("./production.utils.js");
   const schedule = await calculateInitialProductionSchedule({
-    shippingMode: mode,
     maxDiameter,
     requestedAt: new Date(),
-    weeklyBatchDays: mode === "normal" ? requestorWeeklyBatchDays : [],
   });
   const pickupYmdRaw = schedule?.scheduledShipPickup
     ? toKstYmd(schedule.scheduledShipPickup)

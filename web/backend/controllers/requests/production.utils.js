@@ -161,23 +161,19 @@ function getBulkWaitHours(diameterGroup) {
 /**
  * 신규 의뢰의 생산 스케줄 계산 (시각 단위)
  * @param {Object} params
- * @param {string} params.shippingMode - 'normal' | 'express'
  * @param {number} params.maxDiameter - 최대 직경 (mm)
  * @param {Date} params.requestedAt - 의뢰 생성 시각
  * @returns {Object} productionSchedule
  */
 export async function calculateInitialProductionSchedule({
-  shippingMode,
   maxDiameter,
   requestedAt,
-  weeklyBatchDays,
 }) {
   const now = requestedAt || new Date();
   const { diameter, diameterGroup, preferredMachine } =
     getDiameterGroupAndMachine(maxDiameter);
 
-  // Fetch manufacturer settings for lead times; weeklyBatchDays must be provided by requestor
-  let effectiveWeeklyBatchDays = weeklyBatchDays;
+  // Fetch manufacturer settings for lead times
   let manufacturerLeadTimes = null;
 
   try {
@@ -185,30 +181,13 @@ export async function calculateInitialProductionSchedule({
       await import("../businesses/leadTime.controller.js");
     const manufacturerSettings = await getManufacturerLeadTimesUtil();
     manufacturerLeadTimes = manufacturerSettings?.leadTimes || null;
-
-    // weeklyBatchDays are provided by requestor; do not fallback to manufacturer
-    effectiveWeeklyBatchDays = Array.isArray(weeklyBatchDays)
-      ? weeklyBatchDays
-      : [];
   } catch (error) {
     console.error(
       "[calculateInitialProductionSchedule] failed to fetch manufacturer settings:",
       error,
     );
-    effectiveWeeklyBatchDays = Array.isArray(weeklyBatchDays)
-      ? weeklyBatchDays
-      : [];
   }
 
-  if (
-    shippingMode === "normal" &&
-    (!Array.isArray(effectiveWeeklyBatchDays) ||
-      effectiveWeeklyBatchDays.length === 0)
-  ) {
-    throw new Error("weeklyBatchDays is required for normal shipping");
-  }
-
-  // 묶음배송: 직경별 대기
   const waitHours = getBulkWaitHours(diameterGroup);
   let scheduledCamStart = new Date(now.getTime() + waitHours * 60 * 60 * 1000);
 
@@ -246,17 +225,10 @@ export async function calculateInitialProductionSchedule({
 
   const machiningCompleteYmd = toKstYmd(scheduledMachiningComplete);
   const baseBatchStartYmd = getTodayYmdInKst(now) || machiningCompleteYmd;
-  const baseBatchYmd = await addKoreanBusinessDays({
+  const batchProcessingYmd = await addKoreanBusinessDays({
     startYmd: baseBatchStartYmd,
     days: leadDays,
   });
-  const batchProcessingYmd =
-    shippingMode === "normal"
-      ? await resolveNextWeeklyBatchYmd({
-          baseYmd: baseBatchYmd,
-          weeklyBatchDays: effectiveWeeklyBatchDays,
-        })
-      : baseBatchYmd;
   const scheduledBatchProcessing = createKstDateTime(
     batchProcessingYmd,
     PACKING_CUTOFF_HOUR,
@@ -366,15 +338,13 @@ export function getAllProductionQueues(requests) {
 }
 
 /**
- * 배송 모드 변경 시 생산 스케줄 재계산
+ * 생산 스케줄 재계산
  * 의뢰 단계에서만 변경 가능
  */
 export function recalculateProductionSchedule({
   currentStage,
-  newShippingMode,
   maxDiameter,
   requestedAt,
-  weeklyBatchDays,
 }) {
   // 의뢰 단계가 아니면 스케줄 변경 불가
   if (currentStage !== "의뢰") {
@@ -383,10 +353,8 @@ export function recalculateProductionSchedule({
 
   // 새로운 스케줄 계산
   return calculateInitialProductionSchedule({
-    shippingMode: newShippingMode,
     maxDiameter,
     requestedAt,
-    weeklyBatchDays,
   });
 }
 
@@ -538,16 +506,15 @@ export function sortByProductionPriority(requests) {
   return requests
     .map((req) => {
       const schedule = req.productionSchedule || {};
-      const finalMode = req.finalShipping?.mode || req.originalShipping?.mode;
 
       // 우선순위가 이미 계산되어 있으면 사용
       if (typeof schedule.priority === "number") {
         return { ...req.toObject(), _priority: schedule.priority };
       }
 
-      // 없으면 즉시 계산
+      // 없으면 즉시 계산 (항상 묶음 배송)
       const priority = calculatePriority({
-        shippingMode: finalMode,
+        shippingMode: "normal",
         scheduledCamStart: schedule.scheduledCamStart || now,
         diameterGroup: schedule.diameterGroup || "6-8",
       });

@@ -66,7 +66,7 @@ export async function cloneRequestToDraft(req, res) {
       totalLength: ci.totalLength,
       taperAngle: ci.taperAngle,
       workType: ci.workType,
-      shippingMode: request.shippingMode || "normal",
+      shippingMode: "normal", // 항상 묶음 배송
       requestedShipDate: request.requestedShipDate,
     };
 

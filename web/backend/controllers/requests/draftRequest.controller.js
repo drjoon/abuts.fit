@@ -313,7 +313,7 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
     tiltAxisVector,
     frontPoint,
     workType,
-    shippingMode: shippingMode || "normal",
+    shippingMode: "normal", // 항상 묶음 배송
     requestedShipDate,
   });
 
@@ -423,7 +423,7 @@ export const addFilesToDraftBulk = asyncHandler(async (req, res) => {
         tiltAxisVector,
         frontPoint,
         workType,
-        shippingMode: shippingMode || "normal",
+        shippingMode: "normal", // 항상 묶음 배송
         requestedShipDate,
       };
     }),

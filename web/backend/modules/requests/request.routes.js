@@ -131,14 +131,6 @@ router.get(
   requestController.getShippingEstimate,
 );
 
-// 배송 방식 변경 (의뢰자용)
-router.patch(
-  "/my/shipping-mode",
-  authenticate,
-  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
-  requestController.updateMyShippingMode,
-);
-
 // 묶음 배송 생성/신청 (의뢰자용)
 router.post(
   "/my/bulk-shipping",

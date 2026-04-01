@@ -244,7 +244,7 @@ export const useNewRequestSubmit = ({
             connectionDiameter: caseInfos.connectionDiameter,
             workType: "abutment",
           },
-          shippingMode: caseInfos.shippingMode || "normal",
+          shippingMode: "normal", // 항상 묶음 배송
           requestedShipDate: caseInfos.requestedShipDate,
         };
       });
