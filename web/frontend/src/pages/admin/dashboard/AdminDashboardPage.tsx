@@ -303,7 +303,7 @@ export const AdminDashboardPage = () => {
                     </div>
                     <div className="text-2xl font-bold">
                       {(
-                        Number(data.stats?.[0]?.value || 0) || 0
+                        adminDashboardResponse?.data?.userStats?.total ?? 0
                       ).toLocaleString()}
                       명
                     </div>

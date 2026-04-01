@@ -809,7 +809,6 @@ export async function adminGetCreditStats(req, res) {
     });
 
     const totalCharged = Math.abs(ledgerByType.CHARGE?.totalAmount || 0);
-    const totalSpent = Math.abs(ledgerByType.SPEND?.totalAmount || 0);
     const totalBonus = Math.abs(ledgerByType.BONUS?.totalAmount || 0);
     const totalBonusRequest = bonusByCategory.request || 0;
     const totalBonusShipping = bonusByCategory.shipping || 0;
@@ -822,7 +821,7 @@ export async function adminGetCreditStats(req, res) {
             $sum: {
               $cond: [
                 { $in: ["$type", ["CHARGE", "REFUND"]] },
-                { $abs: "$amount" },
+                { $max: [{ $abs: "$amount" }, 0] },
                 0,
               ],
             },
@@ -836,7 +835,7 @@ export async function adminGetCreditStats(req, res) {
                     { $ne: ["$refType", "FREE_SHIPPING_CREDIT"] },
                   ],
                 },
-                { $abs: "$amount" },
+                { $max: ["$amount", 0] },
                 0,
               ],
             },
@@ -850,7 +849,7 @@ export async function adminGetCreditStats(req, res) {
                     { $eq: ["$refType", "FREE_SHIPPING_CREDIT"] },
                   ],
                 },
-                { $abs: "$amount" },
+                { $max: ["$amount", 0] },
                 0,
               ],
             },
@@ -909,6 +908,10 @@ export async function adminGetCreditStats(req, res) {
     const totalSpentBonusShippingAmount = Number(
       summary.spentBonusShippingSum || 0,
     );
+    const totalSpent =
+      totalSpentPaidAmount +
+      totalSpentBonusRequestAmount +
+      totalSpentBonusShippingAmount;
     const totalPaidCredit = Math.max(
       0,
       Number(summary.chargedPaid || 0) +
@@ -935,7 +938,7 @@ export async function adminGetCreditStats(req, res) {
         newBankTransactions,
         matchedBankTransactions,
         totalCharged,
-        totalSpent,
+        totalSpent: Math.max(0, Math.round(totalSpent)),
         totalBonus,
         totalBonusRequest: Math.max(0, Math.round(totalBonusRequest)),
         totalBonusShipping: Math.max(0, Math.round(totalBonusShipping)),
@@ -1663,12 +1666,13 @@ export async function adminGetBusinessCredits(req, res) {
                 $sum: {
                   $cond: [
                     { $in: ["$type", ["CHARGE", "REFUND"]] },
-                    { $abs: "$amount" },
+                    { $max: [{ $abs: "$amount" }, 0] },
                     0,
                   ],
                 },
               },
               // 무료 의뢰 크레딧 충전 (BONUS이지만 FREE_SHIPPING_CREDIT 아님)
+              // BONUS는 양수여야 하므로 음수면 0으로 처리
               chargedBonusRequest: {
                 $sum: {
                   $cond: [
@@ -1678,12 +1682,13 @@ export async function adminGetBusinessCredits(req, res) {
                         { $ne: ["$refType", "FREE_SHIPPING_CREDIT"] },
                       ],
                     },
-                    { $abs: "$amount" },
+                    { $max: ["$amount", 0] },
                     0,
                   ],
                 },
               },
               // 무료 배송비 크레딧 충전 (BONUS + FREE_SHIPPING_CREDIT)
+              // BONUS는 양수여야 하므로 음수면 0으로 처리
               chargedBonusShipping: {
                 $sum: {
                   $cond: [
@@ -1693,7 +1698,7 @@ export async function adminGetBusinessCredits(req, res) {
                         { $eq: ["$refType", "FREE_SHIPPING_CREDIT"] },
                       ],
                     },
-                    { $abs: "$amount" },
+                    { $max: ["$amount", 0] },
                     0,
                   ],
                 },

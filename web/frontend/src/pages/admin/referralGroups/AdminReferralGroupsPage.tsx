@@ -974,22 +974,27 @@ export default function AdminReferralGroupsPage() {
           ) : null}
         </CardHeader>
 
-        <CardContent className="flex-1 min-h-0 flex items-center justify-center overflow-hidden">
+        <CardContent className="flex-1 min-h-0 p-0 overflow-hidden">
           {isTreeLoading ? (
-            <div className="text-muted-foreground">로딩중...</div>
+            <div className="flex items-center justify-center h-full text-muted-foreground">
+              로딩중...
+            </div>
           ) : !effectiveLeaderId || !treeData?.tree ? (
-            <div className="text-center text-muted-foreground">
-              <div className="text-lg mb-2">👆</div>
-              <div>리더를 선택하면 소개 네트워크를 확인할 수 있습니다</div>
+            <div className="flex items-center justify-center h-full text-center text-muted-foreground">
+              <div>
+                <div className="text-lg mb-2">👆</div>
+                <div>리더를 선택하면 소개 네트워크를 확인할 수 있습니다</div>
+              </div>
             </div>
           ) : (
-            <div className="w-full h-full">
+            <div className="w-full h-full p-4">
               <ReferralNetworkChart
                 data={treeData.tree}
                 title=""
                 mode="radial-tree"
                 legendRoles={["requestor", "salesman", "devops"]}
                 chartHeight={600}
+                showCard={false}
               />
             </div>
           )}

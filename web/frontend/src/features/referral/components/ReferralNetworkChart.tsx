@@ -40,6 +40,7 @@ type ReferralNetworkChartProps = {
   chartHeight?: number;
   mode?: "tree" | "radial-tree" | "radial-group";
   currentBusinessAnchorId?: string | null;
+  showCard?: boolean; // Card 래핑 여부 (기본값: true)
 };
 
 export function ReferralNetworkChart({
@@ -51,6 +52,7 @@ export function ReferralNetworkChart({
   chartHeight = 500,
   mode = "tree",
   currentBusinessAnchorId,
+  showCard = true,
 }: ReferralNetworkChartProps) {
   const gradientId = useId().replace(/:/g, "");
   const shadowId = `${gradientId}-shadow`;
@@ -527,6 +529,16 @@ export function ReferralNetworkChart({
     isRoot ? "#2563eb" : ROLE_COLOR[role];
 
   if (!layoutRoot || !fittedLayout) {
+    const emptyContent = (
+      <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+        소개 데이터가 없습니다.
+      </div>
+    );
+
+    if (!showCard) {
+      return emptyContent;
+    }
+
     return (
       <Card className="shadow-sm">
         <CardHeader className="pb-4">
@@ -534,14 +546,143 @@ export function ReferralNetworkChart({
             {title}
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-            소개 데이터가 없습니다.
-          </div>
-        </CardContent>
+        <CardContent>{emptyContent}</CardContent>
       </Card>
     );
   }
+
+  const svgElement = (
+    <svg
+      viewBox={`0 0 ${viewWidth} ${viewHeight}`}
+      className="w-full"
+      style={{ height: `${viewHeight}px` }}
+      role="img"
+      aria-label={title}
+    >
+      <defs>
+        <radialGradient id={haloId} cx="50%" cy="50%" r="65%">
+          <stop offset="0%" stopColor="#dbeafe" stopOpacity="0.9" />
+          <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+        </radialGradient>
+        <filter id={shadowId} x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow
+            dx="0"
+            dy="6"
+            stdDeviation="8"
+            floodColor="#1d4ed8"
+            floodOpacity="0.14"
+          />
+        </filter>
+      </defs>
+
+      <rect x="0" y="0" width={viewWidth} height={viewHeight} fill="#ffffff" />
+      <circle
+        cx={centerX}
+        cy={centerY}
+        r={Math.min(viewWidth, viewHeight) * 0.32}
+        fill={`url(#${haloId})`}
+      />
+
+      {fittedLayout.links.map((link) => (
+        <path
+          key={link.key}
+          d={buildLinkPath(link)}
+          fill="none"
+          stroke="#bfdbfe"
+          strokeWidth={2.5}
+          strokeLinecap="round"
+        />
+      ))}
+
+      {fittedLayout.nodes.map((node) => (
+        <g
+          key={node.id}
+          transform={`translate(${node.x}, ${node.y})`}
+          filter={`url(#${shadowId})`}
+        >
+          {node.isRoot ? (
+            <circle cx="0" cy="0" r={node.r + 16} fill="rgba(37,99,235,0.08)" />
+          ) : null}
+          <circle
+            cx="0"
+            cy="0"
+            r={node.r}
+            fill={fillColor(node.role, node.isRoot)}
+            stroke={node.isRoot ? "#dbeafe" : "#eff6ff"}
+            strokeWidth={node.isRoot ? 6 : 4}
+          />
+          <text
+            x="0"
+            y={node.r + 22}
+            textAnchor="middle"
+            fontSize={node.isRoot ? 16 : 13}
+            fontWeight={node.isRoot ? 800 : 700}
+            fill="#0f172a"
+          >
+            {trimLabel(node.name, node.isRoot ? 13 : 11)}
+          </text>
+          <text
+            x="0"
+            y={node.r + 40}
+            textAnchor="middle"
+            fontSize={12}
+            fontWeight={600}
+            fill="#475569"
+          >
+            {ROLE_LABEL[node.role]}
+          </text>
+          {node.isRoot && node.orders > 0 ? (
+            <text
+              x="0"
+              y={-(node.r + 18)}
+              textAnchor="middle"
+              fontSize={12}
+              fontWeight={700}
+              fill="#2563eb"
+            >
+              최근 30일 {node.orders}건
+            </text>
+          ) : null}
+        </g>
+      ))}
+    </svg>
+  );
+
+  const legendElement =
+    legendRoles.length > 0 ? (
+      <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-600">
+        {legendRoles.map((role) => (
+          <div
+            key={role}
+            className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 shadow-sm"
+          >
+            <span
+              className="inline-block h-3 w-3 rounded-full"
+              style={{ backgroundColor: ROLE_COLOR[role] }}
+            />
+            <span className="font-medium">{ROLE_LABEL[role]}</span>
+          </div>
+        ))}
+      </div>
+    ) : null;
+
+  if (!showCard) {
+    return (
+      <div className="w-full h-full flex flex-col">
+        {svgElement}
+        {legendElement}
+      </div>
+    );
+  }
+
+  const chartContent = (
+    <>
+      <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white/80 shadow-inner">
+        {svgElement}
+      </div>
+      {legendElement}
+    </>
+  );
 
   return (
     <Card className="border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50/60 shadow-sm">
@@ -550,137 +691,7 @@ export function ReferralNetworkChart({
           {title}
         </CardTitle>
       </CardHeader>
-      <CardContent className="pt-2">
-        <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white/80 shadow-inner">
-          <svg
-            viewBox={`0 0 ${viewWidth} ${viewHeight}`}
-            className="w-full"
-            style={{ height: `${viewHeight}px` }}
-            role="img"
-            aria-label={title}
-          >
-            <defs>
-              <radialGradient id={haloId} cx="50%" cy="50%" r="65%">
-                <stop offset="0%" stopColor="#dbeafe" stopOpacity="0.9" />
-                <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
-              </radialGradient>
-              <filter
-                id={shadowId}
-                x="-20%"
-                y="-20%"
-                width="140%"
-                height="140%"
-              >
-                <feDropShadow
-                  dx="0"
-                  dy="6"
-                  stdDeviation="8"
-                  floodColor="#1d4ed8"
-                  floodOpacity="0.14"
-                />
-              </filter>
-            </defs>
-
-            <rect
-              x="0"
-              y="0"
-              width={viewWidth}
-              height={viewHeight}
-              fill="#ffffff"
-            />
-            <circle
-              cx={centerX}
-              cy={centerY}
-              r={Math.min(viewWidth, viewHeight) * 0.32}
-              fill={`url(#${haloId})`}
-            />
-
-            {fittedLayout.links.map((link) => (
-              <path
-                key={link.key}
-                d={buildLinkPath(link)}
-                fill="none"
-                stroke="#bfdbfe"
-                strokeWidth={2.5}
-                strokeLinecap="round"
-              />
-            ))}
-
-            {fittedLayout.nodes.map((node) => (
-              <g
-                key={node.id}
-                transform={`translate(${node.x}, ${node.y})`}
-                filter={`url(#${shadowId})`}
-              >
-                {node.isRoot ? (
-                  <circle
-                    cx="0"
-                    cy="0"
-                    r={node.r + 16}
-                    fill="rgba(37,99,235,0.08)"
-                  />
-                ) : null}
-                <circle
-                  cx="0"
-                  cy="0"
-                  r={node.r}
-                  fill={fillColor(node.role, node.isRoot)}
-                  stroke={node.isRoot ? "#dbeafe" : "#eff6ff"}
-                  strokeWidth={node.isRoot ? 6 : 4}
-                />
-                <text
-                  x="0"
-                  y={node.r + 22}
-                  textAnchor="middle"
-                  fontSize={node.isRoot ? 16 : 13}
-                  fontWeight={node.isRoot ? 800 : 700}
-                  fill="#0f172a"
-                >
-                  {trimLabel(node.name, node.isRoot ? 13 : 11)}
-                </text>
-                <text
-                  x="0"
-                  y={node.r + 40}
-                  textAnchor="middle"
-                  fontSize={12}
-                  fontWeight={600}
-                  fill="#475569"
-                >
-                  {ROLE_LABEL[node.role]}
-                </text>
-                {node.isRoot && node.orders > 0 ? (
-                  <text
-                    x="0"
-                    y={-(node.r + 18)}
-                    textAnchor="middle"
-                    fontSize={12}
-                    fontWeight={700}
-                    fill="#2563eb"
-                  >
-                    최근 30일 {node.orders}건
-                  </text>
-                ) : null}
-              </g>
-            ))}
-          </svg>
-        </div>
-        {legendRoles.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-600">
-            {legendRoles.map((role) => (
-              <div
-                key={role}
-                className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 shadow-sm"
-              >
-                <span
-                  className="inline-block h-3 w-3 rounded-full"
-                  style={{ backgroundColor: ROLE_COLOR[role] }}
-                />
-                <span className="font-medium">{ROLE_LABEL[role]}</span>
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </CardContent>
+      <CardContent className="pt-2">{chartContent}</CardContent>
     </Card>
   );
 }

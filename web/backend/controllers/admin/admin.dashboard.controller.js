@@ -40,6 +40,12 @@ export async function getDashboardStats(req, res) {
       active: true,
     });
 
+    console.log("[Admin Dashboard] User stats:", {
+      totalUsers,
+      activeUsers,
+      byRole: userStatsByRole,
+    });
+
     const { start, end } = getDateRangeFromQuery(req);
     const allRequestsForStats = await Request.find({
       createdAt: { $gte: start, $lte: end },
