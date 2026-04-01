@@ -190,6 +190,8 @@ async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks
         if secret:
             headers["X-Bridge-Secret"] = secret
         
+        log(f"[recalculate-metadata] Fetching meta from: {meta_url}?requestId={req.requestId}")
+        
         meta_resp = requests.get(
             meta_url,
             params={"requestId": req.requestId},
@@ -197,15 +199,40 @@ async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks
             timeout=10,
         )
         
+        log(f"[recalculate-metadata] Response status: {meta_resp.status_code}")
+        
         if meta_resp.status_code != 200:
             log(f"[recalculate-metadata] Failed to get request meta: {meta_resp.status_code}")
+            log(f"[recalculate-metadata] Response text: {meta_resp.text[:500]}")
             raise HTTPException(status_code=404, detail="Request not found")
         
-        meta_data = meta_resp.json().get("data", {})
-        cam_file = meta_data.get("caseInfos", {}).get("camFile", {})
+        # JSON 응답 파싱
+        try:
+            response_json = meta_resp.json()
+            log(f"[recalculate-metadata] Response JSON keys: {list(response_json.keys()) if response_json else 'None'}")
+        except Exception as json_err:
+            log(f"[recalculate-metadata] Failed to parse JSON response: {json_err}")
+            log(f"[recalculate-metadata] Response text: {meta_resp.text[:500]}")
+            raise HTTPException(status_code=500, detail="Invalid JSON response from backend")
+        
+        if not response_json:
+            log(f"[recalculate-metadata] Empty response from backend")
+            raise HTTPException(status_code=500, detail="Empty response from backend")
+        
+        # ApiResponse 형식: { statusCode, data, message, success }
+        meta_data = response_json.get("data") or {}
+        log(f"[recalculate-metadata] meta_data keys: {list(meta_data.keys()) if isinstance(meta_data, dict) else 'Not a dict'}")
+        
+        case_infos = meta_data.get("caseInfos") or {}
+        log(f"[recalculate-metadata] caseInfos keys: {list(case_infos.keys()) if isinstance(case_infos, dict) else 'Not a dict'}")
+        
+        cam_file = case_infos.get("camFile") or {}
         file_path = cam_file.get("filePath")
-        finish_line = meta_data.get("caseInfos", {}).get("finishLine", {})
+        log(f"[recalculate-metadata] camFile filePath: {file_path}")
+        
+        finish_line = case_infos.get("finishLine") or {}
         finish_line_points = finish_line.get("points")
+        log(f"[recalculate-metadata] finishLine points count: {len(finish_line_points) if finish_line_points else 0}")
         
         if not file_path:
             raise HTTPException(status_code=400, detail="STL file path not found in request")

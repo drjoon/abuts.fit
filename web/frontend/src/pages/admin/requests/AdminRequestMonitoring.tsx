@@ -21,6 +21,7 @@ import {
   User,
   Truck,
   XCircle,
+  Trash2,
 } from "lucide-react";
 import { getNormalizedStageLabel } from "@/utils/stage";
 
@@ -116,8 +117,65 @@ export const AdminRequestMonitoring = () => {
     byStatus?: Record<string, number>;
   }>({});
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  const handleDeleteRequest = async (
+    requestId: string,
+    requestMongoId: string,
+  ) => {
+    if (!token) return;
+
+    const confirmed = window.confirm(
+      `의뢰 ${requestId}를 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`,
+    );
+
+    if (!confirmed) return;
+
+    setDeletingIds((prev) => new Set(prev).add(requestMongoId));
+
+    try {
+      const res = await apiFetch({
+        path: `/api/requests/${requestMongoId}`,
+        method: "DELETE",
+        token,
+      });
+
+      if (res.ok) {
+        // 목록에서 제거
+        setRequests((prev) => prev.filter((r) => r._id !== requestMongoId));
+
+        // 통계 갱신
+        const fetchStats = async () => {
+          try {
+            const statsRes = await apiFetch<any>({
+              path: "/api/admin/dashboard",
+              method: "GET",
+              token,
+            });
+            if (statsRes.ok && statsRes.data?.success) {
+              setRequestStats(statsRes.data.data?.requestStats || {});
+            }
+          } catch (error) {
+            console.error("Failed to refresh stats:", error);
+          }
+        };
+        void fetchStats();
+      } else {
+        alert(`삭제 실패: ${res.data?.message || "알 수 없는 오류"}`);
+      }
+    } catch (error: any) {
+      console.error("Failed to delete request:", error);
+      alert(`삭제 중 오류가 발생했습니다: ${error.message}`);
+    } finally {
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(requestMongoId);
+        return next;
+      });
+    }
+  };
 
   useEffect(() => {
     const fetchRequests = async () => {
@@ -390,65 +448,82 @@ export const AdminRequestMonitoring = () => {
               className="max-h-[70vh] overflow-y-auto pr-1"
             >
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {filteredRequests.slice(0, visibleCount).map((request) => (
-                  <div
-                    key={request._id || request.id}
-                    className="p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="space-y-1 min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {getStatusIcon(request)}
-                          <h3 className="font-medium truncate">
-                            {request.caseInfos?.patientName} (
-                            {request.caseInfos?.tooth})
-                          </h3>
-                          {getPriorityBadge(request.priority)}
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-                          <span className="flex items-center gap-1">
-                            <User className="h-3 w-3" />
-                            {request.requestor?.name} (
-                            {request.requestor?.business})
-                          </span>
-                          {request.caManufacturer &&
-                            request.caManufacturer !== "-" && (
-                              <span className="flex items-center gap-1">
-                                <Building2 className="h-3 w-3" />
-                                {request.caManufacturer}
-                              </span>
-                            )}
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1 ml-2 shrink-0">
-                        {getStatusBadge(request)}
-                        <div className="text-right text-xs">
-                          <p className="font-medium text-primary">
-                            {(
-                              request.price?.paidAmount ??
-                              request.price?.amount ??
-                              0
-                            ).toLocaleString()}
-                            원
-                          </p>
-                          <p className="text-muted-foreground">
-                            {new Date(request.createdAt).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                {filteredRequests.slice(0, visibleCount).map((request) => {
+                  const isDeleting = deletingIds.has(request._id);
+                  return (
+                    <div
+                      key={request._id || request.id}
+                      className={`p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors relative ${
+                        isDeleting ? "opacity-50 pointer-events-none" : ""
+                      }`}
+                    >
+                      {/* 삭제 버튼 */}
+                      <button
+                        onClick={() =>
+                          handleDeleteRequest(request.requestId, request._id)
+                        }
+                        disabled={isDeleting}
+                        className="absolute top-2 right-2 p-1.5 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                        title="의뢰 삭제"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
 
-                    {/* Progress Bar */}
-                    <div className="space-y-1">
-                      <div className="w-full bg-muted rounded-full h-1.5">
-                        <div
-                          className="bg-primary h-1.5 rounded-full transition-all"
-                          style={{ width: `${request.progress ?? 0}%` }}
-                        />
+                      <div className="flex items-start justify-between mb-3 pr-8">
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {getStatusIcon(request)}
+                            <h3 className="font-medium truncate">
+                              {request.caseInfos?.patientName} (
+                              {request.caseInfos?.tooth})
+                            </h3>
+                            {getPriorityBadge(request.priority)}
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                            <span className="flex items-center gap-1">
+                              <User className="h-3 w-3" />
+                              {request.requestor?.name} (
+                              {request.requestor?.business})
+                            </span>
+                            {request.caManufacturer &&
+                              request.caManufacturer !== "-" && (
+                                <span className="flex items-center gap-1">
+                                  <Building2 className="h-3 w-3" />
+                                  {request.caManufacturer}
+                                </span>
+                              )}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 ml-2 shrink-0">
+                          {getStatusBadge(request)}
+                          <div className="text-right text-xs">
+                            <p className="font-medium text-primary">
+                              {(
+                                request.price?.paidAmount ??
+                                request.price?.amount ??
+                                0
+                              ).toLocaleString()}
+                              원
+                            </p>
+                            <p className="text-muted-foreground">
+                              {new Date(request.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div className="space-y-1">
+                        <div className="w-full bg-muted rounded-full h-1.5">
+                          <div
+                            className="bg-primary h-1.5 rounded-full transition-all"
+                            style={{ width: `${request.progress ?? 0}%` }}
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <div ref={sentinelRef} className="h-4" />
             </div>

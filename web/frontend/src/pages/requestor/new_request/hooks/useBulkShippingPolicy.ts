@@ -96,20 +96,36 @@ const getLocalShippingPolicy = (
   }
 };
 
+const saveLocalShippingPolicy = (
+  email: string | null | undefined,
+  weeklyBatchDays: string[],
+) => {
+  const key = `${SHIPPING_POLICY_STORAGE_PREFIX}${email || "guest"}`;
+  try {
+    if (typeof window !== "undefined") {
+      const data = {
+        shippingMode: "weeklyBased",
+        weeklyBatchDays,
+        updatedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(key, JSON.stringify(data));
+    }
+  } catch (error) {
+    console.error(
+      "[useBulkShippingPolicy] Failed to save to localStorage:",
+      error,
+    );
+  }
+};
+
 export function useBulkShippingPolicy(email?: string | null) {
   const { token, user } = useAuthStore();
   const [policy, setPolicy] = useState<ShippingPolicyResult>(() =>
-    token ? buildShippingPolicyResult([]) : getLocalShippingPolicy(email),
+    getLocalShippingPolicy(email),
   );
   const businessType = useMemo(() => {
     return resolveBusinessType(user?.role, "requestor");
   }, [user?.role]);
-
-  useEffect(() => {
-    setPolicy(
-      token ? buildShippingPolicyResult([]) : getLocalShippingPolicy(email),
-    );
-  }, [email, token]);
 
   useEffect(() => {
     if (!token) return;
@@ -132,11 +148,16 @@ export function useBulkShippingPolicy(email?: string | null) {
           data?.shippingPolicy?.weeklyBatchDays || [],
         );
         if (cancelled) return;
-        setPolicy((prev) => ({
-          ...prev,
-          weeklyBatchDays: weeklyDays,
-          weeklyBatchLabel: formatWeekdayLabel(weeklyDays),
-        }));
+
+        // 백엔드 데이터를 로컬 스토리지에 저장하고 상태 업데이트
+        if (weeklyDays.length > 0) {
+          saveLocalShippingPolicy(email, weeklyDays);
+          setPolicy((prev) => ({
+            ...prev,
+            weeklyBatchDays: weeklyDays,
+            weeklyBatchLabel: formatWeekdayLabel(weeklyDays),
+          }));
+        }
       } catch {
         // ignore
       }
@@ -146,10 +167,11 @@ export function useBulkShippingPolicy(email?: string | null) {
     return () => {
       cancelled = true;
     };
-  }, [businessType, token, user?.role]);
+  }, [businessType, token, user?.role, email]);
 
   const setWeeklyBatchDays = (days: string[]) => {
     const weeklyDays = normalizeWeeklyBatchDays(days);
+    saveLocalShippingPolicy(email, weeklyDays);
     setPolicy((prev) => ({
       ...prev,
       weeklyBatchDays: weeklyDays,

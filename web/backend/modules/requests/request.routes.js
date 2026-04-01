@@ -63,6 +63,14 @@ router.get(
   requestController.getMyDashboardSummary,
 );
 
+// 대시보드 캐시 강제 무효화 (의뢰자용)
+router.post(
+  "/my/dashboard-summary/force-refresh",
+  authenticate,
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
+  requestController.forceRefreshMyDashboardSummary,
+);
+
 // 제조사 대시보드 요약 (할당된 의뢰 기준)
 router.get(
   "/assigned/dashboard-summary",

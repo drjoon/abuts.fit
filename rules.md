@@ -645,6 +645,8 @@
 - requestor 대시보드 계열 성능 최적화는 **요청 시 재계산보다 이벤트 기반 스냅샷/증분 캐시 갱신**을 우선합니다.
 - 대상 API는 우선 `pricing-referral-stats`, `bulk-shipping`, `dashboard-summary`로 보고, canonical 집계 키는 **user가 아니라 `businessAnchorId`** 기준을 사용합니다.
 - 스냅샷/증분 캐시 갱신 시점은 최소한 **소개 가입자 생성, 신규의뢰 생성, CAM 승인에 따른 의뢰 과금 진입, 세척.패킹 승인에 따른 배송비 과금 진입, 포장.발송/발송/집하 상태 변경, 관련 롤백, 매일 자정 배치**를 포함해야 합니다.
+- **제조사 공정 승인/롤백 시 캐시 무효화**: 제조사가 공정을 승인하거나 롤백할 때마다 해당 의뢰자의 `dashboard-summary`, `bulk-shipping`, `pricing-referral-stats` 캐시를 즉시 무효화하고 스냅샷을 재계산합니다. 이는 `common.review.controller.js`의 `updateReviewStatusByStage` 함수에서 `triggerDashboardSummaryRefreshForAnchorId`를 호출하여 구현됩니다.
+- **캐시 무효화 대상**: 의뢰자(requestor), 영업자(salesman), 개발운영사(devops), 관리자(admin) 모두 동일한 이벤트 기반 무효화 메커니즘을 사용합니다. 공정 변경 시 관련된 모든 역할의 캐시가 무효화됩니다.
 - 위 API들은 cold path 단축을 위해 **읽기 시 fallback 재계산은 최소화**하고, 가능하면 이벤트 후처리/배치에서 미리 값을 준비합니다.
 - `bulk-shipping`은 `businessAnchorId + ymd` 기준 materialized snapshot을 사용하고, payload는 `pre`, `post`, `waiting` 세 묶음을 저장합니다. 읽기 API는 snapshot을 우선 조회하고, 누락 시에만 최소 fallback 재계산 후 snapshot을 채웁니다.
 - `dashboard-summary`는 한 번에 모든 카드를 재계산하지 말고 조각 snapshot으로 분해합니다. 현재 1차 대상은 `stats`와 `manufacturingSummary`이며, `businessAnchorId + ymd + periodKey` 기준으로 저장합니다. `riskSummary`, `recentRequests`처럼 변동성이 크거나 상세 리스트 성격이 강한 구간은 우선 live 계산을 유지하고, 이후 별도 snapshot 또는 증분 캐시로 분리합니다.

@@ -371,89 +371,13 @@ export const RequestorDashboardPage = () => {
       if (!eventOrgId || !myOrgId || eventOrgId !== myOrgId) return;
 
       if (type === "request:stage-changed") {
-        queryClient.setQueryData<any>(summaryQueryKey, (prev) => {
-          if (!prev?.success || !prev?.data) return prev;
-
-          const next = {
-            ...prev,
-            data: {
-              ...prev.data,
-              stats: { ...(prev.data.stats || {}) },
-              recentRequests: Array.isArray(prev.data.recentRequests)
-                ? [...prev.data.recentRequests]
-                : [],
-              riskSummary: prev.data.riskSummary
-                ? {
-                    ...prev.data.riskSummary,
-                    items: Array.isArray(prev.data.riskSummary.items)
-                      ? [...prev.data.riskSummary.items]
-                      : [],
-                  }
-                : prev.data.riskSummary,
-            },
-          };
-
-          const requestId = String(
-            eventRequest?.requestId || payload?.requestId || "",
-          ).trim();
-          if (!requestId) return prev;
-
-          const recentIndex = next.data.recentRequests.findIndex(
-            (item: any) => String(item?.requestId || "").trim() === requestId,
-          );
-          if (recentIndex >= 0) {
-            next.data.recentRequests[recentIndex] = {
-              ...next.data.recentRequests[recentIndex],
-              ...eventRequest,
-            };
-          }
-
-          if (
-            next.data.riskSummary &&
-            Array.isArray(next.data.riskSummary.items)
-          ) {
-            const riskIndex = next.data.riskSummary.items.findIndex(
-              (item: any) =>
-                String(item?.requestId || item?.id || "").trim() ===
-                  requestId ||
-                String(item?._id || "").trim() ===
-                  String(
-                    eventRequest?._id || payload?.requestMongoId || "",
-                  ).trim(),
-            );
-            if (riskIndex >= 0) {
-              next.data.riskSummary.items[riskIndex] = {
-                ...next.data.riskSummary.items[riskIndex],
-                ...eventRequest,
-              };
-            }
-          }
-
-          const toStage = String(
-            eventRequest?.manufacturerStage || payload?.toStage || "",
-          ).trim();
-          const fromStage = String(payload?.fromStage || "").trim();
-          const stats = next.data.stats || {};
-          const stageKeyMap: Record<string, string> = {
-            CAM: "inCam",
-            가공: "inProduction",
-            "세척.패킹": "inPacking",
-            "포장.발송": "inShipping",
-            추적관리: "inTracking",
-          };
-          const fromKey = stageKeyMap[fromStage];
-          const toKey = stageKeyMap[toStage];
-
-          if (fromKey && typeof stats[fromKey] === "number") {
-            stats[fromKey] = Math.max(0, Number(stats[fromKey] || 0) - 1);
-          }
-          if (toKey && typeof stats[toKey] === "number") {
-            stats[toKey] = Number(stats[toKey] || 0) + 1;
-          }
-
-          return next;
+        // 공정 변경 시 전체 대시보드 summary 무효화 및 재조회
+        // manufacturingSummary, stats, recentRequests 모두 최신 데이터로 업데이트
+        void queryClient.invalidateQueries({
+          queryKey: summaryQueryKey,
         });
 
+        // 배송 관련 공정 변경 시 bulk shipping도 무효화
         if (
           ["세척.패킹", "포장.발송", "추적관리"].includes(
             String(payload?.toStage || "").trim(),

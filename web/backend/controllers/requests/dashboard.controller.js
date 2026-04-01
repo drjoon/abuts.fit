@@ -478,6 +478,59 @@ export async function getMyReferralDirectMembers(req, res) {
  * 내 대시보드 요약 (의뢰자용)
  * @route GET /api/requests/my/dashboard-summary
  */
+/**
+ * 대시보드 캐시 강제 무효화 및 재계산
+ * @route POST /api/requests/my/dashboard-summary/force-refresh
+ */
+export async function forceRefreshMyDashboardSummary(req, res) {
+  try {
+    const userId = req.user?._id?.toString();
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "로그인이 필요합니다.",
+      });
+    }
+
+    const freshUser = await User.findById(userId)
+      .select({ businessAnchorId: 1 })
+      .lean();
+
+    if (!freshUser?.businessAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자 정보가 없습니다.",
+      });
+    }
+
+    const businessAnchorId = String(freshUser.businessAnchorId || "").trim();
+
+    console.log("[FORCE_REFRESH] Starting cache invalidation for:", {
+      userId,
+      businessAnchorId,
+    });
+
+    // 캐시와 스냅샷 강제 무효화 및 재계산
+    await triggerDashboardSummaryRefreshForAnchorId(
+      businessAnchorId,
+      "force-refresh-by-user",
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "대시보드 캐시가 무효화되었습니다. 페이지를 새로고침하세요.",
+      businessAnchorId,
+    });
+  } catch (error) {
+    console.error("Error in forceRefreshMyDashboardSummary:", error);
+    return res.status(500).json({
+      success: false,
+      message: "캐시 무효화 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export async function getMyDashboardSummary(req, res) {
   try {
     const { period = "30d" } = req.query;

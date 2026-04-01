@@ -31,7 +31,10 @@ import {
   chooseMachineForCamMachining,
 } from "./common.review.machine.js";
 import { triggerEspritForNc } from "./common.review.esprit.js";
-import { triggerPricingSnapshotForRequestDoc } from "../../services/requestSnapshotTriggers.service.js";
+import {
+  triggerPricingSnapshotForRequestDoc,
+  triggerDashboardSummaryRefreshForAnchorId,
+} from "../../services/requestSnapshotTriggers.service.js";
 
 // Emit worksheet stage changed event
 
@@ -40,20 +43,26 @@ function emitWorksheetStageChanged(request, payload = {}) {
   const requestMongoId = String(request?._id || "").trim();
   if (!requestId && !requestMongoId) return;
 
-  emitAppEventToRoles(["manufacturer", "admin"], "request:stage-changed", {
-    requestId,
-    requestMongoId,
-    manufacturerStage: String(request?.manufacturerStage || "").trim() || null,
-    reviewStage: payload.reviewStage || null,
-    reviewStatus: payload.reviewStatus || null,
-    fromStage: payload.fromStage || null,
-    toStage:
-      payload.toStage ||
-      String(request?.manufacturerStage || "").trim() ||
-      null,
-    source: payload.source || "review-status",
-    request,
-  });
+  // 의뢰자, 제조사, 관리자 모두에게 공정 변경 이벤트 전송
+  emitAppEventToRoles(
+    ["requestor", "manufacturer", "admin"],
+    "request:stage-changed",
+    {
+      requestId,
+      requestMongoId,
+      manufacturerStage:
+        String(request?.manufacturerStage || "").trim() || null,
+      reviewStage: payload.reviewStage || null,
+      reviewStatus: payload.reviewStatus || null,
+      fromStage: payload.fromStage || null,
+      toStage:
+        payload.toStage ||
+        String(request?.manufacturerStage || "").trim() ||
+        null,
+      source: payload.source || "review-status",
+      request,
+    },
+  );
 }
 
 function emitManufacturingAsyncFailure({
@@ -371,6 +380,22 @@ export async function deleteStageFile(req, res) {
       }
       await request.save();
 
+      // 롤백 시 캐시 무효화 (rules.md 섹션 6.1)
+      const businessAnchorId = String(
+        request?.businessAnchorId || request?.requestor?.businessAnchorId || "",
+      ).trim();
+      if (businessAnchorId) {
+        triggerDashboardSummaryRefreshForAnchorId(
+          businessAnchorId,
+          `rollback:${stage}`,
+        ).catch((err) =>
+          console.error(
+            "[ROLLBACK] triggerDashboardSummaryRefreshForAnchorId failed",
+            err,
+          ),
+        );
+      }
+
       return res.status(200).json({
         success: true,
         data: {
@@ -406,6 +431,22 @@ export async function deleteStageFile(req, res) {
     revertManufacturerStageByReviewStage(request, stage);
 
     await request.save();
+
+    // 롤백 시 캐시 무효화 (rules.md 섹션 6.1)
+    const businessAnchorId = String(
+      request?.businessAnchorId || request?.requestor?.businessAnchorId || "",
+    ).trim();
+    if (businessAnchorId) {
+      triggerDashboardSummaryRefreshForAnchorId(
+        businessAnchorId,
+        `rollback-with-file-delete:${stage}`,
+      ).catch((err) =>
+        console.error(
+          "[ROLLBACK] triggerDashboardSummaryRefreshForAnchorId failed",
+          err,
+        ),
+      );
+    }
 
     runStageFileCleanupInBackground({
       requestId: request.requestId || request._id,
@@ -531,8 +572,13 @@ export async function updateReviewStatusByStage(req, res) {
           request?.caseInfos?.newSystemRequest?.requested &&
           request?.caseInfos?.newSystemRequest?.free;
 
+        // businessAnchorId 설정 (트랜잭션 내에서 설정하여 save 시 반영)
         if (!request.businessAnchorId && resolvedBusinessAnchorId) {
           request.businessAnchorId = resolvedBusinessAnchorId;
+          console.log(
+            "[REVIEW] Setting businessAnchorId:",
+            resolvedBusinessAnchorId,
+          );
         }
 
         {
@@ -742,6 +788,52 @@ export async function updateReviewStatusByStage(req, res) {
       resultRequest = request;
     });
 
+    // 공정 변경 시 스냅샷 재계산 트리거 (rules.md 섹션 6.1)
+    // - 승인(APPROVED): 모든 공정 단계 진행 시
+    // - 롤백(PENDING): 모든 공정 되돌림 시
+    // - 거부(REJECTED): 현재 미사용이지만 향후 대비
+    const businessAnchorId = String(
+      resultRequest?.businessAnchorId || "",
+    ).trim();
+    const shouldTriggerSnapshot = status === "APPROVED" || status === "PENDING";
+
+    console.log("[REVIEW] Cache invalidation check:", {
+      requestId: resultRequest?.requestId,
+      businessAnchorId,
+      status,
+      effectiveStage,
+      shouldTriggerSnapshot,
+      hasBusinessAnchorId: !!businessAnchorId,
+    });
+
+    if (businessAnchorId && shouldTriggerSnapshot) {
+      console.log(
+        "[REVIEW] Triggering dashboard summary refresh for:",
+        businessAnchorId,
+      );
+      // 의뢰자 대시보드 캐시 무효화 + 스냅샷 재계산
+      triggerDashboardSummaryRefreshForAnchorId(
+        businessAnchorId,
+        `review-status:${String(status || "").trim()}:${String(
+          effectiveStage || "",
+        ).trim()}`,
+      ).catch((err) =>
+        console.error(
+          "[REVIEW] triggerDashboardSummaryRefreshForAnchorId failed",
+          err,
+        ),
+      );
+    } else {
+      console.warn("[REVIEW] Skipping dashboard refresh:", {
+        reason: !businessAnchorId
+          ? "No businessAnchorId"
+          : "Not APPROVED or PENDING",
+        businessAnchorId,
+        status,
+      });
+    }
+
+    // 배송 관련 공정은 소개 가격 정책 스냅샷도 갱신
     if (String(effectiveStage || "").trim() === "shipping") {
       triggerPricingSnapshotForRequestDoc(
         resultRequest,
