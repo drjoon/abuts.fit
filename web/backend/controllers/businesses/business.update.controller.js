@@ -24,6 +24,7 @@ import {
   grantFreeShippingCreditIfEligible,
 } from "./business.bonus.util.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
+import { invalidateMyBusinessCache } from "./business.controller.js";
 
 // BusinessAnchor를 직접 생성/업데이트하는 헬퍼 함수
 export async function ensureBusinessAnchor({
@@ -743,10 +744,16 @@ export async function updateMyBusiness(req, res) {
         metadataPatch,
         unsetPatch,
       });
-      await BusinessAnchor.findByIdAndUpdate(businessAnchor._id, update);
-      const persistedAnchor = await BusinessAnchor.findById(businessAnchor._id)
-        .select({ name: 1, metadata: 1, status: 1, businessLicense: 1 })
-        .lean();
+      // 성능 최적화: findByIdAndUpdate와 findById를 하나로 통합
+      const persistedAnchor = await BusinessAnchor.findByIdAndUpdate(
+        businessAnchor._id,
+        update,
+        {
+          new: true,
+          select: { name: 1, metadata: 1, status: 1, businessLicense: 1 },
+          lean: true,
+        },
+      );
       console.info("[BusinessAnchor] updateMyBusiness persisted result", {
         businessAnchorId: String(
           persistedAnchor?._id || businessAnchor?._id || "",
@@ -771,37 +778,38 @@ export async function updateMyBusiness(req, res) {
       throw e;
     }
 
-    if (nextName && String(req.user.business || "") !== nextName) {
+    // 성능 최적화: 이름이 변경된 경우에만 User.updateMany 실행
+    const currentBusinessName = String(req.user.business || "").trim();
+    const newBusinessName =
+      nextName || String(businessAnchor?.name || "").trim();
+
+    if (newBusinessName && currentBusinessName !== newBusinessName) {
       await User.updateMany(
         { businessAnchorId: businessAnchor._id },
         {
           $set: {
-            business: nextName,
-          },
-        },
-      );
-    } else {
-      await User.updateMany(
-        { businessAnchorId: businessAnchor._id },
-        {
-          $set: {
-            business: String(businessAnchor?.name || nextName || "").trim(),
+            business: newBusinessName,
           },
         },
       );
     }
 
-    const granted = await grantWelcomeBonusIfEligible({
-      businessAnchorId: businessAnchor._id,
-      userId: req.user._id,
-      userRole: req.user.role,
-    });
+    // 성능 최적화: bonus grant 함수들을 병렬 실행
+    const [granted, freeShippingGranted] = await Promise.all([
+      grantWelcomeBonusIfEligible({
+        businessAnchorId: businessAnchor._id,
+        userId: req.user._id,
+        userRole: req.user.role,
+      }),
+      grantFreeShippingCreditIfEligible({
+        businessAnchorId: businessAnchor._id,
+        userId: req.user._id,
+        userRole: req.user.role,
+      }),
+    ]);
 
-    const freeShippingGranted = await grantFreeShippingCreditIfEligible({
-      businessAnchorId: businessAnchor._id,
-      userId: req.user._id,
-      userRole: req.user.role,
-    });
+    // 캐시 무효화: 사업자 정보가 업데이트되었으므로 getMyBusiness 캐시 제거
+    invalidateMyBusinessCache(businessAnchor._id);
 
     return res.json({
       success: true,

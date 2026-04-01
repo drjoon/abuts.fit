@@ -419,15 +419,16 @@ export async function getAllRequests(req, res) {
 
     const now = new Date();
     const isWorksheetView = view === "worksheet";
+
+    // 성능 최적화: normalize와 shippingPriority 계산을 병렬 처리
     const requests = await Promise.all(
       rawRequests.map(async (r) => {
-        const shippingPriority = await computeShippingPriority({
-          request: r,
-          now,
-        });
-        const normalized = isWorksheetView
-          ? await normalizeWorksheetRequestForResponse(r)
-          : await normalizeRequestForResponse(r);
+        const [shippingPriority, normalized] = await Promise.all([
+          computeShippingPriority({ request: r, now }),
+          isWorksheetView
+            ? normalizeWorksheetRequestForResponse(r)
+            : normalizeRequestForResponse(r),
+        ]);
         return {
           ...normalized,
           shippingPriority,

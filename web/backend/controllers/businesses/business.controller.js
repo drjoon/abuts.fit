@@ -208,12 +208,38 @@ export async function updateBusinessShippingAddress(req, res) {
   }
 }
 
+// 성능 최적화: getMyBusiness 캐시 (TTL 30초)
+const __getMyBusinessCache = new Map();
+const GET_MY_BUSINESS_CACHE_TTL = 30 * 1000;
+
+function getMyBusinessCacheKey(userId, businessType) {
+  return `${userId}:${businessType}`;
+}
+
+// 캐시 무효화 함수 (사업자 정보 업데이트 시 호출)
+export function invalidateMyBusinessCache(businessAnchorId) {
+  if (!businessAnchorId) return 0;
+  let removed = 0;
+  for (const key of __getMyBusinessCache.keys()) {
+    __getMyBusinessCache.delete(key);
+    removed++;
+  }
+  return removed;
+}
+
 export async function getMyBusiness(req, res) {
   try {
     res.set("x-abuts-handler", "business.getMyBusiness");
     const roleCheck = assertBusinessRole(req, res);
     if (!roleCheck) return;
     const { businessType } = roleCheck;
+
+    // 캐시 확인
+    const cacheKey = getMyBusinessCacheKey(req.user._id, businessType);
+    const cached = __getMyBusinessCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < GET_MY_BUSINESS_CACHE_TTL) {
+      return res.json(cached.data);
+    }
 
     const freshUser = await User.findById(req.user._id)
       .select({ businessAnchorId: 1, business: 1 })
@@ -325,7 +351,7 @@ export async function getMyBusiness(req, res) {
     // AI 파싱 후 사용자 확인/검증을 거친 데이터는 metadata에 저장
     const metadata = anchor?.metadata || {};
 
-    return res.json({
+    const responseData = {
       success: true,
       data: {
         membership,
@@ -337,7 +363,15 @@ export async function getMyBusiness(req, res) {
         businessLicense: anchor?.businessLicense || null,
         payoutAccount: anchor?.payoutAccount || {},
       },
+    };
+
+    // 캐시 저장
+    __getMyBusinessCache.set(cacheKey, {
+      ts: Date.now(),
+      data: responseData,
     });
+
+    return res.json(responseData);
   } catch (error) {
     res.set("x-abuts-handler", "business.getMyBusiness");
     return res.status(500).json({

@@ -642,6 +642,7 @@ export async function getReferralGroupTree(req, res) {
               connectFromField: "_id",
               connectToField: "referredByAnchorId",
               as: "descendants",
+              maxDepth: 10, // 성능 최적화: 최대 깊이 제한
               restrictSearchWithMatch: {
                 businessType: { $in: REFERRAL_TREE_ROLES },
               },
@@ -729,6 +730,7 @@ export async function getReferralGroupTree(req, res) {
           endYmd,
         });
 
+      // lite 모드에서는 Request 집계 생략 (성능 최적화)
       const businessStatsRows =
         !lite && memberBusinessAnchorIds.length && start && end
           ? await Request.aggregate([

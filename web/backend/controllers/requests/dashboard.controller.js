@@ -190,8 +190,8 @@ export async function getAssignedDashboardSummary(req, res) {
     const dateFilter = buildDateFilter(period);
 
     // 제조사 대시보드: 해당 제조사에게 할당된 의뢰건을 조회
+    // 취소 건수도 집계해야 하므로 manufacturerStage 필터 제거
     const baseFilter = {
-      manufacturerStage: { $ne: "취소" },
       "caseInfos.implantBrand": { $exists: true, $ne: "" },
     };
 
@@ -262,7 +262,9 @@ export async function getAssignedDashboardSummary(req, res) {
       {
         $group: {
           _id: null,
-          total: { $sum: 1 },
+          total: {
+            $sum: { $cond: [{ $ne: ["$manufacturerStage", "취소"] }, 1, 0] },
+          },
           canceledCount: {
             $sum: { $cond: [{ $eq: ["$manufacturerStage", "취소"] }, 1, 0] },
           },

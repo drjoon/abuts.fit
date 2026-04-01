@@ -701,6 +701,20 @@ requestSchema.index({
 });
 requestSchema.index({ requestor: 1, status: 1 });
 
+// 워크시트 조회 성능 최적화 (제조사 필터링)
+requestSchema.index({
+  manufacturerStage: 1,
+  caManufacturer: 1,
+  createdAt: -1,
+});
+
+// 배송 워크시트 조회 최적화
+requestSchema.index({
+  manufacturerStage: 1,
+  "timeline.estimatedShipYmd": 1,
+  createdAt: -1,
+});
+
 // 의뢰 모델 생성
 const Request = mongoose.model("Request", requestSchema);
 

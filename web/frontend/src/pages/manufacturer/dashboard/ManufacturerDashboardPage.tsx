@@ -118,7 +118,7 @@ export const ManufacturerDashboardPage = () => {
     {
       key: "request-cancel",
       label: "의뢰/취소",
-      value: `${assignedSummary.requestCount ?? 0}/${assignedSummary.canceledCount ?? 0}`,
+      value: `${assignedSummary.total ?? 0}/${assignedSummary.canceledCount ?? 0}`,
       icon: FileText,
       hint: "의뢰 건수 / 취소 건수",
     },

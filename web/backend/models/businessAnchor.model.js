@@ -157,6 +157,13 @@ const businessAnchorSchema = new mongoose.Schema(
 businessAnchorSchema.index({ businessType: 1, name: 1 });
 businessAnchorSchema.index({ referredByAnchorId: 1, businessType: 1 });
 
+// 소개 트리 조회 성능 최적화 ($graphLookup)
+businessAnchorSchema.index({
+  businessType: 1,
+  referredByAnchorId: 1,
+  status: 1,
+});
+
 const BusinessAnchor = mongoose.model("BusinessAnchor", businessAnchorSchema);
 
 export default BusinessAnchor;
