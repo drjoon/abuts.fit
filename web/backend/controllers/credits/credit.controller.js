@@ -220,7 +220,16 @@ export async function getMyCreditSpendInsights(req, res) {
   const MAX = 5000000;
   const WINDOW_DAYS = 90;
   const now = new Date();
-  const since = new Date(now.getTime() - WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  // KST 기준 90일 전
+  const kstDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+  const todayKst = new Date(`${kstDate}T00:00:00+09:00`);
+  todayKst.setDate(todayKst.getDate() - WINDOW_DAYS);
+  const since = todayKst;
 
   const match = {
     ...ledgerQuery,

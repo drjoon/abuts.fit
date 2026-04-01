@@ -16,22 +16,32 @@ import { getThisMonthStartYmdInKst } from "../controllers/requests/utils.js";
 import { recomputePricingReferralSnapshotForLeaderAnchorId } from "../services/pricingReferralSnapshot.service.js";
 
 /**
- * KST 기준 지난달(전월) 1일 00:00:00 ~ 말일 23:59:59 UTC 범위를 반환한다.
+ * 지난 달 범위를 KST 기준으로 계산한다.
+ * 예: 2024-01-01 00:00 KST 실행 시 → 2023-12-01 00:00 ~ 2023-12-31 23:59:59.999 KST
  */
-function getLastMonthRangeUtc() {
+function getLastMonthRangeKst() {
   const now = new Date();
-  const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const kstYear = kstNow.getUTCFullYear();
-  const kstMonth = kstNow.getUTCMonth(); // 0-indexed
-  const lastMonthYear = kstMonth === 0 ? kstYear - 1 : kstYear;
-  const lastMonth = kstMonth === 0 ? 12 : kstMonth; // 1-indexed
-  const startKst = new Date(
-    Date.UTC(lastMonthYear, lastMonth - 1, 1, -9, 0, 0, 0),
-  );
-  const endKst = new Date(
-    Date.UTC(lastMonthYear, lastMonth, 0, 14, 59, 59, 999),
-  );
-  return { start: startKst, end: endKst };
+  const kstDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+  const [year, month] = kstDate.split("-").map(Number);
+
+  const lastMonth = month === 1 ? 12 : month - 1;
+  const lastYear = month === 1 ? year - 1 : year;
+
+  // 지난 달 시작: YYYY-MM-01 00:00:00 KST
+  const startYmd = `${lastYear}-${String(lastMonth).padStart(2, "0")}-01`;
+  const start = new Date(`${startYmd}T00:00:00+09:00`);
+
+  // 지난 달 끝: 이번 달 1일 00:00:00 - 1ms
+  const thisMonthYmd = `${year}-${String(month).padStart(2, "0")}-01`;
+  const thisMonthStart = new Date(`${thisMonthYmd}T00:00:00+09:00`);
+  const end = new Date(thisMonthStart.getTime() - 1);
+
+  return { start, end };
 }
 
 /**
@@ -39,12 +49,20 @@ function getLastMonthRangeUtc() {
  */
 function isFirstDayOfMonthKst() {
   const now = new Date();
-  const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  return (
-    kstNow.getUTCDate() === 1 &&
-    kstNow.getUTCHours() === 0 &&
-    kstNow.getUTCMinutes() === 0
-  );
+  const kstDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(now);
+  const [datePart, timePart] = kstDate.split(", ");
+  const day = parseInt(datePart.split("-")[2], 10);
+  const [hour, minute] = timePart.split(":").map(Number);
+
+  return day === 1 && hour === 0 && minute === 0;
 }
 
 async function runMonthlySnapshot() {

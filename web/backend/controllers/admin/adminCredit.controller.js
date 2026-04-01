@@ -1348,10 +1348,29 @@ export async function adminGetManufacturerSummary(req, res) {
 function parsePeriod(period) {
   const p = String(period || "").trim();
   if (!p || p === "all") return null;
-  const now = Date.now();
-  if (p === "7d") return new Date(now - 7 * 24 * 60 * 60 * 1000);
-  if (p === "30d") return new Date(now - 30 * 24 * 60 * 60 * 1000);
-  if (p === "90d") return new Date(now - 90 * 24 * 60 * 60 * 1000);
+
+  // KST 기준 N일 전 계산
+  const now = new Date();
+  const kstDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+  const todayKst = new Date(`${kstDate}T00:00:00+09:00`);
+
+  if (p === "7d") {
+    todayKst.setDate(todayKst.getDate() - 7);
+    return todayKst;
+  }
+  if (p === "30d") {
+    todayKst.setDate(todayKst.getDate() - 30);
+    return todayKst;
+  }
+  if (p === "90d") {
+    todayKst.setDate(todayKst.getDate() - 90);
+    return todayKst;
+  }
   return null;
 }
 

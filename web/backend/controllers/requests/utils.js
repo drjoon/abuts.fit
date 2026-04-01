@@ -728,9 +728,11 @@ export async function computePriceForRequest({
   const DISCOUNT_PER_ORDER = 20;
   const MAX_DISCOUNT = 5000;
 
-  // 0) 리메이크 기준(90일): 동일 치과+환자+치아에 대해 직전 의뢰가 있으면 고정가
-  const remakeCutoff = new Date(now);
-  remakeCutoff.setDate(remakeCutoff.getDate() - 90);
+  // 0) 리메이크 기준(90일): 동일 치과+환자+치아에 대해 직전 의뢰가 있으면 고정가 (KST 기준)
+  const nowYmd = toKstYmd(now);
+  const nowKst = new Date(`${nowYmd}T00:00:00+09:00`);
+  nowKst.setDate(nowKst.getDate() - 90);
+  const remakeCutoff = nowKst;
   const existing = await Request.findOne({
     ...scopeFilter,
     "caseInfos.patientName": patientName,
@@ -787,8 +789,11 @@ export async function computePriceForRequest({
     return user?.approvedAt || user?.createdAt || null;
   })();
   if (baseDate) {
-    const newUserCutoff = new Date(baseDate);
-    newUserCutoff.setDate(newUserCutoff.getDate() + 90);
+    // KST 기준 90일 후
+    const baseYmd = toKstYmd(baseDate);
+    const baseKst = new Date(`${baseYmd}T00:00:00+09:00`);
+    baseKst.setDate(baseKst.getDate() + 90);
+    const newUserCutoff = baseKst;
     if (now < newUserCutoff) {
       return {
         baseAmount: NEW_USER_FIXED_PRICE,
@@ -807,9 +812,11 @@ export async function computePriceForRequest({
     }
   }
 
-  // 3) 최근 30일 주문량 할인(리퍼럴 합산은 아직 스키마가 없어 0으로 처리)
-  const last30Cutoff = new Date(now);
-  last30Cutoff.setDate(last30Cutoff.getDate() - 30);
+  // 3) 최근 30일 주문량 할인 (KST 기준)
+  const todayYmd = toKstYmd(now);
+  const todayKst = new Date(`${todayYmd}T00:00:00+09:00`);
+  todayKst.setDate(todayKst.getDate() - 30);
+  const last30Cutoff = todayKst;
   const last30DaysOrders = await Request.countDocuments({
     ...scopeFilter,
     manufacturerStage: { $ne: "취소" },

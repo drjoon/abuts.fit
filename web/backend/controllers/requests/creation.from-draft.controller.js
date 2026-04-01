@@ -35,12 +35,15 @@ const REQUEST_ID_SUFFIX_LEN = 8;
 const REQUEST_ID_MAX_TRIES = 8;
 
 const buildRequestIdPrefix = () => {
+  // KST 기준 날짜
   const now = new Date();
-  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const year = kst.getUTCFullYear();
-  const month = String(kst.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(kst.getUTCDate()).padStart(2, "0");
-  return `${year}${month}${day}`;
+  const kstDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+  return kstDate.replace(/-/g, "");
 };
 
 const makeRequestSuffix = () => {

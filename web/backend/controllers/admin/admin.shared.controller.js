@@ -111,9 +111,12 @@ export function getDateRangeFromQuery(req) {
     }
   }
 
-  const start = new Date(now);
-  start.setDate(start.getDate() - 30);
-  return { start, end: now };
+  // KST 기준 30일 전
+  const { toKstYmd } = require("../requests/utils.js");
+  const todayYmd = toKstYmd(now);
+  const todayKst = new Date(`${todayYmd}T00:00:00+09:00`);
+  todayKst.setDate(todayKst.getDate() - 30);
+  return { start: todayKst, end: now };
 }
 
 async function fetchHealthJson(url, fallbackMessage) {
@@ -121,7 +124,10 @@ async function fetchHealthJson(url, fallbackMessage) {
   try {
     const res = await fetch(url, { timeout: 3000 });
     if (!res.ok) {
-      return { status: "warning", message: `${fallbackMessage} (${res.status})` };
+      return {
+        status: "warning",
+        message: `${fallbackMessage} (${res.status})`,
+      };
     }
     const data = await res.json().catch(() => null);
     return {
@@ -212,7 +218,9 @@ export async function logAuthFailure(req, reason, user = null) {
     userAgent: req.headers["user-agent"] || "",
     details: {
       reason: String(reason || "unknown"),
-      email: String(req.body?.email || "").trim().toLowerCase(),
+      email: String(req.body?.email || "")
+        .trim()
+        .toLowerCase(),
     },
   });
 }

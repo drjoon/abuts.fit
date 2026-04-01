@@ -5,7 +5,9 @@ import {
 } from "./utils.js";
 import { isKoreanBusinessDay } from "../../utils/krBusinessDays.js";
 
-const WAYBILL_INPUT_CUTOFF_HOUR_KST = 14;
+// 마감 시각: 택배 수거 시각 (16:00 KST)
+// 14:00 포장 마감, 15:00 수거 신청, 16:00 실제 수거
+const WAYBILL_INPUT_CUTOFF_HOUR_KST = 16;
 
 function toKstYmd(d) {
   if (!d) return null;

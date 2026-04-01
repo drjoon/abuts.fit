@@ -1,5 +1,6 @@
 import Request from "../../models/request.model.js";
 import hanjinService from "../../services/hanjin.service.js";
+import { getTodayYmdInKst } from "./utils.js";
 
 export const HANJIN_CLIENT_ID = String(
   process.env.HANJIN_CLIENT_ID || "",
@@ -614,7 +615,7 @@ export const resolveHanjinPayload = async function ({
   };
 };
 
-export const buildHanjinInsertOrderBody = ({ mailbox, requests }) => {
+export const buildHanjinInsertOrderBody = async ({ mailbox, requests }) => {
   ensureHanjinEnv();
   ensureHanjinSenderEnv();
 
@@ -637,7 +638,9 @@ export const buildHanjinInsertOrderBody = ({ mailbox, requests }) => {
       { statusCode: 400 },
     );
   }
-  const ymd = String(new Date().toISOString().slice(0, 10)).replace(/-/g, "");
+  // KST 기준 오늘 날짜 (YYYYMMDD)
+  const todayYmd = getTodayYmdInKst();
+  const ymd = todayYmd.replace(/-/g, "");
   const custOrdNo = `ABUTS_${ymd}_${String(mailbox || "-")}`.slice(0, 30);
   const receiverPhone = String(first?.requestor?.phoneNumber || "").trim();
 
@@ -671,7 +674,7 @@ export const buildHanjinInsertOrderBody = ({ mailbox, requests }) => {
   };
 };
 
-const buildHanjinDraftPayload = (requests) => {
+const buildHanjinDraftPayload = async (requests) => {
   ensureHanjinEnv();
 
   const mailboxGroupMap = new Map();
@@ -803,7 +806,8 @@ const buildHanjinWblZplLabels = ({ addressList }) => {
       const remark =
         String(row?.remark || "").trim() || `${receiverName} / 1건`;
       const mailboxCode = String(row?.mailbox_code || "").trim();
-      const today = new Date().toISOString().slice(0, 10);
+      // KST 기준 오늘 날짜
+      const today = getTodayYmdInKst();
 
       const zpl = `^XA
 ^MMT

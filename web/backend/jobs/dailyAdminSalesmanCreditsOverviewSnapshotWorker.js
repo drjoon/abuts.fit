@@ -40,8 +40,14 @@ function kstRangeToPeriodKey(range) {
 
 function isMidnightKst() {
   const now = new Date();
-  const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  return kstNow.getUTCHours() === 0 && kstNow.getUTCMinutes() === 0;
+  const kstTime = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(now);
+  const [hour, minute] = kstTime.split(":").map(Number);
+  return hour === 0 && minute === 0;
 }
 
 async function isTodaySnapshotMissing(ymd) {

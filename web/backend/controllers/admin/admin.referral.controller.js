@@ -227,13 +227,26 @@ export async function getReferralGroups(req, res) {
 
     const now = new Date();
     const defaultRange = getLast30DaysRangeUtc(now);
-    const periodStart = startDateRaw
-      ? new Date(startDateRaw)
-      : (defaultRange?.start ??
-        new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000));
-    const periodEnd = endDateRaw
-      ? new Date(endDateRaw)
-      : (defaultRange?.end ?? now);
+
+    let periodStart, periodEnd;
+    if (startDateRaw) {
+      periodStart = new Date(startDateRaw);
+    } else if (defaultRange?.start) {
+      periodStart = defaultRange.start;
+    } else {
+      // KST 기준 30일 전 fallback
+      const kstDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(now);
+      const todayKst = new Date(`${kstDate}T00:00:00+09:00`);
+      todayKst.setDate(todayKst.getDate() - 30);
+      periodStart = todayKst;
+    }
+
+    periodEnd = endDateRaw ? new Date(endDateRaw) : (defaultRange?.end ?? now);
     const {
       directCountByLeaderBusinessAnchorId,
       childBusinessAnchorIdsByLeaderBusinessAnchorId,

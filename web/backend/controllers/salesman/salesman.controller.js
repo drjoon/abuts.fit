@@ -4,7 +4,6 @@ import User from "../../models/user.model.js";
 import SalesmanLedger from "../../models/salesmanLedger.model.js";
 import { Types } from "mongoose";
 import crypto from "crypto";
-import { getLast30DaysRangeUtc } from "../../utils/krBusinessDays.js";
 
 function parsePeriod(input) {
   const raw = String(input || "").trim();
@@ -29,42 +28,47 @@ function parseYearMonth(input) {
   return { year: y, month: m };
 }
 
-function getMonthRangeUtc({ year, month }) {
-  const start = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
-  const end = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
+function getMonthRangeKst({ year, month }) {
+  // KST 기준 월 범위
+  const startYmd = `${year}-${String(month).padStart(2, "0")}-01`;
+  const start = new Date(`${startYmd}T00:00:00+09:00`);
+
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+  const endYmd = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+  const end = new Date(`${endYmd}T00:00:00+09:00`);
+
   return { start, end };
 }
 
-function getPeriodRangeUtc(period) {
+function getPeriodRangeKst(period) {
   const now = new Date();
-  const nowMs = now.getTime();
+  const { toKstYmd } = require("../requests/utils.js");
+  const nowKst = toKstYmd(now);
+  const [year, month] = nowKst.split("-").map(Number);
 
   if (period === "thisMonth") {
-    return getMonthRangeUtc({
-      year: now.getUTCFullYear(),
-      month: now.getUTCMonth() + 1,
-    });
+    return getMonthRangeKst({ year, month });
   }
 
   if (period === "lastMonth") {
-    const y = now.getUTCFullYear();
-    const m = now.getUTCMonth() + 1;
-    const prev = m - 1;
-    if (prev >= 1) return getMonthRangeUtc({ year: y, month: prev });
-    return getMonthRangeUtc({ year: y - 1, month: 12 });
+    const lastMonth = month === 1 ? 12 : month - 1;
+    const lastYear = month === 1 ? year - 1 : year;
+    return getMonthRangeKst({ year: lastYear, month: lastMonth });
   }
 
   if (period === "30d") {
-    const range = getLast30DaysRangeUtc(now);
-    return (
-      range ?? { start: new Date(nowMs - 30 * 24 * 60 * 60 * 1000), end: now }
-    );
+    // KST 기준 30일 전
+    const todayKst = new Date(`${nowKst}T00:00:00+09:00`);
+    todayKst.setDate(todayKst.getDate() - 30);
+    return { start: todayKst, end: now };
   }
 
   if (period === "7d" || period === "90d") {
     const days = period === "7d" ? 7 : 90;
-    const start = new Date(nowMs - days * 24 * 60 * 60 * 1000);
-    return { start, end: now };
+    const todayKst = new Date(`${nowKst}T00:00:00+09:00`);
+    todayKst.setDate(todayKst.getDate() - days);
+    return { start: todayKst, end: now };
   }
 
   return { start: new Date(0), end: now };
@@ -90,10 +94,29 @@ function safeRegex(input) {
 function parseLedgerPeriod(period) {
   const p = String(period || "").trim();
   if (!p || p === "all") return null;
-  const now = Date.now();
-  if (p === "7d") return new Date(now - 7 * 24 * 60 * 60 * 1000);
-  if (p === "30d") return new Date(now - 30 * 24 * 60 * 60 * 1000);
-  if (p === "90d") return new Date(now - 90 * 24 * 60 * 60 * 1000);
+
+  // KST 기준 N일 전 계산
+  const now = new Date();
+  const kstDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+  const todayKst = new Date(`${kstDate}T00:00:00+09:00`);
+
+  if (p === "7d") {
+    todayKst.setDate(todayKst.getDate() - 7);
+    return todayKst;
+  }
+  if (p === "30d") {
+    todayKst.setDate(todayKst.getDate() - 30);
+    return todayKst;
+  }
+  if (p === "90d") {
+    todayKst.setDate(todayKst.getDate() - 90);
+    return todayKst;
+  }
   return null;
 }
 
@@ -284,10 +307,19 @@ export async function getSalesmanDashboard(req, res) {
     const period = parsePeriod(req.query?.period) || "30d";
     const ymInput = parseYearMonth(req.query?.ym);
     const now = new Date();
-    const effectiveYm = ymInput || {
-      year: now.getUTCFullYear(),
-      month: now.getUTCMonth() + 1,
-    };
+    let effectiveYm;
+    if (ymInput) {
+      effectiveYm = ymInput;
+    } else {
+      // KST 기준 년/월
+      const kstDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+      }).format(now);
+      const [year, month] = kstDate.split("-").map(Number);
+      effectiveYm = { year, month };
+    }
 
     const isDevops = me.role === "devops";
     let commissionRate = 0.05;

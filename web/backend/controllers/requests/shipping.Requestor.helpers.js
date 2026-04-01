@@ -231,9 +231,10 @@ export async function buildShippingPackagesSummary(req) {
   }
 
   const todayYmd = getTodayYmdInKst();
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - days);
-  const cutoffYmd = toKstYmd(cutoffDate);
+  // KST 기준 N일 전
+  const todayKst = new Date(`${todayYmd}T00:00:00+09:00`);
+  todayKst.setDate(todayKst.getDate() - days);
+  const cutoffYmd = toKstYmd(todayKst);
 
   const packages = await ShippingPackage.find({
     businessAnchorId: new Types.ObjectId(businessAnchorId),

@@ -652,11 +652,13 @@ requestSchema.pre("save", async function (next) {
   try {
     const now = new Date();
     // KST 기준 날짜로 requestId prefix 생성
-    const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-    const year = kst.getUTCFullYear();
-    const month = String(kst.getUTCMonth() + 1).padStart(2, "0");
-    const day = String(kst.getUTCDate()).padStart(2, "0");
-    const dateStr = `${year}${month}${day}`;
+    const kstDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+    const dateStr = kstDate.replace(/-/g, "");
 
     const session = this.$session?.() || null;
     const RequestModel = this.constructor;

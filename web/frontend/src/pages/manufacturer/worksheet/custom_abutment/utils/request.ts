@@ -133,11 +133,14 @@ export const getDeadlineInfo = (
   }
 
   const now = new Date();
+
+  // 마감 시각: estimatedShipYmd 16:00 KST
+  // KST 16:00 = UTC 07:00 (UTC+9)
   const shipDateDeadline = ymdToUtcDate(estimatedShipYmd);
   if (!shipDateDeadline) {
     return null;
   }
-  shipDateDeadline.setUTCHours(7, 0, 0, 0);
+  shipDateDeadline.setUTCHours(7, 0, 0, 0); // UTC 07:00 = KST 16:00
 
   const remainingMs = shipDateDeadline.getTime() - now.getTime();
   const totalHours = countHoursRemaining(now, shipDateDeadline);

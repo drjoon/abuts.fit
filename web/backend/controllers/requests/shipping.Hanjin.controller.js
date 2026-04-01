@@ -623,7 +623,10 @@ async function executeSingleMailboxPickup({
   }
 
   try {
-    const orderBody = buildHanjinInsertOrderBody({ mailbox, requests: group });
+    const orderBody = await buildHanjinInsertOrderBody({
+      mailbox,
+      requests: group,
+    });
 
     let data = await callHanjinWithFallback({ data: orderBody });
     if (isDuplicateOrderError(data)) {

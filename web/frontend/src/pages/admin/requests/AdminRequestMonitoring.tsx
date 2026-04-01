@@ -143,8 +143,12 @@ export const AdminRequestMonitoring = () => {
       });
 
       if (res.ok) {
-        // 목록에서 제거
-        setRequests((prev) => prev.filter((r) => r._id !== requestMongoId));
+        // 목록에서 제거하지 않고 상태를 "취소"로 업데이트
+        setRequests((prev) =>
+          prev.map((r) =>
+            r._id === requestMongoId ? { ...r, manufacturerStage: "취소" } : r,
+          ),
+        );
 
         // 통계 갱신
         const fetchStats = async () => {
@@ -457,17 +461,19 @@ export const AdminRequestMonitoring = () => {
                         isDeleting ? "opacity-50 pointer-events-none" : ""
                       }`}
                     >
-                      {/* 삭제 버튼 */}
-                      <button
-                        onClick={() =>
-                          handleDeleteRequest(request.requestId, request._id)
-                        }
-                        disabled={isDeleting}
-                        className="absolute top-2 right-2 p-1.5 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                        title="의뢰 삭제"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      {/* 삭제 버튼 - 취소 상태가 아닐 때만 표시 */}
+                      {getNormalizedStageLabel(request) !== "취소" && (
+                        <button
+                          onClick={() =>
+                            handleDeleteRequest(request.requestId, request._id)
+                          }
+                          disabled={isDeleting}
+                          className="absolute top-2 right-2 p-1.5 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                          title="의뢰 삭제"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
 
                       <div className="flex items-start justify-between mb-3 pr-8">
                         <div className="space-y-1 min-w-0 flex-1">

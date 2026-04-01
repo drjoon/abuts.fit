@@ -277,8 +277,12 @@ export async function getPricingStatsByUser(req, res) {
 export async function getSecurityStats(req, res) {
   try {
     const now = new Date();
-    const last30 = new Date(now);
-    last30.setDate(now.getDate() - 30);
+    // KST 기준 30일 전
+    const { toKstYmd } = await import("../requests/utils.js");
+    const todayYmd = toKstYmd(now);
+    const todayKst = new Date(`${todayYmd}T00:00:00+09:00`);
+    todayKst.setDate(todayKst.getDate() - 30);
+    const last30 = todayKst;
 
     const [
       alertsDetected,

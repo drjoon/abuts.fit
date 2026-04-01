@@ -34,12 +34,21 @@ import {
   waitForDashboardSummaryRefreshForAnchorId,
 } from "../../services/requestSnapshotTriggers.service.js";
 
-function getLastMonthRangeUtc() {
+function getLastMonthRangeKst() {
+  // KST 기준 지난 달 범위
   const now = new Date();
-  const start = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1),
-  );
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const nowKst = toKstYmd(now);
+  const [year, month] = nowKst.split("-").map(Number);
+
+  const lastMonth = month === 1 ? 12 : month - 1;
+  const lastYear = month === 1 ? year - 1 : year;
+
+  const startYmd = `${lastYear}-${String(lastMonth).padStart(2, "0")}-01`;
+  const start = new Date(`${startYmd}T00:00:00+09:00`);
+
+  const thisMonthYmd = `${year}-${String(month).padStart(2, "0")}-01`;
+  const end = new Date(`${thisMonthYmd}T00:00:00+09:00`);
+
   return { start, end };
 }
 
@@ -124,27 +133,42 @@ const buildDateFilter = (period) => {
   // all 또는 잘못된 값이면 필터 없음
   if (!period || period === "all") return {};
 
-  // 이번달/지난달: 월 단위 구간
+  // 이번달/지난달: 월 단위 구간 (KST 기준)
   if (period === "thisMonth" || period === "lastMonth") {
-    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const nowKst = toKstYmd(now);
+    const [year, month] = nowKst.split("-").map(Number);
+
+    const startOfThisMonth = new Date(
+      `${year}-${String(month).padStart(2, "0")}-01T00:00:00+09:00`,
+    );
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
+    const startOfNextMonth = new Date(
+      `${nextYear}-${String(nextMonth).padStart(2, "0")}-01T00:00:00+09:00`,
+    );
 
     if (period === "thisMonth") {
       return { createdAt: { $gte: startOfThisMonth, $lt: startOfNextMonth } };
     }
 
     // lastMonth
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonth = month === 1 ? 12 : month - 1;
+    const lastYear = month === 1 ? year - 1 : year;
+    const startOfLastMonth = new Date(
+      `${lastYear}-${String(lastMonth).padStart(2, "0")}-01T00:00:00+09:00`,
+    );
     return { createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth } };
   }
 
-  // 기본: 일 단위
   let days = 30;
   if (period === "7d") days = 7;
   else if (period === "90d") days = 90;
 
-  const from = new Date();
-  from.setDate(from.getDate() - days);
+  // KST 기준 N일 전
+  const todayKst = toKstYmd(now);
+  const fromDate = new Date(todayKst);
+  fromDate.setDate(fromDate.getDate() - days);
+  const from = new Date(`${toKstYmd(fromDate)}T00:00:00+09:00`);
   return { createdAt: { $gte: from } };
 };
 
@@ -316,9 +340,24 @@ export async function getMyReferralDirectMembers(req, res) {
       directMembersCacheKey,
       async () => {
         const range30 = getLast30DaysRangeUtc();
-        const lastMonthStart =
-          range30?.start ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        const lastMonthEnd = range30?.end ?? new Date();
+        let lastMonthStart, lastMonthEnd;
+        if (range30) {
+          lastMonthStart = range30.start;
+          lastMonthEnd = range30.end;
+        } else {
+          // KST 기준 30일 전 fallback
+          const now = new Date();
+          const kstDate = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Seoul",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          }).format(now);
+          const todayKst = new Date(`${kstDate}T00:00:00+09:00`);
+          todayKst.setDate(todayKst.getDate() - 30);
+          lastMonthStart = todayKst;
+          lastMonthEnd = now;
+        }
 
         const requestor = await User.findById(requestorUserId)
           .select({
@@ -1251,8 +1290,11 @@ export async function getMyPricingReferralStats(req, res) {
         let fixedUntil = null;
 
         if (baseDate) {
-          fixedUntil = new Date(baseDate);
-          fixedUntil.setDate(fixedUntil.getDate() + 90);
+          // KST 기준 90일 후 계산
+          const baseYmd = toKstYmd(baseDate);
+          const baseKst = new Date(`${baseYmd}T00:00:00+09:00`);
+          baseKst.setDate(baseKst.getDate() + 90);
+          fixedUntil = baseKst;
           if (now < fixedUntil) {
             rule = "new_user_90days_fixed_10000";
             effectiveUnitPrice = 10000;

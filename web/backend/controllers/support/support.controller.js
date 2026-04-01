@@ -27,9 +27,14 @@ export async function createGuestInquiry(req, res) {
     }
 
     const now = new Date();
-    const y = now.getUTCFullYear();
-    const m = String(now.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(now.getUTCDate()).padStart(2, "0");
+    // KST 기준 날짜
+    const kstDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+    const [y, m, d] = kstDate.split("-");
     const randomId = randomBytes(8).toString("hex");
 
     const payload = {

@@ -14,14 +14,31 @@ const buildDateFilter = (period) => {
   if (!period || period === "all") return {};
 
   if (period === "thisMonth" || period === "lastMonth") {
-    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    // KST 기준 월 계산
+    const nowKst = toKstYmd(now);
+    const [year, month] = nowKst.split("-").map(Number);
+
+    // 이번 달 시작: KST YYYY-MM-01 00:00:00
+    const startOfThisMonth = new Date(
+      `${year}-${String(month).padStart(2, "0")}-01T00:00:00+09:00`,
+    );
+    // 다음 달 시작
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
+    const startOfNextMonth = new Date(
+      `${nextYear}-${String(nextMonth).padStart(2, "0")}-01T00:00:00+09:00`,
+    );
 
     if (period === "thisMonth") {
       return { createdAt: { $gte: startOfThisMonth, $lt: startOfNextMonth } };
     }
 
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    // 지난 달 시작
+    const lastMonth = month === 1 ? 12 : month - 1;
+    const lastYear = month === 1 ? year - 1 : year;
+    const startOfLastMonth = new Date(
+      `${lastYear}-${String(lastMonth).padStart(2, "0")}-01T00:00:00+09:00`,
+    );
     return { createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth } };
   }
 
@@ -29,9 +46,12 @@ const buildDateFilter = (period) => {
   if (period === "7d") days = 7;
   else if (period === "90d") days = 90;
 
-  const from = new Date();
-  from.setDate(from.getDate() - days);
-  return { createdAt: { $gte: from } };
+  // KST 기준 N일 전
+  const todayKst = toKstYmd(now);
+  const fromDate = new Date(todayKst);
+  fromDate.setDate(fromDate.getDate() - days);
+  const fromKst = new Date(`${toKstYmd(fromDate)}T00:00:00+09:00`);
+  return { createdAt: { $gte: fromKst } };
 };
 
 const getRequestEstimatedShipYmd = ({ request, fallbackMap }) => {

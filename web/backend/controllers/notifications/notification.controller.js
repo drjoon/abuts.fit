@@ -2,6 +2,7 @@ import Notification from "../../models/notification.model.js";
 import User from "../../models/user.model.js";
 import { sendNotificationToUser } from "../../socket.js";
 import { sendNotificationViaQueue } from "../../utils/notificationQueue.js";
+import { getTodayYmdInKst } from "../requests/utils.js";
 
 /**
  * 알림 생성 및 전송
@@ -216,8 +217,11 @@ export async function deleteNotification(req, res) {
  */
 export async function cleanupOldNotifications() {
   try {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    // KST 기준 30일 전
+    const todayYmd = getTodayYmdInKst();
+    const todayKst = new Date(`${todayYmd}T00:00:00+09:00`);
+    todayKst.setDate(todayKst.getDate() - 30);
+    const thirtyDaysAgo = todayKst;
 
     const result = await Notification.deleteMany({
       createdAt: { $lt: thirtyDaysAgo },

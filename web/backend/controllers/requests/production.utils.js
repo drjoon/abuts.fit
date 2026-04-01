@@ -46,6 +46,7 @@ const DAILY_PICKUP_HOUR = 16; // 택배 수거 시각 (16:00)
 
 /**
  * KST 시각 생성
+ * new Date() 생성자는 로컬 시간대를 사용하므로 ISO 8601 형식으로 +09:00 명시
  */
 function createKstDateTime(ymd, hour = 0, minute = 0) {
   let ymdString = ymd;
@@ -58,7 +59,13 @@ function createKstDateTime(ymd, hour = 0, minute = 0) {
   const parts = ymdString.split("-").map((n) => Number(n));
   if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
     const [year, month, day] = parts;
-    return new Date(year, month - 1, day, hour, minute, 0);
+    const y = String(year);
+    const m = String(month).padStart(2, "0");
+    const d = String(day).padStart(2, "0");
+    const h = String(hour).padStart(2, "0");
+    const min = String(minute).padStart(2, "0");
+    // KST 시간대 명시 (+09:00)
+    return new Date(`${y}-${m}-${d}T${h}:${min}:00+09:00`);
   }
 
   // fallback: Date 파싱 후 KST 기준으로 재생성
@@ -69,22 +76,34 @@ function createKstDateTime(ymd, hour = 0, minute = 0) {
       .split("-")
       .map(Number);
     const [year, month, day] = iso;
-    return new Date(year, month - 1, day, hour, minute, 0);
+    const y = String(year);
+    const m = String(month).padStart(2, "0");
+    const d = String(day).padStart(2, "0");
+    const h = String(hour).padStart(2, "0");
+    const min = String(minute).padStart(2, "0");
+    return new Date(`${y}-${m}-${d}T${h}:${min}:00+09:00`);
   }
 
   throw new Error(`Invalid ymd for createKstDateTime: ${ymdString}`);
 }
 
 /**
- * 다음 택배 수거 시각 계산 (매일 16:00)
+ * 다음 택배 수거 시각 계산 (매일 16:00 KST)
  */
 function getNextPickupTime(fromDateTime, hour) {
-  const pickupTime = new Date(fromDateTime);
-  pickupTime.setHours(hour, 0, 0, 0);
+  // KST 기준 날짜 추출
+  const fromYmd = toKstYmd(fromDateTime);
+  const h = String(hour).padStart(2, "0");
+
+  // 해당 날짜의 지정 시각 (KST)
+  let pickupTime = new Date(`${fromYmd}T${h}:00:00+09:00`);
 
   // 이미 해당 시각이 지났으면 다음날 같은 시각
   if (fromDateTime >= pickupTime) {
-    pickupTime.setDate(pickupTime.getDate() + 1);
+    const nextDay = new Date(pickupTime);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const nextYmd = toKstYmd(nextDay);
+    pickupTime = new Date(`${nextYmd}T${h}:00:00+09:00`);
   }
 
   return pickupTime;
@@ -123,7 +142,11 @@ export const resolveNextWeeklyBatchYmd = async ({
       const ok = await isKoreanBusinessDay(candidateYmd);
       if (ok) return candidateYmd;
     }
-    cursor.setDate(cursor.getDate() + 1);
+    // KST 기준 다음날
+    const nextYmd = toKstYmd(cursor);
+    const nextKst = new Date(`${nextYmd}T00:00:00+09:00`);
+    nextKst.setDate(nextKst.getDate() + 1);
+    cursor = nextKst;
   }
 
   return baseYmd;
@@ -549,11 +572,13 @@ export function calculateRiskSummary(requests) {
     const status = String(req.manufacturerStage || "");
     const normalizedStage = normalizeRequestStage(req);
     const baseYmd = originalYmd.trim();
-    const startOfDayShip = new Date(`${baseYmd}T00:00:00+09:00`);
+    const startOfDayShip = new Date(`${nextYmd}T00:00:00+09:00`);
     if (Number.isNaN(startOfDayShip.getTime())) continue;
 
-    const warningStart = new Date(startOfDayShip);
-    warningStart.setDate(warningStart.getDate() - warningThresholdDays);
+    // KST 기준 경고 시작일
+    const shipKst = new Date(`${nextYmd}T00:00:00+09:00`);
+    shipKst.setDate(shipKst.getDate() - warningThresholdDays);
+    const warningStart = shipKst;
 
     const isShippedOrLater = ["shipping", "tracking", "cancel"].includes(
       normalizedStage,

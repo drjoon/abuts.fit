@@ -34,6 +34,25 @@
 
 ---
 
+### 1.1 시간대 및 시각 기준
+
+**모든 시각은 KST(한국 표준시, Asia/Seoul)를 기준으로 합니다.**
+
+- 날짜/시각 표시, 계산, 저장 시 **KST 기준**을 사용합니다.
+- 마감 시간: **발송 예정일(estimatedShipYmd) 16:00 KST**
+- 백엔드 시간 유틸리티: `/web/backend/utils/krBusinessDays.js`
+  - `toKstYmd()`: Date → YYYY-MM-DD (KST)
+  - `getTodayYmdInKst()`: 오늘 날짜 (KST)
+  - `addKoreanBusinessDays()`: 영업일 계산 (주말/공휴일 제외)
+- 프론트엔드 마감 시간 계산: `/web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts`
+  - `getDeadlineInfo()`: 마감까지 남은 시간 계산
+  - 마감 시각: `estimatedShipYmd 16:00 KST` (UTC+9)
+- UTC 저장 시 KST 변환 주의:
+  - KST 16:00 = UTC 07:00
+  - `new Date("2026-04-02T16:00:00+09:00")` = `new Date("2026-04-02T07:00:00Z")`
+
+---
+
 - 대화와 문서는 한국어를 기본으로 하고, 코드와 식별자는 영문으로 작성합니다.
 - 간결하게 구현합니다. 새 추상화는 실제로 재사용되거나 복잡도를 줄일 때만 추가합니다.
 - 기존 코드가 이미 잘 만들어져 있으면 **새 파일/새 컴포넌트/새 훅을 만들기보다 공통으로 재사용할 수 있게 개조하는 방향을 우선 검토합니다.**

@@ -70,11 +70,15 @@ export const listKakaoTemplates = async (CorpNum) => {
 };
 
 function formatDateYYYYMMDD(d) {
+  // KST 기준 날짜 포맷 (YYYYMMDD)
   const date = d ? new Date(d) : new Date();
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${y}${m}${day}`;
+  const kstDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+  return kstDate.replace(/-/g, "");
 }
 
 export const buildTaxinvoiceObject = ({
