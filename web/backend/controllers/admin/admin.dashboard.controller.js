@@ -26,18 +26,27 @@ export async function getDashboardStats(req, res) {
       });
     }
 
-    const userStats = await User.aggregate([
-      { $group: { _id: "$role", count: { $sum: 1 } } },
-    ]);
+    const { start, end } = getDateRangeFromQuery(req);
+
+    // 모든 쿼리를 병렬로 실행
+    const [userStats, totalUsers, activeUsers, allRequestsForStats] =
+      await Promise.all([
+        User.aggregate([{ $group: { _id: "$role", count: { $sum: 1 } } }]),
+        User.countDocuments({ role: "requestor" }),
+        User.countDocuments({ role: "requestor", active: true }),
+        Request.find({
+          createdAt: { $gte: start, $lte: end },
+        })
+          .select({
+            manufacturerStage: 1,
+            shippingPackageId: 1,
+          })
+          .lean(),
+      ]);
+
     const userStatsByRole = {};
     userStats.forEach((stat) => {
       userStatsByRole[stat._id] = stat.count;
-    });
-
-    const totalUsers = await User.countDocuments({ role: "requestor" });
-    const activeUsers = await User.countDocuments({
-      role: "requestor",
-      active: true,
     });
 
     console.log("[Admin Dashboard] User stats:", {
@@ -45,16 +54,6 @@ export async function getDashboardStats(req, res) {
       activeUsers,
       byRole: userStatsByRole,
     });
-
-    const { start, end } = getDateRangeFromQuery(req);
-    const allRequestsForStats = await Request.find({
-      createdAt: { $gte: start, $lte: end },
-    })
-      .select({
-        manufacturerStage: 1,
-        shippingPackageId: 1,
-      })
-      .lean();
 
     const normalizeStage = (r) => {
       const stage = String(r.manufacturerStage || "");
@@ -97,15 +96,16 @@ export async function getDashboardStats(req, res) {
     requestStatsByStatus["추적관리박스"] = trackingPackageIds.size;
 
     const totalRequests = allRequestsForStats.length;
-    const recentRequests = await Request.find()
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .populate("requestor", "name email")
-      .populate("caManufacturer", "name email");
 
-    const totalFiles = await File.countDocuments();
-    const totalFileSize = await File.aggregate([
-      { $group: { _id: null, totalSize: { $sum: "$size" } } },
+    // 최근 요청 및 파일 통계를 병렬로 조회
+    const [recentRequests, totalFiles, totalFileSize] = await Promise.all([
+      Request.find()
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .populate("requestor", "name email")
+        .populate("caManufacturer", "name email"),
+      File.countDocuments(),
+      File.aggregate([{ $group: { _id: null, totalSize: { $sum: "$size" } } }]),
     ]);
 
     const dashboardData = {

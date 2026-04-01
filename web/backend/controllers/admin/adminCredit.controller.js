@@ -766,138 +766,94 @@ export async function adminGetCreditStats(req, res) {
       BankTransaction.countDocuments({ status: "MATCHED" }),
     ]);
 
-    const [totalCreditLedger, bonusBreakdown] = await Promise.all([
+    // 모든 CreditLedger 집계를 하나의 쿼리로 통합
+    const [creditSummary] = await Promise.all([
       CreditLedger.aggregate([
         {
           $group: {
-            _id: "$type",
-            totalAmount: { $sum: "$amount" },
-            count: { $sum: 1 },
+            _id: null,
+            chargedPaid: {
+              $sum: {
+                $cond: [
+                  { $in: ["$type", ["CHARGE", "REFUND"]] },
+                  { $max: [{ $abs: "$amount" }, 0] },
+                  0,
+                ],
+              },
+            },
+            chargedBonusRequest: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$type", "BONUS"] },
+                      { $ne: ["$refType", "FREE_SHIPPING_CREDIT"] },
+                    ],
+                  },
+                  { $max: ["$amount", 0] },
+                  0,
+                ],
+              },
+            },
+            chargedBonusShipping: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$type", "BONUS"] },
+                      { $eq: ["$refType", "FREE_SHIPPING_CREDIT"] },
+                    ],
+                  },
+                  { $max: ["$amount", 0] },
+                  0,
+                ],
+              },
+            },
+            adjustSum: {
+              $sum: {
+                $cond: [{ $eq: ["$type", "ADJUST"] }, "$amount", 0],
+              },
+            },
+            spentPaidSum: {
+              $sum: {
+                $cond: [
+                  { $eq: ["$type", "SPEND"] },
+                  { $ifNull: ["$spentPaidAmount", 0] },
+                  0,
+                ],
+              },
+            },
+            spentBonusRequestSum: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$type", "SPEND"] },
+                      { $ne: ["$refType", "SHIPPING_PACKAGE"] },
+                    ],
+                  },
+                  { $ifNull: ["$spentBonusAmount", 0] },
+                  0,
+                ],
+              },
+            },
+            spentBonusShippingSum: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$type", "SPEND"] },
+                      { $eq: ["$refType", "SHIPPING_PACKAGE"] },
+                    ],
+                  },
+                  { $ifNull: ["$spentBonusAmount", 0] },
+                  0,
+                ],
+              },
+            },
           },
         },
       ]),
-      CreditLedger.aggregate([
-        {
-          $match: { type: "BONUS" },
-        },
-        {
-          $group: {
-            _id: {
-              $cond: [
-                { $eq: ["$refType", "FREE_SHIPPING_CREDIT"] },
-                "shipping",
-                "request",
-              ],
-            },
-            totalAmount: { $sum: "$amount" },
-          },
-        },
-      ]),
-    ]);
-
-    const ledgerByType = {};
-    totalCreditLedger.forEach((item) => {
-      ledgerByType[item._id] = {
-        totalAmount: item.totalAmount,
-        count: item.count,
-      };
-    });
-
-    const bonusByCategory = {};
-    bonusBreakdown.forEach((item) => {
-      bonusByCategory[item._id] = Math.abs(item.totalAmount || 0);
-    });
-
-    const totalCharged = Math.abs(ledgerByType.CHARGE?.totalAmount || 0);
-    const totalBonus = Math.abs(ledgerByType.BONUS?.totalAmount || 0);
-    const totalBonusRequest = bonusByCategory.request || 0;
-    const totalBonusShipping = bonusByCategory.shipping || 0;
-
-    const creditSummary = await CreditLedger.aggregate([
-      {
-        $group: {
-          _id: null,
-          chargedPaid: {
-            $sum: {
-              $cond: [
-                { $in: ["$type", ["CHARGE", "REFUND"]] },
-                { $max: [{ $abs: "$amount" }, 0] },
-                0,
-              ],
-            },
-          },
-          chargedBonusRequest: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$type", "BONUS"] },
-                    { $ne: ["$refType", "FREE_SHIPPING_CREDIT"] },
-                  ],
-                },
-                { $max: ["$amount", 0] },
-                0,
-              ],
-            },
-          },
-          chargedBonusShipping: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$type", "BONUS"] },
-                    { $eq: ["$refType", "FREE_SHIPPING_CREDIT"] },
-                  ],
-                },
-                { $max: ["$amount", 0] },
-                0,
-              ],
-            },
-          },
-          adjustSum: {
-            $sum: {
-              $cond: [{ $eq: ["$type", "ADJUST"] }, "$amount", 0],
-            },
-          },
-          spentPaidSum: {
-            $sum: {
-              $cond: [
-                { $eq: ["$type", "SPEND"] },
-                { $ifNull: ["$spentPaidAmount", 0] },
-                0,
-              ],
-            },
-          },
-          spentBonusRequestSum: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$type", "SPEND"] },
-                    { $ne: ["$refType", "SHIPPING_PACKAGE"] },
-                  ],
-                },
-                { $ifNull: ["$spentBonusAmount", 0] },
-                0,
-              ],
-            },
-          },
-          spentBonusShippingSum: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$type", "SPEND"] },
-                    { $eq: ["$refType", "SHIPPING_PACKAGE"] },
-                  ],
-                },
-                { $ifNull: ["$spentBonusAmount", 0] },
-                0,
-              ],
-            },
-          },
-        },
-      },
     ]);
 
     const summary = creditSummary[0] || {};
@@ -912,19 +868,28 @@ export async function adminGetCreditStats(req, res) {
       totalSpentPaidAmount +
       totalSpentBonusRequestAmount +
       totalSpentBonusShippingAmount;
+
+    const chargedPaid = Number(summary.chargedPaid || 0);
+    const chargedBonusRequest = Number(summary.chargedBonusRequest || 0);
+    const chargedBonusShipping = Number(summary.chargedBonusShipping || 0);
+    const adjustSum = Number(summary.adjustSum || 0);
+
+    const totalCharged = chargedPaid;
+    const totalBonus = chargedBonusRequest + chargedBonusShipping;
+    const totalBonusRequest = chargedBonusRequest;
+    const totalBonusShipping = chargedBonusShipping;
+
     const totalPaidCredit = Math.max(
       0,
-      Number(summary.chargedPaid || 0) +
-        Number(summary.adjustSum || 0) -
-        totalSpentPaidAmount,
+      chargedPaid + adjustSum - totalSpentPaidAmount,
     );
     const totalBonusRequestCredit = Math.max(
       0,
-      Number(summary.chargedBonusRequest || 0) - totalSpentBonusRequestAmount,
+      chargedBonusRequest - totalSpentBonusRequestAmount,
     );
     const totalBonusShippingCredit = Math.max(
       0,
-      Number(summary.chargedBonusShipping || 0) - totalSpentBonusShippingAmount,
+      chargedBonusShipping - totalSpentBonusShippingAmount,
     );
 
     return res.json({
@@ -937,9 +902,9 @@ export async function adminGetCreditStats(req, res) {
         matchedChargeOrders,
         newBankTransactions,
         matchedBankTransactions,
-        totalCharged,
+        totalCharged: Math.max(0, Math.round(totalCharged)),
         totalSpent: Math.max(0, Math.round(totalSpent)),
-        totalBonus,
+        totalBonus: Math.max(0, Math.round(totalBonus)),
         totalBonusRequest: Math.max(0, Math.round(totalBonusRequest)),
         totalBonusShipping: Math.max(0, Math.round(totalBonusShipping)),
         totalSpentPaidAmount: Math.max(0, Math.round(totalSpentPaidAmount)),
@@ -960,7 +925,7 @@ export async function adminGetCreditStats(req, res) {
           0,
           Math.round(totalBonusShippingCredit),
         ),
-        ledgerByType,
+        ledgerByType: {},
       },
     });
   } catch (error) {
@@ -989,6 +954,12 @@ export async function adminGetSalesmanCredits(req, res) {
       ? new Date(endDateRaw)
       : (defaultRange?.end ?? null);
 
+    // 전체 개수 조회
+    const totalSalesmen = await User.countDocuments({
+      role: { $in: REFERRAL_LEADER_ROLES },
+    });
+
+    // 페이지네이션 적용하여 필요한 영업자만 조회
     const salesmen = await User.find({
       role: { $in: REFERRAL_LEADER_ROLES },
     })
@@ -1002,6 +973,8 @@ export async function adminGetSalesmanCredits(req, res) {
         businessAnchorId: 1,
       })
       .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
       .lean();
 
     const salesmanIds = salesmen
@@ -1242,14 +1215,11 @@ export async function adminGetSalesmanCredits(req, res) {
         String(a.name || "").localeCompare(String(b.name || ""), "ko"),
     );
 
-    const total = await User.countDocuments({
-      role: { $in: REFERRAL_LEADER_ROLES },
-    });
     return res.json({
       success: true,
       data: {
-        items: sortedItems.slice(skip, skip + limit),
-        total,
+        items: sortedItems,
+        total: totalSalesmen,
         skip,
         limit,
       },
@@ -1538,7 +1508,11 @@ export async function adminGetBusinessCredits(req, res) {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const skip = Math.max(Number(req.query.skip) || 0, 0);
 
+    // 전체 개수 조회 (캐싱 가능)
+    const total = await BusinessAnchor.countDocuments({});
+
     // SSOT: metadata 사용 (extracted 레거시 제거)
+    // 페이지네이션 적용하여 필요한 데이터만 조회
     const orgs = await BusinessAnchor.find({})
       .select({
         name: 1,
@@ -1548,6 +1522,8 @@ export async function adminGetBusinessCredits(req, res) {
         businessType: 1,
       })
       .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
       .lean();
 
     const ownerIds = Array.from(
@@ -1867,12 +1843,10 @@ export async function adminGetBusinessCredits(req, res) {
         String(a.name || "").localeCompare(String(b.name || ""), "ko"),
     );
 
-    const total = await BusinessAnchor.countDocuments({});
-
     return res.json({
       success: true,
       data: {
-        items: sortedResult.slice(skip, skip + limit),
+        items: sortedResult,
         total,
         skip,
         limit,
