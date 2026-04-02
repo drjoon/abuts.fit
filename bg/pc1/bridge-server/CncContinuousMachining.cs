@@ -952,13 +952,29 @@ if (Config.MockCncMachining)
 var uploadSlot = SLOT_A;
 Console.WriteLine("[CncMachining] starting new job machine={0} jobId={1} file={2} slot=O{3}",
 machineId, job?.id, job?.fileName, uploadSlot);
+
 // 1. Edit 모드 전환 (Idle에서만)
 if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var modeErr))
 {
-Console.WriteLine("[CncMachining] edit mode failed machine={0} err={1}", machineId, modeErr);
-return false;
+    // 에러 상세 로그
+    if (modeErr != null && modeErr.Contains("OpenMachineHandle failed"))
+    {
+        Console.WriteLine("[CncMachining] edit mode failed - CNC 장비 연결 실패 machine={0} err={1}", machineId, modeErr);
+        Console.WriteLine("[CncMachining] 확인사항: 1) CNC 장비 전원 ON, 2) Auto 모드 선택, 3) Idle 상태, 4) Hi-Link 서비스 활성화");
+        
+        // 백엔드에 실패 통보
+        var failureMessage = "CNC 장비 연결 실패. 장비 상태를 확인하세요: 1) 전원 ON, 2) Auto 모드, 3) Idle 상태, 4) Hi-Link 서비스 활성화";
+        _ = Task.Run(() => NotifyMachiningFailed(job, machineId, failureMessage, null));
+    }
+    else
+    {
+        Console.WriteLine("[CncMachining] edit mode failed machine={0} err={1}", machineId, modeErr);
+        _ = Task.Run(() => NotifyMachiningFailed(job, machineId, $"Edit 모드 전환 실패: {modeErr}", null));
+    }
+    return false;
 }
 Console.WriteLine("[CncMachining] edit mode ok machine={0} jobId={1} settleMs=300", machineId, job?.id);
+
 await Task.Delay(300);
 Mode1HandleStore.Invalidate(machineId);
 // 2. 대상 슬롯에 기존 프로그램 삭제 후 업로드

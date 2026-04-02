@@ -1343,7 +1343,10 @@ export async function recordMachiningCompleteForBridge(req, res) {
 
     let request = null;
     if (requestId) {
-      request = await Request.findOne({ requestId });
+      request = await Request.findOne({ requestId }).populate(
+        "requestor",
+        "businessAnchorId",
+      );
       if (request) {
         const progress = request?.productionSchedule?.machiningProgress || null;
         const startBase =

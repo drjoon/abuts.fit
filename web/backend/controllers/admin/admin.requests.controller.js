@@ -209,3 +209,56 @@ export async function assignManufacturer(req, res) {
     });
   }
 }
+
+/**
+ * 기존 의뢰의 businessAnchorId 복구 (관리자 전용)
+ * @route POST /api/admin/requests/fix-business-anchor-id
+ */
+export async function fixMissingBusinessAnchorId(req, res) {
+  try {
+    // businessAnchorId가 null인 의뢰 조회
+    const requestsWithoutAnchor = await Request.find({
+      businessAnchorId: null,
+    })
+      .populate("requestor", "businessAnchorId")
+      .lean();
+
+    let updatedCount = 0;
+    let skippedCount = 0;
+    const updates = [];
+
+    for (const request of requestsWithoutAnchor) {
+      const requestorBusinessAnchorId = request.requestor?.businessAnchorId;
+
+      if (requestorBusinessAnchorId) {
+        await Request.updateOne(
+          { _id: request._id },
+          { $set: { businessAnchorId: requestorBusinessAnchorId } },
+        );
+        updates.push({
+          requestId: request.requestId,
+          businessAnchorId: requestorBusinessAnchorId.toString(),
+        });
+        updatedCount++;
+      } else {
+        skippedCount++;
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `businessAnchorId 복구 완료: ${updatedCount}건 업데이트, ${skippedCount}건 건너뜀`,
+      data: {
+        updatedCount,
+        skippedCount,
+        updates,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "businessAnchorId 복구 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}

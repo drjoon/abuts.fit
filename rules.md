@@ -34,7 +34,41 @@
 
 ---
 
-### 1.1 시간대 및 시각 기준
+### 1.1 보안 정보 관리
+
+**보안 정보(비밀번호, API 키, DB URI 등)는 절대 하드코딩하지 않습니다.**
+
+- ❌ **하드코딩 금지 항목**:
+  - MongoDB URI (사용자명, 비밀번호 포함)
+  - API 키 (AWS, Google, Kakao, Brevo 등)
+  - JWT Secret
+  - 공유 비밀키 (BRIDGE_SHARED_SECRET 등)
+  - 계좌번호, 사업자번호 등 민감 정보
+- ✅ **올바른 방법**:
+  - 모든 보안 정보는 **환경변수**로만 관리
+  - `local.env` 또는 `.env` 파일에 저장 (Git에 커밋하지 않음)
+  - 환경변수가 없으면 **명확한 오류 메시지와 함께 프로그램 종료**
+  ```javascript
+  const MONGODB_URI = process.env.MONGODB_URI;
+  if (!MONGODB_URI) {
+    console.error("❌ MONGODB_URI 환경변수가 설정되지 않았습니다.");
+    process.exit(1);
+  }
+  ```
+- ❌ **금지된 패턴**:
+  ```javascript
+  // 절대 이렇게 하지 마세요
+  const MONGODB_URI =
+    process.env.MONGODB_URI || "mongodb+srv://user:password@...";
+  const API_KEY = process.env.API_KEY || "hardcoded_api_key_123";
+  ```
+- 📌 **예외**: 테스트용 mock 값은 허용하되, 실제 프로덕션 정보는 절대 포함하지 않음
+
+**이 규칙을 위반하면 보안 사고가 발생할 수 있습니다.**
+
+---
+
+### 1.2 시간대 및 시각 기준
 
 **모든 시각은 KST(한국 표준시, Asia/Seoul)를 기준으로 합니다.**
 

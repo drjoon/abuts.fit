@@ -272,21 +272,107 @@ export async function getAllRequests(req, res) {
     if (req.query.implantType) filter.implantType = req.query.implantType;
 
     // 제조사: 본인에게 배정되었거나 미배정된 의뢰 + 취소 제외
+    // 단, 세척.패킹 이후 단계(세척.패킹, 포장.발송, 추적관리)는 모든 제조사가 볼 수 있음
     if (role === "manufacturer") {
-      filter = {
-        $and: [
-          filter,
-          { manufacturerStage: { $ne: "취소" } },
-          // assigned to me OR unassigned/null/missing
-          {
-            $or: [
-              { caManufacturer: req.user._id },
-              { caManufacturer: null },
-              { caManufacturer: { $exists: false } },
+      const sharedStages = [
+        "세척.패킹",
+        "포장.발송",
+        "추적관리",
+        "배송대기",
+        "배송중",
+        "배송완료",
+        "완료",
+      ];
+      const requestedStage = filter.manufacturerStage;
+      const requestedStages = filter.manufacturerStage?.$in || [];
+
+      // 단일 단계 요청인 경우
+      if (typeof requestedStage === "string") {
+        if (sharedStages.includes(requestedStage)) {
+          // 공유 단계: caManufacturer 필터 없음
+          filter = {
+            $and: [filter, { manufacturerStage: { $ne: "취소" } }],
+          };
+        } else {
+          // 전용 단계: caManufacturer 필터 적용
+          filter = {
+            $and: [
+              filter,
+              { manufacturerStage: { $ne: "취소" } },
+              {
+                $or: [
+                  { caManufacturer: req.user._id },
+                  { caManufacturer: null },
+                  { caManufacturer: { $exists: false } },
+                ],
+              },
             ],
-          },
-        ],
-      };
+          };
+        }
+      }
+      // 여러 단계 요청인 경우 (완료포함)
+      else if (Array.isArray(requestedStages) && requestedStages.length > 0) {
+        // 요청된 단계를 전용 단계와 공유 단계로 분리
+        const privateStages = requestedStages.filter(
+          (s) => !sharedStages.includes(s),
+        );
+        const publicStages = requestedStages.filter((s) =>
+          sharedStages.includes(s),
+        );
+
+        // 두 그룹 모두 있는 경우: OR 조건으로 결합
+        if (privateStages.length > 0 && publicStages.length > 0) {
+          // 기존 필터에서 manufacturerStage 제거한 새 객체 생성
+          const { manufacturerStage, ...restFilter } = filter;
+          filter = {
+            $and: [
+              restFilter,
+              { manufacturerStage: { $ne: "취소" } },
+              {
+                $or: [
+                  // 공유 단계: 모든 제조사가 볼 수 있음
+                  { manufacturerStage: { $in: publicStages } },
+                  // 전용 단계: 본인에게 배정되었거나 미배정된 의뢰만
+                  {
+                    $and: [
+                      { manufacturerStage: { $in: privateStages } },
+                      {
+                        $or: [
+                          { caManufacturer: req.user._id },
+                          { caManufacturer: null },
+                          { caManufacturer: { $exists: false } },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          };
+        }
+        // 공유 단계만 있는 경우
+        else if (publicStages.length > 0) {
+          filter = {
+            $and: [filter, { manufacturerStage: { $ne: "취소" } }],
+          };
+        }
+        // 전용 단계만 있는 경우
+        else if (privateStages.length > 0) {
+          filter = {
+            $and: [
+              filter,
+              { manufacturerStage: { $ne: "취소" } },
+              {
+                $or: [
+                  { caManufacturer: req.user._id },
+                  { caManufacturer: null },
+                  { caManufacturer: { $exists: false } },
+                ],
+              },
+            ],
+          };
+        }
+      }
     }
 
     // 레거시 MOCK_DEV_TOKEN 분기 제거됨
@@ -416,6 +502,30 @@ export async function getAllRequests(req, res) {
     }
 
     const rawRequests = await query.lean();
+
+    // 디버깅: 필터 조건과 결과 로그
+    if (role === "manufacturer") {
+      const stageFilter =
+        filter.manufacturerStage ||
+        filter.$and?.find((f) => f.manufacturerStage);
+      console.log("[DEBUG] getAllRequests - role:", role);
+      console.log(
+        "[DEBUG] manufacturerStage filter:",
+        JSON.stringify(stageFilter, null, 2),
+      );
+      console.log("[DEBUG] Full filter:", JSON.stringify(filter, null, 2));
+      console.log(`[DEBUG] Found ${rawRequests.length} requests`);
+      if (rawRequests.length > 0) {
+        console.log(
+          "[DEBUG] Sample requests:",
+          rawRequests.slice(0, 5).map((r) => ({
+            requestId: r.requestId,
+            manufacturerStage: r.manufacturerStage,
+            caManufacturer: r.caManufacturer,
+          })),
+        );
+      }
+    }
 
     const now = new Date();
     const isWorksheetView = view === "worksheet";

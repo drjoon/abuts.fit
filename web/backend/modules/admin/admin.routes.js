@@ -27,6 +27,7 @@ import {
   getRequestById,
   updateRequestStatus,
   assignManufacturer,
+  fixMissingBusinessAnchorId,
 } from "../../controllers/admin/admin.requests.controller.js";
 import { getDashboardStats } from "../../controllers/admin/admin.dashboard.controller.js";
 import {
@@ -142,6 +143,7 @@ router.get("/requests", getAllRequests);
 router.get("/requests/:id", getRequestById);
 router.patch("/requests/:id/status", updateRequestStatus);
 router.patch("/requests/:id/assign", assignManufacturer);
+router.post("/requests/fix-business-anchor-id", fixMissingBusinessAnchorId);
 
 // 대시보드 통계
 router.get("/dashboard", getDashboardStats);
