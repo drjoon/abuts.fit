@@ -1138,7 +1138,129 @@ rhino-server (Python)
 - 재계산 API 호출 시 finish line이 없으면 400 에러를 반환합니다.
 - 초기 처리 시 finish line이 없으면 메타데이터 계산을 건너뜁니다.
 
-## 10. 운영 메모
+## 10. Brevo 인바운드 이메일 수신
+
+### 10.1 개요
+
+Brevo의 Inbound Parse Webhooks를 통해 수신한 이메일을 관리자 페이지에서 확인할 수 있습니다.
+
+### 10.2 아키텍처
+
+**모델**: 기존 `Mail` 모델 재사용 (`/web/backend/models/mail.model.js`)
+
+- `direction: "inbound"` - 수신 메일 구분
+- `status: "received"` - 수신 완료 상태
+- `folder: "inbox" | "spam" | "trash"` - 폴더 관리
+- `s3RawKey` - Brevo 전용 메타데이터를 JSON 문자열로 저장
+  - `uuid`, `spamScore`, `brevoAttachments`, `headers` 등
+
+**컨트롤러**: `/web/backend/controllers/admin/adminInboundEmail.controller.js`
+
+- `handleInboundEmailWebhook` - Brevo webhook 수신 (인증 불필요)
+- `adminListInboundEmails` - 메일 목록 조회
+- `adminGetInboundEmail` - 메일 상세 조회
+- `adminMarkInboundEmailAsRead/Unread` - 읽음 상태 관리
+- `adminMoveInboundEmailToSpam/Trash` - 폴더 이동
+- `adminRestoreInboundEmail` - 받은편지함 복원
+- `adminDeleteInboundEmail` - 영구 삭제
+- `adminGetInboundEmailAttachment` - Brevo API를 통한 첨부파일 다운로드
+- `adminGetInboundEmailStats` - 폴더별 미읽음 개수
+
+**라우트**: `/web/backend/modules/admin/admin.routes.js`
+
+- `POST /api/admin/inbound-email/webhook` (인증 미들웨어 전에 정의)
+- `GET /api/admin/inbound-email` - 목록
+- `GET /api/admin/inbound-email/stats` - 통계
+- `GET /api/admin/inbound-email/:id` - 상세
+- `PATCH /api/admin/inbound-email/:id/read|unread|spam|trash|restore`
+- `DELETE /api/admin/inbound-email/:id`
+- `GET /api/admin/inbound-email/:id/attachments/:downloadToken`
+
+**프론트엔드**: `/web/frontend/src/pages/admin/inbound-email/AdminInboundEmailPage.tsx`
+
+- 받은편지함/스팸/휴지통 탭
+- 검색, 읽음/읽지않음 토글, 폴더 이동, 삭제 기능
+- 첨부파일 개수 및 스팸 점수 표시
+
+### 10.3 도메인 및 DNS 설정
+
+**도메인**: `mail.abuts.fit`
+
+**Route53 MX 레코드**:
+
+```
+레코드 이름: mail.abuts.fit
+레코드 타입: MX
+값:
+  10 inbound1.sendinblue.com
+  20 inbound2.sendinblue.com
+TTL: 300
+```
+
+**DNS 전파 확인**:
+
+```bash
+dig MX mail.abuts.fit
+```
+
+### 10.4 Brevo 설정
+
+**1. 도메인 등록 (필수)**:
+
+- Brevo 대시보드 → Settings → Inbound Parsing
+- `mail.abuts.fit` 도메인 추가 및 인증 완료
+
+**2. Webhook 등록**:
+
+```bash
+curl -X POST 'https://api.brevo.com/v3/webhooks' \
+  -H 'accept: application/json' \
+  -H 'api-key: YOUR_BREVO_API_KEY' \
+  -H 'content-type: application/json' \
+  -d '{
+  "type": "inbound",
+  "events": ["inboundEmailProcessed"],
+  "url": "https://abuts.fit/api/admin/inbound-email/webhook",
+  "domain": "mail.abuts.fit"
+}'
+```
+
+**3. 환경변수 설정** (`local.env`):
+
+```bash
+BREVO_API_KEY=your_brevo_api_key_here
+```
+
+### 10.5 데이터 저장 구조
+
+**Brevo webhook payload → Mail 모델 매핑**:
+
+- `item.MessageId` → `messageId`
+- `item.From.Address` → `from`
+- `item.To[].Address` → `to[]`
+- `item.Subject` → `subject`
+- `item.ExtractedMarkdownMessage` → `bodyText`
+- `item.RawHtmlBody` → `bodyHtml`
+- `item.SpamScore > 5` → `folder: "spam"` (자동 분류)
+- Brevo 전용 메타데이터 → `s3RawKey` (JSON 문자열)
+
+### 10.6 주요 규칙
+
+- **중복 방지**: `messageId`로 중복 체크
+- **스팸 자동 분류**: `spamScore > 5`인 메일은 자동으로 spam 폴더로 이동
+- **첨부파일**: Brevo API를 통해 다운로드 (토큰 기반)
+- **기존 Mail 모델 활용**: 별도 InboundEmail 모델 생성하지 않음
+- **Webhook 인증 불필요**: `/api/admin/inbound-email/webhook`는 인증 미들웨어 전에 정의
+
+### 10.7 테스트
+
+1. 테스트 메일 발송: `test@mail.abuts.fit`
+2. 관리자 페이지 확인: `/dashboard/admin/inbound-email`
+3. Webhook 로그 확인: 백엔드 콘솔에서 `[InboundEmail]` 로그 확인
+
+---
+
+## 11. 운영 메모
 
 - 하위 `rules.md`는 루트 규칙을 반복 작성하지 않습니다.
 - 구현 세부, 트러블슈팅, 서비스별 로컬 설정만 남깁니다.

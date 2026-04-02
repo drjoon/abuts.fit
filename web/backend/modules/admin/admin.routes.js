@@ -121,6 +121,22 @@ import {
   adminGetBusinessRegistrationInquiry,
   adminResolveBusinessRegistrationInquiry,
 } from "../../controllers/support/support.controller.js";
+import {
+  handleInboundEmailWebhook,
+  adminListInboundEmails,
+  adminGetInboundEmail,
+  adminMarkInboundEmailAsRead,
+  adminMarkInboundEmailAsUnread,
+  adminMoveInboundEmailToSpam,
+  adminMoveInboundEmailToTrash,
+  adminRestoreInboundEmail,
+  adminDeleteInboundEmail,
+  adminGetInboundEmailAttachment,
+  adminGetInboundEmailStats,
+} from "../../controllers/admin/adminInboundEmail.controller.js";
+
+// Brevo 인바운드 이메일 webhook (인증 불필요 - 미들웨어 전에 정의)
+router.post("/inbound-email/webhook", handleInboundEmailWebhook);
 
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용
 router.use(authenticate);
@@ -332,6 +348,21 @@ router.get("/sms/history", adminListSms);
 // 카카오톡 알림톡 + SMS (팝빌)
 router.post("/messages/send", adminSendKakaoOrSms);
 router.get("/kakao/templates", adminListKakaoTemplates);
+
+// 인바운드 이메일 관리 (인증 필요)
+router.get("/inbound-email/stats", adminGetInboundEmailStats);
+router.get("/inbound-email", adminListInboundEmails);
+router.get("/inbound-email/:id", adminGetInboundEmail);
+router.patch("/inbound-email/:id/read", adminMarkInboundEmailAsRead);
+router.patch("/inbound-email/:id/unread", adminMarkInboundEmailAsUnread);
+router.patch("/inbound-email/:id/spam", adminMoveInboundEmailToSpam);
+router.patch("/inbound-email/:id/trash", adminMoveInboundEmailToTrash);
+router.patch("/inbound-email/:id/restore", adminRestoreInboundEmail);
+router.delete("/inbound-email/:id", adminDeleteInboundEmail);
+router.get(
+  "/inbound-email/:id/attachments/:downloadToken",
+  adminGetInboundEmailAttachment,
+);
 
 // 마이그레이션: Machine manufacturer -> manufacturerBusinessId
 router.post(
