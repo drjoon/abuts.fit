@@ -215,7 +215,7 @@ function runCamApprovePostProcessingInBackground({
     });
 }
 
-function assertAndClaimManufacturerRequestAccess({ req, request }) {
+async function assertAndClaimManufacturerRequestAccess({ req, request }) {
   if (req?.user?.role !== "manufacturer") return;
   if (!request) {
     const err = new Error("의뢰를 찾을 수 없습니다.");
@@ -226,6 +226,43 @@ function assertAndClaimManufacturerRequestAccess({ req, request }) {
     ? String(request.caManufacturer)
     : "";
   const actorManufacturerId = req?.user?._id ? String(req.user._id) : "";
+  const actorBusinessAnchorId = req?.user?.businessAnchorId
+    ? String(req.user.businessAnchorId)
+    : "";
+
+  // 같은 사용자면 OK
+  if (currentManufacturerId === actorManufacturerId) {
+    return;
+  }
+
+  // 다른 사용자지만 같은 BusinessAnchor 소속이면 OK
+  if (currentManufacturerId && actorBusinessAnchorId) {
+    const User = mongoose.model("User");
+    const currentManufacturer = await User.findById(
+      currentManufacturerId,
+    ).select("businessAnchorId");
+    const currentBusinessAnchorId = currentManufacturer?.businessAnchorId
+      ? String(currentManufacturer.businessAnchorId)
+      : "";
+
+    if (
+      currentBusinessAnchorId &&
+      currentBusinessAnchorId === actorBusinessAnchorId
+    ) {
+      console.log(
+        "[MANUFACTURER_ACCESS_CHECK] Same BusinessAnchor - Access granted",
+        {
+          requestId: request.requestId,
+          currentManufacturerId,
+          actorManufacturerId,
+          businessAnchorId: actorBusinessAnchorId,
+        },
+      );
+      return;
+    }
+  }
+
+  // 다른 회사면 거부
   if (
     currentManufacturerId &&
     actorManufacturerId &&
@@ -235,6 +272,8 @@ function assertAndClaimManufacturerRequestAccess({ req, request }) {
     err.statusCode = 403;
     throw err;
   }
+
+  // caManufacturer가 없으면 현재 사용자로 설정
   if (!currentManufacturerId && req?.user?._id) {
     request.caManufacturer = req.user._id;
   }
@@ -278,7 +317,7 @@ export async function deleteStageFile(req, res) {
     }
 
     try {
-      assertAndClaimManufacturerRequestAccess({ req, request });
+      await assertAndClaimManufacturerRequestAccess({ req, request });
     } catch (accessError) {
       return res.status(accessError?.statusCode || 403).json({
         success: false,
@@ -531,7 +570,7 @@ export async function updateReviewStatusByStage(req, res) {
         throw err;
       }
 
-      assertAndClaimManufacturerRequestAccess({ req, request });
+      await assertAndClaimManufacturerRequestAccess({ req, request });
 
       if (status === "APPROVED" && effectiveStage === "request") {
         requestStageMachineSelection = await ensureMachineCompatibilityOrThrow({
