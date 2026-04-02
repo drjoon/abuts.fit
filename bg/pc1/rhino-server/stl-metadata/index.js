@@ -40,6 +40,92 @@ if (finishLinePointsJson) {
 }
 
 /**
+ * STL 모델의 좌표계 검증
+ *
+ * 정의: 어버트먼트는 원점(0,0) 중심, Z축 정렬이어야 함
+ * 검증 기준:
+ * 1. XY 평면 최대 직경이 15mm 이하
+ * 2. 모델이 원점 근처에 위치 (중심이 원점에서 크게 벗어나지 않음)
+ *
+ * @param {THREE.BufferGeometry} geometry - 원본 geometry
+ * @returns {Object} 검증 결과 { valid: boolean, error: string|null, info: object }
+ */
+function validateCoordinateSystem(geometry) {
+  const bbox = geometry.boundingBox;
+  const position = geometry.getAttribute("position");
+
+  const xRange = bbox.max.x - bbox.min.x;
+  const yRange = bbox.max.y - bbox.min.y;
+  const zRange = bbox.max.z - bbox.min.z;
+
+  // XY 평면 중심 계산
+  const xCenter = (bbox.max.x + bbox.min.x) / 2;
+  const yCenter = (bbox.max.y + bbox.min.y) / 2;
+  const centerOffset = Math.sqrt(xCenter * xCenter + yCenter * yCenter);
+
+  // XY 평면에서 최대 직경 계산
+  let maxR = 0;
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i);
+    const y = position.getY(i);
+    const r = Math.sqrt(x * x + y * y);
+    if (r > maxR) maxR = r;
+  }
+  const xyMaxDiameter = maxR * 2;
+
+  const validationInfo = {
+    xyMaxDiameter: xyMaxDiameter,
+    centerOffset: centerOffset,
+    ranges: { x: xRange, y: yRange, z: zRange },
+    bbox: {
+      min: { x: bbox.min.x, y: bbox.min.y, z: bbox.min.z },
+      max: { x: bbox.max.x, y: bbox.max.y, z: bbox.max.z },
+    },
+  };
+
+  console.error(
+    `[coordValidation] xyDiameter=${xyMaxDiameter.toFixed(2)}mm centerOffset=${centerOffset.toFixed(2)}mm`,
+  );
+  console.error(
+    `[coordValidation] Ranges: X=${xRange.toFixed(2)} Y=${yRange.toFixed(2)} Z=${zRange.toFixed(2)}`,
+  );
+  console.error(
+    `[coordValidation] Center: (${xCenter.toFixed(2)}, ${yCenter.toFixed(2)})`,
+  );
+
+  // 검증 1: XY 직경이 15mm 초과 → 좌표계 문제
+  if (xyMaxDiameter > 15.0) {
+    console.error(
+      `[coordValidation] ERROR: XY diameter exceeds 15mm (${xyMaxDiameter.toFixed(2)}mm)`,
+    );
+    return {
+      valid: false,
+      error: `COORDINATE_ERROR: XY 평면 최대 직경이 ${xyMaxDiameter.toFixed(2)}mm로 15mm를 초과합니다. 모델을 원점(0,0) 중심으로 이동시켜주세요.`,
+      info: validationInfo,
+    };
+  }
+
+  // 검증 2: 중심이 원점에서 10mm 이상 벗어남 → 경고
+  if (centerOffset > 10.0) {
+    console.error(
+      `[coordValidation] WARNING: Center offset from origin is ${centerOffset.toFixed(2)}mm`,
+    );
+    return {
+      valid: false,
+      error: `COORDINATE_WARNING: 모델 중심이 원점에서 ${centerOffset.toFixed(2)}mm 떨어져 있습니다. 원점(0,0) 중심으로 이동시켜주세요.`,
+      info: validationInfo,
+    };
+  }
+
+  console.error(`[coordValidation] PASS: Coordinate system is valid`);
+  return {
+    valid: true,
+    error: null,
+    info: validationInfo,
+  };
+}
+
+/**
  * STL 메타데이터 계산 (프론트 로직 포팅)
  */
 async function calculateStlMetadata(filePath, finishLinePoints) {
@@ -50,6 +136,9 @@ async function calculateStlMetadata(filePath, finishLinePoints) {
   geometry = mergeVertices(geometry, 1e-5);
   geometry.computeBoundingBox();
   geometry.computeVertexNormals();
+
+  // 좌표계 검증
+  const validation = validateCoordinateSystem(geometry);
 
   const bbox = geometry.boundingBox;
   const position = geometry.getAttribute("position");
@@ -164,6 +253,12 @@ async function calculateStlMetadata(filePath, finishLinePoints) {
     bbox: {
       min: { x: bbox.min.x, y: bbox.min.y, z: bbox.min.z },
       max: { x: bbox.max.x, y: bbox.max.y, z: bbox.max.z },
+    },
+    coordinateValidation: {
+      valid: validation.valid,
+      error: validation.error,
+      xyMaxDiameter: validation.info.xyMaxDiameter,
+      centerOffset: validation.info.centerOffset,
     },
   };
 }
@@ -548,6 +643,9 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
 (async () => {
   try {
     const metadata = await calculateStlMetadata(stlFilePath, finishLinePoints);
+
+    // 버전 확인용 주석 (Python 로그에서 확인 가능)
+    // VERSION: 2026-04-02-v2-rotation-by-diameter
 
     // JSON 출력 (표준 출력)
     console.log(JSON.stringify(metadata, null, 2));

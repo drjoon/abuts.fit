@@ -45,12 +45,22 @@ def calculate_and_register_metadata(
         )
         
         if success:
+            coord_validation = metadata.get('coordinateValidation', {})
+            validation_msg = ""
+            
+            if not coord_validation.get('valid'):
+                error_msg = coord_validation.get('error', 'Unknown coordinate error')
+                validation_msg = f" [COORD_ERROR: {error_msg}]"
+                log(f"[stl_metadata] ⚠️  COORDINATE VALIDATION FAILED for {request_id}")
+                log(f"[stl_metadata] Error: {error_msg}")
+            
             log(
                 f"[stl_metadata] Registered metadata for {request_id}: "
                 f"maxDiameter={metadata.get('maxDiameter', 0):.2f}mm "
                 f"connectionDiameter={metadata.get('connectionDiameter', 0):.2f}mm "
                 f"totalLength={metadata.get('totalLength', 0):.2f}mm "
                 f"taperAngle={metadata.get('taperAngle', 0):.2f}°"
+                f"{validation_msg}"
             )
             return metadata
         else:
@@ -93,21 +103,32 @@ def _call_nodejs_calculator(
             finish_line_json = json.dumps(finish_line_points)
             cmd.append(finish_line_json)
         
-        # Node.js 실행
+        # Node.js 실행 (UTF-8 인코딩 명시)
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',  # 디코딩 실패 시 � 문자로 대체
             timeout=30,
             cwd=str(script_dir),
         )
+        
+        # stderr 출력이 있으면 로그에 표시 (디버깅용)
+        if result.stderr and result.stderr.strip():
+            log(f"[stl_metadata] Node.js stderr: {result.stderr.strip()}")
         
         if result.returncode != 0:
             log(f"[stl_metadata] Node.js calculation failed: {result.stderr}")
             return None
         
         # JSON 파싱
-        metadata = json.loads(result.stdout)
+        try:
+            metadata = json.loads(result.stdout)
+        except json.JSONDecodeError as e:
+            log(f"[stl_metadata] JSON parse error. stdout: {result.stdout[:200]}")
+            raise
+        
         return metadata
         
     except subprocess.TimeoutExpired:
@@ -141,6 +162,8 @@ def _register_metadata_to_backend(
         backend_url = os.getenv("BACKEND_BASE", "https://abuts.fit/api").rstrip("/")
         register_url = f"{backend_url}/bg/register-stl-metadata"
         
+        coord_validation = metadata.get("coordinateValidation", {})
+        
         payload = {
             "requestId": request_id,
             "requestMongoId": request_mongo_id,
@@ -151,6 +174,7 @@ def _register_metadata_to_backend(
             "tiltAxisVector": metadata.get("tiltAxisVector"),
             "frontPoint": metadata.get("frontPoint"),
             "taperGuide": metadata.get("taperGuide"),
+            "coordinateError": coord_validation.get("error") if not coord_validation.get("valid") else None,
         }
         
         response = requests.post(

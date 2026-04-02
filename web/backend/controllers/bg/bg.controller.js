@@ -1405,6 +1405,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
     tiltAxisVector,
     frontPoint,
     taperGuide,
+    coordinateError,
   } = req.body;
 
   if (!requestId && !requestMongoId) {
@@ -1432,6 +1433,17 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
     request.caseInfos.taperGuide = taperGuide;
   }
 
+  // 좌표계 에러가 있으면 저장
+  if (coordinateError) {
+    request.caseInfos.coordinateError = coordinateError;
+    console.log(
+      `[registerStlMetadata] ⚠️  COORDINATE ERROR for requestId=${request.requestId}: ${coordinateError}`,
+    );
+  } else {
+    // 에러가 없으면 기존 에러 제거
+    request.caseInfos.coordinateError = null;
+  }
+
   await request.save();
 
   console.log(
@@ -1439,7 +1451,8 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
       `maxDiameter=${maxDiameter?.toFixed(2)}mm ` +
       `connectionDiameter=${connectionDiameter?.toFixed(2)}mm ` +
       `totalLength=${totalLength?.toFixed(2)}mm ` +
-      `taperAngle=${taperAngle?.toFixed(2)}°`,
+      `taperAngle=${taperAngle?.toFixed(2)}°` +
+      (coordinateError ? ` [COORD_ERROR]` : ``),
   );
 
   return res.status(200).json(

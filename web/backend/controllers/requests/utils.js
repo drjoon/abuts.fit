@@ -58,6 +58,8 @@ export const SHIPPING_WORKFLOW_LABELS = {
 
 const __requestorOrgScopeCache = new Map();
 const __requestorOrgScopeInFlight = new Map();
+const __manufacturerOrgScopeCache = new Map();
+const __manufacturerOrgScopeInFlight = new Map();
 
 const getRequestorOrgScopeCached = (key) => {
   const hit = __requestorOrgScopeCache.get(key);
@@ -90,6 +92,40 @@ const withRequestorOrgScopeInFlight = async (key, factory) => {
     });
 
   __requestorOrgScopeInFlight.set(key, promise);
+  return promise;
+};
+
+const getManufacturerOrgScopeCached = (key) => {
+  const hit = __manufacturerOrgScopeCache.get(key);
+  if (!hit) return null;
+  if (typeof hit.expiresAt !== "number" || hit.expiresAt <= Date.now()) {
+    __manufacturerOrgScopeCache.delete(key);
+    return null;
+  }
+  return hit.value;
+};
+
+const setManufacturerOrgScopeCached = (key, value, ttlMs) => {
+  __manufacturerOrgScopeCache.set(key, {
+    value,
+    expiresAt: Date.now() + ttlMs,
+  });
+  return value;
+};
+
+const withManufacturerOrgScopeInFlight = async (key, factory) => {
+  const existing = __manufacturerOrgScopeInFlight.get(key);
+  if (existing) return existing;
+
+  const promise = Promise.resolve()
+    .then(factory)
+    .finally(() => {
+      if (__manufacturerOrgScopeInFlight.get(key) === promise) {
+        __manufacturerOrgScopeInFlight.delete(key);
+      }
+    });
+
+  __manufacturerOrgScopeInFlight.set(key, promise);
   return promise;
 };
 
@@ -185,6 +221,11 @@ export function getRequestorOrgId(req) {
   return raw ? String(raw) : "";
 }
 
+export function getManufacturerOrgId(req) {
+  const raw = req?.user?.businessAnchorId;
+  return raw ? String(raw) : "";
+}
+
 export function buildRequestorOrgFilter(req) {
   if (req?.user?.role !== "requestor") return {};
   const orgId = getRequestorOrgId(req);
@@ -249,6 +290,73 @@ export async function buildRequestorOrgScopeFilter(req) {
     60 * 1000,
   );
   return req._requestorOrgScopeFilter;
+}
+
+/**
+ * 제조사용 조직 스코프 필터 생성
+ * 같은 BusinessAnchor에 속한 대표와 직원이 의뢰를 공유할 수 있도록 함
+ * - businessAnchorId가 일치하는 의뢰
+ * - 또는 caManufacturer가 같은 조직의 멤버인 의뢰
+ */
+export async function buildManufacturerOrgScopeFilter(req) {
+  if (req?.user?.role !== "manufacturer") return {};
+
+  if (req?._manufacturerOrgScopeFilter) {
+    return req._manufacturerOrgScopeFilter;
+  }
+
+  const orgId = getManufacturerOrgId(req);
+  if (!orgId || !Types.ObjectId.isValid(orgId)) {
+    // BusinessAnchor가 없으면 본인이 배정된 의뢰만
+    req._manufacturerOrgScopeFilter = { caManufacturer: req.user._id };
+    return req._manufacturerOrgScopeFilter;
+  }
+
+  const cacheKey = `manufacturer-org-scope:${String(req.user?._id || "")}:${orgId}`;
+  const cached = getManufacturerOrgScopeCached(cacheKey);
+  if (cached) {
+    req._manufacturerOrgScopeFilter = cached;
+    return req._manufacturerOrgScopeFilter;
+  }
+
+  const built = await withManufacturerOrgScopeInFlight(cacheKey, async () => {
+    const anchor = await BusinessAnchor.findOne({
+      _id: new Types.ObjectId(orgId),
+    })
+      .select({ primaryContactUserId: 1, owners: 1, members: 1 })
+      .lean();
+
+    if (!anchor) {
+      return { caManufacturer: req.user._id };
+    }
+
+    const primaryId = String(anchor.primaryContactUserId || "");
+    const ownerIds = Array.isArray(anchor.owners)
+      ? anchor.owners.map(String)
+      : [];
+    const memberIdsRaw = Array.isArray(anchor.members) ? anchor.members : [];
+    const memberIds = [primaryId, ...ownerIds, ...memberIdsRaw]
+      .map((id) => String(id))
+      .filter((id) => Types.ObjectId.isValid(id));
+
+    const memberObjectIds = memberIds.map((id) => new Types.ObjectId(id));
+    return {
+      $or: [
+        // 같은 조직의 멤버에게 배정된 의뢰
+        { caManufacturer: { $in: memberObjectIds } },
+        // 또는 미배정 의뢰
+        { caManufacturer: null },
+        { caManufacturer: { $exists: false } },
+      ],
+    };
+  });
+
+  req._manufacturerOrgScopeFilter = setManufacturerOrgScopeCached(
+    cacheKey,
+    built,
+    60 * 1000,
+  );
+  return req._manufacturerOrgScopeFilter;
 }
 
 export function normalizeRequestStage(requestLike) {

@@ -20,6 +20,7 @@ import {
   ensureLotNumberForMachining,
   ensureFinishedLotNumberForPacking,
   buildRequestorOrgScopeFilter,
+  buildManufacturerOrgScopeFilter,
   computePriceForRequest,
   normalizeCaseInfosImplantFields,
   getTodayYmdInKst,
@@ -271,108 +272,17 @@ export async function getAllRequests(req, res) {
     }
     if (req.query.implantType) filter.implantType = req.query.implantType;
 
-    // 제조사: 본인에게 배정되었거나 미배정된 의뢰 + 취소 제외
-    // 단, 세척.패킹 이후 단계(세척.패킹, 포장.발송, 추적관리)는 모든 제조사가 볼 수 있음
+    // 제조사: 같은 BusinessAnchor 조직 내 대표/직원이 의뢰 공유 + 취소 제외
+    // buildManufacturerOrgScopeFilter가 조직 멤버 기반 필터를 생성
     if (role === "manufacturer") {
-      const sharedStages = [
-        "세척.패킹",
-        "포장.발송",
-        "추적관리",
-        "배송대기",
-        "배송중",
-        "배송완료",
-        "완료",
-      ];
-      const requestedStage = filter.manufacturerStage;
-      const requestedStages = filter.manufacturerStage?.$in || [];
-
-      // 단일 단계 요청인 경우
-      if (typeof requestedStage === "string") {
-        if (sharedStages.includes(requestedStage)) {
-          // 공유 단계: caManufacturer 필터 없음
-          filter = {
-            $and: [filter, { manufacturerStage: { $ne: "취소" } }],
-          };
-        } else {
-          // 전용 단계: caManufacturer 필터 적용
-          filter = {
-            $and: [
-              filter,
-              { manufacturerStage: { $ne: "취소" } },
-              {
-                $or: [
-                  { caManufacturer: req.user._id },
-                  { caManufacturer: null },
-                  { caManufacturer: { $exists: false } },
-                ],
-              },
-            ],
-          };
-        }
-      }
-      // 여러 단계 요청인 경우 (완료포함)
-      else if (Array.isArray(requestedStages) && requestedStages.length > 0) {
-        // 요청된 단계를 전용 단계와 공유 단계로 분리
-        const privateStages = requestedStages.filter(
-          (s) => !sharedStages.includes(s),
-        );
-        const publicStages = requestedStages.filter((s) =>
-          sharedStages.includes(s),
-        );
-
-        // 두 그룹 모두 있는 경우: OR 조건으로 결합
-        if (privateStages.length > 0 && publicStages.length > 0) {
-          // 기존 필터에서 manufacturerStage 제거한 새 객체 생성
-          const { manufacturerStage, ...restFilter } = filter;
-          filter = {
-            $and: [
-              restFilter,
-              { manufacturerStage: { $ne: "취소" } },
-              {
-                $or: [
-                  // 공유 단계: 모든 제조사가 볼 수 있음
-                  { manufacturerStage: { $in: publicStages } },
-                  // 전용 단계: 본인에게 배정되었거나 미배정된 의뢰만
-                  {
-                    $and: [
-                      { manufacturerStage: { $in: privateStages } },
-                      {
-                        $or: [
-                          { caManufacturer: req.user._id },
-                          { caManufacturer: null },
-                          { caManufacturer: { $exists: false } },
-                        ],
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          };
-        }
-        // 공유 단계만 있는 경우
-        else if (publicStages.length > 0) {
-          filter = {
-            $and: [filter, { manufacturerStage: { $ne: "취소" } }],
-          };
-        }
-        // 전용 단계만 있는 경우
-        else if (privateStages.length > 0) {
-          filter = {
-            $and: [
-              filter,
-              { manufacturerStage: { $ne: "취소" } },
-              {
-                $or: [
-                  { caManufacturer: req.user._id },
-                  { caManufacturer: null },
-                  { caManufacturer: { $exists: false } },
-                ],
-              },
-            ],
-          };
-        }
-      }
+      const manufacturerOrgScope = await buildManufacturerOrgScopeFilter(req);
+      filter = {
+        $and: [
+          filter,
+          { manufacturerStage: { $ne: "취소" } },
+          manufacturerOrgScope,
+        ],
+      };
     }
 
     // 레거시 MOCK_DEV_TOKEN 분기 제거됨

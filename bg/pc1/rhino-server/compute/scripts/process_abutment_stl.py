@@ -221,6 +221,104 @@ def fail(msg):
     raise Exception(msg)
 
 
+def _align_mesh_to_origin(mesh, target_diameter=3.33):
+    """
+    메시를 원점에 정렬
+    1. Z_max에서 +2mm 위치의 가로 단면 원 중심을 XY 원점으로 이동
+    2. 커넥션 외부 직경 3.33mm 위치를 Z=0으로 이동
+    """
+    import Rhino.Geometry as rg
+    import math
+    
+    bbox = mesh.GetBoundingBox(True)
+    z_min = bbox.Min.Z
+    target_radius = target_diameter / 2.0
+    
+    # 1단계: Z_min + 2mm 위치에서 원의 중심 찾기 (커넥션은 아래쪽)
+    z_reference = z_min + 2.0
+    plane = rg.Plane(rg.Point3d(0, 0, z_reference), rg.Vector3d(0, 0, 1))
+    polylines = rg.Intersect.Intersection.MeshPlane(mesh, plane)
+    
+    if not polylines or len(polylines) == 0:
+        log("[align] No intersection at Z={:.2f}".format(z_reference))
+        return False
+    
+    # 가장 긴 폴리라인 선택 (외부 윤곽)
+    longest = max(polylines, key=lambda pl: pl.Length)
+    
+    # 원의 중심 계산
+    points = []
+    for i in range(longest.Count):
+        pt = longest[i]
+        points.append((pt.X, pt.Y))
+    
+    if len(points) < 3:
+        log("[align] Not enough points for circle")
+        return False
+    
+    center_x = sum(p[0] for p in points) / len(points)
+    center_y = sum(p[1] for p in points) / len(points)
+    
+    log("[align] Circle center at Z={:.2f}: ({:.2f}, {:.2f})".format(
+        z_reference, center_x, center_y))
+    
+    # XY 중심으로 이동
+    mesh.Translate(rg.Vector3d(-center_x, -center_y, 0))
+    
+    # 2단계: 커넥션 외부 직경 3.33mm 위치 찾기
+    # 이제 XY는 정렬되었으므로 Z만 찾으면 됨
+    bbox = mesh.GetBoundingBox(True)
+    z_min = bbox.Min.Z
+    z_max = bbox.Max.Z
+    
+    # 간단한 탐색: Z_min부터 위로 올라가면서 직경 3.33mm 찾기
+    z_step = 0.5  # 0.5mm 간격
+    z_current = z_min
+    
+    best_z = None
+    best_diff = float('inf')
+    
+    while z_current <= z_max:
+        plane = rg.Plane(rg.Point3d(0, 0, z_current), rg.Vector3d(0, 0, 1))
+        polylines = rg.Intersect.Intersection.MeshPlane(mesh, plane)
+        
+        if polylines and len(polylines) > 0:
+            longest = max(polylines, key=lambda pl: pl.Length)
+            
+            # 반지름 계산 (이미 XY 중심 정렬됨)
+            max_radius = 0
+            for i in range(longest.Count):
+                pt = longest[i]
+                r = math.sqrt(pt.X * pt.X + pt.Y * pt.Y)
+                if r > max_radius:
+                    max_radius = r
+            
+            diff = abs(max_radius - target_radius)
+            
+            if diff < best_diff:
+                best_diff = diff
+                best_z = z_current
+            
+            # 충분히 근접하면 중단
+            if diff < 0.05:
+                break
+        
+        z_current += z_step
+    
+    if best_z is None:
+        log("[align] Could not find connection diameter")
+        return False
+    
+    # Z 이동
+    mesh.Translate(rg.Vector3d(0, 0, -best_z))
+    
+    log("[align] Final translation: XY=({:.2f}, {:.2f}), Z={:.2f}".format(
+        -center_x, -center_y, -best_z))
+    log("[align] Connection diameter {:.2f}mm at Z=0".format(target_diameter))
+    
+    return True
+
+
 def _import_stl_meshes(doc, input_path):
     try:
         read_opts = Rhino.FileIO.FileStlReadOptions()
@@ -232,6 +330,22 @@ def _import_stl_meshes(doc, input_path):
         fail("STL Import 실패")
 
     log("import ok")
+    
+    # STL 로드 후 자동 정렬
+    try:
+        log("[align] Starting coordinate alignment...")
+        objs = list(doc.Objects)
+        for obj in objs:
+            if obj and obj.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
+                mesh = obj.Geometry
+                if mesh:
+                    _align_mesh_to_origin(mesh)
+                    # 변경된 geometry를 다시 설정
+                    obj.CommitChanges()
+                    break  # 첫 번째 메시만 정렬
+        log("[align] Alignment complete")
+    except Exception as e:
+        log("[align] Alignment failed: " + str(e))
 
     mesh_obj_refs = []
     try:
