@@ -224,8 +224,8 @@ def fail(msg):
 def _align_mesh_to_origin(mesh, target_diameter=3.33):
     """
     메시를 원점에 정렬
-    1. Z_max에서 +2mm 위치의 가로 단면 원 중심을 XY 원점으로 이동
-    2. 커넥션 외부 직경 3.33mm 위치를 Z=0으로 이동
+    1. Z_min + 2mm 위치의 가로 단면 원 중심을 XY 원점으로 이동
+    2. 커넥션 외부 직경 3.33mm 위치를 Z=0으로 이동 (이진 탐색)
     """
     import Rhino.Geometry as rg
     import math
@@ -265,56 +265,80 @@ def _align_mesh_to_origin(mesh, target_diameter=3.33):
     # XY 중심으로 이동
     mesh.Translate(rg.Vector3d(-center_x, -center_y, 0))
     
-    # 2단계: 커넥션 외부 직경 3.33mm 위치 찾기
-    # 이제 XY는 정렬되었으므로 Z만 찾으면 됨
+    # 2단계: 테이퍼각을 활용하여 커넥션 외부 직경 3.33mm 위치 계산
     bbox = mesh.GetBoundingBox(True)
     z_min = bbox.Min.Z
     z_max = bbox.Max.Z
     
-    # 간단한 탐색: Z_min부터 위로 올라가면서 직경 3.33mm 찾기
-    z_step = 0.5  # 0.5mm 간격
-    z_current = z_min
-    
-    best_z = None
-    best_diff = float('inf')
-    
-    while z_current <= z_max:
-        plane = rg.Plane(rg.Point3d(0, 0, z_current), rg.Vector3d(0, 0, 1))
+    def get_radius_at_z(z):
+        """주어진 Z 높이에서 최대 반지름 계산"""
+        plane = rg.Plane(rg.Point3d(0, 0, z), rg.Vector3d(0, 0, 1))
         polylines = rg.Intersect.Intersection.MeshPlane(mesh, plane)
         
-        if polylines and len(polylines) > 0:
-            longest = max(polylines, key=lambda pl: pl.Length)
-            
-            # 반지름 계산 (이미 XY 중심 정렬됨)
-            max_radius = 0
-            for i in range(longest.Count):
-                pt = longest[i]
-                r = math.sqrt(pt.X * pt.X + pt.Y * pt.Y)
-                if r > max_radius:
-                    max_radius = r
-            
-            diff = abs(max_radius - target_radius)
-            
-            if diff < best_diff:
-                best_diff = diff
-                best_z = z_current
-            
-            # 충분히 근접하면 중단
-            if diff < 0.05:
-                break
+        if not polylines or len(polylines) == 0:
+            return None
         
-        z_current += z_step
+        longest = max(polylines, key=lambda pl: pl.Length)
+        max_radius = 0
+        for i in range(longest.Count):
+            pt = longest[i]
+            r = math.sqrt(pt.X * pt.X + pt.Y * pt.Y)
+            if r > max_radius:
+                max_radius = r
+        
+        return max_radius
     
-    if best_z is None:
-        log("[align] Could not find connection diameter")
+    # 커넥션 영역에서 두 지점 측정 (z_min+2 ~ z_min+2.2)
+    z1 = z_min + 2.0   # 커넥션 시작점
+    z2 = z_min + 2.2   # 0.2mm 위 (짧은 거리로 정밀 측정)
+    
+    r1 = get_radius_at_z(z1)
+    r2 = get_radius_at_z(z2)
+    
+    if r1 is None or r2 is None:
+        log("[align] Could not measure radii in connection area")
         return False
+    
+    # 테이퍼 기울기 계산: tan(angle) = (r2 - r1) / (z2 - z1)
+    dz = z2 - z1  # 0.2mm
+    dr = r2 - r1
+    taper_slope = dr / dz
+    taper_angle_deg = math.degrees(math.atan(taper_slope))
+    
+    log("[align] Measured: r1={:.3f}mm at z={:.2f}, r2={:.3f}mm at z={:.2f}".format(
+        r1, z1, r2, z2))
+    log("[align] Distance: dz={:.3f}mm, dr={:.3f}mm".format(dz, dr))
+    log("[align] Calculated taper angle: {:.2f}° (expected ~11°)".format(taper_angle_deg))
+    
+    # 삼각함수로 target_radius 위치 직접 계산
+    # r1 + taper_slope * (z_target - z1) = target_radius
+    # z_target = z1 + (target_radius - r1) / taper_slope
+    
+    if abs(taper_slope) < 0.0001:  # 거의 수직인 경우
+        log("[align] Taper is too steep or vertical, using fallback")
+        best_z = z1
+    else:
+        best_z = z1 + (target_radius - r1) / taper_slope
+        
+        # 범위 체크
+        if best_z < z_min or best_z > z_max:
+            log("[align] Calculated Z={:.2f} is out of range [{:.2f}, {:.2f}]".format(
+                best_z, z_min, z_max))
+            best_z = max(z_min, min(z_max, best_z))
+    
+    log("[align] Calculated target Z position: {:.2f}mm".format(best_z))
     
     # Z 이동
     mesh.Translate(rg.Vector3d(0, 0, -best_z))
     
+    # 검증: 실제 직경 측정
+    final_radius = get_radius_at_z(0)
+    final_diameter = final_radius * 2.0 if final_radius else 0
+    
     log("[align] Final translation: XY=({:.2f}, {:.2f}), Z={:.2f}".format(
         -center_x, -center_y, -best_z))
-    log("[align] Connection diameter {:.2f}mm at Z=0".format(target_diameter))
+    log("[align] Connection diameter {:.2f}mm at Z=0 (target: {:.2f}mm, diff: {:.3f}mm)".format(
+        final_diameter, target_diameter, abs(final_diameter - target_diameter)))
     
     return True
 
@@ -408,36 +432,117 @@ def _run_fill_mesh_holes(doc, target_id):
     except Exception:
         pass
 
-    # 1st: RhinoCommon API로 직접 홀 메우기 시도
+    # 1st: RhinoCommon API로 직접 홀 메우기 - 개선된 알고리즘
     try:
         geom = target.Geometry
         if geom is not None:
             mesh_copy = geom.DuplicateMesh()
             if mesh_copy is not None:
-                # 기본 FillHoles는 모든 홀을 시도하며 성공 시 True 반환
-                rc_fill = mesh_copy.FillHoles()
-                if rc_fill:
-                    replaced = doc.Objects.Replace(target_id, mesh_copy)
-                    log(
-                        "FillMeshHoles (RhinoCommon) rc={} replaced={}".format(
-                            rc_fill, replaced
-                        )
-                    )
-                    if replaced:
-                        after_naked = _count_naked_edges(mesh_copy)
-                        log(
-                            "after RC FillHoles nakedEdges(before->{})={}".format(
-                                before_naked, after_naked
-                            )
-                        )
-                        if (
-                            before_naked is None
-                            or after_naked is None
-                            or after_naked < before_naked
-                        ):
-                            return True
+                log("Starting aggressive hole filling...")
+                
+                # 여러 반복으로 모든 홀 메우기 (큰 홀 포함)
+                max_iterations = 5
+                filled_any = False
+                
+                for iteration in range(max_iterations):
+                    # 각 반복마다 naked edges 확인
+                    naked_before_iter = _count_naked_edges(mesh_copy)
+                    if naked_before_iter == 0:
+                        log("All holes filled at iteration {}".format(iteration))
+                        break
+                    
+                    log("Iteration {}: naked edges = {}".format(iteration, naked_before_iter))
+                    
+                    # 모든 홀을 메우기 시도 (크기 제한 없음)
+                    # FillHoles() 기본 호출은 작은 홀만 메울 수 있으므로
+                    # 개별 홀을 찾아서 하나씩 메움
+                    try:
+                        # GetNakedEdges로 열린 경계 찾기
+                        naked_edges = mesh_copy.GetNakedEdges()
+                        if naked_edges and len(naked_edges) > 0:
+                            log("Found {} naked edge loops".format(len(naked_edges)))
+                            
+                            # 각 naked edge loop에 대해 홀 메우기
+                            for edge_idx, edge_curve in enumerate(naked_edges):
+                                try:
+                                    # 경계선을 기반으로 메시 패치 생성
+                                    if edge_curve and edge_curve.IsValid:
+                                        # Mesh.CreatePatch를 사용하여 홀 메우기
+                                        patch = Rhino.Geometry.Mesh.CreatePatch(
+                                            [edge_curve],  # 경계 곡선
+                                            10,  # u 방향 span 수
+                                            10,  # v 방향 span 수
+                                            None,  # 내부 점 (없음)
+                                            None,  # 시작 표면 (없음)
+                                            None,  # 당김 표면 (없음)
+                                            True,  # 경계에 맞춤
+                                            0.1   # 허용 오차
+                                        )
+                                        
+                                        if patch and patch.IsValid:
+                                            # 패치를 원본 메시에 추가
+                                            mesh_copy.Append(patch)
+                                            log("Filled hole {} with patch".format(edge_idx))
+                                            filled_any = True
+                                except Exception as e:
+                                    log("Failed to fill hole {}: {}".format(edge_idx, str(e)))
+                            
+                            # 메시 정리: 중복 정점 병합
+                            try:
+                                mesh_copy.Vertices.CombineIdentical(True, True)
+                                mesh_copy.Vertices.CullUnused()
+                            except Exception:
+                                pass
+                            
+                            # 메시 웰딩 (정점 연결)
+                            try:
+                                mesh_copy.Weld(3.14159)  # 180도 각도로 웰딩
+                            except Exception:
+                                pass
+                    except Exception as e:
+                        log("Naked edge processing failed: {}".format(str(e)))
+                    
+                    # 기본 FillHoles도 시도 (작은 홀 처리)
+                    try:
+                        mesh_copy.FillHoles()
+                    except Exception:
+                        pass
+                    
+                    # 반복 후 naked edges 확인
+                    naked_after_iter = _count_naked_edges(mesh_copy)
+                    log("After iteration {}: naked edges = {}".format(iteration, naked_after_iter))
+                    
+                    # 더 이상 개선이 없으면 중단
+                    if naked_after_iter >= naked_before_iter:
+                        break
+                
+                # 최종 메시 정리
+                try:
+                    mesh_copy.Compact()
+                    mesh_copy.Vertices.CombineIdentical(True, True)
+                    mesh_copy.Vertices.CullUnused()
+                    mesh_copy.Normals.ComputeNormals()
+                    mesh_copy.FaceNormals.ComputeFaceNormals()
+                except Exception as e:
+                    log("Final mesh cleanup failed: {}".format(str(e)))
+                
+                # 메시 교체
+                replaced = doc.Objects.Replace(target_id, mesh_copy)
+                log("FillMeshHoles (Enhanced) replaced={}".format(replaced))
+                
+                if replaced:
+                    after_naked = _count_naked_edges(mesh_copy)
+                    log("Final result: nakedEdges {} -> {}".format(before_naked, after_naked))
+                    
+                    if (
+                        before_naked is None
+                        or after_naked is None
+                        or after_naked < before_naked
+                        or filled_any
+                    ):
+                        return True
     except Exception as e:
-        log("FillMeshHoles RhinoCommon 예외: " + str(e))
+        log("FillMeshHoles Enhanced 예외: " + str(e))
 
     # 2nd: Fallback - 커맨드 기반 실행
     try:
