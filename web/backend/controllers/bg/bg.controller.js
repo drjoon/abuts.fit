@@ -495,7 +495,20 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
 
       case "3-nc": {
         const ncStoredName = String(fileName || "").trim();
-        const ncBridgePath = ncStoredName ? `3-nc/${ncStoredName}` : "";
+        // fileName이 이미 "requestId/program.nc" 형태일 수 있으므로 그대로 사용
+        // 또는 단순 파일명일 경우 requestId 폴더 추가
+        let ncBridgePath = "";
+        if (ncStoredName) {
+          // fileName에 이미 경로가 포함되어 있으면 그대로 사용
+          if (ncStoredName.includes("/") || ncStoredName.includes("\\")) {
+            ncBridgePath = `3-nc/${ncStoredName}`;
+          } else {
+            // 단순 파일명이면 requestId 폴더 추가
+            ncBridgePath = requestId
+              ? `3-nc/${requestId}/${ncStoredName}`
+              : `3-nc/${ncStoredName}`;
+          }
+        }
         updateData["caseInfos.ncFile"] =
           s3Info ||
           buildStoredFileMeta({

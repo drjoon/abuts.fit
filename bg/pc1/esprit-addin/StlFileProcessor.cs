@@ -743,6 +743,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         {
             string baseName = Path.GetFileNameWithoutExtension(stlPath) ?? "output";
             string sanitizedBase = RemoveFilledToken(baseName);
+            
+            // requestId 추출 (예: 20260401-USUACVDY)
+            string requestId = ExtractRequestIdFromStlPath(stlPath);
+            
+            // requestId가 있으면 requestId별 하위 폴더 생성
+            if (!string.IsNullOrWhiteSpace(requestId))
+            {
+                string requestFolder = Path.Combine(_outputFolder, requestId);
+                Directory.CreateDirectory(requestFolder);
+                return Path.Combine(requestFolder, "program.nc");
+            }
+            
+            // requestId가 없으면 기존 방식 유지 (fallback)
             return Path.Combine(_outputFolder, sanitizedBase + ".nc");
         }
         private static string RemoveFilledToken(string baseName)
@@ -1114,19 +1127,44 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     AppLogger.Log($"StlFileProcessor: requestId extracted from stlPath: {requestId}");
                 }
                 
+                // NC 파일의 상대 경로 계산 (예: "20260401-USUACVDY/program.nc")
+                string ncRelativePath = fi.Name;
+                try
+                {
+                    string ncDir = fi.DirectoryName ?? string.Empty;
+                    string storageNcDir = AppConfig.StorageNcDirectory;
+                    if (!string.IsNullOrWhiteSpace(ncDir) && !string.IsNullOrWhiteSpace(storageNcDir))
+                    {
+                        string normalizedNcDir = Path.GetFullPath(ncDir);
+                        string normalizedStorageDir = Path.GetFullPath(storageNcDir);
+                        if (normalizedNcDir.StartsWith(normalizedStorageDir, StringComparison.OrdinalIgnoreCase))
+                        {
+                            string relativePart = normalizedNcDir.Substring(normalizedStorageDir.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                            if (!string.IsNullOrWhiteSpace(relativePart))
+                            {
+                                ncRelativePath = Path.Combine(relativePart, fi.Name).Replace(Path.DirectorySeparatorChar, '/');
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Log($"StlFileProcessor: Failed to compute NC relative path: {ex.Message}");
+                }
+                
                 string json;
                 if (upload.ok)
                 {
                     json =
-                        $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(fi.Name)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\",\"status\":\"success\",\"s3Key\":\"{EscapeJson(upload.s3Key)}\",\"s3Url\":\"{EscapeJson(upload.s3Url)}\",\"fileSize\":{upload.fileSize}}}";
+                        $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(ncRelativePath)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\",\"status\":\"success\",\"s3Key\":\"{EscapeJson(upload.s3Key)}\",\"s3Url\":\"{EscapeJson(upload.s3Url)}\",\"fileSize\":{upload.fileSize}}}";
                 }
                 else
                 {
                     json =
-                        $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(fi.Name)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\",\"status\":\"success\",\"metadata\":{{\"fileSize\":{fi.Length},\"upload\":\"fallback_no_s3\"}}}}";
+                        $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(ncRelativePath)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\",\"status\":\"success\",\"metadata\":{{\"fileSize\":{fi.Length},\"upload\":\"fallback_no_s3\"}}}}";
                 }
                 
-                AppLogger.Log($"StlFileProcessor: register-file POST {url} with requestId={requestId}, fileName={fi.Name}");
+                AppLogger.Log($"StlFileProcessor: register-file POST {url} with requestId={requestId}, fileName={ncRelativePath}");
                 
                 using (var req = new HttpRequestMessage(HttpMethod.Post, url))
                 {
@@ -1139,13 +1177,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     var resp = BackendHttp.SendAsync(req).GetAwaiter().GetResult();
                     if (resp.IsSuccessStatusCode)
                     {
-                        AppLogger.Log($"StlFileProcessor: register-file success file={fi.Name} requestId={requestId}");
+                        AppLogger.Log($"StlFileProcessor: register-file success file={ncRelativePath} requestId={requestId}");
                     }
                     else
                     {
                         string body = string.Empty;
                         try { body = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult(); } catch { }
-                        AppLogger.Log($"StlFileProcessor: register-file failed status={resp.StatusCode} file={fi.Name} requestId={requestId} body={body}");
+                        AppLogger.Log($"StlFileProcessor: register-file failed status={resp.StatusCode} file={ncRelativePath} requestId={requestId} body={body}");
                     }
                 }
             }

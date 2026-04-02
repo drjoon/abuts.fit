@@ -608,6 +608,10 @@ state.LastMachiningFailJobId = jobId;
 _ = Task.Run(() => NotifyMachiningTick(state.CurrentJob, machineId, "ALARM", Newtonsoft.Json.JsonConvert.SerializeObject(alarmList)));
 _ = Task.Run(() => NotifyMachiningFailed(state.CurrentJob, machineId, "alarm", alarmList));
 }
+// CNC 알람 코드 참고:
+// - 알람 501 (type=4, no=501): X축 overflow - 제한 범위를 넘는 X축 공구 이동 좌표
+//   공구가 X축 제한 범위를 벗어나는 좌표로 이동하려고 할 때 발생
+//   NC 프로그램의 X축 좌표값 검토 필요
 Console.WriteLine("[CncMachining] machining failed by alarm machine={0} alarms={1}", machineId, Newtonsoft.Json.JsonConvert.SerializeObject(alarmList));
 var failedJob = state.CurrentJob;
 lock (StateLock)
