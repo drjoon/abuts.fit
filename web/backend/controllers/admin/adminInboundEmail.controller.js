@@ -1,9 +1,10 @@
 import Mail from "../../models/mail.model.js";
-import axios from "axios";
 
 /**
  * Brevo 인바운드 이메일 webhook 핸들러
  * POST /api/admin/inbound-email/webhook
+ *
+ * Brevo는 JSON 형식으로 items 배열 전송
  */
 export async function handleInboundEmailWebhook(req, res) {
   try {
