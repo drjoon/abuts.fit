@@ -33,8 +33,8 @@ import Rhino.Geometry.Intersect as intersect
 import System.Drawing as drawing
 import System
 
-_SECTION_COUNT = 40
-_SECTION_STEP_DEG = 9.0
+_SECTION_COUNT = 20
+_SECTION_STEP_DEG = 18.0
 _NEAREST_LIMIT = 10
 _MAX_STEP_DISTANCE = 1
 _PT0_Z_RATIO_LOW = 0.2

@@ -9,22 +9,42 @@ from diameter_analysis import analyze_diameters
 from finishline_detection import detect_finish_line
 
 
+_log_initialized = False
+
 def log(msg):
-    line = "[abuts-rhino] " + str(msg)
+    global _log_initialized
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    line = "[{}][abuts-rhino] {}".format(timestamp, str(msg))
     try:
         print(line)
     except Exception:
         pass
 
-    log_path = os.environ.get("ABUTS_LOG_PATH")
-    if not log_path:
-        return
-
+    # 고정 경로에 logs.txt 저장 (환경 변수 기반)
     try:
-        with open(log_path, "a", encoding="utf-8") as f:
+        bg_root = os.environ.get("BG_ROOT", r"C:\Users\user\abuts.fit\bg")
+        rhino_root = os.environ.get("RHINO_ROOT", r"rhino-server\compute")
+        fixed_log_path = os.path.join(bg_root, rhino_root, "logs.txt")
+        
+        # 첫 로그 시 파일 초기화
+        mode = "w" if not _log_initialized else "a"
+        if not _log_initialized:
+            _log_initialized = True
+        
+        with open(fixed_log_path, mode, encoding="utf-8") as f:
             f.write(line + "\n")
     except Exception:
         pass
+
+    # 기존 로그 경로도 유지
+    log_path = os.environ.get("ABUTS_LOG_PATH")
+    if log_path:
+        try:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except Exception:
+            pass
 
 
 def _extract_request_id_from_path(p: str):
@@ -340,10 +360,11 @@ def _align_mesh_to_origin(mesh, target_diameter=3.33):
     log("[align] Connection diameter {:.2f}mm at Z=0 (target: {:.2f}mm, diff: {:.3f}mm)".format(
         final_diameter, target_diameter, abs(final_diameter - target_diameter)))
     
-    return True
+    # 정렬 변환 벡터 반환 (역변환에 사용)
+    return (center_x, center_y, best_z)
 
 
-def _import_stl_meshes(doc, input_path):
+def _import_stl_meshes(doc, input_path, skip_align=False):
     try:
         read_opts = Rhino.FileIO.FileStlReadOptions()
         ok = Rhino.FileIO.FileStl.Read(str(input_path), doc, read_opts)
@@ -355,21 +376,26 @@ def _import_stl_meshes(doc, input_path):
 
     log("import ok")
     
-    # STL 로드 후 자동 정렬
-    try:
-        log("[align] Starting coordinate alignment...")
-        objs = list(doc.Objects)
-        for obj in objs:
-            if obj and obj.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
-                mesh = obj.Geometry
-                if mesh:
-                    _align_mesh_to_origin(mesh)
-                    # 변경된 geometry를 다시 설정
-                    obj.CommitChanges()
-                    break  # 첫 번째 메시만 정렬
-        log("[align] Alignment complete")
-    except Exception as e:
-        log("[align] Alignment failed: " + str(e))
+    # STL 로드 후 자동 정렬 (skip_align=True면 건너뜀)
+    alignment_transform = None
+    if not skip_align:
+        try:
+            log("[align] Starting coordinate alignment...")
+            objs = list(doc.Objects)
+            for obj in objs:
+                if obj and obj.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
+                    mesh = obj.Geometry
+                    if mesh:
+                        result = _align_mesh_to_origin(mesh)
+                        if result:
+                            alignment_transform = result  # (center_x, center_y, best_z)
+                            # 변경된 메시를 문서에 반영
+                            doc.Objects.Replace(obj.Id, mesh)
+                            log("[align] Mesh replaced in document")
+                        break  # 첫 번째 메시만 정렬
+            log("[align] Alignment complete")
+        except Exception as e:
+            log("[align] Alignment failed: " + str(e))
 
     mesh_obj_refs = []
     try:
@@ -391,7 +417,7 @@ def _import_stl_meshes(doc, input_path):
         fail("Import 후 Mesh가 없습니다")
 
     log("mesh objects after import=" + str(len(mesh_obj_refs)))
-    return mesh_obj_refs
+    return mesh_obj_refs, alignment_transform
 
 
 def _parse_args(argv, input_path_arg=None, output_path_arg=None):
@@ -432,117 +458,44 @@ def _run_fill_mesh_holes(doc, target_id):
     except Exception:
         pass
 
-    # 1st: RhinoCommon API로 직접 홀 메우기 - 개선된 알고리즘
+    # 1st: RhinoCommon API로 간단하고 빠르게 홀 메우기
     try:
         geom = target.Geometry
         if geom is not None:
             mesh_copy = geom.DuplicateMesh()
             if mesh_copy is not None:
-                log("Starting aggressive hole filling...")
+                log("Starting fast hole filling...")
                 
-                # 여러 반복으로 모든 홀 메우기 (큰 홀 포함)
-                max_iterations = 5
-                filled_any = False
-                
-                for iteration in range(max_iterations):
-                    # 각 반복마다 naked edges 확인
-                    naked_before_iter = _count_naked_edges(mesh_copy)
-                    if naked_before_iter == 0:
-                        log("All holes filled at iteration {}".format(iteration))
-                        break
-                    
-                    log("Iteration {}: naked edges = {}".format(iteration, naked_before_iter))
-                    
-                    # 모든 홀을 메우기 시도 (크기 제한 없음)
-                    # FillHoles() 기본 호출은 작은 홀만 메울 수 있으므로
-                    # 개별 홀을 찾아서 하나씩 메움
-                    try:
-                        # GetNakedEdges로 열린 경계 찾기
-                        naked_edges = mesh_copy.GetNakedEdges()
-                        if naked_edges and len(naked_edges) > 0:
-                            log("Found {} naked edge loops".format(len(naked_edges)))
-                            
-                            # 각 naked edge loop에 대해 홀 메우기
-                            for edge_idx, edge_curve in enumerate(naked_edges):
-                                try:
-                                    # 경계선을 기반으로 메시 패치 생성
-                                    if edge_curve and edge_curve.IsValid:
-                                        # Mesh.CreatePatch를 사용하여 홀 메우기
-                                        patch = Rhino.Geometry.Mesh.CreatePatch(
-                                            [edge_curve],  # 경계 곡선
-                                            10,  # u 방향 span 수
-                                            10,  # v 방향 span 수
-                                            None,  # 내부 점 (없음)
-                                            None,  # 시작 표면 (없음)
-                                            None,  # 당김 표면 (없음)
-                                            True,  # 경계에 맞춤
-                                            0.1   # 허용 오차
-                                        )
-                                        
-                                        if patch and patch.IsValid:
-                                            # 패치를 원본 메시에 추가
-                                            mesh_copy.Append(patch)
-                                            log("Filled hole {} with patch".format(edge_idx))
-                                            filled_any = True
-                                except Exception as e:
-                                    log("Failed to fill hole {}: {}".format(edge_idx, str(e)))
-                            
-                            # 메시 정리: 중복 정점 병합
-                            try:
-                                mesh_copy.Vertices.CombineIdentical(True, True)
-                                mesh_copy.Vertices.CullUnused()
-                            except Exception:
-                                pass
-                            
-                            # 메시 웰딩 (정점 연결)
-                            try:
-                                mesh_copy.Weld(3.14159)  # 180도 각도로 웰딩
-                            except Exception:
-                                pass
-                    except Exception as e:
-                        log("Naked edge processing failed: {}".format(str(e)))
-                    
-                    # 기본 FillHoles도 시도 (작은 홀 처리)
-                    try:
-                        mesh_copy.FillHoles()
-                    except Exception:
-                        pass
-                    
-                    # 반복 후 naked edges 확인
-                    naked_after_iter = _count_naked_edges(mesh_copy)
-                    log("After iteration {}: naked edges = {}".format(iteration, naked_after_iter))
-                    
-                    # 더 이상 개선이 없으면 중단
-                    if naked_after_iter >= naked_before_iter:
-                        break
-                
-                # 최종 메시 정리
+                # 간단한 FillHoles 호출 (1회)
                 try:
-                    mesh_copy.Compact()
+                    mesh_copy.FillHoles()
+                except Exception as e:
+                    log("FillHoles failed: {}".format(str(e)))
+                
+                # 기본 메시 정리
+                try:
                     mesh_copy.Vertices.CombineIdentical(True, True)
                     mesh_copy.Vertices.CullUnused()
                     mesh_copy.Normals.ComputeNormals()
-                    mesh_copy.FaceNormals.ComputeFaceNormals()
                 except Exception as e:
-                    log("Final mesh cleanup failed: {}".format(str(e)))
+                    log("Mesh cleanup failed: {}".format(str(e)))
                 
                 # 메시 교체
                 replaced = doc.Objects.Replace(target_id, mesh_copy)
-                log("FillMeshHoles (Enhanced) replaced={}".format(replaced))
+                log("FillMeshHoles (Fast) replaced={}".format(replaced))
                 
                 if replaced:
                     after_naked = _count_naked_edges(mesh_copy)
-                    log("Final result: nakedEdges {} -> {}".format(before_naked, after_naked))
+                    log("Result: nakedEdges {} -> {}".format(before_naked, after_naked))
                     
                     if (
                         before_naked is None
                         or after_naked is None
                         or after_naked < before_naked
-                        or filled_any
                     ):
                         return True
     except Exception as e:
-        log("FillMeshHoles Enhanced 예외: " + str(e))
+        log("FillMeshHoles Fast 예외: " + str(e))
 
     # 2nd: Fallback - 커맨드 기반 실행
     try:
@@ -633,7 +586,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
         # 기존 문서 정리 (ActiveDoc를 사용할 수 있으므로 안전하게 비우기)
         _clear_doc_objects(doc)
-        _import_stl_meshes(doc, input_path)
+        mesh_obj_refs, alignment_transform = _import_stl_meshes(doc, input_path)
 
         # Finish line 계산 및 백엔드 전송 (홀 메움 전 단계)
         try:
@@ -682,12 +635,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         except Exception as e:
             log("Finishline failed: " + str(e))
 
-        # 후속 파이프라인 전 RhinoDoc 초기화 및 STL 재로드
-        log("Resetting document after finish line computation")
-        _clear_doc_objects(doc)
-        _import_stl_meshes(doc, input_path)
-
-        # 1) Explode: RhinoCommon API를 사용하여 고속 처리
+        # 1) Explode: RhinoCommon API를 사용하여 고속 처리 (문서 리셋 없이 바로 진행)
         try:
             objs = list(doc.Objects)
             new_meshes = []
