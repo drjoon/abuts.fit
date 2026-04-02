@@ -78,9 +78,10 @@ export function shouldShowRequestInIncludeCompleted(
 ): boolean {
   const stage = deriveStageForFilter(req);
   const order = stageOrder[stage] ?? 0;
+  // 현재 단계 이전은 제외
   if (order < currentStageOrder) return false;
-  if (order === currentStageOrder) return true;
-  return isSameDayPrePickupWorksheetRequest(req);
+  // 현재 단계 또는 이후 단계는 모두 포함
+  return true;
 }
 
 // Filter requests by stage and completion status
