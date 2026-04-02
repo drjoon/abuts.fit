@@ -204,8 +204,11 @@ export function StlPreviewViewer({
     const scene = sceneRef.current;
     const scenePosition = point ? resolveFrontPointScenePosition(point) : null;
 
+    // 원본 STL은 front point 표시 안함, filled STL만 표시
+    const isFilled = file.name.toLowerCase().includes("filled");
     if (
       !showOverlay ||
+      !isFilled ||
       !scene ||
       !scenePosition ||
       maxDiameterRef.current <= 0
@@ -314,7 +317,12 @@ export function StlPreviewViewer({
         const bbox = geometry.boundingBox!;
         const center = new THREE.Vector3();
         bbox.getCenter(center);
-        centerRef.current = center.clone();
+
+        // filled STL은 이미 원점 정렬되어 있으므로 center를 (0,0,0)으로 설정
+        const isFilled = file.name.toLowerCase().includes("filled");
+        centerRef.current = isFilled
+          ? new THREE.Vector3(0, 0, 0)
+          : center.clone();
 
         const material = new THREE.MeshStandardMaterial({
           color: 0x5b9dff,
@@ -602,10 +610,14 @@ export function StlPreviewViewer({
                       Array.isArray(finishLinePoints)
                     ) {
                       let minAngleDiff = Infinity;
+                      // filled STL은 이미 원점 정렬되어 있으므로 center 변환 불필요
+                      const centerForCalc = isFilled
+                        ? new THREE.Vector3(0, 0, 0)
+                        : center;
                       for (const p of finishLinePoints) {
                         if (!Array.isArray(p) || p.length < 3) continue;
-                        const cx = Number(p[0]) - center.x;
-                        const cy = Number(p[1]) - center.y;
+                        const cx = Number(p[0]) - centerForCalc.x;
+                        const cy = Number(p[1]) - centerForCalc.y;
                         let ptAngle = Math.atan2(cy, cx) * (180 / Math.PI);
                         if (ptAngle < 0) ptAngle += 360;
 
@@ -992,17 +1004,19 @@ export function StlPreviewViewer({
 
         // 메타데이터는 백엔드 캐시에서만 사용 (프론트 계산 제거)
         // STL 메시 추가
-        mesh.position.sub(center);
+        // filled STL은 이미 원점 정렬되어 있으므로 center를 빼지 않음
+        if (!isFilled) {
+          mesh.position.sub(center);
+        }
         scene.add(mesh);
 
         // Draw tilt axis (dotted line passing through origin)
-        if (tiltAxisVector && showOverlay) {
+        // 원본 STL은 오버레이 표시 안함, filled STL만 표시
+        if (tiltAxisVector && showOverlay && isFilled) {
           const axisLength = totalLength * 1.5;
-          const originCentered = new THREE.Vector3(
-            -center.x,
-            -center.y,
-            -center.z,
-          );
+          const originCentered = isFilled
+            ? new THREE.Vector3(0, 0, 0)
+            : new THREE.Vector3(-center.x, -center.y, -center.z);
           const dir = new THREE.Vector3(
             tiltAxisVector.x,
             tiltAxisVector.y,
@@ -1038,8 +1052,8 @@ export function StlPreviewViewer({
         const bboxSize = new THREE.Vector3();
         bbox.getSize(bboxSize);
         centeredBoundsRef.current = {
-          min: bbox.min.clone().sub(center),
-          max: bbox.max.clone().sub(center),
+          min: isFilled ? bbox.min.clone() : bbox.min.clone().sub(center),
+          max: isFilled ? bbox.max.clone() : bbox.max.clone().sub(center),
           margin: Math.max(
             0.2,
             Math.min(bboxSize.x, bboxSize.y, bboxSize.z) * 0.1,
@@ -1049,13 +1063,17 @@ export function StlPreviewViewer({
 
         // showOverlay가 true일 때(제조사 페이지 등)는 모든 가이드를,
         // false일 때(의뢰자 페이지)는 AAA 값과 관련된 가이드만 그립니다.
-        if (taperGuide) {
+        // 원본 STL은 오버레이 표시 안함, filled STL만 표시
+        if (taperGuide && isFilled) {
           const guideHeight = Math.max(taperGuide.zEnd - taperGuide.zStart, 1);
           // 측정선 위치: 피니시라인~포스트최상단의 10~20% 구간 (피니시라인에 가깝게)
           const extendedStartZ = taperGuide.zStart - guideHeight * 0.9;
           const extendedEndZ = taperGuide.zEnd + guideHeight * 1;
-          const zStartCentered = extendedStartZ - center.z;
-          const zEndCentered = extendedEndZ - center.z;
+          // filled STL은 이미 원점 정렬되어 있으므로 center.z를 빼지 않음
+          const effectiveCenter =
+            centerRef.current || new THREE.Vector3(0, 0, 0);
+          const zStartCentered = extendedStartZ - effectiveCenter.z;
+          const zEndCentered = extendedEndZ - effectiveCenter.z;
 
           // 의뢰자 페이지(showOverlay=false)에서는 중심축을 숨김
           // 제조사 페이지에서도 녹색 중심축 표시 제거
@@ -1114,10 +1132,11 @@ export function StlPreviewViewer({
                   0x666666 + colorIdx * 0x111111;
 
               // 실제 표면 포인트들을 중심 좌표계로 변환
+              // filled STL은 effectiveCenter 사용
               const centeredPoints = guide.surfacePoints.map((p) => ({
-                x: p.x - center.x,
-                y: p.y - center.y,
-                z: p.z - center.z,
+                x: p.x - effectiveCenter.x,
+                y: p.y - effectiveCenter.y,
+                z: p.z - effectiveCenter.z,
               }));
 
               // 측정선 - Line2로 굵게 (실제 표면 포인트들 연결)
@@ -1183,10 +1202,16 @@ export function StlPreviewViewer({
         }
 
         const hasFinishLine = Array.isArray(finishLinePoints);
-        if (hasFinishLine && finishLinePoints!.length >= 2) {
+        // 원본 STL은 finish line 표시 안함, filled STL만 표시
+        if (hasFinishLine && finishLinePoints!.length >= 2 && isFilled) {
+          // filled STL은 이미 원점 정렬되어 있으므로 finish line 좌표도 원점 기준
           const pts = finishLinePoints!
             .filter((p) => Array.isArray(p) && p.length >= 3)
-            .map((p) => new THREE.Vector3(p[0], p[1], p[2]).sub(center));
+            .map((p) => {
+              const vec = new THREE.Vector3(p[0], p[1], p[2]);
+              // filled STL이 아닌 경우에만 center를 빼서 상대 좌표로 변환
+              return isFilled ? vec : vec.sub(center);
+            });
           if (pts.length >= 2) {
             const closedPts = pts.slice();
             const first = closedPts[0];
@@ -1392,7 +1417,7 @@ export function StlPreviewViewer({
           {error}
         </div>
       )}
-      {showOverlay && (
+      {showOverlay && file.name.toLowerCase().includes("filled") && (
         <>
           <div className="pointer-events-none absolute bottom-2 left-2 flex flex-col items-start gap-1 rounded-md bg-white/85 px-2 py-1 text-[11px] md:text-[12px] font-medium text-slate-800 shadow-sm border border-slate-200 z-10">
             <div className="flex items-center gap-1.5">
