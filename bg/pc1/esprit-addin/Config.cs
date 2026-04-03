@@ -43,7 +43,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public const double DefaultTurningDepth = 1.5;  // Front Mill depth -> 적용안됨. MainModule.cs에서 DownZ 직접 설정
         public const double DefaultExitAngle = 30.0;
         public const double DefaultTurningExtend = 3.5;
-        public const double DefaultStlShift = 0.0;  // #523: 탑과 포스트 상단 사이 거리
+        public const double DefaultStlShift = 0.3;  // #523: 탑과 포스트 상단 사이 거리
         public const int DefaultRoughfreeformSplitEnable = 0;
         public const int DefaultCompositeSplitEnable = 1;
         public const double DefaultCompositeSplitX = 6.0;

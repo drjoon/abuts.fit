@@ -1519,10 +1519,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     AppLogger.Log("DentalAddin: finishLine 기반 Composite2SplitAB 생략 - span 너무 작음");
                     return;
                 }
-                double splitX = frontX.Value + span * ratio;
+                double splitX = frontX.Value + span * ratio + AppConfig.DefaultStlShift;
                 Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_SPLIT_ENABLE", "1");
                 Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_SPLIT_X", splitX.ToString(CultureInfo.InvariantCulture));
-                AppLogger.Log($"DentalAddin: finishLine split 적용 - bboxTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, finishTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, rawRatio:{rawRatio.ToString("F4", CultureInfo.InvariantCulture)}, ratio(clamped):{ratio.ToString("F4", CultureInfo.InvariantCulture)}, splitX:{splitX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.Value.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.Value.ToString("F4", CultureInfo.InvariantCulture)})");
+                AppLogger.Log($"DentalAddin: finishLine split 적용 - bboxTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, finishTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, rawRatio:{rawRatio.ToString("F4", CultureInfo.InvariantCulture)}, ratio(clamped):{ratio.ToString("F4", CultureInfo.InvariantCulture)}, splitX:{splitX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.Value.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.Value.ToString("F4", CultureInfo.InvariantCulture)}, Shift:{AppConfig.DefaultStlShift.ToString("F3", CultureInfo.InvariantCulture)})");
             }
             catch (Exception ex)
             {
@@ -2202,7 +2202,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log("DentalAddin: Emerge 실행 시작 - IGS 서피스 Merge 및 Translate");
                 TryApplyCompositeSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ);
                 NormalizeCriticalFeatureChainNames(document);
-                // ApplyAdditionalStlShift(document, mainModuleType, AppConfig.DefaultStlShift);
+                ApplyAdditionalStlShift(document, mainModuleType, AppConfig.DefaultStlShift);
                 AppLogger.Log("DentalAddin: MoveSTL 실행 완료");
                 CleanupLegacyTurningProfiles(document);
                 AppLogger.Log("DentalAddin: Main 실행 시작");
