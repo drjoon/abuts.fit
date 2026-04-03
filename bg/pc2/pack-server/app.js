@@ -1,7 +1,13 @@
 const http = require("http");
-const fs = require("fs");
+const express = require("express");
 const os = require("os");
 const path = require("path");
+const fs = require("fs");
+const fetch = require("node-fetch");
+const {
+  renderPackLabelToCanvas,
+  buildPackLabelBitmapZpl,
+} = require("./packLabelRenderer");
 const { execFile } = require("child_process");
 
 function loadLocalEnv() {
@@ -229,135 +235,34 @@ const resolvePackZplSize = (payload) => {
   return { pw: mmToDots(80, defaultDpi), ll: mmToDots(65, defaultDpi) };
 };
 
-const buildPackingLabelZpl = (payload) => {
-  const mailboxCode = safeText(payload.mailboxCode || "-", 12).toUpperCase();
-  const screwType = safeText(payload.screwType || "-", 4).toUpperCase();
-  const clinicName = safeText(payload.clinicName || "-", 28);
-  const requestDateRaw = safeText(payload.requestDate || "-", 32);
-  const requestDate = safeText(
-    String(requestDateRaw).includes("T")
-      ? String(requestDateRaw).split("T")[0]
-      : requestDateRaw,
-    10,
-  );
-  const patientName = safeText(payload.patientName || "-", 24);
-  const toothNumber = safeText(payload.toothNumber || "-", 10);
-  const implantManufacturer = safeText(payload.implantManufacturer || "-", 20);
-  const implantSystem = safeText(payload.implantSystem || "-", 22);
-  const implantType = safeText(payload.implantType || "-", 18);
-  const labName = safeText(payload.labName || "-", 20);
-  const lotNumber = safeText(payload.lotNumber || "-", 26).toUpperCase();
-  const manufacturingDateRaw = safeText(payload.manufacturingDate || "-", 32);
-  const manufacturingDate = safeText(
-    String(manufacturingDateRaw).includes("T")
-      ? String(manufacturingDateRaw).split("T")[0]
-      : manufacturingDateRaw,
-    10,
-  );
-
+const buildPackingLabelZpl = async (payload) => {
   const { pw, ll } = resolvePackZplSize(payload);
   const dpi = Number(payload?.dpi) || PACK_LABEL_DPI;
-  // 600DPI 기준으로 모든 좌표 계산
-  // 80x65mm @ 600DPI = 1890x1535 dots
-  const baseDpi = 600;
-  const scale = dpi / baseDpi;
-  const S = (n) => Math.round(Number(n) * scale);
-  const F = (n) => Math.max(1, Math.round(Number(n) * scale));
-  const T = Math.max(1, Math.round(2 * scale));
-  const layoutShiftY = 12;
-  const qrMag = (base) =>
-    Math.min(10, Math.max(1, Math.round(Number(base) * scale)));
 
-  const PRODUCT_NAME = process.env.PACK_PRODUCT_NAME;
-  const MODEL_NAME = process.env.PACK_MODEL_NAME;
-  const LICENSE_NO = process.env.PACK_LICENSE_NO;
-  const COMPANY_NAME = process.env.PACK_MANUFACTURER_NAME;
-  const COMPANY_ADDR = process.env.PACK_MANUFACTURER_ADDR;
-  const COMPANY_TEL_FAX = process.env.PACK_MANUFACTURER_TEL_FAX;
-  const SELLER_NAME = process.env.PACK_SELLER_NAME;
-  const SELLER_PERMIT = process.env.PACK_SELLER_PERMIT;
-  const SELLER_ADDR = process.env.PACK_SELLER_ADDR;
-  const SELLER_TEL = process.env.PACK_SELLER_TEL;
-  const MANUAL_QR_LABEL = process.env.PACK_MANUAL_QR_LABEL;
-  const MANUFACTURER_LABEL = "제조업자";
+  const opts = {
+    mailboxCode: payload.mailboxCode,
+    screwType: payload.screwType,
+    labName: payload.labName,
+    lotNumber: payload.lotNumber,
+    requestId: payload.requestId,
+    clinicName: payload.clinicName,
+    requestDate: payload.requestDate,
+    patientName: payload.patientName,
+    toothNumber: payload.toothNumber,
+    material: payload.material,
+    implantManufacturer: payload.implantManufacturer,
+    implantBrand: payload.implantBrand || payload.implantSystem,
+    implantFamily: payload.implantFamily || "-",
+    implantType: payload.implantType,
+    manufacturingDate: payload.manufacturingDate,
+    caseType: payload.caseType,
+    printedAt: new Date().toISOString(),
+    dpi,
+    targetDots: { pw, ll },
+  };
 
-  const qrProductData = "https://abuts.fit/manual";
-  const qrManufacturerData = "https://acrodent.com";
-  const qrSellerData = "https://abuts.fit";
-  const lotSuffix = String(lotNumber || "").slice(-3) || "-";
-  const companyQrSize = 195;
-  const companyQrPaddingX = 24;
-  const companyQrPaddingTop = 24;
-  const companyTopTextWidth = 550;
-  const companyBottomTextWidth = 750;
-  const companyLineYs = [53, 124, 195, 266, 337];
-
-  // Layout: 80x65mm @ 600DPI = 1890x1535 dots
-  return [
-    "^XA",
-    `^PW${pw || 1890}`,
-    `^LL${ll || 1535}`,
-    "^LH0,0",
-    "^CI28",
-
-    // ===== TOP SECTION: 3-column header (mailbox, screw, lot) =====
-    `^FO${S(59)},${S(59)}^GB${S(1470)},${S(148)},${T}^FS`,
-    `^FO${S(597)},${S(59)}^GB${T},${S(148)},${T}^FS`,
-    `^FO${S(1070)},${S(59)}^GB${T},${S(148)},${T}^FS`,
-    `^FO${S(59)},${S(71)}^A@N,${F(142)},${F(142)},E:MALGUN.TTF^FB${S(538)},1,0,C,0^FD${mailboxCode}^FS`,
-    `^FO${S(597)},${S(71)}^A@N,${F(142)},${F(142)},E:MALGUN.TTF^FB${S(473)},1,0,C,0^FD${screwType}^FS`,
-    `^FO${S(1070)},${S(71)}^A@N,${F(142)},${F(142)},E:MALGUN.TTF^FB${S(459)},1,0,C,0^FD${lotSuffix}^FS`,
-    `^FO${S(1575)},${S(71)}^BQN,2,${qrMag(6)}^FDLA,${qrProductData}^FS`,
-    `^FO${S(1554)},${S(289)}^A@N,${F(30)},${F(30)},E:MALGUN.TTF^FB${S(254)},1,0,C,0^FD${MANUAL_QR_LABEL}^FS`,
-
-    // ===== SECTION 2: Lab name =====
-    `^FO${S(59)},${S(219)}^GB${S(1470)},${S(136)},${T}^FS`,
-    `^FO${S(59)},${S(243)}^A@N,${F(106)},${F(106)},E:MALGUN.TTF^FB${S(1470)},1,0,C,0^FD${labName}^FS`,
-
-    // ===== SECTION 3-8: Unified info table =====
-    `^FO${S(59)},${S(367)}^GB${S(1772)},${S(668)},${T}^FS`,
-    `^FO${S(59)},${S(449)}^GB${S(1772)},${T},${T}^FS`,
-    `^FO${S(59)},${S(532)},^GB${S(1772)},${T},${T}^FS`,
-    `^FO${S(59)},${S(615)}^GB${S(1772)},${T},${T}^FS`,
-    `^FO${S(1064)},${S(615)}^GB${T},${S(449)},${T}^FS`,
-    `^FO${S(59)},${S(698)}^GB${S(1772)},${T},${T}^FS`,
-    `^FO${S(59)},${S(780)}^GB${S(1772)},${T},${T}^FS`,
-    `^FO${S(59)},${S(863)}^GB${S(1772)},${T},${T}^FS`,
-    `^FO${S(59)},${S(946)}^GB${S(1772)},${T},${T}^FS`,
-    `^FO${S(1064)},${S(946)}^GB${T},${S(89)},${T}^FS`,
-    `^FO${S(59)},${S(390)}^A@N,${F(41)},${F(41)},E:MALGUN.TTF^FB${S(1772)},1,0,C,0^FD${clinicName} / ${patientName} / #${toothNumber}^FS`,
-    `^FO${S(59)},${S(473)}^A@N,${F(41)},${F(41)},E:MALGUN.TTF^FB${S(1772)},1,0,C,0^FD의뢰일: ${requestDate} / 제조일: ${manufacturingDate}^FS`,
-    `^FO${S(59)},${S(556)}^A@N,${F(41)},${F(41)},E:MALGUN.TTF^FB${S(1772)},1,0,C,0^FD${implantManufacturer} / ${implantSystem} / ${implantType}^FS`,
-    `^FO${S(59)},${S(641)}^A@N,${F(38)},${F(38)},E:MALGUN.TTF^FB${S(1005)},1,0,C,0^FD품    명 : ${PRODUCT_NAME}^FS`,
-    `^FO${S(1064)},${S(641)}^A@N,${F(38)},${F(38)},E:MALGUN.TTF^FB${S(767)},1,0,C,0^FD기기 구분 : 비멸균 의료기기^FS`,
-    `^FO${S(59)},${S(724)}^A@N,${F(38)},${F(38)},E:MALGUN.TTF^FB${S(1005)},1,0,C,0^FD모 델 명 : ${MODEL_NAME}^FS`,
-    `^FO${S(1064)},${S(724)}^A@N,${F(38)},${F(38)},E:MALGUN.TTF^FB${S(767)},1,0,C,0^FD품목허가 : ${LICENSE_NO}^FS`,
-    `^FO${S(59)},${S(807)}^A@N,${F(38)},${F(38)},E:MALGUN.TTF^FB${S(1005)},1,0,C,0^FD사용기한 : 해당없음^FS`,
-    `^FO${S(1064)},${S(807)}^A@N,${F(38)},${F(38)},E:MALGUN.TTF^FB${S(767)},1,0,C,0^FD포장단위 : 1SET^FS`,
-    `^FO${S(59)},${S(889)}^A@N,${F(38)},${F(38)},E:MALGUN.TTF^FB${S(1005)},1,0,C,0^FD제조번호 : ${lotNumber}^FS`,
-    `^FO${S(1064)},${S(889)}^A@N,${F(38)},${F(38)},E:MALGUN.TTF^FB${S(767)},1,0,C,0^FD제조일자 : ${manufacturingDate}^FS`,
-    `^FO${S(59)},${S(963)}^A@N,${F(38)},${F(38)},E:MALGUN.TTF^FB${S(1005)},1,0,C,0^FD사용방법, 주의사항 : 사용자 매뉴얼 참조^FS`,
-    `^FO${S(1064)},${S(963)}^A@N,${F(38)},${F(38)},E:MALGUN.TTF^FB${S(767)},1,0,C,0^FD보관방법 : 건조한 실온에서 보관^FS`,
-
-    // ===== SECTION 9: Manufacturer info (bottom left) =====
-    `^FO${S(59)},${S(1099)}^GB${S(857)},${S(425)},${T}^FS`,
-    `^FO${S(77)},${S(1099 + companyLineYs[0])}^A@N,${F(41)},${F(41)},E:MALGUN.TTF^FD${MANUFACTURER_LABEL}^FS`,
-    `^FO${S(77)},${S(1099 + companyLineYs[1])}^A@N,${F(35)},${F(35)},E:MALGUN.TTF^FB${S(companyTopTextWidth)},1,0,L,0^FD${COMPANY_NAME}^FS`,
-    `^FO${S(77)},${S(1099 + companyLineYs[2])}^A@N,${F(35)},${F(35)},E:MALGUN.TTF^FB${S(companyTopTextWidth)},1,0,L,0^FD제조업허가 ${LICENSE_NO}^FS`,
-    `^FO${S(77)},${S(1099 + companyLineYs[3])}^A@N,${F(35)},${F(35)},E:MALGUN.TTF^FB${S(companyBottomTextWidth)},2,0,L,0^FD${COMPANY_ADDR}^FS`,
-    `^FO${S(59 + 857 - companyQrPaddingX - companyQrSize)},${S(1099 + companyQrPaddingTop)}^BQN,2,${qrMag(6)}^FDLA,${qrManufacturerData}^FS`,
-
-    // ===== SECTION 10: Seller info (bottom right) =====
-    `^FO${S(975)},${S(1099)}^GB${S(857)},${S(425)},${T}^FS`,
-    `^FO${S(993)},${S(1099 + companyLineYs[0])}^A@N,${F(41)},${F(41)},E:MALGUN.TTF^FD판매업자^FS`,
-    `^FO${S(993)},${S(1099 + companyLineYs[1])}^A@N,${F(35)},${F(35)},E:MALGUN.TTF^FB${S(companyTopTextWidth)},1,0,L,0^FD${SELLER_NAME}^FS`,
-    `^FO${S(993)},${S(1099 + companyLineYs[2])}^A@N,${F(35)},${F(35)},E:MALGUN.TTF^FB${S(companyTopTextWidth)},1,0,L,0^FD${SELLER_PERMIT}^FS`,
-    `^FO${S(993)},${S(1099 + companyLineYs[3])}^A@N,${F(35)},${F(35)},E:MALGUN.TTF^FB${S(companyBottomTextWidth)},1,0,L,0^FD${SELLER_TEL}^FS`,
-    `^FO${S(993)},${S(1099 + companyLineYs[4])}^A@N,${F(35)},${F(35)},E:MALGUN.TTF^FB${S(companyBottomTextWidth)},2,0,L,0^FD${SELLER_ADDR}^FS`,
-    `^FO${S(975 + 857 - companyQrPaddingX - companyQrSize)},${S(1099 + companyQrPaddingTop)}^BQN,2,${qrMag(6)}^FDLA,${qrSellerData}^FS`,
-
-    "^XZ",
-  ].join("\n");
+  const canvas = await renderPackLabelToCanvas(opts);
+  return buildPackLabelBitmapZpl({ canvas, labelWidth: pw, labelHeight: ll });
 };
 
 const writeZplToTemp = async (zpl) => {
@@ -635,8 +540,8 @@ const server = http.createServer(async (req, res) => {
           ? payload.paperProfile.trim()
           : "";
 
-      // 가로 레이아웃 ZPL 생성 (회전 불필요)
-      const zpl = buildPackingLabelZpl(payload);
+      // 가로 레이아웃 ZPL 생성 (회전 불필요) - Canvas 기반 이미지 렌더링
+      const zpl = await buildPackingLabelZpl(payload);
 
       if (!printer) {
         return jsonResponse(res, 400, {
