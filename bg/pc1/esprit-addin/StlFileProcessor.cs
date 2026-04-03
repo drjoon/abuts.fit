@@ -3586,6 +3586,20 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     SetStaticField(moveModuleType, "BackPointX", updatedBack.Value);
                 }
+                
+                // Mark 모듈의 MarkX도 함께 이동 (각인 코드 위치 조정)
+                Type markModuleType = ResolveMarkModuleType(mainModuleType);
+                if (markModuleType != null)
+                {
+                    double? originalMarkX = TryGetMarkModuleDouble("MarkX");
+                    if (originalMarkX.HasValue)
+                    {
+                        double updatedMarkX = originalMarkX.Value + deltaX;
+                        SetStaticField(markModuleType, "MarkX", updatedMarkX);
+                        AppLogger.Log($"DentalAddin: MarkX 이동 - Original:{originalMarkX.Value:F3}, Updated:{updatedMarkX:F3}");
+                    }
+                }
+                
                 AppLogger.Log($"DentalAddin: STL 추가 X 이동 dX:{deltaX:F3}, FrontPointX:{FormatNcNumber(updatedFront)}, BackPointX:{FormatNcNumber(updatedBack)}");
             }
             catch (Exception ex)
@@ -3693,6 +3707,29 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private static Type ResolveMoveModuleType(Type mainModuleType)
         {
             return mainModuleType?.Assembly?.GetType("DentalAddin.MoveSTL_Module", false, true);
+        }
+        private static Type ResolveMarkModuleType(Type mainModuleType)
+        {
+            return mainModuleType?.Assembly?.GetType("DentalAddin.Mark", false, true);
+        }
+        private double? TryGetMarkModuleDouble(string fieldName)
+        {
+            try
+            {
+                Type mainModuleType = ResolveMainModuleType();
+                Type markModuleType = ResolveMarkModuleType(mainModuleType);
+                FieldInfo field = markModuleType?.GetField(fieldName, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                if (field == null)
+                {
+                    return null;
+                }
+                object value = field.GetValue(null);
+                return value != null ? Convert.ToDouble(value) : (double?)null;
+            }
+            catch
+            {
+                return null;
+            }
         }
         private static void SetStaticProperty(Type targetType, string propertyName, object value)
         {

@@ -1,13 +1,7 @@
 const http = require("http");
-const express = require("express");
 const os = require("os");
 const path = require("path");
 const fs = require("fs");
-const fetch = require("node-fetch");
-const {
-  renderPackLabelToCanvas,
-  buildPackLabelBitmapZpl,
-} = require("./packLabelRenderer");
 const { execFile } = require("child_process");
 
 function loadLocalEnv() {
@@ -235,34 +229,34 @@ const resolvePackZplSize = (payload) => {
   return { pw: mmToDots(80, defaultDpi), ll: mmToDots(65, defaultDpi) };
 };
 
-const buildPackingLabelZpl = async (payload) => {
+const buildPackingLabelZpl = (payload) => {
+  // 프론트에서 이미 생성된 ZPL을 전달받는 경우
+  if (payload.zpl) {
+    return payload.zpl;
+  }
+
+  // Fallback: 간단한 텍스트 기반 ZPL (한글은 영문으로 표시)
+  const mailboxCode = safeText(payload.mailboxCode || "-", 12).toUpperCase();
+  const screwType = safeText(payload.screwType || "-", 4).toUpperCase();
+  const lotNumber = safeText(payload.lotNumber || "-", 26).toUpperCase();
+  const lotSuffix = String(lotNumber || "").slice(-3) || "-";
+  const labName = safeText(payload.labName || "-", 20);
+
   const { pw, ll } = resolvePackZplSize(payload);
-  const dpi = Number(payload?.dpi) || PACK_LABEL_DPI;
 
-  const opts = {
-    mailboxCode: payload.mailboxCode,
-    screwType: payload.screwType,
-    labName: payload.labName,
-    lotNumber: payload.lotNumber,
-    requestId: payload.requestId,
-    clinicName: payload.clinicName,
-    requestDate: payload.requestDate,
-    patientName: payload.patientName,
-    toothNumber: payload.toothNumber,
-    material: payload.material,
-    implantManufacturer: payload.implantManufacturer,
-    implantBrand: payload.implantBrand || payload.implantSystem,
-    implantFamily: payload.implantFamily || "-",
-    implantType: payload.implantType,
-    manufacturingDate: payload.manufacturingDate,
-    caseType: payload.caseType,
-    printedAt: new Date().toISOString(),
-    dpi,
-    targetDots: { pw, ll },
-  };
-
-  const canvas = await renderPackLabelToCanvas(opts);
-  return buildPackLabelBitmapZpl({ canvas, labelWidth: pw, labelHeight: ll });
+  return [
+    "^XA",
+    `^PW${pw || 1890}`,
+    `^LL${ll || 1535}`,
+    "^LH0,0",
+    "^CI28",
+    `^FO100,100^A0N,50,50^FD${mailboxCode}^FS`,
+    `^FO100,200^A0N,50,50^FD${screwType}^FS`,
+    `^FO100,300^A0N,50,50^FD${lotSuffix}^FS`,
+    `^FO100,400^A0N,40,40^FD${labName}^FS`,
+    `^FO100,500^A0N,30,30^FDLot: ${lotNumber}^FS`,
+    "^XZ",
+  ].join("\n");
 };
 
 const writeZplToTemp = async (zpl) => {
