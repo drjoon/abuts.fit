@@ -240,7 +240,7 @@ const renderPackLabelToCanvas = async (opts) => {
   drawBox(20, 20, 498, 50);
   drawVLine(202, 20, 50);
   drawVLine(362, 20, 50);
-  ctx.font = "bold 48px Arial";
+  ctx.font = "bold 48px NotoSans, Arial";
   fillTextCentered(opts.mailboxCode || "-", 20, 24, 182, 8);
   fillTextCentered(opts.screwType || "-", 202, 24, 160, 8);
   {
@@ -251,14 +251,14 @@ const renderPackLabelToCanvas = async (opts) => {
 
   // 치과명
   drawBox(20, 74, 498, 46);
-  ctx.font = "bold 36px Arial";
+  ctx.font = "bold 36px NotoSans, Arial";
   fillTextCenteredInBox(opts.labName || "-", 20, 74, 498, 46, 16);
 
   // 매뉴얼 QR
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(qr1Img, 533, 24, 72, 72);
   ctx.imageSmoothingEnabled = true;
-  ctx.font = "bold 10px Arial";
+  ctx.font = "bold 10px NotoSans, Arial";
   fillTextCenteredInBox(MANUAL_QR_LABEL, 526, 98, 86, 14, 0);
 
   // 통합 정보 테이블
@@ -294,7 +294,7 @@ const renderPackLabelToCanvas = async (opts) => {
   ];
 
   drawBox(20, unifiedTopY, 600, unifiedTableH);
-  ctx.font = "bold 14px Arial";
+  ctx.font = "bold 14px NotoSans, Arial";
   fillTextCentered(
     `${opts.clinicName || "-"} / ${opts.patientName || "-"} / #${opts.toothNumber || "-"}`,
     20,
@@ -322,7 +322,7 @@ const renderPackLabelToCanvas = async (opts) => {
   drawVLine(20 + detailColWidth, detailsY, detailsH);
 
   const drawDetailCell = (label, value, x, y, w, h) => {
-    ctx.font = "bold 13px Arial";
+    ctx.font = "bold 13px NotoSans, Arial";
     fillTextCenteredInBox(`${label} : ${value}`, x, y + 3, w, h - 6, 0);
   };
 
@@ -349,7 +349,7 @@ const renderPackLabelToCanvas = async (opts) => {
   const usageY = detailsY + detailsH;
   drawHLine(20, usageY, 600);
   drawVLine(20 + detailColWidth, usageY, usageTextH);
-  ctx.font = "bold 13px Arial";
+  ctx.font = "bold 13px NotoSans, Arial";
   fillTextCenteredInBox(
     "사용방법, 주의사항 : 사용자 매뉴얼 참조",
     20,
@@ -377,9 +377,9 @@ const renderPackLabelToCanvas = async (opts) => {
   const companyBottomTextWidth = 254;
   const companyLineYs = [18, 42, 66, 90, 114];
   drawBox(20, companyY, 290, companyH);
-  ctx.font = "bold 14px Arial";
+  ctx.font = "bold 14px NotoSans, Arial";
   ctx.fillText(MANUFACTURER_LABEL, 26, companyY + companyLineYs[0]);
-  ctx.font = "12px Arial";
+  ctx.font = "12px NotoSans, Arial";
   fillTextLeft(
     COMPANY_NAME,
     26,
@@ -411,9 +411,9 @@ const renderPackLabelToCanvas = async (opts) => {
   ctx.imageSmoothingEnabled = true;
 
   drawBox(330, companyY, 290, companyH);
-  ctx.font = "bold 14px Arial";
+  ctx.font = "bold 14px NotoSans, Arial";
   ctx.fillText("판매업자", 336, companyY + companyLineYs[0]);
-  ctx.font = "12px Arial";
+  ctx.font = "12px NotoSans, Arial";
   fillTextLeft(
     SELLER_NAME,
     336,
