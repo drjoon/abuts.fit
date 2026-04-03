@@ -98,7 +98,7 @@ export const usePackingPrintSettings = ({
         setPackLabelDesignDots({
           pw: Number(nextDesignDots.pw),
           ll: Number(nextDesignDots.ll),
-          dpi: Number(nextDesignDots.dpi) || 203,
+          dpi: Number(nextDesignDots.dpi) || 600,
         });
       }
 

@@ -23,7 +23,7 @@ const PACK_PAPER_OPTIONS = String(
   .filter(Boolean);
 
 const PACK_LABEL_DPI = Number(process.env.PACK_LABEL_DPI);
-const PACK_LABEL_DESIGN_DPI = 203;
+const PACK_LABEL_DESIGN_DPI = 600;
 
 const mmToDots = (mm, dpi) => {
   const mmNum = Number(mm);
