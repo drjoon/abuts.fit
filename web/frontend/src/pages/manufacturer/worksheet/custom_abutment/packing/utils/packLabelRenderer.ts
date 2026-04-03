@@ -202,6 +202,21 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   const targetHeight =
     Number(opts.targetDots?.ll) || Math.round((baseHeight * dpi) / baseDpi);
   const scale = targetWidth / baseWidth;
+
+  console.log("[renderPackLabelToCanvas] 입력값:", {
+    "opts.dpi": opts.dpi,
+    "opts.designDots": opts.designDots,
+    "opts.targetDots": opts.targetDots,
+  });
+  console.log("[renderPackLabelToCanvas] 계산된 값:", {
+    dpi,
+    baseDpi,
+    baseWidth,
+    baseHeight,
+    targetWidth,
+    targetHeight,
+    scale,
+  });
   const width = Math.round(targetWidth);
   const height = Math.round(targetHeight);
   const canvas = document.createElement("canvas");

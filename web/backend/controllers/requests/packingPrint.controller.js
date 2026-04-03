@@ -47,6 +47,15 @@ export async function getPackPrintSettings(req, res) {
   const paperDefault = PACK_PAPER_DEFAULT;
   const paperOptions = PACK_PAPER_OPTIONS;
 
+  console.log("[getPackPrintSettings] ENV 값:", {
+    dpi,
+    designDpi,
+    paperDefault,
+    paperOptions,
+    PACK_LABEL_DPI: process.env.PACK_LABEL_DPI,
+    PACK_LABEL_DESIGN_DPI: process.env.PACK_LABEL_DESIGN_DPI,
+  });
+
   // Current supported profile: PACK_80x65 (landscape 80 x 65mm)
   const mm =
     paperDefault === "PACK_80x65" || paperOptions.includes("PACK_80x65")
@@ -61,6 +70,12 @@ export async function getPackPrintSettings(req, res) {
         dpi: designDpi,
       }
     : null;
+
+  console.log("[getPackPrintSettings] 계산 결과:", {
+    mm,
+    dots,
+    designDots,
+  });
 
   return res.status(200).json({
     success: true,
