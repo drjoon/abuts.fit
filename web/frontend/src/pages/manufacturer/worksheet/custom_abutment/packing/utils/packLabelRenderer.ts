@@ -45,9 +45,24 @@ export const downloadPngFromCanvas = async (
 };
 
 export const canvasToPngBlob = async (canvas: HTMLCanvasElement) => {
+  console.log("[canvasToPngBlob] Canvas 크기:", {
+    width: canvas.width,
+    height: canvas.height,
+    expectedDpi: 600,
+    "80mm@600dpi": "1890x1535 픽셀이어야 함",
+  });
+
   const blob: Blob | null = await new Promise((resolve) =>
     canvas.toBlob((b) => resolve(b), "image/png"),
   );
+
+  if (blob) {
+    console.log("[canvasToPngBlob] PNG 생성 완료:", {
+      size: `${(blob.size / 1024).toFixed(2)} KB`,
+      type: blob.type,
+    });
+  }
+
   return blob;
 };
 
