@@ -19,7 +19,7 @@ const PACK_PAPER_OPTIONS = String(process.env.PACK_PAPER_OPTIONS)
   .filter(Boolean);
 
 const PACK_LABEL_DPI = Number(process.env.PACK_LABEL_DPI);
-const PACK_LABEL_DESIGN_DPI = Number(process.env.PACK_LABEL_DESIGN_DPI);
+const PACK_LABEL_DESIGN_DPI = 203; // 원본 디자인 좌표는 203 DPI 기준
 
 const mmToDots = (mm, dpi) => {
   const mmNum = Number(mm);

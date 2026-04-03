@@ -86,15 +86,16 @@ export async function printPackingLabelViaBgServer({
     manufacturingDate,
     caseType: material || "-",
     printedAt: new Date().toISOString(),
-    dpi: 600,
-    designDots: { pw: 1890, ll: 1535, dpi: 600 }, // 80x65mm @ 600 DPI
-    targetDots: { pw: 1890, ll: 1535 }, // 80x65mm @ 600 DPI
+    dpi: 600, // 출력 DPI
+    designDots: { pw: 640, ll: 520, dpi: 203 }, // 원본 디자인 좌표 (203 DPI)
+    targetDots: { pw: 1890, ll: 1535 }, // 출력 크기 (600 DPI = 80x65mm)
   };
 
   console.log("[packPrint] Canvas 렌더링 옵션:", {
     dpi: opts.dpi,
     designDots: opts.designDots,
     targetDots: opts.targetDots,
+    "예상 scale": `${1890 / 640} = ${(1890 / 640).toFixed(3)}`,
   });
 
   const canvas = await renderPackLabelToCanvas(opts);

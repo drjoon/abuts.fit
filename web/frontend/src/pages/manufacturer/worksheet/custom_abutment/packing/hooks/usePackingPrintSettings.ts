@@ -29,7 +29,7 @@ export const usePackingPrintSettings = ({
     pw: number;
     ll: number;
     dpi: number;
-  }>({ pw: 1890, ll: 1535, dpi: 600 });
+  }>({ pw: 640, ll: 520, dpi: 203 });
 
   useEffect(() => {
     const storedProfile = localStorage.getItem(
