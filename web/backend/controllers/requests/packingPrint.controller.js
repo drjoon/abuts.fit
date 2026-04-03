@@ -4,7 +4,7 @@ const PACK_PRINT_SERVER_BASE = String(
   process.env.PACK_PRINT_SERVER_BASE || "http://localhost:8004",
 ).trim();
 const PACK_PRINT_SERVER_SHARED_SECRET = String(
-  process.env.PACK_PRINT_SERVER_SHARED_SECRET || "",
+  process.env.PACK_PRINT_SERVER_SHARED_SECRET,
 ).trim();
 const PACK_PRINT_SERVER_TIMEOUT_MS = Number(
   process.env.PACK_PRINT_SERVER_TIMEOUT_MS ||
@@ -12,18 +12,14 @@ const PACK_PRINT_SERVER_TIMEOUT_MS = Number(
     15000,
 );
 
-const PACK_PAPER_DEFAULT = String(
-  process.env.PACK_PAPER_DEFAULT || "PACK_65x80",
-).trim();
-const PACK_PAPER_OPTIONS = String(
-  process.env.PACK_PAPER_OPTIONS || "PACK_65x80",
-)
+const PACK_PAPER_DEFAULT = String(process.env.PACK_PAPER_DEFAULT).trim();
+const PACK_PAPER_OPTIONS = String(process.env.PACK_PAPER_OPTIONS)
   .split(",")
   .map((v) => String(v || "").trim())
   .filter(Boolean);
 
 const PACK_LABEL_DPI = Number(process.env.PACK_LABEL_DPI);
-const PACK_LABEL_DESIGN_DPI = 600;
+const PACK_LABEL_DESIGN_DPI = Number(process.env.PACK_LABEL_DESIGN_DPI);
 
 const mmToDots = (mm, dpi) => {
   const mmNum = Number(mm);
@@ -46,12 +42,9 @@ const withTimeout = async (promise, ms) => {
 };
 
 export async function getPackPrintSettings(req, res) {
-  const dpi =
-    Number.isFinite(PACK_LABEL_DPI) && PACK_LABEL_DPI > 0
-      ? PACK_LABEL_DPI
-      : 600;
-
-  const paperDefault = PACK_PAPER_DEFAULT || null;
+  const dpi = PACK_LABEL_DPI;
+  const designDpi = PACK_LABEL_DESIGN_DPI;
+  const paperDefault = PACK_PAPER_DEFAULT;
   const paperOptions = PACK_PAPER_OPTIONS;
 
   // Current supported profile: PACK_65x80 (landscape 80 x 65mm)
@@ -63,11 +56,11 @@ export async function getPackPrintSettings(req, res) {
   const dots = mm ? { pw: mmToDots(mm.w, dpi), ll: mmToDots(mm.h, dpi) } : null;
   const designDots = mm
     ? {
-        pw: mmToDots(mm.w, PACK_LABEL_DESIGN_DPI),
-        ll: mmToDots(mm.h, PACK_LABEL_DESIGN_DPI),
-        dpi: PACK_LABEL_DESIGN_DPI,
+        pw: mmToDots(mm.w, designDpi),
+        ll: mmToDots(mm.h, designDpi),
+        dpi: designDpi,
       }
-    : { pw: 520, ll: 640, dpi: PACK_LABEL_DESIGN_DPI };
+    : null;
 
   return res.status(200).json({
     success: true,

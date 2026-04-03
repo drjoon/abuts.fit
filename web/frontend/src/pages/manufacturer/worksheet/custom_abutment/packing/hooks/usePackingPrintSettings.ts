@@ -73,8 +73,9 @@ export const usePackingPrintSettings = ({
         throw new Error(data?.message || "용지 설정을 불러올 수 없습니다.");
       }
       const nextDpi = Number(data?.data?.dpi);
-      if (Number.isFinite(nextDpi) && nextDpi > 0) setPackLabelDpi(nextDpi);
-      else setPackLabelDpi(600);
+      if (Number.isFinite(nextDpi) && nextDpi > 0) {
+        setPackLabelDpi(nextDpi);
+      }
 
       const nextDots = data?.data?.label?.dots;
       if (
@@ -93,12 +94,14 @@ export const usePackingPrintSettings = ({
         Number.isFinite(Number(nextDesignDots.pw)) &&
         Number(nextDesignDots.pw) > 0 &&
         Number.isFinite(Number(nextDesignDots.ll)) &&
-        Number(nextDesignDots.ll) > 0
+        Number(nextDesignDots.ll) > 0 &&
+        Number.isFinite(Number(nextDesignDots.dpi)) &&
+        Number(nextDesignDots.dpi) > 0
       ) {
         setPackLabelDesignDots({
           pw: Number(nextDesignDots.pw),
           ll: Number(nextDesignDots.ll),
-          dpi: Number(nextDesignDots.dpi) || 600,
+          dpi: Number(nextDesignDots.dpi),
         });
       }
 
