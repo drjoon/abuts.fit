@@ -87,8 +87,15 @@ export async function printPackingLabelViaBgServer({
     caseType: material || "-",
     printedAt: new Date().toISOString(),
     dpi: 600,
+    designDots: { pw: 1890, ll: 1535, dpi: 600 }, // 80x65mm @ 600 DPI
     targetDots: { pw: 1890, ll: 1535 }, // 80x65mm @ 600 DPI
   };
+
+  console.log("[packPrint] Canvas 렌더링 옵션:", {
+    dpi: opts.dpi,
+    designDots: opts.designDots,
+    targetDots: opts.targetDots,
+  });
 
   const canvas = await renderPackLabelToCanvas(opts);
   const zpl = buildPackLabelBitmapZpl({
