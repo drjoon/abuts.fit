@@ -36,18 +36,56 @@ const ALLOW_IPS = String(
   .map((s) => s.trim())
   .filter(Boolean);
 
-const LOG_FILE = path.resolve(__dirname, "logs.txt");
-const logStream = fs.createWriteStream(LOG_FILE, { flags: "w" });
-logStream.on("error", (err) => {
-  console.error("[pack-server] log stream error", err);
-});
+const LOGS_DIR = path.resolve(__dirname, "logs");
+let LOG_FILE = path.resolve(LOGS_DIR, "latest.txt");
+let logStream = null;
+
+async function initLogStream() {
+  try {
+    await fs.promises.mkdir(LOGS_DIR, { recursive: true });
+  } catch {}
+
+  if (logStream && logStream.writable) {
+    logStream.end();
+  }
+
+  logStream = fs.createWriteStream(LOG_FILE, { flags: "a" });
+  logStream.on("error", (err) => {
+    console.error("[pack-server] log stream error", err);
+  });
+}
+
+async function rotateLogFile() {
+  if (!logStream || !logStream.writable) return;
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const archivedLog = path.resolve(LOGS_DIR, `${timestamp}.txt`);
+
+  logStream.end();
+
+  try {
+    const exists = await fs.promises
+      .access(LOG_FILE)
+      .then(() => true)
+      .catch(() => false);
+    if (exists) {
+      await fs.promises.rename(LOG_FILE, archivedLog);
+      console.log(`[pack-server] log rotated: ${archivedLog}`);
+    }
+  } catch (err) {
+    console.error("[pack-server] log rotation failed", err);
+  }
+
+  await initLogStream();
+  log("log-rotated", { timestamp });
+}
 
 const log = (message, meta) => {
   const stamp = new Date().toISOString();
   const suffix = meta ? ` ${JSON.stringify(meta)}` : "";
   const line = `[pack-server] ${stamp} ${message}${suffix}`;
   console.log(line);
-  if (logStream.writable) {
+  if (logStream && logStream.writable) {
     logStream.write(`${line}\n`, (err) => {
       if (err) {
         console.error("[pack-server] failed to write log line", err);
@@ -361,15 +399,35 @@ const printRawZpl = ({ filePath, printer, title, copies, paperProfile }) =>
         filePath,
       });
 
-      execFile(
+      const child = execFile(
         "powershell.exe",
         psArgs,
-        { windowsHide: true },
+        { windowsHide: true, timeout: 30000 },
         (err, stdout, stderr) => {
-          if (err) return reject(new Error(stderr || err.message));
+          if (err) {
+            const errorMsg = stderr || err.message || String(err);
+            log("printRawZpl:error", {
+              printer: targetPrinter,
+              error: errorMsg,
+              code: err.code,
+              killed: err.killed,
+            });
+            return reject(new Error(errorMsg));
+          }
+          log("printRawZpl:success", {
+            printer: targetPrinter,
+            stdout: stdout?.slice(0, 200),
+          });
           resolve(stdout);
         },
       );
+
+      child.on("error", (err) => {
+        log("printRawZpl:spawn-error", {
+          printer: targetPrinter,
+          message: err.message,
+        });
+      });
       return;
     }
 
@@ -390,9 +448,34 @@ const printRawZpl = ({ filePath, printer, title, copies, paperProfile }) =>
       filePath,
     });
 
-    execFile("lp", args, (err, stdout, stderr) => {
-      if (err) return reject(new Error(stderr || err.message));
-      resolve(stdout);
+    const child = execFile(
+      "lp",
+      args,
+      { timeout: 30000 },
+      (err, stdout, stderr) => {
+        if (err) {
+          const errorMsg = stderr || err.message || String(err);
+          log("printRawZpl:error", {
+            printer,
+            error: errorMsg,
+            code: err.code,
+            killed: err.killed,
+          });
+          return reject(new Error(errorMsg));
+        }
+        log("printRawZpl:success", {
+          printer,
+          stdout: stdout?.slice(0, 200),
+        });
+        resolve(stdout);
+      },
+    );
+
+    child.on("error", (err) => {
+      log("printRawZpl:spawn-error", {
+        printer,
+        message: err.message,
+      });
     });
   });
 
@@ -594,7 +677,19 @@ process.on("unhandledRejection", (reason, promise) => {
   console.error("[pack-server] unhandled rejection:", reason);
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
+  await initLogStream();
   log("server-started", { port: PORT, allowOrigin: ALLOW_ORIGIN });
   console.log(`Pack print server running on http://localhost:${PORT}`);
+
+  // 1시간마다 로그 파일 로테이션
+  setInterval(
+    () => {
+      rotateLogFile().catch((err) => {
+        console.error("[pack-server] log rotation error", err);
+      });
+    },
+    60 * 60 * 1000,
+  );
+  log("log-rotation-scheduled", { intervalHours: 1 });
 });

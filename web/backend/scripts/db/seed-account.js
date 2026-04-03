@@ -40,30 +40,6 @@ async function run() {
         "essential account credentials",
       );
     }
-
-    // const defaultResult = await seedDefaultAccounts();
-    // console.log("[db] seed-account default users", {
-    //   emails: Object.values(defaultResult.users || {})
-    //     .map((user) => user?.email)
-    //     .filter(Boolean),
-    // });
-
-    // const bulkResult = await seedBulkAccounts();
-    // if (bulkResult) {
-    //   await persistJsonFile(
-    //     BULK_OUTPUT_PATH,
-    //     {
-    //       generatedAt: new Date().toISOString(),
-    //       requestors: bulkResult.requestors,
-    //       salesmen: bulkResult.salesmen,
-    //     },
-    //     "bulk account credentials",
-    //   );
-    //   console.log("[db] seed-account bulk users", {
-    //     requestorCount: bulkResult.requestors.length,
-    //     salesmanCount: bulkResult.salesmen.length,
-    //   });
-    // }
   } finally {
     await disconnectDb();
   }

@@ -6,6 +6,7 @@ using Esprit;
 using EspritConstants;
 using Microsoft.VisualBasic;
 using Microsoft.VisualBasic.CompilerServices;
+using Abuts.EspritAddIns.ESPRIT2025AddinProject;
 
 #pragma warning disable CS0649
 
@@ -396,10 +397,12 @@ namespace DentalAddin
                 }
                 FrontStock = 0.0 - boundingBoxLength;
                 double deltaX = 0.0 - boundingBoxLength - num;
-                selectionSet.Translate(deltaX, 0.0, 0.0, RuntimeHelpers.GetObjectValue(Missing.Value));
-                FrontPointX += deltaX;
-                BackPointX += deltaX;
-                DentalLogger.Log($"MoveSTL - 초기 X이동(SpindleSide) dX:{deltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}");
+                double stlShift = AppConfig.DefaultStlShift;
+                double totalDeltaX = deltaX + stlShift;
+                selectionSet.Translate(totalDeltaX, 0.0, 0.0, RuntimeHelpers.GetObjectValue(Missing.Value));
+                FrontPointX += totalDeltaX;
+                BackPointX += totalDeltaX;
+                DentalLogger.Log($"MoveSTL - 초기 X이동(SpindleSide) dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}");
             }
             else
             {
@@ -415,10 +418,12 @@ namespace DentalAddin
                 }
                 FrontStock = boundingBoxLength;
                 double deltaX = boundingBoxLength - num;
-                selectionSet.Translate(deltaX, 0.0, 0.0, RuntimeHelpers.GetObjectValue(Missing.Value));
-                FrontPointX += deltaX;
-                BackPointX += deltaX;
-                DentalLogger.Log($"MoveSTL - 초기 X이동 dX:{deltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}");
+                double stlShift = AppConfig.DefaultStlShift;
+                double totalDeltaX = deltaX + stlShift;
+                selectionSet.Translate(totalDeltaX, 0.0, 0.0, RuntimeHelpers.GetObjectValue(Missing.Value));
+                FrontPointX += totalDeltaX;
+                BackPointX += totalDeltaX;
+                DentalLogger.Log($"MoveSTL - 초기 X이동 dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}");
             }
             selectionSet.RemoveAll();
             MainModule.Document.FeatureChains.Remove(featureChain.Key);

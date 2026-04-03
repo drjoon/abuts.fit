@@ -113,64 +113,7 @@ export async function seedEssentialAccounts() {
 }
 
 export async function seedDefaultAccounts() {
-  const specs = [
-    {
-      name: "데모 제조사 대표",
-      email: "manufacturer.owner@demo.abuts.fit",
-      password: "Mo!7vL#6pR@3sB8!",
-      role: "manufacturer",
-      phoneNumber: "01000000003",
-    },
-    {
-      name: "데모 제조사 직원",
-      email: "manufacturer.staff@demo.abuts.fit",
-      password: "Ms!5kP#8wQ@2nZ7!",
-      role: "manufacturer",
-      phoneNumber: "01000000005",
-    },
-    {
-      name: "데모 관리자 대표",
-      email: "admin.owner@demo.abuts.fit",
-      password: "Ao!6fN#9rV@4cH2!",
-      role: "admin",
-      phoneNumber: "01000000004",
-    },
-    {
-      name: "데모 관리자 직원",
-      email: "admin.staff@demo.abuts.fit",
-      password: "As!4mJ#7tK@9pW3!",
-      role: "admin",
-      phoneNumber: "01000000006",
-    },
-    {
-      name: "데모 개발운영사 대표",
-      email: "devops.owner@demo.abuts.fit",
-      password: "Do!6vP#9xS@4nZ1!",
-      role: "devops",
-      phoneNumber: "01000000009",
-    },
-    {
-      name: "데모 개발운영사 직원",
-      email: "devops.staff@demo.abuts.fit",
-      password: "Ds!5mQ#7kV@3rB2!",
-      role: "devops",
-      phoneNumber: "01000000010",
-    },
-  ];
-
-  for (const spec of specs) {
-    await findOrCreateUser({
-      name: spec.name,
-      email: spec.email,
-      password: spec.password,
-      role: spec.role,
-      phoneNumber: spec.phoneNumber,
-      approvedAt: NOW,
-      active: true,
-    });
-  }
-
-  return { users: specs };
+  const specs = [];
 }
 
 export async function seedBulkAccounts() {

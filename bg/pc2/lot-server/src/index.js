@@ -10,11 +10,49 @@ import os from "os";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const LOG_FILE = path.resolve(__dirname, "logs.txt");
-const logStream = createWriteStream(LOG_FILE, { flags: "w" });
-logStream.on("error", (err) => {
-  console.error("[lot-server] log stream error", err);
-});
+const LOGS_DIR = path.resolve(__dirname, "logs");
+let LOG_FILE = path.resolve(LOGS_DIR, "latest.txt");
+let logStream = null;
+
+async function initLogStream() {
+  try {
+    await fs.mkdir(LOGS_DIR, { recursive: true });
+  } catch {}
+
+  if (logStream && logStream.writable) {
+    logStream.end();
+  }
+
+  logStream = createWriteStream(LOG_FILE, { flags: "a" });
+  logStream.on("error", (err) => {
+    console.error("[lot-server] log stream error", err);
+  });
+}
+
+async function rotateLogFile() {
+  if (!logStream || !logStream.writable) return;
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const archivedLog = path.resolve(LOGS_DIR, `${timestamp}.txt`);
+
+  logStream.end();
+
+  try {
+    const exists = await fs
+      .access(LOG_FILE)
+      .then(() => true)
+      .catch(() => false);
+    if (exists) {
+      await fs.rename(LOG_FILE, archivedLog);
+      console.log(`[lot-server] log rotated: ${archivedLog}`);
+    }
+  } catch (err) {
+    console.error("[lot-server] log rotation failed", err);
+  }
+
+  await initLogStream();
+  logLine("[lot-server] log file rotated and reset");
+}
 
 dotenv.config({
   path: path.resolve(process.cwd(), "local.env"),
@@ -389,6 +427,8 @@ async function handleNewImage(filePath) {
 }
 
 async function main() {
+  await initLogStream();
+
   logLine(`[lot-server] service starting (watchDir=${WATCH_DIR})`);
   await enforceIpAllowlist();
   // Ensure base watch directory exists to avoid early exit on some environments
@@ -407,6 +447,17 @@ async function main() {
     },
     6 * 60 * 60 * 1000,
   );
+
+  // 1시간마다 로그 파일 로테이션
+  setInterval(
+    () => {
+      rotateLogFile().catch((err) => {
+        console.error("[lot-server] log rotation error", err);
+      });
+    },
+    60 * 60 * 1000,
+  );
+  logLine("[lot-server] log rotation scheduled (every 1 hour)");
 
   try {
     const entries = await fs
