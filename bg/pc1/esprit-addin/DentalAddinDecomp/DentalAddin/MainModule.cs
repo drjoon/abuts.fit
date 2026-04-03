@@ -4240,6 +4240,7 @@ namespace DentalAddin
                             goto IL_02a3;
                         IL_02a3:
                             num2 = 39;
+                            DownZ = 1.5;
                             techLatheMoldParallelPlanes.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + Math.Abs(DownZ));
                             // techLatheMoldParallelPlanes.BottomZLimit = MoveSTL_Module.FrontPointX;
                             DentalLogger.Log($"free - FrontFace Right FrontPointX:{MoveSTL_Module.FrontPointX} ZLimit Bottom:{techLatheMoldParallelPlanes.BottomZLimit}");
@@ -4253,6 +4254,7 @@ namespace DentalAddin
                             goto IL_0309;
                         IL_02dc:
                             num2 = 42;
+                            DownZ = 1.5;
                             techLatheMoldParallelPlanes.BottomZLimit = 1.0 * (MoveSTL_Module.FrontPointX - Math.Abs(DownZ));
                             // techLatheMoldParallelPlanes.BottomZLimit = MoveSTL_Module.FrontPointX;
                             DentalLogger.Log($"free - FrontFace Left ZLimit FrontPointX:{MoveSTL_Module.FrontPointX} Bottom:{techLatheMoldParallelPlanes.BottomZLimit}");
