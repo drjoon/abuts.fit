@@ -2217,6 +2217,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
                 AppLogger.Log("DentalAddin: Main 실행 완료");
+                
+                // Main 실행 후 모든 Operation의 StartPointY를 STL shift만큼 조정
+                AdjustOperationStartPointY(document, AppConfig.DefaultStlShift);
+                
                 LogOperationSummary(document, "DentalAddin: PostMain");
                 AppLogger.Log("StlFileProcessor: DentalPanel 호출 완료");
             }
@@ -3605,6 +3609,78 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             catch (Exception ex)
             {
                 AppLogger.Log($"DentalAddin: STL 추가 이동 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+        private void AdjustOperationStartPointY(Document document, double deltaX)
+        {
+            if (document?.Operations == null || deltaX <= 0)
+            {
+                return;
+            }
+            try
+            {
+                int adjustedCount = 0;
+                for (int i = 1; i <= document.Operations.Count; i++)
+                {
+                    try
+                    {
+                        dynamic op = document.Operations[i];
+                        if (op == null) continue;
+                        
+                        // Operation의 Technology 가져오기
+                        dynamic tech = null;
+                        try { tech = op.Technology; } catch { }
+                        if (tech == null) continue;
+                        
+                        // Technology의 TechnoParameters 가져오기
+                        dynamic techParams = null;
+                        try { techParams = tech.TechnoParameters; } catch { }
+                        if (techParams == null) continue;
+                        
+                        // StartPointY (ID 3333) 찾아서 조정
+                        bool adjusted = false;
+                        for (int j = 1; j <= techParams.Count; j++)
+                        {
+                            try
+                            {
+                                dynamic param = techParams[j];
+                                if (param == null) continue;
+                                
+                                int paramId = 0;
+                                try { paramId = param.ID; } catch { }
+                                
+                                // StartPointY ID = 3333
+                                if (paramId == 3333)
+                                {
+                                    double originalValue = 0;
+                                    try { originalValue = param.Value; } catch { }
+                                    
+                                    double newValue = originalValue + deltaX;
+                                    param.Value = newValue;
+                                    adjusted = true;
+                                    
+                                    AppLogger.Log($"DentalAddin: Op[{i}] StartPointY 조정 - {originalValue:F3} -> {newValue:F3}");
+                                    break;
+                                }
+                            }
+                            catch { }
+                        }
+                        
+                        if (adjusted)
+                        {
+                            adjustedCount++;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogger.Log($"DentalAddin: Operation[{i}] StartPointY 조정 실패 - {ex.Message}");
+                    }
+                }
+                AppLogger.Log($"DentalAddin: StartPointY 조정 완료 - {adjustedCount}개 Operation, deltaX:{deltaX:F3}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"DentalAddin: StartPointY 조정 실패 - {ex.GetType().Name}:{ex.Message}");
             }
         }
         private static bool TryInvokeModuleMethod(Type moduleType, string methodName, params object[] args)
