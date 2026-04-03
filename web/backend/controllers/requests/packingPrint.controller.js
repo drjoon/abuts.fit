@@ -47,9 +47,9 @@ export async function getPackPrintSettings(req, res) {
   const paperDefault = PACK_PAPER_DEFAULT;
   const paperOptions = PACK_PAPER_OPTIONS;
 
-  // Current supported profile: PACK_65x80 (landscape 80 x 65mm)
+  // Current supported profile: PACK_80x65 (landscape 80 x 65mm)
   const mm =
-    paperDefault === "PACK_65x80" || paperOptions.includes("PACK_65x80")
+    paperDefault === "PACK_80x65" || paperOptions.includes("PACK_80x65")
       ? { w: 80, h: 65 }
       : null;
 
