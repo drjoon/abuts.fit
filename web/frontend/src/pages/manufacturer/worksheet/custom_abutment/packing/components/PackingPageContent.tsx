@@ -592,23 +592,8 @@ export const PackingPageContent = ({
     previewOpen,
     previewFiles,
     handleOpenPreview,
-    handleAutoPrintProcessedRequest: async (req) => {
-      try {
-        await handlePrintSinglePackingLabel(req, {
-          silentSuccess: true,
-          silentError: false,
-        });
-      } catch (error) {
-        toast({
-          title: "패킹 라벨 자동 출력 실패",
-          description:
-            error instanceof Error && error.message
-              ? error.message
-              : "패킹 라벨 자동 출력 중 오류가 발생했습니다.",
-          variant: "destructive",
-        });
-      }
-    },
+    // 자동 프린트는 백엔드에서 처리하므로 프론트엔드 자동 프린트 제거
+    handleAutoPrintProcessedRequest: null,
   });
 
   const handlePrintPackingLabels = useCallback(async () => {

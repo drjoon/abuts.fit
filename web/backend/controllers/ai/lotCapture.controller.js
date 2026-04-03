@@ -13,6 +13,11 @@ import {
   normalizeRequestForResponse,
 } from "../../controllers/requests/utils.js";
 import { allocateVirtualMailboxAddress } from "../requests/mailbox.utils.js";
+import {
+  printPackingLabelViaBgServer,
+  resolveManufacturingDateForPrint,
+  resolveScrewTypeForPrint,
+} from "../../utils/packPrint.utils.js";
 
 let _apiKey = null;
 let _genAI = null;
@@ -321,6 +326,126 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   await request.save();
   const normalizedRequest = await normalizeRequestForResponse(request);
 
+  // 백엔드에서 pack-server로 자동 프린트 요청
+  let printResult = {
+    success: null,
+    message: "backend_auto_print_pending",
+  };
+
+  try {
+    const manufacturingDate = resolveManufacturingDateForPrint(request);
+    if (!manufacturingDate) {
+      console.warn("[lot-capture] manufacturing date missing for auto print", {
+        requestId: request.requestId,
+        requestMongoId: String(request._id || ""),
+      });
+      throw new Error("제조일자를 확인할 수 없어 라벨을 생성할 수 없습니다.");
+    }
+
+    const fullLotNumber = String(request?.lotNumber?.value || "").trim();
+    const labName = String(
+      request?.requestorBusinessAnchor?.name ||
+        request?.requestorBusiness?.name ||
+        "",
+    ).trim();
+    const implantManufacturer = String(
+      request?.caseInfos?.implantManufacturer || "",
+    ).trim();
+    const clinicName = String(request?.caseInfos?.clinicName || "").trim();
+    const implantBrand = String(request?.caseInfos?.implantBrand || "").trim();
+    const implantFamily = String(
+      request?.caseInfos?.implantFamily || "",
+    ).trim();
+    const implantType = String(request?.caseInfos?.implantType || "").trim();
+    const patientName = String(request?.caseInfos?.patientName || "").trim();
+    const toothNumber = String(request?.caseInfos?.tooth || "").trim();
+    const material = String(
+      request?.caseInfos?.material ||
+        request?.material ||
+        request?.lotNumber?.material ||
+        "",
+    ).trim();
+    const mailboxCode = String(request?.mailboxAddress || "").trim();
+    const screwType = resolveScrewTypeForPrint(request);
+    const createdAtIso = request.createdAt ? String(request.createdAt) : "";
+
+    if (
+      !fullLotNumber ||
+      !labName ||
+      !implantManufacturer ||
+      !clinicName ||
+      !implantBrand ||
+      !implantFamily ||
+      !implantType ||
+      !patientName ||
+      !toothNumber ||
+      !mailboxCode
+    ) {
+      const missing = [];
+      if (!fullLotNumber) missing.push("lotNumber");
+      if (!labName) missing.push("labName");
+      if (!implantManufacturer) missing.push("implantManufacturer");
+      if (!clinicName) missing.push("clinicName");
+      if (!implantBrand) missing.push("implantBrand");
+      if (!implantFamily) missing.push("implantFamily");
+      if (!implantType) missing.push("implantType");
+      if (!patientName) missing.push("patientName");
+      if (!toothNumber) missing.push("toothNumber");
+      if (!mailboxCode) missing.push("mailboxCode");
+
+      console.warn("[lot-capture] missing required fields for auto print", {
+        requestId: request.requestId,
+        missing,
+      });
+      throw new Error(
+        `필수 필드 누락: ${missing.join(", ")}. 라벨을 생성할 수 없습니다.`,
+      );
+    }
+
+    const packPrintResult = await printPackingLabelViaBgServer({
+      requestId: request.requestId,
+      lotNumber: fullLotNumber,
+      mailboxCode,
+      screwType,
+      clinicName,
+      labName,
+      requestDate: createdAtIso,
+      manufacturingDate,
+      implantManufacturer,
+      implantBrand,
+      implantFamily,
+      implantType,
+      patientName,
+      toothNumber,
+      material,
+      paperProfile: "PACK_80x65",
+      copies: 1,
+    });
+
+    printResult = {
+      success: true,
+      message: "backend_auto_print_success",
+      generated: packPrintResult?.generated || null,
+    };
+
+    console.log("[lot-capture] auto print success", {
+      requestId: request.requestId,
+      lotNumber: fullLotNumber,
+    });
+  } catch (printError) {
+    console.error("[lot-capture] auto print failed", {
+      requestId: request.requestId,
+      requestMongoId: String(request._id || ""),
+      message: printError?.message || String(printError),
+    });
+
+    printResult = {
+      success: false,
+      message:
+        printError?.message || "패킹 라벨 자동 프린트 실패 (백엔드 오류)",
+    };
+  }
+
   emitBgRuntimeStatus({
     requestId: request.requestId,
     requestMongoId: String(request._id || "").trim(),
@@ -333,7 +458,9 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     metadata: {
       recognizedSuffix: finalRecognizedSuffix || null,
       temporaryFallback: !packAiRecogEnabled && !finalRecognizedSuffix,
-      autoPrintHandledBy: "frontend",
+      autoPrintHandledBy: "backend",
+      autoPrintSuccess: printResult?.success,
+      autoPrintMessage: printResult?.message,
     },
   });
 
@@ -359,10 +486,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
       uploadedAt:
         request.caseInfos?.stageFiles?.packing?.uploadedAt || new Date(),
     },
-    print: {
-      success: null,
-      message: "frontend_auto_print",
-    },
+    print: printResult,
   });
 
   emitAppEventGlobal("request:stage-changed", {
@@ -385,10 +509,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
         requestId: request.requestId,
         suffix: finalRecognizedSuffix || null,
         recognized: recognized || null,
-        print: {
-          success: null,
-          message: "frontend_auto_print",
-        },
+        print: printResult,
       },
       "포장 캡쳐 처리 완료",
     ),

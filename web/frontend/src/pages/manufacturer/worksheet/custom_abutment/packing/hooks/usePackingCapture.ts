@@ -28,7 +28,9 @@ export const usePackingCapture = ({
   previewOpen: boolean;
   previewFiles: any;
   handleOpenPreview: (req: ManufacturerRequest) => Promise<void>;
-  handleAutoPrintProcessedRequest?: (req: ManufacturerRequest) => Promise<void>;
+  handleAutoPrintProcessedRequest?:
+    | ((req: ManufacturerRequest) => Promise<void>)
+    | null;
 }) => {
   const { uploadFiles: uploadToS3 } = useS3TempUpload({ token });
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -323,7 +325,13 @@ export const usePackingCapture = ({
             await handleOpenPreviewRef.current(matchedRequest);
           }
         }
-        if (mergedEventRequest && handleAutoPrintProcessedRequestRef.current) {
+        // 자동 프린트는 백엔드에서 처리하므로 프론트엔드 자동 프린트는 비활성화
+        // handleAutoPrintProcessedRequest가 null이 아닐 때만 실행 (레거시 호환)
+        if (
+          mergedEventRequest &&
+          handleAutoPrintProcessedRequestRef.current &&
+          typeof handleAutoPrintProcessedRequestRef.current === "function"
+        ) {
           await handleAutoPrintProcessedRequestRef.current(mergedEventRequest);
         }
       })();

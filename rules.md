@@ -1054,6 +1054,56 @@
 - 호환되지 않으면 카드에 경고를 띄우고 CAM을 중단합니다.
 - Esprit에는 장비에 실제 세팅된 소재 직경값을 그대로 전달합니다.
 
+### 7.6 패킹 라벨 자동 프린트 (lot-server → pack-server)
+
+**플로우 (2026-04-03 백엔드 중심으로 변경)**:
+
+1. **lot-server**: 현미경 촬영 이미지를 백엔드에 업로드
+2. **백엔드**: AI로 각인 코드 인식 → 해당 의뢰건 찾기 → 포장.발송 단계로 이동
+3. **백엔드**: pack-server로 자동 프린트 요청 (ZPL 생성은 pack-server가 담당)
+4. **pack-server**: ZPL 생성 후 프린터로 출력
+
+**백엔드 처리** (`/web/backend/controllers/ai/lotCapture.controller.js`):
+
+- 각인 인식 성공 후 `printPackingLabelViaBgServer()` 호출
+- 필수 필드 검증: lotNumber, labName, implantManufacturer, clinicName, implantBrand, implantFamily, implantType, patientName, toothNumber, mailboxCode
+- 제조일자 추출: `resolveManufacturingDateForPrint()` (machining 승인일 → machiningStartedAt → machiningCompletedAt → createdAt 순)
+- 스크류 타입 계산: `resolveScrewTypeForPrint()` (덴티움: "B8", 기타: "A0")
+- **DPI 600 명시**: pack-server로 요청 시 `dpi: 600` 전달
+- 프린트 성공/실패 결과를 웹소켓 이벤트에 포함
+
+**백엔드 유틸리티** (`/web/backend/utils/packPrint.utils.js`):
+
+- `printPackingLabelViaBgServer()`: pack-server `/print-packing-label` 엔드포인트 호출
+- 타임아웃: `PACK_PRINT_TIMEOUT_MS` (기본 5초)
+- 인증: `PACK_PRINT_SERVER_SHARED_SECRET` 헤더 전송
+- 오류 처리: 타임아웃, 네트워크 오류, pack-server 응답 오류 구분
+
+**pack-server** (`/bg/pc2/pack-server/app.js`):
+
+- 엔드포인트: `POST /print-packing-label`
+- ZPL 생성: `buildPackingLabelZpl()` (600 DPI 기준 좌표 계산)
+- 프린터 출력: Windows PowerShell RAW 프린트 또는 CUPS `lp` 명령
+- 환경변수:
+  - `PACK_LABEL_DPI=600` (기본값)
+  - `PACK_PRINT_SERVER_DEFAULT_PRINTER` (기본 프린터)
+  - `PACK_PRINT_SERVER_SHARED_SECRET` (인증)
+
+**프론트엔드**:
+
+- **자동 프린트**: 백엔드에서 처리하므로 프론트엔드 자동 프린트 로직 제거
+- **수동 프린트**: 기존 수동 프린트 기능은 유지 (사용자가 직접 버튼 클릭)
+- 웹소켓 이벤트로 프린트 성공/실패 알림 수신
+
+**주요 규칙**:
+
+- ✅ 라벨 데이터 생성과 프린트 요청은 **백엔드가 담당**
+- ✅ ZPL 생성은 **pack-server가 담당** (프론트엔드 아님)
+- ✅ DPI는 **600으로 명시** (203 DPI 출력 방지)
+- ✅ 프린트 실패 시에도 의뢰는 정상적으로 다음 단계로 진행
+- ✅ 프린트 성공/실패 상태는 웹소켓으로 실시간 전달
+- ❌ 프론트엔드는 자동 프린트를 처리하지 않음 (수동 프린트만)
+
 ## 8. 용어 통일
 
 - `Manufacturer / Brand / Family / Type` 용어를 사용합니다.
