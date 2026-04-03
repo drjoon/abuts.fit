@@ -803,7 +803,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 string truncatedDisplayName = ExtractDisplayName(displayName);
                 lines[1] = $"({truncatedDisplayName})";
                 double backPointForNc = backPointX - AppConfig.DefaultStlShift;
-                double backturnClearance = ResolveBackturnClearance(stockDiameter);
+                // backturnClearance : 이정현 차장님 제안. 2026.04.03
+                // 표시된부분 +2.0 해주시기바랍니다 절단 부분인데 가공후 다음공정때 소재 모서리에 라운드가 져서 제거하는 목적입니다
+                double backturnClearance = ResolveBackturnClearance(stockDiameter) + 2;
                 ApplyOrInsertNcLine(lines, $"#520= {FormatNcNumber(backPointForNc, "0.000")}", "#520");
                 ApplyOrInsertNcLine(lines, $"#521= {FormatNcNumber(stockDiameter, "0.000")}", "#521");
                 ApplyOrInsertNcLine(lines, $"#522= {FormatNcNumber(backturnClearance, "0.000")}", "#522");
@@ -999,6 +1001,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             string serialForNc = ResolveSerialCodeForNc();
             AppLogger.Log($"StlFileProcessor: Serial 각인 코드 적용 - Raw:'{_backendSerialCode ?? string.Empty}' => Use:'{serialForNc}'");
             UpdateSerialBlocks(ncFileName, serialForNc);
+            
+            // UpdateNcHeader/UpdateSerialBlocks로 NC 파일 수정 후 S3 재업로드 및 백엔드 캐시 무효화
+            AppLogger.Log($"StlFileProcessor: NC 헤더/Serial 업데이트 완료, S3 재업로드 시작");
+            NotifyBackendSuccess(_backendRequestId, stlPath, ncFileName);
+            
             return ncFileName;
         }
         private string ResolveSerialCodeForNc()
