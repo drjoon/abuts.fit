@@ -10,6 +10,10 @@ const PACK_PRINT_SERVER_SHARED_SECRET = String(
 
 const PACK_PRINT_TIMEOUT_MS = Number(process.env.PACK_PRINT_TIMEOUT_MS || 5000);
 
+const PACK_PRINT_DEFAULT_PRINTER = String(
+  process.env.PACK_PRINT_DEFAULT_PRINTER || "",
+).trim();
+
 /**
  * pack-server에 패킹 라벨 프린트 요청
  * @param {Object} params - 패킹 라벨 데이터
@@ -79,7 +83,7 @@ export async function printPackingLabelViaBgServer({
     patientName,
     toothNumber,
     material,
-    printer,
+    printer: printer || PACK_PRINT_DEFAULT_PRINTER || undefined,
     paperProfile,
     copies,
     dpi: 600, // 패킹 라벨 프린터 DPI 명시

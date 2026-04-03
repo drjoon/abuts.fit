@@ -18,6 +18,7 @@ import {
   resolveManufacturingDateForPrint,
   resolveScrewTypeForPrint,
 } from "../../utils/packPrint.utils.js";
+import sharp from "sharp";
 
 let _apiKey = null;
 let _genAI = null;
@@ -58,7 +59,9 @@ async function findPackingRequestBySuffix(recognizedSuffix) {
   const candidates = await Request.find({
     status: { $ne: "취소" },
     manufacturerStage: "세척.패킹",
-  }).sort({ createdAt: 1 });
+  })
+    .populate("businessAnchorId", "name metadata")
+    .sort({ createdAt: 1 });
 
   return (
     candidates.find(
@@ -79,6 +82,51 @@ async function recognizeLotNumberFromS3({ s3Key, originalName }) {
     throw new ApiError(404, "S3에서 파일을 찾을 수 없습니다.");
   }
 
+  const originalSizeKB = (buffer.length / 1024).toFixed(2);
+  console.log("[lot-capture] original image size", {
+    s3Key,
+    sizeKB: originalSizeKB,
+    sizeBytes: buffer.length,
+  });
+
+  // 이미지 리사이징으로 Gemini API 비용 절감 (800px 너비로 축소)
+  let processedBuffer = buffer;
+  try {
+    const metadata = await sharp(buffer).metadata();
+    console.log("[lot-capture] original image dimensions", {
+      width: metadata.width,
+      height: metadata.height,
+      format: metadata.format,
+    });
+
+    if (metadata.width && metadata.width > 800) {
+      processedBuffer = await sharp(buffer)
+        .resize(800, null, {
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+
+      const resizedSizeKB = (processedBuffer.length / 1024).toFixed(2);
+      const reduction = (
+        ((buffer.length - processedBuffer.length) / buffer.length) *
+        100
+      ).toFixed(1);
+
+      console.log("[lot-capture] image resized for cost optimization", {
+        originalSizeKB,
+        resizedSizeKB,
+        reduction: `${reduction}%`,
+      });
+    }
+  } catch (resizeError) {
+    console.warn("[lot-capture] image resize failed, using original", {
+      error: resizeError?.message || String(resizeError),
+    });
+    processedBuffer = buffer;
+  }
+
   const guardKey = `gemini-recognizeLotNumber:bg`;
   const guard = shouldBlockExternalCall(guardKey);
   if (guard?.blocked) {
@@ -96,7 +144,7 @@ async function recognizeLotNumberFromS3({ s3Key, originalName }) {
     },
   });
 
-  const imageBase64 = buffer.toString("base64");
+  const imageBase64 = processedBuffer.toString("base64");
   const mimeType = String(originalName || "")
     .toLowerCase()
     .endsWith(".png")
@@ -234,7 +282,9 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     request = await Request.findOne({
       status: { $ne: "취소" },
       manufacturerStage: "세척.패킹",
-    }).sort({ createdAt: 1 });
+    })
+      .populate("businessAnchorId", "name metadata")
+      .sort({ createdAt: 1 });
     reason = request ? "" : "no_packing_request";
 
     console.warn("[lot-capture] temporary fallback applied", {
@@ -344,8 +394,8 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
 
     const fullLotNumber = String(request?.lotNumber?.value || "").trim();
     const labName = String(
-      request?.requestorBusinessAnchor?.name ||
-        request?.requestorBusiness?.name ||
+      request?.businessAnchorId?.name ||
+        request?.businessAnchorId?.metadata?.name ||
         "",
     ).trim();
     const implantManufacturer = String(
