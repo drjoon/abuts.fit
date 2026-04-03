@@ -61,6 +61,11 @@ export async function printPackingLabelViaBgServer({
   paperProfile = "PACK_80x65",
   copies = 1,
 }) {
+  const startTime = Date.now();
+  console.log("[packPrint] step 1/3: rendering canvas for label", {
+    requestId,
+  });
+
   // 백엔드에서 Canvas로 라벨 이미지 생성 후 ZPL로 변환
   const opts = {
     mailboxCode,
@@ -85,15 +90,26 @@ export async function printPackingLabelViaBgServer({
     targetDots: { pw: 1890, ll: 1535 }, // 출력 크기 (600 DPI = 80x65mm)
   };
 
+  const canvasStart = Date.now();
   const canvas = await renderPackLabelToCanvas(opts);
   const zpl = buildPackLabelBitmapZpl({
     canvas,
     labelWidth: 1890,
     labelHeight: 1535,
   });
+  console.log("[packPrint] step 1/3 done: canvas rendered and ZPL generated", {
+    requestId,
+    zplLength: zpl?.length || 0,
+    elapsed: Date.now() - canvasStart,
+  });
 
   // pack-server로 ZPL 전송 (출력만 담당)
   const url = `${PACK_PRINT_SERVER_BASE}/print-zpl`;
+  console.log("[packPrint] step 2/3: sending ZPL to pack-server", {
+    requestId,
+    url,
+    timeoutMs: PACK_PRINT_TIMEOUT_MS,
+  });
 
   const headers = {
     "Content-Type": "application/json",
@@ -115,6 +131,7 @@ export async function printPackingLabelViaBgServer({
   const timeout = setTimeout(() => controller.abort(), PACK_PRINT_TIMEOUT_MS);
 
   try {
+    const fetchStart = Date.now();
     const response = await fetch(url, {
       method: "POST",
       headers,
@@ -123,6 +140,11 @@ export async function printPackingLabelViaBgServer({
     });
 
     clearTimeout(timeout);
+    console.log("[packPrint] step 2/3 done: pack-server responded", {
+      requestId,
+      status: response.status,
+      elapsed: Date.now() - fetchStart,
+    });
 
     const text = await response.text().catch(() => "");
     let data = null;
@@ -152,10 +174,11 @@ export async function printPackingLabelViaBgServer({
       throw new ApiError(500, `패킹 라벨 프린트 실패: ${message}`);
     }
 
-    console.log("[packPrint] pack-server print success", {
+    console.log("[packPrint] step 3/3: pack-server print success", {
       requestId,
       lotNumber,
       generated: data?.generated || null,
+      totalElapsed: Date.now() - startTime,
     });
 
     return data;

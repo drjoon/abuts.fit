@@ -122,9 +122,14 @@ const getClientIp = (req) => {
 };
 
 const isIpAllowed = (req) => {
-  if (!ALLOW_IPS.length || ALLOW_IPS.includes("*")) return true;
+  if (!ALLOW_IPS.length || ALLOW_IPS.includes("*")) {
+    log("ip-check:allow-all", { allowIps: ALLOW_IPS });
+    return true;
+  }
   const ip = getClientIp(req);
-  return ALLOW_IPS.includes(ip);
+  const allowed = ALLOW_IPS.includes(ip);
+  log("ip-check", { clientIp: ip, allowedIps: ALLOW_IPS, allowed });
+  return allowed;
 };
 
 const requireIpAllowed = (req, res) => {
@@ -480,11 +485,16 @@ const printRawZpl = ({ filePath, printer, title, copies, paperProfile }) =>
   });
 
 const requireSecret = (req, res) => {
-  if (!SHARED_SECRET) return true;
+  if (!SHARED_SECRET) {
+    log("secret-check:no-secret-required");
+    return true;
+  }
   if (req.url === "/health") return true;
 
   const incoming = String(req.headers["x-pack-secret"] || "").trim();
-  if (!incoming || incoming !== SHARED_SECRET) {
+  const valid = incoming && incoming === SHARED_SECRET;
+  log("secret-check", { hasIncoming: !!incoming, valid, url: req.url });
+  if (!valid) {
     jsonResponse(res, 401, {
       success: false,
       message: "Unauthorized",
@@ -504,11 +514,20 @@ const server = http.createServer(async (req, res) => {
       return jsonResponse(res, 204, { success: true });
     }
 
+    const clientIp = getClientIp(req);
+    log("incoming-request", {
+      method: req.method,
+      url: req.url,
+      clientIp,
+      xForwardedFor: req.headers["x-forwarded-for"] || "",
+      remoteAddress: req.socket?.remoteAddress || "",
+    });
+
     if (!requireIpAllowed(req, res)) return;
 
     if (!requireSecret(req, res)) return;
 
-    log("request", { method: req.method, url: req.url });
+    log("request-authorized", { method: req.method, url: req.url, clientIp });
   } catch (error) {
     log("request-handler-error", {
       message: error.message,

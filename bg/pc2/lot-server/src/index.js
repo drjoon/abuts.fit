@@ -331,15 +331,29 @@ async function enforceIpAllowlist() {
 }
 
 async function processImageOnce(filePath) {
+  const startTime = Date.now();
   const originalName = path.basename(filePath);
   const recognizedSuffix = extractRecognizedSuffixFromFileName(originalName);
+
+  logLine(`[lot-server] step 1/5: resizing image ${originalName}`);
+  const resizeStart = Date.now();
   const { buffer, mimeType } = await resizeToOneFifth(filePath);
   const fileSize = buffer.length;
+  logLine(
+    `[lot-server] step 1/5 done: resized to ${fileSize} bytes (${Date.now() - resizeStart}ms)`,
+  );
 
+  logLine(
+    `[lot-server] step 2/5: requesting presign URL from ${BACKEND_BASE}/api/bg/presign-upload`,
+  );
+  const presignStart = Date.now();
   const presign = await apiPostJson(`${BACKEND_BASE}/api/bg/presign-upload`, {
     sourceStep: "packing-capture",
     fileName: originalName.replace(/\s+/g, "_"),
   });
+  logLine(
+    `[lot-server] step 2/5 done: presign response (${Date.now() - presignStart}ms, status=${presign?.status})`,
+  );
 
   if (!presign?.ok) {
     throw new Error(
@@ -357,8 +371,17 @@ async function processImageOnce(filePath) {
     throw new Error("presign response missing fields");
   }
 
+  logLine(`[lot-server] step 3/5: uploading to S3 (${fileSize} bytes)`);
+  const uploadStart = Date.now();
   await uploadToPresignedUrl({ uploadUrl, mimeType, buffer });
+  logLine(
+    `[lot-server] step 3/5 done: S3 upload complete (${Date.now() - uploadStart}ms)`,
+  );
 
+  logLine(
+    `[lot-server] step 4/5: registering lot-capture to ${BACKEND_BASE}/api/bg/lot-capture/packing`,
+  );
+  const captureStart = Date.now();
   const done = await apiPostJson(`${BACKEND_BASE}/api/bg/lot-capture/packing`, {
     s3Key,
     s3Url,
@@ -366,6 +389,9 @@ async function processImageOnce(filePath) {
     fileSize,
     recognizedSuffix,
   });
+  logLine(
+    `[lot-server] step 4/5 done: lot-capture response (${Date.now() - captureStart}ms, status=${done?.status})`,
+  );
 
   if (!done?.ok) {
     throw new Error(
@@ -373,6 +399,9 @@ async function processImageOnce(filePath) {
     );
   }
 
+  logLine(
+    `[lot-server] step 5/5: process complete (total ${Date.now() - startTime}ms)`,
+  );
   return { originalName, fileSize };
 }
 
@@ -388,7 +417,11 @@ async function handleNewImage(filePath) {
   try {
     logLine(`[lot-server] detected new image: ${filePath}`);
 
+    const waitStart = Date.now();
     const stable = await waitForStableFile(filePath);
+    logLine(
+      `[lot-server] file stability check: ${stable ? "stable" : "unstable"} (${Date.now() - waitStart}ms)`,
+    );
     if (!stable) {
       await moveFileSafely(filePath, FAILED_DIR);
       logLine(
