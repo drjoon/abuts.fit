@@ -7,12 +7,63 @@
 
 let canvasModuleCache = null;
 
+// 서버 시작 시 폰트 미리 로드 (테스트용)
+(async () => {
+  try {
+    await loadCanvasModule();
+    console.log("[packLabelRenderer] Canvas module preloaded");
+  } catch (err) {
+    console.warn(
+      "[packLabelRenderer] Canvas module preload failed:",
+      err.message,
+    );
+  }
+})();
+
 async function loadCanvasModule() {
   if (canvasModuleCache) return canvasModuleCache;
 
   try {
     const canvasModule = await import("@napi-rs/canvas");
     const qrcodeModule = await import("qrcode");
+
+    // 한글 폰트 등록 (Linux 시스템 폰트 경로)
+    try {
+      const { GlobalFonts } = canvasModule;
+      const { existsSync } = await import("fs");
+
+      // 시스템별 Noto Sans CJK 폰트 경로
+      const fontPaths = [
+        "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc", // Amazon Linux
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc", // Ubuntu/Debian
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansKR-Regular.otf",
+        "/System/Library/Fonts/AppleSDGothicNeo.ttc", // macOS
+      ];
+
+      let fontRegistered = false;
+      for (const fontPath of fontPaths) {
+        try {
+          if (existsSync(fontPath)) {
+            GlobalFonts.registerFromPath(fontPath, "NotoSans");
+            console.log(`[packLabelRenderer] 한글 폰트 등록 성공: ${fontPath}`);
+            fontRegistered = true;
+            break;
+          }
+        } catch (err) {
+          // 다음 경로 시도
+        }
+      }
+
+      if (!fontRegistered) {
+        console.warn(
+          "[packLabelRenderer] 한글 폰트를 찾을 수 없습니다. 한글이 깨질 수 있습니다.",
+        );
+      }
+    } catch (fontError) {
+      console.warn("[packLabelRenderer] 폰트 등록 실패:", fontError.message);
+    }
+
     canvasModuleCache = {
       createCanvas: canvasModule.createCanvas,
       loadImage: canvasModule.loadImage,
