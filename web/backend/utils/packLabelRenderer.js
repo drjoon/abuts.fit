@@ -1,10 +1,34 @@
-import { createCanvas, loadImage } from "canvas";
-import QRCode from "qrcode";
-
 /**
  * 프론트엔드 packLabelRenderer.ts와 동일한 로직으로 Canvas 기반 라벨 생성
  * 600 DPI 기준으로 80x65mm = 1890x1535 dots
+ *
+ * 주의: canvas 패키지는 AWS Linux 서버에서만 설치됨 (로컬 Mac 개발 환경에서는 선택적)
  */
+
+let canvasModuleCache = null;
+
+async function loadCanvasModule() {
+  if (canvasModuleCache) return canvasModuleCache;
+
+  try {
+    const canvasModule = await import("canvas");
+    const qrcodeModule = await import("qrcode");
+    canvasModuleCache = {
+      createCanvas: canvasModule.createCanvas,
+      loadImage: canvasModule.loadImage,
+      QRCode: qrcodeModule.default,
+    };
+    return canvasModuleCache;
+  } catch (error) {
+    console.error(
+      "[packLabelRenderer] canvas 패키지를 로드할 수 없습니다:",
+      error.message,
+    );
+    throw new Error(
+      "canvas 패키지가 설치되지 않았습니다. AWS Linux 서버에서만 사용 가능합니다.",
+    );
+  }
+}
 
 const dateOnly = (value) => {
   const s = String(value || "").trim();
@@ -33,6 +57,8 @@ const truncateToFit = (ctx, text, maxWidth) => {
 };
 
 const renderPackLabelToCanvas = async (opts) => {
+  const { createCanvas, loadImage, QRCode } = await loadCanvasModule();
+
   const dpi = Number(opts.dpi) || 600;
   const baseDpi = Number(opts.designDots?.dpi) || 600;
   const baseWidth = Number(opts.designDots?.pw) || 1890;
