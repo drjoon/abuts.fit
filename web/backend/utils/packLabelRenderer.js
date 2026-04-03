@@ -128,17 +128,18 @@ const renderPackLabelToCanvas = async (opts) => {
   ctx.fillStyle = "black";
   ctx.textBaseline = "top";
 
-  const PRODUCT_NAME = process.env.PACK_PRODUCT_NAME;
-  const MODEL_NAME = process.env.PACK_MODEL_NAME;
-  const LICENSE_NO = process.env.PACK_LICENSE_NO;
-  const COMPANY_NAME = process.env.PACK_MANUFACTURER_NAME;
-  const COMPANY_ADDR = process.env.PACK_MANUFACTURER_ADDR;
+  // 라벨 브랜딩 정보 (opts로 전달받음)
+  const PRODUCT_NAME = opts.productName || "임플란트 상부구조물";
+  const MODEL_NAME = opts.modelName || "CA6512";
+  const LICENSE_NO = opts.licenseNo || "제3583호";
+  const COMPANY_NAME = opts.manufacturerName || "(주)애크로덴트";
+  const COMPANY_ADDR = opts.manufacturerAddr || "경남 김해시 전하로85번길 5";
   const MANUFACTURER_LABEL = "제조업자";
-  const SELLER_NAME = process.env.PACK_SELLER_NAME;
-  const SELLER_PERMIT = process.env.PACK_SELLER_PERMIT;
-  const SELLER_ADDR = process.env.PACK_SELLER_ADDR;
-  const SELLER_TEL = process.env.PACK_SELLER_TEL;
-  const MANUAL_QR_LABEL = process.env.PACK_MANUAL_QR_LABEL;
+  const SELLER_NAME = opts.sellerName || "어벗츠 주식회사";
+  const SELLER_PERMIT = opts.sellerPermit || "제00001호";
+  const SELLER_ADDR = opts.sellerAddr || "경남 거제시 거제중앙로29길 6, 3층";
+  const SELLER_TEL = opts.sellerTel || "1588-3948";
+  const MANUAL_QR_LABEL = opts.manualQrLabel || "사용자매뉴얼";
 
   const drawBox = (x, y, w, h) => {
     ctx.strokeStyle = "black";

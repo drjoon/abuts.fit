@@ -547,6 +547,24 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  if (req.url === "/branding" && req.method === "GET") {
+    return jsonResponse(res, 200, {
+      success: true,
+      branding: {
+        productName: process.env.PACK_PRODUCT_NAME || "",
+        modelName: process.env.PACK_MODEL_NAME || "",
+        licenseNo: process.env.PACK_LICENSE_NO || "",
+        manufacturerName: process.env.PACK_MANUFACTURER_NAME || "",
+        manufacturerAddr: process.env.PACK_MANUFACTURER_ADDR || "",
+        sellerName: process.env.PACK_SELLER_NAME || "",
+        sellerPermit: process.env.PACK_SELLER_PERMIT || "",
+        sellerAddr: process.env.PACK_SELLER_ADDR || "",
+        sellerTel: process.env.PACK_SELLER_TEL || "",
+        manualQrLabel: process.env.PACK_MANUAL_QR_LABEL || "",
+      },
+    });
+  }
+
   if (req.url === "/printers" && req.method === "GET") {
     try {
       const printers = await listPrinters();

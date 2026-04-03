@@ -66,6 +66,23 @@ export async function printPackingLabelViaBgServer({
     requestId,
   });
 
+  // pack-server에서 브랜딩 정보 가져오기
+  let branding = {};
+  try {
+    const brandingUrl = `${PACK_PRINT_SERVER_BASE}/branding`;
+    const brandingHeaders = {};
+    if (PACK_PRINT_SERVER_SHARED_SECRET) {
+      brandingHeaders["x-pack-secret"] = PACK_PRINT_SERVER_SHARED_SECRET;
+    }
+    const brandingRes = await fetch(brandingUrl, { headers: brandingHeaders });
+    if (brandingRes.ok) {
+      const brandingData = await brandingRes.json();
+      branding = brandingData?.branding || {};
+    }
+  } catch (err) {
+    console.warn("[packPrint] failed to fetch branding info:", err.message);
+  }
+
   // 백엔드에서 Canvas로 라벨 이미지 생성 후 ZPL로 변환
   const opts = {
     mailboxCode,
@@ -88,6 +105,8 @@ export async function printPackingLabelViaBgServer({
     dpi: 600, // 출력 DPI
     designDots: { pw: 640, ll: 520, dpi: 203 }, // 원본 디자인 좌표 (203 DPI)
     targetDots: { pw: 1890, ll: 1535 }, // 출력 크기 (600 DPI = 80x65mm)
+    // pack-server에서 가져온 브랜딩 정보
+    ...branding,
   };
 
   const canvasStart = Date.now();
