@@ -45,24 +45,9 @@ export const downloadPngFromCanvas = async (
 };
 
 export const canvasToPngBlob = async (canvas: HTMLCanvasElement) => {
-  console.log("[canvasToPngBlob] Canvas 크기:", {
-    width: canvas.width,
-    height: canvas.height,
-    expectedDpi: 600,
-    "80mm@600dpi": "1890x1535 픽셀이어야 함",
-  });
-
   const blob: Blob | null = await new Promise((resolve) =>
     canvas.toBlob((b) => resolve(b), "image/png"),
   );
-
-  if (blob) {
-    console.log("[canvasToPngBlob] PNG 생성 완료:", {
-      size: `${(blob.size / 1024).toFixed(2)} KB`,
-      type: blob.type,
-    });
-  }
-
   return blob;
 };
 
@@ -217,21 +202,6 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   const targetHeight =
     Number(opts.targetDots?.ll) || Math.round((baseHeight * dpi) / baseDpi);
   const scale = targetWidth / baseWidth;
-
-  console.log("[renderPackLabelToCanvas] 입력값:", {
-    "opts.dpi": opts.dpi,
-    "opts.designDots": opts.designDots,
-    "opts.targetDots": opts.targetDots,
-  });
-  console.log("[renderPackLabelToCanvas] 계산된 값:", {
-    dpi,
-    baseDpi,
-    baseWidth,
-    baseHeight,
-    targetWidth,
-    targetHeight,
-    scale,
-  });
   const width = Math.round(targetWidth);
   const height = Math.round(targetHeight);
   const canvas = document.createElement("canvas");

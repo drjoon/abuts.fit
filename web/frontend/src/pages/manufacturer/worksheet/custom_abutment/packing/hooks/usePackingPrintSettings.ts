@@ -73,14 +73,9 @@ export const usePackingPrintSettings = ({
         throw new Error(data?.message || "용지 설정을 불러올 수 없습니다.");
       }
 
-      console.log("[fetchPaperSettings] 서버 응답:", data);
-
       const nextDpi = Number(data?.data?.dpi);
       if (Number.isFinite(nextDpi) && nextDpi > 0) {
-        console.log("[fetchPaperSettings] DPI 설정:", nextDpi);
         setPackLabelDpi(nextDpi);
-      } else {
-        console.warn("[fetchPaperSettings] DPI 값 없음, 기본값 유지");
       }
 
       const nextDots = data?.data?.label?.dots;
@@ -91,10 +86,7 @@ export const usePackingPrintSettings = ({
         Number.isFinite(Number(nextDots.ll)) &&
         Number(nextDots.ll) > 0
       ) {
-        console.log("[fetchPaperSettings] Dots 설정:", nextDots);
         setPackLabelDots({ pw: Number(nextDots.pw), ll: Number(nextDots.ll) });
-      } else {
-        console.warn("[fetchPaperSettings] Dots 값 없음, 기본값 유지");
       }
 
       const nextDesignDots = data?.data?.label?.designDots;
@@ -107,14 +99,11 @@ export const usePackingPrintSettings = ({
         Number.isFinite(Number(nextDesignDots.dpi)) &&
         Number(nextDesignDots.dpi) > 0
       ) {
-        console.log("[fetchPaperSettings] DesignDots 설정:", nextDesignDots);
         setPackLabelDesignDots({
           pw: Number(nextDesignDots.pw),
           ll: Number(nextDesignDots.ll),
           dpi: Number(nextDesignDots.dpi),
         });
-      } else {
-        console.warn("[fetchPaperSettings] DesignDots 값 없음, 기본값 유지");
       }
 
       const options = Array.isArray(data?.data?.paper?.options)

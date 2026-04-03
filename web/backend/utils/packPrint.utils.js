@@ -62,12 +62,6 @@ export async function printPackingLabelViaBgServer({
   copies = 1,
 }) {
   // 백엔드에서 Canvas로 라벨 이미지 생성 후 ZPL로 변환
-  console.log("[packPrint] generating ZPL from canvas", {
-    requestId,
-    lotNumber,
-    dpi: 600,
-  });
-
   const opts = {
     mailboxCode,
     screwType,
@@ -91,24 +85,11 @@ export async function printPackingLabelViaBgServer({
     targetDots: { pw: 1890, ll: 1535 }, // 출력 크기 (600 DPI = 80x65mm)
   };
 
-  console.log("[packPrint] Canvas 렌더링 옵션:", {
-    dpi: opts.dpi,
-    designDots: opts.designDots,
-    targetDots: opts.targetDots,
-    "예상 scale": `${1890 / 640} = ${(1890 / 640).toFixed(3)}`,
-  });
-
   const canvas = await renderPackLabelToCanvas(opts);
   const zpl = buildPackLabelBitmapZpl({
     canvas,
     labelWidth: 1890,
     labelHeight: 1535,
-  });
-
-  console.log("[packPrint] ZPL generated, sending to pack-server", {
-    requestId,
-    lotNumber,
-    zplLength: zpl.length,
   });
 
   // pack-server로 ZPL 전송 (출력만 담당)
@@ -129,14 +110,6 @@ export async function printPackingLabelViaBgServer({
     copies,
     title: `Custom Abutment Packing ${requestId || lotNumber || ""}`.trim(),
   };
-
-  console.log("[packPrint] sending ZPL to pack-server", {
-    url,
-    requestId,
-    lotNumber,
-    printer: printer || "(auto)",
-    paperProfile,
-  });
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), PACK_PRINT_TIMEOUT_MS);
