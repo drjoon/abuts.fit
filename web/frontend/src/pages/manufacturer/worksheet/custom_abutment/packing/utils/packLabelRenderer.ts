@@ -193,10 +193,10 @@ const truncateToFit = (
 };
 
 export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
-  const dpi = Number(opts.dpi) || 203;
-  const baseDpi = Number(opts.designDots?.dpi) || 203;
-  const baseWidth = Number(opts.designDots?.pw) || 640;
-  const baseHeight = Number(opts.designDots?.ll) || 520;
+  const dpi = Number(opts.dpi) || 600;
+  const baseDpi = Number(opts.designDots?.dpi) || 600;
+  const baseWidth = Number(opts.designDots?.pw) || 1890;
+  const baseHeight = Number(opts.designDots?.ll) || 1535;
   const targetWidth =
     Number(opts.targetDots?.pw) || Math.round((baseWidth * dpi) / baseDpi);
   const targetHeight =

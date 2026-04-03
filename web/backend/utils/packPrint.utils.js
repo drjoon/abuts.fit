@@ -1,4 +1,8 @@
 import { ApiError } from "./ApiError.js";
+import {
+  renderPackLabelToCanvas,
+  buildPackLabelBitmapZpl,
+} from "./packLabelRenderer.js";
 
 const PACK_PRINT_SERVER_BASE = (
   process.env.PACK_PRINT_SERVER_BASE || "http://localhost:8004"
@@ -57,7 +61,50 @@ export async function printPackingLabelViaBgServer({
   paperProfile = "PACK_80x65",
   copies = 1,
 }) {
-  const url = `${PACK_PRINT_SERVER_BASE}/print-packing-label`;
+  // 백엔드에서 Canvas로 라벨 이미지 생성 후 ZPL로 변환
+  console.log("[packPrint] generating ZPL from canvas", {
+    requestId,
+    lotNumber,
+    dpi: 600,
+  });
+
+  const opts = {
+    mailboxCode,
+    screwType,
+    labName,
+    lotNumber,
+    requestId,
+    clinicName,
+    requestDate,
+    patientName,
+    toothNumber,
+    material,
+    implantManufacturer,
+    implantBrand,
+    implantFamily,
+    implantType,
+    manufacturingDate,
+    caseType: material || "-",
+    printedAt: new Date().toISOString(),
+    dpi: 600,
+    targetDots: { pw: 1890, ll: 1535 }, // 80x65mm @ 600 DPI
+  };
+
+  const canvas = await renderPackLabelToCanvas(opts);
+  const zpl = buildPackLabelBitmapZpl({
+    canvas,
+    labelWidth: 1890,
+    labelHeight: 1535,
+  });
+
+  console.log("[packPrint] ZPL generated, sending to pack-server", {
+    requestId,
+    lotNumber,
+    zplLength: zpl.length,
+  });
+
+  // pack-server로 ZPL 전송 (출력만 담당)
+  const url = `${PACK_PRINT_SERVER_BASE}/print-zpl`;
 
   const headers = {
     "Content-Type": "application/json",
@@ -68,29 +115,14 @@ export async function printPackingLabelViaBgServer({
   }
 
   const payload = {
-    requestId,
-    lotNumber,
-    mailboxCode,
-    screwType,
-    clinicName,
-    labName,
-    requestDate,
-    manufacturingDate,
-    implantManufacturer,
-    implantSystem: implantBrand, // pack-server는 implantSystem 필드 사용
-    implantFamily,
-    implantType,
-    patientName,
-    toothNumber,
-    material,
+    zpl,
     printer: printer || PACK_PRINT_DEFAULT_PRINTER || undefined,
     paperProfile,
     copies,
-    dpi: 600, // 패킹 라벨 프린터 DPI 명시
     title: `Custom Abutment Packing ${requestId || lotNumber || ""}`.trim(),
   };
 
-  console.log("[packPrint] sending print request to pack-server", {
+  console.log("[packPrint] sending ZPL to pack-server", {
     url,
     requestId,
     lotNumber,

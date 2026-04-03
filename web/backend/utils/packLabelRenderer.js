@@ -1,10 +1,10 @@
-const { createCanvas, registerFont } = require("canvas");
-const QRCode = require("qrcode");
-const path = require("path");
+import { createCanvas, loadImage } from "canvas";
+import QRCode from "qrcode";
 
-const DESIGN_DPI = 203;
-const DESIGN_WIDTH = 640;
-const DESIGN_HEIGHT = 520;
+/**
+ * 프론트엔드 packLabelRenderer.ts와 동일한 로직으로 Canvas 기반 라벨 생성
+ * 600 DPI 기준으로 80x65mm = 1890x1535 dots
+ */
 
 const dateOnly = (value) => {
   const s = String(value || "").trim();
@@ -32,63 +32,15 @@ const truncateToFit = (ctx, text, maxWidth) => {
   return best;
 };
 
-const fillTextCentered = (ctx, text, x, y, w, padding = 0) => {
-  const t = truncateToFit(ctx, String(text || "-"), Math.max(0, w - padding * 2));
-  const metrics = ctx.measureText(t);
-  const tx = x + Math.max(0, (w - metrics.width) / 2);
-  ctx.fillText(t, tx, y);
-};
-
-const fillTextCenteredInBox = (ctx, text, x, y, w, h, padding = 0) => {
-  const t = truncateToFit(ctx, String(text || "-"), Math.max(0, w - padding * 2));
-  const metrics = ctx.measureText(t);
-  const tx = x + Math.max(0, (w - metrics.width) / 2);
-  const ascent = metrics.actualBoundingBoxAscent || 0;
-  const descent = metrics.actualBoundingBoxDescent || 0;
-  const ty = y + (h + ascent - descent) / 2;
-  ctx.fillText(t, tx, ty);
-};
-
-const fillTextLeft = (ctx, text, x, y, maxWidth) => {
-  const t = truncateToFit(ctx, String(text || "-"), maxWidth);
-  ctx.fillText(t, x, y);
-};
-
-const fillWrappedTextLeft = (ctx, text, x, y, maxWidth, lineHeight, maxLines) => {
-  const source = String(text || "-").trim();
-  if (!source) return;
-  const words = source.split(/\s+/);
-  const lines = [];
-  let current = "";
-
-  words.forEach((word) => {
-    const candidate = current ? `${current} ${word}` : word;
-    if (!current || ctx.measureText(candidate).width <= maxWidth) {
-      current = candidate;
-      return;
-    }
-    lines.push(current);
-    current = word;
-  });
-
-  if (current) lines.push(current);
-
-  lines.slice(0, maxLines).forEach((line, index) => {
-    const rendered =
-      index === maxLines - 1 && lines.length > maxLines
-        ? truncateToFit(ctx, `${line}…`, maxWidth)
-        : line;
-    ctx.fillText(rendered, x, y + index * lineHeight);
-  });
-};
-
 const renderPackLabelToCanvas = async (opts) => {
-  const dpi = Number(opts.dpi) || 203;
-  const baseDpi = DESIGN_DPI;
-  const baseWidth = DESIGN_WIDTH;
-  const baseHeight = DESIGN_HEIGHT;
-  const targetWidth = Number(opts.targetDots?.pw) || Math.round((baseWidth * dpi) / baseDpi);
-  const targetHeight = Number(opts.targetDots?.ll) || Math.round((baseHeight * dpi) / baseDpi);
+  const dpi = Number(opts.dpi) || 600;
+  const baseDpi = Number(opts.designDots?.dpi) || 600;
+  const baseWidth = Number(opts.designDots?.pw) || 1890;
+  const baseHeight = Number(opts.designDots?.ll) || 1535;
+  const targetWidth =
+    Number(opts.targetDots?.pw) || Math.round((baseWidth * dpi) / baseDpi);
+  const targetHeight =
+    Number(opts.targetDots?.ll) || Math.round((baseHeight * dpi) / baseDpi);
   const scale = targetWidth / baseWidth;
   const width = Math.round(targetWidth);
   const height = Math.round(targetHeight);
@@ -129,52 +81,116 @@ const renderPackLabelToCanvas = async (opts) => {
     ctx.fillRect(x, y, 2, h);
   };
 
-  const qr1DataUrl = await QRCode.toDataURL("https://abuts.fit/manual", {
+  const fillTextCentered = (text, x, y, w, padding = 0) => {
+    const t = truncateToFit(
+      ctx,
+      String(text || "-"),
+      Math.max(0, w - padding * 2),
+    );
+    const metrics = ctx.measureText(t);
+    const tx = x + Math.max(0, (w - metrics.width) / 2);
+    ctx.fillText(t, tx, y);
+  };
+
+  const fillTextCenteredInBox = (text, x, y, w, h, padding = 0) => {
+    const t = truncateToFit(
+      ctx,
+      String(text || "-"),
+      Math.max(0, w - padding * 2),
+    );
+    const metrics = ctx.measureText(t);
+    const tx = x + Math.max(0, (w - metrics.width) / 2);
+    const ascent = metrics.actualBoundingBoxAscent || 0;
+    const descent = metrics.actualBoundingBoxDescent || 0;
+    const ty = y + (h + ascent - descent) / 2;
+    ctx.fillText(t, tx, ty);
+  };
+
+  const fillTextLeft = (text, x, y, maxWidth) => {
+    const t = truncateToFit(ctx, String(text || "-"), maxWidth);
+    ctx.fillText(t, x, y);
+  };
+
+  const fillWrappedTextLeft = (text, x, y, maxWidth, lineHeight, maxLines) => {
+    const source = String(text || "-").trim();
+    if (!source) return;
+    const words = source.split(/\s+/);
+    const lines = [];
+    let current = "";
+
+    words.forEach((word) => {
+      const candidate = current ? `${current} ${word}` : word;
+      if (!current || ctx.measureText(candidate).width <= maxWidth) {
+        current = candidate;
+        return;
+      }
+      lines.push(current);
+      current = word;
+    });
+
+    if (current) lines.push(current);
+
+    lines.slice(0, maxLines).forEach((line, index) => {
+      const rendered =
+        index === maxLines - 1 && lines.length > maxLines
+          ? truncateToFit(ctx, `${line}…`, maxWidth)
+          : line;
+      ctx.fillText(rendered, x, y + index * lineHeight);
+    });
+  };
+
+  // QR 코드 생성
+  const qr1Buffer = await QRCode.toBuffer("https://abuts.fit/manual", {
     errorCorrectionLevel: "L",
     margin: 0,
     width: Math.max(1, Math.round(144 * scale)),
   });
-  const qr1Img = await loadImage(qr1DataUrl);
+  const qr1Img = await loadImage(qr1Buffer);
 
-  const qr2DataUrl = await QRCode.toDataURL("https://acrodent.com", {
+  const qr2Buffer = await QRCode.toBuffer("https://acrodent.com", {
     errorCorrectionLevel: "L",
     margin: 0,
     width: Math.max(1, Math.round(144 * scale)),
   });
-  const qr2Img = await loadImage(qr2DataUrl);
+  const qr2Img = await loadImage(qr2Buffer);
 
-  const qr3DataUrl = await QRCode.toDataURL("https://abuts.fit", {
+  const qr3Buffer = await QRCode.toBuffer("https://abuts.fit", {
     errorCorrectionLevel: "L",
     margin: 0,
     width: Math.max(1, Math.round(144 * scale)),
   });
-  const qr3Img = await loadImage(qr3DataUrl);
+  const qr3Img = await loadImage(qr3Buffer);
 
+  // 상단 3칸 박스 (우편함, 나사, Lot)
   drawBox(20, 20, 498, 50);
   drawVLine(202, 20, 50);
   drawVLine(362, 20, 50);
   ctx.font = "bold 48px Arial";
-  fillTextCentered(ctx, opts.mailboxCode || "-", 20, 24, 182, 8);
-  fillTextCentered(ctx, opts.screwType || "-", 202, 24, 160, 8);
+  fillTextCentered(opts.mailboxCode || "-", 20, 24, 182, 8);
+  fillTextCentered(opts.screwType || "-", 202, 24, 160, 8);
   {
     const lot = String(opts.lotNumber || "-");
     const suffix = lot.length >= 3 ? lot.slice(-3) : lot;
-    fillTextCentered(ctx, suffix, 362, 24, 156, 8);
+    fillTextCentered(suffix, 362, 24, 156, 8);
   }
 
+  // 치과명
   drawBox(20, 74, 498, 46);
   ctx.font = "bold 36px Arial";
-  fillTextCenteredInBox(ctx, opts.labName || "-", 20, 74, 498, 46, 16);
+  fillTextCenteredInBox(opts.labName || "-", 20, 74, 498, 46, 16);
 
+  // 매뉴얼 QR
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(qr1Img, 533, 24, 72, 72);
   ctx.imageSmoothingEnabled = true;
   ctx.font = "bold 10px Arial";
-  fillTextCenteredInBox(ctx, MANUAL_QR_LABEL, 526, 98, 86, 14, 0);
+  fillTextCenteredInBox(MANUAL_QR_LABEL, 526, 98, 86, 14, 0);
 
+  // 통합 정보 테이블
   const unifiedTopY = 124;
   const infoRowHeights = [28, 28, 28];
-  const unifiedDetailsY = unifiedTopY + infoRowHeights.reduce((sum, h) => sum + h, 0);
+  const unifiedDetailsY =
+    unifiedTopY + infoRowHeights.reduce((sum, h) => sum + h, 0);
   const detailsY = unifiedDetailsY;
   const detailRowHeights = [28, 28, 28, 28];
   const detailColWidth = 340;
@@ -205,7 +221,6 @@ const renderPackLabelToCanvas = async (opts) => {
   drawBox(20, unifiedTopY, 600, unifiedTableH);
   ctx.font = "bold 14px Arial";
   fillTextCentered(
-    ctx,
     `${opts.clinicName || "-"} / ${opts.patientName || "-"} / #${opts.toothNumber || "-"}`,
     20,
     unifiedTopY + 8,
@@ -214,7 +229,6 @@ const renderPackLabelToCanvas = async (opts) => {
   );
   drawHLine(20, unifiedTopY + infoRowHeights[0], 600);
   fillTextCentered(
-    ctx,
     `의뢰일: ${dateOnly(opts.requestDate)} / 제조일: ${dateOnly(opts.manufacturingDate)}`,
     20,
     unifiedTopY + infoRowHeights[0] + 8,
@@ -223,7 +237,6 @@ const renderPackLabelToCanvas = async (opts) => {
   );
   drawHLine(20, unifiedTopY + infoRowHeights[0] + infoRowHeights[1], 600);
   fillTextCentered(
-    ctx,
     `${opts.implantManufacturer || "-"} / ${opts.implantBrand || "-"} / ${opts.implantFamily || "-"} / ${opts.implantType || "-"}`,
     20,
     unifiedTopY + infoRowHeights[0] + infoRowHeights[1] + 8,
@@ -235,7 +248,7 @@ const renderPackLabelToCanvas = async (opts) => {
 
   const drawDetailCell = (label, value, x, y, w, h) => {
     ctx.font = "bold 13px Arial";
-    fillTextCenteredInBox(ctx, `${label} : ${value}`, x, y + 3, w, h - 6, 0);
+    fillTextCenteredInBox(`${label} : ${value}`, x, y + 3, w, h - 6, 0);
   };
 
   let rowStartY = detailsY;
@@ -246,7 +259,14 @@ const renderPackLabelToCanvas = async (opts) => {
     }
     row.forEach((cell, colIdx) => {
       const cellX = 20 + colIdx * detailColWidth;
-      drawDetailCell(cell.label, cell.value, cellX, rowStartY, detailColWidth, rowHeight);
+      drawDetailCell(
+        cell.label,
+        cell.value,
+        cellX,
+        rowStartY,
+        detailColWidth,
+        rowHeight,
+      );
     });
     rowStartY += rowHeight;
   });
@@ -255,9 +275,24 @@ const renderPackLabelToCanvas = async (opts) => {
   drawHLine(20, usageY, 600);
   drawVLine(20 + detailColWidth, usageY, usageTextH);
   ctx.font = "bold 13px Arial";
-  fillTextCenteredInBox(ctx, "사용방법, 주의사항 : 사용자 매뉴얼 참조", 20, usageY + 4, detailColWidth, usageTextH - 6, 0);
-  fillTextCenteredInBox(ctx, "보관방법 : 건조한 실온에서 보관", 20 + detailColWidth, usageY + 4, 600 - detailColWidth, usageTextH - 6, 0);
+  fillTextCenteredInBox(
+    "사용방법, 주의사항 : 사용자 매뉴얼 참조",
+    20,
+    usageY + 4,
+    detailColWidth,
+    usageTextH - 6,
+    0,
+  );
+  fillTextCenteredInBox(
+    "보관방법 : 건조한 실온에서 보관",
+    20 + detailColWidth,
+    usageY + 4,
+    600 - detailColWidth,
+    usageTextH - 6,
+    0,
+  );
 
+  // 제조업자 / 판매업자
   const companyY = unifiedTopY + unifiedTableH + 16;
   const companyH = 144;
   const companyQrSize = 66;
@@ -270,36 +305,77 @@ const renderPackLabelToCanvas = async (opts) => {
   ctx.font = "bold 14px Arial";
   ctx.fillText(MANUFACTURER_LABEL, 26, companyY + companyLineYs[0]);
   ctx.font = "12px Arial";
-  fillTextLeft(ctx, COMPANY_NAME, 26, companyY + companyLineYs[1], companyTopTextWidth);
-  fillTextLeft(ctx, `제조업허가 ${LICENSE_NO}`, 26, companyY + companyLineYs[2], companyTopTextWidth);
-  fillWrappedTextLeft(ctx, COMPANY_ADDR, 26, companyY + companyLineYs[3], companyBottomTextWidth, 18, 2);
+  fillTextLeft(
+    COMPANY_NAME,
+    26,
+    companyY + companyLineYs[1],
+    companyTopTextWidth,
+  );
+  fillTextLeft(
+    `제조업허가 ${LICENSE_NO}`,
+    26,
+    companyY + companyLineYs[2],
+    companyTopTextWidth,
+  );
+  fillWrappedTextLeft(
+    COMPANY_ADDR,
+    26,
+    companyY + companyLineYs[3],
+    companyBottomTextWidth,
+    18,
+    2,
+  );
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(qr2Img, 20 + 290 - companyQrPaddingX - companyQrSize, companyY + companyQrPaddingTop, companyQrSize, companyQrSize);
+  ctx.drawImage(
+    qr2Img,
+    20 + 290 - companyQrPaddingX - companyQrSize,
+    companyY + companyQrPaddingTop,
+    companyQrSize,
+    companyQrSize,
+  );
   ctx.imageSmoothingEnabled = true;
 
   drawBox(330, companyY, 290, companyH);
   ctx.font = "bold 14px Arial";
   ctx.fillText("판매업자", 336, companyY + companyLineYs[0]);
   ctx.font = "12px Arial";
-  fillTextLeft(ctx, SELLER_NAME, 336, companyY + companyLineYs[1], companyTopTextWidth);
-  fillTextLeft(ctx, SELLER_PERMIT, 336, companyY + companyLineYs[2], companyTopTextWidth);
-  fillTextLeft(ctx, SELLER_TEL, 336, companyY + companyLineYs[3], companyBottomTextWidth);
-  fillWrappedTextLeft(ctx, SELLER_ADDR, 336, companyY + companyLineYs[4], companyBottomTextWidth, 18, 2);
+  fillTextLeft(
+    SELLER_NAME,
+    336,
+    companyY + companyLineYs[1],
+    companyTopTextWidth,
+  );
+  fillTextLeft(
+    SELLER_PERMIT,
+    336,
+    companyY + companyLineYs[2],
+    companyTopTextWidth,
+  );
+  fillTextLeft(
+    SELLER_TEL,
+    336,
+    companyY + companyLineYs[3],
+    companyBottomTextWidth,
+  );
+  fillWrappedTextLeft(
+    SELLER_ADDR,
+    336,
+    companyY + companyLineYs[4],
+    companyBottomTextWidth,
+    18,
+    2,
+  );
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(qr3Img, 330 + 290 - companyQrPaddingX - companyQrSize, companyY + companyQrPaddingTop, companyQrSize, companyQrSize);
+  ctx.drawImage(
+    qr3Img,
+    330 + 290 - companyQrPaddingX - companyQrSize,
+    companyY + companyQrPaddingTop,
+    companyQrSize,
+    companyQrSize,
+  );
   ctx.imageSmoothingEnabled = true;
 
   return canvas;
-};
-
-const loadImage = (dataUrl) => {
-  return new Promise((resolve, reject) => {
-    const { Image } = require("canvas");
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("QR 이미지 로드 실패"));
-    img.src = dataUrl;
-  });
 };
 
 const canvasToZplGraphic = (canvas) => {
@@ -363,7 +439,4 @@ const buildPackLabelBitmapZpl = ({ canvas, labelWidth, labelHeight }) => {
   ].join("\n");
 };
 
-module.exports = {
-  renderPackLabelToCanvas,
-  buildPackLabelBitmapZpl,
-};
+export { renderPackLabelToCanvas, canvasToZplGraphic, buildPackLabelBitmapZpl };
