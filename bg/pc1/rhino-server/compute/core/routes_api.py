@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from . import settings
 from . import state
 from .logger import log
-from .processing import process_single_stl
+from .processing import process_single_stl, upload_via_presign
 from .rhino_runner import run_rhino_python
 from .stl_metadata import calculate_and_register_metadata
 
@@ -251,11 +251,21 @@ async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks
         
         # 백그라운드에서 메타데이터 계산 및 등록
         def _calculate():
-            calculate_and_register_metadata(
+            # 1. 메타데이터 재계산 및 백엔드 등록
+            stl_metadata = calculate_and_register_metadata(
                 stl_path,
                 req.requestId,
                 None,  # requestMongoId는 백엔드에서 찾음
                 finish_line_points,
+            )
+            
+            # 2. S3 재업로드 및 백엔드 캐시 무효화
+            log(f"[recalculate-metadata] Uploading to S3 for cache invalidation: {req.requestId}")
+            metadata_payload = {"stlMetadata": stl_metadata} if stl_metadata else {}
+            upload_via_presign(
+                stl_path,
+                stl_path.name,
+                {"requestId": req.requestId, "metadata": metadata_payload},
             )
         
         background_tasks.add_task(_calculate)
