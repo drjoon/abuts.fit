@@ -940,6 +940,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         }
         private static List<string> BuildSerialBlock(string serialCode, bool isDeburr)
         {
+            double baseY = 0.525;
+            double adjustedY = baseY + AppConfig.DefaultStlShift;
+            AppLogger.Log($"StlFileProcessor: BuildSerialBlock - 각인 Y 좌표 계산 baseY:{baseY:F3} + shift:{AppConfig.DefaultStlShift:F3} = {adjustedY:F3}");
             var block = new List<string>
             {
                 "(Serial)",
@@ -947,7 +950,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 "M50",
                 "G28H0.0",
                 "M23 S2000",
-                "G98 G0 X[#521+1.8]Z[#520+1.8]Y0.525C0.0",
+                $"G98 G0 X[#521+1.8]Z[#520+1.8]Y{adjustedY.ToString("F3", CultureInfo.InvariantCulture)}C0.0",
                 "G4 U0.05",
                 "G1 X4.0 F2000",
                 "G1 X3.45 F500",
@@ -2217,10 +2220,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
                 AppLogger.Log("DentalAddin: Main 실행 완료");
-                
-                // Main 실행 후 모든 Operation의 StartPointY를 STL shift만큼 조정
-                AdjustOperationStartPointY(document, AppConfig.DefaultStlShift);
-                
                 LogOperationSummary(document, "DentalAddin: PostMain");
                 AppLogger.Log("StlFileProcessor: DentalPanel 호출 완료");
             }
@@ -3627,61 +3626,71 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         dynamic op = document.Operations[i];
                         if (op == null) continue;
                         
-                        // Operation의 Technology 가져오기
-                        dynamic tech = null;
-                        try { tech = op.Technology; } catch { }
-                        if (tech == null) continue;
+                        string opName = null;
+                        try { opName = op.Name; } catch { }
                         
-                        // Technology의 TechnoParameters 가져오기
-                        dynamic techParams = null;
-                        try { techParams = tech.TechnoParameters; } catch { }
-                        if (techParams == null) continue;
-                        
-                        // StartPointY (ID 3333) 찾아서 조정
-                        bool adjusted = false;
-                        for (int j = 1; j <= techParams.Count; j++)
+                        // CONNECTION Operation만 조정 (각인 코드)
+                        if (string.IsNullOrEmpty(opName) || !opName.Contains("CONNECTION"))
                         {
-                            try
-                            {
-                                dynamic param = techParams[j];
-                                if (param == null) continue;
-                                
-                                int paramId = 0;
-                                try { paramId = param.ID; } catch { }
-                                
-                                // StartPointY ID = 3333
-                                if (paramId == 3333)
-                                {
-                                    double originalValue = 0;
-                                    try { originalValue = param.Value; } catch { }
-                                    
-                                    double newValue = originalValue + deltaX;
-                                    param.Value = newValue;
-                                    adjusted = true;
-                                    
-                                    AppLogger.Log($"DentalAddin: Op[{i}] StartPointY 조정 - {originalValue:F3} -> {newValue:F3}");
-                                    break;
-                                }
-                            }
-                            catch { }
+                            continue;
                         }
                         
-                        if (adjusted)
+                        // Operation의 Text 속성 (NC 코드) 가져오기
+                        string text = null;
+                        try { text = op.Text; } catch { }
+                        if (string.IsNullOrWhiteSpace(text))
                         {
+                            AppLogger.Log($"DentalAddin: Op[{i}] {opName} - Text(NC코드) null");
+                            continue;
+                        }
+                        
+                        // NC 코드에서 Y 좌표(ESPRIT X축)를 deltaX만큼 증가
+                        string adjustedText = AdjustNcCodeYCoordinates(text, deltaX);
+                        if (adjustedText != text)
+                        {
+                            op.Text = adjustedText;
                             adjustedCount++;
+                            AppLogger.Log($"DentalAddin: Op[{i}] {opName} NC 코드 Y 좌표 조정 완료");
+                        }
+                        else
+                        {
+                            AppLogger.Log($"DentalAddin: Op[{i}] {opName} - NC 코드에 Y 좌표 없음");
                         }
                     }
                     catch (Exception ex)
                     {
-                        AppLogger.Log($"DentalAddin: Operation[{i}] StartPointY 조정 실패 - {ex.Message}");
+                        AppLogger.Log($"DentalAddin: Operation[{i}] NC 코드 조정 실패 - {ex.Message}");
                     }
                 }
-                AppLogger.Log($"DentalAddin: StartPointY 조정 완료 - {adjustedCount}개 Operation, deltaX:{deltaX:F3}");
+                AppLogger.Log($"DentalAddin: Connection NC 코드 조정 완료 - {adjustedCount}개 Operation, deltaX:{deltaX:F3}");
             }
             catch (Exception ex)
             {
-                AppLogger.Log($"DentalAddin: StartPointY 조정 실패 - {ex.GetType().Name}:{ex.Message}");
+                AppLogger.Log($"DentalAddin: NC 코드 조정 실패 - {ex.GetType().Name}:{ex.Message}");
             }
+        }
+        private string AdjustNcCodeYCoordinates(string ncCode, double deltaX)
+        {
+            if (string.IsNullOrWhiteSpace(ncCode) || deltaX <= 0)
+            {
+                return ncCode;
+            }
+            
+            // NC 코드에서 Y 좌표를 찾아서 deltaX만큼 증가
+            // 패턴: Y숫자 (예: Y0.525, Y2.03, Y-1.5)
+            var regex = new Regex(@"Y(-?\d+\.?\d*)", RegexOptions.IgnoreCase);
+            string result = regex.Replace(ncCode, match =>
+            {
+                string originalValue = match.Groups[1].Value;
+                if (double.TryParse(originalValue, NumberStyles.Float, CultureInfo.InvariantCulture, out double yValue))
+                {
+                    double adjustedValue = yValue + deltaX;
+                    return $"Y{adjustedValue.ToString("F3", CultureInfo.InvariantCulture)}";
+                }
+                return match.Value;
+            });
+            
+            return result;
         }
         private static bool TryInvokeModuleMethod(Type moduleType, string methodName, params object[] args)
         {
