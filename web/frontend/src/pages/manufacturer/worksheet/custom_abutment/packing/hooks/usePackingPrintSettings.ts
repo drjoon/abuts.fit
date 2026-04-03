@@ -22,14 +22,14 @@ export const usePackingPrintSettings = ({
     pw: number;
     ll: number;
   }>({
-    pw: 640,
-    ll: 520,
+    pw: 1890,
+    ll: 1535,
   });
   const [packLabelDesignDots, setPackLabelDesignDots] = useState<{
     pw: number;
     ll: number;
     dpi: number;
-  }>({ pw: 640, ll: 520, dpi: 203 });
+  }>({ pw: 1890, ll: 1535, dpi: 600 });
 
   useEffect(() => {
     const storedProfile = localStorage.getItem(
