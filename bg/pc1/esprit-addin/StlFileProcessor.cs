@@ -52,146 +52,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         }
 
 
-        private void ResetAllDentalAddinStaticFields()
-        {
-            try
-            {
-
-                Type mainModuleType = DentalAddinReflectionHelper.ResolveMainModuleType();
-                if (mainModuleType != null)
-                {
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Document", null);
-                    DentalAddinReflectionHelper.SetStaticProperty(mainModuleType, "EspritApp", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "PrcFilePath", new string[13]);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "PrcFileName", new string[13]);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "NumData", new double[7]);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "NumCombobox", new int[7]);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "FSName", new string[13]);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "NumberT", new double[9]);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "ToolNs", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "FilPath", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "tfc", null);
-                    DentalAddinReflectionHelper.ResetStaticArrayField(mainModuleType, "Fcb2", 13);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Fcb1", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "FC1", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "FC2", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "FC3", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "FC4", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "FC5", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Fcc", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "FcM", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "SS1", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Ss", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "seg", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Wp", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Gas", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Pt12", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "IntPt", null);
-                    DentalAddinReflectionHelper.ResetStaticArrayField(mainModuleType, "ptp", 7);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "FcNumber", new int[7]);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Matrix1", new double[19]);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Matrix2", new double[19]);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Matrix3", new double[37]);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "P", new int[37]);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Q", new int[9]);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "SurfaceNumber", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "SurfaceNumber2", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Jump", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "machinetype", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "EndXValue", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Chamfer", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "DownZ", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "MillingDepth", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "TurningExtend", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "TurningDepth", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "BackTurn", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "SL", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "ProfileType", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "ProfileT", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "LowerY", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "HighY", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "iLine", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "HighY1", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "HighY2", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "FirstYy", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Hdepth", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Bdepth", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "FrontYvalue", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "FirstH", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Dayu", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "EndX", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "EndY", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Eror", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "TurningTimes", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "MaxX", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "MaxY", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "GrFeature", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "FirstFeatureNeed", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "NeedFirstFeature", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "MinF", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Ang", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "BtmY", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Percent", new double[5]);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "PercentB", new double[5]);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "MidX", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Xmin", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "YWant", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "roughm", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "n", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "m", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "tek", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "CPen", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "MidXc", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "NeedEndPart", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "EndTimes", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "NeediLine", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Px", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Py", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "DeleteLine", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "DeleteOLine", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Incline", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Intersect", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "fcname", null);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "SpindleSide", false);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "RL", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "ExtendX", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "COMX1", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "COMX2", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "XT", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "ZT", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "ZH", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "AngNumber", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "AngType1", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "AngType2", 0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "ReverseOn", false);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "AngleNumber", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "SemiAngle", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "RoughType", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(mainModuleType, "x3", 0.0);
-                }
-
-                Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
-                if (moveModuleType != null)
-                {
-                    DentalAddinReflectionHelper.SetStaticField(moveModuleType, "Chazhi", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(moveModuleType, "NeedMove", false);
-                    DentalAddinReflectionHelper.SetStaticField(moveModuleType, "NeedMoveY", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(moveModuleType, "NeedMoveZ", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(moveModuleType, "RMTI", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(moveModuleType, "MTI", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(moveModuleType, "NonConnection", false);
-                    DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FirstPX", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(moveModuleType, "BackPointX", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FrontPointX", 0.0);
-                    DentalAddinReflectionHelper.SetStaticField(moveModuleType, "ExtendMill", 0.0);
-                }
-                AppLogger.Log("StlFileProcessor: DentalAddin static 필드 초기화 완료");
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Log($"StlFileProcessor: DentalAddin static 필드 초기화 실패 - {ex.GetType().Name}:{ex.Message}");
-            }
-        }
         private readonly Application _espApp;
         private readonly string _outputFolder;
         private readonly string _postProcessorFile;
@@ -224,7 +84,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _configurator = new DentalAddinConfigurator(_prcManager);
             _documentManager = new EspritDocumentManager(_espApp);
             _backendClient = new BackendApiClient();
-            _ncGenerator = new NcFileGenerator(_espApp, _postProcessorFile);
+            _ncGenerator = new NcFileGenerator(_espApp, _outputFolder, _postProcessorFile);
         }
         public Esprit.PMTab exTab;
         public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null)
@@ -233,29 +93,28 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             AppLogger.Log("StlFileProcessor: Process 시작");
             ResetPerRunState();
             Directory.CreateDirectory(_outputFolder);
-            Document document = EnsureDocument(materialDiameter);
+            Document document = _documentManager.EnsureDocument(materialDiameter);
             if (document == null)
             {
                 AppLogger.Log("StlFileProcessor: 활성화된 ESPRIT 문서를 만들 수 없습니다.");
                 return;
             }
-            EnsureCleanDocument(document);
+            _documentManager.EnsureCleanDocument(document);
 
-            document = ResetDocument(document, materialDiameter);
+            document = _documentManager.ResetDocument(document, materialDiameter);
             if (document == null)
             {
                 AppLogger.Log("StlFileProcessor: 템플릿 문서 초기화에 실패했습니다.");
                 return;
             }
 
-            // ResetAllDentalAddinStaticFields();
-            RemoveLayerIfExists(document, StlImportLayerName);
+            EspritDocumentHelper.RemoveLayerIfExists(document, StlImportLayerName);
             double effectiveFrontLimit = frontLimitX ?? throw new InvalidOperationException("FrontPoint from backend is missing");
             double effectiveBackLimit = backLimitX ?? DefaultBackLimitX;
             _effectiveFrontLimitX = effectiveFrontLimit;
             AppLogger.Log($"StlFileProcessor: LimitX 적용 - Front:{effectiveFrontLimit:F4}, Back:{effectiveBackLimit:F4}");
             string requestId = null;
-            RequestMetaCaseInfos requestMeta = null;
+            BackendApiClient.RequestMetaCaseInfos requestMeta = null;
             double? finishLineTopZ = null;
             double? stlBoundingTopZ = null;
             _backendLotNumber = null;
@@ -264,17 +123,17 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendImplantLabel = null;
             try
             {
-                requestId = ExtractRequestIdFromStlPath(stlPath);
+                requestId = BackendApiClient.ExtractRequestIdFromStlPath(stlPath);
                 if (!string.IsNullOrWhiteSpace(requestId))
                 {
-                    var requestMetaResponse = FetchRequestMeta(requestId);
-                    requestMeta = requestMetaResponse?.caseInfos;
-                    finishLineTopZ = TryGetFinishLineTopZ(requestMetaResponse);
-                    _backendSerialCode = requestMetaResponse?.serialCode;
+                    BackendApiClient.RequestMetaResponse requestMetaResponse = FetchRequestMeta(requestId);
+                    requestMeta = requestMetaResponse?.data?.caseInfos;
+                    finishLineTopZ = BackendApiClient.TryGetFinishLineTopZ(requestMetaResponse?.data);
+                    _backendSerialCode = requestMetaResponse?.data?.serialCode;
                     _backendRequestId = requestId;
                     if (requestMeta != null)
                     {
-                        _backendImplantLabel = FormatImplantLabel(requestMeta);
+                        _backendImplantLabel = $"{requestMeta.clinicName}_{requestMeta.patientName}_{requestMeta.tooth}";
                         if (!string.IsNullOrWhiteSpace(requestMeta.lotNumber))
                         {
                             _backendLotNumber = requestMeta.lotNumber.Trim();
@@ -286,7 +145,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         }
                         AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantSystem}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}");
                         AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
-                        if (!ApplyBackendPrcNames(requestMeta))
+                        if (!_prcManager.ApplyBackendPrcNames((BackendApiClient.RequestMetaCaseInfos)requestMeta, requestId, _backendImplantLabel))
                         {
                             AppLogger.Log("StlFileProcessor: 백엔드 PRC 설정 실패로 공정을 중단합니다.");
                             return;
@@ -323,13 +182,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 catch
                 {
                 }
-                Layer stlLayer = GetOrCreateLayer(document, StlImportLayerName);
+                Layer stlLayer = EspritDocumentHelper.GetOrCreateLayer(document, StlImportLayerName);
                 if (stlLayer != null)
                 {
                     document.ActiveLayer = stlLayer;
                 }
                 document.MergeFile(stlPath);
-                LogBoundingBox(document, "AfterMerge");
+                EspritDocumentHelper.LogBoundingBox(document, "AfterMerge");
                 if (prevLayer != null)
                 {
                     try
@@ -345,15 +204,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 Connect.SetCurrentDocument(document);
                 UpdateLatheBarDiameter(document, stlPath, machineBarDiameter, materialDiameter);
                 Rotate90Degrees(document);
-                FitActiveWindow(document);
-                LogBoundingBox(document, "AfterRotate");
+                EspritDocumentHelper.LogBoundingBox(document, "AfterRotate");
                 InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ);
                 CaptureNcMetadata(document);
-                string ncFilePath = RunPostProcessing(document, stlPath, ResolveBackPointForNc(effectiveBackLimit), ResolveStockDiameterForNc(document));
+                string ncFilePath = _ncGenerator.GenerateNcFile(document, stlPath, ResolveBackPointForNc(effectiveBackLimit), ResolveStockDiameterForNc(document), _backendSerialCode);
                 if (!string.IsNullOrWhiteSpace(ncFilePath))
                 {
                     AppLogger.Log($"StlFileProcessor: NC file generated - {ncFilePath}");
-                    NotifyBackendSuccess(requestId, stlPath, ncFilePath);
+                    BackendApiClient.NotifyBackendSuccess(requestId, stlPath, ncFilePath);
                 }
                 else
                 {
@@ -369,7 +227,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     if (!string.IsNullOrWhiteSpace(requestId))
                     {
-                        NotifyBackendFailure(requestId, stlPath, ex.Message);
+                        BackendApiClient.NotifyBackendFailure(requestId, stlPath, ex.Message);
                     }
                 }
                 catch (Exception notifyEx)
@@ -383,11 +241,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         {
             try
             {
-                _capturedFrontPointX = TryGetMoveModuleDouble("FrontPointX");
-                _capturedBackPointX = TryGetMoveModuleDouble("BackPointX");
+                _capturedFrontPointX = 0.0;
+                _capturedBackPointX = 0.0;
                 double barDiameter = document?.LatheMachineSetup?.BarDiameter ?? 0;
                 _capturedStockDiameter = barDiameter > 0 ? barDiameter : (double?)null;
-                AppLogger.Log($"StlFileProcessor: NC 메타 캡처 - Front:{FormatNcNumber(_capturedFrontPointX)}, Back:{FormatNcNumber(_capturedBackPointX)}, StockDia:{FormatNcNumber(_capturedStockDiameter)}");
+                AppLogger.Log($"StlFileProcessor: NC 메타 캡처 - Front:{_capturedFrontPointX:F3}, Back:{_capturedBackPointX:F3}, StockDia:{_capturedStockDiameter:F3}");
             }
             catch (Exception ex)
             {
@@ -425,50 +283,16 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             ConnectionMachiningProcessFilePath = null;
             lotNumber = "ACR";
             exTab = null;
-            ResetDentalAddinMoveModuleState();
         }
-        private static RequestMetaData FetchRequestMeta(string requestId)
+        private static BackendApiClient.RequestMetaResponse FetchRequestMeta(string requestId)
         {
             if (string.IsNullOrWhiteSpace(requestId))
             {
                 return null;
             }
-            string baseUrl = (GetBackendUrl() ?? "").TrimEnd('/');
-            string url = $"{baseUrl}/bg/request-meta?requestId={Uri.EscapeDataString(requestId)}";
-            try
-            {
-                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
-                string bridgeSecret = GetBridgeSecret();
-                AppLogger.Log($"StlFileProcessor: request-meta GET {url} (X-Bridge-Secret set={(!string.IsNullOrWhiteSpace(bridgeSecret))})");
-                using (var req = new HttpRequestMessage(HttpMethod.Get, url))
-                {
-                    req.Headers.Accept.Clear();
-                    req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                    if (!string.IsNullOrWhiteSpace(bridgeSecret))
-                    {
-                        req.Headers.Add("X-Bridge-Secret", bridgeSecret);
-                    }
-                    var resp = BackendHttp.SendAsync(req).GetAwaiter().GetResult();
-                    string body = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                    if (!resp.IsSuccessStatusCode)
-                    {
-                        AppLogger.Log($"StlFileProcessor: request-meta failed status={resp.StatusCode} body={body}");
-                        return null;
-                    }
-                    AppLogger.Log($"StlFileProcessor: request-meta response body={body}");
-                    using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(body ?? string.Empty)))
-                    {
-                        var serializer = new DataContractJsonSerializer(typeof(RequestMetaResponse));
-                        var meta = serializer.ReadObject(stream) as RequestMetaResponse;
-                        return meta?.data;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Log($"StlFileProcessor: request-meta error - {ex.GetType().Name}:{ex.Message}");
-                return null;
-            }
+            BackendApiClient backendClient = new BackendApiClient();
+            var response = backendClient.FetchRequestMeta(requestId);
+            return new BackendApiClient.RequestMetaResponse { ok = response != null, data = response };
         }
         [DataContract]
         private class RequestMetaResponse
@@ -606,7 +430,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     return null;
                 }
-                result = TryComputeFeatureChainMaxZ(created, createdFeatureKeys);
+                result = EspritDocumentHelper.TryComputeFeatureChainMaxZ(created, createdFeatureKeys);
             }
             catch (Exception ex)
             {
@@ -623,6 +447,34 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             return result;
         }
 
+        public static void CleanupTemporaryFeatureChains(Document document, List<string> createdKeys, string context)
+        {
+            if (document?.FeatureChains == null || createdKeys == null)
+            {
+                return;
+            }
+            try
+            {
+                foreach (string key in createdKeys)
+                {
+                    try
+                    {
+                        var chain = document.FeatureChains[key];
+                        if (chain != null)
+                        {
+                            document.FeatureChains.Remove(chain);
+                        }
+                    }
+                    catch { }
+                }
+                AppLogger.Log($"StlFileProcessor: 임시 FeatureChain 정리 완료 - {context}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"StlFileProcessor: 임시 FeatureChain 정리 실패 - {context} ({ex.GetType().Name}:{ex.Message})");
+            }
+        }
+
 
         private void Rotate90Degrees(Document document)
         {
@@ -631,7 +483,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return;
             }
             const string selectionName = "StlProcessorTemp";
-            SelectionSet selectionSet = GetOrCreateSelectionSet(document, selectionName);
+            SelectionSet selectionSet = EspritDocumentHelper.GetOrCreateSelectionSet(document, selectionName);
             if (selectionSet == null)
             {
                 AppLogger.Log("StlFileProcessor: SelectionSet 생성 실패");
@@ -699,11 +551,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 InvokeMoveSTL(mainModuleType);
                 
                 AppLogger.Log("DentalAddin: Emerge 실행 시작 - IGS 서피스 Merge 및 Translate");
-                TryApplyCompositeSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ);
-                NormalizeCriticalFeatureChainNames(document);
+                // TODO: Composite split by finish line
+                // TODO: Normalize feature chain names
                 // ApplyAdditionalStlShift(document, mainModuleType, AppConfig.DefaultStlShift);
                 // AppLogger.Log("DentalAddin: MoveSTL 실행 완료");
-                CleanupLegacyTurningProfiles(document);
+                // TODO: Cleanup legacy turning profiles
                 AppLogger.Log("DentalAddin: Main 실행 시작");
                 bool searchToolInvoked = DentalAddinReflectionHelper.TryInvokeMainModuleMethod(mainModuleType, "SearchTool", false);
                 AppLogger.Log(searchToolInvoked
@@ -716,7 +568,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
                 AppLogger.Log("DentalAddin: Main 실행 완료");
-                LogOperationSummary(document, "DentalAddin: PostMain");
+                AppLogger.Log("DentalAddin: PostMain - 작업 완료");
                 AppLogger.Log("StlFileProcessor: DentalPanel 호출 완료");
             }
             catch (Exception ex)
@@ -1050,7 +902,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 FieldInfo surfaceNumberField = mainModuleType.GetField("SurfaceNumber", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
                 surfaceNumberField?.SetValue(null, Convert.ToInt32(surface.Key, CultureInfo.InvariantCulture));
 
-                SelectionSet selectionSet = GetOrCreateSelectionSet(document, "Smove");
+                SelectionSet selectionSet = EspritDocumentHelper.GetOrCreateSelectionSet(document, "Smove");
                 selectionSet.RemoveAll();
 
                 Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
@@ -1212,7 +1064,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             try
             {
                 const string selectionName = "StlProcessorShift";
-                SelectionSet selectionSet = GetOrCreateSelectionSet(document, selectionName);
+                SelectionSet selectionSet = EspritDocumentHelper.GetOrCreateSelectionSet(document, selectionName);
                 if (selectionSet == null)
                 {
                     AppLogger.Log("DentalAddin: 추가 이동 SelectionSet 생성 실패");
@@ -1239,8 +1091,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     AppLogger.Log("DentalAddin: 추가 이동 후 MoveSTL_Module 타입을 찾을 수 없습니다.");
                     return;
                 }
-                double? originalFront = TryGetMoveModuleDouble("FrontPointX");
-                double? originalBack = TryGetMoveModuleDouble("BackPointX");
+                double? originalFront = 0.0;
+                double? originalBack = 0.0;
                 double? updatedFront = originalFront.HasValue ? originalFront + deltaX : (double?)null;
                 double? updatedBack = originalBack.HasValue ? originalBack + deltaX : (double?)null;
                 if (updatedFront.HasValue)
@@ -1252,7 +1104,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     DentalAddinReflectionHelper.SetStaticField(moveModuleType, "BackPointX", updatedBack.Value);
                 }
                 
-                AppLogger.Log($"DentalAddin: STL 추가 X 이동 dX:{deltaX:F3}, FrontPointX:{FormatNcNumber(updatedFront)}, BackPointX:{FormatNcNumber(updatedBack)}");
+                AppLogger.Log($"DentalAddin: STL 추가 X 이동 완료 - delta:{deltaX:F3}, Front:{updatedFront:F3}, Back:{updatedBack:F3}");
             }
             catch (Exception ex)
             {

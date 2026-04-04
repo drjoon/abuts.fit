@@ -138,6 +138,13 @@
       <DependentUpon>Settings.settings</DependentUpon>
     </Compile>
     <Compile Include="RepeatProcess.cs" />
+    <Compile Include="Helpers\BackendApiClient.cs" />
+    <Compile Include="Helpers\EspritDocumentHelper.cs" />
+    <Compile Include="Helpers\EspritDocumentManager.cs" />
+    <Compile Include="Helpers\NcFileGenerator.cs" />
+    <Compile Include="DentalAddin\DentalAddinConfigurator.cs" />
+    <Compile Include="DentalAddin\DentalAddinPrcManager.cs" />
+    <Compile Include="DentalAddin\DentalAddinReflectionHelper.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\Clean_Module.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\ConnectionCut.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\DentalLogger.cs" />

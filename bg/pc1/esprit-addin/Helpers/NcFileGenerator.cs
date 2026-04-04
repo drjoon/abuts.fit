@@ -5,8 +5,8 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Esprit;
+using EspritConstants;
 using Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging;
-
 namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 {
     /// <summary>
@@ -17,33 +17,27 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         private readonly Application _espApp;
         private readonly string _outputFolder;
         private readonly string _postProcessorFile;
-
         public NcFileGenerator(Application espApp, string outputFolder, string postProcessorFile)
         {
             _espApp = espApp ?? throw new ArgumentNullException(nameof(espApp));
             _outputFolder = outputFolder ?? AppConfig.StorageNcDirectory;
             _postProcessorFile = postProcessorFile ?? "Acro_dent_XE.asc";
         }
-
         public string GenerateNcFile(Document document, string stlPath, double backPointX, double stockDiameter, string serialCode)
         {
             string postDir = _espApp.Configuration.GetFileDirectory(espFileType.espFileTypePostProcessor);
             string postFilePath = Path.Combine(postDir, _postProcessorFile);
             string ncFileName = BuildNcFilePath(stlPath);
-
             document.NCCode.AddAll();
             document.NCCode.Execute(postFilePath, ncFileName);
             AppLogger.Log($"NcFileGenerator: NC 저장 완료 - {ncFileName}");
-
             UpdateNcHeader(ncFileName, Path.GetFileName(ncFileName), backPointX, stockDiameter);
             
             string serialForNc = NormalizeSerialCode(serialCode);
             AppLogger.Log($"NcFileGenerator: Serial 각인 코드 적용 - Raw:'{serialCode ?? string.Empty}' => Use:'{serialForNc}'");
             UpdateSerialBlocks(ncFileName, serialForNc);
-
             return ncFileName;
         }
-
         private string BuildNcFilePath(string stlPath)
         {
             string baseName = Path.GetFileNameWithoutExtension(stlPath) ?? "output";
@@ -60,7 +54,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             
             return Path.Combine(_outputFolder, sanitizedBase + ".nc");
         }
-
         private static string RemoveFilledToken(string baseName)
         {
             if (string.IsNullOrWhiteSpace(baseName))
@@ -70,7 +63,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             string sanitized = Regex.Replace(baseName, @"(?i)\.filled", string.Empty).Trim('-', '_', '.', ' ');
             return string.IsNullOrWhiteSpace(sanitized) ? "output" : sanitized;
         }
-
         private static string ExtractDisplayName(string displayName)
         {
             if (string.IsNullOrWhiteSpace(displayName))
@@ -85,7 +77,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             int length = Math.Min(2, parts.Length);
             return string.Join("-", parts.Take(length));
         }
-
         private void UpdateNcHeader(string ncFilePath, string displayName, double backPointX, double stockDiameter)
         {
             try
@@ -121,7 +112,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 AppLogger.Log($"NcFileGenerator: NC 헤더 수정 실패 - {ex.GetType().Name}:{ex.Message}");
             }
         }
-
         private static double ResolveBackturnClearance(double stockDiameter)
         {
             double[] clearances = AppConfig.DefaultBackturnClearances;
@@ -149,7 +139,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             if (bestIndex >= clearances.Length) bestIndex = clearances.Length - 1;
             return clearances[bestIndex];
         }
-
         private static void ApplyOrInsertNcLine(List<string> lines, string newLine, string token)
         {
             int index = lines.FindIndex(line => line.TrimStart().StartsWith(token, StringComparison.OrdinalIgnoreCase));
@@ -161,7 +150,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             int insertIndex = Math.Min(2, lines.Count);
             lines.Insert(insertIndex, newLine);
         }
-
         private static string FormatNcNumber(double? value, string format = "0.###############")
         {
             if (!value.HasValue)
@@ -170,7 +158,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             }
             return value.Value.ToString(format, CultureInfo.InvariantCulture);
         }
-
         private void UpdateSerialBlocks(string ncFilePath, string serialCode)
         {
             try
@@ -203,7 +190,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 AppLogger.Log($"NcFileGenerator: Serial 블록 갱신 실패 - {ex.GetType().Name}:{ex.Message}");
             }
         }
-
         private static bool ReplaceSerialBlock(List<string> lines, string marker, List<string> newBlock, int occurrenceIndex = 0)
         {
             if (occurrenceIndex < 0)
@@ -242,7 +228,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             lines.InsertRange(start, newBlock);
             return true;
         }
-
         private static List<string> BuildSerialBlock(string serialCode, bool isDeburr)
         {
             double baseY = 0.525;
@@ -276,7 +261,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             });
             return block;
         }
-
         private static IEnumerable<string> BuildSerialMacroLines(string serialCode, string moveCommand)
         {
             for (int i = 0; i < serialCode.Length; i++)
@@ -288,7 +272,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 }
             }
         }
-
         private static string BuildMacroCall(char letter)
         {
             char upper = char.ToUpperInvariant(letter);
@@ -299,7 +282,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             int macroIndex = upper - 'A' + 1;
             return $"M98P{macroIndex.ToString("0000")}";
         }
-
         private static string NormalizeSerialCode(string raw)
         {
             const string fallback = "ABC";

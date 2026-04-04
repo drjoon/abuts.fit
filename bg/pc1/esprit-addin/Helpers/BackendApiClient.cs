@@ -13,7 +13,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
     /// <summary>
     /// 백엔드 API 통신 클라이언트
     /// </summary>
-    public static class BackendApiClient
+    public class BackendApiClient
     {
         private static readonly HttpClient BackendHttp;
 
@@ -30,7 +30,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             };
         }
 
-        public static RequestMetaData FetchRequestMeta(string requestId)
+        public RequestMetaData FetchRequestMeta(string requestId)
         {
             if (string.IsNullOrWhiteSpace(requestId))
             {
