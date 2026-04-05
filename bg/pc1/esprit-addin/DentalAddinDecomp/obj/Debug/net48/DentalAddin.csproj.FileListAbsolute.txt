@@ -1,0 +1,6 @@
+C:\Users\user\abuts.fit\bg\esprit-addin\DentalAddinDecomp\obj\Debug\net48\DentalAddin.csproj.AssemblyReference.cache
+C:\Users\user\abuts.fit\bg\esprit-addin\DentalAddinDecomp\obj\Debug\net48\DentalAddin.DentalPanel.resources
+C:\Users\user\abuts.fit\bg\esprit-addin\DentalAddinDecomp\obj\Debug\net48\DentalAddin.Dialog1.resources
+C:\Users\user\abuts.fit\bg\esprit-addin\DentalAddinDecomp\obj\Debug\net48\DentalAddin.Dialog2.resources
+C:\Users\user\abuts.fit\bg\esprit-addin\DentalAddinDecomp\obj\Debug\net48\DentalAddin.Resources.resources
+C:\Users\user\abuts.fit\bg\esprit-addin\DentalAddinDecomp\obj\Debug\net48\DentalAddin.csproj.GenerateResource.cache

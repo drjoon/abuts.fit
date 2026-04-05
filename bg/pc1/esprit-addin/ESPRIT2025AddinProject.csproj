@@ -153,6 +153,13 @@
     <Compile Include="DentalAddinDecomp\DentalAddin\Intersection2.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\License.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\MainModule.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\MainModuleFeatureUtils.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\MainModuleGeometryUtils.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\MainModuleOperations.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\MainModuleFreeForm.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\MainModuleComposite.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\MainModuleGeometry.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\MainModuleHelpers.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\Mark.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\Milling_Module.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\MoveSTL_Module.cs" />

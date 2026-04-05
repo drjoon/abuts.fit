@@ -363,19 +363,27 @@ namespace DentalAddin
                 ProjectData.ClearProjectError();
             }
             selectionSet.RemoveAll();
+            int stlCount = 0;
+            int surfaceCount = 0;
             foreach (GraphicObject item in MainModule.Document.GraphicsCollection)
             {
                 if (item.GraphicObjectType == espGraphicObjectType.espSTL_Model)
                 {
                     selectionSet.Add(item, RuntimeHelpers.GetObjectValue(Missing.Value));
-                    break;
+                    stlCount++;
+                }
+                else if (item.GraphicObjectType == espGraphicObjectType.espSurface)
+                {
+                    selectionSet.Add(item, RuntimeHelpers.GetObjectValue(Missing.Value));
+                    surfaceCount++;
                 }
             }
-            if (selectionSet.Count == 0)
+            if (stlCount == 0)
             {
                 DentalLogger.Log("MoveSTL - STL 모델을 찾지 못함");
                 return;
             }
+            DentalLogger.Log($"MoveSTL - shift 대상: STL={stlCount}, Surface={surfaceCount}");
             FeatureList();
             MainModule.Document.FeatureRecognition.CreatePartProfileShadow(selectionSet, MainModule.Document.Planes["XYZ"], espGraphicObjectReturnType.espFeatureChains);
             FeatureChain featureChain = NewFeature();
