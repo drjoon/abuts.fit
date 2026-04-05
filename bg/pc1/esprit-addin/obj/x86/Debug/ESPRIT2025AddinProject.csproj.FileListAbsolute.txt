@@ -31,9 +31,12 @@ C:\abuts.fit\bg\esprit-addin\bin\x86\Debug\DentalAddin.dll
 C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\ESPRIT2025AddinProject.dll.config
 C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\ESPRIT2025AddinProject.dll
 C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\ESPRIT2025AddinProject.pdb
+C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\BouncyCastle.Crypto.dll
 C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\EspritAddInAssistant.dll
 C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\Interop.EspritCommands.dll
+C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\Newtonsoft.Json.dll
 C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\EspritAddInAssistant.xml
+C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\Newtonsoft.Json.xml
 C:\Users\user\abuts.fit\bg\esprit-addin\obj\x86\Debug\ESPRIT2025AddinProject.csproj.AssemblyReference.cache
 C:\Users\user\abuts.fit\bg\esprit-addin\obj\x86\Debug\Abuts.EspritAddIns.ESPRIT2025AddinProject.Properties.Resources.resources
 C:\Users\user\abuts.fit\bg\esprit-addin\obj\x86\Debug\ESPRIT2025AddinProject.csproj.GenerateResource.cache
@@ -41,6 +44,3 @@ C:\Users\user\abuts.fit\bg\esprit-addin\obj\x86\Debug\ESPRIT2025AddinProject.csp
 C:\Users\user\abuts.fit\bg\esprit-addin\obj\x86\Debug\ESPRIT20.CFFCB7C8.Up2Date
 C:\Users\user\abuts.fit\bg\esprit-addin\obj\x86\Debug\ESPRIT2025AddinProject.dll
 C:\Users\user\abuts.fit\bg\esprit-addin\obj\x86\Debug\ESPRIT2025AddinProject.pdb
-C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\BouncyCastle.Crypto.dll
-C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\Newtonsoft.Json.dll
-C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\Newtonsoft.Json.xml

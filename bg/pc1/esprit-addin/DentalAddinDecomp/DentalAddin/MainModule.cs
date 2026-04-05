@@ -531,8 +531,6 @@ namespace DentalAddin
                 return false;
             }
 
-            DentalLogger.Log($"Composite2SplitAB - enabled=1, splitX={splitX.ToString(CultureInfo.InvariantCulture)}, prcA={prcA}, prcB={prcB}");
-
             const double leftRatio = AppConfig.DefaultLeftRatio;
             double rightOffset = AppConfig.DefaultRightRatioOffset;
             double backXForComposite = MoveSTL_Module.BackPointX + rightOffset;
@@ -550,13 +548,43 @@ namespace DentalAddin
             double firstPercent = Clamp(leftRatio * 100.0, 0.0, 100.0);
             double lastPercent = Clamp(rightRatio * 100.0, firstPercent, 100.0);
 
-            double splitRatio = (splitX - MoveSTL_Module.FrontPointX) / (direction * absSpan);
-            if (double.IsNaN(splitRatio) || double.IsInfinity(splitRatio))
+            double splitRatio;
+            if (splitX > 0.001)
             {
-                splitRatio = 0.5;
+                splitRatio = (splitX - MoveSTL_Module.FrontPointX) / (direction * absSpan);
+                if (double.IsNaN(splitRatio) || double.IsInfinity(splitRatio))
+                {
+                    splitRatio = leftRatio + (rightRatio - leftRatio) * 0.27;
+                    splitX = MoveSTL_Module.FrontPointX + splitRatio * direction * absSpan;
+                }
+                splitRatio = Clamp(splitRatio, leftRatio, rightRatio);
+                DentalLogger.Log($"Composite2SplitAB - 환경변수 splitX={splitX:F3} (ratio={splitRatio:F3})");
             }
-            splitRatio = Clamp(splitRatio, leftRatio, rightRatio);
+            else if (MoveSTL_Module.FinishLineTopZ > 0.001)
+            {
+                double stlShift = AppConfig.DefaultStlShift;
+                double finishLineDistanceFromBack = MoveSTL_Module.FinishLineTopZ - stlShift;
+                double frontBeforeShift = MoveSTL_Module.FrontPointX - stlShift;
+                double backBeforeShift = MoveSTL_Module.BackPointX - stlShift;
+                double spanBeforeShift = backBeforeShift - frontBeforeShift;
+                double absSpanBeforeShift = Math.Abs(spanBeforeShift);
+
+                double finishLinePositionBeforeShift = backBeforeShift - finishLineDistanceFromBack;
+                splitX = finishLinePositionBeforeShift + stlShift;
+                splitRatio = (finishLinePositionBeforeShift - frontBeforeShift) / absSpanBeforeShift;
+                splitRatio = Clamp(splitRatio, leftRatio, rightRatio);
+                DentalLogger.Log($"Composite2SplitAB - FinishLine 기반 splitX={splitX:F3} (ratio={splitRatio:F3}, finishLinePos={finishLinePositionBeforeShift:F3}, distFromBack={finishLineDistanceFromBack:F3})");
+            }
+            else
+            {
+                splitRatio = leftRatio + (rightRatio - leftRatio) * 0.27;
+                splitX = MoveSTL_Module.FrontPointX + splitRatio * direction * absSpan;
+                splitRatio = Clamp(splitRatio, leftRatio, rightRatio);
+                DentalLogger.Log($"Composite2SplitAB - 기본 계산 splitX={splitX:F3} (27% 지점, FinishLineTopZ 없음)");
+            }
             double splitPercent = Clamp(splitRatio * 100.0, firstPercent, lastPercent);
+
+            DentalLogger.Log($"Composite2SplitAB - enabled=1, splitX={splitX:F3}, prcA={prcA}, prcB={prcB}");
 
             if (Math.Abs(splitPercent - firstPercent) < 0.01 || Math.Abs(lastPercent - splitPercent) < 0.01)
             {

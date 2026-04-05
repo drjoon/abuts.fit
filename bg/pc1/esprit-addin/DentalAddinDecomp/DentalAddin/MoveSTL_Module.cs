@@ -40,6 +40,8 @@ namespace DentalAddin
 
         public static double ExtendMill;
 
+        public static double FinishLineTopZ;
+
         private static int[] FeaList;
 
         public static void RotateSTL()
@@ -402,7 +404,11 @@ namespace DentalAddin
                 selectionSet.Translate(totalDeltaX, 0.0, 0.0, RuntimeHelpers.GetObjectValue(Missing.Value));
                 FrontPointX += totalDeltaX;
                 BackPointX += totalDeltaX;
-                DentalLogger.Log($"MoveSTL - 초기 X이동(SpindleSide) dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}");
+                if (FinishLineTopZ > 0.001)
+                {
+                    FinishLineTopZ += stlShift;
+                }
+                DentalLogger.Log($"MoveSTL - 초기 X이동(SpindleSide) dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}, FinishLineTopZ:{FinishLineTopZ:0.###}");
             }
             else
             {
@@ -423,7 +429,11 @@ namespace DentalAddin
                 selectionSet.Translate(totalDeltaX, 0.0, 0.0, RuntimeHelpers.GetObjectValue(Missing.Value));
                 FrontPointX += totalDeltaX;
                 BackPointX += totalDeltaX;
-                DentalLogger.Log($"MoveSTL - 초기 X이동 dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}");
+                if (FinishLineTopZ > 0.001)
+                {
+                    FinishLineTopZ += stlShift;
+                }
+                DentalLogger.Log($"MoveSTL - 초기 X이동 dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}, FinishLineTopZ:{FinishLineTopZ:0.###}");
             }
             selectionSet.RemoveAll();
             MainModule.Document.FeatureChains.Remove(featureChain.Key);

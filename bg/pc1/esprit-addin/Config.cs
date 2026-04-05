@@ -46,7 +46,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public const double DefaultStlShift = 0.3;  // #523: 탑과 포스트 상단 사이 거리
         public const int DefaultRoughfreeformSplitEnable = 0;
         public const int DefaultCompositeSplitEnable = 1;
-        public const double DefaultCompositeSplitX = 6.0;
         public const double DefaultLeftRatioOffset = 0.0;
         // public const double DefaultLeftRatioOffset = 0.3;
         public const double DefaultLeftRatio = (DefaultLeftRatioOffset+DefaultStlShift) / 20.0;
@@ -66,7 +65,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public static double TurningExtend => GetDoubleEnvOrDefault(TurningExtendEnv, DefaultTurningExtend);
         public static int RoughfreeformSplitEnable => GetIntEnvOrDefault(RoughfreeformSplitEnableEnv, DefaultRoughfreeformSplitEnable);
         public static int CompositeSplitEnable => GetIntEnvOrDefault(CompositeSplitEnableEnv, DefaultCompositeSplitEnable);
-        public static double CompositeSplitX => GetDoubleEnvOrDefault(CompositeSplitXEnv, DefaultCompositeSplitX);
         public static string CompositePrcA => GetEnvOrDefault(CompositePrcAEnv, string.Empty);
         public static string CompositePrcB => GetEnvOrDefault(CompositePrcBEnv, string.Empty);
         public static string GetBackendUrl()

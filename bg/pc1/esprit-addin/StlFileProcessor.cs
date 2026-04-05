@@ -541,7 +541,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 _configurator.ConfigureDentalProcesses(mainModuleType);
                 ApplyTurningParameters(mainModuleType);
                 EnsureMoveModuleDefaults(mainModuleType, document);
-                ApplyLimitPoints(mainModuleType, frontLimitX, backLimitX);
+                ApplyLimitPoints(mainModuleType, frontLimitX, backLimitX, finishLineTopZ);
                 
                 AppLogger.Log("DentalAddin: MoveSurface 실행 시작 - NeedMoveY/Z 계산");
                 InvokeMoveSurface(mainModuleType);
@@ -549,6 +549,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 
                 AppLogger.Log($"DentalAddin: MoveSTL 실행 시작 (FrontLimit:{frontLimitX}, BackLimit:{backLimitX})");
                 InvokeMoveSTL(mainModuleType);
+                TryApplyCompositeSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ);
                 
                 AppLogger.Log("DentalAddin: Emerge 실행 시작 - IGS 서피스 Merge 및 Translate");
                 // TODO: Composite split by finish line
@@ -761,7 +762,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             return null;
         }
-        private void ApplyLimitPoints(Type mainModuleType, double frontLimitX, double backLimitX)
+        private void ApplyLimitPoints(Type mainModuleType, double frontLimitX, double backLimitX, double? finishLineTopZ = null)
         {
             Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
             if (moveModuleType == null)
@@ -771,8 +772,75 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FrontPointX", frontLimitX);
             DentalAddinReflectionHelper.SetStaticField(moveModuleType, "BackPointX", backLimitX);
-            AppLogger.Log($"DentalAddin: 한계점 설정 완료 - FrontPointX:{frontLimitX}, BackPointX:{backLimitX}");
+            if (finishLineTopZ.HasValue)
+            {
+                DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FinishLineTopZ", finishLineTopZ.Value);
+                AppLogger.Log($"DentalAddin: 한계점 설정 완료 - FrontPointX:{frontLimitX}, BackPointX:{backLimitX}, FinishLineTopZ:{finishLineTopZ.Value:F4}");
+            }
+            else
+            {
+                AppLogger.Log($"DentalAddin: 한계점 설정 완료 - FrontPointX:{frontLimitX}, BackPointX:{backLimitX}");
+            }
         }
+
+        private void TryApplyCompositeSplitByFinishLine(Type mainModuleType, double? stlTopZ, double? finishLineTopZ)
+        {
+            try
+            {
+                if (!stlTopZ.HasValue || !finishLineTopZ.HasValue)
+                {
+                    AppLogger.Log("DentalAddin: finishLine 기반 Composite2SplitAB 생략 - topZ 부족");
+                    return;
+                }
+                if (double.IsNaN(stlTopZ.Value) || double.IsNaN(finishLineTopZ.Value))
+                {
+                    AppLogger.Log("DentalAddin: finishLine 기반 Composite2SplitAB 생략 - topZ NaN");
+                    return;
+                }
+
+                double rawRatio = (stlTopZ.Value - finishLineTopZ.Value) / 20.0;
+                if (double.IsNaN(rawRatio) || double.IsInfinity(rawRatio))
+                {
+                    AppLogger.Log("DentalAddin: finishLine 기반 Composite2SplitAB 생략 - splitRatio invalid");
+                    return;
+                }
+
+                double ratio = Math.Max(0.0, Math.Min(1.0, rawRatio));
+                Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
+                if (moveModuleType == null)
+                {
+                    AppLogger.Log("DentalAddin: finishLine 기반 Composite2SplitAB 생략 - MoveSTL_Module 타입 없음");
+                    return;
+                }
+
+                FieldInfo frontField = moveModuleType.GetField("FrontPointX", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                FieldInfo backField = moveModuleType.GetField("BackPointX", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                if (frontField == null || backField == null)
+                {
+                    AppLogger.Log("DentalAddin: finishLine 기반 Composite2SplitAB 생략 - Front/BackPointX 필드 없음");
+                    return;
+                }
+
+                double frontX = Convert.ToDouble(frontField.GetValue(null), CultureInfo.InvariantCulture);
+                double backX = Convert.ToDouble(backField.GetValue(null), CultureInfo.InvariantCulture);
+                double span = backX - frontX;
+                if (Math.Abs(span) < 0.001)
+                {
+                    AppLogger.Log("DentalAddin: finishLine 기반 Composite2SplitAB 생략 - span 너무 작음");
+                    return;
+                }
+
+                double splitX = frontX + span * ratio + AppConfig.DefaultStlShift;
+                Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_SPLIT_ENABLE", "1");
+                Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_SPLIT_X", splitX.ToString(CultureInfo.InvariantCulture));
+                AppLogger.Log($"DentalAddin: finishLine split 적용 - bboxTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, finishTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, rawRatio:{rawRatio.ToString("F4", CultureInfo.InvariantCulture)}, ratio(clamped):{ratio.ToString("F4", CultureInfo.InvariantCulture)}, splitX:{splitX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)}, Shift:{AppConfig.DefaultStlShift.ToString("F3", CultureInfo.InvariantCulture)})");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"DentalAddin: finishLine 기반 Composite2SplitAB 설정 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
         private void InvokeMoveSurface(Type mainModuleType)
         {
             Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);

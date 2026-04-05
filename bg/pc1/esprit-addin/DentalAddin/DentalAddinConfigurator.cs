@@ -337,6 +337,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
                 string surfaceRoot = Path.Combine(AppConfig.AddInRootDirectory, "Surface");
                 Environment.SetEnvironmentVariable(AppConfig.SurfaceRootEnv, surfaceRoot);
 
+                Environment.SetEnvironmentVariable(AppConfig.CompositeSplitEnableEnv, AppConfig.CompositeSplitEnable.ToString());
+
                 if (prcPaths != null)
                 {
                     if (prcPaths.Length > 10 && !string.IsNullOrWhiteSpace(prcPaths[10]))
