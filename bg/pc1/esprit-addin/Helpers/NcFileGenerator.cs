@@ -230,9 +230,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         }
         private static List<string> BuildSerialBlock(string serialCode, bool isDeburr)
         {
-            double baseY = 0.525;
-            double adjustedY = baseY + AppConfig.DefaultStlShift;
-            AppLogger.Log($"NcFileGenerator: BuildSerialBlock - 각인 Y 좌표 계산 baseY:{baseY:F3} + shift:{AppConfig.DefaultStlShift:F3} = {adjustedY:F3}");
+            // NC Z축 = Esprit X축이므로 shift 적용 필요
+            double zOffset = 1.8 + AppConfig.DefaultStlShift;
+            AppLogger.Log($"NcFileGenerator: BuildSerialBlock - Z offset:{zOffset:F3} (shift 적용)");
             var block = new List<string>
             {
                 "(Serial)",
@@ -240,7 +240,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 "M50",
                 "G28H0.0",
                 "M23 S2000",
-                $"G98 G0 X[#521+1.8]Z[#520+1.8]Y{adjustedY.ToString("F3", CultureInfo.InvariantCulture)}C0.0",
+                $"G98 G0 X[#521+1.8]Z[#520+{zOffset.ToString("F3", CultureInfo.InvariantCulture)}]Y0.525C0.0",
                 "G4 U0.05",
                 "G1 X4.0 F2000",
                 "G1 X3.45 F500",
