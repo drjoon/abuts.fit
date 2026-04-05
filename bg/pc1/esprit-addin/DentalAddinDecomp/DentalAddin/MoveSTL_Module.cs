@@ -42,6 +42,10 @@ namespace DentalAddin
 
         public static double FinishLineTopZ;
 
+        public static double FinishLineX;
+
+        public static double FinishLineR;
+
         private static int[] FeaList;
 
         public static void RotateSTL()
@@ -416,6 +420,10 @@ namespace DentalAddin
                 {
                     FinishLineTopZ += stlShift;
                 }
+                if (FinishLineX > 0.001)
+                {
+                    FinishLineX += totalDeltaX;
+                }
                 DentalLogger.Log($"MoveSTL - 초기 X이동(SpindleSide) dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}, FinishLineTopZ:{FinishLineTopZ:0.###}");
             }
             else
@@ -441,8 +449,13 @@ namespace DentalAddin
                 {
                     FinishLineTopZ += stlShift;
                 }
+                if (FinishLineX > 0.001)
+                {
+                    FinishLineX += totalDeltaX;
+                }
                 DentalLogger.Log($"MoveSTL - 초기 X이동 dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}, FinishLineTopZ:{FinishLineTopZ:0.###}");
             }
+
             selectionSet.RemoveAll();
             MainModule.Document.FeatureChains.Remove(featureChain.Key);
             featureChain = null;
@@ -1024,6 +1037,10 @@ namespace DentalAddin
                         MainModule.Document.Layers.Remove("LayG");
                         FrontPointX += Chazhi;
                         BackPointX += Chazhi;
+                        if (FinishLineX > 0.001)
+                        {
+                            FinishLineX += Chazhi;
+                        }
                         break;
                     }
                 end_IL_0000:;

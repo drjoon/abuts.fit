@@ -117,6 +117,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             BackendApiClient.RequestMetaCaseInfos requestMeta = null;
             double? finishLineTopZ = null;
             double? stlBoundingTopZ = null;
+            double? finishLineEspritR = null;
             _backendLotNumber = null;
             _backendSerialCode = null;
             _backendRequestId = null;
@@ -128,7 +129,36 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     BackendApiClient.RequestMetaResponse requestMetaResponse = FetchRequestMeta(requestId);
                     requestMeta = requestMetaResponse?.data?.caseInfos;
-                    finishLineTopZ = BackendApiClient.TryGetFinishLineTopZ(requestMetaResponse?.data);
+                    double[][] finishLinePoints = requestMetaResponse?.data?.caseInfos?.finishLine?.points;
+                    if (finishLinePoints != null && finishLinePoints.Length > 0)
+                    {
+                        double[] finishTopPoint = null;
+                        double maxFinishZ = double.NegativeInfinity;
+                        foreach (double[] p in finishLinePoints)
+                        {
+                            if (p == null || p.Length < 3)
+                            {
+                                continue;
+                            }
+                            double sourceX = p[0];
+                            double sourceY = p[1];
+                            double sourceZ = p[2];
+                            if (double.IsNaN(sourceX) || double.IsInfinity(sourceX) || double.IsNaN(sourceY) || double.IsInfinity(sourceY) || double.IsNaN(sourceZ) || double.IsInfinity(sourceZ))
+                            {
+                                continue;
+                            }
+                            if (sourceZ > maxFinishZ)
+                            {
+                                maxFinishZ = sourceZ;
+                                finishTopPoint = p;
+                            }
+                        }
+                        if (finishTopPoint != null)
+                        {
+                            finishLineTopZ = finishTopPoint[2];
+                            finishLineEspritR = Math.Sqrt(finishTopPoint[0] * finishTopPoint[0] + finishTopPoint[1] * finishTopPoint[1]);
+                        }
+                    }
                     _backendSerialCode = requestMetaResponse?.data?.serialCode;
                     _backendRequestId = requestId;
                     if (requestMeta != null)
@@ -144,7 +174,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                             throw new InvalidOperationException($"request-meta 응답에 lotNumber가 없습니다. requestId={requestId}");
                         }
                         AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantSystem}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}");
-                        AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
+                        AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, espritR={(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
                         if (!_prcManager.ApplyBackendPrcNames((BackendApiClient.RequestMetaCaseInfos)requestMeta, requestId, _backendImplantLabel))
                         {
                             AppLogger.Log("StlFileProcessor: 백엔드 PRC 설정 실패로 공정을 중단합니다.");
@@ -205,7 +235,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 UpdateLatheBarDiameter(document, stlPath, machineBarDiameter, materialDiameter);
                 Rotate90Degrees(document);
                 EspritDocumentHelper.LogBoundingBox(document, "AfterRotate");
-                InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ);
+                InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ, finishLineEspritR);
                 CaptureNcMetadata(document);
                 string ncFilePath = _ncGenerator.GenerateNcFile(document, stlPath, ResolveBackPointForNc(effectiveBackLimit), ResolveStockDiameterForNc(document), _backendSerialCode);
                 if (!string.IsNullOrWhiteSpace(ncFilePath))
@@ -508,7 +538,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             selectionSet.Rotate(yAxis, -Math.PI / 2, Missing.Value);
             selectionSet.RemoveAll();
         }
-        private void InvokeDentalAddin(Document document, double frontLimitX, double backLimitX, double? stlTopZ, double? finishLineTopZ)
+        private void InvokeDentalAddin(Document document, double frontLimitX, double backLimitX, double? stlTopZ, double? finishLineTopZ, double? finishLineEspritR)
         {
             if (document == null || _espApp == null)
             {
@@ -541,7 +571,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 _configurator.ConfigureDentalProcesses(mainModuleType);
                 ApplyTurningParameters(mainModuleType);
                 EnsureMoveModuleDefaults(mainModuleType, document);
-                ApplyLimitPoints(mainModuleType, frontLimitX, backLimitX, finishLineTopZ);
+                ApplyLimitPoints(mainModuleType, frontLimitX, backLimitX, finishLineTopZ, finishLineEspritR, stlTopZ);
                 
                 AppLogger.Log("DentalAddin: MoveSurface 실행 시작 - NeedMoveY/Z 계산");
                 InvokeMoveSurface(mainModuleType);
@@ -762,7 +792,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             return null;
         }
-        private void ApplyLimitPoints(Type mainModuleType, double frontLimitX, double backLimitX, double? finishLineTopZ = null)
+        private void ApplyLimitPoints(Type mainModuleType, double frontLimitX, double backLimitX, double? finishLineTopZ = null, double? finishLineEspritR = null, double? stlTopZ = null)
         {
             Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
             if (moveModuleType == null)
@@ -775,7 +805,24 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             if (finishLineTopZ.HasValue)
             {
                 DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FinishLineTopZ", finishLineTopZ.Value);
-                AppLogger.Log($"DentalAddin: 한계점 설정 완료 - FrontPointX:{frontLimitX}, BackPointX:{backLimitX}, FinishLineTopZ:{finishLineTopZ.Value:F4}");
+                // FinishLineX는 pre-rotation ESPRIT X 좌표로 변환해야 함
+                // STL Z좌표 → ESPRIT X: backLimitX가 stlTopZ에 대응하므로
+                // FinishLineX = backLimitX + finishLineTopZ - stlTopZ
+                double finishLineEspritX = finishLineTopZ.Value;
+                if (stlTopZ.HasValue && stlTopZ.Value > 0.001)
+                {
+                    finishLineEspritX = backLimitX + finishLineTopZ.Value - stlTopZ.Value;
+                }
+                DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FinishLineX", finishLineEspritX);
+                AppLogger.Log($"DentalAddin: FinishLineX 변환 - finishLineTopZ:{finishLineTopZ.Value:F4}, stlTopZ:{(stlTopZ.HasValue ? stlTopZ.Value.ToString("F4") : "<null>")}, backLimitX:{backLimitX:F4} → FinishLineX:{finishLineEspritX:F4}");
+            }
+            if (finishLineEspritR.HasValue)
+            {
+                DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FinishLineR", finishLineEspritR.Value);
+            }
+            if (finishLineTopZ.HasValue || finishLineEspritR.HasValue)
+            {
+                AppLogger.Log($"DentalAddin: 한계점 설정 완료 - FrontPointX:{frontLimitX}, BackPointX:{backLimitX}, FinishLineR:{(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4") : "<null>")}");
             }
             else
             {
@@ -1316,6 +1363,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             DentalAddinReflectionHelper.SetStaticField(moveModuleType, "NeedMove", false);
             DentalAddinReflectionHelper.SetStaticField(moveModuleType, "NeedMoveY", 0.0);
             DentalAddinReflectionHelper.SetStaticField(moveModuleType, "NeedMoveZ", 0.0);
+            DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FinishLineX", 0.0);
+            DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FinishLineR", 0.0);
             AppLogger.Log($"DentalAddin: MoveSTL 초기화 - MTI:{mtiDefault}(overwrite), Front:{frontLimit}(overwrite), Back:{DefaultBackLimitX}(overwrite), BarDia:{barDiameter}");
         }
         private static void ApplyTurningParameters(Type mainModuleType)
