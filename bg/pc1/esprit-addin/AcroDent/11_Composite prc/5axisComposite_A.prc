@@ -183,7 +183,7 @@ BEGIN_OPERATION; 507; 5Axis_Composite; 0;
 	END_ATTRIBUTES
    END_SUB_TECHNOLOGY;
    EnableSmoothing; 3365; 0;  HIDDEN; CAPTION; 스무딩 사용; SOURCE; 0; TECHCODETYPE; 522;
-   ReverseCuttingDirection; 3229; 0;  LOCKED; HIDDEN; CAPTION; 리버스 절삭 방향; SOURCE; 2; TECHCODETYPE; 67;
+   ReverseCuttingDirection; 3229; 1;  LOCKED; HIDDEN; CAPTION; 리버스 절삭 방향; SOURCE; 2; TECHCODETYPE; 67;
    OrientationStrategy; 3246; 1;  CAPTION; 위치 확정 방법; SOURCE; 0; TECHCODETYPE; 414;
    EntryMovesPointZ; 3263; 0;  LOCKED; HIDDEN; CAPTION; 접근 포인트 Z |접근 포인트 X,Y,Z; SOURCE; 1; TECHCODETYPE; 2;
    4909; 4909; ;  SOURCE; 0; TECHCODETYPE; 3;

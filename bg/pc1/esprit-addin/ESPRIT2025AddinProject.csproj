@@ -167,6 +167,10 @@
     <Compile Include="DentalAddinDecomp\DentalAddin\RECT.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\SerializableData.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\TurningFeature_Module.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\TurningFeature_Profile.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\TurningFeature_FeatureChain.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\TurningFeature_Extension.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\TurningFeature_Utility.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\UserData.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\Win32.cs" />
   </ItemGroup>
