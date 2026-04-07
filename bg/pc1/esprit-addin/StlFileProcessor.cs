@@ -110,9 +110,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
             EspritDocumentHelper.RemoveLayerIfExists(document, StlImportLayerName);
             double effectiveFrontLimit = frontLimitX ?? throw new InvalidOperationException("FrontPoint from backend is missing");
-            double effectiveBackLimit = backLimitX ?? DefaultBackLimitX;
+            double effectiveBackLimit = backLimitX ?? 0.0;
             _effectiveFrontLimitX = effectiveFrontLimit;
-            AppLogger.Log($"StlFileProcessor: LimitX 적용 - Front:{effectiveFrontLimit:F4}, Back:{effectiveBackLimit:F4}");
+            AppLogger.Log($"StlFileProcessor: LimitX 적용 - Front:{effectiveFrontLimit:F4}, Back:{effectiveBackLimit:F4} (초기값, STL 이동 후 업데이트됨)");
             string requestId = null;
             BackendApiClient.RequestMetaCaseInfos requestMeta = null;
             double? finishLineTopZ = null;
@@ -237,7 +237,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 EspritDocumentHelper.LogBoundingBox(document, "AfterRotate");
                 InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ, finishLineEspritR);
                 CaptureNcMetadata(document);
-                string ncFilePath = _ncGenerator.GenerateNcFile(document, stlPath, ResolveBackPointForNc(effectiveBackLimit), ResolveStockDiameterForNc(document), _backendSerialCode);
+                string ncFilePath = _ncGenerator.GenerateNcFile(document, stlPath, ResolveBackPointForNc(), ResolveStockDiameterForNc(document), _backendSerialCode);
                 if (!string.IsNullOrWhiteSpace(ncFilePath))
                 {
                     AppLogger.Log($"StlFileProcessor: NC file generated - {ncFilePath}");
@@ -271,24 +271,58 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         {
             try
             {
-                _capturedFrontPointX = 0.0;
-                _capturedBackPointX = 0.0;
+                AppLogger.Log("StlFileProcessor: CaptureNcMetadata 시작");
+                Type mainModuleType = DentalAddinReflectionHelper.ResolveMainModuleType();
+                AppLogger.Log($"StlFileProcessor: MainModuleType resolved = {(mainModuleType != null ? mainModuleType.FullName : "null")}");
+                
+                Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
+                AppLogger.Log($"StlFileProcessor: MoveModuleType resolved = {(moveModuleType != null ? moveModuleType.FullName : "null")}");
+                
+                _capturedFrontPointX = null;
+                _capturedBackPointX = null;
+                
+                if (moveModuleType != null)
+                {
+                    object backPointXObj = DentalAddinReflectionHelper.GetMainModuleField<object>(moveModuleType, "BackPointX");
+                    AppLogger.Log($"StlFileProcessor: BackPointX 필드 읽기 - obj={backPointXObj}, type={backPointXObj?.GetType().Name ?? "null"}");
+                    
+                    if (backPointXObj != null && backPointXObj is double)
+                    {
+                        _capturedBackPointX = (double)backPointXObj;
+                        AppLogger.Log($"StlFileProcessor: BackPointX 캡처 성공 - {_capturedBackPointX:F4}");
+                    }
+                    else
+                    {
+                        AppLogger.Log($"StlFileProcessor: BackPointX 캡처 실패 - backPointXObj가 null이거나 double이 아님");
+                    }
+                }
+                else
+                {
+                    AppLogger.Log("StlFileProcessor: MoveModuleType이 null - BackPointX 캡처 불가");
+                }
+                
                 double barDiameter = document?.LatheMachineSetup?.BarDiameter ?? 0;
                 _capturedStockDiameter = barDiameter > 0 ? barDiameter : (double?)null;
-                AppLogger.Log($"StlFileProcessor: NC 메타 캡처 - Front:{_capturedFrontPointX:F3}, Back:{_capturedBackPointX:F3}, StockDia:{_capturedStockDiameter:F3}");
+                AppLogger.Log($"StlFileProcessor: NC 메타 캡처 완료 - Front:{(_capturedFrontPointX?.ToString("F3") ?? "null")}, Back:{(_capturedBackPointX?.ToString("F3") ?? "null")}, StockDia:{(_capturedStockDiameter?.ToString("F3") ?? "null")}");
             }
             catch (Exception ex)
             {
-                AppLogger.Log($"StlFileProcessor: NC 메타 캡처 실패 - {ex.Message}");
+                AppLogger.Log($"StlFileProcessor: NC 메타 캡처 실패 - {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
             }
         }
-        private double ResolveBackPointForNc(double fallback)
+        private double ResolveBackPointForNc()
         {
+            AppLogger.Log($"StlFileProcessor: ResolveBackPointForNc 호출 - _capturedBackPointX={(_capturedBackPointX?.ToString("F4") ?? "null")}");
+            
             if (_capturedBackPointX.HasValue && !double.IsNaN(_capturedBackPointX.Value))
             {
+                AppLogger.Log($"StlFileProcessor: BackPointX 사용 - {_capturedBackPointX.Value:F4}");
                 return _capturedBackPointX.Value;
             }
-            return fallback;
+            
+            string errorMsg = $"BackPointX not captured from MoveSTL_Module (_capturedBackPointX={((_capturedBackPointX.HasValue ? _capturedBackPointX.Value.ToString("F4") : "null"))})";
+            AppLogger.Log($"StlFileProcessor: 에러 - {errorMsg}");
+            throw new InvalidOperationException(errorMsg);
         }
         private double ResolveStockDiameterForNc(Document document)
         {
@@ -800,8 +834,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log("DentalAddin: MoveSTL_Module 타입을 찾을 수 없습니다.");
                 return;
             }
+            AppLogger.Log($"DentalAddin: ApplyLimitPoints - FrontPointX={frontLimitX:F4}, BackPointX={backLimitX:F4} (초기값) 설정");
             DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FrontPointX", frontLimitX);
             DentalAddinReflectionHelper.SetStaticField(moveModuleType, "BackPointX", backLimitX);
+            AppLogger.Log($"DentalAddin: MoveSTL_Module 필드 설정 완료 - BackPointX는 STL 이동 중 업데이트될 예정");
             if (finishLineTopZ.HasValue)
             {
                 DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FinishLineTopZ", finishLineTopZ.Value);
@@ -1359,13 +1395,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             DentalAddinReflectionHelper.SetStaticField(moveModuleType, "MTI", mtiDefault);
             double frontLimit = _effectiveFrontLimitX ?? throw new InvalidOperationException("FrontPointX not initialized");
             DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FrontPointX", frontLimit);
-            DentalAddinReflectionHelper.SetStaticField(moveModuleType, "BackPointX", DefaultBackLimitX);
             DentalAddinReflectionHelper.SetStaticField(moveModuleType, "NeedMove", false);
             DentalAddinReflectionHelper.SetStaticField(moveModuleType, "NeedMoveY", 0.0);
             DentalAddinReflectionHelper.SetStaticField(moveModuleType, "NeedMoveZ", 0.0);
             DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FinishLineX", 0.0);
             DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FinishLineR", 0.0);
-            AppLogger.Log($"DentalAddin: MoveSTL 초기화 - MTI:{mtiDefault}(overwrite), Front:{frontLimit}(overwrite), Back:{DefaultBackLimitX}(overwrite), BarDia:{barDiameter}");
+            AppLogger.Log($"DentalAddin: MoveSTL 초기화 - MTI:{mtiDefault}(overwrite), Front:{frontLimit}(overwrite), BarDia:{barDiameter}");
         }
         private static void ApplyTurningParameters(Type mainModuleType)
         {
