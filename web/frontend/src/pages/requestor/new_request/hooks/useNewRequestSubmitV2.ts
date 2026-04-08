@@ -331,6 +331,41 @@ export const useNewRequestSubmitV2 = ({
           dupCount,
         });
 
+        // 402 크레딧 부족 에러 처리
+        if (res.status === 402) {
+          const payload = errData?.data;
+          const machiningFee = payload?.machiningFee;
+          const shippingFee = payload?.shippingFee;
+
+          let description = errData?.message || "크레딧이 부족합니다.";
+
+          // 상세 정보가 있으면 추가 안내
+          if (machiningFee || shippingFee) {
+            const details = [];
+            if (machiningFee?.shortfall > 0) {
+              details.push(
+                `의뢰비 부족: ${machiningFee.shortfall.toLocaleString()}원`,
+              );
+            }
+            if (shippingFee?.shortfall > 0) {
+              details.push(
+                `배송비 부족: ${shippingFee.shortfall.toLocaleString()}원`,
+              );
+            }
+            if (details.length > 0) {
+              description += "\n\n" + details.join("\n");
+            }
+          }
+
+          toast({
+            title: "크레딧 부족",
+            description,
+            variant: "destructive",
+            duration: 7000,
+          });
+          return;
+        }
+
         if (res.status === 409 && errData?.code === "DUPLICATE_REQUEST") {
           const mode = errData?.data?.mode;
           const duplicates = errData?.data?.duplicates;

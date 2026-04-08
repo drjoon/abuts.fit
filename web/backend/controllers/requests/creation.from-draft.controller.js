@@ -4,6 +4,7 @@ import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import DraftRequest from "../../models/draftRequest.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
+import SystemSettings from "../../models/systemSettings.model.js";
 import {
   normalizeCaseInfosImplantFields,
   ensureReviewByStageDefaults,
@@ -721,7 +722,7 @@ export async function createRequestsFromDraft(req, res) {
           }
         }
 
-        const { balance, paidCredit, bonusRequestCredit } =
+        const { balance, paidCredit, bonusRequestCredit, bonusShippingCredit } =
           await getBusinessCreditBalanceBreakdown({
             businessAnchorId,
             session,
@@ -731,29 +732,125 @@ export async function createRequestsFromDraft(req, res) {
           balance,
           paidCredit,
           bonusRequestCredit,
-          required: totalSpendSupply,
+          bonusShippingCredit,
+          requiredMachiningFee: totalSpendSupply,
         });
 
-        // 최소 잔액 검증: 유/무료 크레딧 합계 1만원 미만이면 신규의뢰 차단
-        const MIN_CREDIT_FOR_REQUEST = 10000;
-        if (balance < MIN_CREDIT_FOR_REQUEST) {
-          const err = new Error(
-            `최소 의뢰 비용 ${MIN_CREDIT_FOR_REQUEST.toLocaleString()}원 이상의 크레딧이 필요합니다.`,
-          );
-          err.statusCode = 402;
-          err.payload = {
-            balance,
-            required: MIN_CREDIT_FOR_REQUEST,
-            reason: "insufficient_minimum_credit",
-          };
-          throw err;
+        // 배송비 계산: 박스 수 × 박스당 배송비
+        const systemSettings = await SystemSettings.findOne().lean();
+        const shippingFeePerBox = Number(
+          systemSettings?.creditSettings?.shippingFee || 3500,
+        );
+
+        // 박스 수 계산: 묶음 배송 요일별로 그룹화
+        const requestsByShipDate = new Map();
+        for (const item of preparedCasesForCreate) {
+          const orgId = getRequestorOrgId(req);
+          let weeklyBatchDays = [];
+          if (orgId && Types.ObjectId.isValid(orgId)) {
+            const org = await BusinessAnchor.findById(orgId)
+              .select({ "shippingPolicy.weeklyBatchDays": 1 })
+              .lean();
+            weeklyBatchDays = Array.isArray(
+              org?.shippingPolicy?.weeklyBatchDays,
+            )
+              ? org.shippingPolicy.weeklyBatchDays
+              : [];
+          }
+
+          const shippingMode = item.shippingMode || "normal";
+          if (shippingMode === "normal" && weeklyBatchDays.length === 0) {
+            throw new Error(
+              "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
+            );
+          }
+
+          // estimatedShipYmd 계산 (간단 버전)
+          const createdYmd = getTodayYmdInKst();
+          const estimatedShipYmd = await addKoreanBusinessDays({
+            startYmd: createdYmd,
+            days: 1,
+          });
+
+          const shipDate = estimatedShipYmd || createdYmd;
+          if (!requestsByShipDate.has(shipDate)) {
+            requestsByShipDate.set(shipDate, []);
+          }
+          requestsByShipDate.get(shipDate).push(item);
         }
 
-        // 의뢰 비용 검증
-        if (balance < totalSpendSupply) {
-          const err = new Error("크레딧이 부족합니다.");
+        const boxCount = requestsByShipDate.size;
+        const totalShippingFee = boxCount * shippingFeePerBox;
+
+        console.log("[createRequestsFromDraft] Shipping fee calculation", {
+          t: Date.now() - startTime,
+          boxCount,
+          shippingFeePerBox,
+          totalShippingFee,
+        });
+
+        // 의뢰비 사용 가능 크레딧: paidCredit + bonusRequestCredit
+        const availableForMachining = paidCredit + bonusRequestCredit;
+        // 배송비 사용 가능 크레딧: paidCredit + bonusShippingCredit
+        const availableForShipping = paidCredit + bonusShippingCredit;
+
+        // 의뢰비 부족 체크
+        const machiningShortfall =
+          totalSpendSupply > availableForMachining
+            ? totalSpendSupply - availableForMachining
+            : 0;
+        // 배송비 부족 체크
+        const shippingShortfall =
+          totalShippingFee > availableForShipping
+            ? totalShippingFee - availableForShipping
+            : 0;
+
+        if (machiningShortfall > 0 || shippingShortfall > 0) {
+          let message = "";
+          const details = [];
+
+          if (machiningShortfall > 0 && shippingShortfall > 0) {
+            message = "의뢰비와 배송비 크레딧이 모두 부족합니다.";
+            details.push(
+              `의뢰비 필요: ${totalSpendSupply.toLocaleString()}원 (보유: ${availableForMachining.toLocaleString()}원)`,
+            );
+            details.push(
+              `배송비 필요: ${totalShippingFee.toLocaleString()}원 (보유: ${availableForShipping.toLocaleString()}원)`,
+            );
+          } else if (machiningShortfall > 0) {
+            message = "의뢰비 크레딧이 부족합니다.";
+            details.push(
+              `필요: ${totalSpendSupply.toLocaleString()}원, 보유: ${availableForMachining.toLocaleString()}원`,
+            );
+          } else {
+            message = "배송비 크레딧이 부족합니다.";
+            details.push(
+              `필요: ${totalShippingFee.toLocaleString()}원, 보유: ${availableForShipping.toLocaleString()}원`,
+            );
+          }
+
+          message +=
+            " " +
+            details.join(", ") +
+            ". 크레딧을 충전한 뒤 다시 시도해주세요.";
+
+          const err = new Error(message);
           err.statusCode = 402;
-          err.payload = { balance, required: totalSpendSupply };
+          err.payload = {
+            machiningFee: {
+              required: totalSpendSupply,
+              available: availableForMachining,
+              shortfall: machiningShortfall,
+            },
+            shippingFee: {
+              required: totalShippingFee,
+              available: availableForShipping,
+              shortfall: shippingShortfall,
+              boxCount,
+              feePerBox: shippingFeePerBox,
+            },
+            reason: "insufficient_credit",
+          };
           throw err;
         }
 
@@ -955,7 +1052,9 @@ export async function createRequestsFromDraft(req, res) {
       if (statusCode === 402) {
         return res.status(402).json({
           success: false,
-          message: "크레딧이 부족합니다. 크레딧을 충전한 뒤 다시 시도해주세요.",
+          message:
+            e.message ||
+            "크레딧이 부족합니다. 크레딧을 충전한 뒤 다시 시도해주세요.",
           data: e.payload || null,
         });
       }
