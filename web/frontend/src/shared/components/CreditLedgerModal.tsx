@@ -279,6 +279,12 @@ export const CreditLedgerModal = ({
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const pageRef = useRef(page);
+
+  // page 상태 변경 시 ref 동기화
+  useEffect(() => {
+    pageRef.current = page;
+  }, [page]);
 
   const resetFilters = () => {
     setPeriod("30d");
@@ -359,12 +365,13 @@ export const CreditLedgerModal = ({
   useEffect(() => {
     const sentinel = sentinelRef.current;
     const root = scrollRef.current;
-    if (!sentinel || !root || !hasMore || loading) return;
+    if (!sentinel || !root || !hasMore || loading || !open) return;
+
     const io = new IntersectionObserver(
       (entries) => {
         if (!entries.some((e) => e.isIntersecting)) return;
         if (loading || !hasMore) return;
-        const nextPage = page + 1;
+        const nextPage = pageRef.current + 1;
         setPage(nextPage);
         load(nextPage, false);
       },
@@ -373,7 +380,7 @@ export const CreditLedgerModal = ({
     io.observe(sentinel);
     return () => io.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMore, loading, page, open]);
+  }, [hasMore, loading, open]);
 
   const rows = Array.isArray(items) ? items : [];
 
