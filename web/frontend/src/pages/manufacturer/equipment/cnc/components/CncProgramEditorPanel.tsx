@@ -86,6 +86,9 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
     ).trim();
 
     if (!programKey) return;
+
+    // 캐시 무효화: 프로그램이 변경되면 항상 새로 로드
+    // loadedProgramKeyRef 체크를 제거하여 매번 최신 데이터 조회
     if (loadedProgramKeyRef.current === programKey) return;
     loadedProgramKeyRef.current = programKey;
 

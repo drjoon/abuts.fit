@@ -14,6 +14,7 @@ import { useStlMetadata } from "@/features/requests/hooks/useStlMetadata";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { generateModelNumber } from "@/utils/modelNumber";
+import { deleteCncProgramCache } from "@/shared/files/fileBlobCache";
 import {
   type ManufacturerRequest,
   type ReviewStageKey,
@@ -372,6 +373,12 @@ export const PreviewModal = ({
           return;
         }
 
+        // NC 재생성 성공 시 캐시 무효화
+        const s3Key = activeReq?.caseInfos?.ncFile?.s3Key;
+        if (s3Key) {
+          await deleteCncProgramCache(s3Key);
+        }
+
         toast({
           title: "재생성 요청",
           description: "NC 재생성을 시작했습니다.",
@@ -475,6 +482,12 @@ export const PreviewModal = ({
           variant: "destructive",
         });
         return;
+      }
+
+      // STL 재생성 성공 시 캐시 무효화 (filled.stl 재생성 시 NC도 재생성되므로 NC 캐시도 무효화)
+      const ncS3Key = activeReq?.caseInfos?.ncFile?.s3Key;
+      if (ncS3Key) {
+        await deleteCncProgramCache(ncS3Key);
       }
 
       toast({

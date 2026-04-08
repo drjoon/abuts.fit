@@ -1,6 +1,8 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
+import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
+import { deleteCncProgramCache } from "@/shared/files/fileBlobCache";
 import {
   deriveStageForFilter,
   type ManufacturerRequest,
@@ -874,6 +876,11 @@ export const useRequestFileHandlers = ({
           }
           throw new Error(message);
         }
+        // NC 파일 업로드 성공 시 캐시 무효화
+        if (first.key) {
+          await deleteCncProgramCache(first.key);
+        }
+
         toast({
           title: "업로드 완료",
           description: "NC 파일을 업로드했습니다.",

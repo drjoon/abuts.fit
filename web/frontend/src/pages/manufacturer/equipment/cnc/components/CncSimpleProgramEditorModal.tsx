@@ -46,7 +46,8 @@ export const CncSimpleProgramEditorModal: React.FC<
     const programId = selectedProgram?.id || selectedProgram?._id;
     if (!programId) return;
 
-    // Skip if already loaded this program
+    // 캐시 무효화: 프로그램이 변경되면 항상 새로 로드
+    // loadedProgramIdRef 체크를 통해 동일 프로그램 중복 로드 방지
     if (loadedProgramIdRef.current === programId) return;
 
     loadedProgramIdRef.current = programId;

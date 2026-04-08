@@ -46,7 +46,7 @@ function openDb(): Promise<IDBDatabase | null> {
         console.warn("IndexedDB open error", request.error);
         resolve(null);
       };
-    }
+    },
   );
 }
 
@@ -78,7 +78,7 @@ async function cleanupOldEntries(db: IDBDatabase): Promise<void> {
 
         if (records.length - toDeleteKeys.length > MAX_ENTRIES) {
           const remaining = records.filter(
-            (r) => !toDeleteKeys.includes(r.key)
+            (r) => !toDeleteKeys.includes(r.key),
           );
           const overflow = remaining.length - MAX_ENTRIES;
           if (overflow > 0) {
@@ -171,6 +171,77 @@ export async function setFileBlob(key: string, blob: Blob): Promise<void> {
       };
     } catch (e) {
       console.warn("IndexedDB setFileBlob exception", e);
+      resolve();
+    }
+  });
+}
+
+// 특정 키의 캐시 삭제
+export async function deleteFileBlob(key: string): Promise<void> {
+  const db = await openDb();
+  if (!db) return;
+
+  return new Promise<void>((resolve: () => void) => {
+    try {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.delete(key);
+
+      req.onsuccess = () => resolve();
+      req.onerror = () => {
+        console.warn("IndexedDB deleteFileBlob error", req.error);
+        resolve();
+      };
+    } catch (e) {
+      console.warn("IndexedDB deleteFileBlob exception", e);
+      resolve();
+    }
+  });
+}
+
+// CNC 프로그램 캐시 무효화 (s3Key 기반)
+export async function deleteCncProgramCache(s3Key: string): Promise<void> {
+  if (!s3Key) return;
+  const cacheKey = `cnc:s3:${s3Key}`;
+  await deleteFileBlob(cacheKey);
+}
+
+// 모든 CNC 캐시 무효화 (cnc:s3: 프리픽스)
+export async function invalidateAllCncCache(): Promise<void> {
+  const db = await openDb();
+  if (!db) return;
+
+  return new Promise<void>((resolve: () => void) => {
+    try {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAll();
+
+      req.onsuccess = () => {
+        const records = (req.result as FileBlobRecord[]) || [];
+        const cncKeys = records
+          .filter((r) => r.key.startsWith("cnc:s3:"))
+          .map((r) => r.key);
+
+        if (cncKeys.length === 0) {
+          resolve();
+          return;
+        }
+
+        for (const key of cncKeys) {
+          store.delete(key);
+        }
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      };
+
+      req.onerror = () => {
+        console.warn("IndexedDB invalidateAllCncCache error", req.error);
+        resolve();
+      };
+    } catch (e) {
+      console.warn("IndexedDB invalidateAllCncCache exception", e);
       resolve();
     }
   });

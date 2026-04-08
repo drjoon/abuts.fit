@@ -3,7 +3,11 @@ import { useRef, useState } from "react";
 import type { Machine } from "@/pages/manufacturer/equipment/cnc/types";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { getFileBlob, setFileBlob } from "@/shared/files/fileBlobCache";
+import {
+  getFileBlob,
+  setFileBlob,
+  deleteCncProgramCache,
+} from "@/shared/files/fileBlobCache";
 
 interface UseCncProgramEditorParams {
   workUid: string;
@@ -187,6 +191,16 @@ export const useCncProgramEditor = ({
     const mid = editorMachineId || workUid;
     if (!mid || !prog) return;
 
+    // 저장 전 캐시 무효화: 메모리 캐시와 IndexedDB 캐시 모두 삭제
+    const overrideKey = getProgramOverrideKey(prog);
+    if (overrideKey) {
+      delete programOverridesRef.current[overrideKey];
+    }
+    const s3Key = String(prog?.s3Key || "").trim();
+    if (s3Key) {
+      await deleteCncProgramCache(s3Key);
+    }
+
     const baseProgramNo = prog.programNo ?? prog.no;
     let programNo = options?.programNoOverride ?? baseProgramNo;
 
@@ -231,11 +245,9 @@ export const useCncProgramEditor = ({
 
     if (headType == null) headType = 1;
 
-    const s3Key = String(prog?.s3Key || "").trim();
     const explicitRequestId = String(prog?.requestId || "").trim();
     const requestId = explicitRequestId.trim();
     const normalizedCode = String(code ?? "");
-    const overrideKey = getProgramOverrideKey(prog);
 
     const isJobProgram = !!(requestId || s3Key);
 
@@ -291,24 +303,25 @@ export const useCncProgramEditor = ({
       }
     }
 
-    if (overrideKey) {
-      programOverridesRef.current[overrideKey] = normalizedCode;
-    }
-
-    if (s3Key) {
-      const cacheKey = `cnc:s3:${s3Key}`;
-      try {
-        await setFileBlob(
-          cacheKey,
-          new Blob([normalizedCode], { type: "text/plain" }),
-        );
-      } catch {
-        // no-op
-      }
-    }
-
     // 저장 후 프로그램 리스트/워크보드를 재조회하여 상태를 최신으로 유지
     await fetchProgramList();
+  };
+
+  // 특정 프로그램의 캐시 무효화 (STL 재생성, NC 재생성 시 호출)
+  const invalidateCache = async (prog: any) => {
+    if (!prog) return;
+
+    // 메모리 캐시 삭제
+    const overrideKey = getProgramOverrideKey(prog);
+    if (overrideKey) {
+      delete programOverridesRef.current[overrideKey];
+    }
+
+    // IndexedDB 캐시 삭제
+    const s3Key = String(prog?.s3Key || "").trim();
+    if (s3Key) {
+      await deleteCncProgramCache(s3Key);
+    }
   };
 
   return {
@@ -319,5 +332,6 @@ export const useCncProgramEditor = ({
     closeProgramEditor,
     loadProgramCode,
     saveProgramCode,
+    invalidateCache,
   };
 };

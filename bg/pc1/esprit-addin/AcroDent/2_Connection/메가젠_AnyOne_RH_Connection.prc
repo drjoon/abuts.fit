@@ -147,10 +147,10 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:(Connection Rough Turn/NR0.4)
 		:M3 S3000 T0202
 		:G0 X[#521+1.8] Z[#520+#523-0.2]
-		:G1 X4.8 F0.01
-		:G1 W3.4 
+		:G1 X5.0 F0.01
+		:G1 W3.4 F0.015
 		:G1 X[#521+0.8] W1.6
-		:G1 U0.1 W1.0 F0.015
+		:G1 U0.1 W1.0 F0.02
 		:G0 X40.0 Z[#520+#523-0.4]
 		:G0 T0
 		:M1

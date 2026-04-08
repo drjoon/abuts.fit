@@ -137,7 +137,7 @@ BEGIN_OPERATION; 316; FACE DRILL; 0;
    Text; 513; ;  CAPTION; ¹®ÀÚ; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 513;;
     :
-		:(FOR NEO Regular)
+		:(FOR NEO IS Regular)
     :M93001
     :
     :(Tool/Offset)
@@ -174,10 +174,10 @@ BEGIN_OPERATION; 316; FACE DRILL; 0;
 		:G99 G0 Z20.4
 		:G0 X16.0
 		:G1 X[#521+1.8] F0.1 
-		:G1 X[#521+1.0] F0.05 
+		:G1 X[#521+1.0] F0.02 
 		:G1 Z-0.4 F0.2
     :G4 U0.05
-    :G1 X-1.4 F0.02
+    :G1 X-1.4 F0.015
     :G4 U0.05
 		:G1 X[#521+6.8] W-0.5 F0.5
 		:G0 X30.0 Z-1.5
