@@ -639,7 +639,15 @@ export function NewRequestDetailsSection({
     >
       <div className="app-glass-card-content flex flex-col flex-1 min-h-0 h-full">
         <div className="flex flex-col flex-1 min-h-0 h-full">
-          <div className="flex justify-end px-2 pb-1">
+          <div className="flex justify-end gap-2 px-2 pb-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => uploadInputRef.current?.click()}
+            >
+              STL 파일 추가
+            </Button>
             <Button
               type="button"
               variant="outline"
@@ -661,7 +669,7 @@ export function NewRequestDetailsSection({
             {!hasActiveSession && (
               <div className="flex flex-1 items-center justify-center py-6">
                 <div
-                  className={`w-full max-w-[420px] border-2 border-dashed rounded-2xl p-4 md:p-6 text-center transition-colors flex flex-col items-center justify-center gap-2 ${
+                  className={`w-full max-w-[420px] border-2 border-dashed rounded-2xl p-4 md:p-6 text-center transition-colors flex flex-col items-center justify-center gap-2 cursor-pointer ${
                     isDragOver
                       ? "border-primary bg-primary/5"
                       : "border-gray-300 hover:border-primary/50 bg-white"
@@ -669,15 +677,8 @@ export function NewRequestDetailsSection({
                   onDragOver={onDragOver}
                   onDragLeave={onDragLeave}
                   onDrop={onDrop}
+                  onClick={() => uploadInputRef.current?.click()}
                 >
-                  <Button
-                    variant="outline"
-                    className="text-xs md:text-sm"
-                    onClick={() => uploadInputRef.current?.click()}
-                  >
-                    <Upload className="h-6 md:h-8 w-6 md:w-8 mx-auto text-muted-foreground" />
-                    커스텀 어벗 STL 파일들 드롭
-                  </Button>
                   <p className="text-xs md:text-sm text-muted-foreground">
                     파일명에서 치과이름, 환자이름, 치아번호를 자동 인식합니다.
                   </p>
