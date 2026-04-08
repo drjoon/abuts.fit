@@ -521,7 +521,6 @@ export function NewRequestDetailsSection({
       [fileKey]: true,
     };
 
-    // Check if there are remaining unverified files
     const hasRemainingUnverified = files.some((candidate) => {
       const key = toNormalizedFileKey(candidate);
       return !nextStatus[key];
@@ -529,10 +528,9 @@ export function NewRequestDetailsSection({
 
     let nextIndex = -1;
 
-    // Only search for next unverified file if there are any remaining
     if (hasRemainingUnverified) {
       for (let i = index + 1; i < files.length; i++) {
-        const key = `${normalizeKeyPart(files[i].name)}:${files[i].size}`;
+        const key = toNormalizedFileKey(files[i]);
         if (!nextStatus[key]) {
           nextIndex = i;
           break;
@@ -541,7 +539,7 @@ export function NewRequestDetailsSection({
 
       if (nextIndex === -1) {
         for (let i = 0; i < index; i++) {
-          const key = `${normalizeKeyPart(files[i].name)}:${files[i].size}`;
+          const key = toNormalizedFileKey(files[i]);
           if (!nextStatus[key]) {
             nextIndex = i;
             break;
@@ -550,8 +548,6 @@ export function NewRequestDetailsSection({
       }
     }
 
-    // 중복 체크는 상위(setCaseInfos)에서 이미 수행하므로 여기서는 재호출하지 않는다
-    // (중복 모달이 두 번 뜨는 현상 방지)
     if (hasRemainingUnverified) {
       setShouldRestoreDetailAfterDuplicate(true);
     }
@@ -589,35 +585,6 @@ export function NewRequestDetailsSection({
       info.implantType,
     );
   };
-
-  useEffect(() => {
-    if (!files.length) return;
-    let changed = false;
-    const nextStatus: Record<string, boolean> = { ...fileVerificationStatus };
-
-    files.forEach((file) => {
-      const key = toNormalizedFileKey(file);
-      if (!fileVerificationStatus[key]) return;
-      const info =
-        (caseInfosMap && caseInfosMap[key]) ||
-        caseInfosMap?.__default__ ||
-        caseInfos;
-      if (!requiredFieldsPresent(info)) {
-        nextStatus[key] = false;
-        changed = true;
-      }
-    });
-
-    if (changed) {
-      setFileVerificationStatus(nextStatus);
-    }
-  }, [
-    caseInfosMap,
-    caseInfos,
-    fileVerificationStatus,
-    files,
-    setFileVerificationStatus,
-  ]);
 
   useEffect(() => {
     if (!focusUnverifiedTick || !files.length) return;
@@ -741,6 +708,7 @@ export function NewRequestDetailsSection({
                   const isVerified = !!fileVerificationStatus[fileKey];
                   const isUnverifiedHighlight =
                     highlightUnverifiedArrows && !isVerified;
+
                   const baseClasses = isVerified
                     ? "border border-gray-200 bg-white text-gray-900"
                     : "border border-red-300 bg-red-50 text-red-800";

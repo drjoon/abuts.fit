@@ -344,17 +344,30 @@ export function useDraftMeta() {
   const removeCaseInfos = useCallback(
     (fileKey: string) => {
       if (!fileKey) return;
+      console.log("[useDraftMeta] removeCaseInfos", { fileKey });
       setCaseInfosMap((prev) => {
-        if (!prev[fileKey]) return prev;
+        if (!prev[fileKey]) {
+          console.log("[useDraftMeta] fileKey not found in caseInfosMap", {
+            fileKey,
+            keys: Object.keys(prev),
+          });
+          return prev;
+        }
         const next = { ...prev };
         delete next[fileKey];
+        console.log("[useDraftMeta] removed from caseInfosMap", {
+          fileKey,
+          remainingKeys: Object.keys(next),
+        });
         if (draftIdRef.current) {
           saveDraftMeta(draftIdRef.current, next);
+          // Draft API에도 즉시 반영
+          patchDraftDebounced(next);
         }
         return next;
       });
     },
-    [saveDraftMeta],
+    [saveDraftMeta, patchDraftDebounced],
   );
 
   const deleteDraft = useCallback(async () => {

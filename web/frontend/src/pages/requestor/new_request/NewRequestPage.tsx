@@ -59,7 +59,7 @@ export const NewRequestPage = () => {
     handleDragLeave,
     handleUpload,
     handleUploadUnchecked,
-    handleRemoveFile,
+    handleRemoveFile: rawHandleRemoveFile,
     familyOptions,
     typeOptions,
     implantManufacturer,
@@ -97,6 +97,10 @@ export const NewRequestPage = () => {
     unverifiedCount,
     highlightStep,
   } = useFileVerification({ files });
+
+  // 파일 삭제는 rawHandleRemoveFile이 처리하고,
+  // fileVerificationStatus cleanup은 useFileVerification의 effect가 자동으로 처리
+  const handleRemoveFile = rawHandleRemoveFile;
 
   const hasVerifiedFile = useMemo(() => {
     if (!files.length) return false;
