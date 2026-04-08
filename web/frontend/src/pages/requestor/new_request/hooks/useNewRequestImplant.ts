@@ -9,8 +9,6 @@ export type UseNewRequestImplantParams = {
   token: string | null;
   clinicName?: string;
   onDefaultImplantChange?: (fields: {
-    implantManufacturer: string;
-    implantBrand: string;
     implantFamily: string;
     implantType: string;
   }) => void;
@@ -131,8 +129,6 @@ export const useNewRequestImplant = ({
 
         if (onDefaultImplantChange) {
           onDefaultImplantChange({
-            implantManufacturer,
-            implantBrand,
             implantFamily: nextFamily,
             implantType: nextType,
           });

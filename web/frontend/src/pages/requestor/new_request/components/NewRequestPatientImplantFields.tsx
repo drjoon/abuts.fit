@@ -219,32 +219,45 @@ export function NewRequestPatientImplantFields({
     if (!manufacturerConnections.length) return;
 
     const brandFromCase = caseInfos?.implantBrand || "";
+    const familyFromCase = caseInfos?.implantFamily || "";
+    const typeFromCase = caseInfos?.implantType || "";
+
     const isValidBrand = manufacturerConnections.some(
       (c) => c.brand === brandFromCase,
     );
-    if (isValidBrand) return;
 
-    const fallbackBrand = manufacturerConnections[0].brand || "";
-    if (!fallbackBrand) return;
+    // Brand가 유효하면 현재 값 사용, 아니면 fallback
+    let finalBrand = brandFromCase;
+    let finalFamily = familyFromCase;
+    let finalType = typeFromCase;
 
-    const fallbackFamily = manufacturerConnections[0].family;
-    const fallbackType = manufacturerConnections[0].type || "Hex";
-    setCaseInfos({
-      implantBrand: fallbackBrand,
-      implantFamily: fallbackFamily,
-      implantType: fallbackType,
-    });
-    if (implantSelectSource !== "caseInfos") {
-      setImplantBrand(fallbackBrand);
-      setImplantFamily(fallbackFamily);
-      setImplantType(fallbackType);
+    if (!isValidBrand) {
+      finalBrand = manufacturerConnections[0].brand || "";
+      if (!finalBrand) return;
+      finalFamily = manufacturerConnections[0].family;
+      finalType = manufacturerConnections[0].type || "Hex";
+
+      setCaseInfos({
+        implantBrand: finalBrand,
+        implantFamily: finalFamily,
+        implantType: finalType,
+      });
     }
+
+    // UI 업데이트를 위해 hook 상태 항상 업데이트
+    setImplantManufacturer(manufacturer);
+    setImplantBrand(finalBrand);
+    setImplantFamily(finalFamily);
+    setImplantType(finalType);
   }, [
     caseInfos?.implantManufacturer,
     caseInfos?.implantBrand,
+    caseInfos?.implantFamily,
+    caseInfos?.implantType,
     connectionOptions,
     implantSelectSource,
     setCaseInfos,
+    setImplantManufacturer,
     setImplantFamily,
     setImplantBrand,
     setImplantType,
@@ -423,7 +436,12 @@ export function NewRequestPatientImplantFields({
                   }}
                 >
                   <SelectTrigger disabled={implantDisabled}>
-                    <SelectValue placeholder="Manufacturer" />
+                    <SelectValue placeholder="Manufacturer">
+                      {currentManufacturer
+                        ? manufacturerLabelMap.get(currentManufacturer) ||
+                          currentManufacturer
+                        : undefined}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {manufacturerOptions.map((m) => (
@@ -469,7 +487,11 @@ export function NewRequestPatientImplantFields({
                   <SelectTrigger
                     disabled={implantDisabled || !currentManufacturer}
                   >
-                    <SelectValue placeholder="Brand" />
+                    <SelectValue placeholder="Brand">
+                      {currentBrand
+                        ? brandLabelMap.get(currentBrand) || currentBrand
+                        : undefined}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {brandOptions.map((s) => (
@@ -513,7 +535,11 @@ export function NewRequestPatientImplantFields({
                   disabled={implantDisabled || !currentBrand}
                 >
                   <SelectTrigger disabled={implantDisabled || !currentBrand}>
-                    <SelectValue placeholder="Family" />
+                    <SelectValue placeholder="Family">
+                      {currentFamily
+                        ? familyLabelMap.get(currentFamily) || currentFamily
+                        : undefined}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {currentFamilyOptions.map((family) => (
@@ -552,7 +578,11 @@ export function NewRequestPatientImplantFields({
                   disabled={implantDisabled || !currentFamily}
                 >
                   <SelectTrigger disabled={implantDisabled || !currentFamily}>
-                    <SelectValue placeholder="Type" />
+                    <SelectValue placeholder="Type">
+                      {currentType
+                        ? typeLabelMap.get(currentType) || currentType
+                        : undefined}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {currentTypeOptions.map((t) => (

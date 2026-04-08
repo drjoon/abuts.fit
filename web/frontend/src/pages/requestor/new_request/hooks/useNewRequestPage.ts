@@ -302,13 +302,11 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     token,
     clinicName: currentCaseInfos.clinicName,
     onDefaultImplantChange: (fields) => {
-      // 기본 임플란트가 자동 설정될 때 현재 파일의 Draft.caseInfos에도 같이 기록
+      // Family/Type 기본값만 기록. Manufacturer/Brand는 이미 설정된 값 보존.
+      // updateCaseInfos가 내부적으로 prev와 merge하므로 스프레드 불필요.
       // 단, 파일이 선택되어 있을 때만 (초기 로딩 시 __default__ 덮어쓰기 방지)
       if (selectedPreviewIndex !== null) {
-        setCaseInfos({
-          ...currentCaseInfos,
-          ...fields,
-        });
+        setCaseInfos(fields);
       }
     },
   });

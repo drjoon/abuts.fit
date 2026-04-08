@@ -42,13 +42,19 @@ export function useFileVerification({ files }: Params) {
   >(() => loadStoredStatus());
   const [highlightUnverifiedArrows, setHighlightUnverifiedArrows] =
     useState(false);
-  const hasLoadedFilesRef = useRef(false);
+  // localStorage에 저장된 status가 있으면 이전에 파일이 로드된 적 있다고 간주
+  const hasLoadedFilesRef = useRef(Object.keys(loadStoredStatus()).length > 0);
 
   useEffect(() => {
     if (files.length > 0) {
       hasLoadedFilesRef.current = true;
     }
+    // 파일이 없고 한 번도 로드된 적 없으면 아무것도 안 함 (초기 상태)
     if (!files.length && !hasLoadedFilesRef.current) {
+      return;
+    }
+    // 파일이 없지만 이전에 로드된 적 있으면 status 유지 (새로고침 후 복원 대기 중)
+    if (!files.length && hasLoadedFilesRef.current) {
       return;
     }
     const allowedKeys = new Set(

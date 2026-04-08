@@ -639,6 +639,21 @@ export function NewRequestDetailsSection({
     >
       <div className="app-glass-card-content flex flex-col flex-1 min-h-0 h-full">
         <div className="flex flex-col flex-1 min-h-0 h-full">
+          {/* 숨겨진 파일 업로드 input - 항상 렌더링 */}
+          <input
+            ref={uploadInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const fileList = e.currentTarget.files;
+              if (fileList) {
+                onFilesSelected(Array.from(fileList));
+              }
+              e.currentTarget.value = "";
+            }}
+            accept=".stl"
+          />
           <div className="flex justify-end gap-2 px-2 pb-1">
             <Button
               type="button"
@@ -682,20 +697,6 @@ export function NewRequestDetailsSection({
                   <p className="text-xs md:text-sm text-muted-foreground">
                     파일명에서 치과이름, 환자이름, 치아번호를 자동 인식합니다.
                   </p>
-                  <input
-                    ref={uploadInputRef}
-                    type="file"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => {
-                      const fileList = e.currentTarget.files;
-                      if (fileList) {
-                        onFilesSelected(Array.from(fileList));
-                      }
-                      e.currentTarget.value = "";
-                    }}
-                    accept=".stl"
-                  />
                 </div>
               </div>
             )}

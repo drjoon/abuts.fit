@@ -157,11 +157,17 @@ export function useDraftMeta() {
             throw new Error("Failed to create new draft");
           }
 
+          // updateCaseInfos는 saveDraftMeta만 호출하므로 cachedMeta가 최신 patient/implant 정보를 가짐
+          // localDraft.caseInfosMap은 업데이트되지 않으므로 cachedMeta를 우선 사용
+          const cachedMeta = loadDraftMeta();
           const initialMap =
-            localDraft?.caseInfosMap &&
-            Object.keys(localDraft.caseInfosMap).length > 0
-              ? { ...localDraft.caseInfosMap }
-              : { ...emptyMap };
+            cachedMeta?.caseInfosMap &&
+            Object.keys(cachedMeta.caseInfosMap).length > 0
+              ? { ...cachedMeta.caseInfosMap }
+              : localDraft?.caseInfosMap &&
+                  Object.keys(localDraft.caseInfosMap).length > 0
+                ? { ...localDraft.caseInfosMap }
+                : { ...emptyMap };
 
           if (Object.keys(initialMap).length === 0) {
             initialMap.__default__ = { workType: "abutment" };
