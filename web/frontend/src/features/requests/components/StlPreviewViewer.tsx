@@ -1435,7 +1435,7 @@ export function StlPreviewViewer({
             <div className="flex items-center gap-1.5">
               <span className="text-slate-500">전체 길이 (LLL):</span>
               <span>
-                {totalLengthState > 0 ? totalLengthState.toFixed(1) : "-"} mm
+                {totalLengthState > 0 ? totalLengthState.toFixed(2) : "-"} mm
               </span>
             </div>
           </div>
@@ -1445,7 +1445,7 @@ export function StlPreviewViewer({
               <span className="text-slate-500">커넥션 직경:</span>
               <span>
                 {connectionDiameterState !== null && connectionDiameterState > 0
-                  ? connectionDiameterState.toFixed(1)
+                  ? connectionDiameterState.toFixed(2)
                   : "-"}{" "}
                 mm
               </span>
