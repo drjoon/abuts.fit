@@ -91,7 +91,14 @@ const generateRequestIdBatch = async (count, session) => {
 };
 
 /**
- * DraftRequest를 실제 Request들로 변환
+ * ===== 신규 의뢰 생성 표준 엔드포인트 (SSOT) =====
+ * Draft 기반 워크플로우: 파일 업로드 → Draft 생성 → Draft 수정 → Request로 전환
+ *
+ * Draft를 Request로 전환 (다건 지원)
+ * - 중복 체크, 크레딧 사전 체크, 트랜잭션 처리 포함
+ * - 프론트엔드: useNewRequestSubmitV2.ts
+ * - 참고: rules.md 섹션 4.3.2 "신규 의뢰 생성 엔드포인트 (SSOT)"
+ *
  * @route POST /api/requests/from-draft
  */
 export async function createRequestsFromDraft(req, res) {
@@ -743,43 +750,38 @@ export async function createRequestsFromDraft(req, res) {
         );
 
         // 박스 수 계산: 묶음 배송 요일별로 그룹화
-        const requestsByShipDate = new Map();
-        for (const item of preparedCasesForCreate) {
-          const orgId = getRequestorOrgId(req);
-          let weeklyBatchDays = [];
-          if (orgId && Types.ObjectId.isValid(orgId)) {
-            const org = await BusinessAnchor.findById(orgId)
-              .select({ "shippingPolicy.weeklyBatchDays": 1 })
-              .lean();
-            weeklyBatchDays = Array.isArray(
-              org?.shippingPolicy?.weeklyBatchDays,
-            )
-              ? org.shippingPolicy.weeklyBatchDays
-              : [];
-          }
-
-          const shippingMode = item.shippingMode || "normal";
-          if (shippingMode === "normal" && weeklyBatchDays.length === 0) {
-            throw new Error(
-              "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
-            );
-          }
-
-          // estimatedShipYmd 계산 (간단 버전)
-          const createdYmd = getTodayYmdInKst();
-          const estimatedShipYmd = await addKoreanBusinessDays({
-            startYmd: createdYmd,
-            days: 1,
-          });
-
-          const shipDate = estimatedShipYmd || createdYmd;
-          if (!requestsByShipDate.has(shipDate)) {
-            requestsByShipDate.set(shipDate, []);
-          }
-          requestsByShipDate.get(shipDate).push(item);
+        // 조직 정보는 한 번만 조회
+        const orgId = getRequestorOrgId(req);
+        let weeklyBatchDays = [];
+        if (orgId && Types.ObjectId.isValid(orgId)) {
+          const org = await BusinessAnchor.findById(orgId)
+            .select({ "shippingPolicy.weeklyBatchDays": 1 })
+            .lean();
+          weeklyBatchDays = Array.isArray(org?.shippingPolicy?.weeklyBatchDays)
+            ? org.shippingPolicy.weeklyBatchDays
+            : [];
         }
 
-        const boxCount = requestsByShipDate.size;
+        // 묶음 배송 요일 설정 체크
+        const hasNormalShipping = preparedCasesForCreate.some(
+          (item) => (item.shippingMode || "normal") === "normal",
+        );
+        if (hasNormalShipping && weeklyBatchDays.length === 0) {
+          throw new Error(
+            "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
+          );
+        }
+
+        // 배송 날짜별로 그룹화 (간단 버전: 모두 같은 날짜로 가정)
+        const createdYmd = getTodayYmdInKst();
+        const estimatedShipYmd = await addKoreanBusinessDays({
+          startYmd: createdYmd,
+          days: 1,
+        });
+        const shipDate = estimatedShipYmd || createdYmd;
+
+        // 실제로는 모든 의뢰가 같은 날짜에 배송되므로 박스 수 = 1
+        const boxCount = 1;
         const totalShippingFee = boxCount * shippingFeePerBox;
 
         console.log("[createRequestsFromDraft] Shipping fee calculation", {

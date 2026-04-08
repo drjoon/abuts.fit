@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import SystemSettings from "../../models/systemSettings.model.js";
 import {
   normalizeCaseInfosImplantFields,
   computePriceForRequest,
@@ -18,6 +19,7 @@ import {
   buildStandardStlFileName,
   uploadS3ToRhinoServer,
   uploadToRhinoServer,
+  getBusinessCreditBalanceBreakdown,
 } from "./creation.helpers.controller.js";
 import { getRequestorOrgId } from "./utils.js";
 import { calculateInitialProductionSchedule } from "./production.utils.js";
@@ -280,6 +282,10 @@ export async function createRequest(req, res) {
 }
 
 /**
+ * @deprecated 2026-04-08 이후 사용 금지
+ * 레거시 엔드포인트: Draft 없이 직접 생성
+ * 새 기능 개발 시 createRequestsFromDraft (POST /api/requests/from-draft) 사용 권장
+ *
  * 다건 의뢰 생성 (배치) - 부분 성공 지원
  * 성공/실패를 개별 수집하여 함께 반환합니다.
  * @route POST /api/requests/bulk
@@ -477,6 +483,160 @@ export async function createRequestsBulk(req, res) {
         });
       }
     }
+
+    // ===== 크레딧 사전 체크 =====
+    // 1. 모든 아이템의 가격 계산
+    const priceCalculations = [];
+    for (let i = 0; i < items.length; i++) {
+      const raw = items[i] || {};
+      const { caseInfos } = raw;
+      if (!caseInfos || typeof caseInfos !== "object") {
+        return res.status(400).json({
+          success: false,
+          message: `아이템 ${i + 1}: caseInfos 객체가 필요합니다.`,
+        });
+      }
+
+      const patientName = String(caseInfos.patientName || "").trim();
+      const tooth = String(caseInfos.tooth || "").trim();
+      const clinicName = String(caseInfos.clinicName || "").trim();
+
+      if (!patientName || !tooth || !clinicName) {
+        return res.status(400).json({
+          success: false,
+          message: `아이템 ${i + 1}: 치과이름, 환자이름, 치아번호는 모두 필수입니다.`,
+        });
+      }
+
+      const computedPrice = await computePriceForRequest({
+        requestorId: req.user._id,
+        requestorOrgId: req.user?.businessAnchorId,
+        clinicName,
+        patientName,
+        tooth,
+      });
+
+      priceCalculations.push({
+        index: i,
+        price: computedPrice,
+        estimatedShipYmd: caseInfos.estimatedShipYmd || null,
+      });
+    }
+
+    // 2. 총 의뢰비 계산
+    const totalMachiningFee = priceCalculations.reduce((acc, item) => {
+      const amount = Number(item.price?.amount || 0);
+      return acc + (Number.isFinite(amount) ? amount : 0);
+    }, 0);
+
+    // 3. 배송비 계산: 배송 날짜별로 그룹화
+    const systemSettings = await SystemSettings.findOne().lean();
+    const shippingFeePerBox = Number(
+      systemSettings?.creditSettings?.shippingFee || 3500,
+    );
+
+    // 배송 날짜별로 그룹화 (간단 버전: estimatedShipYmd 기준)
+    const shipDateGroups = new Map();
+    for (const calc of priceCalculations) {
+      const shipDate = calc.estimatedShipYmd || getTodayYmdInKst();
+      if (!shipDateGroups.has(shipDate)) {
+        shipDateGroups.set(shipDate, []);
+      }
+      shipDateGroups.get(shipDate).push(calc);
+    }
+
+    const boxCount = shipDateGroups.size;
+    const totalShippingFee = boxCount * shippingFeePerBox;
+
+    // 4. 크레딧 잔액 조회
+    const businessAnchorId = req.user?.businessAnchorId;
+    if (
+      !businessAnchorId ||
+      !Types.ObjectId.isValid(String(businessAnchorId))
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "사업자 소속 정보가 필요합니다. 설정 > 사업자에서 소속을 먼저 확인해주세요.",
+      });
+    }
+
+    const { balance, paidCredit, bonusRequestCredit, bonusShippingCredit } =
+      await getBusinessCreditBalanceBreakdown({
+        businessAnchorId,
+      });
+
+    console.log("[createRequestsBulk] Credit check", {
+      totalMachiningFee,
+      totalShippingFee,
+      boxCount,
+      balance,
+      paidCredit,
+      bonusRequestCredit,
+      bonusShippingCredit,
+    });
+
+    // 5. 크레딧 부족 체크
+    const availableForMachining = paidCredit + bonusRequestCredit;
+    const availableForShipping = paidCredit + bonusShippingCredit;
+
+    const machiningShortfall =
+      totalMachiningFee > availableForMachining
+        ? totalMachiningFee - availableForMachining
+        : 0;
+    const shippingShortfall =
+      totalShippingFee > availableForShipping
+        ? totalShippingFee - availableForShipping
+        : 0;
+
+    if (machiningShortfall > 0 || shippingShortfall > 0) {
+      let message = "";
+      const details = [];
+
+      if (machiningShortfall > 0 && shippingShortfall > 0) {
+        message = "의뢰비와 배송비 크레딧이 모두 부족합니다.";
+        details.push(
+          `의뢰비 필요: ${totalMachiningFee.toLocaleString()}원 (보유: ${availableForMachining.toLocaleString()}원)`,
+        );
+        details.push(
+          `배송비 필요: ${totalShippingFee.toLocaleString()}원 (보유: ${availableForShipping.toLocaleString()}원)`,
+        );
+      } else if (machiningShortfall > 0) {
+        message = "의뢰비 크레딧이 부족합니다.";
+        details.push(
+          `필요: ${totalMachiningFee.toLocaleString()}원, 보유: ${availableForMachining.toLocaleString()}원`,
+        );
+      } else {
+        message = "배송비 크레딧이 부족합니다.";
+        details.push(
+          `필요: ${totalShippingFee.toLocaleString()}원, 보유: ${availableForShipping.toLocaleString()}원`,
+        );
+      }
+
+      message +=
+        " " + details.join(", ") + ". 크레딧을 충전한 뒤 다시 시도해주세요.";
+
+      return res.status(402).json({
+        success: false,
+        message,
+        data: {
+          machiningFee: {
+            required: totalMachiningFee,
+            available: availableForMachining,
+            shortfall: machiningShortfall,
+          },
+          shippingFee: {
+            required: totalShippingFee,
+            available: availableForShipping,
+            shortfall: shippingShortfall,
+            boxCount,
+            feePerBox: shippingFeePerBox,
+          },
+          reason: "insufficient_credit",
+        },
+      });
+    }
+    // ===== 크레딧 사전 체크 끝 =====
 
     const created = [];
     const errors = [];

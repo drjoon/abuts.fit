@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { useNewRequestClinics } from "./useNewRequestClinics";
-import { useNewRequestSubmit } from "./useNewRequestSubmit";
 import { useNewRequestSubmitV2 } from "./useNewRequestSubmitV2";
 import { useDraftMeta } from "./useDraftMeta";
 import { useNewRequestFilesV2 } from "./useNewRequestFilesV2";
@@ -769,18 +768,9 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     [setDuplicateResolutions],
   );
 
-  // V3 제출 래퍼: 로컬에서 파일 가져와 S3 업로드 후 제출
-  const { handleSubmit: submitNewRequest } = useNewRequestSubmit({
-    token,
-    navigate: navigateWithDashboardRefresh,
-    files,
-    setFiles,
-    setSelectedPreviewIndex,
-    caseInfosMap,
-    duplicateResolutions,
-  });
-
+  // V2 제출: Draft 기반 워크플로우 (SSOT)
   const {
+    handleSubmit: rawHandleSubmit,
     handleSubmitWithDuplicateResolutions:
       rawHandleSubmitWithDuplicateResolutions,
     handleCancel,
@@ -803,32 +793,9 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     const ok = await ensureSetupForUpload();
     if (!ok) return;
 
-    // V3 방식: 로컬에서 파일 가져와 S3 업로드 후 제출
-    try {
-      await submitNewRequest();
-      setDuplicateResolutions([]);
-    } catch (error: any) {
-      // 중복 감지 에러 처리
-      if (error?.code === "DUPLICATE_REQUEST") {
-        const mode = error?.data?.mode;
-        const duplicates = error?.data?.duplicates;
-        if (
-          (mode === "active" || mode === "tracking") &&
-          Array.isArray(duplicates) &&
-          duplicates.length > 0
-        ) {
-          handleServerDuplicateDetected({ mode, duplicates });
-        }
-      }
-    }
-  }, [
-    ensureSetupForUpload,
-    duplicateResolutions,
-    files,
-    submitNewRequest,
-    setDuplicateResolutions,
-    handleServerDuplicateDetected,
-  ]);
+    await rawHandleSubmit();
+    setDuplicateResolutions([]);
+  }, [ensureSetupForUpload, rawHandleSubmit, setDuplicateResolutions]);
 
   const handleSubmitWithDuplicateResolutions = useCallback(
     async (

@@ -12,20 +12,25 @@ router.post(
   requestController.createRequest,
 );
 
-// 다건 의뢰 생성 (배치)
-router.post(
-  "/bulk",
-  authenticate,
-  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
-  requestController.createRequestsBulk,
-);
-
+// ===== 신규 의뢰 생성 =====
+// SSOT: POST /api/requests/from-draft (Draft 기반 워크플로우)
 // Draft에서 의뢰 생성 (의뢰자만 가능)
 router.post(
   "/from-draft",
   authenticate,
   authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
   requestController.createRequestsFromDraft,
+);
+
+// @deprecated 2026-04-08 이후 사용 금지
+// 레거시 엔드포인트: Draft 없이 직접 생성 (기존 코드 호환성을 위해 유지)
+// 새 기능 개발 시 /from-draft 사용 권장
+// 다건 의뢰 생성 (배치)
+router.post(
+  "/bulk",
+  authenticate,
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
+  requestController.createRequestsBulk,
 );
 
 // 모든 의뢰 목록 조회 (테스트 코드와 일치시키기 위해 기본 경로 추가)

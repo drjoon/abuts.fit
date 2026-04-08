@@ -1,3 +1,10 @@
+/**
+ * ===== 신규 의뢰 제출 표준 훅 (SSOT) =====
+ * Draft 기반 워크플로우: POST /api/requests/from-draft 사용
+ * - 중복 체크, 크레딧 체크, 에러 처리 포함
+ * - 백엔드: creation.from-draft.controller.js의 createRequestsFromDraft
+ * - 참고: rules.md 섹션 4.3.2 "신규 의뢰 생성 엔드포인트 (SSOT)"
+ */
 import { useState } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { type ClinicPreset, type CaseInfos } from "./newRequestTypes";
@@ -223,7 +230,129 @@ export const useNewRequestSubmitV2 = ({
 
     try {
       setIsSubmitting(true);
-      // 1. 중복 데이터 체크 (제출 전 클라이언트 사이드 검증 - 동일 페이로드 내 중복)
+
+      // 1. Draft 조회하여 배송 날짜 확인
+      const draftRes = await fetch(
+        `${API_BASE_URL}/requests/drafts/${draftId}`,
+        {
+          headers: getHeaders(),
+        },
+      );
+      let boxCount = 1; // 기본값
+      if (draftRes.ok) {
+        const draftData = await draftRes.json();
+        const caseInfos = Array.isArray(draftData?.caseInfos)
+          ? draftData.caseInfos
+          : [];
+
+        // 배송 날짜별로 그룹화
+        const shipDateGroups = new Set<string>();
+        for (const caseInfo of caseInfos) {
+          const shipDate = caseInfo?.estimatedShipYmd || "unknown";
+          shipDateGroups.add(shipDate);
+        }
+        boxCount = Math.max(1, shipDateGroups.size);
+        console.log("[NewRequestSubmit] shipping box calculation", {
+          caseInfosCount: caseInfos.length,
+          uniqueShipDates: Array.from(shipDateGroups),
+          boxCount,
+        });
+      }
+
+      // 1-2. 크레딧 사전 체크 (업로드 전)
+      console.log("[NewRequestSubmit] credit check start", {
+        t: Date.now() - submitStart,
+      });
+      try {
+        const creditRes = await fetch(`${API_BASE_URL}/credits/balance`, {
+          headers: getHeaders(),
+        });
+        if (creditRes.ok) {
+          const creditResponse = await creditRes.json();
+          const creditData = creditResponse?.data || {};
+          const balance = Number(creditData?.balance || 0);
+          const paidCredit = Number(creditData?.paidCredit || 0);
+          const bonusRequestCredit = Number(
+            creditData?.bonusRequestCredit || 0,
+          );
+          const bonusShippingCredit = Number(
+            creditData?.bonusShippingCredit || 0,
+          );
+
+          console.log("[NewRequestSubmit] credit balance", {
+            creditResponse,
+            creditData,
+            balance,
+            paidCredit,
+            bonusRequestCredit,
+            bonusShippingCredit,
+          });
+
+          // 간단한 예상 비용 계산 (건당 10,000원 가정)
+          const estimatedMachiningFee = files.length * 10000;
+          const estimatedShippingFee = boxCount * 3500; // 박스당 3,500원
+
+          const availableForMachining = paidCredit + bonusRequestCredit;
+          const availableForShipping = paidCredit + bonusShippingCredit;
+
+          console.log("[NewRequestSubmit] credit calculation", {
+            estimatedMachiningFee,
+            estimatedShippingFee,
+            availableForMachining,
+            availableForShipping,
+          });
+
+          const machiningShortfall = Math.max(
+            0,
+            estimatedMachiningFee - availableForMachining,
+          );
+          const shippingShortfall = Math.max(
+            0,
+            estimatedShippingFee - availableForShipping,
+          );
+
+          if (machiningShortfall > 0 || shippingShortfall > 0) {
+            let message = "";
+            const details = [];
+
+            if (machiningShortfall > 0 && shippingShortfall > 0) {
+              message = "의뢰비와 배송비 크레딧이 모두 부족합니다.";
+              details.push(
+                `의뢰비 예상: ${estimatedMachiningFee.toLocaleString()}원 (보유: ${availableForMachining.toLocaleString()}원)`,
+              );
+              details.push(
+                `배송비 예상: ${estimatedShippingFee.toLocaleString()}원 (${boxCount}박스, 보유: ${availableForShipping.toLocaleString()}원)`,
+              );
+            } else if (machiningShortfall > 0) {
+              message = "의뢰비 크레딧이 부족합니다.";
+              details.push(
+                `예상: ${estimatedMachiningFee.toLocaleString()}원, 보유: ${availableForMachining.toLocaleString()}원`,
+              );
+            } else {
+              message = "배송비 크레딧이 부족합니다.";
+              details.push(
+                `예상: ${estimatedShippingFee.toLocaleString()}원 (${boxCount}박스), 보유: ${availableForShipping.toLocaleString()}원`,
+              );
+            }
+
+            message += "\n\n" + details.join("\n");
+            message += "\n\n크레딧을 충전한 뒤 다시 시도해주세요.";
+
+            toast({
+              title: "크레딧 부족",
+              description: message,
+              variant: "destructive",
+              duration: 10000, // 10초
+            });
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("[NewRequestSubmit] credit check failed:", err);
+        // 크레딧 체크 실패 시에도 진행 (백엔드에서 최종 체크)
+      }
+
+      // 2. 중복 데이터 체크 (제출 전 클라이언트 사이드 검증 - 동일 페이로드 내 중복)
       if (files.length > 1 && caseInfosMap) {
         console.log("[NewRequestSubmit] duplicate check start", {
           t: Date.now() - submitStart,
@@ -259,7 +388,7 @@ export const useNewRequestSubmitV2 = ({
         }
       }
 
-      // 2. 제출 전 디바운스 대기 중인 변경사항을 즉시 Draft에 저장 (서버 데이터 동기화)
+      // 3. 제출 전 디바운스 대기 중인 변경사항을 즉시 Draft에 저장 (서버 데이터 동기화)
       if (patchDraftImmediately && caseInfosMap) {
         console.log("[NewRequestSubmit] patch draft start", {
           t: Date.now() - submitStart,
@@ -282,7 +411,7 @@ export const useNewRequestSubmitV2 = ({
         }
       }
 
-      // 3. Draft를 Request로 전환
+      // 4. Draft를 Request로 전환
       console.log("[useNewRequestSubmitV2] Submitting draft to request...", {
         draftId,
         duplicateResolutionsCount: duplicateResolutions?.length || 0,
@@ -361,7 +490,7 @@ export const useNewRequestSubmitV2 = ({
             title: "크레딧 부족",
             description,
             variant: "destructive",
-            duration: 7000,
+            duration: 10000, // 10초
           });
           return;
         }
