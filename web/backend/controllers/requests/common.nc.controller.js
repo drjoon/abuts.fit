@@ -189,12 +189,19 @@ function makeDirectRootNcName({ requestId, fileName }) {
   return `${head}.nc`;
 }
 
-function makeRequestNcBridgePath(fileName) {
+function makeRequestNcBridgePath(fileName, requestId) {
   const normalized = String(fileName || "")
     .trim()
     .replace(/\\/g, "/")
     .replace(/^\/+/, "")
     .replace(/^3-nc\//i, "");
+  const rid = String(requestId || "").trim();
+
+  // requestId가 있으면 3-nc/{requestId}/{fileName} 형태로 저장
+  // 없으면 레거시 호환을 위해 3-nc/{fileName} 형태로 저장
+  if (rid) {
+    return `3-nc/${rid}/${normalized || "program.nc"}`;
+  }
   return `3-nc/${normalized || "program.nc"}`;
 }
 
@@ -221,7 +228,7 @@ async function uploadNcToBridgeStore({
   const relPath =
     String(storeScope || "") === "direct_root"
       ? makeDirectRootNcName({ requestId, fileName: normalizedName })
-      : makeRequestNcBridgePath(normalizedName);
+      : makeRequestNcBridgePath(normalizedName, requestId);
   const resp = await fetch(`${BRIDGE_BASE}/api/bridge-store/upload`, {
     method: "POST",
     headers: withBridgeHeaders({ "Content-Type": "application/json" }),
@@ -284,6 +291,7 @@ export async function ensureNcFileOnBridgeStoreByRequestId(req, res) {
             ? requestedBridgePath
             : makeRequestNcBridgePath(
                 fileName || existingPath || requestedBridgePath,
+                requestId,
               );
 
     if (!bridgePath) {

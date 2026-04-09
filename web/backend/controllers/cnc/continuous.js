@@ -23,9 +23,16 @@ function buildStoredNcS3Key(requestId, fileName) {
   return `requests/${rid}/3-nc/${safeName}`;
 }
 
-function buildRequestNcBridgePath(fileName) {
+function buildRequestNcBridgePath(fileName, requestId) {
   const safeName =
     sanitizeS3KeySegment(String(fileName || "").trim()) || "program.nc";
+  const rid = String(requestId || "").trim();
+
+  // requestId가 있으면 3-nc/{requestId}/{fileName} 형태로 저장
+  // 없으면 레거시 호환을 위해 3-nc/{fileName} 형태로 저장
+  if (rid) {
+    return `3-nc/${rid}/${safeName}`;
+  }
   return `3-nc/${safeName}`;
 }
 
@@ -39,12 +46,17 @@ function buildDirectBridgePath({ machineId, originalFileName }) {
   return `3-direct/${base}${ext}`;
 }
 
-function resolveRequestNcBridgePath({ currentPath, requestedPath, fileName }) {
+function resolveRequestNcBridgePath({
+  currentPath,
+  requestedPath,
+  fileName,
+  requestId,
+}) {
   const current = String(currentPath || "").trim();
   const requested = String(requestedPath || "").trim();
   if (/^3-nc\//i.test(current)) return current;
   if (/^3-nc\//i.test(requested)) return requested;
-  return buildRequestNcBridgePath(fileName);
+  return buildRequestNcBridgePath(fileName, requestId);
 }
 
 async function uploadNcContentToBridgeStore({ bridgePath, content }) {
@@ -259,6 +271,7 @@ export async function saveJobProgramCode(req, res) {
       currentPath: currentNc?.filePath,
       requestedPath: requestedBridgePath,
       fileName,
+      requestId,
     });
     const resolvedOriginalFileName =
       originalFileName ||

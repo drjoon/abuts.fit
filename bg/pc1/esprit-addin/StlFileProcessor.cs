@@ -237,7 +237,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 EspritDocumentHelper.LogBoundingBox(document, "AfterRotate");
                 InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ, finishLineEspritR);
                 CaptureNcMetadata(document);
-                string ncFilePath = _ncGenerator.GenerateNcFile(document, stlPath, ResolveBackPointForNc(), ResolveStockDiameterForNc(document), _backendSerialCode);
+                string ncFilePath = _ncGenerator.GenerateNcFile(document, stlPath, ResolveFrontPointForNc(), ResolveStockDiameterForNc(document), _backendSerialCode);
                 if (!string.IsNullOrWhiteSpace(ncFilePath))
                 {
                     AppLogger.Log($"StlFileProcessor: NC file generated - {ncFilePath}");
@@ -278,7 +278,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
                 AppLogger.Log($"StlFileProcessor: MoveModuleType resolved = {(moveModuleType != null ? moveModuleType.FullName : "null")}");
                 
-                _capturedFrontPointX = null;
+                _capturedFrontPointX = _effectiveFrontLimitX;
                 _capturedBackPointX = null;
                 
                 if (moveModuleType != null)
@@ -310,17 +310,18 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log($"StlFileProcessor: NC 메타 캡처 실패 - {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
             }
         }
-        private double ResolveBackPointForNc()
+        private double ResolveFrontPointForNc()
         {
-            AppLogger.Log($"StlFileProcessor: ResolveBackPointForNc 호출 - _capturedBackPointX={(_capturedBackPointX?.ToString("F4") ?? "null")}");
+            AppLogger.Log($"StlFileProcessor: ResolveFrontPointForNc 호출 - _capturedFrontPointX={(_capturedFrontPointX?.ToString("F4") ?? "null")}");
             
-            if (_capturedBackPointX.HasValue && !double.IsNaN(_capturedBackPointX.Value))
+            if (_capturedFrontPointX.HasValue && !double.IsNaN(_capturedFrontPointX.Value))
             {
-                AppLogger.Log($"StlFileProcessor: BackPointX 사용 - {_capturedBackPointX.Value:F4}");
-                return _capturedBackPointX.Value;
+                double absFrontPointX = Math.Abs(_capturedFrontPointX.Value);
+                AppLogger.Log($"StlFileProcessor: FrontPointX 사용 - {_capturedFrontPointX.Value:F4} → Math.Abs = {absFrontPointX:F4}");
+                return absFrontPointX;
             }
             
-            string errorMsg = $"BackPointX not captured from MoveSTL_Module (_capturedBackPointX={((_capturedBackPointX.HasValue ? _capturedBackPointX.Value.ToString("F4") : "null"))})";
+            string errorMsg = $"FrontPointX not captured (_capturedFrontPointX={((_capturedFrontPointX.HasValue ? _capturedFrontPointX.Value.ToString("F4") : "null"))})";
             AppLogger.Log($"StlFileProcessor: 에러 - {errorMsg}");
             throw new InvalidOperationException(errorMsg);
         }
