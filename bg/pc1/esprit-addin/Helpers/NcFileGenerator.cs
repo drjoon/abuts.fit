@@ -97,7 +97,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 }
                 lines[0] = string.IsNullOrWhiteSpace(lines[0]) ? "%" : lines[0];
                 string truncatedDisplayName = ExtractDisplayName(displayName);
-                lines[1] = $"({truncatedDisplayName})";
+                // lines[1] = $"({truncatedDisplayName})";
+                lines[1] = $"O4000";
                 double backturnClearance = ResolveBackturnClearance(stockDiameter) + 2;
                 ApplyOrInsertNcLine(lines, $"#520= {FormatNcNumber(frontPointX, "0.000")}", "#520");
                 ApplyOrInsertNcLine(lines, $"#521= {FormatNcNumber(stockDiameter, "0.000")}", "#521");
