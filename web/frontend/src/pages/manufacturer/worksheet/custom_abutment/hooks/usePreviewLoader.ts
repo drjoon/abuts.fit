@@ -261,10 +261,9 @@ export function usePreviewLoader({
                 const ncName =
                   ncMeta?.filePath || ncMeta?.originalName || "program.nc";
                 const ncCacheVersion = ncMeta?.fileSize || ncMeta?.uploadedAt;
-                const ncCacheKey =
-                  ncMeta?.s3Key && ncCacheVersion
-                    ? `${ncMeta.s3Key}:${ncCacheVersion}`
-                    : ncMeta?.s3Key || null;
+                const ncCacheKey = ncMeta?.s3Key
+                  ? `cnc:s3:${ncMeta.s3Key}${ncCacheVersion ? `:${ncCacheVersion}` : ""}`
+                  : null;
                 const ncFile = await fetchAsFileWithCache(
                   ncCacheKey,
                   () => fetchSignedUrl(`/api/requests/${req._id}/nc-file-url`),

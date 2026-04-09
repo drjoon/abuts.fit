@@ -163,12 +163,18 @@ export function useWorksheetRealtimeStatus({
 
       const requestId = String(notification?.data?.requestId || "").trim();
       const sourceStep = String(notification?.data?.sourceStep || "").trim();
-      const s3Key = notification?.data?.s3Key;
       const status = String(notification?.data?.status || "").trim();
 
-      // NC 파일 생성 성공 시 캐시 무효화
-      if (sourceStep === "3-nc" && status === "success" && s3Key) {
-        void deleteCncProgramCache(s3Key);
+      // NC 파일 재생성 완료 시 이전 NC 캐시 무효화 (현재 request에 남아있는 구 s3Key 기반)
+      if (sourceStep === "3-nc" && status === "success" && requestId) {
+        setRequests((prev) => {
+          const found = prev.find(
+            (r) => String((r as any)?.requestId || "").trim() === requestId,
+          );
+          const oldS3Key = (found as any)?.caseInfos?.ncFile?.s3Key;
+          if (oldS3Key) void deleteCncProgramCache(oldS3Key);
+          return prev;
+        });
       }
 
       let shouldRefreshList = false;
