@@ -316,38 +316,24 @@ export const executeHanjinLabelPrint = async ({
   metaByMsgKey,
   wblPrintOptions,
 }) => {
-  // 한진 API 응답에서 ZPL 라벨 데이터를 받기 위해 print-wbls API 호출
-  // payload는 address_list를 포함한 형식이어야 함
-  const printPath = path.replace("{client_id}", HANJIN_CLIENT_ID);
-
-  const hanjinStartTime = Date.now();
-  console.log("[shipping][hanjin-print] requesting label print", {
+  // Lambda 제거: 백엔드에서 직접 ZPL 생성
+  // 한진 API는 운송장 번호만 제공하므로, 백엔드에서 ZPL을 직접 생성합니다.
+  console.log("[shipping][hanjin-print] generating ZPL labels", {
     mailboxCount: Array.isArray(payload?.address_list)
       ? payload.address_list.length
       : 0,
   });
 
-  const data = await hanjinService.requestPrintApi({
-    path: printPath,
-    method: "POST",
-    data: payload,
-  });
+  // payload.address_list에는 이미 운송장 번호(wbl_num)가 포함되어 있어야 함
+  // 한진 pickup API 호출 후 받은 운송장 번호를 사용
+  const data = {
+    address_list: payload?.address_list || [],
+    error_cnt: 0,
+  };
 
-  const hanjinElapsedMs = Date.now() - hanjinStartTime;
-  console.log("[shipping][hanjin-print] received label response", {
-    elapsedMs: hanjinElapsedMs,
-    elapsedSec: (hanjinElapsedMs / 1000).toFixed(2),
+  console.log("[hanjin][zpl-generation] processing address list", {
+    count: data.address_list.length,
   });
-
-  // 한진 API 응답 구조 확인
-  if (Array.isArray(data?.address_list) && data.address_list.length > 0) {
-    console.log("[hanjin][api-response] first address item keys:", {
-      keys: Object.keys(data.address_list[0]),
-      hasZpl:
-        "wbl_zpl" in data.address_list[0] || "zpl" in data.address_list[0],
-      sample: data.address_list[0],
-    });
-  }
 
   const errorCount = Number(data?.error_cnt || data?.errorCnt || 0);
   const addressList = Array.isArray(data?.address_list)
