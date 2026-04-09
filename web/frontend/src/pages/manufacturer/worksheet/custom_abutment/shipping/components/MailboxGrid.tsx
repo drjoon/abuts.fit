@@ -52,7 +52,7 @@ export const MailboxGrid = ({
   const [selectedGroupIdx, setSelectedGroupIdx] = useState(0);
   const [isRequestingPickup, setIsRequestingPickup] = useState(false);
   const [activeHeaderAction, setActiveHeaderAction] = useState<
-    "print" | "pickup" | "mock" | null
+    "print" | "pickup" | "mock" | "reset" | null
   >(null);
   const [failedMailboxes, setFailedMailboxes] = useState<Set<string>>(
     new Set(),
@@ -794,6 +794,7 @@ export const MailboxGrid = ({
     }
 
     setIsRequestingPickup(true);
+    setActiveHeaderAction("reset");
     try {
       console.log(
         "[reset] before reset, requests:",
@@ -1014,16 +1015,29 @@ export const MailboxGrid = ({
   const hasChangedPrintedMailbox = changedPrintedAddresses.length > 0;
   const hasAcceptedMailbox = acceptedAddresses.length > 0;
 
-  // 출력 버튼: 미출력 우편함이 있거나, 출력 후 변경된 우편함이 있거나, 접수 취소 후 재출력 필요 시 활성화
-  const canPrint =
-    hasUnprintedMailbox || hasChangedPrintedMailbox || hasPrintedMailbox;
-  const printActionLabel = hasPrintedMailbox
-    ? "🖨️ 운송장 재출력"
-    : "🖨️ 운송장 출력";
+  // 접수/집하/완료되지 않은 "출력 완료" 우편함 (수거 접수 가능 대상)
+  // picked_up/completed는 이미 집하된 상태이므로 접수 대상에서 제외
+  const hasPurelyPrintedMailbox = occupiedAddresses.some((addr) => {
+    const status = pickupRequestedMailboxes.get(addr);
+    if (
+      status === "accepted" ||
+      status === "picked_up" ||
+      status === "completed"
+    )
+      return false;
+    return status === "printed" || printedMailboxes.has(addr);
+  });
 
-  // 접수 버튼: 출력된 우편함이 있으면 활성화 (접수 모드)
+  // 출력 버튼: 미출력 우편함이 있거나, 출력 후 내용이 변경된 우편함이 있을 때만 활성화
+  // hasPrintedMailbox 단독으로는 활성화하지 않음 (재출력은 변경 시에만 허용)
+  const canPrint = hasUnprintedMailbox || hasChangedPrintedMailbox;
+  const printActionLabel = hasUnprintedMailbox
+    ? "🖨️ 운송장 출력"
+    : "🖨️ 운송장 재출력";
+
+  // 접수 버튼: 출력됐지만 아직 접수/집하되지 않은 우편함이 있을 때 활성화
   // 취소 버튼: 접수된 우편함이 있으면 활성화 (취소 모드)
-  const canPickup = hasPrintedMailbox && !hasAcceptedMailbox;
+  const canPickup = hasPurelyPrintedMailbox && !hasAcceptedMailbox;
   const canCancelPickup = hasAcceptedMailbox;
   const pickupActionLabel = hasAcceptedMailbox
     ? "↩️ 택배 취소"
@@ -1055,21 +1069,26 @@ export const MailboxGrid = ({
       disabled: !canPrint,
       variant: "blue" as const,
       onClick: () => {
-        if (hasPrintedMailbox && hasChangedPrintedMailbox) {
+        if (!hasPrintedMailbox) {
+          // 최초 출력: 모든 우편함 출력
+          void handlePrintOnly();
+        } else if (hasChangedPrintedMailbox) {
           // 재출력: 변경된 우편함만 출력
           void handlePrintOnly({
             targetAddresses: changedPrintedAddresses,
             modifyOnly: true,
           });
-          return;
+        } else if (hasUnprintedMailbox) {
+          // 새로 추가된 우편함만 출력 (기존 출력분은 변경 없음)
+          void handlePrintOnly({
+            targetAddresses: unprintedAddresses,
+          });
         }
-        // 최초 출력: 모든 우편함 출력
-        void handlePrintOnly();
       },
     },
     {
       label: "임시: 리셋",
-      loading: activeHeaderAction === null && isRequestingPickup,
+      loading: activeHeaderAction === "reset" && isRequestingPickup,
       loadingLabel: "리셋 중...",
       disabled: !hasAnyOccupiedMailbox,
       variant: "white" as const,
