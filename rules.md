@@ -630,6 +630,40 @@
   4. **웹앱 수정**: 중복 제품 제거, 누락 제품 처리 (부분 롤백 또는 전체 미발송)
   5. **라벨 재출력**: 변경된 우편함만 다시 출력
   6. **재접수**: 수정 후 택배 접수 재실행 (멱동성 처리로 안전)
+
+#### 4.4.1 한진 라벨 출력 엔드포인트 구분 (SSOT)
+
+**라벨 출력에는 두 가지 백엔드 엔드포인트가 있으며, 반드시 상황에 맞게 선택해야 합니다.**
+
+- **`POST /api/requests/shipping/hanjin/pickup-and-print`** (통합 접수+출력)
+  - 사용 조건: 대상 우편함 중 하나라도 `accepted` / `picked_up` 상태가 **아닌** 경우
+  - 동작: 한진 API에 접수 요청 → `wbl_num` 획득 → ZPL 라벨 생성 → 출력/PDF 변환
+  - `wbl_num`이 없으면 ZPL이 빈 문자열로 생성되어 라벨이 정상 출력되지 않으므로, 반드시 이 엔드포인트를 먼저 호출해야 함
+  - 멱등성 보장: 이미 `accepted` 상태인 우편함은 내부적으로 스킵하고 `wbl_num`만 재사용
+
+- **`POST /api/requests/shipping/hanjin/print-labels`** (라벨 재출력 전용)
+  - 사용 조건: 대상 우편함이 **모두** `accepted` 또는 `picked_up` 상태인 경우 (DB에 `wbl_num` 이미 존재)
+  - 동작: DB에서 `wbl_num` 직접 조회 → ZPL 라벨 생성 → 출력/PDF 변환
+  - `wbl_num` 없이 이 엔드포인트를 호출하면 빈 ZPL이 생성되고 `saveGeneratedWaybillPngs`에서 필터링되어 아무것도 다운로드되지 않음
+
+**프론트엔드 라우팅 원칙 (`handlePrintOnly`):**
+
+- `needsPickupBeforePrint = effectiveTargetAddresses.some(addr => status !== "accepted" && status !== "picked_up")`
+- `needsPickupBeforePrint === true` → `pickup-and-print` 사용
+- `needsPickupBeforePrint === false` → `print-labels` 사용
+
+**`wbl_num` (운송장 번호) 의존성:**
+
+- ZPL 라벨 생성의 SSOT는 `wbl_num`입니다.
+- `wbl_num`은 한진 API 접수(pickup) 시 획득되며, DB의 `request.deliveryInfoRef` 또는 한진 응답에서 관리됩니다.
+- `wbl_num` 없이 ZPL을 생성하면 빈 문자열이 반환되고, 프론트엔드의 `saveGeneratedWaybillPngs`는 `wbl_num`이 없는 row를 필터링합니다.
+- 따라서 최초 출력은 반드시 `pickup-and-print`를 통해 `wbl_num`을 먼저 확보해야 합니다.
+
+**출력 모드:**
+
+- `shippingOutputMode = "pdf"`: ZPL → PDF 변환 후 브라우저 다운로드 (비동기)
+- `shippingOutputMode = "print"`: ZPL을 직접 프린터 서버(`WBL_PRINT_SERVER_BASE`)에 전송
+
 - 포장.발송 화면의 기본 출발점은 **`택배 접수`** 이며, 접수 후 `wblNo`를 획득한 뒤 **`운송장 출력`** 을 실행합니다.
 - 택배 접수는 우편함 선택 기반이 아니라, **해당 우편함에 현재 들어 있는 전체 제품**을 대상으로 실행합니다.
 - 우편함 선택 기능은 제거합니다. 선택 배경, 전체선택/전체해제, 선택 개수 요약 UI를 두지 않습니다.

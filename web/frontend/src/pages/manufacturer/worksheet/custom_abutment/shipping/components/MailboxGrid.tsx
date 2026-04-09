@@ -15,6 +15,7 @@ import { MailboxPrintSettingsDialog } from "./MailboxPrintSettingsDialog";
 import { MailboxShelfGroupTabs } from "./MailboxShelfGroupTabs";
 import { MailboxStickyHeader } from "./MailboxStickyHeader";
 import { useMailboxPrintSettings } from "./useMailboxPrintSettings";
+import { ToastAction } from "@/components/ui/toast";
 
 const MAILBOX_SHELF_NAMES = ["A", "B", "C", "D", "E", "F", "G", "H", "I"];
 
@@ -231,32 +232,32 @@ export const MailboxGrid = ({
         description: `${effectiveTargetAddresses.length}개 우편함의 운송장을 출력합니다. 한진 API 응답까지 10초 이상 걸릴 수 있습니다.`,
         duration: 8000,
       });
-      const needsPickupBeforePrint = modifyOnly
-        ? effectiveTargetAddresses.some((addr) => {
-            const status = pickupRequestedMailboxes.get(addr);
-            return status !== "accepted" && status !== "picked_up";
+      // wbl_num은 한진 접수(pickup) 후 DB에 저장되므로,
+      // accepted/picked_up이 아닌 우편함이 포함되면 pickup-and-print 사용 (접수 → 출력 통합)
+      // 이미 모두 accepted/picked_up인 경우엔 print-labels로 DB의 wbl_num을 직접 조회해 출력
+      const needsPickupBeforePrint = effectiveTargetAddresses.some((addr) => {
+        const status = pickupRequestedMailboxes.get(addr);
+        return status !== "accepted" && status !== "picked_up";
+      });
+      const response = needsPickupBeforePrint
+        ? await callHanjinApiWithMeta({
+            path: "/api/requests/shipping/hanjin/pickup-and-print",
+            mailboxAddresses: effectiveTargetAddresses,
+            wblPrintOptions: {
+              printer: printerProfile || undefined,
+              paperProfile,
+              shippingOutputMode,
+            } as any,
           })
-        : false;
-      const response =
-        modifyOnly && needsPickupBeforePrint
-          ? await callHanjinApiWithMeta({
-              path: "/api/requests/shipping/hanjin/pickup-and-print",
-              mailboxAddresses: effectiveTargetAddresses,
-              wblPrintOptions: {
-                printer: printerProfile || undefined,
-                paperProfile,
-                shippingOutputMode,
-              } as any,
-            })
-          : await callHanjinApiWithMeta({
-              path: "/api/requests/shipping/hanjin/print-labels",
-              mailboxAddresses: effectiveTargetAddresses,
-              wblPrintOptions: {
-                printer: printerProfile || undefined,
-                paperProfile,
-                shippingOutputMode,
-              } as any,
-            });
+        : await callHanjinApiWithMeta({
+            path: "/api/requests/shipping/hanjin/print-labels",
+            mailboxAddresses: effectiveTargetAddresses,
+            wblPrintOptions: {
+              printer: printerProfile || undefined,
+              paperProfile,
+              shippingOutputMode,
+            } as any,
+          });
       const { data, wblPrint } = response;
 
       const changedMailboxAddressSet = new Set(
@@ -816,7 +817,6 @@ export const MailboxGrid = ({
       // 로컬 상태 초기화
       setMailboxChangeMeta({});
       setWorkflowOverrideByRequestId({});
-      clearWorkflowOverridesForMailboxes(occupiedAddresses);
       setFailedMailboxes(new Set());
 
       // 백엔드 상태 다시 조회
@@ -1028,9 +1028,10 @@ export const MailboxGrid = ({
     return status === "printed" || printedMailboxes.has(addr);
   });
 
-  // 출력 버튼: 미출력 우편함이 있거나, 출력 후 내용이 변경된 우편함이 있을 때만 활성화
-  // hasPrintedMailbox 단독으로는 활성화하지 않음 (재출력은 변경 시에만 허용)
-  const canPrint = hasUnprintedMailbox || hasChangedPrintedMailbox;
+  // 출력 버튼: 미출력 우편함이 있거나, 출력 후 내용이 변경된 우편함이 있을 때 활성화
+  // 이미 출력된 우편함이 있으면 재출력 버튼도 항상 활성화 (클릭 시 확인 토스트로 실수 방지)
+  const canPrint =
+    hasUnprintedMailbox || hasChangedPrintedMailbox || hasPrintedMailbox;
   const printActionLabel = hasUnprintedMailbox
     ? "🖨️ 운송장 출력"
     : "🖨️ 운송장 재출력";
@@ -1082,6 +1083,21 @@ export const MailboxGrid = ({
           // 새로 추가된 우편함만 출력 (기존 출력분은 변경 없음)
           void handlePrintOnly({
             targetAddresses: unprintedAddresses,
+          });
+        } else {
+          // 변경 없는 재출력: 확인 토스트 후 전체 재출력
+          toast({
+            title: "운송장 재출력",
+            description:
+              "변경된 내용이 없습니다. 전체 운송장을 재출력하시겠습니까? 확인하려면 다시 클릭하세요.",
+            action: (
+              <ToastAction
+                altText="재출력"
+                onClick={() => void handlePrintOnly()}
+              >
+                재출력
+              </ToastAction>
+            ),
           });
         }
       },
