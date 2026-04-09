@@ -8,7 +8,10 @@ logStream.on("error", (err) => {
 });
 
 const log = (message, meta) => {
-  const stamp = new Date().toISOString();
+  const now = new Date();
+  const kstOffset = 9 * 60;
+  const kstTime = new Date(now.getTime() + kstOffset * 60 * 1000);
+  const stamp = kstTime.toISOString().replace("Z", "+09:00");
   const suffix = meta ? ` ${JSON.stringify(meta)}` : "";
   const line = `[wbls-server] ${stamp} ${message}${suffix}`;
   console.log(line);

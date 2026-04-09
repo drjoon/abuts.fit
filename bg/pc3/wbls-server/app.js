@@ -119,12 +119,20 @@ const listPrinters = () =>
         "powershell.exe",
         psArgs,
         { windowsHide: true },
-        (err, stdout) => {
-          if (err) return reject(err);
+        (err, stdout, stderr) => {
+          if (err) {
+            log("list-printers:powershell-error", {
+              error: err.message,
+              stderr: stderr,
+              stdout: stdout,
+            });
+            return reject(err);
+          }
           const printers = stdout
             .split(/\r?\n/)
             .map((line) => line.trim())
             .filter(Boolean);
+          log("list-printers:success", { count: printers.length, printers });
           return resolve(printers);
         },
       );
@@ -468,11 +476,16 @@ const server = http.createServer(async (req, res) => {
 
   if (req.url === "/printers" && req.method === "GET") {
     try {
+      log("printers:request", { platform: process.platform });
       const printers = await listPrinters();
-      log("printers", { count: printers.length });
+      log("printers:response", { count: printers.length, printers });
       return jsonResponse(res, 200, { success: true, printers });
     } catch (error) {
-      log("printers:error", { message: error.message });
+      log("printers:error", {
+        message: error.message,
+        stack: error.stack,
+        platform: process.platform,
+      });
       return jsonResponse(res, 500, {
         success: false,
         message: error.message,
