@@ -755,7 +755,13 @@ export const MailboxGrid = ({
     () =>
       occupiedAddresses.filter((addr) => {
         const status = pickupRequestedMailboxes.get(addr);
-        return status === "printed" || printedMailboxes.has(addr);
+        // accepted/picked_up도 이미 출력 완료된 상태로 간주
+        return (
+          status === "printed" ||
+          status === "accepted" ||
+          status === "picked_up" ||
+          printedMailboxes.has(addr)
+        );
       }),
     [occupiedAddresses, pickupRequestedMailboxes, printedMailboxes],
   );
@@ -988,11 +994,16 @@ export const MailboxGrid = ({
   };
 
   // 백엔드 상태 기반 버튼 로직
-  const unprintedAddresses = occupiedAddresses.filter(
-    (addr) =>
+  const unprintedAddresses = occupiedAddresses.filter((addr) => {
+    const status = pickupRequestedMailboxes.get(addr);
+    // printed/accepted/picked_up은 이미 출력 완료 → 미출력 목록에서 제외
+    return (
       !printedMailboxes.has(addr) &&
-      pickupRequestedMailboxes.get(addr) !== "printed",
-  );
+      status !== "printed" &&
+      status !== "accepted" &&
+      status !== "picked_up"
+    );
+  });
 
   const changedPrintedAddresses = printedMailboxChanges
     .filter((item) => item.changed)
@@ -1003,8 +1014,9 @@ export const MailboxGrid = ({
   const hasChangedPrintedMailbox = changedPrintedAddresses.length > 0;
   const hasAcceptedMailbox = acceptedAddresses.length > 0;
 
-  // 출력 버튼: 미출력 우편함이 있거나, 출력 후 변경된 우편함이 있으면 활성화
-  const canPrint = hasUnprintedMailbox || hasChangedPrintedMailbox;
+  // 출력 버튼: 미출력 우편함이 있거나, 출력 후 변경된 우편함이 있거나, 접수 취소 후 재출력 필요 시 활성화
+  const canPrint =
+    hasUnprintedMailbox || hasChangedPrintedMailbox || hasPrintedMailbox;
   const printActionLabel = hasPrintedMailbox
     ? "🖨️ 운송장 재출력"
     : "🖨️ 운송장 출력";

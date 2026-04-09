@@ -317,6 +317,8 @@ const findPrePrintSnapshotRequests = async (mailboxAddresses = []) =>
       mailboxAddress: 1,
       manufacturerStage: 1,
       shippingLabelPrinted: 1,
+      shippingWorkflow: 1,
+      deliveryInfoRef: 1,
     },
   });
 
@@ -1061,9 +1063,59 @@ export async function printHanjinLabels(req, res) {
       );
     }
 
+    // accepted/picked_up 상태 주소에 대해 DB에 저장된 wblNum을 payload에 주입
+    const acceptedDeliveryInfoIds = printRequests
+      .filter((requestDoc) => {
+        const code = String(requestDoc?.shippingWorkflow?.code || "").trim();
+        return (
+          (code === SHIPPING_WORKFLOW_CODES.ACCEPTED ||
+            code === SHIPPING_WORKFLOW_CODES.PICKED_UP) &&
+          requestDoc?.deliveryInfoRef
+        );
+      })
+      .map((requestDoc) => requestDoc.deliveryInfoRef);
+
+    const wblNumByMailbox = new Map();
+    if (acceptedDeliveryInfoIds.length > 0) {
+      const deliveryInfoDocs = await DeliveryInfo.find({
+        _id: { $in: acceptedDeliveryInfoIds },
+      })
+        .select({ _id: 1, trackingNumber: 1 })
+        .lean();
+      const deliveryInfoMap = new Map(
+        deliveryInfoDocs.map((di) => [String(di._id), di]),
+      );
+      for (const requestDoc of printRequests) {
+        const code = String(requestDoc?.shippingWorkflow?.code || "").trim();
+        if (
+          code !== SHIPPING_WORKFLOW_CODES.ACCEPTED &&
+          code !== SHIPPING_WORKFLOW_CODES.PICKED_UP
+        )
+          continue;
+        const mailbox = String(requestDoc?.mailboxAddress || "").trim();
+        if (!mailbox) continue;
+        const diId = String(requestDoc?.deliveryInfoRef || "").trim();
+        const di = deliveryInfoMap.get(diId);
+        const wblNum = String(di?.trackingNumber || "").trim();
+        if (wblNum) wblNumByMailbox.set(mailbox, wblNum);
+      }
+    }
+
+    const enrichedPayload =
+      wblNumByMailbox.size > 0
+        ? {
+            ...resolved.payload,
+            address_list: (resolved.payload?.address_list || []).map((row) => {
+              const msgKey = String(row?.msg_key || "").trim();
+              const wblNum = wblNumByMailbox.get(msgKey);
+              return wblNum ? { ...row, wbl_num: wblNum } : row;
+            }),
+          }
+        : resolved.payload;
+
     const { labelData, wblPrint } = await executeHanjinLabelPrint({
       path,
-      payload: resolved.payload,
+      payload: enrichedPayload,
       metaByMsgKey: resolved.metaByMsgKey,
       wblPrintOptions,
     });
