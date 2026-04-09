@@ -229,33 +229,163 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         }
         private static List<string> BuildSerialBlock(string serialCode, bool isDeburr)
         {
-            // prc 파일 형식 그대로 반영
-            var block = new List<string>
+            // prc 파일을 템플릿으로 사용하여 각인 문자 부분만 교체
+            var templateLines = ReadSerialTemplateFromPrc();
+            if (templateLines == null || templateLines.Count == 0)
             {
-                "(Serial)",
-                "T0909 (CENTER MILL/D2.0*A90)",
-                "M50",
-                "G28H0",
-                "M23S2000",
-                "G98G0X[#521+1.8]Z[#520+#523+1.775]Y0.525C0.0",
-                "G1X4.0F2000",
-                "G1X3.45F500",
-                string.Empty
-            };
-            block.AddRange(BuildSerialMacroLines(serialCode));
-            block.Add(string.Empty);
-            block.AddRange(new[]
+                AppLogger.Log("NcFileGenerator: ❌ prc 템플릿 로드 실패 - Serial 블록 생성 불가");
+                return new List<string> { "(Serial)", "// ERROR: prc template not found" };
+            }
+            
+            var result = new List<string>();
+            bool inMacroSection = false;
+            
+            foreach (var line in templateLines)
             {
-                "G0 X30.0",
-                "G0 Z-17.5",
-                "G0 T0",
-                "M51",
-                "M25",
-                "M1",
-                string.Empty
-            });
-            return block;
+                string trimmed = line.Trim();
+                
+                // 매크로 섹션 시작 감지 (첫 M98P)
+                if (!inMacroSection && trimmed.StartsWith("M98P", StringComparison.OrdinalIgnoreCase))
+                {
+                    inMacroSection = true;
+                    // 실제 각인 문자로 교체된 매크로 라인 삽입
+                    result.AddRange(BuildSerialMacroLines(serialCode));
+                    continue;
+                }
+                
+                // 매크로 섹션 종료 감지 (빈 줄 또는 G0로 시작)
+                if (inMacroSection && (string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith("G0", StringComparison.OrdinalIgnoreCase)))
+                {
+                    inMacroSection = false;
+                    result.Add(line);
+                    continue;
+                }
+                
+                // 매크로 섹션 내부는 스킵 (이미 BuildSerialMacroLines로 교체함)
+                if (inMacroSection)
+                {
+                    continue;
+                }
+                
+                // 나머지는 그대로 추가
+                result.Add(line);
+            }
+            
+            return result;
         }
+        
+        private static List<string> ReadSerialTemplateFromPrc()
+        {
+            try
+            {
+                // prc 파일 경로 찾기 (AcroDent/2_Connection 폴더)
+                string addinDir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+                string prcDir = Path.Combine(addinDir, "AcroDent", "2_Connection");
+                
+                if (!Directory.Exists(prcDir))
+                {
+                    AppLogger.Log($"NcFileGenerator: prc 디렉토리 없음 - {prcDir}");
+                    return null;
+                }
+                
+                // 첫 번째 prc 파일 사용 (모든 prc 파일의 Serial 블록 구조는 동일)
+                var prcFiles = Directory.GetFiles(prcDir, "*.prc");
+                if (prcFiles.Length == 0)
+                {
+                    AppLogger.Log($"NcFileGenerator: prc 파일 없음 - {prcDir}");
+                    return null;
+                }
+                
+                string prcPath = prcFiles[0];
+                var allLines = File.ReadAllLines(prcPath);
+                
+                // (Serial) 블록 찾기
+                int startIdx = -1;
+                int endIdx = -1;
+                
+                for (int i = 0; i < allLines.Length; i++)
+                {
+                    string trimmed = allLines[i].Trim();
+                    
+                    if (trimmed.Equals(":(Serial)", StringComparison.OrdinalIgnoreCase))
+                    {
+                        startIdx = i;
+                    }
+                    else if (startIdx >= 0 && trimmed.StartsWith(":", StringComparison.Ordinal) && 
+                             !trimmed.Equals(":(Serial)", StringComparison.OrdinalIgnoreCase) &&
+                             trimmed.Length > 1 && trimmed[1] != ' ')
+                    {
+                        // 다음 블록 시작 (예: :(HEX2.485 Deburr2))
+                        endIdx = i;
+                        break;
+                    }
+                }
+                
+                if (startIdx < 0)
+                {
+                    AppLogger.Log($"NcFileGenerator: (Serial) 블록 없음 - {prcPath}");
+                    return null;
+                }
+                
+                if (endIdx < 0)
+                {
+                    endIdx = allLines.Length;
+                }
+                
+                // : 접두사 제거하고 반환
+                var block = new List<string>();
+                for (int i = startIdx; i < endIdx; i++)
+                {
+                    string line = allLines[i];
+                    if (line.TrimStart().StartsWith(":"))
+                    {
+                        block.Add(line.TrimStart().Substring(1));
+                    }
+                    else
+                    {
+                        block.Add(line);
+                    }
+                }
+                
+                AppLogger.Log($"NcFileGenerator: prc 템플릿 로드 성공 - {prcPath} ({block.Count} lines)");
+                return block;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"NcFileGenerator: prc 템플릿 로드 실패 - {ex.GetType().Name}:{ex.Message}");
+                return null;
+            }
+        }
+        
+        // private static List<string> BuildSerialBlockFallback(string serialCode)
+        // {
+        //     // prc 로드 실패 시 폴백 (기존 하드코딩 방식)
+        //     var block = new List<string>
+        //     {
+        //         "(Serial)",
+        //         "T0909 (CENTER MILL/D2.0*A90)",
+        //         "M50",
+        //         "G28H0",
+        //         "M23S2000",
+        //         "G98G0X[#521+1.8]Z[#520+#523+1.775]Y0.525C0.0",
+        //         "G1X4.0F2000",
+        //         "G1X3.45F500",
+        //         string.Empty
+        //     };
+        //     block.AddRange(BuildSerialMacroLines(serialCode));
+        //     block.Add(string.Empty);
+        //     block.AddRange(new[]
+        //     {
+        //         "G0 X30.0",
+        //         "G0 Z-17.5",
+        //         "G0 T0",
+        //         "M51",
+        //         "M25",
+        //         "M1",
+        //         string.Empty
+        //     });
+        //     return block;
+        // }
         private static IEnumerable<string> BuildSerialMacroLines(string serialCode)
         {
             for (int i = 0; i < serialCode.Length; i++)
