@@ -229,46 +229,41 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         }
         private static List<string> BuildSerialBlock(string serialCode, bool isDeburr)
         {
-            // NC Z축 = Esprit X축이므로 shift 적용 필요
-            // double zOffset = 1.8 + AppConfig.DefaultStlShift;
-            // AppLogger.Log($"NcFileGenerator: BuildSerialBlock - Z offset:{zOffset:F3} (shift 적용)");
+            // prc 파일 형식 그대로 반영
             var block = new List<string>
             {
                 "(Serial)",
                 "T0909 (CENTER MILL/D2.0*A90)",
                 "M50",
-                "G28H0.0",
-                "M23 S2000",
+                "G28H0",
+                "M23S2000",
                 "G98G0X[#521+1.8]Z[#520+#523+1.775]Y0.525C0.0",
-                // $"G98 G0 X[#521+1.8]Z[#520+{zOffset.ToString("F3", CultureInfo.InvariantCulture)}]Y0.525C0.0",
-                "G4 U0.05",
-                "G1 X4.0 F2000",
-                "G1 X3.45 F500",
+                "G1X4.0F2000",
+                "G1X3.45F500",
                 string.Empty
             };
-            block.AddRange(BuildSerialMacroLines(serialCode, "G1 V-0.35 F1000"));
+            block.AddRange(BuildSerialMacroLines(serialCode));
             block.Add(string.Empty);
             block.AddRange(new[]
             {
                 "G0 X30.0",
                 "G0 Z-17.5",
                 "G0 T0",
-                "M25",
                 "M51",
-                "G99",
+                "M25",
                 "M1",
                 string.Empty
             });
             return block;
         }
-        private static IEnumerable<string> BuildSerialMacroLines(string serialCode, string moveCommand)
+        private static IEnumerable<string> BuildSerialMacroLines(string serialCode)
         {
             for (int i = 0; i < serialCode.Length; i++)
             {
                 yield return BuildMacroCall(serialCode[i]);
-                if (i < serialCode.Length - 1 && !string.IsNullOrWhiteSpace(moveCommand))
+                if (i < serialCode.Length - 1)
                 {
-                    yield return moveCommand;
+                    yield return "G1V-0.35F1000";
                 }
             }
         }
