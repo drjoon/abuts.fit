@@ -1,4 +1,5 @@
 import Request from "../../models/request.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import s3Utils, { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
@@ -373,7 +374,21 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   }
   applyStatusMapping(request, "발송");
 
+  console.log("[lot-capture] before save - businessAnchorId state", {
+    requestId: request.requestId,
+    hasName: !!request?.businessAnchorId?.name,
+    nameValue: request?.businessAnchorId?.name || null,
+    mailboxAddress: request?.mailboxAddress || null,
+  });
+
   await request.save();
+
+  console.log("[lot-capture] after save - businessAnchorId state", {
+    requestId: request.requestId,
+    hasName: !!request?.businessAnchorId?.name,
+    nameValue: request?.businessAnchorId?.name || null,
+  });
+
   const normalizedRequest = await normalizeRequestForResponse(request);
 
   // 라벨 프린트는 백그라운드에서 비동기 처리 (응답 속도 개선)
@@ -385,6 +400,15 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   // 백그라운드 프린트 작업 (응답 대기 없음)
   setImmediate(async () => {
     try {
+      console.log("[lot-capture] auto print started", {
+        requestId: request?.requestId,
+        requestMongoId: String(request?._id || ""),
+        hasBusinessAnchorId: !!request?.businessAnchorId,
+        businessAnchorIdType: typeof request?.businessAnchorId,
+        businessAnchorIdName: request?.businessAnchorId?.name,
+        businessAnchorIdMetadata: request?.businessAnchorId?.metadata,
+      });
+
       const manufacturingDate = resolveManufacturingDateForPrint(request);
       if (!manufacturingDate) {
         console.warn(
@@ -398,11 +422,28 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
       }
 
       const fullLotNumber = String(request?.lotNumber?.value || "").trim();
-      const labName = String(
-        request?.businessAnchorId?.name ||
-          request?.businessAnchorId?.metadata?.name ||
-          "",
-      ).trim();
+
+      // businessAnchorId.name이 있으면 populate된 것, 없으면 ObjectId만 있는 것
+      let labName = "";
+      if (request?.businessAnchorId?.name) {
+        // populate된 경우 - name 필드 직접 사용
+        labName = String(request.businessAnchorId.name).trim();
+      } else if (request?.businessAnchorId?.metadata?.name) {
+        labName = String(request.businessAnchorId.metadata.name).trim();
+      } else if (request?.businessAnchorId) {
+        // populate되지 않은 ObjectId만 있는 경우 - DB에서 직접 조회
+        console.warn(
+          "[lot-capture] businessAnchorId not populated, fetching from DB",
+          {
+            requestId: request.requestId,
+            businessAnchorId: String(request.businessAnchorId),
+          },
+        );
+        const anchor = await BusinessAnchor.findById(
+          request.businessAnchorId,
+        ).select("name metadata");
+        labName = String(anchor?.name || anchor?.metadata?.name || "").trim();
+      }
       const implantManufacturer = String(
         request?.caseInfos?.implantManufacturer || "",
       ).trim();
@@ -425,6 +466,24 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
       const mailboxCode = String(request?.mailboxAddress || "").trim();
       const screwType = resolveScrewTypeForPrint(request);
       const createdAtIso = request.createdAt ? String(request.createdAt) : "";
+
+      console.log("[lot-capture] auto print field values", {
+        requestId: request?.requestId,
+        fullLotNumber,
+        labName,
+        implantManufacturer,
+        clinicName,
+        implantBrand,
+        implantFamily,
+        implantType,
+        patientName,
+        toothNumber,
+        mailboxCode,
+        screwType,
+        material,
+        manufacturingDate,
+        createdAtIso: createdAtIso ? "set" : "empty",
+      });
 
       if (
         !fullLotNumber ||
@@ -492,10 +551,17 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
         generated: packPrintResult?.generated || null,
       });
     } catch (printError) {
+      console.error(
+        "[lot-capture] ❌ Failed to print packing label:",
+        printError,
+      );
       console.error("[lot-capture] auto print failed (background)", {
-        requestId: request.requestId,
-        requestMongoId: String(request._id || ""),
+        requestId: request?.requestId,
+        requestMongoId: String(request?._id || ""),
         message: printError?.message || String(printError),
+        stack: printError?.stack,
+        requestExists: !!request,
+        hasBusinessAnchorId: !!request?.businessAnchorId,
       });
 
       // 프린트 실패 이벤트 발송
