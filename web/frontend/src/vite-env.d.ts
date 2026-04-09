@@ -14,6 +14,8 @@ interface ImportMetaEnv {
   readonly VITE_PACK_SELLER_TEL?: string;
   readonly VITE_PACK_MANUAL_QR_LABEL?: string;
   readonly VITE_PACK_MANUAL_QR_TEXT?: string;
+  readonly VITE_PACK_UDI_GTIN?: string;
+  readonly VITE_PACK_MANUFACTURER_PERMIT_NO?: string;
 }
 
 interface ImportMeta {
