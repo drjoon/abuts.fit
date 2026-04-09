@@ -667,6 +667,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         sourceStep: String(sourceStep || "").trim() || null,
         status: String(status || "").trim() || null,
         fileName: String(fileName || "").trim() || null,
+        s3Key: s3Info?.s3Key || null, // 프론트엔드 캐시 무효화용
       },
       timestamp: new Date(),
     });

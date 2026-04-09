@@ -747,6 +747,12 @@ export const useRequestFileHandlers = ({
           }
           throw new Error(message);
         }
+        // CAM 파일 업로드 성공 시 NC 캐시 무효화 (CAM 업로드 시 NC도 재생성되므로)
+        const ncS3Key = req?.caseInfos?.ncFile?.s3Key;
+        if (ncS3Key) {
+          await deleteCncProgramCache(ncS3Key);
+        }
+
         toast({
           title: "업로드 완료",
           description: "CAM STL이 저장되었습니다.",

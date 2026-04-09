@@ -6,6 +6,7 @@ import {
   onCncMachiningCompleted,
   onCncMachiningTick,
 } from "@/shared/realtime/socket";
+import { deleteCncProgramCache } from "@/shared/files/fileBlobCache";
 import {
   deriveStageForFilter,
   type ManufacturerRequest,
@@ -162,6 +163,14 @@ export function useWorksheetRealtimeStatus({
 
       const requestId = String(notification?.data?.requestId || "").trim();
       const sourceStep = String(notification?.data?.sourceStep || "").trim();
+      const s3Key = notification?.data?.s3Key;
+      const status = String(notification?.data?.status || "").trim();
+
+      // NC 파일 생성 성공 시 캐시 무효화
+      if (sourceStep === "3-nc" && status === "success" && s3Key) {
+        void deleteCncProgramCache(s3Key);
+      }
+
       let shouldRefreshList = false;
       if (requestId) {
         setRequests((prev) =>
