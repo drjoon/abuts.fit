@@ -73,6 +73,42 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
                 return false;
             }
         }
+        public static double ReadBottomZLimitFromFacePrc()
+        {
+            try
+            {
+                string facePrcDir = Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", "7_FrontFace prc");
+                if (!Directory.Exists(facePrcDir))
+                {
+                    throw new DirectoryNotFoundException($"디렉터리 없음: {facePrcDir}");
+                }
+                string[] prcFiles = Directory.GetFiles(facePrcDir, "*.prc");
+                if (prcFiles.Length == 0)
+                {
+                    throw new FileNotFoundException($"prc 파일 없음: {facePrcDir}");
+                }
+                string prcPath = prcFiles[0];
+                string[] lines = File.ReadAllLines(prcPath);
+                foreach (string line in lines)
+                {
+                    if (line.TrimStart().StartsWith("BottomZLimit;", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string[] parts = line.Split(new[] { ';' }, StringSplitOptions.None);
+                        if (parts.Length >= 3 && double.TryParse(parts[2].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double value))
+                        {
+                            AppLogger.Log($"DentalAddinPrcManager.ReadBottomZLimitFromFacePrc: BottomZLimit={value} from {Path.GetFileName(prcPath)}");
+                            return value;
+                        }
+                    }
+                }
+                throw new InvalidOperationException($"BottomZLimit 항목 없음: {prcPath}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"DentalAddinPrcManager.ReadBottomZLimitFromFacePrc: 읽기 실패 - {ex.GetType().Name}:{ex.Message}");
+                throw;
+            }
+        }
         private static string NormalizeFileNameForComparison(string value)
         {
             if (string.IsNullOrWhiteSpace(value))

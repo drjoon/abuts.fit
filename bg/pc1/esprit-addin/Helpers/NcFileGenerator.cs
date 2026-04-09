@@ -23,7 +23,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             _outputFolder = outputFolder ?? AppConfig.StorageNcDirectory;
             _postProcessorFile = postProcessorFile ?? "Acro_dent_XE.asc";
         }
-        public string GenerateNcFile(Document document, string stlPath, double frontPointX, double stockDiameter, string serialCode)
+        public string GenerateNcFile(Document document, string stlPath, double frontPointX, double stockDiameter, string serialCode, double? stlBoundingTopZ = null)
         {
             string postDir = _espApp.Configuration.GetFileDirectory(espFileType.espFileTypePostProcessor);
             string postFilePath = Path.Combine(postDir, _postProcessorFile);
@@ -31,7 +31,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             document.NCCode.AddAll();
             document.NCCode.Execute(postFilePath, ncFileName);
             AppLogger.Log($"NcFileGenerator: NC 저장 완료 - {ncFileName}");
-            UpdateNcHeader(ncFileName, Path.GetFileName(ncFileName), frontPointX, stockDiameter);
+            UpdateNcHeader(ncFileName, Path.GetFileName(ncFileName), frontPointX, stockDiameter, stlBoundingTopZ);
             
             string serialForNc = NormalizeSerialCode(serialCode);
             AppLogger.Log($"NcFileGenerator: Serial 각인 코드 적용 - Raw:'{serialCode ?? string.Empty}' => Use:'{serialForNc}'");
@@ -77,7 +77,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             int length = Math.Min(2, parts.Length);
             return string.Join("-", parts.Take(length));
         }
-        private void UpdateNcHeader(string ncFilePath, string displayName, double frontPointX, double stockDiameter)
+        private void UpdateNcHeader(string ncFilePath, string displayName, double frontPointX, double stockDiameter, double? stlBoundingTopZ = null)
         {
             try
             {
@@ -100,12 +100,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 // lines[1] = $"({truncatedDisplayName})";
                 lines[1] = $"O4000";
                 double backturnClearance = ResolveBackturnClearance(stockDiameter) + 2;
-                ApplyOrInsertNcLine(lines, $"#520= {FormatNcNumber(frontPointX, "0.000")}", "#520");
+                ApplyOrInsertNcLine(lines, $"#520= {FormatNcNumber(stlBoundingTopZ, "0.000")}", "#520");
                 ApplyOrInsertNcLine(lines, $"#521= {FormatNcNumber(stockDiameter, "0.000")}", "#521");
                 ApplyOrInsertNcLine(lines, $"#522= {FormatNcNumber(backturnClearance, "0.000")}", "#522");
                 ApplyOrInsertNcLine(lines, $"#523= {FormatNcNumber(AppConfig.DefaultStlShift, "0.000")}", "#523");
                 File.WriteAllLines(ncFilePath, lines.ToArray());
-                AppLogger.Log($"NcFileGenerator: NC 헤더 수정 완료 - #520:{FormatNcNumber(frontPointX)} (Math.Abs(FrontPointX)), #521:{FormatNcNumber(stockDiameter)}, #522:{FormatNcNumber(backturnClearance)}");
+                AppLogger.Log($"NcFileGenerator: NC 헤더 수정 완료 - #520:{FormatNcNumber(stlBoundingTopZ)} (stlBoundingTopZ), #521:{FormatNcNumber(stockDiameter)}, #522:{FormatNcNumber(backturnClearance)}");
             }
             catch (Exception ex)
             {

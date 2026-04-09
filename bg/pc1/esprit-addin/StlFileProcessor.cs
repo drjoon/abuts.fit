@@ -237,7 +237,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 EspritDocumentHelper.LogBoundingBox(document, "AfterRotate");
                 InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ, finishLineEspritR);
                 CaptureNcMetadata(document);
-                string ncFilePath = _ncGenerator.GenerateNcFile(document, stlPath, ResolveFrontPointForNc(), ResolveStockDiameterForNc(document), _backendSerialCode);
+                string ncFilePath = _ncGenerator.GenerateNcFile(document, stlPath, ResolveFrontPointForNc(), ResolveStockDiameterForNc(document), _backendSerialCode, stlBoundingTopZ);
                 if (!string.IsNullOrWhiteSpace(ncFilePath))
                 {
                     AppLogger.Log($"StlFileProcessor: NC file generated - {ncFilePath}");
@@ -838,7 +838,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             AppLogger.Log($"DentalAddin: ApplyLimitPoints - FrontPointX={frontLimitX:F4}, BackPointX={backLimitX:F4} (초기값) 설정");
             DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FrontPointX", frontLimitX);
             DentalAddinReflectionHelper.SetStaticField(moveModuleType, "BackPointX", backLimitX);
-            AppLogger.Log($"DentalAddin: MoveSTL_Module 필드 설정 완료 - BackPointX는 STL 이동 중 업데이트될 예정");
+            double downZ = DentalAddinPrcManager.ReadBottomZLimitFromFacePrc();
+            DentalAddinReflectionHelper.SetStaticField(mainModuleType, "DownZ", downZ);
+            AppLogger.Log($"DentalAddin: MoveSTL_Module 필드 설정 완료 - BackPointX는 STL 이동 중 업데이트될 예정, DownZ={downZ}");
             if (finishLineTopZ.HasValue)
             {
                 DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FinishLineTopZ", finishLineTopZ.Value);
