@@ -157,8 +157,8 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:
 		:(Rough U0.1)
     :M3 S3500 T0303 (B-Turn/NR0.05)
-		:G0 X[#521+1.8] Z[#520+#523+0.1]
-		:G1 X5.7 F0.1
+		:G99G0 X[#521+1.8] Z[#520+#523+0.1]
+		:G1 X5.5 F0.1
 		:G1 X4.3 F0.015
 		:G1 X3.611 F0.01
 		:G1 X3.02 W1.521
@@ -230,7 +230,7 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:
     :(Finish Connection)
     :M3 S3500 T0303(B-Turn/NR0.05)
-		:G0 X[#521+1.8]Z[#520+#523+0.05]
+		:G99 G0 X[#521+1.8]Z[#520+#523+0.05]
 		:G4 U0.05
 		:G1 X5.5 F0.1
 		:G1 X4.0 F0.02
@@ -329,7 +329,7 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
     :(Final Deburr)
     :T0303 (B-Turn NR0.05)
     :M3 S3500 
-		:G0 X[#521+1.8]Z[#520+#523+0.05]
+		:G99G0 X[#521+1.8]Z[#520+#523+0.05]
 		:G4 U0.05
 		:G1 X5.5 F0.1
 		:G1 X4.0 F0.02

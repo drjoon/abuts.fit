@@ -159,6 +159,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         }
         private void UpdateSerialBlocks(string ncFilePath, string serialCode)
         {
+            // NC 파일에서 (Serial) 마커를 찾아 prc 템플릿 기반 각인 블록으로 교체
+            // prc 파일에 (Serial) 블록이 2개 있으며, 각각 NC 파일의 마커에 대응
             try
             {
                 if (!File.Exists(ncFilePath))
@@ -168,20 +170,35 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 }
                 string normalizedSerial = NormalizeSerialCode(serialCode);
                 var lines = new List<string>(File.ReadAllLines(ncFilePath));
-                bool serialUpdated = ReplaceSerialBlock(lines, "(Serial)", BuildSerialBlock(normalizedSerial, false));
-                bool serialDeburrUpdated = ReplaceSerialBlock(lines, "(Serial Deburr)", BuildSerialBlock(normalizedSerial, true));
+                AppLogger.Log($"NcFileGenerator: Serial 블록 교체 시작 - serialCode:'{normalizedSerial}', NC 라인 수:{lines.Count}");
+
+                // prc 0번째 (Serial) → NC 첫 번째 (Serial) 마커 교체
+                var firstBlock = BuildSerialBlock(normalizedSerial, 0);
+                bool serialUpdated = ReplaceSerialBlock(lines, "(Serial)", firstBlock);
+                AppLogger.Log($"NcFileGenerator: 1번째 (Serial) 블록 교체 - {(serialUpdated ? "성공" : "⚠️ 마커 없음")}");
+
+                // prc 1번째 (Serial) → NC의 (Serial Deburr) 또는 두 번째 (Serial) 마커 교체
+                var secondBlock = BuildSerialBlock(normalizedSerial, 1);
+                bool serialDeburrUpdated = ReplaceSerialBlock(lines, "(Serial Deburr)", secondBlock);
                 if (!serialDeburrUpdated)
                 {
-                    serialDeburrUpdated = ReplaceSerialBlock(lines, "(Serial)", BuildSerialBlock(normalizedSerial, true), occurrenceIndex: 1);
-                }
-                if (serialUpdated || serialDeburrUpdated)
-                {
-                    File.WriteAllLines(ncFilePath, lines);
-                    AppLogger.Log($"NcFileGenerator: Serial 블록 갱신 - Serial:{serialUpdated}, Deburr:{serialDeburrUpdated}");
+                    // (Serial Deburr) 마커가 없으면 두 번째 (Serial) 마커에 적용
+                    serialDeburrUpdated = ReplaceSerialBlock(lines, "(Serial)", secondBlock, occurrenceIndex: 1);
+                    AppLogger.Log($"NcFileGenerator: 2번째 (Serial) 블록 교체 - {(serialDeburrUpdated ? "성공" : "⚠️ 마커 없음")}");
                 }
                 else
                 {
-                    AppLogger.Log("NcFileGenerator: Serial 블록을 찾지 못해 갱신하지 못했습니다.");
+                    AppLogger.Log("NcFileGenerator: (Serial Deburr) 블록 교체 - 성공");
+                }
+
+                if (serialUpdated || serialDeburrUpdated)
+                {
+                    File.WriteAllLines(ncFilePath, lines);
+                    AppLogger.Log($"NcFileGenerator: Serial 블록 갱신 완료 - 1st:{serialUpdated}, 2nd:{serialDeburrUpdated}");
+                }
+                else
+                {
+                    AppLogger.Log("NcFileGenerator: ❌ Serial 블록 마커 없음 - NC 파일에 (Serial) 주석 확인 필요");
                 }
             }
             catch (Exception ex)
@@ -227,60 +244,90 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             lines.InsertRange(start, newBlock);
             return true;
         }
-        private static List<string> BuildSerialBlock(string serialCode, bool isDeburr)
+        private static List<string> BuildSerialBlock(string serialCode, int occurrenceInPrc)
         {
-            // prc 파일을 템플릿으로 사용하여 각인 문자 부분만 교체
-            var templateLines = ReadSerialTemplateFromPrc();
+            // prc 파일의 occurrenceInPrc번째 (Serial) 블록을 템플릿으로 읽어
+            // M98P0001~M98P0003 구간만 실제 각인 코드로 교체하고 나머지는 prc 그대로 사용
+            var templateLines = ReadSerialTemplateFromPrc(occurrenceInPrc);
             if (templateLines == null || templateLines.Count == 0)
             {
-                AppLogger.Log("NcFileGenerator: ❌ prc 템플릿 로드 실패 - Serial 블록 생성 불가");
+                AppLogger.Log($"NcFileGenerator: ❌ prc 템플릿 로드 실패 (occurrence:{occurrenceInPrc}) - Serial 블록 생성 불가");
                 return new List<string> { "(Serial)", "// ERROR: prc template not found" };
             }
-            
+
+            // prc에서 각인 문자 간 이동 명령 추출 (M98P 사이의 G 코드)
+            // 예: G1V-0.35F1000 또는 G1 V-0.35 F1000 → prc 수정 시 자동 반영
+            string interCharMove = ExtractInterCharMove(templateLines);
+            AppLogger.Log($"NcFileGenerator: 각인 이동 명령='{interCharMove}', serialCode='{serialCode}', occurrence={occurrenceInPrc}");
+
             var result = new List<string>();
             bool inMacroSection = false;
-            
+
             foreach (var line in templateLines)
             {
                 string trimmed = line.Trim();
-                
-                // 매크로 섹션 시작 감지 (첫 M98P)
+
+                // [매크로 섹션 시작] 첫 M98Pxxxx 라인 감지
+                // prc의 M98P 구간 전체를 실제 각인 코드로 교체
                 if (!inMacroSection && trimmed.StartsWith("M98P", StringComparison.OrdinalIgnoreCase))
                 {
                     inMacroSection = true;
-                    // 실제 각인 문자로 교체된 매크로 라인 삽입
-                    result.AddRange(BuildSerialMacroLines(serialCode));
+                    result.AddRange(BuildSerialMacroLines(serialCode, interCharMove));
                     continue;
                 }
-                
-                // 매크로 섹션 종료 감지 (빈 줄 또는 G0로 시작)
-                if (inMacroSection && (string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith("G0", StringComparison.OrdinalIgnoreCase)))
+
+                // [매크로 섹션 종료] 빈 줄 → 매크로 구간 끝, 빈 줄 포함
+                if (inMacroSection && string.IsNullOrWhiteSpace(trimmed))
                 {
                     inMacroSection = false;
                     result.Add(line);
                     continue;
                 }
-                
-                // 매크로 섹션 내부는 스킵 (이미 BuildSerialMacroLines로 교체함)
+
+                // [매크로 섹션 내부] M98P, G1V 등은 위에서 이미 교체했으므로 스킵
                 if (inMacroSection)
                 {
                     continue;
                 }
-                
-                // 나머지는 그대로 추가
+
+                // [나머지] prc 원본 그대로 추가
                 result.Add(line);
             }
-            
+
+            AppLogger.Log($"NcFileGenerator: Serial 블록 빌드 완료 (occurrence:{occurrenceInPrc}) - {result.Count} lines");
             return result;
         }
+
+        private static string ExtractInterCharMove(List<string> templateLines)
+        {
+            // prc 템플릿에서 첫 M98P 다음에 오는 이동 명령 추출
+            // prc 구조: :M98P0001 / :G1V-0.35F1000 / :M98P0002 / ...
+            // → 첫 M98P 직후의 비어있지 않은 줄이 이동 명령
+            bool pastFirstMacro = false;
+            foreach (var line in templateLines)
+            {
+                string trimmed = line.Trim();
+                if (trimmed.StartsWith("M98P", StringComparison.OrdinalIgnoreCase))
+                {
+                    pastFirstMacro = true;
+                    continue;
+                }
+                if (pastFirstMacro && !string.IsNullOrWhiteSpace(trimmed) &&
+                    !trimmed.StartsWith("M98P", StringComparison.OrdinalIgnoreCase))
+                {
+                    return trimmed;
+                }
+            }
+            AppLogger.Log("NcFileGenerator: ⚠️ prc에서 이동 명령 추출 실패 - 기본값 G1V-0.35F1000 사용");
+            return "G1V-0.35F1000";
+        }
         
-        private static List<string> ReadSerialTemplateFromPrc()
+        private static List<string> ReadSerialTemplateFromPrc(int occurrenceIndex = 0)
         {
             try
             {
                 // prc 파일 경로 찾기 (AcroDent/2_Connection 폴더)
-                string addinDir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
-                string prcDir = Path.Combine(addinDir, "AcroDent", "2_Connection");
+                string prcDir = Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", "2_Connection");
                 
                 if (!Directory.Exists(prcDir))
                 {
@@ -299,7 +346,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 string prcPath = prcFiles[0];
                 var allLines = File.ReadAllLines(prcPath);
                 
-                // (Serial) 블록 찾기
+                // (Serial) 블록 찾기 (occurrenceIndex번째)
+                int currentOccurrence = -1;
                 int startIdx = -1;
                 int endIdx = -1;
                 
@@ -309,21 +357,28 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                     
                     if (trimmed.Equals(":(Serial)", StringComparison.OrdinalIgnoreCase))
                     {
-                        startIdx = i;
+                        currentOccurrence++;
+                        if (currentOccurrence == occurrenceIndex)
+                        {
+                            startIdx = i;
+                        }
                     }
-                    else if (startIdx >= 0 && trimmed.StartsWith(":", StringComparison.Ordinal) && 
-                             !trimmed.Equals(":(Serial)", StringComparison.OrdinalIgnoreCase) &&
-                             trimmed.Length > 1 && trimmed[1] != ' ')
+                    else if (startIdx >= 0 && (
+                             // 다음 NC 블록 시작 (예: :(HEX2.485 Deburr2), :(Finish Connection))
+                             (trimmed.StartsWith(":(" , StringComparison.Ordinal) &&
+                              !trimmed.Equals(":(Serial)", StringComparison.OrdinalIgnoreCase)) ||
+                             // prc 파일 END_STRING 태그 (마지막 블록 경계)
+                             trimmed.Equals("END_STRING", StringComparison.OrdinalIgnoreCase)))
                     {
-                        // 다음 블록 시작 (예: :(HEX2.485 Deburr2))
                         endIdx = i;
+                        AppLogger.Log($"NcFileGenerator: (Serial) 블록 끝 감지 - line {i}: '{trimmed}'");
                         break;
                     }
                 }
                 
                 if (startIdx < 0)
                 {
-                    AppLogger.Log($"NcFileGenerator: (Serial) 블록 없음 - {prcPath}");
+                    AppLogger.Log($"NcFileGenerator: (Serial) 블록 없음 (occurrence:{occurrenceIndex}) - {prcPath}");
                     return null;
                 }
                 
@@ -347,7 +402,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                     }
                 }
                 
-                AppLogger.Log($"NcFileGenerator: prc 템플릿 로드 성공 - {prcPath} ({block.Count} lines)");
+                AppLogger.Log($"NcFileGenerator: prc 템플릿 로드 성공 (occurrence:{occurrenceIndex}) - {prcPath}, lines {startIdx}~{endIdx}, 추출:{block.Count} lines");
                 return block;
             }
             catch (Exception ex)
@@ -386,14 +441,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         //     });
         //     return block;
         // }
-        private static IEnumerable<string> BuildSerialMacroLines(string serialCode)
+        private static IEnumerable<string> BuildSerialMacroLines(string serialCode, string interCharMove)
         {
+            // 3글자 각인 코드를 M98Pxxxx 매크로 호출로 변환
+            // 문자 사이에는 prc에서 추출한 이동 명령 삽입 (마지막 문자 제외)
+            // A=M98P0001, B=M98P0002, ..., Z=M98P0026
             for (int i = 0; i < serialCode.Length; i++)
             {
-                yield return BuildMacroCall(serialCode[i]);
+                string macroCall = BuildMacroCall(serialCode[i]);
+                AppLogger.Log($"NcFileGenerator: [{i + 1}/{serialCode.Length}] '{serialCode[i]}' → {macroCall}");
+                yield return macroCall;
                 if (i < serialCode.Length - 1)
                 {
-                    yield return "G1V-0.35F1000";
+                    yield return interCharMove;
                 }
             }
         }

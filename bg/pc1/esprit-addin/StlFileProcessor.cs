@@ -882,8 +882,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
 
-                // Composite 분할 위치를 finishLineTopZ보다 0.4mm 왼쪽으로 조정
-                double rawRatio = (stlTopZ.Value - (finishLineTopZ.Value + 0.4)) / 20.0;
+                // Composite 분할 위치를 finishLineTopZ보다 1.0mm 왼쪽으로 조정
+                double rawRatio = (stlTopZ.Value - (finishLineTopZ.Value + 1.0)) / 20.0;
                 if (double.IsNaN(rawRatio) || double.IsInfinity(rawRatio))
                 {
                     AppLogger.Log("DentalAddin: finishLine 기반 Composite2SplitAB 생략 - splitRatio invalid");
