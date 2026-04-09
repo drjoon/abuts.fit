@@ -252,6 +252,10 @@ async def process_single_stl(p: Path, force_reprocess: bool = False):
             log(f"Calling run_rhino_python for: {p.name}")
             log_text, output_info = await run_rhino_python(input_stl=p, output_stl=out_path)
             log(f"Auto-processing done: {out_name}")
+            if log_text:
+                for _ln in log_text.split("\n"):
+                    if "[align]" in _ln:
+                        log("[rhino-align] " + _ln.strip())
             state.recent_history.append(
                 {
                     "file": p.name,

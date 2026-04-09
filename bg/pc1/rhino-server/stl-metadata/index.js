@@ -158,22 +158,10 @@ async function calculateStlMetadata(filePath, finishLinePoints) {
   }
   const maxDiameter = maxR * 2;
 
-  // 2. 커넥션 직경 계산 (z=0 단면)
+  // 2. 커넥션 직경 계산 (z=0 단면, max distance with wider tolerance)
+  const sliceTolerance = 0.05; // 0.05mm tolerance (increased from 0.0001mm)
   let connectionMaxR = 0;
-  const sliceTolerance = 1e-4;
-
-  const addIntersection = (x1, y1, z1, x2, y2, z2) => {
-    if ((z1 === 0 && z2 === 0) || z1 === z2) return;
-    if ((z1 > 0 && z2 > 0) || (z1 < 0 && z2 < 0)) return;
-
-    const t = z1 / (z1 - z2);
-    if (t < 0 || t > 1) return;
-
-    const ix = x1 + t * (x2 - x1);
-    const iy = y1 + t * (y2 - y1);
-    const r = Math.sqrt(ix * ix + iy * iy);
-    if (r > connectionMaxR) connectionMaxR = r;
-  };
+  let pointCount = 0;
 
   const readVertex = (vertexIndex) => ({
     x: position.getX(vertexIndex),
@@ -189,33 +177,51 @@ async function calculateStlMetadata(filePath, finishLinePoints) {
     const i0 = index ? index.getX(tri * 3) : tri * 3;
     const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
     const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
-
     const v0 = readVertex(i0);
     const v1 = readVertex(i1);
     const v2 = readVertex(i2);
 
-    // z=0 근처 정점 체크
+    // z=0 근처 정점
     if (Math.abs(v0.z) <= sliceTolerance) {
       const r = Math.sqrt(v0.x * v0.x + v0.y * v0.y);
       if (r > connectionMaxR) connectionMaxR = r;
+      pointCount++;
     }
     if (Math.abs(v1.z) <= sliceTolerance) {
       const r = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
       if (r > connectionMaxR) connectionMaxR = r;
+      pointCount++;
     }
     if (Math.abs(v2.z) <= sliceTolerance) {
       const r = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
       if (r > connectionMaxR) connectionMaxR = r;
+      pointCount++;
     }
 
-    // 엣지 교차점 체크
-    addIntersection(v0.x, v0.y, v0.z, v1.x, v1.y, v1.z);
-    addIntersection(v1.x, v1.y, v1.z, v2.x, v2.y, v2.z);
-    addIntersection(v2.x, v2.y, v2.z, v0.x, v0.y, v0.z);
+    // 엣지 교차점
+    const addIntersection = (va, vb) => {
+      if ((va.z > 0 && vb.z < 0) || (va.z < 0 && vb.z > 0)) {
+        const denom = Math.abs(va.z - vb.z);
+        if (denom < 1e-10) return;
+        const t = Math.abs(va.z) / denom;
+        const ix = va.x + t * (vb.x - va.x);
+        const iy = va.y + t * (vb.y - va.y);
+        const r = Math.sqrt(ix * ix + iy * iy);
+        if (r > connectionMaxR) connectionMaxR = r;
+        pointCount++;
+      }
+    };
+    addIntersection(v0, v1);
+    addIntersection(v1, v2);
+    addIntersection(v2, v0);
   }
 
   const connectionDiameter =
     connectionMaxR > 0 ? connectionMaxR * 2 : maxDiameter;
+
+  console.error(
+    `[connectionDiameter] Z=0: maxR=${connectionMaxR.toFixed(6)}mm, d=${connectionDiameter.toFixed(6)}mm (${pointCount} points, tol=${sliceTolerance}mm)`,
+  );
 
   // 3. 전체 길이 (Z축 범위)
   const totalLength = bbox.max.z - bbox.min.z;
