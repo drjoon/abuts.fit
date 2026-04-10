@@ -333,6 +333,19 @@ export const MailboxGrid = ({
       const queuedPrintDescription = `${completedPrintCount}개 우편함의 라벨 출력 요청을 접수했습니다.`;
 
       if (shippingOutputMode === "image") {
+        if ((wblPrint as any)?.outputMode === "pdf") {
+          await saveGeneratedWaybillPngs({
+            addressList: (data as any)?.address_list || [],
+            zplLabels: (data as any)?.zplLabels || [],
+          });
+          toast({
+            title: modifyOnly ? "운송장 재출력 완료" : "운송장 출력 완료",
+            description: completedPrintDescriptionImage,
+          });
+          notifyPickupUpdated();
+          return;
+        }
+
         if ((wblPrint as any)?.queued) {
           toast({
             title: modifyOnly

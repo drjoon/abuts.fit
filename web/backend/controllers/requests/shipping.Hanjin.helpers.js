@@ -877,81 +877,19 @@ async function triggerWblServerPrint(payload, options = null) {
     };
   }
 
-  // PDF 저장 모드 - 비동기 처리로 즉시 반환
+  // PDF 저장 모드 - 프론트에서 Canvas로 PNG 생성 (wbls-server 불필요)
   if (outputMode === "pdf") {
-    if (!media) {
-      return {
-        success: false,
-        reason: "no_media_selected",
-        message: "용지 종류를 선택해주세요.",
-      };
-    }
-
-    if (!payload?.zplLabels?.length) {
-      return {
-        success: false,
-        reason: "no_zpl_labels",
-        message: "출력할 ZPL 라벨 데이터가 없습니다.",
-      };
-    }
-
-    // 비동기로 PDF 변환 요청 (응답 대기 없이 즉시 반환)
-    const labelCount = payload.zplLabels.length;
-    console.log("[wbl-print] queuing PDF conversion batch (async)", {
-      labelCount,
-    });
-
-    // 백그라운드에서 PDF 변환 처리
-    void (async () => {
-      const wblStartTime = Date.now();
-      try {
-        const pdfResults = await Promise.all(
-          payload.zplLabels.map((zpl) =>
-            requestWblServerPrint({
-              zpl,
-              body: {
-                saveMode: "pdf",
-                paperProfile: media,
-                title: "Hanjin Waybill Label",
-              },
-            }),
-          ),
-        );
-
-        const wblElapsedMs = Date.now() - wblStartTime;
-        const failedResult = pdfResults.find((result) => !result?.success);
-
-        if (failedResult) {
-          console.error("[wbl-print] PDF conversion batch failed", {
-            elapsedMs: wblElapsedMs,
-            elapsedSec: (wblElapsedMs / 1000).toFixed(2),
-            labelCount,
-            error: failedResult?.message,
-          });
-        } else {
-          console.log("[wbl-print] PDF conversion batch completed", {
-            elapsedMs: wblElapsedMs,
-            elapsedSec: (wblElapsedMs / 1000).toFixed(2),
-            labelCount,
-          });
-        }
-      } catch (error) {
-        const wblElapsedMs = Date.now() - wblStartTime;
-        console.error("[wbl-print] PDF conversion batch error", {
-          elapsedMs: wblElapsedMs,
-          elapsedSec: (wblElapsedMs / 1000).toFixed(2),
-          labelCount,
-          error: error.message,
-        });
-      }
-    })();
-
-    // 즉시 성공 응답 반환 (실제 PDF 변환은 백그라운드에서 진행)
+    const labelCount = payload?.zplLabels?.length || 0;
+    console.log(
+      "[wbl-print] pdf mode: PNG rendering will be done on frontend",
+      {
+        labelCount,
+      },
+    );
     return {
       success: true,
-      queued: true,
       outputMode: "pdf",
-      message: `${labelCount}개의 라벨 PDF 변환을 요청했습니다.`,
+      message: `${labelCount}개의 라벨을 PNG로 저장합니다.`,
       labelCount,
     };
   }
