@@ -111,35 +111,61 @@ const renderPackLabelToCanvas = async (opts) => {
   const dpi = Number(opts.dpi) || 600;
   const baseDpi = Number(opts.designDots?.dpi) || 600;
   const baseWidth = Number(opts.designDots?.pw) || 1890;
-  const baseHeight = Number(opts.designDots?.ll) || 1535;
   const targetWidth =
     Number(opts.targetDots?.pw) || Math.round((baseWidth * dpi) / baseDpi);
-  const targetHeight =
-    Number(opts.targetDots?.ll) || Math.round((baseHeight * dpi) / baseDpi);
   const scale = targetWidth / baseWidth;
   const width = Math.round(targetWidth);
-  const height = Math.round(targetHeight);
-  const canvas = createCanvas(width, height);
-  const ctx = canvas.getContext("2d");
-
-  ctx.scale(scale, scale);
-  ctx.fillStyle = "white";
-  ctx.fillRect(0, 0, baseWidth, baseHeight);
-  ctx.fillStyle = "black";
-  ctx.textBaseline = "top";
 
   // 라벨 브랜딩 정보 (opts로 전달받음)
   const PRODUCT_NAME = opts.productName || "임플란트 상부구조물";
-  const MODEL_NAME = opts.modelName || "CA6512";
-  const LICENSE_NO = opts.licenseNo || "제3583호";
-  const COMPANY_NAME = opts.manufacturerName || "(주)애크로덴트";
-  const COMPANY_ADDR = opts.manufacturerAddr || "경남 김해시 전하로85번길 5";
-  const MANUFACTURER_LABEL = "제조업자";
-  const SELLER_NAME = opts.sellerName || "어벗츠 주식회사";
-  const SELLER_PERMIT = opts.sellerPermit || "제00001호";
-  const SELLER_ADDR = opts.sellerAddr || "경남 거제시 거제중앙로29길 6, 3층";
-  const SELLER_TEL = opts.sellerTel || "1588-3948";
+  const MODEL_NAME = opts.modelName || "";
+  const LICENSE_NO = opts.licenseNo || "";
+  const COMPANY_NAME = opts.manufacturerName || "";
+  const COMPANY_ADDR = opts.manufacturerAddr || "";
+  const COMPANY_TEL_FAX = opts.manufacturerTelFax || opts.manufacturerTel || "";
+  const SELLER_NAME = opts.sellerName || "";
+  const SELLER_PERMIT = opts.sellerPermit || "";
+  const SELLER_ADDR = opts.sellerAddr || "";
+  const SELLER_TEL = opts.sellerTel || "";
   const MANUAL_QR_LABEL = opts.manualQrLabel || "사용자매뉴얼";
+  const UDI_GTIN = opts.udiGtin || "";
+  const MANUFACTURER_PERMIT_NO = opts.manufacturerPermitNo || LICENSE_NO;
+
+  // ── 레이아웃 상수 (캔버스 생성 전에 먼저 계산) ─────────────────
+  const M = 16;
+  const W = baseWidth - M * 2;
+
+  const botLineH = 18;
+  const botPadTop = 7;
+  const botPadBot = 7;
+  const _mfgBoxH = botPadTop + 3 * botLineH + botPadBot;
+  const _sellerBoxH = botPadTop + 3 * botLineH + botPadBot;
+  const _bottomH = _mfgBoxH + _sellerBoxH;
+
+  const row1H = 62;
+  const row2H = 54;
+  const row3H = 34;
+  const row4H = 34;
+  const lRow1H = 36;
+  const lRow2H = 36;
+  const lRow3H = 30;
+  const lRow4H = 56;
+  const legalBodyH = lRow1H + lRow2H + lRow3H + lRow4H;
+  const totalContentH =
+    row1H + row2H + row3H + row4H + legalBodyH + 2 + _bottomH;
+  const computedBaseHeight = M + totalContentH + M;
+
+  // ── 캔버스 생성 (최종 높이로 한 번만) ────────────────────────
+  const finalHeight = Math.round(computedBaseHeight * scale);
+  const canvas = createCanvas(width, finalHeight);
+  const ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "white";
+  ctx.fillRect(0, 0, baseWidth, computedBaseHeight);
+  ctx.fillStyle = "black";
+  ctx.textBaseline = "top";
+
+  // ── 유틸리티 함수 ─────────────────────────────────────────────
 
   const drawBox = (x, y, w, h) => {
     ctx.strokeStyle = "black";
@@ -147,53 +173,56 @@ const renderPackLabelToCanvas = async (opts) => {
     ctx.strokeRect(x, y, w, h);
   };
 
-  const drawHLine = (x, y, w) => {
+  const drawHLine = (x, y, w, thickness = 2) => {
     ctx.fillStyle = "black";
-    ctx.fillRect(x, y, w, 2);
+    ctx.fillRect(x, y, w, thickness);
   };
 
-  const drawVLine = (x, y, h) => {
+  const drawVLine = (x, y, h, thickness = 2) => {
     ctx.fillStyle = "black";
-    ctx.fillRect(x, y, 2, h);
+    ctx.fillRect(x, y, thickness, h);
   };
 
-  const fillTextCentered = (text, x, y, w, padding = 0) => {
-    const t = truncateToFit(
-      ctx,
-      String(text || "-"),
-      Math.max(0, w - padding * 2),
-    );
-    const metrics = ctx.measureText(t);
-    const tx = x + Math.max(0, (w - metrics.width) / 2);
-    ctx.fillText(t, tx, y);
-  };
-
-  const fillTextCenteredInBox = (text, x, y, w, h, padding = 0) => {
-    const t = truncateToFit(
-      ctx,
-      String(text || "-"),
-      Math.max(0, w - padding * 2),
-    );
+  const fillTextCenteredInBox = (text, x, y, w, h, padding = 4) => {
+    const raw = String(text || "-");
+    const maxW = Math.max(0, w - padding * 2);
+    let t = raw;
+    if (ctx.measureText(raw).width > maxW) {
+      const ellipsis = "...";
+      let lo = 0,
+        hi = raw.length,
+        best = ellipsis;
+      while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        const c = `${raw.slice(0, mid).trimEnd()}${ellipsis}`;
+        if (ctx.measureText(c).width <= maxW) {
+          best = c;
+          lo = mid + 1;
+        } else hi = mid - 1;
+      }
+      t = best;
+    }
     const metrics = ctx.measureText(t);
     const tx = x + Math.max(0, (w - metrics.width) / 2);
     const ascent = metrics.actualBoundingBoxAscent || 0;
     const descent = metrics.actualBoundingBoxDescent || 0;
     const ty = y + (h + ascent - descent) / 2;
+    ctx.fillStyle = "black";
     ctx.fillText(t, tx, ty);
   };
 
   const fillTextLeft = (text, x, y, maxWidth) => {
-    const t = truncateToFit(ctx, String(text || "-"), maxWidth);
+    const t = truncateToFit(ctx, String(text || ""), maxWidth);
+    ctx.fillStyle = "black";
     ctx.fillText(t, x, y);
   };
 
   const fillWrappedTextLeft = (text, x, y, maxWidth, lineHeight, maxLines) => {
-    const source = String(text || "-").trim();
+    const source = String(text || "").trim();
     if (!source) return;
     const words = source.split(/\s+/);
     const lines = [];
     let current = "";
-
     words.forEach((word) => {
       const candidate = current ? `${current} ${word}` : word;
       if (!current || ctx.measureText(candidate).width <= maxWidth) {
@@ -203,9 +232,8 @@ const renderPackLabelToCanvas = async (opts) => {
       lines.push(current);
       current = word;
     });
-
     if (current) lines.push(current);
-
+    ctx.fillStyle = "black";
     lines.slice(0, maxLines).forEach((line, index) => {
       const rendered =
         index === maxLines - 1 && lines.length > maxLines
@@ -215,240 +243,280 @@ const renderPackLabelToCanvas = async (opts) => {
     });
   };
 
-  // QR 코드 생성
-  const qr1Buffer = await QRCode.toBuffer("https://abuts.fit/manual", {
-    errorCorrectionLevel: "L",
-    margin: 0,
-    width: Math.max(1, Math.round(144 * scale)),
-  });
-  const qr1Img = await loadImage(qr1Buffer);
-
-  const qr2Buffer = await QRCode.toBuffer("https://acrodent.com", {
-    errorCorrectionLevel: "L",
-    margin: 0,
-    width: Math.max(1, Math.round(144 * scale)),
-  });
-  const qr2Img = await loadImage(qr2Buffer);
-
-  const qr3Buffer = await QRCode.toBuffer("https://abuts.fit", {
-    errorCorrectionLevel: "L",
-    margin: 0,
-    width: Math.max(1, Math.round(144 * scale)),
-  });
-  const qr3Img = await loadImage(qr3Buffer);
-
-  // 상단 3칸 박스 (우편함, 나사, Lot)
-  drawBox(20, 20, 498, 50);
-  drawVLine(202, 20, 50);
-  drawVLine(362, 20, 50);
-  ctx.font = "bold 48px NotoSans, Arial";
-  fillTextCentered(opts.mailboxCode || "-", 20, 24, 182, 8);
-  fillTextCentered(opts.screwType || "-", 202, 24, 160, 8);
-  {
-    const lot = String(opts.lotNumber || "-");
-    const suffix = lot.length >= 3 ? lot.slice(-3) : lot;
-    fillTextCentered(suffix, 362, 24, 156, 8);
-  }
-
-  // 치과명
-  drawBox(20, 74, 498, 46);
-  ctx.font = "bold 36px NotoSans, Arial";
-  fillTextCenteredInBox(opts.labName || "-", 20, 74, 498, 46, 16);
-
-  // 매뉴얼 QR
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(qr1Img, 533, 24, 72, 72);
-  ctx.imageSmoothingEnabled = true;
-  ctx.font = "bold 10px NotoSans, Arial";
-  fillTextCenteredInBox(MANUAL_QR_LABEL, 526, 98, 86, 14, 0);
-
-  // 통합 정보 테이블
-  const unifiedTopY = 124;
-  const infoRowHeights = [28, 28, 28];
-  const unifiedDetailsY =
-    unifiedTopY + infoRowHeights.reduce((sum, h) => sum + h, 0);
-  const detailsY = unifiedDetailsY;
-  const detailRowHeights = [28, 28, 28, 28];
-  const detailColWidth = 340;
-  const infoH = infoRowHeights.reduce((sum, h) => sum + h, 0);
-  const detailsH = detailRowHeights.reduce((sum, h) => sum + h, 0);
-  const usageTextH = 30;
-  const usageSectionH = usageTextH;
-  const unifiedTableH = infoH + detailsH + usageSectionH;
-  const detailRows = [
-    [
-      { label: "품    명", value: PRODUCT_NAME },
-      { label: "기기 구분", value: "비멸균 의료기기" },
-    ],
-    [
-      { label: "모 델 명", value: MODEL_NAME },
-      { label: "품목허가", value: LICENSE_NO },
-    ],
-    [
-      { label: "사용기한", value: "해당없음" },
-      { label: "포장단위", value: "1SET" },
-    ],
-    [
-      { label: "제조번호", value: opts.lotNumber || "-" },
-      { label: "제조일자", value: dateOnly(opts.manufacturingDate) },
-    ],
-  ];
-
-  drawBox(20, unifiedTopY, 600, unifiedTableH);
-  ctx.font = "bold 14px NotoSans, Arial";
-  fillTextCentered(
-    `${opts.clinicName || "-"} / ${opts.patientName || "-"} / #${opts.toothNumber || "-"}`,
-    20,
-    unifiedTopY + 8,
-    600,
-    14,
-  );
-  drawHLine(20, unifiedTopY + infoRowHeights[0], 600);
-  fillTextCentered(
-    `의뢰일: ${dateOnly(opts.requestDate)} / 제조일: ${dateOnly(opts.manufacturingDate)}`,
-    20,
-    unifiedTopY + infoRowHeights[0] + 8,
-    600,
-    14,
-  );
-  drawHLine(20, unifiedTopY + infoRowHeights[0] + infoRowHeights[1], 600);
-  fillTextCentered(
-    `${opts.implantManufacturer || "-"} / ${opts.implantBrand || "-"} / ${opts.implantFamily || "-"} / ${opts.implantType || "-"}`,
-    20,
-    unifiedTopY + infoRowHeights[0] + infoRowHeights[1] + 8,
-    600,
-    14,
-  );
-  drawHLine(20, unifiedDetailsY, 600);
-  drawVLine(20 + detailColWidth, detailsY, detailsH);
-
-  const drawDetailCell = (label, value, x, y, w, h) => {
-    ctx.font = "bold 13px NotoSans, Arial";
-    fillTextCenteredInBox(`${label} : ${value}`, x, y + 3, w, h - 6, 0);
+  const fillWrappedTextCenteredInBox = (
+    text,
+    x,
+    y,
+    w,
+    h,
+    lineHeight,
+    padding = 4,
+  ) => {
+    const source = String(text || "").trim();
+    if (!source) return;
+    const maxW = Math.max(0, w - padding * 2);
+    const words = source.split(/\s+/);
+    const lines = [];
+    let current = "";
+    words.forEach((word) => {
+      const candidate = current ? `${current} ${word}` : word;
+      if (!current || ctx.measureText(candidate).width <= maxW) {
+        current = candidate;
+        return;
+      }
+      lines.push(current);
+      current = word;
+    });
+    if (current) lines.push(current);
+    const totalH = lines.length * lineHeight;
+    const startY = y + (h - totalH) / 2;
+    ctx.fillStyle = "black";
+    lines.forEach((line, i) => {
+      const mw = ctx.measureText(line).width;
+      const tx = x + Math.max(0, (w - mw) / 2);
+      ctx.fillText(line, tx, startY + i * lineHeight);
+    });
   };
 
-  let rowStartY = detailsY;
-  detailRows.forEach((row, rowIdx) => {
-    const rowHeight = detailRowHeights[rowIdx];
-    if (rowIdx > 0) {
-      drawHLine(20, rowStartY, 600);
-    }
-    row.forEach((cell, colIdx) => {
-      const cellX = 20 + colIdx * detailColWidth;
-      drawDetailCell(
-        cell.label,
-        cell.value,
-        cellX,
-        rowStartY,
-        detailColWidth,
-        rowHeight,
-      );
+  // ── QR 이미지 사전 로드 ────────────────────────────────────────
+  const qrSize = Math.max(1, Math.round(128 * scale));
+
+  const loadQr = async (url) => {
+    const buffer = await QRCode.toBuffer(url, {
+      errorCorrectionLevel: "L",
+      margin: 0,
+      width: qrSize,
     });
-    rowStartY += rowHeight;
-  });
+    return loadImage(buffer);
+  };
 
-  const usageY = detailsY + detailsH;
-  drawHLine(20, usageY, 600);
-  drawVLine(20 + detailColWidth, usageY, usageTextH);
-  ctx.font = "bold 13px NotoSans, Arial";
-  fillTextCenteredInBox(
-    "사용방법, 주의사항 : 사용자 매뉴얼 참조",
-    20,
-    usageY + 4,
-    detailColWidth,
-    usageTextH - 6,
-    0,
-  );
-  fillTextCenteredInBox(
-    "보관방법 : 건조한 실온에서 보관",
-    20 + detailColWidth,
-    usageY + 4,
-    600 - detailColWidth,
-    usageTextH - 6,
-    0,
-  );
+  const [qrManualImg, , qrSellerImg] = await Promise.all([
+    loadQr("https://abuts.fit/manual"),
+    loadQr("https://acrodent.com"),
+    loadQr("https://abuts.fit"),
+  ]);
 
-  // 제조업자 / 판매업자
-  const companyY = unifiedTopY + unifiedTableH + 16;
-  const companyH = 144;
-  const companyQrSize = 66;
-  const companyQrPaddingX = 8;
-  const companyQrPaddingTop = 8;
-  const companyTopTextWidth = 186;
-  const companyBottomTextWidth = 254;
-  const companyLineYs = [18, 42, 66, 90, 114];
-  drawBox(20, companyY, 290, companyH);
-  ctx.font = "bold 14px NotoSans, Arial";
-  ctx.fillText(MANUFACTURER_LABEL, 26, companyY + companyLineYs[0]);
-  ctx.font = "12px NotoSans, Arial";
-  fillTextLeft(
-    COMPANY_NAME,
-    26,
-    companyY + companyLineYs[1],
-    companyTopTextWidth,
+  // ── 폰트 상수 ──────────────────────────────────────────────────
+  const FONT_6PT = "16px NotoSans, Arial";
+  const FONT_6PT_BOLD = "bold 16px NotoSans, Arial";
+  const FONT_HEADER = "bold 50px NotoSans, Arial";
+  const FONT_LAB = "bold 38px NotoSans, Arial";
+  const FONT_INFO = "bold 18px NotoSans, Arial";
+  const FONT_LEGAL_TITLE = "bold 22px NotoSans, Arial";
+  const FONT_LEGAL_BODY = "17px NotoSans, Arial";
+  const FONT_LEGAL_NOTICE = "bold 19px NotoSans, Arial";
+
+  let curY = M;
+
+  // ── 1행: 메일함코드 | 스크루타입 | 로트번호(끝3자리) + 우상단 QR ──
+  const qrTopSize = 70;
+  const lotSuffix = (() => {
+    const lot = String(opts.lotNumber || "-");
+    return lot.length >= 3 ? lot.slice(-3) : lot;
+  })();
+  const qrTopX = M + W - qrTopSize;
+  const contentW = W - qrTopSize - 8;
+
+  drawBox(M, curY, contentW, row1H);
+  const col1W = Math.round(contentW * 0.36);
+  const col2W = Math.round(contentW * 0.29);
+  const col3W = contentW - col1W - col2W;
+  drawVLine(M + col1W, curY, row1H);
+  drawVLine(M + col1W + col2W, curY, row1H);
+  ctx.font = FONT_HEADER;
+  fillTextCenteredInBox(opts.mailboxCode || "-", M, curY, col1W, row1H, 8);
+  fillTextCenteredInBox(
+    opts.screwType || "-",
+    M + col1W,
+    curY,
+    col2W,
+    row1H,
+    8,
   );
-  fillTextLeft(
-    `제조업허가 ${LICENSE_NO}`,
-    26,
-    companyY + companyLineYs[2],
-    companyTopTextWidth,
-  );
-  fillWrappedTextLeft(
-    COMPANY_ADDR,
-    26,
-    companyY + companyLineYs[3],
-    companyBottomTextWidth,
-    18,
-    2,
-  );
+  fillTextCenteredInBox(lotSuffix, M + col1W + col2W, curY, col3W, row1H, 8);
+
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(
-    qr2Img,
-    20 + 290 - companyQrPaddingX - companyQrSize,
-    companyY + companyQrPaddingTop,
-    companyQrSize,
-    companyQrSize,
-  );
+  ctx.drawImage(qrManualImg, qrTopX, curY, qrTopSize, qrTopSize);
   ctx.imageSmoothingEnabled = true;
+  ctx.font = "bold 10px NotoSans, Arial";
+  fillTextCenteredInBox(
+    MANUAL_QR_LABEL,
+    qrTopX - 4,
+    curY + qrTopSize,
+    qrTopSize + 8,
+    14,
+    0,
+  );
 
-  drawBox(330, companyY, 290, companyH);
-  ctx.font = "bold 14px NotoSans, Arial";
-  ctx.fillText("판매업자", 336, companyY + companyLineYs[0]);
-  ctx.font = "12px NotoSans, Arial";
-  fillTextLeft(
-    SELLER_NAME,
-    336,
-    companyY + companyLineYs[1],
-    companyTopTextWidth,
+  curY += row1H;
+
+  // ── 2행: 치과기공소(랩)명 ──────────────────────
+  drawBox(M, curY, contentW, row2H);
+  ctx.font = FONT_LAB;
+  fillTextCenteredInBox(opts.labName || "-", M, curY, contentW, row2H, 16);
+  curY += row2H;
+
+  // ── 3행: 환자 / 치과 / 치아번호  +  의뢰일 ────────────────
+  const orderDateLabel = `의뢰일: ${dateOnly(opts.requestDate)}`;
+  ctx.font = FONT_INFO;
+  const dateMetrics = ctx.measureText(orderDateLabel);
+  const dateCellW = Math.round(dateMetrics.width) + 24;
+  const patientCellW = W - dateCellW;
+  drawBox(M, curY, W, row3H);
+  drawVLine(M + patientCellW, curY, row3H);
+  ctx.font = FONT_INFO;
+  fillTextCenteredInBox(
+    `${opts.clinicName || "-"} / ${opts.patientName || "-"} / #${opts.toothNumber || "-"}`,
+    M,
+    curY,
+    patientCellW,
+    row3H,
+    8,
   );
-  fillTextLeft(
-    SELLER_PERMIT,
-    336,
-    companyY + companyLineYs[2],
-    companyTopTextWidth,
+  fillTextCenteredInBox(
+    orderDateLabel,
+    M + patientCellW,
+    curY,
+    dateCellW,
+    row3H,
+    4,
   );
-  fillTextLeft(
-    SELLER_TEL,
-    336,
-    companyY + companyLineYs[3],
-    companyBottomTextWidth,
+  curY += row3H;
+
+  // ── 4행: 임플란트 제조사/브랜드/패밀리/타입 ──────────────
+  drawBox(M, curY, W, row4H);
+  ctx.font = FONT_INFO;
+  fillTextCenteredInBox(
+    `${opts.implantManufacturer || "-"} / ${opts.implantBrand || "-"} / ${opts.implantFamily || "-"} / ${opts.implantType || "-"}`,
+    M,
+    curY,
+    W,
+    row4H,
+    8,
   );
-  fillWrappedTextLeft(
-    SELLER_ADDR,
-    336,
-    companyY + companyLineYs[4],
-    companyBottomTextWidth,
-    18,
-    2,
+  curY += row4H;
+
+  // ── 5구역: 법정 기재사항 박스 ────────────────────────────────
+  const legalTopY = curY;
+  const splitColW = Math.round(W * 0.58);
+  const rColX = M + splitColW;
+  const rColW = W - splitColW;
+
+  drawBox(M, legalTopY, W, legalBodyH);
+  drawHLine(M, legalTopY + lRow1H, W);
+  drawHLine(M, legalTopY + lRow1H + lRow2H, W);
+  drawHLine(M, legalTopY + lRow1H + lRow2H + lRow3H, W);
+  drawVLine(rColX, legalTopY, lRow1H + lRow2H);
+
+  ctx.font = FONT_LEGAL_TITLE;
+  ctx.fillStyle = "black";
+  ctx.fillText(`품목명:${PRODUCT_NAME}`, M + 6, legalTopY + (lRow1H - 20) / 2);
+  ctx.fillText(
+    `모델명:${MODEL_NAME}`,
+    M + 6,
+    legalTopY + lRow1H + (lRow2H - 20) / 2,
+  );
+
+  ctx.font = FONT_LEGAL_BODY;
+  ctx.fillText(
+    `품목인증번호: 제인 26-0000호, 포장단위:1set, 보관방법: 실온보관`,
+    M + 6,
+    legalTopY + lRow1H + lRow2H + (lRow3H - 15) / 2,
+  );
+
+  const descY = legalTopY + lRow1H + lRow2H + lRow3H;
+  const descText = `자세한 설명은 인터넷 홈페이지(www.acrodent.com) 또는 우측 상단 사용자 매뉴얼 바코드에 제공`;
+  const descColW = Math.round(W * 0.65);
+  const udiInlineX = M + descColW;
+  const udiInlineW = W - descColW;
+  ctx.font = FONT_LEGAL_BODY;
+  fillWrappedTextLeft(descText, M + 6, descY + 5, descColW - 14, 16, 3);
+  ctx.font = FONT_LEGAL_NOTICE;
+  fillWrappedTextCenteredInBox(
+    "일회용비멸균 의료기기, 재사용 금지",
+    udiInlineX,
+    descY,
+    udiInlineW,
+    lRow4H,
+    19,
+    6,
+  );
+
+  ctx.font = FONT_LEGAL_TITLE;
+  ctx.fillStyle = "black";
+  ctx.fillText(
+    `제조번호:${opts.lotNumber || "-"}`,
+    rColX + 6,
+    legalTopY + (lRow1H - 20) / 2,
+  );
+  ctx.fillText(
+    `제조일자:${dateOnly(opts.manufacturingDate)}`,
+    rColX + 6,
+    legalTopY + lRow1H + (lRow2H - 20) / 2,
+  );
+
+  curY = legalTopY + legalBodyH;
+
+  // ── 6구역: 제조자/판매원 세로 적층(좌) + UDI+QR 통합박스(우) ──
+  const mfgBoxH = botPadTop + 3 * botLineH + botPadBot;
+  const sellerBoxH = botPadTop + 3 * botLineH + botPadBot;
+  const bottomH = mfgBoxH + sellerBoxH;
+  const bottomY = curY + 2;
+  const leftColW = Math.round(W * 0.45);
+  const udiColW = W - leftColW;
+  const udiColX = M + leftColW;
+
+  // 제조자 소박스 (좌 상단)
+  drawBox(M, bottomY, leftColW, mfgBoxH);
+  ctx.font = FONT_6PT_BOLD;
+  ctx.fillStyle = "black";
+  ctx.fillText("제조자: " + COMPANY_NAME, M + 6, bottomY + botPadTop);
+  ctx.font = FONT_6PT;
+  ctx.fillText(COMPANY_ADDR, M + 6, bottomY + botPadTop + botLineH);
+  ctx.fillText(COMPANY_TEL_FAX, M + 6, bottomY + botPadTop + botLineH * 2);
+
+  // 판매원 소박스 (좌 하단)
+  const sellerBoxY = bottomY + mfgBoxH;
+  drawBox(M, sellerBoxY, leftColW, sellerBoxH);
+  ctx.font = FONT_6PT_BOLD;
+  ctx.fillText("판매원: " + SELLER_NAME, M + 6, sellerBoxY + botPadTop);
+  ctx.font = FONT_6PT;
+  ctx.fillText(SELLER_ADDR, M + 6, sellerBoxY + botPadTop + botLineH);
+  ctx.fillText(
+    `${SELLER_PERMIT} / ${SELLER_TEL}`,
+    M + 6,
+    sellerBoxY + botPadTop + botLineH * 2,
+  );
+
+  // UDI + QR 통합박스 (우측 전체 높이)
+  drawBox(udiColX, bottomY, udiColW, bottomH);
+  const mfgDateYmd = dateOnly(opts.manufacturingDate);
+  const udiMfgDate = mfgDateYmd.replace(/-/g, "").slice(2);
+  const udiLines = [
+    `(01)${UDI_GTIN}`,
+    `(10)${opts.lotNumber || "-"}`,
+    `(11)${udiMfgDate}`,
+  ];
+  const udiTextX = udiColX + 8;
+  const qrBotSize = Math.min(bottomH - 12, 72);
+  const udiTextW = udiColW - qrBotSize - 20;
+  const qrUdiX = udiColX + udiColW - qrBotSize - 8;
+  const qrUdiY = bottomY + (bottomH - qrBotSize) / 2;
+  const udiTotalTextH = (udiLines.length + 1) * botLineH;
+  const udiTextStartY = bottomY + Math.round((bottomH - udiTotalTextH) / 2);
+  ctx.font = FONT_6PT;
+  ctx.fillStyle = "black";
+  udiLines.forEach((line, i) => {
+    fillTextLeft(line, udiTextX, udiTextStartY + i * botLineH, udiTextW);
+  });
+  fillTextLeft(
+    `제조업허가 ${MANUFACTURER_PERMIT_NO}`,
+    udiTextX,
+    udiTextStartY + udiLines.length * botLineH + 4,
+    udiColW - 16,
   );
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(
-    qr3Img,
-    330 + 290 - companyQrPaddingX - companyQrSize,
-    companyY + companyQrPaddingTop,
-    companyQrSize,
-    companyQrSize,
-  );
+  ctx.drawImage(qrSellerImg, qrUdiX, qrUdiY, qrBotSize, qrBotSize);
   ctx.imageSmoothingEnabled = true;
 
   return canvas;

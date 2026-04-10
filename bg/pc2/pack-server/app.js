@@ -556,11 +556,17 @@ const server = http.createServer(async (req, res) => {
         licenseNo: process.env.PACK_LICENSE_NO || "",
         manufacturerName: process.env.PACK_MANUFACTURER_NAME || "",
         manufacturerAddr: process.env.PACK_MANUFACTURER_ADDR || "",
+        manufacturerTelFax: process.env.PACK_MANUFACTURER_TEL_FAX || "",
+        manufacturerPermitNo:
+          process.env.PACK_MANUFACTURER_PERMIT_NO ||
+          process.env.PACK_LICENSE_NO ||
+          "",
         sellerName: process.env.PACK_SELLER_NAME || "",
         sellerPermit: process.env.PACK_SELLER_PERMIT || "",
         sellerAddr: process.env.PACK_SELLER_ADDR || "",
         sellerTel: process.env.PACK_SELLER_TEL || "",
         manualQrLabel: process.env.PACK_MANUAL_QR_LABEL || "",
+        udiGtin: process.env.PACK_UDI_GTIN || "",
       },
     });
   }

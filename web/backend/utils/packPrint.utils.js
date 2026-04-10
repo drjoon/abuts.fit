@@ -103,7 +103,7 @@ export async function printPackingLabelViaBgServer({
     caseType: material || "-",
     printedAt: new Date().toISOString(),
     dpi: 600, // 출력 DPI
-    designDots: { pw: 640, ll: 520, dpi: 203 }, // 원본 디자인 좌표 (203 DPI)
+    designDots: { pw: 1890, ll: 1535, dpi: 600 }, // 신버전 렌더러 좌표계 (600 DPI)
     targetDots: { pw: 1890, ll: 1535 }, // 출력 크기 (600 DPI = 80x65mm)
     // pack-server에서 가져온 브랜딩 정보
     ...branding,
