@@ -855,18 +855,18 @@ const enrichHanjinAddressList = ({
       address:
         row?.address || payloadRow?.address || payloadRow?.rcv_addr || null,
       snd_prn:
-        row?.snd_prn || payloadRow?.snd_prn || HANJIN_SENDER_NAME || null,
+        HANJIN_SENDER_NAME || row?.snd_prn || payloadRow?.snd_prn || null,
       snd_nam:
-        row?.snd_nam || payloadRow?.snd_nam || HANJIN_SENDER_NAME || null,
-      snd_tel: row?.snd_tel || payloadRow?.snd_tel || HANJIN_SENDER_TEL || null,
+        HANJIN_SENDER_NAME || row?.snd_nam || payloadRow?.snd_nam || null,
+      snd_tel: HANJIN_SENDER_TEL || row?.snd_tel || payloadRow?.snd_tel || null,
       snd_hphn:
-        row?.snd_hphn ||
-        payloadRow?.snd_hphn ||
         HANJIN_SENDER_MOBILE ||
         HANJIN_SENDER_TEL ||
+        row?.snd_hphn ||
+        payloadRow?.snd_hphn ||
         null,
-      snd_add: row?.snd_add || payloadRow?.snd_add || senderAddress || null,
-      snd_addr: row?.snd_addr || payloadRow?.snd_addr || senderAddress || null,
+      snd_add: senderAddress || row?.snd_add || payloadRow?.snd_add || null,
+      snd_addr: senderAddress || row?.snd_addr || payloadRow?.snd_addr || null,
     };
   });
 
