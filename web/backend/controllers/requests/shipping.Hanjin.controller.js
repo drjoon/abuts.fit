@@ -657,6 +657,41 @@ async function executeSingleMailboxPickup({
   }
 }
 
+export async function cancelHanjinPickupForReset(mailboxAddresses) {
+  if (!Array.isArray(mailboxAddresses) || !mailboxAddresses.length) return;
+  let callHanjinWithFallback;
+  try {
+    callHanjinWithFallback = buildCancelCaller();
+  } catch {
+    return;
+  }
+  const list = mailboxAddresses
+    .map((v) => String(v || "").trim())
+    .filter(Boolean);
+  if (!list.length) return;
+  const requestDocs = await Request.find({
+    mailboxAddress: { $in: list },
+    manufacturerStage: "포장.발송",
+    "shippingWorkflow.code": { $in: ["accepted", "picked_up"] },
+  }).populate("deliveryInfoRef");
+  const byMailbox = groupRequestsByMailbox(requestDocs);
+  await Promise.allSettled(
+    list.map(async (mailbox) => {
+      const group = byMailbox.get(mailbox) || [];
+      if (!group.length) return;
+      try {
+        await executeSingleMailboxPickupCancel({
+          mailbox,
+          group,
+          callHanjinWithFallback,
+        });
+      } catch {
+        // best-effort: 취소 실패해도 리셋 계속 진행
+      }
+    }),
+  );
+}
+
 async function executeSingleMailboxPickupCancel({
   mailbox,
   group,

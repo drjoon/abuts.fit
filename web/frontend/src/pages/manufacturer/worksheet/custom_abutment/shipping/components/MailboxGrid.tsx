@@ -797,15 +797,6 @@ export const MailboxGrid = ({
     setIsRequestingPickup(true);
     setActiveHeaderAction("reset");
     try {
-      console.log(
-        "[reset] before reset, requests:",
-        requests.map((r) => ({
-          id: r.requestId,
-          mailbox: r.mailboxAddress,
-          workflowCode: r.shippingWorkflow?.code,
-        })),
-      );
-
       await request<any>({
         path: "/api/requests/shipping/mailbox-reset-working-state",
         method: "POST",
@@ -814,7 +805,7 @@ export const MailboxGrid = ({
         },
       });
 
-      // 로컬 상태 초기화
+      // 로컬 상태 초기화 (refresh 전후 모두 초기화하여 stale override 방지)
       setMailboxChangeMeta({});
       setWorkflowOverrideByRequestId({});
       setFailedMailboxes(new Set());
@@ -824,14 +815,8 @@ export const MailboxGrid = ({
         await onRefresh();
       }
 
-      console.log(
-        "[reset] after refresh, requests:",
-        requests.map((r) => ({
-          id: r.requestId,
-          mailbox: r.mailboxAddress,
-          workflowCode: r.shippingWorkflow?.code,
-        })),
-      );
+      // refresh 완료 후 혹시 남은 override 재초기화
+      setWorkflowOverrideByRequestId({});
 
       toast({
         title: "임시 리셋 완료",
@@ -1028,17 +1013,23 @@ export const MailboxGrid = ({
     return status === "printed" || printedMailboxes.has(addr);
   });
 
-  // 출력 버튼: 미출력 우편함이 있거나, 출력 후 내용이 변경된 우편함이 있을 때 활성화
-  // 이미 출력된 우편함이 있으면 재출력 버튼도 항상 활성화 (클릭 시 확인 토스트로 실수 방지)
-  const canPrint =
-    hasUnprintedMailbox || hasChangedPrintedMailbox || hasPrintedMailbox;
-  const printActionLabel = hasUnprintedMailbox
+  // none 상태 우편함: 아직 한진 API 접수 전 (wblNo 없음)
+  const hasNoneMailbox = occupiedAddresses.some((addr) => {
+    const status = pickupRequestedMailboxes.get(addr);
+    return !status || status === "none";
+  });
+
+  // 출력 버튼: wblNo가 있을 때만 활성화 (accepted/printed/picked_up 상태)
+  // none 상태는 wblNo 없으므로 출력 불가 → 먼저 택배 접수해야 함
+  const canPrint = hasPrintedMailbox || hasChangedPrintedMailbox;
+  const printActionLabel = hasAcceptedMailbox
     ? "🖨️ 운송장 출력"
     : "🖨️ 운송장 재출력";
 
-  // 접수 버튼: 출력됐지만 아직 접수/집하되지 않은 우편함이 있을 때 활성화
+  // 접수 버튼: none 상태(첫 접수) 또는 purely-printed 상태(재접수)일 때 활성화
   // 취소 버튼: 접수된 우편함이 있으면 활성화 (취소 모드)
-  const canPickup = hasPurelyPrintedMailbox && !hasAcceptedMailbox;
+  const canPickup =
+    (hasPurelyPrintedMailbox || hasNoneMailbox) && !hasAcceptedMailbox;
   const canCancelPickup = hasAcceptedMailbox;
   const pickupActionLabel = hasAcceptedMailbox
     ? "↩️ 택배 취소"

@@ -21,6 +21,7 @@ import {
 } from "./shipping.Tracking.helpers.js";
 import { startHanjinTrackingPoll } from "./shipping.TrackingPoller.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
+import { cancelHanjinPickupForReset } from "./shipping.Hanjin.controller.js";
 
 function resolveShippingBoxKey(requestDoc) {
   const shippingPackageId = String(requestDoc?.shippingPackageId || "").trim();
@@ -507,6 +508,9 @@ export async function resetMailboxShippingWorkingState(req, res) {
         message: "조건에 맞는 의뢰를 찾을 수 없습니다.",
       });
     }
+
+    // accepted/picked_up 상태 우편함에 대해 한진 취소 API 호출 (best-effort)
+    await cancelHanjinPickupForReset(mailboxAddresses);
 
     const now = new Date();
     const updatedIds = [];
