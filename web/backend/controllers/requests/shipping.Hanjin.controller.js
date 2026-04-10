@@ -363,6 +363,7 @@ const buildTrackingStatusLabel = (deliveryInfo) => {
 
 const extractTrackingNumberFromPickupData = (data) => {
   const candidates = [
+    data?.wblNo,
     data?.trackingNumber,
     data?.waybillNumber,
     data?.wbl_num,
@@ -371,10 +372,12 @@ const extractTrackingNumberFromPickupData = (data) => {
     data?.invoiceNumber,
     data?.orderNo,
     data?.orderNumber,
+    data?.data?.wblNo,
     data?.data?.trackingNumber,
     data?.data?.waybillNumber,
     data?.data?.wbl_num,
     data?.data?.wblNum,
+    data?.result?.wblNo,
     data?.result?.trackingNumber,
     data?.result?.waybillNumber,
     data?.result?.wbl_num,
@@ -401,10 +404,8 @@ async function finalizeMailboxPickupShipment({
     actorUserId,
   });
   const affectedBusinessAnchorId = String(pkg?.businessAnchorId || "").trim();
-  // 중복 에러인 경우 trackingNumber 추출 안 함 (아직 실제 접수가 아니므로)
-  const trackingNumber = isDuplicate
-    ? null
-    : extractTrackingNumberFromPickupData(pickupData);
+  // 중복(ERROR-03)이어도 wblNo가 반환되면 저장 (운송장 출력에 필요)
+  const trackingNumber = extractTrackingNumberFromPickupData(pickupData);
   const actualShipPickup = new Date();
   const updatedIds = [];
 
@@ -459,6 +460,7 @@ async function finalizeMailboxPickupShipment({
             $set: {
               carrier: "hanjin",
               shippedAt: deliveryInfo?.shippedAt || actualShipPickup,
+              ...(trackingNumber ? { trackingNumber } : {}),
             },
           },
         },

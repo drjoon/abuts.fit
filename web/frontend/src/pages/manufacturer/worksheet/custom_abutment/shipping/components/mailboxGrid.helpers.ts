@@ -210,7 +210,10 @@ export const saveGeneratedWaybillPngs = async ({
 }) => {
   const normalized = Array.isArray(addressList) ? addressList : [];
   const rows = normalized.filter(
-    (row) => row && row.result_code === "OK" && row.wbl_num,
+    (row) =>
+      row &&
+      String(row.result_code || row.resultCode || "OK").trim() === "OK" &&
+      (row.wbl_num || row.wblNum),
   );
   if (!rows.length) {
     throw new Error("운송장 정보를 찾지 못했습니다.");
@@ -237,8 +240,12 @@ export const saveGeneratedWaybillPngs = async ({
     const senderName = String(row.snd_prn || row.snd_nam || "").trim();
     const senderTel = String(row.snd_tel || row.snd_hphn || "").trim();
     const senderAddr = String(row.snd_add || row.snd_addr || "").trim();
-    const receiverName = String(row.rcv_prn || row.rcv_nam || "").trim();
-    const receiverTel = String(row.rcv_tel || row.rcv_hphn || "").trim();
+    const receiverName = String(
+      row.rcv_prn || row.rcv_nam || row.receiver_name || row.rcvrNm || "",
+    ).trim();
+    const receiverTel = String(
+      row.rcv_tel || row.rcv_hphn || row.receiver_phone || row.rcvrTelNo || "",
+    ).trim();
     const receiverZip = String(row.rcv_zip || "").trim();
     const receiverAddr = String(
       row.address || row.rcv_add || row.rcv_addr || prtAdd,

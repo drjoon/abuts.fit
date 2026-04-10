@@ -230,7 +230,7 @@ export const MailboxGrid = ({
       toast({
         title: modifyOnly ? "운송장 재출력 시작" : "운송장 출력 시작",
         description: `${effectiveTargetAddresses.length}개 우편함의 운송장을 출력합니다. 한진 API 응답까지 10초 이상 걸릴 수 있습니다.`,
-        duration: 8000,
+        duration: 10000,
       });
       // wbl_num은 한진 접수(pickup) 후 DB에 저장되므로,
       // accepted/picked_up이 아닌 우편함이 포함되면 pickup-and-print 사용 (접수 → 출력 통합)
@@ -333,6 +333,17 @@ export const MailboxGrid = ({
       const queuedPrintDescription = `${completedPrintCount}개 우편함의 라벨 출력 요청을 접수했습니다.`;
 
       if (shippingOutputMode === "image") {
+        if ((wblPrint as any)?.queued) {
+          toast({
+            title: modifyOnly
+              ? "운송장 재출력 요청 완료"
+              : "운송장 출력 요청 완료",
+            description: queuedPrintDescription,
+          });
+          notifyPickupUpdated();
+          return;
+        }
+
         const candidatePayload =
           (wblPrint as any)?.data || wblPrint || (data as any)?.label || data;
         const printPayload = resolvePrintPayload(candidatePayload);
@@ -1046,12 +1057,19 @@ export const MailboxGrid = ({
   const actionButtons = [
     {
       label: pickupActionLabel,
-      loading: activeHeaderAction === "pickup" && isRequestingPickup,
+      loading:
+        (activeHeaderAction === "pickup" || activeHeaderAction === "print") &&
+        isRequestingPickup &&
+        !hasAcceptedMailbox,
       loadingLabel: pickupActionLoadingLabel,
       disabled: pickupActionDisabled,
       variant: hasAcceptedMailbox ? ("rose" as const) : ("slate" as const),
       onClick: () => {
-        void handlePickupAction();
+        if (hasAcceptedMailbox) {
+          void handlePickupAction();
+        } else {
+          void handlePrintOnly();
+        }
       },
     },
     {
@@ -1081,6 +1099,7 @@ export const MailboxGrid = ({
             title: "운송장 재출력",
             description:
               "변경된 내용이 없습니다. 전체 운송장을 재출력하시겠습니까? 확인하려면 다시 클릭하세요.",
+            duration: 10000,
             action: (
               <ToastAction
                 altText="재출력"

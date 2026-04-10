@@ -589,7 +589,7 @@ export const resolveHanjinPayload = async function ({
     throw error;
   }
 
-  const built = buildHanjinDraftPayload(requests);
+  const built = await buildHanjinDraftPayload(requests);
 
   return {
     payload: built.payload,
