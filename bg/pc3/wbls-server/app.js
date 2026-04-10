@@ -447,6 +447,7 @@ const printPngWindows = ({ filePath, printer, title }) =>
       "$pd = New-Object System.Drawing.Printing.PrintDocument",
       `$pd.PrinterSettings.PrinterName = ${escapedPrinter}`,
       "$pd.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0,0,0,0)",
+      "$pd.DefaultPageSettings.Landscape = $true",
       "$pd.add_PrintPage({",
       "  param($s, $e)",
       "  $imgW = $bitmap.Width",
