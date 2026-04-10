@@ -219,14 +219,10 @@ export const saveGeneratedWaybillPngs = async ({
     throw new Error("운송장 정보를 찾지 못했습니다.");
   }
 
-  const canvasW = 1218;
-  const canvasH = 812;
-
-  const isMeaningfulHanjinText = (value: unknown) => {
-    const raw = String(value || "").trim();
-    if (!raw) return false;
-    return raw.replace(/[\/()\s]+/g, "").length > 0;
-  };
+  // ZPL PW984 x LL787 dots (203dpi) 기준 × 2배 고해상도
+  const S = 2;
+  const canvasW = 984 * S;
+  const canvasH = 787 * S;
 
   const renderRowToPngBlob = async (row: any) => {
     const canvas = document.createElement("canvas");
@@ -235,30 +231,22 @@ export const saveGeneratedWaybillPngs = async ({
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("이미지 렌더링에 실패했습니다.");
 
+    const KR = '"Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
+
+    // ── 필드 추출 (ZPL buildHanjinWblZplLabels와 동일) ────────────────────
     const wbl = String(row.wbl_num || "").trim();
     const prtAdd = String(row.prt_add || "").trim();
-    const senderName = String(row.snd_prn || row.snd_nam || "").trim();
-    const senderTel = String(row.snd_tel || row.snd_hphn || "").trim();
-    const senderAddr = String(row.snd_add || row.snd_addr || "").trim();
     const receiverName = String(
-      row.rcv_prn || row.rcv_nam || row.receiver_name || row.rcvrNm || "",
+      row.receiver_name || row.rcv_prn || row.rcv_nam || "",
     ).trim();
-    const receiverTel = String(
-      row.rcv_tel || row.rcv_hphn || row.receiver_phone || row.rcvrTelNo || "",
+    const receiverPhone = String(
+      row.receiver_phone || row.rcv_tel || row.rcv_hphn || "",
     ).trim();
-    const receiverZip = String(row.rcv_zip || "").trim();
-    const receiverAddr = String(
-      row.address || row.rcv_add || row.rcv_addr || prtAdd,
-    ).trim();
-    const goodsName = String(row.goods_nm || row.gds_nm || "의료기기").trim();
-    const boxCount = String(
-      row.qty || row.box_cnt || row.cts_num || "1/0",
-    ).trim();
-    const fareType = String(row.pay_typ || row.fare_typ || "S").trim();
-    const tmlRaw = String(row.tml_nam || "").trim();
-    const cenRaw = String(row.cen_nam || "").trim();
-    const tml = isMeaningfulHanjinText(tmlRaw) ? tmlRaw : "";
-    const cen = isMeaningfulHanjinText(cenRaw) ? cenRaw : "";
+    const tmlNam = String(row.tml_nam || "").trim();
+    const domMid = String(row.dom_mid || "").trim();
+    const sTemNam = String(row.s_tml_nam || "").trim();
+    const domRgn = String(row.dom_rgn || "").trim();
+    const grpRnk = String(row.grp_rnk || "").trim();
     const mailboxCode = String(row.mailbox_code || "").trim();
     const organizationName = String(row.organization_name || "").trim();
     const requestCount = Number(row.request_count || 0);
@@ -274,14 +262,12 @@ export const saveGeneratedWaybillPngs = async ({
         row.msg_key ||
         "",
     ).trim();
-    const printedYmd = String(
-      row.prt_ymd || row.wbl_dt || new Date().toISOString().slice(0, 10),
-    )
-      .trim()
-      .replace(/[^0-9-]/g, "")
-      .slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
 
-    const drawText = (
+    // ── 유틸 (dot 단위 좌표 → pixel) ─────────────────────────────────────
+    const p = (dots: number) => dots * S;
+
+    const dt = (
       text: string,
       x: number,
       y: number,
@@ -290,277 +276,134 @@ export const saveGeneratedWaybillPngs = async ({
     ) => {
       ctx.fillStyle = color;
       ctx.font = font;
-      ctx.fillText(text, x, y);
+      ctx.fillText(text, p(x), p(y));
     };
 
-    const fitText = (
+    const ft = (
       text: string,
       x: number,
       y: number,
-      maxWidth: number,
+      maxDots: number,
       font: string,
       color = "#111827",
     ) => {
       ctx.save();
       ctx.font = font;
-      let output = String(text || "").trim();
-      if (output) {
-        while (output.length > 1 && ctx.measureText(output).width > maxWidth) {
-          output = `${output.slice(0, -2).trimEnd()}…`;
-        }
-      }
+      let o = String(text || "").trim();
+      while (o.length > 1 && ctx.measureText(o).width > p(maxDots))
+        o = `${o.slice(0, -2).trimEnd()}…`;
       ctx.fillStyle = color;
-      ctx.fillText(output || "-", x, y);
+      ctx.fillText(o || "-", p(x), p(y));
       ctx.restore();
     };
 
-    const line = (
-      x1: number,
-      y1: number,
-      x2: number,
-      y2: number,
-      width = 2,
-    ) => {
+    const hl = (x1: number, y: number, x2: number, w = 3) => {
       ctx.beginPath();
-      ctx.lineWidth = width;
+      ctx.lineWidth = w * S;
       ctx.strokeStyle = "#111827";
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
+      ctx.moveTo(p(x1), p(y));
+      ctx.lineTo(p(x2), p(y));
+      ctx.stroke();
+    };
+    const vl = (x: number, y1: number, y2: number, w = 3) => {
+      ctx.beginPath();
+      ctx.lineWidth = w * S;
+      ctx.strokeStyle = "#111827";
+      ctx.moveTo(p(x), p(y1));
+      ctx.lineTo(p(x), p(y2));
       ctx.stroke();
     };
 
-    const box = (x: number, y: number, w: number, h: number, width = 2) => {
-      ctx.lineWidth = width;
-      ctx.strokeStyle = "#111827";
-      ctx.strokeRect(x, y, w, h);
+    const { default: JsBarcode } = await import("jsbarcode");
+    const bc = (val: string, h: number, bw = 2): HTMLCanvasElement => {
+      const c = document.createElement("canvas");
+      try {
+        JsBarcode(c, val || "0", {
+          format: "CODE128",
+          displayValue: false,
+          margin: 0,
+          height: h * S,
+          width: bw,
+          background: "#ffffff",
+          lineColor: "#000000",
+        });
+      } catch {}
+      return c;
     };
 
-    const sideLabel = (text: string, x: number, y: number, h: number) => {
-      ctx.save();
-      ctx.translate(x, y + h);
-      ctx.rotate(-Math.PI / 2);
-      ctx.fillStyle = "#111827";
-      ctx.font = '700 22px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
-      ctx.fillText(text, 0, 0);
-      ctx.restore();
-    };
-
+    // ── 배경 + 외곽 ──────────────────────────────────────────────────────
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvasW, canvasH);
+    ctx.lineWidth = 3 * S;
+    ctx.strokeStyle = "#111827";
+    ctx.strokeRect(p(30), p(5), p(924), p(777));
 
-    // 외곽 테두리
-    box(10, 10, 1198, 792, 3);
+    // ── 1. 헤더 (ZPL y:15~70) ─────────────────────────────────────────────
+    // ^FO30,20 운송장번호 / ^FO200,15 wblNum / ^FO550,20 P.1 / ^FO850,20 한진택배
+    hl(30, 70, 954);
+    dt("운송장번호", 38, 44, `600 ${p(18)}px ${KR}`);
+    ft(wbl, 190, 47, 350, `700 ${p(28)}px Arial, sans-serif`);
+    dt("P.1  1/1", 545, 44, `500 ${p(18)}px ${KR}`);
+    dt("한진택배 1588-0011", 760, 44, `700 ${p(18)}px ${KR}`, "#1a56db");
 
-    // 최상단: 운송장번호 + P.1 1/1 + 한진택배
-    line(10, 60, 1208, 60, 3);
-    drawText(
-      "운송장번호",
-      30,
-      45,
-      '700 20px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-    );
-    fitText(
-      wbl,
-      200,
-      48,
-      300,
-      '700 32px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-    );
-    drawText(
-      "P. 1    1/1",
-      550,
-      45,
-      '500 16px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-    );
-    drawText(
-      "한진택배 1588-0011",
-      950,
-      45,
-      '700 16px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-    );
+    // ── 2. 메인 분류 영역 (ZPL y:70~330) ─────────────────────────────────
+    // 좌: tml_nam(크게) / dom_mid / s_tml_nam
+    // 우3분할: x=500(도화정/dom_rgn) | x=630(권역/grp_rnk) | x=760(구분/mailboxCode)
+    vl(500, 70, 330);
+    vl(630, 70, 330);
+    vl(760, 70, 330);
+    hl(30, 330, 954);
 
-    // 왼쪽 대형 영역: 거제 (tmlNam) + domMid + sTemNam
-    line(10, 370, 1208, 370, 3);
-    fitText(
-      tml || "거제",
-      30,
-      160,
-      550,
-      '900 110px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-    );
+    ft(tmlNam || "거제", 38, 195, 455, `900 ${p(120)}px ${KR}`);
+    if (domMid) ft(domMid, 38, 275, 455, `700 ${p(72)}px ${KR}`);
+    if (sTemNam) ft(sTemNam, 38, 323, 455, `600 ${p(48)}px ${KR}`);
 
-    // domMid (514 하산)
-    const domMid = String(row.dom_mid || "").trim();
-    if (domMid) {
-      fitText(
-        domMid,
-        30,
-        250,
-        550,
-        '700 70px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-      );
-    }
+    dt("도화정", 510, 100, `500 ${p(20)}px ${KR}`);
+    ft(domRgn, 510, 140, 115, `700 ${p(22)}px ${KR}`);
+    dt("권역", 640, 100, `500 ${p(20)}px ${KR}`);
+    ft(grpRnk, 640, 155, 115, `900 ${p(40)}px ${KR}`);
+    dt("구분", 770, 100, `500 ${p(20)}px ${KR}`);
+    ft(mailboxCode, 770, 140, 175, `700 ${p(20)}px ${KR}`);
 
-    // sTemNam (CB 650W)
-    const sTemNam = String(row.s_tml_nam || "").trim();
-    if (sTemNam) {
-      fitText(
-        sTemNam,
-        30,
-        330,
-        550,
-        '600 50px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-      );
-    }
+    // ── 3. 배달주소 (ZPL y:330~520) ─────────────────────────────────────
+    hl(30, 520, 954);
+    dt("배달주소", 38, 365, `500 ${p(20)}px ${KR}`, "#555");
+    ft(prtAdd, 38, 400, 590, `600 ${p(22)}px ${KR}`);
 
-    // 오른쪽 3단 박스
-    line(590, 60, 590, 370, 3);
-    line(720, 60, 720, 370, 3);
-    line(860, 60, 860, 370, 3);
+    const bcMain = bc(wbl, 120, 3);
+    ctx.drawImage(bcMain, p(650), p(348), p(300), p(120));
+    ft(wbl, 650, 494, 300, `500 ${p(15)}px Arial, sans-serif`);
 
-    // 도화정
-    drawText(
-      "도화정",
-      610,
-      100,
-      '600 24px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-    );
-    fitText(
-      cen || "거...",
-      610,
-      140,
-      100,
-      '700 20px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-    );
+    // ── 4. 받는 분 (ZPL y:520~640) ──────────────────────────────────────
+    hl(30, 640, 954);
+    dt("받는분", 38, 548, `500 ${p(20)}px ${KR}`, "#555");
+    ft(receiverName, 38, 578, 740, `700 ${p(24)}px ${KR}`);
+    ft(receiverPhone, 38, 610, 740, `500 ${p(20)}px ${KR}`);
+    dt(today, 795, 568, `500 ${p(18)}px ${KR}`, "#444");
+    dt("Type:S", 795, 594, `500 ${p(18)}px ${KR}`, "#444");
 
-    // 권역
-    drawText(
-      "권역",
-      740,
-      100,
-      '600 24px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-    );
-    fitText(
-      receiverZip || "D1",
-      740,
-      150,
-      110,
-      '900 36px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-    );
+    // ── 5. 품목 (ZPL y:640~670) ───────────────────────────────────────────
+    hl(30, 670, 954);
+    dt("의료기기  1/0", 38, 660, `500 ${p(18)}px ${KR}`);
 
-    // 구분
-    drawText(
-      "구분",
-      880,
-      100,
-      '600 24px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-    );
-    fitText(
-      mailboxCode || "A1A1 / 향기로운...",
-      880,
-      140,
-      300,
-      '700 20px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-    );
+    // ── 6. 비고 + 하단 바코드 (ZPL y:670~740) ────────────────────────────
+    hl(30, 740, 954, 2);
+    dt("비고", 38, 710, `600 ${p(18)}px ${KR}`);
+    ft(remark, 110, 710, 640, `500 ${p(18)}px ${KR}`);
 
-    // 중단: 패키지 주소 + 바코드
-    line(10, 580, 1208, 580, 3);
-    sideLabel("패키지", 30, 380, 180);
-    fitText(
-      receiverAddr || prtAdd || "고현동 38-4",
-      120,
-      430,
-      600,
-      '700 18px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-    );
+    const bcBot = bc(wbl, 40, 2);
+    ctx.drawImage(bcBot, p(800), p(678), p(150), p(40));
+    ft(`운임Type:S  ${wbl}`, 640, 758, 310, `500 ${p(14)}px Arial, sans-serif`);
 
-    const { default: JsBarcode } = await import("jsbarcode");
-    const barcodeCanvas = document.createElement("canvas");
-    try {
-      JsBarcode(barcodeCanvas, wbl || "-", {
-        format: "CODE128",
-        displayValue: false,
-        margin: 0,
-        height: 140,
-        width: 2,
-        background: "#ffffff",
-        lineColor: "#000000",
-      });
-      ctx.drawImage(barcodeCanvas, 750, 380, 400, 140);
-    } catch {}
-    fitText(wbl, 880, 540, 200, "600 16px Arial, sans-serif");
-
-    // 하단: 패키지 수령 정보
-    line(10, 680, 1208, 680, 3);
-    sideLabel("패키지 수령", 30, 590, 80);
-    fitText(
-      receiverName || "-",
-      120,
-      620,
-      400,
-      '700 18px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+    // ── 7. 개인정보 문구 (ZPL y:740~787) ─────────────────────────────────
+    ft(
+      "※ 개인정보 보호를 위하여 인수하신 화물의 운송장을 폐기하여 주시기 바랍니다. ⓗ",
+      38,
+      775,
+      916,
+      `400 ${p(15)}px ${KR}`,
+      "#555",
     );
-    fitText(
-      receiverTel || "-",
-      120,
-      650,
-      400,
-      '600 18px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-    );
-    fitText(printedYmd || "-", 950, 620, 150, "500 16px Arial, sans-serif");
-    fitText(
-      `Type:${fareType || "S"}`,
-      950,
-      650,
-      150,
-      "500 16px Arial, sans-serif",
-    );
-
-    fitText(
-      `${goodsName}  ${boxCount}`,
-      120,
-      710,
-      400,
-      '600 16px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-    );
-
-    // 최하단: 비고 + 바코드
-    line(10, 730, 1208, 730, 3);
-    drawText(
-      "비고",
-      30,
-      765,
-      '700 18px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-    );
-    fitText(
-      remark || "A1A1 / 향기로운치과 / 3건",
-      130,
-      765,
-      600,
-      '600 18px "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
-    );
-
-    const bottomBarcodeCanvas = document.createElement("canvas");
-    try {
-      JsBarcode(bottomBarcodeCanvas, wbl || "-", {
-        format: "CODE128",
-        displayValue: false,
-        margin: 0,
-        height: 40,
-        width: 2,
-        background: "#ffffff",
-        lineColor: "#000000",
-      });
-      ctx.drawImage(bottomBarcodeCanvas, 750, 740, 400, 40);
-    } catch {}
-    fitText(
-      `운임Type:${fareType || "S"}`,
-      750,
-      795,
-      150,
-      "500 14px Arial, sans-serif",
-    );
-    fitText(wbl, 920, 795, 200, "700 20px Arial, sans-serif");
 
     const blob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
