@@ -29,8 +29,17 @@ const DEFAULT_MEDIA_PROFILE = String(
   process.env.WBL_MEDIA_DEFAULT || "FS",
 ).trim();
 const DEFAULT_PRINTER = String(
-  process.env.PRINT_SERVER_DEFAULT_PRINTER || "",
+  process.env.PRINT_SERVER_DEFAULT_PRINTER ||
+    process.env.WBL_PRINTER_DEFAULT ||
+    "",
 ).trim();
+const SENDER_NAME = String(process.env.HANJIN_SENDER_NAME || "").trim();
+const SENDER_TEL = String(process.env.HANJIN_SENDER_TEL || "").trim();
+const SENDER_BASE_ADDR = String(
+  process.env.HANJIN_SENDER_BASE_ADDR || "",
+).trim();
+const SENDER_DTL_ADDR = String(process.env.HANJIN_SENDER_DTL_ADDR || "").trim();
+const SENDER_ZIP = String(process.env.HANJIN_SENDER_ZIP || "").trim();
 const ALLOW_IPS = String(
   process.env.ALLOW_IPS || process.env.WBL_ALLOW_IPS || "",
 )
@@ -519,6 +528,21 @@ const server = http.createServer(async (req, res) => {
 
   if (req.url === "/health" && req.method === "GET") {
     return jsonResponse(res, 200, { success: true, status: "ok" });
+  }
+
+  if (req.url === "/print-settings" && req.method === "GET") {
+    const sender = {};
+    if (SENDER_NAME) sender.name = SENDER_NAME;
+    if (SENDER_TEL) sender.tel = SENDER_TEL;
+    if (SENDER_BASE_ADDR) sender.baseAddr = SENDER_BASE_ADDR;
+    if (SENDER_DTL_ADDR) sender.dtlAddr = SENDER_DTL_ADDR;
+    if (SENDER_ZIP) sender.zip = SENDER_ZIP;
+    return jsonResponse(res, 200, {
+      success: true,
+      defaultPrinter: DEFAULT_PRINTER || null,
+      defaultMedia: DEFAULT_MEDIA_PROFILE || null,
+      sender: Object.keys(sender).length > 0 ? sender : null,
+    });
   }
 
   if (req.url === "/printers" && req.method === "GET") {

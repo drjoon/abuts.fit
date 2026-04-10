@@ -287,10 +287,30 @@ const logMissingReceiverAddressDiagnostics = ({ request, mailbox, reason }) => {
   }
 };
 
+const fetchWblServerSenderInfo = async () => {
+  if (!WBL_PRINT_SERVER_BASE) return null;
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if (WBL_PRINT_SHARED_SECRET)
+      headers["x-wbl-secret"] = WBL_PRINT_SHARED_SECRET;
+    const response = await fetch(`${WBL_PRINT_SERVER_BASE}/print-settings`, {
+      method: "GET",
+      headers,
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data?.sender || null;
+  } catch {
+    return null;
+  }
+};
+
 export const buildResolvedLabelData = ({
   data,
   metaByMsgKey = {},
   payloadAddressList = [],
+  senderOverride = null,
 }) => {
   const payloadByMsgKey = Object.fromEntries(
     payloadAddressList
@@ -309,6 +329,7 @@ export const buildResolvedLabelData = ({
             addressList: data.address_list,
             metaByMsgKey,
             payloadByMsgKey,
+            senderOverride,
           }),
         }
       : data;
@@ -346,6 +367,11 @@ export const executeHanjinLabelPrint = async ({
     throw Object.assign(new Error("한진 운송장 출력 경로가 비어 있습니다."), {
       statusCode: 500,
     });
+  }
+
+  const senderInfo = await fetchWblServerSenderInfo();
+  if (senderInfo) {
+    console.log("[hanjin][label] wbls-server 발신인 정보 사용", senderInfo);
   }
 
   const data = await hanjinService.requestPrintApi({
@@ -410,6 +436,7 @@ export const executeHanjinLabelPrint = async ({
     data,
     metaByMsgKey,
     payloadAddressList: payload?.address_list,
+    senderOverride: senderInfo,
   });
 
   const shouldTriggerWblPrint =
@@ -823,13 +850,24 @@ const enrichHanjinAddressList = ({
   addressList,
   metaByMsgKey,
   payloadByMsgKey = {},
+  senderOverride = null,
 }) =>
   (Array.isArray(addressList) ? addressList : []).map((row) => {
     const msgKey = String(row?.msg_key || row?.msgKey || "").trim();
     const meta = metaByMsgKey?.[msgKey] || {};
     const payloadRow = payloadByMsgKey?.[msgKey] || {};
-    const senderAddress = [HANJIN_SENDER_BASE_ADDR, HANJIN_SENDER_DTL_ADDR]
-      .map((value) => String(value || "").trim())
+    const senderName =
+      String(senderOverride?.name || "").trim() || HANJIN_SENDER_NAME;
+    const senderTel =
+      String(senderOverride?.tel || "").trim() || HANJIN_SENDER_TEL;
+    const senderMobile =
+      String(senderOverride?.mobile || "").trim() ||
+      HANJIN_SENDER_MOBILE ||
+      senderTel;
+    const senderAddress = [
+      String(senderOverride?.baseAddr || "").trim() || HANJIN_SENDER_BASE_ADDR,
+      String(senderOverride?.dtlAddr || "").trim() || HANJIN_SENDER_DTL_ADDR,
+    ]
       .filter(Boolean)
       .join(" ");
     return {
@@ -854,17 +892,10 @@ const enrichHanjinAddressList = ({
         row?.rcv_addr || payloadRow?.rcv_addr || payloadRow?.address || null,
       address:
         row?.address || payloadRow?.address || payloadRow?.rcv_addr || null,
-      snd_prn:
-        HANJIN_SENDER_NAME || row?.snd_prn || payloadRow?.snd_prn || null,
-      snd_nam:
-        HANJIN_SENDER_NAME || row?.snd_nam || payloadRow?.snd_nam || null,
-      snd_tel: HANJIN_SENDER_TEL || row?.snd_tel || payloadRow?.snd_tel || null,
-      snd_hphn:
-        HANJIN_SENDER_MOBILE ||
-        HANJIN_SENDER_TEL ||
-        row?.snd_hphn ||
-        payloadRow?.snd_hphn ||
-        null,
+      snd_prn: senderName || row?.snd_prn || payloadRow?.snd_prn || null,
+      snd_nam: senderName || row?.snd_nam || payloadRow?.snd_nam || null,
+      snd_tel: senderTel || row?.snd_tel || payloadRow?.snd_tel || null,
+      snd_hphn: senderMobile || row?.snd_hphn || payloadRow?.snd_hphn || null,
       snd_add: senderAddress || row?.snd_add || payloadRow?.snd_add || null,
       snd_addr: senderAddress || row?.snd_addr || payloadRow?.snd_addr || null,
     };

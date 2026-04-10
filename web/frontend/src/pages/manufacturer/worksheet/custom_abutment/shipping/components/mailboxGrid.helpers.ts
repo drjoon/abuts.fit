@@ -512,50 +512,53 @@ const renderWaybillRowToPngBlob = async (row: any): Promise<Blob> => {
   ctx.imageSmoothingEnabled = false;
 
   // ── 콘텐츠 전용 공식 라벨 배치 ───────────────────────────────────────
+  // 운송장번호 헤더행은 고정, 나머지 바디 요소는 위로 이동
+  const DY = -20;
+
   zt2(formattedWblNum, 122, 6, 40, 350, true);
   zt("P. 1", 498, 10, 22, true);
   zt("1 / 1", 654, 10, 22, true);
 
-  zt2(mainLabel, 76, 70, 100, 390, true);
-  zt2(domMid, 492, 62, 56, 90, true);
-  zt2(grpRnk, 560, 68, 28, 110, true);
-  zt2(esNam, 492, 116, 50, 210, true);
-  zt2(esCod || cenCod, 748, 70, 72, 110, true);
-  zt2(cenSummary, 692, 132, 18, 210);
-  if (areaLabel) zt2(areaLabel, 886, 82, 34, 60, true);
+  zt2(mainLabel, 76, 70 + DY, 100, 390, true);
+  zt2(domMid, 492, 62 + DY, 56, 90, true);
+  zt2(grpRnk, 560, 68 + DY, 28, 110, true);
+  zt2(esNam, 492, 116 + DY, 50, 210, true);
+  zt2(esCod || cenCod, 748, 70 + DY, 72, 110, true);
+  zt2(cenSummary, 692, 132 + DY, 18, 210);
+  if (areaLabel) zt2(areaLabel, 886, 82 + DY, 34, 60, true);
 
-  zt(`발지:${senderLabel}`, 74, 184, 24, true);
+  zt(`발지:${senderLabel}`, 74, 184 + DY, 24, true);
 
-  zt2(receiverNameMasked, 74, 228, 28, 330, true);
-  zt2(receiverPhoneMasked, 468, 230, 20, 180);
-  zt2(receiverAddr, 74, 264, 18, 585);
-  zt2(prtAdd, 74, 314, 54, 500, true);
+  zt2(receiverNameMasked, 74, 228 + DY, 28, 330, true);
+  zt2(receiverPhoneMasked, 468, 230 + DY, 20, 180);
+  zt2(receiverAddr, 74, 264 + DY, 18, 585);
+  zt2(prtAdd, 74, 314 + DY, 54, 500, true);
 
   const bcTerminal = makeBC({
     value: terminalBarcodeValue,
-    height: 68,
+    height: 90,
     format: "CODE128",
-    moduleWidth: 1.6,
+    moduleWidth: 2.0,
   });
-  ctx.drawImage(bcTerminal, 748 * S, 236 * S, bcTerminal.width, 68 * S);
+  ctx.drawImage(bcTerminal, 748 * S, (236 + DY) * S, bcTerminal.width, 90 * S);
 
-  zt2(senderSummary, 76, 394, 18, 610);
-  zt2(senderAddr, 74, 418, 16, 640);
-  zt(`${todayLabel} Type:S`, 734, 392, 18);
+  zt2(senderSummary, 76, 394 + DY, 18, 610);
+  zt2(senderAddr, 74, 418 + DY, 16, 640);
+  zt(`${todayLabel} Type:S`, 734, 392 + DY, 18);
 
-  zt("의료기기", 74, 486, 22);
-  zt("1 / 0 (건수/수량)", 826, 486, 18);
+  zt("의료기기", 74, 486 + DY, 22);
+  zt("1 / 0 (건수/수량)", 826, 486 + DY, 18);
 
-  zt2(remark, 74, 712, 16, 420);
+  zt2(remark, 74, 712 + DY, 16, 420);
 
   const bcBot = makeBC({
     value: wblNum,
-    height: 98,
+    height: 120,
     format: "ITF",
-    moduleWidth: 1.6,
+    moduleWidth: 2.0,
   });
-  ctx.drawImage(bcBot, 604 * S, 552 * S, bcBot.width, 98 * S);
-  zt2(`운임Type:S  ${formattedWblNum}`, 560, 684, 18, 380);
+  ctx.drawImage(bcBot, 604 * S, (552 + DY) * S, bcBot.width, 120 * S);
+  zt2(`운임Type:S  ${formattedWblNum}`, 560, 684 + DY, 18, 380);
 
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
