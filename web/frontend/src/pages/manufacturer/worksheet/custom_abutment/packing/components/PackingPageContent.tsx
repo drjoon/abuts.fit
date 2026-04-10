@@ -577,6 +577,22 @@ export const PackingPageContent = ({
     ],
   );
 
+  const handleAutoPrintProcessedRequest = useCallback(
+    async (req: ManufacturerRequest) => {
+      try {
+        await handlePrintSinglePackingLabel(req, { silentSuccess: true });
+      } catch (err) {
+        toast({
+          title: "자동 라벨 출력 실패",
+          description:
+            (err as Error)?.message || "라벨 출력 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      }
+    },
+    [handlePrintSinglePackingLabel, toast],
+  );
+
   const {
     isDraggingOver,
     ocrProcessing,
@@ -592,8 +608,7 @@ export const PackingPageContent = ({
     previewOpen,
     previewFiles,
     handleOpenPreview,
-    // 자동 프린트는 백엔드에서 처리하므로 프론트엔드 자동 프린트 제거
-    handleAutoPrintProcessedRequest: null,
+    handleAutoPrintProcessedRequest,
   });
 
   const handlePrintPackingLabels = useCallback(async () => {

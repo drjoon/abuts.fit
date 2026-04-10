@@ -397,8 +397,21 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     message: "backend_auto_print_pending",
   };
 
+  // source=manual(프론트 드롭): 프론트에서 캔버스→ZPL 생성 후 직접 출력
+  // source≠manual(lot-server 등): 백엔드 fallback 렌더러로 출력
+  const capturedByFrontend = String(source || "").trim() === "manual";
+
   // 백그라운드 프린트 작업 (응답 대기 없음)
   setImmediate(async () => {
+    if (capturedByFrontend) {
+      console.log(
+        "[lot-capture] source=manual: 프론트 렌더 출력 위임, 백엔드 auto-print 건너뜀",
+        {
+          requestId: request.requestId,
+        },
+      );
+      return;
+    }
     try {
       console.log("[lot-capture] auto print started", {
         requestId: request?.requestId,
@@ -594,6 +607,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
 
   emitAppEventGlobal("packing:capture-processed", {
     source: "bg-lot-capture",
+    capturedBy: capturedByFrontend ? "frontend" : "worker",
     requestId: request.requestId,
     requestMongoId: String(request._id || ""),
     recognizedSuffix: finalRecognizedSuffix || null,

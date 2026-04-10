@@ -244,6 +244,7 @@ export const usePackingCapture = ({
       const suffix = String(payload?.recognizedSuffix || "").trim();
       const eventRequest = payload?.request as ManufacturerRequest | undefined;
       const movedToStage = String(payload?.movedToStage || "").trim();
+      const capturedBy = String(payload?.capturedBy || "").trim();
       const mergedEventRequest = (() => {
         const currentRequest = requestsRef.current.find((req) => {
           const currentMongoId = String(req._id || "").trim();
@@ -325,9 +326,10 @@ export const usePackingCapture = ({
             await handleOpenPreviewRef.current(matchedRequest);
           }
         }
-        // 자동 프린트는 백엔드에서 처리하므로 프론트엔드 자동 프린트는 비활성화
-        // handleAutoPrintProcessedRequest가 null이 아닐 때만 실행 (레거시 호환)
+        // capturedBy=frontend(프론트 이미지 드롭)일 때만 프론트에서 ZPL 생성 후 출력
+        // capturedBy=worker(lot-server 자동 인식)일 때는 백엔드 auto-print 사용
         if (
+          capturedBy === "frontend" &&
           mergedEventRequest &&
           handleAutoPrintProcessedRequestRef.current &&
           typeof handleAutoPrintProcessedRequestRef.current === "function"
