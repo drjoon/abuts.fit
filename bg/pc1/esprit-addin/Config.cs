@@ -40,7 +40,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public const int DefaultEspritPort = 8001;
         public const string DefaultBackendUrl = "https://abuts.fit/api";
         public const string DefaultBridgeSharedSecret = "";
-        public const double DefaultTurningDepth = 1.5;  // Front Mill depth -> 적용안됨. MainModule.cs에서 DownZ 직접 설정
+        public const double DefaultTurningDepth = 1.5;  // Front Mill depth -> face.prc에서 LimitZ 설정
         public const double DefaultExitAngle = 30.0;
         public const double DefaultTurningExtend = 3.5;
         public const double DefaultStlShift = 0.05;  // #523: 탑과 포스트 상단 사이 거리
@@ -49,8 +49,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public const double DefaultLeftRatioOffset = 0.0;
         // public const double DefaultLeftRatioOffset = 0.3;
         public const double DefaultLeftRatio = (DefaultLeftRatioOffset+DefaultStlShift) / 20.0;
-        public const double DefaultRightRatioOffset = -0.3;
-        // -0.2 for left 0.2 to #520(STL origin) which means back-turning will compensate
+        public const double DefaultRightRatioOffset = -0.0;
+        // public const double DefaultRightRatioOffset = -0.3;
+        // -0.3 for left 0.1 to #520(STL origin) which means back-turning will compensate
         public static int[] DefaultBackturnDiameters = { 6, 8, 10, 12, 14 };
         public static double[] DefaultBackturnClearances = {0.584, 1.161, 1.738, 2.316, 2.893};
         public static string BaseDirectory => GetEnvOrDefault(BaseDirectoryEnv, DefaultBaseDirectory);

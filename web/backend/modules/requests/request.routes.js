@@ -279,6 +279,13 @@ router.get(
   requestController.getWblPrinters,
 );
 
+router.post(
+  "/shipping/wbl/print-png",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.wblPrintPng,
+);
+
 // 의뢰 상세 조회 (권한 검증은 컨트롤러에서 처리)
 router.get("/:id", authenticate, requestController.getRequestById);
 

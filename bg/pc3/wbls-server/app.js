@@ -433,6 +433,53 @@ const renderZplAsKoreanPdf = async (zpl, pdfPath, koreanFontPath) => {
   });
 };
 
+const printPngWindows = ({ filePath, printer, title }) =>
+  new Promise((resolve, reject) => {
+    const targetPrinter = String(printer || DEFAULT_PRINTER || "").trim();
+    if (!targetPrinter) return reject(new Error("Printer is required"));
+
+    const escapedPrinter = toPsSingleQuoted(targetPrinter);
+    const escapedFilePath = toPsSingleQuoted(filePath);
+
+    const psScript = [
+      "Add-Type -AssemblyName System.Drawing",
+      `$bitmap = New-Object System.Drawing.Bitmap ${escapedFilePath}`,
+      "$pd = New-Object System.Drawing.Printing.PrintDocument",
+      `$pd.PrinterSettings.PrinterName = ${escapedPrinter}`,
+      "$pd.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0,0,0,0)",
+      "$pd.add_PrintPage({",
+      "  param($s, $e)",
+      "  $imgW = $bitmap.Width",
+      "  $imgH = $bitmap.Height",
+      "  $pageW = $e.PageBounds.Width",
+      "  $pageH = $e.PageBounds.Height",
+      "  $scale = [Math]::Min($pageW / $imgW, $pageH / $imgH)",
+      "  $destW = [int]($imgW * $scale)",
+      "  $destH = [int]($imgH * $scale)",
+      "  $destX = [int](($pageW - $destW) / 2)",
+      "  $destY = [int](($pageH - $destH) / 2)",
+      "  $e.Graphics.DrawImage($bitmap, $destX, $destY, $destW, $destH)",
+      "  $e.HasMorePages = $false",
+      "})",
+      "$pd.Print()",
+      "Start-Sleep -Milliseconds 500",
+      "$bitmap.Dispose()",
+      "$pd.Dispose()",
+    ].join("\r\n");
+
+    log("print-png:windows", { printer: targetPrinter, filePath });
+
+    execFile(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psScript],
+      { windowsHide: true, timeout: 30000 },
+      (err, stdout, stderr) => {
+        if (err) return reject(new Error(stderr || err.message));
+        resolve(stdout);
+      },
+    );
+  });
+
 const printFile = ({ filePath, printer, title, paperProfile, raw = false }) =>
   new Promise((resolve, reject) => {
     if (isWindows && raw) {
@@ -496,8 +543,79 @@ const server = http.createServer(async (req, res) => {
   if (req.url === "/print" && req.method === "POST") {
     return jsonResponse(res, 410, {
       success: false,
-      message: "Legacy PDF printing is disabled. Use /print-zpl.",
+      message: "Legacy PDF printing is disabled. Use /print-zpl or /print-png.",
     });
+  }
+
+  if (req.url === "/print-png" && req.method === "POST") {
+    try {
+      const raw = await readBody(req);
+      const payload = raw ? JSON.parse(raw) : {};
+      const pngBase64 = payload.png;
+      const printer = await resolvePrinter(payload.printer);
+      const title = payload.title || "Hanjin Label";
+      const paperProfile =
+        typeof payload.paperProfile === "string"
+          ? payload.paperProfile.trim()
+          : "";
+
+      if (!pngBase64 || typeof pngBase64 !== "string") {
+        return jsonResponse(res, 400, {
+          success: false,
+          message:
+            "png base64 \ubb38\uc790\uc5f4\uc774 \ud544\uc694\ud569\ub2c8\ub2e4.",
+        });
+      }
+      if (!printer) {
+        return jsonResponse(res, 400, {
+          success: false,
+          message:
+            "\uc0ac\uc6a9 \uac00\ub2a5\ud55c \ud504\ub9b0\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.",
+        });
+      }
+
+      const pngBuffer = Buffer.from(pngBase64, "base64");
+      const pngPath = path.join(
+        os.tmpdir(),
+        `hanjin-label-${Date.now()}-${Math.random().toString(16).slice(2)}.png`,
+      );
+
+      log("print-png:received", {
+        printer,
+        title,
+        pngBytes: pngBuffer.length,
+        paperProfile,
+      });
+
+      await fs.promises.writeFile(pngPath, pngBuffer);
+
+      try {
+        if (isWindows) {
+          await printPngWindows({ filePath: pngPath, printer, title });
+        } else {
+          await printFile({
+            filePath: pngPath,
+            printer,
+            title,
+            paperProfile,
+            raw: false,
+          });
+        }
+        log("print-png:done", { printer, title });
+        return jsonResponse(res, 200, { success: true, printMode: "png" });
+      } catch (error) {
+        log("print-png:error", { printer, message: error.message });
+        return jsonResponse(res, 500, {
+          success: false,
+          message: error.message,
+        });
+      } finally {
+        fs.unlink(pngPath, () => undefined);
+      }
+    } catch (error) {
+      log("print-png:error", { message: error.message });
+      return jsonResponse(res, 500, { success: false, message: error.message });
+    }
   }
 
   if (req.url === "/print-zpl" && req.method === "POST") {
@@ -566,7 +684,7 @@ const server = http.createServer(async (req, res) => {
       // ^A0N 등 ZPL 기본 폰트는 한글 글리프를 포함하지 않으므로,
       // raw ZPL 또는 pdfkit 기본 폰트로 출력하면 한글이 깨진다.
       const koreanFontPath = findKoreanFontPath();
-      if (/[\uAC00-\uD7A3]/.test(zpl) && koreanFontPath) {
+      if (/[\uAC00-\uD7A3]/.test(zpl) && koreanFontPath && !isWindows) {
         log("print-zpl:korean-pdf", { printer, title, font: koreanFontPath });
         const pdfPath = path.join(
           os.tmpdir(),

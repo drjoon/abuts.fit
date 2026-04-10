@@ -65,6 +65,7 @@ export const {
   getWblPrintSettings,
   getWblPrinters,
   requestHanjinPickupAndPrint,
+  wblPrintPng,
 } = shippingHanjinController;
 
 export const {

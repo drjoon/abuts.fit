@@ -8,6 +8,7 @@ import {
   handleDownloadWaybillPdf,
   resolvePrintPayload,
   saveGeneratedWaybillPngs,
+  printGeneratedWaybillPngs,
 } from "./mailboxGrid.helpers";
 import { MailboxActionHeader } from "./MailboxActionHeader";
 import { MailboxShelfGrid } from "./MailboxShelfGrid";
@@ -403,6 +404,22 @@ export const MailboxGrid = ({
           notifyPickupUpdated();
           return;
         }
+      }
+
+      if ((wblPrint as any)?.outputMode === "label-png") {
+        await printGeneratedWaybillPngs({
+          addressList: (data as any)?.address_list || [],
+          zplLabels: (data as any)?.zplLabels || [],
+          printer: (wblPrint as any)?.printer || printerProfile || undefined,
+          paperProfile:
+            (wblPrint as any)?.paperProfile || paperProfile || undefined,
+        });
+        toast({
+          title: modifyOnly ? "운송장 재출력 완료" : "운송장 출력 완료",
+          description: completedPrintDescriptionPrint,
+        });
+        notifyPickupUpdated();
+        return;
       }
 
       if ((wblPrint as any)?.queued) {

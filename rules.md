@@ -1449,7 +1449,52 @@ BREVO_API_KEY=your_brevo_api_key_here
 
 ---
 
-## 11. 운영 메모
+## 11. 한진 운송장 라벨 출력 아키텍처
+
+### 11.1 출력 흐름 (label 모드)
+
+```
+프론트 → 백엔드 → 프론트 → 백엔드 → wbls-server → 프린터
+```
+
+1. **프론트 → 백엔드** `POST /api/requests/shipping/hanjin/print-labels`
+   - `shippingOutputMode: "label"`, `printer`, `paperProfile` 포함
+2. **백엔드 → 한진 API** ZPL 생성 후 `address_list + zplLabels` 를 프론트로 반환
+   - `wblPrint.outputMode: "label-png"` 시그널 포함 (wbls-server로 직접 ZPL 전송 안 함)
+3. **프론트** 브라우저 Canvas로 PNG 렌더링 (한글 폰트 완벽 지원, 고해상도 4배)
+4. **프론트 → 백엔드** `POST /api/requests/shipping/wbl/print-png` (base64 PNG)
+5. **백엔드 → wbls-server** `POST /print-png` 프록시
+6. **wbls-server → 프린터**
+   - Windows: PowerShell `System.Drawing.Printing.PrintDocument` (lp 불필요)
+   - Linux/Mac: `lp` 명령
+
+### 11.2 이 아키텍처의 이유
+
+- wbls-server(Windows)에는 `lp` 명령이 없음 → ZPL을 wbls-server에서 직접 PDF 변환 후 lp 출력하면 `ENOENT` 에러 발생
+- 브라우저 Canvas 렌더링이 wbls-server의 pdfkit 렌더링보다 한글/레이아웃 정확도가 훨씬 높음
+- PNG는 플랫폼 독립적: Windows `System.Drawing` / Linux `lp` 모두 처리 가능
+
+### 11.3 관련 파일
+
+| 역할                 | 파일                                                                    |
+| -------------------- | ----------------------------------------------------------------------- |
+| PNG 렌더링 + POST    | `web/frontend/.../mailboxGrid.helpers.ts` (`printGeneratedWaybillPngs`) |
+| label-png 신호 반환  | `web/backend/.../shipping.Hanjin.helpers.js` (`triggerWblServerPrint`)  |
+| PNG 프록시 컨트롤러  | `web/backend/.../shipping.Hanjin.controller.js` (`wblPrintPng`)         |
+| PNG 라우트           | `web/backend/modules/requests/request.routes.js`                        |
+| wbls-server PNG 출력 | `bg/pc3/wbls-server/app.js` (`printPngWindows`, `/print-png`)           |
+
+### 11.4 image 모드 vs label 모드
+
+|                  | image 모드            | label 모드                        |
+| ---------------- | --------------------- | --------------------------------- |
+| 용도             | 미리보기/저장         | 실제 프린터 출력                  |
+| PNG 처리         | ZIP으로 파일 다운로드 | wbls-server로 POST 후 프린터 출력 |
+| wbls-server 관여 | 없음                  | 있음 (`/print-png`)               |
+
+---
+
+## 12. 운영 메모
 
 - 하위 `rules.md`는 루트 규칙을 반복 작성하지 않습니다.
 - 구현 세부, 트러블슈팅, 서비스별 로컬 설정만 남깁니다.

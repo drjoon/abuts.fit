@@ -963,6 +963,63 @@ export async function getWblPrinters(req, res) {
   }
 }
 
+export async function wblPrintPng(req, res) {
+  try {
+    const { png, printer, paperProfile, title } = req.body || {};
+    if (!png || typeof png !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "png base64 데이터가 필요합니다.",
+      });
+    }
+    const WBL_PRINT_SERVER_BASE = String(
+      process.env.WBL_PRINT_SERVER_BASE || "",
+    ).trim();
+    const WBL_PRINT_SHARED_SECRET = String(
+      process.env.WBL_PRINT_SHARED_SECRET || "",
+    ).trim();
+    if (!WBL_PRINT_SERVER_BASE) {
+      return res.status(400).json({
+        success: false,
+        message: "운송장 출력 서버 기본 URL이 설정되지 않았습니다.",
+      });
+    }
+    const headers = { "Content-Type": "application/json" };
+    if (WBL_PRINT_SHARED_SECRET)
+      headers["x-wbl-secret"] = WBL_PRINT_SHARED_SECRET;
+
+    const targetUrl = `${WBL_PRINT_SERVER_BASE}/print-png`;
+    console.log("[wbl-print] → POST /print-png 프록시", {
+      url: targetUrl,
+      printer,
+      paperProfile,
+      pngBytes: png.length,
+    });
+
+    const response = await fetch(targetUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ png, printer, paperProfile, title }),
+      signal: AbortSignal.timeout(30000),
+    });
+    const data = await response.json();
+    console.log("[wbl-print] ← /print-png 응답", {
+      status: response.status,
+      ok: response.ok,
+      data,
+    });
+    return res
+      .status(response.ok ? 200 : 500)
+      .json({ success: response.ok, ...data });
+  } catch (error) {
+    console.error("Error in wblPrintPng:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "PNG 출력 중 오류가 발생했습니다.",
+    });
+  }
+}
+
 export async function validateHanjinCustomerCheck(req, res) {
   try {
     ensureHanjinEnv();

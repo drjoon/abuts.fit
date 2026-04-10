@@ -494,14 +494,21 @@ const requestWblServerPrint = async ({ zpl, body }) => {
     : 15000;
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
+  const targetUrl = `${WBL_PRINT_SERVER_BASE}/print-zpl`;
   const startTime = Date.now();
-  console.log("[wbl-print] requesting ZPL conversion", {
-    saveMode: body?.saveMode,
+  console.log("[wbl-print] → POST /print-zpl 요청 시작", {
+    url: targetUrl,
+    printer: body?.printer,
     paperProfile: body?.paperProfile,
+    saveMode: body?.saveMode,
+    zplLength: String(zpl || "").length,
+    zplPreview: String(zpl || "").slice(0, 80),
+    timeoutMs,
+    hasSecret: Boolean(WBL_PRINT_SHARED_SECRET),
   });
 
   try {
-    const response = await fetch(`${WBL_PRINT_SERVER_BASE}/print-zpl`, {
+    const response = await fetch(targetUrl, {
       method: "POST",
       headers,
       body: JSON.stringify({ zpl, ...body }),
@@ -510,11 +517,13 @@ const requestWblServerPrint = async ({ zpl, body }) => {
 
     const data = await response.json();
     const elapsedMs = Date.now() - startTime;
-    console.log("[wbl-print] received ZPL conversion response", {
+    console.log("[wbl-print] ← /print-zpl 응답 수신", {
+      url: targetUrl,
       elapsedMs,
       elapsedSec: (elapsedMs / 1000).toFixed(2),
-      success: response.ok,
       status: response.status,
+      ok: response.ok,
+      responseData: data,
     });
 
     return {
@@ -528,11 +537,26 @@ const requestWblServerPrint = async ({ zpl, body }) => {
 };
 
 const dispatchWblServerPrint = ({ zpl, body }) => {
-  void requestWblServerPrint({ zpl, body }).catch((error) => {
-    console.error("[wbl-print][dispatch] async print failed", {
-      message: error?.message,
-    });
+  console.log("[wbl-print][dispatch] 비동기 출력 요청 시작", {
+    printer: body?.printer,
+    paperProfile: body?.paperProfile,
+    zplLength: String(zpl || "").length,
   });
+  void requestWblServerPrint({ zpl, body })
+    .then((result) => {
+      console.log("[wbl-print][dispatch] 비동기 출력 완료", {
+        success: result?.success,
+        status: result?.status,
+        data: result,
+      });
+    })
+    .catch((error) => {
+      console.error("[wbl-print][dispatch] 비동기 출력 실패", {
+        printer: body?.printer,
+        message: error?.message,
+        stack: error?.stack?.split("\n").slice(0, 4).join(" | "),
+      });
+    });
 };
 
 export const executeHanjinOrderApiWithFallback = async ({
@@ -963,20 +987,33 @@ const buildHanjinWblZplLabels = ({ addressList }) => {
 };
 
 async function triggerWblServerPrint(payload, options = null) {
-  if (!WBL_PRINT_SERVER_BASE) {
-    return {
-      success: false,
-      reason: "no_wbl_print_server_base",
-      message: "운송장 출력 서버 기본 URL이 설정되지 않았습니다.",
-    };
-  }
-
   const printer = String(options?.printer || "").trim();
   const media = String(options?.paperProfile || options?.media || "").trim();
   const skipPrint = Boolean(options?.skipPrint);
   const outputMode = String(options?.outputMode || "print")
     .trim()
     .toLowerCase();
+
+  console.log("[wbl-print][trigger] triggerWblServerPrint 진입", {
+    WBL_PRINT_SERVER_BASE: WBL_PRINT_SERVER_BASE || "(미설정)",
+    outputMode,
+    printer: printer || "(없음)",
+    media: media || "(없음)",
+    skipPrint,
+    zplLabelCount: payload?.zplLabels?.length ?? 0,
+    addressListCount: payload?.address_list?.length ?? 0,
+  });
+
+  if (!WBL_PRINT_SERVER_BASE) {
+    console.warn(
+      "[wbl-print][trigger] WBL_PRINT_SERVER_BASE 미설정 → 출력 불가",
+    );
+    return {
+      success: false,
+      reason: "no_wbl_print_server_base",
+      message: "운송장 출력 서버 기본 URL이 설정되지 않았습니다.",
+    };
+  }
 
   if (skipPrint) {
     return {
@@ -1006,6 +1043,7 @@ async function triggerWblServerPrint(payload, options = null) {
 
   // 프린터 출력 모드
   if (!printer) {
+    console.warn("[wbl-print][trigger] 프린터 미선택 → 출력 중단");
     return {
       success: false,
       reason: "no_printer_selected",
@@ -1014,6 +1052,7 @@ async function triggerWblServerPrint(payload, options = null) {
   }
 
   if (!media) {
+    console.warn("[wbl-print][trigger] 용지 미선택 → 출력 중단");
     return {
       success: false,
       reason: "no_media_selected",
@@ -1029,22 +1068,18 @@ async function triggerWblServerPrint(payload, options = null) {
     };
   }
 
-  payload.zplLabels.forEach((zpl) => {
-    dispatchWblServerPrint({
-      zpl,
-      body: {
-        printer,
-        paperProfile: media,
-        title: "Hanjin Waybill Label",
-      },
-    });
-  });
+  const labelCount = payload.zplLabels.length;
+  console.log(
+    "[wbl-print][trigger] label-png 모드: 프론트에서 PNG 렌더링 후 /print-png로 전송",
+    { labelCount, printer, paperProfile: media },
+  );
 
   return {
     success: true,
-    queued: true,
-    outputMode: "print",
-    message: `${payload.zplLabels.length}개의 라벨 인쇄 요청을 접수했습니다.`,
-    queuedCount: payload.zplLabels.length,
+    outputMode: "label-png",
+    message: `${labelCount}개 라벨 PNG 출력 준비 완료. 프론트에서 PNG 렌더링 후 전송합니다.`,
+    labelCount,
+    printer,
+    paperProfile: media,
   };
 }
