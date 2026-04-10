@@ -287,7 +287,20 @@ const logMissingReceiverAddressDiagnostics = ({ request, mailbox, reason }) => {
   }
 };
 
-export const buildResolvedLabelData = ({ data, metaByMsgKey = {} }) => {
+export const buildResolvedLabelData = ({
+  data,
+  metaByMsgKey = {},
+  payloadAddressList = [],
+}) => {
+  const payloadByMsgKey = Object.fromEntries(
+    payloadAddressList
+      .map((row) => {
+        const msgKey = String(row?.msg_key || row?.msgKey || "").trim();
+        return msgKey ? [msgKey, row] : null;
+      })
+      .filter(Boolean),
+  );
+
   const enrichedData =
     data && typeof data === "object"
       ? {
@@ -295,6 +308,7 @@ export const buildResolvedLabelData = ({ data, metaByMsgKey = {} }) => {
           address_list: enrichHanjinAddressList({
             addressList: data.address_list,
             metaByMsgKey,
+            payloadByMsgKey,
           }),
         }
       : data;
@@ -316,29 +330,59 @@ export const executeHanjinLabelPrint = async ({
   metaByMsgKey,
   wblPrintOptions,
 }) => {
-  // Lambda 제거: 백엔드에서 직접 ZPL 생성
-  // 한진 API는 운송장 번호만 제공하므로, 백엔드에서 ZPL을 직접 생성합니다.
-  console.log("[shipping][hanjin-print] generating ZPL labels", {
-    mailboxCount: Array.isArray(payload?.address_list)
-      ? payload.address_list.length
-      : 0,
+  console.log(
+    "[shipping][hanjin-print] requesting official Hanjin print data",
+    {
+      mailboxCount: Array.isArray(payload?.address_list)
+        ? payload.address_list.length
+        : 0,
+    },
+  );
+
+  const resolvedPath = String(path || "")
+    .replace("{client_id}", HANJIN_CLIENT_ID)
+    .trim();
+  if (!resolvedPath) {
+    throw Object.assign(new Error("한진 운송장 출력 경로가 비어 있습니다."), {
+      statusCode: 500,
+    });
+  }
+
+  const data = await hanjinService.requestPrintApi({
+    path: resolvedPath,
+    method: "POST",
+    data: payload,
   });
 
-  // payload.address_list에는 이미 운송장 번호(wbl_num)가 포함되어 있어야 함
-  // 한진 pickup API 호출 후 받은 운송장 번호를 사용
-  const data = {
-    address_list: payload?.address_list || [],
-    error_cnt: 0,
-  };
+  const responseAddressList = Array.isArray(data?.address_list)
+    ? data.address_list
+    : [];
 
   console.log("[hanjin][zpl-generation] processing address list", {
-    count: data.address_list.length,
+    count: responseAddressList.length,
+    firstRowPreview:
+      responseAddressList.length > 0
+        ? {
+            msg_key: responseAddressList[0]?.msg_key,
+            hub_cod: responseAddressList[0]?.hub_cod,
+            tml_cod: responseAddressList[0]?.tml_cod,
+            dom_mid: responseAddressList[0]?.dom_mid,
+            cen_cod: responseAddressList[0]?.cen_cod,
+            cen_nam: responseAddressList[0]?.cen_nam,
+            s_tml_cod: responseAddressList[0]?.s_tml_cod,
+            s_tml_nam: responseAddressList[0]?.s_tml_nam,
+            grp_rnk: responseAddressList[0]?.grp_rnk,
+            es_nam: responseAddressList[0]?.es_nam,
+            dom_rgn: responseAddressList[0]?.dom_rgn,
+            es_cod: responseAddressList[0]?.es_cod,
+            prt_add: responseAddressList[0]?.prt_add,
+            wbl_num: responseAddressList[0]?.wbl_num,
+          }
+        : null,
   });
 
   const errorCount = Number(data?.error_cnt || data?.errorCnt || 0);
-  const addressList = Array.isArray(data?.address_list)
-    ? data.address_list
-    : [];
+  const addressList = responseAddressList;
   const failedRows = addressList.filter(
     (row) =>
       String(row?.result_code || row?.resultCode || "OK").trim() !== "OK",
@@ -362,7 +406,11 @@ export const executeHanjinLabelPrint = async ({
     });
   }
 
-  const labelData = buildResolvedLabelData({ data, metaByMsgKey });
+  const labelData = buildResolvedLabelData({
+    data,
+    metaByMsgKey,
+    payloadAddressList: payload?.address_list,
+  });
 
   const shouldTriggerWblPrint =
     wblPrintOptions && typeof wblPrintOptions === "object";
@@ -392,6 +440,7 @@ export const executeHanjinLabelPrint = async ({
 
 export const executeCachedLabelPrint = async ({
   cachedZplLabels = [],
+  cachedAddressList = [],
   wblPrintOptions,
 }) => {
   const zplLabels = Array.isArray(cachedZplLabels)
@@ -407,7 +456,7 @@ export const executeCachedLabelPrint = async ({
   }
 
   const labelData = {
-    address_list: [],
+    address_list: Array.isArray(cachedAddressList) ? cachedAddressList : [],
     zplLabels,
   };
   const shouldTriggerWblPrint =
@@ -746,17 +795,54 @@ const buildHanjinDraftPayload = async (requests) => {
 
 export const debugHanjinPrintPayload = () => {};
 
-const enrichHanjinAddressList = ({ addressList, metaByMsgKey }) =>
+const enrichHanjinAddressList = ({
+  addressList,
+  metaByMsgKey,
+  payloadByMsgKey = {},
+}) =>
   (Array.isArray(addressList) ? addressList : []).map((row) => {
     const msgKey = String(row?.msg_key || row?.msgKey || "").trim();
     const meta = metaByMsgKey?.[msgKey] || {};
+    const payloadRow = payloadByMsgKey?.[msgKey] || {};
+    const senderAddress = [HANJIN_SENDER_BASE_ADDR, HANJIN_SENDER_DTL_ADDR]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+      .join(" ");
     return {
+      ...payloadRow,
       ...row,
       mailbox_code: meta.mailbox_code || row?.mailbox_code || null,
       organization_name:
         meta.organization_name || row?.organization_name || null,
       request_count: meta.request_count || row?.request_count || null,
       remark: meta.remark || row?.remark || null,
+      receiver_name:
+        row?.receiver_name ||
+        payloadRow?.receiver_name ||
+        payloadRow?.rcv_prn ||
+        null,
+      receiver_phone:
+        row?.receiver_phone ||
+        payloadRow?.receiver_phone ||
+        payloadRow?.rcv_tel ||
+        null,
+      rcv_addr:
+        row?.rcv_addr || payloadRow?.rcv_addr || payloadRow?.address || null,
+      address:
+        row?.address || payloadRow?.address || payloadRow?.rcv_addr || null,
+      snd_prn:
+        row?.snd_prn || payloadRow?.snd_prn || HANJIN_SENDER_NAME || null,
+      snd_nam:
+        row?.snd_nam || payloadRow?.snd_nam || HANJIN_SENDER_NAME || null,
+      snd_tel: row?.snd_tel || payloadRow?.snd_tel || HANJIN_SENDER_TEL || null,
+      snd_hphn:
+        row?.snd_hphn ||
+        payloadRow?.snd_hphn ||
+        HANJIN_SENDER_MOBILE ||
+        HANJIN_SENDER_TEL ||
+        null,
+      snd_add: row?.snd_add || payloadRow?.snd_add || senderAddress || null,
+      snd_addr: row?.snd_addr || payloadRow?.snd_addr || senderAddress || null,
     };
   });
 
@@ -768,33 +854,59 @@ const buildHanjinWblZplLabels = ({ addressList }) => {
 
   const zplLabels = filtered
     .map((row) => {
-      // 한진 API 응답 필드 추출
-      const wblNum = String(row?.wbl_num || "").trim();
-      const prtAdd = String(row?.prt_add || "").trim();
-      const receiverName = String(row?.receiver_name || "").trim();
-      const receiverPhone = String(row?.receiver_phone || "").trim();
-      const tmlNam = String(row?.tml_nam || "").trim();
-      const cenNam = String(row?.cen_nam || "").trim();
-      const sTemNam = String(row?.s_tml_nam || "").trim();
-      const domRgn = String(row?.dom_rgn || "").trim();
-      const domMid = String(row?.dom_mid || "").trim();
-      const grpRnk = String(row?.grp_rnk || "").trim();
-      const esCod = String(row?.es_cod || "").trim();
+      // 한진 API 응답 필드 추출 (첨4 명세표 기준)
+      const wblNum = String(row?.wbl_num || "").trim(); // ⑨ 운송장번호
+      const hubCod = String(row?.hub_cod || "").trim(); // ① 허브코드(대분류)
+      const tmlCod = String(row?.tml_cod || "").trim(); // ② 도착지터미널코드
+      const tmlNam = String(row?.tml_nam || "").trim(); // 도착지터미널명 (화면용)
+      const domMid = String(row?.dom_mid || "").trim(); // ④ 중분류코드
+      const cenCod = String(row?.cen_cod || "").trim(); // ⑤ 집배점코드
+      const cenNam = String(row?.cen_nam || "").trim(); // ⑥ 집배점명
+      const sTmlCod = String(row?.s_tml_cod || "").trim(); // ⑦ 발송터미널코드
+      const sTmlNam = String(row?.s_tml_nam || "").trim(); // ⑧ 발송터미널명
+      const grpRnk = String(row?.grp_rnk || "").trim(); // ⑩ 소분류코드-배송사원
+      const esNam = String(row?.es_nam || "").trim(); // ⑪ 배송사원명
+      const prtAdd = String(row?.prt_add || "").trim(); // ⑫ 주소출력정보
+      const domRgn = String(row?.dom_rgn || "").trim(); // ⑮ 권역구분 (1:수도권/2~6:지방/7:제주/9:도서지역)
+      const esCod = String(row?.es_cod || "").trim(); // ⑯ 배송사원분류코드
 
-      if (!wblNum) {
-        return "";
-      }
+      // 수신인 정보
+      const receiverName = String(
+        row?.receiver_name || row?.rcv_prn || "",
+      ).trim();
+      const receiverPhone = String(
+        row?.receiver_phone || row?.rcv_tel || "",
+      ).trim();
+      const receiverAddr = String(row?.rcv_add || row?.address || "").trim();
+      // 발신인 정보
+      const senderName = String(row?.snd_prn || row?.snd_nam || "").trim();
+      const senderPhone = String(row?.snd_tel || row?.snd_hphn || "").trim();
+      const senderAddr = String(row?.snd_add || row?.snd_addr || "").trim();
 
-      // 한진 FS 타입 운송장 ZPL 라벨 생성
-      // 용지 크기: 123mm x 100mm (약 984 x 787 dots at 203 DPI)
-      // Code Page 29 (한국어 KS X 1001)
-      // 첨부 이미지 기준 정확한 레이아웃 (가로형)
-      const remark =
-        String(row?.remark || "").trim() || `${receiverName} / 1건`;
+      if (!wblNum) return "";
+
       const mailboxCode = String(row?.mailbox_code || "").trim();
-      // KST 기준 오늘 날짜
+      const orgName = String(row?.organization_name || "").trim();
+      const reqCount = Number(row?.request_count || 0);
+      const remark =
+        String(row?.remark || "").trim() ||
+        [mailboxCode, orgName, reqCount > 0 ? `${reqCount}건` : ""]
+          .filter(Boolean)
+          .join(" / ");
       const today = getTodayYmdInKst();
+      const todayLabel = `${today.replace(/-/g, ".")}.`;
 
+      // 지방/수도권 표시
+      const domRgnNum = parseInt(domRgn, 10);
+      const areaLabel =
+        domRgnNum === 1 ? "수도권" : domRgnNum >= 7 ? "제주" : "지방";
+
+      // 발송지 표시: s_tml_cod + s_tml_nam
+      const senderLabel = [sTmlCod, sTmlNam].filter(Boolean).join(" ");
+      const mainLabel = [hubCod, tmlCod].filter(Boolean).join(" ") || tmlNam;
+      const terminalBarcodeValue = tmlCod || cenCod || esCod || wblNum;
+
+      // 실제 한진 FS 운송장 레이아웃 기준 콘텐츠 전용 출력
       const zpl = `^XA
 ^MMT
 ^CI29
@@ -802,47 +914,45 @@ const buildHanjinWblZplLabels = ({ addressList }) => {
 ^LL787
 ^PON
 ^LH0,0
-^FO30,20^A0N,24,24^FD운송장번호^FS
-^FO200,15^A0N,36,36^FD${wblNum}^FS
-^FO550,20^A0N,18,18^FDP.1  1/1^FS
-^FO850,20^A0N,18,18^FD한진택배 1588-0011^FS
-^FO30,70^GB924,3,3^FS
-^FO30,90^A0N,120,120^FD${tmlNam}^FS
-^FO500,90^GB3,230,3^FS
-^FO520,90^A0N,28,28^FD도화정^FS
-^FO520,125^A0N,24,24^FD${domRgn}^FS
-^FO630,90^GB3,230,3^FS
-^FO650,90^A0N,28,28^FD권역^FS
-^FO650,125^A0N,40,40^FD${grpRnk}^FS
-^FO760,90^GB3,230,3^FS
-^FO780,90^A0N,28,28^FD구분^FS
-^FO780,125^A0N,24,24^FD${mailboxCode}^FS
-^FO30,200^A0N,80,80^FD${domMid}^FS
-^FO30,290^A0N,60,60^FD${sTemNam}^FS
-^FO30,330^GB924,3,3^FS
-^FO30,350^A0N,22,22^FD배달주소^FS
-^FO30,380^A0N,20,20^FD${prtAdd}^FS
-^FO650,350^BY2,2,120^BCN,120,N,N,N^FD${wblNum}^FS
-^FO30,520^GB924,3,3^FS
-^FO30,540^A0N,22,22^FD받는분^FS
-^FO30,570^A0N,20,20^FD${receiverName}^FS
-^FO30,600^A0N,20,20^FD${receiverPhone}^FS
-^FO800,540^A0N,18,18^FD${today}^FS
-^FO800,570^A0N,18,18^FDType:S^FS
-^FO30,640^A0N,18,18^FD의료기기  1/0^FS
-^FO30,670^GB924,3,3^FS
-^FO30,690^A0N,20,20^FD비고  ${remark}^FS
-^FO800,690^BY2,2,40^BCN,40,N,N,N^FD${wblNum}^FS
+^FO18,10^A0N,22,22^FD운송장번호^FS
+^FO118,6^A0N,34,34^FD${wblNum}^FS
+^FO572,10^A0N,22,22^FDP. 1^FS
+^FO680,10^A0N,22,22^FD1 / 1^FS
+^FO812,6^A0N,22,22^FDⓗ 한진택배^FS
+^FO862,28^A0N,16,16^FD1588-0011^FS
+^FO24,78^A0N,104,104^FD${mainLabel}^FS
+^FO26,196^A0N,24,24^FD발지:${senderLabel}^FS
+^FO428,74^A0N,58,58^FD${domMid}^FS
+^FO560,78^A0N,28,28^FD${grpRnk}^FS
+^FO428,126^A0N,50,50^FD${esNam}^FS
+^FO682,82^A0N,64,64^FD${esCod || cenCod}^FS
+^FO638,142^A0N,18,18^FD${cenCod ? `${cenCod} ` : ""}${cenNam}^FS
+^FO860,92^A0N,34,34^FD${areaLabel}^FS
+^FO10,292^A0B,26,26^FD받는분^FS
+^FO74,226^A0N,24,24^FD${receiverName}^FS
+^FO468,226^A0N,20,20^FD${receiverPhone}^FS
+^FO74,258^A0N,20,20^FD${receiverAddr}^FS
+^FO74,306^A0N,54,54^FD${prtAdd}^FS
+^FO742,222^BY2,2,70^BCN,70,N,N,N^FD${terminalBarcodeValue}^FS
+^FO10,444^A0B,26,26^FD보낸분^FS
+^FO74,392^A0N,18,18^FD${senderName}  ${senderPhone}^FS
+^FO74,418^A0N,16,16^FD${senderAddr}^FS
+^FO734,392^A0N,18,18^FD${todayLabel} Type:S^FS
+^FO74,486^A0N,22,22^FD의료기기^FS
+^FO826,486^A0N,18,18^FD1 / 0 (건수/수량)^FS
+^FO74,662^A0N,14,14^FD※ 개인정보 보호를 위하여 인수하신 화물의 운송장을 폐기하여 주시기 바랍니다. ⓗ^FS
+^FO74,712^A0N,16,16^FD${remark}^FS
+^FO602,552^BY2,2,94^BCN,94,N,N,N^FD${wblNum}^FS
+^FO560,694^A0N,18,18^FD운임Type:S  ${wblNum}^FS
 ^XZ`;
 
       console.log("[hanjin][zpl] generated FS type label", {
         wblNum,
-        tmlNam,
-        domMid,
-        cenNam,
+        tmlNam: hubCod || tmlCod,
+        terminalBarcodeValue,
+        remark,
         grpRnk,
         mailboxCode,
-        zplPreview: zpl.slice(0, 200),
       });
 
       return zpl;

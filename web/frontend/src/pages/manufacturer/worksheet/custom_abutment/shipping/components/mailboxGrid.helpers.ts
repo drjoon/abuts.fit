@@ -209,18 +209,136 @@ export const saveGeneratedWaybillPngs = async ({
   zplLabels?: string[];
 }) => {
   const normalized = Array.isArray(addressList) ? addressList : [];
-  const rows = normalized.filter(
-    (row) =>
-      row &&
-      String(row.result_code || row.resultCode || "OK").trim() === "OK" &&
-      (row.wbl_num || row.wblNum),
-  );
+  const parseZplField = (zpl: string, pattern: RegExp) => {
+    const match = String(zpl || "").match(pattern);
+    return String(match?.[1] || "").trim();
+  };
+
+  const recoverRowFromZpl = (row: any, zpl: string) => {
+    if (!zpl) return row;
+
+    const mainLabel = parseZplField(
+      zpl,
+      /\^FO24,78\^A0N,104,104\^FD([^\^]+)\^FS/,
+    );
+    const senderLabelRaw = parseZplField(
+      zpl,
+      /\^FO26,196\^A0N,24,24\^FD발지:([^\^]+)\^FS/,
+    );
+    const domMid = parseZplField(zpl, /\^FO428,74\^A0N,58,58\^FD([^\^]+)\^FS/);
+    const grpRnk = parseZplField(zpl, /\^FO560,78\^A0N,28,28\^FD([^\^]+)\^FS/);
+    const esNam = parseZplField(zpl, /\^FO428,126\^A0N,50,50\^FD([^\^]+)\^FS/);
+    const esCod = parseZplField(zpl, /\^FO682,82\^A0N,64,64\^FD([^\^]+)\^FS/);
+    const cenSummary = parseZplField(
+      zpl,
+      /\^FO638,142\^A0N,18,18\^FD([^\^]+)\^FS/,
+    );
+    const areaLabel = parseZplField(
+      zpl,
+      /\^FO860,92\^A0N,34,34\^FD([^\^]+)\^FS/,
+    );
+    const receiverName = parseZplField(
+      zpl,
+      /\^FO74,226\^A0N,24,24\^FD([^\^]+)\^FS/,
+    );
+    const receiverPhone = parseZplField(
+      zpl,
+      /\^FO468,226\^A0N,20,20\^FD([^\^]+)\^FS/,
+    );
+    const receiverAddr = parseZplField(
+      zpl,
+      /\^FO74,258\^A0N,20,20\^FD([^\^]+)\^FS/,
+    );
+    const prtAdd = parseZplField(zpl, /\^FO74,306\^A0N,54,54\^FD([^\^]+)\^FS/);
+    const senderSummary = parseZplField(
+      zpl,
+      /\^FO74,392\^A0N,18,18\^FD([^\^]+)\^FS/,
+    );
+    const senderAddr = parseZplField(
+      zpl,
+      /\^FO74,418\^A0N,16,16\^FD([^\^]+)\^FS/,
+    );
+
+    const [parsedHubCod = "", parsedTmlCod = ""] = mainLabel
+      .split(/\s+/)
+      .filter(Boolean);
+    const senderParts = senderLabelRaw.split(/\s+/).filter(Boolean);
+    const parsedSTmlCod = senderParts[0] || "";
+    const parsedSTmlNam = senderParts.slice(1).join(" ");
+    const cenParts = cenSummary.split(/\s+/).filter(Boolean);
+    const parsedCenCod = cenParts[0] || "";
+    const parsedCenNam = cenParts.slice(1).join(" ");
+    const senderSummaryParts = senderSummary
+      .split(/\s{2,}|\s\/\s|\//)
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+    const parsedSenderName = senderSummaryParts[0] || "";
+    const parsedSenderPhone = senderSummaryParts[1] || "";
+
+    return {
+      ...row,
+      hub_cod: row?.hub_cod || parsedHubCod || undefined,
+      tml_cod: row?.tml_cod || parsedTmlCod || undefined,
+      dom_mid: row?.dom_mid || domMid || undefined,
+      grp_rnk: row?.grp_rnk || grpRnk || undefined,
+      es_nam: row?.es_nam || esNam || undefined,
+      es_cod: row?.es_cod || esCod || undefined,
+      cen_cod: row?.cen_cod || parsedCenCod || undefined,
+      cen_nam: row?.cen_nam || parsedCenNam || undefined,
+      s_tml_cod: row?.s_tml_cod || parsedSTmlCod || undefined,
+      s_tml_nam: row?.s_tml_nam || parsedSTmlNam || undefined,
+      dom_rgn:
+        row?.dom_rgn ||
+        (areaLabel === "수도권"
+          ? "1"
+          : areaLabel === "제주"
+            ? "7"
+            : areaLabel === "도서"
+              ? "9"
+              : areaLabel
+                ? "2"
+                : undefined),
+      receiver_name:
+        row?.receiver_name || row?.rcv_prn || receiverName || undefined,
+      receiver_phone:
+        row?.receiver_phone || row?.rcv_tel || receiverPhone || undefined,
+      rcv_add: row?.rcv_add || row?.address || receiverAddr || undefined,
+      address: row?.address || row?.rcv_add || receiverAddr || undefined,
+      prt_add: row?.prt_add || prtAdd || undefined,
+      snd_prn:
+        row?.snd_prn ||
+        row?.snd_nam ||
+        parsedSenderName ||
+        senderSummary ||
+        undefined,
+      snd_nam:
+        row?.snd_nam ||
+        row?.snd_prn ||
+        parsedSenderName ||
+        senderSummary ||
+        undefined,
+      snd_tel: row?.snd_tel || row?.snd_hphn || parsedSenderPhone || undefined,
+      snd_hphn: row?.snd_hphn || row?.snd_tel || parsedSenderPhone || undefined,
+      snd_add: row?.snd_add || row?.snd_addr || senderAddr || undefined,
+      snd_addr: row?.snd_addr || row?.snd_add || senderAddr || undefined,
+    };
+  };
+
+  const rows = normalized
+    .filter(
+      (row) =>
+        String(row?.result_code || row?.resultCode || "OK").trim() === "OK",
+    )
+    .map((row, index) =>
+      recoverRowFromZpl(row, String(zplLabels?.[index] || "")),
+    );
+
   if (!rows.length) {
-    throw new Error("운송장 정보를 찾지 못했습니다.");
+    throw new Error("운송장 PDF 출력 데이터가 없습니다.");
   }
 
-  // ZPL PW984 x LL787 dots (203dpi) 기준 × 2배 고해상도
-  const S = 2;
+  // ZPL PW984 × LL787 dots (203 dpi) 기준 × 4배 고해상도
+  const S = 4;
   const canvasW = 984 * S;
   const canvasH = 787 * S;
 
@@ -231,32 +349,80 @@ export const saveGeneratedWaybillPngs = async ({
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("이미지 렌더링에 실패했습니다.");
 
-    const KR = '"Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
+    const KR =
+      '"Nanum Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
+    const formatWaybillDisplay = (value: string) => {
+      const digits = String(value || "").replace(/\D/g, "");
+      if (digits.length !== 12) return String(value || "").trim();
+      return `${digits.slice(0, 4)}-${digits.slice(4, 8)}-${digits.slice(8, 12)}`;
+    };
+    const maskName = (value: string) => {
+      const text = String(value || "").trim();
+      if (!text) return "";
+      const chars = Array.from(text);
+      if (chars.length === 1) return text;
+      if (chars.length === 2) return `${chars[0]}*`;
+      return `${chars[0]}${"*".repeat(chars.length - 2)}${chars[chars.length - 1]}`;
+    };
+    const maskPhone = (value: string) => {
+      const digits = String(value || "").replace(/\D/g, "");
+      if (!digits) return "";
 
-    // ── 필드 추출 (ZPL buildHanjinWblZplLabels와 동일) ────────────────────
-    const wbl = String(row.wbl_num || "").trim();
+      if (digits.startsWith("02")) {
+        if (digits.length === 9)
+          return `${digits.slice(0, 2)}-${"*".repeat(3)}-${digits.slice(5)}`;
+        if (digits.length === 10)
+          return `${digits.slice(0, 2)}-${"*".repeat(4)}-${digits.slice(6)}`;
+      }
+
+      if (digits.length === 10)
+        return `${digits.slice(0, 3)}-${"*".repeat(3)}-${digits.slice(6)}`;
+      if (digits.length === 11)
+        return `${digits.slice(0, 3)}-${"*".repeat(4)}-${digits.slice(7)}`;
+      if (digits.length === 12)
+        return `${digits.slice(0, 4)}-${"*".repeat(4)}-${digits.slice(8)}`;
+
+      const head = digits.slice(0, Math.max(0, digits.length - 8));
+      const middle = digits.slice(
+        Math.max(0, digits.length - 8),
+        Math.max(0, digits.length - 4),
+      );
+      const tail = digits.slice(-4);
+      if (!head || !middle || !tail) return String(value || "").trim();
+      return `${head}-${"*".repeat(middle.length)}-${tail}`;
+    };
+
+    // ── 필드 (ZPL buildHanjinWblZplLabels 동일, 첨4 명세표 기준) ──────────
+    const wblNum = String(row.wbl_num || "").trim();
+    const hubCod = String(row.hub_cod || "").trim();
+    const tmlCod = String(row.tml_cod || "").trim();
+    const tmlNam = String(row.tml_nam || "").trim();
+    const domMid = String(row.dom_mid || "").trim();
+    const cenCod = String(row.cen_cod || "").trim();
+    const cenNam = String(row.cen_nam || "").trim();
+    const sTmlCod = String(row.s_tml_cod || "").trim();
+    const sTmlNam = String(row.s_tml_nam || "").trim();
+    const grpRnk = String(row.grp_rnk || "").trim();
+    const esNam = String(row.es_nam || "").trim();
     const prtAdd = String(row.prt_add || "").trim();
+    const domRgn = String(row.dom_rgn || "").trim();
+    const esCod = String(row.es_cod || "").trim();
     const receiverName = String(
       row.receiver_name || row.rcv_prn || row.rcv_nam || "",
     ).trim();
     const receiverPhone = String(
       row.receiver_phone || row.rcv_tel || row.rcv_hphn || "",
     ).trim();
-    const tmlNam = String(row.tml_nam || "").trim();
-    const domMid = String(row.dom_mid || "").trim();
-    const sTemNam = String(row.s_tml_nam || "").trim();
-    const domRgn = String(row.dom_rgn || "").trim();
-    const grpRnk = String(row.grp_rnk || "").trim();
+    const receiverAddr = String(row.rcv_add || row.address || "").trim();
+    const senderName = String(row.snd_prn || row.snd_nam || "").trim();
+    const senderPhone = String(row.snd_tel || row.snd_hphn || "").trim();
+    const senderAddr = String(row.snd_add || row.snd_addr || "").trim();
     const mailboxCode = String(row.mailbox_code || "").trim();
-    const organizationName = String(row.organization_name || "").trim();
-    const requestCount = Number(row.request_count || 0);
+    const orgName = String(row.organization_name || "").trim();
+    const reqCount = Number(row.request_count || 0);
     const remark = String(
       row.remark ||
-        [
-          mailboxCode,
-          organizationName,
-          requestCount > 0 ? `${requestCount}건` : "",
-        ]
+        [mailboxCode, orgName, reqCount > 0 ? `${reqCount}건` : ""]
           .filter(Boolean)
           .join(" / ") ||
         row.msg_key ||
@@ -264,146 +430,141 @@ export const saveGeneratedWaybillPngs = async ({
     ).trim();
     const today = new Date().toISOString().slice(0, 10);
 
-    // ── 유틸 (dot 단위 좌표 → pixel) ─────────────────────────────────────
-    const p = (dots: number) => dots * S;
+    const domRgnNum = parseInt(domRgn, 10);
+    const areaLabel =
+      domRgnNum === 1
+        ? "수도권"
+        : domRgnNum === 7
+          ? "제주"
+          : domRgnNum === 9
+            ? "도서"
+            : domRgn
+              ? "지방"
+              : "";
+    const senderLabel = [sTmlCod, sTmlNam].filter(Boolean).join(" ");
+    const mainLabel = [hubCod, tmlCod].filter(Boolean).join(" ") || tmlNam;
+    const terminalBarcodeValue = tmlCod || cenCod || esCod || wblNum;
+    const todayLabel = `${today.replace(/-/g, ".")}.`;
+    const formattedWblNum = formatWaybillDisplay(wblNum);
+    const receiverNameMasked = maskName(receiverName);
+    const receiverPhoneMasked = maskPhone(receiverPhone);
+    const senderNameMasked = maskName(senderName);
+    const senderPhoneMasked = maskPhone(senderPhone);
+    const senderSummary = [senderNameMasked, senderPhoneMasked]
+      .filter(Boolean)
+      .join(" / ");
+    const cenSummary = [cenCod, cenNam].filter(Boolean).join(" ");
 
-    const dt = (
+    // ── 유틸: ZPL ^FO x,y ^A0N,h → canvas baseline = (y+h)*S ──────────
+    const zt = (
       text: string,
-      x: number,
-      y: number,
-      font: string,
-      color = "#111827",
+      fx: number,
+      fy: number,
+      fh: number,
+      bold = false,
+      color = "#000000",
     ) => {
+      ctx.font = `${bold ? "700" : "400"} ${fh * S}px ${KR}`;
       ctx.fillStyle = color;
-      ctx.font = font;
-      ctx.fillText(text, p(x), p(y));
+      ctx.fillText(text, fx * S, (fy + fh) * S);
     };
-
-    const ft = (
+    const zt2 = (
       text: string,
-      x: number,
-      y: number,
-      maxDots: number,
-      font: string,
-      color = "#111827",
+      fx: number,
+      fy: number,
+      fh: number,
+      maxW: number,
+      bold = false,
+      color = "#000000",
     ) => {
+      const font = `${bold ? "700" : "400"} ${fh * S}px ${KR}`;
       ctx.save();
       ctx.font = font;
       let o = String(text || "").trim();
-      while (o.length > 1 && ctx.measureText(o).width > p(maxDots))
+      while (o.length > 1 && ctx.measureText(o).width > maxW * S)
         o = `${o.slice(0, -2).trimEnd()}…`;
       ctx.fillStyle = color;
-      ctx.fillText(o || "-", p(x), p(y));
+      ctx.fillText(o, fx * S, (fy + fh) * S);
       ctx.restore();
     };
-
-    const hl = (x1: number, y: number, x2: number, w = 3) => {
-      ctx.beginPath();
-      ctx.lineWidth = w * S;
-      ctx.strokeStyle = "#111827";
-      ctx.moveTo(p(x1), p(y));
-      ctx.lineTo(p(x2), p(y));
-      ctx.stroke();
-    };
-    const vl = (x: number, y1: number, y2: number, w = 3) => {
-      ctx.beginPath();
-      ctx.lineWidth = w * S;
-      ctx.strokeStyle = "#111827";
-      ctx.moveTo(p(x), p(y1));
-      ctx.lineTo(p(x), p(y2));
-      ctx.stroke();
-    };
-
     const { default: JsBarcode } = await import("jsbarcode");
-    const bc = (val: string, h: number, bw = 2): HTMLCanvasElement => {
+    const makeBC = ({
+      value,
+      height,
+      format,
+      moduleWidth,
+    }: {
+      value: string;
+      height: number;
+      format: string;
+      moduleWidth: number;
+    }): HTMLCanvasElement => {
       const c = document.createElement("canvas");
       try {
-        JsBarcode(c, val || "0", {
-          format: "CODE128",
+        JsBarcode(c, value || "0", {
+          format,
           displayValue: false,
           margin: 0,
-          height: h * S,
-          width: bw,
-          background: "#ffffff",
+          height: height * S,
+          width: moduleWidth * S,
+          background: "rgba(255,255,255,0)",
           lineColor: "#000000",
         });
       } catch {}
       return c;
     };
 
-    // ── 배경 + 외곽 ──────────────────────────────────────────────────────
+    // ── 흰 배경 ──────────────────────────────────────────────────────────
+    ctx.clearRect(0, 0, canvasW, canvasH);
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvasW, canvasH);
-    ctx.lineWidth = 3 * S;
-    ctx.strokeStyle = "#111827";
-    ctx.strokeRect(p(30), p(5), p(924), p(777));
+    ctx.imageSmoothingEnabled = false;
 
-    // ── 1. 헤더 (ZPL y:15~70) ─────────────────────────────────────────────
-    // ^FO30,20 운송장번호 / ^FO200,15 wblNum / ^FO550,20 P.1 / ^FO850,20 한진택배
-    hl(30, 70, 954);
-    dt("운송장번호", 38, 44, `600 ${p(18)}px ${KR}`);
-    ft(wbl, 190, 47, 350, `700 ${p(28)}px Arial, sans-serif`);
-    dt("P.1  1/1", 545, 44, `500 ${p(18)}px ${KR}`);
-    dt("한진택배 1588-0011", 760, 44, `700 ${p(18)}px ${KR}`, "#1a56db");
+    // ── 콘텐츠 전용 공식 라벨 배치 ───────────────────────────────────────
+    zt2(formattedWblNum, 122, 6, 40, 350, true);
+    zt("P. 1", 498, 10, 22, true);
+    zt("1 / 1", 654, 10, 22, true);
 
-    // ── 2. 메인 분류 영역 (ZPL y:70~330) ─────────────────────────────────
-    // 좌: tml_nam(크게) / dom_mid / s_tml_nam
-    // 우3분할: x=500(도화정/dom_rgn) | x=630(권역/grp_rnk) | x=760(구분/mailboxCode)
-    vl(500, 70, 330);
-    vl(630, 70, 330);
-    vl(760, 70, 330);
-    hl(30, 330, 954);
+    zt2(mainLabel, 76, 70, 100, 390, true);
+    zt2(domMid, 492, 62, 56, 90, true);
+    zt2(grpRnk, 560, 68, 28, 110, true);
+    zt2(esNam, 492, 116, 50, 210, true);
+    zt2(esCod || cenCod, 748, 70, 72, 110, true);
+    zt2(cenSummary, 692, 132, 18, 210);
+    if (areaLabel) zt2(areaLabel, 886, 82, 34, 60, true);
 
-    ft(tmlNam || "거제", 38, 195, 455, `900 ${p(120)}px ${KR}`);
-    if (domMid) ft(domMid, 38, 275, 455, `700 ${p(72)}px ${KR}`);
-    if (sTemNam) ft(sTemNam, 38, 323, 455, `600 ${p(48)}px ${KR}`);
+    zt(`발지:${senderLabel}`, 74, 184, 24, true);
 
-    dt("도화정", 510, 100, `500 ${p(20)}px ${KR}`);
-    ft(domRgn, 510, 140, 115, `700 ${p(22)}px ${KR}`);
-    dt("권역", 640, 100, `500 ${p(20)}px ${KR}`);
-    ft(grpRnk, 640, 155, 115, `900 ${p(40)}px ${KR}`);
-    dt("구분", 770, 100, `500 ${p(20)}px ${KR}`);
-    ft(mailboxCode, 770, 140, 175, `700 ${p(20)}px ${KR}`);
+    zt2(receiverNameMasked, 74, 228, 28, 330, true);
+    zt2(receiverPhoneMasked, 468, 230, 20, 180);
+    zt2(receiverAddr, 74, 264, 18, 585);
+    zt2(prtAdd, 74, 314, 54, 500, true);
 
-    // ── 3. 배달주소 (ZPL y:330~520) ─────────────────────────────────────
-    hl(30, 520, 954);
-    dt("배달주소", 38, 365, `500 ${p(20)}px ${KR}`, "#555");
-    ft(prtAdd, 38, 400, 590, `600 ${p(22)}px ${KR}`);
+    const bcTerminal = makeBC({
+      value: terminalBarcodeValue,
+      height: 68,
+      format: "CODE128",
+      moduleWidth: 1.6,
+    });
+    ctx.drawImage(bcTerminal, 748 * S, 236 * S, bcTerminal.width, 68 * S);
 
-    const bcMain = bc(wbl, 120, 3);
-    ctx.drawImage(bcMain, p(650), p(348), p(300), p(120));
-    ft(wbl, 650, 494, 300, `500 ${p(15)}px Arial, sans-serif`);
+    zt2(senderSummary, 76, 394, 18, 610);
+    zt2(senderAddr, 74, 418, 16, 640);
+    zt(`${todayLabel} Type:S`, 734, 392, 18);
 
-    // ── 4. 받는 분 (ZPL y:520~640) ──────────────────────────────────────
-    hl(30, 640, 954);
-    dt("받는분", 38, 548, `500 ${p(20)}px ${KR}`, "#555");
-    ft(receiverName, 38, 578, 740, `700 ${p(24)}px ${KR}`);
-    ft(receiverPhone, 38, 610, 740, `500 ${p(20)}px ${KR}`);
-    dt(today, 795, 568, `500 ${p(18)}px ${KR}`, "#444");
-    dt("Type:S", 795, 594, `500 ${p(18)}px ${KR}`, "#444");
+    zt("의료기기", 74, 486, 22);
+    zt("1 / 0 (건수/수량)", 826, 486, 18);
 
-    // ── 5. 품목 (ZPL y:640~670) ───────────────────────────────────────────
-    hl(30, 670, 954);
-    dt("의료기기  1/0", 38, 660, `500 ${p(18)}px ${KR}`);
+    zt2(remark, 74, 712, 16, 420);
 
-    // ── 6. 비고 + 하단 바코드 (ZPL y:670~740) ────────────────────────────
-    hl(30, 740, 954, 2);
-    dt("비고", 38, 710, `600 ${p(18)}px ${KR}`);
-    ft(remark, 110, 710, 640, `500 ${p(18)}px ${KR}`);
-
-    const bcBot = bc(wbl, 40, 2);
-    ctx.drawImage(bcBot, p(800), p(678), p(150), p(40));
-    ft(`운임Type:S  ${wbl}`, 640, 758, 310, `500 ${p(14)}px Arial, sans-serif`);
-
-    // ── 7. 개인정보 문구 (ZPL y:740~787) ─────────────────────────────────
-    ft(
-      "※ 개인정보 보호를 위하여 인수하신 화물의 운송장을 폐기하여 주시기 바랍니다. ⓗ",
-      38,
-      775,
-      916,
-      `400 ${p(15)}px ${KR}`,
-      "#555",
-    );
+    const bcBot = makeBC({
+      value: wblNum,
+      height: 98,
+      format: "ITF",
+      moduleWidth: 1.6,
+    });
+    ctx.drawImage(bcBot, 604 * S, 552 * S, bcBot.width, 98 * S);
+    zt2(`운임Type:S  ${formattedWblNum}`, 560, 684, 18, 380);
 
     const blob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(

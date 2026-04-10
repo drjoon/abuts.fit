@@ -394,6 +394,10 @@ const requestSchema = new mongoose.Schema(
         type: [String],
         default: undefined,
       },
+      cachedAddressListRow: {
+        type: {},
+        default: undefined,
+      },
       cachedLabelCount: {
         type: Number,
         default: 0,

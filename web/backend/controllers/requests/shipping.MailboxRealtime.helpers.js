@@ -66,6 +66,7 @@ export const getLastPrintedSnapshotForMailbox = (requests = []) => {
           Boolean(String(value || "").trim()),
         )
       : [],
+    cachedAddressListRow: shippingLabelPrinted?.cachedAddressListRow || null,
     cachedLabelCount: Number(shippingLabelPrinted?.cachedLabelCount || 0),
   };
 };
@@ -95,6 +96,7 @@ export const buildMailboxChangeSet = (requests = []) => {
       printed: previous.printed,
       snapshotCapturedAt: previous.capturedAt,
       cachedZplLabels: previous.cachedZplLabels,
+      cachedAddressListRow: previous.cachedAddressListRow || null,
       hasCachedLabels: Array.isArray(previous.cachedZplLabels)
         ? previous.cachedZplLabels.length > 0
         : false,
@@ -139,6 +141,7 @@ export const persistPrintedMailboxState = async ({
   mailboxAddresses = [],
   requests = [],
   cachedZplLabelsByAddress = null,
+  cachedAddressListRowByAddress = null,
 }) => {
   const addresses = Array.isArray(mailboxAddresses)
     ? mailboxAddresses.map((v) => String(v || "").trim()).filter(Boolean)
@@ -195,6 +198,12 @@ export const persistPrintedMailboxState = async ({
                     "shippingLabelPrinted.cachedZplLabels": cachedZplLabels,
                     "shippingLabelPrinted.cachedLabelCount":
                       cachedZplLabels.length,
+                  }
+                : {}),
+              ...(cachedAddressListRowByAddress?.[address]
+                ? {
+                    "shippingLabelPrinted.cachedAddressListRow":
+                      cachedAddressListRowByAddress[address],
                   }
                 : {}),
             },

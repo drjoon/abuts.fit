@@ -964,6 +964,12 @@ export const MailboxGrid = ({
           });
           return next;
         });
+        if (successfulMailboxAddresses.length) {
+          applyWorkflowOverrideForMailboxes(successfulMailboxAddresses, {
+            code: "canceled",
+            label: "취소",
+          });
+        }
         setFailedMailboxes((prev) => {
           const next = new Set(prev);
           successfulMailboxAddresses.forEach((addr) => next.delete(addr));

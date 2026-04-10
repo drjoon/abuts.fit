@@ -1084,9 +1084,16 @@ export async function printHanjinLabels(req, res) {
           ? change.cachedZplLabels
           : [];
       });
+      const cachedAddressList = normalizedMailboxAddresses
+        .map((address) => {
+          const change = mailboxChangeSet.get(address);
+          return change?.cachedAddressListRow || null;
+        })
+        .filter(Boolean);
 
       const { labelData, wblPrint } = await executeCachedLabelPrint({
         cachedZplLabels,
+        cachedAddressList,
         wblPrintOptions,
       });
 
@@ -1171,10 +1178,22 @@ export async function printHanjinLabels(req, res) {
         )
       : null;
 
+    const cachedAddressListRowByAddress = Array.isArray(labelData?.address_list)
+      ? Object.fromEntries(
+          (labelData.address_list || []).map((row) => {
+            const mailboxAddress = String(
+              row?.mailbox_code || row?.msg_key || "",
+            ).trim();
+            return [mailboxAddress, row];
+          }),
+        )
+      : null;
+
     const printedState = await persistPrintedMailboxState({
       mailboxAddresses: normalizedMailboxAddresses,
       requests: printRequests,
       cachedZplLabelsByAddress,
+      cachedAddressListRowByAddress,
     });
 
     await emitDeliveryUpdatedBatch(
