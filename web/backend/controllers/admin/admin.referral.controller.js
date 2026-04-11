@@ -28,6 +28,19 @@ const REFERRAL_TREE_ROLES = ["requestor", "salesman", "devops"];
 const REFERRAL_REVENUE_OWNER_ROLES = new Set(["requestor", "devops"]);
 const REFERRAL_COMMISSION_LEADER_ROLES = new Set(["salesman", "devops"]);
 
+const REFERRAL_LEADER_ROLE_FILTER = [{ role: "salesman" }, { role: "devops" }];
+
+function normalizeReferralLeaders(rawUsers) {
+  const seen = new Set();
+  return (rawUsers || []).filter((u) => {
+    const anchorId = String(u?.businessAnchorId || "");
+    if (!anchorId || !Types.ObjectId.isValid(anchorId)) return false;
+    if (seen.has(anchorId)) return false;
+    seen.add(anchorId);
+    return true;
+  });
+}
+
 async function getShippingRequestCountByBusinessAnchorIds({
   businessAnchorIds,
   startYmd,

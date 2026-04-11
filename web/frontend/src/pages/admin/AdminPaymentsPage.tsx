@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { usePeriodStore } from "@/store/usePeriodStore";
+import { usePeriodStore, periodToRangeQuery } from "@/store/usePeriodStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -164,7 +164,7 @@ export default function AdminPaymentsPage() {
         token,
       }),
       request<any>({
-        path: `/api/admin/credits/salesmen?limit=200&skip=0`,
+        path: `/api/admin/credits/salesmen?limit=200&skip=0${periodToRangeQuery(period).replace(/^\?/, "&")}`,
         method: "GET",
         token,
       }),

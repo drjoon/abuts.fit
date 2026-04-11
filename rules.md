@@ -866,6 +866,23 @@
 - 원장 `type` 표시: `EARN=적립`, `REFUND=환불`, `PAYOUT=정산`, `ADJUST=조정`.
 - `SnapshotRecalcAllButton`(수동 재계산 버튼)은 제조사 정산 페이지에서 사용하지 않는다.
 
+### 6.1.2 영업자·개발운영사 정산 페이지
+
+- 영업자(`SalesmanPaymentsPage`)와 개발운영사(`DevopsDashboardPage`) 정산 데이터는 **`useCommissionDashboard` 훅**을 공유한다. 역할별 UI 분기는 각 페이지에서 처리하며, 훅 내부에는 두지 않는다.
+- 데이터 소스: `GET /api/salesman/dashboard?period=...` — 스냅샷 없음, 항상 live 계산.
+- 정산 원장: `SalesmanLedgerModal` (영업자) 또는 `CommissionLedgerInline` (개발운영사) 컴포넌트 사용.
+- `commissionRate`, `indirectCommissionRate`(영업자 전용), `payoutDayOfMonth`는 백엔드가 반환하며 프론트는 그대로 표시한다.
+
+### 6.1.3 관리자 정산 페이지
+
+- **영업자·개발운영사 크레딧 overview API**: `GET /api/admin/credits/salesmen/overview?period=...`
+  - `AdminSalesmanCreditsOverviewSnapshot` 스냅샷 **읽기를 사용하지 않는다**. 요청마다 live 계산(`recalcAdminSalesmanCreditsOverviewSnapshot`)을 수행하고 결과를 반환한다.
+  - `recalcAdminSalesmanCreditsOverviewSnapshot`은 계산 결과를 `AdminSalesmanCreditsOverviewSnapshot`에 side-effect로 기록한다(`getAdminSnapshotsStatus` 참조용). 이 기록은 read path에서 사용하지 않는다.
+- **salesmen 목록 API**: `GET /api/admin/credits/salesmen` — `startDate`/`endDate` 쿼리 파라미터로 기간 필터 적용 필수. 프론트에서 `periodToRangeQuery(period)`로 변환하여 전달.
+- **제조사 summary API**: `GET /api/admin/credits/manufacturer/summary?period=...` — `ManufacturerCreditLedger` live 집계.
+- 프론트에서 `businessAnchorId` 기준 그룹핑(영업자 탭 카드)을 수행하는 `useMemo` 집계 로직은 추후 백엔드 endpoint(`/api/admin/credits/salesmen/by-anchor`)로 이관 예정.
+- `recalcAllSnapshots`(`POST /api/snapshots/recalc-all`)은 **admin 전용**. 현재는 referral 스냅샷(`PricingReferralRolling30dAggregate`)만 재계산한다. 제조사·영업자 크레딧 스냅샷 재계산 로직은 제거됨.
+
 ### 6.2 실시간
 
 - 표준 채널은 Socket.io 기반 `app-event` 입니다.

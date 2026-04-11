@@ -269,49 +269,6 @@ export async function recalcAdminSalesmanCreditsOverviewSnapshot({
 export async function adminGetSalesmanCreditsOverview(req, res) {
   try {
     const periodKey = String(req.query.period || "30d").trim() || "30d";
-    const range = getPeriodRangeUtcFromPeriodKey(periodKey);
-    if (!range) {
-      return res.status(500).json({
-        success: false,
-        message: "기간 계산에 실패했습니다.",
-      });
-    }
-
-    const ymd = getTodayYmdInKst();
-    if (!ymd) {
-      return res.status(500).json({
-        success: false,
-        message: "날짜 계산에 실패했습니다.",
-      });
-    }
-
-    const refresh = String(req.query.refresh || "") === "1";
-    if (!refresh) {
-      const cached = await AdminSalesmanCreditsOverviewSnapshot.findOne({
-        ymd,
-        periodKey,
-      })
-        .select({
-          _id: 0,
-          ymd: 1,
-          periodKey: 1,
-          rangeStartUtc: 1,
-          rangeEndUtc: 1,
-          salesmenCount: 1,
-          referral: 1,
-          commission: 1,
-          walletPeriod: 1,
-          computedAt: 1,
-        })
-        .lean();
-      if (cached?.computedAt) {
-        return res.status(200).json({
-          success: true,
-          data: cached,
-          cached: true,
-        });
-      }
-    }
 
     const payload = await recalcAdminSalesmanCreditsOverviewSnapshot({
       periodKey,
@@ -319,13 +276,11 @@ export async function adminGetSalesmanCreditsOverview(req, res) {
     if (!payload) {
       return res.status(500).json({
         success: false,
-        message: "영업자 크레딧 요약 스냅샷 재계산에 실패했습니다.",
+        message: "영업자 크레딧 요약 조회에 실패했습니다.",
       });
     }
 
-    return res
-      .status(200)
-      .json({ success: true, data: payload, cached: false });
+    return res.status(200).json({ success: true, data: payload });
   } catch (error) {
     console.error("adminGetSalesmanCreditsOverview error:", error);
     return res.status(500).json({
