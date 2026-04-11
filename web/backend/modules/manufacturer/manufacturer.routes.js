@@ -8,6 +8,7 @@ import {
   getManufacturerDailySettlementSnapshots,
   getManufacturerDailySettlementSnapshotStatus,
   triggerManufacturerDailySettlementSnapshotRecalc,
+  getManufacturerCreditDailySummary,
 } from "../../controllers/manufacturers/manufacturer.controller.js";
 import { getManagementStatus } from "./manufacturer.controller.js";
 import {
@@ -51,6 +52,15 @@ router.get(
     subRoles: ["owner", "staff"],
   }),
   getManufacturerCreditLedger,
+);
+
+// 제조사 일별 정산 라이브 집계 (원장에서 KST 일자별 실시간 집계)
+router.get(
+  "/credits/daily-summary",
+  authorize(["manufacturer", "admin"], {
+    subRoles: ["owner", "staff"],
+  }),
+  getManufacturerCreditDailySummary,
 );
 
 // 제조사 일별 정산 스냅샷

@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { toKstYmd } from "@/shared/date/kst";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
-import { SnapshotRecalcAllButton } from "@/shared/components/SnapshotRecalcAllButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
@@ -30,7 +29,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type PaymentItem = {
   _id: string;
@@ -55,9 +53,7 @@ type ManufacturerLedgerRow = {
 };
 
 type ManufacturerDailySnapshotRow = {
-  _id: string;
   ymd: string;
-  manufacturerOrganization: string;
   earnRequestAmount: number;
   earnRequestCount: number;
   earnShippingAmount: number;
@@ -66,15 +62,6 @@ type ManufacturerDailySnapshotRow = {
   payoutAmount: number;
   adjustAmount: number;
   netAmount: number;
-  computedAt?: string;
-};
-
-type ManufacturerDailySnapshotStatus = {
-  lastComputedAt: string | null;
-  baseYmd: string;
-  baseMidnightUtc: string;
-  snapshotYmd: string;
-  snapshotMissing?: boolean;
 };
 
 const PAGE_SIZE = 50;
@@ -83,6 +70,7 @@ const formatDate = (iso: string) => {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleString("ko-KR", {
+    timeZone: "Asia/Seoul",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -103,6 +91,14 @@ const statusColor = (s: string) => {
   if (s === "PENDING") return "text-yellow-600";
   if (s === "CANCELLED") return "text-rose-600";
   return "";
+};
+
+const typeLabel = (t: string) => {
+  if (t === "EARN") return "적립";
+  if (t === "REFUND") return "환불";
+  if (t === "PAYOUT") return "정산";
+  if (t === "ADJUST") return "조정";
+  return t;
 };
 
 const periodToDays = (period: PeriodFilterValue): number | null => {
@@ -140,9 +136,6 @@ export const ManufacturerPaymentPage = () => {
   const [snapItems, setSnapItems] = useState<ManufacturerDailySnapshotRow[]>(
     [],
   );
-  const [snapshotStatus, setSnapshotStatus] =
-    useState<ManufacturerDailySnapshotStatus | null>(null);
-
   const anyLoading = loading || ledgerLoading || snapLoading;
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -159,7 +152,7 @@ export const ManufacturerPaymentPage = () => {
     setQ("");
   };
 
-  const buildParams = (p: number) => {
+  const buildQueryParams = (p: number) => {
     const params = new URLSearchParams({
       page: String(p),
       limit: String(PAGE_SIZE),
@@ -180,7 +173,7 @@ export const ManufacturerPaymentPage = () => {
     setLoading(true);
     try {
       const res = await apiFetch<any>({
-        path: `/api/manufacturer/payments?${buildParams(p)}`,
+        path: `/api/manufacturer/payments?${buildQueryParams(p)}`,
         method: "GET",
         token,
       });
@@ -210,59 +203,12 @@ export const ManufacturerPaymentPage = () => {
     }
   };
 
-  const loadSnapshotStatus = async () => {
-    if (!token) return;
-    try {
-      const res = await apiFetch<any>({
-        path: `/api/manufacturer/credits/daily-snapshots/status`,
-        method: "GET",
-        token,
-      });
-      if (!res.ok || !res.data?.success) {
-        throw new Error(res.data?.message || "조회 실패");
-      }
-      setSnapshotStatus(res.data.data || null);
-    } catch (err: any) {
-      toast({
-        title: "조회 실패",
-        description: err?.message,
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleSnapshotSuccess = async () => {
-    await loadSnapshotStatus();
-    await loadSnapshots();
-  };
-
-  useEffect(() => {
-    if (!token) return;
-    loadSnapshotStatus();
-  }, [token]);
-
-  const buildLedgerParams = (p: number) => {
-    const params = new URLSearchParams({
-      page: String(p),
-      limit: String(PAGE_SIZE),
-    });
-    if (from) params.set("from", from);
-    if (to) params.set("to", to);
-    const days = periodToDays(period);
-    if (days && !from && !to) {
-      const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-      params.set("from", toKstYmd(cutoff) || "");
-    }
-    if (q.trim()) params.set("q", q.trim());
-    return params.toString();
-  };
-
   const loadLedger = async (p: number, reset: boolean) => {
     if (!token) return;
     setLedgerLoading(true);
     try {
       const res = await apiFetch<any>({
-        path: `/api/manufacturer/credits/ledger?${buildLedgerParams(p)}`,
+        path: `/api/manufacturer/credits/ledger?${buildQueryParams(p)}`,
         method: "GET",
         token,
       });
@@ -303,7 +249,7 @@ export const ManufacturerPaymentPage = () => {
     setSnapLoading(true);
     try {
       const res = await apiFetch<any>({
-        path: `/api/manufacturer/credits/daily-snapshots?${buildSnapshotParams()}`,
+        path: `/api/manufacturer/credits/daily-summary?${buildSnapshotParams()}`,
         method: "GET",
         token,
       });
@@ -384,7 +330,7 @@ export const ManufacturerPaymentPage = () => {
   return (
     <DashboardShell
       title="정산 내역"
-      subtitle="제조사 정산 스냅샷과 원장, 입금 내역을 확인하세요."
+      subtitle="일별 정산 집계, 원장, 입금 내역을 확인하세요."
       stats={null}
       mainLeft={
         <div className="space-y-4">
@@ -452,22 +398,15 @@ export const ManufacturerPaymentPage = () => {
                         </span>
                         <CalendarClock className="mt-0.5 h-4 w-4 text-muted-foreground" />
                         <div className="min-w-0">
-                          <div className="font-medium">일별 정산 스냅샷</div>
+                          <div className="font-medium">일별 정산 집계</div>
                           <div className="text-muted-foreground">
-                            매일 KST 자정에 전일분으로 자동 생성
+                            원장 기준 KST 일자별 실시간 집계
                           </div>
                         </div>
                       </div>
                     </div>
                   </DialogContent>
                 </Dialog>
-
-                <SnapshotRecalcAllButton
-                  token={token}
-                  className="h-9"
-                  disabled={anyLoading}
-                  onSuccess={handleSnapshotSuccess}
-                />
 
                 <div className="grow" />
               </div>
@@ -519,13 +458,16 @@ export const ManufacturerPaymentPage = () => {
                         환불
                       </TableHead>
                       <TableHead className="w-[120px] text-right">
+                        지급
+                      </TableHead>
+                      <TableHead className="w-[120px] text-right">
                         순액
                       </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {snapItems.map((r) => (
-                      <TableRow key={r._id}>
+                      <TableRow key={r.ymd}>
                         <TableCell className="text-xs tabular-nums">
                           {r.ymd}
                         </TableCell>
@@ -538,7 +480,14 @@ export const ManufacturerPaymentPage = () => {
                           ({Number(r.earnShippingCount || 0)})
                         </TableCell>
                         <TableCell className="text-right text-xs tabular-nums text-rose-700">
-                          ₩{Number(r.refundAmount || 0).toLocaleString()}
+                          {Number(r.refundAmount || 0) !== 0
+                            ? `₩${Number(r.refundAmount).toLocaleString()}`
+                            : "-"}
+                        </TableCell>
+                        <TableCell className="text-right text-xs tabular-nums text-rose-700">
+                          {Number(r.payoutAmount || 0) !== 0
+                            ? `₩${Number(r.payoutAmount).toLocaleString()}`
+                            : "-"}
                         </TableCell>
                         <TableCell className="text-right text-xs font-semibold tabular-nums text-blue-700">
                           ₩{Number(r.netAmount || 0).toLocaleString()}
@@ -548,7 +497,7 @@ export const ManufacturerPaymentPage = () => {
                     {snapLoading && (
                       <TableRow>
                         <TableCell
-                          colSpan={5}
+                          colSpan={6}
                           className="text-center text-sm text-muted-foreground py-4"
                         >
                           불러오는 중...
@@ -558,7 +507,7 @@ export const ManufacturerPaymentPage = () => {
                     {!snapLoading && snapItems.length === 0 && (
                       <TableRow>
                         <TableCell
-                          colSpan={5}
+                          colSpan={6}
                           className="text-center text-sm text-muted-foreground py-8"
                         >
                           조회 결과가 없습니다.
@@ -590,10 +539,15 @@ export const ManufacturerPaymentPage = () => {
                     {ledgerItems.map((r) => (
                       <TableRow key={r._id}>
                         <TableCell className="text-xs">
-                          {formatDate(String(r.occurredAt || r._id))}
+                          {formatDate(String(r.occurredAt || ""))}
                         </TableCell>
                         <TableCell className="text-xs font-medium">
-                          {r.type}
+                          <div>{typeLabel(r.type)}</div>
+                          {r.refType ? (
+                            <div className="text-[10px] text-muted-foreground">
+                              {r.refType}
+                            </div>
+                          ) : null}
                         </TableCell>
                         <TableCell className="text-right text-xs font-semibold text-blue-700 tabular-nums">
                           ₩{Number(r.amount || 0).toLocaleString()}
@@ -651,7 +605,7 @@ export const ManufacturerPaymentPage = () => {
                     {items.map((r) => (
                       <TableRow key={r._id}>
                         <TableCell className="text-xs">
-                          {formatDate(String(r.occurredAt || r._id))}
+                          {formatDate(String(r.occurredAt || ""))}
                         </TableCell>
                         <TableCell
                           className={`text-xs font-medium ${statusColor(r.status)}`}

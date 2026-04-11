@@ -501,10 +501,172 @@ export async function sendUrgentMessage(req, res) {
   }
 }
 
+export async function getManufacturerCreditDailySummary(req, res) {
+  try {
+    const user = req.user;
+    if (!user?._id || user?.role !== "manufacturer") {
+      return res.status(403).json({
+        success: false,
+        message: "제조사 권한이 필요합니다.",
+      });
+    }
+
+    const manufacturerOrganization = String(user.business || "").trim();
+    if (!manufacturerOrganization) {
+      return res.status(400).json({
+        success: false,
+        message: "조직 정보가 필요합니다.",
+      });
+    }
+
+    const { fromYmd, toYmd, limit = "60" } = req.query;
+    const l = Math.min(366, Math.max(1, parseInt(limit)));
+
+    const match = { manufacturerOrganization };
+    if (typeof fromYmd === "string" && fromYmd.trim()) {
+      const from = new Date(`${fromYmd.trim()}T00:00:00.000+09:00`);
+      if (!Number.isNaN(from.getTime())) {
+        match.occurredAt = { ...(match.occurredAt || {}), $gte: from };
+      }
+    }
+    if (typeof toYmd === "string" && toYmd.trim()) {
+      const to = new Date(`${toYmd.trim()}T23:59:59.999+09:00`);
+      if (!Number.isNaN(to.getTime())) {
+        match.occurredAt = { ...(match.occurredAt || {}), $lte: to };
+      }
+    }
+
+    const rows = await ManufacturerCreditLedger.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: {
+            ymd: {
+              $dateToString: {
+                format: "%Y-%m-%d",
+                date: "$occurredAt",
+                timezone: "Asia/Seoul",
+              },
+            },
+          },
+          earnRequestAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$type", "EARN"] },
+                    { $ne: ["$refType", "SHIPPING_PACKAGE"] },
+                  ],
+                },
+                "$amount",
+                0,
+              ],
+            },
+          },
+          earnRequestCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$type", "EARN"] },
+                    { $ne: ["$refType", "SHIPPING_PACKAGE"] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          earnShippingAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$type", "EARN"] },
+                    { $eq: ["$refType", "SHIPPING_PACKAGE"] },
+                  ],
+                },
+                "$amount",
+                0,
+              ],
+            },
+          },
+          earnShippingCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$type", "EARN"] },
+                    { $eq: ["$refType", "SHIPPING_PACKAGE"] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          refundAmount: {
+            $sum: { $cond: [{ $eq: ["$type", "REFUND"] }, "$amount", 0] },
+          },
+          payoutAmount: {
+            $sum: { $cond: [{ $eq: ["$type", "PAYOUT"] }, "$amount", 0] },
+          },
+          adjustAmount: {
+            $sum: { $cond: [{ $eq: ["$type", "ADJUST"] }, "$amount", 0] },
+          },
+        },
+      },
+      {
+        $addFields: {
+          ymd: "$_id.ymd",
+          netAmount: {
+            $add: [
+              "$earnRequestAmount",
+              "$earnShippingAmount",
+              "$refundAmount",
+              "$payoutAmount",
+              "$adjustAmount",
+            ],
+          },
+        },
+      },
+      { $sort: { ymd: -1 } },
+      { $limit: l },
+      {
+        $project: {
+          _id: 0,
+          ymd: 1,
+          earnRequestAmount: 1,
+          earnRequestCount: 1,
+          earnShippingAmount: 1,
+          earnShippingCount: 1,
+          refundAmount: 1,
+          payoutAmount: 1,
+          adjustAmount: 1,
+          netAmount: 1,
+        },
+      },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: rows,
+    });
+  } catch (error) {
+    console.error("제조사 일별 정산 집계 실패:", error);
+    return res.status(500).json({
+      success: false,
+      message: "제조사 일별 정산 집계에 실패했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export default {
   recordManufacturerPayment,
   listManufacturerPayments,
   sendUrgentMessage,
   getManufacturerCreditLedger,
   getManufacturerDailySettlementSnapshots,
+  getManufacturerCreditDailySummary,
 };

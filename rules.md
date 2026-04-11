@@ -852,6 +852,20 @@
 - `bulk-shipping`은 `businessAnchorId + ymd` 기준 materialized snapshot을 사용하고, payload는 `pre`, `post`, `waiting` 세 묶음을 저장합니다. 읽기 API는 snapshot을 우선 조회하고, 누락 시에만 최소 fallback 재계산 후 snapshot을 채웁니다.
 - `dashboard-summary`는 한 번에 모든 카드를 재계산하지 말고 조각 snapshot으로 분해합니다. 현재 1차 대상은 `stats`와 `manufacturingSummary`이며, `businessAnchorId + ymd + periodKey` 기준으로 저장합니다. `riskSummary`, `recentRequests`처럼 변동성이 크거나 상세 리스트 성격이 강한 구간은 우선 live 계산을 유지하고, 이후 별도 snapshot 또는 증분 캐시로 분리합니다.
 
+### 6.1.1 제조사 정산 페이지
+
+- 제조사 정산은 **자정 배치 스냅샷 방식을 사용하지 않는다**. `ManufacturerDailySettlementSnapshot` 컬렉션 기반 접근은 폐기 방향이며, 신규 구현은 원장(ledger) 라이브 집계를 사용한다.
+- **일별 정산 집계 API**: `GET /api/manufacturer/credits/daily-summary`
+  - `ManufacturerCreditLedger`에서 `$dateToString timezone: "Asia/Seoul"`로 KST 일자별 `$group` 집계
+  - `EARN(non-SHIPPING_PACKAGE)` → `earnRequest`, `EARN(SHIPPING_PACKAGE)` → `earnShipping`, `REFUND`, `PAYOUT`, `ADJUST` 별도 합산
+  - `netAmount = earnRequest + earnShipping + refund + payout + adjust`
+  - 쿼리 파라미터: `fromYmd`, `toYmd` (KST YYYY-MM-DD), `limit` (최대 366)
+- **정산 원장 API**: `GET /api/manufacturer/credits/ledger` — 페이지네이션 + 검색, 무한스크롤
+- **입금 내역 API**: `GET /api/manufacturer/payments` — 페이지네이션 + 상태 필터, 무한스크롤
+- 모든 날짜 표시는 `timeZone: "Asia/Seoul"` 명시 필수.
+- 원장 `type` 표시: `EARN=적립`, `REFUND=환불`, `PAYOUT=정산`, `ADJUST=조정`.
+- `SnapshotRecalcAllButton`(수동 재계산 버튼)은 제조사 정산 페이지에서 사용하지 않는다.
+
 ### 6.2 실시간
 
 - 표준 채널은 Socket.io 기반 `app-event` 입니다.
