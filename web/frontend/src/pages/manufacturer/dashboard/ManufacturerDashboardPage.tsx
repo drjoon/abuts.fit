@@ -1,14 +1,9 @@
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { useEffect, useState } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Link } from "react-router-dom";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
@@ -22,22 +17,25 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Clock,
-  CheckCircle,
-  FileText,
   AlertTriangle,
+  ArrowRight,
+  CheckCircle,
+  ClipboardList,
+  FileText,
   Boxes,
   Wrench,
   Factory,
-  PackageCheck,
   Package,
+  Wallet,
 } from "lucide-react";
 
 export const ManufacturerDashboardPage = () => {
   const { user, token } = useAuthStore();
-  const navigate = useNavigate();
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
   const [riskModalOpen, setRiskModalOpen] = useState(false);
+  const [materialDetailOpen, setMaterialDetailOpen] = useState(false);
+  const [toolsDetailOpen, setToolsDetailOpen] = useState(false);
+  const [machinesDetailOpen, setMachinesDetailOpen] = useState(false);
 
   if (!user || user.role !== "manufacturer") return null;
 
@@ -114,13 +112,28 @@ export const ManufacturerDashboardPage = () => {
     ? (managementStatusResponse.data?.status ?? {})
     : {};
 
+  const matStatus = managementStatus.material ?? {};
+  const toolsStatus = managementStatus.tools ?? {};
+  const machinesStatus = managementStatus.machines ?? {};
+
+  const inProgressTotal =
+    (assignedSummary.requestCount ?? 0) +
+    (assignedSummary.camCount ?? 0) +
+    (assignedSummary.machiningCount ?? 0) +
+    (assignedSummary.packingCount ?? 0) +
+    (assignedSummary.shippingCount ?? 0);
+
+  const riskDelayed = riskSummary?.delayedCount ?? 0;
+  const riskWarning = riskSummary?.warningCount ?? 0;
+  const hasRisk = riskDelayed > 0 || riskWarning > 0;
+
   const stageStats = [
     {
       key: "request-cancel",
       label: "의뢰/취소",
-      value: `${assignedSummary.total ?? 0}/${assignedSummary.canceledCount ?? 0}`,
+      value: `${assignedSummary.requestCount ?? 0}/${assignedSummary.canceledCount ?? 0}`,
       icon: FileText,
-      hint: "의뢰 건수 / 취소 건수",
+      hint: "의뢰 단계 / 취소 건수",
     },
     {
       key: "cam",
@@ -159,49 +172,6 @@ export const ManufacturerDashboardPage = () => {
     },
   ];
 
-  const managementCards = [
-    {
-      key: "material-change",
-      label: "소재 관리",
-      description: "소재 재고/교체 관리",
-      href: "/dashboard/cnc",
-      icon: Boxes,
-      meta: ["소재 재고/교체 예약"],
-      hasIssue: managementStatus.material?.hasIssue ?? false,
-      status: managementStatus.material?.status ?? "이상 없음",
-    },
-    {
-      key: "tools",
-      label: "공구 관리",
-      description: "공구 수명/오프셋 관리",
-      href: "/dashboard/cnc",
-      icon: Wrench,
-      meta: ["마모/교체 주기 확인"],
-      hasIssue: managementStatus.tools?.hasIssue ?? false,
-      status: managementStatus.tools?.status ?? "이상 없음",
-    },
-    {
-      key: "machines",
-      label: "장비 관리",
-      description: "CNC · 프린터 장비 관리",
-      href: "/dashboard/cnc",
-      icon: Factory,
-      meta: ["장비 상태/알람 확인"],
-      hasIssue: managementStatus.machines?.hasIssue ?? false,
-      status: managementStatus.machines?.status ?? "이상 없음",
-    },
-    {
-      key: "products",
-      label: "제품 관리",
-      description: "제품/생산 프로파일 관리",
-      href: "/dashboard/products",
-      icon: PackageCheck,
-      meta: ["프로파일/템플릿 관리"],
-      hasIssue: managementStatus.products?.hasIssue ?? false,
-      status: managementStatus.products?.status ?? "이상 없음",
-    },
-  ];
-
   return (
     <>
       <DashboardShell
@@ -209,52 +179,213 @@ export const ManufacturerDashboardPage = () => {
         subtitle="제작 현황을 확인하세요."
         headerRight={
           <div className="flex flex-wrap items-center gap-2">
+            {inProgressTotal > 0 && (
+              <Badge variant="secondary" className="text-xs font-medium">
+                진행 중 {inProgressTotal}건
+              </Badge>
+            )}
             <PeriodFilter value={period} onChange={setPeriod} />
           </div>
         }
         topSection={
           <div className="space-y-3">
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 items-stretch">
-              {managementCards.map((item) => (
-                <Card
-                  key={item.key}
-                  onClick={() => navigate(item.href)}
-                  className="app-glass-card app-glass-card--lg cursor-pointer"
-                >
-                  <CardContent className="pt-6">
-                    <div className="flex items-start gap-3">
-                      <item.icon className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <div className="text-sm font-semibold text-slate-900">
-                            {item.label}
-                          </div>
-                          <span
-                            className={`text-[11px] font-semibold whitespace-nowrap ${
-                              item.hasIssue ? "text-red-600" : "text-green-600"
-                            }`}
-                          >
-                            {item.hasIssue
-                              ? item.status || "이상 있음"
-                              : "이상 없음"}
-                          </span>
+            {hasRisk && (
+              <button
+                onClick={() => setRiskModalOpen(true)}
+                className="w-full text-left rounded-lg border px-4 py-3 transition-colors"
+                style={{
+                  borderColor: riskDelayed > 0 ? "#fca5a5" : "#fcd34d",
+                  background: riskDelayed > 0 ? "#fff1f2" : "#fffbeb",
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <AlertTriangle
+                      className={`h-4 w-4 flex-shrink-0 ${
+                        riskDelayed > 0 ? "text-red-500" : "text-amber-500"
+                      }`}
+                    />
+                    <span
+                      className={`text-sm font-semibold ${
+                        riskDelayed > 0 ? "text-red-700" : "text-amber-700"
+                      }`}
+                    >
+                      발송 마감 위험
+                    </span>
+                    {riskDelayed > 0 && (
+                      <span className="text-[10px] font-bold bg-red-600 text-white px-2 py-0.5 rounded-full">
+                        지연 {riskDelayed}건
+                      </span>
+                    )}
+                    {riskWarning > 0 && (
+                      <span className="text-[10px] font-bold bg-amber-500 text-white px-2 py-0.5 rounded-full">
+                        주의 {riskWarning}건
+                      </span>
+                    )}
+                  </div>
+                  <ArrowRight
+                    className={`h-4 w-4 ${
+                      riskDelayed > 0 ? "text-red-400" : "text-amber-400"
+                    }`}
+                  />
+                </div>
+              </button>
+            )}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-stretch">
+              {/* 소재 관리 */}
+              <Card
+                onClick={() => setMaterialDetailOpen(true)}
+                className="app-glass-card app-glass-card--lg cursor-pointer"
+              >
+                <CardContent className="pt-6">
+                  <div className="flex items-start gap-3">
+                    <Boxes className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="text-sm font-semibold text-slate-900">
+                          소재 관리
                         </div>
-                        <div className="text-xs text-muted-foreground flex flex-col gap-1">
-                          <span>{item.description}</span>
-                          {item.meta?.map((line) => (
-                            <span
-                              key={line}
-                              className="text-[11px] text-slate-500"
-                            >
-                              {line}
+                        <span
+                          className={`text-[11px] font-semibold whitespace-nowrap ${
+                            matStatus.scheduledChanges > 0
+                              ? "text-amber-600"
+                              : "text-green-600"
+                          }`}
+                        >
+                          {matStatus.scheduledChanges > 0
+                            ? `교체 예약 ${matStatus.scheduledChanges}건`
+                            : "이상 없음"}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground space-y-1">
+                        <div>전체 {matStatus.totalCount ?? "-"}대</div>
+                        {matStatus.groups &&
+                          Object.keys(matStatus.groups).length > 0 && (
+                            <div className="flex gap-2 flex-wrap">
+                              {Object.entries(
+                                matStatus.groups as Record<string, number>,
+                              )
+                                .sort(([a], [b]) => Number(a) - Number(b))
+                                .map(([dg, cnt]) => (
+                                  <span
+                                    key={dg}
+                                    className="text-[11px] text-slate-600 font-medium"
+                                  >
+                                    {dg}mm · {cnt}대
+                                  </span>
+                                ))}
+                            </div>
+                          )}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 공구 관리 */}
+              <Card
+                onClick={() => setToolsDetailOpen(true)}
+                className="app-glass-card app-glass-card--lg cursor-pointer"
+              >
+                <CardContent className="pt-6">
+                  <div className="flex items-start gap-3">
+                    <Wrench className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="text-sm font-semibold text-slate-900">
+                          공구 관리
+                        </div>
+                        <span
+                          className={`text-[11px] font-semibold whitespace-nowrap ${
+                            toolsStatus.alarmCount > 0
+                              ? "text-red-600"
+                              : toolsStatus.warningCount > 0
+                                ? "text-amber-600"
+                                : "text-green-600"
+                          }`}
+                        >
+                          {toolsStatus.alarmCount > 0
+                            ? `교체 필요 ${toolsStatus.alarmCount}`
+                            : toolsStatus.warningCount > 0
+                              ? `주의 ${toolsStatus.warningCount}`
+                              : "이상 없음"}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground space-y-1">
+                        <div className="flex gap-3">
+                          {toolsStatus.alarmCount > 0 && (
+                            <span className="text-red-600 font-medium">
+                              교체 필요 {toolsStatus.alarmCount}
                             </span>
-                          ))}
+                          )}
+                          {toolsStatus.warningCount > 0 && (
+                            <span className="text-amber-600 font-medium">
+                              주의 {toolsStatus.warningCount}
+                            </span>
+                          )}
+                          {!toolsStatus.alarmCount &&
+                            !toolsStatus.warningCount && (
+                              <span>전체 공구 정상</span>
+                            )}
                         </div>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 장비 관리 */}
+              <Card
+                onClick={() => setMachinesDetailOpen(true)}
+                className="app-glass-card app-glass-card--lg cursor-pointer"
+              >
+                <CardContent className="pt-6">
+                  <div className="flex items-start gap-3">
+                    <Factory className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="text-sm font-semibold text-slate-900">
+                          장비 관리
+                        </div>
+                        <span
+                          className={`text-[11px] font-semibold whitespace-nowrap ${
+                            machinesStatus.maintenanceCount > 0 ||
+                            machinesStatus.inactiveCount > 0
+                              ? "text-amber-600"
+                              : "text-green-600"
+                          }`}
+                        >
+                          {machinesStatus.maintenanceCount > 0
+                            ? `정비 중 ${machinesStatus.maintenanceCount}대`
+                            : machinesStatus.inactiveCount > 0
+                              ? `비활성 ${machinesStatus.inactiveCount}대`
+                              : "이상 없음"}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground space-y-1">
+                        <div>전체 {machinesStatus.totalCount ?? "-"}대</div>
+                        <div className="flex gap-2">
+                          {machinesStatus.activeCount > 0 && (
+                            <span className="text-[11px] text-slate-600 font-medium">
+                              활성 {machinesStatus.activeCount}
+                            </span>
+                          )}
+                          {machinesStatus.maintenanceCount > 0 && (
+                            <span className="text-[11px] text-amber-600 font-medium">
+                              정비 {machinesStatus.maintenanceCount}
+                            </span>
+                          )}
+                          {machinesStatus.inactiveCount > 0 && (
+                            <span className="text-[11px] text-slate-500 font-medium">
+                              비활성 {machinesStatus.inactiveCount}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </div>
         }
@@ -283,13 +414,26 @@ export const ManufacturerDashboardPage = () => {
             ))}
           </>
         }
-        mainLeft={null}
-        mainRight={null}
       />
       <RiskDetailModal
         open={riskModalOpen}
         onOpenChange={setRiskModalOpen}
         riskSummary={riskSummary}
+      />
+      <MaterialDetailModal
+        open={materialDetailOpen}
+        onOpenChange={setMaterialDetailOpen}
+        matStatus={matStatus}
+      />
+      <ToolsDetailModal
+        open={toolsDetailOpen}
+        onOpenChange={setToolsDetailOpen}
+        toolsStatus={toolsStatus}
+      />
+      <MachinesDetailModal
+        open={machinesDetailOpen}
+        onOpenChange={setMachinesDetailOpen}
+        machinesStatus={machinesStatus}
       />
     </>
   );
@@ -346,6 +490,322 @@ const RiskDetailModal = ({
               표시할 지연/주의 의뢰가 없습니다.
             </div>
           )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const MACHINE_STATUS_LABEL: Record<string, string> = {
+  active: "활성",
+  maintenance: "정비 중",
+  inactive: "비활성",
+};
+
+const MaterialDetailModal = ({
+  open,
+  onOpenChange,
+  matStatus,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  matStatus: any;
+}) => {
+  const machines: any[] = matStatus.machines ?? [];
+  const formatDate = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleString("ko-KR", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return iso;
+    }
+  };
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>소재 관리</DialogTitle>
+          <DialogDescription>
+            장비별 현재 소재 장착 현황 및 교체 예약
+          </DialogDescription>
+        </DialogHeader>
+        {machines.length === 0 ? (
+          <div className="text-sm text-muted-foreground text-center py-6">
+            등록된 장비가 없습니다.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {machines.map((m: any) => (
+              <div key={m.name} className="rounded-lg border p-3 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-slate-800">
+                    {m.name}
+                  </span>
+                  {m.diameterGroup ? (
+                    <span className="text-xs font-medium bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
+                      ⌀{m.diameterGroup}mm
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      소재 미장착
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 text-xs text-slate-600">
+                  <div>
+                    <span className="text-muted-foreground">종류 </span>
+                    {m.materialType || "-"}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">잔여 </span>
+                    {m.remainingLength != null ? `${m.remainingLength}mm` : "-"}
+                  </div>
+                </div>
+                {m.scheduled && (
+                  <div className="flex items-center gap-1.5 text-[11px] bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                    <span className="font-medium text-amber-700">
+                      교체 예약
+                    </span>
+                    <span className="text-amber-600">
+                      ⌀{m.scheduled.newDiameterGroup}mm ·{" "}
+                      {m.scheduled.targetTime
+                        ? formatDate(m.scheduled.targetTime)
+                        : ""}
+                    </span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="pt-1 flex justify-end">
+          <Link
+            to="/dashboard/cnc"
+            className="text-xs text-primary underline-offset-2 hover:underline"
+            onClick={() => onOpenChange(false)}
+          >
+            장비 페이지에서 관리 →
+          </Link>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const TOOL_ALERT_META: Record<string, { label: string; cls: string }> = {
+  alarm: { label: "교체 필요", cls: "bg-red-100 text-red-700" },
+  warn: { label: "주의", cls: "bg-amber-100 text-amber-700" },
+  ok: { label: "정상", cls: "bg-green-100 text-green-700" },
+  unknown: { label: "데이터 없음", cls: "bg-slate-100 text-slate-500" },
+};
+
+const ToolsDetailModal = ({
+  open,
+  onOpenChange,
+  toolsStatus,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  toolsStatus: any;
+}) => {
+  const machines: any[] = toolsStatus.machines ?? [];
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>공구 관리</DialogTitle>
+          <DialogDescription>장비별 공구 수명 현황</DialogDescription>
+        </DialogHeader>
+        {machines.length === 0 ? (
+          <div className="text-sm text-muted-foreground text-center py-6">
+            등록된 장비가 없습니다.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {machines.map((m: any) => {
+              const alertMeta =
+                TOOL_ALERT_META[m.alertLevel] ?? TOOL_ALERT_META.unknown;
+              const dueTools: any[] = m.dueTools ?? [];
+              return (
+                <div key={m.name} className="rounded-lg border p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm font-semibold text-slate-800">
+                        {m.name}
+                      </span>
+                      {m.machineId && (
+                        <span className="ml-1.5 text-[11px] text-muted-foreground">
+                          ({m.machineId})
+                        </span>
+                      )}
+                    </div>
+                    <span
+                      className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${
+                        alertMeta.cls
+                      }`}
+                    >
+                      {alertMeta.label}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="text-center">
+                      <div className="text-muted-foreground text-[10px]">
+                        전체
+                      </div>
+                      <div className="font-semibold text-slate-700">
+                        {m.totalTools}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-muted-foreground text-[10px]">
+                        교체 필요
+                      </div>
+                      <div
+                        className={`font-semibold ${
+                          m.alarmCount > 0 ? "text-red-600" : "text-slate-400"
+                        }`}
+                      >
+                        {m.alarmCount}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-muted-foreground text-[10px]">
+                        주의
+                      </div>
+                      <div
+                        className={`font-semibold ${
+                          m.warningCount > 0
+                            ? "text-amber-600"
+                            : "text-slate-400"
+                        }`}
+                      >
+                        {m.warningCount}
+                      </div>
+                    </div>
+                  </div>
+                  {dueTools.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {dueTools.map((t: any) => (
+                        <span
+                          key={t.toolNum}
+                          className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                            t.status === "alarm"
+                              ? "bg-red-50 text-red-700 border border-red-200"
+                              : "bg-amber-50 text-amber-700 border border-amber-200"
+                          }`}
+                        >
+                          T{String(t.toolNum).padStart(2, "0")}{" "}
+                          {t.status === "alarm" ? "교체" : "주의"}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div className="pt-1 flex justify-end">
+          <Link
+            to="/dashboard/cnc"
+            className="text-xs text-primary underline-offset-2 hover:underline"
+            onClick={() => onOpenChange(false)}
+          >
+            장비 페이지에서 관리 →
+          </Link>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const MachinesDetailModal = ({
+  open,
+  onOpenChange,
+  machinesStatus,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  machinesStatus: any;
+}) => {
+  const list: any[] = machinesStatus.list ?? [];
+  const total = machinesStatus.totalCount ?? list.length;
+  const active = machinesStatus.activeCount ?? 0;
+  const maintenance = machinesStatus.maintenanceCount ?? 0;
+  const inactive = machinesStatus.inactiveCount ?? 0;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>장비 관리</DialogTitle>
+          <DialogDescription>CNC 장비 상태 현황</DialogDescription>
+        </DialogHeader>
+        {total > 0 && (
+          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="rounded-lg bg-green-50 border border-green-100 py-2">
+              <div className="font-bold text-lg text-green-700">{active}</div>
+              <div className="text-muted-foreground">활성</div>
+            </div>
+            <div className="rounded-lg bg-amber-50 border border-amber-100 py-2">
+              <div className="font-bold text-lg text-amber-700">
+                {maintenance}
+              </div>
+              <div className="text-muted-foreground">정비 중</div>
+            </div>
+            <div className="rounded-lg bg-slate-50 border py-2">
+              <div className="font-bold text-lg text-slate-500">{inactive}</div>
+              <div className="text-muted-foreground">비활성</div>
+            </div>
+          </div>
+        )}
+        {list.length === 0 ? (
+          <div className="text-sm text-muted-foreground text-center py-6">
+            등록된 장비가 없습니다.
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {list.map((m: any) => (
+              <div
+                key={m.name}
+                className="flex items-center justify-between rounded-lg border px-3 py-2.5"
+              >
+                <div>
+                  <span className="text-sm font-semibold text-slate-800">
+                    {m.name}
+                  </span>
+                  {m.machineId && (
+                    <span className="ml-1.5 text-[11px] text-muted-foreground">
+                      {m.machineId}
+                    </span>
+                  )}
+                </div>
+                <span
+                  className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                    m.status === "active"
+                      ? "bg-green-100 text-green-700"
+                      : m.status === "maintenance"
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-slate-100 text-slate-500"
+                  }`}
+                >
+                  {MACHINE_STATUS_LABEL[m.status] ?? m.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="pt-1 flex justify-end">
+          <Link
+            to="/dashboard/cnc"
+            className="text-xs text-primary underline-offset-2 hover:underline"
+            onClick={() => onOpenChange(false)}
+          >
+            장비 페이지에서 관리 →
+          </Link>
         </div>
       </DialogContent>
     </Dialog>

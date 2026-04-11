@@ -6,6 +6,7 @@ import { Types } from "mongoose";
 import {
   buildRequestorOrgScopeFilter,
   buildRequestorOrgFilter,
+  buildManufacturerOrgScopeFilter,
   normalizeCaseInfosImplantFields,
   addKoreanBusinessDays,
   getTodayYmdInKst,
@@ -195,13 +196,10 @@ export async function getAssignedDashboardSummary(req, res) {
       "caseInfos.implantBrand": { $exists: true, $ne: "" },
     };
 
-    // 제조사 역할일 때: 해당 제조사에게 할당된 의뢰건만 필터링
+    // 제조사 역할일 때: 같은 BusinessAnchor 조직 전체 범위로 필터링
     if (role === "manufacturer") {
-      baseFilter.$or = [
-        { caManufacturer: req.user._id },
-        { caManufacturer: null },
-        { caManufacturer: { $exists: false } },
-      ];
+      const orgScopeFilter = await buildManufacturerOrgScopeFilter(req);
+      Object.assign(baseFilter, orgScopeFilter);
     }
 
     const [statsResult] = await Request.aggregate([
@@ -251,8 +249,14 @@ export async function getAssignedDashboardSummary(req, res) {
                       },
                       then: "cam",
                     },
+                    {
+                      case: {
+                        $in: ["$$stage", ["의뢰"]],
+                      },
+                      then: "request",
+                    },
                   ],
-                  default: "request",
+                  default: "other",
                 },
               },
             },
@@ -1006,16 +1010,7 @@ export async function getDashboardRiskSummary(req, res) {
     const filter =
       role === "manufacturer"
         ? {
-            $and: [
-              baseFilter,
-              {
-                $or: [
-                  { caManufacturer: req.user._id },
-                  { caManufacturer: null },
-                  { caManufacturer: { $exists: false } },
-                ],
-              },
-            ],
+            $and: [baseFilter, await buildManufacturerOrgScopeFilter(req)],
           }
         : role === "admin"
           ? {
