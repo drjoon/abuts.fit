@@ -80,8 +80,6 @@ export const MailboxGrid = ({
         }
       >
     >({});
-  const lastRealtimeSampleSigRef = useRef<string>("");
-  const lastRealtimeSampleAtRef = useRef<number>(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const touchStartXRef = useRef<number>(0);
   const shelfRefs = useRef<Record<string, HTMLDivElement | null>>({});

@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { type ManufacturerRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import { useToast } from "@/shared/hooks/use-toast";
+import { request } from "@/shared/api/apiClient";
 
 export const useMailboxManagement = (
   token: string | null,
@@ -64,28 +65,21 @@ export const useMailboxManagement = (
       return;
     setIsRollingBackAll(true);
     try {
-      const res = await fetch("/api/requests/shipping/mailbox-rollback", {
+      const res = await request<any>({
+        path: "/api/requests/shipping/mailbox-rollback",
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+        token,
+        jsonBody: {
           mailboxAddress: mailboxModalAddress,
           requestIds: mailboxModalRequests
             .map((req) => req._id)
             .filter(Boolean),
-        }),
+        },
       });
 
       if (!res.ok) {
-        let message = "전체 롤백에 실패했습니다.";
-        try {
-          const body = await res.json().catch(() => null);
-          if (body?.message) message = body.message;
-        } catch {
-          // ignore
-        }
+        const message =
+          String(res.data?.message || "").trim() || "전체 롤백에 실패했습니다.";
         throw new Error(message);
       }
 
@@ -94,6 +88,15 @@ export const useMailboxManagement = (
         title: "박스 전체 롤백 완료",
         description: "우편함 롤백을 완료했습니다.",
         duration: 3000,
+      });
+    } catch (error) {
+      toast({
+        title: "전체 롤백 실패",
+        description:
+          error instanceof Error && error.message
+            ? error.message
+            : "우편함 전체 롤백에 실패했습니다.",
+        variant: "destructive",
       });
     } finally {
       setIsRollingBackAll(false);

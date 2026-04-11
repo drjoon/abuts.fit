@@ -1,31 +1,31 @@
 import { useEffect } from "react";
 import { type ManufacturerRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 
-export const useMailboxSync = (
-  pageState: any,
-  mailboxState: any,
-) => {
+export const useMailboxSync = (pageState: any, mailboxState: any) => {
+  const {
+    mailboxModalOpen,
+    mailboxModalAddress,
+    mailboxModalRequests,
+    setMailboxModalRequests,
+    handleShipmentModalClose,
+  } = mailboxState;
+
   useEffect(() => {
-    if (!mailboxState.mailboxModalOpen || !mailboxState.mailboxModalAddress)
-      return;
+    if (!mailboxModalOpen || !mailboxModalAddress) return;
     const next = pageState.requests.filter(
-      (req: ManufacturerRequest) => req.mailboxAddress === mailboxState.mailboxModalAddress,
+      (req: ManufacturerRequest) => req.mailboxAddress === mailboxModalAddress,
     );
-    mailboxState.setMailboxModalRequests(next);
+    setMailboxModalRequests(next);
   }, [
     pageState.requests,
-    mailboxState.mailboxModalOpen,
-    mailboxState.mailboxModalAddress,
-    mailboxState,
+    mailboxModalOpen,
+    mailboxModalAddress,
+    setMailboxModalRequests,
   ]);
 
   useEffect(() => {
-    if (!mailboxState.mailboxModalOpen) return;
-    if (mailboxState.mailboxModalRequests.length > 0) return;
-    mailboxState.handleShipmentModalClose();
-  }, [
-    mailboxState.mailboxModalRequests.length,
-    mailboxState.mailboxModalOpen,
-    mailboxState,
-  ]);
+    if (!mailboxModalOpen) return;
+    if (mailboxModalRequests.length > 0) return;
+    handleShipmentModalClose();
+  }, [mailboxModalRequests.length, mailboxModalOpen, handleShipmentModalClose]);
 };

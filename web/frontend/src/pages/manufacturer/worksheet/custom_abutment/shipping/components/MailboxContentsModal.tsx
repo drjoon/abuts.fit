@@ -313,7 +313,7 @@ export const MailboxContentsModal = ({
                   size="sm"
                   className="h-8 text-xs gap-1"
                   disabled={isRollingBackAll}
-                  onClick={() => onRollbackAll(requests)}
+                  onClick={() => void onRollbackAll(requests)}
                 >
                   <ArrowLeft className="h-3 w-3" />
                 </Button>
