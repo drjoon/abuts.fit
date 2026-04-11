@@ -192,6 +192,9 @@ const truncateToFit = (
   return best;
 };
 
+// ⚠️ 이 렌더러와 동일한 로직이 백엔드에도 존재합니다.
+// 디자인(레이아웃·폰트·텍스트) 수정 시 반드시 아래 파일도 함께 수정하세요:
+//   web/backend/utils/packLabelRenderer.js  (AI 로트 캡처 자동 출력 경로)
 export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   const dpi = Number(opts.dpi) || 600;
   const baseDpi = Number(opts.designDots?.dpi) || 600;
@@ -219,8 +222,10 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
 
   const env = import.meta.env;
   // 법정 기재 항목 (환경변수)
-  const PRODUCT_NAME = env.VITE_PACK_PRODUCT_NAME || "임플란트 상부구조물";
-  const MODEL_NAME = env.VITE_PACK_MODEL_NAME || "";
+  const PRODUCT_NAME = (
+    env.VITE_PACK_PRODUCT_NAME || "임플란트 상부구조물"
+  ).replace(/['"]/g, "");
+  const MODEL_NAME = (env.VITE_PACK_MODEL_NAME || "").replace(/['"]/g, "");
   const LICENSE_NO = env.VITE_PACK_LICENSE_NO || "";
   const COMPANY_NAME = env.VITE_PACK_MANUFACTURER_NAME || "";
   const COMPANY_ADDR = env.VITE_PACK_MANUFACTURER_ADDR || "";
@@ -384,11 +389,11 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   //   6pt → 50도트 이상 → font-size ≥ 14px
   // 가독성을 위해 약간 여유를 두고 설정.
   const FONT_7PT = "bold 20px Arial"; // 법규 7pt 이상 필수 항목
-  const FONT_6PT = "16px Arial"; // 법규 6pt 이상 기타 항목
-  const FONT_6PT_BOLD = "bold 16px Arial";
+  const FONT_6PT = "18px Arial"; // 법규 6.5pt 이상 기타 항목
+  const FONT_6PT_BOLD = "bold 18px Arial";
   const FONT_HEADER = "bold 50px Arial"; // 상단 헤더 (메일함·스크루·로트)
   const FONT_LAB = "bold 38px Arial"; // 치과기공소(랩)명
-  const FONT_INFO = "bold 18px Arial"; // 환자/치과/임플란트 정보 행
+  const FONT_INFO = "bold 22px Arial"; // 환자/치과/임플란트 정보 행
   const FONT_LEGAL_TITLE = "bold 22px Arial";
   const FONT_LEGAL_BODY = "17px Arial";
   const FONT_LEGAL_NOTICE = "bold 19px Arial";
@@ -479,30 +484,16 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   fillTextCenteredInBox(opts.labName || "-", M, curY, contentW, row2H, 16);
   curY += row2H;
 
-  // ── 3행: 환자 / 치과 / 치아번호  +  의뢰일 ────────────────
-  const orderDateLabel = `의뢰일: ${dateOnly(opts.requestDate)}`;
-  ctx.font = FONT_INFO;
-  const dateMetrics = ctx.measureText(orderDateLabel);
-  const dateCellW = Math.round(dateMetrics.width) + 24;
-  const patientCellW = W - dateCellW;
+  // ── 3행: 환자 / 치과 / 치아번호 ────────────────
   drawBox(M, curY, W, row3H);
-  drawVLine(M + patientCellW, curY, row3H);
   ctx.font = FONT_INFO;
   fillTextCenteredInBox(
     `${opts.clinicName || "-"} / ${opts.patientName || "-"} / #${opts.toothNumber || "-"}`,
     M,
     curY,
-    patientCellW,
+    W,
     row3H,
     8,
-  );
-  fillTextCenteredInBox(
-    orderDateLabel,
-    M + patientCellW,
-    curY,
-    dateCellW,
-    row3H,
-    4,
   );
   curY += row3H;
 
@@ -531,12 +522,8 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   const rColW = W - splitColW;
   const rRowH = Math.floor((lRow1H + lRow2H) / 2);
 
-  // 법정 박스 전체
+  // 법정 박스 전체 (내부 구분선 없음)
   drawBox(M, legalTopY, W, legalBodyH);
-  drawHLine(M, legalTopY + lRow1H, W);
-  drawHLine(M, legalTopY + lRow1H + lRow2H, W);
-  drawHLine(M, legalTopY + lRow1H + lRow2H + lRow3H, W);
-  drawVLine(rColX, legalTopY, lRow1H + lRow2H);
 
   // 좌 1행: 품목명 (7pt↑)
   ctx.font = FONT_LEGAL_TITLE;
@@ -577,7 +564,7 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   // 일회용비멸균 의료기기, 재사용 금지 — 우측 인라인 (7pt↑, 줄바꿈 허용)
   ctx.font = FONT_LEGAL_NOTICE;
   fillWrappedTextCenteredInBox(
-    "일회용비멸균 의료기기, 재사용 금지",
+    "일회용 비멸균 의료기기, 재사용 금지",
     udiInlineX,
     descY,
     udiInlineW,
@@ -676,25 +663,32 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
     `(11)${udiMfgDate}`,
   ];
   const udiLineH = botLineH;
-  const udiTextX = udiColX + 8;
   const qrBotSize = Math.min(bottomH - 12, 72);
-  const udiTextW = udiColW - qrBotSize - 20;
-  const qrUdiX = udiColX + udiColW - qrBotSize - 8;
-  const qrUdiY = bottomY + (bottomH - qrBotSize) / 2;
-  // UDI 텍스트 수직 중앙 정렬
-  const udiTotalTextH = (udiLines.length + 1) * udiLineH; // 3줄 + 제조업허가 1줄
-  const udiTextStartY = bottomY + Math.round((bottomH - udiTotalTextH) / 2);
+  // 실제 텍스트 너비로 QR을 바로 옆에 붙임 (텍스트+QR 그룹 중앙 정렬)
   ctx.font = FONT_6PT;
-  udiLines.forEach((line, i) => {
-    fillTextLeft(line, udiTextX, udiTextStartY + i * udiLineH, udiTextW);
-  });
-  fillTextLeft(
-    `제조업허가 ${MANUFACTURER_PERMIT_NO}`,
-    udiTextX,
-    udiTextStartY + udiLines.length * udiLineH + 4,
-    udiColW - 16,
+  const maxUdiLineW = Math.max(
+    ...udiLines.map((l) => ctx.measureText(l).width),
   );
-  // UDI QR 코드 (우측 수직 중앙)
+  const udiQrGap = 8;
+  const groupW = maxUdiLineW + udiQrGap + qrBotSize;
+  const groupX = udiColX + Math.max(4, (udiColW - groupW) / 2);
+  const udiTextX = groupX;
+  const qrUdiX = groupX + maxUdiLineW + udiQrGap;
+  const qrUdiY = bottomY + (bottomH - qrBotSize) / 2;
+  // UDI 텍스트 수직 중앙 정렬 (3줄만, 제조업허가는 별도 하단 중앙)
+  const udiTotalTextH = udiLines.length * udiLineH;
+  const udiTextStartY = bottomY + Math.round((bottomH - udiTotalTextH) / 2);
+  udiLines.forEach((line, i) => {
+    fillTextLeft(line, udiTextX, udiTextStartY + i * udiLineH, maxUdiLineW);
+  });
+  // 제조업허가번호: 박스 하단 중앙 정렬
+  const permitText = `제조업허가 ${MANUFACTURER_PERMIT_NO}`;
+  const permitMetrics = ctx.measureText(permitText);
+  const permitX = udiColX + Math.max(0, (udiColW - permitMetrics.width) / 2);
+  const permitY = bottomY + bottomH - udiLineH - 2;
+  ctx.fillStyle = "black";
+  ctx.fillText(permitText, permitX, permitY);
+  // UDI QR 코드 (텍스트 바로 우측)
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(qrSellerImg, qrUdiX, qrUdiY, qrBotSize, qrBotSize);
   ctx.imageSmoothingEnabled = true;

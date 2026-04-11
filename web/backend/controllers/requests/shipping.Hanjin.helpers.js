@@ -748,7 +748,7 @@ export const buildHanjinInsertOrderBody = async ({ mailbox, requests }) => {
     custEdiCd: HANJIN_CLIENT_ID,
     custOrdNo,
     cntractNo: HANJIN_CSR_NUM,
-    svcCatCd: "E",
+    svcCatCd: "S",
     pickupAskDt: ymd,
     sndrZip: HANJIN_SENDER_ZIP,
     sndrBaseAddr: HANJIN_SENDER_BASE_ADDR,

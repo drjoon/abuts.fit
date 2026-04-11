@@ -1494,7 +1494,22 @@ BREVO_API_KEY=your_brevo_api_key_here
 
 ---
 
-## 12. 운영 메모
+## 12. 패킹 라벨 렌더러
+
+패킹 라벨 렌더러는 **두 곳에 별도로 존재**한다. 디자인 변경 시 **반드시 양쪽 모두 수정**해야 한다.
+
+| 경로                                                                            | 파일                                                  | 비고                     |
+| ------------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------ |
+| 프론트 수동 출력 (`PackingPageContent.tsx` → `/api/requests/packing/print-zpl`) | `web/frontend/.../packing/utils/packLabelRenderer.ts` | 브라우저 Canvas API 사용 |
+| AI 로트 캡처 자동 출력 (`lotCapture.controller.js` → `packPrint.utils.js`)      | `web/backend/utils/packLabelRenderer.js`              | Node.js canvas-node 사용 |
+
+- 프론트 렌더러는 `import.meta.env`(VITE*PACK*\*)로 브랜딩 정보 주입
+- 백엔드 렌더러는 `opts` 객체(productName, modelName 등)로 브랜딩 정보 주입 (pack-server `/branding` 엔드포인트에서 가져옴)
+- 백엔드 렌더러에서 browser-only API(`new Image`, `URL.createObjectURL` 등) 사용 불가
+
+---
+
+## 13. 운영 메모
 
 - 하위 `rules.md`는 루트 규칙을 반복 작성하지 않습니다.
 - 구현 세부, 트러블슈팅, 서비스별 로컬 설정만 남깁니다.
