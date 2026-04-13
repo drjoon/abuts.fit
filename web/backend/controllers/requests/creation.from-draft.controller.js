@@ -135,7 +135,14 @@ export async function createRequestsFromDraft(req, res) {
       });
     }
 
-    const draft = await DraftRequest.findById(draftId).lean();
+    const earlyOrgId =
+      req.user?.role === "requestor" ? getRequestorOrgId(req) : null;
+    const [draft, lockStatus] = await Promise.all([
+      DraftRequest.findById(draftId).lean(),
+      earlyOrgId && Types.ObjectId.isValid(earlyOrgId)
+        ? checkCreditLock(earlyOrgId)
+        : Promise.resolve({ isLocked: false }),
+    ]);
     console.log("[createRequestsFromDraft] draft loaded", {
       t: Date.now() - startTime,
       found: Boolean(draft),
@@ -156,17 +163,13 @@ export async function createRequestsFromDraft(req, res) {
     }
 
     if (req.user?.role === "requestor") {
-      const orgId = getRequestorOrgId(req);
-      if (!orgId || !Types.ObjectId.isValid(orgId)) {
+      if (!earlyOrgId || !Types.ObjectId.isValid(earlyOrgId)) {
         return res.status(403).json({
           success: false,
           message:
             "사업자 소속 정보가 필요합니다. 설정 > 사업자에서 소속을 먼저 확인해주세요.",
         });
       }
-
-      // 크레딧 lock 체크
-      const lockStatus = await checkCreditLock(orgId);
       if (lockStatus.isLocked) {
         return res.status(403).json({
           success: false,
@@ -223,7 +226,10 @@ export async function createRequestsFromDraft(req, res) {
     const preparedCandidates = await Promise.all(
       abutmentCases.map(async (ci, idx) => {
         const caseStart = Date.now();
-        const normalizedCi = await normalizeCaseInfosImplantFields(ci || {});
+        const normalizedCi = await normalizeCaseInfosImplantFields(
+          ci || {},
+          false,
+        );
         console.log("[createRequestsFromDraft] normalize case", {
           t: Date.now() - startTime,
           idx,
@@ -242,6 +248,17 @@ export async function createRequestsFromDraft(req, res) {
         const missing = [];
         if (!clinicName) missing.push("치과이름");
         if (!patientName) missing.push("환자이름");
+
+        // 신규 임플란트 의뢰(newSystemRequest)가 아닌 경우 임플란트 필드 검증
+        // strict=false로 normalization 후 여기서 명시적으로 체크
+        const isNewSystemRequest = ci?.newSystemRequest?.requested === true;
+        if (!isNewSystemRequest) {
+          if (!normalizedCi.implantManufacturer)
+            missing.push("임플란트 제조사");
+          if (!normalizedCi.implantBrand) missing.push("임플란트 브랜드");
+          if (!normalizedCi.implantFamily) missing.push("임플란트 패밀리");
+          if (!normalizedCi.implantType) missing.push("임플란트 타입");
+        }
 
         if (missing.length > 0) {
           const fileName = ci?.file?.originalName || `파일 ${idx + 1}`;
@@ -630,6 +647,48 @@ export async function createRequestsFromDraft(req, res) {
       return acc + (Number.isFinite(n) ? n : 0);
     }, 0);
 
+    // Pre-fetch read-only data in parallel before transaction to minimize transaction duration
+    const createdYmd = getTodayYmdInKst();
+    const shippingOrgId = String(businessAnchorId || "");
+    const [systemSettings, shippingOrg, estimatedShipYmd] = await Promise.all([
+      SystemSettings.findOne().lean(),
+      shippingOrgId && Types.ObjectId.isValid(shippingOrgId)
+        ? BusinessAnchor.findById(shippingOrgId)
+            .select({ "shippingPolicy.weeklyBatchDays": 1 })
+            .lean()
+        : Promise.resolve(null),
+      addKoreanBusinessDays({ startYmd: createdYmd, days: 1 }),
+    ]);
+    const shippingFeePerBox = Number(
+      systemSettings?.creditSettings?.shippingFee || 3500,
+    );
+    const weeklyBatchDays = Array.isArray(
+      shippingOrg?.shippingPolicy?.weeklyBatchDays,
+    )
+      ? shippingOrg.shippingPolicy.weeklyBatchDays
+      : [];
+    const shipDate = estimatedShipYmd || createdYmd;
+    const boxCount = 1;
+    const totalShippingFee = boxCount * shippingFeePerBox;
+    console.log("[createRequestsFromDraft] pre-fetch done", {
+      t: Date.now() - startTime,
+      shippingFeePerBox,
+      weeklyBatchDays,
+      shipDate,
+    });
+
+    // 묶음 배송 요일 설정 체크 (transaction 외부로 이동)
+    const hasNormalShipping = preparedCasesForCreate.some(
+      (item) => (item.shippingMode || "normal") === "normal",
+    );
+    if (hasNormalShipping && weeklyBatchDays.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "묶음 배송 요일을 설정해주세요. 신규 의뢰 페이지의 묶음 배송 섹션에서 요일을 선택 후 다시 시도하세요.",
+      });
+    }
+
     const session = await mongoose.startSession();
     try {
       console.log("[createRequestsFromDraft] transaction start", {
@@ -742,47 +801,6 @@ export async function createRequestsFromDraft(req, res) {
           bonusShippingCredit,
           requiredMachiningFee: totalSpendSupply,
         });
-
-        // 배송비 계산: 박스 수 × 박스당 배송비
-        const systemSettings = await SystemSettings.findOne().lean();
-        const shippingFeePerBox = Number(
-          systemSettings?.creditSettings?.shippingFee || 3500,
-        );
-
-        // 박스 수 계산: 묶음 배송 요일별로 그룹화
-        // 조직 정보는 한 번만 조회
-        const orgId = getRequestorOrgId(req);
-        let weeklyBatchDays = [];
-        if (orgId && Types.ObjectId.isValid(orgId)) {
-          const org = await BusinessAnchor.findById(orgId)
-            .select({ "shippingPolicy.weeklyBatchDays": 1 })
-            .lean();
-          weeklyBatchDays = Array.isArray(org?.shippingPolicy?.weeklyBatchDays)
-            ? org.shippingPolicy.weeklyBatchDays
-            : [];
-        }
-
-        // 묶음 배송 요일 설정 체크
-        const hasNormalShipping = preparedCasesForCreate.some(
-          (item) => (item.shippingMode || "normal") === "normal",
-        );
-        if (hasNormalShipping && weeklyBatchDays.length === 0) {
-          throw new Error(
-            "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
-          );
-        }
-
-        // 배송 날짜별로 그룹화 (간단 버전: 모두 같은 날짜로 가정)
-        const createdYmd = getTodayYmdInKst();
-        const estimatedShipYmd = await addKoreanBusinessDays({
-          startYmd: createdYmd,
-          days: 1,
-        });
-        const shipDate = estimatedShipYmd || createdYmd;
-
-        // 실제로는 모든 의뢰가 같은 날짜에 배송되므로 박스 수 = 1
-        const boxCount = 1;
-        const totalShippingFee = boxCount * shippingFeePerBox;
 
         console.log("[createRequestsFromDraft] Shipping fee calculation", {
           t: Date.now() - startTime,
@@ -921,9 +939,11 @@ export async function createRequestsFromDraft(req, res) {
             shippingMode === "normal" &&
             requestorWeeklyBatchDays.length === 0
           ) {
-            throw new Error(
+            const batchDayErr2 = new Error(
               "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
             );
+            batchDayErr2.statusCode = 400;
+            throw batchDayErr2;
           }
 
           const productionSchedule = await calculateInitialProductionSchedule({
@@ -1034,12 +1054,23 @@ export async function createRequestsFromDraft(req, res) {
           createdCount: createdRequests.length,
           requestIds: createdRequests.map((r) => r.requestId),
         });
-        await triggerDashboardSummaryRefreshForAnchorId(
+        triggerDashboardSummaryRefreshForAnchorId(
           createdAnchorId,
           "request-created",
+        ).catch((err) =>
+          console.error(
+            "[createRequestsFromDraft] dashboard refresh error",
+            err,
+          ),
         );
         // bulk shipping은 요약 스냅샷과 분리된 materialized snapshot이므로 별도로 갱신한다.
-        await recomputeBulkShippingSnapshotForBusinessAnchorId(createdAnchorId);
+        recomputeBulkShippingSnapshotForBusinessAnchorId(createdAnchorId).catch(
+          (err) =>
+            console.error(
+              "[createRequestsFromDraft] bulk shipping snapshot error",
+              err,
+            ),
+        );
       } else {
         console.warn(
           "[createRequestsFromDraft] No businessAnchorId for dashboard refresh",

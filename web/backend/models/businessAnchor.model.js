@@ -87,6 +87,14 @@ const businessAnchorSchema = new mongoose.Schema(
       salesmanDirectRate: { type: Number, default: 0.05, min: 0, max: 1 },
       updatedAt: { type: Date, default: null },
     },
+    shippingPolicy: {
+      weeklyBatchDays: {
+        type: [String],
+        default: [],
+        enum: ["mon", "tue", "wed", "thu", "fri"],
+      },
+      updatedAt: { type: Date, default: null },
+    },
     referralMembershipAggregate: {
       requestorDirectCircleAnchorIds: {
         type: [

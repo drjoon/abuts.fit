@@ -55,7 +55,7 @@ export const useNewRequestSubmitV2 = ({
   patchDraftImmediately,
   onDuplicateDetected,
 }: UseNewRequestSubmitV2Params) => {
-  const { toast } = useToast();
+  const { toast, dismiss } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const normalizeKeyPart = (s: string) => {
@@ -338,6 +338,7 @@ export const useNewRequestSubmitV2 = ({
             message += "\n\n" + details.join("\n");
             message += "\n\n크레딧을 충전한 뒤 다시 시도해주세요.";
 
+            dismiss();
             toast({
               title: "크레딧 부족",
               description: message,
@@ -486,6 +487,7 @@ export const useNewRequestSubmitV2 = ({
             }
           }
 
+          dismiss();
           toast({
             title: "크레딧 부족",
             description,
@@ -549,12 +551,23 @@ export const useNewRequestSubmitV2 = ({
         }
       } catch {}
 
+      // V3 로컬 드래프트 정리 (localStorage + IndexedDB)
+      try {
+        const { clearLocalDraft } = await import("../utils/localDraftStorage");
+        clearLocalDraft();
+        const { clearAllFiles } = await import("../utils/fileIndexedDB");
+        await clearAllFiles();
+      } catch (err) {
+        console.warn("[submitFromDraft] Failed to clear local draft:", err);
+      }
+
       try {
         if (typeof window !== "undefined") {
           window.dispatchEvent(new Event("abuts:credits:updated"));
         }
       } catch {}
 
+      dismiss();
       toast({ title: "의뢰가 제출되었습니다" });
       console.log("[NewRequestSubmit] navigate", {
         t: Date.now() - submitStart,
@@ -577,6 +590,7 @@ export const useNewRequestSubmitV2 = ({
         description = "환자정보 또는 임플란트 정보가 누락되었습니다.";
       }
 
+      dismiss();
       toast({
         title: "의뢰 제출 중 오류",
         description,

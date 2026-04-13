@@ -675,7 +675,7 @@ export const NewRequestPage = () => {
                   toast({
                     title: "의뢰 접수중",
                     description: "제출을 처리하고 있어요. 잠시만 기다려주세요.",
-                    duration: 3000,
+                    duration: 15000,
                   });
                   handleSubmit();
                 })();

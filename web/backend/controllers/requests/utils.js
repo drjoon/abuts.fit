@@ -841,17 +841,25 @@ export async function computePriceForRequest({
   const nowKst = new Date(`${nowYmd}T00:00:00+09:00`);
   nowKst.setDate(nowKst.getDate() - 90);
   const remakeCutoff = nowKst;
-  const existing = await Request.findOne({
-    ...scopeFilter,
-    "caseInfos.patientName": patientName,
-    "caseInfos.tooth": tooth,
-    "caseInfos.clinicName": clinicName,
-    "caseInfos.implantBrand": { $exists: true, $ne: "" },
-    manufacturerStage: { $ne: "취소" },
-    createdAt: { $gte: remakeCutoff },
-  })
-    .select({ _id: 1 })
-    .lean();
+  // Run remake check and org lookup in parallel (independent queries)
+  const [existing, orgForBaseDate] = await Promise.all([
+    Request.findOne({
+      ...scopeFilter,
+      "caseInfos.patientName": patientName,
+      "caseInfos.tooth": tooth,
+      "caseInfos.clinicName": clinicName,
+      "caseInfos.implantBrand": { $exists: true, $ne: "" },
+      manufacturerStage: { $ne: "취소" },
+      createdAt: { $gte: remakeCutoff },
+    })
+      .select({ _id: 1 })
+      .lean(),
+    requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))
+      ? BusinessAnchor.findById(new Types.ObjectId(String(requestorOrgId)))
+          .select({ primaryContactUserId: 1 })
+          .lean()
+      : Promise.resolve(null),
+  ]);
 
   if (existing && !forceNewOrderPricing) {
     return {
@@ -874,21 +882,14 @@ export async function computePriceForRequest({
   // 조직 단위 정책이므로, 조직이 있으면 조직 owner의 가입일을 기준으로 한다.
   // updatedAt은 운영 중 자주 갱신될 수 있어 기준일로 사용하지 않는다.
   const baseDate = await (async () => {
-    if (requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))) {
-      const org = await BusinessAnchor.findById(
-        new Types.ObjectId(String(requestorOrgId)),
-      )
-        .select({ primaryContactUserId: 1 })
+    const ownerId = orgForBaseDate?.primaryContactUserId
+      ? String(orgForBaseDate.primaryContactUserId)
+      : "";
+    if (ownerId && Types.ObjectId.isValid(ownerId)) {
+      const owner = await User.findById(ownerId)
+        .select({ createdAt: 1, approvedAt: 1 })
         .lean();
-      const ownerId = org?.primaryContactUserId
-        ? String(org.primaryContactUserId)
-        : "";
-      if (ownerId && Types.ObjectId.isValid(ownerId)) {
-        const owner = await User.findById(ownerId)
-          .select({ createdAt: 1, approvedAt: 1 })
-          .lean();
-        return owner?.approvedAt || owner?.createdAt || null;
-      }
+      return owner?.approvedAt || owner?.createdAt || null;
     }
 
     const user = await User.findById(requestorId)
