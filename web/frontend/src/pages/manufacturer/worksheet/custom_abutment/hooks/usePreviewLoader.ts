@@ -177,15 +177,17 @@ export function usePreviewLoader({
         const hasCamFile = !!req.caseInfos?.camFile?.s3Key;
         const shouldUseSingleLeftStl = isCamStage;
 
-        const originalFilePromise: Promise<File | null> = shouldUseSingleLeftStl
-          ? Promise.resolve(null)
-          : fetchAsFileWithCache(
-              originalCacheKey,
-              () =>
-                fetchSignedUrl(`/api/requests/${req._id}/original-file-url`),
-              originalName,
-              { disableCache: disableStlCache },
-            );
+        const hasOriginalFile = !!req.caseInfos?.file?.s3Key;
+        const originalFilePromise: Promise<File | null> =
+          shouldUseSingleLeftStl || !hasOriginalFile
+            ? Promise.resolve(null)
+            : fetchAsFileWithCache(
+                originalCacheKey,
+                () =>
+                  fetchSignedUrl(`/api/requests/${req._id}/original-file-url`),
+                originalName,
+                { disableCache: disableStlCache },
+              );
 
         const camFilePromise: Promise<File | null> = hasCamFile
           ? (() => {
