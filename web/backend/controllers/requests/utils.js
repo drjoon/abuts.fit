@@ -926,12 +926,6 @@ export async function computePriceForRequest({
   const todayKst = new Date(`${todayYmd}T00:00:00+09:00`);
   todayKst.setDate(todayKst.getDate() - 30);
   const last30Cutoff = todayKst;
-  const last30DaysOrders = await Request.countDocuments({
-    ...scopeFilter,
-    manufacturerStage: { $ne: "취소" },
-    createdAt: { $gte: last30Cutoff },
-  });
-
   // 추천 관계의 canonical SSOT는 BusinessAnchor.referredByAnchorId다.
   // 할인 계산도 user가 아니라 직접 소개된 사업자 anchor의 주문량을 합산해야
   // 같은 사업자의 여러 사용자가 중복 반영되지 않는다.
@@ -940,27 +934,34 @@ export async function computePriceForRequest({
       ? new Types.ObjectId(String(requestorOrgId))
       : null;
 
-  let referralLast30DaysOrders = 0;
-  if (myBusinessAnchorId) {
-    const referredAnchors = await BusinessAnchor.find({
-      referredByAnchorId: myBusinessAnchorId,
-      businessType: "requestor",
-    })
-      .select({ _id: 1 })
-      .lean();
-
-    const referredBusinessAnchorIds = (referredAnchors || [])
-      .map((anchor) => anchor?._id)
-      .filter(Boolean);
-
-    referralLast30DaysOrders = referredBusinessAnchorIds.length
-      ? await Request.countDocuments({
-          businessAnchorId: { $in: referredBusinessAnchorIds },
-          manufacturerStage: { $ne: "취소" },
-          createdAt: { $gte: last30Cutoff },
+  // last30DaysOrders와 referredAnchors 조회를 병렬 실행 (독립적인 쿼리)
+  const [last30DaysOrders, referredAnchors] = await Promise.all([
+    Request.countDocuments({
+      ...scopeFilter,
+      manufacturerStage: { $ne: "취소" },
+      createdAt: { $gte: last30Cutoff },
+    }),
+    myBusinessAnchorId
+      ? BusinessAnchor.find({
+          referredByAnchorId: myBusinessAnchorId,
+          businessType: "requestor",
         })
-      : 0;
-  }
+          .select({ _id: 1 })
+          .lean()
+      : Promise.resolve([]),
+  ]);
+
+  const referredBusinessAnchorIds = (referredAnchors || [])
+    .map((anchor) => anchor?._id)
+    .filter(Boolean);
+
+  const referralLast30DaysOrders = referredBusinessAnchorIds.length
+    ? await Request.countDocuments({
+        businessAnchorId: { $in: referredBusinessAnchorIds },
+        manufacturerStage: { $ne: "취소" },
+        createdAt: { $gte: last30Cutoff },
+      })
+    : 0;
   const totalOrders = last30DaysOrders + referralLast30DaysOrders;
   const discountAmount = Math.min(
     totalOrders * DISCOUNT_PER_ORDER,

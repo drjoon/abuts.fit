@@ -917,23 +917,8 @@ export async function createRequestsFromDraft(req, res) {
             updatedAt: requestedAt,
           };
 
-          // Fetch requestor weeklyBatchDays
-          let requestorWeeklyBatchDays = [];
-          try {
-            const orgId = getRequestorOrgId(req);
-            if (orgId && Types.ObjectId.isValid(orgId)) {
-              const org = await BusinessAnchor.findById(orgId)
-                .select({ "shippingPolicy.weeklyBatchDays": 1 })
-                .lean();
-              requestorWeeklyBatchDays = Array.isArray(
-                org?.shippingPolicy?.weeklyBatchDays,
-              )
-                ? org.shippingPolicy.weeklyBatchDays
-                : [];
-            }
-          } catch (e) {
-            // handled by scheduler validation
-          }
+          // weeklyBatchDays already fetched in pre-fetch phase (same org as businessAnchorId)
+          const requestorWeeklyBatchDays = weeklyBatchDays;
 
           if (
             shippingMode === "normal" &&

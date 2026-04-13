@@ -231,133 +231,11 @@ export const useNewRequestSubmitV2 = ({
     try {
       setIsSubmitting(true);
 
-      // 1. Draft 조회하여 배송 날짜 확인
-      const draftRes = await fetch(
-        `${API_BASE_URL}/requests/drafts/${draftId}`,
-        {
-          headers: getHeaders(),
-        },
-      );
-      let boxCount = 1; // 기본값
-      if (draftRes.ok) {
-        const draftData = await draftRes.json();
-        const caseInfos = Array.isArray(draftData?.caseInfos)
-          ? draftData.caseInfos
-          : [];
+      // boxCount = 1 (백엔드도 항상 1로 고정; 별도 draft 조회 불필요)
+      const boxCount = 1;
 
-        // 배송 날짜별로 그룹화
-        const shipDateGroups = new Set<string>();
-        for (const caseInfo of caseInfos) {
-          const shipDate = caseInfo?.estimatedShipYmd || "unknown";
-          shipDateGroups.add(shipDate);
-        }
-        boxCount = Math.max(1, shipDateGroups.size);
-        console.log("[NewRequestSubmit] shipping box calculation", {
-          caseInfosCount: caseInfos.length,
-          uniqueShipDates: Array.from(shipDateGroups),
-          boxCount,
-        });
-      }
-
-      // 1-2. 크레딧 사전 체크 (업로드 전)
-      console.log("[NewRequestSubmit] credit check start", {
-        t: Date.now() - submitStart,
-      });
-      try {
-        const creditRes = await fetch(`${API_BASE_URL}/credits/balance`, {
-          headers: getHeaders(),
-        });
-        if (creditRes.ok) {
-          const creditResponse = await creditRes.json();
-          const creditData = creditResponse?.data || {};
-          const balance = Number(creditData?.balance || 0);
-          const paidCredit = Number(creditData?.paidCredit || 0);
-          const bonusRequestCredit = Number(
-            creditData?.bonusRequestCredit || 0,
-          );
-          const bonusShippingCredit = Number(
-            creditData?.bonusShippingCredit || 0,
-          );
-
-          console.log("[NewRequestSubmit] credit balance", {
-            creditResponse,
-            creditData,
-            balance,
-            paidCredit,
-            bonusRequestCredit,
-            bonusShippingCredit,
-          });
-
-          // 간단한 예상 비용 계산 (건당 10,000원 가정)
-          const estimatedMachiningFee = files.length * 10000;
-          const estimatedShippingFee = boxCount * 3500; // 박스당 3,500원
-
-          const availableForMachining = paidCredit + bonusRequestCredit;
-          const availableForShipping = paidCredit + bonusShippingCredit;
-
-          console.log("[NewRequestSubmit] credit calculation", {
-            estimatedMachiningFee,
-            estimatedShippingFee,
-            availableForMachining,
-            availableForShipping,
-          });
-
-          const machiningShortfall = Math.max(
-            0,
-            estimatedMachiningFee - availableForMachining,
-          );
-          const shippingShortfall = Math.max(
-            0,
-            estimatedShippingFee - availableForShipping,
-          );
-
-          if (machiningShortfall > 0 || shippingShortfall > 0) {
-            let message = "";
-            const details = [];
-
-            if (machiningShortfall > 0 && shippingShortfall > 0) {
-              message = "의뢰비와 배송비 크레딧이 모두 부족합니다.";
-              details.push(
-                `의뢰비 예상: ${estimatedMachiningFee.toLocaleString()}원 (보유: ${availableForMachining.toLocaleString()}원)`,
-              );
-              details.push(
-                `배송비 예상: ${estimatedShippingFee.toLocaleString()}원 (${boxCount}박스, 보유: ${availableForShipping.toLocaleString()}원)`,
-              );
-            } else if (machiningShortfall > 0) {
-              message = "의뢰비 크레딧이 부족합니다.";
-              details.push(
-                `예상: ${estimatedMachiningFee.toLocaleString()}원, 보유: ${availableForMachining.toLocaleString()}원`,
-              );
-            } else {
-              message = "배송비 크레딧이 부족합니다.";
-              details.push(
-                `예상: ${estimatedShippingFee.toLocaleString()}원 (${boxCount}박스), 보유: ${availableForShipping.toLocaleString()}원`,
-              );
-            }
-
-            message += "\n\n" + details.join("\n");
-            message += "\n\n크레딧을 충전한 뒤 다시 시도해주세요.";
-
-            dismiss();
-            toast({
-              title: "크레딧 부족",
-              description: message,
-              variant: "destructive",
-              duration: 10000, // 10초
-            });
-            return;
-          }
-        }
-      } catch (err) {
-        console.warn("[NewRequestSubmit] credit check failed:", err);
-        // 크레딧 체크 실패 시에도 진행 (백엔드에서 최종 체크)
-      }
-
-      // 2. 중복 데이터 체크 (제출 전 클라이언트 사이드 검증 - 동일 페이로드 내 중복)
+      // 1. 클라이언트 사이드 중복 체크 (동기)
       if (files.length > 1 && caseInfosMap) {
-        console.log("[NewRequestSubmit] duplicate check start", {
-          t: Date.now() - submitStart,
-        });
         const uniqueCombinations = new Set();
         const duplicates = [];
 
@@ -374,9 +252,6 @@ export const useNewRequestSubmitV2 = ({
         }
 
         if (duplicates.length > 0) {
-          console.log("[NewRequestSubmit] duplicate check blocked", {
-            t: Date.now() - submitStart,
-          });
           toast({
             title: "의뢰 제출 중 오류",
             description: `제출한 의뢰 목록에 동일한 치과/환자/치아 조합이 중복되었습니다: ${duplicates.join(
@@ -389,27 +264,105 @@ export const useNewRequestSubmitV2 = ({
         }
       }
 
-      // 3. 제출 전 디바운스 대기 중인 변경사항을 즉시 Draft에 저장 (서버 데이터 동기화)
+      // 2. 크레딧 체크 + Draft 즉시 패치 병렬 실행 (크리티컬 패스 최적화)
+      const validFileKeys = new Set(files.map((f) => toNormalizedFileKey(f)));
+      const filteredMap: Record<string, CaseInfos> = {};
       if (patchDraftImmediately && caseInfosMap) {
-        console.log("[NewRequestSubmit] patch draft start", {
-          t: Date.now() - submitStart,
-        });
-        const validFileKeys = new Set(files.map((f) => toNormalizedFileKey(f)));
-        const filteredMap: Record<string, CaseInfos> = {};
         for (const [key, value] of Object.entries(caseInfosMap)) {
           if (key === "__default__" || validFileKeys.has(key)) {
             filteredMap[key] = value;
           }
         }
+      }
 
-        try {
-          await patchDraftImmediately(filteredMap);
-          console.log("[NewRequestSubmit] patch draft done", {
-            t: Date.now() - submitStart,
-          });
-        } catch (err) {
-          console.warn("[useNewRequestSubmitV2] Pre-submit patch failed:", err);
-        }
+      let creditShortfallMsg: string | null = null;
+
+      await Promise.all([
+        // 크레딧 사전 체크 (백엔드에서 최종 체크; 실패해도 계속 진행)
+        (async () => {
+          try {
+            const creditRes = await fetch(`${API_BASE_URL}/credits/balance`, {
+              headers: getHeaders(),
+            });
+            if (creditRes.ok) {
+              const creditResponse = await creditRes.json();
+              const creditData = creditResponse?.data || {};
+              const paidCredit = Number(creditData?.paidCredit || 0);
+              const bonusRequestCredit = Number(
+                creditData?.bonusRequestCredit || 0,
+              );
+              const bonusShippingCredit = Number(
+                creditData?.bonusShippingCredit || 0,
+              );
+
+              const estimatedMachiningFee = files.length * 10000;
+              const estimatedShippingFee = boxCount * 3500;
+
+              const availableForMachining = paidCredit + bonusRequestCredit;
+              const availableForShipping = paidCredit + bonusShippingCredit;
+
+              const machiningShortfall = Math.max(
+                0,
+                estimatedMachiningFee - availableForMachining,
+              );
+              const shippingShortfall = Math.max(
+                0,
+                estimatedShippingFee - availableForShipping,
+              );
+
+              if (machiningShortfall > 0 || shippingShortfall > 0) {
+                let message = "";
+                const details = [];
+
+                if (machiningShortfall > 0 && shippingShortfall > 0) {
+                  message = "의뢰비와 배송비 크레딧이 모두 부족합니다.";
+                  details.push(
+                    `의뢰비 예상: ${estimatedMachiningFee.toLocaleString()}원 (보유: ${availableForMachining.toLocaleString()}원)`,
+                  );
+                  details.push(
+                    `배송비 예상: ${estimatedShippingFee.toLocaleString()}원 (${boxCount}박스, 보유: ${availableForShipping.toLocaleString()}원)`,
+                  );
+                } else if (machiningShortfall > 0) {
+                  message = "의뢰비 크레딧이 부족합니다.";
+                  details.push(
+                    `예상: ${estimatedMachiningFee.toLocaleString()}원, 보유: ${availableForMachining.toLocaleString()}원`,
+                  );
+                } else {
+                  message = "배송비 크레딧이 부족합니다.";
+                  details.push(
+                    `예상: ${estimatedShippingFee.toLocaleString()}원 (${boxCount}박스), 보유: ${availableForShipping.toLocaleString()}원`,
+                  );
+                }
+
+                message += "\n\n" + details.join("\n");
+                message += "\n\n크레딧을 충전한 뒤 다시 시도해주세요.";
+                creditShortfallMsg = message;
+              }
+            }
+          } catch (err) {
+            console.warn("[NewRequestSubmit] credit check failed:", err);
+          }
+        })(),
+        // Draft 즉시 패치 (백엔드가 최신 caseInfos를 읽도록 보장)
+        patchDraftImmediately && Object.keys(filteredMap).length > 0
+          ? patchDraftImmediately(filteredMap).catch((err) => {
+              console.warn(
+                "[useNewRequestSubmitV2] Pre-submit patch failed:",
+                err,
+              );
+            })
+          : Promise.resolve(),
+      ]);
+
+      if (creditShortfallMsg) {
+        dismiss();
+        toast({
+          title: "크레딧 부족",
+          description: creditShortfallMsg,
+          variant: "destructive",
+          duration: 10000,
+        });
+        return;
       }
 
       // 4. Draft를 Request로 전환
