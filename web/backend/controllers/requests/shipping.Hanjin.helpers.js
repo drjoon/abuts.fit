@@ -6,6 +6,10 @@ export const HANJIN_CLIENT_ID = String(
   process.env.HANJIN_CLIENT_ID || "",
 ).trim();
 const HANJIN_CSR_NUM = String(process.env.HANJIN_CSR_NUM || "").trim();
+console.log(
+  "[hanjin][init] 계약번호(HANJIN_CSR_NUM):",
+  HANJIN_CSR_NUM || "(미설정)",
+);
 const HANJIN_SHIPPER_ZIP = String(process.env.HANJIN_SHIPPER_ZIP || "").trim();
 const WBL_PRINT_SERVER_BASE = String(
   process.env.WBL_PRINT_SERVER_BASE || "",
@@ -744,6 +748,10 @@ export const buildHanjinInsertOrderBody = async ({ mailbox, requests }) => {
   const custOrdNo = `ABUTS_${ymd}_${String(mailbox || "-")}`.slice(0, 30);
   const receiverPhone = String(first?.requestor?.phoneNumber || "").trim();
 
+  console.log(
+    "[hanjin][insert-order] 계약번호(cntractNo):",
+    HANJIN_CSR_NUM || "(미설정)",
+  );
   return {
     custEdiCd: HANJIN_CLIENT_ID,
     custOrdNo,
@@ -848,6 +856,10 @@ const buildHanjinDraftPayload = async (requests) => {
     },
   );
 
+  console.log(
+    "[hanjin][print-wbls] 계약번호(csr_num):",
+    HANJIN_CSR_NUM || "(미설정)",
+  );
   return {
     payload: {
       client_id: HANJIN_CLIENT_ID,
