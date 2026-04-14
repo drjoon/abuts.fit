@@ -362,6 +362,9 @@ export async function deleteStageFile(req, res) {
         request.productionSchedule.assignedMachine = null;
         request.productionSchedule.queuePosition = null;
         request.assignedMachine = null;
+        // machining 롤백 시 PRC 파일명 클리어 - 재가공 시 최신 PRC로 재결정되도록 한다.
+        request.caseInfos.faceHolePrcFileName = null;
+        request.caseInfos.connectionPrcFileName = null;
       }
       if (stage === "packing") {
         request.productionSchedule.actualMachiningStart = null;
@@ -369,6 +372,10 @@ export async function deleteStageFile(req, res) {
         request.productionSchedule.assignedMachine = null;
         request.productionSchedule.queuePosition = null;
         request.assignedMachine = null;
+        // packing 롤백 시 PRC 파일명 클리어 - 재가공 시 최신 PRC로 재결정되도록 한다.
+        // PRC 매핑이 변경된 경우 구버전 PRC가 재사용되는 버그 방지.
+        request.caseInfos.faceHolePrcFileName = null;
+        request.caseInfos.connectionPrcFileName = null;
         try {
           if (!global.__rollbackPackingReservedMachineLoadMap) {
             global.__rollbackPackingReservedMachineLoadMap = new Map();
@@ -457,6 +464,13 @@ export async function deleteStageFile(req, res) {
     bumpRollbackCount(request, stage);
     if (stage === "machining") {
       bumpRollbackCount(request, "cam");
+    }
+
+    // machining/packing 롤백 시 PRC 파일명 클리어 - 재가공 시 최신 PRC로 재결정되도록 한다.
+    // PRC 매핑이 변경된 경우 구버전 PRC가 재사용되는 버그 방지.
+    if (stage === "machining" || stage === "packing") {
+      request.caseInfos.faceHolePrcFileName = null;
+      request.caseInfos.connectionPrcFileName = null;
     }
 
     request.caseInfos.reviewByStage[stage] = {

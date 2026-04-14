@@ -528,7 +528,7 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   // 좌 1행: 품목명 (7pt↑)
   ctx.font = FONT_LEGAL_TITLE;
   fillTextLeft(
-    `품목명:${PRODUCT_NAME}`,
+    `품목명:${PRODUCT_NAME.replace(/['"]/g, "")}`,
     M + 6,
     legalTopY + (lRow1H - 20) / 2,
     splitColW - 10,
@@ -537,7 +537,7 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   // 좌 2행: 모델명 (7pt↑)
   ctx.font = FONT_LEGAL_TITLE;
   fillTextLeft(
-    `모델명:${MODEL_NAME}`,
+    `모델명:${MODEL_NAME.replace(/['"]/g, "")}`,
     M + 6,
     legalTopY + lRow1H + (lRow2H - 20) / 2,
     splitColW - 10,
@@ -576,7 +576,7 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   // 우 1행: 제조번호 (7pt↑)
   ctx.font = FONT_LEGAL_TITLE;
   fillTextLeft(
-    `제조번호:${opts.lotNumber || "-"}`,
+    `제조번호:${String(opts.lotNumber || "-").replace(/['"]/g, "")}`,
     rColX + 6,
     legalTopY + (lRow1H - 20) / 2,
     rColW - 10,
@@ -585,7 +585,7 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   // 우 2행: 제조일자 (7pt↑)
   ctx.font = FONT_LEGAL_TITLE;
   fillTextLeft(
-    `제조일자:${dateOnly(opts.manufacturingDate)}`,
+    `제조일자:${dateOnly(opts.manufacturingDate).replace(/['"]/g, "")}`,
     rColX + 6,
     legalTopY + lRow1H + (lRow2H - 20) / 2,
     rColW - 10,

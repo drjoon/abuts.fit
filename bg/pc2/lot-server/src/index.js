@@ -183,8 +183,8 @@ async function resizeToOneFifth(inputPath) {
 
   const resized = await img
     .resize({
-      width: Math.max(1, Math.round(width * 0.2)),
-      height: Math.max(1, Math.round(height * 0.2)),
+      width: 1280,
+      height: 1280,
       fit: "inside",
       withoutEnlargement: true,
     })
@@ -335,7 +335,7 @@ async function processImageOnce(filePath) {
   const originalName = path.basename(filePath);
   const recognizedSuffix = extractRecognizedSuffixFromFileName(originalName);
 
-  logLine(`[lot-server] step 1/5: resizing image ${originalName}`);
+  logLine(`[lot-server] step 1/5: preparing image ${originalName}`);
   const resizeStart = Date.now();
   const { buffer, mimeType } = await resizeToOneFifth(filePath);
   const fileSize = buffer.length;
