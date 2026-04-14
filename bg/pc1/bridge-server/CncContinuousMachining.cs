@@ -1710,20 +1710,9 @@ private static bool TryResolveJobFilePath(CncJobItem job, out string fullPath, o
 fullPath = null;
 error = null;
 var root = Path.GetFullPath(Config.BridgeStoreRoot);
-var bp = (job.bridgePath ?? string.Empty).Trim();
-if (!string.IsNullOrEmpty(bp))
-{
-var rel = bp.Replace('/', Path.DirectorySeparatorChar).Replace("..", string.Empty);
-var combined = Path.GetFullPath(Path.Combine(root, rel));
-if (!combined.StartsWith(root, StringComparison.OrdinalIgnoreCase))
-{
-error = "bridgePath is outside of root";
-return false;
-}
-fullPath = combined;
-return true;
-}
-// 한글/긴 파일명/경로길이 문제를 피하기 위해, S3 기반 job은 로컬 캐시 파일명을 jobId 기반으로 고정한다.
+// S3 기반 job: s3Key가 있으면 jobId 기반 캐시 경로를 bridgePath보다 먼저 사용한다.
+// bridgePath가 여러 케이스에서 동일한 파일명(program.nc 등)을 가리키는 경우,
+// Esprit가 다음 케이스 NC를 저장하면 덮어쓰기되어 잘못된 파일이 가공되는 문제를 방지한다.
 try
 {
 var sk = (job.s3Key ?? string.Empty).Trim();
@@ -1746,6 +1735,20 @@ return true;
 }
 }
 catch { }
+// s3Key가 없을 때만 bridgePath로 직접 경로를 해석한다 (수동 업로드, 직접 파일 지정 케이스).
+var bp = (job.bridgePath ?? string.Empty).Trim();
+if (!string.IsNullOrEmpty(bp))
+{
+var rel = bp.Replace('/', Path.DirectorySeparatorChar).Replace("..", string.Empty);
+var combined = Path.GetFullPath(Path.Combine(root, rel));
+if (!combined.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+{
+error = "bridgePath is outside of root";
+return false;
+}
+fullPath = combined;
+return true;
+}
 var fn = (job.fileName ?? string.Empty).Trim();
 if (string.IsNullOrEmpty(fn))
 {

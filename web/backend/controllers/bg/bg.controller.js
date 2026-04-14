@@ -379,10 +379,17 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     const resolvedOriginalName = originalFileName || fileName;
     const canonicalBgFilePath =
       sourceStep === "3-nc" && String(fileName || "").trim()
-        ? `3-nc/${String(fileName || "")
-            .trim()
-            .replace(/\\/g, "/")
-            .replace(/^\/+/, "")}`
+        ? (() => {
+            const cleanName = String(fileName || "")
+              .trim()
+              .replace(/\\/g, "/")
+              .replace(/^\/+/, "")
+              .replace(/^3-nc\//i, "");
+            // requestId를 포함한 고유 경로로 저장하여 여러 의뢰가 동일 파일명(program.nc)을 덮어쓰는 문제 방지
+            return requestId
+              ? `3-nc/${requestId}/${cleanName}`
+              : `3-nc/${cleanName}`;
+          })()
         : fileName;
     if (incomingS3Key && incomingS3Url) {
       s3Info = buildStoredFileMeta({
