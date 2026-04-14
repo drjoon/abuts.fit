@@ -385,7 +385,11 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
               .replace(/\\/g, "/")
               .replace(/^\/+/, "")
               .replace(/^3-nc\//i, "");
-            // requestId를 포함한 고유 경로로 저장하여 여러 의뢰가 동일 파일명(program.nc)을 덮어쓰는 문제 방지
+            // 이미 서브디렉토리가 포함된 경우(Esprit이 {date}-{code}/{stlName}.nc 형태로 저장)엔 그대로 사용
+            // 단순 파일명(program.nc 등)이면 requestId 폴더를 추가하여 의뢰별 고유 경로 생성
+            if (cleanName.includes("/")) {
+              return `3-nc/${cleanName}`;
+            }
             return requestId
               ? `3-nc/${requestId}/${cleanName}`
               : `3-nc/${cleanName}`;

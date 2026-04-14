@@ -265,7 +265,7 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
    Rough5AxisStartPointY; 6659; 0;  HIDDEN; CAPTION; 축 시작 점 Z| 축 시작 점 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
    ShankClearance; 3225; 0;  HIDDEN; CAPTION; 생크 공차; SOURCE; 3; TECHCODETYPE; 2;
    MaximumTiltAngle; 3412; 20;  HIDDEN; CAPTION; 최대 기울기 각도; SOURCE; 1; TECHCODETYPE; 2;
-   StockAllowanceWalls; 233; 0.29999999999999999;  CAPTION; 벽면 가공 여유; SOURCE; 2; TECHCODETYPE; 2;
+   StockAllowanceWalls; 233; 0.2;  CAPTION; 벽면 가공 여유; SOURCE; 2; TECHCODETYPE; 2;
    RoundContactCorners; 3327; 0;  CAPTION; 접촉 코너에 라운드; SOURCE; 1; TECHCODETYPE; 67;
    4412; 4412; 1;  SOURCE; 0; TECHCODETYPE; 2;
    4905; 4905; ;  SOURCE; 0; TECHCODETYPE; 3;

@@ -49,7 +49,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             {
                 string requestFolder = Path.Combine(_outputFolder, requestId);
                 Directory.CreateDirectory(requestFolder);
-                return Path.Combine(requestFolder, "program.nc");
+                return Path.Combine(requestFolder, sanitizedBase + ".nc");
             }
             
             return Path.Combine(_outputFolder, sanitizedBase + ".nc");
