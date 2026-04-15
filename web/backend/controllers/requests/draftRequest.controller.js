@@ -5,10 +5,7 @@ import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
 
-import {
-  uploadToRhinoServer,
-  buildStandardStlFileName,
-} from "./creation.helpers.controller.js";
+import { buildStandardStlFileName } from "./creation.helpers.controller.js";
 import { normalizeCaseInfosImplantFields } from "./utils.js";
 
 async function buildNormalizedDraftCaseInfos(caseInfosInput = []) {

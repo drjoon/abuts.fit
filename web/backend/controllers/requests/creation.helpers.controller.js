@@ -1,48 +1,8 @@
-import axios from "axios";
-import FormData from "form-data";
 import CreditLedger from "../../models/creditLedger.model.js";
 
-/**
- * 파일을 Rhino 서버의 1-stl 에 직접 업로드하고 즉시 처리를 시작하도록 요청하는 헬퍼
- */
-export async function uploadToRhinoServer(fileBuffer, fileName) {
-  try {
-    const RHINO_SERVER_URL =
-      process.env.RHINO_SERVER_URL ||
-      process.env.RHINO_COMPUTE_BASE_URL ||
-      "http://localhost:8000";
-    const RHINO_SHARED_SECRET = String(
-      process.env.RHINO_SHARED_SECRET || "",
-    ).trim();
-    const formData = new FormData();
-    formData.append("file", fileBuffer, { filename: fileName });
-
-    const response = await axios.post(
-      `${RHINO_SERVER_URL}/api/rhino/upload-stl`,
-      formData,
-      {
-        headers: {
-          ...formData.getHeaders(),
-          ...(RHINO_SHARED_SECRET
-            ? { "X-Bridge-Secret": RHINO_SHARED_SECRET }
-            : {}),
-        },
-        timeout: 30000,
-      },
-    );
-
-    if (response.data?.ok) {
-      console.log(
-        `[Rhino-Server] File upload successful, processing started: ${fileName}`,
-      );
-      return true;
-    }
-    return false;
-  } catch (err) {
-    console.error(`[Rhino-Server] Failed to upload file: ${err.message}`);
-    return false;
-  }
-}
+// [정책] uploadToRhinoServer / uploadS3ToRhinoServer 제거
+// 백엔드가 rhino-server에 직접 STL을 전송하던 방식 삭제.
+// rhino-server가 /api/rhino/process-file 호출 시 /bg/original-file → S3에서 직접 다운로드함.
 
 /**
  * STL 파일명을 표준 형식으로 생성하는 헬퍼
@@ -59,21 +19,6 @@ export function buildStandardStlFileName({
     ? `.${originalFileName.split(".").pop().toLowerCase()}`
     : ".stl";
   return `${requestId}-${clinicName}-${patientName}-${tooth}${ext}`;
-}
-
-/**
- * S3에서 파일을 다운로드하여 Rhino 서버의 1-stl 에 직접 업로드하는 헬퍼
- */
-export async function uploadS3ToRhinoServer(s3Url, fileName) {
-  try {
-    const s3Utils = (await import("../../utils/s3.utils.js")).default;
-    const buffer = await s3Utils.getObjectBufferFromS3(s3Url);
-    if (buffer) {
-      await uploadToRhinoServer(buffer, fileName);
-    }
-  } catch (err) {
-    console.error(`[Rhino-Server] Failed to upload S3 file: ${err.message}`);
-  }
 }
 
 export async function getBusinessCreditBalanceBreakdown({

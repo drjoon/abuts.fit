@@ -28,7 +28,6 @@ import {
   buildStandardStlFileName,
   getBusinessCreditBalanceBreakdown,
   isDuplicateKeyError,
-  uploadS3ToRhinoServer,
 } from "./creation.helpers.controller.js";
 
 const REQUEST_ID_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -1008,11 +1007,7 @@ export async function createRequestsFromDraft(req, res) {
               newRequest.caseInfos.file.filePath = bgFileName;
             }
 
-            uploadS3ToRhinoServer(s3Key, bgFileName).catch((err) => {
-              console.error(
-                `[Rhino-Parallel-Upload] Failed for request ${requestId}: ${err.message}`,
-              );
-            });
+            // [정책] uploadS3ToRhinoServer 제거 — rhino-server가 process-file 트리거 시 S3에서 직접 다운로드
           }
 
           requestDocs.push(newRequest);

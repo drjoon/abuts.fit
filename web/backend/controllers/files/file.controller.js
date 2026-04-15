@@ -1,8 +1,6 @@
 import mongoose, { Types } from "mongoose";
 import path from "path";
 import fs from "fs/promises";
-import axios from "axios";
-import FormData from "form-data";
 import File from "../../models/file.model.js";
 import Request from "../../models/request.model.js";
 import ChatRoom from "../../models/chatRoom.model.js";
@@ -37,59 +35,9 @@ const getExtFromName = (name) => {
   return ext.length > 10 ? "" : ext;
 };
 
-const RHINO_SERVER_URL =
-  process.env.RHINO_SERVER_URL || "http://localhost:8000";
-
-/**
- * 파일을 Rhino 서버의 1-stl 에 직접 업로드하는 헬퍼
- */
-async function uploadToRhinoServer(fileBuffer, fileName) {
-  try {
-    const RHINO_SHARED_SECRET = String(
-      process.env.RHINO_SHARED_SECRET || "",
-    ).trim();
-    // 기존 Rhino Compute 서버 업로드 로직 유지
-    const formData = new FormData();
-    formData.append("file", fileBuffer, { filename: fileName });
-
-    const response = await axios.post(
-      `${RHINO_SERVER_URL}/api/rhino/upload-stl`,
-      formData,
-      {
-        headers: {
-          ...formData.getHeaders(),
-          ...(RHINO_SHARED_SECRET
-            ? { "X-Bridge-Secret": RHINO_SHARED_SECRET }
-            : {}),
-        },
-        timeout: 5000,
-      },
-    );
-
-    if (response.data?.ok) {
-      console.log(`[Rhino-Server] File uploaded to 1-stl: ${fileName}`);
-      return true;
-    }
-    return false;
-  } catch (err) {
-    console.error(`[Rhino-Server] Failed to upload file: ${err.message}`);
-    return false;
-  }
-}
-
-/**
- * S3에서 파일을 다운로드하여 Rhino 서버의 1-stl 에 직접 업로드하는 헬퍼
- */
-async function uploadS3ToRhinoServer(s3Key, fileName) {
-  try {
-    const buffer = await s3Utils.getObjectBufferFromS3(s3Key);
-    if (buffer) {
-      await uploadToRhinoServer(buffer, fileName);
-    }
-  } catch (err) {
-    console.error(`[Rhino-Server] Failed to upload S3 file: ${err.message}`);
-  }
-}
+// [정책] uploadToRhinoServer / uploadS3ToRhinoServer 제거
+// 백엔드가 rhino-server에 직접 파일을 전송하던 방식 삭제.
+// rhino-server가 /api/rhino/process-file 호출 시 /bg/original-file → S3에서 직접 다운로드함.
 
 // 임시 파일 업로드 (의뢰와 아직 연결되지 않은 상태, 사용자별 중복 방지)
 export const uploadTempFiles = asyncHandler(async (req, res) => {
@@ -115,9 +63,6 @@ export const uploadTempFiles = asyncHandler(async (req, res) => {
     }
 
     const originalname = normalizeOriginalName(rawName);
-
-    // Rhino 서버 1-stl 에 직접 업로드 시도
-    await uploadToRhinoServer(buffer, originalname);
 
     // 사용자별 파일명+용량 기준 중복 검사
     const existing = await File.findOne({

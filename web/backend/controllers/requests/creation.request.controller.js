@@ -17,8 +17,6 @@ import {
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import {
   buildStandardStlFileName,
-  uploadS3ToRhinoServer,
-  uploadToRhinoServer,
   getBusinessCreditBalanceBreakdown,
 } from "./creation.helpers.controller.js";
 import { getRequestorOrgId } from "./utils.js";
@@ -221,11 +219,7 @@ export async function createRequest(req, res) {
         originalFileName: newRequest.caseInfos.file.originalName,
       });
 
-      // 즉시 실행 (응답을 기다리지 않음)
-      uploadToRhinoServer(req.file.buffer, bgFileName).catch((e) =>
-        console.error(`[Rhino-Direct-Upload] Failed: ${e.message}`),
-      );
-
+      // [정책] uploadToRhinoServer 제거 — rhino-server가 process-file 트리거 시 S3에서 직접 다운로드
       // DB에 로컬 경로 정보 업데이트
       newRequest.caseInfos.file.filePath = bgFileName;
       await newRequest.save();
@@ -952,14 +946,7 @@ export async function createRequestsBulk(req, res) {
               { _id: newRequest._id },
               { $set: { "caseInfos.file.filePath": bgFileName } },
             );
-            uploadS3ToRhinoServer(
-              normalizedCaseInfos.file.s3Key,
-              bgFileName,
-            ).catch((err) =>
-              console.error(
-                `[Rhino-Parallel-Upload] Failed for request ${newRequest.requestId}: ${err.message}`,
-              ),
-            );
+            // [정책] uploadS3ToRhinoServer 제거 — rhino-server가 process-file 트리거 시 S3에서 직접 다운로드
           }
 
           const totalMs = Date.now() - iStart;

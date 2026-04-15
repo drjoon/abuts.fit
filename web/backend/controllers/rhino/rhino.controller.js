@@ -1,22 +1,9 @@
-import { dirname, resolve } from "path";
-import { fileURLToPath } from "url";
-import fs from "fs";
 import axios from "axios";
-import FormData from "form-data";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiError } from "../../utils/ApiError.js";
-import Request from "../../models/request.model.js";
-import { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const RHINO_STORE_IN_DIR = resolve(__dirname, "../../../rhino/Stl-Stores/in");
 const RHINO_COMPUTE_BASE_URL = String(
   process.env.RHINO_COMPUTE_BASE_URL || "http://127.0.0.1:8000",
-).replace(/\/+$/, "");
-const RHINO_SERVER_UPLOAD_BASE_URL = String(
-  process.env.RHINO_SERVER_URL || RHINO_COMPUTE_BASE_URL,
 ).replace(/\/+$/, "");
 
 const RHINO_SHARED_SECRET = String(
@@ -67,66 +54,10 @@ const sanitizeStlName = (name) => {
   return cleaned.toLowerCase().endsWith(".stl") ? cleaned : `${cleaned}.stl`;
 };
 
-const uploadBufferToRhino = async (buffer, fileName) => {
-  if (!buffer || buffer.length === 0) return false;
-  try {
-    const formData = new FormData();
-    formData.append("file", buffer, { filename: fileName });
-
-    const resp = await axios.post(
-      `${RHINO_SERVER_UPLOAD_BASE_URL}/api/rhino/upload-stl`,
-      formData,
-      {
-        headers: {
-          ...formData.getHeaders(),
-          ...rhinoAuthHeaders(),
-        },
-        timeout: 1000 * 30,
-      },
-    );
-    return resp?.data?.ok === true;
-  } catch (error) {
-    console.error(
-      "[Rhino] uploadBufferToRhino failed",
-      error?.message || error,
-    );
-    return false;
-  }
-};
-
-const ensureStlOnRhinoStore = async (safeName) => {
-  try {
-    const targetPath = resolve(RHINO_STORE_IN_DIR, safeName);
-    if (fs.existsSync(targetPath)) return true;
-
-    const request = await Request.findOne({
-      $or: [
-        { "caseInfos.file.filePath": safeName },
-        { "caseInfos.file.originalName": safeName },
-        { "caseInfos.file.fileName": safeName },
-      ],
-    })
-      .select("caseInfos.file.s3Key")
-      .lean();
-
-    const s3Key = request?.caseInfos?.file?.s3Key;
-    if (!s3Key) {
-      console.warn(`[Rhino] Unable to locate STL in DB for ${safeName}`);
-      return false;
-    }
-
-    const buffer = await getObjectBufferFromS3(s3Key);
-    const uploaded = await uploadBufferToRhino(buffer, safeName);
-    if (!uploaded) {
-      console.warn(`[Rhino] Failed to re-upload STL to Rhino for ${safeName}`);
-      return false;
-    }
-    return true;
-  } catch (error) {
-    console.error(`[Rhino] ensureStlOnRhinoStore error for ${safeName}`, error);
-    return false;
-  }
-};
+// [정책] uploadBufferToRhino / ensureStlOnRhinoStore 제거
+// 백엔드가 rhino-server에 직접 파일을 전송하던 방식 삭제.
+// rhino-server의 /api/rhino/process-file 호출 시 파일이 없으면
+// rhino-server가 /bg/original-file → S3에서 직접 다운로드함.
 
 export const processFileByName = asyncHandler(async (req, res) => {
   const rawName = req.body?.filePath || req.body?.fileName || req.body?.name;
@@ -135,22 +66,16 @@ export const processFileByName = asyncHandler(async (req, res) => {
   }
 
   const safeName = sanitizeStlName(String(rawName));
+  const requestId = req.body?.requestId || null;
   const force = Boolean(req.body?.force);
 
-  const ensured = await ensureStlOnRhinoStore(safeName);
-  if (!ensured) {
-    throw new ApiError(
-      404,
-      "원본 STL 파일을 찾을 수 없습니다. S3 업로드 상태를 확인해주세요.",
-    );
-  }
-
+  // [정책] rhino-server가 파일 없으면 /bg/original-file로 S3에서 직접 다운로드
   const resp = await enqueueTask(() =>
     axios.post(
       `${RHINO_COMPUTE_BASE_URL}/api/rhino/process-file`,
-      { filePath: safeName, fileName: safeName, force },
+      { filePath: safeName, fileName: safeName, requestId, force },
       {
-        timeout: 1000 * 60 * 1,
+        timeout: 1000 * 60 * 3,
         headers: rhinoAuthHeaders(),
       },
     ),
