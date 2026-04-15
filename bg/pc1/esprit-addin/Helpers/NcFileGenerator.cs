@@ -20,7 +20,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         public NcFileGenerator(Application espApp, string outputFolder, string postProcessorFile)
         {
             _espApp = espApp ?? throw new ArgumentNullException(nameof(espApp));
-            _outputFolder = outputFolder ?? AppConfig.StorageNcDirectory;
+            // [정책] StorageNcDirectory 대신 OS temp 기반 임시 디렉토리
+            _outputFolder = outputFolder ?? System.IO.Path.Combine(System.IO.Path.GetTempPath(), "abuts-esprit-nc");
+            System.IO.Directory.CreateDirectory(_outputFolder);
             _postProcessorFile = postProcessorFile ?? "Acro_dent_XE.asc";
         }
         public string GenerateNcFile(Document document, string stlPath, double frontPointX, double stockDiameter, string serialCode, double? stlBoundingTopZ = null)

@@ -32,11 +32,14 @@ router.post(
   cncMachineController.consumeBridgeQueueJobForBridge,
 );
 
+// [정책 §4.8] Lab(의뢰건) S3 다운로드 presign — bridge-server 전용
+// bridge가 가공 명령 시 S3에서 NC 파일을 실시간 다운로드하기 위해 호출
+// 구 경로: /bridge/cnc-direct/presign-download → URL은 bridge-server가 하드코딩하므로 유지
 router.get(
   "/bridge/cnc-direct/presign-download/:machineId",
   requireBridgeIpAllowlist,
   requireBridgeSecret,
-  cncMachineController.createCncDirectDownloadPresignForBridge,
+  cncMachineController.createCncLabDownloadPresignForBridge,
 );
 router.get(
   "/bridge/machine-flags/:machineId",
@@ -150,10 +153,13 @@ router.post(
   cncMachineController.cancelMachiningForMachine,
 );
 
+// [정책 §4.8] Man(수동) 업로드 — 장비 페이지에서 작업자가 올리는 수동 파일
+// man = manual. requestId 없음, bridge-store 경유 → bridge 큐 등록
+// 구 경로: /smart/upload, /continuous/upload → 신 경로: /man/upload
 router.post(
-  "/:machineId/smart/upload",
+  "/:machineId/man/upload",
   authorizeRoles("manufacturer", "admin"),
-  cncMachineController.smartUpload,
+  cncMachineController.manUpload,
 );
 
 // 작업 결과 조회 (이중 응답 방식)
@@ -177,22 +183,18 @@ router.post(
   cncMachineController.enqueueBridgeContinuousJobFromDb,
 );
 
-// CNC(3-direct) 업로드: presign 발급 + DB 예약목록 enqueue (브리지 서버 다운 시에도 동작)
+// [정책 §4.8] Lab(의뢰건) 업로드 — 프론트가 S3에 직접 presign 업로드 후 DB 등록
+// lab = laboratory(기공소) 의뢰건 자동가공 전용. requestId 항상 포함
+// 구 경로: /direct/presign, /direct/enqueue → 신 경로: /lab/presign, /lab/enqueue
 router.post(
-  "/:machineId/direct/presign",
+  "/:machineId/lab/presign",
   authorizeRoles("manufacturer", "admin"),
-  cncMachineController.createCncDirectUploadPresign,
+  cncMachineController.createCncLabUploadPresign,
 );
 router.post(
-  "/:machineId/direct/enqueue",
+  "/:machineId/lab/enqueue",
   authorizeRoles("manufacturer", "admin"),
-  cncMachineController.enqueueCncDirectToDb,
-);
-
-router.post(
-  "/:machineId/continuous/upload",
-  authorizeRoles("manufacturer", "admin"),
-  cncMachineController.uploadAndEnqueueContinuousForMachine,
+  cncMachineController.enqueueCncLabToDb,
 );
 
 router.post(
@@ -201,10 +203,12 @@ router.post(
   cncMachineController.saveJobProgramCode,
 );
 
+// [정책 §4.8] Lab(의뢰건) S3 다운로드 presign (제조사/관리자용)
+// 구 경로: /direct/presign-download → 신 경로: /lab/presign-download
 router.get(
-  "/:machineId/direct/presign-download",
+  "/:machineId/lab/presign-download",
   authorizeRoles("manufacturer", "admin"),
-  cncMachineController.createCncDirectDownloadPresign,
+  cncMachineController.createCncLabDownloadPresign,
 );
 
 // 브리지 연속 가공 상태 조회

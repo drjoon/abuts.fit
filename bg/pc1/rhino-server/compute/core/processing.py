@@ -384,6 +384,15 @@ async def process_single_stl(p: Path, force_reprocess: bool = False):
         finally:
             with state.in_flight_lock:
                 state.in_flight.discard(p.name)
+            # [정책] 처리 완료 후 OS temp 임시 파일 즉시 삭제
+            # 입력(p)은 S3 원본에서 다운로드한 캐시, 출력(out_path)은 S3에 업로드 완료
+            for _tmp in (p, out_path):
+                try:
+                    if _tmp and _tmp.exists():
+                        _tmp.unlink(missing_ok=True)
+                        log(f"[cleanup] temp file deleted: {_tmp.name}")
+                except Exception as _e:
+                    log(f"[cleanup] temp file delete failed ({_tmp}): {_e}")
 
 async def recover_unprocessed_files() -> None:
     try:

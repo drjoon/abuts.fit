@@ -23,6 +23,10 @@ namespace HiLinkBridgeWebApi48.Controllers
         }
 
         // POST /api/cnc/smart/upload?machines=M3,M4
+        // [정책 §4.8] 이 엔드포인트는 bridge-store 경로(path)를 직접 받아 CNC에 업로드한다.
+        // 신규 Man(/man/upload) 경로에서는 백엔드가 파일을 수신하여 /continuous/enqueue로만 큐에 등록하므로
+        // 이 엔드포인트를 백엔드에서 직접 프록시하지 않는다.
+        // 필요 시 bridge 내부에서 직접 호출하는 경우에만 사용한다.
         [HttpPost]
         [Route("smart/upload")]
         public HttpResponseMessage SmartUploadProgram(string machines, [FromBody] SmartUploadProgramRequest req)

@@ -169,13 +169,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging
                 var bridgeSecret = AppConfig.GetBridgeSecret();
                 var allowIps = AppConfig.GetEspritAllowIpsRaw();
                 var baseDir = AppConfig.BaseDirectory;
-                var filledDir = AppConfig.StorageFilledDirectory;
-                var ncDir = AppConfig.StorageNcDirectory;
+                var tempStlDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "abuts-esprit-stl");
+                var tempNcDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "abuts-esprit-nc");
 
                 var now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
                 Trace.WriteLine($"[{now}] [Config] BaseDirectory={baseDir}");
-                Trace.WriteLine($"[{now}] [Config] StorageFilledDirectory={filledDir}");
-                Trace.WriteLine($"[{now}] [Config] StorageNcDirectory={ncDir}");
+                Trace.WriteLine($"[{now}] [Config] TempStlDir={tempStlDir} (OS temp, not persistent)");
+                Trace.WriteLine($"[{now}] [Config] TempNcDir={tempNcDir} (OS temp, not persistent)");
             }
             catch
             {

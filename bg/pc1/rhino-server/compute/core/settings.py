@@ -12,29 +12,21 @@ load_dotenv(dotenv_path=APP_ROOT / "local.env", override=True)
 
 SCRIPT_DIR = APP_ROOT / "scripts"
 
-# BG_STORAGE_ROOT: local.env의 BG_ROOT, STORAGE_ROOT 또는 환경변수 BG_STORAGE_ROOT 사용
+# [정책] 로컬 storage 폴더 제거 — 백엔드 DB + S3가 SSOT
+# 입력/출력 파일은 OS temp 기반 임시 디렉토리를 사용하며 처리 후 삭제됨.
+# BG_STORAGE_ROOT 환경 변수가 설정된 경우 레거시 호환성 유지를 위해 해당 경로를 사용.
 _env_storage_root = os.getenv("BG_STORAGE_ROOT", "").strip()
 if _env_storage_root:
-    BG_STORAGE_ROOT = Path(_env_storage_root)
+    # 레거시: 환경변수로 명시된 storage root 사용
+    _storage_root = Path(_env_storage_root)
+    STORE_IN_DIR = _storage_root / "1-stl"
+    STORE_OUT_DIR = _storage_root / "2-filled"
 else:
-    bg_root = os.getenv("BG_ROOT", "").strip()
-    storage_root = os.getenv("STORAGE_ROOT", "").strip()
-    if bg_root and storage_root:
-        BG_STORAGE_ROOT = Path(bg_root) / storage_root
-    else:
-        # 실행 경로 기반 자동 감지: rhino-server/compute 상위의 storage 폴더 찾기
-        current = APP_ROOT.parent  # rhino-server
-        while current != current.parent:
-            if (current / "storage").exists():
-                BG_STORAGE_ROOT = current / "storage"
-                break
-            current = current.parent
-        else:
-            # storage 폴더를 찾지 못하면 기본값 사용
-            BG_STORAGE_ROOT = APP_ROOT.parent.parent / "storage"
+    # 운영 모드: OS temp 기반 임시 디렉토리
+    import tempfile as _tempfile
+    STORE_IN_DIR = Path(_tempfile.gettempdir()) / "abuts-rhino-stl-in"
+    STORE_OUT_DIR = Path(_tempfile.gettempdir()) / "abuts-rhino-stl-out"
 
-STORE_IN_DIR = BG_STORAGE_ROOT / "1-stl"
-STORE_OUT_DIR = BG_STORAGE_ROOT / "2-filled"
 TMP_DIR = APP_ROOT / ".tmp"
 
 DEFAULT_TIMEOUT_SEC = int(os.getenv("RHINO_TIMEOUT_SEC", "180"))
@@ -54,8 +46,8 @@ JOB_CALLBACK_URL = os.getenv(
 
 def ensure_dirs() -> None:
     SCRIPT_DIR.mkdir(parents=True, exist_ok=True)
-    STORE_IN_DIR.mkdir(parents=True, exist_ok=True)
-    STORE_OUT_DIR.mkdir(parents=True, exist_ok=True)
+    STORE_IN_DIR.mkdir(parents=True, exist_ok=True)   # OS temp 기반 임시 입력 디렉토리
+    STORE_OUT_DIR.mkdir(parents=True, exist_ok=True)  # OS temp 기반 임시 출력 디렉토리
     TMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -116,6 +108,7 @@ def purge_old_storage(days: int = 15) -> None:
             return
 
     try:
+        # OS temp 기반 임시 디렉토리도 동일하게 TTL purge
         _purge_dir(STORE_IN_DIR)
         _purge_dir(STORE_OUT_DIR)
     except Exception:

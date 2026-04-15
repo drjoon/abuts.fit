@@ -101,29 +101,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                     AppLogger.Log($"BackendApiClient: requestId extracted from stlPath: {requestId}");
                 }
                 
+                // [정책] OS temp 기반 임시 파일 사용 — 로지컈 경로 대신 파일명만 백엔드에 전달
                 string ncRelativePath = fi.Name;
-                try
-                {
-                    string ncDir = fi.DirectoryName ?? string.Empty;
-                    string storageNcDir = AppConfig.StorageNcDirectory;
-                    if (!string.IsNullOrWhiteSpace(ncDir) && !string.IsNullOrWhiteSpace(storageNcDir))
-                    {
-                        string normalizedNcDir = Path.GetFullPath(ncDir);
-                        string normalizedStorageDir = Path.GetFullPath(storageNcDir);
-                        if (normalizedNcDir.StartsWith(normalizedStorageDir, StringComparison.OrdinalIgnoreCase))
-                        {
-                            string relativePart = normalizedNcDir.Substring(normalizedStorageDir.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                            if (!string.IsNullOrWhiteSpace(relativePart))
-                            {
-                                ncRelativePath = Path.Combine(relativePart, fi.Name).Replace(Path.DirectorySeparatorChar, '/');
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    AppLogger.Log($"BackendApiClient: Failed to compute NC relative path: {ex.Message}");
-                }
                 
                 string json;
                 if (upload.ok)
@@ -149,6 +128,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                     if (resp.IsSuccessStatusCode)
                     {
                         AppLogger.Log($"BackendApiClient: register-file success file={ncRelativePath} requestId={requestId}");
+                        // [정책] S3 업로드 + 등록 완료 후 OS temp 임시 파일 즉시 삭제
+                        TryDeleteTempFile(ncPath, "NC");
+                        TryDeleteTempFile(stlPath, "STL");
                     }
                     else
                     {
@@ -381,6 +363,20 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         public class RequestMetaFinishLine
         {
             [DataMember] public double[][] points { get; set; }
+        }
+
+        private static void TryDeleteTempFile(string path, string label)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
+                File.Delete(path);
+                AppLogger.Log($"BackendApiClient: temp {label} deleted: {Path.GetFileName(path)}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"BackendApiClient: temp {label} delete failed: {ex.GetType().Name}:{ex.Message}");
+            }
         }
     }
 }

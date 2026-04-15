@@ -809,10 +809,33 @@
 - `POST /api/cnc-machines/:machineId/bridge-queue/reconcile`: 현재 브리지 큐 스냅샷에서 `requestId` 있는 의뢰건 항목을 제거하고 저장하는 관리자/제조사 전용 엔드포인트.
 - DB 마이그레이션이나 수동 정리 시 사용한다.
 
-#### 4.8.6 금지 사항
+#### 4.8.6 프론트엔드 업로드 훅 분리
+
+**두 업로드 경로는 완전히 다른 API를 사용하여 섞일 수 없도록 강제됩니다.**
+
+| 훅 파일                                                                    | 용도                           | API 경로                                                            | 특징                                                                        |
+| -------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `/web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useLabUpload.ts` | 의뢰건 자동 가공 (작업 페이지) | `POST /api/cnc-machines/:machineId/lab/presign` + `.../lab/enqueue` | requestId 포함, S3 presign 업로드 → DB 생산 큐 등록, source="request_auto"  |
+| `/web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts` | 수동 파일 업로드 (장비 페이지) | `POST /api/cnc-machines/:machineId/man/upload`                      | requestId 없음, 파일 → 백엔드 경유 → bridge 큐 등록, source="manual_upload" |
+
+**경로 이름 의미**:
+
+- `/lab/` = **laboratory(기공소)**. 기공소에서 접수된 의뢰건의 자동가공 전용. 프론트가 S3에 직접 presign PUT 업로드.
+- `/man/` = **manual(수동)**. 작업자가 장비 페이지에서 직접 올리는 수동 업로드 전용. 파일을 백엔드 경유로 수신 후 bridge-store 저장.
+
+**구 경로 → 신 경로 매핑** (코드 내 레거시 참조 금지):
+
+- `/direct/presign` + `/direct/enqueue` → `/lab/presign` + `/lab/enqueue`
+- `/continuous/upload`, `/smart/upload` → `/man/upload`
+- S3 저장 경로: `bg/3-direct/` → `bg/3-lab/` (Lab), `bg/3-man/` (Man)
+
+**중요**: 두 훅은 서로 다른 백엔드 엔드포인트를 호출하므로, 애초에 섞일 수 없는 구조입니다. 별도의 강제 구분 코드가 필요하지 않습니다.
+
+#### 4.8.7 금지 사항
 
 - `triggerNextAutoMachiningAfterComplete` 완료 후 브리지 큐 스냅샷을 재읽어 DB에 저장하는 것 금지.
 - 의뢰건 NC 파일 경로가 브리지 큐 스냅샷 `jobs` 배열에 `requestId`와 함께 남아 있는 것 금지.
+- 두 업로드 훅을 같은 컴포넌트에서 혼용하는 것 금지 (각 페이지는 하나의 훅만 사용).
 - 두 큐를 하나의 `bridgeQueueSnapshot`으로 합산하여 표시하는 것 금지.
 
 ---

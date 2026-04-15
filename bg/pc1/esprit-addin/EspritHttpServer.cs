@@ -388,11 +388,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                             );
                             return;
                         }
-                        var filledDir = AppConfig.StorageFilledDirectory;
-                        if (!Directory.Exists(filledDir))
-                        {
-                            Directory.CreateDirectory(filledDir);
-                        }
+                        var filledDir = GetTempStlDir();
                         var targetPath = System.IO.Path.Combine(filledDir, safeName);
                         if (req.Force)
                         {
@@ -532,17 +528,24 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             AppLogger.Log("[Queue Processor] Stopped");
         }
+        private static string GetTempStlDir()
+        {
+            // [정책] 로컬 storage 폴더 대신 OS temp 기반 임시 디렉토리 사용
+            // 처리 완료 후 파일은 삭제되므로 영구 경로 불필요
+            var dir = Path.Combine(Path.GetTempPath(), "abuts-esprit-stl");
+            Directory.CreateDirectory(dir);
+            return dir;
+        }
         private string NormalizeFilePath(string path)
         {
             if (string.IsNullOrWhiteSpace(path))
                 return path;
-            // 상대 경로면 storage 기준으로 보정
+            // 상대 경로면 OS temp 기반 임시 디렉토리로 보정 (구 StorageFilledDirectory 대체)
             if (!Path.IsPathRooted(path))
             {
-                string storagePath = AppConfig.StorageFilledDirectory;
-                string fullPath = Path.Combine(storagePath, Path.GetFileName(path));
-                AppLogger.Log($"[NC Processing] Path normalization: {path} -> {fullPath}");
-                return fullPath;
+                string tempPath = Path.Combine(GetTempStlDir(), Path.GetFileName(path));
+                AppLogger.Log($"[NC Processing] Path normalization: {path} -> {tempPath}");
+                return tempPath;
             }
             return path;
         }
@@ -564,22 +567,20 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         }
         private static void TryDeleteExistingNcFiles(NcGenerationRequest req, string stlPath)
         {
+            // [정책] NC 출력 파일은 NcFileGenerator가 OS temp 기반 경로에 생성하고
+            // NotifyBackendSuccess()로 S3 업로드 후 즉시 삭제함.
+            // Force 재실행 시에도 temp 파일은 OS가 관리하므로 별도 삭제 불필요.
             try
             {
-                var outDir = AppConfig.StorageNcDirectory;
-                if (string.IsNullOrWhiteSpace(outDir)) return;
-                Directory.CreateDirectory(outDir);
                 string baseName = Path.GetFileNameWithoutExtension(stlPath ?? string.Empty) ?? string.Empty;
                 string sanitizedBase = RemoveFilledToken(baseName);
-                if (string.IsNullOrWhiteSpace(sanitizedBase))
-                {
-                    sanitizedBase = baseName;
-                }
+                if (string.IsNullOrWhiteSpace(sanitizedBase)) sanitizedBase = baseName;
                 if (string.IsNullOrWhiteSpace(sanitizedBase)) return;
+                var tempNcDir = Path.Combine(Path.GetTempPath(), "abuts-esprit-nc");
                 var candidates = new List<string>
                 {
-                    Path.Combine(outDir, sanitizedBase + ".nc"),
-                    Path.Combine(outDir, baseName + ".nc"),
+                    Path.Combine(tempNcDir, sanitizedBase + ".nc"),
+                    Path.Combine(tempNcDir, baseName + ".nc"),
                 };
                 foreach (var p in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
                 {

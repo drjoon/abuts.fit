@@ -1,52 +1,28 @@
 using System;
-using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
 using System.Windows.Forms;
 
 namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 {
+    // [정책] storage 폴더 파일 목록 UI 제거.
+    // esprit-addin은 백엔드 HTTP 트리거 방식만 사용하므로 파일 선택 창이 불필요함.
+    // AddInMainWindow는 현재 사용되지 않으며 Connect.cs에서 마스키드 상태로 유지.
     public class AddInMainWindow : Form
     {
-        private readonly FilePanel _filePanel;
-
-        public event Action<string> FileRequested;
-
         public AddInMainWindow()
         {
             FormBorderStyle = FormBorderStyle.FixedSingle;
             StartPosition = FormStartPosition.Manual;
-            Text = "STL 파일 선택";
-            ClientSize = new Size(360, 120); // 3줄 정도 표시하도록 높이 축소
-            TopMost = true;
+            Text = "abuts.fit CAM addin";
+            ClientSize = new Size(200, 40);
+            TopMost = false;
             ShowInTaskbar = false;
-            ControlBox = true;
-            MaximizeBox = false;
-            MinimizeBox = true;
-
-            _filePanel = new FilePanel(new List<string>());
-            _filePanel.Dock = DockStyle.Fill;
-            _filePanel.FileSelected += HandleFileSelected;
-            Controls.Add(_filePanel);
-
-            PositionForm();
-        }
-
-        public void UpdateFiles(IEnumerable<string> files)
-        {
-            _filePanel.SetFiles(files ?? Enumerable.Empty<string>());
+            WindowState = FormWindowState.Minimized;
         }
 
         public void ShowWindow()
         {
-            if (!Visible)
-            {
-                Show();
-            }
-            else
-            {
-                Activate();
-            }
+            // 사용안함 — 데스크탑 노출 전단 방지
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -55,45 +31,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             if (e.CloseReason == CloseReason.UserClosing)
             {
                 e.Cancel = true;
-                WindowState = FormWindowState.Minimized;
                 Hide();
             }
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                _filePanel.FileSelected -= HandleFileSelected;
-            }
-            base.Dispose(disposing);
-        }
-
-        protected override CreateParams CreateParams
-        {
-            get
-            {
-                const int CP_NOCLOSE_BUTTON = 0x200;
-                CreateParams cp = base.CreateParams;
-                cp.ClassStyle |= CP_NOCLOSE_BUTTON;
-                return cp;
-            }
-        }
-
-        private void HandleFileSelected(string filePath)
-        {
-            FileRequested?.Invoke(filePath);
-        }
-
-        private void PositionForm()
-        {
-            Screen screen = Screen.PrimaryScreen;
-            int offsetX = 20;
-            int offsetY = 40;
-            Location = new Point(
-                screen.WorkingArea.Right - Width - offsetX,
-                screen.WorkingArea.Bottom - Height - offsetY
-            );
         }
     }
 }

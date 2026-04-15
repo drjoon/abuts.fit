@@ -109,28 +109,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return value ?? string.Empty;
             }
         }
-        private static void PurgeOldFiles(string dirPath, int days)
-        {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(dirPath)) return;
-                if (!Directory.Exists(dirPath)) return;
-                var thresholdUtc = DateTime.UtcNow.AddDays(-Math.Abs(days));
-                foreach (var file in Directory.GetFiles(dirPath, "*", SearchOption.AllDirectories))
-                {
-                    try
-                    {
-                        var utc = File.GetLastWriteTimeUtc(file);
-                        if (utc < thresholdUtc)
-                        {
-                            File.Delete(file);
-                        }
-                    }
-                    catch { }
-                }
-            }
-            catch { }
-        }
         private static PendingItem[] FetchPendingNcItems()
         {
             try
@@ -205,16 +183,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 var baseUrl = BackendApiBase();
                 if (string.IsNullOrWhiteSpace(baseUrl)) return false;
-                var qs = new List<string>();
+                var qs = new System.Collections.Generic.List<string>();
                 qs.Add("sourceStep=2-filled");
                 if (!string.IsNullOrWhiteSpace(requestId))
-                {
                     qs.Add("requestId=" + Uri.EscapeDataString(requestId));
-                }
                 if (!string.IsNullOrWhiteSpace(filePath))
-                {
                     qs.Add("filePath=" + Uri.EscapeDataString(filePath));
-                }
                 var url = baseUrl + "/bg/source-file?" + string.Join("&", qs);
                 using (var req = new HttpRequestMessage(HttpMethod.Get, url))
                 {
@@ -230,9 +204,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     var bytes = resp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
                     var dir = Path.GetDirectoryName(targetFullPath);
                     if (!string.IsNullOrWhiteSpace(dir) && !Directory.Exists(dir))
-                    {
                         Directory.CreateDirectory(dir);
-                    }
                     File.WriteAllBytes(targetFullPath, bytes);
                     return true;
                 }
@@ -253,8 +225,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 // 승인 시 백엔드가 직접 esprit-addin HTTP 엔드포인트로 단일 작업을 트리거하므로,
                 // 재기동 시 pending 전체를 복구하면 "승인하지 않은 백로그"까지 자동 처리될 수 있다.
                 AppLogger.Log("Connect: pending-nc recovery skipped (policy: single approval only)");
-                PurgeOldFiles(AppConfig.StorageFilledDirectory, 15);
-                PurgeOldFiles(AppConfig.StorageNcDirectory, 15);
+                // [정책] storage 폴더 TTL purge 제거 — 로컬 storage를 사용하지 않으므로 불필요.
+                // 임시 파일은 OS temp 기반으로 관리됨 (EspritHttpServer.ProcessNcRequest 참조).
                 return;
             }
             catch { }
@@ -410,18 +382,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             
             //EC.OnCommand;
             EC.OnCommand += EC_OnCommand;
-            // Show floating main window on launch
-            string folderPath = AppConfig.StorageFilledDirectory;
-            bool folderExists = Directory.Exists(folderPath);
-            List<string> files = folderExists ? Directory.GetFiles(folderPath, "*.stl").ToList() : new List<string>();
-            AppLogger.Log($"Connect: StorageFilledDirectory={folderPath}, exists={folderExists}, fileCount={files.Count}");
-            if (_mainWindow == null || _mainWindow.IsDisposed)
-            {
-                _mainWindow = new AddInMainWindow();
-                _mainWindow.FileRequested += HandleFileRequest;
-            }
-            _mainWindow.UpdateFiles(files);
-            _mainWindow.ShowWindow();
         }
         private void EC_OnCommand(int Cookie, int UserId)
         {
@@ -446,7 +406,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             if (_mainWindow != null)
             {
-                _mainWindow.FileRequested -= HandleFileRequest;
                 _mainWindow.Close();
                 _mainWindow = null;
             }
@@ -457,21 +416,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 _httpServer = null;
             }
             ReleaseApplicationEventHandlers();
-        }
-        private void HandleFileRequest(string filePath)
-        {
-            if (string.IsNullOrEmpty(filePath))
-            {
-                return;
-            }
-            try
-            {
-                new StlFileProcessor(_espApp).Process(filePath);
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Log($"STL 처리 중 오류가 발생했습니다: {ex.Message}");
-            }
         }
         public void _ConnectionManager_DocumentClosed(bool espritIsShuttingDown)
         {

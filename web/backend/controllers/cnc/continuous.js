@@ -105,7 +105,18 @@ function normalizeBridgePath(p) {
     .replace(/\.(nc|stl)$/i, "");
 }
 
-export async function uploadAndEnqueueContinuousForMachine(req, res) {
+/**
+ * [정책 §4.8] Man(수동) 업로드 전용 — 파일 수신 → S3 저장 → bridge 큐 등록
+ *
+ * 경로: POST /api/cnc-machines/:machineId/man/upload
+ * 호출자: useManUpload (장비 페이지)
+ * 흐름: 작업자가 파일 선택 → 백엔드가 파일 수신 → bridge-store에 저장 → bridge 큐 enqueue
+ *
+ * man = manual. 작업자가 장비 페이지에서 직접 올리는 수동 파일
+ * requestId 없음 / source = "manual_upload"
+ * Lab(의뢰건) 업로드(useLabUpload /lab/)와 완전 분리
+ */
+export async function manUpload(req, res) {
   try {
     const { machineId } = req.params;
     const mid = String(machineId || "").trim();
@@ -210,14 +221,17 @@ export async function uploadAndEnqueueContinuousForMachine(req, res) {
       },
     });
   } catch (error) {
-    console.error("uploadAndEnqueueContinuousForMachine error", error);
+    console.error("manUpload error", error);
     return res.status(500).json({
       success: false,
-      message: "continuous 업로드 처리 중 오류가 발생했습니다.",
+      message: "수동 업로드 처리 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
 }
+
+/** 하위 호환 alias — 라우터/컨트롤러 export는 manUpload를 직접 참조할 것 */
+export const uploadAndEnqueueContinuousForMachine = manUpload;
 
 export async function saveJobProgramCode(req, res) {
   try {

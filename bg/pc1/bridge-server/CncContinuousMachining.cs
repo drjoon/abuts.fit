@@ -1599,6 +1599,8 @@ var backendBase = Config.BackendBase;
 if (string.IsNullOrEmpty(backendBase)) return false;
 var mid = (machineId ?? string.Empty).Trim();
 if (string.IsNullOrEmpty(mid)) return false;
+// [정책 §4.8] Lab(의뢰건) S3 다운로드 presign 요청 — 백엔드 /bridge/cnc-direct/presign-download/:machineId
+// 이 URL은 백엔드 라우터에서 유지됨 (bridge-server가 하드코딩하므로 변경 금지)
 var presignUrl = backendBase.TrimEnd('/') + "/cnc-machines/bridge/cnc-direct/presign-download/" + Uri.EscapeDataString(mid) + "?s3Key=" + Uri.EscapeDataString(s3Key);
 string text;
 using (var req = new HttpRequestMessage(HttpMethod.Get, presignUrl))

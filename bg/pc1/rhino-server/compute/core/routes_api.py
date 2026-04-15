@@ -6,6 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
+# NOTE: UploadFile/File 여전히 /api/rhino/fillhole/direct에서 사용 중
 from pydantic import BaseModel
 
 from . import settings
@@ -38,7 +39,12 @@ async def process_file_api(req: ProcessFileRequest, background_tasks: Background
     safe_name = settings.sanitize_filename(name)
     p = settings.STORE_IN_DIR / safe_name
     if not p.exists():
-        raise HTTPException(status_code=404, detail=f"File not found: {safe_name}")
+        # [정책] 로컬 캐시가 없으면 백엔드(/bg/original-file → S3)에서 다운로드
+        # SSOT: 백엔드 DB + S3가 원본, 로컬 storage는 임시 캐시
+        from .processing import download_original_to_input
+        downloaded = download_original_to_input({"filePath": name, "requestId": req.requestId})
+        if not downloaded or not p.exists():
+            raise HTTPException(status_code=404, detail=f"File not found locally or on backend: {safe_name}")
 
     with state.in_flight_lock:
         if safe_name in state.in_flight and not (req.force or False):
@@ -48,27 +54,10 @@ async def process_file_api(req: ProcessFileRequest, background_tasks: Background
     return {"ok": True, "message": "Processing started", "filePath": safe_name}
 
 
-@router.post("/api/rhino/upload-stl")
-async def upload_stl(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
-    settings.ensure_dirs()
-    safe_name = settings.sanitize_filename(file.filename or "uploaded.stl")
-    target_path = settings.STORE_IN_DIR / safe_name
-
-    try:
-        data = await file.read()
-        target_path.write_bytes(data)
-        log(f"Direct upload saved to 1-stl: {safe_name} ({len(data)} bytes)")
-
-        if state.is_running:
-            background_tasks.add_task(process_single_stl, target_path)
-
-        return JSONResponse(
-            status_code=202,
-            content={"ok": True, "status": "STARTED", "fileName": safe_name},
-        )
-    except Exception as e:
-        log(f"Failed to save uploaded file: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# [정책] /api/rhino/upload-stl 제거
+# 백엔드가 로컬에 직접 파일을 전송하는 방식 삭제.
+# 박대신: 백엔드가 S3에 올린 후 process-file 엔드포인트를 트리거하면
+# rhino-server가 백엔드 /bg/original-file 를 통해 S3에서 직접 다운로드함.
 
 
 @router.post("/api/rhino/fillhole/direct")
@@ -139,7 +128,12 @@ async def store_fillhole(req: StoreFillHoleRequest):
     safe_name = settings.sanitize_filename(req.name or "input.stl")
     input_path = settings.STORE_IN_DIR / safe_name
     if not input_path.exists() or not input_path.is_file():
-        raise HTTPException(status_code=404, detail=f"input 파일을 찾을 수 없습니다: {safe_name}")
+        # [정책] 로컬 캐시가 없으면 백엔드(/bg/original-file → S3)에서 다운로드
+        from .processing import download_original_to_input
+        req_id = settings.extract_request_id_from_name(safe_name)
+        download_original_to_input({"filePath": req.name, "requestId": req_id})
+        if not input_path.exists() or not input_path.is_file():
+            raise HTTPException(status_code=404, detail=f"input 파일을 찾을 수 없습니다 (로컬 및 백엔드 모두 없음): {safe_name}")
 
     in_base = Path(safe_name).stem or "base"
     out_name = settings.sanitize_filename(f"{in_base}.filled.stl")
@@ -242,12 +236,15 @@ async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks
         stl_path = settings.STORE_OUT_DIR / safe_name
         
         if not stl_path.exists():
-            # 원본 파일 확인
+            # filled.stl이 없으면 원본 STL을 백엔드(/bg/original-file → S3)에서 다운로드
+            # [정책] 로컬 storage는 임시 캐시 — 원본은 항상 백엔드/S3에서 조달
             original_name = safe_name.replace(".filled.stl", ".stl")
             stl_path = settings.STORE_IN_DIR / original_name
-            
             if not stl_path.exists():
-                raise HTTPException(status_code=404, detail=f"STL file not found: {file_path}")
+                from .processing import download_original_to_input
+                download_original_to_input({"filePath": file_path, "requestId": req.requestId})
+            if not stl_path.exists():
+                raise HTTPException(status_code=404, detail=f"STL file not found locally or on backend: {file_path}")
         
         # 백그라운드에서 메타데이터 계산 및 등록
         def _calculate():

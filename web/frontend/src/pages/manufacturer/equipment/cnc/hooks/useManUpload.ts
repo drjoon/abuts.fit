@@ -8,7 +8,18 @@ export type ManUploadProgress = {
   percent: number;
 };
 
-// 장비카드: 업로드 + 즉시 브리지 큐 등록 (bridge 측 allowAutoStart 기본 false → paused 상태 유지)
+/**
+ * [정책 §4.8] 장비 페이지 수동 업로드 전용 훅
+ *
+ * 용도: 장비 페이지에서 작업자가 수동으로 업로드하는 파일 처리
+ * 경로: POST /api/cnc-machines/:machineId/man/upload
+ * 특징:
+ *   - man = manual. 작업자가 장비 페이지에서 직접 이용하는 수동 업로드 전용
+ *   - requestId 없음 (source="manual_upload")
+ *   - 파일 → 백엔드 경유 → bridge-store 저장 → bridge 큐 등록
+ *   - 기본 paused 상태 (allowJobStart 플래그로 제어)
+ *   - 의뢰건 자동 가공(useLabUpload /lab/)와 완전 분리됨
+ */
 export const useManUpload = () => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -48,9 +59,11 @@ export const useManUpload = () => {
           await new Promise<void>((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             xhr.timeout = 10 * 60 * 1000;
+            // Man(수동) 업로드 전용 API — /man/upload
+            // 구 경로 /continuous/upload, /smart/upload 에서 변경됨
             xhr.open(
               "POST",
-              `/api/cnc-machines/${encodeURIComponent(mid)}/continuous/upload`,
+              `/api/cnc-machines/${encodeURIComponent(mid)}/man/upload`,
             );
             xhr.setRequestHeader("Authorization", `Bearer ${token}`);
 
@@ -81,10 +94,12 @@ export const useManUpload = () => {
             xhr.ontimeout = () =>
               reject(new Error("업로드 시간이 초과되었습니다."));
 
-            const form = new FormData();
-            form.append("file", file);
-            form.append("originalFileName", fileName);
-            xhr.send(form);
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("fileName", fileName);
+
+            // Man 업로드: requestId 없음, source="manual_upload" / Lab(/lab/)과 완전 분리
+            xhr.send(formData);
           });
           uploadedCount += 1;
         }

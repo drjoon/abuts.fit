@@ -10,7 +10,17 @@ export type LabUploadProgress = {
   percent: number;
 };
 
-// 가공카드: 업로드 후 즉시 DB 예약큐에 등록 (자동 시작 여부는 백엔드/브리지 머신 플래그로 결정)
+/**
+ * [정책 §4.8] 의뢰건 자동 가공 전용 업로드 훅
+ *
+ * 용도: 작업-가공 페이지에서 Request.manufacturerStage="가공" 의뢰건 처리
+ * 경로: POST /api/cnc-machines/:machineId/lab/presign + /lab/enqueue
+ * 특징:
+ *   - lab = laboratory(기공소). 의뢰건 자동가공 전용
+ *   - requestId를 포함하여 DB 생산 큐에 등록 (source="request_auto")
+ *   - allowAutoMachining 플래그에 따라 자동 시작
+ *   - 장비 페이지 수동 업로드(useManUpload /man/upload)와 완전 분리됨
+ */
 export const useLabUpload = () => {
   const { token } = useAuthStore();
   const [uploading, setUploading] = useState(false);
@@ -118,9 +128,9 @@ export const useLabUpload = () => {
             throw new Error("파일명이 올바르지 않습니다.");
           }
 
-          // 1) presign 발급
+          // 1) Lab presign 발급 — 백엔드가 S3 PUT URL을 반환
           const presignRes = await apiFetch({
-            path: `/api/cnc-machines/${encodeURIComponent(mid)}/direct/presign`,
+            path: `/api/cnc-machines/${encodeURIComponent(mid)}/lab/presign`,
             method: "POST",
             token,
             jsonBody: {
@@ -147,9 +157,10 @@ export const useLabUpload = () => {
           // 2) S3 업로드(PUT)
           await uploadToPresignedUrl(mid, uploadUrl, file);
 
-          // 3) DB 예약목록 enqueue (allowAutoStart=true)
+          // 3) Lab enqueue — S3에 저장된 메타데이터를 DB에 등록
+          // requestId 포함, source="request_auto" / Man(/man/upload)과 완전 분리
           const enqueueRes = await apiFetch({
-            path: `/api/cnc-machines/${encodeURIComponent(mid)}/direct/enqueue`,
+            path: `/api/cnc-machines/${encodeURIComponent(mid)}/lab/enqueue`,
             method: "POST",
             token,
             jsonBody: {

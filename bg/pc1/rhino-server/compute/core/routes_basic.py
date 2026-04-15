@@ -37,8 +37,8 @@ def root():
     return {
         "ok": True,
         "service": "rhino-fastapi",
-        "storeInDir": str(settings.STORE_IN_DIR),
-        "storeOutDir": str(settings.STORE_OUT_DIR),
+        "tempInDir": str(settings.STORE_IN_DIR),
+        "tempOutDir": str(settings.STORE_OUT_DIR),
     }
 
 

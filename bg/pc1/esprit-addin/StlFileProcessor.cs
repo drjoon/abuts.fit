@@ -72,11 +72,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private double? _effectiveFrontLimitX;
         public double DefaultBackLimitX { get; set; } = 0;
         public string lotNumber { get; set; } = "ACR";
+        // [정책] 로컬 storage는 임시 캐시 — 백엔드 DB + S3가 SSOT
+        // - 입력 STL(2-filled): 없으면 Connect.DownloadSourceFileToFilledDir()로 S3에서 다운로드
+        // - 출력 NC(3-nc): 생성 후 BackendApiClient.NotifyBackendSuccess()로 S3에 presign 업로드
+        // - 로컬 파일은 PurgeOldFiles()로 15일 후 자동 삭제
         public StlFileProcessor(Application app, string outputFolder = null,
             string postProcessorFile = "Acro_dent_XE.asc")
         {
             _espApp = app ?? throw new InvalidOperationException("ESPRIT Application not initialized");
-            _outputFolder = string.IsNullOrWhiteSpace(outputFolder) ? AppConfig.StorageNcDirectory : outputFolder;
+            // [정책] StorageNcDirectory 대신 OS temp 기반 임시 디렉토리 사용
+            // NC 파일은 S3 업로드 후 BackendApiClient.NotifyBackendSuccess()에서 삭제됨
+            _outputFolder = string.IsNullOrWhiteSpace(outputFolder)
+                ? System.IO.Path.Combine(System.IO.Path.GetTempPath(), "abuts-esprit-nc")
+                : outputFolder;
             _postProcessorFile = postProcessorFile;
             _prcManager = new DentalAddinPrcManager();
             _prcManager.FaceHoleProcessFilePath = this.FaceHoleProcessFilePath;

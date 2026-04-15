@@ -16,10 +16,10 @@ import {
   getMachines,
 } from "../../controllers/cnc/machines.js";
 import {
-  createCncDirectDownloadPresign,
-  createCncDirectDownloadPresignForBridge,
-  createCncDirectUploadPresign,
-  enqueueCncDirectToDb,
+  createCncLabDownloadPresign,
+  createCncLabDownloadPresignForBridge,
+  createCncLabUploadPresign,
+  enqueueCncLabToDb,
 } from "../../controllers/cnc/direct.js";
 import {
   enqueueBridgeContinuousJob,
@@ -27,7 +27,7 @@ import {
   getBridgeContinuousState,
   getJobResult,
   saveJobProgramCode,
-  uploadAndEnqueueContinuousForMachine,
+  manUpload,
   smartUpload,
 } from "../../controllers/cnc/continuous.js";
 import {
@@ -61,7 +61,7 @@ export {
   getMachineFlagsForBridge,
   getDbBridgeQueueSnapshotForBridge,
   consumeBridgeQueueJobForBridge,
-  createCncDirectDownloadPresignForBridge,
+  createCncLabDownloadPresignForBridge,
   recordMachiningTickForBridge,
   triggerNextAutoMachiningManually,
   recordMachiningStartForBridge,
@@ -73,11 +73,11 @@ export {
   getBridgeActiveProgram,
   enqueueBridgeContinuousJob,
   enqueueBridgeContinuousJobFromDb,
-  uploadAndEnqueueContinuousForMachine,
+  manUpload,
   saveJobProgramCode,
-  createCncDirectUploadPresign,
-  enqueueCncDirectToDb,
-  createCncDirectDownloadPresign,
+  createCncLabUploadPresign,
+  enqueueCncLabToDb,
+  createCncLabDownloadPresign,
   getBridgeContinuousState,
   smartUpload,
   getJobResult,
