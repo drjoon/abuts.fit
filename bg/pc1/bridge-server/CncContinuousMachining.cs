@@ -136,6 +136,28 @@ catch (Exception completeEx)
 {
     Console.WriteLine("[CncMachining] NotifyMachiningComplete endpoint error: {0}", completeEx.Message);
 }
+// [정책] manual_upload 경로 파일은 S3/DB 등록 없이 bridge-store 로컬에만 저장되므로
+// 가공 완료 후 즉시 삭제한다.
+try
+{
+    var src = (job?.source ?? string.Empty).Trim();
+    var bp = (job?.bridgePath ?? string.Empty).Trim();
+    if (string.Equals(src, "manual_upload", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(bp))
+    {
+        var root = Path.GetFullPath(Config.BridgeStoreRoot);
+        var rel = bp.Replace('/', Path.DirectorySeparatorChar).Replace("..", string.Empty);
+        var fullPath = Path.GetFullPath(Path.Combine(root, rel));
+        if (fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase) && File.Exists(fullPath))
+        {
+            File.Delete(fullPath);
+            Console.WriteLine("[CncMachining] manual_upload file deleted after completion machine={0} path={1}", machineId, bp);
+        }
+    }
+}
+catch (Exception cleanEx)
+{
+    Console.WriteLine("[CncMachining] manual_upload cleanup failed machine={0} err={1}", machineId, cleanEx.Message);
+}
 }
 catch (Exception ex)
 {
@@ -425,7 +447,7 @@ public static void Stop()
 try { _timer?.Dispose(); } catch { }
 _timer = null;
 }
-public static CncJobItem EnqueueFileJob(string machineId, string fileName, string requestId, string bridgePath = null, string s3Key = null, string s3Bucket = null, bool enqueueFront = false, string originalFileName = null, bool paused = true, bool allowAutoStart = false)
+public static CncJobItem EnqueueFileJob(string machineId, string fileName, string requestId, string bridgePath = null, string s3Key = null, string s3Bucket = null, bool enqueueFront = false, string originalFileName = null, bool paused = true, bool allowAutoStart = false, string source = null)
 {
 var mid = (machineId ?? string.Empty).Trim();
 if (string.IsNullOrEmpty(mid)) return null;
@@ -462,7 +484,13 @@ job.s3Bucket = sb;
 }
 }
 catch { }
-Console.WriteLine("[CncMachining] job enqueued machine={0} jobId={1} file={2}", mid, job?.id, job?.fileName);
+try
+{
+    var src = (source ?? string.Empty).Trim();
+    if (!string.IsNullOrEmpty(src)) job.source = src;
+}
+catch { }
+Console.WriteLine("[CncMachining] job enqueued machine={0} jobId={1} file={2} source={3}", mid, job?.id, job?.fileName, job?.source);
 return job;
 }
 private static async Task Tick()

@@ -186,6 +186,7 @@ export async function manUpload(req, res) {
       enqueueFront: false,
       paused: true,
       allowAutoStart: false,
+      source: "manual_upload",
     };
     const enqueueResp = await fetch(enqueueUrl, {
       method: "POST",

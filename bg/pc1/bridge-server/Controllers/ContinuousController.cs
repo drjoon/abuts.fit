@@ -37,6 +37,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 var enqueueFront = payload.Value<bool?>("enqueueFront") ?? false;
                 var paused = payload.Value<bool?>("paused") ?? true;
                 var allowAutoStart = payload.Value<bool?>("allowAutoStart") ?? false;
+                var source = payload.Value<string>("source");
 
                 if (string.IsNullOrEmpty(fileName))
                 {
@@ -66,7 +67,8 @@ namespace HiLinkBridgeWebApi48.Controllers
                         enqueueFront,
                         originalFileName,
                         paused,
-                        allowAutoStart
+                        allowAutoStart,
+                        source
                     );
 
                     if (enqueued == null)
