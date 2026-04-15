@@ -884,7 +884,7 @@ export const PackingPageContent = ({
           onDownloadCamStl={() => Promise.resolve()}
           onDownloadNcFile={() => Promise.resolve()}
           onDownloadStageFile={handleDownloadStageFile}
-          onOpenNextRequest={handleOpenNextRequest}
+          // onOpenNextRequest 제거: 승인 후 다음 의뢰 자동 열기 방지 정책 적용
           setSearchParams={setSearchParams}
           setConfirmTitle={setConfirmTitle}
           setConfirmDescription={setConfirmDescription}

@@ -673,12 +673,8 @@ export const PreviewModal = ({
                       }
                     };
 
-                    void (async () => {
-                      await performBack();
-                      if (onOpenNextRequest && activeReq._id) {
-                        await onOpenNextRequest(activeReq._id);
-                      }
-                    })();
+                    // 롤백 후 모달 닫기만 한다. 다음 의뢰 자동 열기는 하지 않는다.
+                    void performBack();
                   }}
                   aria-label="이전 공정"
                   title="이전 공정"
@@ -699,55 +695,38 @@ export const PreviewModal = ({
                   e.preventDefault();
                   e.stopPropagation();
                   try {
+                    // 승인 처리: keepPreviewOpen=false → 승인 후 모달이 즉시 닫힌다.
+                    // BG 앱 트리거(Esprit 등)는 백엔드 ReviewApprovalQueue에서 직렬로 처리된다.
+                    // 다음 의뢰는 자동으로 열리지 않는다(연속 승인으로 인한 충돌 방지).
                     await onUpdateReviewStatus({
                       req: activeReq,
                       status: "APPROVED",
                       stageOverride: currentReviewStageKey,
-                      keepPreviewOpen: true,
+                      keepPreviewOpen: false,
                     });
 
+                    // CAM 단계 승인 시 NC 파일 bridge-store 동기화 (비동기, 실패 무시)
                     if (isCamStage) {
                       const requestId = String(activeReq.requestId).trim();
-                      if (!token) {
-                        throw new Error("로그인이 필요합니다.");
-                      }
-                      if (!requestId) {
-                        throw new Error(
-                          "requestId가 없어 NC 동기화를 진행할 수 없습니다.",
-                        );
-                      }
-
-                      void fetch(
-                        `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/ensure-bridge`,
-                        {
-                          method: "POST",
-                          headers: {
-                            Authorization: `Bearer ${token}`,
-                            "Content-Type": "application/json",
+                      if (token && requestId) {
+                        void fetch(
+                          `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/ensure-bridge`,
+                          {
+                            method: "POST",
+                            headers: {
+                              Authorization: `Bearer ${token}`,
+                              "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({}),
                           },
-                          body: JSON.stringify({}),
-                        },
-                      )
-                        .then(async (ensureRes) => {
-                          const ensureBody: any = await ensureRes
-                            .json()
-                            .catch(() => ({}));
-                          if (!ensureRes.ok || ensureBody?.success === false) {
-                            throw new Error(
-                              ensureBody?.message ||
-                                ensureBody?.error ||
-                                "NC 파일 bridge-store 동기화에 실패했습니다.",
-                            );
-                          }
-                        })
-                        .catch((err) => {
+                        ).catch((err) => {
                           console.error("NC bridge ensure failed:", err);
                         });
+                      }
                     }
 
-                    if (onOpenNextRequest && activeReq._id) {
-                      await onOpenNextRequest(activeReq._id);
-                    }
+                    // 승인 완료 후 모달 닫기 (onOpenNextRequest는 더 이상 호출하지 않음)
+                    onOpenChange(false);
                   } catch (err) {
                     console.error("Review status update failed:", err);
                   }

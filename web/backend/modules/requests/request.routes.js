@@ -3,6 +3,7 @@ const router = express.Router();
 import requestController from "../../controllers/requests/request.controller.js";
 import * as cncEventController from "../../controllers/cnc/cncEvent.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
+import { getQueueStatus } from "../../services/reviewApprovalQueue.service.js";
 
 // 새 의뢰 생성 (의뢰자만 가능)
 router.post(
@@ -433,6 +434,23 @@ router.post(
   authenticate,
   authorize(["requestor", "admin"]),
   requestController.cloneRequestToDraft,
+);
+
+// 제조사/관리자: 승인 직렬 큐 상태 조회 (모니터링용)
+router.get(
+  "/approval-queue/status",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  async (req, res) => {
+    try {
+      const status = await getQueueStatus();
+      return res.status(200).json({ success: true, data: status });
+    } catch (err) {
+      return res
+        .status(500)
+        .json({ success: false, message: err?.message || "큐 상태 조회 실패" });
+    }
+  },
 );
 
 // 의뢰 삭제 (권한 검증은 컨트롤러에서 처리)

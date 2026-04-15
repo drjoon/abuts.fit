@@ -42,7 +42,7 @@ import { useMailboxManagement } from "@/pages/manufacturer/worksheet/custom_abut
 import { useRequestCardHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestCardHandlers";
 import { useCardActions } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useCardActions";
 import { useRequestFiltering } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFiltering";
-import { useRequestNavigation } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestNavigation";
+// useRequestNavigation 제거: 승인 후 다음 의뢰 자동 열기 방지 정책에 따라 미사용
 import { usePackingSelection } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePackingSelection";
 import { useMailboxSync } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useMailboxSync";
 import { useDiameterQueue } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useDiameterQueue";
@@ -542,13 +542,8 @@ export const RequestPage = ({
     tabStage,
   ]);
 
-  const { handleOpenNextRequest } = useRequestNavigation(
-    filteredAndSorted,
-    getFilteredAndSortedRequests,
-    handleOpenPreview,
-    refreshRequests,
-    pageState,
-  );
+  // handleOpenNextRequest 제거: 승인/롤백 후 다음 의뢰를 자동으로 열지 않는다.
+  // 작업자가 직접 다음 의뢰 카드를 선택하도록 유도한다. (백엔드 큐 과부하 방지)
 
   useEffect(() => {
     pageState.visibleCountRef.current = 12;
@@ -799,7 +794,8 @@ export const RequestPage = ({
         setConfirmDescription={pageState.setConfirmDescription}
         setConfirmAction={pageState.setConfirmAction}
         setConfirmOpen={pageState.setConfirmOpen}
-        onOpenNextRequest={handleOpenNextRequest}
+        // onOpenNextRequest는 제거됨: 승인 후 다음 의뢰 자동 열기 방지
+        // 승인 시 모달이 닫히고 작업자가 직접 다음 의뢰를 선택한다.
       />
 
       <ConfirmDialog

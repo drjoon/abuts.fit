@@ -7,6 +7,7 @@ import {
   startPeriodicCacheRefresh,
 } from "./utils/cacheWarming.js";
 import { startDummyCncScheduler } from "./jobs/dummyCncWorker.js";
+import { startReviewApprovalWorker } from "./services/reviewApprovalQueue.service.js";
 
 // 포트 설정 (EB 기본 upstream 포트는 8080)
 const PORT = process.env.PORT || 8080;
@@ -54,6 +55,10 @@ dbReady
     }
 
     startDummyCncScheduler();
+
+    // 의뢰/CAM 단계 승인 직렬 큐 워커 시작
+    // 작업자 연속 승인 시 BG 앱(rhino, esprit, bridge, lot, pack, wbls) 과부하 방지
+    startReviewApprovalWorker();
   })
   .catch((err) => {
     console.error("MongoDB 연결 실패(서버는 계속 실행):", err);

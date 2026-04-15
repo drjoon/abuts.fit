@@ -731,6 +731,48 @@
 - CAM 승인, 세척.패킹 롤백, 자동 재배정 모두 동일한 함수를 사용합니다.
 - 중복 구현을 피하고 일관성을 유지합니다.
 
+### 4.7 승인 직렬 큐 처리 정책 (ReviewApprovalQueue)
+
+**배경:**
+
+- 제조사 워크시트에서 작업자가 의뢰/CAM 단계 의뢰를 빠르게 연속 승인하면, 백엔드와 BG 앱(rhino, esprit, bridge, lot, pack, wbls)이 동시 요청을 받아 충돌 및 과부하가 발생한다.
+
+**정책:**
+
+1. **모달 즉시 닫기**: 승인 버튼 클릭 → `keepPreviewOpen: false` → 모달 즉시 닫힘. 다음 의뢰는 자동으로 열리지 않는다.
+2. **다음 의뢰 자동 열기 금지**: `onOpenNextRequest` / `handleOpenNextRequest` 호출을 제거한다. 작업자가 직접 다음 의뢰 카드를 선택한다.
+3. **BG 트리거 직렬 큐**: DB 트랜잭션(credit 차감, stage 변경 등)은 HTTP 요청 내에서 즉시 처리하되, BG 앱 트리거(Esprit NC 생성, 장비 배정, 자동 가공 시작 등)는 `ReviewApprovalQueue` 컬렉션에 enqueue한다.
+4. **워커 직렬 처리**: 서버 시작 시 `startReviewApprovalWorker()`가 실행되어 큐를 FIFO 순서로 하나씩 처리한다. 처리 중인 항목이 있으면 다음 항목은 PENDING 상태로 대기한다.
+5. **중복 방지**: `uniqueKey = taskType:requestMongoId`로 unique index. 이미 PENDING/PROCESSING 상태인 항목은 중복 등록하지 않는다.
+6. **재시도**: 처리 실패 시 최대 3회(기본값) 재시도. 초과 시 FAILED로 기록하고 프론트에 `request:async-action-failed` 이벤트를 발행한다.
+7. **잠금 해제**: LOCK_TIMEOUT_MS(기본 30초) 초과 시 잠금을 해제하여 워커 크래시 대비.
+
+**적용 단계:**
+
+- `REQUEST_STAGE_APPROVED` (의뢰 단계): Esprit NC 생성 트리거
+- `CAM_STAGE_APPROVED` (CAM 단계): 장비 배정 + CNC 자동 가공 트리거
+
+**관련 파일:**
+
+- `web/backend/models/reviewApprovalQueue.model.js` — 큐 컬렉션 스키마
+- `web/backend/services/reviewApprovalQueue.service.js` — enqueue/worker/executeTask 로직
+- `web/backend/controllers/requests/common.review.controller.js` — enqueueApproval 호출
+- `web/backend/server.js` — startReviewApprovalWorker() 등록
+- `web/frontend/…/components/PreviewModal.tsx` — keepPreviewOpen: false + onOpenChange(false)
+- `web/frontend/…/components/RequestPage.tsx` — onOpenNextRequest prop 제거
+- `web/frontend/…/packing/components/PackingPageContent.tsx` — onOpenNextRequest prop 제거
+
+**금지 사항:**
+
+- 승인 즉시 다음 의뢰 자동 열기 (`handleOpenNextRequest` 재도입 금지)
+- BG 트리거를 HTTP 요청 내에서 직접 동기/비동기 실행하는 방식 재도입 금지 (연속 요청 충돌 원인)
+- 큐 없이 `Promise.resolve().then()` 패턴으로 BG 트리거를 처리하는 방식 금지
+
+**모니터링:**
+
+- `GET /api/requests/approval-queue/status` — 큐 상태(pending/processing/failed/completed24h) 조회 (제조사/관리자)
+- 환경변수: `REVIEW_APPROVAL_QUEUE_POLL_MS` (폴링 간격, 기본 1500ms), `REVIEW_APPROVAL_QUEUE_LOCK_TIMEOUT_MS` (잠금 해제 기준, 기본 30000ms)
+
 ## 5. Frontend 규칙
 
 ### 5.1 공통 UI

@@ -31,6 +31,7 @@ import {
   chooseMachineForCamMachining,
 } from "./common.review.machine.js";
 import { triggerEspritForNc } from "./common.review.esprit.js";
+import { enqueueApproval } from "../../services/reviewApprovalQueue.service.js";
 import {
   triggerPricingSnapshotForRequestDoc,
   triggerDashboardSummaryRefreshForAnchorId,
@@ -122,7 +123,46 @@ function runStageFileCleanupInBackground({ requestId, stage, s3Key }) {
     });
 }
 
+/**
+ * CAM 단계 승인 후처리를 큐에 등록한다.
+ * 기존 직접 실행 방식에서 reviewApprovalQueue 기반 직렬 처리로 전환.
+ * 큐 워커가 chooseMachineForCamMachining + triggerNextAutoMachiningAfterComplete를 순서대로 처리한다.
+ */
 function runCamApprovePostProcessingInBackground({
+  requestMongoId,
+  requestId,
+}) {
+  // 큐에 enqueue. 워커가 직렬로 처리하므로 동시 요청 충돌 방지.
+  Request.findById(requestMongoId)
+    .then(async (request) => {
+      if (!request) return;
+      const requestObj = request.toObject
+        ? request.toObject()
+        : JSON.parse(JSON.stringify(request));
+      await enqueueApproval({
+        taskType: "CAM_STAGE_APPROVED",
+        request: requestObj,
+        actorUserId: null,
+      });
+    })
+    .catch((err) => {
+      emitManufacturingAsyncFailure({
+        requestId,
+        requestMongoId,
+        action: "cam-approve-post-processing",
+        stage: "cam",
+        message: err?.message || "CAM 승인 큐 등록에 실패했습니다.",
+      });
+      console.error("[CAM-APPROVE] queue enqueue failed", {
+        requestId,
+        requestMongoId,
+        message: err?.message || String(err || ""),
+      });
+    });
+}
+
+// 아래는 레거시: 큐 도입 이전의 직접 실행 방식 (더 이상 호출되지 않음)
+function _legacyRunCamApprovePostProcessingInBackground_UNUSED({
   requestMongoId,
   requestId,
 }) {
@@ -928,21 +968,26 @@ export async function updateReviewStatusByStage(req, res) {
     });
 
     if (pendingEspritTriggerRequest) {
-      triggerEspritForNc({ request: pendingEspritTriggerRequest }).catch(
-        (error) => {
-          emitManufacturingAsyncFailure({
-            requestId: pendingEspritTriggerRequest?.requestId || null,
-            requestMongoId: pendingEspritTriggerRequest?._id || null,
-            action: "esprit-trigger",
-            stage: "request",
-            message: error?.message || "Esprit 트리거에 실패했습니다.",
-          });
-          console.error("[REVIEW] async triggerEspritForNc failed", {
-            requestId: pendingEspritTriggerRequest?.requestId || null,
-            message: error?.message || String(error || ""),
-          });
-        },
-      );
+      // Esprit NC 생성 트리거를 직접 실행하지 않고 큐에 등록한다.
+      // 큐 워커가 직렬로 처리하므로 연속 승인 시 동시 요청 충돌을 방지한다.
+      // BG 앱(rhino, esprit, bridge, lot, pack, wbls) 모두 이 큐를 통해 보호된다.
+      enqueueApproval({
+        taskType: "REQUEST_STAGE_APPROVED",
+        request: pendingEspritTriggerRequest,
+        actorUserId: req?.user?._id ? String(req.user._id) : null,
+      }).catch((error) => {
+        emitManufacturingAsyncFailure({
+          requestId: pendingEspritTriggerRequest?.requestId || null,
+          requestMongoId: pendingEspritTriggerRequest?._id || null,
+          action: "esprit-trigger",
+          stage: "request",
+          message: error?.message || "Esprit 트리거 큐 등록에 실패했습니다.",
+        });
+        console.error("[REVIEW] enqueueApproval (esprit) failed", {
+          requestId: pendingEspritTriggerRequest?.requestId || null,
+          message: error?.message || String(error || ""),
+        });
+      });
     }
 
     return res.status(200).json({
