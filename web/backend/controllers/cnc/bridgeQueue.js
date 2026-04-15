@@ -21,9 +21,32 @@ export async function getBridgeQueueForMachine(req, res) {
     const snap = await getDbBridgeQueueSnapshot(mid);
 
     const jobs0 = Array.isArray(snap.jobs) ? snap.jobs : [];
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // [정책 4.8.2] 장비 페이지 조회 시 의뢰건 항목 자동 필터:
+    // requestId가 있는 항목은 의뢰건 자동 가공 항목으로, 장비 페이지 예약목록에
+    // 포함되면 안 된다. 오염된 항목이 있으면 DB 스냅샷도 즉시 정리한다.
+    // ──────────────────────────────────────────────────────────────────────────
+    const cleanJobs = jobs0.filter((j) => {
+      const rid = String(j?.requestId || "").trim();
+      return !rid;
+    });
+    if (cleanJobs.length < jobs0.length) {
+      // 오염된 항목이 발견됨 → 비동기로 스냅샷 정리 (응답 지연 없이)
+      saveBridgeQueueSnapshot(mid, cleanJobs).catch((e) => {
+        console.error(
+          `[bridge:queue:get] failed to auto-clean request_auto items for ${mid}:`,
+          e?.message,
+        );
+      });
+      console.warn(
+        `[bridge:queue:get] auto-removed ${jobs0.length - cleanJobs.length} request_auto items from snapshot for ${mid} (policy 4.8.2)`,
+      );
+    }
+
     const equipment = [];
     const machining = [];
-    for (const j of jobs0) {
+    for (const j of cleanJobs) {
       const p = typeof j?.priority === "number" ? j.priority : 2;
       if (p === 1) equipment.push(j);
       else machining.push(j);
@@ -128,9 +151,32 @@ export async function getDbBridgeQueueSnapshotForBridge(req, res) {
     const snap = await getDbBridgeQueueSnapshot(mid);
 
     const jobs0 = Array.isArray(snap.jobs) ? snap.jobs : [];
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // [정책 4.8.2] 브리지 서버 큐 스냅샷 조회 시 의뢰건 항목 필터:
+    // requestId가 있는 항목은 의뢰건 자동 가공 항목이다.
+    // 브리지 서버가 이 항목을 읽어 직접 실행하면 수동 파일 우선 정책이 깨지므로
+    // 브리지 서버에는 수동 파일 항목만 반환한다.
+    // ──────────────────────────────────────────────────────────────────────────
+    const cleanJobs = jobs0.filter((j) => {
+      const rid = String(j?.requestId || "").trim();
+      return !rid;
+    });
+    if (cleanJobs.length < jobs0.length) {
+      saveBridgeQueueSnapshot(mid, cleanJobs).catch((e) => {
+        console.error(
+          `[bridge:queue:snapshot-for-bridge] failed to auto-clean for ${mid}:`,
+          e?.message,
+        );
+      });
+      console.warn(
+        `[bridge:queue:snapshot-for-bridge] auto-removed ${jobs0.length - cleanJobs.length} request_auto items for ${mid} (policy 4.8.2)`,
+      );
+    }
+
     const equipment = [];
     const machining = [];
-    for (const j of jobs0) {
+    for (const j of cleanJobs) {
       const p = typeof j?.priority === "number" ? j.priority : 2;
       if (p === 1) equipment.push(j);
       else machining.push(j);
@@ -618,6 +664,65 @@ export async function clearBridgeQueueForMachine(req, res) {
     return res.status(500).json({
       success: false,
       message: "브리지 예약 큐 전체 삭제 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// [정책 4.8.5] 브리지 큐 스냅샷 정리 (reconcile):
+// DB 스냅샷에서 requestId가 있는 항목(의뢰건 자동 가공)을 모두 제거한다.
+// 장비 페이지 예약목록에는 수동 업로드 파일(requestId 없음)만 남아야 한다.
+// 기존에 오염된 스냅샷을 수동으로 정리할 때 사용한다.
+// ──────────────────────────────────────────────────────────────────────────
+export async function reconcileBridgeQueueSnapshot(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res.status(400).json({
+        success: false,
+        message: "machineId is required",
+      });
+    }
+
+    const snap = await getDbBridgeQueueSnapshot(mid);
+    const before = Array.isArray(snap.jobs) ? snap.jobs.slice() : [];
+
+    // requestId가 있는 항목(의뢰건 자동 가공)을 제거하고 수동 파일만 남긴다
+    const after = before.filter((j) => {
+      const rid = String(j?.requestId || "").trim();
+      return !rid;
+    });
+
+    const removedCount = before.length - after.length;
+    if (removedCount > 0) {
+      await saveBridgeQueueSnapshot(mid, after);
+      console.log(
+        "[bridge:reconcile] request_auto items removed from snapshot",
+        JSON.stringify({
+          machineId: mid,
+          before: before.length,
+          after: after.length,
+        }),
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        machineId: mid,
+        before: before.length,
+        after: after.length,
+        removedCount,
+        remainingJobs: after,
+      },
+    });
+  } catch (error) {
+    console.error("Error in reconcileBridgeQueueSnapshot:", error);
+    return res.status(500).json({
+      success: false,
+      message: "브리지 큐 스냅샷 정리 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

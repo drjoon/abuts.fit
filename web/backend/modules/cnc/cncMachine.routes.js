@@ -263,6 +263,15 @@ router.post(
   cncMachineController.clearBridgeQueueForMachine,
 );
 
+// [정책 4.8.5] 브리지 큐 스냅샷 reconcile:
+// DB 스냅샷에서 requestId 있는 의뢰건 항목을 제거하고 수동 파일만 남긴다.
+// 기존에 오염된 스냅샷을 수동으로 정리할 때 사용한다.
+router.post(
+  "/:machineId/bridge-queue/reconcile",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.reconcileBridgeQueueSnapshot,
+);
+
 // 생산 큐 조회 (제조사, 관리자)
 router.get(
   "/queues",

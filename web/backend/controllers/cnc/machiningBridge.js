@@ -625,7 +625,13 @@ export async function triggerNextAutoMachiningAfterComplete({
     if (!base) return;
     const base0 = String(base).replace(/\/$/, "");
 
-    // if job already exists in bridge queue but paused, unpause it.
+    // ──────────────────────────────────────────────────────────────────────────
+    // [정책 4.8.3] 장비 페이지 수동 파일 우선 확인:
+    // 브리지 큐에 source="manual_upload" 항목(requestId 없는 수동 업로드 파일)이
+    // 남아 있으면 의뢰건 자동 가공 트리거를 건너뛴다.
+    // 수동 파일은 브리지가 자체 순서대로 처리하며, 모두 소진된 뒤에야
+    // 다음 의뢰건 자동 가공이 시작된다.
+    // ──────────────────────────────────────────────────────────────────────────
     try {
       const qResp = await fetch(
         `${base0}/api/bridge/queue/${encodeURIComponent(mid)}`,
@@ -639,6 +645,23 @@ export async function triggerNextAutoMachiningAfterComplete({
       console.log(
         `[bridge:auto-next] queue snapshot inspected machine=${mid} requestId=${requestId} queueSize=${list.length} elapsedMs=${Date.now() - startedAt}`,
       );
+
+      // [정책 4.8.3] 수동 파일 항목: requestId가 없거나 source="manual_upload"인 항목
+      const manualJobs = list.filter((j) => {
+        const rid = String(j?.requestId || "").trim();
+        return !rid; // requestId 없는 항목 = 수동 업로드 파일
+      });
+      if (manualJobs.length > 0) {
+        console.log(
+          `[bridge:auto-next] skip auto-trigger for ${mid}: manual_upload jobs exist in bridge queue (count=${manualJobs.length}), yielding to equipment-page queue elapsedMs=${Date.now() - startedAt}`,
+        );
+        // 수동 파일이 있는 경우: DB 스냅샷은 건드리지 않는다.
+        // 브리지가 수동 파일을 모두 처리한 뒤 다음 완료 콜백에서 다시 이 함수를 호출한다.
+        return;
+      }
+
+      // [정책 4.8.2] 이미 해당 의뢰건이 브리지 큐에 있는지 확인 (중복 enqueue 방지)
+      // 단, 확인 후 스냅샷을 DB에 저장하지 않는다 (의뢰건이 스냅샷에 오염되는 원인 제거)
       const found = list.find((j) => {
         const rid = String(j?.requestId || "").trim();
         if (rid && rid === requestId) return true;
@@ -661,14 +684,8 @@ export async function triggerNextAutoMachiningAfterComplete({
           },
         );
         invalidateBridgeFlagsCache(mid).catch(() => {});
-        try {
-          const q = await fetchBridgeQueueFromBridge(mid);
-          if (q.ok) {
-            await saveBridgeQueueSnapshot(mid, q.jobs);
-          }
-        } catch {
-          // ignore
-        }
+        // [정책 4.8.6] 의뢰건 auto-trigger 후 스냅샷 갱신 금지
+        // (브리지 큐의 의뢰건 항목이 장비 페이지 스냅샷에 오염되는 것을 방지)
         return;
       }
       if (found?.id) {
@@ -676,20 +693,19 @@ export async function triggerNextAutoMachiningAfterComplete({
           `[bridge:auto-next] existing job already queued machine=${mid} jobId=${String(found.id)} requestId=${requestId} elapsedMs=${Date.now() - startedAt}`,
         );
         invalidateBridgeFlagsCache(mid).catch(() => {});
-        try {
-          const q = await fetchBridgeQueueFromBridge(mid);
-          if (q.ok) {
-            await saveBridgeQueueSnapshot(mid, q.jobs);
-          }
-        } catch {
-          // ignore
-        }
+        // [정책 4.8.6] 의뢰건 auto-trigger 후 스냅샷 갱신 금지
         return;
       }
     } catch {
       // ignore and try process-file
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // [정책 4.8.2] 의뢰건 자동 가공 트리거:
+    // process-file API를 직접 호출하여 즉시 실행한다.
+    // 브리지가 자체 큐에 올리더라도 백엔드 DB 스냅샷은 갱신하지 않는다.
+    // (장비 페이지 예약목록 오염 방지)
+    // ──────────────────────────────────────────────────────────────────────────
     const triggerUrl = `${base0}/api/bridge/process-file`;
     console.log(
       `[bridge:auto-next] process-file request machine=${mid} requestId=${requestId} fileName=${fileName} elapsedMs=${Date.now() - startedAt}`,
@@ -725,14 +741,12 @@ export async function triggerNextAutoMachiningAfterComplete({
       throw error;
     }
 
-    try {
-      const q = await fetchBridgeQueueFromBridge(mid);
-      if (q.ok) {
-        await saveBridgeQueueSnapshot(mid, q.jobs);
-      }
-    } catch {
-      // ignore
-    }
+    // [정책 4.8.6] process-file 성공 후 브리지 큐 스냅샷을 DB에 저장하지 않는다.
+    // 브리지가 의뢰건을 자체 큐에 추가하더라도 백엔드 스냅샷에는 반영하지 않아
+    // 장비 페이지 예약목록이 오염되지 않는다.
+    console.log(
+      `[bridge:auto-next] process-file success machine=${mid} requestId=${requestId} elapsedMs=${Date.now() - startedAt} (snapshot NOT updated per policy 4.8.6)`,
+    );
   } catch (e) {
     console.warn(
       "[bridge:auto-next] triggerNextAutoMachiningAfterComplete failed",
@@ -1553,7 +1567,12 @@ export async function recordMachiningCompleteForBridge(req, res) {
       metadata: { jobId: jobId || null },
     });
 
-    // 완료된 작업을 DB 큐에서 제거 (requestId 우선, 없으면 bridgePath로 제거)
+    // ──────────────────────────────────────────────────────────────────────────
+    // [정책 4.8.2] 완료 후 DB 스냅샷 정리:
+    // 1. 방금 완료된 의뢰건 항목 제거 (requestId 우선, 없으면 bridgePath로 제거)
+    // 2. 스냅샷에 남아있는 다른 의뢰건 항목도 모두 제거 (requestId 있는 항목 전부)
+    //    → 장비 페이지 예약목록에는 수동 업로드 파일(requestId 없음)만 남아야 함
+    // ──────────────────────────────────────────────────────────────────────────
     try {
       const machine = await CncMachine.findOne({ machineId: mid }).select(
         "bridgeQueueSnapshot",
@@ -1562,19 +1581,24 @@ export async function recordMachiningCompleteForBridge(req, res) {
         const before = machine.bridgeQueueSnapshot.jobs.length;
         machine.bridgeQueueSnapshot.jobs =
           machine.bridgeQueueSnapshot.jobs.filter((j) => {
+            // 방금 완료된 의뢰건 제거
             if (requestId && String(j?.requestId || "") === requestId)
               return false;
             if (!requestId && bridgePathRaw) {
               const p = String(j?.bridgePath || j?.path || "").trim();
               if (p && p === bridgePathRaw) return false;
             }
+            // [정책 4.8.2] requestId가 있는 항목은 모두 의뢰건 자동 가공 항목 →
+            // 장비 페이지 스냅샷에 포함되면 안 되므로 제거한다
+            const jRid = String(j?.requestId || "").trim();
+            if (jRid) return false;
             return true;
           });
         if (machine.bridgeQueueSnapshot.jobs.length !== before) {
           machine.bridgeQueueSnapshot.updatedAt = now;
           await machine.save();
           console.log(
-            "[bridge:machining:complete] queue trimmed",
+            "[bridge:machining:complete] queue trimmed (request_auto items removed)",
             JSON.stringify({
               machineId: mid,
               before,
@@ -1847,6 +1871,41 @@ export async function recordMachiningFailForBridge(req, res) {
       });
     } catch {
       // ignore
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // [정책 4.8.2] 실패 후 DB 스냅샷에서 의뢰건 항목 제거:
+    // 실패 시에도 스냅샷에 requestId 있는 항목이 남으면 장비 페이지가 오염된다.
+    // ──────────────────────────────────────────────────────────────────────────
+    try {
+      const machine = await CncMachine.findOne({ machineId: mid }).select(
+        "bridgeQueueSnapshot",
+      );
+      if (machine?.bridgeQueueSnapshot?.jobs) {
+        const before = machine.bridgeQueueSnapshot.jobs.length;
+        machine.bridgeQueueSnapshot.jobs =
+          machine.bridgeQueueSnapshot.jobs.filter((j) => {
+            const jRid = String(j?.requestId || "").trim();
+            return !jRid;
+          });
+        if (machine.bridgeQueueSnapshot.jobs.length !== before) {
+          machine.bridgeQueueSnapshot.updatedAt = now;
+          await machine.save();
+          console.log(
+            "[bridge:machining:fail] request_auto items removed from snapshot",
+            JSON.stringify({
+              machineId: mid,
+              before,
+              after: machine.bridgeQueueSnapshot.jobs.length,
+            }),
+          );
+        }
+      }
+    } catch (e) {
+      console.error(
+        "[bridge:machining:fail] Error removing request items from queue:",
+        e.message,
+      );
     }
 
     return res.status(200).json({ success: true });

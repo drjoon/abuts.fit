@@ -8,6 +8,7 @@ import {
   reorderBridgeQueueForMachine,
   updateBridgeQueueJobPause,
   updateBridgeQueueJobQty,
+  reconcileBridgeQueueSnapshot,
 } from "../../controllers/cnc/bridgeQueue.js";
 import {
   getBridgeActiveProgram,
@@ -86,6 +87,7 @@ export {
   updateBridgeQueueJobPause,
   applyBridgeQueueBatchForMachine,
   clearBridgeQueueForMachine,
+  reconcileBridgeQueueSnapshot,
   getProductionQueues,
   applyProductionQueueBatchForMachine,
   reassignProductionQueues,

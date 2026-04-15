@@ -773,6 +773,50 @@
 - `GET /api/requests/approval-queue/status` — 큐 상태(pending/processing/failed/completed24h) 조회 (제조사/관리자)
 - 환경변수: `REVIEW_APPROVAL_QUEUE_POLL_MS` (폴링 간격, 기본 1500ms), `REVIEW_APPROVAL_QUEUE_LOCK_TIMEOUT_MS` (잠금 해제 기준, 기본 30000ms)
 
+### 4.8 가공 워크시트/장비 페이지 큐 완전 분리 정책
+
+**두 가공 경로는 반드시 독립적으로 운영되며 절대 혼용하지 않는다.**
+
+#### 4.8.1 채널 정의
+
+| 채널                             | 데이터 소스                                    | 관리 주체                              | 화면                 |
+| -------------------------------- | ---------------------------------------------- | -------------------------------------- | -------------------- |
+| **의뢰건 자동 가공 (Worksheet)** | `Request.manufacturerStage = "가공"` (MongoDB) | 생산 큐 (`getProductionQueues`)        | 작업-가공 페이지     |
+| **수동 파일 가공 (Equipment)**   | `CncMachine.bridgeQueueSnapshot` (DB 스냅샷)   | 브리지 큐 (`getBridgeQueueForMachine`) | 장비 페이지 예약목록 |
+
+#### 4.8.2 브리지 큐 스냅샷 오염 금지
+
+- **장비 페이지 브리지 큐**에는 `source = "manual_upload"` 항목(작업자가 장비 페이지에서 직접 올린 파일)만 포함되어야 한다.
+- `source = "request_auto"` 항목(의뢰건 자동 가공)은 브리지 큐 스냅샷에 **절대 저장하지 않는다.**
+- 의뢰건 자동 가공 트리거(`triggerNextAutoMachiningAfterComplete`)는 브리지 `process-file` API를 **직접 호출**하여 즉시 실행하며, 브리지가 자체 큐에 올리더라도 **백엔드 DB 스냅샷은 갱신하지 않는다.**
+- 가공 완료 후 브리지 큐를 재읽어 스냅샷을 동기화할 때는 `requestId`가 있는 항목(의뢰건)을 **자동으로 제거**하고 저장한다.
+
+#### 4.8.3 우선순위 정책
+
+가공 완료 후 다음 작업 결정 순서:
+
+1. **장비 페이지 수동 파일 우선**: 브리지 큐 스냅샷에 `source = "manual_upload"` 항목이 남아 있으면, 의뢰건 자동 가공을 **건너뛴다.** 수동 파일은 브리지가 자체적으로 순서대로 처리한다.
+2. **의뢰건 자동 가공**: 수동 파일 큐가 비어 있을 때만 다음 의뢰건을 `process-file`로 트리거한다.
+
+#### 4.8.4 관련 플래그 구분
+
+- **`allowAutoMachining`**: 작업-가공 페이지 의뢰건 자동 가공 허용 여부. 의뢰건 자동 가공 트리거(`triggerNextAutoMachiningAfterComplete`)의 실행 조건.
+- **`allowJobStart`**: 장비 페이지 작업자 수동 가공 시작 허용 여부. 수동 파일 큐 실행 조건.
+- 두 플래그는 독립적이며 혼용하지 않는다.
+
+#### 4.8.5 스냅샷 정리 (reconcile)
+
+- `POST /api/cnc-machines/:machineId/bridge-queue/reconcile`: 현재 브리지 큐 스냅샷에서 `requestId` 있는 의뢰건 항목을 제거하고 저장하는 관리자/제조사 전용 엔드포인트.
+- DB 마이그레이션이나 수동 정리 시 사용한다.
+
+#### 4.8.6 금지 사항
+
+- `triggerNextAutoMachiningAfterComplete` 완료 후 브리지 큐 스냅샷을 재읽어 DB에 저장하는 것 금지.
+- 의뢰건 NC 파일 경로가 브리지 큐 스냅샷 `jobs` 배열에 `requestId`와 함께 남아 있는 것 금지.
+- 두 큐를 하나의 `bridgeQueueSnapshot`으로 합산하여 표시하는 것 금지.
+
+---
+
 ## 5. Frontend 규칙
 
 ### 5.1 공통 UI
