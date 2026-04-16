@@ -386,6 +386,9 @@ export const PreviewModal = ({
           title: "재생성 요청",
           description: "NC 재생성을 시작했습니다.",
         });
+
+        // NC 재생성 성공 시 모달 닫기
+        onOpenChange(false);
       } catch (err: any) {
         toast({
           title: "재생성 실패",

@@ -15,6 +15,7 @@ import {
 } from "../requests/utils.js";
 import { emitBgRuntimeStatus } from "./bgRuntimeEvents.js";
 import { emitAppEventToRoles } from "../../socket.js";
+import { resolvePrcFileNames } from "../requests/prcMapping.utils.js";
 
 const BG_STORAGE_BASE =
   process.env.BG_STORAGE_PATH ||
@@ -946,6 +947,25 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
       `[BG] getRequestMeta: finishLine points available requestId=${request.requestId} count=${finishLinePoints.length}`,
     );
   }
+  // PRC 파일명: DB에 저장된 값 우선, 없으면 임플란트 정보로 동적 계산
+  // NC 재생성 경로에서도 esprit-addin이 PRC 파일명을 필요로 하므로 여기서 보장
+  let resolvedPrcFiles = {
+    faceHolePrcFileName: ci.faceHolePrcFileName || "",
+    connectionPrcFileName: ci.connectionPrcFileName || "",
+  };
+  if (
+    !resolvedPrcFiles.faceHolePrcFileName ||
+    !resolvedPrcFiles.connectionPrcFileName
+  ) {
+    try {
+      resolvedPrcFiles = await resolvePrcFileNames(ci);
+    } catch (e) {
+      console.warn(
+        `[BG] getRequestMeta: PRC 동적 계산 실패 requestId=${request.requestId}`,
+        e?.message,
+      );
+    }
+  }
   const lotValue = request?.lotNumber?.value || "";
   const serialCode = lotValue.length >= 3 ? lotValue.slice(-3) : "";
   return res.status(200).json(
@@ -969,11 +989,10 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           workType: ci.workType || "",
           lotNumber: lotValue,
           // esprit-addin에서 공정 PRC를 선택하기 위한 의뢰별 설정
-          // 공정 PRC 파일명 규칙은 백엔드가 소유한다.
-          // 값이 비어 있으면 addin이 임의 폴백하지 않고 공정을 중단해야 하므로,
-          // 여기서는 백엔드에 저장된 값만 그대로 전달한다.
-          faceHolePrcFileName: ci.faceHolePrcFileName || "",
-          connectionPrcFileName: ci.connectionPrcFileName || "",
+          // PRC 파일명이 DB에 저장된 경우 그대로 사용, 없으면 임플란트 정보로 동적 계산.
+          // NC 재생성 경로(request-meta 직접 조회)에서도 PRC 파일명이 필요하므로 여기서 보장.
+          faceHolePrcFileName: resolvedPrcFiles.faceHolePrcFileName,
+          connectionPrcFileName: resolvedPrcFiles.connectionPrcFileName,
           finishLine:
             Array.isArray(finishLinePoints) && finishLinePoints.length >= 2
               ? { points: finishLinePoints }

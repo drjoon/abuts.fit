@@ -25,7 +25,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         [DataMember] public string PatientName { get; set; }
         [DataMember] public string Tooth { get; set; }
         [DataMember] public string ImplantManufacturer { get; set; }
-        [DataMember] public string ImplantSystem { get; set; }
+        [DataMember] public string ImplantBrand { get; set; }
         [DataMember] public string ImplantType { get; set; }
         [DataMember] public double MaterialDiameter { get; set; }
         [DataMember] public string MaterialDiameterGroup { get; set; }
@@ -461,7 +461,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return;
             }
             AppLogger.Log($"[NC Processing] Starting CAM processing: RequestId={req.RequestId}, Clinic={req.ClinicName}, Patient={req.PatientName}, Tooth={req.Tooth}");
-            AppLogger.Log($"[NC Processing] Implant: {req.ImplantManufacturer}/{req.ImplantSystem}/{req.ImplantType}, MaxDia={req.MaxDiameter}, ConnDia={req.ConnectionDiameter}");
+            AppLogger.Log($"[NC Processing] Implant: {req.ImplantManufacturer}/{req.ImplantBrand}/{req.ImplantType}, MaxDia={req.MaxDiameter}, ConnDia={req.ConnectionDiameter}");
             AppLogger.Log($"[NC Processing] WorkType={req.WorkType}, LotNumber={req.LotNumber}");
             var tiltVectorLabel = req.TiltAxisVector != null
                 ? $"({req.TiltAxisVector.x:F4}, {req.TiltAxisVector.y:F4}, {req.TiltAxisVector.z:F4})"

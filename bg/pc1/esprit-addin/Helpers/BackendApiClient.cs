@@ -348,7 +348,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember] public string patientName { get; set; }
             [DataMember] public string tooth { get; set; }
             [DataMember] public string implantManufacturer { get; set; }
-            [DataMember] public string implantSystem { get; set; }
+            [DataMember] public string implantBrand { get; set; }
             [DataMember] public string implantType { get; set; }
             [DataMember] public double maxDiameter { get; set; }
             [DataMember] public double connectionDiameter { get; set; }
