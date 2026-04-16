@@ -101,9 +101,12 @@ export async function getCompletedMachiningRecords(req, res) {
       });
     }
 
+    // man(수동 업로드)만 표시: requestId가 없는 레코드만 조회
+    // lab(의뢰 자동가공, requestId 있음)은 워크시트 Completed에서 별도 처리
     const query = {
       machineId,
       status: "COMPLETED",
+      requestId: { $in: [null, ""] },
     };
 
     if (cursor) {
@@ -127,41 +130,11 @@ export async function getCompletedMachiningRecords(req, res) {
       )
       .lean();
 
-    const requestIds = recs
-      .map((r) => String(r?.requestId || "").trim())
-      .filter(Boolean);
-    const uniqueRequestIds = Array.from(new Set(requestIds));
-
-    // request 정보 병합 (lotNumber, clinic/patient/tooth, manufacturerStage)
-    const reqDocs = await Request.find({
-      requestId: { $in: uniqueRequestIds },
-    })
-      .select(
-        "requestId lotNumber caseInfos.clinicName caseInfos.patientName caseInfos.tooth caseInfos.rollbackCounts manufacturerStage",
-      )
-      .lean();
-    const reqMap = new Map(
-      (Array.isArray(reqDocs) ? reqDocs : [])
-        .map((doc) => [String(doc?.requestId || "").trim(), doc])
-        .filter(([k]) => !!k),
-    );
-
     const validRecs = [];
     let nextCursor = null;
     let hasMore = false;
 
     for (const r of recs) {
-      const rid = String(r?.requestId || "").trim();
-      if (rid) {
-        const reqDoc = reqMap.get(rid);
-        // If rolled back to before '세척.패킹', it is not considered completed anymore
-        if (
-          reqDoc &&
-          ["의뢰", "CAM", "가공"].includes(reqDoc.manufacturerStage)
-        ) {
-          continue;
-        }
-      }
       if (validRecs.length < limit) {
         validRecs.push(r);
       } else {
@@ -178,25 +151,15 @@ export async function getCompletedMachiningRecords(req, res) {
       nextCursor = `${new Date(lastRec.completedAt).toISOString()}|${String(lastRec._id)}`;
     }
 
-    const merged = validRecs.map((r) => {
-      const req = reqMap.get(String(r?.requestId || "").trim());
-      return {
-        ...r,
-        lotNumber: req?.lotNumber || r?.lotNumber || {},
-        clinicName: req?.caseInfos?.clinicName || r?.clinicName,
-        patientName: req?.caseInfos?.patientName || r?.patientName,
-        tooth: req?.caseInfos?.tooth || r?.tooth,
-        rollbackCount: Number(req?.caseInfos?.rollbackCounts?.machining || 0),
-      };
-    });
-
-    const items = merged.map((r) => {
-      const rid = String(r?.requestId || "").trim();
-      const displayLabel = formatRequestLabelForCompleted(r, rid);
+    const items = validRecs.map((r) => {
+      const displayLabel =
+        String(
+          r?.displayLabel || r?.originalFileName || r?.fileName || "",
+        ).trim() || null;
       return {
         id: String(r?._id || ""),
         machineId: String(r?.machineId || "").trim(),
-        requestId: rid || null,
+        requestId: null,
         jobId: r?.jobId != null ? String(r.jobId) : null,
         status: String(r?.status || "").trim(),
         completedAt: r?.completedAt
@@ -208,12 +171,12 @@ export async function getCompletedMachiningRecords(req, res) {
             : typeof r?.elapsedSeconds === "number" && r.elapsedSeconds >= 0
               ? Math.floor(r.elapsedSeconds)
               : 0,
-        displayLabel: String(displayLabel || "").trim() || null,
+        displayLabel,
         lotNumber: r?.lotNumber || null,
         clinicName: r?.clinicName || null,
         patientName: r?.patientName || null,
         tooth: r?.tooth || null,
-        rollbackCount: Number(r?.rollbackCount || 0),
+        rollbackCount: 0,
       };
     });
 
@@ -371,50 +334,22 @@ export async function getLastCompletedMachiningMap(req, res) {
       return res.status(200).json({ success: true, data: {} });
     }
 
+    // man(수동 업로드)만 표시: requestId가 없는 레코드만 조회
+    // lab(의뢰 자동가공, requestId 있음)은 워크시트 Completed에서 별도 처리
     const recs = await MachiningRecord.find({
       machineId: { $in: machineIds },
       status: "COMPLETED",
+      requestId: { $in: [null, ""] },
     })
       .sort({ completedAt: -1, updatedAt: -1, createdAt: -1 })
       .limit(500)
       .lean();
-
-    const requestIds = recs
-      .map((r) => String(r?.requestId || "").trim())
-      .filter(Boolean);
-    const uniqueRequestIds = Array.from(new Set(requestIds));
-
-    const reqDocs = uniqueRequestIds.length
-      ? await Request.find({ requestId: { $in: uniqueRequestIds } })
-          .select(
-            "requestId lotNumber caseInfos.clinicName caseInfos.patientName caseInfos.tooth caseInfos.rollbackCounts manufacturerStage",
-          )
-          .lean()
-      : [];
-    const reqById = new Map();
-    for (const r of Array.isArray(reqDocs) ? reqDocs : []) {
-      const rid = String(r?.requestId || "").trim();
-      if (rid) reqById.set(rid, r);
-    }
 
     const byMachine = new Map();
     for (const r of Array.isArray(recs) ? recs : []) {
       const mid = String(r?.machineId || "").trim();
       if (!mid) continue;
       if (byMachine.has(mid)) continue;
-
-      const rid = String(r?.requestId || "").trim();
-      if (rid) {
-        const reqDoc = reqById.get(rid);
-        // If the request has been rolled back from '세척.패킹' (or later), it's no longer the "last completed"
-        if (
-          reqDoc &&
-          ["의뢰", "CAM", "가공"].includes(reqDoc.manufacturerStage)
-        ) {
-          continue;
-        }
-      }
-
       byMachine.set(mid, r);
     }
 
@@ -423,21 +358,14 @@ export async function getLastCompletedMachiningMap(req, res) {
       const rec = byMachine.get(mid) || null;
       if (!rec) continue;
 
-      const rid = String(rec?.requestId || "").trim();
-      const reqDoc = rid ? reqById.get(rid) : null;
-      const displayLabel = formatRequestLabelForCompleted(reqDoc, rid);
-      const clinicName = reqDoc?.caseInfos?.clinicName
-        ? String(reqDoc.caseInfos.clinicName).trim()
-        : "";
-      const patientName = reqDoc?.caseInfos?.patientName
-        ? String(reqDoc.caseInfos.patientName).trim()
-        : "";
-      const tooth = reqDoc?.caseInfos?.tooth
-        ? String(reqDoc.caseInfos.tooth).trim()
-        : "";
-      const lotValue = reqDoc?.lotNumber?.value
-        ? String(reqDoc.lotNumber.value).trim()
-        : "";
+      const displayLabel =
+        String(
+          rec?.displayLabel || rec?.originalFileName || rec?.fileName || "",
+        ).trim() || null;
+      const clinicName = String(rec?.clinicName || "").trim();
+      const patientName = String(rec?.patientName || "").trim();
+      const tooth = String(rec?.tooth || "").trim();
+      const lotValue = "";
       const completedAt = rec?.completedAt
         ? new Date(rec.completedAt).toISOString()
         : rec?.updatedAt
@@ -453,15 +381,13 @@ export async function getLastCompletedMachiningMap(req, res) {
       data[mid] = {
         machineId: mid,
         jobId: rec?.jobId != null ? String(rec.jobId) : null,
-        requestId: rid || null,
-        requestMongoId: reqDoc?._id ? String(reqDoc._id) : null,
-        displayLabel: String(displayLabel || "").trim() || null,
+        requestId: null,
+        requestMongoId: null,
+        displayLabel: displayLabel || null,
         clinicName,
         patientName,
         tooth,
-        rollbackCount: Number(
-          reqDoc?.caseInfos?.rollbackCounts?.machining || 0,
-        ),
+        rollbackCount: 0,
         lotNumber: {
           value: lotValue || undefined,
         },

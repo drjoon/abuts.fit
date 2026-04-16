@@ -504,9 +504,9 @@ export const MachineCard = (props: MachineCardProps) => {
       typeof durationSecondsRaw === "number" && durationSecondsRaw >= 0
         ? Math.floor(durationSecondsRaw)
         : 0;
-    const requestId = (currentProg as any)?.requestId
-      ? String((currentProg as any).requestId)
-      : null;
+    // man(수동 업로드)만 표시: currentProg에 requestId가 있으면 lab 파일이므로 제외
+    const isLabProg = !!(currentProg as any)?.requestId;
+    if (isLabProg) return null;
     const jobId = (currentProg as any)?.jobId
       ? String((currentProg as any).jobId)
       : (currentProg as any)?.id
@@ -515,7 +515,7 @@ export const MachineCard = (props: MachineCardProps) => {
     return {
       machineId: machine.uid,
       jobId,
-      requestId,
+      requestId: null,
       displayLabel: null,
       completedAt,
       durationSeconds,
