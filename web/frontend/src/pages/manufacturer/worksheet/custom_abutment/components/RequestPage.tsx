@@ -166,6 +166,7 @@ export const RequestPage = ({
           : Array.isArray(raw)
             ? raw
             : [];
+
         if (data?.success && Array.isArray(list)) {
           if (append) {
             pageState.setRequests((prev) => {
@@ -190,6 +191,8 @@ export const RequestPage = ({
               );
             });
           } else {
+            // append=false: 페이지 새로고침이므로 prev를 무시하고 list만 사용
+            // realtimeProgress만 prev에서 복원
             pageState.setRequests((prev) =>
               mergeTransientRealtimeProgress(
                 prev,
@@ -462,7 +465,7 @@ export const RequestPage = ({
   const setPreviewOpen = pageState.setPreviewOpen;
 
   useEffect(() => {
-    pageState.pageRefForCore.current = 1;
+    resetPagination();
     // eslint-disable-next-line react-hooks/exhaustive-deps
     void fetchRequestsCore(false, false);
   }, [tabStage, showCompleted]);

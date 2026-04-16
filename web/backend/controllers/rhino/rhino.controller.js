@@ -1,6 +1,8 @@
 import axios from "axios";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiError } from "../../utils/ApiError.js";
+import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
+import Request from "../../models/request.model.js";
 
 const RHINO_COMPUTE_BASE_URL = String(
   process.env.RHINO_COMPUTE_BASE_URL || "http://127.0.0.1:8000",
@@ -69,22 +71,83 @@ export const processFileByName = asyncHandler(async (req, res) => {
   const requestId = req.body?.requestId || null;
   const force = Boolean(req.body?.force);
 
-  // [정책] rhino-server가 파일 없으면 /bg/original-file로 S3에서 직접 다운로드
-  const resp = await enqueueTask(() =>
-    axios.post(
-      `${RHINO_COMPUTE_BASE_URL}/api/rhino/process-file`,
-      { filePath: safeName, fileName: safeName, requestId, force },
-      {
-        timeout: 1000 * 60 * 3,
-        headers: rhinoAuthHeaders(),
-      },
-    ),
-  );
+  // requestId가 있으면 Request 조회하여 requestMongoId 확보
+  let requestMongoId = null;
+  if (requestId) {
+    try {
+      const request = await Request.findOne({ requestId })
+        .select({ _id: 1 })
+        .lean();
+      if (request) {
+        requestMongoId = String(request._id);
+      }
+    } catch {
+      // ignore
+    }
+  }
 
-  return res.status(200).json({
-    success: true,
-    data: resp.data,
-  });
+  // Rhino 재생성 시작 시 런타임 상태 발행 (경과 시간 표시용)
+  if (requestId) {
+    emitBgRuntimeStatus({
+      requestId,
+      requestMongoId,
+      source: "rhino-server",
+      stage: "request",
+      status: "processing",
+      label: "Filled STL 생성 중",
+      tone: "blue",
+      startedAt: new Date().toISOString(),
+      elapsedSeconds: 0,
+    });
+  }
+
+  try {
+    // [정책] rhino-server가 파일 없으면 /bg/original-file로 S3에서 직접 다운로드
+    const resp = await enqueueTask(() =>
+      axios.post(
+        `${RHINO_COMPUTE_BASE_URL}/api/rhino/process-file`,
+        { filePath: safeName, fileName: safeName, requestId, force },
+        {
+          timeout: 1000 * 60 * 3,
+          headers: rhinoAuthHeaders(),
+        },
+      ),
+    );
+
+    // 성공 시 런타임 상태 클리어 (bg.controller의 registerProcessedFile에서 완료 이벤트 발행)
+    if (requestId) {
+      emitBgRuntimeStatus({
+        requestId,
+        requestMongoId,
+        source: "rhino-server",
+        stage: "request",
+        status: "completed",
+        label: "Filled STL 생성 완료",
+        tone: "blue",
+        clear: true,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: resp.data,
+    });
+  } catch (error) {
+    // 실패 시 런타임 상태 클리어
+    if (requestId) {
+      emitBgRuntimeStatus({
+        requestId,
+        requestMongoId,
+        source: "rhino-server",
+        stage: "request",
+        status: "failed",
+        label: "Filled STL 생성 실패",
+        tone: "rose",
+        clear: true,
+      });
+    }
+    throw error;
+  }
 });
 
 export const fillholeFromUpload = asyncHandler(async (req, res) => {

@@ -29,12 +29,12 @@ import { triggerNextAutoMachiningAfterComplete } from "../controllers/cnc/machin
 
 // 워커 폴링 간격 (ms). 환경변수로 조정 가능.
 const WORKER_POLL_INTERVAL_MS = Number(
-  process.env.REVIEW_APPROVAL_QUEUE_POLL_MS || 1500
+  process.env.REVIEW_APPROVAL_QUEUE_POLL_MS || 1500,
 );
 
 // 처리 시간 초과 시 잠금 해제 기준 (ms). 네트워크 타임아웃보다 넉넉히 설정.
 const LOCK_TIMEOUT_MS = Number(
-  process.env.REVIEW_APPROVAL_QUEUE_LOCK_TIMEOUT_MS || 30000
+  process.env.REVIEW_APPROVAL_QUEUE_LOCK_TIMEOUT_MS || 30000,
 );
 
 // 워커 인스턴스 고유 ID (다중 인스턴스 잠금 식별용)
@@ -61,7 +61,9 @@ export async function enqueueApproval({ taskType, request, actorUserId }) {
   const requestId = String(request?.requestId || "");
 
   if (!requestMongoId || !requestId) {
-    throw new Error("[ReviewApprovalQueue] requestMongoId/requestId is required");
+    throw new Error(
+      "[ReviewApprovalQueue] requestMongoId/requestId is required",
+    );
   }
 
   // uniqueKey: 동일 의뢰에 대해 동일 taskType이 중복 등록되지 않도록 보장
@@ -83,9 +85,11 @@ export async function enqueueApproval({ taskType, request, actorUserId }) {
     return { alreadyQueued: true, queueId: String(existing._id) };
   }
 
-  // 기존 FAILED 항목이 있으면 재시도를 위해 PENDING으로 초기화
-  const failedDoc = await ReviewApprovalQueue.findOneAndUpdate(
-    { uniqueKey, status: "FAILED" },
+  // 기존 FAILED/COMPLETED/CANCELLED 항목이 있으면 재시도를 위해 PENDING으로 초기화
+  // COMPLETED: 롤백 후 재승인 시 동일 uniqueKey로 재등록 필요
+  // CANCELLED: 취소 후 재승인 시 동일 uniqueKey로 재등록 필요
+  const resetDoc = await ReviewApprovalQueue.findOneAndUpdate(
+    { uniqueKey, status: { $in: ["FAILED", "COMPLETED", "CANCELLED"] } },
     {
       $set: {
         status: "PENDING",
@@ -101,40 +105,65 @@ export async function enqueueApproval({ taskType, request, actorUserId }) {
         actorUserId: actorUserId || null,
       },
     },
-    { new: true }
+    { new: true },
   );
-  if (failedDoc) {
-    console.log("[ReviewApprovalQueue] re-queued failed item", {
+  if (resetDoc) {
+    console.log("[ReviewApprovalQueue] re-queued item", {
       requestId,
       taskType,
-      queueId: String(failedDoc._id),
+      prevStatus: resetDoc.status,
+      queueId: String(resetDoc._id),
     });
-    return { alreadyQueued: false, queueId: String(failedDoc._id) };
+    return { alreadyQueued: false, queueId: String(resetDoc._id) };
   }
 
   // 신규 등록
-  const doc = await ReviewApprovalQueue.create({
-    taskType,
-    status: "PENDING",
-    requestMongoId,
-    requestId,
-    uniqueKey,
-    payload: buildPayload(taskType, request),
-    actorUserId: actorUserId || null,
-  });
+  try {
+    const doc = await ReviewApprovalQueue.create({
+      taskType,
+      status: "PENDING",
+      requestMongoId,
+      requestId,
+      uniqueKey,
+      payload: buildPayload(taskType, request),
+      actorUserId: actorUserId || null,
+    });
 
-  console.log("[ReviewApprovalQueue] enqueued", {
-    requestId,
-    taskType,
-    queueId: String(doc._id),
-  });
+    console.log("[ReviewApprovalQueue] enqueued", {
+      requestId,
+      taskType,
+      queueId: String(doc._id),
+    });
 
-  // 워커가 대기 중이라면 즉시 폴링 한 번 트리거
-  void processNextItem().catch((err) =>
-    console.error("[ReviewApprovalQueue] immediate processNextItem error", err)
-  );
+    // 워커가 대기 중이라면 즉시 폴링 한 번 트리거
+    void processNextItem().catch((err) =>
+      console.error(
+        "[ReviewApprovalQueue] immediate processNextItem error",
+        err,
+      ),
+    );
 
-  return { alreadyQueued: false, queueId: String(doc._id) };
+    return { alreadyQueued: false, queueId: String(doc._id) };
+  } catch (error) {
+    // 중복 키 에러 (경쟁 상태): findOne과 create 사이에 다른 요청이 먼저 생성한 경우
+    if (error?.code === 11000 || error?.message?.includes("duplicate")) {
+      console.log(
+        "[ReviewApprovalQueue] duplicate key caught (race condition), fetching existing",
+        {
+          requestId,
+          taskType,
+        },
+      );
+      const raceExisting = await ReviewApprovalQueue.findOne({
+        uniqueKey,
+        status: { $in: ["PENDING", "PROCESSING"] },
+      }).lean();
+      if (raceExisting) {
+        return { alreadyQueued: true, queueId: String(raceExisting._id) };
+      }
+    }
+    throw error;
+  }
 }
 
 /**
@@ -160,17 +189,14 @@ export async function processNextItem() {
         lockedUntil: null,
         processingStartedAt: null,
       },
-    }
+    },
   );
 
   // 원자적으로 PENDING 항목 하나를 PROCESSING으로 전환하여 잠금 획득
   const item = await ReviewApprovalQueue.findOneAndUpdate(
     {
       status: "PENDING",
-      $or: [
-        { lockedUntil: null },
-        { lockedUntil: { $lt: now } },
-      ],
+      $or: [{ lockedUntil: null }, { lockedUntil: { $lt: now } }],
     },
     {
       $set: {
@@ -185,7 +211,7 @@ export async function processNextItem() {
     {
       sort: { createdAt: 1 }, // 먼저 들어온 것부터 처리 (FIFO)
       new: true,
-    }
+    },
   );
 
   if (!item) {
@@ -238,7 +264,10 @@ export async function processNextItem() {
         failedAt: isRetryable ? null : new Date(),
         lockedBy: null,
         lockedUntil: null,
-        error: { message: message.slice(0, 500), code: String(err?.statusCode || err?.code || "") },
+        error: {
+          message: message.slice(0, 500),
+          code: String(err?.statusCode || err?.code || ""),
+        },
       },
     });
 
@@ -270,9 +299,12 @@ async function executeTask(item) {
     }
     // 이미 다른 경로(재업로드 등)로 NC가 생성된 경우 트리거 스킵
     if (request?.caseInfos?.ncFile?.s3Key) {
-      console.log("[ReviewApprovalQueue] NC already exists, skip esprit trigger", {
-        requestId,
-      });
+      console.log(
+        "[ReviewApprovalQueue] NC already exists, skip esprit trigger",
+        {
+          requestId,
+        },
+      );
       return;
     }
     await triggerEspritForNc({ request });
@@ -305,7 +337,7 @@ async function runCamApproveTask({ requestMongoId, requestId }) {
   const existingMachineId = String(
     request?.productionSchedule?.assignedMachine ||
       request?.assignedMachine ||
-      ""
+      "",
   ).trim();
 
   let selectedMachineId = existingMachineId;
@@ -369,18 +401,27 @@ async function runCamApproveTask({ requestMongoId, requestId }) {
     });
   } catch (err) {
     // 자동 가공 트리거 실패는 치명적이지 않으므로 경고만 남김
-    console.warn("[ReviewApprovalQueue] CAM task: auto machining trigger failed", {
-      requestId,
-      machineId: selectedMachineId,
-      error: err?.message || String(err),
-    });
+    console.warn(
+      "[ReviewApprovalQueue] CAM task: auto machining trigger failed",
+      {
+        requestId,
+        machineId: selectedMachineId,
+        error: err?.message || String(err),
+      },
+    );
   }
 }
 
 /**
  * 승인 큐 실패 시 프론트에 이벤트 발행
  */
-function emitApprovalQueueFailure({ requestId, requestMongoId, taskType, message, isRetryable }) {
+function emitApprovalQueueFailure({
+  requestId,
+  requestMongoId,
+  taskType,
+  message,
+  isRetryable,
+}) {
   const stageMap = {
     REQUEST_STAGE_APPROVED: "request",
     CAM_STAGE_APPROVED: "cam",
@@ -391,12 +432,15 @@ function emitApprovalQueueFailure({ requestId, requestMongoId, taskType, message
     {
       requestId: requestId ? String(requestId) : null,
       requestMongoId: requestMongoId || null,
-      action: taskType === "REQUEST_STAGE_APPROVED" ? "esprit-trigger" : "cam-approve-post",
+      action:
+        taskType === "REQUEST_STAGE_APPROVED"
+          ? "esprit-trigger"
+          : "cam-approve-post",
       stage: stageMap[taskType] || null,
       message: isRetryable
         ? `${message} (재시도 예정)`
         : `${message} (최대 재시도 초과)`,
-    }
+    },
   );
 }
 
@@ -419,7 +463,8 @@ function buildPayload(taskType, request) {
         totalLength: request?.caseInfos?.totalLength || null,
         taperAngle: request?.caseInfos?.taperAngle || null,
         faceHolePrcFileName: request?.caseInfos?.faceHolePrcFileName || null,
-        connectionPrcFileName: request?.caseInfos?.connectionPrcFileName || null,
+        connectionPrcFileName:
+          request?.caseInfos?.connectionPrcFileName || null,
         clinicName: request?.caseInfos?.clinicName || null,
         patientName: request?.caseInfos?.patientName || null,
         tooth: request?.caseInfos?.tooth || null,
@@ -459,7 +504,7 @@ export function startReviewApprovalWorker() {
   _workerRunning = true;
 
   console.log(
-    `[ReviewApprovalQueue] worker started (poll=${WORKER_POLL_INTERVAL_MS}ms, lock=${LOCK_TIMEOUT_MS}ms)`
+    `[ReviewApprovalQueue] worker started (poll=${WORKER_POLL_INTERVAL_MS}ms, lock=${LOCK_TIMEOUT_MS}ms)`,
   );
 
   const tick = async () => {

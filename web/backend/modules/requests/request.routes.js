@@ -3,7 +3,11 @@ const router = express.Router();
 import requestController from "../../controllers/requests/request.controller.js";
 import * as cncEventController from "../../controllers/cnc/cncEvent.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
-import { getQueueStatus } from "../../services/reviewApprovalQueue.service.js";
+import {
+  getQueueStatus,
+  enqueueApproval,
+} from "../../services/reviewApprovalQueue.service.js";
+import Request from "../../models/request.model.js";
 
 // 새 의뢰 생성 (의뢰자만 가능)
 router.post(
@@ -449,6 +453,50 @@ router.get(
       return res
         .status(500)
         .json({ success: false, message: err?.message || "큐 상태 조회 실패" });
+    }
+  },
+);
+
+// 관리자: 의뢰 Esprit 트리거 수동 재시도 (큐 stuck 복구용)
+router.post(
+  "/approval-queue/retry-esprit",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const { requestIds } = req.body || {};
+      if (!Array.isArray(requestIds) || requestIds.length === 0) {
+        return res
+          .status(400)
+          .json({ success: false, message: "requestIds 배열이 필요합니다." });
+      }
+      const results = [];
+      for (const requestId of requestIds) {
+        const request = await Request.findOne({ requestId }).lean();
+        if (!request) {
+          results.push({
+            requestId,
+            ok: false,
+            message: "의뢰를 찾을 수 없습니다.",
+          });
+          continue;
+        }
+        try {
+          const result = await enqueueApproval({
+            taskType: "REQUEST_STAGE_APPROVED",
+            request,
+            actorUserId: String(req.user._id),
+          });
+          results.push({ requestId, ok: true, ...result });
+        } catch (err) {
+          results.push({ requestId, ok: false, message: err?.message });
+        }
+      }
+      return res.status(200).json({ success: true, data: results });
+    } catch (err) {
+      return res
+        .status(500)
+        .json({ success: false, message: err?.message || "재시도 실패" });
     }
   },
 );

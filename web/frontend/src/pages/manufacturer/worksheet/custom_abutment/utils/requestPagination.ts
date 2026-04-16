@@ -70,9 +70,8 @@ export function useInfiniteScroll(
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries[0].isIntersecting) return;
-        if (!userScrolledRef.current) return;
         if (visibleCount >= filteredLength - 3 && hasMore) {
-          void fetchNextPage();
+          if (userScrolledRef.current) void fetchNextPage();
         }
         if (visibleCount < filteredLength) {
           setVisibleCount((prev) => prev + 9);

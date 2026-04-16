@@ -113,7 +113,9 @@ export function useWorksheetRealtimeStatus({
     });
 
     if (found) return updated;
-    return [nextRequest, ...updated];
+    // found=false인 경우: 현재 페이지에 없는 항목이므로 추가하지 않음
+    // (페이지 로딩 중이거나, 무한 스크롤로 아직 불러오지 않은 페이지의 항목일 수 있음)
+    return prev;
   };
 
   useEffect(() => {
@@ -293,19 +295,9 @@ export function useWorksheetRealtimeStatus({
           }
           return;
         case "request:stage-changed": {
-          const eventRequest = payload?.request as
-            | ManufacturerRequest
-            | undefined;
-          if (!eventRequest) return;
-          setRequests((prev) =>
-            applyRequestPatch(prev, {
-              ...eventRequest,
-              manufacturerStage:
-                String(
-                  eventRequest.manufacturerStage || payload?.toStage || "",
-                ).trim() || eventRequest.manufacturerStage,
-            }),
-          );
+          // 스테이지 변경 시 항목을 개별 패치하지 않고 전체 목록을 재조회한다.
+          // 이렇게 해야 현재 탭 조건에 맞는 항목만 한번에 올바르게 필터링된다.
+          if (fetchRequests) void fetchRequests(true);
           return;
         }
         case "request:cam-trigger-failed":
