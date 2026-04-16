@@ -51,8 +51,14 @@ if [ -n "$TARGET" ] && [ -d "$TARGET" ]; then
     echo "[predeploy] linked $TARGET/shared -> ../shared"
   fi
 
-  echo "[predeploy] Installing dependencies in $TARGET"
+  # 캐시에서 복원되었는지 확인
+  if [ -f "$TARGET/.npm-cache-restored" ]; then
+    echo "[predeploy] node_modules restored from cache, skipping npm install"
+    rm -f "$TARGET/.npm-cache-restored"
+    exit 0
+  fi
 
+  echo "[predeploy] Installing dependencies in $TARGET"
 
   cd "$TARGET"
 

@@ -1649,7 +1649,59 @@ BREVO_API_KEY=your_brevo_api_key_here
 
 ---
 
-## 13. 운영 메모
+## 13. EBS 배포 최적화
+
+### 13.1 node_modules 캐싱 전략
+
+**배포 시간을 1-2분으로 단축하기 위해 `node_modules` 캐싱을 사용합니다.**
+
+#### 동작 방식
+
+1. **Pre-deploy 단계** (`.ebextensions/03_cache_node_modules.config`)
+   - `package-lock.json`의 MD5 해시 계산
+   - 캐시된 해시와 비교하여 일치하면 `/var/cache/abuts-fit/node_modules`에서 복원
+   - 복원 성공 시 `.npm-cache-restored` 마커 파일 생성
+
+2. **Install 단계** (`.platform/hooks/predeploy/01_install_backend.sh`)
+   - `.npm-cache-restored` 마커 파일이 있으면 `npm ci` 스킵
+   - 마커 파일이 없으면 정상적으로 `npm ci` 실행
+
+3. **Post-deploy 단계** (`.ebextensions/03_cache_node_modules.config`)
+   - 배포 완료 후 `/var/app/current/backend/node_modules`를 캐시로 복사
+   - `package-lock.json` 해시를 `/var/cache/abuts-fit/node_modules/package-lock.hash`에 저장
+
+#### 캐시 무효화 조건
+
+- `package-lock.json` 내용이 변경되면 자동으로 캐시 무효화
+- 새로운 패키지 추가/제거/업데이트 시 자동으로 재설치
+
+#### 관련 파일
+
+| 파일                                              | 역할                          |
+| ------------------------------------------------- | ----------------------------- |
+| `.ebextensions/03_cache_node_modules.config`      | 캐싱 훅 스크립트 정의         |
+| `.platform/hooks/predeploy/01_install_backend.sh` | 캐시 복원 확인 및 npm install |
+
+#### 효과
+
+- **첫 배포**: 4분 (정상 설치)
+- **이후 배포** (package-lock.json 변경 없음): 1-2분 (캐시 복원)
+- **패키지 변경 시**: 4분 (재설치 후 캐시 갱신)
+
+### 13.2 @napi-rs/canvas 패키지
+
+**서버 사이드 Canvas 렌더링을 위해 `@napi-rs/canvas`를 사용합니다.**
+
+- **용도**: 패킹 라벨 ZPL 생성 (`packLabelRenderer.js`)
+- **선택 이유**:
+  - `node-canvas`보다 설치 시간 빠름 (사전 빌드된 바이너리)
+  - Python/Cairo 의존성 없음
+  - 네이티브 성능
+- **시스템 폰트**: Amazon Linux 2023에서 Noto Sans CJK 폰트 자동 설치 (`.platform/hooks/predeploy/01_install_backend.sh`)
+
+---
+
+## 14. 운영 메모
 
 - 하위 `rules.md`는 루트 규칙을 반복 작성하지 않습니다.
 - 구현 세부, 트러블슈팅, 서비스별 로컬 설정만 남깁니다.
