@@ -73,6 +73,9 @@ namespace HiLinkBridgeWebApi48.Controllers
                 }
                 catch { }
 
+                CncMachining.ResetStartBackoff(req.machineId);
+                CncMachining.TriggerProcessNow(req.machineId);
+
                 return Content(HttpStatusCode.Accepted, new
                 {
                     ok = true,

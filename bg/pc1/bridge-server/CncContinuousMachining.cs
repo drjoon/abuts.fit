@@ -837,6 +837,9 @@ return;
 return;
 }
 
+var hasLocalJob = CncJobQueue.Peek(machineId) != null;
+if (!hasLocalJob)
+{
 try
 {
 await SyncQueueFromBackend(machineId, false);
@@ -844,6 +847,7 @@ await SyncQueueFromBackend(machineId, false);
 catch (Exception syncEx)
 {
 Console.WriteLine("[CncMachining] idle force sync failed machine={0} err={1}", machineId, syncEx.Message);
+}
 }
 var nextJob = CncJobQueue.Peek(machineId);
 if (nextJob == null)
@@ -1373,7 +1377,7 @@ private static async Task<(bool Success, string Error)> UploadProgramToSlot(stri
                 );
             }
 
-            // 로컬 캐시에 없으면 S3에서 내려받아 캐시한다.
+            // 로컬에 없으면 S3에서 temp 경로로 다운로드한다.
             var downloaded = await TryDownloadAndCacheFromS3(machineId, job, fullPath);
             if (!downloaded || !File.Exists(fullPath))
             {
@@ -1383,7 +1387,12 @@ private static async Task<(bool Success, string Error)> UploadProgramToSlot(stri
             }
         }
 
+        var isTempFile = !string.IsNullOrEmpty(job.s3Key);
         var content = File.ReadAllText(fullPath);
+        if (isTempFile)
+        {
+            try { File.Delete(fullPath); } catch { }
+        }
         var enforcedContent = BridgeShared.EnsurePercentAndHeaderSecondLine(content, slotNo);
         var processedContent = BridgeShared.SanitizeProgramTextForCnc(BridgeShared.EnsureProgramEnvelope(enforcedContent));
         var processedPreviewLines = (processedContent ?? string.Empty)
@@ -1660,7 +1669,7 @@ if (!dl.IsSuccessStatusCode) return false;
 var bytes = await dl.Content.ReadAsByteArrayAsync();
 File.WriteAllBytes(fullPath, bytes);
 }
-Console.WriteLine("[CncMachining] cached from S3: {0}", fullPath);
+Console.WriteLine("[CncMachining] downloaded from S3 to temp: {0}", fullPath);
 return true;
 }
 catch (Exception ex)
@@ -1740,27 +1749,19 @@ private static bool TryResolveJobFilePath(CncJobItem job, out string fullPath, o
 fullPath = null;
 error = null;
 var root = Path.GetFullPath(Config.BridgeStoreRoot);
-// S3 기반 job: s3Key가 있으면 jobId 기반 캐시 경로를 bridgePath보다 먼저 사용한다.
-// bridgePath가 여러 케이스에서 동일한 파일명(program.nc 등)을 가리키는 경우,
-// Esprit가 다음 케이스 NC를 저장하면 덮어쓰기되어 잘못된 파일이 가공되는 문제를 방지한다.
+// S3 기반 job: s3Key가 있으면 시스템 temp 폴더에 임시 파일 경로를 반환한다.
+// 다운로드 후 CNC 업로드 완료 시 즉시 삭제하므로 영구 캐시를 남기지 않는다.
+// bridgePath 경로 충돌(동일 파일명 덮어쓰기) 문제도 방지된다.
 try
 {
 var sk = (job.s3Key ?? string.Empty).Trim();
 var jid = (job.id ?? string.Empty).Trim();
 if (!string.IsNullOrEmpty(sk) && !string.IsNullOrEmpty(jid))
 {
-var mid = (job.machineId ?? string.Empty).Trim();
-if (string.IsNullOrEmpty(mid)) mid = "_";
 var safeId = Regex.Replace(jid, @"[^A-Za-z0-9_\-]", "_");
 if (string.IsNullOrEmpty(safeId)) safeId = Guid.NewGuid().ToString("N");
-var safeFile = safeId + ".nc";
-var p2 = Path.GetFullPath(Path.Combine(root, mid, "cache", safeFile));
-if (!p2.StartsWith(root, StringComparison.OrdinalIgnoreCase))
-{
-error = "cache path is outside of root";
-return false;
-}
-fullPath = p2;
+var tempFile = Path.Combine(Path.GetTempPath(), safeId + ".nc");
+fullPath = tempFile;
 return true;
 }
 }
