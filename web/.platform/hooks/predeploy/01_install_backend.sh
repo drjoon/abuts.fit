@@ -51,32 +51,53 @@ if [ -n "$TARGET" ] && [ -d "$TARGET" ]; then
     echo "[predeploy] linked $TARGET/shared -> ../shared"
   fi
 
-  # 캐시에서 복원되었는지 확인
-  if [ -f "$TARGET/.npm-cache-restored" ]; then
-    echo "[predeploy] node_modules restored from cache, skipping npm install"
-    rm -f "$TARGET/.npm-cache-restored"
-    exit 0
-  fi
+  CACHE_DIR="/var/cache/abuts-fit/node_modules"
 
-  echo "[predeploy] Installing dependencies in $TARGET"
+  # package-lock.json 해시 비교로 캐시 사용 여부 결정
+  if [ -f "$TARGET/package-lock.json" ] && [ -d "$CACHE_DIR/node_modules" ] && [ -f "$CACHE_DIR/package-lock.hash" ]; then
+    CURRENT_HASH=$(md5sum "$TARGET/package-lock.json" | cut -d' ' -f1)
+    CACHED_HASH=$(cat "$CACHE_DIR/package-lock.hash")
+    echo "[predeploy] package-lock hash: current=$CURRENT_HASH cached=$CACHED_HASH"
+
+    if [ "$CURRENT_HASH" = "$CACHED_HASH" ]; then
+      echo "[predeploy] Cache hit! Restoring node_modules from cache..."
+      rm -rf "$TARGET/node_modules"
+      cp -a "$CACHE_DIR/node_modules" "$TARGET/node_modules"
+      echo "[predeploy] node_modules restored from cache ($(du -sh $TARGET/node_modules | cut -f1))"
+      exit 0
+    fi
+
+    echo "[predeploy] Cache miss (hash changed), installing..."
+  else
+    echo "[predeploy] No cache found, installing..."
+  fi
 
   cd "$TARGET"
 
   if [ -f "package-lock.json" ] || [ -f "npm-shrinkwrap.json" ]; then
     if npm ci --omit=dev --no-audit --no-fund; then
       echo "[predeploy] npm ci finished in $TARGET"
-      exit 0
+    else
+      echo "[predeploy] npm ci failed. Falling back to npm install in $TARGET" >&2
+      npm install --omit=dev --no-audit --no-fund
+      echo "[predeploy] npm install finished in $TARGET"
     fi
-
-    echo "[predeploy] npm ci failed. Falling back to npm install in $TARGET" >&2
+  else
+    echo "[predeploy] lockfile not found. Falling back to npm install in $TARGET" >&2
     npm install --omit=dev --no-audit --no-fund
     echo "[predeploy] npm install finished in $TARGET"
-    exit 0
   fi
 
-  echo "[predeploy] lockfile not found. Falling back to npm install in $TARGET" >&2
-  npm install --omit=dev --no-audit --no-fund
-  echo "[predeploy] npm install finished in $TARGET"
+  # 캐시 저장
+  if [ -d "$TARGET/node_modules" ] && [ -f "$TARGET/package-lock.json" ]; then
+    echo "[predeploy] Saving node_modules to cache..."
+    mkdir -p "$CACHE_DIR"
+    rm -rf "$CACHE_DIR/node_modules"
+    cp -a "$TARGET/node_modules" "$CACHE_DIR/node_modules"
+    md5sum "$TARGET/package-lock.json" | cut -d' ' -f1 > "$CACHE_DIR/package-lock.hash"
+    echo "[predeploy] Cache saved ($(du -sh $CACHE_DIR/node_modules | cut -f1))"
+  fi
+
   exit 0
 fi
 

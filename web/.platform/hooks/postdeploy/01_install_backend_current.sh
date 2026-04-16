@@ -36,29 +36,8 @@ if [ ! -L "$TARGET/shared" ]; then
   echo "[postdeploy] linked $TARGET/shared -> ../shared"
 fi
 
-echo "[postdeploy] Installing dependencies in $TARGET"
+echo "[postdeploy] Restarting service (dependencies already installed in predeploy)..."
 
-cd "$TARGET"
-
-if [ -f "package-lock.json" ] || [ -f "npm-shrinkwrap.json" ]; then
-  if npm ci --omit=dev --no-audit --no-fund; then
-    echo "[postdeploy] npm ci finished in $TARGET"
-  else
-    echo "[postdeploy] npm ci failed. Falling back to npm install in $TARGET" >&2
-    npm install --omit=dev --no-audit --no-fund
-    echo "[postdeploy] npm install finished in $TARGET"
-  fi
-
-  if command -v systemctl >/dev/null 2>&1; then
-    systemctl reset-failed web.service || true
-    systemctl restart web.service || true
-  fi
-  exit 0
-fi
-
-echo "[postdeploy] lockfile not found. Falling back to npm install in $TARGET" >&2
-npm install --omit=dev --no-audit --no-fund
-echo "[postdeploy] npm install finished in $TARGET"
 if command -v systemctl >/dev/null 2>&1; then
   systemctl reset-failed web.service || true
   systemctl restart web.service || true
