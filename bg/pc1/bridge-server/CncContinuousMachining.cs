@@ -881,31 +881,43 @@ if (!string.IsNullOrEmpty(state.LastStartFailJobId) &&
 {
 return;
 }
+lock (StateLock)
+{
+    if (state.IsRunning || state.AwaitingStart || state.CurrentJob != null)
+    {
+        return;
+    }
+    state.AwaitingStart = true;
+}
 var started = await StartNewJob(machineId, state, nextJob);
 if (started)
 {
-_ = CncJobQueue.TryRemove(machineId, nextJob.id);
-lock (StateLock)
-{
-state.LastStartFailJobId = null;
-state.StartFailCount = 0;
-state.NextStartAttemptUtc = DateTime.MinValue;
-}
+    _ = CncJobQueue.TryRemove(machineId, nextJob.id);
+    lock (StateLock)
+    {
+        state.LastStartFailJobId = null;
+        state.StartFailCount = 0;
+        state.NextStartAttemptUtc = DateTime.MinValue;
+    }
 }
 else
 {
-Console.WriteLine("[CncMachining] start failed (will retry) machine={0} jobId={1} file={2}",
-machineId,
-nextJob.id,
-nextJob.fileName
-);
-lock (StateLock)
-{
-state.LastStartFailJobId = nextJob.id;
-state.StartFailCount = Math.Min(10, state.StartFailCount + 1);
-var delaySec = Math.Min(60, 2 * state.StartFailCount);
-state.NextStartAttemptUtc = DateTime.UtcNow.AddSeconds(delaySec);
-}
+    lock (StateLock)
+    {
+        state.AwaitingStart = false;
+    }
+    Console.WriteLine("[CncMachining] start failed (will retry) machine={0} jobId={1} file={2}",
+    machineId,
+    nextJob.id,
+    nextJob.fileName
+    );
+    lock (StateLock)
+    {
+        state.LastStartFailJobId = nextJob.id;
+        state.StartFailCount = Math.Min(10, state.StartFailCount + 1);
+        var delaySec = Math.Min(60, 3 * state.StartFailCount);
+        state.NextStartAttemptUtc = DateTime.UtcNow.AddSeconds(delaySec);
+    }
 }
 }
 private static async Task<bool> CheckJobCompleted(string machineId, MachineState state)
@@ -1087,16 +1099,28 @@ if (expectedSubProgramNo > 0)
     var subRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => HiLink.SetActivateProgram(handle, subDto), "SetActivateProgram.CncMachining.sub");
     if (subRc != 0)
     {
-        Console.WriteLine(
-            "[CncMachining] sub activate failed machine={0} jobId={1} subProg={2} res={3}",
-            machineId,
-            job?.id,
-            expectedSubProgramNo,
-            subRc
-        );
-        return false;
+        // sub activate 실패 시 현재 active sub를 재확인: 장비가 이미 해당 sub를 활성화 중이면
+        // SetActivateProgram이 -1을 리턴하는 경우가 있음 (main이 이미 활성화된 상태에서 sub re-set)
+        if (TryGetActiveProgramNos(machineId, out var recheckMain, out var recheckSub, out _) && recheckSub == expectedSubProgramNo)
+        {
+            Console.WriteLine("[CncMachining] sub program already active machine={0} jobId={1} subProg={2} res={3} (ignored)", machineId, job?.id, expectedSubProgramNo, subRc);
+        }
+        else
+        {
+            Console.WriteLine(
+                "[CncMachining] sub activate failed machine={0} jobId={1} subProg={2} res={3}",
+                machineId,
+                job?.id,
+                expectedSubProgramNo,
+                subRc
+            );
+            return false;
+        }
     }
+    else
+    {
     Console.WriteLine("[CncMachining] sub program re-activated machine={0} jobId={1} subProg={2}", machineId, job?.id, expectedSubProgramNo);
+    }
 }
 // 4. Auto 모드 전환
 if (!Mode1Api.TrySetMachineMode(machineId, "AUTO", out var modeErr2))

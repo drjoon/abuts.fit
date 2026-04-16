@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import * as XLSX from "xlsx";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { generateModelNumber } from "@/utils/modelNumber";
@@ -565,7 +564,8 @@ export const TrackingInquiryPage = () => {
     win.close();
   };
 
-  const handleDownloadTodayShipping = () => {
+  const handleDownloadTodayShipping = async () => {
+    const XLSX = await import("xlsx");
     const today = new Date();
     const ymd = toKstYmd(today) || "";
     const rows = shippingRows.filter((r) => {
@@ -622,7 +622,8 @@ export const TrackingInquiryPage = () => {
     });
   };
 
-  const handleDownloadUdi = () => {
+  const handleDownloadUdi = async () => {
+    const XLSX = await import("xlsx");
     const todayStr = (toKstYmd(new Date()) || "").replace(/-/g, "");
     const rows = [
       [

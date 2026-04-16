@@ -1,4 +1,3 @@
-import QRCode from "qrcode";
 import { toKstYmd } from "@/shared/date/kst";
 import { type ManufacturerRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 
@@ -363,6 +362,7 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   const qrSize = Math.max(1, Math.round(128 * scale));
 
   const loadQr = async (url: string) => {
+    const { default: QRCode } = await import("qrcode");
     const dataUrl = await QRCode.toDataURL(url, {
       errorCorrectionLevel: "L",
       margin: 0,

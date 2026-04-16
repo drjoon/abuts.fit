@@ -1,11 +1,35 @@
+import { Suspense, lazy } from "react";
 import { useLocation } from "react-router-dom";
-import { RequestPage } from "./custom_abutment/components/RequestPage";
-import { CamPage } from "./custom_abutment/cam/CamPage";
-import { MachiningPage } from "./custom_abutment/machining/MachiningPage";
-import { PackingPage } from "./custom_abutment/packing/PackingPage";
-import { ShippingPage } from "./custom_abutment/shipping/ShippingPage";
-import { TrackingInquiryPage } from "./custom_abutment/tracking/TrackingPage";
 import { deriveStageForFilter } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+
+const RequestPage = lazy(() =>
+  import("./custom_abutment/components/RequestPage").then((m) => ({
+    default: m.RequestPage,
+  })),
+);
+const CamPage = lazy(() =>
+  import("./custom_abutment/cam/CamPage").then((m) => ({ default: m.CamPage })),
+);
+const MachiningPage = lazy(() =>
+  import("./custom_abutment/machining/MachiningPage").then((m) => ({
+    default: m.MachiningPage,
+  })),
+);
+const PackingPage = lazy(() =>
+  import("./custom_abutment/packing/PackingPage").then((m) => ({
+    default: m.PackingPage,
+  })),
+);
+const ShippingPage = lazy(() =>
+  import("./custom_abutment/shipping/ShippingPage").then((m) => ({
+    default: m.ShippingPage,
+  })),
+);
+const TrackingInquiryPage = lazy(() =>
+  import("./custom_abutment/tracking/TrackingPage").then((m) => ({
+    default: m.TrackingInquiryPage,
+  })),
+);
 
 export const ManufacturerWorksheetPage = () => {
   const location = useLocation();
@@ -65,7 +89,7 @@ export const ManufacturerWorksheetPage = () => {
 
   return (
     <div className="w-full h-full flex flex-col min-h-0 items-stretch">
-      {renderContent()}
+      <Suspense fallback={null}>{renderContent()}</Suspense>
     </div>
   );
 };

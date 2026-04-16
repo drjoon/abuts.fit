@@ -49,5 +49,51 @@ export default defineConfig(({ mode }) => {
         "@": path.resolve(__dirname, "src"),
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (
+              id.includes("node_modules/three") ||
+              id.includes("node_modules/three-stdlib")
+            ) {
+              return "three";
+            }
+            if (
+              id.includes("node_modules/@radix-ui") ||
+              id.includes("node_modules/cmdk") ||
+              id.includes("node_modules/vaul")
+            ) {
+              return "radix";
+            }
+            if (
+              id.includes("node_modules/react/") ||
+              id.includes("node_modules/react-dom/") ||
+              id.includes("node_modules/react-router") ||
+              id.includes("node_modules/scheduler/")
+            ) {
+              return "react-vendor";
+            }
+            if (id.includes("node_modules/@tanstack")) {
+              return "tanstack";
+            }
+            if (id.includes("node_modules/lucide-react")) {
+              return "lucide";
+            }
+            if (id.includes("node_modules/date-fns")) {
+              return "date-fns";
+            }
+            if (
+              id.includes("node_modules/socket.io-client") ||
+              id.includes("node_modules/engine.io-client") ||
+              id.includes("node_modules/@socket.io") ||
+              id.includes("node_modules/socket.io-parser")
+            ) {
+              return "socketio";
+            }
+          },
+        },
+      },
+    },
   };
 });
