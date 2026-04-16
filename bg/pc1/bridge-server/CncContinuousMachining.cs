@@ -765,8 +765,29 @@ var awaitingElapsed = state.AwaitingStartSinceUtc == DateTime.MinValue
     ? TimeSpan.Zero
     : (DateTime.UtcNow - state.AwaitingStartSinceUtc);
 
-// 알람 체크는 15초 이상 경과 시에만 수행 (불필요한 지연 방지)
+// start signal 재전송: 15초 이상 경과 + 마지막 전송 후 15초 이상 지났으면 1회 재전송
+// (장비가 이전 job HOME 복귀 중에 첫 start를 놓쳤을 경우 대비)
 if (!Config.MockCncMachining && awaitingElapsed >= TimeSpan.FromSeconds(15))
+{
+    var lastSignalAgo = state.LastAwaitingStartSignalUtc == DateTime.MinValue
+        ? TimeSpan.MaxValue
+        : (DateTime.UtcNow - state.LastAwaitingStartSignalUtc);
+    if (lastSignalAgo >= TimeSpan.FromSeconds(15))
+    {
+        var retryFlags = await GetMachineFlagsFromBackend(machineId);
+        if (retryFlags != null && retryFlags.AllowAutoMachining)
+        {
+            if (TryStartSignal(machineId, out _))
+            {
+                lock (StateLock) { state.LastAwaitingStartSignalUtc = DateTime.UtcNow; }
+                Console.WriteLine("[CncMachining] start signal retry machine={0} jobId={1} awaitingElapsedMs={2}", machineId, state.CurrentJob?.id, awaitingSinceMs);
+            }
+        }
+    }
+}
+
+// 알람 체크는 30초 이상 경과 시에만 수행 (start signal 재전송 기회 확보 후)
+if (!Config.MockCncMachining && awaitingElapsed >= TimeSpan.FromSeconds(30))
 {
 if (TryGetMachineAlarms(machineId, out var awaitingAlarms, out var awaitingAlarmErr))
 {
@@ -812,7 +833,7 @@ return;
 }
 }
 
-if (awaitingElapsed >= TimeSpan.FromSeconds(20))
+if (awaitingElapsed >= TimeSpan.FromSeconds(60))
 {
 var stuckJob = state.CurrentJob;
 var stuckSlot = state.CurrentSlot;
