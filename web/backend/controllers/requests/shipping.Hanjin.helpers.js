@@ -1,4 +1,5 @@
 import Request from "../../models/request.model.js";
+import SystemSettings from "../../models/systemSettings.model.js";
 import hanjinService from "../../services/hanjin.service.js";
 import { getTodayYmdInKst } from "./utils.js";
 
@@ -36,20 +37,33 @@ const HANJIN_PATH_FALLBACKS = {
   HANJIN_CUSTOMER_CHECK_PATH: "/parcel-delivery/v1/customer/customer-check",
 };
 
-const HANJIN_SENDER_ZIP = String(
-  process.env.HANJIN_SENDER_ZIP || process.env.HANJIN_SHIPPER_ZIP || "",
-).trim();
-const HANJIN_SENDER_BASE_ADDR = String(
-  process.env.HANJIN_SENDER_BASE_ADDR || "",
-).trim();
-const HANJIN_SENDER_DTL_ADDR = String(
-  process.env.HANJIN_SENDER_DTL_ADDR || "",
-).trim();
-const HANJIN_SENDER_NAME = String(process.env.HANJIN_SENDER_NAME || "").trim();
-const HANJIN_SENDER_TEL = String(process.env.HANJIN_SENDER_TEL || "").trim();
-const HANJIN_SENDER_MOBILE = String(
-  process.env.HANJIN_SENDER_MOBILE || "",
-).trim();
+// [한진 송하인 정보 — DB(SystemSettings) 관리 이유]
+// AWS EBS 환경변수는 한글 문자열을 올바른 UTF-8로 Node.js에 전달하지 못합니다.
+// 예: EBS 콘솔에 "경상남도 김해시 흥동"을 설정해도 process.env로 읽으면 "???? ??? ??"처럼 깨집니다.
+// → 한글 포함 필드(baseAddr, dtlAddr, name)는 SystemSettings DB에서 읽습니다.
+// → SystemSettings.hanjinSenderInfo에 default 값이 정의되어 있어 seed 없이도 동작합니다.
+// → 참고: rules.md 섹션 6.7.0 "한진 송하인 정보 DB 관리 정책"
+
+/**
+ * SystemSettings.hanjinSenderInfo를 읽어 송하인 정보를 반환합니다.
+ * setDefaultsOnInsert로 upsert하므로 항상 default 값이 보장됩니다.
+ */
+const getHanjinSenderInfo = async () => {
+  const doc = await SystemSettings.findOneAndUpdate(
+    { key: "global" },
+    { $setOnInsert: { key: "global" } },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  ).lean();
+  const info = doc?.hanjinSenderInfo || {};
+  return {
+    zip: String(info.zip || process.env.HANJIN_SENDER_ZIP || "").trim(),
+    baseAddr: String(info.baseAddr || "").trim(),
+    dtlAddr: String(info.dtlAddr || "").trim(),
+    name: String(info.name || "").trim(),
+    tel: String(info.tel || process.env.HANJIN_SENDER_TEL || "").trim(),
+    mobile: String(info.mobile || "").trim(),
+  };
+};
 
 export const resolveMailboxList = (mailboxAddresses) =>
   Array.isArray(mailboxAddresses)
@@ -105,30 +119,14 @@ export const ensureHanjinEnv = () => {
   }
 };
 
-const ensureHanjinSenderEnv = () => {
-  if (!HANJIN_SENDER_ZIP)
+const ensureHanjinSenderInfo = (sender) => {
+  // DB default 값이 있으므로 정상적으로는 누락되지 않음
+  // (SystemSettings.hanjinSenderInfo 스키마 default 참고)
+  if (!sender.zip || !sender.baseAddr || !sender.name || !sender.tel)
     throw Object.assign(
-      new Error("HANJIN_SENDER_ZIP 환경 변수가 필요합니다."),
-      { statusCode: 500 },
-    );
-  if (!HANJIN_SENDER_BASE_ADDR)
-    throw Object.assign(
-      new Error("HANJIN_SENDER_BASE_ADDR 환경 변수가 필요합니다."),
-      { statusCode: 500 },
-    );
-  if (!HANJIN_SENDER_DTL_ADDR)
-    throw Object.assign(
-      new Error("HANJIN_SENDER_DTL_ADDR 환경 변수가 필요합니다."),
-      { statusCode: 500 },
-    );
-  if (!HANJIN_SENDER_NAME)
-    throw Object.assign(
-      new Error("HANJIN_SENDER_NAME 환경 변수가 필요합니다."),
-      { statusCode: 500 },
-    );
-  if (!HANJIN_SENDER_TEL)
-    throw Object.assign(
-      new Error("HANJIN_SENDER_TEL 환경 변수가 필요합니다."),
+      new Error(
+        "한진 송하인 정보가 DB(SystemSettings.hanjinSenderInfo)에 설정되지 않았습니다.",
+      ),
       { statusCode: 500 },
     );
 };
@@ -719,9 +717,14 @@ export const resolveHanjinPayload = async function ({
   };
 };
 
-export const buildHanjinInsertOrderBody = async ({ mailbox, requests }) => {
+export const buildHanjinInsertOrderBody = async ({
+  mailbox,
+  requests,
+  wblNo,
+}) => {
   ensureHanjinEnv();
-  ensureHanjinSenderEnv();
+  const sender = await getHanjinSenderInfo();
+  ensureHanjinSenderInfo(sender);
 
   const list = Array.isArray(requests) ? requests : [];
   const first = list[0] || {};
@@ -748,22 +751,34 @@ export const buildHanjinInsertOrderBody = async ({ mailbox, requests }) => {
   const custOrdNo = `ABUTS_${ymd}_${String(mailbox || "-")}`.slice(0, 30);
   const receiverPhone = String(first?.requestor?.phoneNumber || "").trim();
 
+  const resolvedWblNo = String(wblNo || "").trim();
   console.log(
     "[hanjin][insert-order] 계약번호(cntractNo):",
     HANJIN_CSR_NUM || "(미설정)",
+    "wblNo:",
+    resolvedWblNo || "(미설정)",
   );
+  if (!resolvedWblNo) {
+    throw Object.assign(
+      new Error(
+        "운송장번호(wblNo)가 없어 한진 택배 접수를 진행할 수 없습니다. 운송장 출력을 먼저 완료해주세요.",
+      ),
+      { statusCode: 400 },
+    );
+  }
   return {
     custEdiCd: HANJIN_CLIENT_ID,
     custOrdNo,
+    wblNo: resolvedWblNo,
     cntractNo: HANJIN_CSR_NUM,
     svcCatCd: "S",
     pickupAskDt: ymd,
-    sndrZip: HANJIN_SENDER_ZIP,
-    sndrBaseAddr: HANJIN_SENDER_BASE_ADDR,
-    sndrDtlAddr: HANJIN_SENDER_DTL_ADDR,
-    sndrNm: HANJIN_SENDER_NAME,
-    sndrTelNo: HANJIN_SENDER_TEL,
-    sndrMobileNo: HANJIN_SENDER_MOBILE || HANJIN_SENDER_TEL,
+    sndrZip: sender.zip,
+    sndrBaseAddr: sender.baseAddr,
+    sndrDtlAddr: sender.dtlAddr,
+    sndrNm: sender.name,
+    sndrTelNo: sender.tel,
+    sndrMobileNo: sender.mobile || sender.tel,
     rcvrZip: receiverZip,
     rcvrBaseAddr: addressText,
     rcvrDtlAddr: receiverDetail,

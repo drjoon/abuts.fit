@@ -19,6 +19,16 @@ const systemSettingsSchema = new mongoose.Schema(
       defaultWelcomeBonusCredit: { type: Number, default: 30000 },
       defaultFreeShippingCredit: { type: Number, default: 7000 },
     },
+    // 한진 송하인 정보: EBS 환경변수 한글 인코딩 버그로 인해 DB에서 관리
+    // (환경변수로 읽으면 한글이 "??"로 깨짐 → rules.md 섹션 6.7.0 참고)
+    hanjinSenderInfo: {
+      zip: { type: String, default: "50965" },
+      baseAddr: { type: String, default: "경상남도 김해시 흥동" },
+      dtlAddr: { type: String, default: "전하로 85번길 5" },
+      name: { type: String, default: "어벗츠 주식회사" },
+      tel: { type: String, default: "1588-3948" },
+      mobile: { type: String, default: "" },
+    },
     securitySettings: {
       twoFactorAuth: { type: Boolean, default: true },
       loginNotifications: { type: Boolean, default: true },

@@ -627,9 +627,23 @@ async function executeSingleMailboxPickup({
   }
 
   try {
+    const deliveryInfoRefIds = group
+      .map((r) => r?.deliveryInfoRef)
+      .filter(Boolean);
+    let wblNo = null;
+    if (deliveryInfoRefIds.length > 0) {
+      const di = await DeliveryInfo.findOne({
+        _id: { $in: deliveryInfoRefIds },
+      })
+        .select({ trackingNumber: 1 })
+        .lean();
+      wblNo = String(di?.trackingNumber || "").trim() || null;
+    }
+
     const orderBody = await buildHanjinInsertOrderBody({
       mailbox,
       requests: group,
+      wblNo,
     });
 
     let data = await callHanjinWithFallback({ data: orderBody });

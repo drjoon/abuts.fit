@@ -1255,6 +1255,38 @@
 - `customer-check` 검증 성공(`resultCode=OK`)을 기준으로 인증 로직을 확인한 뒤 주문/취소 API를 연동합니다.
 - 한진 REST 주문/취소/고객검증 경로는 문서 기준 `/parcel-delivery/v1/...` 를 우선 사용합니다.
 
+#### 6.7.0 한진 송하인 정보 DB 관리 정책 (EBS 한글 인코딩 버그)
+
+**배경:**
+
+AWS EBS 환경변수는 한글 문자열을 올바른 UTF-8로 Node.js `process.env`에 전달하지 못합니다.
+
+- EBS 콘솔에 `HANJIN_SENDER_BASE_ADDR=경상남도 김해시 흥동`을 설정해도 `process.env`로 읽으면 `"???? ??? ??"` 처럼 깨집니다.
+- 수하인 정보(`rcvrBaseAddr`, `rcvrNm` 등)는 MongoDB에서 읽어오므로 정상이지만, 송하인 정보는 환경변수 의존 시 깨집니다.
+
+**정책:**
+
+- **한글 포함 필드** (`baseAddr`, `dtlAddr`, `name`)는 `SystemSettings.hanjinSenderInfo`(DB)에서 관리합니다.
+- **ASCII 필드** (`zip`, `tel`, `mobile`)는 환경변수 fallback을 허용합니다.
+- `SystemSettings.hanjinSenderInfo` 스키마에 default 값이 정의되어 있어 별도 seeding 없이도 `upsert + setDefaultsOnInsert` 패턴으로 항상 올바른 값이 보장됩니다.
+- 값 변경이 필요하면 MongoDB에서 직접 `SystemSettings` 문서의 `hanjinSenderInfo` 필드를 수정합니다 (코드/환경변수 변경 불필요).
+
+**현재 default 값 (systemSettings.model.js 기준):**
+
+| 필드                        | 값                     |
+| --------------------------- | ---------------------- |
+| `hanjinSenderInfo.zip`      | `50965`                |
+| `hanjinSenderInfo.baseAddr` | `경상남도 김해시 흥동` |
+| `hanjinSenderInfo.dtlAddr`  | `전하로 85번길 5`      |
+| `hanjinSenderInfo.name`     | `어벗츠 주식회사`      |
+| `hanjinSenderInfo.tel`      | `1588-3948`            |
+
+**관련 코드:**
+
+- 모델: `web/backend/models/systemSettings.model.js` → `hanjinSenderInfo` 필드
+- 읽기: `web/backend/controllers/requests/shipping.Hanjin.helpers.js` → `getHanjinSenderInfo()`
+- 환경변수 `HANJIN_SENDER_BASE_ADDR`, `HANJIN_SENDER_DTL_ADDR`, `HANJIN_SENDER_NAME`은 더 이상 사용하지 않습니다 (EBS에서 삭제 가능).
+
 #### 6.7.1 한진 API 성능 및 타임아웃
 
 - 한진 운송장 출력 API(`print-wbls`)는 응답까지 **10초 이상** 걸릴 수 있습니다.
