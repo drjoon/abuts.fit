@@ -507,7 +507,7 @@ foreach (var kv in MachineStates)
 var k = kv.Key;
 var s = kv.Value;
 if (string.IsNullOrEmpty(k) || s == null) continue;
-if (!string.IsNullOrEmpty(s.PendingConsumeJobId) || s.IsRunning || s.AwaitingStart)
+if (!string.IsNullOrEmpty(s.PendingConsumeJobId) || s.IsRunning || s.AwaitingStart || s.StartFailCount > 0 || CncJobQueue.Peek(k) != null)
 {
 keys.Add(k);
 }
