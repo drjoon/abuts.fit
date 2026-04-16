@@ -119,7 +119,8 @@ namespace HiLinkBridgeWebApi48
                 {
                     if (io != null && io.IOUID == (short)busyIoUid)
                     {
-                        isBusy = io.Status != 0;
+                        // IO_R_YELLOW=0(가공 중) → isBusy=true, IO_R_YELLOW=1(사이클 완료/대기) → isBusy=false
+                        isBusy = io.Status == 0;
                         var busyKey = string.Format("{0}|{1}|{2}", mid, panelType, io.IOUID);
                         var shouldLogBusy = false;
                         lock (BusyReadLogLock)

@@ -279,13 +279,20 @@ private static Task<bool> DetectMachiningCompletion(string machineId, MachineSta
             var elapsed = DateTime.UtcNow - started;
             return Task.FromResult(elapsed >= TimeSpan.FromSeconds(5));
         }
-        // 1) Busy IO 기반 완료 감지 (가공 시작(busy=1)을 한번이라도 봤고, 이후 busy=0이면 완료 후보)
+        // ── IO_R_YELLOW(CncBusyIoUid=65) 신호 해석 ──────────────────────────────
+        // IO_R_YELLOW=0 → isBusy=True  (장비가 실제 절삭 중)
+        // IO_R_YELLOW=1 → isBusy=False (사이클 완료/대기 상태)
+        // ※ 물리 신호가 반전된 장비이므로 CncMachineSignalUtils.TryGetMachineBusy 에서
+        //   io.Status == 0 → isBusy=true 로 매핑. 이 함수의 busy 변수도 그 값을 사용.
+        // ──────────────────────────────────────────────────────────────────────────
+        // 1) 가공 중(isBusy=True, IO_R_YELLOW=0) 을 한 번이라도 봤고,
+        //    이후 사이클 완료(isBusy=False, IO_R_YELLOW=1) 로 전환되면 완료 후보
         if (TryGetMachineBusy(machineId, out var busy))
         {
-            if (busy) state.SawBusy = true;
-            if (state.SawBusy && !busy)
+            if (busy) state.SawBusy = true;   // IO_R_YELLOW=0 감지 → 절삭 중 플래그
+            if (state.SawBusy && !busy)        // IO_R_YELLOW=0→1 전환 → 사이클 완료 후보
             {
-                // 2) 생산 수량 확인 (카운트 +1)
+                // 2) 생산 수량 확인 (카운트 +1 로 오감지 방지)
                 if (TryGetProductCount(machineId, out var currentCount))
                 {
                     if (currentCount > state.ProductCountBefore)
@@ -769,7 +776,9 @@ Console.WriteLine(
 }
 catch { }
 
-// busy 상태 체크를 먼저 수행 (가장 빠른 시작 감지)
+// ── 시작 감지: IO_R_YELLOW=0(isBusy=True) → 절삭 개시 확인 ──────────────────
+// 스타트 신호 전송 후 장비가 프로그램을 실행하면 IO_R_YELLOW가 0으로 떨어짐.
+// isBusy=True(=IO_R_YELLOW=0) 감지 시 AwaitingStart→IsRunning 전환.
 if (TryGetMachineBusy(machineId, out var awaitingBusy) && awaitingBusy)
 {
 var prodCountBefore = 0;
@@ -786,7 +795,7 @@ state.IsRunning = true;
 state.AwaitingStart = false;
 state.StartedAtUtc = DateTime.UtcNow;
 state.ProductCountBefore = prodCountBefore;
-state.SawBusy = true;
+state.SawBusy = true;  // IO_R_YELLOW=0(절삭 중) 이미 확인됐으므로 SawBusy=True 초기화
 state.AwaitingStartSinceUtc = DateTime.MinValue;
 state.LastAwaitingStartSignalUtc = DateTime.MinValue;
 }
@@ -898,9 +907,9 @@ return;
 // [settle] 가공 완료 후 다음 건 시작 전 안전 확인:
 // - 완료 후 6초(CNC_POST_COMPLETE_MIN_SETTLE_SECONDS, 기본 6) 동안은 무조건 대기
 // - 6초 경과 후부터 매 tick(~3초)마다 busy/alarm/status를 체크
-// - busy=false + alarm=0 + status≠Alarm 조건 충족 시 즉시 다음 건 진행
+// - !busy(IO_R_YELLOW=1 대기) + alarm=0 + status≠Alarm 충족 시 즉시 다음 건 진행
+// - busy 판단: IO_R_YELLOW=0 가공 중(음), IO_R_YELLOW=1 사이클 완료/대기(양). CncMachineSignalUtils 참고.
 // - 조건 미충족 시 계속 대기 (최대 CNC_POST_COMPLETE_MAX_SETTLE_SECONDS=60초)
-// → 로그의 settle-pass sinceCompletedMs 값으로 최적 인터벌 파악 가능
 // ──────────────────────────────────────────────────────────────────────────
 if (state.LastCompletedAtUtc != DateTime.MinValue && !Config.MockCncMachining)
 {
@@ -921,6 +930,7 @@ var countOk = TryGetProductCount(machineId, out var settleCount);
 var isNotAlarm = !statusOk || settleStatus != MachineStatusType.Alarm;
 var isBusy = busyOk && settleBusy;
 var hasAlarm = alarmOk && settleAlarms != null && settleAlarms.Count > 0;
+var isSafe = !isBusy && !hasAlarm && isNotAlarm;
 Console.WriteLine(
     "[CncMachining] settle-check machine={0} sinceCompletedMs={1} busy={2} alarmCount={3} status={4} isSafe={5} busyOk={6} alarmOk={7} statusOk={8} count={9}",
     machineId,
@@ -928,14 +938,14 @@ Console.WriteLine(
     busyOk ? settleBusy.ToString() : "?",
     alarmOk ? (settleAlarms?.Count ?? 0).ToString() : "?",
     statusOk ? settleStatus.ToString() : "?",
-    (!isBusy && !hasAlarm && isNotAlarm),
+    isSafe,
     busyOk,
     alarmOk,
     statusOk,
     countOk ? settleCount.ToString() : "?"
 );
 // 안전 조건 충족: 즉시 다음 건 진행
-if (!isBusy && !hasAlarm && isNotAlarm)
+if (isSafe)
 {
 lock (StateLock)
 {
@@ -1077,13 +1087,15 @@ private static async Task<bool> CheckJobCompleted(string machineId, MachineState
 {
 try
 {
-// 1) Busy IO 기반 완료 감지 (가공 시작(busy=1)을 한번이라도 봤고, 이후 busy=0이면 완료 후보)
+// 1) 가공 중(isBusy=True, IO_R_YELLOW=0) 을 한 번이라도 봤고,
+//    이후 사이클 완료(isBusy=False, IO_R_YELLOW=1) 로 전환되면 완료 후보
+//    CncMachineSignalUtils.TryGetMachineBusy: IO_R_YELLOW=0 → isBusy=True (반전 매핑)
 if (TryGetMachineBusy(machineId, out var busy))
 {
-if (busy) state.SawBusy = true;
-if (state.SawBusy && !busy)
+if (busy) state.SawBusy = true;   // IO_R_YELLOW=0 감지 → 절삭 중 플래그
+if (state.SawBusy && !busy)        // IO_R_YELLOW=0→1 전환 → 사이클 완료 후보
 {
-// 2) 생산 수량 확인 (카운트 +1)
+// 2) 생산 수량 확인 (카운트 +1 로 오감지 방지)
 if (TryGetProductCount(machineId, out var currentCount))
 {
 if (currentCount > state.ProductCountBefore)

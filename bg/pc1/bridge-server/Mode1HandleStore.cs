@@ -140,20 +140,20 @@ namespace HiLinkBridgeWebApi48
             short res;
             res = HiLinkDllGate.Run(Mode1Api.DllLock, () => HiLink.SetActivateProgram(handle, dto), "SetActivateProgram");
 
-            // -8(무효 핸들) → Invalidate 후 1회 재시도
-            if (res == -8)
+            // -8(무효 핸들) / -16(소켓 끊김) → Invalidate 후 1회 재시도
+            if (res == -8 || res == -16)
             {
                 Invalidate(uid);
 
                 if (!TryGetHandle(uid, out var handle2, out var error2))
                 {
                     error = error2;
-                    return -8;
+                    return res;
                 }
 
                 short res2;
                 res2 = HiLinkDllGate.Run(Mode1Api.DllLock, () => HiLink.SetActivateProgram(handle2, dto), "SetActivateProgram.retry");
-                if (res2 == -8)
+                if (res2 == -8 || res2 == -16)
                 {
                     Invalidate(uid);
                 }

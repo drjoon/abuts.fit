@@ -34,8 +34,8 @@ namespace HiLinkBridgeWebApi48
                 return true;
             }
 
-            // -8(무효 핸들) → Invalidate 후 1회 재시도
-            if (result == -8)
+            // -8(무효 핸들) / -16(소켓 끊김) → Invalidate 후 1회 재시도
+            if (result == -8 || result == -16)
             {
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
@@ -48,7 +48,7 @@ namespace HiLinkBridgeWebApi48
                         info = retryInfo;
                         return true;
                     }
-                    if (result2 == -8)
+                    if (result2 == -8 || result2 == -16)
                     {
                         Mode1HandleStore.Invalidate(uid);
                     }
@@ -86,8 +86,8 @@ namespace HiLinkBridgeWebApi48
                 return true;
             }
 
-            // -8(무효 핸들) → Invalidate 후 1회 재시도
-            if (result == -8)
+            // -8(무효 핸들) / -16(소켓 끊김) → Invalidate 후 1회 재시도
+            if (result == -8 || result == -16)
             {
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
@@ -100,7 +100,7 @@ namespace HiLinkBridgeWebApi48
                         list = retryList;
                         return true;
                     }
-                    if (result2 == -8)
+                    if (result2 == -8 || result2 == -16)
                     {
                         Mode1HandleStore.Invalidate(uid);
                     }
@@ -135,8 +135,8 @@ namespace HiLinkBridgeWebApi48
                 return true;
             }
 
-            // -8(무효 핸들) → Invalidate 후 1회 재시도
-            if (result == -8)
+            // -8(무효 핸들) / -16(소켓 끊김) → Invalidate 후 1회 재시도
+            if (result == -8 || result == -16)
             {
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
@@ -147,7 +147,7 @@ namespace HiLinkBridgeWebApi48
                     {
                         return true;
                     }
-                    if (result2 == -8)
+                    if (result2 == -8 || result2 == -16)
                     {
                         Mode1HandleStore.Invalidate(uid);
                     }
@@ -194,8 +194,8 @@ namespace HiLinkBridgeWebApi48
                 return true;
             }
 
-            // -8(무효 핸들) → Invalidate 후 1회 재시도
-            if (result == -8)
+            // -8(무효 핸들) / -16(소켓 끊김) → Invalidate 후 1회 재시도
+            if (result == -8 || result == -16)
             {
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
@@ -208,7 +208,7 @@ namespace HiLinkBridgeWebApi48
                         activateProgNum = localActivateProgNum;
                         return true;
                     }
-                    if (result2 == -8)
+                    if (result2 == -8 || result2 == -16)
                     {
                         Mode1HandleStore.Invalidate(uid);
                     }
@@ -277,8 +277,8 @@ namespace HiLinkBridgeWebApi48
                 return true;
             }
 
-            // -8(무효 핸들) → Invalidate 후 1회 재시도
-            if (result == -8)
+            // -8(무효 핸들) / -16(소켓 끊김) → Invalidate 후 1회 재시도
+            if (result == -8 || result == -16)
             {
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
@@ -287,7 +287,7 @@ namespace HiLinkBridgeWebApi48
                     short result2;
                     result2 = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineProgramListInfo(handle2, ref retryInfo), "GetMachineProgramListInfo.retry");
                     if (result2 == 0) return true;
-                    if (result2 == -8)
+                    if (result2 == -8 || result2 == -16)
                     {
                         Mode1HandleStore.Invalidate(uid);
                     }
@@ -326,7 +326,7 @@ namespace HiLinkBridgeWebApi48
             }
 
             // -8(무효 핸들) → Invalidate 후 1회 재시도
-            if (result == -8)
+            if (result == -8 || result == -16)
             {
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
@@ -339,7 +339,7 @@ namespace HiLinkBridgeWebApi48
                         info = retryInfo;
                         return true;
                     }
-                    if (result2 == -8)
+                    if (result2 == -8 || result2 == -16)
                     {
                         Mode1HandleStore.Invalidate(uid);
                     }
@@ -382,8 +382,8 @@ namespace HiLinkBridgeWebApi48
                 return true;
             }
 
-            // -8(무효 핸들) → Invalidate 후 1회 재시도
-            if (result == -8)
+            // -8(무효 핸들) / -16(소켓 끊김) → Invalidate 후 1회 재시도
+            if (result == -8 || result == -16)
             {
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
@@ -400,7 +400,7 @@ namespace HiLinkBridgeWebApi48
                         info = retryInfo;
                         return true;
                     }
-                    if (result2 == -8)
+                    if (result2 == -8 || result2 == -16)
                     {
                         Mode1HandleStore.Invalidate(uid);
                     }
@@ -446,8 +446,8 @@ namespace HiLinkBridgeWebApi48
                 return true;
             }
 
-            // 2) -8(잘못된 핸들) 이면 핸들을 폐기 후 1회 재시도
-            if (result == -8)
+            // 2) -8(잘못된 핸들) / -16(소켓 끊김) → 핸들을 폐기 후 1회 재시도
+            if (result == -8 || result == -16)
             {
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
@@ -459,7 +459,7 @@ namespace HiLinkBridgeWebApi48
                         info = retryInfo;
                         return true;
                     }
-                    if (result2 == -8)
+                    if (result2 == -8 || result2 == -16)
                     {
                         Mode1HandleStore.Invalidate(uid);
                     }
@@ -521,8 +521,8 @@ namespace HiLinkBridgeWebApi48
                 return (true, machineStatus, null);
             }
 
-            // -8(잘못된 핸들)이면 핸들을 폐기 후 1회 재시도
-            if (result == -8)
+            // -8(잘못된 핸들) / -16(소켓 끊김) → 핸들을 폐기 후 1회 재시도
+            if (result == -8 || result == -16)
             {
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
@@ -533,7 +533,7 @@ namespace HiLinkBridgeWebApi48
                     {
                         return (true, machineStatus, null);
                     }
-                    if (result2 == -8)
+                    if (result2 == -8 || result2 == -16)
                     {
                         Mode1HandleStore.Invalidate(uid);
                     }
@@ -561,8 +561,8 @@ namespace HiLinkBridgeWebApi48
                 return true;
             }
 
-            // -8(무효 핸들) → Invalidate 후 1회 재시도
-            if (result == -8)
+            // -8(무효 핸들) / -16(소켓 끊김) → Invalidate 후 1회 재시도
+            if (result == -8 || result == -16)
             {
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
@@ -572,7 +572,7 @@ namespace HiLinkBridgeWebApi48
                     {
                         return true;
                     }
-                    if (result2 == -8)
+                    if (result2 == -8 || result2 == -16)
                     {
                         Mode1HandleStore.Invalidate(uid);
                     }
