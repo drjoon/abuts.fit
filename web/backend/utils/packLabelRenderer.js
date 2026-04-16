@@ -126,13 +126,17 @@ const renderPackLabelToCanvas = async (opts) => {
   );
   const MODEL_NAME = (opts.modelName || "").replace(/['"]/g, "");
   const LICENSE_NO = opts.licenseNo || "";
-  const COMPANY_NAME = opts.manufacturerName || "";
-  const COMPANY_ADDR = opts.manufacturerAddr || "";
-  const COMPANY_TEL_FAX = opts.manufacturerTelFax || opts.manufacturerTel || "";
-  const SELLER_NAME = opts.sellerName || "";
-  const SELLER_PERMIT = opts.sellerPermit || "";
-  const SELLER_ADDR = opts.sellerAddr || "";
-  const SELLER_TEL = opts.sellerTel || "";
+  const COMPANY_NAME = (opts.manufacturerName || "").replace(/['"]/g, "");
+  const COMPANY_ADDR = (opts.manufacturerAddr || "").replace(/['"]/g, "");
+  const COMPANY_TEL_FAX = (
+    opts.manufacturerTelFax ||
+    opts.manufacturerTel ||
+    ""
+  ).replace(/['"]/g, "");
+  const SELLER_NAME = (opts.sellerName || "").replace(/['"]/g, "");
+  const SELLER_PERMIT = (opts.sellerPermit || "").replace(/['"]/g, "");
+  const SELLER_ADDR = (opts.sellerAddr || "").replace(/['"]/g, "");
+  const SELLER_TEL = (opts.sellerTel || "").replace(/['"]/g, "");
   const MANUAL_QR_LABEL = opts.manualQrLabel || "사용자매뉴얼";
   const UDI_GTIN = opts.udiGtin || "";
   const MANUFACTURER_PERMIT_NO = opts.manufacturerPermitNo || LICENSE_NO;
@@ -395,12 +399,20 @@ const renderPackLabelToCanvas = async (opts) => {
   const rColW = W - splitColW;
 
   drawBox(M, legalTopY, W, legalBodyH);
+  // 5구역 내부 구분선
+  drawHLine(M, legalTopY + lRow1H, W); // 1행/2행 경계
+  drawHLine(M, legalTopY + lRow1H + lRow2H, W); // 2행/3행 경계
+  drawHLine(M, legalTopY + lRow1H + lRow2H + lRow3H, W); // 3행/4행 경계
 
   ctx.font = FONT_LEGAL_TITLE;
   ctx.fillStyle = "black";
-  ctx.fillText(`품목명:${PRODUCT_NAME}`, M + 6, legalTopY + (lRow1H - 20) / 2);
   ctx.fillText(
-    `모델명:${MODEL_NAME}`,
+    `품목명:${PRODUCT_NAME.replace(/['"]/g, "")}`,
+    M + 6,
+    legalTopY + (lRow1H - 20) / 2,
+  );
+  ctx.fillText(
+    `모델명:${MODEL_NAME.replace(/['"]/g, "")}`,
     M + 6,
     legalTopY + lRow1H + (lRow2H - 20) / 2,
   );
@@ -433,12 +445,12 @@ const renderPackLabelToCanvas = async (opts) => {
   ctx.font = FONT_LEGAL_TITLE;
   ctx.fillStyle = "black";
   ctx.fillText(
-    `제조번호:${opts.lotNumber || "-"}`,
+    `제조번호:${String(opts.lotNumber || "-").replace(/['"]/g, "")}`,
     rColX + 6,
     legalTopY + (lRow1H - 20) / 2,
   );
   ctx.fillText(
-    `제조일자:${dateOnly(opts.manufacturingDate)}`,
+    `제조일자:${dateOnly(opts.manufacturingDate).replace(/['"]/g, "")}`,
     rColX + 6,
     legalTopY + lRow1H + (lRow2H - 20) / 2,
   );

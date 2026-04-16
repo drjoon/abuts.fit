@@ -226,13 +226,25 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   ).replace(/['"]/g, "");
   const MODEL_NAME = (env.VITE_PACK_MODEL_NAME || "").replace(/['"]/g, "");
   const LICENSE_NO = env.VITE_PACK_LICENSE_NO || "";
-  const COMPANY_NAME = env.VITE_PACK_MANUFACTURER_NAME || "";
-  const COMPANY_ADDR = env.VITE_PACK_MANUFACTURER_ADDR || "";
-  const COMPANY_TEL_FAX = env.VITE_PACK_MANUFACTURER_TEL_FAX || "";
-  const SELLER_NAME = env.VITE_PACK_SELLER_NAME || "";
-  const SELLER_PERMIT = env.VITE_PACK_SELLER_PERMIT || "";
-  const SELLER_ADDR = env.VITE_PACK_SELLER_ADDR || "";
-  const SELLER_TEL = env.VITE_PACK_SELLER_TEL || "";
+  const COMPANY_NAME = (env.VITE_PACK_MANUFACTURER_NAME || "").replace(
+    /['"]/g,
+    "",
+  );
+  const COMPANY_ADDR = (env.VITE_PACK_MANUFACTURER_ADDR || "").replace(
+    /['"]/g,
+    "",
+  );
+  const COMPANY_TEL_FAX = (env.VITE_PACK_MANUFACTURER_TEL_FAX || "").replace(
+    /['"]/g,
+    "",
+  );
+  const SELLER_NAME = (env.VITE_PACK_SELLER_NAME || "").replace(/['"]/g, "");
+  const SELLER_PERMIT = (env.VITE_PACK_SELLER_PERMIT || "").replace(
+    /['"]/g,
+    "",
+  );
+  const SELLER_ADDR = (env.VITE_PACK_SELLER_ADDR || "").replace(/['"]/g, "");
+  const SELLER_TEL = (env.VITE_PACK_SELLER_TEL || "").replace(/['"]/g, "");
   const MANUAL_QR_LABEL = env.VITE_PACK_MANUAL_QR_LABEL || "사용자매뉴얼";
   // UDI: (01) GTIN 모델별 고유번호
   const UDI_GTIN = env.VITE_PACK_UDI_GTIN || "";
@@ -394,7 +406,7 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   const FONT_HEADER = "bold 50px Arial"; // 상단 헤더 (메일함·스크루·로트)
   const FONT_LAB = "bold 38px Arial"; // 치과기공소(랩)명
   const FONT_INFO = "bold 22px Arial"; // 환자/치과/임플란트 정보 행
-  const FONT_LEGAL_TITLE = "bold 22px Arial";
+  const FONT_LEGAL_TITLE = "bold 22px Arial"; // 법규 7pt 이상 필수 항목
   const FONT_LEGAL_BODY = "17px Arial";
   const FONT_LEGAL_NOTICE = "bold 19px Arial";
 
@@ -522,8 +534,11 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   const rColW = W - splitColW;
   const rRowH = Math.floor((lRow1H + lRow2H) / 2);
 
-  // 법정 박스 전체 (내부 구분선 없음)
+  // 법정 박스 전체 + 내부 구분선
   drawBox(M, legalTopY, W, legalBodyH);
+  drawHLine(M, legalTopY + lRow1H, W); // 1행/2행 경계
+  drawHLine(M, legalTopY + lRow1H + lRow2H, W); // 2행/3행 경계
+  drawHLine(M, legalTopY + lRow1H + lRow2H + lRow3H, W); // 3행/4행 경계
 
   // 좌 1행: 품목명 (7pt↑)
   ctx.font = FONT_LEGAL_TITLE;
