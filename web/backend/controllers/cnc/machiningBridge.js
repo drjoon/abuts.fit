@@ -1908,6 +1908,21 @@ export async function recordMachiningFailForBridge(req, res) {
       );
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // [정책 4.8.2] 알람 fail 후 다음 의뢰건 자동 가공 트리거:
+    // 알람/실패로 현재 job이 종료된 후 다음 대기 의뢰건이 있으면 트리거.
+    // triggerNextAutoMachiningAfterComplete 내부에서 장비 알람 체크를 수행하므로
+    // 알람 미해제 상태면 자동으로 skip된다.
+    // ──────────────────────────────────────────────────────────────────────────
+    try {
+      void triggerNextAutoMachiningAfterComplete({
+        machineId: mid,
+        completedRequestId: requestId || "",
+      });
+    } catch {
+      // ignore: fire-and-forget
+    }
+
     return res.status(200).json({ success: true });
   } catch (error) {
     return res.status(500).json({

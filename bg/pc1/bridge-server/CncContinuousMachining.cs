@@ -245,6 +245,29 @@ catch (Exception ex)
 Console.WriteLine("[CncMachining] NotifyMachiningFailed error: {0}", ex.Message);
 }
 }
+private static async Task RequestBackendAutoTrigger(string machineId)
+{
+try
+{
+var backend = GetBackendBase();
+if (string.IsNullOrEmpty(backend)) return;
+var url = backend + "/cnc-machines/bridge/machining/auto-trigger/" + Uri.EscapeDataString(machineId);
+using (var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url))
+{
+AddAuthHeader(req);
+AddSecretHeader(req);
+using (var resp = await Http.SendAsync(req))
+{
+var body = await resp.Content.ReadAsStringAsync();
+Console.WriteLine("[CncMachining] backend auto-trigger machine={0} status={1} body={2}", machineId, (int)resp.StatusCode, body);
+}
+}
+}
+catch (Exception ex)
+{
+Console.WriteLine("[CncMachining] RequestBackendAutoTrigger error machine={0} err={1}", machineId, ex.Message);
+}
+}
 private static Task<bool> DetectMachiningCompletion(string machineId, MachineState state)
 {
     try
@@ -334,6 +357,12 @@ public DateTime NextStartAttemptUtc;
 public DateTime MockCompletionDueUtc;
 public JObject UiSnapshot;
 public DateTime UiSnapshotUpdatedAt;
+// 알람 fail 후 idle 복구 추적: 알람 감지 시각. 클리어 확인 후 백엔드 auto-trigger 요청에 사용
+public DateTime HadAlarmSinceIdleUtc;
+// 알람 클리어 체크 쓰로틀링: 마지막 체크 시각 (매 tick 호출 방지, 5초 간격)
+public DateTime LastAlarmClearCheckUtc;
+// 가공 완료 시각: 다음 건 시작 전 settle 대기 기준 (척 오픈 M코드 처리, HOME 복귀 대기)
+public DateTime LastCompletedAtUtc;
 }
 private static readonly object StateLock = new object();
 private static readonly Dictionary<string, MachineState> MachineStates
@@ -507,7 +536,7 @@ foreach (var kv in MachineStates)
 var k = kv.Key;
 var s = kv.Value;
 if (string.IsNullOrEmpty(k) || s == null) continue;
-if (!string.IsNullOrEmpty(s.PendingConsumeJobId) || s.IsRunning || s.AwaitingStart || s.StartFailCount > 0 || CncJobQueue.Peek(k) != null)
+if (!string.IsNullOrEmpty(s.PendingConsumeJobId) || s.IsRunning || s.AwaitingStart || s.StartFailCount > 0 || CncJobQueue.Peek(k) != null || s.HadAlarmSinceIdleUtc != DateTime.MinValue || s.LastCompletedAtUtc != DateTime.MinValue)
 {
 keys.Add(k);
 }
@@ -652,6 +681,7 @@ state.AwaitingStart = false;
 state.CurrentJob = null;
 state.SawBusy = false;
 state.MockCompletionDueUtc = DateTime.MinValue;
+state.HadAlarmSinceIdleUtc = DateTime.UtcNow;
 }
 _ = CncJobQueue.TryRemove(machineId, failedJob?.id);
 return;
@@ -683,6 +713,7 @@ mockDone = true;
 if (mockDone)
 {
 var completedJob = state.CurrentJob;
+var completedAt = DateTime.UtcNow;
 lock (StateLock)
 {
 state.PendingConsumeJobId = completedJob?.id;
@@ -692,7 +723,10 @@ state.IsRunning = false;
 state.AwaitingStart = false;
 state.SawBusy = false;
 state.MockCompletionDueUtc = DateTime.MinValue;
+state.LastCompletedAtUtc = completedAt;
 }
+Console.WriteLine("[CncMachining] job completed machine={0} jobId={1} completedAt={2:o} minSettleSec={3} maxSettleSec={4}",
+    machineId, completedJob?.id, completedAt, Config.CncPostCompleteMinSettleSeconds, Config.CncPostCompleteMaxSettleSeconds);
 _ = Task.Run(() => NotifyMachiningCompleted(completedJob, machineId));
 _ = CncJobQueue.TryRemove(machineId, completedJob?.id);
 return;
@@ -786,8 +820,9 @@ if (!Config.MockCncMachining && awaitingElapsed >= TimeSpan.FromSeconds(15))
     }
 }
 
-// 알람 체크는 30초 이상 경과 시에만 수행 (start signal 재전송 기회 확보 후)
-if (!Config.MockCncMachining && awaitingElapsed >= TimeSpan.FromSeconds(30))
+// 알람 체크는 15초 이상 경과 시에만 수행 (start signal 재전송 기회 확보 후)
+// 30초에서 15초로 단축: EX1047 같이 start 직전 M코드 알람이 start signal retry(15초)와 겹칠 경우 조기 감지
+if (!Config.MockCncMachining && awaitingElapsed >= TimeSpan.FromSeconds(15))
 {
 if (TryGetMachineAlarms(machineId, out var awaitingAlarms, out var awaitingAlarmErr))
 {
@@ -827,6 +862,7 @@ lock (StateLock)
 state.PendingConsumeJobId = awaitingJob?.id;
 state.ConsumeFailCount = 0;
 state.NextConsumeAttemptUtc = DateTime.MinValue;
+state.HadAlarmSinceIdleUtc = DateTime.UtcNow;
 }
 return;
 }
@@ -858,6 +894,79 @@ return;
 return;
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// [settle] 가공 완료 후 다음 건 시작 전 안전 확인:
+// - 완료 후 6초(CNC_POST_COMPLETE_MIN_SETTLE_SECONDS, 기본 6) 동안은 무조건 대기
+// - 6초 경과 후부터 매 tick(~3초)마다 busy/alarm/status를 체크
+// - busy=false + alarm=0 + status≠Alarm 조건 충족 시 즉시 다음 건 진행
+// - 조건 미충족 시 계속 대기 (최대 CNC_POST_COMPLETE_MAX_SETTLE_SECONDS=60초)
+// → 로그의 settle-pass sinceCompletedMs 값으로 최적 인터벌 파악 가능
+// ──────────────────────────────────────────────────────────────────────────
+if (state.LastCompletedAtUtc != DateTime.MinValue && !Config.MockCncMachining)
+{
+var sinceCompleted = DateTime.UtcNow - state.LastCompletedAtUtc;
+var sinceMs = (int)sinceCompleted.TotalMilliseconds;
+var minSettleSec = Config.CncPostCompleteMinSettleSeconds;
+var maxSettleSec = Config.CncPostCompleteMaxSettleSeconds;
+// 최소 대기 시간 미충족: 무조건 대기
+if (sinceCompleted < TimeSpan.FromSeconds(minSettleSec))
+{
+return;
+}
+// 최소 대기 경과 후: 매 tick 장비 상태 체크
+var busyOk = TryGetMachineBusy(machineId, out var settleBusy);
+var alarmOk = TryGetMachineAlarms(machineId, out var settleAlarms, out _);
+var statusOk = Mode1Api.TryGetMachineStatus(machineId, out var settleStatus, out _);
+var countOk = TryGetProductCount(machineId, out var settleCount);
+var isNotAlarm = !statusOk || settleStatus != MachineStatusType.Alarm;
+var isBusy = busyOk && settleBusy;
+var hasAlarm = alarmOk && settleAlarms != null && settleAlarms.Count > 0;
+Console.WriteLine(
+    "[CncMachining] settle-check machine={0} sinceCompletedMs={1} busy={2} alarmCount={3} status={4} isSafe={5} busyOk={6} alarmOk={7} statusOk={8} count={9}",
+    machineId,
+    sinceMs,
+    busyOk ? settleBusy.ToString() : "?",
+    alarmOk ? (settleAlarms?.Count ?? 0).ToString() : "?",
+    statusOk ? settleStatus.ToString() : "?",
+    (!isBusy && !hasAlarm && isNotAlarm),
+    busyOk,
+    alarmOk,
+    statusOk,
+    countOk ? settleCount.ToString() : "?"
+);
+// 안전 조건 충족: 즉시 다음 건 진행
+if (!isBusy && !hasAlarm && isNotAlarm)
+{
+lock (StateLock)
+{
+state.LastCompletedAtUtc = DateTime.MinValue;
+state.LastAlarmClearCheckUtc = DateTime.MinValue;
+}
+Console.WriteLine("[CncMachining] settle-pass machine={0} sinceCompletedMs={1} → next job start", machineId, sinceMs);
+}
+else
+{
+// 최대 대기 시간 초과: 경고 후 강제 진행
+if (sinceCompleted >= TimeSpan.FromSeconds(maxSettleSec))
+{
+lock (StateLock)
+{
+state.LastCompletedAtUtc = DateTime.MinValue;
+state.LastAlarmClearCheckUtc = DateTime.MinValue;
+}
+Console.WriteLine("[CncMachining] settle-timeout machine={0} sinceCompletedMs={1} busy={2} alarmCount={3} status={4} → forced next job",
+    machineId, sinceMs,
+    busyOk ? settleBusy.ToString() : "?",
+    alarmOk ? (settleAlarms?.Count ?? 0).ToString() : "?",
+    statusOk ? settleStatus.ToString() : "?");
+}
+else
+{
+return;
+}
+}
+}
+
 var hasLocalJob = CncJobQueue.Peek(machineId) != null;
 if (!hasLocalJob)
 {
@@ -873,6 +982,29 @@ Console.WriteLine("[CncMachining] idle force sync failed machine={0} err={1}", m
 var nextJob = CncJobQueue.Peek(machineId);
 if (nextJob == null)
 {
+// 알람 후 idle 복구 감지: 큐가 비어있고 이전에 알람이 발생했으면 알람 클리어 여부 체크
+// 알람이 클리어됐으면 백엔드에 다음 의뢰건 auto-trigger 요청 (5초 간격 쓰로틀링)
+var hadAlarm = state.HadAlarmSinceIdleUtc != DateTime.MinValue;
+if (hadAlarm && !Config.MockCncMachining)
+{
+var checkAgo = state.LastAlarmClearCheckUtc == DateTime.MinValue
+    ? TimeSpan.MaxValue
+    : (DateTime.UtcNow - state.LastAlarmClearCheckUtc);
+if (checkAgo >= TimeSpan.FromSeconds(5))
+{
+lock (StateLock) { state.LastAlarmClearCheckUtc = DateTime.UtcNow; }
+var flagsCheck = await GetMachineFlagsFromBackend(machineId);
+if (flagsCheck != null && flagsCheck.AllowAutoMachining)
+{
+if (TryGetMachineAlarms(machineId, out var idleAlarms, out _) && (idleAlarms == null || idleAlarms.Count == 0))
+{
+lock (StateLock) { state.HadAlarmSinceIdleUtc = DateTime.MinValue; state.LastAlarmClearCheckUtc = DateTime.MinValue; }
+Console.WriteLine("[CncMachining] alarm cleared, requesting backend auto-trigger machine={0}", machineId);
+_ = Task.Run(() => RequestBackendAutoTrigger(machineId));
+}
+}
+}
+}
 return;
 }
 var flagsBeforeStart = await GetMachineFlagsFromBackend(machineId);

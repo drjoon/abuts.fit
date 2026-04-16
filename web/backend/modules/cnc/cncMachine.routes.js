@@ -72,6 +72,15 @@ router.post(
   cncMachineController.recordMachiningFailForBridge,
 );
 
+// 브리지 전용 알람 클리어 후 다음 의뢰건 자동 가공 트리거
+// 브리지가 알람 클리어를 감지하면 이 엔드포인트를 호출해 큐에서 다음 job을 꺼낸다.
+router.post(
+  "/bridge/machining/auto-trigger/:machineId",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  cncMachineController.triggerNextAutoMachiningManually,
+);
+
 // 수동 자동 가공 트리거: 프론트에서 호출해 다음 대기 의뢰 가공을 시작
 router.post(
   "/machining/auto-trigger/:machineId",
