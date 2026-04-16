@@ -179,7 +179,7 @@ export function usePreviewLoader({
 
         const hasOriginalFile = !!req.caseInfos?.file?.s3Key;
         const originalFilePromise: Promise<File | null> =
-          shouldUseSingleLeftStl || !hasOriginalFile
+          shouldUseSingleLeftStl || !hasOriginalFile || isMachiningStage
             ? Promise.resolve(null)
             : fetchAsFileWithCache(
                 originalCacheKey,
@@ -189,28 +189,29 @@ export function usePreviewLoader({
                 { disableCache: disableStlCache },
               );
 
-        const camFilePromise: Promise<File | null> = hasCamFile
-          ? (() => {
-              const camName =
-                req.caseInfos?.camFile?.filePath ||
-                req.caseInfos?.camFile?.originalName ||
-                originalName;
-              const camCacheKeyBase = req.caseInfos?.camFile?.s3Key || null;
-              const camCacheVersion =
-                req.caseInfos?.camFile?.fileSize ||
-                req.caseInfos?.camFile?.uploadedAt;
-              const camCacheKey =
-                camCacheKeyBase && camCacheVersion
-                  ? `${camCacheKeyBase}:${camCacheVersion}`
-                  : camCacheKeyBase;
-              return fetchAsFileWithCache(
-                camCacheKey,
-                () => fetchSignedUrl(`/api/requests/${req._id}/cam-file-url`),
-                camName,
-                { disableCache: disableStlCache },
-              ).catch(() => null);
-            })()
-          : Promise.resolve(null);
+        const camFilePromise: Promise<File | null> =
+          hasCamFile && !isMachiningStage
+            ? (() => {
+                const camName =
+                  req.caseInfos?.camFile?.filePath ||
+                  req.caseInfos?.camFile?.originalName ||
+                  originalName;
+                const camCacheKeyBase = req.caseInfos?.camFile?.s3Key || null;
+                const camCacheVersion =
+                  req.caseInfos?.camFile?.fileSize ||
+                  req.caseInfos?.camFile?.uploadedAt;
+                const camCacheKey =
+                  camCacheKeyBase && camCacheVersion
+                    ? `${camCacheKeyBase}:${camCacheVersion}`
+                    : camCacheKeyBase;
+                return fetchAsFileWithCache(
+                  camCacheKey,
+                  () => fetchSignedUrl(`/api/requests/${req._id}/cam-file-url`),
+                  camName,
+                  { disableCache: disableStlCache },
+                ).catch(() => null);
+              })()
+            : Promise.resolve(null);
 
         const leftStlPromise: Promise<File | null> = shouldUseSingleLeftStl
           ? hasCamFile
@@ -260,8 +261,9 @@ export function usePreviewLoader({
             ? (async () => {
                 const ncMeta = req.caseInfos?.ncFile;
                 if (!ncMeta?.s3Key) return;
-                const ncName =
-                  ncMeta?.filePath || ncMeta?.originalName || "program.nc";
+                const ncNameRaw =
+                  ncMeta?.originalName || ncMeta?.filePath || "program.nc";
+                const ncName = ncNameRaw.split("/").pop() || ncNameRaw;
                 const ncCacheVersion = ncMeta?.fileSize || ncMeta?.uploadedAt;
                 const ncCacheKey = ncMeta?.s3Key
                   ? `cnc:s3:${ncMeta.s3Key}${ncCacheVersion ? `:${ncCacheVersion}` : ""}`

@@ -110,7 +110,7 @@ export const useCncProgramEditor = ({
       }
 
       const presignRes = await apiFetch({
-        path: `/api/cnc-machines/${encodeURIComponent(mid)}/direct/presign-download?s3Key=${encodeURIComponent(
+        path: `/api/cnc-machines/${encodeURIComponent(mid)}/lab/presign-download?s3Key=${encodeURIComponent(
           s3Key,
         )}`,
         method: "GET",

@@ -228,11 +228,14 @@ export const PreviewModal = ({
       activeReq?.caseInfos?.camFile?.originalName ||
       "filled.stl"
     : "filled.stl";
-  const ncName =
-    activeReq?.caseInfos?.ncFile?.filePath ||
-    activeReq?.caseInfos?.ncFile?.originalName ||
-    previewNcName ||
-    "program.nc";
+  const ncName = (() => {
+    const raw =
+      activeReq?.caseInfos?.ncFile?.originalName ||
+      activeReq?.caseInfos?.ncFile?.filePath ||
+      previewNcName ||
+      "program.nc";
+    return raw.split("/").pop() || raw;
+  })();
 
   const leftTitle = isNcStage
     ? ncName
