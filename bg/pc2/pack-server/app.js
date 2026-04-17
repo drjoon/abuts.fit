@@ -567,6 +567,8 @@ const server = http.createServer(async (req, res) => {
         sellerTel: process.env.PACK_SELLER_TEL || "",
         manualQrLabel: process.env.PACK_MANUAL_QR_LABEL || "",
         udiGtin: process.env.PACK_UDI_GTIN || "",
+        certInfo: process.env.PACK_CERT_INFO || "",
+        homepageUrl: process.env.PACK_HOMEPAGE_URL || "",
       },
     });
   }

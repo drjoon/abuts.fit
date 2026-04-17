@@ -29,6 +29,38 @@ const systemSettingsSchema = new mongoose.Schema(
       tel: { type: String, default: "1588-3948" },
       mobile: { type: String, default: "" },
     },
+    // 패킹 라벨 브랜딩 정보: EBS 환경변수 한글 인코딩 버그로 인해 DB에서 관리
+    // (rules.md 섹션 16 참고)
+    packLabelBranding: {
+      productName: { type: String, default: "치과용임플란트 상부구조물" },
+      modelName: { type: String, default: "CA6512" },
+      licenseNo: { type: String, default: "제3583호" },
+      manufacturerName: { type: String, default: "(주)애크로덴트" },
+      manufacturerAddr: {
+        type: String,
+        default: "경남 김해시 전하로85번길 5, 나동(흥동)",
+      },
+      manufacturerTelFax: {
+        type: String,
+        default: "T 055-314-4607  F 055-901-0241",
+      },
+      manufacturerPermitNo: { type: String, default: "제3583호" },
+      sellerName: { type: String, default: "어벗츠 주식회사" },
+      sellerPermit: { type: String, default: "제00001호" },
+      sellerAddr: {
+        type: String,
+        default: "경남 거제시 거제중앙로29길 6, 3층",
+      },
+      sellerTel: { type: String, default: "1588-3948" },
+      udiGtin: { type: String, default: "08800123600154" },
+      certInfo: {
+        type: String,
+        default:
+          "품목인증번호: 제인 26-0000호, 포장단위:1set, 보관방법: 실온보관",
+      },
+      homepageUrl: { type: String, default: "www.acrodent.com" },
+      manualQrLabel: { type: String, default: "사용자매뉴얼" },
+    },
     securitySettings: {
       twoFactorAuth: { type: Boolean, default: true },
       loginNotifications: { type: Boolean, default: true },

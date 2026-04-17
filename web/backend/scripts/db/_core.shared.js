@@ -3,6 +3,7 @@ import FilenameRule from "../../models/filenameRule.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import { CONNECTIONS_SEED } from "./data/connections.seed.js";
 import { FILENAME_RULES_SEED } from "./data/filenameRules.seed.js";
+import { PACK_LABEL_BRANDING_SEED } from "./data/packLabelBranding.seed.js";
 
 async function ensureSystemSettings() {
   await SystemSettings.findOneAndUpdate(
@@ -10,6 +11,19 @@ async function ensureSystemSettings() {
     { $setOnInsert: { key: "global" } },
     { new: true, upsert: true, setDefaultsOnInsert: true },
   );
+}
+
+async function upsertPackLabelBranding() {
+  const update = {};
+  for (const [k, v] of Object.entries(PACK_LABEL_BRANDING_SEED)) {
+    update[`packLabelBranding.${k}`] = v;
+  }
+  await SystemSettings.findOneAndUpdate(
+    { key: "global" },
+    { $set: update },
+    { new: true, upsert: true },
+  );
+  return { updated: Object.keys(update).length };
 }
 
 async function upsertConnections() {
@@ -60,5 +74,6 @@ export async function seedCoreShared() {
   await ensureSystemSettings();
   const connections = await upsertConnections();
   const filenameRules = await upsertFilenameRules();
-  return { connections, filenameRules };
+  const packLabelBranding = await upsertPackLabelBranding();
+  return { connections, filenameRules, packLabelBranding };
 }

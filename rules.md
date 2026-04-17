@@ -1733,6 +1733,122 @@ BREVO_API_KEY=your_brevo_api_key_here
 
 ---
 
+## 15. DB Seeding 체계
+
+### 15.1 스크립트 위치
+
+모든 seeding 스크립트는 `web/backend/scripts/db/` 에 위치합니다.
+
+| 스크립트               | npm 명령                                   | 역할                                          |
+| ---------------------- | ------------------------------------------ | --------------------------------------------- |
+| `reset.js`             | `npm run db:reset`                         | 전체 컬렉션 deleteMany 후 DB_VERSION 증가     |
+| `seed-account.js`      | `npm run db:seed-account`                  | 계정 생성 (필수 계정 + 벌크 계정)             |
+| `seed-data.js`         | `npm run db:seed-data [건수]`              | 의뢰/CreditLedger/정산 더미 데이터 생성       |
+| `seed-prc-mappings.js` | `npm run db:implant-preset` 또는 직접 실행 | 로컬 PRC 파일을 읽어 PrcMapping 컬렉션 upsert |
+| `implant-preset.js`    | `npm run db:implant-preset`                | 임플란트 프리셋 add-only upsert               |
+
+### 15.2 내부 모듈 구조
+
+| 파일                         | 역할                                                                                               |
+| ---------------------------- | -------------------------------------------------------------------------------------------------- |
+| `_mongo.js`                  | DB 연결/해제 유틸리티                                                                              |
+| `_core.shared.js`            | `SystemSettings` upsert, `Connection` upsert, `FilenameRule` upsert — 모든 seed에서 공통 호출      |
+| `seed/accounts.js`           | `seedEssentialAccounts()`, `seedBulkAccounts()` — `.essential-accounts.config.json` 기반 계정 생성 |
+| `seed/data.js`               | `seedRequestData()` — 랜덤 Request/CreditLedger/SalesmanLedger 생성                                |
+| `seed/utils.js`              | `findOrCreateUser`, `generateRequestId` 등 공통 유틸                                               |
+| `data/connections.seed.js`   | `CONNECTIONS_SEED` — implant Connection 데이터                                                     |
+| `data/filenameRules.seed.js` | `FILENAME_RULES_SEED` — 파일명 규칙 데이터                                                         |
+
+### 15.3 권장 실행 순서
+
+```bash
+npm run db:reset          # 1. 전체 초기화
+npm run db:seed-account   # 2. 계정 생성 (필수 계정 config 파일 필요)
+npm run db:seed-data      # 3. 더미 의뢰 데이터 생성
+npm run db:implant-preset # 4. 임플란트 프리셋 (선택)
+```
+
+### 15.4 안전장치
+
+- **production에서는 기본적으로 DB 변경 거부** — 강제 실행 시 `ABUTS_DB_FORCE=true` 환경변수 필요
+- `reset`은 `dropDatabase`가 아니라 각 컬렉션 `deleteMany`로 처리
+- `seed-data`는 기존 계정을 사용하므로 `seed-account` 먼저 실행 필요
+- `implant-preset`은 기존 데이터 유지, 없는 항목만 추가 (add-only)
+
+### 15.5 계정 설정 파일
+
+- `scripts/db/seed/.essential-accounts.config.json` — 필수 계정 명세 (git 비추적)
+- `scripts/db/seed/.essential-accounts.json` — 생성된 계정 자격증명 출력 (git 비추적)
+- `scripts/db/seed/.bulk-accounts.config.json` — 벌크 계정 명세 (git 비추적)
+
+---
+
+## 16. 한글 설정값 DB SSOT 정책
+
+**AWS EBS 환경변수는 한글 UTF-8 문자열을 Node.js에 올바르게 전달하지 못합니다.**
+예: EBS 콘솔에 "경상남도 김해시 흥동" 입력 → `process.env`로 읽으면 "???? ??? ??"처럼 깨짐.
+
+→ **한글이 포함된 모든 설정값은 `SystemSettings` DB(key: "global")에서 관리합니다.**
+
+### 16.1 packLabelBranding (패킹 라벨 브랜딩)
+
+**SSOT: `SystemSettings.packLabelBranding` (MongoDB)**
+
+- 백엔드(`packPrint.utils.js`)가 렌더링 시 `SystemSettings`에서 직접 읽어 `opts`로 주입
+- 값 변경 시: `web/backend/scripts/db/data/packLabelBranding.seed.js` 수정 후 아래 명령 실행
+
+```bash
+cd web/backend && npm run db:seed-branding
+```
+
+**필드 목록:**
+
+| 필드                   | 설명                                | 현재 값                                                         |
+| ---------------------- | ----------------------------------- | --------------------------------------------------------------- |
+| `productName`          | 품목명                              | 치과용임플란트 상부구조물                                       |
+| `modelName`            | 모델명                              | CA6512                                                          |
+| `licenseNo`            | 품목허가번호                        | 제3583호                                                        |
+| `manufacturerName`     | 제조자명                            | (주)애크로덴트                                                  |
+| `manufacturerAddr`     | 제조자 주소                         | 경남 김해시 전하로85번길 5, 나동(흥동)                          |
+| `manufacturerTelFax`   | 제조자 전화/팩스                    | T 055-314-4607 F 055-901-0241                                   |
+| `manufacturerPermitNo` | 제조업허가번호                      | 제3583호                                                        |
+| `sellerName`           | 판매원명                            | 어벗츠 주식회사                                                 |
+| `sellerPermit`         | 판매업허가번호                      | 제00001호                                                       |
+| `sellerAddr`           | 판매원 주소                         | 경남 거제시 거제중앙로29길 6, 3층                               |
+| `sellerTel`            | 판매원 전화                         | 1588-3948                                                       |
+| `udiGtin`              | UDI GTIN                            | 08800123600154                                                  |
+| `certInfo`             | 품목인증번호·포장단위·보관방법 문구 | 품목인증번호: 제인 26-0000호, 포장단위:1set, 보관방법: 실온보관 |
+| `homepageUrl`          | 제품 홈페이지 URL                   | www.acrodent.com                                                |
+| `manualQrLabel`        | 사용자매뉴얼 QR 라벨                | 사용자매뉴얼                                                    |
+
+### 16.2 hanjinSenderInfo (한진 운송장 발신인)
+
+**SSOT: `SystemSettings.hanjinSenderInfo` (MongoDB)**
+
+- 백엔드(`shipping.Hanjin.helpers.js`)가 `SystemSettings`에서 직접 읽음
+- wbls-server `GET /print-settings`는 보조 override 역할 (로컬 PC 테스트용)
+- DB model default 값이 정의되어 있어 seed 없이도 `findOneAndUpdate + upsert`로 자동 생성
+
+**필드 목록:**
+
+| 필드       | 설명                            |
+| ---------- | ------------------------------- |
+| `zip`      | 우편번호 (50965)                |
+| `baseAddr` | 기본주소 (경상남도 김해시 흥동) |
+| `dtlAddr`  | 상세주소 (전하로 85번길 5)      |
+| `name`     | 발신인명 (어벗츠 주식회사)      |
+| `tel`      | 전화 (1588-3948)                |
+| `mobile`   | 휴대폰                          |
+
+### 16.3 금지 사항
+
+- ❌ EBS 환경변수에 한글 값 저장 금지 (깨짐 버그)
+- ❌ `pack-server/local.env`의 한글 값을 SSOT로 사용 금지
+- ✅ 한글 포함 설정값은 반드시 `SystemSettings` DB에서 관리
+- ✅ seed 파일(`packLabelBranding.seed.js`) 수정 후 `npm run db:seed-branding` 실행
+
+---
+
 ## 14. 운영 메모
 
 - 하위 `rules.md`는 루트 규칙을 반복 작성하지 않습니다.

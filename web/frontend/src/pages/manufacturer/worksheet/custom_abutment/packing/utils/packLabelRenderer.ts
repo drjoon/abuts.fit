@@ -250,6 +250,8 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   const UDI_GTIN = env.VITE_PACK_UDI_GTIN || "";
   const MANUFACTURER_PERMIT_NO =
     env.VITE_PACK_MANUFACTURER_PERMIT_NO || LICENSE_NO;
+  const CERT_INFO = (env.VITE_PACK_CERT_INFO || "").replace(/['"]/g, "");
+  const HOMEPAGE_URL = (env.VITE_PACK_HOMEPAGE_URL || "").replace(/['"]/g, "");
 
   // ── 유틸리티 함수 ─────────────────────────────────────────────
 
@@ -561,7 +563,7 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   // 좌 3행: 품목인증번호·포장단위·보관방법 (6pt)
   ctx.font = FONT_LEGAL_BODY;
   fillTextLeft(
-    `품목인증번호: 제인 26-0000호, 포장단위:1set, 보관방법: 실온보관`,
+    CERT_INFO,
     M + 6,
     legalTopY + lRow1H + lRow2H + (lRow3H - 15) / 2,
     W - 12,
@@ -569,7 +571,9 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
 
   // 좌 4행: 설명문 + 일회용비멸균 인라인 (6pt + 7pt↑)
   const descY = legalTopY + lRow1H + lRow2H + lRow3H;
-  const descText = `자세한 설명은 인터넷 홈페이지(www.acrodent.com) 또는 우측 상단 사용자 매뉴얼 바코드에 제공`;
+  const descText = HOMEPAGE_URL
+    ? `자세한 설명은 인터넷 홈페이지(${HOMEPAGE_URL}) 또는 우측 상단 사용자 매뉴얼 바코드에 제공`
+    : `자세한 설명은 인터넷 홈페이지 또는 우측 상단 사용자 매뉴얼 바코드에 제공`;
   // 설명문 영역: 전체폭의 65% / 일회용비멸균: 나머지 35%
   const descColW = Math.round(W * 0.65);
   const udiInlineX = M + descColW;

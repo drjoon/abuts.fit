@@ -799,7 +799,7 @@ export const buildHanjinInsertOrderBody = async ({
     rcvrTelNo: receiverPhone,
     rcvrMobileNo: receiverPhone,
     comodityNm: "의료기기",
-    payTypCd: "PP",
+    payTypCd: "CD",
     boxTypCd: "B",
     comodityList: [
       {

@@ -3,6 +3,7 @@ import {
   renderPackLabelToCanvas,
   buildPackLabelBitmapZpl,
 } from "./packLabelRenderer.js";
+import SystemSettings from "../models/systemSettings.model.js";
 
 const PACK_PRINT_SERVER_BASE = (
   process.env.PACK_PRINT_SERVER_BASE || "http://localhost:8004"
@@ -66,21 +67,18 @@ export async function printPackingLabelViaBgServer({
     requestId,
   });
 
-  // pack-server에서 브랜딩 정보 가져오기
+  // DB(SystemSettings.packLabelBranding)에서 브랜딩 정보 읽기
+  // EBS 환경변수 한글 인코딩 버그로 인해 DB를 SSOT로 사용합니다. (rules.md 섹션 16)
   let branding = {};
   try {
-    const brandingUrl = `${PACK_PRINT_SERVER_BASE}/branding`;
-    const brandingHeaders = {};
-    if (PACK_PRINT_SERVER_SHARED_SECRET) {
-      brandingHeaders["x-pack-secret"] = PACK_PRINT_SERVER_SHARED_SECRET;
-    }
-    const brandingRes = await fetch(brandingUrl, { headers: brandingHeaders });
-    if (brandingRes.ok) {
-      const brandingData = await brandingRes.json();
-      branding = brandingData?.branding || {};
-    }
+    const doc = await SystemSettings.findOneAndUpdate(
+      { key: "global" },
+      { $setOnInsert: { key: "global" } },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    ).lean();
+    branding = doc?.packLabelBranding || {};
   } catch (err) {
-    console.warn("[packPrint] failed to fetch branding info:", err.message);
+    console.warn("[packPrint] failed to read branding from DB:", err.message);
   }
 
   // 백엔드에서 Canvas로 라벨 이미지 생성 후 ZPL로 변환
