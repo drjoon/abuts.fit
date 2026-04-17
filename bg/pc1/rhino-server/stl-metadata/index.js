@@ -504,122 +504,212 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
     }
   }
 
-  // 3. FrontPoint 계산 (경사축 기반 포스트 측면 ray intersection)
+  // 3. FrontPoint 계산 (Top/Side 교점 + side 방향 보정)
   //
-  // 기존 Top/Side 교점 방식은 경사축 상방에 홈(screw hole 등)이 있을 때
-  // 그 홈 테두리를 top/side 교점으로 잘못 선택하는 문제가 있었다.
-  //
-  // 새 방법:
-  // 1) tiltAxisVector의 XY 평면 투영으로 경사 방향(frontDir, 수평) 확정
-  // 2) finish line 위 포스트 구간(30%~70%)을 Z 슬라이스로 나눔
-  //    → 이 범위는 포스트 측면만 포함하며 상방 홈/상면을 자동 배제
-  // 3) 각 Z 슬라이스에서 frontDir 방향으로 최대 반경 교점 수집
-  // 4) 수집된 교점 중 Z가 가장 낮은 점 = 포스트 하단 측면 = front point
+  // 1단계: tiltAxisVector 기준 Top/Side 교점 탐색 (기존 방식)
+  //        - top face: tiltDir 방향 법선이 0.5 초과 & proj > topProjThreshold
+  //        - side face: 그 외
+  //        - 교점 정점 = top+side 양쪽 face에 속하는 정점
+  // 2단계: 교점이 상방 홈 테두리에 떨어진 경우 보정
+  //        - 교점 Z에서 tiltDir 반대 방향으로 sideOffset(0.5mm) 이동한 Z를 구함
+  //        - 보정된 Z에서 frontDir(XY 경사 방향) 수평 ray로 mesh 재교차 → 포스트 측면 확정
   if (!tiltAxisVector) {
     tiltAxisVector = { x: 0, y: 0, z: 1 };
   }
 
-  // tiltAxisVector의 XY 투영으로 경사 방향 추출
-  const xyLen = Math.sqrt(
-    tiltAxisVector.x * tiltAxisVector.x + tiltAxisVector.y * tiltAxisVector.y,
+  // tiltDir 정규화
+  const tiltDirLen = Math.sqrt(
+    tiltAxisVector.x * tiltAxisVector.x +
+      tiltAxisVector.y * tiltAxisVector.y +
+      tiltAxisVector.z * tiltAxisVector.z,
   );
+  const tiltDir = {
+    x: tiltAxisVector.x / tiltDirLen,
+    y: tiltAxisVector.y / tiltDirLen,
+    z: tiltAxisVector.z / tiltDirLen,
+  };
 
-  let frontDir; // XY 평면상 경사 방향 (단위벡터)
-  if (xyLen > 1e-6) {
-    frontDir = {
-      x: tiltAxisVector.x / xyLen,
-      y: tiltAxisVector.y / xyLen,
-    };
-  } else {
-    // 경사가 거의 없는 경우 (직립) → 임의 방향 선택 후 최대 반경으로 보정
-    frontDir = { x: 1, y: 0 };
+  // tiltAxisVector의 XY 투영으로 수평 경사 방향(frontDir) 추출
+  const xyLen = Math.sqrt(tiltDir.x * tiltDir.x + tiltDir.y * tiltDir.y);
+  const frontDir =
+    xyLen > 1e-6
+      ? { x: tiltDir.x / xyLen, y: tiltDir.y / xyLen }
+      : { x: 1, y: 0 };
+
+  // 경사축 방향으로 가장 높은 투영값 찾기
+  let maxProj = -Infinity;
+  for (let tri = 0; tri < triangleCount; tri++) {
+    for (let j = 0; j < 3; j++) {
+      const idx = index ? index.getX(tri * 3 + j) : tri * 3 + j;
+      const v = readVertex(idx);
+      const proj = v.x * tiltDir.x + v.y * tiltDir.y + v.z * tiltDir.z;
+      if (proj > maxProj) maxProj = proj;
+    }
   }
 
-  // 포스트 Z 범위: finish line 위 30%~70% 구간
-  // (30% 미만은 finish line 근처, 70% 이상은 상방 홈/나사 헤드 영역)
-  const postZStart = finishLineTopZ + availableHeight * 0.3;
-  const postZEnd = finishLineTopZ + availableHeight * 0.7;
-  const postZHeight = postZEnd - postZStart;
+  const totalLength = bbox.max.z - bbox.min.z;
+  const topProjThreshold = maxProj - Math.min(2.0, totalLength * 0.2);
+
+  // 정점 분류 (Top/Side)
+  const vertexFaceTypes = new Map();
+  const getVertexHash = (v) =>
+    `${v.x.toFixed(4)},${v.y.toFixed(4)},${v.z.toFixed(4)}`;
+
+  for (let tri = 0; tri < triangleCount; tri++) {
+    const i0 = index ? index.getX(tri * 3) : tri * 3;
+    const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
+    const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
+
+    const v0 = readVertex(i0);
+    const v1 = readVertex(i1);
+    const v2 = readVertex(i2);
+
+    const avgProj =
+      ((v0.x + v1.x + v2.x) * tiltDir.x +
+        (v0.y + v1.y + v2.y) * tiltDir.y +
+        (v0.z + v1.z + v2.z) * tiltDir.z) /
+      3;
+
+    if (avgProj > topProjThreshold - 2.0) {
+      const e1 = { x: v1.x - v0.x, y: v1.y - v0.y, z: v1.z - v0.z };
+      const e2 = { x: v2.x - v0.x, y: v2.y - v0.y, z: v2.z - v0.z };
+      const normal = {
+        x: e1.y * e2.z - e1.z * e2.y,
+        y: e1.z * e2.x - e1.x * e2.z,
+        z: e1.x * e2.y - e1.y * e2.x,
+      };
+      const normalLen = Math.sqrt(
+        normal.x * normal.x + normal.y * normal.y + normal.z * normal.z,
+      );
+      if (normalLen > 1e-9) {
+        normal.x /= normalLen;
+        normal.y /= normalLen;
+        normal.z /= normalLen;
+      }
+
+      let faceType = "none";
+      const dotProduct =
+        normal.x * tiltDir.x + normal.y * tiltDir.y + normal.z * tiltDir.z;
+      if (dotProduct > 0.5) {
+        if (avgProj > topProjThreshold) {
+          faceType = "top";
+        }
+      } else {
+        faceType = "side";
+      }
+
+      if (faceType !== "none") {
+        for (const vertex of [v0, v1, v2]) {
+          const hash = getVertexHash(vertex);
+          if (!vertexFaceTypes.has(hash)) {
+            vertexFaceTypes.set(hash, { v: vertex, types: new Set() });
+          }
+          vertexFaceTypes.get(hash).types.add(faceType);
+        }
+      }
+    }
+  }
+
+  // 최대 직경 계산 (전체 기하)
+  let maxR = 0;
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i);
+    const y = position.getY(i);
+    const r = Math.sqrt(x * x + y * y);
+    if (r > maxR) maxR = r;
+  }
+  const maxDiameter = maxR * 2;
+
+  // Top/Side 교점 중 최저 Z 찾기
+  let bestFrontPoint = null;
+  let minZFront = Infinity;
+  const minRadius = Math.max(1.0, maxDiameter * 0.15);
+
+  for (const { v, types } of vertexFaceTypes.values()) {
+    if (types.has("top") && types.has("side")) {
+      const dx = v.x - center.x;
+      const dy = v.y - center.y;
+      const distToAxis = Math.sqrt(dx * dx + dy * dy);
+
+      if (distToAxis > minRadius && v.z < minZFront) {
+        minZFront = v.z;
+        bestFrontPoint = v;
+      }
+    }
+  }
 
   let frontPoint = null;
+  if (bestFrontPoint) {
+    // 2단계: 교점에서 XY 평면상 frontDir(경사 방향, 바깥쪽)으로 0.2mm 이동한
+    //        위치를 ray 출발점으로 삼아 같은 Z에서 mesh 재교차 → 포스트 측면 확정
+    //
+    // 이유: Top/Side 교점은 상방 홈 테두리에 걸릴 수 있다.
+    //       포스트 외부(frontDir 방향)에서 안쪽으로 쏘면 홈이 아닌
+    //       포스트 측면과의 교점을 얻을 수 있다.
+    const xyShift = 0.2; // XY 바깥쪽으로 이동할 거리 (mm)
+    const rayOriginX = bestFrontPoint.x + frontDir.x * xyShift;
+    const rayOriginY = bestFrontPoint.y + frontDir.y * xyShift;
+    const targetZ = bestFrontPoint.z;
 
-  if (postZHeight > 0.5) {
-    // 포스트 구간을 20 슬라이스로 나눠 각 Z에서 frontDir 방향 최대 반경 교점 수집
-    const sliceCount = 20;
-    const candidates = []; // { x, y, z, proj }
+    // targetZ 슬라이스에서 frontDir 방향 최대 반경 교점 탐색
+    // (ray 출발점이 mesh 외부이므로, 교점이 bestFrontPoint보다 안쪽이어도 허용)
+    const tolerance = 0.15;
+    let bestProj = -Infinity;
+    let bestX = bestFrontPoint.x;
+    let bestY = bestFrontPoint.y;
+    let found = false;
 
-    for (let s = 0; s <= sliceCount; s++) {
-      const targetZ = postZStart + (postZHeight * s) / sliceCount;
-      const tolerance = postZHeight / (sliceCount * 4);
-      let bestProj = -Infinity;
-      let bestX = 0;
-      let bestY = 0;
-      let found = false;
+    for (let tri = 0; tri < triangleCount; tri++) {
+      const i0 = index ? index.getX(tri * 3) : tri * 3;
+      const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
+      const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
+      const v0 = readVertex(i0);
+      const v1 = readVertex(i1);
+      const v2 = readVertex(i2);
 
-      for (let tri = 0; tri < triangleCount; tri++) {
-        const i0 = index ? index.getX(tri * 3) : tri * 3;
-        const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
-        const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
-        const v0 = readVertex(i0);
-        const v1 = readVertex(i1);
-        const v2 = readVertex(i2);
-
-        // 정점이 targetZ 근처인 경우
-        for (const v of [v0, v1, v2]) {
-          if (Math.abs(v.z - targetZ) <= tolerance) {
-            const proj =
-              (v.x - center.x) * frontDir.x + (v.y - center.y) * frontDir.y;
-            if (proj > bestProj) {
-              bestProj = proj;
-              bestX = v.x;
-              bestY = v.y;
-              found = true;
-            }
-          }
-        }
-
-        // 엣지 교차점
-        const checkEdge = (a, b) => {
-          if (
-            (a.z < targetZ && b.z < targetZ) ||
-            (a.z > targetZ && b.z > targetZ)
-          )
-            return;
-          if (Math.abs(a.z - b.z) < 1e-9) return;
-          const t = (targetZ - a.z) / (b.z - a.z);
-          if (t < 0 || t > 1) return;
-          const ix = a.x + t * (b.x - a.x);
-          const iy = a.y + t * (b.y - a.y);
+      for (const v of [v0, v1, v2]) {
+        if (Math.abs(v.z - targetZ) <= tolerance) {
           const proj =
-            (ix - center.x) * frontDir.x + (iy - center.y) * frontDir.y;
+            (v.x - center.x) * frontDir.x + (v.y - center.y) * frontDir.y;
           if (proj > bestProj) {
             bestProj = proj;
-            bestX = ix;
-            bestY = iy;
+            bestX = v.x;
+            bestY = v.y;
             found = true;
           }
-        };
-        checkEdge(v0, v1);
-        checkEdge(v1, v2);
-        checkEdge(v2, v0);
+        }
       }
 
-      if (found) {
-        candidates.push({ x: bestX, y: bestY, z: targetZ, proj: bestProj });
-      }
-    }
-
-    // 수집된 교점 중 Z가 가장 낮은 점 = 포스트 하단 측면 = front point
-    // (Z가 낮을수록 포스트 기저부에 가까우며, 상방 홈은 Z가 높아 자동 배제됨)
-    if (candidates.length > 0) {
-      candidates.sort((a, b) => a.z - b.z);
-      const best = candidates[0];
-      frontPoint = {
-        x: Math.round(best.x * 100) / 100,
-        y: Math.round(best.y * 100) / 100,
-        z: Math.round(best.z * 100) / 100,
+      const checkEdge = (a, b) => {
+        if (
+          (a.z < targetZ && b.z < targetZ) ||
+          (a.z > targetZ && b.z > targetZ)
+        )
+          return;
+        if (Math.abs(a.z - b.z) < 1e-9) return;
+        const t = (targetZ - a.z) / (b.z - a.z);
+        if (t < 0 || t > 1) return;
+        const ix = a.x + t * (b.x - a.x);
+        const iy = a.y + t * (b.y - a.y);
+        const proj =
+          (ix - center.x) * frontDir.x + (iy - center.y) * frontDir.y;
+        if (proj > bestProj) {
+          bestProj = proj;
+          bestX = ix;
+          bestY = iy;
+          found = true;
+        }
       };
+      checkEdge(v0, v1);
+      checkEdge(v1, v2);
+      checkEdge(v2, v0);
     }
+
+    frontPoint = {
+      x: Math.round(bestX * 100) / 100,
+      y: Math.round(bestY * 100) / 100,
+      z: Math.round(targetZ * 100) / 100,
+    };
   }
 
   return {

@@ -385,10 +385,23 @@ export const executeHanjinLabelPrint = async ({
     });
   }
 
-  const senderInfo = await fetchWblServerSenderInfo();
-  if (senderInfo) {
-    console.log("[hanjin][label] wbls-server 발신인 정보 사용", senderInfo);
-  }
+  const wblsSenderInfo = await fetchWblServerSenderInfo();
+  const dbSenderInfo = await getHanjinSenderInfo();
+  const senderInfo = {
+    ...dbSenderInfo,
+    ...(wblsSenderInfo
+      ? Object.fromEntries(
+          Object.entries(wblsSenderInfo).filter(
+            ([, v]) => v != null && String(v).trim() !== "",
+          ),
+        )
+      : {}),
+  };
+  console.log("[hanjin][label] 발신인 정보", {
+    wblsServer: wblsSenderInfo,
+    db: dbSenderInfo,
+    merged: senderInfo,
+  });
 
   const data = await hanjinService.requestPrintApi({
     path: resolvedPath,
@@ -897,17 +910,13 @@ const enrichHanjinAddressList = ({
     const msgKey = String(row?.msg_key || row?.msgKey || "").trim();
     const meta = metaByMsgKey?.[msgKey] || {};
     const payloadRow = payloadByMsgKey?.[msgKey] || {};
-    const senderName =
-      String(senderOverride?.name || "").trim() || HANJIN_SENDER_NAME;
-    const senderTel =
-      String(senderOverride?.tel || "").trim() || HANJIN_SENDER_TEL;
+    const senderName = String(senderOverride?.name || "").trim();
+    const senderTel = String(senderOverride?.tel || "").trim();
     const senderMobile =
-      String(senderOverride?.mobile || "").trim() ||
-      HANJIN_SENDER_MOBILE ||
-      senderTel;
+      String(senderOverride?.mobile || "").trim() || senderTel;
     const senderAddress = [
-      String(senderOverride?.baseAddr || "").trim() || HANJIN_SENDER_BASE_ADDR,
-      String(senderOverride?.dtlAddr || "").trim() || HANJIN_SENDER_DTL_ADDR,
+      String(senderOverride?.baseAddr || "").trim(),
+      String(senderOverride?.dtlAddr || "").trim(),
     ]
       .filter(Boolean)
       .join(" ");
@@ -917,12 +926,7 @@ const enrichHanjinAddressList = ({
         msgKey,
         senderOverride,
         computed: { senderName, senderTel, senderAddress },
-        env: {
-          HANJIN_SENDER_NAME,
-          HANJIN_SENDER_TEL,
-          HANJIN_SENDER_BASE_ADDR,
-          HANJIN_SENDER_DTL_ADDR,
-        },
+        env: { senderOverride },
         rowOriginal: {
           snd_prn: row?.snd_prn,
           snd_nam: row?.snd_nam,
