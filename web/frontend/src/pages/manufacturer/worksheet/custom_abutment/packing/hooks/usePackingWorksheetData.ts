@@ -119,6 +119,9 @@ export const usePackingWorksheetData = ({
           if (userRole === "manufacturer") {
             hasMoreRef.current = list.length >= PAGE_LIMIT;
           }
+          if (append && list.length > 0) {
+            setVisibleCount((prev) => prev + list.length);
+          }
           return list as ManufacturerRequest[];
         }
         return list as ManufacturerRequest[];

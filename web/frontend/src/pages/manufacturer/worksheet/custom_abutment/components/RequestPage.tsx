@@ -208,6 +208,9 @@ export const RequestPage = ({
           }
           pageState.hasMoreRefForCore.current = list.length >= PAGE_LIMIT;
           hasMoreRef.current = list.length >= PAGE_LIMIT;
+          if (append && list.length > 0) {
+            pageState.setVisibleCount((prev) => prev + list.length);
+          }
         } else {
           pageState.hasMoreRefForCore.current = false;
           hasMoreRef.current = false;
