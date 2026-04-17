@@ -296,23 +296,6 @@ const assertHanjinOrderSuccess = (data) => {
   }
 };
 
-const buildCancelCaller = () => {
-  const cancelPath = resolveHanjinPath(
-    "HANJIN_PICKUP_CANCEL_PATH",
-    getHanjinPathFallbacks().HANJIN_PICKUP_CANCEL_PATH,
-  );
-  if (!cancelPath) {
-    throw Object.assign(
-      new Error("HANJIN_PICKUP_CANCEL_PATH가 설정되지 않았습니다."),
-      { statusCode: 400 },
-    );
-  }
-  return buildHanjinOrderFallbackCaller({
-    pathCandidates: buildHanjinPathCandidates(cancelPath),
-    logPrefix: "[hanjin][pickup-cancel-auto]",
-  });
-};
-
 const buildIntegratedPrintRequest = ({
   req,
   mailboxAddresses,
@@ -694,12 +677,6 @@ async function executeSingleMailboxPickup({
 
 export async function cancelHanjinPickupForReset(mailboxAddresses) {
   if (!Array.isArray(mailboxAddresses) || !mailboxAddresses.length) return;
-  let callHanjinWithFallback;
-  try {
-    callHanjinWithFallback = buildCancelCaller();
-  } catch {
-    return;
-  }
   const list = mailboxAddresses
     .map((v) => String(v || "").trim())
     .filter(Boolean);
@@ -715,11 +692,7 @@ export async function cancelHanjinPickupForReset(mailboxAddresses) {
       const group = byMailbox.get(mailbox) || [];
       if (!group.length) return;
       try {
-        await executeSingleMailboxPickupCancel({
-          mailbox,
-          group,
-          callHanjinWithFallback,
-        });
+        await executeSingleMailboxPickupCancel({ mailbox, group });
       } catch {
         // best-effort: 취소 실패해도 리셋 계속 진행
       }
@@ -727,21 +700,12 @@ export async function cancelHanjinPickupForReset(mailboxAddresses) {
   );
 }
 
-async function executeSingleMailboxPickupCancel({
-  mailbox,
-  group,
-  callHanjinWithFallback,
-}) {
-  const ymd = getTodayYmdInKst().replace(/-/g, "");
+async function executeSingleMailboxPickupCancel({ mailbox, group }) {
   const updatedIds = [];
-  const custOrdNo = `ABUTS_${ymd}_${String(mailbox || "-")}`.slice(0, 30);
-  const cancelBody = {
-    custEdiCd: HANJIN_CLIENT_ID,
-    custOrdNo,
-  };
 
   try {
-    const data = await callHanjinWithFallback({ data: cancelBody });
+    // svcCatCd=S(자체출력) 주문은 한진 cancel-order API 미지원
+    // 운송장을 자체 폐기처리하므로 로컬 상태만 취소 처리
     const now = new Date();
 
     const deliveryInfoUpdateOps = [];
@@ -833,7 +797,7 @@ async function executeSingleMailboxPickupCancel({
         SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.CANCELED],
     });
 
-    return { mailbox, success: true, data, updatedIds };
+    return { mailbox, success: true, updatedIds };
   } catch (error) {
     return {
       mailbox,
@@ -1471,56 +1435,16 @@ export async function requestHanjinPickup(req, res) {
 
 export async function cancelHanjinPickup(req, res) {
   try {
-    const { mailboxAddresses, payload } = req.body || {};
-    const path = resolveHanjinPath(
-      "HANJIN_PICKUP_CANCEL_PATH",
-      getHanjinPathFallbacks().HANJIN_PICKUP_CANCEL_PATH,
-    );
-    if (!path) {
-      return res.status(400).json({
-        success: false,
-        message: "HANJIN_PICKUP_CANCEL_PATH가 설정되지 않았습니다.",
-      });
-    }
-
-    if (payload && !Array.isArray(mailboxAddresses)) {
-      return res.status(200).json({
-        success: true,
-        data: { mocked: true, path, payload },
-      });
-    }
-
-    let resolved;
-    try {
-      resolved = await resolveHanjinPayload({ mailboxAddresses, payload });
-    } catch (err) {
-      if (err.statusCode) {
-        return res.status(err.statusCode).json({
-          success: false,
-          message: err.message,
-        });
-      }
-      throw err;
-    }
-    void resolved;
+    // svcCatCd=S(자체출력) 주문은 한진 cancel-order API 미지원
+    // 운송장을 자체 폐기처리하므로 로컬 상태만 취소 처리
+    const { mailboxAddresses } = req.body || {};
 
     const list = resolveMailboxList(mailboxAddresses);
-    if (!list.length && !(payload && typeof payload === "object")) {
+    if (!list.length) {
       return res.status(400).json({
         success: false,
         message: "mailboxAddresses가 필요합니다.",
       });
-    }
-
-    const pathCandidates = buildHanjinPathCandidates(path);
-    const callHanjinWithFallback = buildHanjinOrderFallbackCaller({
-      pathCandidates,
-      logPrefix: "[hanjin][pickup-cancel]",
-    });
-
-    if (payload && typeof payload === "object") {
-      const data = await callHanjinWithFallback({ data: payload });
-      return res.status(200).json({ success: true, data });
     }
 
     const requestDocs = await Request.find({
@@ -1545,7 +1469,6 @@ export async function cancelHanjinPickup(req, res) {
         return executeSingleMailboxPickupCancel({
           mailbox,
           group,
-          callHanjinWithFallback,
         });
       }),
     );
