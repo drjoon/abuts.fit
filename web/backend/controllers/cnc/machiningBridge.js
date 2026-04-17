@@ -21,8 +21,6 @@ import {
 import { allocateVirtualMailboxAddress } from "../requests/mailbox.utils.js";
 
 const REQUEST_ID_REGEX = /(\d{8}-[A-Z0-9]{6,10})/i;
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 const STARTED_EMIT_TTL_MS = 30 * 1000;
 const startedEmitCache = new Map();
 const MACHINING_TICK_LOG_WINDOW_MS = 60 * 1000;
@@ -482,9 +480,8 @@ export async function triggerNextAutoMachiningAfterComplete({
   if (!mid) return;
 
   const startedAt = Date.now();
-  const settleDelayMs = 3000;
   console.log(
-    `[bridge:auto-next] complete received machine=${mid} completedRequestId=${String(completedRequestId || "").trim() || "null"} settleDelayMs=${settleDelayMs}`,
+    `[bridge:auto-next] complete received machine=${mid} completedRequestId=${String(completedRequestId || "").trim() || "null"}`,
   );
 
   try {
@@ -515,14 +512,6 @@ export async function triggerNextAutoMachiningAfterComplete({
       );
       return;
     }
-
-    console.log(
-      `[bridge:auto-next] settle delay start machine=${mid} delayMs=${settleDelayMs} elapsedMs=${Date.now() - startedAt}`,
-    );
-    await sleep(settleDelayMs);
-    console.log(
-      `[bridge:auto-next] settle delay done machine=${mid} delayMs=${settleDelayMs} elapsedMs=${Date.now() - startedAt}`,
-    );
 
     const pending = await Request.find({
       manufacturerStage: { $in: ["CAM", "가공"] },

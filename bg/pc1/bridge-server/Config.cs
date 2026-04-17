@@ -175,8 +175,8 @@ namespace HiLinkBridgeWebApi48
         public static int CncJobAssumeMinutes => GetInt("CNC_JOB_ASSUME_MINUTES", 0, 1, 24 * 60);
         // 가공 완료 후 다음 건 시작 전 최소 대기 시간 (초)
         // 이 시간 동안은 무조건 대기 (척 오픈 M코드, HOME 복귀 초기 처리)
-        // local.env: CNC_POST_COMPLETE_MIN_SETTLE_SECONDS=6 (기본 6초)
-        public static int CncPostCompleteMinSettleSeconds => GetInt("CNC_POST_COMPLETE_MIN_SETTLE_SECONDS", 6, 0, 300);
+        // local.env: CNC_POST_COMPLETE_MIN_SETTLE_SECONDS=2 (기본 2초)
+        public static int CncPostCompleteMinSettleSeconds => GetInt("CNC_POST_COMPLETE_MIN_SETTLE_SECONDS", 2, 0, 300);
         // 가공 완료 후 최대 대기 시간 (초)
         // 장비가 idle/alarm-free 상태가 안 되면 이 시간 후 강제로 다음 건 진행
         // local.env: CNC_POST_COMPLETE_MAX_SETTLE_SECONDS=60 (기본 60초)

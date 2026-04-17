@@ -278,6 +278,24 @@ const isDuplicateOrderError = (data) => {
   return code === "ERROR-03" || message.includes("주문번호(custOrdNo) 중복");
 };
 
+const assertHanjinOrderSuccess = (data) => {
+  const code = String(data?.resultCode || data?.result_code || "").trim();
+  if (code && code !== "OK" && !isDuplicateOrderError(data)) {
+    const message = String(
+      data?.resultMessage || data?.result_message || "한진 주문 전송 실패",
+    ).trim();
+    const err = Object.assign(
+      new Error(`[hanjin][insert-order] ${message} (${code})`),
+      {
+        statusCode: 502,
+        hanjinResultCode: code,
+        data,
+      },
+    );
+    throw err;
+  }
+};
+
 const buildCancelCaller = () => {
   const cancelPath = resolveHanjinPath(
     "HANJIN_PICKUP_CANCEL_PATH",
@@ -647,6 +665,7 @@ async function executeSingleMailboxPickup({
     });
 
     let data = await callHanjinWithFallback({ data: orderBody });
+    assertHanjinOrderSuccess(data);
     if (isDuplicateOrderError(data)) {
       return finalizeMailboxPickupResult({
         mailbox,
@@ -1267,6 +1286,42 @@ export async function printHanjinLabels(req, res) {
       cachedAddressListRowByAddress,
     });
 
+    // print 응답의 wbl_num을 DeliveryInfo에 저장 (pickup insert-order에서 wblNo로 사용)
+    if (Array.isArray(labelData?.address_list)) {
+      const wblNumByMailbox = new Map();
+      for (const row of labelData.address_list) {
+        const mailbox = String(row?.mailbox_code || row?.msg_key || "").trim();
+        const wblNum = String(row?.wbl_num || "").trim();
+        if (mailbox && wblNum) wblNumByMailbox.set(mailbox, wblNum);
+      }
+      if (wblNumByMailbox.size > 0) {
+        const printedAt = printedState?.printedAt || new Date();
+        for (const requestDoc of printRequests) {
+          const mailbox = String(requestDoc?.mailboxAddress || "").trim();
+          const wblNum = wblNumByMailbox.get(mailbox);
+          if (!wblNum) continue;
+          let deliveryInfo = requestDoc?.deliveryInfoRef
+            ? await DeliveryInfo.findById(requestDoc.deliveryInfoRef)
+            : null;
+          if (!deliveryInfo) {
+            deliveryInfo = await DeliveryInfo.create({
+              request: requestDoc._id,
+              trackingNumber: wblNum,
+              carrier: "hanjin",
+              shippedAt: printedAt,
+            });
+            await Request.updateOne(
+              { _id: requestDoc._id },
+              { $set: { deliveryInfoRef: deliveryInfo._id } },
+            );
+          } else if (!deliveryInfo.trackingNumber) {
+            deliveryInfo.trackingNumber = wblNum;
+            await deliveryInfo.save();
+          }
+        }
+      }
+    }
+
     await emitDeliveryUpdatedBatch(
       buildPrintedEventItems({
         requests: printRequests,
@@ -1565,7 +1620,44 @@ export async function requestHanjinPickupAndPrint(req, res) {
     const flowStartedAtMs = Date.now();
     const flowStartedAt = nowIso();
 
-    // 1단계: 택배 접수 (wblNo 획득)
+    // 1단계: 운송장 출력 (wblNo 발급)
+    const printStartedAtMs = Date.now();
+    const printStartedAt = nowIso();
+
+    const printReq = buildIntegratedPrintRequest({
+      req,
+      mailboxAddresses: printTargetMailboxAddresses,
+      wblPrintOptions: body.wblPrintOptions,
+    });
+    const selectedRequestsForPrint = await findIntegratedPrintRequests(
+      printTargetMailboxAddresses,
+    );
+    printReq.__resolvedHanjinPayload = {
+      mailboxAddresses: printTargetMailboxAddresses,
+      requests: Array.isArray(selectedRequestsForPrint)
+        ? selectedRequestsForPrint.filter((requestDoc) =>
+            printTargetMailboxAddresses.includes(
+              String(requestDoc?.mailboxAddress || "").trim(),
+            ),
+          )
+        : [],
+    };
+
+    const printStep = await executeIntegratedCapturedStep({
+      res,
+      controllerFn: printHanjinLabels,
+      reqLike: printReq,
+      fallbackMessage: "운송장 출력에 실패했습니다.",
+    });
+
+    if (!printStep.ok) {
+      return printStep.response;
+    }
+
+    const printFinishedAtMs = Date.now();
+    const printFinishedAt = nowIso();
+
+    // 2단계: 택배 접수 (print 후 발급된 wblNo 사용)
     const pickupStartedAtMs = Date.now();
     const pickupStartedAt = nowIso();
 
@@ -1605,43 +1697,6 @@ export async function requestHanjinPickupAndPrint(req, res) {
 
     const pickupFinishedAtMs = Date.now();
     const pickupFinishedAt = nowIso();
-
-    // 2단계: 운송장 출력 (wblNo 포함)
-    const printStartedAtMs = Date.now();
-    const printStartedAt = nowIso();
-
-    const printReq = buildIntegratedPrintRequest({
-      req,
-      mailboxAddresses: printTargetMailboxAddresses,
-      wblPrintOptions: body.wblPrintOptions,
-    });
-    const selectedRequestsForPrint = await findIntegratedPrintRequests(
-      printTargetMailboxAddresses,
-    );
-    printReq.__resolvedHanjinPayload = {
-      mailboxAddresses: printTargetMailboxAddresses,
-      requests: Array.isArray(selectedRequestsForPrint)
-        ? selectedRequestsForPrint.filter((requestDoc) =>
-            printTargetMailboxAddresses.includes(
-              String(requestDoc?.mailboxAddress || "").trim(),
-            ),
-          )
-        : [],
-    };
-
-    const printStep = await executeIntegratedCapturedStep({
-      res,
-      controllerFn: printHanjinLabels,
-      reqLike: printReq,
-      fallbackMessage: "운송장 출력에 실패했습니다.",
-    });
-
-    if (!printStep.ok) {
-      return printStep.response;
-    }
-
-    const printFinishedAtMs = Date.now();
-    const printFinishedAt = nowIso();
 
     const flowFinishedAtMs = Date.now();
     const flowFinishedAt = nowIso();
