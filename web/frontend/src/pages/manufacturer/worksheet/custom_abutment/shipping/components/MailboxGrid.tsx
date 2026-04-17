@@ -536,13 +536,23 @@ export const MailboxGrid = ({
       return;
     }
 
+    // 현재 화면에 표시된 requests의 shippingPackageId를 함께 전송하여
+    // 날짜별 박스(shippingPackageId)를 구분 - 어제 미처리 건과 오늘 건 혼합 방지
+    const shippingPackageIds = Array.from(
+      new Set(
+        requests
+          .map((r) => String(r.shippingPackageId || "").trim())
+          .filter(Boolean),
+      ),
+    );
+
     setIsRequestingPickup(true);
     setActiveHeaderAction("mock");
     try {
       const response = await request<any>({
         path: "/api/requests/shipping/hanjin/mock-pickup-complete",
         method: "POST",
-        jsonBody: { mailboxAddresses },
+        jsonBody: { mailboxAddresses, shippingPackageIds },
       });
       const body = response.data as any;
       if (!response.ok || !body?.success) {

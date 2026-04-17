@@ -78,7 +78,7 @@ function resolveMailboxTrackingNumber(group = [], prefix, now) {
  */
 export async function mockHanjinPickupCompleted(req, res) {
   try {
-    const { mailboxAddresses = [] } = req.body || {};
+    const { mailboxAddresses = [], shippingPackageIds = [] } = req.body || {};
 
     const addressList = Array.isArray(mailboxAddresses)
       ? mailboxAddresses
@@ -93,10 +93,23 @@ export async function mockHanjinPickupCompleted(req, res) {
       });
     }
 
-    const targetRequests = await Request.find({
+    // shippingPackageId가 있으면 해당 ID만 처리하여 날짜별 박스를 구분한다.
+    // 같은 mailboxAddress를 어제/오늘 재사용하는 경우 어제 미처리 건과 오늘 건이 혼합되는 것을 방지.
+    const packageIdList = Array.isArray(shippingPackageIds)
+      ? shippingPackageIds
+          .map((value) => String(value || "").trim())
+          .filter(Boolean)
+      : [];
+
+    const dbQuery = {
       mailboxAddress: { $in: addressList },
       manufacturerStage: "포장.발송",
-    })
+    };
+    if (packageIdList.length) {
+      dbQuery.shippingPackageId = { $in: packageIdList };
+    }
+
+    const targetRequests = await Request.find(dbQuery)
       .populate("requestor", "name business phoneNumber address")
       .populate("businessAnchorId", "name metadata")
       .populate("deliveryInfoRef");

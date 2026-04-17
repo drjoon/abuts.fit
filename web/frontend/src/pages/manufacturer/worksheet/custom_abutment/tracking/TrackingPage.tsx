@@ -710,13 +710,25 @@ export const TrackingInquiryPage = () => {
     });
 
     // 우편함 단위로 그룹핑
+    // 집하 단위 SSOT: trackingNumber가 있으면 같은 송장 = 같은 집하 박스
+    // trackingNumber 없는 경우: mailboxAddress + pickedUpAt 날짜(KST) 조합으로 묶어
+    //   같은 날 같이 집하된 건들을 하나의 그룹으로 표시
     const boxMap = new Map<string, ManufacturerRequest[]>();
     for (const r of only) {
-      const shippingPackageId = String(r?.shippingPackageId || "").trim();
+      const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+      const trackingNumber = String(di?.trackingNumber || "").trim();
       const mailboxAddress = String(r?.mailboxAddress || "").trim();
+      const pickedUpAt = String(di?.pickedUpAt || "").trim();
+      const pickedUpYmd = pickedUpAt
+        ? toKstYmd(new Date(pickedUpAt)) || pickedUpAt.slice(0, 10)
+        : "";
       const fallbackRequestId = String(r?.requestId || r?._id || "").trim();
-      const boxKey =
-        shippingPackageId || mailboxAddress || `request:${fallbackRequestId}`;
+      // trackingNumber가 있으면 송장 기준, 없으면 우편함+집하날짜, 그것도 없으면 개별
+      const boxKey = trackingNumber
+        ? `tn:${trackingNumber}`
+        : mailboxAddress && pickedUpYmd
+          ? `mb:${mailboxAddress}:${pickedUpYmd}`
+          : mailboxAddress || `request:${fallbackRequestId}`;
       if (!boxMap.has(boxKey)) {
         boxMap.set(boxKey, []);
       }
