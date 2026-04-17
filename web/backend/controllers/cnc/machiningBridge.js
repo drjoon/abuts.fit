@@ -160,9 +160,7 @@ export async function getCompletedMachiningRecords(req, res) {
         .filter(Boolean);
       if (requestIds.length > 0) {
         const requests = await Request.find({ requestId: { $in: requestIds } })
-          .select(
-            "requestId clinicName patientName caseInfos productionSchedule",
-          )
+          .select("requestId caseInfos lotNumber productionSchedule")
           .lean();
         for (const r of requests) {
           const rid = String(r?.requestId || "").trim();
@@ -170,21 +168,11 @@ export async function getCompletedMachiningRecords(req, res) {
           const rollbackCount = Number(
             r?.productionSchedule?.machiningProgress?.rollbackCount ?? 0,
           );
-          const tooth = (() => {
-            const infos = Array.isArray(r?.caseInfos) ? r.caseInfos : [];
-            const teeth = infos
-              .map((c) => String(c?.tooth || ""))
-              .filter(Boolean);
-            return teeth.join(", ");
-          })();
-          const lotNumber = (() => {
-            const infos = Array.isArray(r?.caseInfos) ? r.caseInfos : [];
-            const lot = infos.find((c) => c?.lotNumber?.value);
-            return lot?.lotNumber || null;
-          })();
+          const tooth = String(r?.caseInfos?.tooth || "").trim();
+          const lotNumber = r?.lotNumber?.value ? r.lotNumber : null;
           requestInfoMap.set(rid, {
-            clinicName: String(r?.clinicName || "").trim(),
-            patientName: String(r?.patientName || "").trim(),
+            clinicName: String(r?.caseInfos?.clinicName || "").trim(),
+            patientName: String(r?.caseInfos?.patientName || "").trim(),
             tooth,
             lotNumber,
             requestMongoId: String(r?._id || "").trim(),
@@ -411,9 +399,7 @@ export async function getLastCompletedMachiningMap(req, res) {
       }
       if (requestIds.length > 0) {
         const requests = await Request.find({ requestId: { $in: requestIds } })
-          .select(
-            "requestId clinicName patientName caseInfos productionSchedule rollbackCount",
-          )
+          .select("requestId caseInfos lotNumber productionSchedule")
           .lean();
         for (const r of requests) {
           const rid = String(r?.requestId || "").trim();
@@ -421,21 +407,11 @@ export async function getLastCompletedMachiningMap(req, res) {
           const rollbackCount = Number(
             r?.productionSchedule?.machiningProgress?.rollbackCount ?? 0,
           );
-          const tooth = (() => {
-            const infos = Array.isArray(r?.caseInfos) ? r.caseInfos : [];
-            const teeth = infos
-              .map((c) => String(c?.tooth || ""))
-              .filter(Boolean);
-            return teeth.join(", ");
-          })();
-          const lotNumber = (() => {
-            const infos = Array.isArray(r?.caseInfos) ? r.caseInfos : [];
-            const lot = infos.find((c) => c?.lotNumber?.value);
-            return lot?.lotNumber || null;
-          })();
+          const tooth = String(r?.caseInfos?.tooth || "").trim();
+          const lotNumber = r?.lotNumber?.value ? r.lotNumber : null;
           requestInfoMap.set(rid, {
-            clinicName: String(r?.clinicName || "").trim(),
-            patientName: String(r?.patientName || "").trim(),
+            clinicName: String(r?.caseInfos?.clinicName || "").trim(),
+            patientName: String(r?.caseInfos?.patientName || "").trim(),
             tooth,
             lotNumber,
             requestMongoId: String(r?._id || "").trim(),
@@ -568,32 +544,8 @@ export async function triggerNextAutoMachiningAfterComplete({
 
     if (!pick) {
       console.log(
-        `[bridge:auto-next] no pending jobs found for ${mid}, turning off auto-machining.`,
+        `[bridge:auto-next] no pending jobs found for ${mid}, staying idle.`,
       );
-      // No pending jobs, turn off auto-machining
-      const updatedMachine = await Machine.findOneAndUpdate(
-        { $or: [{ uid: mid }, { name: mid }] },
-        { $set: { allowAutoMachining: false } },
-        { new: true },
-      ).lean();
-
-      if (updatedMachine) {
-        try {
-          getIO().emit("cnc-machine-settings-changed", {
-            machineId: updatedMachine.uid,
-            settings: {
-              allowAutoMachining: false,
-              allowJobStart: updatedMachine.allowJobStart,
-              allowProgramDelete: updatedMachine.allowProgramDelete,
-              allowRequestAssign: updatedMachine.allowRequestAssign,
-            },
-          });
-          // bridge-server 캐시 무효화 (연속 가공 시 즉시 반영)
-          invalidateBridgeFlagsCache(updatedMachine.uid).catch(() => {});
-        } catch {
-          // ignore
-        }
-      }
       return;
     }
 
@@ -1675,45 +1627,6 @@ export async function recordMachiningCompleteForBridge(req, res) {
       });
     } catch {
       // ignore
-    }
-
-    // 완료 이후 대기 중인 가공 의뢰가 없으면 자동 가공 OFF
-    try {
-      const pendingCount = await Request.countDocuments({
-        manufacturerStage: { $in: ["CAM", "가공"] },
-        "productionSchedule.assignedMachine": mid,
-      });
-
-      if (pendingCount === 0) {
-        const m = await Machine.findOneAndUpdate(
-          { $or: [{ uid: mid }, { name: mid }] },
-          { $set: { allowAutoMachining: false } },
-          { new: true },
-        ).lean();
-
-        if (m) {
-          try {
-            getIO().emit("cnc-machine-settings-changed", {
-              machineId: m.uid,
-              settings: {
-                allowAutoMachining: false,
-                allowJobStart: m.allowJobStart,
-                allowProgramDelete: m.allowProgramDelete,
-                allowRequestAssign: m.allowRequestAssign,
-              },
-            });
-            console.log(
-              `[bridge:machining:complete] auto-machining turned off for ${mid} (queue empty)`,
-            );
-          } catch {
-            // ignore
-          }
-        }
-      }
-    } catch (e) {
-      console.warn(
-        `[bridge:machining:complete] failed to check pending queue for auto-machining off: ${e.message}`,
-      );
     }
 
     return res.status(200).json({ success: true });

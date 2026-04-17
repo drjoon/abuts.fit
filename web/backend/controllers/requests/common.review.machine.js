@@ -230,6 +230,9 @@ export async function chooseMachineForCamMachining({
         machineId,
         availableDia,
         lastAssignmentAt,
+        allowedDiameterGroups: Array.isArray(m.maxModelDiameterGroups)
+          ? m.maxModelDiameterGroups
+          : [],
       };
     })
     .filter(Boolean);
@@ -255,13 +258,26 @@ export async function chooseMachineForCamMachining({
     session,
   );
 
-  const ceilCandidates = candidatesWithDia.filter(
-    (c) => c.availableDia >= targetDiameter,
-  );
+  const targetDiameterGroup = toDiameterGroup(targetDiameter);
+  const ceilCandidates = candidatesWithDia.filter((c) => {
+    if (c.availableDia < targetDiameter) return false;
+    if (
+      c.allowedDiameterGroups.length > 0 &&
+      targetDiameterGroup &&
+      !c.allowedDiameterGroups.includes(targetDiameterGroup)
+    )
+      return false;
+    return true;
+  });
   console.log("[CAM-CHOOSE] ceilCandidates", {
     requestId: request?.requestId,
+    targetDiameterGroup,
     count: ceilCandidates.length,
-    list: ceilCandidates.map((c) => ({ m: c.machineId, d: c.availableDia })),
+    list: ceilCandidates.map((c) => ({
+      m: c.machineId,
+      d: c.availableDia,
+      allowed: c.allowedDiameterGroups,
+    })),
   });
   const hasCeil = ceilCandidates.length > 0;
   const pool = hasCeil

@@ -1025,16 +1025,10 @@ return;
 }
 if (!flagsBeforeStart.AllowAutoMachining)
 {
-Console.WriteLine("[CncMachining] idle preload blocked machine={0} jobId={1} reason=allowAutoMachining=false", machineId, nextJob.id);
-lock (StateLock)
-{
-state.PendingConsumeJobId = nextJob.id;
-state.ConsumeFailCount = 0;
-state.NextConsumeAttemptUtc = DateTime.MinValue;
-state.LastMachiningFailJobId = nextJob.id;
-}
-_ = CncJobQueue.TryRemove(machineId, nextJob.id);
-_ = Task.Run(() => NotifyMachiningFailed(nextJob, machineId, "allowAutoMachining=false", null));
+// allowAutoMachining=false이면 job을 큐에 그대로 보존하고 대기한다.
+// 백엔드가 job을 push한 시점에는 가공 의사가 있으므로 즉시 fail 처리하면 안 된다.
+// 플래그가 다시 true가 되면 다음 tick에서 자동으로 시작된다.
+Console.WriteLine("[CncMachining] idle preload waiting machine={0} jobId={1} reason=allowAutoMachining=false (will retry next tick)", machineId, nextJob.id);
 return;
 }
 var now = DateTime.UtcNow;
