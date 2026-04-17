@@ -27,6 +27,7 @@ export type CompletedMachiningRecordsModalProps = {
   machineId: string;
   title?: string;
   pageSize?: number;
+  includeRequests?: boolean;
   onRollbackRequest?: (requestId: string, machineId: string) => void;
 };
 
@@ -36,6 +37,7 @@ export const CompletedMachiningRecordsModal = ({
   machineId,
   title,
   pageSize = 5,
+  includeRequests = false,
   onRollbackRequest,
 }: CompletedMachiningRecordsModalProps) => {
   const { token } = useAuthStore();
@@ -95,6 +97,7 @@ export const CompletedMachiningRecordsModal = ({
         url.searchParams.set("machineId", mid);
         url.searchParams.set("limit", String(pageSize));
         if (nextCursor) url.searchParams.set("cursor", nextCursor);
+        if (includeRequests) url.searchParams.set("includeRequests", "true");
 
         const controller = new AbortController();
         const timeoutMs = 8000;
@@ -160,7 +163,7 @@ export const CompletedMachiningRecordsModal = ({
         inFlightRef.current = false;
       }
     },
-    [machineId, pageSize, token],
+    [machineId, pageSize, token, includeRequests],
   );
 
   useEffect(() => {

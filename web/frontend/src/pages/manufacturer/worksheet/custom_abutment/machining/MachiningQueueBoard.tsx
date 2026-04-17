@@ -665,6 +665,7 @@ export const MachiningQueueBoard = ({
         machineId={completedModalMachineId}
         title={completedModalTitle}
         pageSize={5}
+        includeRequests={true}
         onRollbackRequest={(requestId, machineId) => {
           void rollbackRequestInQueue(machineId, requestId);
         }}

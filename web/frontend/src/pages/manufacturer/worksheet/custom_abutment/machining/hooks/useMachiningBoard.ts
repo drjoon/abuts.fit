@@ -613,9 +613,12 @@ export const useMachiningBoard = ({
   const refreshLastCompletedFromServer = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await fetch("/api/cnc-machines/machining/last-completed", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(
+        "/api/cnc-machines/machining/last-completed?includeRequests=true",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
       const body: any = await res.json().catch(() => ({}));
       if (!res.ok || body?.success === false) return;
       const map =

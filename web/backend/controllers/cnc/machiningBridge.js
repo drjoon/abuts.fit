@@ -93,6 +93,9 @@ export async function getCompletedMachiningRecords(req, res) {
       ? Math.min(50, Math.max(1, limitRaw))
       : 5;
     const cursor = String(req.query.cursor || "").trim();
+    // includeRequests=true: 워크시트에서 의뢰 자동가공 완료 건도 포함
+    // includeRequests=false(기본): 장비 페이지에서 수동 업로드 완료만 표시
+    const includeRequests = req.query.includeRequests === "true";
 
     if (!machineId) {
       return res.status(400).json({
@@ -101,12 +104,10 @@ export async function getCompletedMachiningRecords(req, res) {
       });
     }
 
-    // man(수동 업로드)만 표시: requestId가 없는 레코드만 조회
-    // lab(의뢰 자동가공, requestId 있음)은 워크시트 Completed에서 별도 처리
     const query = {
       machineId,
       status: "COMPLETED",
-      requestId: { $in: [null, ""] },
+      ...(includeRequests ? {} : { requestId: { $in: [null, ""] } }),
     };
 
     if (cursor) {
@@ -151,15 +152,60 @@ export async function getCompletedMachiningRecords(req, res) {
       nextCursor = `${new Date(lastRec.completedAt).toISOString()}|${String(lastRec._id)}`;
     }
 
+    // includeRequests=true일 때 requestId가 있는 레코드의 Request 정보를 일괄 조회
+    let requestInfoMap = new Map();
+    if (includeRequests) {
+      const requestIds = validRecs
+        .map((r) => String(r?.requestId || "").trim())
+        .filter(Boolean);
+      if (requestIds.length > 0) {
+        const requests = await Request.find({ requestId: { $in: requestIds } })
+          .select(
+            "requestId clinicName patientName caseInfos productionSchedule",
+          )
+          .lean();
+        for (const r of requests) {
+          const rid = String(r?.requestId || "").trim();
+          if (!rid) continue;
+          const rollbackCount = Number(
+            r?.productionSchedule?.machiningProgress?.rollbackCount ?? 0,
+          );
+          const tooth = (() => {
+            const infos = Array.isArray(r?.caseInfos) ? r.caseInfos : [];
+            const teeth = infos
+              .map((c) => String(c?.tooth || ""))
+              .filter(Boolean);
+            return teeth.join(", ");
+          })();
+          const lotNumber = (() => {
+            const infos = Array.isArray(r?.caseInfos) ? r.caseInfos : [];
+            const lot = infos.find((c) => c?.lotNumber?.value);
+            return lot?.lotNumber || null;
+          })();
+          requestInfoMap.set(rid, {
+            clinicName: String(r?.clinicName || "").trim(),
+            patientName: String(r?.patientName || "").trim(),
+            tooth,
+            lotNumber,
+            requestMongoId: String(r?._id || "").trim(),
+            rollbackCount,
+          });
+        }
+      }
+    }
+
     const items = validRecs.map((r) => {
       const displayLabel =
         String(
           r?.displayLabel || r?.originalFileName || r?.fileName || "",
         ).trim() || null;
+      const recRequestId = String(r?.requestId || "").trim() || null;
+      const reqInfo = recRequestId ? requestInfoMap.get(recRequestId) : null;
       return {
         id: String(r?._id || ""),
         machineId: String(r?.machineId || "").trim(),
-        requestId: null,
+        requestId: recRequestId,
+        requestMongoId: reqInfo?.requestMongoId || null,
         jobId: r?.jobId != null ? String(r.jobId) : null,
         status: String(r?.status || "").trim(),
         completedAt: r?.completedAt
@@ -172,11 +218,11 @@ export async function getCompletedMachiningRecords(req, res) {
               ? Math.floor(r.elapsedSeconds)
               : 0,
         displayLabel,
-        lotNumber: r?.lotNumber || null,
-        clinicName: r?.clinicName || null,
-        patientName: r?.patientName || null,
-        tooth: r?.tooth || null,
-        rollbackCount: 0,
+        lotNumber: reqInfo?.lotNumber || null,
+        clinicName: reqInfo?.clinicName || null,
+        patientName: reqInfo?.patientName || null,
+        tooth: reqInfo?.tooth || null,
+        rollbackCount: reqInfo?.rollbackCount ?? 0,
       };
     });
 
@@ -323,6 +369,10 @@ async function fetchMachineAlarmsFromBridge(machineId) {
 
 export async function getLastCompletedMachiningMap(req, res) {
   try {
+    // includeRequests=true: 워크시트에서 의뢰 자동가공 완료 건도 포함
+    // includeRequests=false(기본): 장비 페이지에서 수동 업로드 완료만 표시
+    const includeRequests = req.query.includeRequests === "true";
+
     const activeMachines = await CncMachine.find({ status: "active" })
       .select("machineId")
       .lean();
@@ -334,12 +384,10 @@ export async function getLastCompletedMachiningMap(req, res) {
       return res.status(200).json({ success: true, data: {} });
     }
 
-    // man(수동 업로드)만 표시: requestId가 없는 레코드만 조회
-    // lab(의뢰 자동가공, requestId 있음)은 워크시트 Completed에서 별도 처리
     const recs = await MachiningRecord.find({
       machineId: { $in: machineIds },
       status: "COMPLETED",
-      requestId: { $in: [null, ""] },
+      ...(includeRequests ? {} : { requestId: { $in: [null, ""] } }),
     })
       .sort({ completedAt: -1, updatedAt: -1, createdAt: -1 })
       .limit(500)
@@ -353,6 +401,50 @@ export async function getLastCompletedMachiningMap(req, res) {
       byMachine.set(mid, r);
     }
 
+    // includeRequests=true일 때 requestId가 있는 레코드의 Request 정보를 일괄 조회
+    let requestInfoMap = new Map();
+    if (includeRequests) {
+      const requestIds = [];
+      for (const [, rec] of byMachine) {
+        const rid = String(rec?.requestId || "").trim();
+        if (rid) requestIds.push(rid);
+      }
+      if (requestIds.length > 0) {
+        const requests = await Request.find({ requestId: { $in: requestIds } })
+          .select(
+            "requestId clinicName patientName caseInfos productionSchedule rollbackCount",
+          )
+          .lean();
+        for (const r of requests) {
+          const rid = String(r?.requestId || "").trim();
+          if (!rid) continue;
+          const rollbackCount = Number(
+            r?.productionSchedule?.machiningProgress?.rollbackCount ?? 0,
+          );
+          const tooth = (() => {
+            const infos = Array.isArray(r?.caseInfos) ? r.caseInfos : [];
+            const teeth = infos
+              .map((c) => String(c?.tooth || ""))
+              .filter(Boolean);
+            return teeth.join(", ");
+          })();
+          const lotNumber = (() => {
+            const infos = Array.isArray(r?.caseInfos) ? r.caseInfos : [];
+            const lot = infos.find((c) => c?.lotNumber?.value);
+            return lot?.lotNumber || null;
+          })();
+          requestInfoMap.set(rid, {
+            clinicName: String(r?.clinicName || "").trim(),
+            patientName: String(r?.patientName || "").trim(),
+            tooth,
+            lotNumber,
+            requestMongoId: String(r?._id || "").trim(),
+            rollbackCount,
+          });
+        }
+      }
+    }
+
     const data = {};
     for (const mid of machineIds) {
       const rec = byMachine.get(mid) || null;
@@ -362,10 +454,12 @@ export async function getLastCompletedMachiningMap(req, res) {
         String(
           rec?.displayLabel || rec?.originalFileName || rec?.fileName || "",
         ).trim() || null;
-      const clinicName = String(rec?.clinicName || "").trim();
-      const patientName = String(rec?.patientName || "").trim();
-      const tooth = String(rec?.tooth || "").trim();
-      const lotValue = "";
+      const recRequestId = String(rec?.requestId || "").trim() || null;
+      const reqInfo = recRequestId ? requestInfoMap.get(recRequestId) : null;
+      const clinicName = reqInfo ? reqInfo.clinicName : "";
+      const patientName = reqInfo ? reqInfo.patientName : "";
+      const tooth = reqInfo ? reqInfo.tooth : "";
+      const lotNumber = reqInfo ? reqInfo.lotNumber : { value: undefined };
       const completedAt = rec?.completedAt
         ? new Date(rec.completedAt).toISOString()
         : rec?.updatedAt
@@ -381,16 +475,14 @@ export async function getLastCompletedMachiningMap(req, res) {
       data[mid] = {
         machineId: mid,
         jobId: rec?.jobId != null ? String(rec.jobId) : null,
-        requestId: null,
-        requestMongoId: null,
+        requestId: recRequestId,
+        requestMongoId: reqInfo?.requestMongoId || null,
         displayLabel: displayLabel || null,
         clinicName,
         patientName,
         tooth,
-        rollbackCount: 0,
-        lotNumber: {
-          value: lotValue || undefined,
-        },
+        rollbackCount: reqInfo?.rollbackCount ?? 0,
+        lotNumber: lotNumber || { value: undefined },
         completedAt,
         durationSeconds,
       };
