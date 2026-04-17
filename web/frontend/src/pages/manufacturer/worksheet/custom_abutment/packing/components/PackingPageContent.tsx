@@ -99,6 +99,7 @@ export const PackingPageContent = ({
     currentStageOrder,
     diameterQueueForPacking,
     visibleCount,
+    serverTotal,
     sentinelRef,
     userScrolledRef,
   } = usePackingWorksheetData({
@@ -734,7 +735,7 @@ export const PackingPageContent = ({
       <div className="flex-1">
         {showQueueBar && (
           <WorksheetQueueSummary
-            total={diameterQueueForPacking.total}
+            total={serverTotal ?? diameterQueueForPacking.total}
             labels={diameterQueueForPacking.labels}
             counts={diameterQueueForPacking.counts}
           />

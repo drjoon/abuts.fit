@@ -38,6 +38,7 @@ export const useRequestPageState = () => {
     {},
   );
   const [visibleCount, setVisibleCount] = useState(12);
+  const [serverTotal, setServerTotal] = useState<number | null>(null);
   const [selectedPackingRequestIds, setSelectedPackingRequestIds] = useState<
     string[]
   >([]);
@@ -113,6 +114,8 @@ export const useRequestPageState = () => {
     setUploadProgress,
     visibleCount,
     setVisibleCount,
+    serverTotal,
+    setServerTotal,
     selectedPackingRequestIds,
     setSelectedPackingRequestIds,
     visibleCountRef,

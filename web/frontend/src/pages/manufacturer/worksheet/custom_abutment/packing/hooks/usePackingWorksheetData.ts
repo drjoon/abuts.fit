@@ -25,6 +25,7 @@ export const usePackingWorksheetData = ({
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [visibleCount, setVisibleCount] = useState(12);
+  const [serverTotal, setServerTotal] = useState<number | null>(null);
   const PAGE_LIMIT = 12;
   const pageRef = useRef(1);
   const hasMoreRef = useRef(true);
@@ -52,7 +53,7 @@ export const usePackingWorksheetData = ({
           url.searchParams.set("page", String(pageRef.current));
           url.searchParams.set("limit", String(PAGE_LIMIT));
           url.searchParams.set("view", "worksheet");
-          url.searchParams.set("includeTotal", "0");
+          url.searchParams.set("includeTotal", append ? "0" : "1");
           if (stageFilterForTab.length === 1) {
             url.searchParams.set("manufacturerStage", stageFilterForTab[0]);
           } else {
@@ -85,6 +86,12 @@ export const usePackingWorksheetData = ({
             : [];
 
         if (data?.success && Array.isArray(list)) {
+          if (!append) {
+            const total = data?.data?.pagination?.total;
+            if (typeof total === "number") {
+              setServerTotal(total);
+            }
+          }
           if (append) {
             setRequests((prev) => {
               const map = new Map<string, any>();
@@ -154,6 +161,11 @@ export const usePackingWorksheetData = ({
   useEffect(() => {
     void fetchRequests();
   }, [fetchRequests]);
+
+  useEffect(() => {
+    setVisibleCount(12);
+    setServerTotal(null);
+  }, [showCompleted, worksheetSearch]);
 
   const searchLower = worksheetSearch.toLowerCase();
   const currentStageForTab = "세척.패킹";
@@ -295,6 +307,7 @@ export const usePackingWorksheetData = ({
     diameterQueueForPacking,
     visibleCount,
     setVisibleCount,
+    serverTotal,
     sentinelRef,
     hasMoreRef,
     pageRef,

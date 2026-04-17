@@ -128,7 +128,7 @@ export const RequestPage = ({
           if (tabStage === "shipping") {
             url.searchParams.set("worksheetProfile", "shipping");
           }
-          url.searchParams.set("includeTotal", "0");
+          url.searchParams.set("includeTotal", append ? "0" : "1");
           if (tabStage === "shipping" || tabStage === "tracking") {
             url.searchParams.set("includeDelivery", "1");
           }
@@ -168,6 +168,12 @@ export const RequestPage = ({
             : [];
 
         if (data?.success && Array.isArray(list)) {
+          if (!append) {
+            const total = data?.data?.pagination?.total;
+            if (typeof total === "number") {
+              pageState.setServerTotal(total);
+            }
+          }
           if (append) {
             pageState.setRequests((prev) => {
               const map = new Map<string, any>();
@@ -548,10 +554,21 @@ export const RequestPage = ({
   // handleOpenNextRequest 제거: 승인/롤백 후 다음 의뢰를 자동으로 열지 않는다.
   // 작업자가 직접 다음 의뢰 카드를 선택하도록 유도한다. (백엔드 큐 과부하 방지)
 
+  const setVisibleCount = pageState.setVisibleCount;
+  const visibleCountRef = pageState.visibleCountRef;
+  const setServerTotal = pageState.setServerTotal;
   useEffect(() => {
-    pageState.visibleCountRef.current = 12;
-    pageState.setVisibleCount(12);
-  }, [worksheetSearch, showCompleted, tabStage, pageState]);
+    visibleCountRef.current = 12;
+    setVisibleCount(12);
+    setServerTotal(null);
+  }, [
+    worksheetSearch,
+    showCompleted,
+    tabStage,
+    setVisibleCount,
+    visibleCountRef,
+    setServerTotal,
+  ]);
 
   useInfiniteScroll(
     pageState.sentinelRef,
@@ -625,7 +642,7 @@ export const RequestPage = ({
         )}
         {showQueueBar && (
           <WorksheetQueueSummary
-            total={diameterQueueForReceive.total}
+            total={pageState.serverTotal ?? diameterQueueForReceive.total}
             labels={diameterQueueForReceive.labels}
             counts={diameterQueueForReceive.counts}
           />
