@@ -1,5 +1,6 @@
 import CreditLedger from "../../models/creditLedger.model.js";
 import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
+import AdminCreditLedger from "../../models/adminCreditLedger.model.js";
 import BonusGrant from "../../models/bonusGrant.model.js";
 import ChargeOrder from "../../models/chargeOrder.model.js";
 import BankTransaction from "../../models/bankTransaction.model.js";
@@ -703,8 +704,16 @@ export async function adminCreateSalesmanPayout(req, res) {
 
 export async function adminGetCreditStats(req, res) {
   try {
+    const totalOrgs = await BusinessAnchor.countDocuments({
+      businessType: "requestor",
+    });
+
+    // requestor 타입 BusinessAnchor ID 목록 조회 (의뢰자 전용 집계 필터)
+    const requestorAnchorIds = await BusinessAnchor.distinct("_id", {
+      businessType: "requestor",
+    });
+
     const [
-      totalOrgs,
       totalChargeOrders,
       totalBankTransactions,
       pendingChargeOrders,
@@ -712,25 +721,48 @@ export async function adminGetCreditStats(req, res) {
       newBankTransactions,
       matchedBankTransactions,
     ] = await Promise.all([
-      BusinessAnchor.countDocuments({ businessType: "requestor" }),
-      ChargeOrder.countDocuments(),
+      ChargeOrder.countDocuments({
+        businessAnchorId: { $in: requestorAnchorIds },
+      }),
       BankTransaction.countDocuments(),
-      ChargeOrder.countDocuments({ status: "PENDING" }),
-      ChargeOrder.countDocuments({ status: "MATCHED" }),
+      ChargeOrder.countDocuments({
+        businessAnchorId: { $in: requestorAnchorIds },
+        status: "PENDING",
+      }),
+      ChargeOrder.countDocuments({
+        businessAnchorId: { $in: requestorAnchorIds },
+        status: "MATCHED",
+      }),
       BankTransaction.countDocuments({ status: "NEW" }),
       BankTransaction.countDocuments({ status: "MATCHED" }),
     ]);
 
-    // 모든 CreditLedger 집계를 하나의 쿼리로 통합
+    // 의뢰자 CreditLedger만 집계
     const [creditSummary] = await Promise.all([
       CreditLedger.aggregate([
         {
+          $match: {
+            businessAnchorId: { $in: requestorAnchorIds },
+          },
+        },
+        {
           $group: {
             _id: null,
+            // 유료 크레딧 충전 (CHARGE만 - adminGetBusinessCredits와 동일한 방식)
             chargedPaid: {
               $sum: {
                 $cond: [
-                  { $in: ["$type", ["CHARGE", "REFUND"]] },
+                  { $eq: ["$type", "CHARGE"] },
+                  { $max: [{ $abs: "$amount" }, 0] },
+                  0,
+                ],
+              },
+            },
+            // REFUND: 소비된 금액을 돌려주는 것이므로 잔액 계산 시 spentPaidSum에서 차감
+            refundSum: {
+              $sum: {
+                $cond: [
+                  { $eq: ["$type", "REFUND"] },
                   { $max: [{ $abs: "$amount" }, 0] },
                   0,
                 ],
@@ -819,8 +851,11 @@ export async function adminGetCreditStats(req, res) {
     const totalSpentBonusShippingAmount = Number(
       summary.spentBonusShippingSum || 0,
     );
+    // REFUND는 소비를 되돌리는 것이므로 순소비에서 차감
+    const refundSum = Number(summary.refundSum || 0);
+    const netSpentPaidAmount = Math.max(0, totalSpentPaidAmount - refundSum);
     const totalSpent =
-      totalSpentPaidAmount +
+      netSpentPaidAmount +
       totalSpentBonusRequestAmount +
       totalSpentBonusShippingAmount;
 
@@ -836,7 +871,7 @@ export async function adminGetCreditStats(req, res) {
 
     const totalPaidCredit = Math.max(
       0,
-      chargedPaid + adjustSum - totalSpentPaidAmount,
+      chargedPaid + adjustSum - netSpentPaidAmount,
     );
     const totalBonusRequestCredit = Math.max(
       0,
@@ -862,7 +897,7 @@ export async function adminGetCreditStats(req, res) {
         totalBonus: Math.max(0, Math.round(totalBonus)),
         totalBonusRequest: Math.max(0, Math.round(totalBonusRequest)),
         totalBonusShipping: Math.max(0, Math.round(totalBonusShipping)),
-        totalSpentPaidAmount: Math.max(0, Math.round(totalSpentPaidAmount)),
+        totalSpentPaidAmount: Math.max(0, Math.round(netSpentPaidAmount)),
         totalSpentBonusRequestAmount: Math.max(
           0,
           Math.round(totalSpentBonusRequestAmount),
@@ -1990,6 +2025,241 @@ export async function adminGetBusinessCreditDetail(req, res) {
     return res.status(500).json({
       success: false,
       message: "사업자 크레딧 상세 조회에 실패했습니다.",
+    });
+  }
+}
+
+export async function adminGetAdminCredits(req, res) {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const skip = Math.max(Number(req.query.skip) || 0, 0);
+
+    // 관리자 사용자 목록 조회
+    const total = await User.countDocuments({ role: "admin" });
+
+    const admins = await User.find({ role: "admin" })
+      .select({
+        _id: 1,
+        name: 1,
+        email: 1,
+        active: 1,
+        createdAt: 1,
+      })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const adminIds = admins.map((admin) => admin._id);
+
+    // 관리자별 레저 집계
+    const ledgerAggregations = await Promise.all(
+      adminIds.map((adminId) =>
+        AdminCreditLedger.aggregate([
+          { $match: { adminUserId: adminId } },
+          {
+            $group: {
+              _id: "$type",
+              total: { $sum: "$amount" },
+            },
+          },
+        ]),
+      ),
+    );
+
+    // 결과 조합
+    const results = admins.map((admin, index) => {
+      const ledgerRows = ledgerAggregations[index] || [];
+      let earnedAmount = 0;
+      let paidOutAmount = 0;
+      let adjustedAmount = 0;
+
+      for (const row of ledgerRows) {
+        const type = String(row._id || "");
+        const total = Number(row.total || 0);
+        if (type === "EARN") earnedAmount += total;
+        else if (type === "PAYOUT") paidOutAmount += total;
+        else if (type === "ADJUST") adjustedAmount += total;
+      }
+
+      const balanceAmount = earnedAmount - paidOutAmount + adjustedAmount;
+
+      return {
+        adminUserId: admin._id,
+        name: admin.name,
+        email: admin.email,
+        active: admin.active,
+        createdAt: admin.createdAt,
+        wallet: {
+          earnedAmount,
+          paidOutAmount,
+          adjustedAmount,
+          balanceAmount,
+        },
+      };
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        items: results,
+        total,
+        skip,
+        limit,
+      },
+    });
+  } catch (error) {
+    console.error("adminGetAdminCredits error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "관리자 크레딧 조회에 실패했습니다.",
+    });
+  }
+}
+
+export async function adminGetAdminLedger(req, res) {
+  try {
+    const adminIdRaw = String(req.params.id || "");
+    if (!Types.ObjectId.isValid(adminIdRaw)) {
+      return res.status(400).json({
+        success: false,
+        message: "관리자 ID가 올바르지 않습니다.",
+      });
+    }
+    const adminUserId = new Types.ObjectId(adminIdRaw);
+
+    const typeRaw = String(req.query.type || "")
+      .trim()
+      .toUpperCase();
+    const periodRaw = String(req.query.period || "").trim();
+    const qRaw = String(req.query.q || "").trim();
+
+    const page = Math.max(1, Number(req.query.page || 1) || 1);
+    const pageSize = Math.min(
+      200,
+      Math.max(1, Number(req.query.pageSize || 50) || 50),
+    );
+
+    const match = { adminUserId };
+
+    if (
+      typeRaw &&
+      typeRaw !== "ALL" &&
+      ["EARN", "PAYOUT", "ADJUST"].includes(typeRaw)
+    ) {
+      match.type = typeRaw;
+    }
+
+    const createdAt = {};
+    const sinceFromPeriod = parsePeriod(periodRaw);
+    if (sinceFromPeriod) {
+      createdAt.$gte = sinceFromPeriod;
+    }
+
+    const fromRaw = String(req.query.from || "").trim();
+    const toRaw = String(req.query.to || "").trim();
+
+    if (fromRaw) {
+      const from = new Date(fromRaw);
+      if (!Number.isNaN(from.getTime())) {
+        createdAt.$gte = from;
+      }
+    }
+
+    if (toRaw) {
+      const to = new Date(toRaw);
+      if (!Number.isNaN(to.getTime())) {
+        createdAt.$lte = to;
+      }
+    }
+
+    if (Object.keys(createdAt).length) {
+      match.createdAt = createdAt;
+    }
+
+    if (qRaw) {
+      const rx = safeRegex(qRaw);
+      const ors = [];
+      if (rx) {
+        ors.push({ uniqueKey: rx });
+        ors.push({ refType: rx });
+      }
+      if (Types.ObjectId.isValid(qRaw)) {
+        ors.push({ refId: new Types.ObjectId(qRaw) });
+      }
+      if (ors.length) {
+        match.$or = ors;
+      }
+    }
+
+    // running balance를 위해 전체 누적 잔액 계산 (필터 무관)
+    const allLedgerRows = await AdminCreditLedger.aggregate([
+      { $match: { adminUserId } },
+      { $group: { _id: "$type", total: { $sum: "$amount" } } },
+    ]);
+    let totalBalance = 0;
+    for (const r of allLedgerRows) {
+      const t = String(r._id || "");
+      const v = Number(r.total || 0);
+      if (t === "EARN" || t === "ADJUST") totalBalance += v;
+      else if (t === "PAYOUT") totalBalance -= v;
+    }
+
+    // 현재 페이지 이후(더 오래된) 항목들의 합산 잔액 계산
+    const skippedRows =
+      (page - 1) * pageSize > 0
+        ? await AdminCreditLedger.find(match)
+            .sort({ occurredAt: -1, _id: -1 })
+            .limit((page - 1) * pageSize)
+            .select({ type: 1, amount: 1 })
+            .lean()
+        : [];
+    let skippedSum = 0;
+    for (const r of skippedRows) {
+      const t = String(r.type || "");
+      const v = Number(r.amount || 0);
+      if (t === "EARN" || t === "ADJUST") skippedSum += v;
+      else if (t === "PAYOUT") skippedSum -= v;
+    }
+
+    const [total, rawItems] = await Promise.all([
+      AdminCreditLedger.countDocuments(match),
+      AdminCreditLedger.find(match)
+        .sort({ occurredAt: -1, _id: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .select({
+          type: 1,
+          amount: 1,
+          refType: 1,
+          refId: 1,
+          uniqueKey: 1,
+          occurredAt: 1,
+          createdAt: 1,
+        })
+        .lean(),
+    ]);
+
+    // running balance: 각 행 이후의 잔액 (최신→과거 순)
+    let runningBalance = totalBalance - skippedSum;
+    const items = (Array.isArray(rawItems) ? rawItems : []).map((r) => {
+      const v = Number(r.amount || 0);
+      const t = String(r.type || "");
+      const balanceAfter = runningBalance;
+      if (t === "EARN" || t === "ADJUST") runningBalance -= v;
+      else if (t === "PAYOUT") runningBalance += v;
+      return { ...r, balanceAfter };
+    });
+
+    return res.json({
+      success: true,
+      data: { items, total, page, pageSize },
+    });
+  } catch (error) {
+    console.error("adminGetAdminLedger error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "관리자 원장 조회에 실패했습니다.",
     });
   }
 }

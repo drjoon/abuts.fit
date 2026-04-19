@@ -115,6 +115,8 @@ import {
   adminGetSalesmanLedger,
   adminCreateSalesmanPayout,
   adminGetManufacturerSummary,
+  adminGetAdminCredits,
+  adminGetAdminLedger,
 } from "../../controllers/admin/adminCredit.controller.js";
 import {
   adminListBusinessRegistrationInquiries,
@@ -191,6 +193,8 @@ router.get("/credits/salesmen/overview", adminGetSalesmanCreditsOverview);
 router.get("/credits/salesmen", adminGetSalesmanCredits);
 router.get("/credits/salesmen/:id/ledger", adminGetSalesmanLedger);
 router.post("/credits/salesmen/:id/payout", adminCreateSalesmanPayout);
+router.get("/credits/admins", adminGetAdminCredits);
+router.get("/credits/admins/:id/ledger", adminGetAdminLedger);
 router.get("/credits/b-plan/charge-orders", adminListChargeOrders);
 router.get("/credits/b-plan/bank-transactions", adminListBankTransactions);
 router.post(

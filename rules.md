@@ -349,36 +349,39 @@
 
 ### 2.4 수익 분배 (매출 100% 기준)
 
-분배율은 `User.devopsPayoutSettings`에 저장되며, **개발운영사 설정 저장 이벤트**에서만 갱신합니다 (SSOT write-on-event).
+분배율은 `BusinessAnchor.payoutRates`에 저장되며, **개발운영사 설정 저장 이벤트**에서만 갱신합니다 (SSOT write-on-event).
 읽기 경로(대시보드/통계 조회)에서는 저장된 값을 그대로 사용하고, 재계산하지 않습니다.
 
 #### 저장 필드
 
-| 필드                                           | 기본값 | 의미                                                  |
-| ---------------------------------------------- | ------ | ----------------------------------------------------- |
-| `User.devopsPayoutSettings.manufacturerRate`   | 0.65   | 제조사 분배율                                         |
-| `User.devopsPayoutSettings.baseCommissionRate` | 0.05   | 개발운영사 직접 소개 수수료율                         |
-| `User.devopsPayoutSettings.salesmanDirectRate` | 0.05   | 영업자 직접 소개 수수료율 (미설정 보너스 기준도 동일) |
+| 필드                                            | 기본값 | 의미                          |
+| ----------------------------------------------- | ------ | ----------------------------- |
+| `BusinessAnchor.payoutRates.manufacturerRate`   | 0.65   | 제조사 분배율                 |
+| `BusinessAnchor.payoutRates.baseCommissionRate` | 0.05   | 개발운영사 직접 소개 수수료율 |
+| `BusinessAnchor.payoutRates.adminRate`          | 0.25   | 관리자 분배율 (나머지)        |
 
 #### 의뢰자 유형별 수수료 (거래 1건 기준)
 
-| 의뢰자 유형                                                   | 제조사             | 개발운영사                                  | 영업자                     | 관리자 |
-| ------------------------------------------------------------- | ------------------ | ------------------------------------------- | -------------------------- | ------ |
-| 개발운영사가 직접 소개 (`referredByAnchorId` = devops anchor) | `manufacturerRate` | `baseCommissionRate`                        | 0                          | 나머지 |
-| 소개자 없음 (`referredByAnchorId` = null)                     | `manufacturerRate` | `baseCommissionRate` + `salesmanDirectRate` | 0                          | 나머지 |
-| 영업자가 직접 소개                                            | `manufacturerRate` | 0                                           | `salesmanDirectRate`       | 나머지 |
-| 영업자 간접 소개 (하위 영업자 체인)                           | `manufacturerRate` | 0                                           | `salesmanDirectRate × 0.5` | 나머지 |
+| 의뢰자 유형                               | 제조사 | 개발운영사  | 영업자         | 관리자         |
+| ----------------------------------------- | ------ | ----------- | -------------- | -------------- |
+| 소개자 없음 (`referredByAnchorId` = null) | 65%    | 10% (5%+5%) | 0              | 나머지 (25%)   |
+| 영업자가 직접 소개                        | 65%    | 5%          | 5%             | 나머지 (25%)   |
+| 영업자 간접 소개 (하위 영업자 체인)       | 65%    | 5%          | 7.5% (5%+2.5%) | 나머지 (22.5%) |
 
 > 영업자와 개발운영사 수수료는 동일 거래에 **중복 합산되지 않습니다.**
 
-#### 관리자 범위 (기본값 기준)
+#### 관리자 범위
 
-- **최소** = 100 − `manufacturerRate` − `baseCommissionRate` − `salesmanDirectRate × 1.5` = 22.5%
-  (개발운영사 기본 + 영업자 최대 동시 발생)
-- **최대** = 100 − `manufacturerRate` − `baseCommissionRate` − `salesmanDirectRate` = 25%
-  (영업자 없음, 개발운영사 기본 + 미설정 보너스)
+- **동적 계산** = 100% - 제조사(65%) - 개발운영사 수수료 - 영업자 수수료
+  (나머지 전체를 관리자가 수취)
 
 분배 비율은 개발운영사 설정 화면에서 관리하며, 변경 시 본 문서를 먼저 갱신합니다.
+
+#### 관리자 수익 분배
+
+- **레저**: `AdminCreditLedger` (별도 컬렉션)
+- **타입**: `EARN`, `PAYOUT`, `ADJUST`
+- **트리거**: 의뢰 결제 시 자동 `EARN` 생성, 정산 시 `PAYOUT` 처리
 
 ### 2.5 소개 네트워크 의미 규칙
 

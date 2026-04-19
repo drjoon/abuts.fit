@@ -1,7 +1,12 @@
 import { Types } from "mongoose";
 import CreditLedger from "../../models/creditLedger.model.js";
+import SalesmanLedger from "../../models/salesmanLedger.model.js";
+import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
+import AdminCreditLedger from "../../models/adminCreditLedger.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
+import User from "../../models/user.model.js";
 import {
   applyStatusMapping,
   computePriceForRequest,
@@ -232,7 +237,16 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     businessAnchorId,
     balanceDelta: -resolvedAmount,
     reason: "machining_spend",
-    refId: request?._id,
+    refId: request._id,
+  });
+
+  // 수수료 분배 처리
+  await distributeCommissionOnRequestSpend({
+    request,
+    spendAmount: resolvedAmount,
+    businessAnchorId,
+    actorUserId,
+    session,
   });
 }
 
@@ -507,6 +521,275 @@ export async function ensureDeliveryInfoShippedAtNow({ request, session }) {
   const doc = Array.isArray(created) ? created[0] : null;
   if (doc?._id) {
     request.deliveryInfoRef = doc._id;
+  }
+}
+
+// 수수료 분배 함수
+export async function distributeCommissionOnRequestSpend({
+  request,
+  spendAmount,
+  businessAnchorId,
+  actorUserId,
+  session,
+}) {
+  if (!request?._id || !businessAnchorId || spendAmount <= 0) return;
+
+  try {
+    // 의뢰자의 BusinessAnchor 정보 조회
+    const requestorAnchor = await BusinessAnchor.findById(businessAnchorId)
+      .select({ referredByAnchorId: 1, businessType: 1 })
+      .session(session || null)
+      .lean();
+
+    if (!requestorAnchor || requestorAnchor.businessType !== "requestor") {
+      console.log("[COMMISSION] skip non-requestor business", {
+        businessAnchorId,
+        businessType: requestorAnchor?.businessType,
+      });
+      return;
+    }
+
+    // 기본 분배율 (첨1 이미지 기준)
+    const MANUFACTURER_RATE = 0.65; // 제조사 65% 고정
+    const SALESMAN_DIRECT_RATE = 0.05; // 영업자 직접 소개 5%
+    const SALESMAN_INDIRECT_RATE = 0.025; // 영업자 간접 소개 2.5%
+    const DEVOPS_BASE_RATE = 0.05; // 개발운영사 기본 5%
+
+    let devopsCommissionAmount = 0;
+    let salesmanCommissionAmount = 0;
+    let referrerInfo = null;
+
+    // 소개자 정보 조회 및 수수료 계산
+    if (requestorAnchor.referredByAnchorId) {
+      referrerInfo = await BusinessAnchor.findById(
+        requestorAnchor.referredByAnchorId,
+      )
+        .select({
+          businessType: 1,
+          primaryContactUserId: 1,
+          referredByAnchorId: 1,
+        })
+        .session(session || null)
+        .lean();
+
+      if (referrerInfo) {
+        if (referrerInfo.businessType === "devops") {
+          // 개발운영사가 직접 소개한 경우
+          devopsCommissionAmount = Math.round(spendAmount * DEVOPS_BASE_RATE);
+        } else if (referrerInfo.businessType === "salesman") {
+          // 영업자가 직접 소개한 경우: 영업자 5% + 개발운영사 5%
+          salesmanCommissionAmount = Math.round(
+            spendAmount * SALESMAN_DIRECT_RATE,
+          );
+          devopsCommissionAmount = Math.round(spendAmount * DEVOPS_BASE_RATE);
+        }
+      }
+    } else {
+      // 소개자 없는 경우: 개발운영사가 직접 소개했다고 간주하여 추가 5%
+      devopsCommissionAmount = Math.round(
+        spendAmount * (DEVOPS_BASE_RATE + SALESMAN_DIRECT_RATE),
+      );
+    }
+
+    // 영업자 간접 소개 체크 (2단계 이상)
+    let indirectSalesmanCommissionAmount = 0;
+    if (
+      referrerInfo?.businessType === "salesman" &&
+      referrerInfo.referredByAnchorId
+    ) {
+      const indirectReferrer = await BusinessAnchor.findById(
+        referrerInfo.referredByAnchorId,
+      )
+        .select({
+          businessType: 1,
+          primaryContactUserId: 1,
+        })
+        .session(session || null)
+        .lean();
+
+      if (
+        indirectReferrer?.businessType === "salesman" &&
+        indirectReferrer.primaryContactUserId
+      ) {
+        indirectSalesmanCommissionAmount = Math.round(
+          spendAmount * SALESMAN_INDIRECT_RATE,
+        );
+        // 영업자 간접 소개 시에도 개발운영사 5% 추가
+        devopsCommissionAmount = Math.round(spendAmount * DEVOPS_BASE_RATE);
+      }
+    }
+
+    // 관리자 분배율 동적 계산: 나머지 전체
+    const totalDistributed =
+      devopsCommissionAmount +
+      salesmanCommissionAmount +
+      indirectSalesmanCommissionAmount;
+    const adminCommissionAmount =
+      spendAmount -
+      Math.round(spendAmount * MANUFACTURER_RATE) -
+      totalDistributed;
+
+    // 관리자 수수료 분배
+    if (adminCommissionAmount > 0) {
+      const adminUser = await User.findOne({
+        role: "admin",
+        active: true,
+      })
+        .select({ _id: 1 })
+        .session(session || null)
+        .lean();
+
+      if (adminUser?._id) {
+        const adminUniqueKey = `request:${String(request._id)}:admin_commission`;
+        await AdminCreditLedger.updateOne(
+          { uniqueKey: adminUniqueKey },
+          {
+            $setOnInsert: {
+              adminUserId: adminUser._id,
+              type: "EARN",
+              amount: adminCommissionAmount,
+              refType: "REQUEST",
+              refId: request._id,
+              uniqueKey: adminUniqueKey,
+              occurredAt: new Date(),
+            },
+          },
+          { upsert: true, session },
+        );
+
+        console.log("[COMMISSION] admin commission distributed", {
+          requestId: request?.requestId,
+          amount: adminCommissionAmount,
+          adminUserId: adminUser._id,
+        });
+      }
+    }
+
+    // 개발운영사 수수료 분배
+    if (
+      devopsCommissionAmount > 0 &&
+      referrerInfo?.businessType === "devops" &&
+      referrerInfo.primaryContactUserId
+    ) {
+      const devopsUniqueKey = `request:${String(request._id)}:devops_commission`;
+      await SalesmanLedger.updateOne(
+        { uniqueKey: devopsUniqueKey },
+        {
+          $setOnInsert: {
+            salesmanId: referrerInfo.primaryContactUserId,
+            type: "EARN",
+            amount: devopsCommissionAmount,
+            refType: "REQUEST",
+            refId: request._id,
+            uniqueKey: devopsUniqueKey,
+          },
+        },
+        { upsert: true, session },
+      );
+
+      console.log("[COMMISSION] devops commission distributed", {
+        requestId: request?.requestId,
+        amount: devopsCommissionAmount,
+        devopsUserId: referrerInfo.primaryContactUserId,
+      });
+    }
+
+    // 영업자 직접 소개 수수료 분배
+    if (
+      salesmanCommissionAmount > 0 &&
+      referrerInfo?.businessType === "salesman" &&
+      referrerInfo.primaryContactUserId
+    ) {
+      const salesmanUniqueKey = `request:${String(request._id)}:salesman_commission`;
+      await SalesmanLedger.updateOne(
+        { uniqueKey: salesmanUniqueKey },
+        {
+          $setOnInsert: {
+            salesmanId: referrerInfo.primaryContactUserId,
+            type: "EARN",
+            amount: salesmanCommissionAmount,
+            refType: "REQUEST",
+            refId: request._id,
+            uniqueKey: salesmanUniqueKey,
+          },
+        },
+        { upsert: true, session },
+      );
+
+      console.log("[COMMISSION] salesman direct commission distributed", {
+        requestId: request?.requestId,
+        amount: salesmanCommissionAmount,
+        salesmanUserId: referrerInfo.primaryContactUserId,
+      });
+    }
+
+    // 영업자 간접 소개 수수료 분배
+    if (indirectSalesmanCommissionAmount > 0) {
+      const indirectReferrer = await BusinessAnchor.findById(
+        referrerInfo.referredByAnchorId,
+      )
+        .select({
+          businessType: 1,
+          primaryContactUserId: 1,
+        })
+        .session(session || null)
+        .lean();
+
+      if (
+        indirectReferrer?.businessType === "salesman" &&
+        indirectReferrer.primaryContactUserId
+      ) {
+        const indirectSalesmanUniqueKey = `request:${String(request._id)}:salesman_indirect_commission`;
+        await SalesmanLedger.updateOne(
+          { uniqueKey: indirectSalesmanUniqueKey },
+          {
+            $setOnInsert: {
+              salesmanId: indirectReferrer.primaryContactUserId,
+              type: "EARN",
+              amount: indirectSalesmanCommissionAmount,
+              refType: "REQUEST",
+              refId: request._id,
+              uniqueKey: indirectSalesmanUniqueKey,
+            },
+          },
+          { upsert: true, session },
+        );
+
+        console.log("[COMMISSION] salesman indirect commission distributed", {
+          requestId: request?.requestId,
+          amount: indirectSalesmanCommissionAmount,
+          salesmanUserId: indirectReferrer.primaryContactUserId,
+        });
+      }
+    }
+
+    // 제조사 수수료 분배 (의뢰 할당 시 처리)
+    const manufacturerCommissionAmount = Math.round(
+      spendAmount * MANUFACTURER_RATE,
+    );
+    console.log("[COMMISSION] manufacturer commission to be allocated", {
+      requestId: request?.requestId,
+      amount: manufacturerCommissionAmount,
+    });
+
+    console.log("[COMMISSION] commission distribution summary", {
+      requestId: request?.requestId,
+      spendAmount,
+      manufacturer: manufacturerCommissionAmount,
+      devops: devopsCommissionAmount,
+      salesmanDirect: salesmanCommissionAmount,
+      salesmanIndirect: indirectSalesmanCommissionAmount,
+      admin: adminCommissionAmount,
+      total:
+        manufacturerCommissionAmount +
+        devopsCommissionAmount +
+        salesmanCommissionAmount +
+        indirectSalesmanCommissionAmount +
+        adminCommissionAmount,
+    });
+  } catch (error) {
+    console.error("[COMMISSION] distribute commission error:", error);
+    // 수수료 분배 실패해도 의뢰 처리는 계속 진행
   }
 }
 

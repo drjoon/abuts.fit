@@ -53,6 +53,14 @@ function getDepositAccountInfo() {
 }
 
 export async function createChargeOrder(req, res) {
+  const userRole = req.user?.role;
+  if (userRole !== "requestor") {
+    return res.status(403).json({
+      success: false,
+      message: "크레딧 충전은 의뢰자 계정만 가능합니다.",
+    });
+  }
+
   const businessAnchorId = req.user?.businessAnchorId;
   const userId = req.user?._id;
   const userName = req.user?.name;
