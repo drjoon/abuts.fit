@@ -166,7 +166,7 @@ namespace DentalAddin
 
             opA.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
             opB.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
-            opA.FirstPassPercent = firstPercent;
+            // opA.FirstPassPercent은 prc 파일(5axisComposite_A.prc)의 FirstPassPercent 값(기본 1.5)을 그대로 사용
             opA.LastPassPercent = splitPercent;
             opB.FirstPassPercent = splitPercent;
             opB.LastPassPercent = lastPercent;

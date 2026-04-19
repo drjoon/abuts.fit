@@ -95,7 +95,7 @@ BEGIN_OPERATION; 507; 5Axis_Composite; 0;
 	END_STRING
    SpindleID; 793; 1;  CAPTION; 스핀들 이름; SOURCE; 1; TECHCODETYPE; 1;
    OutputZValue; 1218; 0;  CAPTION; Z값 출력; SOURCE; 0; TECHCODETYPE; 118;
-   FirstPassPercent; 3462; 1.5;  CAPTION; 첫 패스 퍼센트; SOURCE; 2; TECHCODETYPE; 2;
+   FirstPassPercent; 3462; 2.5;  CAPTION; 첫 패스 퍼센트; SOURCE; 2; TECHCODETYPE; 2;
    ToolCenterPercent; 3445; 100;  HIDDEN; CAPTION; 공구 중심 직경의 %값; SOURCE; 2; TECHCODETYPE; 2;
    CustomSetting10; 640; 0;  CAPTION; 사용자 정의 설정 10; SOURCE; 1; TECHCODETYPE; 2;
    AutoTiltMode; 3411; 1;  HIDDEN; CAPTION; 자동틸트 모드; SOURCE; 0; TECHCODETYPE; 484;
