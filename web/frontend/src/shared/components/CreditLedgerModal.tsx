@@ -280,6 +280,8 @@ export const CreditLedgerModal = ({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const pageRef = useRef(page);
+  const loadingRef = useRef(false);
+  const hasMoreRef = useRef(false);
 
   // page 상태 변경 시 ref 동기화
   useEffect(() => {
@@ -305,13 +307,15 @@ export const CreditLedgerModal = ({
     params.set("pageSize", String(PAGE_SIZE));
 
     if (businessAnchorId) {
-      return `/api/admin/credits/organizations/${businessAnchorId}/ledger?${params.toString()}`;
+      return `/api/admin/credits/businesses/${businessAnchorId}/ledger?${params.toString()}`;
     }
     return `/api/credits/ledger?${params.toString()}`;
   };
 
   const load = async (pageNum: number, reset: boolean) => {
     if (!token) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       const res = await apiFetch<{
@@ -337,10 +341,18 @@ export const CreditLedgerModal = ({
 
       const data = res.data.data;
       const fetched = Array.isArray(data?.items) ? data.items : [];
-      setItems((prev) => (reset ? fetched : [...prev, ...fetched]));
-      setHasMore(fetched.length >= PAGE_SIZE);
+      const total = Number(data?.total ?? 0);
+      setItems((prev) => {
+        const next = reset ? fetched : [...prev, ...fetched];
+        const more = next.length < total;
+        setHasMore(more);
+        hasMoreRef.current = more;
+        return next;
+      });
     } catch (e: any) {
       if (reset) setItems([]);
+      setHasMore(false);
+      hasMoreRef.current = false;
       toast({
         title: "크레딧 내역 조회 실패",
         description: e?.message || "다시 시도해주세요.",
@@ -348,6 +360,7 @@ export const CreditLedgerModal = ({
         duration: 3000,
       });
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
   };
@@ -356,7 +369,9 @@ export const CreditLedgerModal = ({
   useEffect(() => {
     if (!open) return;
     setPage(1);
+    pageRef.current = 1;
     setHasMore(true);
+    hasMoreRef.current = true;
     load(1, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, period, type, q, from, to, businessAnchorId]);
@@ -365,12 +380,12 @@ export const CreditLedgerModal = ({
   useEffect(() => {
     const sentinel = sentinelRef.current;
     const root = scrollRef.current;
-    if (!sentinel || !root || !hasMore || loading || !open) return;
+    if (!sentinel || !root || !open) return;
 
     const io = new IntersectionObserver(
       (entries) => {
         if (!entries.some((e) => e.isIntersecting)) return;
-        if (loading || !hasMore) return;
+        if (loadingRef.current || !hasMoreRef.current) return;
         const nextPage = pageRef.current + 1;
         setPage(nextPage);
         load(nextPage, false);
@@ -380,7 +395,7 @@ export const CreditLedgerModal = ({
     io.observe(sentinel);
     return () => io.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMore, loading, open]);
+  }, [open]);
 
   const rows = Array.isArray(items) ? items : [];
 
