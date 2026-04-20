@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 # NOTE: UploadFile/File 여전히 /api/rhino/fillhole/direct에서 사용 중
 from pydantic import BaseModel
