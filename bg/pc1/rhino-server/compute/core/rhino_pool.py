@@ -64,9 +64,9 @@ def ping_rhino_instance(rhinocode: str, rhino_id: str) -> bool:
         return False
 
 
-def refresh_rhino_pool(rhinocode: str) -> None:
+def refresh_rhino_pool(rhinocode: str, force: bool = False) -> None:
     now = time.time()
-    if state.rhino_all and (now - state.rhino_last_expand_ts < 10.0):
+    if not force and state.rhino_all and (now - state.rhino_last_expand_ts < 10.0):
         return
 
     existing = set(list_rhino_pipe_ids(rhinocode))
@@ -104,8 +104,10 @@ async def acquire_rhino_id(timeout_sec: float = 60.0) -> Iterable[str]:
     rhinocode = settings.get_rhinocode_bin()
     start = time.time()
     rid: Optional[str] = None
+    last_rescan_ts = 0.0
 
     while True:
+        need_rescan = False
         with state.rhino_pool_cond:
             while not state.rhino_available:
                 if time.time() - start > timeout_sec:
@@ -113,8 +115,20 @@ async def acquire_rhino_id(timeout_sec: float = 60.0) -> Iterable[str]:
                         "사용 가능한 Rhino 인스턴스가 없습니다. Rhino를 실행한 뒤 다시 시도하세요."
                     )
                 state.rhino_pool_cond.wait(timeout=0.5)
+                # pool이 비었을 때 주기적으로 재스캔 (라이노 오래 실행 시 pipeId 변경 대응)
+                now_t = time.time()
+                if now_t - last_rescan_ts >= 2.0:
+                    last_rescan_ts = now_t
+                    need_rescan = True
+                    break
+            if not need_rescan and state.rhino_available:
+                rid = state.rhino_available.popleft()
 
-            rid = state.rhino_available.popleft()
+        if need_rescan or rid is None:
+            # pool이 비어 있거나 재스캔이 필요한 경우 lock 밖에서 실행
+            refresh_rhino_pool(rhinocode)
+            rid = None
+            continue
 
         now = time.time()
         should_ping = (now - state.last_ping_success_ts) > 30.0
@@ -129,10 +143,14 @@ async def acquire_rhino_id(timeout_sec: float = 60.0) -> Iterable[str]:
             )
             break
 
+        log(f"ping failed for pipeId={rid}, rescanning pool...")
         with state.rhino_pool_cond:
             if rid in state.rhino_all:
                 state.rhino_all.discard(rid)
             state.rhino_pool_cond.notify_all()
+        rid = None
+        # ping 실패 후 즉시 강제 재스캔으로 새 pipeId 발견 (쿨다운 무시)
+        refresh_rhino_pool(rhinocode, force=True)
 
     try:
         yield rid
