@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 # NOTE: UploadFile/File 여전히 /api/rhino/fillhole/direct에서 사용 중
 from pydantic import BaseModel
@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from . import settings
 from . import state
 from .logger import log
-from .processing import process_single_stl, upload_via_presign
+from .processing import process_single_stl, upload_via_presign, enqueue_stl_job
 from .rhino_runner import run_rhino_python
 from .stl_metadata import calculate_and_register_metadata
 
@@ -28,7 +28,7 @@ class ProcessFileRequest(BaseModel):
 
 
 @router.post("/api/rhino/process-file")
-async def process_file_api(req: ProcessFileRequest, background_tasks: BackgroundTasks):
+async def process_file_api(req: ProcessFileRequest):
     if not state.is_running:
         raise HTTPException(status_code=503, detail="Service is stopped")
 
@@ -46,12 +46,17 @@ async def process_file_api(req: ProcessFileRequest, background_tasks: Background
         if not downloaded or not p.exists():
             raise HTTPException(status_code=404, detail=f"File not found locally or on backend: {safe_name}")
 
-    with state.in_flight_lock:
-        if safe_name in state.in_flight and not (req.force or False):
-            return {"ok": True, "message": "Already processing", "jobId": "existing"}
+    # [정책] FIFO 큐에 추가 - 현재 처리 중인 작업을 중단하지 않고 순차 처리
+    # BackgroundTasks.add_task 는 사용하지 않는다: 여러 작업이 동시에 실행되어 Rhino pipe를 경쟁하는 문제가 발생함.
+    force = bool(req.force or False)
+    result = enqueue_stl_job(p, force)
+    queue_size = state.stl_job_queue.qsize()
 
-    background_tasks.add_task(process_single_stl, p, bool(req.force or False))
-    return {"ok": True, "message": "Processing started", "filePath": safe_name}
+    if result == "in_flight":
+        return {"ok": True, "message": "Already processing", "status": "in_flight"}
+    if result == "queued_already":
+        return {"ok": True, "message": "Already queued", "status": "queued_already", "queueSize": queue_size}
+    return {"ok": True, "message": "Queued for processing", "status": "enqueued", "filePath": safe_name, "queueSize": queue_size}
 
 
 # [정책] /api/rhino/upload-stl 제거

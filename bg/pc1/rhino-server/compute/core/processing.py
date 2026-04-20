@@ -441,13 +441,9 @@ async def recover_unprocessed_files() -> None:
             if not downloaded or not safe_name:
                 continue
             p = settings.STORE_IN_DIR / safe_name
-            with state.in_flight_lock:
-                if p.name in state.in_flight:
-                    continue
-            # 백엔드가 내려준 pending 목록이 곧 처리 대상이므로 별도의 상태 조회는 생략
-            log(f"Recover: processing {p.name}")
-            await process_single_stl(p)
-            log(f"Recover: {p.name} processing completed")
+            # FIFO 큐에 추가 - 큐 워커가 순차 처리
+            result = enqueue_stl_job(p, force=False)
+            log(f"Recover: enqueued {p.name} → {result}")
     except Exception as e:
         log(f"Recover failed: {e}")
 def run_recovery_in_thread():
@@ -459,3 +455,80 @@ def start_recovery_thread():
     t = threading.Thread(target=run_recovery_in_thread, daemon=True)
     t.start()
     return t
+
+
+# ---------------------------------------------------------------------------
+# FIFO STL 처리 큐 (한 번에 하나씩 순차 처리)
+# ---------------------------------------------------------------------------
+# 동시에 여러 /api/rhino/process-file 요청이 오더라도 기존 작업을 중단하지 않는다.
+# 요청은 stl_job_queue에 쌓이고, stl_queue_worker가 하나씩 꺼내 처리한다.
+# 중복 요청(같은 파일명이 이미 큐에 있거나 처리 중)은 무시한다.
+
+async def stl_queue_worker() -> None:
+    """앱 시작 시 asyncio.create_task로 한 번만 실행되는 영구 워커."""
+    log("[stl-queue] Worker started")
+    while True:
+        try:
+            item = await state.stl_job_queue.get()
+            p: Path = item["path"]
+            force: bool = item.get("force", False)
+            log(f"[stl-queue] Dequeued: {p.name} (queue remaining: {state.stl_job_queue.qsize()})")
+            try:
+                await process_single_stl(p, force)
+            except Exception as e:
+                log(f"[stl-queue] Unexpected error for {p.name}: {e}")
+            finally:
+                state.stl_job_queue.task_done()
+        except asyncio.CancelledError:
+            log("[stl-queue] Worker cancelled")
+            break
+        except Exception as e:
+            log(f"[stl-queue] Worker loop error: {e}")
+
+
+def enqueue_stl_job(p: Path, force: bool = False) -> str:
+    """
+    STL 처리 작업을 FIFO 큐에 추가한다. Thread-safe.
+    - 이미 in_flight(처리 중)인 파일이면 'in_flight' 반환
+    - 이미 큐에 대기 중인 파일이면 'queued_already' 반환
+    - 성공적으로 큐에 추가되면 'enqueued' 반환
+
+    asyncio.Queue는 thread-safe하지 않으므로, 메인 이벤트 루프에 등록해야 한다.
+    asyncio 루프 안에서 호출되면 put_nowait 직접 사용, 루프 밖(별도 스레드)이면
+    main_loop.call_soon_threadsafe를 사용한다.
+    """
+    if not force:
+        with state.in_flight_lock:
+            if p.name in state.in_flight:
+                log(f"[stl-queue] Skip enqueue (in_flight): {p.name}")
+                return "in_flight"
+
+    # 이미 큐에 대기 중인지 확인 (force=False 시)
+    if not force:
+        try:
+            queued_names = {item["path"].name for item in list(state.stl_job_queue._queue)}
+            if p.name in queued_names:
+                log(f"[stl-queue] Skip enqueue (already queued): {p.name}")
+                return "queued_already"
+        except Exception:
+            pass
+
+    item = {"path": p, "force": force}
+    log(f"[stl-queue] Enqueued: {p.name} (queue size after: {state.stl_job_queue.qsize() + 1})")
+
+    # 현재 실행 중인 이벤트 루프가 있으면 직접 put_nowait,
+    # 별도 스레드(recovery thread)에서 호출 시 main_loop.call_soon_threadsafe 사용
+    try:
+        import asyncio as _asyncio
+        running_loop = _asyncio.get_running_loop()
+        # 같은 루프 안: 직접 put_nowait
+        state.stl_job_queue.put_nowait(item)
+    except RuntimeError:
+        # 이벤트 루프 밖(별도 스레드): thread-safe하게 추가
+        if state.main_loop and state.main_loop.is_running():
+            state.main_loop.call_soon_threadsafe(state.stl_job_queue.put_nowait, item)
+        else:
+            # fallback: 직접 put (main_loop 아직 미설정 시)
+            state.stl_job_queue.put_nowait(item)
+
+    return "enqueued"

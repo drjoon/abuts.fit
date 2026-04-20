@@ -12,6 +12,10 @@ global_rhino_lock = asyncio.Lock()
 processing_semaphore = asyncio.Semaphore(1)
 main_loop: Optional[asyncio.AbstractEventLoop] = None
 
+# FIFO STL 처리 큐 - 한 번에 하나씩 순차 처리
+# 동시에 여러 재생성 요청이 와도 앞의 작업이 끝난 뒤 다음 작업을 시작한다.
+stl_job_queue: asyncio.Queue = asyncio.Queue()
+
 executor = ThreadPoolExecutor(max_workers=settings.MAX_RHINO_CONCURRENCY)
 
 jobs: Dict[str, dict] = {}

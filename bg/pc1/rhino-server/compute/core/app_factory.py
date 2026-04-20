@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from . import settings
 from . import state
 from .logger import log
-from .processing import start_recovery_thread
+from .processing import start_recovery_thread, stl_queue_worker
 from .routes_basic import router as basic_router
 from .routes_api import router as api_router
 
@@ -132,6 +132,8 @@ def create_app():
             settings.purge_old_storage(days=15)
         except Exception:
             pass
+        # FIFO STL 큐 워커 시작 - 한 번에 하나씩 순차 처리를 보장한다.
+        asyncio.create_task(stl_queue_worker())
         # startup recovery는 backend pending 목록을 읽고 로컬 입력 캐시를 채우는 I/O 작업이라
         # FastAPI 메인 루프를 막지 않도록 별도 thread에서 시작한다.
         start_recovery_thread()
