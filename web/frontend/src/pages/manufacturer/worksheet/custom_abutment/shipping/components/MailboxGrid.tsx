@@ -1035,66 +1035,23 @@ export const MailboxGrid = ({
   };
 
   // 백엔드 상태 기반 버튼 로직
-  const unprintedAddresses = occupiedAddresses.filter((addr) => {
-    const status = pickupRequestedMailboxes.get(addr);
-    // printed/accepted/picked_up은 이미 출력 완료 → 미출력 목록에서 제외
-    return (
-      !printedMailboxes.has(addr) &&
-      status !== "printed" &&
-      status !== "accepted" &&
-      status !== "picked_up"
-    );
-  });
-
   const changedPrintedAddresses = printedMailboxChanges
     .filter((item) => item.changed)
     .map((item) => item.address);
 
-  const hasPrintedMailbox = printedWorkflowAddresses.length > 0;
-  const hasUnprintedMailbox = unprintedAddresses.length > 0;
   const hasChangedPrintedMailbox = changedPrintedAddresses.length > 0;
   const hasAcceptedMailbox = acceptedAddresses.length > 0;
 
-  // 접수/집하/완료되지 않은 "출력 완료" 우편함 (수거 접수 가능 대상)
-  // picked_up/completed는 이미 집하된 상태이므로 접수 대상에서 제외
-  const hasPurelyPrintedMailbox = occupiedAddresses.some((addr) => {
-    const status = pickupRequestedMailboxes.get(addr);
-    if (
-      status === "accepted" ||
-      status === "picked_up" ||
-      status === "completed"
-    )
-      return false;
-    return status === "printed" || printedMailboxes.has(addr);
-  });
+  // 출력 버튼: 택배 접수(accepted) 후에만 활성화
+  const canPrint = hasAcceptedMailbox;
 
-  // none 상태 우편함: 아직 한진 API 접수 전 (wblNo 없음)
-  const hasNoneMailbox = occupiedAddresses.some((addr) => {
-    const status = pickupRequestedMailboxes.get(addr);
-    return !status || status === "none";
-  });
-
-  // 출력 버튼: wblNo가 있을 때만 활성화 (accepted/printed/picked_up 상태)
-  // none 상태는 wblNo 없으므로 출력 불가 → 먼저 택배 접수해야 함
-  const canPrint = hasPrintedMailbox || hasChangedPrintedMailbox;
-  const printActionLabel = hasAcceptedMailbox
-    ? "🖨️ 운송장 출력"
-    : "🖨️ 운송장 재출력";
-
-  // 접수 버튼: none 상태(첫 접수) 또는 purely-printed 상태(재접수)일 때 활성화
-  // 취소 버튼: 접수된 우편함이 있으면 활성화 (취소 모드)
-  const canPickup =
-    (hasPurelyPrintedMailbox || hasNoneMailbox) && !hasAcceptedMailbox;
-  const canCancelPickup = hasAcceptedMailbox;
+  // 접수/취소 버튼: 항상 활성 (토글)
   const pickupActionLabel = hasAcceptedMailbox
     ? "↩️ 택배 취소"
     : "🚚 택배 접수";
   const pickupActionLoadingLabel = hasAcceptedMailbox
     ? "취소 중..."
     : "접수 중...";
-  const pickupActionDisabled = hasAcceptedMailbox
-    ? !canCancelPickup
-    : !canPickup;
 
   const hasAnyOccupiedMailbox = occupiedAddresses.length > 0;
 
@@ -1106,7 +1063,7 @@ export const MailboxGrid = ({
         isRequestingPickup &&
         !hasAcceptedMailbox,
       loadingLabel: pickupActionLoadingLabel,
-      disabled: pickupActionDisabled,
+      disabled: false,
       variant: hasAcceptedMailbox ? ("rose" as const) : ("slate" as const),
       onClick: () => {
         if (hasAcceptedMailbox) {
@@ -1117,42 +1074,21 @@ export const MailboxGrid = ({
       },
     },
     {
-      label: printActionLabel,
+      label: "🖨️ 운송장 재출력",
       loading: activeHeaderAction === "print" && isRequestingPickup,
       loadingLabel: "출력 중...",
       disabled: !canPrint,
       variant: "blue" as const,
       onClick: () => {
-        if (!hasPrintedMailbox) {
-          // 최초 출력: 모든 우편함 출력
-          void handlePrintOnly();
-        } else if (hasChangedPrintedMailbox) {
+        if (hasChangedPrintedMailbox) {
           // 재출력: 변경된 우편함만 출력
           void handlePrintOnly({
             targetAddresses: changedPrintedAddresses,
             modifyOnly: true,
           });
-        } else if (hasUnprintedMailbox) {
-          // 새로 추가된 우편함만 출력 (기존 출력분은 변경 없음)
-          void handlePrintOnly({
-            targetAddresses: unprintedAddresses,
-          });
         } else {
-          // 변경 없는 재출력: 확인 토스트 후 전체 재출력
-          toast({
-            title: "운송장 재출력",
-            description:
-              "변경된 내용이 없습니다. 전체 운송장을 재출력하시겠습니까? 확인하려면 다시 클릭하세요.",
-            duration: 10000,
-            action: (
-              <ToastAction
-                altText="재출력"
-                onClick={() => void handlePrintOnly()}
-              >
-                재출력
-              </ToastAction>
-            ),
-          });
+          // 전체 재출력
+          void handlePrintOnly();
         }
       },
     },
@@ -1164,16 +1100,6 @@ export const MailboxGrid = ({
       variant: "white" as const,
       onClick: () => {
         void handleTemporaryReset();
-      },
-    },
-    {
-      label: "MOCK 집하",
-      loading: activeHeaderAction === "mock" && isRequestingPickup,
-      loadingLabel: "집하 중...",
-      disabled: !hasAnyOccupiedMailbox,
-      variant: "white" as const,
-      onClick: () => {
-        void handleMockPickupComplete();
       },
     },
   ];

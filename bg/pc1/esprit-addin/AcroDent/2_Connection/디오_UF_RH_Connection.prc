@@ -184,14 +184,14 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
 		:M1
 		: 
 		:
-		:(HEX2.48/1st)
+		:(HEX2.49/1st)
 		:T0606 (EndMill/D1.5)
 		:M88
 		:M50
 		:G28H0
 		:M23 S5500
 		:G0 X[#521+1.0] Y2.0 Z[#520+2.4] C0.0
-		:G98 G1X2.48 F3000
+		:G98 G1X2.49 F3000
 		:G1 Y-2.0 F200
 		:G0 H60.0
 		:G1 Y2.0F200 
@@ -257,13 +257,13 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
 		:M5
 		:M1
 		:
-		:(Deburr HEX2.48)
+		:(Deburr HEX2.49)
 		:T0606(EndMill/D1.5)
 		:M50
 		:G28H0.0
 		:M23 S5500
 		:G0 X[#521+1.0] Y2.0 Z[#520+2.4] C0.0
-		:G98 G1X2.48 F3000
+		:G98 G1X2.49 F3000
 		:G1 Y-2.0F300
 		:G0 H60.0
 		:G1 Y2.0F300 
@@ -307,13 +307,13 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
 		:M1
 		:
 		:
-		:(HEX2.48 Deburr2)
+		:(HEX2.49 Deburr2)
 		:T0606 (EndMill/D1.5)
 		:M50
 		:G28H0
 		:M23 S5500 
 		:G0 X[#521+1.0] Y2.0 Z[#520+2.4] C0.0
-		:G98 G1 X2.48 F3000
+		:G98 G1 X2.49 F3000
 		:G1Y-2.0 F500
 		:G0H60.0
 		:G1Y2.0F500
@@ -400,4 +400,4 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
    END_EXPRESSION
 	BEGIN_ATTRIBUTES
 	END_ATTRIBUTES
-END_OPERATION
+END_OPERATION;

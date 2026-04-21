@@ -109,6 +109,7 @@ async function requestHanjin({
   params = undefined,
   headers = undefined,
   timeout = DEFAULT_TIMEOUT_MS,
+  skipAuthorization = false,
 }) {
   ensureConfigured();
   const { url, canonicalPath } = resolveUrl(baseUrl, path);
@@ -141,7 +142,9 @@ async function requestHanjin({
       headers: {
         "Content-Type": "application/json; charset=utf-8",
         "x-api-key": apiKey,
-        Authorization: authorization,
+        // Print API (ebbapd.hjt.co.kr)는 x-api-key만 사용하며 Authorization 헤더 불필요
+        // Order/Customer API (api.hanjin.com)는 HMAC 서명 Authorization 헤더 필요
+        ...(skipAuthorization ? {} : { Authorization: authorization }),
         ...headers,
       },
     });
@@ -190,7 +193,11 @@ export const hanjinService = {
   buildAuthorizationHeader,
   request: requestHanjin,
   requestPrintApi: (options) =>
-    requestHanjin({ baseUrl: baseUrls.print, ...options }),
+    requestHanjin({
+      baseUrl: baseUrls.print,
+      skipAuthorization: true,
+      ...options,
+    }),
   requestOrderApi: (options) =>
     requestHanjin({ baseUrl: baseUrls.order, ...options }),
   requestCustomerApi: (options) =>
