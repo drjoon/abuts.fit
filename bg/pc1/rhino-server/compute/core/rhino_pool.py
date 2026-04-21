@@ -100,57 +100,76 @@ def ensure_rhino_pool() -> None:
 
 @asynccontextmanager
 async def acquire_rhino_id(timeout_sec: float = 60.0) -> Iterable[str]:
-    ensure_rhino_pool()
+    # [fix] 이벤트 루프 블로킹 방지:
+    # - subprocess.run(blocking) → run_in_executor로 스레드 풀 실행
+    # - threading.Condition.wait(blocking) → await asyncio.sleep(non-blocking)
+    # 이 함수는 asyncio 이벤트 루프에서 실행되므로 blocking 호출이 있으면
+    # HTTP 응답이 멈춰 서버 전체가 먹통이 됨
+    import asyncio as _asyncio
+    loop = _asyncio.get_event_loop()
     rhinocode = settings.get_rhinocode_bin()
+
+    # 초기 pool 스캔을 executor에서 실행 (subprocess.run blocking 방지)
+    await loop.run_in_executor(None, ensure_rhino_pool)
+
     start = time.time()
     rid: Optional[str] = None
     last_rescan_ts = 0.0
 
     while True:
-        need_rescan = False
+        # pool 상태를 빠르게 확인 (lock은 짧게만 잡음 - blocking wait 없음)
         with state.rhino_pool_cond:
-            while not state.rhino_available:
-                if time.time() - start > timeout_sec:
-                    raise RuntimeError(
-                        "사용 가능한 Rhino 인스턴스가 없습니다. Rhino를 실행한 뒤 다시 시도하세요."
-                    )
-                state.rhino_pool_cond.wait(timeout=0.5)
-                # pool이 비었을 때 주기적으로 재스캔 (라이노 오래 실행 시 pipeId 변경 대응)
-                now_t = time.time()
-                if now_t - last_rescan_ts >= 2.0:
-                    last_rescan_ts = now_t
-                    need_rescan = True
-                    break
-            if not need_rescan and state.rhino_available:
+            if state.rhino_available:
                 rid = state.rhino_available.popleft()
 
-        if need_rescan or rid is None:
-            # pool이 비어 있거나 재스캔이 필요한 경우 lock 밖에서 실행
-            refresh_rhino_pool(rhinocode)
-            rid = None
-            continue
-
-        now = time.time()
-        should_ping = (now - state.last_ping_success_ts) > 30.0
-
-        if not should_ping or (
-            rhinocode and rid and ping_rhino_instance(rhinocode, rid)
-        ):
-            if should_ping:
-                state.last_ping_success_ts = now
-            log(
-                f"acquire: pipeId={rid} (avail={len(state.rhino_available)}/{len(state.rhino_all)})"
-            )
+        if rid is not None:
             break
 
-        log(f"ping failed for pipeId={rid}, rescanning pool...")
-        with state.rhino_pool_cond:
-            if rid in state.rhino_all:
-                state.rhino_all.discard(rid)
-            state.rhino_pool_cond.notify_all()
-        rid = None
-        # ping 실패 후 즉시 강제 재스캔으로 새 pipeId 발견 (쿨다운 무시)
-        refresh_rhino_pool(rhinocode, force=True)
+        if time.time() - start > timeout_sec:
+            raise RuntimeError(
+                "사용 가능한 Rhino 인스턴스가 없습니다. Rhino를 실행한 뒤 다시 시도하세요."
+            )
+
+        # pool이 비었을 때 주기적으로 재스캔 (라이노 오래 실행 시 pipeId 변경 대응)
+        now_t = time.time()
+        if now_t - last_rescan_ts >= 2.0:
+            last_rescan_ts = now_t
+            # subprocess.run을 executor에서 실행해 이벤트 루프를 블로킹하지 않음
+            await loop.run_in_executor(None, refresh_rhino_pool, rhinocode)
+
+        # threading.Condition.wait 대신 asyncio.sleep 사용 (이벤트 루프 양보)
+        await _asyncio.sleep(0.5)
+
+    now = time.time()
+    should_ping = (now - state.last_ping_success_ts) > 30.0
+
+    if should_ping:
+        # subprocess.run을 executor에서 실행해 이벤트 루프를 블로킹하지 않음
+        ping_ok = await loop.run_in_executor(None, ping_rhino_instance, rhinocode, rid)
+        if ping_ok:
+            state.last_ping_success_ts = now
+        else:
+            log(f"ping failed for pipeId={rid}, rescanning pool...")
+            with state.rhino_pool_cond:
+                if rid in state.rhino_all:
+                    state.rhino_all.discard(rid)
+                state.rhino_pool_cond.notify_all()
+            rid = None
+            # ping 실패 후 즉시 강제 재스캔으로 새 pipeId 발견 (쿨다운 무시)
+            await loop.run_in_executor(None, refresh_rhino_pool, rhinocode, True)
+            # 재스캔 후 풀에 새로운 pipeId가 있으면 재시도 (Rhino 재시작 대응)
+            with state.rhino_pool_cond:
+                if state.rhino_available:
+                    rid = state.rhino_available.popleft()
+            if rid is not None:
+                log(f"acquire after rescan: pipeId={rid} (avail={len(state.rhino_available)}/{len(state.rhino_all)})")
+
+    if rid is None:
+        raise RuntimeError("Rhino 인스턴스 ping 실패. Rhino를 재시작한 뒤 다시 시도하세요.")
+
+    log(
+        f"acquire: pipeId={rid} (avail={len(state.rhino_available)}/{len(state.rhino_all)})"
+    )
 
     try:
         yield rid

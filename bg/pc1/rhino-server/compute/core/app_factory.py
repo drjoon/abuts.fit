@@ -13,6 +13,26 @@ from .routes_basic import router as basic_router
 from .routes_api import router as api_router
 
 
+async def _queue_worker_watchdog() -> None:
+    """stl_queue_worker 태스크를 감시하고 죽으면 자동 재시작한다.
+    CancelledError나 예외로 워커가 종료되면 큐에 STL이 쌓여도 처리가 안 되어 먹통이 됨.
+    """
+    while True:
+        try:
+            task = asyncio.create_task(stl_queue_worker())
+            log("[watchdog] stl_queue_worker started")
+            await task
+            # 정상 종료(CancelledError로 break)는 서버 종료 시만 발생
+            log("[watchdog] stl_queue_worker exited normally, not restarting")
+            break
+        except asyncio.CancelledError:
+            log("[watchdog] watchdog cancelled, stopping")
+            break
+        except Exception as e:
+            log(f"[watchdog] stl_queue_worker crashed: {e}, restarting in 5s")
+            await asyncio.sleep(5)
+
+
 def create_app():
     app = FastAPI(title="abuts.fit rhino worker")
 
@@ -133,7 +153,8 @@ def create_app():
         except Exception:
             pass
         # FIFO STL 큐 워커 시작 - 한 번에 하나씩 순차 처리를 보장한다.
-        asyncio.create_task(stl_queue_worker())
+        # watchdog이 워커 태스크를 관리하므로 직접 create_task하지 않는다.
+        asyncio.create_task(_queue_worker_watchdog())
         # startup recovery는 backend pending 목록을 읽고 로컬 입력 캐시를 채우는 I/O 작업이라
         # FastAPI 메인 루프를 막지 않도록 별도 thread에서 시작한다.
         start_recovery_thread()
