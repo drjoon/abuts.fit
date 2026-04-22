@@ -144,6 +144,11 @@ export const MachineQueueCard = ({
     ? String(currentSlot.requestMongoId)
     : "";
   const headRollbackCount = Number((currentSlot as any)?.rollbackCount || 0);
+  const headMachiningCompleted =
+    String(currentSlot?.machiningRecord?.status || "").toUpperCase() ===
+    "COMPLETED";
+  const headCanApproveWithoutRemachining =
+    (headRollbackCount > 0 || headMachiningCompleted) && !!headRequestMongoId;
 
   // Next Up 대기 건수는 전체 가공 대기열에서 현재 Now Playing(실행중) 1건을 제외한 값이다.
   const totalMachiningCount = Math.max(
@@ -216,6 +221,19 @@ export const MachineQueueCard = ({
   const isCompletedRolledBack = completedRolledBack;
 
   const effectiveLastCompleted = isCompletedRolledBack ? null : lastCompleted;
+
+  // 디버깅: effectiveLastCompleted 값 확인
+  useEffect(() => {
+    if (effectiveLastCompleted) {
+      console.log("[MachineQueueCard] effectiveLastCompleted:", {
+        machineId,
+        requestId: effectiveLastCompleted.requestId,
+        requestMongoId: (effectiveLastCompleted as any)?.requestMongoId,
+        rollbackCount: (effectiveLastCompleted as any)?.rollbackCount,
+        patientName: (effectiveLastCompleted as any)?.patientName,
+      });
+    }
+  }, [effectiveLastCompleted, machineId]);
 
   const lastCompletedSummary = (() =>
     buildLastCompletedSummary(effectiveLastCompleted))();
@@ -517,17 +535,16 @@ export const MachineQueueCard = ({
                     <button
                       type="button"
                       className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
-                        headRollbackCount > 0 && headRequestMongoId
+                        headCanApproveWithoutRemachining
                           ? ""
                           : "opacity-30 cursor-not-allowed"
                       }`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (headRollbackCount <= 0) return;
-                        if (!headRequestMongoId) return;
+                        if (!headCanApproveWithoutRemachining) return;
                         onApproveFromRollback?.(headRequestMongoId);
                       }}
-                      disabled={!(headRollbackCount > 0 && headRequestMongoId)}
+                      disabled={!headCanApproveWithoutRemachining}
                       title="재가공 없이 세척.패킹으로 승인"
                     >
                       <ArrowRight className="h-3 w-3" />
@@ -613,29 +630,50 @@ export const MachineQueueCard = ({
                     <button
                       type="button"
                       className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
-                        Number((nextSlot as any)?.rollbackCount || 0) > 0 &&
-                        String((nextSlot as any)?.requestMongoId || "").trim()
+                        (() => {
+                          const rc = Number(
+                            (nextSlot as any)?.rollbackCount || 0,
+                          );
+                          const mc =
+                            String(
+                              nextSlot?.machiningRecord?.status || "",
+                            ).toUpperCase() === "COMPLETED";
+                          const id = String(
+                            (nextSlot as any)?.requestMongoId || "",
+                          ).trim();
+                          return (rc > 0 || mc) && id;
+                        })()
                           ? ""
                           : "opacity-30 cursor-not-allowed"
                       }`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        const rollbackCount = Number(
+                        const rc = Number(
                           (nextSlot as any)?.rollbackCount || 0,
                         );
+                        const mc =
+                          String(
+                            nextSlot?.machiningRecord?.status || "",
+                          ).toUpperCase() === "COMPLETED";
                         const id = String(
                           (nextSlot as any)?.requestMongoId || "",
                         ).trim();
-                        if (rollbackCount <= 0) return;
-                        if (!id) return;
+                        if (!(rc > 0 || mc) || !id) return;
                         onApproveFromRollback?.(id);
                       }}
-                      disabled={
-                        !(
-                          Number((nextSlot as any)?.rollbackCount || 0) > 0 &&
-                          String((nextSlot as any)?.requestMongoId || "").trim()
-                        )
-                      }
+                      disabled={(() => {
+                        const rc = Number(
+                          (nextSlot as any)?.rollbackCount || 0,
+                        );
+                        const mc =
+                          String(
+                            nextSlot?.machiningRecord?.status || "",
+                          ).toUpperCase() === "COMPLETED";
+                        const id = String(
+                          (nextSlot as any)?.requestMongoId || "",
+                        ).trim();
+                        return !((rc > 0 || mc) && id);
+                      })()}
                       title="재가공 없이 세척.패킹으로 승인"
                     >
                       <ArrowRight className="h-3 w-3" />

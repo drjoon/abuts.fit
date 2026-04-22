@@ -164,7 +164,7 @@ export async function getCompletedMachiningRecords(req, res) {
           const rid = String(r?.requestId || "").trim();
           if (!rid) continue;
           const rollbackCount = Number(
-            r?.productionSchedule?.machiningProgress?.rollbackCount ?? 0,
+            r?.caseInfos?.rollbackCounts?.machining ?? 0,
           );
           const tooth = String(r?.caseInfos?.tooth || "").trim();
           const lotNumber = r?.lotNumber?.value ? r.lotNumber : null;
@@ -403,7 +403,7 @@ export async function getLastCompletedMachiningMap(req, res) {
           const rid = String(r?.requestId || "").trim();
           if (!rid) continue;
           const rollbackCount = Number(
-            r?.productionSchedule?.machiningProgress?.rollbackCount ?? 0,
+            r?.caseInfos?.rollbackCounts?.machining ?? 0,
           );
           const tooth = String(r?.caseInfos?.tooth || "").trim();
           const lotNumber = r?.lotNumber?.value ? r.lotNumber : null;

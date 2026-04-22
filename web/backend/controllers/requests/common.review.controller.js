@@ -384,6 +384,9 @@ export async function deleteStageFile(req, res) {
       if (stage === "machining") {
         bumpRollbackCount(request, "cam");
       }
+      if (stage === "packing") {
+        bumpRollbackCount(request, "machining");
+      }
 
       const prevStageMap = {
         machining: "CAM",
@@ -504,6 +507,9 @@ export async function deleteStageFile(req, res) {
     bumpRollbackCount(request, stage);
     if (stage === "machining") {
       bumpRollbackCount(request, "cam");
+    }
+    if (stage === "packing") {
+      bumpRollbackCount(request, "machining");
     }
 
     // machining/packing 롤백 시 PRC 파일명 클리어 - 재가공 시 최신 PRC로 재결정되도록 한다.
