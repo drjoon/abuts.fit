@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import type { ManufacturerRequest } from "../../utils/request";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
@@ -80,6 +80,11 @@ export const MailboxGrid = ({
         }
       >
     >({});
+  // 재출력 우편함 선택 다이얼로그
+  const [reprintDialogOpen, setReprintDialogOpen] = useState(false);
+  const [reprintSelectedAddresses, setReprintSelectedAddresses] = useState<
+    Set<string>
+  >(new Set());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const touchStartXRef = useRef<number>(0);
   const shelfRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -1035,61 +1040,58 @@ export const MailboxGrid = ({
   };
 
   // 백엔드 상태 기반 버튼 로직
-  const changedPrintedAddresses = printedMailboxChanges
-    .filter((item) => item.changed)
-    .map((item) => item.address);
-
-  const hasChangedPrintedMailbox = changedPrintedAddresses.length > 0;
   const hasAcceptedMailbox = acceptedAddresses.length > 0;
+  const hasAnyOccupiedMailbox = occupiedAddresses.length > 0;
 
-  // 출력 버튼: 택배 접수(accepted) 후에만 활성화
-  const canPrint = hasAcceptedMailbox;
-
-  // 접수/취소 버튼: 항상 활성 (토글)
-  const pickupActionLabel = hasAcceptedMailbox
-    ? "↩️ 택배 취소"
-    : "🚚 택배 접수";
-  const pickupActionLoadingLabel = hasAcceptedMailbox
-    ? "취소 중..."
+  // [택배접수] 클릭: pickup-and-print (접수 → 라벨 출력 통합)
+  // accepted 상태가 하나라도 있으면 [운송장 재출력] 모드로 라벨 변경
+  const pickupPrintLabel = hasAcceptedMailbox
+    ? "🖨️ 운송장 재출력"
+    : "🚚 택배접수";
+  const pickupPrintLoadingLabel = hasAcceptedMailbox
+    ? "출력 중..."
     : "접수 중...";
 
-  const hasAnyOccupiedMailbox = occupiedAddresses.length > 0;
+  // 재출력 다이얼로그에서 선택된 주소로 재출력 실행
+  const handleReprintConfirm = useCallback(() => {
+    const selectedList = Array.from(reprintSelectedAddresses);
+    if (!selectedList.length) return;
+    setReprintDialogOpen(false);
+    void handlePrintOnly({
+      targetAddresses: selectedList,
+      modifyOnly: true,
+    });
+  }, [reprintSelectedAddresses]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const actionButtons = [
     {
-      label: pickupActionLabel,
+      // 택배접수: 접수 전이면 pickup-and-print, 접수 후엔 운송장 재출력 선택 다이얼로그
+      label: pickupPrintLabel,
       loading:
         (activeHeaderAction === "pickup" || activeHeaderAction === "print") &&
-        isRequestingPickup &&
-        !hasAcceptedMailbox,
-      loadingLabel: pickupActionLoadingLabel,
-      disabled: false,
-      variant: hasAcceptedMailbox ? ("rose" as const) : ("slate" as const),
+        isRequestingPickup,
+      loadingLabel: pickupPrintLoadingLabel,
+      disabled: !hasAnyOccupiedMailbox,
+      variant: "slate" as const,
       onClick: () => {
         if (hasAcceptedMailbox) {
-          void handlePickupAction();
+          // 재출력: 우편함 선택 다이얼로그 열기
+          setReprintSelectedAddresses(new Set(acceptedAddresses));
+          setReprintDialogOpen(true);
         } else {
+          // 신규 접수: pickup-and-print (접수 → 라벨 출력 통합)
           void handlePrintOnly();
         }
       },
     },
     {
-      label: "🖨️ 운송장 재출력",
-      loading: activeHeaderAction === "print" && isRequestingPickup,
-      loadingLabel: "출력 중...",
-      disabled: !canPrint,
-      variant: "blue" as const,
+      label: "🧪 mock 집하",
+      loading: activeHeaderAction === "mock" && isRequestingPickup,
+      loadingLabel: "집하 중...",
+      disabled: !hasAnyOccupiedMailbox,
+      variant: "white" as const,
       onClick: () => {
-        if (hasChangedPrintedMailbox) {
-          // 재출력: 변경된 우편함만 출력
-          void handlePrintOnly({
-            targetAddresses: changedPrintedAddresses,
-            modifyOnly: true,
-          });
-        } else {
-          // 전체 재출력
-          void handlePrintOnly();
-        }
+        void handleMockPickupComplete();
       },
     },
     {
@@ -1104,8 +1106,257 @@ export const MailboxGrid = ({
     },
   ];
 
+  // 재출력 다이얼로그용 주소 파싱: "A1A2" → { shelfCol:"A", shelfRow:"1", binCol:"A", binRow:"2" }
+  const parsedAcceptedAddresses = useMemo(() => {
+    return acceptedAddresses.map((addr) => ({
+      addr,
+      shelfCol: addr[0] ?? "",
+      shelfRow: addr[1] ?? "",
+      binCol: addr[2] ?? "",
+      binRow: addr[3] ?? "",
+    }));
+  }, [acceptedAddresses]);
+
+  // 열(BinCol) / 행(BinRow) 그룹
+  const reprintBinCols = useMemo(
+    () => [...new Set(parsedAcceptedAddresses.map((p) => p.binCol))].sort(),
+    [parsedAcceptedAddresses],
+  );
+  const reprintBinRows = useMemo(
+    () => [...new Set(parsedAcceptedAddresses.map((p) => p.binRow))].sort(),
+    [parsedAcceptedAddresses],
+  );
+
+  const toggleReprintByBinCol = (col: string) => {
+    const colAddrs = parsedAcceptedAddresses
+      .filter((p) => p.binCol === col)
+      .map((p) => p.addr);
+    const allSelected = colAddrs.every((a) => reprintSelectedAddresses.has(a));
+    setReprintSelectedAddresses((prev) => {
+      const next = new Set(prev);
+      colAddrs.forEach((a) => (allSelected ? next.delete(a) : next.add(a)));
+      return next;
+    });
+  };
+
+  const toggleReprintByBinRow = (row: string) => {
+    const rowAddrs = parsedAcceptedAddresses
+      .filter((p) => p.binRow === row)
+      .map((p) => p.addr);
+    const allSelected = rowAddrs.every((a) => reprintSelectedAddresses.has(a));
+    setReprintSelectedAddresses((prev) => {
+      const next = new Set(prev);
+      rowAddrs.forEach((a) => (allSelected ? next.delete(a) : next.add(a)));
+      return next;
+    });
+  };
+
+  const toggleReprintAll = () => {
+    if (reprintSelectedAddresses.size === acceptedAddresses.length) {
+      setReprintSelectedAddresses(new Set());
+    } else {
+      setReprintSelectedAddresses(new Set(acceptedAddresses));
+    }
+  };
+
   return (
     <div className="w-full flex flex-col h-full relative">
+      {/* 재출력 우편함 선택 다이얼로그 */}
+      {reprintDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-16">
+          <div className="bg-white rounded-2xl shadow-2xl w-[560px] max-h-[75vh] flex flex-col overflow-hidden">
+            {/* 헤더 */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div>
+                <div className="font-semibold text-base text-slate-800">
+                  운송장 재출력 우편함 선택
+                </div>
+                <div className="text-xs text-slate-400 mt-0.5">
+                  총 {acceptedAddresses.length}개 우편함 ·{" "}
+                  {reprintSelectedAddresses.size}개 선택됨
+                </div>
+              </div>
+              <button
+                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+                onClick={() => setReprintDialogOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 엑셀 스타일 테이블: 행=BinRow, 열=BinCol */}
+            <div className="flex-1 overflow-auto px-6 py-4">
+              <table className="w-full border-collapse select-none">
+                <thead>
+                  <tr>
+                    {/* 좌상단 코너: 전체선택/해제 */}
+                    <th className="w-14 h-10 border border-slate-200 bg-slate-50 rounded-tl">
+                      <button
+                        onClick={toggleReprintAll}
+                        className="w-full h-full flex items-center justify-center group"
+                        title="전체 선택/해제"
+                      >
+                        <span
+                          className={`w-4 h-4 border-2 rounded flex items-center justify-center text-[10px] font-bold transition-colors ${
+                            acceptedAddresses.length > 0 &&
+                            reprintSelectedAddresses.size ===
+                              acceptedAddresses.length
+                              ? "bg-blue-500 border-blue-500 text-white"
+                              : reprintSelectedAddresses.size > 0
+                                ? "bg-blue-100 border-blue-400 text-blue-600"
+                                : "border-slate-300 group-hover:border-blue-400"
+                          }`}
+                        >
+                          {acceptedAddresses.length > 0 &&
+                          reprintSelectedAddresses.size ===
+                            acceptedAddresses.length
+                            ? "✓"
+                            : reprintSelectedAddresses.size > 0
+                              ? "−"
+                              : ""}
+                        </span>
+                      </button>
+                    </th>
+                    {/* 열 헤더: BinCol — 클릭 시 열 전체 선택/해제 */}
+                    {reprintBinCols.map((col) => {
+                      const colAddrs = parsedAcceptedAddresses
+                        .filter((p) => p.binCol === col)
+                        .map((p) => p.addr)
+                        .filter((a) => acceptedAddresses.includes(a));
+                      const allSel =
+                        colAddrs.length > 0 &&
+                        colAddrs.every((a) => reprintSelectedAddresses.has(a));
+                      const someSel =
+                        !allSel &&
+                        colAddrs.some((a) => reprintSelectedAddresses.has(a));
+                      return (
+                        <th
+                          key={col}
+                          onClick={() => toggleReprintByBinCol(col)}
+                          className={`h-10 border border-slate-200 text-xs font-semibold font-mono cursor-pointer transition-colors px-2 ${
+                            allSel
+                              ? "bg-blue-500 text-white"
+                              : someSel
+                                ? "bg-blue-100 text-blue-700"
+                                : "bg-slate-50 text-slate-500 hover:bg-blue-50 hover:text-blue-600"
+                          }`}
+                        >
+                          {col}열
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {reprintBinRows.map((row) => {
+                    const rowAddrs = parsedAcceptedAddresses
+                      .filter((p) => p.binRow === row)
+                      .map((p) => p.addr)
+                      .filter((a) => acceptedAddresses.includes(a));
+                    const allRowSel =
+                      rowAddrs.length > 0 &&
+                      rowAddrs.every((a) => reprintSelectedAddresses.has(a));
+                    const someRowSel =
+                      !allRowSel &&
+                      rowAddrs.some((a) => reprintSelectedAddresses.has(a));
+                    return (
+                      <tr key={row}>
+                        {/* 행 헤더: BinRow — 클릭 시 행 전체 선택/해제 */}
+                        <td
+                          onClick={() => toggleReprintByBinRow(row)}
+                          className={`h-12 border border-slate-200 text-xs font-semibold font-mono cursor-pointer transition-colors text-center ${
+                            allRowSel
+                              ? "bg-blue-500 text-white"
+                              : someRowSel
+                                ? "bg-blue-100 text-blue-700"
+                                : "bg-slate-50 text-slate-500 hover:bg-blue-50 hover:text-blue-600"
+                          }`}
+                        >
+                          {row}행
+                        </td>
+                        {/* 셀: 각 BinCol × BinRow 교차점 */}
+                        {reprintBinCols.map((col) => {
+                          const addr = parsedAcceptedAddresses.find(
+                            (p) => p.binCol === col && p.binRow === row,
+                          )?.addr;
+                          const exists =
+                            addr !== undefined &&
+                            acceptedAddresses.includes(addr);
+                          const selected =
+                            exists && reprintSelectedAddresses.has(addr!);
+                          const count = exists
+                            ? (addressMap.get(addr!) ?? []).length
+                            : 0;
+                          return (
+                            <td
+                              key={col}
+                              onClick={() => {
+                                if (!exists) return;
+                                setReprintSelectedAddresses((prev) => {
+                                  const next = new Set(prev);
+                                  if (selected) next.delete(addr!);
+                                  else next.add(addr!);
+                                  return next;
+                                });
+                              }}
+                              className={`h-12 border border-slate-200 text-center transition-colors ${
+                                !exists
+                                  ? "bg-slate-50"
+                                  : selected
+                                    ? "bg-blue-500 cursor-pointer"
+                                    : "bg-white hover:bg-blue-50 cursor-pointer"
+                              }`}
+                            >
+                              {exists && (
+                                <div className="flex flex-col items-center justify-center gap-0.5">
+                                  <span
+                                    className={`text-xs font-mono font-semibold ${selected ? "text-white" : "text-slate-700"}`}
+                                  >
+                                    {addr}
+                                  </span>
+                                  {count > 0 && (
+                                    <span
+                                      className={`text-[10px] ${selected ? "text-blue-100" : "text-slate-400"}`}
+                                    >
+                                      {count}건
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* 푸터 */}
+            <div className="flex gap-2 justify-between items-center px-6 py-4 border-t border-slate-100">
+              <span className="text-xs text-slate-400">
+                {reprintSelectedAddresses.size}개 선택됨
+              </span>
+              <div className="flex gap-2">
+                <button
+                  className="px-4 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100 border border-slate-200"
+                  onClick={() => setReprintDialogOpen(false)}
+                >
+                  취소
+                </button>
+                <button
+                  className="px-5 py-2 rounded-lg text-sm text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 font-medium"
+                  disabled={reprintSelectedAddresses.size === 0}
+                  onClick={handleReprintConfirm}
+                >
+                  재출력 ({reprintSelectedAddresses.size}개)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <MailboxStickyHeader>
         <MailboxActionHeader
           isRequestingPickup={isRequestingPickup}

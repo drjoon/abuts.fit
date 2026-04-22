@@ -1289,6 +1289,14 @@ export const TrackingInquiryPage = () => {
                           </span>
                         </div>
                         <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            {shippedAt && (
+                              <span>접수 {formatYmd(shippedAt)}</span>
+                            )}
+                            {pickedUpAt && (
+                              <span>집하 {formatYmd(pickedUpAt)}</span>
+                            )}
+                          </div>
                           <span className="text-sm text-gray-500">
                             {di.carrier || "-"}
                           </span>
