@@ -788,6 +788,17 @@ export async function updateReviewStatusByStage(req, res) {
           if (effectiveStage === "cam") {
             applyStatusMapping(request, "가공");
           } else if (effectiveStage === "machining") {
+            // machining 단계 승인: 이미 가공이 완료된 의뢰(machiningRecord 있음)는 재가공 없이 바로 세척.패킹으로
+            const hasMachiningRecord = !!request.machiningRecord;
+            if (hasMachiningRecord) {
+              console.log(
+                "[MACHINING_APPROVAL] machiningRecord exists, skip machining and go to packing",
+                {
+                  requestId: request.requestId,
+                  machiningRecord: String(request.machiningRecord),
+                },
+              );
+            }
             applyStatusMapping(request, "세척.패킹");
             if (!request.mailboxAddress) {
               try {

@@ -430,7 +430,7 @@ export const MachineQueueCard = ({
                           onApproveFromRollback
                         )
                       }
-                      title="재가공 없이 승인"
+                      title="재가공 없이 세척.패킹으로 승인"
                     >
                       <ArrowRight className="h-3 w-3" />
                     </button>
@@ -528,7 +528,7 @@ export const MachineQueueCard = ({
                         onApproveFromRollback?.(headRequestMongoId);
                       }}
                       disabled={!(headRollbackCount > 0 && headRequestMongoId)}
-                      title="재가공 없이 승인"
+                      title="재가공 없이 세척.패킹으로 승인"
                     >
                       <ArrowRight className="h-3 w-3" />
                     </button>
@@ -636,7 +636,7 @@ export const MachineQueueCard = ({
                           String((nextSlot as any)?.requestMongoId || "").trim()
                         )
                       }
-                      title="재가공 없이 승인"
+                      title="재가공 없이 세척.패킹으로 승인"
                     >
                       <ArrowRight className="h-3 w-3" />
                     </button>
