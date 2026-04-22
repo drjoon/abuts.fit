@@ -80,7 +80,8 @@ export function shouldShowRequestInIncludeCompleted(
   const order = stageOrder[stage] ?? 0;
   // 현재 단계 이전은 제외
   if (order < currentStageOrder) return false;
-  // 현재 단계 또는 이후 단계는 모두 포함
+  // 추적관리(포장.발송 이후)는 완료포함에서도 제외
+  if (order > stageOrder["포장.발송"]) return false;
   return true;
 }
 
