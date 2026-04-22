@@ -126,6 +126,47 @@ export const useRequestFileHandlers = ({
 
       if (stageKey === "shipping" && status === "PENDING") {
         next.mailboxAddress = null;
+        const prevCounts = {
+          ...(req.caseInfos?.rollbackCounts || {}),
+        } as Record<string, number>;
+        prevCounts["shipping"] = Number(prevCounts["shipping"] || 0) + 1;
+        next.caseInfos = {
+          ...next.caseInfos,
+          rollbackCounts: prevCounts as any,
+        };
+      }
+
+      if (stageKey === "tracking" && status === "PENDING") {
+        const prevCounts = {
+          ...(req.caseInfos?.rollbackCounts || {}),
+        } as Record<string, number>;
+        prevCounts["tracking"] = Number(prevCounts["tracking"] || 0) + 1;
+        next.caseInfos = {
+          ...next.caseInfos,
+          rollbackCounts: prevCounts as any,
+        };
+      }
+
+      if (stageKey === "cam" && status === "PENDING") {
+        const prevCounts = {
+          ...(req.caseInfos?.rollbackCounts || {}),
+        } as Record<string, number>;
+        prevCounts["cam"] = Number(prevCounts["cam"] || 0) + 1;
+        next.caseInfos = {
+          ...next.caseInfos,
+          rollbackCounts: prevCounts as any,
+        };
+      }
+
+      if (stageKey === "request" && status === "PENDING") {
+        const prevCounts = {
+          ...(req.caseInfos?.rollbackCounts || {}),
+        } as Record<string, number>;
+        prevCounts["request"] = Number(prevCounts["request"] || 0) + 1;
+        next.caseInfos = {
+          ...next.caseInfos,
+          rollbackCounts: prevCounts as any,
+        };
       }
 
       if (stageKey === "machining" && status === "PENDING") {
@@ -153,7 +194,11 @@ export const useRequestFileHandlers = ({
         string,
         unknown
       >;
-      delete nextStageFiles[stageKey];
+      // rollbackOnly=true일 때는 서버도 stageFiles를 삭제하지 않으므로
+      // 로컬 optimistic update에서도 파일을 유지해야 함
+      if (!rollbackOnly) {
+        delete nextStageFiles[stageKey];
+      }
 
       const next = {
         ...req,
@@ -193,6 +238,22 @@ export const useRequestFileHandlers = ({
           actualMachiningComplete: null,
           assignedMachine: null,
           queuePosition: null,
+        };
+      }
+
+      if (rollbackOnly) {
+        const prevCounts = {
+          ...(req.caseInfos?.rollbackCounts || {}),
+        } as Record<string, number>;
+        const bump = (k: string) => {
+          prevCounts[k] = Number(prevCounts[k] || 0) + 1;
+        };
+        bump(stageKey);
+        if (stageKey === "machining") bump("cam");
+        if (stageKey === "packing") bump("machining");
+        next.caseInfos = {
+          ...next.caseInfos,
+          rollbackCounts: prevCounts as any,
         };
       }
 

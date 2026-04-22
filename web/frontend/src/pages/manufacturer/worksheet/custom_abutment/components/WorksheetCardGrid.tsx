@@ -244,10 +244,20 @@ export const WorksheetCardGrid = ({
           caseInfos.rollbackCounts?.[reviewStageKey] || 0,
         );
 
-        // packing 단계에서는 각인 이미지가 있어야 승인 가능
+        const packingShippingRollbackCount =
+          reviewStageKey === "packing"
+            ? Number(caseInfos.rollbackCounts?.shipping || 0)
+            : 0;
+
+        // packing 단계에서는 각인 이미지가 있어야 승인 가능.
+        // 단, 포장.발송에서 롤백되어 돌아온 경우(shipping 롤백 이력 있음)나
+        // 세척.패킹에서 롤백되었다가 다시 온 경우(packing 롤백 이력 있음)는
+        // 이미 각인 라벨이 인식된 적 있으므로 재인식 없이 승인 가능.
         const hasEngravingImage =
           reviewStageKey === "packing"
-            ? !!(
+            ? packingShippingRollbackCount > 0 ||
+              Number(caseInfos.rollbackCounts?.packing || 0) > 0 ||
+              !!(
                 caseInfos.stageFiles?.packing?.s3Url ||
                 caseInfos.stageFiles?.packing?.filePath
               )
@@ -266,7 +276,7 @@ export const WorksheetCardGrid = ({
           (rollbackCountForStage > 0 ||
             (isCamStage && Number(caseInfos.rollbackCounts?.cam || 0) > 0) ||
             (reviewStageKey === "packing" &&
-              Number(caseInfos.rollbackCounts?.shipping || 0) > 0) ||
+              packingShippingRollbackCount > 0) ||
             (reviewStageKey === "cam" &&
               Number(caseInfos.rollbackCounts?.machining || 0) > 0) ||
             (reviewStageKey === "request" && requestStageRollbackExists));

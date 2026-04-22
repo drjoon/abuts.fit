@@ -204,6 +204,17 @@ export const PreviewModal = ({
         | "packing"
         | "shipping"
         | "tracking";
+      // packing 단계에서는 각인 이미지가 있거나, 포장.발송/packing 롤백 이력이 있으면 승인 가능
+      // (롤백 이력 있음 = 이미 각인 라벨 인식 완료된 적 있음)
+      if (key === "packing") {
+        const hasFile =
+          !!activeReq?.caseInfos?.stageFiles?.packing?.s3Key ||
+          !!previewStageUrl;
+        const hasRollbackHistory =
+          Number(activeReq?.caseInfos?.rollbackCounts?.packing || 0) > 0 ||
+          Number(activeReq?.caseInfos?.rollbackCounts?.shipping || 0) > 0;
+        return hasFile || hasRollbackHistory;
+      }
       return (
         !!activeReq?.caseInfos?.stageFiles?.[key]?.s3Key || !!previewStageUrl
       );
