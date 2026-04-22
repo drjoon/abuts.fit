@@ -33,14 +33,14 @@ import Rhino.Geometry.Intersect as intersect
 import System.Drawing as drawing
 import System
 
-_SECTION_COUNT = 20
-_SECTION_STEP_DEG = 18.0
+_SECTION_COUNT = 40
+_SECTION_STEP_DEG = 9.0
 _NEAREST_LIMIT = 10
-_MAX_STEP_DISTANCE = 2
+_MAX_STEP_DISTANCE = 1.5
 _PT0_Z_RATIO_LOW = 0.2
-_PT0_Z_RATIO_HIGH = 0.6
+_PT0_Z_RATIO_HIGH = 0.55
 _Z_RATIO_LOW = 0.2
-_Z_RATIO_HIGH = 0.85
+_Z_RATIO_HIGH = 0.65
 _SHOW_POINT_TEXTDOTS = False
 _DIST_TOL = 1e-8
 _DEBUG_TRACE = os.environ.get("FINISHLINE_TRACE_DEBUG", "1") in ("1", "true", "TRUE")
@@ -300,12 +300,16 @@ def _select_outermost_nearby(
         best_pt, details = pick_best(within_limit)
         return (best_pt, details) if return_details else best_pt
 
-    if all_candidates:
+    # max_distance 조건이 있을 때는 fallback 없이 None 반환 (큰 Z 점프 방지)
+    if max_distance is not None:
         _trace_log(
-            "[trace] fallback: no candidates within {:.3f}mm, using outermost regardless".format(
-                max_distance or 0
+            "[trace] no candidates within {:.3f}mm, returning None (no fallback)".format(
+                max_distance
             )
         )
+        return (None, []) if return_details else None
+
+    if all_candidates:
         best_pt, details = pick_best(all_candidates)
         return (best_pt, details) if return_details else best_pt
 
@@ -313,13 +317,17 @@ def _select_outermost_nearby(
 
 
 def _pick_start_pt(pt0: rg.Point3d, sections: Sequence[Dict[str, Sequence]]):
+    # 1차: pt0와 Z 차이가 2mm 이내인 후보 중에서 가장 가깝고 외곽인 점 선택
     best = None
+    Z_TOL = 2.0
     for idx, section in enumerate(sections):
         candidates = _merge_candidates(section.get("controls") or [], section.get("points") or [])
-        # 시작점은 거리 제한 없이 pt0에서 가장 가까운 영역 중 외곽 선택
+        # Z 높이 유사 후보 우선 필터링
+        z_close = [pt for pt in candidates if abs(pt.Z - pt0.Z) <= Z_TOL]
+        pool = z_close if z_close else candidates
         chosen = _select_outermost_nearby(
             pt0,
-            candidates,
+            pool,
             max_distance=None,
             debug_label=f"start plane_idx={idx}",
         )
@@ -345,22 +353,28 @@ def _trace_finishline_points(
     last = rg.Point3d(start_pt)
     section_points: Dict[int, rg.Point3d] = {start_idx: rg.Point3d(start_pt)}
 
+    _MAX_Z_STEP = 1.0  # 단계별 Z 방향 최대 허용 변화량 (mm)
+
     for step in range(1, total):
         idx = (start_idx + step) % total
         candidates = _merge_candidates(
             sections[idx].get("controls") or [],
             sections[idx].get("points") or [],
         )
+        # Z 방향 큰 점프 사전 필터링: 이전 점 대비 Z 차이가 1mm 초과 후보 제외
+        z_filtered = [pt for pt in candidates if abs(pt.Z - last.Z) <= _MAX_Z_STEP]
+        if not z_filtered:
+            z_filtered = candidates  # 모든 후보가 제거되면 원본 유지
         _trace_log(
-            "[trace] step={} plane_idx={} ctrl_candidates={}".format(
-                step, idx, len(candidates)
+            "[trace] step={} plane_idx={} ctrl_candidates={} z_filtered={}".format(
+                step, idx, len(candidates), len(z_filtered)
             )
         )
 
-        # 3D 거리 1mm 제한 적용
+        # 3D 거리 제한 적용
         best_pt = _select_outermost_nearby(
             last,
-            candidates,
+            z_filtered,
             max_distance=_MAX_STEP_DISTANCE,
             debug_label=f"step={step} plane_idx={idx}",
         )

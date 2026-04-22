@@ -1044,13 +1044,8 @@ export const MailboxGrid = ({
   const hasAnyOccupiedMailbox = occupiedAddresses.length > 0;
 
   // [택배접수] 클릭: pickup-and-print (접수 → 라벨 출력 통합)
-  // accepted 상태가 하나라도 있으면 [운송장 재출력] 모드로 라벨 변경
-  const pickupPrintLabel = hasAcceptedMailbox
-    ? "🖨️ 운송장 재출력"
-    : "🚚 택배접수";
-  const pickupPrintLoadingLabel = hasAcceptedMailbox
-    ? "출력 중..."
-    : "접수 중...";
+  const pickupPrintLabel = "🚚 택배접수 & 🖨️송장출력";
+  const pickupPrintLoadingLabel = "처리 중...";
 
   // 재출력 다이얼로그에서 선택된 주소로 재출력 실행
   const handleReprintConfirm = useCallback(() => {
@@ -1085,7 +1080,7 @@ export const MailboxGrid = ({
       },
     },
     {
-      label: "🧪 mock 집하",
+      label: "📦 집하",
       loading: activeHeaderAction === "mock" && isRequestingPickup,
       loadingLabel: "집하 중...",
       disabled: !hasAnyOccupiedMailbox,
@@ -1095,7 +1090,7 @@ export const MailboxGrid = ({
       },
     },
     {
-      label: "임시: 리셋",
+      label: "🔄 리셋",
       loading: activeHeaderAction === "reset" && isRequestingPickup,
       loadingLabel: "리셋 중...",
       disabled: !hasAnyOccupiedMailbox,
