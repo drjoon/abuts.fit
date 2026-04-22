@@ -26,7 +26,10 @@ import { useWorksheetRealtimeStatus } from "@/pages/manufacturer/worksheet/custo
 import { PackingPrinterSettingsDialog } from "../components/PackingPrinterSettingsDialog";
 import { usePackingPrintSettings } from "../hooks/usePackingPrintSettings";
 import { usePackingWorksheetData } from "../hooks/usePackingWorksheetData";
-import { usePackingCapture } from "../hooks/usePackingCapture";
+import {
+  usePackingCapture,
+  type CaptureResult,
+} from "../hooks/usePackingCapture";
 import {
   buildPackLabelBitmapZpl,
   getLotLabel,
@@ -75,6 +78,7 @@ export const PackingPageContent = ({
     string[]
   >([]);
   const didInitPackingSelectionRef = useRef(false);
+  const [captureHistory, setCaptureHistory] = useState<CaptureResult[]>([]);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -578,21 +582,9 @@ export const PackingPageContent = ({
     ],
   );
 
-  const handleAutoPrintProcessedRequest = useCallback(
-    async (req: ManufacturerRequest) => {
-      try {
-        await handlePrintSinglePackingLabel(req, { silentSuccess: true });
-      } catch (err) {
-        toast({
-          title: "자동 라벨 출력 실패",
-          description:
-            (err as Error)?.message || "라벨 출력 중 오류가 발생했습니다.",
-          variant: "destructive",
-        });
-      }
-    },
-    [handlePrintSinglePackingLabel, toast],
-  );
+  const handleCaptureResult = useCallback((result: CaptureResult) => {
+    setCaptureHistory((prev) => [result, ...prev].slice(0, 20));
+  }, []);
 
   const {
     isDraggingOver,
@@ -609,7 +601,7 @@ export const PackingPageContent = ({
     previewOpen,
     previewFiles,
     handleOpenPreview,
-    handleAutoPrintProcessedRequest,
+    onCaptureResult: handleCaptureResult,
   });
 
   const handlePrintPackingLabels = useCallback(async () => {
@@ -801,6 +793,61 @@ export const PackingPageContent = ({
             </div>
           </div>
         </div>
+
+        {captureHistory.length > 0 && (
+          <div className="w-full px-4 pt-2 pb-1">
+            <div className="flex items-center justify-between mb-1.5 px-1">
+              <span className="text-xs font-semibold text-slate-500">
+                각인 인식 결과
+              </span>
+              <button
+                type="button"
+                onClick={() => setCaptureHistory([])}
+                className="text-xs text-slate-400 hover:text-slate-600"
+              >
+                전체 지우기
+              </button>
+            </div>
+            <div className="flex flex-wrap justify-center gap-2">
+              {captureHistory.map((item, idx) => {
+                const caseInfos = item.request?.caseInfos || {};
+                const clinicName = String((caseInfos as any)?.clinicName || "");
+                const patientName = String(
+                  (caseInfos as any)?.patientName || "",
+                );
+                const tooth = String((caseInfos as any)?.tooth || "");
+                const lotSuffix = item.recognizedSuffix || "—";
+                const timeStr = item.capturedAt.toLocaleTimeString("ko-KR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                });
+                return (
+                  <div
+                    key={`${item.requestId}-${idx}`}
+                    className="rounded-lg border border-blue-200 bg-blue-50 shadow-sm px-4 py-2 text-sm min-w-[160px] max-w-[220px]"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-blue-700 tracking-widest text-lg">
+                        {lotSuffix}
+                      </span>
+                      <span className="text-xs text-slate-400">{timeStr}</span>
+                    </div>
+                    <div className="text-slate-600 text-xs mt-0.5 truncate">
+                      {item.requestId}
+                      {clinicName && ` · ${clinicName}`}
+                      {patientName && ` · ${patientName}`}
+                      {tooth && ` · ${tooth}`}
+                    </div>
+                    <div className="text-xs text-blue-500 mt-0.5">
+                      → 포장.발송 이동
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {isEmpty ? (
           <div className="flex justify-center py-8">

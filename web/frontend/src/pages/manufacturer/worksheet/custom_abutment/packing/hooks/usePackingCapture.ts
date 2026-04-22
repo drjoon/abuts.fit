@@ -11,6 +11,13 @@ import { onAppEvent } from "@/shared/realtime/socket";
 import { type ManufacturerRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
 
+export type CaptureResult = {
+  requestId: string;
+  recognizedSuffix: string;
+  request: ManufacturerRequest;
+  capturedAt: Date;
+};
+
 export const usePackingCapture = ({
   token,
   requests,
@@ -19,7 +26,7 @@ export const usePackingCapture = ({
   previewOpen,
   previewFiles,
   handleOpenPreview,
-  handleAutoPrintProcessedRequest,
+  onCaptureResult,
 }: {
   token?: string | null;
   requests: ManufacturerRequest[];
@@ -28,9 +35,7 @@ export const usePackingCapture = ({
   previewOpen: boolean;
   previewFiles: any;
   handleOpenPreview: (req: ManufacturerRequest) => Promise<void>;
-  handleAutoPrintProcessedRequest?:
-    | ((req: ManufacturerRequest) => Promise<void>)
-    | null;
+  onCaptureResult?: (result: CaptureResult) => void;
 }) => {
   const { uploadFiles: uploadToS3 } = useS3TempUpload({ token });
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -42,24 +47,15 @@ export const usePackingCapture = ({
   const previewOpenRef = useRef(previewOpen);
   const previewFilesRef = useRef(previewFiles);
   const handleOpenPreviewRef = useRef(handleOpenPreview);
-  const handleAutoPrintProcessedRequestRef = useRef(
-    handleAutoPrintProcessedRequest,
-  );
+  const onCaptureResultRef = useRef(onCaptureResult);
 
   useEffect(() => {
     requestsRef.current = requests;
     previewOpenRef.current = previewOpen;
     previewFilesRef.current = previewFiles;
     handleOpenPreviewRef.current = handleOpenPreview;
-    handleAutoPrintProcessedRequestRef.current =
-      handleAutoPrintProcessedRequest;
-  }, [
-    handleAutoPrintProcessedRequest,
-    handleOpenPreview,
-    previewFiles,
-    previewOpen,
-    requests,
-  ]);
+    onCaptureResultRef.current = onCaptureResult;
+  }, [onCaptureResult, handleOpenPreview, previewFiles, previewOpen, requests]);
 
   const extractLotSuffix3 = useCallback((value: string | null | undefined) => {
     const s = String(value || "").toUpperCase();
@@ -326,21 +322,20 @@ export const usePackingCapture = ({
             await handleOpenPreviewRef.current(matchedRequest);
           }
         }
-        // capturedBy=frontend(프론트 이미지 드롭)일 때만 프론트에서 ZPL 생성 후 출력
-        // capturedBy=worker(lot-server 자동 인식)일 때는 백엔드 auto-print 사용
-        if (
-          capturedBy === "frontend" &&
-          mergedEventRequest &&
-          handleAutoPrintProcessedRequestRef.current &&
-          typeof handleAutoPrintProcessedRequestRef.current === "function"
-        ) {
-          await handleAutoPrintProcessedRequestRef.current(mergedEventRequest);
+        // 인식 결과를 콜백으로 전달 (라벨은 이미 사전 출력됨)
+        if (mergedEventRequest && onCaptureResultRef.current) {
+          onCaptureResultRef.current({
+            requestId: String(mergedEventRequest.requestId || requestId || ""),
+            recognizedSuffix: suffix,
+            request: mergedEventRequest,
+            capturedAt: new Date(),
+          });
         }
       })();
       toast({
-        title: "자동 처리 완료",
+        title: `각인 인식: ${suffix || "인식됨"}`,
         description: requestId
-          ? `${requestId}${suffix ? ` · ${suffix}` : ""}`
+          ? `${requestId} → 포장.발송으로 이동`
           : "세척.패킹 처리 결과가 반영되었습니다.",
       });
     });
