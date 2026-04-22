@@ -31,7 +31,7 @@ const WBL_MEDIA_OPTIONS = String(process.env.WBL_MEDIA_OPTIONS || "FS")
   .filter(Boolean);
 
 const HANJIN_PATH_FALLBACKS = {
-  HANJIN_PRINT_WBL_PATH: "/v1/wbl/{client_id}/print-wbls-sc",
+  HANJIN_PRINT_WBL_PATH: "/v1/wbl/{client_id}/print-wbls",
   HANJIN_PICKUP_REQUEST_PATH: "/parcel-delivery/v1/order/insert-order",
   HANJIN_PICKUP_CANCEL_PATH: "/parcel-delivery/v1/order/cancel-order",
   HANJIN_CUSTOMER_CHECK_PATH: "/parcel-delivery/v1/customer/customer-check",
