@@ -620,7 +620,7 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   const sellerBoxH = botPadTop + selLines * botLineH + botPadBot;
   const bottomH = mfgBoxH + sellerBoxH;
   const bottomY = curY + 2;
-  const leftColW = Math.round(W * 0.52);
+  const leftColW = Math.round(W * 0.56);
   const udiColW = W - leftColW;
   const udiColX = M + leftColW;
 
@@ -665,7 +665,7 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
     leftColW - 12,
   );
   fillTextLeft(
-    `${SELLER_PERMIT} / ${SELLER_TEL}`,
+    SELLER_TEL,
     M + 6,
     sellerBoxY + botPadTop + botLineH * 2,
     leftColW - 12,

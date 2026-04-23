@@ -466,7 +466,7 @@ const renderPackLabelToCanvas = async (opts) => {
   const sellerBoxH = botPadTop + 3 * botLineH + botPadBot;
   const bottomH = mfgBoxH + sellerBoxH;
   const bottomY = curY + 2;
-  const leftColW = Math.round(W * 0.52);
+  const leftColW = Math.round(W * 0.56);
   const udiColW = W - leftColW;
   const udiColX = M + leftColW;
 
@@ -486,11 +486,7 @@ const renderPackLabelToCanvas = async (opts) => {
   ctx.fillText("판매원: " + SELLER_NAME, M + 6, sellerBoxY + botPadTop);
   ctx.font = FONT_6PT;
   ctx.fillText(SELLER_ADDR, M + 6, sellerBoxY + botPadTop + botLineH);
-  ctx.fillText(
-    `${SELLER_PERMIT} / ${SELLER_TEL}`,
-    M + 6,
-    sellerBoxY + botPadTop + botLineH * 2,
-  );
+  ctx.fillText(SELLER_TEL, M + 6, sellerBoxY + botPadTop + botLineH * 2);
 
   // UDI + QR 통합박스 (우측 전체 높이)
   drawBox(udiColX, bottomY, udiColW, bottomH);
