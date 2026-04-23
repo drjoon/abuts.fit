@@ -620,7 +620,7 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   const sellerBoxH = botPadTop + selLines * botLineH + botPadBot;
   const bottomH = mfgBoxH + sellerBoxH;
   const bottomY = curY + 2;
-  const leftColW = Math.round(W * 0.45);
+  const leftColW = Math.round(W * 0.52);
   const udiColW = W - leftColW;
   const udiColX = M + leftColW;
 
