@@ -526,12 +526,12 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
 
   // ── 5구역: 법정 기재사항 박스 ────────────────────────────────
   // 첨2 레이아웃:
-  //   1행 좌/우 분할: 품목명 / 제조번호
-  //   2행 좌/우 분할: 모델명 / 제조일자
+  //   1행 좌/우 분할: 품목명 / 모델명
+  //   2행 좌/우 분할: 제조번호 / 제조일자
   //   3행 전체폭: 품목인증번호+포장단위+보관방법
   //   4행 전체폭: 설명문 + 일회용비멸균 문구
   const legalTopY = curY;
-  const splitColW = Math.round(W * 0.58);
+  const splitColW = Math.round(W * 0.63);
   const rColX = M + splitColW;
   const rColW = W - splitColW;
   const rRowH = Math.floor((lRow1H + lRow2H) / 2);
@@ -551,10 +551,10 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
     splitColW - 10,
   );
 
-  // 좌 2행: 모델명 (7pt↑)
+  // 좌 2행: 제조번호 (7pt↑)
   ctx.font = FONT_LEGAL_TITLE;
   fillTextLeft(
-    `모델명:${MODEL_NAME.replace(/['"]/g, "")}`,
+    `제조번호:${String(opts.lotNumber || "-").replace(/['"]/g, "")}`,
     M + 6,
     legalTopY + lRow1H + (lRow2H - 20) / 2,
     splitColW - 10,
@@ -592,10 +592,10 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
     6,
   );
 
-  // 우 1행: 제조번호 (7pt↑)
+  // 우 1행: 모델명 (7pt↑)
   ctx.font = FONT_LEGAL_TITLE;
   fillTextLeft(
-    `제조번호:${String(opts.lotNumber || "-").replace(/['"]/g, "")}`,
+    `모델명:${MODEL_NAME.replace(/['"]/g, "")}`,
     rColX + 6,
     legalTopY + (lRow1H - 20) / 2,
     rColW - 10,

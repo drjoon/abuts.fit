@@ -396,7 +396,7 @@ const renderPackLabelToCanvas = async (opts) => {
 
   // ── 5구역: 법정 기재사항 박스 ────────────────────────────────
   const legalTopY = curY;
-  const splitColW = Math.round(W * 0.58);
+  const splitColW = Math.round(W * 0.63);
   const rColX = M + splitColW;
   const rColW = W - splitColW;
 
@@ -414,7 +414,7 @@ const renderPackLabelToCanvas = async (opts) => {
     legalTopY + (lRow1H - 20) / 2,
   );
   ctx.fillText(
-    `모델명:${MODEL_NAME.replace(/['"]/g, "")}`,
+    `제조번호:${String(opts.lotNumber || "-").replace(/['"]/g, "")}`,
     M + 6,
     legalTopY + lRow1H + (lRow2H - 20) / 2,
   );
@@ -449,7 +449,7 @@ const renderPackLabelToCanvas = async (opts) => {
   ctx.font = FONT_LEGAL_TITLE;
   ctx.fillStyle = "black";
   ctx.fillText(
-    `제조번호:${String(opts.lotNumber || "-").replace(/['"]/g, "")}`,
+    `모델명:${MODEL_NAME.replace(/['"]/g, "")}`,
     rColX + 6,
     legalTopY + (lRow1H - 20) / 2,
   );
