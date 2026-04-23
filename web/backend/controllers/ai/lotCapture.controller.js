@@ -1,5 +1,4 @@
 import Request from "../../models/request.model.js";
-import BusinessAnchor from "../../models/businessAnchor.model.js";
 import s3Utils, { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
@@ -14,11 +13,6 @@ import {
   normalizeRequestForResponse,
 } from "../../controllers/requests/utils.js";
 import { allocateVirtualMailboxAddress } from "../requests/mailbox.utils.js";
-import {
-  printPackingLabelViaBgServer,
-  resolveManufacturingDateForPrint,
-  resolveScrewTypeForPrint,
-} from "../../utils/packPrint.utils.js";
 import sharp from "sharp";
 
 let _apiKey = null;
@@ -391,201 +385,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
 
   const normalizedRequest = await normalizeRequestForResponse(request);
 
-  // 라벨 프린트는 백그라운드에서 비동기 처리 (응답 속도 개선)
-  const printResult = {
-    success: null,
-    message: "backend_auto_print_pending",
-  };
-
-  // source=manual(프론트 드롭): 프론트에서 캔버스→ZPL 생성 후 직접 출력
-  // source≠manual(lot-server 등): 백엔드 fallback 렌더러로 출력
   const capturedByFrontend = String(source || "").trim() === "manual";
-
-  // 백그라운드 프린트 작업 (응답 대기 없음)
-  setImmediate(async () => {
-    if (capturedByFrontend) {
-      console.log(
-        "[lot-capture] source=manual: 프론트 렌더 출력 위임, 백엔드 auto-print 건너뜀",
-        {
-          requestId: request.requestId,
-        },
-      );
-      return;
-    }
-    try {
-      console.log("[lot-capture] auto print started", {
-        requestId: request?.requestId,
-        requestMongoId: String(request?._id || ""),
-        hasBusinessAnchorId: !!request?.businessAnchorId,
-        businessAnchorIdType: typeof request?.businessAnchorId,
-        businessAnchorIdName: request?.businessAnchorId?.name,
-        businessAnchorIdMetadata: request?.businessAnchorId?.metadata,
-      });
-
-      const manufacturingDate = resolveManufacturingDateForPrint(request);
-      if (!manufacturingDate) {
-        console.warn(
-          "[lot-capture] manufacturing date missing for auto print",
-          {
-            requestId: request.requestId,
-            requestMongoId: String(request._id || ""),
-          },
-        );
-        throw new Error("제조일자를 확인할 수 없어 라벨을 생성할 수 없습니다.");
-      }
-
-      const fullLotNumber = String(request?.lotNumber?.value || "").trim();
-
-      // businessAnchorId.name이 있으면 populate된 것, 없으면 ObjectId만 있는 것
-      let labName = "";
-      if (request?.businessAnchorId?.name) {
-        // populate된 경우 - name 필드 직접 사용
-        labName = String(request.businessAnchorId.name).trim();
-      } else if (request?.businessAnchorId?.metadata?.name) {
-        labName = String(request.businessAnchorId.metadata.name).trim();
-      } else if (request?.businessAnchorId) {
-        // populate되지 않은 ObjectId만 있는 경우 - DB에서 직접 조회
-        console.warn(
-          "[lot-capture] businessAnchorId not populated, fetching from DB",
-          {
-            requestId: request.requestId,
-            businessAnchorId: String(request.businessAnchorId),
-          },
-        );
-        const anchor = await BusinessAnchor.findById(
-          request.businessAnchorId,
-        ).select("name metadata");
-        labName = String(anchor?.name || anchor?.metadata?.name || "").trim();
-      }
-      const implantManufacturer = String(
-        request?.caseInfos?.implantManufacturer || "",
-      ).trim();
-      const clinicName = String(request?.caseInfos?.clinicName || "").trim();
-      const implantBrand = String(
-        request?.caseInfos?.implantBrand || "",
-      ).trim();
-      const implantFamily = String(
-        request?.caseInfos?.implantFamily || "",
-      ).trim();
-      const implantType = String(request?.caseInfos?.implantType || "").trim();
-      const patientName = String(request?.caseInfos?.patientName || "").trim();
-      const toothNumber = String(request?.caseInfos?.tooth || "").trim();
-      const material = String(
-        request?.caseInfos?.material ||
-          request?.material ||
-          request?.lotNumber?.material ||
-          "",
-      ).trim();
-      const mailboxCode = String(request?.mailboxAddress || "").trim();
-      const screwType = resolveScrewTypeForPrint(request);
-      const createdAtIso = request.createdAt ? String(request.createdAt) : "";
-
-      console.log("[lot-capture] auto print field values", {
-        requestId: request?.requestId,
-        fullLotNumber,
-        labName,
-        implantManufacturer,
-        clinicName,
-        implantBrand,
-        implantFamily,
-        implantType,
-        patientName,
-        toothNumber,
-        mailboxCode,
-        screwType,
-        material,
-        manufacturingDate,
-        createdAtIso: createdAtIso ? "set" : "empty",
-      });
-
-      if (
-        !fullLotNumber ||
-        !labName ||
-        !implantManufacturer ||
-        !clinicName ||
-        !implantBrand ||
-        !implantFamily ||
-        !implantType ||
-        !patientName ||
-        !toothNumber ||
-        !mailboxCode
-      ) {
-        const missing = [];
-        if (!fullLotNumber) missing.push("lotNumber");
-        if (!labName) missing.push("labName");
-        if (!implantManufacturer) missing.push("implantManufacturer");
-        if (!clinicName) missing.push("clinicName");
-        if (!implantBrand) missing.push("implantBrand");
-        if (!implantFamily) missing.push("implantFamily");
-        if (!implantType) missing.push("implantType");
-        if (!patientName) missing.push("patientName");
-        if (!toothNumber) missing.push("toothNumber");
-        if (!mailboxCode) missing.push("mailboxCode");
-
-        console.warn("[lot-capture] missing required fields for auto print", {
-          requestId: request.requestId,
-          missing,
-        });
-        throw new Error(
-          `필수 필드 누락: ${missing.join(", ")}. 라벨을 생성할 수 없습니다.`,
-        );
-      }
-
-      const packPrintResult = await printPackingLabelViaBgServer({
-        requestId: request.requestId,
-        lotNumber: fullLotNumber,
-        mailboxCode,
-        screwType,
-        clinicName,
-        labName,
-        requestDate: createdAtIso,
-        manufacturingDate,
-        implantManufacturer,
-        implantBrand,
-        implantFamily,
-        implantType,
-        patientName,
-        toothNumber,
-        material,
-        paperProfile: "PACK_80x65",
-        copies: 1,
-      });
-
-      console.log("[lot-capture] auto print success (background)", {
-        requestId: request.requestId,
-        lotNumber: fullLotNumber,
-      });
-
-      // 프린트 성공 이벤트 발송
-      emitAppEventGlobal("packing:print-completed", {
-        requestId: request.requestId,
-        requestMongoId: String(request._id || ""),
-        success: true,
-        generated: packPrintResult?.generated || null,
-      });
-    } catch (printError) {
-      console.error(
-        "[lot-capture] ❌ Failed to print packing label:",
-        printError,
-      );
-      console.error("[lot-capture] auto print failed (background)", {
-        requestId: request?.requestId,
-        requestMongoId: String(request?._id || ""),
-        message: printError?.message || String(printError),
-        stack: printError?.stack,
-        requestExists: !!request,
-        hasBusinessAnchorId: !!request?.businessAnchorId,
-      });
-
-      // 프린트 실패 이벤트 발송
-      emitAppEventGlobal("packing:print-failed", {
-        requestId: request.requestId,
-        requestMongoId: String(request._id || ""),
-        success: false,
-        message: printError?.message || "패킹 라벨 자동 프린트 실패",
-      });
-    }
-  });
 
   emitBgRuntimeStatus({
     requestId: request.requestId,
@@ -599,9 +399,6 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     metadata: {
       recognizedSuffix: finalRecognizedSuffix || null,
       temporaryFallback: !packAiRecogEnabled && !finalRecognizedSuffix,
-      autoPrintHandledBy: "backend",
-      autoPrintSuccess: printResult?.success,
-      autoPrintMessage: printResult?.message,
     },
   });
 
@@ -628,7 +425,6 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
       uploadedAt:
         request.caseInfos?.stageFiles?.packing?.uploadedAt || new Date(),
     },
-    print: printResult,
   });
 
   emitAppEventGlobal("request:stage-changed", {
@@ -651,7 +447,6 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
         requestId: request.requestId,
         suffix: finalRecognizedSuffix || null,
         recognized: recognized || null,
-        print: printResult,
       },
       "포장 캡쳐 처리 완료",
     ),
