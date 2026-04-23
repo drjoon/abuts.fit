@@ -135,6 +135,24 @@ export const PackingPageContent = ({
     [filteredAndSorted],
   );
 
+  const printedPackingRequestIds = useMemo(
+    () =>
+      filteredAndSorted
+        .filter((req) => Boolean((req as any)?.shippingLabelPrinted?.printed))
+        .map((req) => String(req._id || ""))
+        .filter(Boolean),
+    [filteredAndSorted],
+  );
+
+  const unprintedPackingRequestIds = useMemo(
+    () =>
+      filteredAndSorted
+        .filter((req) => !Boolean((req as any)?.shippingLabelPrinted?.printed))
+        .map((req) => String(req._id || ""))
+        .filter(Boolean),
+    [filteredAndSorted],
+  );
+
   const {
     printerProfile,
     setPrinterProfile,
@@ -301,6 +319,14 @@ export const PackingPageContent = ({
     setSelectedPackingRequestIds(allPackingRequestIds);
   }, [allPackingRequestIds]);
 
+  const handleSelectUnprintedPackingRequests = useCallback(() => {
+    setSelectedPackingRequestIds(unprintedPackingRequestIds);
+  }, [unprintedPackingRequestIds]);
+
+  const handleSelectPrintedPackingRequests = useCallback(() => {
+    setSelectedPackingRequestIds(printedPackingRequestIds);
+  }, [printedPackingRequestIds]);
+
   const handleClearPackingRequests = useCallback(() => {
     setSelectedPackingRequestIds([]);
   }, []);
@@ -311,11 +337,11 @@ export const PackingPageContent = ({
       const next = prev.filter((id) => validIds.has(id));
       if (!didInitPackingSelectionRef.current) {
         didInitPackingSelectionRef.current = true;
-        return allPackingRequestIds;
+        return unprintedPackingRequestIds;
       }
       return next;
     });
-  }, [allPackingRequestIds]);
+  }, [allPackingRequestIds, unprintedPackingRequestIds]);
 
   const handleOpenNextRequest = useCallback(
     async (currentReqId: string) => {
@@ -759,9 +785,40 @@ export const PackingPageContent = ({
                     : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm"
                 }`}
               >
-                {isPrintingPackingLabels ? "출력 중..." : "🏷️ 패킹 라벨 출력"}
+                {isPrintingPackingLabels
+                  ? "출력 중..."
+                  : `🏷️ 패킹 라벨 출력 (${selectedPackingRequestIds.length}건)`}
               </button>
               <div className="w-2" />
+              {/* 미출력 선택 */}
+              <button
+                type="button"
+                onClick={handleSelectUnprintedPackingRequests}
+                disabled={!unprintedPackingRequestIds.length}
+                title={`미출력 ${unprintedPackingRequestIds.length}건 선택`}
+                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                  !unprintedPackingRequestIds.length
+                    ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                    : "bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100"
+                }`}
+              >
+                미출력만 ({unprintedPackingRequestIds.length})
+              </button>
+              {/* 기출력 선택 */}
+              <button
+                type="button"
+                onClick={handleSelectPrintedPackingRequests}
+                disabled={!printedPackingRequestIds.length}
+                title={`기출력 ${printedPackingRequestIds.length}건 선택 (재출력)`}
+                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                  !printedPackingRequestIds.length
+                    ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                    : "bg-slate-50 text-slate-600 border-slate-300 hover:bg-slate-100"
+                }`}
+              >
+                기출력만 ({printedPackingRequestIds.length})
+              </button>
+              {/* 전체 선택/해제 */}
               <button
                 type="button"
                 onClick={handleSelectAllPackingRequests}
@@ -772,7 +829,7 @@ export const PackingPageContent = ({
                     : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
                 }`}
               >
-                전체 선택
+                전체
               </button>
               <button
                 type="button"
@@ -784,12 +841,8 @@ export const PackingPageContent = ({
                     : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
                 }`}
               >
-                전체 해제
+                해제
               </button>
-              <div className="text-xs text-slate-500">
-                전체 {allPackingRequestIds.length}개 / 선택{" "}
-                {selectedPackingRequestIds.length}개
-              </div>
             </div>
           </div>
         </div>
@@ -864,6 +917,7 @@ export const PackingPageContent = ({
                   ),
                 ),
               )}
+              printedRequestIds={new Set(printedPackingRequestIds)}
               onToggleSelected={handleTogglePackingRequest}
               onDownload={handleDownloadOriginalStl}
               onOpenPreview={handleOpenPreview}

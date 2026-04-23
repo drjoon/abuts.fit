@@ -641,7 +641,7 @@ export const MailboxGrid = ({
       else if (codes.has("canceled")) nextStatus = "canceled";
       else if (codes.has("completed")) nextStatus = "completed";
       else if (codes.has("picked_up")) nextStatus = "picked_up";
-      else if (codes.has("accepted")) nextStatus = "accepted";
+      // accepted 상태 제거: 운송장번호 부여 시점을 printed로 통합
       else if (codes.has("printed")) nextStatus = "printed";
       map.set(mailbox, nextStatus);
     }
@@ -798,27 +798,37 @@ export const MailboxGrid = ({
     }
   }
 
-  const acceptedAddresses = useMemo(
-    () =>
-      occupiedAddresses.filter(
-        (addr) => pickupRequestedMailboxes.get(addr) === "accepted",
-      ),
-    [occupiedAddresses, pickupRequestedMailboxes],
-  );
+  // accepted 상태 제거: 더 이상 사용하지 않음
+  // const acceptedAddresses = useMemo(
+  //   () =>
+  //     occupiedAddresses.filter(
+  //       (addr) => pickupRequestedMailboxes.get(addr) === "accepted",
+  //     ),
+  //   [occupiedAddresses, pickupRequestedMailboxes],
+  // );
 
   const printedWorkflowAddresses = useMemo(
     () =>
       occupiedAddresses.filter((addr) => {
         const status = pickupRequestedMailboxes.get(addr);
-        // accepted/picked_up도 이미 출력 완료된 상태로 간주
+        // printed/picked_up/completed를 출력 완료 상태로 간주
         return (
           status === "printed" ||
-          status === "accepted" ||
           status === "picked_up" ||
+          status === "completed" ||
           printedMailboxes.has(addr)
         );
       }),
     [occupiedAddresses, pickupRequestedMailboxes, printedMailboxes],
+  );
+
+  // 미출력 우편함: 점유됐지만 아직 운송장 출력 안 된 것
+  const unprintedMailboxAddresses = useMemo(
+    () =>
+      occupiedAddresses.filter(
+        (addr) => !printedWorkflowAddresses.includes(addr),
+      ),
+    [occupiedAddresses, printedWorkflowAddresses],
   );
 
   const printedMailboxChanges = useMemo(
@@ -899,7 +909,7 @@ export const MailboxGrid = ({
       ? normalizedExplicitTargets.filter(
           (addr) => pickupRequestedMailboxes.get(addr) === "accepted",
         )
-      : acceptedAddresses;
+      : occupiedAddresses;
     const hasAcceptedTarget = acceptedTargetAddresses.length > 0;
     const printedAddresses = normalizedExplicitTargets.length
       ? normalizedExplicitTargets.filter(
@@ -1039,44 +1049,59 @@ export const MailboxGrid = ({
     }
   };
 
-  // 백엔드 상태 기반 버튼 로직
-  const hasAcceptedMailbox = acceptedAddresses.length > 0;
+  // 백엔드 상태 기반 버튼 로직 (accepted 상태 제거)
+  // const hasAcceptedMailbox = acceptedAddresses.length > 0;
   const hasAnyOccupiedMailbox = occupiedAddresses.length > 0;
 
-  // [택배접수] 클릭: pickup-and-print (접수 → 라벨 출력 통합)
-  const pickupPrintLabel = "🚚 택배접수 & 🖨️송장출력";
-  const pickupPrintLoadingLabel = "처리 중...";
+  // 운송장 출력 라벨
+  const printLabel = "🖨️ 운송장 출력";
+  const printLoadingLabel = "출력 중...";
 
-  // 재출력 다이얼로그에서 선택된 주소로 재출력 실행
-  const handleReprintConfirm = useCallback(() => {
+  // 운송장 출력 다이얼로그에서 선택된 주소로 출력 실행
+  const handlePrintConfirm = useCallback(() => {
     const selectedList = Array.from(reprintSelectedAddresses);
     if (!selectedList.length) return;
     setReprintDialogOpen(false);
-    void handlePrintOnly({
-      targetAddresses: selectedList,
-      modifyOnly: true,
-    });
-  }, [reprintSelectedAddresses]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // 신규 우편함이 있으면 pickup-and-print (운송장번호 신청+출력)
+    // 기출력 우편함만 있으면 print-labels (재출력만)
+    const hasUnprinted = selectedList.some(
+      (addr) => !printedWorkflowAddresses.includes(addr),
+    );
+
+    if (hasUnprinted) {
+      // 신규 우편함 포함: 운송장번호 신청 후 출력
+      void handlePrintOnly({
+        targetAddresses: selectedList,
+        modifyOnly: false,
+      });
+    } else {
+      // 기출력 우편함만: 재출력만
+      void handlePrintOnly({
+        targetAddresses: selectedList,
+        modifyOnly: true,
+      });
+    }
+  }, [reprintSelectedAddresses, printedWorkflowAddresses]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const actionButtons = [
     {
-      // 택배접수: 접수 전이면 pickup-and-print, 접수 후엔 운송장 재출력 선택 다이얼로그
-      label: pickupPrintLabel,
+      // 운송장 출력: 항상 다이얼로그로 대상 선택 후 출력
+      label: "🖨️ 운송장 출력",
       loading:
         (activeHeaderAction === "pickup" || activeHeaderAction === "print") &&
         isRequestingPickup,
-      loadingLabel: pickupPrintLoadingLabel,
+      loadingLabel: "출력 중...",
       disabled: !hasAnyOccupiedMailbox,
       variant: "slate" as const,
       onClick: () => {
-        if (hasAcceptedMailbox) {
-          // 재출력: 우편함 선택 다이얼로그 열기
-          setReprintSelectedAddresses(new Set(acceptedAddresses));
-          setReprintDialogOpen(true);
-        } else {
-          // 신규 접수: pickup-and-print (접수 → 라벨 출력 통합)
-          void handlePrintOnly();
-        }
+        // 항상 선택 다이얼로그 오픈: 신규/기출력 구분 선택
+        const initialSelected =
+          unprintedMailboxAddresses.length > 0
+            ? new Set(unprintedMailboxAddresses)
+            : new Set(occupiedAddresses);
+        setReprintSelectedAddresses(initialSelected);
+        setReprintDialogOpen(true);
       },
     },
     {
@@ -1102,28 +1127,28 @@ export const MailboxGrid = ({
   ];
 
   // 재출력 다이얼로그용 주소 파싱: "A1A2" → { shelfCol:"A", shelfRow:"1", binCol:"A", binRow:"2" }
-  const parsedAcceptedAddresses = useMemo(() => {
-    return acceptedAddresses.map((addr) => ({
+  const parsedTargetAddresses = useMemo(() => {
+    return occupiedAddresses.map((addr) => ({
       addr,
       shelfCol: addr[0] ?? "",
       shelfRow: addr[1] ?? "",
       binCol: addr[2] ?? "",
       binRow: addr[3] ?? "",
     }));
-  }, [acceptedAddresses]);
+  }, [occupiedAddresses]);
 
   // 열(BinCol) / 행(BinRow) 그룹
   const reprintBinCols = useMemo(
-    () => [...new Set(parsedAcceptedAddresses.map((p) => p.binCol))].sort(),
-    [parsedAcceptedAddresses],
+    () => [...new Set(parsedTargetAddresses.map((p) => p.binCol))].sort(),
+    [parsedTargetAddresses],
   );
   const reprintBinRows = useMemo(
-    () => [...new Set(parsedAcceptedAddresses.map((p) => p.binRow))].sort(),
-    [parsedAcceptedAddresses],
+    () => [...new Set(parsedTargetAddresses.map((p) => p.binRow))].sort(),
+    [parsedTargetAddresses],
   );
 
   const toggleReprintByBinCol = (col: string) => {
-    const colAddrs = parsedAcceptedAddresses
+    const colAddrs = parsedTargetAddresses
       .filter((p) => p.binCol === col)
       .map((p) => p.addr);
     const allSelected = colAddrs.every((a) => reprintSelectedAddresses.has(a));
@@ -1135,7 +1160,7 @@ export const MailboxGrid = ({
   };
 
   const toggleReprintByBinRow = (row: string) => {
-    const rowAddrs = parsedAcceptedAddresses
+    const rowAddrs = parsedTargetAddresses
       .filter((p) => p.binRow === row)
       .map((p) => p.addr);
     const allSelected = rowAddrs.every((a) => reprintSelectedAddresses.has(a));
@@ -1147,16 +1172,16 @@ export const MailboxGrid = ({
   };
 
   const toggleReprintAll = () => {
-    if (reprintSelectedAddresses.size === acceptedAddresses.length) {
+    if (reprintSelectedAddresses.size === occupiedAddresses.length) {
       setReprintSelectedAddresses(new Set());
     } else {
-      setReprintSelectedAddresses(new Set(acceptedAddresses));
+      setReprintSelectedAddresses(new Set(occupiedAddresses));
     }
   };
 
   return (
     <div className="w-full flex flex-col h-full relative">
-      {/* 재출력 우편함 선택 다이얼로그 */}
+      {/* 운송장 출력 우편함 선택 다이얼로그 */}
       {reprintDialogOpen && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-16">
           <div className="bg-white rounded-2xl shadow-2xl w-[560px] max-h-[75vh] flex flex-col overflow-hidden">
@@ -1164,10 +1189,11 @@ export const MailboxGrid = ({
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div>
                 <div className="font-semibold text-base text-slate-800">
-                  운송장 재출력 우편함 선택
+                  운송장 출력 우편함 선택
                 </div>
                 <div className="text-xs text-slate-400 mt-0.5">
-                  총 {acceptedAddresses.length}개 우편함 ·{" "}
+                  총 {occupiedAddresses.length}개 우편함 (신규{" "}
+                  {unprintedMailboxAddresses.length}개) ·{" "}
                   {reprintSelectedAddresses.size}개 선택됨
                 </div>
               </div>
@@ -1193,18 +1219,18 @@ export const MailboxGrid = ({
                       >
                         <span
                           className={`w-4 h-4 border-2 rounded flex items-center justify-center text-[10px] font-bold transition-colors ${
-                            acceptedAddresses.length > 0 &&
+                            occupiedAddresses.length > 0 &&
                             reprintSelectedAddresses.size ===
-                              acceptedAddresses.length
+                              occupiedAddresses.length
                               ? "bg-blue-500 border-blue-500 text-white"
                               : reprintSelectedAddresses.size > 0
                                 ? "bg-blue-100 border-blue-400 text-blue-600"
                                 : "border-slate-300 group-hover:border-blue-400"
                           }`}
                         >
-                          {acceptedAddresses.length > 0 &&
+                          {occupiedAddresses.length > 0 &&
                           reprintSelectedAddresses.size ===
-                            acceptedAddresses.length
+                            occupiedAddresses.length
                             ? "✓"
                             : reprintSelectedAddresses.size > 0
                               ? "−"
@@ -1214,10 +1240,10 @@ export const MailboxGrid = ({
                     </th>
                     {/* 열 헤더: BinCol — 클릭 시 열 전체 선택/해제 */}
                     {reprintBinCols.map((col) => {
-                      const colAddrs = parsedAcceptedAddresses
+                      const colAddrs = parsedTargetAddresses
                         .filter((p) => p.binCol === col)
                         .map((p) => p.addr)
-                        .filter((a) => acceptedAddresses.includes(a));
+                        .filter((a) => occupiedAddresses.includes(a));
                       const allSel =
                         colAddrs.length > 0 &&
                         colAddrs.every((a) => reprintSelectedAddresses.has(a));
@@ -1244,10 +1270,10 @@ export const MailboxGrid = ({
                 </thead>
                 <tbody>
                   {reprintBinRows.map((row) => {
-                    const rowAddrs = parsedAcceptedAddresses
+                    const rowAddrs = parsedTargetAddresses
                       .filter((p) => p.binRow === row)
                       .map((p) => p.addr)
-                      .filter((a) => acceptedAddresses.includes(a));
+                      .filter((a) => occupiedAddresses.includes(a));
                     const allRowSel =
                       rowAddrs.length > 0 &&
                       rowAddrs.every((a) => reprintSelectedAddresses.has(a));
@@ -1271,14 +1297,16 @@ export const MailboxGrid = ({
                         </td>
                         {/* 셀: 각 BinCol × BinRow 교차점 */}
                         {reprintBinCols.map((col) => {
-                          const addr = parsedAcceptedAddresses.find(
+                          const addr = parsedTargetAddresses.find(
                             (p) => p.binCol === col && p.binRow === row,
                           )?.addr;
                           const exists =
                             addr !== undefined &&
-                            acceptedAddresses.includes(addr);
+                            occupiedAddresses.includes(addr);
                           const selected =
                             exists && reprintSelectedAddresses.has(addr!);
+                          const isPrinted =
+                            exists && printedWorkflowAddresses.includes(addr!);
                           const count = exists
                             ? (addressMap.get(addr!) ?? []).length
                             : 0;
@@ -1299,19 +1327,38 @@ export const MailboxGrid = ({
                                   ? "bg-slate-50"
                                   : selected
                                     ? "bg-blue-500 cursor-pointer"
-                                    : "bg-white hover:bg-blue-50 cursor-pointer"
+                                    : isPrinted
+                                      ? "bg-slate-100 hover:bg-slate-50 cursor-pointer"
+                                      : "bg-white hover:bg-blue-50 cursor-pointer"
                               }`}
                             >
                               {exists && (
                                 <div className="flex flex-col items-center justify-center gap-0.5">
+                                  {isPrinted && (
+                                    <div className="text-[9px] font-semibold text-slate-500 mb-0.5">
+                                      ✓ 출력됨
+                                    </div>
+                                  )}
                                   <span
-                                    className={`text-xs font-mono font-semibold ${selected ? "text-white" : "text-slate-700"}`}
+                                    className={`text-xs font-mono font-semibold ${
+                                      selected
+                                        ? "text-white"
+                                        : isPrinted
+                                          ? "text-slate-600"
+                                          : "text-slate-700"
+                                    }`}
                                   >
                                     {addr}
                                   </span>
                                   {count > 0 && (
                                     <span
-                                      className={`text-[10px] ${selected ? "text-blue-100" : "text-slate-400"}`}
+                                      className={`text-[10px] ${
+                                        selected
+                                          ? "text-blue-100"
+                                          : isPrinted
+                                            ? "text-slate-400"
+                                            : "text-slate-400"
+                                      }`}
                                     >
                                       {count}건
                                     </span>
@@ -1343,9 +1390,9 @@ export const MailboxGrid = ({
                 <button
                   className="px-5 py-2 rounded-lg text-sm text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 font-medium"
                   disabled={reprintSelectedAddresses.size === 0}
-                  onClick={handleReprintConfirm}
+                  onClick={handlePrintConfirm}
                 >
-                  재출력 ({reprintSelectedAddresses.size}개)
+                  운송장 출력 ({reprintSelectedAddresses.size}개)
                 </button>
               </div>
             </div>

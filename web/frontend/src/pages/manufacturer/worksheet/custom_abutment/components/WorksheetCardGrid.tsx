@@ -17,6 +17,7 @@ import {
 type WorksheetCardGridProps = {
   requests: ManufacturerRequest[];
   selectedRequestIds?: string[];
+  printedRequestIds?: Set<string>;
   onToggleSelected?: (req: ManufacturerRequest) => void;
   onDownload: (req: ManufacturerRequest) => void;
   onOpenPreview: (req: ManufacturerRequest) => void;
@@ -40,6 +41,7 @@ type WorksheetCardGridProps = {
 export const WorksheetCardGrid = ({
   requests,
   selectedRequestIds = [],
+  printedRequestIds,
   onToggleSelected,
   onDownload,
   onOpenPreview,
@@ -115,6 +117,9 @@ export const WorksheetCardGrid = ({
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {requests.map((request) => {
         const isSelected = selectedRequestIdSet.has(String(request._id || ""));
+        const isPrinted = printedRequestIds
+          ? printedRequestIds.has(String(request._id || ""))
+          : Boolean((request as any)?.shippingLabelPrinted?.printed);
         const caseInfos = (request.caseInfos ||
           {}) as typeof request.caseInfos & {
           newSystemRequest?: { requested?: boolean; free?: boolean };
@@ -437,22 +442,34 @@ export const WorksheetCardGrid = ({
             className={`relative h-full border ${
               isSelected
                 ? "border-blue-500 bg-blue-50/40"
-                : hasInsufficientShippingCredit
-                  ? "border-red-500 border-2 bg-red-50/40"
-                  : isCompletedForCurrentStage
-                    ? "border-emerald-500 bg-emerald-50/30"
-                    : deadlineInfo
-                      ? deadlineInfo.borderClass
-                      : urgency === "danger"
-                        ? "border-rose-500 border-2"
-                        : urgency === "warning"
-                          ? "border-amber-500 border-2"
-                          : "border-slate-200"
+                : tabStage === "packing" && isPrinted
+                  ? "border-slate-300 bg-slate-50/60 opacity-75"
+                  : hasInsufficientShippingCredit
+                    ? "border-red-500 border-2 bg-red-50/40"
+                    : isCompletedForCurrentStage
+                      ? "border-emerald-500 bg-emerald-50/30"
+                      : deadlineInfo
+                        ? deadlineInfo.borderClass
+                        : urgency === "danger"
+                          ? "border-rose-500 border-2"
+                          : urgency === "warning"
+                            ? "border-amber-500 border-2"
+                            : "border-slate-200"
             } ${onToggleSelected ? "cursor-pointer" : ""}`}
             role={onToggleSelected ? "button" : undefined}
             aria-pressed={onToggleSelected ? isSelected : undefined}
           >
             <div className="absolute right-2 top-2 z-20 flex gap-1">
+              {tabStage === "packing" && isPrinted && (
+                <div className="absolute left-2 top-2 z-20">
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] px-1.5 py-0 font-semibold border-slate-300 bg-slate-100 text-slate-500"
+                  >
+                    ✓ 출력 완료
+                  </Badge>
+                </div>
+              )}
               {onRollback && canRollback && (
                 <button
                   type="button"
