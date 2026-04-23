@@ -81,9 +81,19 @@
 - 프론트엔드 마감 시간 계산: `/web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts`
   - `getDeadlineInfo()`: 마감까지 남은 시간 계산
   - 마감 시각: `estimatedShipYmd 16:00 KST` (UTC+9)
+- 프론트엔드 KST 포맷팅 유틸리티: `/web/frontend/src/shared/date/kst.ts`
+  - `toKstYmd()`: Date → YYYY-MM-DD (KST)
+  - `formatKstDateTimeToKo()`: KST 기준 날짜/시간 문자열 포맷 (ko-KR)
+  - 모든 날짜/시간 표시는 이 유틸리티를 사용해야 함
 - UTC 저장 시 KST 변환 주의:
   - KST 16:00 = UTC 07:00
   - `new Date("2026-04-02T16:00:00+09:00")` = `new Date("2026-04-02T07:00:00Z")`
+- **한진 API `statusDate` 파싱 주의** (2026-04-23):
+  - 한진 API는 `"YYYY-MM-DD HH:MM:SS"` 포맷으로 KST 시각을 반환하지만 timezone 정보 없음
+  - AWS EBS(UTC)에서 `new Date()` 직접 파싱 시 UTC로 해석되어 +9h 오차 발생
+  - `parseDate()` 함수(`shipping.Tracking.helpers.js`)에서 이 패턴을 `+09:00`로 강제 해석
+  - ❌ `new Date("2026-04-23 15:48:51")` → UTC 15:48 (잘못됨)
+  - ✅ `new Date("2026-04-23T15:48:51+09:00")` → KST 15:48 (올바름)
 
 ---
 

@@ -24,7 +24,26 @@ export const toBool = (v) =>
 
 export const parseDate = (v) => {
   if (!v) return null;
-  const d = v instanceof Date ? v : new Date(v);
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v;
+  const s = String(v).trim();
+  // 한진 API는 "YYYY-MM-DD HH:MM:SS" 포맷으로 KST 시각을 반환하나
+  // timezone 정보가 없으므로 new Date() 파싱 시 UTC로 해석됨 (+9h 오차 발생).
+  // "YYYY-MM-DD HH:MM:SS" 또는 "YYYYMMDDHHMMSS" 패턴은 KST로 강제 해석.
+  const isoLike = s.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
+  if (isoLike) {
+    const kst = new Date(
+      `${isoLike[1]}-${isoLike[2]}-${isoLike[3]}T${isoLike[4]}:${isoLike[5]}:${isoLike[6]}+09:00`,
+    );
+    return Number.isNaN(kst.getTime()) ? null : kst;
+  }
+  const compactLike = s.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/);
+  if (compactLike) {
+    const kst = new Date(
+      `${compactLike[1]}-${compactLike[2]}-${compactLike[3]}T${compactLike[4]}:${compactLike[5]}:${compactLike[6]}+09:00`,
+    );
+    return Number.isNaN(kst.getTime()) ? null : kst;
+  }
+  const d = new Date(s);
   if (Number.isNaN(d.getTime())) return null;
   return d;
 };

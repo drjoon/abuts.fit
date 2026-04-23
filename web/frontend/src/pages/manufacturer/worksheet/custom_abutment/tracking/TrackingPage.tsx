@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import type { DeliveryInfoSummary } from "@/types/request";
-import { toKstYmd } from "@/shared/date/kst";
+import { toKstYmd, formatKstDateTimeToKo } from "@/shared/date/kst";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import {
   deriveStageForFilter,
@@ -87,10 +87,7 @@ const normalizeLotNumberLabel = (req: ManufacturerRequest) => {
 };
 
 const formatDateTime = (d?: string) => {
-  if (!d) return "-";
-  const dt = new Date(d);
-  if (Number.isNaN(dt.getTime())) return "-";
-  return dt.toLocaleString("ko-KR");
+  return formatKstDateTimeToKo(d);
 };
 
 const getShippingStatus = (req: ManufacturerRequest) => {
