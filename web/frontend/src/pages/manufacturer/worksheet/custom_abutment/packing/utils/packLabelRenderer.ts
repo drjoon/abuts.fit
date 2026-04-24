@@ -19,6 +19,7 @@ export type PackLabelRenderOptions = {
   manufacturingDate: string;
   caseType: string;
   printedAt: string;
+  modelName?: string;
   dpi?: number;
   targetDots?: { pw: number; ll: number };
   designDots?: { pw: number; ll: number; dpi: number };
@@ -224,7 +225,10 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   const PRODUCT_NAME = (
     env.VITE_PACK_PRODUCT_NAME || "임플란트 상부구조물"
   ).replace(/['"]/g, "");
-  const MODEL_NAME = (env.VITE_PACK_MODEL_NAME || "").replace(/['"]/g, "");
+  const MODEL_NAME = (opts.modelName || env.VITE_PACK_MODEL_NAME || "").replace(
+    /['"]/g,
+    "",
+  );
   const LICENSE_NO = env.VITE_PACK_LICENSE_NO || "";
   const COMPANY_NAME = (env.VITE_PACK_MANUFACTURER_NAME || "").replace(
     /['"]/g,
@@ -531,7 +535,8 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   //   3행 전체폭: 품목인증번호+포장단위+보관방법
   //   4행 전체폭: 설명문 + 일회용비멸균 문구
   const legalTopY = curY;
-  const splitColW = Math.round(W * 0.63);
+  // 모델명/제조일자를 왼쪽으로 이동하기 위해 좌측 컬럼 비율 축소
+  const splitColW = Math.round(W * 0.53);
   const rColX = M + splitColW;
   const rColW = W - splitColW;
   const rRowH = Math.floor((lRow1H + lRow2H) / 2);

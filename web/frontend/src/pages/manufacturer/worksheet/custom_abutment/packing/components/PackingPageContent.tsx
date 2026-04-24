@@ -534,6 +534,9 @@ export const PackingPageContent = ({
         "";
       const mailboxCode = resolvePackMailboxCode(req);
       const screwType = resolvePackScrewCode(req);
+      // 모델명: CA + 각도(aaa) + 최대직경(ddd) + 최대높이(lll) + "-" + 로트 끝3자리
+      const modelNumber = generateModelNumber(caseInfos as any, fullLotNumber);
+      const modelName = modelNumber ? `CA${modelNumber}` : "";
       const payload = {
         printer: printerProfile || undefined,
         paperProfile: paperProfile || undefined,
@@ -553,6 +556,7 @@ export const PackingPageContent = ({
         patientName,
         toothNumber,
         material,
+        modelName,
         caseType: "Custom Abutment",
         printedAt: new Date().toISOString(),
       };

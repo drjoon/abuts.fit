@@ -125,6 +125,7 @@ const renderPackLabelToCanvas = async (opts) => {
     "",
   );
   const MODEL_NAME = (opts.modelName || "").replace(/['"]/g, "");
+  // opts.modelName은 packPrint.utils.js에서 CA + 각도 + 최대직경 + 최대높이로 생성됨
   const LICENSE_NO = opts.licenseNo || "";
   const COMPANY_NAME = (opts.manufacturerName || "").replace(/['"]/g, "");
   const COMPANY_ADDR = (opts.manufacturerAddr || "").replace(/['"]/g, "");
@@ -396,7 +397,8 @@ const renderPackLabelToCanvas = async (opts) => {
 
   // ── 5구역: 법정 기재사항 박스 ────────────────────────────────
   const legalTopY = curY;
-  const splitColW = Math.round(W * 0.63);
+  // 모델명/제조일자를 왼쪽으로 이동하기 위해 좌측 컬럼 비율 축소
+  const splitColW = Math.round(W * 0.53);
   const rColX = M + splitColW;
   const rColW = W - splitColW;
 
