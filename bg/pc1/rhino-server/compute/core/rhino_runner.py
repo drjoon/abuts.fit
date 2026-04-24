@@ -135,8 +135,39 @@ async def run_rhino_python(
                     await process.wait()
                     raise RuntimeError(f"Rhino 스크립트 실행 타임아웃 ({timeout_sec}s)")
             finally:
+                # [fix] 서브프로세스 고아 누수 방지:
+                # callback이 먼저 와서 future가 set되면 process_task만 cancel하던 이전 코드는
+                # 실제 rhinocode 자식 프로세스를 죽이지 않아 시간이 지나며 파이프/FD/프로세스 leak.
+                # 하루 누적되면 RhinoCode/OS 자원이 포화되어 신규 작업이 먹통이 됨.
+                # 이제는 프로세스가 살아있다면 강제 종료 후 종료까지 대기(짧게)하고 task를 취소한다.
+                if process is not None:
+                    try:
+                        if process.returncode is None:
+                            try:
+                                process.kill()
+                            except Exception:
+                                pass
+                            try:
+                                await asyncio.wait_for(process.wait(), timeout=5.0)
+                            except asyncio.TimeoutError:
+                                log(f"process wait timeout after kill (pid={getattr(process,'pid',None)})")
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
                 for p in pending:
-                    p.cancel()
+                    try:
+                        p.cancel()
+                    except Exception:
+                        pass
+                # cancel된 task가 정리될 때까지 잠깐 기다려 경고/예외가 로그로 새지 않게 함
+                for p in pending:
+                    try:
+                        await asyncio.wait_for(p, timeout=0.5)
+                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                        pass
+                    except Exception:
+                        pass
 
             if not payload:
                 raise RuntimeError("Rhino 스크립트로부터 결과를 받지 못했습니다.")

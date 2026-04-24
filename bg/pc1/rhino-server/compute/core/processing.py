@@ -465,8 +465,15 @@ def start_recovery_thread():
 # 중복 요청(같은 파일명이 이미 큐에 있거나 처리 중)은 무시한다.
 
 async def stl_queue_worker() -> None:
-    """앱 시작 시 asyncio.create_task로 한 번만 실행되는 영구 워커."""
-    log("[stl-queue] Worker started")
+    """앱 시작 시 asyncio.create_task로 한 번만 실행되는 영구 워커.
+
+    [fix] per-job 하드 타임아웃(기본 10분)을 두어 한 작업이 어떤 이유로든 멈춰도
+    워커가 영구 블록되지 않도록 한다. 예전에는 한 번 hang이 생기면 이후 STL이
+    큐에만 쌓이고 서버 전체가 '처리 불능' 상태가 되었다.
+    """
+    import os as _os
+    hard_timeout = float(_os.getenv("RHINO_JOB_HARD_TIMEOUT_SEC", "600"))
+    log(f"[stl-queue] Worker started (hard_timeout={hard_timeout}s)")
     while True:
         try:
             item = await state.stl_job_queue.get()
@@ -474,16 +481,49 @@ async def stl_queue_worker() -> None:
             force: bool = item.get("force", False)
             log(f"[stl-queue] Dequeued: {p.name} (queue remaining: {state.stl_job_queue.qsize()})")
             try:
-                await process_single_stl(p, force)
+                await asyncio.wait_for(process_single_stl(p, force), timeout=hard_timeout)
+            except asyncio.TimeoutError:
+                log(f"[stl-queue] HARD TIMEOUT ({hard_timeout}s) for {p.name}, skipping to next")
+                # in_flight 정리 (process_single_stl 내부 finally가 못 돌았을 경우 안전망)
+                try:
+                    with state.in_flight_lock:
+                        state.in_flight.discard(p.name)
+                except Exception:
+                    pass
             except Exception as e:
                 log(f"[stl-queue] Unexpected error for {p.name}: {e}")
             finally:
                 state.stl_job_queue.task_done()
+                # [fix] state.jobs 무한 증가 방지: 최근 200개만 유지
+                try:
+                    if len(state.jobs) > 200:
+                        items_sorted = sorted(
+                            state.jobs.items(),
+                            key=lambda kv: kv[1].get("createdAt", 0),
+                        )
+                        for jid, _ in items_sorted[: len(state.jobs) - 200]:
+                            state.jobs.pop(jid, None)
+                except Exception:
+                    pass
+                # [fix] 완료되었거나 오래된 job_futures 정리 (안전망)
+                try:
+                    stale_tokens = [
+                        t for t, f in list(state.job_futures.items()) if f.done()
+                    ]
+                    for t in stale_tokens:
+                        state.job_futures.pop(t, None)
+                except Exception:
+                    pass
         except asyncio.CancelledError:
             log("[stl-queue] Worker cancelled")
             break
         except Exception as e:
             log(f"[stl-queue] Worker loop error: {e}")
+            # 루프 자체 예외 시 잠시 쉬고 계속
+            try:
+                await asyncio.sleep(1.0)
+            except Exception:
+                pass
 
 
 def enqueue_stl_job(p: Path, force: bool = False) -> str:
