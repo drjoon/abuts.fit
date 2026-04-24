@@ -58,20 +58,19 @@ export async function adminOverrideWelcomeBonus(req, res) {
         : Number(defaults.defaultWelcomeBonusCredit ?? 0) ||
           CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultWelcomeBonusCredit;
 
-    const formatted = formatBusinessNumber(businessNumberDigits);
-
-    let businessId = String(req.body?.businessId || "").trim();
-    if (businessId && !Types.ObjectId.isValid(businessId)) {
+    let businessAnchorId = String(
+      req.body?.businessAnchorId || req.body?.businessId || "",
+    ).trim();
+    if (businessAnchorId && !Types.ObjectId.isValid(businessAnchorId)) {
       return res.status(400).json({
         success: false,
-        message: "유효하지 않은 businessId입니다.",
+        message: "유효하지 않은 businessAnchorId입니다.",
       });
     }
 
-    let businessAnchorId = null;
-    if (!businessId) {
+    if (!businessAnchorId) {
       const org = await BusinessAnchor.findOne({
-        "metadata.businessNumber": formatted,
+        businessNumberNormalized: businessNumberDigits,
       })
         .select({ _id: 1, businessType: 1, metadata: 1 })
         .lean();
@@ -87,20 +86,25 @@ export async function adminOverrideWelcomeBonus(req, res) {
           message: "의뢰자 사업자에게만 무료 크레딧을 지급할 수 있습니다.",
         });
       }
-      businessId = String(org._id);
       businessAnchorId = String(org._id);
     } else {
-      const org = await BusinessAnchor.findById(businessId)
+      const org = await BusinessAnchor.findById(businessAnchorId)
         .select({ businessType: 1, metadata: 1 })
         .lean();
+      if (!org?._id) {
+        return res.status(404).json({
+          success: false,
+          message: "해당 사업자등록번호로 등록된 기공소를 찾을 수 없습니다.",
+        });
+      }
       if (!isRequestorBusiness(org)) {
         return res.status(400).json({
           success: false,
           message: "의뢰자 사업자에게만 무료 크레딧을 지급할 수 있습니다.",
         });
       }
-      businessAnchorId = org?.businessAnchorId || null;
     }
+    const businessId = businessAnchorId;
 
     const userIdRaw = String(req.body?.userId || "").trim();
     const userId =
@@ -437,20 +441,19 @@ export async function adminGrantFreeShippingCredit(req, res) {
         : Number(defaults.defaultFreeShippingCredit ?? 0) ||
           CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultFreeShippingCredit;
 
-    const formatted = formatBusinessNumber(businessNumberDigits);
-
-    let businessId = String(req.body?.businessId || "").trim();
-    if (businessId && !Types.ObjectId.isValid(businessId)) {
+    let businessAnchorId = String(
+      req.body?.businessAnchorId || req.body?.businessId || "",
+    ).trim();
+    if (businessAnchorId && !Types.ObjectId.isValid(businessAnchorId)) {
       return res.status(400).json({
         success: false,
-        message: "유효하지 않은 businessId입니다.",
+        message: "유효하지 않은 businessAnchorId입니다.",
       });
     }
 
-    let businessAnchorId = null;
-    if (!businessId) {
+    if (!businessAnchorId) {
       const org = await BusinessAnchor.findOne({
-        "metadata.businessNumber": formatted,
+        businessNumberNormalized: businessNumberDigits,
       })
         .select({ _id: 1, businessType: 1, metadata: 1 })
         .lean();
@@ -467,12 +470,17 @@ export async function adminGrantFreeShippingCredit(req, res) {
             "의뢰자 사업자에게만 배송비 무료 크레딧을 지급할 수 있습니다.",
         });
       }
-      businessId = String(org._id);
       businessAnchorId = String(org._id);
     } else {
-      const org = await BusinessAnchor.findById(businessId)
+      const org = await BusinessAnchor.findById(businessAnchorId)
         .select({ _id: 1, businessType: 1, metadata: 1 })
         .lean();
+      if (!org?._id) {
+        return res.status(404).json({
+          success: false,
+          message: "해당 사업자등록번호로 등록된 기공소를 찾을 수 없습니다.",
+        });
+      }
       if (!isRequestorBusiness(org)) {
         return res.status(400).json({
           success: false,
@@ -480,8 +488,8 @@ export async function adminGrantFreeShippingCredit(req, res) {
             "의뢰자 사업자에게만 배송비 무료 크레딧을 지급할 수 있습니다.",
         });
       }
-      businessAnchorId = org?.businessAnchorId || null;
     }
+    const businessId = businessAnchorId;
 
     const userIdRaw = String(req.body?.userId || "").trim();
     const userId =
