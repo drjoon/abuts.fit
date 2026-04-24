@@ -636,6 +636,11 @@
 - 레거시 잘못된 배송 데이터가 남아 있을 수는 있지만, 새 데이터 처리 규칙은 항상 **패키지 기준 1회 차감 + shipDateYmd 기준 요약**을 따릅니다.
 - 이 구간에서는 한진 예약취소 API로 접수 취소할 수 있어야 하며, 제품 추가/제외 후 재접수할 수 있어야 합니다.
 - 포장.발송의 실제 운영 순서는 **택배 접수(wblNo 획득) → 운송장 출력(wblNo 포함) → 창고 실물 대조 → 웹앱 수정 → 라벨 재출력 → 재접수(멱동성)** 입니다.
+- **의뢰자별 주간 발송 요일(`BusinessAnchor.shippingPolicy.weeklyBatchDays`) 필터**:
+  - 우편함이 속한 의뢰자 조직의 `weeklyBatchDays`에 오늘(KST 요일)이 포함되지 않으면 해당 우편함은 **오늘 발송 대상에서 자동 제외**합니다.
+  - 대상 액션: 운송장 출력(초기 선택 및 수동 선택), 택배 접수/취소, MOCK 집하. (단순 `리셋`은 모든 점유 우편함을 대상으로 유지.)
+  - UI: 해당 우편함은 앰버(호박) 색 배경 + 점선 테두리로 구분되고, 좌상단에 다음 발송 요일 뱃지를 표시하며 툴팁에 `다음 발송: #요일` 문구를 덧붙입니다.
+  - SSOT: 프론트는 `/api/requests?view=worksheet&worksheetProfile=shipping` 응답의 `item.business.shippingPolicy.weeklyBatchDays`를 사용합니다. 정책이 비어 있으면(`weeklyBatchDays.length === 0`) 기존 동작과 동일하게 **오늘 발송 가능**으로 간주합니다(하위 호환).
 - 한진 API 프로세스:
   1. **택배 접수**: 한진 API로 주문 등록 → `wblNo`(운송장 번호) 획득 → `accepted` 상태
   2. **운송장 출력**: `wblNo` 포함하여 라벨 출력 → `printed` 상태

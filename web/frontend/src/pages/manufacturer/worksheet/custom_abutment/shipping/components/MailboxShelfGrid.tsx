@@ -6,6 +6,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import type { MailboxShippingDayInfo } from "./shippingDay.helpers";
 
 type MailboxPickupStatus =
   | "none"
@@ -25,6 +26,7 @@ type MailboxShelfGridProps = {
   printedMailboxes: Set<string>;
   pickupRequestedMailboxes: Map<string, MailboxPickupStatus>;
   failedMailboxes: Set<string>;
+  mailboxShippingDayMap?: Map<string, MailboxShippingDayInfo>;
   shelfRefs: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   handleTouchStart: (e: React.TouchEvent) => void;
@@ -42,6 +44,7 @@ export const MailboxShelfGrid = ({
   printedMailboxes,
   pickupRequestedMailboxes,
   failedMailboxes,
+  mailboxShippingDayMap,
   shelfRefs,
   scrollContainerRef,
   handleTouchStart,
@@ -55,6 +58,7 @@ export const MailboxShelfGrid = ({
     address,
     isOccupied,
     mailboxStatus,
+    nextShippingDayLabel,
   }: {
     address: string;
     isOccupied: boolean;
@@ -66,6 +70,7 @@ export const MailboxShelfGrid = ({
       | "완료"
       | "취소"
       | "오류 발생";
+    nextShippingDayLabel?: string | null;
   }) => {
     const lines = [address];
     if (!isOccupied) {
@@ -74,6 +79,10 @@ export const MailboxShelfGrid = ({
     }
 
     lines.push(`상태: ${mailboxStatus}`);
+    if (nextShippingDayLabel) {
+      lines.push(`다음 발송: ${nextShippingDayLabel}요일`);
+      lines.push("※ 오늘 발송 대상에서 제외됨");
+    }
     return lines.join("\n");
   };
 
@@ -130,6 +139,13 @@ export const MailboxShelfGrid = ({
                           !showSuccessBorder &&
                           !showFailedBorder &&
                           !isErrorStatus;
+                        const shippingDayInfo =
+                          mailboxShippingDayMap?.get(address);
+                        const isNotTodayShip =
+                          isOccupied && Boolean(shippingDayInfo?.notToday);
+                        const nextShippingDayLabel = isNotTodayShip
+                          ? shippingDayInfo?.nextDayLabel || null
+                          : null;
                         const mailboxStatus =
                           showFailedBorder || isErrorStatus
                             ? "오류 발생"
@@ -159,6 +175,7 @@ export const MailboxShelfGrid = ({
                           address,
                           isOccupied,
                           mailboxStatus,
+                          nextShippingDayLabel,
                         });
 
                         return (
@@ -170,7 +187,7 @@ export const MailboxShelfGrid = ({
                                 data-printed={hasPrinted ? "1" : "0"}
                                 className={`
                                   relative flex flex-col items-center justify-between p-1 rounded border transition-all select-none
-                                  bg-white border-slate-200
+                                  ${isNotTodayShip ? "bg-amber-50 border-amber-300" : "bg-white border-slate-200"}
                                   ${isOccupied ? "cursor-pointer hover:shadow-md" : ""}
                                 `}
                                 style={{
@@ -190,6 +207,24 @@ export const MailboxShelfGrid = ({
                                 ) : null}
                                 {showFailedBorder ? (
                                   <div className="pointer-events-none absolute inset-0 rounded border-2 border-red-600" />
+                                ) : null}
+                                {isNotTodayShip &&
+                                !showSuccessBorder &&
+                                !showAcceptedBorder &&
+                                !showPrintedBorder &&
+                                !showFailedBorder ? (
+                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-dashed border-amber-500" />
+                                ) : null}
+                                {isNotTodayShip && nextShippingDayLabel ? (
+                                  <div
+                                    className="pointer-events-none absolute -top-1 -right-1 px-1 rounded bg-amber-500 text-white font-bold leading-none"
+                                    style={{
+                                      fontSize: "8px",
+                                      padding: "1px 3px",
+                                    }}
+                                  >
+                                    {nextShippingDayLabel}
+                                  </div>
                                 ) : null}
                                 <div
                                   className={`font-mono font-bold leading-none text-center w-full pointer-events-none ${

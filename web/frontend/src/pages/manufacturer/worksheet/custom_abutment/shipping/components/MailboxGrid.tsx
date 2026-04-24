@@ -17,6 +17,11 @@ import { MailboxShelfGroupTabs } from "./MailboxShelfGroupTabs";
 import { MailboxStickyHeader } from "./MailboxStickyHeader";
 import { useMailboxPrintSettings } from "./useMailboxPrintSettings";
 import { ToastAction } from "@/components/ui/toast";
+import {
+  getKstDayKey,
+  resolveMailboxShippingDayInfo,
+  type MailboxShippingDayInfo,
+} from "./shippingDay.helpers";
 
 const MAILBOX_SHELF_NAMES = ["A", "B", "C", "D", "E", "F", "G", "H", "I"];
 
@@ -210,8 +215,8 @@ export const MailboxGrid = ({
     modifyOnly?: boolean;
   } = {}) => {
     const effectiveTargetAddresses = Array.isArray(targetAddresses)
-      ? targetAddresses
-      : occupiedAddresses;
+      ? targetAddresses.filter((addr) => !notTodayAddressSet.has(addr))
+      : todayShippableAddresses;
     if (effectiveTargetAddresses.length === 0) {
       toast({
         title: "우편함 없음",
@@ -527,7 +532,7 @@ export const MailboxGrid = ({
   const handleMockPickupComplete = async () => {
     const mailboxAddresses = Array.from(
       new Set(
-        occupiedAddresses
+        todayShippableAddresses
           .map((address) => String(address || "").trim())
           .filter(Boolean),
       ),
@@ -536,7 +541,10 @@ export const MailboxGrid = ({
     if (!mailboxAddresses.length) {
       toast({
         title: "MOCK 집하 대상 없음",
-        description: "집하 완료로 반영할 우편함이 없습니다.",
+        description:
+          notTodayAddressSet.size > 0
+            ? "오늘 발송 대상 우편함이 없습니다. (의뢰자 발송 요일 설정상 제외됨)"
+            : "집하 완료로 반영할 우편함이 없습니다.",
       });
       return;
     }
@@ -614,6 +622,30 @@ export const MailboxGrid = ({
   const occupiedAddresses = useMemo(() => {
     return Array.from(addressMap.keys());
   }, [addressMap]);
+
+  // 오늘 발송 여부: 의뢰자별 weeklyBatchDays 설정을 기준으로 판정
+  const mailboxShippingDayMap = useMemo(() => {
+    const todayKey = getKstDayKey();
+    const map = new Map<string, MailboxShippingDayInfo>();
+    for (const [address, items] of addressMap.entries()) {
+      map.set(address, resolveMailboxShippingDayInfo(items, todayKey));
+    }
+    return map;
+  }, [addressMap]);
+
+  const notTodayAddressSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const [address, info] of mailboxShippingDayMap.entries()) {
+      if (info.notToday) set.add(address);
+    }
+    return set;
+  }, [mailboxShippingDayMap]);
+
+  // 오늘 발송 대상: 설정상 오늘이 발송일이 아닌 우편함 제외
+  const todayShippableAddresses = useMemo(
+    () => occupiedAddresses.filter((addr) => !notTodayAddressSet.has(addr)),
+    [occupiedAddresses, notTodayAddressSet],
+  );
 
   const pickupRequestedMailboxes = useMemo(() => {
     const workflowCodesByMailbox = new Map<string, Set<string>>();
@@ -909,7 +941,7 @@ export const MailboxGrid = ({
       ? normalizedExplicitTargets.filter(
           (addr) => pickupRequestedMailboxes.get(addr) === "accepted",
         )
-      : occupiedAddresses;
+      : todayShippableAddresses;
     const hasAcceptedTarget = acceptedTargetAddresses.length > 0;
     const printedAddresses = normalizedExplicitTargets.length
       ? normalizedExplicitTargets.filter(
@@ -923,8 +955,10 @@ export const MailboxGrid = ({
       : hasPrintedTarget
         ? printedAddresses
         : normalizedExplicitTargets.length
-          ? normalizedExplicitTargets
-          : occupiedAddresses;
+          ? normalizedExplicitTargets.filter(
+              (addr) => !notTodayAddressSet.has(addr),
+            )
+          : todayShippableAddresses;
 
     if (!targetAddresses.length) {
       toast({
@@ -1096,10 +1130,14 @@ export const MailboxGrid = ({
       variant: "slate" as const,
       onClick: () => {
         // 항상 선택 다이얼로그 오픈: 신규/기출력 구분 선택
-        const initialSelected =
+        // 초기 선택: 오늘 발송 가능한(의뢰자 요일 설정상 허용) 미출력 우편함
+        const defaultPool =
           unprintedMailboxAddresses.length > 0
-            ? new Set(unprintedMailboxAddresses)
-            : new Set(occupiedAddresses);
+            ? unprintedMailboxAddresses
+            : occupiedAddresses;
+        const initialSelected = new Set(
+          defaultPool.filter((addr) => !notTodayAddressSet.has(addr)),
+        );
         setReprintSelectedAddresses(initialSelected);
         setReprintDialogOpen(true);
       },
@@ -1307,14 +1345,26 @@ export const MailboxGrid = ({
                             exists && reprintSelectedAddresses.has(addr!);
                           const isPrinted =
                             exists && printedWorkflowAddresses.includes(addr!);
+                          const isNotToday =
+                            exists && notTodayAddressSet.has(addr!);
+                          const nextDayLabel = isNotToday
+                            ? (mailboxShippingDayMap.get(addr!)?.nextDayLabel ??
+                              null)
+                            : null;
                           const count = exists
                             ? (addressMap.get(addr!) ?? []).length
                             : 0;
                           return (
                             <td
                               key={col}
+                              title={
+                                isNotToday && nextDayLabel
+                                  ? `다음 발송: ${nextDayLabel}요일`
+                                  : undefined
+                              }
                               onClick={() => {
                                 if (!exists) return;
+                                if (isNotToday && !selected) return; // 오늘 발송 대상 아님: 수동 선택 차단
                                 setReprintSelectedAddresses((prev) => {
                                   const next = new Set(prev);
                                   if (selected) next.delete(addr!);
@@ -1325,16 +1375,23 @@ export const MailboxGrid = ({
                               className={`h-12 border border-slate-200 text-center transition-colors ${
                                 !exists
                                   ? "bg-slate-50"
-                                  : selected
-                                    ? "bg-blue-500 cursor-pointer"
-                                    : isPrinted
-                                      ? "bg-slate-100 hover:bg-slate-50 cursor-pointer"
-                                      : "bg-white hover:bg-blue-50 cursor-pointer"
+                                  : isNotToday
+                                    ? "bg-amber-50 border-dashed border-amber-400 cursor-not-allowed opacity-70"
+                                    : selected
+                                      ? "bg-blue-500 cursor-pointer"
+                                      : isPrinted
+                                        ? "bg-slate-100 hover:bg-slate-50 cursor-pointer"
+                                        : "bg-white hover:bg-blue-50 cursor-pointer"
                               }`}
                             >
                               {exists && (
                                 <div className="flex flex-col items-center justify-center gap-0.5">
-                                  {isPrinted && (
+                                  {isNotToday && nextDayLabel && (
+                                    <div className="text-[9px] font-semibold text-amber-700 mb-0.5">
+                                      다음 {nextDayLabel}요일
+                                    </div>
+                                  )}
+                                  {isPrinted && !isNotToday && (
                                     <div className="text-[9px] font-semibold text-slate-500 mb-0.5">
                                       ✓ 출력됨
                                     </div>
@@ -1440,6 +1497,7 @@ export const MailboxGrid = ({
         printedMailboxes={printedMailboxes}
         pickupRequestedMailboxes={pickupRequestedMailboxes}
         failedMailboxes={failedMailboxes}
+        mailboxShippingDayMap={mailboxShippingDayMap}
         shelfRefs={shelfRefs}
         scrollContainerRef={scrollContainerRef}
         handleTouchStart={handleTouchStart}

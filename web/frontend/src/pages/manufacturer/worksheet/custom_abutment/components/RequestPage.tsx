@@ -645,7 +645,11 @@ export const RequestPage = ({
         )}
         {showQueueBar && (
           <WorksheetQueueSummary
-            total={pageState.serverTotal ?? diameterQueueForReceive.total}
+            total={
+              showCompleted
+                ? diameterQueueForReceive.total
+                : (pageState.serverTotal ?? diameterQueueForReceive.total)
+            }
             labels={diameterQueueForReceive.labels}
             counts={diameterQueueForReceive.counts}
           />

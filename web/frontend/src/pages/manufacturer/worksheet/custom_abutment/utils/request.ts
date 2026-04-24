@@ -9,6 +9,14 @@ export type ManufacturerRequest = RequestBase & {
         business?: string;
       })
     | null;
+  business?: {
+    _id?: string;
+    name?: string;
+    metadata?: any;
+    shippingPolicy?: {
+      weeklyBatchDays?: string[];
+    };
+  } | null;
   deliveryInfoRef?: any;
   wasPickedUp?: boolean;
   pickupStatusCode?: string | null;

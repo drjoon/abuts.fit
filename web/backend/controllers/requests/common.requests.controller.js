@@ -397,7 +397,10 @@ export async function getAllRequests(req, res) {
         .select(selectedProjection)
         .populate("requestor", requestorPopulateSelect);
       if (view === "worksheet" && worksheetProfile === "shipping") {
-        query = query.populate("businessAnchorId", "name extracted");
+        query = query.populate(
+          "businessAnchorId",
+          "name metadata shippingPolicy",
+        );
       }
       if (includeDelivery) {
         // 배송 정보가 필요한 경우에만 최소 필드로 populate
@@ -481,7 +484,7 @@ export async function getAllRequests(req, res) {
               $in: requestorAnchorIds.map((id) => new Types.ObjectId(id)),
             },
           })
-            .select({ _id: 1, name: 1, metadata: 1 })
+            .select({ _id: 1, name: 1, metadata: 1, shippingPolicy: 1 })
             .lean()
         : [];
 
@@ -515,10 +518,27 @@ export async function getAllRequests(req, res) {
             ? metadata.companyName.trim()
             : "";
 
+        const shippingPolicyRaw =
+          requestorOrgDoc.shippingPolicy &&
+          typeof requestorOrgDoc.shippingPolicy === "object"
+            ? requestorOrgDoc.shippingPolicy
+            : undefined;
+        const weeklyBatchDaysRaw = Array.isArray(
+          shippingPolicyRaw?.weeklyBatchDays,
+        )
+          ? shippingPolicyRaw.weeklyBatchDays
+              .map((v) => String(v || "").trim())
+              .filter(Boolean)
+          : [];
+        const shippingPolicy = shippingPolicyRaw
+          ? { ...shippingPolicyRaw, weeklyBatchDays: weeklyBatchDaysRaw }
+          : undefined;
+
         item.business = {
           _id: anchorId,
           name: orgName || companyName || undefined,
           metadata,
+          shippingPolicy,
         };
         item.requestorBusinessAnchor = item.business;
       }

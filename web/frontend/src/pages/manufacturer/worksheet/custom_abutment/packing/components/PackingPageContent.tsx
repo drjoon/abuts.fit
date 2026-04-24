@@ -753,7 +753,11 @@ export const PackingPageContent = ({
       <div className="flex-1">
         {showQueueBar && (
           <WorksheetQueueSummary
-            total={serverTotal ?? diameterQueueForPacking.total}
+            total={
+              showCompleted
+                ? diameterQueueForPacking.total
+                : (serverTotal ?? diameterQueueForPacking.total)
+            }
             labels={diameterQueueForPacking.labels}
             counts={diameterQueueForPacking.counts}
           />
