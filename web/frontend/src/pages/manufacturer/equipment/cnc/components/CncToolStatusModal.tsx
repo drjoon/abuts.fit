@@ -11,6 +11,8 @@ interface CncToolStatusModalProps {
   onRequestClose: () => void;
   onOpenToolOffsetEditor: () => void;
   onSave?: () => void;
+  /** 가공 통계 모달로 이동하는 콜백 (제공 시 헤더에 버튼 표시) */
+  onOpenMachiningStats?: () => void;
 }
 
 export const CncToolStatusModal = ({
@@ -22,6 +24,7 @@ export const CncToolStatusModal = ({
   onRequestClose,
   onOpenToolOffsetEditor,
   onSave,
+  onOpenMachiningStats,
 }: CncToolStatusModalProps) => {
   if (!open) return null;
 
@@ -44,20 +47,31 @@ export const CncToolStatusModal = ({
           </div>
           <div className="flex items-center gap-3">
             {title === "공구 상태" && (
-              <div className="hidden sm:flex items-center gap-2 text-xs">
-                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white text-emerald-700 border border-emerald-500">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  정상
-                </span>
-                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white text-amber-700 border border-amber-500">
-                  <span className="w-2 h-2 rounded-full bg-amber-400" />
-                  주의
-                </span>
-                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white text-red-700 border border-red-500">
-                  <span className="w-2 h-2 rounded-full bg-red-500" />
-                  교체 필요
-                </span>
-              </div>
+              <>
+                <div className="hidden sm:flex items-center gap-2 text-xs">
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white text-emerald-700 border border-emerald-500">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    정상
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white text-amber-700 border border-amber-500">
+                    <span className="w-2 h-2 rounded-full bg-amber-400" />
+                    주의
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white text-red-700 border border-red-500">
+                    <span className="w-2 h-2 rounded-full bg-red-500" />
+                    교체 필요
+                  </span>
+                </div>
+                {onOpenMachiningStats && (
+                  <button
+                    type="button"
+                    onClick={onOpenMachiningStats}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-medium border border-blue-200 rounded-lg px-2 py-1 bg-blue-50 hover:bg-blue-100"
+                  >
+                    가공 통계
+                  </button>
+                )}
+              </>
             )}
             <button
               onClick={onRequestClose}

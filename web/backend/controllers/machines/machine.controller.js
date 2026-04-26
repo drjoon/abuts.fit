@@ -25,6 +25,12 @@ import {
   buildToolingSummary,
   buildToolReplacementUpdate,
   normalizeToolLifeRows,
+  normalizeToolSlots,
+  normalizeMachiningStats,
+  applyBeginToolRemoval,
+  applyCompleteToolReplacement,
+  appendMachiningJobStats,
+  resetCurrentMachiningStats,
 } from "../../controllers/cnc/tooling.js";
 
 function withBridgeHeaders(extra = {}) {
@@ -75,6 +81,9 @@ async function buildOfflineMachineStatusPayload() {
 const UI_SNAPSHOT_READ_TYPES = new Set([
   "GetMotorTemperature",
   "GetToolLifeInfo",
+  // 슬롯 메타데이터 + 가공 통계 조회 (DB-only, 브리지 불필요)
+  "GetToolSlots",
+  "GetToolStats",
 ]);
 
 const UI_SNAPSHOT_WRITE_TYPES = new Set([
@@ -82,6 +91,15 @@ const UI_SNAPSHOT_WRITE_TYPES = new Set([
   "UpdateToolLife",
   "RecordToolReplacement",
   "UpdateToolOffset",
+  // 공구 교체 워크플로우 (DB-only, 브리지 불필요)
+  // BeginToolRemoval: 웹앱에서 공구 해제 요청 (mounted → removing)
+  "BeginToolRemoval",
+  // CompleteToolReplacement: 실제 공구 교체 후 완료 확인 (removing/removed → mounted)
+  "CompleteToolReplacement",
+  // UpdateToolSlotMeta: 공구 이름/타입/메모만 수정 (교체 흐름 없이)
+  "UpdateToolSlotMeta",
+  // RecordMachiningJobStats: 가공 완료 시 통계 기록 (bridge-server에서 호출)
+  "RecordMachiningJobStats",
 ]);
 
 function normalizeNumeric(value, fallback = 0) {
@@ -977,6 +995,246 @@ export async function callRawProxy(req, res) {
           success: true,
           data: { toolOffsetRows: mergedRows },
           uiSnapshot,
+        });
+      }
+
+      // ── GetToolSlots: 슬롯 메타데이터 + 교체 상태 조회 (DB-only) ──────────
+      if (normalizedDataType === "GetToolSlots") {
+        const current = await getCncToolingState(uid);
+        const slots = normalizeToolSlots(current?.tooling?.toolSlots);
+        const stats = normalizeMachiningStats(current?.tooling?.machiningStats);
+        return res.status(200).json({
+          success: true,
+          data: {
+            toolSlots: slots,
+            machiningStats: stats,
+          },
+        });
+      }
+
+      // ── GetToolStats: 가공 통계 조회 (DB-only) ────────────────────────────
+      if (normalizedDataType === "GetToolStats") {
+        const current = await getCncToolingState(uid);
+        const stats = normalizeMachiningStats(current?.tooling?.machiningStats);
+        const slots = normalizeToolSlots(current?.tooling?.toolSlots);
+        return res.status(200).json({
+          success: true,
+          data: {
+            machiningStats: stats,
+            toolSlots: slots,
+          },
+        });
+      }
+
+      // ── BeginToolRemoval: 공구 해제 요청 (mounted → removing) ──────────────
+      // 작업자가 웹앱에서 "공구 해제" 버튼을 클릭할 때 호출한다.
+      // 슬롯 replacementStatus를 removing으로 전환하고,
+      // 이후 작업자가 장비에서 실제 공구를 물리적으로 제거한 뒤
+      // CompleteToolReplacement를 호출해 교체 완료 처리한다.
+      if (normalizedDataType === "BeginToolRemoval") {
+        const toolNum = Number(req.body?.payload?.toolNum);
+        if (!Number.isFinite(toolNum) || toolNum < 1) {
+          return res.status(400).json({
+            success: false,
+            message: "toolNum은 1 이상의 정수여야 합니다.",
+          });
+        }
+        const current = await getCncToolingState(uid);
+        const { nextSlots } = applyBeginToolRemoval({
+          existingSlots: current?.tooling?.toolSlots,
+          toolNum,
+          user: req.user || null,
+        });
+        const nextState = await persistCncToolingState(uid, {
+          toolingPatch: {
+            // 기존 필드 유지, toolSlots만 갱신
+            observations: current?.tooling?.observations,
+            replacementHistory: current?.tooling?.replacementHistory,
+            toolSlots: nextSlots,
+            machiningStats: current?.tooling?.machiningStats,
+          },
+        });
+        return res.status(200).json({
+          success: true,
+          data: {
+            toolSlots: normalizeToolSlots(nextState?.tooling?.toolSlots),
+          },
+        });
+      }
+
+      // ── CompleteToolReplacement: 교체 완료 확인 (removing → mounted) ────────
+      // 작업자가 장비에서 실제 공구를 교체한 뒤 웹앱에서 "교체 완료" 버튼을 클릭할 때 호출한다.
+      // 슬롯 replacementStatus를 mounted로 전환하고,
+      // toolLifeRows useCount를 0으로 리셋(RecordToolReplacement 로직 재사용),
+      // machiningStats의 currentJobCount/currentMachiningSeconds를 리셋한다.
+      if (normalizedDataType === "CompleteToolReplacement") {
+        const payload = req.body?.payload || {};
+        const toolNum = Number(payload?.toolNum);
+        if (!Number.isFinite(toolNum) || toolNum < 1) {
+          return res.status(400).json({
+            success: false,
+            message: "toolNum은 1 이상의 정수여야 합니다.",
+          });
+        }
+        const current = await getCncToolingState(uid);
+        const currentRows = normalizeToolLifeRows(
+          current?.uiSnapshot?.toolLifeRows,
+        );
+        const { nextSlots, replacementRecord, nextRows, observedAt } =
+          applyCompleteToolReplacement({
+            existingSlots: current?.tooling?.toolSlots,
+            currentRows,
+            payload,
+            user: req.user || null,
+          });
+        const nextHistory = appendToolReplacementHistory(
+          current?.tooling?.replacementHistory,
+          replacementRecord,
+        );
+        const nextObservations = appendToolLifeObservations({
+          previousRows: currentRows,
+          nextRows,
+          existingObservations: current?.tooling?.observations,
+          observedAt,
+          source: "CompleteToolReplacement",
+        });
+        // 현재 장착 이후 통계 리셋
+        const { nextStats } = resetCurrentMachiningStats(
+          current?.tooling?.machiningStats,
+          toolNum,
+        );
+        const nextState = await persistCncToolingState(uid, {
+          uiSnapshotPatch: { toolLifeRows: nextRows },
+          toolingPatch: {
+            observations: nextObservations,
+            replacementHistory: nextHistory,
+            toolSlots: nextSlots,
+            machiningStats: nextStats,
+          },
+        });
+        const toolingSummary = buildToolingSummary({
+          toolLifeRows: nextRows,
+          tooling: nextState.tooling,
+        });
+        return res.status(200).json({
+          success: true,
+          data: {
+            machineToolLife: {
+              toolLife: nextRows,
+              toolLifeInfo: nextRows,
+              toolingSummary,
+              replacementHistory: nextHistory,
+              observations: nextObservations,
+            },
+            toolSlots: normalizeToolSlots(nextState?.tooling?.toolSlots),
+            machiningStats: normalizeMachiningStats(
+              nextState?.tooling?.machiningStats,
+            ),
+            replacementRecord,
+          },
+          uiSnapshot: nextState.uiSnapshot,
+          tooling: nextState.tooling,
+        });
+      }
+
+      // ── UpdateToolSlotMeta: 공구 이름/타입/메모 수정 (교체 흐름 없이) ────────
+      if (normalizedDataType === "UpdateToolSlotMeta") {
+        const payload = req.body?.payload || {};
+        const toolNum = Number(payload?.toolNum);
+        if (!Number.isFinite(toolNum) || toolNum < 1) {
+          return res.status(400).json({
+            success: false,
+            message: "toolNum은 1 이상의 정수여야 합니다.",
+          });
+        }
+        const current = await getCncToolingState(uid);
+        const slots = normalizeToolSlots(current?.tooling?.toolSlots);
+        const idx = slots.findIndex((s) => s.toolNum === toolNum);
+        const existing =
+          idx >= 0
+            ? slots[idx]
+            : {
+                toolNum,
+                toolName: "",
+                toolType: "other",
+                toolNote: "",
+                replacementStatus: "mounted",
+                removalRequestedAt: null,
+                removalRequestedBy: null,
+                removalRequestedByName: "",
+                lastReplacedAt: null,
+                lastReplacedBy: null,
+                lastReplacedByName: "",
+              };
+        const updated = {
+          ...existing,
+          toolName: String(payload?.toolName ?? existing.toolName ?? "")
+            .trim()
+            .slice(0, 100),
+          toolType: ["drill", "mill", "reamer", "other"].includes(
+            payload?.toolType,
+          )
+            ? payload.toolType
+            : existing.toolType,
+          toolNote: String(payload?.toolNote ?? existing.toolNote ?? "")
+            .trim()
+            .slice(0, 300),
+        };
+        const nextSlots = [...slots];
+        if (idx >= 0) nextSlots[idx] = updated;
+        else nextSlots.push(updated);
+
+        const nextState = await persistCncToolingState(uid, {
+          toolingPatch: {
+            observations: current?.tooling?.observations,
+            replacementHistory: current?.tooling?.replacementHistory,
+            toolSlots: nextSlots,
+            machiningStats: current?.tooling?.machiningStats,
+          },
+        });
+        return res.status(200).json({
+          success: true,
+          data: {
+            toolSlots: normalizeToolSlots(nextState?.tooling?.toolSlots),
+          },
+        });
+      }
+
+      // ── RecordMachiningJobStats: 가공 완료 통계 기록 (bridge-server 호출) ───
+      // bridge-server의 NotifyMachiningCompleted 흐름에서 완료 시각과 가공 시간을 함께 전송.
+      // 어느 공구 슬롯이 사용됐는지는 payload.toolNum으로 전달한다(없으면 0=장비단위).
+      if (normalizedDataType === "RecordMachiningJobStats") {
+        const payload = req.body?.payload || {};
+        const toolNum = Number(payload?.toolNum ?? 0);
+        const jobDurationSeconds = Number(payload?.jobDurationSeconds ?? 0);
+        const completedAt = payload?.completedAt
+          ? new Date(payload.completedAt)
+          : new Date();
+
+        const current = await getCncToolingState(uid);
+        const { nextStats } = appendMachiningJobStats({
+          existingStats: current?.tooling?.machiningStats,
+          toolNum: Number.isFinite(toolNum) ? toolNum : 0,
+          jobDurationSeconds: Number.isFinite(jobDurationSeconds)
+            ? jobDurationSeconds
+            : 0,
+          completedAt,
+        });
+        const nextState = await persistCncToolingState(uid, {
+          toolingPatch: {
+            observations: current?.tooling?.observations,
+            replacementHistory: current?.tooling?.replacementHistory,
+            toolSlots: current?.tooling?.toolSlots,
+            machiningStats: nextStats,
+          },
+        });
+        return res.status(200).json({
+          success: true,
+          data: {
+            machiningStats: normalizeMachiningStats(
+              nextState?.tooling?.machiningStats,
+            ),
+          },
         });
       }
     }

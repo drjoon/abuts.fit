@@ -199,6 +199,87 @@ const cncMachineSchema = new mongoose.Schema(
         ],
         default: [],
       },
+      // 슬롯별 공구 메타데이터 및 교체 워크플로우 상태
+      // 교체 흐름: mounted → removing(해제요청) → removed(실제교체대기) → mounting(장착중) → mounted
+      toolSlots: {
+        type: [
+          {
+            // 슬롯 번호 (toolLifeRows.toolNum과 동일 키로 매핑)
+            toolNum: { type: Number, required: true },
+            // 공구 명칭 (예: "드릴 1.2mm", "밀링 D3.0")
+            toolName: { type: String, trim: true, default: "" },
+            // 공구 타입 분류 (drill | mill | reamer | other)
+            toolType: {
+              type: String,
+              enum: ["drill", "mill", "reamer", "other"],
+              default: "other",
+            },
+            // 공구 메모 (직경, 제조사, 로트번호 등 자유 기입)
+            toolNote: { type: String, trim: true, default: "" },
+            // 현재 교체 워크플로우 상태
+            // - mounted: 장착 완료(정상 운용)
+            // - removing: 작업자가 웹앱에서 해제 요청(장비에서 공구 빼는 중)
+            // - removed: 장비에서 실제 공구 제거 완료 대기 (교체 완료 확인 전)
+            replacementStatus: {
+              type: String,
+              enum: ["mounted", "removing", "removed"],
+              default: "mounted",
+            },
+            // 해제 요청 시각 (removing 상태로 전환된 시각)
+            removalRequestedAt: { type: Date, default: null },
+            // 해제 요청자
+            removalRequestedBy: {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: "User",
+              default: null,
+            },
+            removalRequestedByName: { type: String, trim: true, default: "" },
+            // 가장 최근 교체 완료 시각
+            lastReplacedAt: { type: Date, default: null },
+            // 가장 최근 교체자
+            lastReplacedBy: {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: "User",
+              default: null,
+            },
+            lastReplacedByName: { type: String, trim: true, default: "" },
+          },
+        ],
+        default: [],
+      },
+      // 슬롯별 가공 통계: 가공 완료 시 bridge-server가 백엔드에 notify할 때 집계
+      // machiningStats는 장비 단위가 아니라 슬롯(공구) 단위 누적 통계다.
+      machiningStats: {
+        type: [
+          {
+            // 슬롯 번호
+            toolNum: { type: Number, required: true },
+            // 전체 누적 가공 건수 (교체해도 리셋하지 않는 절대 누계)
+            totalJobCount: { type: Number, default: 0 },
+            // 전체 누적 가공 시간(초) (교체해도 리셋하지 않는 절대 누계)
+            totalMachiningSeconds: { type: Number, default: 0 },
+            // 현재 장착 이후(교체 기준) 가공 건수
+            currentJobCount: { type: Number, default: 0 },
+            // 현재 장착 이후(교체 기준) 가공 시간(초)
+            currentMachiningSeconds: { type: Number, default: 0 },
+            // 마지막 가공 완료 시각
+            lastJobAt: { type: Date, default: null },
+            // 최근 30일 일별 가공 건수 버킷 [{ymd, count, seconds}]
+            // ymd: "YYYY-MM-DD" (KST 기준)
+            dailyBuckets: {
+              type: [
+                {
+                  ymd: { type: String, trim: true },
+                  count: { type: Number, default: 0 },
+                  seconds: { type: Number, default: 0 },
+                },
+              ],
+              default: [],
+            },
+          },
+        ],
+        default: [],
+      },
     },
     bridgeQueueSnapshot: {
       jobs: [
