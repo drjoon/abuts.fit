@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 
 import type { HealthLevel } from "@/pages/manufacturer/equipment/cnc/components/MachineCard";
+import { CncToolRegistrationModal } from "@/pages/manufacturer/equipment/cnc/components/CncToolRegistrationModal";
 import {
-  TOOL_TYPE_LABELS,
   formatSeconds,
   type MachiningStatEntry,
   type ToolSlot,
@@ -25,13 +25,13 @@ interface UseCncToolPanelsParams {
   onCompleteToolReplacement?: (payload: any) => Promise<any>;
   /** 슬롯 메타 수정 함수 (useCncToolSlots.updateToolSlotMeta) */
   onUpdateToolSlotMeta?: (payload: any) => Promise<boolean>;
-  /** 신규 공구 슬롯 등록 함수 (useCncToolSlots.addToolSlot) */
+  /**
+   * 신규 공구 슬롯 등록 함수 (useCncToolSlots.addToolSlot).
+   * 슬롯 메타는 toolNum(필수) + toolName(선택)만 사용한다.
+   */
   onAddTool?: (payload: {
     toolNum: number;
     toolName?: string;
-    toolType?: string;
-    toolNote?: string;
-    configCount?: number;
   }) => Promise<boolean>;
 }
 
@@ -902,15 +902,8 @@ export const useCncToolPanels = ({
             공구 {slotName} 해제
           </div>
           <div className="text-xs text-slate-600">
-            사용 {targetRow?.useCount ?? 0}회 / 설정{" "}
-            {targetRow?.configCount ?? 0}회
+            사용 {targetRow?.useCount ?? 0}회
           </div>
-          {slot?.toolType ? (
-            <div className="text-xs text-slate-500">
-              {TOOL_TYPE_LABELS[slot.toolType] ?? "기타"}
-              {slot.toolNote ? ` · ${slot.toolNote}` : ""}
-            </div>
-          ) : null}
         </div>
 
         {isAlreadyRemoving ? (
@@ -1035,13 +1028,7 @@ export const useCncToolPanels = ({
 
     let replacementKind: "normal" | "abnormal" = "normal";
     let replacementNote = "";
-    let nextConfigCount =
-      targetRow?.configCount != null && targetRow?.configCount !== 0
-        ? String(targetRow.configCount)
-        : "";
     let newToolName = slot?.toolName ?? "";
-    let newToolType: ToolSlot["toolType"] = slot?.toolType ?? "other";
-    let newToolNote = slot?.toolNote ?? "";
 
     const buildBody = () => (
       <div className="space-y-4 text-sm text-gray-700">
@@ -1100,62 +1087,22 @@ export const useCncToolPanels = ({
           </div>
         </div>
 
-        {/* 공구 메타 업데이트 (선택) */}
+        {/* 공구 메타 업데이트 (선택) — 이름만 입력 */}
         <div className="space-y-2">
           <div className="text-xs font-semibold text-slate-500">
-            새 공구 정보{" "}
+            새 공구 이름{" "}
             <span className="text-slate-400 font-normal">
               (선택 — 공구가 바뀌었을 때)
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="text"
-              defaultValue={newToolName}
-              onChange={(e) => {
-                newToolName = e.target.value;
-              }}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-              placeholder="공구 이름 (예: 드릴 1.2mm)"
-            />
-            <select
-              defaultValue={newToolType}
-              onChange={(e) => {
-                newToolType = e.target.value as ToolSlot["toolType"];
-              }}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-            >
-              {Object.entries(TOOL_TYPE_LABELS).map(([v, label]) => (
-                <option key={v} value={v}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
           <input
             type="text"
-            defaultValue={newToolNote}
+            defaultValue={newToolName}
             onChange={(e) => {
-              newToolNote = e.target.value;
+              newToolName = e.target.value;
             }}
             className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-            placeholder="직경, 제조사, 로트번호 등"
-          />
-        </div>
-
-        {/* 새 설정값 (선택) */}
-        <div className="space-y-1">
-          <div className="text-xs font-semibold text-slate-500">
-            새 설정값 <span className="text-slate-400 font-normal">(선택)</span>
-          </div>
-          <input
-            type="number"
-            defaultValue={nextConfigCount}
-            onChange={(e) => {
-              nextConfigCount = e.target.value;
-            }}
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-            placeholder="기존 설정값 유지"
+            placeholder="공구 이름 (예: 드릴 1.2mm)"
           />
         </div>
 
@@ -1190,15 +1137,11 @@ export const useCncToolPanels = ({
                   toolNum,
                   kind: replacementKind,
                   note: replacementNote,
-                  newConfigCount:
-                    nextConfigCount === "" ? null : Number(nextConfigCount),
                   predictedReplacementUseCount:
                     toolMeta?.predictedReplacementUseCount ||
                     targetRow?.configCount ||
                     0,
                   toolName: newToolName,
-                  toolType: newToolType,
-                  toolNote: newToolNote,
                 };
                 const data = await onCompleteToolReplacement(payload);
                 if (data) {
@@ -1420,9 +1363,7 @@ export const useCncToolPanels = ({
                             <span className="text-slate-400">-</span>
                           )}
                         </div>
-                        <div className="text-[10px] text-slate-400">
-                          {slot ? (TOOL_TYPE_LABELS[slot.toolType] ?? "") : ""}
-                        </div>
+                        <div className="text-[10px] text-slate-400" />
                       </td>
                       <td className="px-2 py-2.5 text-center">
                         <button
@@ -1581,11 +1522,6 @@ export const useCncToolPanels = ({
                       </td>
                       <td className="px-2 py-2.5 text-left text-slate-700 truncate">
                         {slot?.toolName || "-"}
-                        {slot?.toolType && slot.toolType !== "other" ? (
-                          <span className="ml-1 text-[10px] text-slate-400">
-                            {TOOL_TYPE_LABELS[slot.toolType]}
-                          </span>
-                        ) : null}
                       </td>
                       <td className="px-2 py-2.5 text-center font-mono text-slate-800">
                         {stat.totalJobCount.toLocaleString()}건
@@ -1637,169 +1573,59 @@ export const useCncToolPanels = ({
   };
 
   /**
-   * 공구 등록 모달 — 신규 슬롯에 공구를 처음 등록할 때 사용.
+   * 공구 등록 모달 — 단순화 + 템플릿 기반.
    *
-   * 입력값:
-   *  - toolNum (필수, 1+)  ← 슬롯 번호
-   *  - toolName (선택)     ← 예: "드릴 1.2mm"
-   *  - toolType (필수)     ← drill | mill | reamer | other
-   *  - toolNote (선택)     ← 직경/제조사/로트 등
-   *  - configCount (필수)  ← 예상 교체 시점 사용 횟수
+   * 슬롯 메타는 toolNum(필수) + toolName(선택)만 사용한다.
+   * 사용량/시간은 백엔드가 자동 누적해 충분한 데이터가 모이면 교체 시기를 예측한다.
    *
-   * 흐름: onAddTool 호출 → UpdateToolLife + UpdateToolSlotMeta → 성공 시
-   * GetToolLifeInfo 다시 조회해 모달을 새 데이터로 갱신.
+   * 모달은 3개 탭을 가진다:
+   *  1) 직접 등록 — 현재 장비에 슬롯 1개 추가
+   *  2) 템플릿 적용 — 저장된 템플릿을 1개 이상 장비에 Merge upsert
+   *  3) 템플릿 관리 — 템플릿 생성/편집/삭제
+   *
+   * onAddTool은 toolNum + toolName만 전달한다 (toolType/toolNote/configCount 제거).
    */
   const openAddToolDialog = () => {
     if (!onAddTool) return;
-    let nextToolNum = "";
-    let nextName = "";
-    let nextType: ToolSlot["toolType"] = "drill";
-    let nextNote = "";
-    let nextConfigCount = "";
-    let submitting = false;
 
-    const buildBody = () => (
-      <div className="space-y-4 text-sm text-gray-700">
-        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800">
-          새 공구를 슬롯에 등록합니다. 등록 후 "공구 상태" 화면에서 해제/교체
-          워크플로우를 시작할 수 있습니다.
-        </div>
-
-        {/* toolNum + configCount */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-slate-500">
-              슬롯 번호 <span className="text-red-500">*</span>
-            </div>
-            <input
-              type="number"
-              min={1}
-              defaultValue={nextToolNum}
-              onChange={(e) => {
-                nextToolNum = e.target.value;
-              }}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-              placeholder="1"
-            />
-          </div>
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-slate-500">
-              설정값(예상 교체 시점)
-            </div>
-            <input
-              type="number"
-              min={0}
-              defaultValue={nextConfigCount}
-              onChange={(e) => {
-                nextConfigCount = e.target.value;
-              }}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-              placeholder="예: 5000"
-            />
-          </div>
-        </div>
-
-        {/* 이름 + 타입 */}
-        <div className="grid grid-cols-2 gap-3">
-          <input
-            type="text"
-            defaultValue={nextName}
-            onChange={(e) => {
-              nextName = e.target.value;
-            }}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-            placeholder="공구 이름 (예: 드릴 1.2mm)"
-          />
-          <select
-            defaultValue={nextType}
-            onChange={(e) => {
-              nextType = e.target.value as ToolSlot["toolType"];
-            }}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-          >
-            {Object.entries(TOOL_TYPE_LABELS).map(([v, label]) => (
-              <option key={v} value={v}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* 메모 */}
-        <input
-          type="text"
-          defaultValue={nextNote}
-          onChange={(e) => {
-            nextNote = e.target.value;
-          }}
-          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-          placeholder="직경, 제조사, 로트번호 등"
-        />
-
-        <div className="flex justify-end gap-2 pt-2">
-          <button
-            type="button"
-            onClick={() => openToolDetailWithSlots(null, lastToolHealthLevel)}
-            className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-300"
-          >
-            취소
-          </button>
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={() => {
-              void (async () => {
-                if (submitting) return;
-                const tn = Number(nextToolNum);
-                if (!Number.isFinite(tn) || tn < 1) {
-                  setError("슬롯 번호는 1 이상의 정수여야 합니다.");
-                  return;
-                }
-                submitting = true;
-                const ok = await onAddTool({
-                  toolNum: tn,
-                  toolName: nextName,
-                  toolType: nextType,
-                  toolNote: nextNote,
-                  configCount:
-                    nextConfigCount === "" ? 0 : Number(nextConfigCount),
-                });
-                submitting = false;
-                if (!ok) return;
-                // 등록 성공 → 공구 수명 정보 다시 조회 후 슬롯 강화 화면 복귀
-                try {
-                  const res = await callRaw(workUid, "GetToolLifeInfo");
-                  const data: any = res?.data ?? res;
-                  const toolLife =
-                    data?.machineToolLife?.toolLife ??
-                    data?.machineToolLife?.toolLifeInfo ??
-                    [];
-                  const meta = {
-                    toolingSummary: data?.machineToolLife?.toolingSummary,
-                    replacementHistory:
-                      data?.machineToolLife?.replacementHistory,
-                    observations: data?.machineToolLife?.observations,
-                  };
-                  const nextLevel = resolveSummaryLevel(meta.toolingSummary);
-                  setToolHealth(nextLevel);
-                  setLastToolHealthLevel(nextLevel);
-                  setToolTooltip(buildSummaryTooltip(meta.toolingSummary));
-                  openToolDetailWithSlots(toolLife, nextLevel, meta);
-                } catch {
-                  openToolDetailWithSlots(null, lastToolHealthLevel);
-                }
-              })();
-            }}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            공구 등록
-          </button>
-        </div>
-      </div>
-    );
+    const closeAndReturn = async () => {
+      // 등록/적용 후 공구 상태 화면을 다시 그리기 위해 현재 데이터를 재조회한다.
+      try {
+        const res = await callRaw(workUid, "GetToolLifeInfo");
+        const data: any = res?.data ?? res;
+        const toolLife =
+          data?.machineToolLife?.toolLife ??
+          data?.machineToolLife?.toolLifeInfo ??
+          [];
+        const meta = {
+          toolingSummary: data?.machineToolLife?.toolingSummary,
+          replacementHistory: data?.machineToolLife?.replacementHistory,
+          observations: data?.machineToolLife?.observations,
+        };
+        const nextLevel = resolveSummaryLevel(meta.toolingSummary);
+        setToolHealth(nextLevel);
+        setLastToolHealthLevel(nextLevel);
+        setToolTooltip(buildSummaryTooltip(meta.toolingSummary));
+        openToolDetailWithSlots(toolLife, nextLevel, meta);
+      } catch {
+        openToolDetailWithSlots(null, lastToolHealthLevel);
+      }
+    };
 
     setModalTitle("공구 등록");
-    setModalBody(buildBody());
+    setModalBody(
+      <CncToolRegistrationModal
+        currentMachineId={workUid}
+        onCancel={() => openToolDetailWithSlots(null, lastToolHealthLevel)}
+        onAddTool={async ({ toolNum, toolName }) => {
+          return onAddTool({ toolNum, toolName });
+        }}
+        onAfterApply={() => {
+          void closeAndReturn();
+        }}
+        setError={setError}
+      />,
+    );
     setModalOpen(true);
   };
 

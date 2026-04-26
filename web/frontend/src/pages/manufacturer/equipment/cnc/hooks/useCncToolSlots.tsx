@@ -180,21 +180,17 @@ export const useCncToolSlots = ({
   /**
    * addToolSlot — 신규 공구 슬롯 등록 (작업자가 처음 공구를 등록할 때).
    *
-   * 1) UpdateToolLife: 해당 toolNum 행을 useCount=0, configCount=N으로 시드한다.
-   * 2) UpdateToolSlotMeta: 공구 이름/타입/메모를 등록한다.
+   * 슬롯 메타는 toolNum(필수) + toolName(선택)만 사용한다.
+   * 사용량/시간은 백엔드가 자동 누적해 충분한 데이터가 모이면 교체 시기를 예측한다.
+   *
+   * 1) UpdateToolLife: 해당 toolNum 행을 useCount=0으로 시드한다 (configCount는 0).
+   * 2) UpdateToolSlotMeta: 공구 이름만 등록한다.
    * 3) loadToolSlots: 슬롯 목록을 다시 불러온다.
-   * 4) (호출자가) GetToolLifeInfo로 toolLifeRows를 다시 로드해 모달을 갱신.
    *
    * @returns true 성공 / false 실패
    */
   const addToolSlot = useCallback(
-    async (payload: {
-      toolNum: number;
-      toolName?: string;
-      toolType?: string;
-      toolNote?: string;
-      configCount?: number;
-    }) => {
+    async (payload: { toolNum: number; toolName?: string }) => {
       if (!workUid) return false;
       const ok = await ensureCncWriteAllowed();
       if (!ok) return false;
@@ -203,23 +199,20 @@ export const useCncToolSlots = ({
         if (!Number.isFinite(toolNum) || toolNum < 1) {
           throw new Error("toolNum은 1 이상의 정수여야 합니다.");
         }
-        const configCount = Math.max(0, Number(payload.configCount ?? 0) || 0);
         // 1) 공구 수명 행 시드 (mergeRowsByKey가 toolNum 기준 upsert)
         await callRaw(workUid, "UpdateToolLife", [
           {
             toolNum,
             useCount: 0,
-            configCount,
+            configCount: 0,
             warningCount: 0,
             use: true,
           },
         ]);
-        // 2) 슬롯 메타 등록 (toolName / toolType / toolNote)
+        // 2) 슬롯 메타 등록 (toolName만)
         await callRaw(workUid, "UpdateToolSlotMeta", {
           toolNum,
-          toolName: payload.toolName,
-          toolType: payload.toolType,
-          toolNote: payload.toolNote,
+          toolName: payload.toolName ?? "",
         });
         // 3) 슬롯 목록 재로드
         await loadToolSlots();
