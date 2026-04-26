@@ -849,6 +849,26 @@ export async function callRawProxy(req, res) {
           .status(200)
           .json(snapshotToToolLifeResponse(uiSnapshot, tooling));
       }
+      // GetToolSlots: 슬롯 메타데이터 + 교체 상태 조회 (DB-only)
+      if (normalizedDataType === "GetToolSlots") {
+        return res.status(200).json({
+          success: true,
+          data: {
+            toolSlots: normalizeToolSlots(tooling?.toolSlots),
+            machiningStats: normalizeMachiningStats(tooling?.machiningStats),
+          },
+        });
+      }
+      // GetToolStats: 가공 통계 조회 (DB-only)
+      if (normalizedDataType === "GetToolStats") {
+        return res.status(200).json({
+          success: true,
+          data: {
+            machiningStats: normalizeMachiningStats(tooling?.machiningStats),
+            toolSlots: normalizeToolSlots(tooling?.toolSlots),
+          },
+        });
+      }
     }
 
     if (UI_SNAPSHOT_WRITE_TYPES.has(normalizedDataType)) {
@@ -995,34 +1015,6 @@ export async function callRawProxy(req, res) {
           success: true,
           data: { toolOffsetRows: mergedRows },
           uiSnapshot,
-        });
-      }
-
-      // ── GetToolSlots: 슬롯 메타데이터 + 교체 상태 조회 (DB-only) ──────────
-      if (normalizedDataType === "GetToolSlots") {
-        const current = await getCncToolingState(uid);
-        const slots = normalizeToolSlots(current?.tooling?.toolSlots);
-        const stats = normalizeMachiningStats(current?.tooling?.machiningStats);
-        return res.status(200).json({
-          success: true,
-          data: {
-            toolSlots: slots,
-            machiningStats: stats,
-          },
-        });
-      }
-
-      // ── GetToolStats: 가공 통계 조회 (DB-only) ────────────────────────────
-      if (normalizedDataType === "GetToolStats") {
-        const current = await getCncToolingState(uid);
-        const stats = normalizeMachiningStats(current?.tooling?.machiningStats);
-        const slots = normalizeToolSlots(current?.tooling?.toolSlots);
-        return res.status(200).json({
-          success: true,
-          data: {
-            machiningStats: stats,
-            toolSlots: slots,
-          },
         });
       }
 
