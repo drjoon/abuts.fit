@@ -1249,6 +1249,71 @@
 - ✅ 재시동 시 백엔드 스냅샷으로 초기화
 - ✅ 자동 재시도 없음 (명시적 제어만 허용)
 
+#### 6.4.8 공구 슬롯 / 교체 워크플로우 / 가공 통계
+
+장비별 내부 슬롯에 장착된 공구의 메타데이터, 교체 시기, 가공 사용량을 백엔드(`CncMachine.tooling`)에서 SSOT로 관리합니다.
+
+**데이터 모델 (`CncMachine.tooling`):**
+
+- `toolLifeRows`(`uiSnapshot`): Hi-Link DLL과 동기화되는 사용/설정 카운트 (`useCount`, `configCount`, `warningCount`).
+- `toolSlots`: 슬롯별 공구 메타데이터 + 교체 워크플로우 상태.
+  - 필드: `toolNum`, `toolName`, `toolType`(`drill|mill|reamer|other`), `toolNote`, `replacementStatus`(`mounted|removing|removed`), `removalRequestedAt/By/ByName`, `lastReplacedAt/By/ByName`.
+- `replacementHistory`: 교체 이력 (정상/비정상 구분, 메모, 교체 직전 사용량 스냅샷 포함).
+- `observations`: 사용량 변화 관찰 로그.
+- `machiningStats`: 슬롯별 가공 통계.
+  - 필드: `toolNum`, `totalJobCount`, `totalMachiningSeconds`(절대 누계), `currentJobCount`, `currentMachiningSeconds`(현재 장착 이후, 교체 시 리셋), `lastJobAt`, `dailyBuckets[]`(KST 기준 `YYYY-MM-DD` 일별 버킷, 최대 60일).
+  - `toolNum=0`은 장비 단위 통계 키로 예약합니다.
+
+**3단계 교체 워크플로우 (작업자 흐름):**
+
+1. **웹앱에서 해제 요청** (`BeginToolRemoval`)
+   - 작업자가 공구 상태 모달에서 "해제" 버튼 클릭.
+   - 슬롯 상태를 `mounted → removing`으로 전환하고 `removalRequestedAt/By`를 기록.
+2. **장비에서 실제 공구 교체**
+   - 작업자가 직접 CNC 장비에서 공구를 분리/장착.
+   - 웹앱 UI는 "장비에서 공구를 교체하세요" 안내 화면을 표시.
+3. **웹앱에서 교체 완료 기록** (`CompleteToolReplacement`)
+   - 작업자가 "교체 완료 확인" 버튼 클릭.
+   - 슬롯 상태를 `mounted`로 전환, `lastReplacedAt/By` 기록.
+   - 공구 메타(`toolName/toolType/toolNote`)를 함께 업데이트(공구 변경 시).
+   - `toolLifeRows.useCount`를 0으로 리셋, `replacementHistory`에 `kind`(`normal|abnormal`) + 메모 + 직전 사용량 스냅샷 추가.
+   - `machiningStats.currentJobCount/currentMachiningSeconds`를 0으로 리셋(절대 누계는 유지).
+
+**교체 알람 정책:**
+
+- `toolingSummary.alertLevel`은 `useCount/predictedReplacementUseCount` 비율과 알람 임계값 기반으로 산출.
+  - `ratio >= 1` → `alarm` (교체 필요)
+  - `ratio >= 0.95` → `warn` (교체 임박)
+  - 그 외 → `ok`
+- 슬롯 카드 / 목록에는 슬롯 `replacementStatus`도 함께 배지로 표시:
+  - `removing` → 주황 "해제중"
+  - `removed` → 빨강 "교체대기"
+
+**가공 통계 누적 정책:**
+
+- 가공 1건 완료 시(`recordMachiningCompleteForBridge`) `MachiningRecord.durationSeconds`를 사용해 자동으로 `toolNum=0`(장비 단위) 통계에 누적합니다. 통계 누적 실패는 메인 워크플로우에 영향을 주지 않도록 `try/catch`로 보호합니다.
+- 슬롯 단위(`toolNum > 0`) 통계는 추후 NC 프로그램 사용 공구를 식별할 수 있을 때 별도 `RecordMachiningJobStats` 호출로 누적합니다.
+- 일별 버킷(`dailyBuckets`)은 KST 기준 `YYYY-MM-DD`로 키잉하며 최근 60일치만 유지합니다(오래된 버킷은 자동 삭제).
+- 공구 교체 시 `currentJobCount/currentMachiningSeconds`는 리셋되지만 `totalJobCount/totalMachiningSeconds`는 절대 누계로 유지합니다.
+
+**API 엔드포인트 (`POST /api/machines/:uid/raw`, `dataType` 기반):**
+
+- 조회: `GetToolLifeInfo`, `GetToolSlots`, `GetToolStats`
+- 수정: `UpdateToolLife`, `UpdateToolSlotMeta`
+- 워크플로우: `BeginToolRemoval`, `CompleteToolReplacement`, `RecordToolReplacement`(레거시 1단계 교체)
+- 통계: `RecordMachiningJobStats`(브리지/슬롯별 호출용)
+
+**프론트엔드 훅:**
+
+- `useCncToolSlots` — 슬롯/통계 데이터 로드 + 교체 워크플로우 API 호출.
+- `useCncToolPanels` — UI 모달(공구 상태, 3단계 교체, 가공 통계)을 빌드. `useCncToolSlots`가 제공하는 데이터/콜백을 props로 주입받아 슬롯 강화 UI(`openToolDetailWithSlots`)와 통계 모달(`openMachiningStatsModal`)을 렌더링합니다.
+
+**사용 페이지:**
+
+- `EquipmentPage` (`/manufacturer/equipment`) — 장비 대시보드.
+- `MachiningQueueBoard` (`/manufacturer/worksheet/.../machining`) — 가공 작업 보드.
+- `WorksheetCncMachineSection` — 읽기 전용(쓰기 가드 차단), 슬롯 워크플로우 비활성.
+
 ### 6.5 채팅
 
 - 의뢰 채팅은 `Request.messages`를 사용합니다.

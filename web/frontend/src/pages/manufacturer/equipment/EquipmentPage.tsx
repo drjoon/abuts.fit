@@ -17,6 +17,7 @@ import { useCncRaw } from "@/features/manufacturer/cnc/hooks/useCncRaw";
 import type { HealthLevel } from "@/pages/manufacturer/equipment/cnc/components/MachineCard";
 import { useCncWriteGuard } from "@/features/manufacturer/cnc/hooks/useCncWriteGuard";
 import { useCncToolPanels } from "@/features/manufacturer/cnc/hooks/useCncToolPanels";
+import { useCncToolSlots } from "@/pages/manufacturer/equipment/cnc/hooks/useCncToolSlots";
 import { useCncDashboardCore } from "@/features/manufacturer/cnc/hooks/useCncDashboardCore";
 import { useCncTempPanel } from "@/features/manufacturer/cnc/hooks/useCncTempPanel";
 import type { CncJobItem } from "@/pages/manufacturer/equipment/cnc/components/CncReservationModal";
@@ -161,6 +162,29 @@ export const EquipmentPage = () => {
     toast,
   });
 
+  // 슬롯 메타데이터(toolSlots) + 가공 통계(machiningStats) 관리 훅.
+  // workUid가 바뀔 때마다 백엔드에서 GetToolSlots로 캐시한다.
+  const {
+    toolSlots,
+    machiningStats,
+    loadToolSlots,
+    beginToolRemoval,
+    completeToolReplacement,
+    updateToolSlotMeta,
+  } = useCncToolSlots({
+    workUid,
+    callRaw,
+    ensureCncWriteAllowed,
+    setError,
+  });
+
+  // workUid 변경 시 자동 로드 (장비 선택 직후 슬롯 정보 동기화)
+  useEffect(() => {
+    if (workUid) {
+      void loadToolSlots();
+    }
+  }, [workUid, loadToolSlots]);
+
   const {
     modalOpen,
     modalTitle,
@@ -174,9 +198,10 @@ export const EquipmentPage = () => {
     setToolLifeRows,
     setToolLifeDirty,
     setToolLifeSaveConfirmOpen,
-    openToolDetail,
     openToolOffsetEditor,
     handleToolLifeSaveConfirm,
+    openToolDetailWithSlots,
+    openMachiningStatsModal,
   } = useCncToolPanels({
     workUid,
     callRaw,
@@ -190,7 +215,24 @@ export const EquipmentPage = () => {
       if (!workUid) return;
       updateToolTooltip(workUid, msg);
     },
+    // 슬롯 워크플로우 연결: 슬롯/통계 데이터와 API 콜백을 패널 훅에 주입
+    toolSlots,
+    machiningStats,
+    onBeginToolRemoval: beginToolRemoval,
+    onCompleteToolReplacement: completeToolReplacement,
+    onUpdateToolSlotMeta: updateToolSlotMeta,
   });
+
+  // openToolDetail 호출 시 자동으로 슬롯 정보를 반영한 새 UI를 사용한다.
+  // CncMachineGrid의 MachineCard에서 "공구" 아이콘 클릭 시 호출되므로,
+  // 기존 openToolDetail 시그니처를 유지하면서 슬롯 데이터를 함께 표시한다.
+  const openToolDetailUnified = useCallback(
+    (toolLife: any[], level: HealthLevel, toolingMeta?: any) => {
+      // 슬롯 콜백이 제공되어 있으므로 슬롯 강화 UI 사용
+      openToolDetailWithSlots(toolLife, level, toolingMeta);
+    },
+    [openToolDetailWithSlots],
+  );
 
   const { tempModalOpen, tempModalBody, setTempModalOpen, openTempDetail } =
     useCncTempPanel({
@@ -597,7 +639,8 @@ export const EquipmentPage = () => {
         fetchProgramList={fetchProgramList}
         openTempDetail={openTempDetail}
         callRaw={callRaw}
-        openToolDetail={openToolDetail}
+        openToolDetail={openToolDetailUnified}
+        openMachiningStatsModal={openMachiningStatsModal}
         updateToolTooltip={updateToolTooltip}
         updateToolHealth={updateToolHealth}
         handleEditMachine={handleEditMachine}

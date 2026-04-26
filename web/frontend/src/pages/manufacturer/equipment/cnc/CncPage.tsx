@@ -54,6 +54,7 @@ export const CncDashboardPageView = (props: any) => {
     openTempDetail,
     callRaw,
     openToolDetail,
+    openMachiningStatsModal,
     updateToolTooltip,
     updateToolHealth,
     handleEditMachine,
@@ -712,6 +713,7 @@ export const CncDashboardPageView = (props: any) => {
         onSave={() => {
           void handleToolLifeSaveConfirm();
         }}
+        onOpenMachiningStats={openMachiningStatsModal}
       />
 
       <CncMaterialChangeModal

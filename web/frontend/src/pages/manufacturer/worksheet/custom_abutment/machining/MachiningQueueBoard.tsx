@@ -23,6 +23,7 @@ import { CncToolStatusModal } from "@/pages/manufacturer/equipment/cnc/component
 import { useCncDashboardMachineInfo } from "@/pages/manufacturer/equipment/cnc/hooks/useCncDashboardMachineInfo";
 import { useCncTempPanel } from "@/pages/manufacturer/equipment/cnc/hooks/useCncTempPanel";
 import { useCncToolPanels } from "@/pages/manufacturer/equipment/cnc/hooks/useCncToolPanels";
+import { useCncToolSlots } from "@/pages/manufacturer/equipment/cnc/hooks/useCncToolSlots";
 import { useCncWriteGuard } from "@/pages/manufacturer/equipment/cnc/hooks/useCncWriteGuard";
 import { MachineQueueCard } from "./components/MachineQueueCard";
 import type { MachineActionLevel, MachineStatus, QueueItem } from "./types";
@@ -171,15 +172,37 @@ export const MachiningQueueBoard = ({
       },
     });
 
+  // 가공보드에서도 슬롯 메타/통계 + 교체 워크플로우 지원
+  const {
+    toolSlots,
+    machiningStats,
+    loadToolSlots,
+    beginToolRemoval,
+    completeToolReplacement,
+    updateToolSlotMeta,
+  } = useCncToolSlots({
+    workUid: toolWorkUid,
+    callRaw,
+    ensureCncWriteAllowed,
+    setError: setPanelError,
+  });
+
+  useEffect(() => {
+    if (toolWorkUid) {
+      void loadToolSlots();
+    }
+  }, [toolWorkUid, loadToolSlots]);
+
   const {
     modalOpen,
     modalTitle,
     modalBody,
     toolLifeDirty,
     setModalOpen,
-    openToolDetail,
     openToolOffsetEditor,
     handleToolLifeSaveConfirm,
+    openToolDetailWithSlots,
+    openMachiningStatsModal,
   } = useCncToolPanels({
     workUid: toolWorkUid,
     callRaw,
@@ -196,6 +219,11 @@ export const MachiningQueueBoard = ({
       if (!toolWorkUid) return;
       setToolTooltipMap((prev) => ({ ...prev, [toolWorkUid]: msg }));
     },
+    toolSlots,
+    machiningStats,
+    onBeginToolRemoval: beginToolRemoval,
+    onCompleteToolReplacement: completeToolReplacement,
+    onUpdateToolSlotMeta: updateToolSlotMeta,
   });
 
   useEffect(() => {
@@ -237,7 +265,7 @@ export const MachiningQueueBoard = ({
           ...prev,
           [uid]: buildToolSummaryTooltip(toolingSummary),
         }));
-        openToolDetail(toolLife, level as any, {
+        openToolDetailWithSlots(toolLife, level as any, {
           toolingSummary,
           replacementHistory,
           observations,
@@ -246,7 +274,7 @@ export const MachiningQueueBoard = ({
         setPanelError(e?.message || "공구 상태 조회 중 오류가 발생했습니다.");
       }
     },
-    [callRaw, openToolDetail],
+    [callRaw, openToolDetailWithSlots],
   );
 
   const handleDeleteConfirm = useCallback(async () => {
@@ -583,6 +611,7 @@ export const MachiningQueueBoard = ({
         onRequestClose={() => setModalOpen(false)}
         onOpenToolOffsetEditor={() => openToolOffsetEditor()}
         onSave={handleToolLifeSaveConfirm}
+        onOpenMachiningStats={openMachiningStatsModal}
       />
 
       <Dialog open={machineInfoOpen} onOpenChange={setMachineInfoOpen}>

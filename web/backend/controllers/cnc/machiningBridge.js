@@ -19,6 +19,7 @@ import {
   invalidateBridgeFlagsCache,
 } from "./shared.js";
 import { allocateVirtualMailboxAddress } from "../requests/mailbox.utils.js";
+import { appendMachiningJobStats } from "./tooling.js";
 
 const REQUEST_ID_REGEX = /(\d{8}-[A-Z0-9]{6,10})/i;
 const STARTED_EMIT_TTL_MS = 30 * 1000;
@@ -1525,6 +1526,57 @@ export async function recordMachiningCompleteForBridge(req, res) {
       message: "OK",
       metadata: { jobId: jobId || null },
     });
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 가공 통계(machiningStats) 누적
+    //
+    // 정책:
+    // - 가공 1건 완료 시 toolNum=0(장비 단위) 통계에 자동 누적한다.
+    // - 슬롯 단위(toolNum > 0) 통계는 추후 NC 프로그램 사용 공구 식별이
+    //   가능해지면 RecordMachiningJobStats로 별도 호출하여 누적한다.
+    // - 실패해도 가공 완료 응답 흐름에는 영향을 주지 않도록 try/catch로 감싼다.
+    // ──────────────────────────────────────────────────────────────────────────
+    try {
+      // MachiningRecord에서 방금 기록된 durationSeconds 조회
+      const completedRecord = await MachiningRecord.findOne({
+        machineId: mid,
+        ...(jobId ? { jobId } : {}),
+        status: "COMPLETED",
+      })
+        .sort({ completedAt: -1 })
+        .select({ durationSeconds: 1, elapsedSeconds: 1, completedAt: 1 })
+        .lean();
+
+      const recordedDuration =
+        Number(completedRecord?.durationSeconds) ||
+        Number(completedRecord?.elapsedSeconds) ||
+        0;
+      const completedAt = completedRecord?.completedAt
+        ? new Date(completedRecord.completedAt)
+        : now;
+
+      // 장비(toolNum=0) 단위 통계 누적
+      const cncMachine = await CncMachine.findOne({ machineId: mid });
+      if (cncMachine) {
+        const { nextStats } = appendMachiningJobStats({
+          existingStats: cncMachine.tooling?.machiningStats,
+          toolNum: 0,
+          jobDurationSeconds: recordedDuration,
+          completedAt,
+        });
+        cncMachine.tooling = {
+          ...(cncMachine.tooling?.toObject?.() || cncMachine.tooling || {}),
+          machiningStats: nextStats,
+        };
+        await cncMachine.save();
+      }
+    } catch (statsErr) {
+      // 통계 집계 실패는 무시 (메인 워크플로우 보호)
+      console.warn(
+        "[bridge:machining:complete] machiningStats accumulate skipped",
+        statsErr?.message || statsErr,
+      );
+    }
 
     // ──────────────────────────────────────────────────────────────────────────
     // [정책 4.8.2] 완료 후 DB 스냅샷 정리:
