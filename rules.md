@@ -1253,9 +1253,16 @@
 
 장비별 내부 슬롯에 장착된 공구의 메타데이터, 교체 시기, 가공 사용량을 백엔드(`CncMachine.tooling`)에서 SSOT로 관리합니다.
 
+**Hi-Link / 브리지 비의존 원칙 (필수):**
+
+- 공구 수명/슬롯/교체 이력/가공 통계는 **백엔드 DB(SSOT)에서만 기록·읽기**하며 Hi-Link DLL이나 `bridge-server`에 의존하지 않습니다.
+- 관련 dataType (`GetToolLifeInfo`, `GetToolSlots`, `GetToolStats`, `UpdateToolLife`, `RecordToolReplacement`, `BeginToolRemoval`, `CompleteToolReplacement`, `UpdateToolSlotMeta`, `UpdateToolOffset`, `RecordMachiningJobStats`)는 `callRawProxy` 안에서 DB 스냅샷만 읽고 응답합니다. `bridge-server`로 raw 호출이 전달되지 않습니다(브리지 측에서도 Mode2 dataType은 명시적으로 거부).
+- 가공 1건 완료 통계 누적은 `recordMachiningCompleteForBridge` 안의 `appendMachiningJobStats` 직접 호출로 처리되며, 별도의 브리지 HTTP 라운드트립이 없습니다.
+- 따라서 브리지/Hi-Link가 오프라인이어도 공구 모달 열기·교체 워크플로우·통계 누적은 정상 동작해야 합니다.
+
 **데이터 모델 (`CncMachine.tooling`):**
 
-- `toolLifeRows`(`uiSnapshot`): Hi-Link DLL과 동기화되는 사용/설정 카운트 (`useCount`, `configCount`, `warningCount`).
+- `toolLifeRows`(`uiSnapshot`): 작업자가 입력한(또는 NC 프로그램에서 누적된) 공구 사용/설정 카운트 (`useCount`, `configCount`, `warningCount`). 백엔드 DB가 SSOT이며 Hi-Link 폴링 동기화는 사용하지 않습니다.
 - `toolSlots`: 슬롯별 공구 메타데이터 + 교체 워크플로우 상태.
   - 필드: `toolNum`, `toolName`, `toolType`(`drill|mill|reamer|other`), `toolNote`, `replacementStatus`(`mounted|removing|removed`), `removalRequestedAt/By/ByName`, `lastReplacedAt/By/ByName`.
 - `replacementHistory`: 교체 이력 (정상/비정상 구분, 메모, 교체 직전 사용량 스냅샷 포함).

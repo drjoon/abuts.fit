@@ -165,7 +165,7 @@ export const useCncToolPanels = ({
           const msg =
             res?.message ||
             res?.error ||
-            "툴 오프셋 업데이트 실패 (Hi-Link UpdateToolOffset 응답 확인 필요)";
+            "툴 오프셋 업데이트 실패 (백엔드 UpdateToolOffset 응답 확인 필요)";
           throw new Error(msg);
         }
 
@@ -828,7 +828,7 @@ export const useCncToolPanels = ({
         const msg =
           res?.message ||
           res?.error ||
-          "툴 수명 업데이트 실패 (Hi-Link UpdateToolLife 응답 확인 필요)";
+          "툴 수명 업데이트 실패 (백엔드 UpdateToolLife 응답 확인 필요)";
         throw new Error(msg);
       }
 
@@ -1508,8 +1508,6 @@ export const useCncToolPanels = ({
               슬롯 번호와 공구 정보를 입력해 등록하면
               <br />
               교체 워크플로우와 가공 통계를 사용할 수 있습니다.
-              <br />
-              (Hi-Link DLL이 연결된 장비라면 첫 동기화 후 자동으로 표시됩니다.)
             </div>
             {onAddTool ? (
               <button
