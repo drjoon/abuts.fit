@@ -25,6 +25,14 @@ interface UseCncToolPanelsParams {
   onCompleteToolReplacement?: (payload: any) => Promise<any>;
   /** 슬롯 메타 수정 함수 (useCncToolSlots.updateToolSlotMeta) */
   onUpdateToolSlotMeta?: (payload: any) => Promise<boolean>;
+  /** 신규 공구 슬롯 등록 함수 (useCncToolSlots.addToolSlot) */
+  onAddTool?: (payload: {
+    toolNum: number;
+    toolName?: string;
+    toolType?: string;
+    toolNote?: string;
+    configCount?: number;
+  }) => Promise<boolean>;
 }
 
 interface ToolingMetaSnapshot {
@@ -45,6 +53,7 @@ export const useCncToolPanels = ({
   onBeginToolRemoval,
   onCompleteToolReplacement,
   onUpdateToolSlotMeta,
+  onAddTool,
 }: UseCncToolPanelsParams) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("");
@@ -1265,6 +1274,19 @@ export const useCncToolPanels = ({
 
     const buildSlotTable = () => (
       <div className="space-y-3 text-sm text-gray-700">
+        {/* 공구 추가 버튼 (onAddTool 콜백이 제공된 경우에만 노출) */}
+        {onAddTool ? (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={openAddToolDialog}
+              className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+            >
+              <span className="text-base leading-none">+</span> 공구 추가
+            </button>
+          </div>
+        ) : null}
+
         {/* 요약 배너 */}
         {toolingSummary ? (
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -1476,7 +1498,30 @@ export const useCncToolPanels = ({
             </table>
           </div>
         ) : (
-          <div className="text-base text-gray-500">공구 정보가 없습니다.</div>
+          // 빈 상태: 공구 등록 안내 + CTA 버튼
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-6 py-10 text-center space-y-3">
+            <div className="text-3xl">🔧</div>
+            <div className="text-base font-semibold text-slate-800">
+              등록된 공구가 없습니다
+            </div>
+            <div className="text-xs text-slate-500 leading-relaxed">
+              슬롯 번호와 공구 정보를 입력해 등록하면
+              <br />
+              교체 워크플로우와 가공 통계를 사용할 수 있습니다.
+              <br />
+              (Hi-Link DLL이 연결된 장비라면 첫 동기화 후 자동으로 표시됩니다.)
+            </div>
+            {onAddTool ? (
+              <button
+                type="button"
+                onClick={openAddToolDialog}
+                className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                <span className="text-base leading-none">+</span> 공구 등록
+                시작하기
+              </button>
+            ) : null}
+          </div>
         )}
       </div>
     );
@@ -1590,6 +1635,173 @@ export const useCncToolPanels = ({
 
     setModalTitle("가공 통계");
     setModalBody(body);
+    setModalOpen(true);
+  };
+
+  /**
+   * 공구 등록 모달 — 신규 슬롯에 공구를 처음 등록할 때 사용.
+   *
+   * 입력값:
+   *  - toolNum (필수, 1+)  ← 슬롯 번호
+   *  - toolName (선택)     ← 예: "드릴 1.2mm"
+   *  - toolType (필수)     ← drill | mill | reamer | other
+   *  - toolNote (선택)     ← 직경/제조사/로트 등
+   *  - configCount (필수)  ← 예상 교체 시점 사용 횟수
+   *
+   * 흐름: onAddTool 호출 → UpdateToolLife + UpdateToolSlotMeta → 성공 시
+   * GetToolLifeInfo 다시 조회해 모달을 새 데이터로 갱신.
+   */
+  const openAddToolDialog = () => {
+    if (!onAddTool) return;
+    let nextToolNum = "";
+    let nextName = "";
+    let nextType: ToolSlot["toolType"] = "drill";
+    let nextNote = "";
+    let nextConfigCount = "";
+    let submitting = false;
+
+    const buildBody = () => (
+      <div className="space-y-4 text-sm text-gray-700">
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800">
+          새 공구를 슬롯에 등록합니다. 등록 후 "공구 상태" 화면에서 해제/교체
+          워크플로우를 시작할 수 있습니다.
+        </div>
+
+        {/* toolNum + configCount */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <div className="text-xs font-semibold text-slate-500">
+              슬롯 번호 <span className="text-red-500">*</span>
+            </div>
+            <input
+              type="number"
+              min={1}
+              defaultValue={nextToolNum}
+              onChange={(e) => {
+                nextToolNum = e.target.value;
+              }}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+              placeholder="1"
+            />
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs font-semibold text-slate-500">
+              설정값(예상 교체 시점)
+            </div>
+            <input
+              type="number"
+              min={0}
+              defaultValue={nextConfigCount}
+              onChange={(e) => {
+                nextConfigCount = e.target.value;
+              }}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+              placeholder="예: 5000"
+            />
+          </div>
+        </div>
+
+        {/* 이름 + 타입 */}
+        <div className="grid grid-cols-2 gap-3">
+          <input
+            type="text"
+            defaultValue={nextName}
+            onChange={(e) => {
+              nextName = e.target.value;
+            }}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+            placeholder="공구 이름 (예: 드릴 1.2mm)"
+          />
+          <select
+            defaultValue={nextType}
+            onChange={(e) => {
+              nextType = e.target.value as ToolSlot["toolType"];
+            }}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+          >
+            {Object.entries(TOOL_TYPE_LABELS).map(([v, label]) => (
+              <option key={v} value={v}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 메모 */}
+        <input
+          type="text"
+          defaultValue={nextNote}
+          onChange={(e) => {
+            nextNote = e.target.value;
+          }}
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+          placeholder="직경, 제조사, 로트번호 등"
+        />
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={() => openToolDetailWithSlots(null, lastToolHealthLevel)}
+            className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-300"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={() => {
+              void (async () => {
+                if (submitting) return;
+                const tn = Number(nextToolNum);
+                if (!Number.isFinite(tn) || tn < 1) {
+                  setError("슬롯 번호는 1 이상의 정수여야 합니다.");
+                  return;
+                }
+                submitting = true;
+                const ok = await onAddTool({
+                  toolNum: tn,
+                  toolName: nextName,
+                  toolType: nextType,
+                  toolNote: nextNote,
+                  configCount:
+                    nextConfigCount === "" ? 0 : Number(nextConfigCount),
+                });
+                submitting = false;
+                if (!ok) return;
+                // 등록 성공 → 공구 수명 정보 다시 조회 후 슬롯 강화 화면 복귀
+                try {
+                  const res = await callRaw(workUid, "GetToolLifeInfo");
+                  const data: any = res?.data ?? res;
+                  const toolLife =
+                    data?.machineToolLife?.toolLife ??
+                    data?.machineToolLife?.toolLifeInfo ??
+                    [];
+                  const meta = {
+                    toolingSummary: data?.machineToolLife?.toolingSummary,
+                    replacementHistory:
+                      data?.machineToolLife?.replacementHistory,
+                    observations: data?.machineToolLife?.observations,
+                  };
+                  const nextLevel = resolveSummaryLevel(meta.toolingSummary);
+                  setToolHealth(nextLevel);
+                  setLastToolHealthLevel(nextLevel);
+                  setToolTooltip(buildSummaryTooltip(meta.toolingSummary));
+                  openToolDetailWithSlots(toolLife, nextLevel, meta);
+                } catch {
+                  openToolDetailWithSlots(null, lastToolHealthLevel);
+                }
+              })();
+            }}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            공구 등록
+          </button>
+        </div>
+      </div>
+    );
+
+    setModalTitle("공구 등록");
+    setModalBody(buildBody());
     setModalOpen(true);
   };
 

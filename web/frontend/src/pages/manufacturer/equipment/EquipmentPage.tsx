@@ -171,6 +171,7 @@ export const EquipmentPage = () => {
     beginToolRemoval,
     completeToolReplacement,
     updateToolSlotMeta,
+    addToolSlot,
   } = useCncToolSlots({
     workUid,
     callRaw,
@@ -221,6 +222,7 @@ export const EquipmentPage = () => {
     onBeginToolRemoval: beginToolRemoval,
     onCompleteToolReplacement: completeToolReplacement,
     onUpdateToolSlotMeta: updateToolSlotMeta,
+    onAddTool: addToolSlot,
   });
 
   // openToolDetail 호출 시 자동으로 슬롯 정보를 반영한 새 UI를 사용한다.

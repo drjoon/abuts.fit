@@ -157,11 +157,7 @@ export const useCncToolSlots = ({
       const ok = await ensureCncWriteAllowed();
       if (!ok) return null;
       try {
-        const res = await callRaw(
-          workUid,
-          "CompleteToolReplacement",
-          payload,
-        );
+        const res = await callRaw(workUid, "CompleteToolReplacement", payload);
         const nextSlots: ToolSlot[] = Array.isArray(res?.data?.toolSlots)
           ? res.data.toolSlots
           : [];
@@ -179,6 +175,61 @@ export const useCncToolSlots = ({
       }
     },
     [workUid, callRaw, ensureCncWriteAllowed, setError],
+  );
+
+  /**
+   * addToolSlot — 신규 공구 슬롯 등록 (작업자가 처음 공구를 등록할 때).
+   *
+   * 1) UpdateToolLife: 해당 toolNum 행을 useCount=0, configCount=N으로 시드한다.
+   * 2) UpdateToolSlotMeta: 공구 이름/타입/메모를 등록한다.
+   * 3) loadToolSlots: 슬롯 목록을 다시 불러온다.
+   * 4) (호출자가) GetToolLifeInfo로 toolLifeRows를 다시 로드해 모달을 갱신.
+   *
+   * @returns true 성공 / false 실패
+   */
+  const addToolSlot = useCallback(
+    async (payload: {
+      toolNum: number;
+      toolName?: string;
+      toolType?: string;
+      toolNote?: string;
+      configCount?: number;
+    }) => {
+      if (!workUid) return false;
+      const ok = await ensureCncWriteAllowed();
+      if (!ok) return false;
+      try {
+        const toolNum = Number(payload.toolNum);
+        if (!Number.isFinite(toolNum) || toolNum < 1) {
+          throw new Error("toolNum은 1 이상의 정수여야 합니다.");
+        }
+        const configCount = Math.max(0, Number(payload.configCount ?? 0) || 0);
+        // 1) 공구 수명 행 시드 (mergeRowsByKey가 toolNum 기준 upsert)
+        await callRaw(workUid, "UpdateToolLife", [
+          {
+            toolNum,
+            useCount: 0,
+            configCount,
+            warningCount: 0,
+            use: true,
+          },
+        ]);
+        // 2) 슬롯 메타 등록 (toolName / toolType / toolNote)
+        await callRaw(workUid, "UpdateToolSlotMeta", {
+          toolNum,
+          toolName: payload.toolName,
+          toolType: payload.toolType,
+          toolNote: payload.toolNote,
+        });
+        // 3) 슬롯 목록 재로드
+        await loadToolSlots();
+        return true;
+      } catch (e: any) {
+        setError(e?.message ?? "공구 등록 중 오류가 발생했습니다.");
+        return false;
+      }
+    },
+    [workUid, callRaw, ensureCncWriteAllowed, setError, loadToolSlots],
   );
 
   /**
@@ -229,17 +280,14 @@ export const useCncToolSlots = ({
    * - removed:  장비에서 제거 완료 대기 (빨강)
    * - mounted:  정상 장착 (회색, 표시 없음)
    */
-  const getReplacementBadge = useCallback(
-    (slot: ToolSlot | null) => {
-      if (!slot) return null;
-      if (slot.replacementStatus === "removing")
-        return { label: "해제 요청됨", color: "amber" } as const;
-      if (slot.replacementStatus === "removed")
-        return { label: "교체 대기", color: "red" } as const;
-      return null;
-    },
-    [],
-  );
+  const getReplacementBadge = useCallback((slot: ToolSlot | null) => {
+    if (!slot) return null;
+    if (slot.replacementStatus === "removing")
+      return { label: "해제 요청됨", color: "amber" } as const;
+    if (slot.replacementStatus === "removed")
+      return { label: "교체 대기", color: "red" } as const;
+    return null;
+  }, []);
 
   return {
     toolSlots,
@@ -249,6 +297,7 @@ export const useCncToolSlots = ({
     beginToolRemoval,
     completeToolReplacement,
     updateToolSlotMeta,
+    addToolSlot,
     getSlot,
     getStats,
     getReplacementBadge,
