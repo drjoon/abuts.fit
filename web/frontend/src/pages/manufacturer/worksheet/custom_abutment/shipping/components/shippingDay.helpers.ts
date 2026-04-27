@@ -16,12 +16,21 @@ export const getKstDayKey = (date: Date = new Date()): string => {
   return DAY_KEYS[kst.getUTCDay()];
 };
 
+export const getKstTodayYmd = (date: Date = new Date()): string => {
+  const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().split("T")[0];
+};
+
 const normalizeDays = (raw: unknown): string[] => {
   if (!Array.isArray(raw)) return [];
   return Array.from(
     new Set(
       raw
-        .map((v) => String(v || "").trim().toLowerCase())
+        .map((v) =>
+          String(v || "")
+            .trim()
+            .toLowerCase(),
+        )
         .filter((v): v is (typeof DAY_KEYS)[number] =>
           (DAY_KEYS as readonly string[]).includes(v),
         ),
@@ -54,7 +63,7 @@ export const getNextShippingDayKey = (
   for (const d of valid) {
     const idx = DAY_KEYS.indexOf(d as (typeof DAY_KEYS)[number]);
     if (idx < 0) continue;
-    const diff = ((idx - todayIdx + 7) % 7) || 7;
+    const diff = (idx - todayIdx + 7) % 7 || 7;
     if (diff < bestDiff) {
       bestDiff = diff;
       best = d;
@@ -82,8 +91,19 @@ export type MailboxShippingDayInfo = {
 export const resolveMailboxShippingDayInfo = (
   requests: ManufacturerRequest[],
   todayKey: string = getKstDayKey(),
+  todayYmd: string = getKstTodayYmd(),
 ): MailboxShippingDayInfo => {
   if (!requests || requests.length === 0) {
+    return { notToday: false, nextDayLabel: null };
+  }
+  // 마감일(estimatedShipYmd)이 오늘이거나 이미 지난 의뢰가 하나라도 있으면
+  // 의뢰자의 weeklyBatchDays 정책과 무관하게 오늘 함께 발송 가능하도록 한다.
+  // (마감보다 일찍 제품이 나온 미래 발송 의뢰는 함께 묶어 조기 발송)
+  const hasDueOrOverdue = requests.some((req) => {
+    const ymd = String(req?.timeline?.estimatedShipYmd || "").trim();
+    return ymd && ymd <= todayYmd;
+  });
+  if (hasDueOrOverdue) {
     return { notToday: false, nextDayLabel: null };
   }
   // All requests in a mailbox share the same requestor org, so inspect the first
