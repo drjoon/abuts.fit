@@ -61,6 +61,7 @@ async def run_rhino_python(
                     log(
                         f"run: pipeId={rhino_id} input={input_stl.name} out={output_stl.name}"
                     )
+                    state.last_rhino_subprocess_started_ts = time.time()
 
                     process = await asyncio.create_subprocess_exec(
                         rhinocode,
@@ -187,6 +188,7 @@ async def run_rhino_python(
                 raise RuntimeError(full_err)
 
             elapsed = time.time() - start_time
+            state.last_rhino_subprocess_done_ts = time.time()
             if rhino_id:
                 log(f"done: pipeId={rhino_id} elapsed={elapsed:.2f}s")
             else:

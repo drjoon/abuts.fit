@@ -34,6 +34,120 @@ async def _queue_worker_watchdog() -> None:
             await asyncio.sleep(5)
 
 
+def _fmt_age(ts) -> str:
+    """epoch ts -> '12.3s ago' / 'never'."""
+    if ts is None:
+        return "never"
+    try:
+        import time as _t
+        delta = _t.time() - float(ts)
+        if delta < 0:
+            return "future?"
+        if delta < 90:
+            return f"{delta:.1f}s ago"
+        if delta < 5400:
+            return f"{delta/60:.1f}m ago"
+        return f"{delta/3600:.1f}h ago"
+    except Exception:
+        return "?"
+
+
+async def _health_heartbeat() -> None:
+    """[diag] 60초마다 system health snapshot을 로그로 남긴다.
+
+    먹통이 발생했을 때 마지막 heartbeat 로그가 root cause를 말해준다:
+    - queue=N, in_flight=... 인데 last_dequeue_ts가 오래됨 → worker가 멈춤
+    - current_processing이 수십 분째 동일 → Rhino 스크립트가 hang
+    - rhino_all=0, rhino_avail=0 이 지속 → RhinoCode list 실패 / Rhino 죽음
+    - last_subprocess_done_ts vs started_ts 비교로 RhinoCode 자식 hang 감지
+    """
+    import time as _t
+    interval = float(settings.os.getenv("RHINO_HEARTBEAT_SEC", "60"))
+    stuck_warn_sec = float(settings.os.getenv("RHINO_STUCK_WARN_SEC", "300"))
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            now = _t.time()
+            uptime_h = (now - state.server_start_ts) / 3600.0
+
+            try:
+                qsize = state.stl_job_queue.qsize()
+            except Exception:
+                qsize = -1
+            try:
+                in_flight_snapshot = list(state.in_flight)
+            except Exception:
+                in_flight_snapshot = []
+
+            cur_name = state.current_processing_name
+            cur_started = state.current_processing_started_ts
+            cur_dur = (now - cur_started) if cur_started else None
+
+            line = (
+                "[heartbeat] "
+                f"uptime={uptime_h:.1f}h "
+                f"queue={qsize} "
+                f"in_flight={len(in_flight_snapshot)}({','.join(in_flight_snapshot) or '-'}) "
+                f"rhino_all={len(state.rhino_all)} "
+                f"rhino_avail={len(state.rhino_available)} "
+                f"jobs_ok={state.total_jobs_processed} "
+                f"jobs_fail={state.total_jobs_failed} "
+                f"jobs_timeout={state.total_jobs_timeout} "
+                f"job_futures={len(state.job_futures)} "
+                f"last_enqueue={_fmt_age(state.last_enqueue_ts)} "
+                f"last_dequeue={_fmt_age(state.last_dequeue_ts)} "
+                f"last_success={_fmt_age(state.last_success_ts)} "
+                f"last_failure={_fmt_age(state.last_failure_ts)} "
+                f"last_subproc_started={_fmt_age(state.last_rhino_subprocess_started_ts)} "
+                f"last_subproc_done={_fmt_age(state.last_rhino_subprocess_done_ts)} "
+                f"current={cur_name or '-'}"
+                + (f" cur_dur={cur_dur:.0f}s" if cur_dur is not None else "")
+            )
+            log(line)
+
+            # stuck 감지: 처리 중 작업이 임계치 이상 같은 상태라면 경보 로그
+            if cur_started and (now - cur_started) > stuck_warn_sec:
+                log(
+                    f"[heartbeat][STUCK] '{cur_name}' processing for "
+                    f"{(now - cur_started):.0f}s (>{stuck_warn_sec:.0f}s). "
+                    "Rhino script may be hung. Check Rhino UI / RhinoCode pipe."
+                )
+            # subprocess 시작했는데 done_ts가 stale + 처리 중이면 경보
+            if (
+                state.last_rhino_subprocess_started_ts
+                and (
+                    state.last_rhino_subprocess_done_ts is None
+                    or state.last_rhino_subprocess_done_ts
+                    < state.last_rhino_subprocess_started_ts
+                )
+                and (now - state.last_rhino_subprocess_started_ts) > stuck_warn_sec
+            ):
+                log(
+                    "[heartbeat][STUCK] RhinoCode subprocess started "
+                    f"{(now - state.last_rhino_subprocess_started_ts):.0f}s ago without 'done'. "
+                    "Likely Rhino-side hang."
+                )
+            # 큐에는 쌓였는데 worker가 dequeue를 못 하는 경우
+            if qsize > 0 and state.last_enqueue_ts and state.last_dequeue_ts:
+                if (
+                    state.last_enqueue_ts > state.last_dequeue_ts
+                    and (now - state.last_enqueue_ts) > stuck_warn_sec
+                    and not cur_name
+                ):
+                    log(
+                        f"[heartbeat][STUCK] queue={qsize} but worker idle for "
+                        f"{(now - state.last_enqueue_ts):.0f}s. stl_queue_worker may be dead."
+                    )
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            log(f"[heartbeat] error: {e}")
+            try:
+                await asyncio.sleep(5)
+            except Exception:
+                break
+
+
 async def _rhino_pool_refresher() -> None:
     """Rhino pool을 주기적으로 재스캔하는 백그라운드 태스크.
 
@@ -75,7 +189,7 @@ def create_app():
             return await call_next(request)
         is_protected = path.startswith("/api/rhino/") or path.startswith(
             "/control/"
-        ) or path.startswith("/history/")
+        ) or path.startswith("/history/") or path.startswith("/health/diag")
 
         if not is_protected:
             return await call_next(request)
@@ -187,6 +301,8 @@ def create_app():
         # 요청이 올 때까지 기다리지 않고 선제적으로 갱신한다. 하루 누적되는 stale pipeId로
         # 인한 지연/실패를 예방.
         asyncio.create_task(_rhino_pool_refresher())
+        # [diag] 60초마다 system health 스냅샷 로그 + stuck 자동 감지
+        asyncio.create_task(_health_heartbeat())
         # startup recovery는 backend pending 목록을 읽고 로컬 입력 캐시를 채우는 I/O 작업이라
         # FastAPI 메인 루프를 막지 않도록 별도 thread에서 시작한다.
         start_recovery_thread()

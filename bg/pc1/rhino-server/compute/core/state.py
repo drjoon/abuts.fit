@@ -36,6 +36,22 @@ job_futures: Dict[str, asyncio.Future] = {}
 is_running = True
 recent_history = deque(maxlen=50)
 
+# [diag] 먹통 진단을 위한 관찰 필드. 모두 epoch seconds(또는 None).
+# stl_queue_worker / process_single_stl / run_rhino_python 가 갱신한다.
+# _health_heartbeat 가 60초마다 스냅샷을 로그로 남긴다.
+server_start_ts: float = time.time()
+last_enqueue_ts: Optional[float] = None
+last_dequeue_ts: Optional[float] = None
+last_success_ts: Optional[float] = None
+last_failure_ts: Optional[float] = None
+current_processing_name: Optional[str] = None
+current_processing_started_ts: Optional[float] = None
+last_rhino_subprocess_started_ts: Optional[float] = None
+last_rhino_subprocess_done_ts: Optional[float] = None
+total_jobs_processed: int = 0
+total_jobs_failed: int = 0
+total_jobs_timeout: int = 0
+
 
 def set_main_loop(loop: asyncio.AbstractEventLoop) -> None:
     global main_loop

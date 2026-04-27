@@ -32,6 +32,56 @@ async def get_recent_history():
     return {"ok": True, "history": list(state.recent_history)}
 
 
+@router.get("/health/diag")
+async def health_diag():
+    """[diag] 먹통 의심 시 외부에서 GET 호출해 현재 상태를 즉시 확인.
+
+    인증된 경로(/health/...)지만 본 라우트는 routes_basic이므로
+    auth_middleware의 'is_protected' 분기를 따른다 → /history/* 와 동일하게 보호됨.
+    """
+    import time as _t
+    now = _t.time()
+
+    def age(ts):
+        if ts is None:
+            return None
+        return round(now - float(ts), 2)
+
+    try:
+        qsize = state.stl_job_queue.qsize()
+    except Exception:
+        qsize = -1
+
+    return {
+        "ok": True,
+        "isRunning": state.is_running,
+        "uptimeSec": round(now - state.server_start_ts, 1),
+        "queueSize": qsize,
+        "inFlight": list(state.in_flight),
+        "rhinoAll": list(state.rhino_all),
+        "rhinoAvail": list(state.rhino_available),
+        "totals": {
+            "ok": state.total_jobs_processed,
+            "failed": state.total_jobs_failed,
+            "timeout": state.total_jobs_timeout,
+        },
+        "openFutures": len(state.job_futures),
+        "current": {
+            "name": state.current_processing_name,
+            "durationSec": age(state.current_processing_started_ts),
+        },
+        "ageSec": {
+            "lastEnqueue": age(state.last_enqueue_ts),
+            "lastDequeue": age(state.last_dequeue_ts),
+            "lastSuccess": age(state.last_success_ts),
+            "lastFailure": age(state.last_failure_ts),
+            "lastSubprocStarted": age(state.last_rhino_subprocess_started_ts),
+            "lastSubprocDone": age(state.last_rhino_subprocess_done_ts),
+            "lastPingSuccess": age(state.last_ping_success_ts) if state.last_ping_success_ts else None,
+        },
+    }
+
+
 @router.get("/")
 def root():
     return {

@@ -479,10 +479,17 @@ async def stl_queue_worker() -> None:
             item = await state.stl_job_queue.get()
             p: Path = item["path"]
             force: bool = item.get("force", False)
+            state.last_dequeue_ts = time.time()
+            state.current_processing_name = p.name
+            state.current_processing_started_ts = state.last_dequeue_ts
             log(f"[stl-queue] Dequeued: {p.name} (queue remaining: {state.stl_job_queue.qsize()})")
             try:
                 await asyncio.wait_for(process_single_stl(p, force), timeout=hard_timeout)
+                state.last_success_ts = time.time()
+                state.total_jobs_processed += 1
             except asyncio.TimeoutError:
+                state.last_failure_ts = time.time()
+                state.total_jobs_timeout += 1
                 log(f"[stl-queue] HARD TIMEOUT ({hard_timeout}s) for {p.name}, skipping to next")
                 # in_flight 정리 (process_single_stl 내부 finally가 못 돌았을 경우 안전망)
                 try:
@@ -491,8 +498,12 @@ async def stl_queue_worker() -> None:
                 except Exception:
                     pass
             except Exception as e:
+                state.last_failure_ts = time.time()
+                state.total_jobs_failed += 1
                 log(f"[stl-queue] Unexpected error for {p.name}: {e}")
             finally:
+                state.current_processing_name = None
+                state.current_processing_started_ts = None
                 state.stl_job_queue.task_done()
                 # [fix] state.jobs 무한 증가 방지: 최근 200개만 유지
                 try:
@@ -554,6 +565,7 @@ def enqueue_stl_job(p: Path, force: bool = False) -> str:
             pass
 
     item = {"path": p, "force": force}
+    state.last_enqueue_ts = time.time()
     log(f"[stl-queue] Enqueued: {p.name} (queue size after: {state.stl_job_queue.qsize() + 1})")
 
     # 현재 실행 중인 이벤트 루프가 있으면 직접 put_nowait,
