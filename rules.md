@@ -1445,6 +1445,23 @@ AWS EBS 환경변수는 한글 문자열을 올바른 UTF-8로 Node.js `process.
 - 잘못된 PRC로 가공하는 것보다 안전하게 중단하는 것이 우선입니다.
 - Esprit는 재기동 시 `pending-nc` 백로그를 자동 복구하지 않고, 승인된 단일 작업만 처리합니다.
 
+### 7.4.1 유지홈(retentionGroove) 옵션
+
+의뢰자가 임플란트 정보 입력 시 선택하는 **유지홈** 옵션은 5축 Composite Finishing 작업의 `StepIncrement`(스텝 간격) 값을 의뢰별로 변경합니다.
+
+- **SSOT (백엔드)**: `Request.caseInfos.retentionGroove` (`"none" | "shallow" | "deep"`, 기본값 `"deep"`)
+- **치과별 디폴트 (프론트 localStorage)**: `ClinicPreset.defaultRetentionGroove` — 의뢰자가 새 의뢰 화면에서 유지홈 값을 바꾸면 선택된 치과의 디폴트로 자동 저장되며, 같은 치과를 다시 선택하면 그 값이 자동으로 채워집니다 (favorite 임플란트와 동일 패턴, 서버 저장 없음).
+- **값 매핑 (`StepIncrement` mm)**:
+  - `none` → `0.1`
+  - `shallow` → `0.2`
+  - `deep` → `0.3`
+- **API 노출**: `GET /api/bg/request-meta`의 `caseInfos.retentionGroove`로 esprit-addin에 전달.
+- **esprit-addin 적용 방식 (PRC 파일 무변경)**:
+  - `StlFileProcessor.TryApplyRetentionGrooveToStepIncrementEnv()`가 매핑된 numeric 값을 환경변수 `ABUTS_COMPOSITE_STEP_INCREMENT_A`에 주입.
+  - `MainModuleComposite.TryRunComposite2SplitAB`이 `5axisComposite_A.prc`로 `opA`를 로드한 직후, `MainModuleComposite.TrySetCompositeStepIncrement`가 `opA.GetType().InvokeMember("StepIncrement", BindingFlags.SetProperty, …)`로 COM 객체에 직접 SetProperty (PRC `StepIncrement; 217;` DispId 동치).
+  - `_B.prc`는 변경하지 않음. PRC 파일 원본을 절대 수정하지 않으며, 임시 사본도 만들지 않음.
+- 값 누락/비정상이면 env를 비워 PRC 원본 `StepIncrement`를 그대로 사용 (안전 디폴트).
+
 ### 7.5 CAM 직경 호환성
 
 - CAM 단계에서 STL 최대 직경과 장비 소재 직경 그룹의 호환성을 검사합니다.

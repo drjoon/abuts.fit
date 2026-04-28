@@ -89,6 +89,14 @@ const requestSchema = new mongoose.Schema(
       faceHolePrcFileName: String,
       connectionPrcFileName: String,
       workType: String,
+      // 유지홈(retentionGroove) 옵션 — esprit-addin이 5axisComposite_A.prc의
+      // StepIncrement(스텝 간격) 값을 의뢰별로 다르게 적용하기 위한 SSOT 필드.
+      // 매핑: none=0.1, shallow=0.2, deep=0.3 (rules.md §7.4.1 참조)
+      retentionGroove: {
+        type: String,
+        enum: ["none", "shallow", "deep"],
+        default: "deep",
+      },
       reviewByStage: {
         request: {
           status: {

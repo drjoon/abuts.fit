@@ -193,9 +193,52 @@ namespace DentalAddin
 
             DentalLogger.Log($"Composite2SplitAB - PassPercent: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2})");
 
+            // 유지홈(retentionGroove) -> StepIncrement 적용 (DispId 217 기준 IDispatch 늦은 바인딩).
+            // env: ABUTS_COMPOSITE_STEP_INCREMENT_A (예: 0.1 / 0.2 / 0.3)
+            // PRC 파일 원본은 변경하지 않으며, A 작업에만 적용한다(B는 PRC 기본값 유지).
+            TrySetCompositeStepIncrement(opA, "A");
+
             TryAddOperation(opA, freeFormFeature, "Composite2SplitAB:A");
             TryAddOperation(opB, freeFormFeature, "Composite2SplitAB:B");
             return true;
+        }
+
+        // retentionGroove(유지홈) → StepIncrement 적용. PRC 파일을 건드리지 않고
+        // Esprit COM 객체(IDispatch)에 직접 SetProperty 한다. 대상 DispId 는 PRC 의
+        // `StepIncrement; 217;` 토큰과 동일하다. 환경변수 ABUTS_COMPOSITE_STEP_INCREMENT_A
+        // 가 비어 있으면 PRC 기본값을 그대로 사용한다.
+        private static void TrySetCompositeStepIncrement(TechLatheMill5xComposite op, string label)
+        {
+            if (op == null)
+            {
+                return;
+            }
+            string raw = Environment.GetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                DentalLogger.Log($"Composite2SplitAB - {label} StepIncrement env 비어있음, PRC 기본값 사용");
+                return;
+            }
+            if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double stepIncrement))
+            {
+                DentalLogger.Log($"Composite2SplitAB - {label} StepIncrement env 파싱 실패 (raw='{raw}'), PRC 기본값 사용");
+                return;
+            }
+            try
+            {
+                op.GetType().InvokeMember(
+                    "StepIncrement",
+                    BindingFlags.SetProperty,
+                    null,
+                    op,
+                    new object[] { stepIncrement },
+                    CultureInfo.InvariantCulture);
+                DentalLogger.Log($"Composite2SplitAB - {label} StepIncrement={stepIncrement.ToString("0.###", CultureInfo.InvariantCulture)} 적용 (PRC 파일 무변경)");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"Composite2SplitAB - {label} StepIncrement 설정 실패: {ex.GetType().Name}:{ex.Message}");
+            }
         }
 
         private static void TryAddOperation(object technology, IGraphicObject graphicObject, string context)

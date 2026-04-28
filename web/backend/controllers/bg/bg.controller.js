@@ -987,6 +987,9 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           maxDiameter: ci.maxDiameter || 0,
           connectionDiameter: ci.connectionDiameter || 0,
           workType: ci.workType || "",
+          // 유지홈 옵션 — esprit-addin이 5axisComposite_A.prc의 StepIncrement
+          // (스텝 간격) 값을 결정하는 데 사용. rules.md §7.4.1 참조.
+          retentionGroove: ci.retentionGroove || "deep",
           lotNumber: lotValue,
           // esprit-addin에서 공정 PRC를 선택하기 위한 의뢰별 설정
           // PRC 파일명이 DB에 저장된 경우 그대로 사용, 없으면 임플란트 정보로 동적 계산.

@@ -356,6 +356,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember] public string lotNumber { get; set; }
             [DataMember] public string faceHolePrcFileName { get; set; }
             [DataMember] public string connectionPrcFileName { get; set; }
+            // 유지홈 옵션 ("none"|"shallow"|"deep") — 5axisComposite_A.prc 의
+            // StepIncrement 값을 의뢰별로 덮어쓰는 데 사용. rules.md §7.4.1 참조.
+            [DataMember] public string retentionGroove { get; set; }
             [DataMember] public RequestMetaFinishLine finishLine { get; set; }
         }
 

@@ -5,10 +5,16 @@ export type ClinicFavoriteImplant = {
   type: string;
 };
 
+export type RetentionGrooveValue = "none" | "shallow" | "deep";
+
 export type ClinicPreset = {
   id: string;
   name: string;
   favorite?: ClinicFavoriteImplant;
+  // 치과별 유지홈 디폴트값. 새 의뢰 작성 시 치과를 선택하면 이 값이
+  // caseInfos.retentionGroove 로 자동 채워진다. 사용자가 값을 바꾸면
+  // 자동으로 해당 치과의 디폴트로 갱신된다 (favorite 임플란트와 동일 패턴).
+  defaultRetentionGroove?: RetentionGrooveValue;
 };
 
 export type Connection = {
@@ -55,6 +61,7 @@ export type CaseInfos = {
     free?: boolean;
     tag?: string;
   };
+  retentionGroove?: "none" | "shallow" | "deep";
 };
 
 export type DraftFileMeta = {

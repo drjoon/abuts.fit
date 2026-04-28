@@ -65,6 +65,13 @@ const draftCaseSchema = new mongoose.Schema(
           type: String,
           enum: ["abutment", "crown"],
         },
+        // 유지홈(retentionGroove) — Request로 승격 시 그대로 전달.
+        // 매핑/적용 위치는 rules.md §7.4.1 참조.
+        retentionGroove: {
+          type: String,
+          enum: ["none", "shallow", "deep"],
+          default: "deep",
+        },
         // 배송 요청 정보 (묶음 배송만 사용)
         requestedShipDate: Date,
       },

@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
 import { NewRequestPatientImplantFields } from "./NewRequestPatientImplantFields";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -785,7 +787,7 @@ export function NewRequestDetailsSection({
       </div>
 
       <Dialog open={isDetailOpen} onOpenChange={handleDialogOpenChange}>
-        <DialogContent className="w-[calc(100vw-1rem)] sm:w-[1180px] lg:w-[980px] max-w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:w-[1180px] lg:w-[980px] max-w-[calc(100vw-1rem)] max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">
               STL 확인 및 정보 입력
@@ -845,6 +847,64 @@ export function NewRequestDetailsSection({
                     clearAllTeethPresets={clearAllTeethPresets}
                     handleAddOrSelectClinic={handleAddOrSelectClinic}
                   />
+
+                  {/* 유지홈 옵션 */}
+                  <div className="flex flex-row items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                    <div className="text-sm font-semibold text-slate-600">
+                      유지홈
+                    </div>
+                    <RadioGroup
+                      value={detailCaseInfos?.retentionGroove || "deep"}
+                      onValueChange={(value) =>
+                        setDetailCaseInfos({
+                          retentionGroove: value as "none" | "shallow" | "deep",
+                        })
+                      }
+                      className="flex items-center gap-10"
+                      disabled={!detailFile}
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem
+                          value="none"
+                          id="rg-none"
+                          className="border-slate-300 text-blue-600"
+                        />
+                        <Label
+                          htmlFor="rg-none"
+                          className="text-sm text-slate-700 cursor-pointer"
+                        >
+                          없음
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem
+                          value="shallow"
+                          id="rg-shallow"
+                          className="border-slate-300 text-blue-600"
+                        />
+                        <Label
+                          htmlFor="rg-shallow"
+                          className="text-sm text-slate-700 cursor-pointer"
+                        >
+                          얕음
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem
+                          value="deep"
+                          id="rg-deep"
+                          className="border-slate-300 text-blue-600"
+                        />
+                        <Label
+                          htmlFor="rg-deep"
+                          className="text-sm text-slate-700 cursor-pointer"
+                        >
+                          깊음
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+
                   <div className="flex flex-col gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <span className="text-sm font-semibold text-slate-700">

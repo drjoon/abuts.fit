@@ -345,6 +345,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       family: implantFamily,
       type: implantType,
     },
+    // 현재 편집 중인 retentionGroove 값을 전달하여 선택된 치과의 디폴트로 자동 저장.
+    retentionGroove: currentCaseInfos?.retentionGroove,
   });
 
   // 클리닉 프리셋 (글로벌)
@@ -372,9 +374,13 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         : null;
       const clinicName = selectedClinic?.name || "";
 
-      // 현재 선택된 파일의 clinicName만 업데이트
+      // 현재 선택된 파일의 clinicName + 치과별 유지홈 디폴트 적용
       if (currentFileKey && updateCaseInfos) {
-        updateCaseInfos(currentFileKey, { clinicName });
+        const updates: any = { clinicName };
+        if (selectedClinic?.defaultRetentionGroove) {
+          updates.retentionGroove = selectedClinic.defaultRetentionGroove;
+        }
+        updateCaseInfos(currentFileKey, updates);
       }
     },
     [rawHandleSelectClinic, rawClinicPresets, currentFileKey, updateCaseInfos],
@@ -401,6 +407,10 @@ export const useNewRequestPage = (existingRequestId?: string) => {
           updates.implantBrand = favorite.brand;
           updates.implantFamily = favorite.family;
           updates.implantType = favorite.type;
+        }
+        // 치과별 유지홈 디폴트가 있으면 자동 적용 (favorite 임플란트와 동일 패턴).
+        if (selectedClinic?.defaultRetentionGroove) {
+          updates.retentionGroove = selectedClinic.defaultRetentionGroove;
         }
 
         // updateCaseInfos 호출 (로컬 상태 + 디바운스된 PATCH)

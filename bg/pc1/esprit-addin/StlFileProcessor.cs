@@ -67,6 +67,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private string _backendSerialCode;
         private string _backendRequestId;
         private string _backendImplantLabel;
+        // 유지홈(retentionGroove) 옵션 캐시 — request-meta 수신 직후 저장.
+        // 이후 5axisComposite_A.prc 의 StepIncrement 를 의뢰별로 덮어쓰기 위해 사용.
+        private string _backendRetentionGroove;
         public string FaceHoleProcessFilePath { get; set; }
         public string ConnectionMachiningProcessFilePath { get; set; }
         private double? _effectiveFrontLimitX;
@@ -181,7 +184,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         {
                             throw new InvalidOperationException($"request-meta 응답에 lotNumber가 없습니다. requestId={requestId}");
                         }
-                        AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}");
+                        // 유지홈(retentionGroove) 옵션 캐시 — 이후 Composite A PRC 의 StepIncrement 를 덮어쓰는 데 사용
+                        _backendRetentionGroove = string.IsNullOrWhiteSpace(requestMeta.retentionGroove)
+                            ? null
+                            : requestMeta.retentionGroove.Trim();
+                        AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}");
                         AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, espritR={(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
                         if (!_prcManager.ApplyBackendPrcNames((BackendApiClient.RequestMetaCaseInfos)requestMeta, requestId, _backendImplantLabel))
                         {
@@ -401,6 +408,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             [DataMember] public string lotNumber { get; set; }
             [DataMember] public string faceHolePrcFileName { get; set; }
             [DataMember] public string connectionPrcFileName { get; set; }
+            // 유지홈(retentionGroove) — 5axisComposite_A.prc 의 StepIncrement
+            // 값을 의뢰별로 덮어쓰기 위한 필드. rules.md §7.4.1 참조.
+            [DataMember] public string retentionGroove { get; set; }
             [DataMember] public RequestMetaFinishLine finishLine { get; set; }
         }
         [DataContract]
@@ -623,6 +633,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log($"DentalAddin: MoveSTL 실행 시작 (FrontLimit:{frontLimitX}, BackLimit:{backLimitX})");
                 InvokeMoveSTL(mainModuleType);
                 TryApplyCompositeSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ);
+                // 유지홈 옵션을 5axisComposite_A 의 StepIncrement 에 반영.
+                // PRC 파일은 건드리지 않고, env 변수에 numeric 값만 주입한다.
+                // 실제 적용은 MainModuleComposite.TryRunComposite2SplitAB → TrySetCompositeStepIncrement 가
+                // Esprit COM(IDispatch)을 통해 opA.StepIncrement(DispId 217) 에 직접 SetProperty 한다.
+                TryApplyRetentionGrooveToStepIncrementEnv();
                 
                 AppLogger.Log("DentalAddin: Emerge 실행 시작 - IGS 서피스 Merge 및 Translate");
                 // TODO: Composite split by finish line
@@ -933,6 +948,59 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             catch (Exception ex)
             {
                 AppLogger.Log($"DentalAddin: finishLine 기반 Composite2SplitAB 설정 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        // 유지홈(retentionGroove) → StepIncrement 매핑 테이블
+        //   none    → 0.1
+        //   shallow → 0.2
+        //   deep    → 0.3 (기본값)
+        // 정책 (2026-04-29 변경):
+        //   PRC 파일 사본을 만들지 않는다. 환경변수 ABUTS_COMPOSITE_STEP_INCREMENT_A 에
+        //   numeric 값만 주입하고, 실제 StepIncrement 적용은
+        //   MainModuleComposite.TryRunComposite2SplitAB → TrySetCompositeStepIncrement 가
+        //   Esprit COM 객체(opA)에 IDispatch SetProperty 로 수행한다 (PRC DispId 217 동치).
+        // 안전: 값이 비어있거나 enum 외이면 env 를 비우고 PRC 기본값을 그대로 사용.
+        private void TryApplyRetentionGrooveToStepIncrementEnv()
+        {
+            try
+            {
+                string groove = _backendRetentionGroove;
+                if (string.IsNullOrWhiteSpace(groove))
+                {
+                    Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, null);
+                    AppLogger.Log("DentalAddin: retentionGroove 미지정 - StepIncrement 기본값(PRC 원본) 유지");
+                    return;
+                }
+
+                double? stepIncrement = null;
+                switch (groove.Trim().ToLowerInvariant())
+                {
+                    case "none":
+                        stepIncrement = 0.1;
+                        break;
+                    case "shallow":
+                        stepIncrement = 0.2;
+                        break;
+                    case "deep":
+                        stepIncrement = 0.3;
+                        break;
+                }
+
+                if (!stepIncrement.HasValue)
+                {
+                    Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, null);
+                    AppLogger.Log($"DentalAddin: retentionGroove 값 비정상 '{groove}' - StepIncrement 원본 유지");
+                    return;
+                }
+
+                string envValue = stepIncrement.Value.ToString("0.###", CultureInfo.InvariantCulture);
+                Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, envValue);
+                AppLogger.Log($"DentalAddin: retentionGroove 적용 - groove={groove}, StepIncrement={envValue} (env={AppConfig.CompositeStepIncrementAEnv}, PRC 파일 무변경)");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"DentalAddin: retentionGroove 적용 실패 - {ex.GetType().Name}:{ex.Message}");
             }
         }
 

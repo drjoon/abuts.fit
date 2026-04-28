@@ -25,6 +25,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public const string CompositeSplitXEnv = "ABUTS_COMPOSITE_SPLIT_X";
         public const string CompositePrcAEnv = "ABUTS_COMPOSITE_PRC_A";
         public const string CompositePrcBEnv = "ABUTS_COMPOSITE_PRC_B";
+        // 5축 Composite_A 의 StepIncrement(스텝 간격, mm) 런타임 오버라이드.
+        // 의뢰자별 retentionGroove(none/shallow/deep) 값을 0.1/0.2/0.3 으로 매핑하여 주입한다.
+        // PRC 파일을 건드리지 않고 Esprit COM API(IDispatch SetProperty StepIncrement)로 적용된다.
+        public const string CompositeStepIncrementAEnv = "ABUTS_COMPOSITE_STEP_INCREMENT_A";
         public const string BackendUrlEnv = "BACKEND_BASE";
         public const string EspritPortEnv = "ESPRIT_ADDIN_PORT";
         public const string EspritSharedSecretEnv = "ESPRIT_SHARED_SECRET";
