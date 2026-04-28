@@ -1015,6 +1015,7 @@ export async function createRequestsFromDraft(req, res) {
             }
 
             // [정책] uploadS3ToRhinoServer 제거 — rhino-server가 process-file 트리거 시 S3에서 직접 다운로드
+            // 실제 트리거는 트랜잭션 커밋 이후에 일괄 호출 (아래 createdRequests 루프 참고).
           }
 
           requestDocs.push(newRequest);
@@ -1029,6 +1030,27 @@ export async function createRequestsFromDraft(req, res) {
         t: Date.now() - startTime,
         created: createdRequests.length,
       });
+
+      // [트리거] 트랜잭션 커밋 후 rhino-server에 fill hole 처리 시작을 알린다 (fire-and-forget).
+      // 의뢰별로 STL이 있으면 각각 트리거. 실패해도 의뢰 생성은 그대로 성공 응답된다.
+      try {
+        const { triggerRhinoProcessFileForRequest } =
+          await import("../rhino/rhino.controller.js");
+        for (const doc of createdRequests) {
+          const filePath = doc?.caseInfos?.file?.filePath;
+          if (!filePath) continue;
+          triggerRhinoProcessFileForRequest({
+            requestId: doc.requestId,
+            filePath,
+            fileName: filePath,
+          });
+        }
+      } catch (e) {
+        console.warn(
+          "[createRequestsFromDraft] rhino trigger import/dispatch failed",
+          e?.message || e,
+        );
+      }
 
       const createdAnchorId = String(
         createdRequests[0]?.businessAnchorId ||

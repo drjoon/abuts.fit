@@ -223,6 +223,16 @@ export async function createRequest(req, res) {
       // DB에 로컬 경로 정보 업데이트
       newRequest.caseInfos.file.filePath = bgFileName;
       await newRequest.save();
+
+      // [트리거] rhino-server가 fill hole 작업을 즉시 시작하도록 알림 (fire-and-forget).
+      // 실패해도 의뢰 생성은 정상 응답되며, rhino 재기동 시 /bg/pending-stl 로 복구된다.
+      const { triggerRhinoProcessFileForRequest } =
+        await import("../rhino/rhino.controller.js");
+      triggerRhinoProcessFileForRequest({
+        requestId: newRequest.requestId,
+        filePath: bgFileName,
+        fileName: bgFileName,
+      });
     }
 
     emitAppEventToRoles(["admin"], "comm:badge-update", {
@@ -977,6 +987,29 @@ export async function createRequestsBulk(req, res) {
 
     const workers = Array.from({ length: CONCURRENCY }, () => worker());
     await Promise.all(workers);
+
+    // [트리거] rhino-server에 fill hole 처리 시작을 알린다 (fire-and-forget).
+    // 의뢰별로 STL이 있으면 각각 트리거. 실패해도 의뢰 생성은 그대로 성공 응답된다.
+    if (created.length > 0) {
+      try {
+        const { triggerRhinoProcessFileForRequest } =
+          await import("../rhino/rhino.controller.js");
+        for (const doc of created) {
+          const filePath = doc?.caseInfos?.file?.filePath;
+          if (!filePath) continue;
+          triggerRhinoProcessFileForRequest({
+            requestId: doc.requestId,
+            filePath,
+            fileName: filePath,
+          });
+        }
+      } catch (e) {
+        console.warn(
+          "[createRequestsBulk] rhino trigger import/dispatch failed",
+          e?.message || e,
+        );
+      }
+    }
 
     // Dashboard refresh trigger
     if (created.length > 0) {
