@@ -22,6 +22,7 @@ export type RequestDetailDialogCaseInfos = {
   implantType?: string;
   maxDiameter?: number | null;
   connectionDiameter?: number | null;
+  retentionGroove?: "none" | "shallow" | "deep";
 };
 
 export type RequestDetailDialogRequest = {
@@ -325,6 +326,20 @@ export const RequestDetailDialog = ({
                     : "-"}
                 </span>
               </div>
+              {(() => {
+                // 유지홈(retentionGroove) 표시 - rules.md §7.4.1
+                // none=없음(0.1) / shallow=얕음(0.2) / deep=깊음(0.3)
+                const rg = caseInfos.retentionGroove;
+                if (!rg) return null;
+                const label =
+                  rg === "none" ? "없음" : rg === "shallow" ? "얕음" : "깊음";
+                return (
+                  <div className="grid grid-cols-[110px_1fr] gap-2">
+                    <span className="text-slate-600">유지홈</span>
+                    <span className="font-medium text-right">{label}</span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </DialogDescription>

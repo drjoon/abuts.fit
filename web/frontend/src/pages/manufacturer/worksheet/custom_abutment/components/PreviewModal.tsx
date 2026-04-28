@@ -607,6 +607,18 @@ export const PreviewModal = ({
     ? ""
     : String(activeReq?.lotNumber?.value || "").trim();
 
+  // 유지홈(retentionGroove) 표시 - rules.md §7.4.1
+  // none=없음(0.1) / shallow=얕음(0.2) / deep=깊음(0.3)
+  const retentionGrooveLabel = (() => {
+    const rg = (activeReq?.caseInfos as any)?.retentionGroove as
+      | "none"
+      | "shallow"
+      | "deep"
+      | undefined;
+    if (!rg) return "";
+    return rg === "none" ? "없음" : rg === "shallow" ? "얕음" : "깊음";
+  })();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -637,7 +649,22 @@ export const PreviewModal = ({
                       {generateModelNumber(activeReq?.caseInfos, fullLotLabel)}
                     </Badge>
                   )}
+                  {retentionGrooveLabel && (
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-amber-200 bg-amber-50 text-amber-700"
+                    >
+                      유지홈 {retentionGrooveLabel}
+                    </Badge>
+                  )}
                 </div>
+              ) : retentionGrooveLabel ? (
+                <Badge
+                  variant="outline"
+                  className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-amber-200 bg-amber-50 text-amber-700"
+                >
+                  유지홈 {retentionGrooveLabel}
+                </Badge>
               ) : null}
 
               <Button

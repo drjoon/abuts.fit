@@ -74,8 +74,23 @@ export const MachiningRequestLabel = ({
     .map((part) => String(part || "").trim())
     .filter(Boolean);
 
+  // 유지홈(retentionGroove) 표시 - rules.md §7.4.1
+  // none=없음(0.1) / shallow=얕음(0.2) / deep=깊음(0.3)
+  const retentionGrooveLabel = (() => {
+    const rg = caseInfos?.retentionGroove as
+      | "none"
+      | "shallow"
+      | "deep"
+      | undefined;
+    if (!rg) return "";
+    return rg === "none" ? "없음" : rg === "shallow" ? "얕음" : "깊음";
+  })();
+
   const infoBadges =
-    resolvedMaxDia || resolvedCamDia || implantParts.length ? (
+    resolvedMaxDia ||
+    resolvedCamDia ||
+    implantParts.length ||
+    retentionGrooveLabel ? (
       <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
         {resolvedMaxDia ? (
           <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 font-semibold">
@@ -90,6 +105,11 @@ export const MachiningRequestLabel = ({
         {implantParts.length ? (
           <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-600">
             {implantParts.join(" / ")}
+          </span>
+        ) : null}
+        {retentionGrooveLabel ? (
+          <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">
+            유지홈 {retentionGrooveLabel}
           </span>
         ) : null}
       </div>
