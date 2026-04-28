@@ -251,6 +251,9 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
     tiltAxisVector,
     frontPoint,
     workType,
+    // 유지홈(retentionGroove) — 파일 추가 시점에 프론트가 값을 보내면 보존.
+    // 미지정이면 schema default("deep") 적용 (rules.md §7.4.1)
+    retentionGroove,
     shippingMode,
     requestedShipDate,
   } = req.body || {};
@@ -310,6 +313,8 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
     tiltAxisVector,
     frontPoint,
     workType,
+    // 유지홈 옵션 (rules.md §7.4.1)
+    retentionGroove,
     shippingMode: "normal", // 항상 묶음 배송
     requestedShipDate,
   });
@@ -376,6 +381,8 @@ export const addFilesToDraftBulk = asyncHandler(async (req, res) => {
         tiltAxisVector,
         frontPoint,
         workType,
+        // 유지홈(retentionGroove) — bulk 파일 추가 시에도 보존 (rules.md §7.4.1)
+        retentionGroove,
         shippingMode,
         requestedShipDate,
       } = raw || {};
@@ -420,6 +427,8 @@ export const addFilesToDraftBulk = asyncHandler(async (req, res) => {
         tiltAxisVector,
         frontPoint,
         workType,
+        // 유지홈 옵션 (rules.md §7.4.1)
+        retentionGroove,
         shippingMode: "normal", // 항상 묶음 배송
         requestedShipDate,
       };

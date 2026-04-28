@@ -668,6 +668,28 @@ export const WorksheetCardGrid = ({
                   {caseInfos.implantBrand || "-"} /{" "}
                   {caseInfos.implantFamily || "-"} /{" "}
                   {caseInfos.implantType || "-"}
+                  {(() => {
+                    // 유지홈(retentionGroove) 표시 - rules.md §7.4.1
+                    // none=없음(0.1) / shallow=얕음(0.2) / deep=깊음(0.3)
+                    const rg = (caseInfos as any)?.retentionGroove as
+                      | "none"
+                      | "shallow"
+                      | "deep"
+                      | undefined;
+                    if (!rg) return null;
+                    const label =
+                      rg === "none"
+                        ? "없음"
+                        : rg === "shallow"
+                          ? "얕음"
+                          : "깊음";
+                    return (
+                      <>
+                        <span>•</span>
+                        <span>유지홈 {label}</span>
+                      </>
+                    );
+                  })()}
                 </div>
                 {/* 백그라운드 작업 실패 시 안내 메시지 */}
                 {((isCamStage &&

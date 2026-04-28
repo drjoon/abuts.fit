@@ -199,6 +199,54 @@ export const fillholeFromUpload = asyncHandler(async (req, res) => {
   return res.status(200).send(Buffer.from(resp.data));
 });
 
+/**
+ * 새 의뢰 생성 후 rhino-server에 STL 처리(filled.stl 생성)를 트리거하기 위한 헬퍼.
+ *
+ * [정책]
+ *  - 의뢰 생성 흐름은 rhino HTTP 응답을 기다리지 않는다 (fire-and-forget).
+ *  - rhino의 /api/rhino/process-file 는 enqueue 직후 즉시 200 으로 응답하므로 빠르지만,
+ *    네트워크 단절/일시 오류로 실패하더라도 의뢰 생성 자체는 영향 받지 않아야 한다.
+ *  - 실패해도 안전망: rhino-server 재기동 시 /bg/pending-stl SSOT에서 다시 끌어와 처리한다.
+ *
+ * 호출 위치: createRequest / createRequestsBulk / createRequestsFromDraft 가 의뢰를 저장한 직후.
+ */
+export const triggerRhinoProcessFileForRequest = ({
+  requestId,
+  filePath,
+  fileName,
+}) => {
+  const targetName = String(filePath || fileName || "").trim();
+  if (!targetName) return;
+  const url = `${RHINO_COMPUTE_BASE_URL}/api/rhino/process-file`;
+  axios
+    .post(
+      url,
+      {
+        filePath: targetName,
+        fileName: targetName,
+        requestId: requestId || null,
+        force: false,
+      },
+      {
+        timeout: 1000 * 30,
+        headers: rhinoAuthHeaders(),
+      },
+    )
+    .then((resp) => {
+      const status = resp?.data?.data?.status || resp?.data?.status || "ok";
+      console.log(
+        `[rhino-trigger] requestId=${requestId || "-"} file=${targetName} status=${status}`,
+      );
+    })
+    .catch((err) => {
+      console.warn(
+        `[rhino-trigger] failed requestId=${requestId || "-"} file=${targetName}: ${
+          err?.response?.status || ""
+        } ${err?.message || err}`,
+      );
+    });
+};
+
 export const fillholeFromStoreName = asyncHandler(async (req, res) => {
   const rawName = req.body?.name;
   if (!rawName) {

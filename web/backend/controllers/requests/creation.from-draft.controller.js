@@ -316,6 +316,11 @@ export async function createRequestsFromDraft(req, res) {
           };
         }
 
+        // 유지홈(retentionGroove) — Draft → Request 승격 시 명시적으로 전달.
+        // normalizedCi 스프레드만 의존하면 누락 위험이 있으므로 여기서 default("deep")
+        // 까지 보장해 esprit-addin이 항상 유효한 값을 받도록 한다. (rules.md §7.4.1)
+        const retentionGrooveValue = ci?.retentionGroove || "deep";
+
         const caseInfosWithFile = ci?.file
           ? {
               ...normalizedCi,
@@ -325,6 +330,7 @@ export async function createRequestsFromDraft(req, res) {
               taperAngle: ci.taperAngle,
               tiltAxisVector: ci.tiltAxisVector,
               frontPoint: ci.frontPoint,
+              retentionGroove: retentionGrooveValue,
               newSystemRequest,
               file: {
                 originalName: ci.file.originalName,
@@ -342,6 +348,7 @@ export async function createRequestsFromDraft(req, res) {
               taperAngle: ci.taperAngle,
               tiltAxisVector: ci.tiltAxisVector,
               frontPoint: ci.frontPoint,
+              retentionGroove: retentionGrooveValue,
               newSystemRequest,
             };
 
