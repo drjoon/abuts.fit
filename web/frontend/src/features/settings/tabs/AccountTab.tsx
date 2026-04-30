@@ -421,9 +421,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         return false;
       }
 
-      const body: any = res.data || {};
-      const data = body.data || body;
-
       setPhoneVerificationCode("");
       setPhoneVerifiedAt(null);
       setVerificationSent(true);
@@ -434,14 +431,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         description: "문자로 받은 인증번호를 입력해주세요.",
         duration: 3000,
       });
-
-      if (data?.devCode) {
-        toast({
-          title: "개발용 인증번호",
-          description: String(data.devCode),
-          duration: 3000,
-        });
-      }
       return true;
     } catch {
       toast({
