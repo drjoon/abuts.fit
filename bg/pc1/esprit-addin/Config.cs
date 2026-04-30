@@ -53,8 +53,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public const double DefaultLeftRatioOffset = 0.0;
         // public const double DefaultLeftRatioOffset = 0.3;
         public const double DefaultLeftRatio = (DefaultLeftRatioOffset+DefaultStlShift) / 20.0;
-        public const double DefaultRightRatioOffset = -0.0;
-        // public const double DefaultRightRatioOffset = -0.3;
+        // public const double DefaultRightRatioOffset = -0.0;
+        public const double DefaultRightRatioOffset = -0.3;
         // -0.3 for left 0.1 to #520(STL origin) which means back-turning will compensate
         public static int[] DefaultBackturnDiameters = { 6, 8, 10, 12, 14 };
         public static double[] DefaultBackturnClearances = {0.584, 1.161, 1.738, 2.316, 2.893};
