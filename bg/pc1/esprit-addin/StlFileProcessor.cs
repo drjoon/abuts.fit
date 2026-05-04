@@ -28,6 +28,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
     public class StlFileProcessor
     {
         private const string StlImportLayerName = "AbutsStlImport";
+        private const double DefaultWAxisRotationDegrees = 30.0;
         private static readonly HttpClient BackendHttp;
         static StlFileProcessor()
         {
@@ -118,6 +119,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log("StlFileProcessor: 템플릿 문서 초기화에 실패했습니다.");
                 return;
             }
+
+            InitializeActivePlane(document);
 
             EspritDocumentHelper.RemoveLayerIfExists(document, StlImportLayerName);
             double effectiveFrontLimit = frontLimitX ?? throw new InvalidOperationException("FrontPoint from backend is missing");
@@ -249,6 +252,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 Connect.SetCurrentDocument(document);
                 UpdateLatheBarDiameter(document, stlPath, machineBarDiameter, materialDiameter);
                 Rotate90Degrees(document);
+                RotateByWAxisDegrees(document, DefaultWAxisRotationDegrees);
                 EspritDocumentHelper.LogBoundingBox(document, "AfterRotate");
                 InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ, finishLineEspritR);
                 CaptureNcMetadata(document);
@@ -590,6 +594,59 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Segment yAxis = document.GetSegment(origin, yAxisPoint);
             selectionSet.Rotate(yAxis, -Math.PI / 2, Missing.Value);
             selectionSet.RemoveAll();
+        }
+        private void RotateByWAxisDegrees(Document document, double degrees)
+        {
+            if (document == null)
+            {
+                return;
+            }
+            if (Math.Abs(degrees) <= 0.0001)
+            {
+                return;
+            }
+
+            const string selectionName = "StlProcessorTemp";
+            SelectionSet selectionSet = EspritDocumentHelper.GetOrCreateSelectionSet(document, selectionName);
+            if (selectionSet == null)
+            {
+                AppLogger.Log("StlFileProcessor: W축 회전용 SelectionSet 생성 실패");
+                return;
+            }
+
+            try
+            {
+                selectionSet.RemoveAll();
+                foreach (GraphicObject graphic in document.GraphicsCollection)
+                {
+                    if (graphic?.GraphicObjectType == espGraphicObjectType.espSTL_Model)
+                    {
+                        selectionSet.Add(graphic, Missing.Value);
+                    }
+                }
+                if (selectionSet.Count == 0)
+                {
+                    AppLogger.Log("StlFileProcessor: W축 회전 대상 STL이 없습니다.");
+                    return;
+                }
+
+                Point origin = document.GetPoint(0, 0, 0);
+                Point xAxisPoint = document.GetPoint(1, 0, 0);
+                Segment wAxis = document.GetSegment(origin, xAxisPoint);
+                double angleRad = degrees * Math.PI / 180.0;
+                selectionSet.Rotate(wAxis, angleRad, Missing.Value);
+                AppLogger.Log($"StlFileProcessor: STL W축 회전 적용 - {degrees:F1}도 (C0 기준)");
+            }
+            finally
+            {
+                try
+                {
+                    selectionSet.RemoveAll();
+                }
+                catch
+                {
+                }
+            }
         }
         private void InvokeDentalAddin(Document document, double frontLimitX, double backLimitX, double? stlTopZ, double? finishLineTopZ, double? finishLineEspritR)
         {
@@ -1428,6 +1485,39 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         {
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Document", document);
             DentalAddinReflectionHelper.SetStaticProperty(mainModuleType, "EspritApp", _espApp);
+        }
+        private static void InitializeActivePlane(Document document)
+        {
+            if (document == null)
+            {
+                return;
+            }
+
+            try
+            {
+                Plane xyzPlane = null;
+                try
+                {
+                    xyzPlane = document.Planes["XYZ"];
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Log($"StlFileProcessor: XYZ 작업면 조회 실패 - {ex.GetType().Name}:{ex.Message}");
+                }
+
+                if (xyzPlane == null)
+                {
+                    AppLogger.Log("StlFileProcessor: XYZ 작업면이 없어 ActivePlane 초기화를 건너뜁니다.");
+                    return;
+                }
+
+                document.ActivePlane = xyzPlane;
+                AppLogger.Log("StlFileProcessor: ActivePlane을 XYZ로 초기화했습니다.");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"StlFileProcessor: ActivePlane 초기화 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
         }
         private void UpdateLatheBarDiameter(Document document, string stlPath, double initialBarDiameter, double? backendMaterialDiameter)
         {
