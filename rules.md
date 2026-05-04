@@ -130,7 +130,7 @@
   - read 경로에서 계산하지 않는 이유가 무엇인지
     를 읽는 사람이 바로 이해할 수 있게 적습니다.
 
-### 1.1 파일 크기 관리 (800줄 정책)
+### 1.4 파일 크기 관리 (800줄 정책)
 
 - **모든 소스 파일은 800줄을 초과하지 않도록 관리합니다.**
 - 새 코드 추가 시 파일이 800줄을 초과할 것으로 예상되면 **자동으로 리팩터링**합니다.
@@ -179,7 +179,7 @@
 - **해결**:
   1. **extracted/metadata 통합**: `BusinessAnchor` 모델에서 `extracted` 필드 제거, `metadata`로 통합 관리
      - AI 파싱 결과도 사용자 확인/검증을 거치므로 "추출"이 아닌 "검증된 메타데이터"
-     - `metadata`가 SSOT, 프론트엔드 호환성을 위해 `extracted`로도 alias하여 반환
+     - `metadata`가 SSOT이며 `extracted` alias는 제공하지 않음
   2. `useBusinessDataManagement.ts`: 서버에 `businessLicense`가 있으면 무조건 서버 데이터를 적용하도록 로직 추가
   3. `business.update.controller.js`: 업데이트 후 조회 시 `businessLicense` 필드를 select에 포함
   4. `BusinessTab.tsx`: 저장 성공 후 `invalidateBusinessMeCache` 호출 및 `force: true` 옵션으로 서버 데이터 강제 재로드
@@ -297,7 +297,7 @@
 ### 2.3 사업자 규칙
 
 - 사업자 단위 데이터는 개인이 아니라 **사업자 SSOT**로 관리합니다.
-- 현재 권장 구조는 **`User = 사람`, `BusinessAnchor = 법인/사업자 SSOT`, `Business = 멤버십/운영 UI 컨테이너`** 입니다.
+- 현재 구조는 **`User = 사람`, `BusinessAnchor = 법인/사업자 SSOT`** 입니다.
 - 의뢰 조회 범위는 기본적으로 **내 사업자 + 허용된 하위 범위** 기준입니다.
 - 직계 멤버 집계는 사업자 단위로 계산합니다.
 - requestor/salesman/manufacturer 등 role별 사업자의 내부 식별자는 Mongo `_id` 이지만, **사업자 anchor는 `organizationType + normalizedBusinessNumber`** 입니다.
@@ -309,7 +309,7 @@
 - request 문서의 사업자 귀속 필드는 과도기 명칭보다 **`requestorBusinessAnchorId`** 를 우선 사용합니다.
 - 의뢰건, 크레딧, 수수료, 리퍼럴, 주문량/통계, 배송 박스/우편함 귀속의 기본 단위는 **유저가 아니라 사업자**입니다.
 - requestor 역할에서 대표/직원 구분은 권한 모델일 뿐이며, 금액/집계/추천 보상/우편함/배송비 귀속 기준을 개인 사용자로 분기하지 않습니다.
-- business owner는 사업자를 생성/검증 요청하는 사용자 역할일 뿐, 사업자 생성 이후 관련 데이터의 canonical 귀속 주체는 **owner가 아니라 business 엔터티 자체**입니다.
+- business owner는 사업자를 생성/검증 요청하는 사용자 역할일 뿐, 사업자 생성 이후 관련 데이터의 canonical 귀속 주체는 **owner 개인이 아니라 BusinessAnchor 엔터티 자체**입니다.
 - 개인 사용자 기준 처리가 필요한 경우는 인증/세션/알림 수신 주체처럼 **사용자 자체가 엔터티인 기능**으로 한정합니다.
 
 ### 2.3.2 BusinessAnchor SSOT 원칙 (Business 컬렉션 완전 제거)
@@ -410,17 +410,16 @@
   - 관리자 화면에서 `group`이라는 표현은 의뢰자 할인 네트워크에 한정하고, 그 외에는 `리더`, `소개 네트워크`, `소개 현황` 표현을 우선합니다.
 - 소개 네트워크 차트의 주문량은 역할별 카드/통계와 같은 기준의 **실제 사업자 주문수**를 표시해야 합니다.
 
-### 2.3.1 사업자 대표 가입 및 BusinessAnchor/Business 생성
+### 2.3.1 사업자 대표 가입 및 BusinessAnchor 생성
 
 - **사업자 대표(owner)가 가입할 때** 다음 흐름을 따릅니다:
   1. 사용자가 개인 계정 생성 (User 엔터티)
   2. 온보딩 또는 설정에서 사업자등록증 업로드 및 검증
   3. 검증 완료 시 canonical **BusinessAnchor** 생성 또는 기존 anchor attach
-  4. 운영/멤버십 컨테이너인 **Business 엔터티 생성** 및 `businessAnchorId` 연결
-  5. 대표 사용자는 해당 Business에 owner 권한으로 귀속
-  6. 이후 가입하는 직원들도 같은 Business에 member 권한으로 귀속
+  4. 대표 사용자는 해당 `BusinessAnchor.owners`/`primaryContactUserId`로 귀속
+  5. 이후 가입하는 직원들도 같은 `BusinessAnchor.members`로 귀속
 - **canonical 귀속 키는 사업자등록번호 검증 완료 시점의 `businessAnchorId`** 이며, 이후 의뢰/크레딧/배송/소개/집계는 `businessAnchorId` 기준으로 처리합니다.
-- 사업자 대표와 직원은 모두 같은 Business/BusinessAnchor에 속하며, 개인 사용자 ID가 아니라 **`businessAnchorId`** 를 기준으로 집계합니다.
+- 사업자 대표와 직원은 모두 같은 BusinessAnchor에 속하며, 개인 사용자 ID가 아니라 **`businessAnchorId`** 를 기준으로 집계합니다.
 - 온보딩과 설정 메뉴의 사업자등록 UI는 동일한 BusinessForm 컴포넌트를 공유하여 일관성을 유지합니다.
 
 ## 3. SSOT와 데이터 흐름
