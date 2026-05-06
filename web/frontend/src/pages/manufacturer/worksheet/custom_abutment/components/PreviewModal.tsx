@@ -225,6 +225,11 @@ export const PreviewModal = ({
     return !!activeReq?.caseInfos?.camFile?.s3Key || !!previewFiles.cam;
   })();
 
+  const isNcGenerating =
+    isCamStage &&
+    String((activeReq as any)?.realtimeProgress?.badge || "").trim() ===
+      "NC 생성중";
+
   const controlBtnClass =
     "inline-flex h-8 w-8 items-center justify-center rounded-md border text-[13px] font-medium transition";
 
@@ -733,11 +738,11 @@ export const PreviewModal = ({
               <button
                 type="button"
                 className={`${controlBtnClass} ${
-                  reviewSaving || !canApprove
+                  reviewSaving || !canApprove || isNcGenerating
                     ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
                     : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                 }`}
-                disabled={reviewSaving || !canApprove}
+                disabled={reviewSaving || !canApprove || isNcGenerating}
                 onClick={async (e) => {
                   e.preventDefault();
                   e.stopPropagation();

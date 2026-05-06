@@ -369,6 +369,16 @@ export async function regenerateNcByRequestId(req, res) {
 
     await triggerEspritForNc({ request, force: true });
 
+    emitAppEventToRoles(
+      ["manufacturer", "admin"],
+      "request:cam-processing-started",
+      {
+        source: "nc-regenerate",
+        requestId: request?.requestId || null,
+        requestMongoId: String(request?._id || "").trim() || null,
+      },
+    );
+
     return res.status(200).json({
       success: true,
       message: "NC 재생성 요청을 전송했습니다.",

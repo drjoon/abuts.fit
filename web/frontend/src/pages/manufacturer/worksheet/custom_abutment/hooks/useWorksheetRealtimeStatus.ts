@@ -249,6 +249,23 @@ export function useWorksheetRealtimeStatus({
 
       switch (type) {
         case "request:cam-processing-started":
+          delete realtimeBaseRef.current[requestId];
+          setRequests((prev) =>
+            prev.map((r) => {
+              if (String((r as any)?.requestId || "").trim() !== requestId) {
+                return r;
+              }
+              return {
+                ...(r as any),
+                realtimeProgress: {
+                  badge: "NC 생성중",
+                  elapsedSeconds: null,
+                  startedAt: null,
+                  tone: "blue",
+                },
+              } as any;
+            }),
+          );
           return;
         case "request:filled-processing-started":
           delete realtimeBaseRef.current[requestId];

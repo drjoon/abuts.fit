@@ -286,6 +286,11 @@ export const WorksheetCardGrid = ({
               Number(caseInfos.rollbackCounts?.machining || 0) > 0) ||
             (reviewStageKey === "request" && requestStageRollbackExists));
 
+        const isNcGenerating =
+          reviewStageKey === "cam" &&
+          String((request as any)?.realtimeProgress?.badge || "").trim() ===
+            "NC 생성중";
+
         const lotBadgeClass = (() => {
           const s = String(stageForRollback || "").trim();
           const base =
@@ -488,25 +493,27 @@ export const WorksheetCardGrid = ({
                 <button
                   type="button"
                   className={`h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50 ${
-                    canApproveFromRollback
+                    canApproveFromRollback && !isNcGenerating
                       ? ""
                       : "opacity-40 cursor-not-allowed"
                   }`}
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    if (!canApproveFromRollback) return;
+                    if (!canApproveFromRollback || isNcGenerating) return;
                     onApprove(request);
                   }}
                   aria-label="승인"
                   title={
                     !hasEngravingImage
                       ? "각인 이미지가 필요합니다"
-                      : canApproveFromRollback
-                        ? "승인"
-                        : "롤백 이력이 있을 때만 승인 가능"
+                      : isNcGenerating
+                        ? "NC 재생성 완료를 기다리는 중입니다"
+                        : canApproveFromRollback
+                          ? "승인"
+                          : "롤백 이력이 있을 때만 승인 가능"
                   }
-                  disabled={!canApproveFromRollback}
+                  disabled={!canApproveFromRollback || isNcGenerating}
                 >
                   <ArrowRight className="h-4 w-4" />
                 </button>
