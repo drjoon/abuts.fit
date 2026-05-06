@@ -133,7 +133,9 @@ export async function updateBusinessShippingAddress(req, res) {
       });
     }
 
-    const businessId = String(req.body?.businessId || "").trim();
+    const businessId = String(
+      req.body?.businessAnchorId || req.body?.businessId || "",
+    ).trim();
     const address = String(req.body?.address || "").trim();
     const addressDetail = String(req.body?.addressDetail || "").trim();
     const zipCode = String(req.body?.zipCode || "").trim();
@@ -141,7 +143,7 @@ export async function updateBusinessShippingAddress(req, res) {
     if (!businessId) {
       return res.status(400).json({
         success: false,
-        message: "businessId가 필요합니다.",
+        message: "businessAnchorId가 필요합니다.",
       });
     }
 

@@ -8,6 +8,18 @@ export const buildMailboxSnapshotFingerprint = (requests = []) => {
       requestId: String(requestDoc?.requestId || "").trim(),
       mailboxAddress: String(requestDoc?.mailboxAddress || "").trim(),
       stage: String(requestDoc?.manufacturerStage || "").trim(),
+      businessAnchorId: String(
+        requestDoc?.businessAnchorId?._id || requestDoc?.businessAnchorId || "",
+      ).trim(),
+      receiverAddress: String(
+        requestDoc?.businessAnchorId?.metadata?.address || "",
+      ).trim(),
+      receiverAddressDetail: String(
+        requestDoc?.businessAnchorId?.metadata?.addressDetail || "",
+      ).trim(),
+      receiverZipCode: String(
+        requestDoc?.businessAnchorId?.metadata?.zipCode || "",
+      ).trim(),
     }))
     .filter((item) => item.requestMongoId || item.requestId)
     .sort((a, b) => {

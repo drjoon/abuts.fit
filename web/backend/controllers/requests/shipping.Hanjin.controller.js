@@ -320,7 +320,9 @@ const findPrePrintSnapshotRequests = async (mailboxAddresses = []) =>
       shippingLabelPrinted: 1,
       shippingWorkflow: 1,
       deliveryInfoRef: 1,
+      businessAnchorId: 1,
     },
+    populateBusinessAnchor: true,
   });
 
 const preparePickupAndPrintChangeContext = async (mailboxAddresses = []) => {

@@ -180,11 +180,11 @@ const resolveReceiverZipSource = (request) => {
   const business = resolveBusinessOrganization(request);
   const metadata = resolveOrganizationMeta(business);
   return (
+    metadata?.zipCode ||
+    metadata?.postalCode ||
     requestor?.address?.postalCode ||
     requestor?.zipCode ||
     requestor?.postalCode ||
-    metadata?.zipCode ||
-    metadata?.postalCode ||
     ""
   );
 };
@@ -194,12 +194,12 @@ const normalizeReceiverAddressForHanjin = (request) => {
   const business = resolveBusinessOrganization(request);
   const metadata = resolveOrganizationMeta(business);
   const addressCandidates = [
+    metadata?.address,
+    metadata?.address1,
     requestor?.addressText,
     requestor?.address?.roadAddress,
     requestor?.address?.address1,
     requestor?.address,
-    metadata?.address,
-    metadata?.address1,
   ];
   return (
     addressCandidates
@@ -213,13 +213,13 @@ const resolveReceiverDetailAddress = (request) => {
   const business = resolveBusinessOrganization(request);
   const metadata = resolveOrganizationMeta(business);
   const candidates = [
+    metadata?.addressDetail,
+    metadata?.detailAddress,
+    metadata?.address2,
     requestor?.address?.detailAddress,
     requestor?.address?.address2,
     requestor?.address?.detail,
     requestor?.detailAddress,
-    metadata?.addressDetail,
-    metadata?.detailAddress,
-    metadata?.address2,
   ];
   const resolvedCandidate =
     candidates.map((value) => String(value || "").trim()).find(Boolean) || "";
@@ -671,6 +671,11 @@ export const findPackingStageRequestsByMailboxes = async (
 
   if (options.populateRequestor !== false) {
     query = query.populate("requestor", "name business phoneNumber address");
+  }
+  if (
+    options.populateBusinessAnchor === true ||
+    options.populateRequestor !== false
+  ) {
     query = query.populate("businessAnchorId", "name metadata");
   }
 
