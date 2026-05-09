@@ -89,6 +89,33 @@ export const MachiningQueueBoard = ({
   const [siOpen, setSiOpen] = useState(false);
   const [siFetching, setSiFetching] = useState(false);
 
+  // 마지막으로 본 의룰건 requestId를 localStorage에 저장/복원
+  const SI_LAST_KEY = "abuts:si-last-request-id";
+
+  const saveSiRequestId = (items: SelfInspectionReportItem[], idx: number) => {
+    const id = items[idx]?.requestId;
+    if (id) {
+      try {
+        localStorage.setItem(SI_LAST_KEY, id);
+      } catch {
+        /* noop */
+      }
+    }
+  };
+
+  const restoreSiIdx = (items: SelfInspectionReportItem[]): number => {
+    try {
+      const lastId = localStorage.getItem(SI_LAST_KEY);
+      if (lastId) {
+        const found = items.findIndex((it) => it.requestId === lastId);
+        if (found >= 0) return found;
+      }
+    } catch {
+      /* noop */
+    }
+    return 0;
+  };
+
   const openSelfInspectionQueue = async () => {
     setSiFetching(true);
     try {
@@ -107,8 +134,9 @@ export const MachiningQueueBoard = ({
         });
         return;
       }
+      const idx = restoreSiIdx(items);
       setSiQueue(items);
-      setSiIdx(0);
+      setSiIdx(idx);
       setSiOpen(true);
     } catch {
       toast({
@@ -749,10 +777,24 @@ export const MachiningQueueBoard = ({
             : undefined
         }
         onPrev={
-          siIdx > 0 ? () => setSiIdx((i) => Math.max(0, i - 1)) : undefined
+          siIdx > 0
+            ? () =>
+                setSiIdx((i) => {
+                  const next = Math.max(0, i - 1);
+                  saveSiRequestId(siQueue, next);
+                  return next;
+                })
+            : undefined
         }
         onNext={
-          siIdx + 1 < siQueue.length ? () => setSiIdx((i) => i + 1) : undefined
+          siIdx + 1 < siQueue.length
+            ? () =>
+                setSiIdx((i) => {
+                  const next = i + 1;
+                  saveSiRequestId(siQueue, next);
+                  return next;
+                })
+            : undefined
         }
       />
 

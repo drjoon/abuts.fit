@@ -9,6 +9,7 @@ import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewe
 import { useStlMetadata } from "@/features/requests/hooks/useStlMetadata";
 import { useAuthStore } from "@/store/useAuthStore";
 import { formatKstDateTimeToKo } from "@/shared/date/kst";
+import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
 
 type InspectionRow = {
   label: string;
@@ -243,10 +244,19 @@ export function SelfInspectionReportModal({
     );
   }, [rows]);
 
-  // Load STL file (CAM → original fallback)
+  // Load STL file (CAM → original fallback, IndexedDB 캐시 사용)
   useEffect(() => {
     if (!open || !requestId || !token) return;
     let cancelled = false;
+
+    const blobToFile = (blob: Blob, filename: string) =>
+      new File([blob], filename, { type: blob.type || "model/stl" });
+
+    const fetchBlob = async (url: string): Promise<Blob> => {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error("blob fetch failed");
+      return r.blob();
+    };
 
     const load = async () => {
       setStlLoading(true);
@@ -276,7 +286,30 @@ export function SelfInspectionReportModal({
         }
         if (!mid || cancelled) return;
 
-        // Step 2: get signed URL (cam first, then original)
+        // Step 2: CAM 캐시 확인 → 없으면 original 캐시 확인 → 없으면 S3 fetch
+        const camCacheKey = `stl:${mid}:cam`;
+        const origCacheKey = `stl:${mid}:original`;
+
+        // CAM 캐시 hit
+        const cachedCam = await getFileBlob(camCacheKey);
+        if (cachedCam) {
+          if (cancelled) return;
+          const filename = camFileName.toLowerCase().includes("filled")
+            ? camFileName
+            : camFileName.replace(/\.stl$/i, ".filled.stl");
+          setStlFile(blobToFile(cachedCam, filename));
+          return;
+        }
+
+        // original 캐시 hit
+        const cachedOrig = await getFileBlob(origCacheKey);
+        if (cachedOrig) {
+          if (cancelled) return;
+          setStlFile(blobToFile(cachedOrig, `${requestId}.stl`));
+          return;
+        }
+
+        // Step 3: signed URL 취득 (CAM → original fallback)
         let signedUrl = "";
         let isCamFile = false;
         const camRes = await fetch(`/api/requests/${mid}/cam-file-url`, {
@@ -290,9 +323,7 @@ export function SelfInspectionReportModal({
         if (!signedUrl) {
           const origRes = await fetch(
             `/api/requests/${mid}/original-file-url`,
-            {
-              headers: { Authorization: `Bearer ${token}` },
-            },
+            { headers: { Authorization: `Bearer ${token}` } },
           );
           if (origRes.ok) {
             const b = await origRes.json().catch(() => ({}));
@@ -301,19 +332,23 @@ export function SelfInspectionReportModal({
         }
         if (!signedUrl || cancelled) return;
 
-        // Step 3: download blob
-        // Use actual cam filename so StlPreviewViewer overlay triggers on 'filled'
+        // Step 4: blob 다운로드 → 캐시 저장 → 표시
+        const blob = await fetchBlob(signedUrl);
+        if (cancelled) return;
+
+        const cacheKey = isCamFile ? camCacheKey : origCacheKey;
+        try {
+          await setFileBlob(cacheKey, blob);
+        } catch {
+          /* ignore */
+        }
+
         const filename = isCamFile
           ? camFileName.toLowerCase().includes("filled")
             ? camFileName
             : camFileName.replace(/\.stl$/i, ".filled.stl")
           : `${requestId}.stl`;
-        const blobRes = await fetch(signedUrl);
-        if (!blobRes.ok || cancelled) return;
-        const blob = await blobRes.blob();
-        if (!cancelled) {
-          setStlFile(new File([blob], filename, { type: "model/stl" }));
-        }
+        setStlFile(blobToFile(blob, filename));
       } catch {
         // ignore
       } finally {
