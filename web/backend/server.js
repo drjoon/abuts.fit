@@ -8,6 +8,7 @@ import {
 } from "./utils/cacheWarming.js";
 import { startDummyCncScheduler } from "./jobs/dummyCncWorker.js";
 import { startReviewApprovalWorker } from "./services/reviewApprovalQueue.service.js";
+import { seedCoreShared } from "./scripts/db/_core.shared.js";
 
 // 포트 설정 (EB 기본 upstream 포트는 8080)
 const PORT = process.env.PORT || 8080;
@@ -43,6 +44,17 @@ dbReady
         }
       } catch (error) {
         console.error("[subRole fix] 오류:", error.message);
+      }
+    })();
+
+    // Connection 컬렉션 diameter 필드 보장 (브랜드별 원점 정렬 직경)
+    // connections.seed.js에 정의된 diameter 값이 DB에 반영되도록 idempotent 업서트 실행
+    (async () => {
+      try {
+        const result = await seedCoreShared();
+        console.log("[startup] Connection 시드 적용 완료", result.connections);
+      } catch (err) {
+        console.error("[startup] Connection 시드 적용 실패:", err?.message);
       }
     })();
 

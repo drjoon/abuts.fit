@@ -197,6 +197,14 @@ def fetch_connection_target_diameter(request_id: str | None) -> float | None:
         case_infos = ((payload or {}).get("data") or {}).get("caseInfos") or {}
         raw = case_infos.get("connectionTargetDiameter")
         if raw in (None, ""):
+            log(
+                f"[diameter] connectionTargetDiameter is null in backend response: requestId={request_id} "
+                f"implantManufacturer={case_infos.get('implantManufacturer', '')} "
+                f"implantBrand={case_infos.get('implantBrand', '')} "
+                f"implantFamily={case_infos.get('implantFamily', '')} "
+                f"implantType={case_infos.get('implantType', '')} "
+                f"connectionPrcFileName={case_infos.get('connectionPrcFileName', '')}"
+            )
             return None
         diameter = float(raw)
         if diameter > 0:
@@ -210,7 +218,7 @@ def canonicalize_input_name(original: str) -> str:
     # 백엔드 파일명을 그대로 사용 (경로/특수문자만 sanitize)
     return settings.sanitize_filename(Path(original).name)
 
-async def process_single_stl(p: Path, force_reprocess: bool = False):
+async def process_single_stl(p: Path, force_reprocess: bool = False, explicit_request_id: str | None = None):
     if isinstance(p, str):
         p = Path(p)
     if not p.exists():
@@ -221,7 +229,7 @@ async def process_single_stl(p: Path, force_reprocess: bool = False):
         prefixed_input = canonicalize_input_name(p.name)
         base_stem = Path(prefixed_input).stem
         out_name = settings.sanitize_filename(f"{base_stem}.filled.stl")
-        req_id = settings.extract_request_id_from_name(prefixed_input)
+        req_id = explicit_request_id or settings.extract_request_id_from_name(prefixed_input)
         out_path = settings.STORE_OUT_DIR / out_name
         with state.in_flight_lock:
             if p.name in state.in_flight:
@@ -370,7 +378,7 @@ async def process_single_stl(p: Path, force_reprocess: bool = False):
                         tail_snippet = tail[-2000:]
                         log("[rhino-log tail]\n" + tail_snippet)
                 return
-            
+
             from .stl_metadata import calculate_and_register_metadata
             finish_line_points = None
             if metadata.get("finishLine"):
@@ -389,7 +397,7 @@ async def process_single_stl(p: Path, force_reprocess: bool = False):
                     log(f"[process_single_stl] STL metadata calculated and registered for {req_id}")
             except Exception as e:
                 log(f"[process_single_stl] Failed to calculate STL metadata: {e}")
-            
+
             if force_fill:
                 log("Force-fill 테스트 모드: presigned 업로드와 백엔드 통지를 생략합니다.")
             else:
@@ -488,7 +496,7 @@ async def recover_unprocessed_files() -> None:
                 continue
             p = settings.STORE_IN_DIR / safe_name
             # FIFO 큐에 추가 - 큐 워커가 순차 처리
-            result = enqueue_stl_job(p, force=False)
+            result = enqueue_stl_job(p, force=False, request_id=item.get("requestId"))
             log(f"Recover: enqueued {p.name} → {result}")
     except Exception as e:
         log(f"Recover failed: {e}")
@@ -525,12 +533,13 @@ async def stl_queue_worker() -> None:
             item = await state.stl_job_queue.get()
             p: Path = item["path"]
             force: bool = item.get("force", False)
+            item_request_id: str | None = item.get("requestId")
             state.last_dequeue_ts = time.time()
             state.current_processing_name = p.name
             state.current_processing_started_ts = state.last_dequeue_ts
             log(f"[stl-queue] Dequeued: {p.name} (queue remaining: {state.stl_job_queue.qsize()})")
             try:
-                await asyncio.wait_for(process_single_stl(p, force), timeout=hard_timeout)
+                await asyncio.wait_for(process_single_stl(p, force, explicit_request_id=item_request_id), timeout=hard_timeout)
                 state.last_success_ts = time.time()
                 state.total_jobs_processed += 1
             except asyncio.TimeoutError:
@@ -583,7 +592,7 @@ async def stl_queue_worker() -> None:
                 pass
 
 
-def enqueue_stl_job(p: Path, force: bool = False) -> str:
+def enqueue_stl_job(p: Path, force: bool = False, request_id: str | None = None) -> str:
     """
     STL 처리 작업을 FIFO 큐에 추가한다. Thread-safe.
     - 이미 in_flight(처리 중)인 파일이면 'in_flight' 반환
@@ -610,7 +619,7 @@ def enqueue_stl_job(p: Path, force: bool = False) -> str:
         except Exception:
             pass
 
-    item = {"path": p, "force": force}
+    item = {"path": p, "force": force, "requestId": request_id}
     state.last_enqueue_ts = time.time()
     log(f"[stl-queue] Enqueued: {p.name} (queue size after: {state.stl_job_queue.qsize() + 1})")
 

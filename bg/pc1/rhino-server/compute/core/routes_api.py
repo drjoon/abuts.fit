@@ -49,7 +49,8 @@ async def process_file_api(req: ProcessFileRequest):
     # [정책] FIFO 큐에 추가 - 현재 처리 중인 작업을 중단하지 않고 순차 처리
     # BackgroundTasks.add_task 는 사용하지 않는다: 여러 작업이 동시에 실행되어 Rhino pipe를 경쟁하는 문제가 발생함.
     force = bool(req.force or False)
-    result = enqueue_stl_job(p, force)
+    explicit_request_id = (req.requestId or "").strip() or None
+    result = enqueue_stl_job(p, force, request_id=explicit_request_id)
     queue_size = state.stl_job_queue.qsize()
 
     if result == "in_flight":
@@ -178,33 +179,33 @@ async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks
     try:
         import os
         import requests
-        
+
         # 백엔드에서 원본 STL 파일 경로 및 finish line 조회
         backend_url = os.getenv("BACKEND_BASE", "https://abuts.fit/api").rstrip("/")
-        
+
         # Request 메타 정보 조회
         meta_url = f"{backend_url}/bg/request-meta"
         headers = {}
         secret = os.getenv("RHINO_SHARED_SECRET") or os.getenv("BRIDGE_SHARED_SECRET", "")
         if secret:
             headers["X-Bridge-Secret"] = secret
-        
+
         log(f"[recalculate-metadata] Fetching meta from: {meta_url}?requestId={req.requestId}")
-        
+
         meta_resp = requests.get(
             meta_url,
             params={"requestId": req.requestId},
             headers=headers,
             timeout=10,
         )
-        
+
         log(f"[recalculate-metadata] Response status: {meta_resp.status_code}")
-        
+
         if meta_resp.status_code != 200:
             log(f"[recalculate-metadata] Failed to get request meta: {meta_resp.status_code}")
             log(f"[recalculate-metadata] Response text: {meta_resp.text[:500]}")
             raise HTTPException(status_code=404, detail="Request not found")
-        
+
         # JSON 응답 파싱
         try:
             response_json = meta_resp.json()
@@ -213,33 +214,33 @@ async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks
             log(f"[recalculate-metadata] Failed to parse JSON response: {json_err}")
             log(f"[recalculate-metadata] Response text: {meta_resp.text[:500]}")
             raise HTTPException(status_code=500, detail="Invalid JSON response from backend")
-        
+
         if not response_json:
             log(f"[recalculate-metadata] Empty response from backend")
             raise HTTPException(status_code=500, detail="Empty response from backend")
-        
+
         # ApiResponse 형식: { statusCode, data, message, success }
         meta_data = response_json.get("data") or {}
         log(f"[recalculate-metadata] meta_data keys: {list(meta_data.keys()) if isinstance(meta_data, dict) else 'Not a dict'}")
-        
+
         case_infos = meta_data.get("caseInfos") or {}
         log(f"[recalculate-metadata] caseInfos keys: {list(case_infos.keys()) if isinstance(case_infos, dict) else 'Not a dict'}")
-        
+
         cam_file = case_infos.get("camFile") or {}
         file_path = cam_file.get("filePath")
         log(f"[recalculate-metadata] camFile filePath: {file_path}")
-        
+
         finish_line = case_infos.get("finishLine") or {}
         finish_line_points = finish_line.get("points")
         log(f"[recalculate-metadata] finishLine points count: {len(finish_line_points) if finish_line_points else 0}")
-        
+
         if not file_path:
             raise HTTPException(status_code=400, detail="STL file path not found in request")
-        
+
         # 로컬 STL 파일 경로 확인 (filled.stl 우선)
         safe_name = settings.sanitize_filename(Path(file_path).name)
         stl_path = settings.STORE_OUT_DIR / safe_name
-        
+
         if not stl_path.exists():
             # filled.stl이 없으면 원본 STL을 백엔드(/bg/original-file → S3)에서 다운로드
             # [정책] 로컬 storage는 임시 캐시 — 원본은 항상 백엔드/S3에서 조달
@@ -250,7 +251,7 @@ async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks
                 download_original_to_input({"filePath": file_path, "requestId": req.requestId})
             if not stl_path.exists():
                 raise HTTPException(status_code=404, detail=f"STL file not found locally or on backend: {file_path}")
-        
+
         # 백그라운드에서 메타데이터 계산 및 등록
         def _calculate():
             # 1. 메타데이터 재계산 및 백엔드 등록
@@ -260,7 +261,7 @@ async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks
                 None,  # requestMongoId는 백엔드에서 찾음
                 finish_line_points,
             )
-            
+
             # 2. S3 재업로드 및 백엔드 캐시 무효화
             log(f"[recalculate-metadata] Uploading to S3 for cache invalidation: {req.requestId}")
             metadata_payload = {"stlMetadata": stl_metadata} if stl_metadata else {}
@@ -269,17 +270,17 @@ async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks
                 stl_path.name,
                 {"requestId": req.requestId, "metadata": metadata_payload},
             )
-        
+
         background_tasks.add_task(_calculate)
-        
+
         log(f"[recalculate-metadata] Started for {req.requestId}")
-        
+
         return {
             "ok": True,
             "message": "Metadata recalculation started",
             "requestId": req.requestId,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:

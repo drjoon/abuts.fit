@@ -460,6 +460,7 @@ export const PreviewModal = ({
         body: JSON.stringify({
           filePath,
           fileName: filePath,
+          requestId: activeReq?.requestId || "",
           force: true,
         }),
       });

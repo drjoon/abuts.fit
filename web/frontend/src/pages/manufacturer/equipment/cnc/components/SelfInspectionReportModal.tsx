@@ -528,11 +528,6 @@ export function SelfInspectionReportModal({
               </div>
 
               <div className="flex-1 flex flex-col items-end gap-2">
-                {queueInfo && (
-                  <div className="text-[11px] font-semibold text-slate-500">
-                    {queueInfo.current} / {queueInfo.total}
-                  </div>
-                )}
                 {!confirmed && (
                   <p className="text-[11px] text-red-600 text-right">
                     확정 후 수정할 수 없습니다
@@ -543,6 +538,7 @@ export function SelfInspectionReportModal({
                     성적서가 확정되었습니다. 더 이상 수정할 수 없습니다.
                   </p>
                 )}
+
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -553,6 +549,11 @@ export function SelfInspectionReportModal({
                   >
                     ←
                   </button>
+                  {queueInfo && (
+                    <p className="text-[11px] font-semibold text-slate-500">
+                      {queueInfo.current} / {queueInfo.total}
+                    </p>
+                  )}
                   <button
                     type="button"
                     disabled={!onNext}

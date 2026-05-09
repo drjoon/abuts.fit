@@ -740,14 +740,7 @@ export const MachiningQueueBoard = ({
       <SelfInspectionReportModal
         open={siOpen}
         onOpenChange={(next) => {
-          if (!next) {
-            if (siIdx + 1 < siQueue.length) {
-              setSiIdx((i) => i + 1);
-            } else {
-              setSiOpen(false);
-              setSiQueue([]);
-            }
-          }
+          setSiOpen(next);
         }}
         item={siQueue[siIdx] ?? null}
         queueInfo={
