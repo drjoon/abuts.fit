@@ -176,6 +176,12 @@ export async function getCompletedMachiningRecords(req, res) {
             lotNumber,
             requestMongoId: String(r?._id || "").trim(),
             rollbackCount,
+            implantManufacturer: String(
+              r?.caseInfos?.implantManufacturer || "",
+            ).trim(),
+            implantBrand: String(r?.caseInfos?.implantBrand || "").trim(),
+            implantFamily: String(r?.caseInfos?.implantFamily || "").trim(),
+            implantType: String(r?.caseInfos?.implantType || "").trim(),
           });
         }
       }
@@ -210,6 +216,10 @@ export async function getCompletedMachiningRecords(req, res) {
         patientName: reqInfo?.patientName || null,
         tooth: reqInfo?.tooth || null,
         rollbackCount: reqInfo?.rollbackCount ?? 0,
+        implantManufacturer: reqInfo?.implantManufacturer || null,
+        implantBrand: reqInfo?.implantBrand || null,
+        implantFamily: reqInfo?.implantFamily || null,
+        implantType: reqInfo?.implantType || null,
       };
     });
 
@@ -287,6 +297,12 @@ export async function getPendingSelfInspections(req, res) {
         completedAt: rec.completedAt
           ? new Date(rec.completedAt).toISOString()
           : null,
+        implantManufacturer: String(
+          reqInfo?.caseInfos?.implantManufacturer || "",
+        ).trim(),
+        implantBrand: String(reqInfo?.caseInfos?.implantBrand || "").trim(),
+        implantFamily: String(reqInfo?.caseInfos?.implantFamily || "").trim(),
+        implantType: String(reqInfo?.caseInfos?.implantType || "").trim(),
       });
       if (result.length >= limit) break;
     }

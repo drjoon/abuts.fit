@@ -28,6 +28,10 @@ type CompletedMachiningItem = {
   patientName?: string;
   tooth?: string;
   lotNumber?: { value?: string } | null;
+  implantManufacturer?: string | null;
+  implantBrand?: string | null;
+  implantFamily?: string | null;
+  implantType?: string | null;
 };
 
 export type CompletedMachiningRecordsModalProps = {
@@ -309,6 +313,10 @@ export const CompletedMachiningRecordsModal = ({
                       tooth: it.tooth,
                       lotNumber: it.lotNumber?.value,
                       completedAt: it.completedAt,
+                      implantManufacturer: it.implantManufacturer ?? undefined,
+                      implantBrand: it.implantBrand ?? undefined,
+                      implantFamily: it.implantFamily ?? undefined,
+                      implantType: it.implantType ?? undefined,
                     });
                     setInspectionOpen(true);
                   }}

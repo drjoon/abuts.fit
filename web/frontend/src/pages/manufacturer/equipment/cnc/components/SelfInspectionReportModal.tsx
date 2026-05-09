@@ -27,6 +27,10 @@ export type SelfInspectionReportItem = {
   tooth?: string;
   lotNumber?: string;
   completedAt?: string | null;
+  implantManufacturer?: string;
+  implantBrand?: string;
+  implantFamily?: string;
+  implantType?: string;
 };
 
 type Props = {
@@ -347,6 +351,16 @@ export function SelfInspectionReportModal({
     ? formatKstDateTimeToKo(new Date(requestedAt))
     : "-";
 
+  const implantLabel =
+    [
+      item?.implantManufacturer,
+      item?.implantBrand,
+      item?.implantFamily,
+      item?.implantType,
+    ]
+      .filter(Boolean)
+      .join(" / ") || "-";
+
   const infoRows = [
     { label: "접수일시", value: requestedAtStr },
     { label: "생산일시", value: productionDateStr },
@@ -357,6 +371,7 @@ export function SelfInspectionReportModal({
           .filter(Boolean)
           .join(" / ") || "-",
     },
+    { label: "임플란트", value: implantLabel },
     { label: "모델명", value: requestId || "-" },
     { label: "로트번호", value: item?.lotNumber || "-" },
   ];
