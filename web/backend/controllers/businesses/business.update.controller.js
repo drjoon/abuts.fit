@@ -512,7 +512,10 @@ export async function updateMyBusiness(req, res) {
     }
 
     let verificationResult = null;
-    if (businessNumber) {
+    // 이미 verified 상태이고 사업자등록번호가 변경되지 않는 경우 홈택스 재검증 스킵
+    // (주소·전화번호 등 단순 정보 수정 시 홈택스 API 타임아웃/장애로 저장이 차단되는 문제 방지)
+    const skipVerification = isVerifiedBusiness && !isBusinessNumberChanging;
+    if (businessNumber && !skipVerification) {
       verificationResult = await verifyBusinessNumber({
         businessNumber,
         companyName: nextName || businessAnchor?.name || "",
