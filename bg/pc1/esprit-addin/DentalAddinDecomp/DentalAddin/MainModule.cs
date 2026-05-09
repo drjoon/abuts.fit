@@ -2086,7 +2086,8 @@ namespace DentalAddin
             techLatheMill5xComposite.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
 
             const double leftRatio = AppConfig.DefaultLeftRatio;
-            double rightOffset = (AppConfig.DefaultRightRatioOffset > 0.0) ? 0.0 : AppConfig.DefaultRightRatioOffset;
+            // double rightOffset = (AppConfig.DefaultRightRatioOffset > 0.0) ? 0.0 : AppConfig.DefaultRightRatioOffset;
+            double rightOffset = AppConfig.DefaultRightRatioOffset;
             double backXForComposite = MoveSTL_Module.BackPointX + rightOffset;
             double rightRatio = backXForComposite / 20.0;
             rightRatio = Clamp(rightRatio, leftRatio, 1.0);
