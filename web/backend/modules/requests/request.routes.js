@@ -344,6 +344,22 @@ router.get(
   requestController.getRequestSummaryByRequestId,
 );
 
+// 제조사/관리자: 자주검사 성적서 조회
+router.get(
+  "/by-request/:requestId/self-inspection",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.getSelfInspectionByRequestId,
+);
+
+// 제조사/관리자: 자주검사 성적서 저장 (확정)
+router.post(
+  "/by-request/:requestId/self-inspection",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.saveSelfInspectionByRequestId,
+);
+
 // 제조사/관리자: 원본 STL 다운로드 URL
 router.get(
   "/:id/original-file-url",

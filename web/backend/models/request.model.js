@@ -611,6 +611,23 @@ const requestSchema = new mongoose.Schema(
       paidAt: Date,
       amount: Number,
     },
+    selfInspection: {
+      confirmed: { type: Boolean, default: false },
+      confirmedAt: Date,
+      confirmedBy: String,
+      overallJudgment: String,
+      rows: [
+        {
+          label: String,
+          referenceValue: String,
+          criterion: String,
+          instrument: String,
+          measuredValue: String,
+          judgment: String,
+          _id: false,
+        },
+      ],
+    },
   },
   {
     timestamps: true, // createdAt, updatedAt 자동 생성

@@ -17,6 +17,10 @@ import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { CncProgramEditorPanel } from "@/pages/manufacturer/equipment/cnc/components/CncProgramEditorPanel";
 import { CncPlaylistDrawer } from "@/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer";
 import { CompletedMachiningRecordsModal } from "@/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal";
+import {
+  SelfInspectionReportModal,
+  type SelfInspectionReportItem,
+} from "@/pages/manufacturer/equipment/cnc/components/SelfInspectionReportModal";
 import { CncMachineManagerModal } from "@/pages/manufacturer/equipment/cnc/components/CncMachineManagerModal";
 import { CncTempDetailModal } from "@/pages/manufacturer/equipment/cnc/components/CncTempDetailModal";
 import { CncToolStatusModal } from "@/pages/manufacturer/equipment/cnc/components/CncToolStatusModal";
@@ -80,6 +84,41 @@ export const MachiningQueueBoard = ({
   );
   const [toolWorkUid, setToolWorkUid] = useState("");
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [siQueue, setSiQueue] = useState<SelfInspectionReportItem[]>([]);
+  const [siIdx, setSiIdx] = useState(0);
+  const [siOpen, setSiOpen] = useState(false);
+  const [siFetching, setSiFetching] = useState(false);
+
+  const openSelfInspectionQueue = async () => {
+    setSiFetching(true);
+    try {
+      const res = await fetch(
+        "/api/cnc-machines/machining/pending-self-inspections?limit=100",
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const body = await res.json().catch(() => ({}));
+      const items: SelfInspectionReportItem[] = Array.isArray(body?.data)
+        ? body.data
+        : [];
+      if (items.length === 0) {
+        toast({
+          title: "미확정 자주검사 없음",
+          description: "모든 가공 완료 건이 이미 확정되었습니다.",
+        });
+        return;
+      }
+      setSiQueue(items);
+      setSiIdx(0);
+      setSiOpen(true);
+    } catch {
+      toast({
+        title: "오류",
+        description: "자주검사 목록을 불러오지 못했습니다.",
+      });
+    } finally {
+      setSiFetching(false);
+    }
+  };
 
   const {
     machines,
@@ -429,6 +468,14 @@ export const MachiningQueueBoard = ({
           ) : null}
           <button
             type="button"
+            disabled={siFetching}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-1 text-[12px] font-extrabold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+            onClick={() => void openSelfInspectionQueue()}
+          >
+            {siFetching ? "로딩…" : "자주검사"}
+          </button>
+          <button
+            type="button"
             className="rounded-xl border border-slate-200 bg-white px-3 py-1 text-[12px] font-extrabold text-slate-700 shadow-sm hover:bg-slate-50"
             onClick={() => {
               void reassignProductionQueues();
@@ -689,6 +736,32 @@ export const MachiningQueueBoard = ({
           </div>
         </DialogContent>
       </Dialog>
+
+      <SelfInspectionReportModal
+        open={siOpen}
+        onOpenChange={(next) => {
+          if (!next) {
+            if (siIdx + 1 < siQueue.length) {
+              setSiIdx((i) => i + 1);
+            } else {
+              setSiOpen(false);
+              setSiQueue([]);
+            }
+          }
+        }}
+        item={siQueue[siIdx] ?? null}
+        queueInfo={
+          siQueue.length > 1
+            ? { current: siIdx + 1, total: siQueue.length }
+            : undefined
+        }
+        onPrev={
+          siIdx > 0 ? () => setSiIdx((i) => Math.max(0, i - 1)) : undefined
+        }
+        onNext={
+          siIdx + 1 < siQueue.length ? () => setSiIdx((i) => i + 1) : undefined
+        }
+      />
 
       <CompletedMachiningRecordsModal
         open={completedModalOpen}

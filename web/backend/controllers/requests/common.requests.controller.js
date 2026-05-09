@@ -213,6 +213,7 @@ export async function getRequestSummaryByRequestId(req, res) {
       _id: 1,
       requestId: 1,
       caseInfos: 1,
+      createdAt: 1,
     });
     if (!request) {
       return res
@@ -231,12 +232,82 @@ export async function getRequestSummaryByRequestId(req, res) {
       data: {
         _id: request._id,
         requestId: request.requestId,
+        createdAt: request.createdAt ?? null,
         tooth,
         maxDiameter,
       },
     });
   } catch (e) {
     return res.status(500).json({ success: false, message: "요약 조회 실패" });
+  }
+}
+
+export async function getSelfInspectionByRequestId(req, res) {
+  try {
+    const requestId = String(req.params?.requestId || "").trim();
+    if (!requestId)
+      return res
+        .status(400)
+        .json({ success: false, message: "requestId required" });
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin")
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+
+    const request = await Request.findOne({ requestId }).select({
+      selfInspection: 1,
+    });
+    if (!request)
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+
+    return res.json({ success: true, data: request.selfInspection ?? null });
+  } catch (e) {
+    return res
+      .status(500)
+      .json({ success: false, message: "자주검사 조회 실패" });
+  }
+}
+
+export async function saveSelfInspectionByRequestId(req, res) {
+  try {
+    const requestId = String(req.params?.requestId || "").trim();
+    if (!requestId)
+      return res
+        .status(400)
+        .json({ success: false, message: "requestId required" });
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin")
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+
+    const { rows, overallJudgment, confirmedBy } = req.body;
+
+    const updated = await Request.findOneAndUpdate(
+      { requestId },
+      {
+        $set: {
+          "selfInspection.confirmed": true,
+          "selfInspection.confirmedAt": new Date(),
+          "selfInspection.confirmedBy": String(confirmedBy || ""),
+          "selfInspection.overallJudgment": String(overallJudgment || ""),
+          "selfInspection.rows": Array.isArray(rows) ? rows : [],
+        },
+      },
+      { new: true, select: { selfInspection: 1 } },
+    );
+
+    if (!updated)
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+
+    return res.json({ success: true, data: updated.selfInspection });
+  } catch (e) {
+    return res
+      .status(500)
+      .json({ success: false, message: "자주검사 저장 실패" });
   }
 }
 

@@ -226,6 +226,77 @@ export async function getCompletedMachiningRecords(req, res) {
   }
 }
 
+export async function getPendingSelfInspections(req, res) {
+  try {
+    const limitRaw = Number(req.query.limit);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(200, Math.max(1, limitRaw))
+      : 50;
+
+    const recs = await MachiningRecord.find({
+      status: "COMPLETED",
+      requestId: { $nin: [null, ""] },
+    })
+      .sort({ completedAt: -1 })
+      .limit(limit * 5)
+      .select("requestId machineId completedAt durationSeconds")
+      .lean();
+
+    if (recs.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const allRequestIds = [
+      ...new Set(
+        recs.map((r) => String(r?.requestId || "").trim()).filter(Boolean),
+      ),
+    ];
+
+    const requests = await Request.find({
+      requestId: { $in: allRequestIds },
+      $or: [
+        { "selfInspection.confirmed": { $ne: true } },
+        { selfInspection: { $exists: false } },
+      ],
+    })
+      .select("requestId caseInfos lotNumber")
+      .lean();
+
+    const unconfirmedIds = new Set(
+      requests.map((r) => String(r?.requestId || "").trim()),
+    );
+    const requestInfoMap = new Map();
+    for (const r of requests) {
+      requestInfoMap.set(String(r.requestId).trim(), r);
+    }
+
+    const result = [];
+    const seen = new Set();
+    for (const rec of recs) {
+      const rid = String(rec?.requestId || "").trim();
+      if (!rid || !unconfirmedIds.has(rid) || seen.has(rid)) continue;
+      seen.add(rid);
+      const reqInfo = requestInfoMap.get(rid);
+      result.push({
+        requestId: rid,
+        requestMongoId: String(reqInfo?._id || "") || null,
+        clinicName: String(reqInfo?.caseInfos?.clinicName || "").trim(),
+        patientName: String(reqInfo?.caseInfos?.patientName || "").trim(),
+        tooth: String(reqInfo?.caseInfos?.tooth || "").trim(),
+        lotNumber: reqInfo?.lotNumber?.value || null,
+        completedAt: rec.completedAt
+          ? new Date(rec.completedAt).toISOString()
+          : null,
+      });
+      if (result.length >= limit) break;
+    }
+
+    return res.json({ success: true, data: result });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: "조회 실패" });
+  }
+}
+
 export async function triggerNextAutoMachiningManually(req, res) {
   try {
     const mid = String(req.params?.machineId || "").trim();

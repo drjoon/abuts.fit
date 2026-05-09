@@ -33,6 +33,9 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   item: SelfInspectionReportItem | null;
+  queueInfo?: { current: number; total: number };
+  onPrev?: () => void;
+  onNext?: () => void;
 };
 
 const DEFAULT_ROWS: InspectionRow[] = [
@@ -42,7 +45,7 @@ const DEFAULT_ROWS: InspectionRow[] = [
     criterion: "식별",
     instrument: "현미경",
     measuredValue: "",
-    judgment: "",
+    judgment: "적합",
   },
   {
     label: "기준직경",
@@ -50,7 +53,7 @@ const DEFAULT_ROWS: InspectionRow[] = [
     criterion: "+0.02/-0.01",
     instrument: "비전",
     measuredValue: "",
-    judgment: "",
+    judgment: "적합",
   },
   {
     label: "전장",
@@ -58,7 +61,7 @@ const DEFAULT_ROWS: InspectionRow[] = [
     criterion: "±0.05",
     instrument: "비전",
     measuredValue: "",
-    judgment: "",
+    judgment: "적합",
   },
   {
     label: "최대직경",
@@ -66,7 +69,7 @@ const DEFAULT_ROWS: InspectionRow[] = [
     criterion: "±0.05",
     instrument: "비전",
     measuredValue: "",
-    judgment: "",
+    judgment: "적합",
   },
   {
     label: "내경깊이",
@@ -74,7 +77,7 @@ const DEFAULT_ROWS: InspectionRow[] = [
     criterion: "±0.05",
     instrument: "G20게이지",
     measuredValue: "",
-    judgment: "",
+    judgment: "적합",
   },
   {
     label: "헥사치수",
@@ -82,11 +85,18 @@ const DEFAULT_ROWS: InspectionRow[] = [
     criterion: "±0.005",
     instrument: "마이크로미터",
     measuredValue: "",
-    judgment: "",
+    judgment: "적합",
   },
 ];
 
-export function SelfInspectionReportModal({ open, onOpenChange, item }: Props) {
+export function SelfInspectionReportModal({
+  open,
+  onOpenChange,
+  item,
+  queueInfo,
+  onPrev,
+  onNext,
+}: Props) {
   const { token, user } = useAuthStore();
   const [stlFile, setStlFile] = useState<File | null>(null);
   const [stlLoading, setStlLoading] = useState(false);
@@ -99,6 +109,10 @@ export function SelfInspectionReportModal({ open, onOpenChange, item }: Props) {
     "합격" | "불합격" | ""
   >("");
   const [inspector, setInspector] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [requestedAt, setRequestedAt] = useState<string | null>(null);
+  const [inspectionAt, setInspectionAt] = useState<string | null>(null);
 
   const requestId = item?.requestId ?? null;
   const lotShortCode = String(item?.lotNumber || "")
@@ -116,17 +130,43 @@ export function SelfInspectionReportModal({ open, onOpenChange, item }: Props) {
     setResolvedMongoId(String(item?.requestMongoId || "").trim() || null);
   }, [open, item]);
 
-  // Reset form state when item changes
+  // Reset form state and load existing self-inspection
   useEffect(() => {
-    if (!open) return;
+    if (!open || !requestId) return;
     setStlFile(null);
     setFinishLinePoints(null);
     setOverallJudgment("");
     setInspector(user?.name || "");
-  }, [open, requestId, user?.name]);
+    setConfirmed(false);
+    setRequestedAt(null);
+    setInspectionAt(new Date().toISOString());
 
-  // Populate rows from metadata + lot info
+    const loadExisting = async () => {
+      try {
+        const res = await fetch(
+          `/api/requests/by-request/${encodeURIComponent(requestId)}/self-inspection`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!res.ok) return;
+        const body = await res.json().catch(() => ({}));
+        const data = body?.data;
+        if (data?.confirmed) {
+          if (Array.isArray(data.rows) && data.rows.length > 0)
+            setRows(data.rows);
+          if (data.overallJudgment) setOverallJudgment(data.overallJudgment);
+          if (data.confirmedBy) setInspector(data.confirmedBy);
+          setConfirmed(true);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    void loadExisting();
+  }, [open, requestId, token, user?.name]);
+
+  // Populate rows from metadata + lot info (skip if already confirmed/loaded from DB)
   useEffect(() => {
+    if (confirmed) return;
     const fmt = (v: number | undefined, dec = 2) =>
       v != null ? String(Number(v).toFixed(dec)) : "-";
 
@@ -137,7 +177,7 @@ export function SelfInspectionReportModal({ open, onOpenChange, item }: Props) {
         criterion: "식별",
         instrument: "현미경",
         measuredValue: lotShortCode || "",
-        judgment: lotShortCode ? "적합" : "",
+        judgment: "적합",
       },
       {
         label: "기준직경",
@@ -148,7 +188,7 @@ export function SelfInspectionReportModal({ open, onOpenChange, item }: Props) {
           metadata?.connectionDiameter != null
             ? fmt(metadata.connectionDiameter)
             : "",
-        judgment: metadata?.connectionDiameter != null ? "적합" : "",
+        judgment: "적합",
       },
       {
         label: "전장",
@@ -157,7 +197,7 @@ export function SelfInspectionReportModal({ open, onOpenChange, item }: Props) {
         instrument: "비전",
         measuredValue:
           metadata?.totalLength != null ? fmt(metadata.totalLength) : "",
-        judgment: metadata?.totalLength != null ? "적합" : "",
+        judgment: "적합",
       },
       {
         label: "최대직경",
@@ -166,7 +206,7 @@ export function SelfInspectionReportModal({ open, onOpenChange, item }: Props) {
         instrument: "비전",
         measuredValue:
           metadata?.maxDiameter != null ? fmt(metadata.maxDiameter) : "",
-        judgment: metadata?.maxDiameter != null ? "적합" : "",
+        judgment: "적합",
       },
       {
         label: "내경깊이",
@@ -174,7 +214,7 @@ export function SelfInspectionReportModal({ open, onOpenChange, item }: Props) {
         criterion: "±0.05",
         instrument: "G20게이지",
         measuredValue: "",
-        judgment: "",
+        judgment: "적합",
       },
       {
         label: "헥사치수",
@@ -182,10 +222,10 @@ export function SelfInspectionReportModal({ open, onOpenChange, item }: Props) {
         criterion: "±0.005",
         instrument: "마이크로미터",
         measuredValue: "",
-        judgment: "",
+        judgment: "적합",
       },
     ]);
-  }, [metadata, lotShortCode]);
+  }, [metadata, lotShortCode, confirmed]);
 
   // Auto-compute overall judgment when all rows have a judgment
   useEffect(() => {
@@ -217,6 +257,8 @@ export function SelfInspectionReportModal({ open, onOpenChange, item }: Props) {
         const data = body?.data;
         let mid = String(data?._id || resolvedMongoId || "").trim() || null;
         if (!cancelled && mid) setResolvedMongoId(mid);
+        if (!cancelled && data?.createdAt)
+          setRequestedAt(String(data.createdAt));
         let camFileName = `${requestId}.filled.stl`;
         if (!cancelled) {
           const pts = data?.caseInfos?.finishLine?.points;
@@ -297,12 +339,19 @@ export function SelfInspectionReportModal({ open, onOpenChange, item }: Props) {
     ? formatKstDateTimeToKo(new Date(item.completedAt))
     : "-";
 
+  const inspectionDateStr = inspectionAt
+    ? formatKstDateTimeToKo(new Date(inspectionAt))
+    : "-";
+
+  const requestedAtStr = requestedAt
+    ? formatKstDateTimeToKo(new Date(requestedAt))
+    : "-";
+
   const infoRows = [
-    { label: "접수일자", value: productionDateStr },
-    { label: "납품업체", value: item?.clinicName || "-" },
-    { label: "생산일자", value: productionDateStr },
+    { label: "접수일시", value: requestedAtStr },
+    { label: "생산일시", value: productionDateStr },
     {
-      label: "사용처/환자/치아",
+      label: "치과/환자/치아",
       value:
         [item?.clinicName, item?.patientName, item?.tooth]
           .filter(Boolean)
@@ -314,17 +363,14 @@ export function SelfInspectionReportModal({ open, onOpenChange, item }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[96vw] max-w-5xl max-h-[92vh] overflow-hidden p-0 gap-0">
+      <DialogContent className="w-[96vw] max-w-5xl overflow-hidden p-0 gap-0">
         <DialogHeader className="px-5 pt-4 pb-3 border-b border-slate-200">
           <DialogTitle className="text-base font-extrabold">
             자주검사성적서
           </DialogTitle>
         </DialogHeader>
 
-        <div
-          className="flex overflow-hidden"
-          style={{ height: "calc(92vh - 57px)" }}
-        >
+        <div className="flex overflow-hidden">
           {/* ── Left: STL Preview ── */}
           <div className="w-[42%] shrink-0 border-r border-slate-200 flex flex-col bg-slate-50 overflow-hidden">
             <div className="flex-1 min-h-0">
@@ -350,7 +396,7 @@ export function SelfInspectionReportModal({ open, onOpenChange, item }: Props) {
           </div>
 
           {/* ── Right: Inspection Form ── */}
-          <div className="flex-1 overflow-y-auto px-5 py-4">
+          <div className="flex-1 overflow-y-auto px-5 py-4 max-h-[calc(90vh-57px)]">
             <h2 className="text-lg font-extrabold text-center border-b-2 border-slate-800 pb-2 mb-3">
               자주검사 성적서
             </h2>
@@ -410,17 +456,18 @@ export function SelfInspectionReportModal({ open, onOpenChange, item }: Props) {
                     <td className="border border-slate-300 px-1 py-0.5 bg-amber-50">
                       <input
                         type="text"
-                        className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold placeholder:text-slate-300"
+                        className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold placeholder:text-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed"
                         value={row.measuredValue}
                         onChange={(e) =>
                           updateRow(idx, "measuredValue", e.target.value)
                         }
                         placeholder="-"
+                        disabled={confirmed}
                       />
                     </td>
                     <td className="border border-slate-300 px-1 py-0.5 bg-amber-50">
                       <select
-                        className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold cursor-pointer"
+                        className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold cursor-pointer disabled:cursor-not-allowed"
                         value={row.judgment}
                         onChange={(e) =>
                           updateRow(
@@ -429,6 +476,7 @@ export function SelfInspectionReportModal({ open, onOpenChange, item }: Props) {
                             e.target.value as InspectionRow["judgment"],
                           )
                         }
+                        disabled={confirmed}
                       >
                         <option value="">-</option>
                         <option value="적합">적합</option>
@@ -446,45 +494,114 @@ export function SelfInspectionReportModal({ open, onOpenChange, item }: Props) {
                   </td>
                   <td
                     colSpan={2}
-                    className="border border-slate-300 px-1 py-0.5 bg-amber-50"
+                    className={`border border-slate-300 px-2 py-1.5 text-center font-extrabold ${
+                      overallJudgment === "합격"
+                        ? "text-emerald-600 bg-emerald-50"
+                        : overallJudgment === "불합격"
+                          ? "text-red-600 bg-red-50"
+                          : "text-slate-400 bg-amber-50"
+                    }`}
                   >
-                    <select
-                      className="w-full text-center bg-transparent outline-none text-slate-900 font-extrabold cursor-pointer"
-                      value={overallJudgment}
-                      onChange={(e) =>
-                        setOverallJudgment(
-                          e.target.value as "합격" | "불합격" | "",
-                        )
-                      }
-                    >
-                      <option value="">-</option>
-                      <option value="합격">합격</option>
-                      <option value="불합격">불합격</option>
-                    </select>
+                    {overallJudgment || "-"}
                   </td>
                 </tr>
               </tbody>
             </table>
 
             {/* Footer */}
-            <div className="border border-slate-300 rounded-lg overflow-hidden text-[13px]">
-              <div className="flex items-center gap-3 px-3 py-1.5 border-b border-slate-200">
-                <span className="w-28 shrink-0 font-semibold text-slate-500">
-                  검사일/시간
-                </span>
-                <span className="text-slate-800">{productionDateStr}</span>
+            <div className="flex items-start gap-3">
+              <div className="w-120 shrink-0 border border-slate-300 rounded-lg overflow-hidden text-[13px]">
+                <div className="flex items-center gap-3 px-3 py-1.5 border-b border-slate-200">
+                  <span className="w-20 shrink-0 font-semibold text-slate-500">
+                    검사일시
+                  </span>
+                  <span className="text-slate-800 text-xs">
+                    {inspectionDateStr}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 px-3 py-1.5">
+                  <span className="w-20 shrink-0 font-semibold text-slate-500">
+                    검사자
+                  </span>
+                  <span className="text-slate-800">{inspector || "-"}</span>
+                </div>
               </div>
-              <div className="flex items-center gap-3 px-3 py-1.5">
-                <span className="w-28 shrink-0 font-semibold text-slate-500">
-                  검사자
-                </span>
-                <input
-                  type="text"
-                  className="flex-1 bg-transparent outline-none border-b border-slate-200 focus:border-slate-400 transition-colors placeholder:text-slate-300"
-                  value={inspector}
-                  onChange={(e) => setInspector(e.target.value)}
-                  placeholder="이름 입력"
-                />
+
+              <div className="flex-1 flex flex-col items-end gap-2">
+                {queueInfo && (
+                  <div className="text-[11px] font-semibold text-slate-500">
+                    {queueInfo.current} / {queueInfo.total}
+                  </div>
+                )}
+                {!confirmed && (
+                  <p className="text-[11px] text-red-600 text-right">
+                    확정 후 수정할 수 없습니다
+                  </p>
+                )}
+                {confirmed && (
+                  <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 text-center w-full">
+                    성적서가 확정되었습니다. 더 이상 수정할 수 없습니다.
+                  </p>
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={!onPrev}
+                    onClick={onPrev}
+                    className="px-3 py-2 rounded-lg font-extrabold text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="이전"
+                  >
+                    ←
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!onNext}
+                    onClick={onNext}
+                    className="px-3 py-2 rounded-lg font-extrabold text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="다음"
+                  >
+                    →
+                  </button>
+                  <button
+                    type="button"
+                    disabled={confirmed || saving || !requestId}
+                    onClick={async () => {
+                      if (!requestId) return;
+                      setSaving(true);
+                      try {
+                        const res = await fetch(
+                          `/api/requests/by-request/${encodeURIComponent(requestId)}/self-inspection`,
+                          {
+                            method: "POST",
+                            headers: {
+                              "Content-Type": "application/json",
+                              Authorization: `Bearer ${token}`,
+                            },
+                            body: JSON.stringify({
+                              rows,
+                              overallJudgment,
+                              confirmedBy: inspector,
+                            }),
+                          },
+                        );
+                        if (res.ok) setConfirmed(true);
+                      } catch {
+                        // ignore
+                      } finally {
+                        setSaving(false);
+                      }
+                    }}
+                    className={`px-6 py-2 rounded-lg font-bold text-sm transition ${
+                      confirmed
+                        ? "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+                        : saving
+                          ? "bg-slate-300 text-slate-500 cursor-not-allowed"
+                          : "bg-slate-800 text-white hover:bg-slate-700 active:bg-slate-900"
+                    }`}
+                  >
+                    {confirmed ? "✓ 확정됨" : saving ? "저장 중…" : "확정"}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
