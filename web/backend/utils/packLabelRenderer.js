@@ -397,8 +397,8 @@ const renderPackLabelToCanvas = async (opts) => {
 
   // ── 5구역: 법정 기재사항 박스 ────────────────────────────────
   const legalTopY = curY;
-  // 모델명/제조일자를 왼쪽으로 이동하기 위해 좌측 컬럼 비율 축소
-  const splitColW = Math.round(W * 0.53);
+  // 모델명/제조일자를 오른쪽으로 이동 (로트번호 제거로 모델명이 짧아진 만큼 분할 비율 증가)
+  const splitColW = Math.round(W * 0.57);
   const rColX = M + splitColW;
   const rColW = W - splitColW;
 

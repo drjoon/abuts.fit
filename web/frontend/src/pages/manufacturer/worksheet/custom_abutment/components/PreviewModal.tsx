@@ -646,12 +646,12 @@ export const PreviewModal = ({
                   >
                     {fullLotLabel}
                   </Badge>
-                  {generateModelNumber(activeReq?.caseInfos, fullLotLabel) && (
+                  {generateModelNumber(activeReq?.caseInfos) && (
                     <Badge
                       variant="outline"
                       className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-slate-200 bg-slate-50 text-slate-600"
                     >
-                      {generateModelNumber(activeReq?.caseInfos, fullLotLabel)}
+                      {generateModelNumber(activeReq?.caseInfos)}
                     </Badge>
                   )}
                   {retentionGrooveLabel && (

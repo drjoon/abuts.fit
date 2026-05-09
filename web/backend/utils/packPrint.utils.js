@@ -44,7 +44,7 @@ const PACK_PRINT_DEFAULT_PRINTER = String(
  */
 // 프론트 /web/frontend/src/utils/modelNumber.ts 와 동일한 로직.
 // 디자인 수정 시 반드시 두 곳을 함께 맞춰야 함.
-function generateModelNumber(caseInfos, lotNumber) {
+function generateModelNumber(caseInfos) {
   if (!caseInfos) return "";
   const formatPart = (val) => {
     if (typeof val !== "number" || Number.isNaN(val)) return "000";
@@ -56,15 +56,7 @@ function generateModelNumber(caseInfos, lotNumber) {
   const ddd = formatPart(caseInfos.maxDiameter);
   const lll = formatPart(caseInfos.totalLength);
   if (aaa === "000" && ddd === "000" && lll === "000") return "";
-  let shortLot = "000";
-  if (lotNumber) {
-    shortLot = String(lotNumber)
-      .trim()
-      .replace(/^CA(P)?/i, "")
-      .slice(-3)
-      .toUpperCase();
-  }
-  return `${aaa}${ddd}${lll}-${shortLot}`;
+  return `${aaa}${ddd}${lll}`;
 }
 
 export async function printPackingLabelViaBgServer({
@@ -109,12 +101,13 @@ export async function printPackingLabelViaBgServer({
     console.warn("[packPrint] failed to read branding from DB:", err.message);
   }
 
-  // 모델명: CA + 각도(aaa) + 최대직경(ddd) + 최대높이(lll) + "-" + 로트 끝3자리
+  // 모델명: CA + 각도(aaa) + 최대직경(ddd) + 최대높이(lll) (로트번호 미포함)
   // branding.modelName(env 기본값)보다 의뢰별로 계산된 값이 우선.
-  const computedModelNumber = generateModelNumber(
-    { taperAngle, maxDiameter, totalLength },
-    lotNumber,
-  );
+  const computedModelNumber = generateModelNumber({
+    taperAngle,
+    maxDiameter,
+    totalLength,
+  });
   const computedModelName = computedModelNumber
     ? `CA${computedModelNumber}`
     : "";

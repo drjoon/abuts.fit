@@ -4,7 +4,6 @@ export function generateModelNumber(
     maxDiameter?: number | null;
     totalLength?: number | null;
   } | null,
-  lotNumber?: string | null
 ): string {
   if (!caseInfos) return "";
 
@@ -21,14 +20,5 @@ export function generateModelNumber(
 
   if (aaa === "000" && ddd === "000" && lll === "000") return "";
 
-  let shortLot = "000";
-  if (lotNumber) {
-    shortLot = lotNumber
-      .trim()
-      .replace(/^CA(P)?/i, "")
-      .slice(-3)
-      .toUpperCase();
-  }
-
-  return `${aaa}${ddd}${lll}-${shortLot}`;
+  return `${aaa}${ddd}${lll}`;
 }

@@ -6,7 +6,7 @@ export const CONNECTIONS_SEED = [
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "네오_IS_RH_Connection.prc",
-    connection: 3.35,
+    diameter: 3.35,
     isActive: true,
   },
   {
@@ -16,7 +16,7 @@ export const CONNECTIONS_SEED = [
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "네오_IS_RN_Connection.prc",
-    connection: 3.35,
+    diameter: 3.35,
     isActive: false,
   },
   {
@@ -26,7 +26,7 @@ export const CONNECTIONS_SEED = [
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "덴티스_SQ_MH_Connection.prc",
-    connection: 2.8,
+    diameter: 2.8,
     isActive: false,
   },
   {
@@ -36,7 +36,7 @@ export const CONNECTIONS_SEED = [
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "덴티스_SQ_MN_Connection.prc",
-    connection: 2.8,
+    diameter: 2.8,
     isActive: false,
   },
   {
@@ -46,7 +46,7 @@ export const CONNECTIONS_SEED = [
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "덴티스_SQ_RH_Connection.prc",
-    connection: 3.35,
+    diameter: 3.35,
     isActive: true,
   },
   {
@@ -56,7 +56,7 @@ export const CONNECTIONS_SEED = [
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "덴티스_SQ_RN_Connection.prc",
-    connection: 3.35,
+    diameter: 3.35,
     isActive: false,
   },
   {
@@ -66,7 +66,7 @@ export const CONNECTIONS_SEED = [
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "덴티움_SuperLine_RH_Connection.prc",
-    connection: 3.33,
+    diameter: 3.33,
     isActive: true,
   },
   {
@@ -76,7 +76,7 @@ export const CONNECTIONS_SEED = [
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "덴티움_SuperLine_RN_Connection.prc",
-    connection: 3.33,
+    diameter: 3.33,
     isActive: false,
   },
   {
@@ -86,7 +86,7 @@ export const CONNECTIONS_SEED = [
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "디오_UF_MH_Connection.prc",
-    connection: 2.3,
+    diameter: 2.3,
     isActive: false,
   },
   {
@@ -96,7 +96,7 @@ export const CONNECTIONS_SEED = [
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "디오_UF_MN_Connection.prc",
-    connection: 2.3,
+    diameter: 2.3,
     isActive: false,
   },
   {
@@ -106,7 +106,7 @@ export const CONNECTIONS_SEED = [
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "디오_UF_RH_Connection.prc",
-    connection: 3.35,
+    diameter: 3.35,
     isActive: true,
   },
   {
@@ -116,7 +116,7 @@ export const CONNECTIONS_SEED = [
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "디오_UF_RN_Connection.prc",
-    connection: 3.35,
+    diameter: 3.35,
     isActive: false,
   },
   {
@@ -126,7 +126,7 @@ export const CONNECTIONS_SEED = [
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "메가젠_AnyOne_RH_Connection.prc",
-    connection: 3.3,
+    diameter: 3.3,
     isActive: true,
   },
   {
@@ -136,7 +136,7 @@ export const CONNECTIONS_SEED = [
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "메가젠_AnyOne_RN_Connection.prc",
-    connection: 3.3,
+    diameter: 3.3,
     isActive: false,
   },
   {
@@ -146,7 +146,7 @@ export const CONNECTIONS_SEED = [
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "오스템_TS_MH_Connection.prc",
-    connection: 2.6,
+    diameter: 2.6,
     isActive: false,
   },
   {
@@ -156,7 +156,7 @@ export const CONNECTIONS_SEED = [
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "오스템_TS_MN_Connection.prc",
-    connection: 2.6,
+    diameter: 2.6,
     isActive: false,
   },
   {
@@ -166,7 +166,7 @@ export const CONNECTIONS_SEED = [
     type: "Hex",
     category: "hanhwa-connection",
     fileName: "오스템_TS_RH_Connection.prc",
-    connection: 3.35,
+    diameter: 3.35,
     isActive: true,
   },
   {
@@ -176,7 +176,7 @@ export const CONNECTIONS_SEED = [
     type: "Non-Hex",
     category: "hanhwa-connection",
     fileName: "오스템_TS_RN_Connection.prc",
-    connection: 3.35,
+    diameter: 3.35,
     isActive: false,
   },
   // {

@@ -79,7 +79,7 @@ const normalizeLotNumberLabel = (req: ManufacturerRequest) => {
     formatted = `${cleaned.slice(0, 6)}-${cleaned.slice(6)}`;
   }
 
-  const modelNum = generateModelNumber((req as any)?.caseInfos, formatted);
+  const modelNum = generateModelNumber((req as any)?.caseInfos);
   if (modelNum) {
     return `${formatted} (${modelNum})`;
   }

@@ -564,12 +564,12 @@ export const WorksheetCardGrid = ({
                         <Badge variant="outline" className={lotBadgeClass}>
                           {lotCodeSource}
                         </Badge>
-                        {generateModelNumber(caseInfos, lotCodeSource) && (
+                        {generateModelNumber(caseInfos) && (
                           <Badge
                             variant="outline"
                             className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-slate-200 bg-slate-50 text-slate-600"
                           >
-                            {generateModelNumber(caseInfos, lotCodeSource)}
+                            {generateModelNumber(caseInfos)}
                           </Badge>
                         )}
                       </div>

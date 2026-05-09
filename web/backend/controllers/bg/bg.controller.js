@@ -969,7 +969,9 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
       );
     }
   }
-  const connectionTargetDiameter = await resolveConnectionTargetDiameter(ci);
+  const connectionTargetDiameter = await resolveConnectionTargetDiameter(ci, {
+    connectionPrcFileName: resolvedPrcFiles.connectionPrcFileName,
+  });
   const lotValue = request?.lotNumber?.value || "";
   const serialCode = lotValue.length >= 3 ? lotValue.slice(-3) : "";
   return res.status(200).json(

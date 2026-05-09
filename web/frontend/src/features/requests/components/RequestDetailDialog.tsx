@@ -142,10 +142,7 @@ export const RequestDetailDialog = ({
 }: RequestDetailDialogProps) => {
   const caseInfos = request?.caseInfos || {};
   const implantDisplay = formatImplantDisplay(caseInfos);
-  const lotNumberValue = request?.lotNumber?.value || "";
-  const modelNumberLabel = lotNumberValue
-    ? generateModelNumber(caseInfos, lotNumberValue)
-    : "";
+  const modelNumberLabel = generateModelNumber(caseInfos);
 
   const maxDiameter = caseInfos.maxDiameter;
   const connectionDiameter = caseInfos.connectionDiameter;

@@ -535,8 +535,8 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   //   3행 전체폭: 품목인증번호+포장단위+보관방법
   //   4행 전체폭: 설명문 + 일회용비멸균 문구
   const legalTopY = curY;
-  // 모델명/제조일자를 왼쪽으로 이동하기 위해 좌측 컬럼 비율 축소
-  const splitColW = Math.round(W * 0.53);
+  // 모델명/제조일자를 오른쪽으로 이동 (로트번호 제거로 모델명이 짧아진 만큼 분할 비율 증가)
+  const splitColW = Math.round(W * 0.57);
   const rColX = M + splitColW;
   const rColW = W - splitColW;
   const rRowH = Math.floor((lRow1H + lRow2H) / 2);

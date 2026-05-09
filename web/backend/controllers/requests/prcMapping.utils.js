@@ -91,14 +91,39 @@ export async function getConnectionTargetDiameterByImplant(
   return Number.isFinite(diameter) ? diameter : null;
 }
 
-export async function resolveConnectionTargetDiameter(caseInfos) {
+export async function getConnectionTargetDiameterByPrcFileName(
+  connectionPrcFileName,
+) {
+  const fileName = String(connectionPrcFileName || "").trim();
+  if (!fileName) return null;
+
+  const connection = await Connection.findOne({
+    fileName,
+    category: "hanhwa-connection",
+  })
+    .select({ diameter: 1 })
+    .lean();
+
+  const diameter = Number(connection?.diameter);
+  return Number.isFinite(diameter) ? diameter : null;
+}
+
+export async function resolveConnectionTargetDiameter(caseInfos, options = {}) {
   if (!caseInfos) return null;
 
   const normalized = normalizeImplantFields(caseInfos);
-  return await getConnectionTargetDiameterByImplant(
+  const diameterByImplant = await getConnectionTargetDiameterByImplant(
     normalized.implantManufacturer,
     normalized.implantBrand,
     normalized.implantFamily,
     normalized.implantType,
   );
+
+  if (diameterByImplant !== null) {
+    return diameterByImplant;
+  }
+
+  const prcFileName =
+    options.connectionPrcFileName || normalized.connectionPrcFileName || "";
+  return await getConnectionTargetDiameterByPrcFileName(prcFileName);
 }

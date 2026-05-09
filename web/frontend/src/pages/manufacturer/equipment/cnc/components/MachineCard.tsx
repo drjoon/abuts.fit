@@ -604,15 +604,9 @@ export const MachineCard = (props: MachineCardProps) => {
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200">
                       {lotBadge}
                     </span>
-                    {generateModelNumber(
-                      requestInfo?.caseInfos,
-                      String(lotRaw || ""),
-                    ) && (
+                    {generateModelNumber(requestInfo?.caseInfos) && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-50 text-slate-600 border border-slate-200">
-                        {generateModelNumber(
-                          requestInfo?.caseInfos,
-                          String(lotRaw || ""),
-                        )}
+                        {generateModelNumber(requestInfo?.caseInfos)}
                       </span>
                     )}
                   </div>
@@ -635,15 +629,9 @@ export const MachineCard = (props: MachineCardProps) => {
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200">
                       {lotBadge}
                     </span>
-                    {generateModelNumber(
-                      requestInfo?.caseInfos,
-                      String(lotRaw || ""),
-                    ) && (
+                    {generateModelNumber(requestInfo?.caseInfos) && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-50 text-slate-600 border border-slate-200">
-                        {generateModelNumber(
-                          requestInfo?.caseInfos,
-                          String(lotRaw || ""),
-                        )}
+                        {generateModelNumber(requestInfo?.caseInfos)}
                       </span>
                     )}
                   </div>

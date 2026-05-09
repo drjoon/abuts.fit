@@ -534,8 +534,8 @@ export const PackingPageContent = ({
         "";
       const mailboxCode = resolvePackMailboxCode(req);
       const screwType = resolvePackScrewCode(req);
-      // 모델명: CA + 각도(aaa) + 최대직경(ddd) + 최대높이(lll) + "-" + 로트 끝3자리
-      const modelNumber = generateModelNumber(caseInfos as any, fullLotNumber);
+      // 모델명: CA + 각도(aaa) + 최대직경(ddd) + 최대높이(lll) (로트번호 미포함)
+      const modelNumber = generateModelNumber(caseInfos as any);
       const modelName = modelNumber ? `CA${modelNumber}` : "";
       const payload = {
         printer: printerProfile || undefined,
@@ -596,7 +596,7 @@ export const PackingPageContent = ({
       if (!options?.silentSuccess) {
         toast({
           title: "패킹 라벨 출력 완료",
-          description: `${req.requestId || fullLotNumber} (${generateModelNumber((req as any)?.caseInfos, fullLotNumber) || ""}) 라벨을 출력했습니다.`,
+          description: `${req.requestId || fullLotNumber} (${generateModelNumber((req as any)?.caseInfos) || ""}) 라벨을 출력했습니다.`,
         });
       }
     },
