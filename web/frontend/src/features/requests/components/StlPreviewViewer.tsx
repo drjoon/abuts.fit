@@ -1429,7 +1429,7 @@ export function StlPreviewViewer({
             <div className="flex items-center gap-1.5">
               <span className="text-slate-500">최대 직경 (DDD):</span>
               <span>
-                {maxDiameterState > 0 ? maxDiameterState.toFixed(1) : "-"} mm
+                {maxDiameterState > 0 ? maxDiameterState.toFixed(2) : "-"} mm
               </span>
             </div>
             <div className="flex items-center gap-1.5">

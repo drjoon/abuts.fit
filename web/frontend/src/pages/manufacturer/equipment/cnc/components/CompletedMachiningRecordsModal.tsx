@@ -8,17 +8,26 @@ import {
 import { useAuthStore } from "@/store/useAuthStore";
 import { MachiningRequestLabel } from "@/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningRequestLabel";
 import { ArrowLeft } from "lucide-react";
+import {
+  SelfInspectionReportModal,
+  type SelfInspectionReportItem,
+} from "./SelfInspectionReportModal";
 
 type CompletedMachiningItem = {
   id: string;
   machineId: string;
   requestId: string | null;
+  requestMongoId?: string | null;
   jobId: string | null;
   status: string;
   completedAt: string | null;
   durationSeconds: number;
   displayLabel: string | null;
   rollbackCount?: number;
+  clinicName?: string;
+  patientName?: string;
+  tooth?: string;
+  lotNumber?: { value?: string } | null;
 };
 
 export type CompletedMachiningRecordsModalProps = {
@@ -49,6 +58,9 @@ export const CompletedMachiningRecordsModal = ({
   const [rolledBackIds, setRolledBackIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [inspectionOpen, setInspectionOpen] = useState(false);
+  const [inspectionItem, setInspectionItem] =
+    useState<SelfInspectionReportItem | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const inFlightRef = useRef(false);
@@ -253,88 +265,113 @@ export const CompletedMachiningRecordsModal = ({
   );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[92vw] max-w-2xl max-h-[78vh] overflow-hidden">
-        <DialogHeader>
-          <DialogTitle className="text-lg font-extrabold">
-            {effectiveTitle}
-          </DialogTitle>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="w-[92vw] max-w-2xl max-h-[78vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-extrabold">
+              {effectiveTitle}
+            </DialogTitle>
+          </DialogHeader>
 
-        <div className="mt-1 flex flex-col gap-2 overflow-auto pr-1 max-h-[62vh]">
-          {!!error && (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-              {error}
-            </div>
-          )}
-
-          {items.length === 0 && !loading && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-slate-500">
-              표시할 완료 기록이 없습니다.
-            </div>
-          )}
-
-          {formattedItems.map((row, index) => {
-            const rollbackCount = Number((row as any)?.rollbackCount || 0);
-            const isRolledBack =
-              (row.rid ? rolledBackIds.has(row.rid) : false) ||
-              rollbackCount > 0;
-            return (
-              <div
-                key={items[index].id}
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[11px] font-semibold text-slate-500">
-                      종료 {row.hhmm}
-                      <span className="ml-4">소요 {row.mmss}</span>
-                    </div>
-                    <div
-                      className={`mt-0.5 truncate text-[15px] font-extrabold text-slate-900 ${
-                        isRolledBack ? "line-through text-slate-400" : ""
-                      }`}
-                    >
-                      <MachiningRequestLabel
-                        clinicName={row.clinic}
-                        patientName={row.patient}
-                        tooth={row.tooth}
-                        requestId={row.rid}
-                        lotShortCode={row.lotRaw.slice(-3).toUpperCase()}
-                        className="text-[15px]"
-                      />
-                    </div>
-                  </div>
-                  {row.rid && onRollbackRequest ? (
-                    <button
-                      type="button"
-                      className="inline-flex h-8 w-10 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-                      onClick={() => {
-                        setRolledBackIds((prev) => {
-                          const next = new Set(prev);
-                          next.add(row.rid);
-                          return next;
-                        });
-                        onRollbackRequest(row.rid, machineId);
-                      }}
-                    >
-                      <ArrowLeft className="h-4 w-4" />
-                    </button>
-                  ) : null}
-                </div>
+          <div className="mt-1 flex flex-col gap-2 overflow-auto pr-1 max-h-[62vh]">
+            {!!error && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                {error}
               </div>
-            );
-          })}
+            )}
 
-          <div ref={sentinelRef} className="h-6" />
+            {items.length === 0 && !loading && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-slate-500">
+                표시할 완료 기록이 없습니다.
+              </div>
+            )}
 
-          {loading && (
-            <div className="py-2 text-center text-sm text-slate-500">
-              불러오는 중...
-            </div>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
+            {formattedItems.map((row, index) => {
+              const rollbackCount = Number((row as any)?.rollbackCount || 0);
+              const isRolledBack =
+                (row.rid ? rolledBackIds.has(row.rid) : false) ||
+                rollbackCount > 0;
+              return (
+                <div
+                  key={items[index].id}
+                  role="button"
+                  tabIndex={0}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm hover:bg-slate-50 transition-colors cursor-pointer"
+                  onClick={() => {
+                    const it = items[index];
+                    if (!it.requestId) return;
+                    setInspectionItem({
+                      requestId: it.requestId,
+                      requestMongoId: it.requestMongoId,
+                      clinicName: it.clinicName,
+                      patientName: it.patientName,
+                      tooth: it.tooth,
+                      lotNumber: it.lotNumber?.value,
+                      completedAt: it.completedAt,
+                    });
+                    setInspectionOpen(true);
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[11px] font-semibold text-slate-500">
+                        종료 {row.hhmm}
+                        <span className="ml-4">소요 {row.mmss}</span>
+                      </div>
+                      <div
+                        className={`mt-0.5 truncate text-[15px] font-extrabold text-slate-900 ${
+                          isRolledBack ? "line-through text-slate-400" : ""
+                        }`}
+                      >
+                        <MachiningRequestLabel
+                          clinicName={row.clinic}
+                          patientName={row.patient}
+                          tooth={row.tooth}
+                          requestId={row.rid}
+                          lotShortCode={row.lotRaw.slice(-3).toUpperCase()}
+                          className="text-[15px]"
+                        />
+                      </div>
+                    </div>
+                    {row.rid && onRollbackRequest ? (
+                      <button
+                        type="button"
+                        className="inline-flex h-8 w-10 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRolledBackIds((prev) => {
+                            const next = new Set(prev);
+                            next.add(row.rid);
+                            return next;
+                          });
+                          onRollbackRequest(row.rid, machineId);
+                        }}
+                      >
+                        <ArrowLeft className="h-4 w-4" />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+
+            <div ref={sentinelRef} className="h-6" />
+
+            {loading && (
+              <div className="py-2 text-center text-sm text-slate-500">
+                불러오는 중...
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <SelfInspectionReportModal
+        open={inspectionOpen}
+        onOpenChange={setInspectionOpen}
+        item={inspectionItem}
+      />
+    </>
   );
 };
