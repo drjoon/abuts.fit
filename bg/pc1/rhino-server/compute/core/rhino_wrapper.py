@@ -64,6 +64,7 @@ WRAPPER_TEMPLATE = Template(
     "os.environ['ABUTS_INPUT_STL'] = r\"${input_stl}\"\n"
     "os.environ['ABUTS_OUTPUT_STL'] = r\"${output_stl}\"\n"
     "os.environ['ABUTS_LOG_PATH'] = r\"${log_path}\"\n"
+    "os.environ['ABUTS_CONNECTION_TARGET_DIAMETER'] = \"${connection_target_diameter}\"\n"
     "import System.Diagnostics\n"
     "import sys\n"
     "sys.path.append(r\"${script_dir}\")\n"
@@ -80,7 +81,14 @@ WRAPPER_TEMPLATE = Template(
 )
 
 
-def write_wrapper_script(*, token: str, input_stl: Path, output_stl: Path, log_path: Path) -> Path:
+def write_wrapper_script(
+    *,
+    token: str,
+    input_stl: Path,
+    output_stl: Path,
+    log_path: Path,
+    connection_target_diameter: float | None = None,
+) -> Path:
     settings.TMP_DIR.mkdir(parents=True, exist_ok=True)
     wrapper_path = settings.TMP_DIR / f"job_{token}.py"
     wrapper_path.write_text(
@@ -89,6 +97,11 @@ def write_wrapper_script(*, token: str, input_stl: Path, output_stl: Path, log_p
             input_stl=repr_path_for_template(input_stl),
             output_stl=repr_path_for_template(output_stl),
             log_path=repr_path_for_template(log_path),
+            connection_target_diameter=(
+                str(connection_target_diameter)
+                if connection_target_diameter is not None
+                else ""
+            ),
             script_dir=repr_path_for_template(settings.SCRIPT_DIR),
             token=token,
         ),

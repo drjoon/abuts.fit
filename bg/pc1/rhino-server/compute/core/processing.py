@@ -171,6 +171,41 @@ def download_original_to_input(item: dict) -> bool:
         log(f"original-file fetch error: {e}")
         return False
 
+
+def fetch_connection_target_diameter(request_id: str | None) -> float | None:
+    if not request_id:
+        return None
+
+    backend = os.getenv("BACKEND_BASE", "").rstrip("/")
+    if not backend:
+        return None
+
+    try:
+        res = requests.get(
+            f"{backend}/bg/request-meta",
+            params={"requestId": request_id},
+            timeout=10,
+            headers=settings.bridge_headers(),
+        )
+        if res.status_code != 200:
+            log(
+                f"request-meta fetch failed for diameter: requestId={request_id} status={res.status_code}"
+            )
+            return None
+
+        payload = res.json() if res.content else {}
+        case_infos = ((payload or {}).get("data") or {}).get("caseInfos") or {}
+        raw = case_infos.get("connectionTargetDiameter")
+        if raw in (None, ""):
+            return None
+        diameter = float(raw)
+        if diameter > 0:
+            return diameter
+    except Exception as e:
+        log(f"request-meta diameter parse failed: requestId={request_id} error={e}")
+
+    return None
+
 def canonicalize_input_name(original: str) -> str:
     # 백엔드 파일명을 그대로 사용 (경로/특수문자만 sanitize)
     return settings.sanitize_filename(Path(original).name)
@@ -249,8 +284,19 @@ async def process_single_stl(p: Path, force_reprocess: bool = False):
                 tone="blue",
                 metadata={"fileName": p.name, "outputName": out_name},
             )
+            connection_target_diameter = fetch_connection_target_diameter(req_id)
+            if connection_target_diameter is not None:
+                log(
+                    f"[align] requestId={req_id} connection target diameter={connection_target_diameter:.4f}mm"
+                )
+            else:
+                log(f"[align] requestId={req_id} connection target diameter not found; using default")
             log(f"Calling run_rhino_python for: {p.name}")
-            log_text, output_info = await run_rhino_python(input_stl=p, output_stl=out_path)
+            log_text, output_info = await run_rhino_python(
+                input_stl=p,
+                output_stl=out_path,
+                connection_target_diameter=connection_target_diameter,
+            )
             log(f"Auto-processing done: {out_name}")
             if log_text:
                 for _ln in log_text.split("\n"):

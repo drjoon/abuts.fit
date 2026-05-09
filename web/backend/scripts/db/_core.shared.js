@@ -28,19 +28,31 @@ async function upsertPackLabelBranding() {
 
 async function upsertConnections() {
   const ops = (Array.isArray(CONNECTIONS_SEED) ? CONNECTIONS_SEED : []).map(
-    (c) => ({
-      updateOne: {
-        filter: {
-          manufacturer: c.manufacturer,
-          brand: c.brand,
-          family: c.family,
-          type: c.type,
-          category: c.category,
+    (c) => {
+      const seedDiameter = Number(c.diameter ?? c.connection);
+      const diameter = Number.isFinite(seedDiameter) ? seedDiameter : undefined;
+      return {
+        updateOne: {
+          filter: {
+            manufacturer: c.manufacturer,
+            brand: c.brand,
+            family: c.family,
+            type: c.type,
+            category: c.category,
+          },
+          update: {
+            $set: {
+              ...(diameter !== undefined ? { diameter } : {}),
+            },
+            $setOnInsert: {
+              ...c,
+              ...(diameter !== undefined ? { diameter } : {}),
+            },
+          },
+          upsert: true,
         },
-        update: c,
-        upsert: true,
-      },
-    }),
+      };
+    },
   );
   if (ops.length === 0) return { matched: 0, modified: 0, upserted: 0 };
   const result = await Connection.bulkWrite(ops, { ordered: false });

@@ -15,7 +15,10 @@ import {
 } from "../requests/utils.js";
 import { emitBgRuntimeStatus } from "./bgRuntimeEvents.js";
 import { emitAppEventToRoles } from "../../socket.js";
-import { resolvePrcFileNames } from "../requests/prcMapping.utils.js";
+import {
+  resolvePrcFileNames,
+  resolveConnectionTargetDiameter,
+} from "../requests/prcMapping.utils.js";
 
 const BG_STORAGE_BASE =
   process.env.BG_STORAGE_PATH ||
@@ -966,6 +969,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
       );
     }
   }
+  const connectionTargetDiameter = await resolveConnectionTargetDiameter(ci);
   const lotValue = request?.lotNumber?.value || "";
   const serialCode = lotValue.length >= 3 ? lotValue.slice(-3) : "";
   return res.status(200).json(
@@ -986,6 +990,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           implantType: ci.implantType || "",
           maxDiameter: ci.maxDiameter || 0,
           connectionDiameter: ci.connectionDiameter || 0,
+          connectionTargetDiameter,
           workType: ci.workType || "",
           // 유지홈 옵션 — esprit-addin이 5axisComposite_A.prc의 StepIncrement
           // (스텝 간격) 값을 결정하는 데 사용. rules.md §7.4.1 참조.

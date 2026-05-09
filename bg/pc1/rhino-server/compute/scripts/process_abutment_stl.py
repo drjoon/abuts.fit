@@ -245,7 +245,7 @@ def _align_mesh_to_origin(mesh, target_diameter=3.33):
     """
     메시를 원점에 정렬
     1. Z_min + 2mm 위치의 가로 단면 원 중심을 XY 원점으로 이동
-    2. 커넥션 외부 직경 3.33mm 위치를 Z=0으로 이동 (소수점 4자리 정밀도)
+    2. 커넥션 외부 직경(target_diameter) 위치를 Z=0으로 이동 (소수점 4자리 정밀도)
     """
     import Rhino.Geometry as rg
     import math
@@ -457,7 +457,7 @@ def _align_mesh_to_origin(mesh, target_diameter=3.33):
     return (total_center_x, total_center_y, best_z)
 
 
-def _import_stl_meshes(doc, input_path, skip_align=False):
+def _import_stl_meshes(doc, input_path, skip_align=False, target_diameter=3.33):
     try:
         read_opts = Rhino.FileIO.FileStlReadOptions()
         ok = Rhino.FileIO.FileStl.Read(str(input_path), doc, read_opts)
@@ -479,7 +479,7 @@ def _import_stl_meshes(doc, input_path, skip_align=False):
                 if obj and obj.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
                     mesh = obj.Geometry
                     if mesh:
-                        result = _align_mesh_to_origin(mesh)
+                        result = _align_mesh_to_origin(mesh, target_diameter=target_diameter)
                         if result:
                             alignment_transform = result  # (center_x, center_y, best_z)
                             # 변경된 메시를 문서에 반영
@@ -644,6 +644,16 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
     input_path, output_path = _parse_args(sys.argv, input_path_arg, output_path_arg)
 
+    target_diameter = 3.33
+    raw_target_diameter = os.environ.get("ABUTS_CONNECTION_TARGET_DIAMETER", "").strip()
+    if raw_target_diameter:
+        try:
+            parsed_target = float(raw_target_diameter)
+            if parsed_target > 0:
+                target_diameter = parsed_target
+        except Exception:
+            pass
+
     input_path = str(input_path)
     output_path = str(output_path)
 
@@ -676,10 +686,15 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         log("start")
         log("input=" + input_path)
         log("output=" + output_path)
+        log("[align] target connection diameter={:.4f}mm".format(target_diameter))
 
         # 기존 문서 정리 (ActiveDoc를 사용할 수 있으므로 안전하게 비우기)
         _clear_doc_objects(doc)
-        mesh_obj_refs, alignment_transform = _import_stl_meshes(doc, input_path)
+        mesh_obj_refs, alignment_transform = _import_stl_meshes(
+            doc,
+            input_path,
+            target_diameter=target_diameter,
+        )
 
         # Finish line 계산 및 백엔드 전송 (홀 메움 전 단계)
         try:

@@ -14,6 +14,7 @@
     "db:seed-account": "cross-env ENV_FILE=local.env node scripts/db/seed-account.js",
     "db:reset-password": "cross-env ENV_FILE=local.env node scripts/db/reset-password.js",
     "db:seed-data": "cross-env ENV_FILE=local.env node scripts/db/seed-data.js",
+    "db:backfill": "cross-env ENV_FILE=local.env node scripts/db/backfill-connection-diameter.js",
     "db:seed-branding": "cross-env ENV_FILE=local.env node scripts/db/seed-branding.js",
     "db:implant-preset": "cross-env ENV_FILE=local.env node scripts/db/implant-preset.js",
     "db:seed-prc": "cross-env ENV_FILE=local.env node scripts/db/seed-prc-mappings.js",

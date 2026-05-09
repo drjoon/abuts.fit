@@ -17,6 +17,7 @@ async def run_rhino_python(
     *,
     input_stl: Path,
     output_stl: Path,
+    connection_target_diameter: float | None = None,
     timeout_sec: float = settings.DEFAULT_TIMEOUT_SEC,
 ) -> tuple[str, dict | None]:
     rhinocode = settings.get_rhinocode_bin()
@@ -42,7 +43,11 @@ async def run_rhino_python(
     state.job_futures[token] = future
 
     wrapper_path = write_wrapper_script(
-        token=token, input_stl=input_stl, output_stl=output_stl, log_path=log_path
+        token=token,
+        input_stl=input_stl,
+        output_stl=output_stl,
+        log_path=log_path,
+        connection_target_diameter=connection_target_diameter,
     )
 
     try:

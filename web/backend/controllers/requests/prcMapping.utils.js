@@ -13,6 +13,7 @@ import {
   normalizeImplantType,
 } from "../../utils/implantCanonical.js";
 import { buildPrcFileNamesFromCatalog } from "../../utils/prcFilenameCatalog.js";
+import Connection from "../../models/connection.model.js";
 
 /**
  * 임플란트 정보로 PRC 파일명 조회 (DB 우선)
@@ -54,4 +55,50 @@ export async function resolvePrcFileNames(caseInfos) {
   }
 
   return await getPrcFileNamesByImplant(manufacturer, brand, family, type);
+}
+
+export async function getConnectionTargetDiameterByImplant(
+  manufacturer,
+  brand,
+  family,
+  type,
+) {
+  const normalizedManufacturer = normalizeImplantManufacturer(manufacturer);
+  const normalizedBrand = normalizeImplantBrand(brand, normalizedManufacturer);
+  const normalizedFamily = String(family || "").trim();
+  const normalizedType = normalizeImplantType(type);
+
+  if (
+    !normalizedManufacturer ||
+    !normalizedBrand ||
+    !normalizedFamily ||
+    !normalizedType
+  ) {
+    return null;
+  }
+
+  const connection = await Connection.findOne({
+    manufacturer: normalizedManufacturer,
+    brand: normalizedBrand,
+    family: normalizedFamily,
+    type: normalizedType,
+    category: "hanhwa-connection",
+  })
+    .select({ diameter: 1 })
+    .lean();
+
+  const diameter = Number(connection?.diameter);
+  return Number.isFinite(diameter) ? diameter : null;
+}
+
+export async function resolveConnectionTargetDiameter(caseInfos) {
+  if (!caseInfos) return null;
+
+  const normalized = normalizeImplantFields(caseInfos);
+  return await getConnectionTargetDiameterByImplant(
+    normalized.implantManufacturer,
+    normalized.implantBrand,
+    normalized.implantFamily,
+    normalized.implantType,
+  );
 }
