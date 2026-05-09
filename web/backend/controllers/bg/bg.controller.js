@@ -972,6 +972,15 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
   const connectionTargetDiameter = await resolveConnectionTargetDiameter(ci, {
     connectionPrcFileName: resolvedPrcFiles.connectionPrcFileName,
   });
+  if (connectionTargetDiameter != null) {
+    console.log(
+      `[BG] getRequestMeta: connectionTargetDiameter=${connectionTargetDiameter}mm requestId=${request.requestId} brand=${ci.implantManufacturer}/${ci.implantBrand}/${ci.implantFamily}/${ci.implantType}`,
+    );
+  } else {
+    console.warn(
+      `[BG] getRequestMeta: connectionTargetDiameter가 null입니다. requestId=${request.requestId} brand=${ci.implantManufacturer}/${ci.implantBrand}/${ci.implantFamily}/${ci.implantType} prcFile=${resolvedPrcFiles.connectionPrcFileName}`,
+    );
+  }
   const lotValue = request?.lotNumber?.value || "";
   const serialCode = lotValue.length >= 3 ? lotValue.slice(-3) : "";
   return res.status(200).json(

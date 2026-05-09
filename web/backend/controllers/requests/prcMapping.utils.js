@@ -16,6 +16,32 @@ import { buildPrcFileNamesFromCatalog } from "../../utils/prcFilenameCatalog.js"
 import Connection from "../../models/connection.model.js";
 
 /**
+ * 임플란트 브랜드별 커넥션 직경 정적 맵 (DB 조회 실패 시 폴백)
+ * connections.seed.js 의 값을 기준으로 유지 — DB 시드 갱신 시 함께 업데이트할 것.
+ * key 형식: "MANUFACTURER/brand/family/type"
+ */
+export const STATIC_CONNECTION_DIAMETER_MAP = {
+  "NEOBIOTECH/IS/Regular/Hex": 3.35,
+  "NEOBIOTECH/IS/Regular/Non-Hex": 3.35,
+  "DENTIS/Mini/Mini/Hex": 2.8,
+  "DENTIS/Mini/Mini/Non-Hex": 2.8,
+  "DENTIS/SQ/Regular/Hex": 3.35,
+  "DENTIS/SQ/Regular/Non-Hex": 3.35,
+  "DENTIUM/SuperLine/Regular/Hex": 3.33,
+  "DENTIUM/SuperLine/Regular/Non-Hex": 3.33,
+  "DIO/Mini/Mini/Hex": 2.3,
+  "DIO/Mini/Mini/Non-Hex": 2.3,
+  "DIO/UF/Regular/Hex": 3.35,
+  "DIO/UF/Regular/Non-Hex": 3.35,
+  "MEGAGEN/AnyOne/Regular/Hex": 3.3,
+  "MEGAGEN/AnyOne/Regular/Non-Hex": 3.3,
+  "OSSTEM/Mini/Mini/Hex": 2.6,
+  "OSSTEM/Mini/Mini/Non-Hex": 2.6,
+  "OSSTEM/TS/Regular/Hex": 3.35,
+  "OSSTEM/TS/Regular/Non-Hex": 3.35,
+};
+
+/**
  * 임플란트 정보로 PRC 파일명 조회 (DB 우선)
  * @param {string} manufacturer - 제조사 (e.g. "OSSTEM", "DENTIS")
  * @param {string} brand - 브랜드 (e.g. "TS", "SuperLine")
@@ -88,7 +114,21 @@ export async function getConnectionTargetDiameterByImplant(
     .lean();
 
   const diameter = Number(connection?.diameter);
-  return Number.isFinite(diameter) ? diameter : null;
+  if (Number.isFinite(diameter) && diameter > 0) {
+    return diameter;
+  }
+
+  // DB 조회 실패 시 정적 맵으로 폴백
+  const staticKey = `${normalizedManufacturer}/${normalizedBrand}/${normalizedFamily}/${normalizedType}`;
+  const staticDiameter = STATIC_CONNECTION_DIAMETER_MAP[staticKey];
+  if (typeof staticDiameter === "number" && staticDiameter > 0) {
+    console.warn(
+      `[connectionDiameter] DB lookup returned null/0, using static fallback: ${staticKey} → ${staticDiameter}mm`,
+    );
+    return staticDiameter;
+  }
+
+  return null;
 }
 
 export async function getConnectionTargetDiameterByPrcFileName(

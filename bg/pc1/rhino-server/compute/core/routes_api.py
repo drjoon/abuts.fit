@@ -124,6 +124,8 @@ async def fillhole_direct(file: UploadFile = File(...)):
 
 class StoreFillHoleRequest(BaseModel):
     name: str
+    requestId: Optional[str] = None
+    connectionTargetDiameter: Optional[float] = None
 
 
 @router.post("/api/rhino/store/fillhole")
@@ -136,7 +138,7 @@ async def store_fillhole(req: StoreFillHoleRequest):
     if not input_path.exists() or not input_path.is_file():
         # [정책] 로컬 캐시가 없으면 백엔드(/bg/original-file → S3)에서 다운로드
         from .processing import download_original_to_input
-        req_id = settings.extract_request_id_from_name(safe_name)
+        req_id = req.requestId or settings.extract_request_id_from_name(safe_name)
         download_original_to_input({"filePath": req.name, "requestId": req_id})
         if not input_path.exists() or not input_path.is_file():
             raise HTTPException(status_code=404, detail=f"input 파일을 찾을 수 없습니다 (로컬 및 백엔드 모두 없음): {safe_name}")
@@ -145,10 +147,26 @@ async def store_fillhole(req: StoreFillHoleRequest):
     out_name = settings.sanitize_filename(f"{in_base}.filled.stl")
     output_path = settings.STORE_OUT_DIR / out_name
 
+    # 커넥션 직경 결정: 직접 전달된 값 > requestId로 조회 > None(기본값 3.33)
+    connection_target_diameter: float | None = None
+    if req.connectionTargetDiameter is not None and req.connectionTargetDiameter > 0:
+        connection_target_diameter = req.connectionTargetDiameter
+        log(f"[store/fillhole] connectionTargetDiameter from request: {connection_target_diameter:.4f}mm")
+    elif req.requestId:
+        from .processing import fetch_connection_target_diameter
+        connection_target_diameter = fetch_connection_target_diameter(req.requestId)
+        if connection_target_diameter is not None:
+            log(f"[store/fillhole] connectionTargetDiameter from backend: {connection_target_diameter:.4f}mm (requestId={req.requestId})")
+        else:
+            log(f"[store/fillhole] connectionTargetDiameter not found for requestId={req.requestId}; using default")
+    else:
+        log(f"[store/fillhole] no requestId or connectionTargetDiameter provided; using default 3.33mm")
+
     try:
         await run_rhino_python(
             input_stl=input_path,
             output_stl=output_path,
+            connection_target_diameter=connection_target_diameter,
             timeout_sec=settings.DEFAULT_TIMEOUT_SEC,
         )
     except subprocess.TimeoutExpired:

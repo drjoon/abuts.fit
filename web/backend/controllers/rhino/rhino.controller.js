@@ -3,6 +3,7 @@ import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
 import Request from "../../models/request.model.js";
+import { resolveConnectionTargetDiameter } from "../requests/prcMapping.utils.js";
 
 const RHINO_COMPUTE_BASE_URL = String(
   process.env.RHINO_COMPUTE_BASE_URL || "http://127.0.0.1:8000",
@@ -254,12 +255,39 @@ export const fillholeFromStoreName = asyncHandler(async (req, res) => {
   }
 
   const safeName = sanitizeStlName(String(rawName));
+  const requestId = req.body?.requestId || null;
+
+  // requestId 가 있으면 DB에서 커넥션 직경 조회
+  let connectionTargetDiameter = null;
+  if (requestId) {
+    try {
+      const request = await Request.findOne({ requestId })
+        .select({ caseInfos: 1 })
+        .lean();
+      if (request?.caseInfos) {
+        connectionTargetDiameter = await resolveConnectionTargetDiameter(
+          request.caseInfos,
+        );
+      }
+    } catch (e) {
+      console.warn(
+        `[fillholeFromStoreName] connectionTargetDiameter lookup failed for requestId=${requestId}:`,
+        e?.message,
+      );
+    }
+  }
 
   // [변경] Rhino Compute 서버로의 요청을 큐에 넣어 순차 처리하도록 보장
   const resp = await enqueueTask(() =>
     axios.post(
       `${RHINO_COMPUTE_BASE_URL}/api/rhino/store/fillhole`,
-      { name: safeName },
+      {
+        name: safeName,
+        ...(requestId ? { requestId } : {}),
+        ...(connectionTargetDiameter != null
+          ? { connectionTargetDiameter }
+          : {}),
+      },
       {
         responseType: "arraybuffer",
         timeout: 1000 * 60 * 5,

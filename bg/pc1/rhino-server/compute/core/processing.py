@@ -172,6 +172,43 @@ def download_original_to_input(item: dict) -> bool:
         return False
 
 
+# 임플란트 브랜드별 커넥션 직경 정적 맵
+# 백엔드 DB가 connectionTargetDiameter=null 반환 시 폴백으로 사용
+# key: (manufacturer, brand, family, type)  — 모두 정규화된 값
+# 레퍼런스: connections.seed.js — DB 시드 변경 시 함께 업데이트
+_BRAND_DIAMETER_FALLBACK: dict[tuple[str, str, str, str], float] = {
+    ("NEOBIOTECH", "IS", "Regular", "Hex"): 3.35,
+    ("NEOBIOTECH", "IS", "Regular", "Non-Hex"): 3.35,
+    ("DENTIS", "SQ", "Regular", "Hex"): 3.35,
+    ("DENTIS", "SQ", "Regular", "Non-Hex"): 3.35,
+    ("DENTIS", "Mini", "Mini", "Hex"): 2.8,
+    ("DENTIS", "Mini", "Mini", "Non-Hex"): 2.8,
+    ("DENTIUM", "SuperLine", "Regular", "Hex"): 3.33,
+    ("DENTIUM", "SuperLine", "Regular", "Non-Hex"): 3.33,
+    ("DIO", "UF", "Regular", "Hex"): 3.35,
+    ("DIO", "UF", "Regular", "Non-Hex"): 3.35,
+    ("DIO", "Mini", "Mini", "Hex"): 2.3,
+    ("DIO", "Mini", "Mini", "Non-Hex"): 2.3,
+    ("MEGAGEN", "AnyOne", "Regular", "Hex"): 3.3,
+    ("MEGAGEN", "AnyOne", "Regular", "Non-Hex"): 3.3,
+    ("OSSTEM", "TS", "Regular", "Hex"): 3.35,
+    ("OSSTEM", "TS", "Regular", "Non-Hex"): 3.35,
+    ("OSSTEM", "Mini", "Mini", "Hex"): 2.6,
+    ("OSSTEM", "Mini", "Mini", "Non-Hex"): 2.6,
+}
+
+
+def _fallback_diameter_from_case_infos(case_infos: dict) -> float | None:
+    """case_infos의 임플란트 필드로 정적 맵에서 직경을 찾아 반환."""
+    manufacturer = str(case_infos.get("implantManufacturer") or "").strip()
+    brand = str(case_infos.get("implantBrand") or "").strip()
+    family = str(case_infos.get("implantFamily") or "").strip()
+    implant_type = str(case_infos.get("implantType") or "").strip()
+    if not (manufacturer and brand and family and implant_type):
+        return None
+    return _BRAND_DIAMETER_FALLBACK.get((manufacturer, brand, family, implant_type))
+
+
 def fetch_connection_target_diameter(request_id: str | None) -> float | None:
     if not request_id:
         return None
@@ -196,19 +233,39 @@ def fetch_connection_target_diameter(request_id: str | None) -> float | None:
         payload = res.json() if res.content else {}
         case_infos = ((payload or {}).get("data") or {}).get("caseInfos") or {}
         raw = case_infos.get("connectionTargetDiameter")
-        if raw in (None, ""):
+        if raw not in (None, ""):
+            diameter = float(raw)
+            if diameter > 0:
+                log(
+                    f"[diameter] connectionTargetDiameter={diameter:.4f}mm from backend DB "
+                    f"(requestId={request_id} "
+                    f"{case_infos.get('implantManufacturer','')}/{case_infos.get('implantBrand','')}/"
+                    f"{case_infos.get('implantFamily','')}/{case_infos.get('implantType','')})"
+                )
+                return diameter
+
+        # 백엔드가 null 반환 → 직접 커넥션 직경을 알 수 없음 → 정적 맵으로 폴백
+        manufacturer = case_infos.get('implantManufacturer', '')
+        brand = case_infos.get('implantBrand', '')
+        family = case_infos.get('implantFamily', '')
+        implant_type = case_infos.get('implantType', '')
+        prc = case_infos.get('connectionPrcFileName', '')
+        log(
+            f"[diameter] connectionTargetDiameter is null in backend response: requestId={request_id} "
+            f"implantManufacturer={manufacturer} "
+            f"implantBrand={brand} "
+            f"implantFamily={family} "
+            f"implantType={implant_type} "
+            f"connectionPrcFileName={prc}"
+        )
+        fallback = _fallback_diameter_from_case_infos(case_infos)
+        if fallback is not None:
             log(
-                f"[diameter] connectionTargetDiameter is null in backend response: requestId={request_id} "
-                f"implantManufacturer={case_infos.get('implantManufacturer', '')} "
-                f"implantBrand={case_infos.get('implantBrand', '')} "
-                f"implantFamily={case_infos.get('implantFamily', '')} "
-                f"implantType={case_infos.get('implantType', '')} "
-                f"connectionPrcFileName={case_infos.get('connectionPrcFileName', '')}"
+                f"[diameter] static fallback: {manufacturer}/{brand}/{family}/{implant_type} → {fallback:.4f}mm"
             )
-            return None
-        diameter = float(raw)
-        if diameter > 0:
-            return diameter
+            return fallback
+        log(f"[diameter] no static fallback found for {manufacturer}/{brand}/{family}/{implant_type}; will use default 3.33")
+        return None
     except Exception as e:
         log(f"request-meta diameter parse failed: requestId={request_id} error={e}")
 
