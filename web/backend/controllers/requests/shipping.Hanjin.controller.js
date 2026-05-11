@@ -1280,8 +1280,14 @@ export async function printHanjinLabels(req, res) {
               { _id: requestDoc._id },
               { $set: { deliveryInfoRef: deliveryInfo._id } },
             );
-          } else if (!deliveryInfo.trackingNumber) {
+          } else if (
+            String(deliveryInfo.trackingNumber || "").trim() !== wblNum
+          ) {
             deliveryInfo.trackingNumber = wblNum;
+            deliveryInfo.carrier = "hanjin";
+            if (!deliveryInfo.shippedAt) {
+              deliveryInfo.shippedAt = printedAt;
+            }
             await deliveryInfo.save();
           }
         }

@@ -465,16 +465,6 @@ export const WorksheetCardGrid = ({
             aria-pressed={onToggleSelected ? isSelected : undefined}
           >
             <div className="absolute right-2 top-2 z-20 flex gap-1">
-              {tabStage === "packing" && isPrinted && (
-                <div className="absolute left-2 top-2 z-20">
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] px-1.5 py-0 font-semibold border-slate-300 bg-slate-100 text-slate-500"
-                  >
-                    ✓ 출력 완료
-                  </Badge>
-                </div>
-              )}
               {onRollback && canRollback && (
                 <button
                   type="button"
@@ -519,22 +509,34 @@ export const WorksheetCardGrid = ({
                 </button>
               )}
             </div>
-            {deadlineInfo && (
+            {deadlineInfo || (tabStage === "packing" && isPrinted) ? (
               <div className="absolute right-2 bottom-2 z-20 flex items-center gap-1 flex-nowrap">
-                <Badge
-                  variant="outline"
-                  className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border whitespace-nowrap ${deadlineInfo.badgeClass}`}
-                >
-                  {deadlineInfo.displayText}
-                </Badge>
-                <Badge
-                  variant="outline"
-                  className={`${stageBadgeClassName} whitespace-nowrap`}
-                >
-                  {stageBadgeLabel}
-                </Badge>
+                {tabStage === "packing" && isPrinted && (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] px-1.5 py-0 font-semibold border-slate-300 bg-slate-100 text-slate-500"
+                  >
+                    ✓ 출력 완료
+                  </Badge>
+                )}
+                {deadlineInfo && (
+                  <>
+                    <Badge
+                      variant="outline"
+                      className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border whitespace-nowrap ${deadlineInfo.badgeClass}`}
+                    >
+                      {deadlineInfo.displayText}
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className={`${stageBadgeClassName} whitespace-nowrap`}
+                    >
+                      {stageBadgeLabel}
+                    </Badge>
+                  </>
+                )}
               </div>
-            )}
+            ) : null}
             {isUploading && progress !== undefined && (
               <div className="absolute inset-0 z-10 bg-white/80 flex flex-col items-center justify-center p-4 rounded-xl">
                 <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-2">
