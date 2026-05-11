@@ -56,6 +56,39 @@ namespace DentalAddin
             }
         }
 
+        // Composite_B(+rightOffset 구간) 가공여유 보정.
+        // PRC의 StockAllowance(DispId 272) 기본값을 수정하지 않고 런타임으로만 오버라이드한다.
+        private static void TrySetCompositeStockAllowance(TechLatheMill5xComposite op, string label)
+        {
+            if (op == null)
+            {
+                return;
+            }
+
+            double stockAllowance = AppConfig.DefaultCompositeBStockAllowanceForRightOffset;
+            if (stockAllowance <= 0.0)
+            {
+                DentalLogger.Log($"Composite2SplitAB - {label} StockAllowance 보정값이 0 이하라 적용 생략 ({stockAllowance.ToString("0.###", CultureInfo.InvariantCulture)})");
+                return;
+            }
+
+            try
+            {
+                op.GetType().InvokeMember(
+                    "StockAllowance",
+                    BindingFlags.SetProperty,
+                    null,
+                    op,
+                    new object[] { stockAllowance },
+                    CultureInfo.InvariantCulture);
+                DentalLogger.Log($"Composite2SplitAB - {label} StockAllowance={stockAllowance.ToString("0.###", CultureInfo.InvariantCulture)} 적용 (PRC 파일 무변경)");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"Composite2SplitAB - {label} StockAllowance 설정 실패: {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
         private static bool TryRunComposite2SplitAB(FreeFormFeature freeFormFeature)
         {
             if (Document == null || freeFormFeature == null)
@@ -76,8 +109,10 @@ namespace DentalAddin
             const double leftRatio = AppConfig.DefaultLeftRatio;
             double rightOffset = AppConfig.DefaultRightRatioOffset;
             double backXForComposite = MoveSTL_Module.BackPointX + rightOffset;
+            double baseBackRatio = MoveSTL_Module.BackPointX / 20.0;
             double rightRatio = backXForComposite / 20.0;
             rightRatio = Clamp(rightRatio, leftRatio, 1.0);
+            baseBackRatio = Clamp(baseBackRatio, leftRatio, rightRatio);
             double span = MoveSTL_Module.BackPointX - MoveSTL_Module.FrontPointX;
             double absSpan = Math.Abs(span);
             double direction = span >= 0 ? 1.0 : -1.0;
@@ -88,6 +123,7 @@ namespace DentalAddin
             }
 
             double firstPercent = Clamp(leftRatio * 100.0, 0.0, 100.0);
+            double baseBackPercent = Clamp(baseBackRatio * 100.0, firstPercent, 100.0);
             double lastPercent = Clamp(rightRatio * 100.0, firstPercent, 100.0);
 
             double splitRatio;
@@ -171,6 +207,13 @@ namespace DentalAddin
             opB.FirstPassPercent = splitPercent;
             opB.LastPassPercent = lastPercent;
 
+            bool hasRightExtensionSegment = rightOffset > 0.0 && lastPercent - baseBackPercent > 0.01;
+            double extensionStartPercent = Clamp(baseBackPercent, splitPercent, lastPercent);
+            if (hasRightExtensionSegment)
+            {
+                opB.LastPassPercent = extensionStartPercent;
+            }
+
             opA.DriveSurface = "19," + Conversions.ToString(SurfaceNumber);
             opB.DriveSurface = opA.DriveSurface;
 
@@ -191,15 +234,44 @@ namespace DentalAddin
                 opB.ToolID = opA.ToolID;
             }
 
-            DentalLogger.Log($"Composite2SplitAB - PassPercent: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2})");
+            DentalLogger.Log($"Composite2SplitAB - PassPercent: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B-Base({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), B-ExtEnabled={hasRightExtensionSegment}, B-ExtStart={extensionStartPercent:F2}, B-Last={lastPercent:F2}");
 
             // 유지홈(retentionGroove) -> StepIncrement 적용 (DispId 217 기준 IDispatch 늦은 바인딩).
             // env: ABUTS_COMPOSITE_STEP_INCREMENT_A (예: 0.1 / 0.2 / 0.3)
             // PRC 파일 원본은 변경하지 않으며, A 작업에만 적용한다(B는 PRC 기본값 유지).
             TrySetCompositeStepIncrement(opA, "A");
+            TechLatheMill5xComposite opBExtension = null;
+            if (hasRightExtensionSegment)
+            {
+                ITechnology[] techBExt = TryOpenProcess(technologyUtility, prcB, "Composite2SplitAB:B:Extension");
+                if (techBExt.Length > 0)
+                {
+                    opBExtension = techBExt[0] as TechLatheMill5xComposite;
+                }
+
+                if (opBExtension == null)
+                {
+                    DentalLogger.Log("Composite2SplitAB - B Extension PRC 로드/캐스팅 실패, Extension 구간 가공여유 보정 생략");
+                }
+                else
+                {
+                    opBExtension.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
+                    opBExtension.FirstPassPercent = extensionStartPercent;
+                    opBExtension.LastPassPercent = lastPercent;
+                    opBExtension.DriveSurface = opA.DriveSurface;
+                    opBExtension.ToolID = opB.ToolID;
+                    // #520 기준 +rightOffset 구간(연장 0.1mm)에만 가공여유 +0.05 적용.
+                    // PRC 원본(StockAllowance=0)은 유지하고, 런타임 COM 속성으로만 적용한다.
+                    TrySetCompositeStockAllowance(opBExtension, "B-Extension");
+                }
+            }
 
             TryAddOperation(opA, freeFormFeature, "Composite2SplitAB:A");
             TryAddOperation(opB, freeFormFeature, "Composite2SplitAB:B");
+            if (opBExtension != null)
+            {
+                TryAddOperation(opBExtension, freeFormFeature, "Composite2SplitAB:B:Extension");
+            }
             return true;
         }
 
