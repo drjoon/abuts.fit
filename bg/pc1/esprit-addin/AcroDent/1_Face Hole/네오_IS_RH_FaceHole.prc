@@ -149,7 +149,7 @@ BEGIN_OPERATION; 316; FACE DRILL; 0;
     :(T08:Rough[Ball D4.0]WX-0.3/WZ-0.4/GX5.0/GZ10.9)
     :(T09:Engraving[D2.0*A90]WX-0.3/WZ-0.4/GZ15.86)
     :(T41:C-drill[D5.0*A90]WZ-0.4)
-    :(T45:S-drill[D2.015*L4.8/D2.35]WZ-0.4)
+    :(T45:S-drill[D2.015*L4.25/D2.35]WZ-0.4)
     :(T48:Finish[Ball D2.0]WZ-0.4/GZ4.0)
     :(T21:Shuter[D6.0])
     :
@@ -199,12 +199,12 @@ BEGIN_OPERATION; 316; FACE DRILL; 0;
 		:
 		:(Step drill)
 		:M88
-		:T4545 (D2.015*L4.8/D2.35)
+		:T4545 (D2.015*L4.25/D2.35)
 		:M3 S3000
 		:G99 G0 X0.0 Z-1.5
 		:G4 U0.1
 		:G1 Z-0.5 F0.1
-		:G83 Z[#520+#523+3.60] Q500 P5 F0.025
+		:G83 Z[#520+#523+3.85] Q500 P5 F0.025
     :G80
 		:G0 Z-1.5
     :G0 T0
