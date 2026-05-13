@@ -7,6 +7,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "네오_IS_RH_Connection.prc",
     diameter: 3.35,
+    l2: 2.82,
     isActive: true,
   },
   {
@@ -17,6 +18,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "네오_IS_RN_Connection.prc",
     diameter: 3.35,
+    l2: 2.82,
     isActive: false,
   },
   {
@@ -27,6 +29,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "덴티스_SQ_MH_Connection.prc",
     diameter: 2.8,
+    l2: 2.6,
     isActive: false,
   },
   {
@@ -37,6 +40,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "덴티스_SQ_MN_Connection.prc",
     diameter: 2.8,
+    l2: 2.6,
     isActive: false,
   },
   {
@@ -47,6 +51,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "덴티스_SQ_RH_Connection.prc",
     diameter: 3.35,
+    l2: 2.55,
     isActive: true,
   },
   {
@@ -57,6 +62,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "덴티스_SQ_RN_Connection.prc",
     diameter: 3.35,
+    l2: 2.55,
     isActive: false,
   },
   {
@@ -67,6 +73,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "덴티움_SuperLine_RH_Connection.prc",
     diameter: 3.33,
+    l2: 2.75,
     isActive: true,
   },
   {
@@ -77,6 +84,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "덴티움_SuperLine_RN_Connection.prc",
     diameter: 3.33,
+    l2: 2.75,
     isActive: false,
   },
   {
@@ -87,6 +95,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "디오_UF_MH_Connection.prc",
     diameter: 2.3,
+    l2: 2.75,
     isActive: false,
   },
   {
@@ -97,6 +106,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "디오_UF_MN_Connection.prc",
     diameter: 2.3,
+    l2: 2.75,
     isActive: false,
   },
   {
@@ -107,6 +117,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "디오_UF_RH_Connection.prc",
     diameter: 3.35,
+    l2: 2.75,
     isActive: true,
   },
   {
@@ -117,6 +128,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "디오_UF_RN_Connection.prc",
     diameter: 3.35,
+    l2: 2.75,
     isActive: false,
   },
   {
@@ -127,6 +139,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "메가젠_AnyOne_RH_Connection.prc",
     diameter: 3.3,
+    l2: 2.3,
     isActive: true,
   },
   {
@@ -137,6 +150,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "메가젠_AnyOne_RN_Connection.prc",
     diameter: 3.3,
+    l2: 2.3,
     isActive: false,
   },
   {
@@ -147,6 +161,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "오스템_TS_MH_Connection.prc",
     diameter: 2.6,
+    l2: 2.1,
     isActive: false,
   },
   {
@@ -157,6 +172,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "오스템_TS_MN_Connection.prc",
     diameter: 2.6,
+    l2: 2.1,
     isActive: false,
   },
   {
@@ -167,6 +183,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "오스템_TS_RH_Connection.prc",
     diameter: 3.35,
+    l2: 2.4,
     isActive: true,
   },
   {
@@ -177,6 +194,7 @@ export const CONNECTIONS_SEED = [
     category: "hanhwa-connection",
     fileName: "오스템_TS_RN_Connection.prc",
     diameter: 3.35,
+    l2: 2.4,
     isActive: false,
   },
   // {

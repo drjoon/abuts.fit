@@ -7,12 +7,14 @@ import { sendNotificationToRoles } from "../../socket.js";
 import path from "path";
 import fs from "fs/promises";
 import Request from "../../models/request.model.js";
+import Connection from "../../models/connection.model.js";
 import CncEvent from "../../models/cncEvent.model.js";
 import { getPresignedPutUrl } from "../../utils/s3.utils.js";
 import {
   applyStatusMapping,
   normalizeRequestForResponse,
 } from "../requests/utils.js";
+import { normalizeImplantFields } from "../../utils/implantCanonical.js";
 import { emitBgRuntimeStatus } from "./bgRuntimeEvents.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import {
@@ -39,6 +41,28 @@ const REMOTE_BASE_BY_STEP = {
   "3-nc": process.env.ESPRIT_ADDIN_BASE_URL,
   cnc: process.env.BRIDGE_BASE || process.env.BRIDGE_NODE_URL,
 };
+
+async function resolveConnectionL2FromCaseInfos(caseInfos) {
+  const normalized = normalizeImplantFields(caseInfos || {});
+  const manufacturer = String(normalized.implantManufacturer || "").trim();
+  const brand = String(normalized.implantBrand || "").trim();
+  const family = String(normalized.implantFamily || "").trim();
+  const type = String(normalized.implantType || "").trim();
+  if (!manufacturer || !brand || !family || !type) return null;
+
+  const connection = await Connection.findOne({
+    manufacturer,
+    brand,
+    family,
+    type,
+    category: "hanhwa-connection",
+  })
+    .select({ l2: 1 })
+    .lean();
+
+  const rawL2 = Number(connection?.l2);
+  return Number.isFinite(rawL2) ? rawL2 : null;
+}
 
 export const registerBridgeSettings = asyncHandler(async (req, res) => {
   const {
@@ -1464,6 +1488,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
     maxDiameter,
     connectionDiameter,
     totalLength,
+    l1,
     taperAngle,
     tiltAxisVector,
     frontPoint,
@@ -1487,6 +1512,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
   request.caseInfos.maxDiameter = maxDiameter;
   request.caseInfos.connectionDiameter = connectionDiameter;
   request.caseInfos.totalLength = totalLength;
+  request.caseInfos.l1 = l1;
   request.caseInfos.taperAngle = taperAngle;
   request.caseInfos.tiltAxisVector = tiltAxisVector;
   request.caseInfos.frontPoint = frontPoint;
@@ -1514,6 +1540,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
       `maxDiameter=${maxDiameter?.toFixed(2)}mm ` +
       `connectionDiameter=${connectionDiameter?.toFixed(2)}mm ` +
       `totalLength=${totalLength?.toFixed(2)}mm ` +
+      `l1=${l1?.toFixed(2)}mm ` +
       `taperAngle=${taperAngle?.toFixed(2)}°` +
       (coordinateError ? ` [COORD_ERROR]` : ``),
   );
@@ -1527,6 +1554,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
           maxDiameter,
           connectionDiameter,
           totalLength,
+          l1,
           taperAngle,
           tiltAxisVector,
           frontPoint,
@@ -1550,10 +1578,13 @@ export const getStlMetadata = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Request not found");
   }
 
+  const l2 = await resolveConnectionL2FromCaseInfos(request.caseInfos);
   const metadata = {
     maxDiameter: request.caseInfos?.maxDiameter,
     connectionDiameter: request.caseInfos?.connectionDiameter,
     totalLength: request.caseInfos?.totalLength,
+    l1: request.caseInfos?.l1,
+    l2,
     taperAngle: request.caseInfos?.taperAngle,
     tiltAxisVector: request.caseInfos?.tiltAxisVector,
     frontPoint: request.caseInfos?.frontPoint,
@@ -1566,6 +1597,8 @@ export const getStlMetadata = asyncHandler(async (req, res) => {
       `maxDiameter=${metadata.maxDiameter} ` +
       `connectionDiameter=${metadata.connectionDiameter} ` +
       `totalLength=${metadata.totalLength} ` +
+      `l1=${metadata.l1} ` +
+      `l2=${metadata.l2} ` +
       `taperAngle=${metadata.taperAngle}`,
   );
 

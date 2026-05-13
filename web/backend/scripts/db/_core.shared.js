@@ -31,6 +31,8 @@ async function upsertConnections() {
     (c) => {
       const seedDiameter = Number(c.diameter ?? c.connection);
       const diameter = Number.isFinite(seedDiameter) ? seedDiameter : undefined;
+      const seedL2 = Number(c.l2);
+      const l2 = Number.isFinite(seedL2) ? seedL2 : undefined;
       return {
         updateOne: {
           filter: {
@@ -43,10 +45,12 @@ async function upsertConnections() {
           update: {
             $set: {
               ...(diameter !== undefined ? { diameter } : {}),
+              ...(l2 !== undefined ? { l2 } : {}),
             },
             $setOnInsert: {
               ...c,
               ...(diameter !== undefined ? { diameter } : {}),
+              ...(l2 !== undefined ? { l2 } : {}),
             },
           },
           upsert: true,

@@ -61,7 +61,15 @@ const DEFAULT_ROWS: InspectionRow[] = [
     judgment: "적합",
   },
   {
-    label: "전장",
+    label: "L1",
+    referenceValue: "-",
+    criterion: "±0.05",
+    instrument: "비전",
+    measuredValue: "",
+    judgment: "적합",
+  },
+  {
+    label: "L2",
     referenceValue: "-",
     criterion: "±0.05",
     instrument: "비전",
@@ -174,6 +182,8 @@ export function SelfInspectionReportModal({
     if (confirmed) return;
     const fmt = (v: number | undefined, dec = 2) =>
       v != null ? String(Number(v).toFixed(dec)) : "-";
+    const l1Reference = metadata?.l1;
+    const l2Reference = metadata?.l2;
 
     setRows([
       {
@@ -196,12 +206,19 @@ export function SelfInspectionReportModal({
         judgment: "적합",
       },
       {
-        label: "전장",
-        referenceValue: fmt(metadata?.totalLength),
+        label: "L1",
+        referenceValue: fmt(l1Reference, 3),
         criterion: "±0.05",
         instrument: "비전",
-        measuredValue:
-          metadata?.totalLength != null ? fmt(metadata.totalLength) : "",
+        measuredValue: l1Reference != null ? fmt(l1Reference, 3) : "",
+        judgment: "적합",
+      },
+      {
+        label: "L2",
+        referenceValue: fmt(l2Reference, 3),
+        criterion: "±0.05",
+        instrument: "비전",
+        measuredValue: l2Reference != null ? fmt(l2Reference, 3) : "",
         judgment: "적합",
       },
       {

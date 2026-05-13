@@ -59,6 +59,7 @@ def calculate_and_register_metadata(
                 f"maxDiameter={metadata.get('maxDiameter', 0):.2f}mm "
                 f"connectionDiameter={metadata.get('connectionDiameter', 0):.2f}mm "
                 f"totalLength={metadata.get('totalLength', 0):.2f}mm "
+                f"l1={metadata.get('l1', 0):.2f}mm "
                 f"taperAngle={metadata.get('taperAngle', 0):.2f}°"
                 f"{validation_msg}"
             )
@@ -170,6 +171,7 @@ def _register_metadata_to_backend(
             "maxDiameter": metadata.get("maxDiameter"),
             "connectionDiameter": metadata.get("connectionDiameter"),
             "totalLength": metadata.get("totalLength"),
+            "l1": metadata.get("l1"),
             "taperAngle": metadata.get("taperAngle"),
             "tiltAxisVector": metadata.get("tiltAxisVector"),
             "frontPoint": metadata.get("frontPoint"),

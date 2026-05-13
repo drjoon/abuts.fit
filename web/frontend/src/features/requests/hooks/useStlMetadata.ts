@@ -10,6 +10,8 @@ export interface StlMetadata {
   maxDiameter?: number;
   connectionDiameter?: number;
   totalLength?: number;
+  l1?: number;
+  l2?: number;
   taperAngle?: number;
   tiltAxisVector?: { x: number; y: number; z: number } | null;
   frontPoint?: { x: number; y: number; z: number } | null;

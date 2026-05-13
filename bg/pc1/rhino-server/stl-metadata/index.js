@@ -226,6 +226,10 @@ async function calculateStlMetadata(filePath, finishLinePoints) {
   // 3. 전체 길이 (Z축 범위)
   const totalLength = bbox.max.z - bbox.min.z;
 
+  // 3-1. L1 (원점 기준 포스트 최상단까지 거리)
+  // process_abutment_stl.py 정렬 이후 기준 좌표계에서 max.z를 사용한다.
+  const l1 = bbox.max.z;
+
   // 4. 테이퍼 계산 (finish line이 있는 경우에만)
   let taperAngle = 0;
   let tiltAxisVector = null;
@@ -252,6 +256,7 @@ async function calculateStlMetadata(filePath, finishLinePoints) {
     maxDiameter,
     connectionDiameter,
     totalLength,
+    l1,
     taperAngle,
     tiltAxisVector,
     frontPoint,
