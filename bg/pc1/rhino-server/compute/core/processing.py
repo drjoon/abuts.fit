@@ -364,9 +364,26 @@ async def process_single_stl(p: Path, force_reprocess: bool = False, explicit_re
             )
             log(f"Auto-processing done: {out_name}")
             if log_text:
+                seen_forwarded = set()
                 for _ln in log_text.split("\n"):
-                    if "[align]" in _ln:
-                        log("[rhino-align] " + _ln.strip())
+                    stripped = _ln.strip()
+                    if not stripped:
+                        continue
+                    if (
+                        "[finishline] module reloaded" in stripped
+                        or "Finishline failed:" in stripped
+                        or "finishline post status=" in stripped
+                        or "finishline post failed:" in stripped
+                    ):
+                        key = "F|" + stripped
+                        if key not in seen_forwarded:
+                            seen_forwarded.add(key)
+                            log("[rhino-finishline] " + stripped)
+                    if "[align]" in stripped:
+                        key = "A|" + stripped
+                        if key not in seen_forwarded:
+                            seen_forwarded.add(key)
+                            log("[rhino-align] " + stripped)
             state.recent_history.append(
                 {
                     "file": p.name,
@@ -402,6 +419,8 @@ async def process_single_stl(p: Path, force_reprocess: bool = False, explicit_re
                         pass
                 return meta
             metadata = _parse_metadata_from_log(log_text)
+            if not metadata.get("finishLine"):
+                log(f"[rhino-finishline] FINISHLINE_RESULT missing for {req_id}")
             output_ok = False
             if output_info and isinstance(output_info, dict):
                 exists = output_info.get("exists")

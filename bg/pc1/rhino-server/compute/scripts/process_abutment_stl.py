@@ -6,7 +6,7 @@ import Rhino
 import Rhino.FileIO
 
 from diameter_analysis import analyze_diameters
-from finishline_detection import detect_finish_line
+import finishline_detection as finishline_detection_module
 
 
 _log_initialized = False
@@ -63,6 +63,17 @@ def _extract_request_id_from_path(p: str):
         return None
 
 
+def _detect_finish_line_latest(doc, visualize=False):
+    try:
+        import importlib
+        module = importlib.reload(finishline_detection_module)
+        log("[finishline] module reloaded path={}".format(getattr(module, "__file__", "unknown")))
+        return module.detect_finish_line(doc=doc, visualize=visualize)
+    except Exception as e:
+        log("[finishline] module reload failed, fallback cached module: " + str(e))
+        return finishline_detection_module.detect_finish_line(doc=doc, visualize=visualize)
+
+
 def _post_finish_line(request_id: str, input_file_name: str, finish_line: dict):
     try:
         import json
@@ -80,7 +91,7 @@ def _post_finish_line(request_id: str, input_file_name: str, finish_line: dict):
         body = json.dumps(payload, ensure_ascii=False)
 
         client = System.Net.Http.HttpClient()
-        secret = os.environ.get("RHINO_SHARED_SECRET")
+        secret = os.environ.get("RHINO_SHARED_SECRET") or os.environ.get("BRIDGE_SHARED_SECRET")
         if secret:
             try:
                 client.DefaultRequestHeaders.Remove("X-Bridge-Secret")
@@ -94,6 +105,16 @@ def _post_finish_line(request_id: str, input_file_name: str, finish_line: dict):
             "application/json",
         )
         resp = client.PostAsync(url, content).Result
+        status_code = int(resp.StatusCode) if resp is not None else -1
+        ok = bool(resp.IsSuccessStatusCode) if resp is not None else False
+        log("finishline post status={} ok={}".format(status_code, ok))
+        if not ok:
+            try:
+                resp_text = resp.Content.ReadAsStringAsync().Result
+            except Exception:
+                resp_text = ""
+            if resp_text:
+                log("finishline post response=" + str(resp_text)[:500])
     except Exception as e:
         log("finishline post failed: " + str(e))
 
@@ -254,6 +275,7 @@ def _align_mesh_to_origin(mesh, target_diameter=3.33):
     z_min = bbox.Min.Z
     # 소수점 4자리 정밀도로 target_radius 설정
     target_radius = round(target_diameter / 2.0, 4)  # 1.6650mm
+    align_fast_mode = os.environ.get("ABUTS_ALIGN_FAST", "1") in ("1", "true", "TRUE")
     
     def get_circle_at_z(z):
         plane = rg.Plane(rg.Point3d(0, 0, z), rg.Vector3d(0, 0, 1))
@@ -385,14 +407,18 @@ def _align_mesh_to_origin(mesh, target_diameter=3.33):
         dz, dr, taper_slope))
     log("[align] Taper angle: {:.6f}° (expected ~11°)".format(taper_angle_deg))
     
-    # origin 기준 r1 측정 (bbox 기반 r1은 slope만 사용, 절대 위치는 origin 기준)
-    r1_origin = measure_r_at_z(z1)
-    if r1_origin is not None:
-        log("[align] r1 origin-based: {:.8f}mm (bbox-based: {:.6f}mm, diff: {:.8f}mm)".format(
-            r1_origin, r1, abs(r1 - r1_origin)))
-    else:
+    # origin 기준 r1 측정 (성능 모드에서는 생략)
+    if align_fast_mode:
         r1_origin = r1
-        log("[align] r1 origin measurement failed, using bbox r1")
+        log("[align] Fast mode: skip origin r1 measurement")
+    else:
+        r1_origin = measure_r_at_z(z1)
+        if r1_origin is not None:
+            log("[align] r1 origin-based: {:.8f}mm (bbox-based: {:.6f}mm, diff: {:.8f}mm)".format(
+                r1_origin, r1, abs(r1 - r1_origin)))
+        else:
+            r1_origin = r1
+            log("[align] r1 origin measurement failed, using bbox r1")
     
     # z_target = z1 + (target_radius - r1_origin) / taper_slope (정밀도 보존)
     if abs(taper_slope) < 0.00001:  # 거의 수직인 경우
@@ -427,16 +453,28 @@ def _align_mesh_to_origin(mesh, target_diameter=3.33):
             log("[align] Refined center at Z=0: ({:.4f}, {:.4f})".format(
                 final_center_x, final_center_y))
 
-    # 원점 기준 Z=0 반지름 측정 (tight tolerance로 정확한 Z=0 측정)
-    conn_r_origin = measure_r_at_z(0, tight_tol=True)
-    log("[align] Measured radius at Z=0 (origin, tight): {:.6f}mm = {:.6f}mm diameter".format(
-        conn_r_origin if conn_r_origin else 0.0,
-        (conn_r_origin * 2) if conn_r_origin else 0.0))
+    # 원점 기준 Z=0 반지름 측정
+    if align_fast_mode:
+        conn_r_origin = get_radius_at_z(0)
+        log("[align] Fast mode radius at Z=0 (bbox): {:.6f}mm = {:.6f}mm diameter".format(
+            conn_r_origin if conn_r_origin else 0.0,
+            (conn_r_origin * 2) if conn_r_origin else 0.0))
+    else:
+        conn_r_origin = measure_r_at_z(0, tight_tol=True)
+        log("[align] Measured radius at Z=0 (origin, tight): {:.6f}mm = {:.6f}mm diameter".format(
+            conn_r_origin if conn_r_origin else 0.0,
+            (conn_r_origin * 2) if conn_r_origin else 0.0))
 
     # Residual Z 보정 (안전망: origin 기준으로 한 번 더 조정)
-    if conn_r_origin is not None and abs(taper_slope) >= 0.00001:
-        residual_z = (target_radius - conn_r_origin) / taper_slope
-        if abs(residual_z) > 0.0001:
+    # 성능 최적화: 반지름 오차/잔여 Z가 매우 작으면 재보정 루프를 생략한다.
+    residual_radius_tol = float(os.environ.get("ABUTS_ALIGN_RESIDUAL_RADIUS_TOL", "0.0001"))
+    residual_z_tol = float(os.environ.get("ABUTS_ALIGN_RESIDUAL_Z_TOL", "0.0005"))
+    if align_fast_mode:
+        log("[align] Fast mode: skip residual correction")
+    elif conn_r_origin is not None and abs(taper_slope) >= 0.00001:
+        residual_radius = target_radius - conn_r_origin
+        residual_z = residual_radius / taper_slope
+        if abs(residual_radius) > residual_radius_tol and abs(residual_z) > residual_z_tol:
             mesh.Translate(rg.Vector3d(0, 0, -residual_z))
             best_z = best_z + residual_z
             log("[align] Residual Z correction: {:.6f}mm".format(residual_z))
@@ -445,6 +483,13 @@ def _align_mesh_to_origin(mesh, target_diameter=3.33):
             log("[align] Post-correction radius (tight): {:.6f}mm = {:.6f}mm diameter".format(
                 conn_r_origin if conn_r_origin else 0.0,
                 (conn_r_origin * 2) if conn_r_origin else 0.0))
+        else:
+            log(
+                "[align] Residual correction skipped: dr={:.6f}mm dz={:.6f}mm".format(
+                    residual_radius,
+                    residual_z,
+                )
+            )
 
     final_diameter = (conn_r_origin * 2) if conn_r_origin is not None else 0.0
 
@@ -455,6 +500,101 @@ def _align_mesh_to_origin(mesh, target_diameter=3.33):
 
     # 정렬 변환 벡터 반환 (역변환에 사용)
     return (total_center_x, total_center_y, best_z)
+
+
+def _run_alignment_on_first_mesh(doc, target_diameter=3.33):
+    alignment_transform = None
+    try:
+        log("[align] Starting coordinate alignment...")
+        objs = list(doc.Objects)
+        for obj in objs:
+            if obj and obj.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
+                mesh = obj.Geometry
+                if mesh:
+                    result = _align_mesh_to_origin(mesh, target_diameter=target_diameter)
+                    if result:
+                        alignment_transform = result  # (center_x, center_y, best_z)
+                        doc.Objects.Replace(obj.Id, mesh)
+                        log("[align] Mesh replaced in document")
+                    break  # 첫 번째 메시만 정렬
+        log("[align] Alignment complete")
+    except Exception as e:
+        log("[align] Alignment failed: " + str(e))
+    return alignment_transform
+
+
+def _build_alignment_transform(alignment_transform):
+    if not alignment_transform:
+        return None
+    try:
+        cx, cy, cz = alignment_transform
+        return Rhino.Geometry.Transform.Translation(-float(cx), -float(cy), -float(cz))
+    except Exception:
+        return None
+
+
+def _apply_alignment_transform_to_doc_curves(doc, alignment_transform):
+    xform = _build_alignment_transform(alignment_transform)
+    if xform is None:
+        return 0
+
+    moved = 0
+    try:
+        objs = list(doc.Objects)
+    except Exception:
+        objs = []
+
+    for obj in objs:
+        if obj is None or obj.ObjectType != Rhino.DocObjects.ObjectType.Curve:
+            continue
+        geo = obj.Geometry
+        if geo is None:
+            continue
+        try:
+            dup = geo.Duplicate()
+            if dup is None:
+                continue
+            if not dup.Transform(xform):
+                continue
+            if doc.Objects.Replace(obj.Id, dup):
+                moved += 1
+        except Exception:
+            continue
+
+    if moved > 0:
+        log("[align] Curves transformed count={}".format(moved))
+    return moved
+
+
+def _transform_finishline_points(points, alignment_transform):
+    xform = _build_alignment_transform(alignment_transform)
+    if xform is None or not points:
+        return points or []
+
+    transformed = []
+    for p in points:
+        if p is None:
+            continue
+        try:
+            pt = Rhino.Geometry.Point3d(float(p.X), float(p.Y), float(p.Z))
+            pt.Transform(xform)
+            transformed.append(pt)
+        except Exception:
+            transformed.append(p)
+    return transformed
+
+
+def _transform_finishline_point(pt, alignment_transform):
+    xform = _build_alignment_transform(alignment_transform)
+    if xform is None or pt is None:
+        return pt
+    try:
+        p = Rhino.Geometry.Point3d(float(pt.X), float(pt.Y), float(pt.Z))
+        p.Transform(xform)
+        return p
+    except Exception:
+        pass
+    return pt
 
 
 def _import_stl_meshes(doc, input_path, skip_align=False, target_diameter=3.33):
@@ -472,23 +612,10 @@ def _import_stl_meshes(doc, input_path, skip_align=False, target_diameter=3.33):
     # STL 로드 후 자동 정렬 (skip_align=True면 건너뜀)
     alignment_transform = None
     if not skip_align:
-        try:
-            log("[align] Starting coordinate alignment...")
-            objs = list(doc.Objects)
-            for obj in objs:
-                if obj and obj.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
-                    mesh = obj.Geometry
-                    if mesh:
-                        result = _align_mesh_to_origin(mesh, target_diameter=target_diameter)
-                        if result:
-                            alignment_transform = result  # (center_x, center_y, best_z)
-                            # 변경된 메시를 문서에 반영
-                            doc.Objects.Replace(obj.Id, mesh)
-                            log("[align] Mesh replaced in document")
-                        break  # 첫 번째 메시만 정렬
-            log("[align] Alignment complete")
-        except Exception as e:
-            log("[align] Alignment failed: " + str(e))
+        alignment_transform = _run_alignment_on_first_mesh(
+            doc,
+            target_diameter=target_diameter,
+        )
 
     mesh_obj_refs = []
     try:
@@ -693,55 +820,77 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         mesh_obj_refs, alignment_transform = _import_stl_meshes(
             doc,
             input_path,
+            skip_align=True,
             target_diameter=target_diameter,
         )
 
-        # Finish line 계산 및 백엔드 전송 (홀 메움 전 단계)
+        # Finish line 계산 (원본 STL import 직후 단계)
+        fl = None
+        pts = []
+        pt0 = None
+        strategy_used = None
         try:
-            import base64
-            import json
-
-            fl = detect_finish_line(doc=doc, visualize=False)
+            fl = _detect_finish_line_latest(doc=doc, visualize=False)
             pts = fl.get("points") or []
             pt0 = fl.get("pt0")
-
-            finish_line_payload = {
-                "version": 1,
-                "sectionCount": int(fl.get("plane_count") or 0),
-                "maxStepDistance": float(
-                    os.environ.get("ABUTS_FINISHLINE_MAX_STEP", "1") or 1
-                ),
-                "points": [[float(p.X), float(p.Y), float(p.Z)] for p in pts],
-                "pt0": [float(pt0.X), float(pt0.Y), float(pt0.Z)] if pt0 else None,
-            }
-
-            log(
-                "finishline detected points={} planeCount={} hasPt0={}".format(
-                    len(finish_line_payload.get("points") or []),
-                    finish_line_payload.get("sectionCount"),
-                    bool(finish_line_payload.get("pt0")),
-                )
-            )
-            try:
-                encoded_finish_line = base64.b64encode(
-                    json.dumps(finish_line_payload, ensure_ascii=False).encode("utf-8")
-                ).decode("ascii")
-                log("FINISHLINE_RESULT:" + encoded_finish_line)
-            except Exception as encode_err:
-                log("Finishline encode failed: " + str(encode_err))
-
-            req_id = _extract_request_id_from_path(input_path)
-            if req_id:
-                canonical_name = os.path.basename(str(input_path))
-                _post_finish_line(
-                    req_id,
-                    canonical_name,
-                    finish_line_payload,
-                )
-
-            # 로컬 콘솔에서 finish line payload를 노출하지 않는다 (로그 정리)
+            strategy_used = fl.get("strategy_used")
         except Exception as e:
             log("Finishline failed: " + str(e))
+
+        # 원본 상태 피니시라인 추출 이후 정렬 수행
+        alignment_transform = _run_alignment_on_first_mesh(
+            doc,
+            target_diameter=target_diameter,
+        )
+        _apply_alignment_transform_to_doc_curves(doc, alignment_transform)
+
+        # 백엔드 등록은 정렬 좌표계 기준으로 수행
+        if fl is not None:
+            try:
+                import base64
+                import json
+
+                aligned_pts = _transform_finishline_points(pts, alignment_transform)
+                aligned_pt0 = _transform_finishline_point(pt0, alignment_transform)
+
+                finish_line_payload = {
+                    "version": 1,
+                    "sectionCount": int(fl.get("plane_count") or 0),
+                    "maxStepDistance": float(
+                        os.environ.get("ABUTS_FINISHLINE_MAX_STEP", "1") or 1
+                    ),
+                    "points": [[float(p.X), float(p.Y), float(p.Z)] for p in aligned_pts],
+                    "pt0": [float(aligned_pt0.X), float(aligned_pt0.Y), float(aligned_pt0.Z)] if aligned_pt0 else None,
+                }
+
+                log(
+                    "finishline detected points={} planeCount={} hasPt0={} strategy={} aligned={}".format(
+                        len(finish_line_payload.get("points") or []),
+                        finish_line_payload.get("sectionCount"),
+                        bool(finish_line_payload.get("pt0")),
+                        strategy_used,
+                        bool(alignment_transform),
+                    )
+                )
+
+                try:
+                    encoded_finish_line = base64.b64encode(
+                        json.dumps(finish_line_payload, ensure_ascii=False).encode("utf-8")
+                    ).decode("ascii")
+                    log("FINISHLINE_RESULT:" + encoded_finish_line)
+                except Exception as encode_err:
+                    log("Finishline encode failed: " + str(encode_err))
+
+                req_id = _extract_request_id_from_path(input_path)
+                if req_id:
+                    canonical_name = os.path.basename(str(input_path))
+                    _post_finish_line(
+                        req_id,
+                        canonical_name,
+                        finish_line_payload,
+                    )
+            except Exception as e:
+                log("Finishline post failed after alignment: " + str(e))
 
         # 1) Explode: RhinoCommon API를 사용하여 고속 처리 (문서 리셋 없이 바로 진행)
         try:
@@ -840,10 +989,16 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             tol,
         ))
 
-        fill_targets = open_candidates if open_candidates else candidates
+        fill_targets = _pick_fill_targets(pool)
         fill_targets = [c for c in fill_targets if c.get("id")]
+        if best_id and all(c.get("id") != best_id for c in fill_targets):
+            picked = next((c for c in pool if c.get("id") == best_id), None)
+            if picked is not None:
+                fill_targets.insert(0, picked)
         if not fill_targets:
             fail("FillMeshHoles 대상 Mesh 목록을 만들지 못했습니다")
+
+        log("FillMeshHoles target count={} (limit={})".format(len(fill_targets), _FILL_TARGET_LIMIT))
 
         for idx, c in enumerate(fill_targets):
             oid = c.get("id")
@@ -888,7 +1043,10 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                 merged = meshes[0]
             elif len(meshes) > 1:
                 tol = doc.ModelAbsoluteTolerance if doc else 0.01
-                merged = Rhino.Geometry.Mesh.CreateFromMerge(meshes, tol or 0.01, True)
+                if hasattr(Rhino.Geometry.Mesh, "CreateFromMerge"):
+                    merged = Rhino.Geometry.Mesh.CreateFromMerge(meshes, tol or 0.01, True)
+                else:
+                    log("Join (RhinoCommon) skipped: CreateFromMerge unavailable")
 
             if merged and merged.Faces.Count > 0:
                 try:
