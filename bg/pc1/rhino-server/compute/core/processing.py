@@ -372,7 +372,10 @@ async def process_single_stl(p: Path, force_reprocess: bool = False, explicit_re
                     if (
                         "[finishline] module reloaded" in stripped
                         or "Finishline failed:" in stripped
+                        or "finishline post url=" in stripped
+                        or "finishline post auth " in stripped
                         or "finishline post status=" in stripped
+                        or "finishline post response=" in stripped
                         or "finishline post failed:" in stripped
                     ):
                         key = "F|" + stripped

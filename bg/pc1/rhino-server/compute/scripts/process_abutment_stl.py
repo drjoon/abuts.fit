@@ -80,7 +80,7 @@ def _post_finish_line(request_id: str, input_file_name: str, finish_line: dict):
         import System.Net.Http
         import System.Text
 
-        backend = os.environ.get("BACKEND_BASE", "https://abuts.fit/api").rstrip("/")
+        backend = os.environ.get("BACKEND_BASE", "https://abuts.fit/api").strip().rstrip("/")
         url = backend + "/bg/register-finish-line"
 
         payload = {
@@ -91,7 +91,20 @@ def _post_finish_line(request_id: str, input_file_name: str, finish_line: dict):
         body = json.dumps(payload, ensure_ascii=False)
 
         client = System.Net.Http.HttpClient()
-        secret = os.environ.get("RHINO_SHARED_SECRET") or os.environ.get("BRIDGE_SHARED_SECRET")
+        rhino_secret = os.environ.get("RHINO_SHARED_SECRET", "").strip()
+        bridge_secret = os.environ.get("BRIDGE_SHARED_SECRET", "").strip()
+        secret = rhino_secret or bridge_secret
+        secret_source = (
+            "RHINO_SHARED_SECRET"
+            if rhino_secret
+            else ("BRIDGE_SHARED_SECRET" if bridge_secret else "none")
+        )
+        log(
+            "finishline post auth secret_len={} source={}".format(
+                len(str(secret or "")),
+                secret_source,
+            )
+        )
         if secret:
             try:
                 client.DefaultRequestHeaders.Remove("X-Bridge-Secret")
