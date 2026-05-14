@@ -172,8 +172,27 @@ export const registerFinishLine = asyncHandler(async (req, res) => {
     request = await Request.findOne({ requestId });
   }
 
+  const normalizedTarget = normalizeFilePath(filePath);
+  const rawFilePath = String(filePath || "").trim();
+  const baseName = rawFilePath ? path.basename(rawFilePath) : "";
+
+  if (!request && baseName) {
+    const directCandidates = Array.from(
+      new Set([rawFilePath, baseName].filter(Boolean)),
+    );
+
+    request = await Request.findOne({
+      manufacturerStage: { $ne: "취소" },
+      $or: [
+        { "caseInfos.file.filePath": { $in: directCandidates } },
+        { "caseInfos.file.originalName": { $in: directCandidates } },
+        { "caseInfos.camFile.filePath": { $in: directCandidates } },
+        { "caseInfos.ncFile.filePath": { $in: directCandidates } },
+      ],
+    });
+  }
+
   if (!request) {
-    const normalizedTarget = normalizeFilePath(filePath);
     if (normalizedTarget) {
       const allRequests = await Request.find({
         manufacturerStage: { $ne: "취소" },

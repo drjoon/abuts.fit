@@ -38,7 +38,7 @@ export function requireSecretFromEnv(envKey, label = "secret") {
       return next();
     }
 
-    const provided = String(req.headers["x-bridge-secret"] || "");
+    const provided = String(req.headers["x-bridge-secret"] || "").trim();
     if (!provided || !secrets.includes(provided)) {
       logSecretMismatch(req, [envKey], provided, label);
       return res.status(401).json({
@@ -58,7 +58,7 @@ export function requireAnySecretFromEnv(envKeys, label = "secret") {
       return next();
     }
 
-    const provided = String(req.headers["x-bridge-secret"] || "");
+    const provided = String(req.headers["x-bridge-secret"] || "").trim();
     if (!provided || !secrets.includes(provided)) {
       logSecretMismatch(req, envKeys, provided, label);
       return res.status(401).json({
