@@ -1,10 +1,11 @@
-"""Finish line detection for abutment STL meshes.
+"""Finish line detection helpers for abutment STL meshes.
 
-알고리즘(요청 반영):
-1) 입력 mesh를 explode해서 분리 파트 후보를 만든다.
-2) 후보 중 max-Z 파트를 선택한다.
-3) 선택 파트로 `ExtractMeshEdges`(떨어짐/결합) 실행 후, 생성 커브 중 min-Z 폐곡선을
-   피니시라인으로 저장한다.
+요구 사항
+1) Edge 기반(ExtractMeshEdges) 피니시라인을 먼저 시도
+2) edge 결과 min-Z가 0.5mm 이하면 비정상으로 간주
+3) 비정상 시 단면 추적 기반으로 재시도
+4) 단면 추적은 XZ 평면 40개(9도 간격) 사용
+5) 시각화: pt0 반경 0.1 구(녹색), 추적 곡선 빨간 튜브(반경 0.03)
 """
 
 from __future__ import annotations
@@ -20,13 +21,31 @@ import Rhino.Geometry.Intersect as intersect
 import System.Drawing as drawing
 import System
 
-_SECTION_COUNT = 40
-_SECTION_STEP_DEG = 9.0
+_SECTION_COUNT = 20
+_SECTION_STEP_DEG = 18.0
+_NEAREST_LIMIT = 10
+_MAX_STEP_DISTANCE = 1
 _PT0_Z_RATIO_LOW = 0.2
-_PT0_Z_RATIO_HIGH = 0.55
+_PT0_Z_RATIO_HIGH = 0.6
+_Z_RATIO_LOW = 0.2
+_Z_RATIO_HIGH = 0.7
+_TARGET_TRACE_POINT_COUNT = 120
 _SHOW_POINT_TEXTDOTS = False
+_DIST_TOL = 1e-8
 _DEBUG_TRACE = os.environ.get("FINISHLINE_TRACE_DEBUG", "0") in ("1", "true", "TRUE")
 _DEBUG_ADD_POLYLINE_CURVE = os.environ.get("FINISHLINE_DEBUG_CURVE_DOC", "1") in ("1", "true", "TRUE")
+# ExtractMeshEdges 결과가 너무 낮은 Z로 잡히는 경우(포스트/치은 미분리 샘플) 차단 임계값
+_EDGE_MIN_Z_VALID_THRESHOLD_MM = 0.5
+
+
+def _merge_candidates(primary: Sequence[rg.Point3d], secondary: Sequence[rg.Point3d]) -> List[rg.Point3d]:
+    merged: List[rg.Point3d] = [rg.Point3d(pt) for pt in primary if pt is not None]
+    for pt in secondary:
+        if pt is None:
+            continue
+        if not any(existing.DistanceTo(pt) <= _DIST_TOL for existing in merged):
+            merged.append(rg.Point3d(pt))
+    return merged
 
 
 def _trace_log(msg: str) -> None:
@@ -70,6 +89,37 @@ def _mesh_z_key(mesh: rg.Mesh) -> Optional[Tuple[float, float, float, float]]:
         float(mesh.Vertices.Count),
         float(bbox.Diagonal.Length),
     )
+
+
+def _detect_finishline_points_edge(
+    doc: Rhino.RhinoDoc,
+    mesh: rg.Mesh,
+) -> Tuple[Optional[List[rg.Point3d]], str]:
+    candidates = _explode_components_sorted_by_max_z(mesh)
+    if not candidates:
+        candidates = [mesh]
+
+    for idx, target_mesh in enumerate(candidates):
+        _trace_log(
+            "[detect-edge] candidate[{}] vertices={} faces={} key={}".format(
+                idx,
+                target_mesh.Vertices.Count,
+                target_mesh.Faces.Count,
+                _mesh_z_key(target_mesh),
+            )
+        )
+
+        edge_curves = _extract_mesh_edges_with_command(doc, target_mesh)
+        strategy_used = "C_EXTRACT_MESH_EDGES_UNWELDED"
+        if not edge_curves:
+            edge_curves = _extract_naked_edges_fallback(target_mesh)
+            strategy_used = "C_FALLBACK_NAKED_EDGES"
+
+        traced_points = _pick_min_z_closed_curve_points(edge_curves, doc.ModelAbsoluteTolerance)
+        if traced_points and len(traced_points) >= 3:
+            return traced_points, "{}#candidate{}".format(strategy_used, idx)
+
+    return None, "C_EDGE_FAILED"
 
 
 def _pick_primary_mesh(doc: Rhino.RhinoDoc, mesh_id=None) -> Tuple[rdo.MeshObject, rg.Mesh]:
@@ -381,10 +431,32 @@ def _pick_min_z_closed_curve_points(curves: Sequence[rg.Curve], tolerance: float
     return selected_points
 
 
+def _points_min_z(points: Sequence[rg.Point3d]) -> Optional[float]:
+    if not points:
+        return None
+    try:
+        return float(min(p.Z for p in points))
+    except Exception:
+        return None
+
+
 def _extract_lowest_boundary_loop_points(mesh: rg.Mesh) -> Optional[List[rg.Point3d]]:
-    # LEGACY 비활성: 메시에지 추출 기반(C 전략)만 사용.
-    _trace_log("[legacy-disabled] _extract_lowest_boundary_loop_points")
-    return None
+    # 기존 방식: naked edge 폐곡선 중 min-Z 루프 사용
+    loops = _extract_naked_edges_fallback(mesh)
+    if not loops:
+        _trace_log("[legacy] no naked edge loops")
+        return None
+    points = _pick_min_z_closed_curve_points(loops, 1e-6)
+    if not points or len(points) < 3:
+        _trace_log("[legacy] lowest boundary loop not found")
+        return None
+    _trace_log(
+        "[legacy] lowest boundary loop selected min_z={:.6f} pts={}".format(
+            _points_min_z(points) if _points_min_z(points) is not None else float("nan"),
+            len(points),
+        )
+    )
+    return points
 
 
 def _extract_lowest_cross_section(mesh: rg.Mesh) -> Optional[List[rg.Point3d]]:
@@ -427,15 +499,173 @@ def _select_pt0(mesh: rg.Mesh) -> rg.Point3d:
 # Section sampling
 # ---------------------------------------------------------------------------
 def _build_section_planes(count: int = _SECTION_COUNT, step_deg: float = _SECTION_STEP_DEG) -> List[rg.Plane]:
-    # LEGACY 비활성: 메시에지 추출 기반(C 전략)만 사용.
-    _trace_log("[legacy-disabled] _build_section_planes")
-    return []
+    planes: List[rg.Plane] = []
+    z_axis = rg.Vector3d(0, 0, 1)
+    for idx in range(count):
+        angle = math.radians(step_deg * idx)
+        x_dir = rg.Vector3d(math.cos(angle), math.sin(angle), 0)
+        if not x_dir.IsValid or x_dir.IsZero:
+            x_dir = rg.Vector3d(1, 0, 0)
+        planes.append(rg.Plane(rg.Point3d.Origin, x_dir, z_axis))
+    return planes
 
 
-def _intersect_mesh_plane(mesh: rg.Mesh, plane: rg.Plane):
-    # LEGACY 비활성: 메시에지 추출 기반(C 전략)만 사용.
-    _trace_log("[legacy-disabled] _intersect_mesh_plane")
-    return [], [], []
+def _curve_control_points(curve: rg.Curve) -> List[rg.Point3d]:
+    pts: List[rg.Point3d] = []
+    nurbs = None
+    try:
+        nurbs = curve.ToNurbsCurve()
+    except Exception:
+        nurbs = None
+
+    if nurbs is not None:
+        try:
+            for i in range(nurbs.Points.Count):
+                pts.append(nurbs.Points[i].Location)
+            return pts
+        except Exception:
+            pts = []
+
+    try:
+        polyline = curve.ToPolyline(0, 0, 0, 0, 0, 0, True)
+        if polyline:
+            pts.extend([rg.Point3d(pt) for pt in polyline])
+    except Exception:
+        pass
+
+    return pts
+
+
+def _filter_points_by_z(points: Sequence[rg.Point3d], low_z: float, high_z: float) -> List[rg.Point3d]:
+    return [pt for pt in points if low_z <= pt.Z <= high_z]
+
+
+def _sample_plane_section(
+    mesh: rg.Mesh,
+    plane: rg.Plane,
+    low_z: float,
+    high_z: float,
+) -> Tuple[List[rg.Point3d], List[rg.Curve], List[rg.Point3d]]:
+    try:
+        polylines = intersect.Intersection.MeshPlane(mesh, plane)
+    except Exception:
+        polylines = None
+
+    points: List[rg.Point3d] = []
+    curves: List[rg.Curve] = []
+    control_points: List[rg.Point3d] = []
+    if not polylines:
+        return points, curves, control_points
+
+    for pl in polylines:
+        if not pl:
+            continue
+        sample_pts = [rg.Point3d(pt) for pt in pl]
+        points.extend(sample_pts)
+        try:
+            poly_curve = rg.PolylineCurve(pl)
+        except Exception:
+            poly_curve = None
+        if poly_curve is not None:
+            curves.append(poly_curve)
+            control_points.extend(_curve_control_points(poly_curve))
+
+    filtered_points = _filter_points_by_z(points, low_z, high_z)
+    filtered_controls = _filter_points_by_z(control_points, low_z, high_z)
+    _trace_log(
+        "[section] plane_idx={} raw_pts={} ctrl_pts={} filtered_ctrls={}".format(
+            plane, len(points), len(control_points), len(filtered_controls)
+        )
+    )
+    return filtered_points, curves, filtered_controls
+
+
+def _collect_section_data(mesh: rg.Mesh, planes: Sequence[rg.Plane]):
+    sections = []
+    bbox = mesh.GetBoundingBox(True)
+    z_min = bbox.Min.Z
+    z_max = bbox.Max.Z
+    height = max(1e-6, z_max - z_min)
+
+    # _select_pt0와 동일한 20~70% 구간 필터
+    low_z = z_min + _Z_RATIO_LOW * height
+    high_z = z_min + _Z_RATIO_HIGH * height
+
+    for idx, plane in enumerate(planes):
+        pts, curves, ctrl_pts = _sample_plane_section(mesh, plane, low_z, high_z)
+        sections.append(
+            {
+                "index": idx,
+                "points": pts,
+                "curves": curves,
+                "controls": ctrl_pts,
+                "plane": plane,
+            }
+        )
+        _trace_log(
+            "[collect] plane_idx={} ctrl_candidates={} point_candidates={}".format(
+                idx, len(ctrl_pts), len(pts)
+            )
+        )
+    return sections
+
+
+def _select_outermost_nearby(
+    ref_point: rg.Point3d,
+    candidates: Sequence[rg.Point3d],
+    limit: int = _NEAREST_LIMIT,
+    max_distance: Optional[float] = None,
+    debug_label: Optional[str] = None,
+    return_details: bool = False,
+):
+    if not candidates:
+        return (None, []) if return_details else None
+
+    within_limit: List[Tuple[float, float, rg.Point3d]] = []
+    all_candidates: List[Tuple[float, float, rg.Point3d]] = []
+
+    for pt in candidates:
+        try:
+            dist = pt.DistanceTo(ref_point)
+            radius_sq = pt.X * pt.X + pt.Y * pt.Y
+            all_candidates.append((radius_sq, dist, pt))
+            if max_distance is not None and dist > (max_distance + _DIST_TOL):
+                continue
+            within_limit.append((radius_sq, dist, pt))
+        except Exception:
+            continue
+
+    def pick_best(items: Sequence[Tuple[float, float, rg.Point3d]]):
+        ordered = sorted(items, key=lambda item: (-item[0], item[1]))
+        limited = ordered[: max(1, limit)]
+        return limited[0][2], limited
+
+    if within_limit:
+        if debug_label and max_distance is not None:
+            detail = ", ".join(
+                "r={:.3f} d={:.3f}".format(math.sqrt(r_sq), dist)
+                for r_sq, dist, _ in within_limit
+            )
+            _trace_log(
+                "[filter] {} candidates (<= {:.3f}mm): {}".format(
+                    debug_label,
+                    max_distance,
+                    detail or "(none)",
+                )
+            )
+        best_pt, details = pick_best(within_limit)
+        return (best_pt, details) if return_details else best_pt
+
+    if all_candidates:
+        _trace_log(
+            "[trace] fallback: no candidates within {:.3f}mm, using outermost regardless".format(
+                max_distance or 0
+            )
+        )
+        best_pt, details = pick_best(all_candidates)
+        return (best_pt, details) if return_details else best_pt
+
+    return (None, []) if return_details else None
 
 
 # ---------------------------------------------------------------------------
@@ -454,18 +684,110 @@ def _find_finishline_point_on_section(
 
 
 def _order_by_azimuth(pts: Sequence[rg.Point3d]) -> List[rg.Point3d]:
-    # LEGACY 비활성: 메시에지 추출 기반(C 전략)만 사용.
-    _trace_log("[legacy-disabled] _order_by_azimuth")
-    return list(pts)
+    if not pts:
+        return []
+    ordered = sorted(pts, key=lambda p: math.atan2(p.Y, p.X))
+    return [rg.Point3d(p) for p in ordered]
+
+
+def _pick_start_pt(pt0: rg.Point3d, sections: Sequence[Dict[str, Sequence]]):
+    best = None
+    for idx, section in enumerate(sections):
+        candidates = _merge_candidates(section.get("controls") or [], section.get("points") or [])
+        # 시작점은 거리 제한 없이 pt0에서 가장 가까운 영역 중 외곽 선택
+        chosen = _select_outermost_nearby(
+            pt0,
+            candidates,
+            max_distance=None,
+            debug_label="start plane_idx={}".format(idx),
+        )
+        if chosen is not None:
+            dist = chosen.DistanceTo(pt0)
+            if best is None or dist < best[0]:
+                best = (dist, idx, chosen)
+    if best is None:
+        raise RuntimeError("단면 교차에서 어떤 점도 얻지 못했습니다")
+    return best[1], best[2]
+
+
+def _trace_finishline_points(
+    start_idx: int,
+    start_pt: rg.Point3d,
+    sections: Sequence[Dict[str, Sequence]],
+) -> Tuple[List[rg.Point3d], Dict[int, rg.Point3d]]:
+    total = len(sections)
+    if total == 0:
+        raise RuntimeError("Plane 후보가 없습니다")
+
+    traced: List[rg.Point3d] = [rg.Point3d(start_pt)]
+    last = rg.Point3d(start_pt)
+    section_points: Dict[int, rg.Point3d] = {start_idx: rg.Point3d(start_pt)}
+
+    for step in range(1, total):
+        idx = (start_idx + step) % total
+        candidates = _merge_candidates(
+            sections[idx].get("controls") or [],
+            sections[idx].get("points") or [],
+        )
+        _trace_log(
+            "[trace] step={} plane_idx={} ctrl_candidates={}".format(
+                step, idx, len(candidates)
+            )
+        )
+
+        # 3D 거리 1mm 제한 적용
+        best_pt = _select_outermost_nearby(
+            last,
+            candidates,
+            max_distance=_MAX_STEP_DISTANCE,
+            debug_label="step={} plane_idx={}".format(step, idx),
+        )
+
+        if best_pt is None:
+            all_sorted = sorted(candidates, key=lambda p: p.DistanceTo(last)) if candidates else []
+            min_dist = all_sorted[0].DistanceTo(last) if all_sorted else -1
+            _trace_log(
+                "[trace] STOP: no candidates within {:.3f}mm at step {} (closest {:.3f}mm)".format(
+                    _MAX_STEP_DISTANCE, step, min_dist
+                )
+            )
+            break
+
+        new_pt = rg.Point3d(best_pt)
+        move_len = new_pt.DistanceTo(last)
+        _trace_log(
+            "[trace] step={} plane_idx={} move_len={:.4f}mm".format(step, idx, move_len)
+        )
+
+        if move_len > (_MAX_STEP_DISTANCE + _DIST_TOL):
+            _trace_log(
+                "[trace] ERROR: jump {:.3f}mm at step {}, terminating trace".format(
+                    move_len, step
+                )
+            )
+            break
+
+        section_points[idx] = new_pt
+        traced.append(new_pt)
+        last = new_pt
+
+    if len(traced) > 2:
+        traced.append(rg.Point3d(traced[0]))
+
+    return traced, section_points
 
 
 def _detect_finishline_points(
     mesh: rg.Mesh,
     planes: Sequence[rg.Plane],
 ) -> Tuple[List[rg.Point3d], List[Dict[str, object]]]:
-    # LEGACY 비활성: 메시에지 추출 기반(C 전략)만 사용.
-    _trace_log("[legacy-disabled] _detect_finishline_points")
-    return [], []
+    if not planes:
+        return [], []
+    pt0 = _select_pt0(mesh)
+    sections = _collect_section_data(mesh, planes)
+    start_idx, start_pt = _pick_start_pt(pt0, sections)
+    traced_points, _ = _trace_finishline_points(start_idx, start_pt, sections)
+    return traced_points, sections
 
 
 # ---------------------------------------------------------------------------
@@ -514,7 +836,7 @@ def _visualize(
 ) -> Dict[str, List[str]]:
     added_ids: Dict[str, List[str]] = {"points": [], "mesh": []}
 
-    sphere = rg.Sphere(pt0, 0.05)
+    sphere = rg.Sphere(pt0, 0.1)
     sphere_id = _add_colored_object(doc, sphere.ToBrep(), drawing.Color.FromArgb(0, 200, 0))
     added_ids["points"].append(str(sphere_id))
 
@@ -525,7 +847,7 @@ def _visualize(
     polyline = rg.Polyline(points)
     tube_curve = polyline.ToNurbsCurve()
 
-    radii = System.Array[System.Double]([0.05])
+    radii = System.Array[System.Double]([0.03])
     params = System.Array[System.Double]([tube_curve.Domain.T0])
     pipes = rg.Brep.CreatePipe(
         tube_curve,
@@ -604,65 +926,34 @@ def detect_finish_line(
     visualize: bool = True,
     strategy: str = "A",  # 호환성 유지용 (A만 지원)
 ) -> Dict[str, object]:
-    """피니시라인 폐곡선을 계산하고 시각화 geometry를 추가한다.
-
-    알고리즘:
-      - Mesh explode 후 max-Z 파트 선택
-      - 선택 파트에서 ExtractMeshEdges(떨어짐/결합) 실행
-      - 결과 커브 중 min-Z 폐곡선 선택
-    """
+    """Edge 우선 + 조건부 단면 추적 fallback 방식으로 피니시라인을 계산한다."""
     doc = _get_active_doc(doc)
-    _trace_log("[detect] strategy=C_EDGE_ONLY")
     mesh_obj, mesh_geom = _pick_primary_mesh(doc, mesh_id=mesh_id)
     mesh_copy = mesh_geom.DuplicateMesh()
     if mesh_copy is None:
         raise RuntimeError("Mesh 복제에 실패했습니다")
 
-    candidates = _explode_components_sorted_by_max_z(mesh_copy)
-    if not candidates:
-        candidates = [mesh_copy]
+    pt0 = _select_pt0(mesh_copy)
+    sections: List[Dict[str, object]] = []
 
-    pt0 = _select_pt0(candidates[0])
-    traced_points: Optional[List[rg.Point3d]] = None
-    strategy_used = "C_EXTRACT_MESH_EDGES_UNWELDED"
-
-    for idx, target_mesh in enumerate(candidates):
-        _trace_log(
-            "[detect] candidate[{}] vertices={} faces={} key={}".format(
-                idx,
-                target_mesh.Vertices.Count,
-                target_mesh.Faces.Count,
-                _mesh_z_key(target_mesh),
+    traced_points, strategy_used = _detect_finishline_points_edge(doc, mesh_copy)
+    if traced_points and len(traced_points) >= 3:
+        edge_min_z = _points_min_z(traced_points)
+        if edge_min_z is not None and edge_min_z <= _EDGE_MIN_Z_VALID_THRESHOLD_MM:
+            _trace_log(
+                "[detect] edge result rejected min_z={:.6f} <= {:.3f}; fallback=section_tracking".format(
+                    edge_min_z,
+                    _EDGE_MIN_Z_VALID_THRESHOLD_MM,
+                )
             )
-        )
-
-        edge_curves = _extract_mesh_edges_with_command(doc, target_mesh)
-        strategy_used = "C_EXTRACT_MESH_EDGES_UNWELDED"
-        if not edge_curves:
-            _trace_log("[detect] candidate[{}] edge command produced 0 curves, fallback=naked_edges".format(idx))
-            edge_curves = _extract_naked_edges_fallback(target_mesh)
-            strategy_used = "C_FALLBACK_NAKED_EDGES"
-
-        _trace_log(
-            "[detect] candidate[{}] edge_curves={} strategy={}".format(
-                idx,
-                len(edge_curves),
-                strategy_used,
-            )
-        )
-
-        traced_points = _pick_min_z_closed_curve_points(edge_curves, doc.ModelAbsoluteTolerance)
-        if traced_points and len(traced_points) >= 3:
-            strategy_used = "{}#candidate{}".format(strategy_used, idx)
-            break
+            traced_points = None
 
     if not traced_points or len(traced_points) < 3:
-        raise RuntimeError(
-            "ExtractMeshEdges 결과에서 min-Z 폐곡선을 찾지 못했습니다 (candidates={})".format(len(candidates))
-        )
-
-    sections: List[Dict[str, object]] = []
-    planes = []
+        planes = _build_section_planes(count=_SECTION_COUNT, step_deg=_SECTION_STEP_DEG)
+        traced_points, sections = _detect_finishline_points(mesh_copy, planes)
+        if not traced_points or len(traced_points) < 3:
+            raise RuntimeError("edge/단면추적 모두 피니시라인 점을 찾지 못했습니다")
+        strategy_used = "SECTION_TRACKING_20x18_FALLBACK"
 
     viz_ids: Dict[str, List[str]] = {"points": [], "mesh": []}
     if _DEBUG_ADD_POLYLINE_CURVE:
