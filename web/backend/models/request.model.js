@@ -64,6 +64,7 @@ const requestSchema = new mongoose.Schema(
       maxDiameter: Number,
       connectionDiameter: Number,
       totalLength: Number,
+      l1: Number,
       taperAngle: Number,
       tiltAxisVector: {
         x: Number,
