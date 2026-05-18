@@ -30,6 +30,8 @@ function formatBusinessNumber(digits10) {
   return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
 }
 
+const OWNER_ONLY_WELCOME_BONUS_AMOUNTS = new Set([300000, 500000]);
+
 export async function adminOverrideWelcomeBonus(req, res) {
   try {
     const businessNumberDigits = normalizeBusinessNumberDigits(
@@ -57,6 +59,15 @@ export async function adminOverrideWelcomeBonus(req, res) {
         ? Math.max(0, Math.floor(amountRaw))
         : Number(defaults.defaultWelcomeBonusCredit ?? 0) ||
           CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultWelcomeBonusCredit;
+
+    const isAdminOwner = String(req.user?.subRole || "") === "owner";
+    if (OWNER_ONLY_WELCOME_BONUS_AMOUNTS.has(amount) && !isAdminOwner) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "30만원/50만원 무료 크레딧은 관리자 대표만 지급할 수 있습니다.",
+      });
+    }
 
     let businessAnchorId = String(
       req.body?.businessAnchorId || req.body?.businessId || "",

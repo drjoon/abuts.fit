@@ -87,6 +87,7 @@ type RequestorFreeCreditTabProps = {
   cancelingGrant: boolean;
   bonusGrantRows: BonusGrantHistoryRow[];
   filteredFreeCreditUsageRows: BusinessCredit[];
+  isAdminOwner: boolean;
 };
 
 export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
@@ -136,7 +137,11 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
     cancelingGrant,
     bonusGrantRows,
     filteredFreeCreditUsageRows,
+    isAdminOwner,
   } = props;
+  const generalFreeCreditAmounts: FreeCreditAmount[] = isAdminOwner
+    ? [30000, 50000, 300000, 500000]
+    : [30000, 50000];
   const eligibleBusinesses = businesses.filter(
     (business) => String(business.businessType || "").trim() === "requestor",
   );
@@ -299,9 +304,14 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                         ? "일반 무료 크레딧 금액"
                         : "배송비 무료 크레딧 금액"}
                     </Label>
+                    {grantCreditType === "general" && !isAdminOwner ? (
+                      <div className="text-xs text-muted-foreground">
+                        30만원/50만원은 관리자 대표 전용입니다.
+                      </div>
+                    ) : null}
                     <div className="grid grid-cols-5 gap-2">
                       {(grantCreditType === "general"
-                        ? [30000, 50000]
+                        ? generalFreeCreditAmounts
                         : [3500, 7000, 10500, 14000, 17500]
                       ).map((amount) => (
                         <Button

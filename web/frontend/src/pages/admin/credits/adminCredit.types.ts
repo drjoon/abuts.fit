@@ -164,7 +164,7 @@ export type BankTransaction = {
   matchedAt?: string;
 };
 
-export type FreeCreditAmount = 30000 | 50000;
+export type FreeCreditAmount = 30000 | 50000 | 300000 | 500000;
 
 export type BonusGrantHistoryRow = {
   _id: string;

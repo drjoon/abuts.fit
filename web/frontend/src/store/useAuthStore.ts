@@ -17,6 +17,7 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
+  subRole?: string | null;
   avatar?: string;
   profileImage?: string;
   companyName?: string;
@@ -43,6 +44,7 @@ const normalizeApiUser = (u: any): User | null => {
     name: String(u.name || ""),
     email: String(u.email || ""),
     role: u.role as UserRole,
+    subRole: u.subRole ? String(u.subRole) : null,
     profileImage:
       typeof u.profileImage === "string" ? u.profileImage : undefined,
     companyName: String(u.business || u.companyName || ""),
@@ -181,6 +183,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
           name: String(u.name || ""),
           email: String(u.email || ""),
           role: u.role as UserRole,
+          subRole: u.subRole ? String(u.subRole) : null,
           profileImage:
             typeof u.profileImage === "string" ? u.profileImage : undefined,
           companyName: String(u.business || u.companyName || ""),

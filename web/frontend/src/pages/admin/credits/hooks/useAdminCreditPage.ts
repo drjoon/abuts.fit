@@ -37,9 +37,11 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 };
 
 export function useAdminCreditPage() {
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
+  const isAdminOwner =
+    user?.role === "admin" && String(user?.subRole || "") === "owner";
 
   const [stats, setStats] = useState<CreditStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
@@ -415,6 +417,15 @@ export function useAdminCreditPage() {
       toast({
         title: "지급 이유 입력 필요",
         description: "무료 크레딧 지급 이유를 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!isAdminOwner && selectedBonusAmount >= 300000) {
+      toast({
+        title: "권한 없음",
+        description:
+          "30만원/50만원 무료 크레딧은 관리자 대표만 지급할 수 있습니다.",
         variant: "destructive",
       });
       return;
@@ -1122,5 +1133,6 @@ export function useAdminCreditPage() {
     selectedShippingCreditBusiness,
     filteredBonusGrantRows,
     filteredFreeCreditUsageRows,
+    isAdminOwner,
   };
 }

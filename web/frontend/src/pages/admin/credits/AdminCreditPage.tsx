@@ -133,6 +133,7 @@ export default function AdminCreditPage() {
             setMatchForce={state.setMatchForce}
             handleManualMatch={state.handleManualMatch}
             matching={state.matching}
+            isAdminOwner={state.isAdminOwner}
           />
         </TabsContent>
 

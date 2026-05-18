@@ -126,6 +126,7 @@ type RequestorCreditTabProps = {
   setMatchForce: (value: boolean) => void;
   handleManualMatch: () => void | Promise<void>;
   matching: boolean;
+  isAdminOwner: boolean;
 };
 
 export function RequestorCreditTab(props: RequestorCreditTabProps) {
@@ -317,6 +318,7 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
           cancelingGrant={props.cancelingGrant}
           bonusGrantRows={props.bonusGrantRows}
           filteredFreeCreditUsageRows={props.filteredFreeCreditUsageRows}
+          isAdminOwner={props.isAdminOwner}
         />
 
         <TabsContent value="verification" className="space-y-4">
