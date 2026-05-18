@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
-import { usePeriodStore } from "@/store/usePeriodStore";
+import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { apiFetch } from "@/shared/api/apiClient";
 import {
@@ -112,10 +112,6 @@ export const AdminRequestMonitoring = () => {
   const [requests, setRequests] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("all");
-  const [requestStats, setRequestStats] = useState<{
-    total?: number;
-    byStatus?: Record<string, number>;
-  }>({});
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const listScrollRef = useRef<HTMLDivElement | null>(null);
@@ -149,23 +145,6 @@ export const AdminRequestMonitoring = () => {
             r._id === requestMongoId ? { ...r, manufacturerStage: "취소" } : r,
           ),
         );
-
-        // 통계 갱신
-        const fetchStats = async () => {
-          try {
-            const statsRes = await apiFetch<any>({
-              path: "/api/admin/dashboard",
-              method: "GET",
-              token,
-            });
-            if (statsRes.ok && statsRes.data?.success) {
-              setRequestStats(statsRes.data.data?.requestStats || {});
-            }
-          } catch (error) {
-            console.error("Failed to refresh stats:", error);
-          }
-        };
-        void fetchStats();
       } else {
         alert(`삭제 실패: ${res.data?.message || "알 수 없는 오류"}`);
       }
@@ -185,15 +164,37 @@ export const AdminRequestMonitoring = () => {
     const fetchRequests = async () => {
       if (!token) return;
       try {
-        const res = await apiFetch<any>({
-          path: "/api/requests",
-          method: "GET",
-          token,
-        });
-        if (res.ok && res.data?.data?.requests) {
-          setRequests(res.data.data.requests);
-          setVisibleCount(PAGE_SIZE);
+        const LIMIT = 200;
+        let page = 1;
+        const merged: any[] = [];
+
+        while (true) {
+          const query = new URLSearchParams({
+            page: String(page),
+            limit: String(LIMIT),
+            sortBy: "createdAt",
+            sortOrder: "desc",
+          });
+
+          const res = await apiFetch<any>({
+            path: `/api/requests?${query.toString()}`,
+            method: "GET",
+            token,
+          });
+
+          if (!res.ok || !res.data?.data?.requests) break;
+
+          const pageRequests = Array.isArray(res.data.data.requests)
+            ? res.data.data.requests
+            : [];
+          merged.push(...pageRequests);
+
+          if (pageRequests.length < LIMIT) break;
+          page += 1;
         }
+
+        setRequests(merged);
+        setVisibleCount(PAGE_SIZE);
       } catch (error) {
         console.error("Failed to fetch requests:", error);
       }
@@ -201,26 +202,43 @@ export const AdminRequestMonitoring = () => {
     void fetchRequests();
   }, [token]);
 
-  useEffect(() => {
-    const fetchStats = async () => {
-      if (!token) return;
-      try {
-        const res = await apiFetch<any>({
-          path: "/api/admin/dashboard",
-          method: "GET",
-          token,
-        });
-        if (res.ok && res.data?.success) {
-          setRequestStats(res.data.data?.requestStats || {});
-        }
-      } catch (error) {
-        console.error("Failed to fetch request stats:", error);
-      }
-    };
-    void fetchStats();
-  }, [token, setRequestStats]);
+  const periodFilteredRequests = useMemo(() => {
+    const { startDate, endDate } = periodToRange(period);
+    const startMs = new Date(startDate).getTime();
+    const endMs = new Date(endDate).getTime();
 
-  const filteredRequests = requests.filter((request) => {
+    return requests.filter((request) => {
+      const createdAtMs = new Date(request?.createdAt || 0).getTime();
+      if (!Number.isFinite(createdAtMs)) return false;
+      return createdAtMs >= startMs && createdAtMs <= endMs;
+    });
+  }, [requests, period]);
+
+  const requestStats = useMemo(() => {
+    const byStatus: Record<string, number> = {
+      의뢰: 0,
+      CAM: 0,
+      가공: 0,
+      "세척.패킹": 0,
+      "포장.발송": 0,
+      추적관리: 0,
+      취소: 0,
+    };
+
+    periodFilteredRequests.forEach((request) => {
+      const stage = getNormalizedStageLabel(request);
+      if (byStatus[stage] != null) {
+        byStatus[stage] += 1;
+      }
+    });
+
+    return {
+      total: periodFilteredRequests.length,
+      byStatus,
+    };
+  }, [periodFilteredRequests]);
+
+  const filteredRequests = periodFilteredRequests.filter((request) => {
     const caseInfos = request.caseInfos || {};
     const requestor = request.requestor || {};
     const effectiveStatus = getNormalizedStageLabel(request);
@@ -246,7 +264,7 @@ export const AdminRequestMonitoring = () => {
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [searchQuery, selectedStatus]);
+  }, [searchQuery, selectedStatus, period]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
