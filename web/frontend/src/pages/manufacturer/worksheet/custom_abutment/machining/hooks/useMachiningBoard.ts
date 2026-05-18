@@ -783,8 +783,8 @@ export const useMachiningBoard = ({
       toast({
         title: `${mid} 가공 알람`,
         description: alarmSummary
-          ? `${alarmSummary}${data?.reason ? ` · ${String(data.reason)}` : ""}`
-          : String(data?.reason || "CNC 알람으로 가공이 중단되었습니다."),
+          ? `${alarmSummary}${data?.reason ? ` · ${String(data.reason)}` : ""}${data?.errorCode ? ` · 코드: ${String(data.errorCode)}` : ""}`
+          : `${String(data?.reason || "CNC 알람으로 가공이 중단되었습니다.")}${data?.errorCode ? ` · 코드: ${String(data.errorCode)}` : ""}`,
         variant: "destructive",
       });
 
@@ -809,7 +809,7 @@ export const useMachiningBoard = ({
                 `type=${String(alarm?.type ?? "")}, no=${String(alarm?.no ?? "")}`,
             )
             .join(" / ")
-        : String(data?.message || "CNC 알람이 감지되었습니다.");
+        : `${String(data?.message || "CNC 알람이 감지되었습니다.")}${data?.errorCode ? ` · 코드: ${String(data.errorCode)}` : ""}`;
 
       const alarmToastKey = `${mid}:${alarmText}`;
       const now = Date.now();

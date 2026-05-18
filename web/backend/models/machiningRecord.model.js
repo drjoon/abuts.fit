@@ -70,6 +70,10 @@ const machiningRecordSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    errorCode: {
+      type: String,
+      default: null,
+    },
     alarms: {
       type: Array,
       default: [],

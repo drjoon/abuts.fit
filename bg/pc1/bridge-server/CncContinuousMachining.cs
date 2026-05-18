@@ -209,7 +209,7 @@ private static async Task<bool> TryConsumeBackendQueueJob(string machineId, stri
         return false;
     }
 }
-private static async Task NotifyMachiningFailed(CncJobItem job, string machineId, string error, List<object> alarms = null)
+private static async Task NotifyMachiningFailed(CncJobItem job, string machineId, string error, List<object> alarms = null, string errorCode = null)
 {
 try
 {
@@ -222,6 +222,7 @@ requestId = job?.requestId,
 jobId = job?.id,
 bridgePath = job?.bridgePath,
 reason = error,
+errorCode = string.IsNullOrWhiteSpace(errorCode) ? null : errorCode,
 alarms = alarms ?? new List<object>()
 };
 var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
@@ -670,7 +671,7 @@ lock (StateLock)
 state.LastMachiningFailJobId = jobId;
 }
 _ = Task.Run(() => NotifyMachiningTick(state.CurrentJob, machineId, "ALARM", Newtonsoft.Json.JsonConvert.SerializeObject(alarmList)));
-_ = Task.Run(() => NotifyMachiningFailed(state.CurrentJob, machineId, "alarm", alarmList));
+_ = Task.Run(() => NotifyMachiningFailed(state.CurrentJob, machineId, "alarm", alarmList, "CNC_ALARM_DETECTED"));
 }
 // CNC 알람 코드 참고:
 // - 알람 501 (type=4, no=501): X축 overflow - 제한 범위를 넘는 X축 공구 이동 좌표
@@ -862,7 +863,7 @@ if (shouldSendAwaitingAlarm)
 {
 var awaitingAlarmJson = Newtonsoft.Json.JsonConvert.SerializeObject(awaitingAlarms);
 _ = Task.Run(() => NotifyMachiningTick(awaitingJob, machineId, "ALARM", awaitingAlarmJson));
-_ = Task.Run(() => NotifyMachiningFailed(awaitingJob, machineId, "alarm", awaitingAlarms));
+_ = Task.Run(() => NotifyMachiningFailed(awaitingJob, machineId, "alarm", awaitingAlarms, "CNC_ALARM_DETECTED"));
 }
 Console.WriteLine("[CncMachining] awaiting-start alarm machine={0} alarms={1}", machineId, Newtonsoft.Json.JsonConvert.SerializeObject(awaitingAlarms));
 _ = CncJobQueue.TryRemove(machineId, awaitingJob?.id);
@@ -895,7 +896,7 @@ state.ConsumeFailCount = 0;
 state.NextConsumeAttemptUtc = DateTime.MinValue;
 state.MockCompletionDueUtc = DateTime.MinValue;
 }
-_ = Task.Run(() => NotifyMachiningFailed(stuckJob, machineId, "awaiting-start-timeout", null));
+_ = Task.Run(() => NotifyMachiningFailed(stuckJob, machineId, "awaiting-start-timeout", null, "CNC_AWAITING_START_TIMEOUT"));
 _ = CncJobQueue.TryRemove(machineId, stuckJob?.id);
 Console.WriteLine("[CncMachining] awaiting-start timeout machine={0} jobId={1} slot=O{2}", machineId, stuckJob?.id, stuckSlot);
 return;
@@ -1171,12 +1172,12 @@ if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var modeErr))
         
         // 백엔드에 실패 통보
         var failureMessage = "CNC 장비 연결 실패. 장비 상태를 확인하세요: 1) 전원 ON, 2) Auto 모드, 3) Idle 상태, 4) Hi-Link 서비스 활성화";
-        _ = Task.Run(() => NotifyMachiningFailed(job, machineId, failureMessage, null));
+        _ = Task.Run(() => NotifyMachiningFailed(job, machineId, failureMessage, null, "CNC_OPEN_MACHINE_HANDLE_FAILED"));
     }
     else
     {
         Console.WriteLine("[CncMachining] edit mode failed machine={0} err={1}", machineId, modeErr);
-        _ = Task.Run(() => NotifyMachiningFailed(job, machineId, $"Edit 모드 전환 실패: {modeErr}", null));
+        _ = Task.Run(() => NotifyMachiningFailed(job, machineId, $"Edit 모드 전환 실패: {modeErr}", null, "CNC_EDIT_MODE_FAILED"));
     }
     return false;
 }

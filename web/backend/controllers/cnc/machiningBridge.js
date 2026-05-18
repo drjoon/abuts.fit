@@ -1785,6 +1785,9 @@ export async function recordMachiningFailForBridge(req, res) {
       ? String(req.body.bridgePath).trim()
       : "";
     const reason = req.body?.reason ? String(req.body.reason).trim() : "";
+    const errorCode = req.body?.errorCode
+      ? String(req.body.errorCode).trim()
+      : "";
     const alarms = Array.isArray(req.body?.alarms) ? req.body.alarms : [];
 
     const meta = await resolveJobMetaFromSnapshot({
@@ -1801,7 +1804,7 @@ export async function recordMachiningFailForBridge(req, res) {
       status: "failed",
       eventType: "MACHINING_FAILED",
       message: reason || "FAILED",
-      metadata: { jobId: jobId || null, alarms },
+      metadata: { jobId: jobId || null, errorCode: errorCode || null, alarms },
     });
 
     if (requestId) {
@@ -1822,6 +1825,7 @@ export async function recordMachiningFailForBridge(req, res) {
           originalFileName: meta.originalFileName,
           status: "FAILED",
           failReason: reason || "FAILED",
+          errorCode: errorCode || null,
           alarms,
           completedAt: now,
         };
@@ -1891,6 +1895,7 @@ export async function recordMachiningFailForBridge(req, res) {
             $set: {
               status: "FAILED",
               failReason: reason || "FAILED",
+              errorCode: errorCode || null,
               alarms,
               completedAt: now,
               fileName: meta.fileName,
@@ -1913,6 +1918,7 @@ export async function recordMachiningFailForBridge(req, res) {
         bridgePath: bridgePathRaw || null,
         status: "FAILED",
         reason: reason || "FAILED",
+        errorCode: errorCode || null,
         alarms,
         failedAt: now,
       };
@@ -1925,6 +1931,7 @@ export async function recordMachiningFailForBridge(req, res) {
         jobId: jobId || null,
         requestId: requestId || null,
         message: reason || "FAILED",
+        errorCode: errorCode || null,
         alarms,
         alarmAt: now,
       });

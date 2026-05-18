@@ -348,6 +348,7 @@ export function onCncMachiningAlarm(
     jobId: string | null;
     requestId: string | null;
     message?: string | null;
+    errorCode?: string | null;
     alarms?: any[];
     alarmAt: string;
   }) => void,
@@ -380,6 +381,7 @@ export function onCncMachiningFailed(
     bridgePath?: string | null;
     status: "FAILED";
     reason?: string | null;
+    errorCode?: string | null;
     alarms?: any[];
     failedAt: string;
   }) => void,
