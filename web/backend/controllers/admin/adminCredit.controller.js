@@ -768,6 +768,23 @@ export async function adminGetCreditStats(req, res) {
                 ],
               },
             },
+            // 배송비 환불 분리 집계 (fallback 계산용)
+            refundShippingSum: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$type", "REFUND"] },
+                      {
+                        $in: ["$refType", ["SHIPPING_PACKAGE", "SHIPPING_FEE"]],
+                      },
+                    ],
+                  },
+                  { $max: [{ $abs: "$amount" }, 0] },
+                  0,
+                ],
+              },
+            },
             chargedBonusRequest: {
               $sum: {
                 $cond: [
@@ -799,6 +816,48 @@ export async function adminGetCreditStats(req, res) {
             adjustSum: {
               $sum: {
                 $cond: [{ $eq: ["$type", "ADJUST"] }, "$amount", 0],
+              },
+            },
+            spentTotal: {
+              $sum: {
+                $cond: [{ $eq: ["$type", "SPEND"] }, { $abs: "$amount" }, 0],
+              },
+            },
+            spentByRequestSum: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$type", "SPEND"] },
+                      {
+                        $not: {
+                          $in: [
+                            "$refType",
+                            ["SHIPPING_PACKAGE", "SHIPPING_FEE"],
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                  { $abs: "$amount" },
+                  0,
+                ],
+              },
+            },
+            spentByShippingSum: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$type", "SPEND"] },
+                      {
+                        $in: ["$refType", ["SHIPPING_PACKAGE", "SHIPPING_FEE"]],
+                      },
+                    ],
+                  },
+                  { $abs: "$amount" },
+                  0,
+                ],
               },
             },
             spentPaidSum: {
@@ -851,13 +910,58 @@ export async function adminGetCreditStats(req, res) {
     const totalSpentBonusShippingAmount = Number(
       summary.spentBonusShippingSum || 0,
     );
-    // REFUND는 소비를 되돌리는 것이므로 순소비에서 차감
     const refundSum = Number(summary.refundSum || 0);
-    const netSpentPaidAmount = Math.max(0, totalSpentPaidAmount - refundSum);
+    const refundShippingSum = Number(summary.refundShippingSum || 0);
+    const refundRequestSum = refundSum - refundShippingSum;
+    const spentTotal = Math.max(0, Number(summary.spentTotal || 0) - refundSum);
+
+    const spentBonusTotal =
+      totalSpentBonusRequestAmount + totalSpentBonusShippingAmount;
+    let netSpentPaidAmount = 0;
+    let resolvedSpentBonusRequestAmount = 0;
+    let resolvedSpentBonusShippingAmount = 0;
+
+    if (
+      Math.round(totalSpentPaidAmount + spentBonusTotal) ===
+      Math.round(spentTotal)
+    ) {
+      netSpentPaidAmount = Math.max(0, totalSpentPaidAmount);
+      resolvedSpentBonusRequestAmount = Math.max(
+        0,
+        totalSpentBonusRequestAmount,
+      );
+      resolvedSpentBonusShippingAmount = Math.max(
+        0,
+        totalSpentBonusShippingAmount,
+      );
+    } else {
+      const spentByRequest = Math.max(
+        0,
+        Number(summary.spentByRequestSum || 0) - refundRequestSum,
+      );
+      const spentByShipping = Math.max(
+        0,
+        Number(summary.spentByShippingSum || 0) - refundShippingSum,
+      );
+
+      const chargedBonusRequest = Number(summary.chargedBonusRequest || 0);
+      const chargedBonusShipping = Number(summary.chargedBonusShipping || 0);
+
+      const bonusShippingUsed = Math.min(chargedBonusShipping, spentByShipping);
+      const paidFromShipping = spentByShipping - bonusShippingUsed;
+
+      const bonusRequestUsed = Math.min(chargedBonusRequest, spentByRequest);
+      const paidFromRequest = spentByRequest - bonusRequestUsed;
+
+      netSpentPaidAmount = Math.max(0, paidFromRequest + paidFromShipping);
+      resolvedSpentBonusRequestAmount = Math.max(0, bonusRequestUsed);
+      resolvedSpentBonusShippingAmount = Math.max(0, bonusShippingUsed);
+    }
+
     const totalSpent =
       netSpentPaidAmount +
-      totalSpentBonusRequestAmount +
-      totalSpentBonusShippingAmount;
+      resolvedSpentBonusRequestAmount +
+      resolvedSpentBonusShippingAmount;
 
     const chargedPaid = Number(summary.chargedPaid || 0);
     const chargedBonusRequest = Number(summary.chargedBonusRequest || 0);
@@ -875,11 +979,11 @@ export async function adminGetCreditStats(req, res) {
     );
     const totalBonusRequestCredit = Math.max(
       0,
-      chargedBonusRequest - totalSpentBonusRequestAmount,
+      chargedBonusRequest - resolvedSpentBonusRequestAmount,
     );
     const totalBonusShippingCredit = Math.max(
       0,
-      chargedBonusShipping - totalSpentBonusShippingAmount,
+      chargedBonusShipping - resolvedSpentBonusShippingAmount,
     );
 
     return res.json({
@@ -900,11 +1004,11 @@ export async function adminGetCreditStats(req, res) {
         totalSpentPaidAmount: Math.max(0, Math.round(netSpentPaidAmount)),
         totalSpentBonusRequestAmount: Math.max(
           0,
-          Math.round(totalSpentBonusRequestAmount),
+          Math.round(resolvedSpentBonusRequestAmount),
         ),
         totalSpentBonusShippingAmount: Math.max(
           0,
-          Math.round(totalSpentBonusShippingAmount),
+          Math.round(resolvedSpentBonusShippingAmount),
         ),
         totalPaidCredit: Math.max(0, Math.round(totalPaidCredit)),
         totalBonusRequestCredit: Math.max(
