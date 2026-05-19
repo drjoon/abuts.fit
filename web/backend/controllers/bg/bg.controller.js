@@ -1556,6 +1556,38 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
 
   await request.save();
 
+  const normalizedUpdatedRequest = await normalizeRequestForResponse(request);
+  const eventMetadata = {
+    maxDiameter,
+    connectionDiameter,
+    totalLength,
+    updatedAt: metadataUpdatedAt,
+    l1,
+    taperAngle,
+    tiltAxisVector,
+    frontPoint,
+    taperGuide: request.caseInfos?.taperGuide,
+  };
+
+  try {
+    emitAppEventToRoles(
+      ["manufacturer", "admin"],
+      "request:stl-metadata-updated",
+      {
+        source: "register-stl-metadata",
+        requestId: request.requestId,
+        requestMongoId: String(request._id || "").trim() || null,
+        metadata: eventMetadata,
+        request: normalizedUpdatedRequest,
+      },
+    );
+  } catch (eventError) {
+    console.warn(
+      `[registerStlMetadata] failed to emit metadata update event for requestId=${request.requestId}:`,
+      eventError?.message || eventError,
+    );
+  }
+
   console.log(
     `[registerStlMetadata] requestId=${request.requestId} ` +
       `maxDiameter=${maxDiameter?.toFixed(2)}mm ` +
@@ -1656,11 +1688,16 @@ export const recalculateStlMetadata = asyncHandler(async (req, res) => {
 
   try {
     const axios = (await import("axios")).default;
+    const connectionTargetDiameter = await resolveConnectionTargetDiameter(
+      request.caseInfos,
+    );
+
     const response = await axios.post(
       `${rhinoBaseUrl}/recalculate-metadata`,
       {
         requestId: request.requestId,
         requestMongoId: request._id.toString(),
+        connectionTargetDiameter,
       },
       {
         headers: withBridgeHeaders(),

@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from "react";
 import { request as api } from "@/shared/api/apiClient";
+import { onAppEvent } from "@/shared/realtime/socket";
 
 const RECALCULATE_POLL_INTERVAL_MS = 1000;
 const RECALCULATE_POLL_MAX_ATTEMPTS = 20;
@@ -19,6 +20,7 @@ export interface StlMetadata {
   taperAngle?: number;
   tiltAxisVector?: { x: number; y: number; z: number } | null;
   frontPoint?: { x: number; y: number; z: number } | null;
+  taperGuide?: unknown;
 }
 
 function toRevisionValue(metadata: StlMetadata | null | undefined): string {
@@ -43,7 +45,9 @@ async function fetchStlMetadata(requestId: string): Promise<{
     path: `/bg/stl-metadata/${requestId}`,
   });
 
-  const apiData = response.data as any;
+  const apiData = response.data as {
+    data?: { metadata?: StlMetadata; cached?: boolean };
+  };
   const actualData = apiData?.data;
   if (actualData?.metadata) {
     return {
@@ -79,22 +83,50 @@ export function useStlMetadata(requestId?: string): UseStlMetadataResult {
       return;
     }
 
+    let cancelled = false;
+
     const fetchMetadata = async () => {
       setLoading(true);
       setError(null);
 
       try {
         const fetched = await fetchStlMetadata(requestId);
+        if (cancelled) return;
         setMetadata(fetched.metadata);
         setCached(fetched.cached);
-      } catch (err: any) {
-        setError(err.message || "Failed to fetch metadata");
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error ? err.message : "Failed to fetch metadata";
+        if (!cancelled) setError(message);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchMetadata();
+
+    const unsubscribe = onAppEvent((evt) => {
+      const type = String(evt?.type || "").trim();
+      if (type !== "request:stl-metadata-updated") return;
+
+      const payload = evt?.data || {};
+      const eventRequestId = String(payload?.requestId || "").trim();
+      if (eventRequestId !== requestId) return;
+
+      const eventMetadata = payload?.metadata;
+      if (eventMetadata && typeof eventMetadata === "object") {
+        setMetadata(eventMetadata as StlMetadata);
+        setCached(true);
+        setError(null);
+      } else {
+        void fetchMetadata();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, [requestId]);
 
   const recalculate = async () => {
@@ -146,8 +178,10 @@ export function useStlMetadata(requestId?: string): UseStlMetadataResult {
           "메타데이터 재계산이 아직 반영되지 않았습니다. 잠시 후 다시 시도해주세요.",
         );
       }
-    } catch (err: any) {
-      setError(err.message || "Failed to recalculate metadata");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to recalculate metadata";
+      setError(message);
       throw err;
     } finally {
       setLoading(false);

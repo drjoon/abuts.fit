@@ -6,16 +6,15 @@ from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
+
 # NOTE: UploadFile/File 여전히 /api/rhino/fillhole/direct에서 사용 중
 from pydantic import BaseModel
 
-from . import settings
-from . import state
+from . import settings, state
 from .logger import log
-from .processing import process_single_stl, upload_via_presign, enqueue_stl_job
+from .processing import enqueue_stl_job, process_single_stl, upload_via_presign
 from .rhino_runner import run_rhino_python
 from .stl_metadata import calculate_and_register_metadata
-
 
 router = APIRouter()
 
@@ -42,9 +41,15 @@ async def process_file_api(req: ProcessFileRequest):
         # [정책] 로컬 캐시가 없으면 백엔드(/bg/original-file → S3)에서 다운로드
         # SSOT: 백엔드 DB + S3가 원본, 로컬 storage는 임시 캐시
         from .processing import download_original_to_input
-        downloaded = download_original_to_input({"filePath": name, "requestId": req.requestId})
+
+        downloaded = download_original_to_input(
+            {"filePath": name, "requestId": req.requestId}
+        )
         if not downloaded or not p.exists():
-            raise HTTPException(status_code=404, detail=f"File not found locally or on backend: {safe_name}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"File not found locally or on backend: {safe_name}",
+            )
 
     # [정책] FIFO 큐에 추가 - 현재 처리 중인 작업을 중단하지 않고 순차 처리
     # BackgroundTasks.add_task 는 사용하지 않는다: 여러 작업이 동시에 실행되어 Rhino pipe를 경쟁하는 문제가 발생함.
@@ -56,8 +61,19 @@ async def process_file_api(req: ProcessFileRequest):
     if result == "in_flight":
         return {"ok": True, "message": "Already processing", "status": "in_flight"}
     if result == "queued_already":
-        return {"ok": True, "message": "Already queued", "status": "queued_already", "queueSize": queue_size}
-    return {"ok": True, "message": "Queued for processing", "status": "enqueued", "filePath": safe_name, "queueSize": queue_size}
+        return {
+            "ok": True,
+            "message": "Already queued",
+            "status": "queued_already",
+            "queueSize": queue_size,
+        }
+    return {
+        "ok": True,
+        "message": "Queued for processing",
+        "status": "enqueued",
+        "filePath": safe_name,
+        "queueSize": queue_size,
+    }
 
 
 # [정책] /api/rhino/upload-stl 제거
@@ -138,10 +154,14 @@ async def store_fillhole(req: StoreFillHoleRequest):
     if not input_path.exists() or not input_path.is_file():
         # [정책] 로컬 캐시가 없으면 백엔드(/bg/original-file → S3)에서 다운로드
         from .processing import download_original_to_input
+
         req_id = req.requestId or settings.extract_request_id_from_name(safe_name)
         download_original_to_input({"filePath": req.name, "requestId": req_id})
         if not input_path.exists() or not input_path.is_file():
-            raise HTTPException(status_code=404, detail=f"input 파일을 찾을 수 없습니다 (로컬 및 백엔드 모두 없음): {safe_name}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"input 파일을 찾을 수 없습니다 (로컬 및 백엔드 모두 없음): {safe_name}",
+            )
 
     in_base = Path(safe_name).stem or "base"
     out_name = settings.sanitize_filename(f"{in_base}.filled.stl")
@@ -151,16 +171,25 @@ async def store_fillhole(req: StoreFillHoleRequest):
     connection_target_diameter: float | None = None
     if req.connectionTargetDiameter is not None and req.connectionTargetDiameter > 0:
         connection_target_diameter = req.connectionTargetDiameter
-        log(f"[store/fillhole] connectionTargetDiameter from request: {connection_target_diameter:.4f}mm")
+        log(
+            f"[store/fillhole] connectionTargetDiameter from request: {connection_target_diameter:.4f}mm"
+        )
     elif req.requestId:
         from .processing import fetch_connection_target_diameter
+
         connection_target_diameter = fetch_connection_target_diameter(req.requestId)
         if connection_target_diameter is not None:
-            log(f"[store/fillhole] connectionTargetDiameter from backend: {connection_target_diameter:.4f}mm (requestId={req.requestId})")
+            log(
+                f"[store/fillhole] connectionTargetDiameter from backend: {connection_target_diameter:.4f}mm (requestId={req.requestId})"
+            )
         else:
-            log(f"[store/fillhole] connectionTargetDiameter not found for requestId={req.requestId}; using default")
+            log(
+                f"[store/fillhole] connectionTargetDiameter not found for requestId={req.requestId}; using default"
+            )
     else:
-        log(f"[store/fillhole] no requestId or connectionTargetDiameter provided; using default 3.33mm")
+        log(
+            f"[store/fillhole] no requestId or connectionTargetDiameter provided; using default 3.33mm"
+        )
 
     try:
         await run_rhino_python(
@@ -187,15 +216,19 @@ async def store_fillhole(req: StoreFillHoleRequest):
 
 class RecalculateMetadataRequest(BaseModel):
     requestId: str
+    connectionTargetDiameter: float | None = None
 
 
 @router.post("/recalculate-metadata")
-async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks: BackgroundTasks):
+async def recalculate_metadata(
+    req: RecalculateMetadataRequest, background_tasks: BackgroundTasks
+):
     """
     프론트엔드에서 메타데이터 재계산 요청 시 호출
     """
     try:
         import os
+
         import requests
 
         # 백엔드에서 원본 STL 파일 경로 및 finish line 조회
@@ -204,11 +237,15 @@ async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks
         # Request 메타 정보 조회
         meta_url = f"{backend_url}/bg/request-meta"
         headers = {}
-        secret = os.getenv("RHINO_SHARED_SECRET") or os.getenv("BRIDGE_SHARED_SECRET", "")
+        secret = os.getenv("RHINO_SHARED_SECRET") or os.getenv(
+            "BRIDGE_SHARED_SECRET", ""
+        )
         if secret:
             headers["X-Bridge-Secret"] = secret
 
-        log(f"[recalculate-metadata] Fetching meta from: {meta_url}?requestId={req.requestId}")
+        log(
+            f"[recalculate-metadata] Fetching meta from: {meta_url}?requestId={req.requestId}"
+        )
 
         meta_resp = requests.get(
             meta_url,
@@ -220,18 +257,24 @@ async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks
         log(f"[recalculate-metadata] Response status: {meta_resp.status_code}")
 
         if meta_resp.status_code != 200:
-            log(f"[recalculate-metadata] Failed to get request meta: {meta_resp.status_code}")
+            log(
+                f"[recalculate-metadata] Failed to get request meta: {meta_resp.status_code}"
+            )
             log(f"[recalculate-metadata] Response text: {meta_resp.text[:500]}")
             raise HTTPException(status_code=404, detail="Request not found")
 
         # JSON 응답 파싱
         try:
             response_json = meta_resp.json()
-            log(f"[recalculate-metadata] Response JSON keys: {list(response_json.keys()) if response_json else 'None'}")
+            log(
+                f"[recalculate-metadata] Response JSON keys: {list(response_json.keys()) if response_json else 'None'}"
+            )
         except Exception as json_err:
             log(f"[recalculate-metadata] Failed to parse JSON response: {json_err}")
             log(f"[recalculate-metadata] Response text: {meta_resp.text[:500]}")
-            raise HTTPException(status_code=500, detail="Invalid JSON response from backend")
+            raise HTTPException(
+                status_code=500, detail="Invalid JSON response from backend"
+            )
 
         if not response_json:
             log(f"[recalculate-metadata] Empty response from backend")
@@ -239,10 +282,14 @@ async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks
 
         # ApiResponse 형식: { statusCode, data, message, success }
         meta_data = response_json.get("data") or {}
-        log(f"[recalculate-metadata] meta_data keys: {list(meta_data.keys()) if isinstance(meta_data, dict) else 'Not a dict'}")
+        log(
+            f"[recalculate-metadata] meta_data keys: {list(meta_data.keys()) if isinstance(meta_data, dict) else 'Not a dict'}"
+        )
 
         case_infos = meta_data.get("caseInfos") or {}
-        log(f"[recalculate-metadata] caseInfos keys: {list(case_infos.keys()) if isinstance(case_infos, dict) else 'Not a dict'}")
+        log(
+            f"[recalculate-metadata] caseInfos keys: {list(case_infos.keys()) if isinstance(case_infos, dict) else 'Not a dict'}"
+        )
 
         cam_file = case_infos.get("camFile") or {}
         file_path = cam_file.get("filePath")
@@ -250,10 +297,14 @@ async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks
 
         finish_line = case_infos.get("finishLine") or {}
         finish_line_points = finish_line.get("points")
-        log(f"[recalculate-metadata] finishLine points count: {len(finish_line_points) if finish_line_points else 0}")
+        log(
+            f"[recalculate-metadata] finishLine points count: {len(finish_line_points) if finish_line_points else 0}"
+        )
 
         if not file_path:
-            raise HTTPException(status_code=400, detail="STL file path not found in request")
+            raise HTTPException(
+                status_code=400, detail="STL file path not found in request"
+            )
 
         # 로컬 STL 파일 경로 확인 (filled.stl 우선)
         safe_name = settings.sanitize_filename(Path(file_path).name)
@@ -266,22 +317,52 @@ async def recalculate_metadata(req: RecalculateMetadataRequest, background_tasks
             stl_path = settings.STORE_IN_DIR / original_name
             if not stl_path.exists():
                 from .processing import download_original_to_input
-                download_original_to_input({"filePath": file_path, "requestId": req.requestId})
+
+                download_original_to_input(
+                    {"filePath": file_path, "requestId": req.requestId}
+                )
             if not stl_path.exists():
-                raise HTTPException(status_code=404, detail=f"STL file not found locally or on backend: {file_path}")
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"STL file not found locally or on backend: {file_path}",
+                )
 
         # 백그라운드에서 메타데이터 계산 및 등록
         def _calculate():
             # 1. 메타데이터 재계산 및 백엔드 등록
+            connection_target_diameter = req.connectionTargetDiameter
+            if connection_target_diameter is None or connection_target_diameter <= 0:
+                try:
+                    from .processing import fetch_connection_target_diameter
+
+                    connection_target_diameter = fetch_connection_target_diameter(
+                        req.requestId
+                    )
+                except Exception as diameter_err:
+                    log(
+                        f"[recalculate-metadata] Failed to resolve connection target diameter: {diameter_err}"
+                    )
+                    connection_target_diameter = None
+            if (
+                connection_target_diameter is not None
+                and connection_target_diameter > 0
+            ):
+                log(
+                    f"[recalculate-metadata] requestId={req.requestId} connection target diameter={connection_target_diameter:.4f}mm"
+                )
+
             stl_metadata = calculate_and_register_metadata(
                 stl_path,
                 req.requestId,
                 None,  # requestMongoId는 백엔드에서 찾음
                 finish_line_points,
+                connection_target_diameter=connection_target_diameter,
             )
 
             # 2. S3 재업로드 및 백엔드 캐시 무효화
-            log(f"[recalculate-metadata] Uploading to S3 for cache invalidation: {req.requestId}")
+            log(
+                f"[recalculate-metadata] Uploading to S3 for cache invalidation: {req.requestId}"
+            )
             metadata_payload = {"stlMetadata": stl_metadata} if stl_metadata else {}
             upload_via_presign(
                 stl_path,

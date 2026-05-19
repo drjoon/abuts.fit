@@ -5,13 +5,12 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from . import settings
-from . import state
+from . import settings, state
 from .logger import log
 from .processing import start_recovery_thread, stl_queue_worker
 from .rhino_pool import refresh_rhino_pool
-from .routes_basic import router as basic_router
 from .routes_api import router as api_router
+from .routes_basic import router as basic_router
 
 
 async def _queue_worker_watchdog() -> None:
@@ -40,14 +39,15 @@ def _fmt_age(ts) -> str:
         return "never"
     try:
         import time as _t
+
         delta = _t.time() - float(ts)
         if delta < 0:
             return "future?"
         if delta < 90:
             return f"{delta:.1f}s ago"
         if delta < 5400:
-            return f"{delta/60:.1f}m ago"
-        return f"{delta/3600:.1f}h ago"
+            return f"{delta / 60:.1f}m ago"
+        return f"{delta / 3600:.1f}h ago"
     except Exception:
         return "?"
 
@@ -62,6 +62,7 @@ async def _health_heartbeat() -> None:
     - last_subprocess_done_ts vs started_ts 비교로 RhinoCode 자식 hang 감지
     """
     import time as _t
+
     interval = float(settings.os.getenv("RHINO_HEARTBEAT_SEC", "60"))
     stuck_warn_sec = float(settings.os.getenv("RHINO_STUCK_WARN_SEC", "300"))
     while True:
@@ -187,9 +188,12 @@ def create_app():
         path = request.url.path
         if path == "/api/rhino/internal/job-callback":
             return await call_next(request)
-        is_protected = path.startswith("/api/rhino/") or path.startswith(
-            "/control/"
-        ) or path.startswith("/history/") or path.startswith("/health/diag")
+        is_protected = (
+            path.startswith("/api/rhino/")
+            or path.startswith("/control/")
+            or path.startswith("/history/")
+            or path.startswith("/health/diag")
+        )
 
         if not is_protected:
             return await call_next(request)
@@ -197,9 +201,7 @@ def create_app():
         # IP 화이트리스트 검증 (매 요청마다 동적으로 로드)
         allow_ips_raw = settings.os.getenv("RHINO_ALLOW_IPS", "").strip()
         allow_ips_set = {
-            ip.strip()
-            for ip in allow_ips_raw.split(",")
-            if ip and ip.strip()
+            ip.strip() for ip in allow_ips_raw.split(",") if ip and ip.strip()
         }
 
         if allow_ips_set:
@@ -301,8 +303,15 @@ def create_app():
         # 요청이 올 때까지 기다리지 않고 선제적으로 갱신한다. 하루 누적되는 stale pipeId로
         # 인한 지연/실패를 예방.
         asyncio.create_task(_rhino_pool_refresher())
-        # [diag] 60초마다 system health 스냅샷 로그 + stuck 자동 감지
-        asyncio.create_task(_health_heartbeat())
+        # heartbeat 로그는 기본 비활성화(로그 스팸 방지). 필요 시 env로 활성화.
+        if settings.os.getenv("RHINO_HEARTBEAT_ENABLED", "false").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        ):
+            asyncio.create_task(_health_heartbeat())
+            log("[startup] heartbeat enabled")
         # startup recovery는 backend pending 목록을 읽고 로컬 입력 캐시를 채우는 I/O 작업이라
         # FastAPI 메인 루프를 막지 않도록 별도 thread에서 시작한다.
         start_recovery_thread()

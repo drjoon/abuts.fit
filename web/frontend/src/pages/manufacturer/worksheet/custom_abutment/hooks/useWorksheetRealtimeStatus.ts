@@ -20,7 +20,10 @@ type UseWorksheetRealtimeStatusParams = {
   fetchRequestsCore?: (silent?: boolean, append?: boolean) => Promise<any>;
   previewOpen?: boolean;
   previewFiles?: any;
-  handleOpenPreview?: (req: ManufacturerRequest) => Promise<void>;
+  handleOpenPreview?: (
+    req: ManufacturerRequest,
+    opts?: { forceRefresh?: boolean },
+  ) => Promise<void>;
   removeOnMachiningComplete?: boolean;
   matchesCurrentPage?: (req: ManufacturerRequest) => boolean;
 };
@@ -341,6 +344,49 @@ export function useWorksheetRealtimeStatus({
           }
           // 전체 목록 재조회로 탭 필터링도 갱신
           if (fetchRequests) void fetchRequests(true);
+          return;
+        }
+        case "request:stl-metadata-updated": {
+          const eventRequest = payload?.request as
+            | ManufacturerRequest
+            | undefined;
+          if (eventRequest) {
+            setRequests((prev) => applyRequestPatch(prev, eventRequest));
+          }
+
+          if (fetchRequests) void fetchRequests(true);
+
+          const {
+            previewOpen: currentPreviewOpen,
+            previewFiles: currentPreviewFiles,
+            fetchRequestsCore: currentFetchRequestsCore,
+            handleOpenPreview: currentHandleOpenPreview,
+          } = latestRef.current;
+
+          if (
+            !currentPreviewOpen ||
+            !currentFetchRequestsCore ||
+            !currentHandleOpenPreview
+          ) {
+            return;
+          }
+
+          const currentRid = String(
+            currentPreviewFiles?.request?.requestId || "",
+          ).trim();
+          if (currentRid && currentRid !== requestId) return;
+
+          void (async () => {
+            const list = await currentFetchRequestsCore(true);
+            if (!Array.isArray(list) || list.length === 0) return;
+            const updated = list.find(
+              (r: any) => String(r?.requestId || "").trim() === requestId,
+            );
+            if (!updated) return;
+            await currentHandleOpenPreview(updated as any, {
+              forceRefresh: true,
+            });
+          })();
           return;
         }
         case "request:cam-trigger-failed":
