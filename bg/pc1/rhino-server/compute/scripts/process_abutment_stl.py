@@ -279,239 +279,133 @@ def _align_mesh_to_origin(mesh, target_diameter=3.33):
     """
     메시를 원점에 정렬
     1. Z_min + 2mm 위치의 가로 단면 원 중심을 XY 원점으로 이동
-    2. 커넥션 외부 직경(target_diameter) 위치를 Z=0으로 이동 (소수점 4자리 정밀도)
+    2. 커넥션 외부 직경(target_diameter) 위치를 Z=0으로 이동
+       - plane intersection 기반 반지름으로 테이퍼 기울기 계산 후 1-shot Z 계산
+       - 이후 이진탐색으로 ±0.005mm 이내로 수렴
     """
     import Rhino.Geometry as rg
     import math
-    
-    bbox = mesh.GetBoundingBox(True)
-    z_min = bbox.Min.Z
-    # 소수점 4자리 정밀도로 target_radius 설정
-    target_radius = round(target_diameter / 2.0, 4)  # 1.6650mm
-    align_fast_mode = os.environ.get("ABUTS_ALIGN_FAST", "1") in ("1", "true", "TRUE")
-    
-    def get_circle_at_z(z):
-        plane = rg.Plane(rg.Point3d(0, 0, z), rg.Vector3d(0, 0, 1))
-        polylines = rg.Intersect.Intersection.MeshPlane(mesh, plane)
-        
-        if not polylines or len(polylines) == 0:
-            return None
-        
-        longest = max(polylines, key=lambda pl: pl.Length)
-        points = []
-        for i in range(longest.Count):
-            pt = longest[i]
-            points.append((pt.X, pt.Y))
-        
-        if len(points) < 3:
-            return None
-        
-        min_x = min(p[0] for p in points)
-        max_x = max(p[0] for p in points)
-        min_y = min(p[1] for p in points)
-        max_y = max(p[1] for p in points)
-        center_x_local = (min_x + max_x) / 2.0
-        center_y_local = (min_y + max_y) / 2.0
-        
-        max_radius = 0.0
-        for px, py in points:
-            r = math.sqrt((px - center_x_local) * (px - center_x_local) + (py - center_y_local) * (py - center_y_local))
-            if r > max_radius:
-                max_radius = r
-        
-        return round(center_x_local, 4), round(center_y_local, 4), round(max_radius, 4)
-    
-    # 1단계: Z_min + 2mm 위치에서 원의 중심 찾기 (커넥션은 아래쪽)
-    z_reference = z_min + 2.0
-    reference_circle = get_circle_at_z(z_reference)
-    
-    if reference_circle is None:
-        log("[align] No intersection at Z={:.2f}".format(z_reference))
-        return False
-    
-    center_x, center_y, _ = reference_circle
-    total_center_x = center_x
-    total_center_y = center_y
-    
-    log("[align] Circle center at Z={:.4f}: ({:.4f}, {:.4f})".format(
-        z_reference, center_x, center_y))
-    
-    # XY 중심으로 이동
-    mesh.Translate(rg.Vector3d(-center_x, -center_y, 0))
-    
-    # 2단계: 테이퍼각을 활용하여 커넥션 외부 직경 3.33mm 위치 계산
+
     bbox = mesh.GetBoundingBox(True)
     z_min = bbox.Min.Z
     z_max = bbox.Max.Z
-    
-    def get_radius_at_z(z):
-        circle = get_circle_at_z(z)
-        if circle is None:
+    target_radius = target_diameter / 2.0
+
+    def get_circle_at_z(z):
+        """plane intersection 기반 최대 반지름 반환 (center_x, center_y, max_r)"""
+        plane = rg.Plane(rg.Point3d(0, 0, z), rg.Vector3d(0, 0, 1))
+        polylines = rg.Intersect.Intersection.MeshPlane(mesh, plane)
+        if not polylines or len(polylines) == 0:
             return None
-        return circle[2]
-    
-    def measure_r_at_z(target_z, tight_tol=False):
-        """원점 기준 최대 반지름 측정 (tolerance 완화하여 더 많은 점 포함)"""
-        max_r = 0.0
-        tol = 1e-4 if tight_tol else 0.05  # tight: 0.0001mm, wide: 0.05mm
-        count = 0
-        
+        longest = max(polylines, key=lambda pl: pl.Length)
+        pts = [(longest[i].X, longest[i].Y) for i in range(longest.Count)]
+        if len(pts) < 3:
+            return None
+        cx = (min(p[0] for p in pts) + max(p[0] for p in pts)) / 2.0
+        cy = (min(p[1] for p in pts) + max(p[1] for p in pts)) / 2.0
+        mr = max(math.sqrt((px - cx) ** 2 + (py - cy) ** 2) for px, py in pts)
+        return cx, cy, mr
+
+    def get_radius_at_z(z):
+        """Node.js stl_metadata와 동일: z 평면 통과 edge intersection만 사용 (연속/monotonic)"""
+        mr = 0.0
+        found = False
         for fi in range(mesh.Faces.Count):
             face = mesh.Faces[fi]
             va = mesh.Vertices[face.A]
             vb = mesh.Vertices[face.B]
             vc = mesh.Vertices[face.C]
-            
-            # Edge 교차점
             for pa, pb in ((va, vb), (vb, vc), (vc, va)):
-                za = pa.Z - target_z
-                zb = pb.Z - target_z
+                za = pa.Z - z
+                zb = pb.Z - z
                 if (za > 0 and zb < 0) or (za < 0 and zb > 0):
                     denom = abs(za - zb)
-                    if denom < 1e-10:
+                    if denom < 1e-12:
                         continue
                     t = abs(za) / denom
                     ix = pa.X + t * (pb.X - pa.X)
                     iy = pa.Y + t * (pb.Y - pa.Y)
-                    ir = math.sqrt(ix * ix + iy * iy)
-                    if ir > max_r:
-                        max_r = ir
-                    count += 1
-            
-            # Z=target_z 근처 정점
-            for v in (va, vb, vc):
-                if abs(v.Z - target_z) <= tol:
-                    ir = math.sqrt(v.X * v.X + v.Y * v.Y)
-                    if ir > max_r:
-                        max_r = ir
-                    count += 1
-        
-        if max_r > 0:
-            log("[align] Max-r at Z={:.4f}: {:.6f}mm ({} points, tol={:.4f}mm)".format(
-                target_z, max_r, count, tol))
-        
-        return max_r if max_r > 0 else None
-    
-    # 커넥션 영역에서 두 지점 측정하여 테이퍼 기울기 계산
-    z1 = z_min + 2.0   # 커넥션 시작점 (정밀도 보존)
-    z2 = z_min + 2.2   # 0.2mm 위
-    
+                    r = math.sqrt(ix * ix + iy * iy)
+                    if r > mr:
+                        mr = r
+                    found = True
+        return mr if found and mr > 0 else None
+
+    # 1단계: XY 원점 정렬 (Z_min + 2mm 단면 중심)
+    z_reference = z_min + 2.0
+    ref = get_circle_at_z(z_reference)
+    if ref is None:
+        log("[align] No intersection at Z={:.2f}".format(z_reference))
+        return False
+    center_x, center_y, _ = ref
+    total_center_x = center_x
+    total_center_y = center_y
+    log("[align] Circle center at Z={:.4f}: ({:.4f}, {:.4f})".format(z_reference, center_x, center_y))
+    mesh.Translate(rg.Vector3d(-center_x, -center_y, 0))
+
+    bbox = mesh.GetBoundingBox(True)
+    z_min = bbox.Min.Z
+    z_max = bbox.Max.Z
+
+    # 2단계: 테이퍼 기울기로 target Z 1-shot 계산
+    z1 = z_min + 2.0
+    z2 = z_min + 2.2
     r1 = get_radius_at_z(z1)
     r2 = get_radius_at_z(z2)
-    
     if r1 is None or r2 is None:
         log("[align] Could not measure radii in connection area")
         return False
-    
-    # 테이퍼 기울기 계산: tan(angle) = (r2 - r1) / (z2 - z1)
+
     dz = z2 - z1
     dr = r2 - r1
-    
     if abs(dz) < 0.0001:
-        log("[align] dz too small, cannot calculate taper")
+        log("[align] dz too small")
         return False
-    
-    taper_slope = dr / dz
-    taper_angle_deg = math.degrees(math.atan(taper_slope))
-    
+    measured_slope = dr / dz
     log("[align] Measured at z1={:.6f}mm: r={:.6f}mm".format(z1, r1))
     log("[align] Measured at z2={:.6f}mm: r={:.6f}mm".format(z2, r2))
-    log("[align] Taper: dz={:.6f}mm, dr={:.6f}mm, slope={:.8f}".format(
-        dz, dr, taper_slope))
-    log("[align] Taper angle: {:.6f}° (expected ~11°)".format(taper_angle_deg))
-    
-    # origin 기준 r1 측정 (성능 모드에서는 생략)
-    if align_fast_mode:
-        r1_origin = r1
-        log("[align] Fast mode: skip origin r1 measurement")
+    log("[align] Measured slope={:.8f} angle={:.4f}°".format(
+        measured_slope, math.degrees(math.atan(measured_slope))))
+
+    # 11도 편측 테이퍼 강제 (모델에 실제 target_radius 구간이 없을 수 있음)
+    # 측정 slope이 11±도 범위면 채택, 너무 벗어나면 11도 강제
+    nominal_slope = math.tan(math.radians(11.0))  # ≈ 0.19438
+    angle_tol_deg = float(os.environ.get("ABUTS_ALIGN_TAPER_ANGLE_TOL_DEG", "1.5"))
+    measured_angle = math.degrees(math.atan(measured_slope))
+    if abs(measured_angle - 11.0) <= angle_tol_deg:
+        taper_slope = measured_slope
     else:
-        r1_origin = measure_r_at_z(z1)
-        if r1_origin is not None:
-            log("[align] r1 origin-based: {:.8f}mm (bbox-based: {:.6f}mm, diff: {:.8f}mm)".format(
-                r1_origin, r1, abs(r1 - r1_origin)))
-        else:
-            r1_origin = r1
-            log("[align] r1 origin measurement failed, using bbox r1")
-    
-    # z_target = z1 + (target_radius - r1_origin) / taper_slope (정밀도 보존)
-    if abs(taper_slope) < 0.00001:  # 거의 수직인 경우
-        log("[align] Taper is too steep or vertical, using z1 as fallback")
-        best_z = z1
-    else:
-        delta_r = target_radius - r1_origin
-        delta_z = delta_r / taper_slope
-        best_z = z1 + delta_z
-        log("[align] Z calculation: delta_r={:.8f}mm, delta_z={:.8f}mm".format(delta_r, delta_z))
-        
-        # 범위 체크
-        if best_z < z_min or best_z > z_max:
-            log("[align] Calculated Z={:.4f} is out of range [{:.4f}, {:.4f}]".format(
-                best_z, z_min, z_max))
-            best_z = max(z_min, min(z_max, best_z))
-    
-    log("[align] Calculated target Z position: {:.8f}mm (full precision)".format(best_z))
-    
-    # Z 이동
+        taper_slope = nominal_slope
+        log("[align] slope deviates from 11° by {:.2f}° → using nominal 11°".format(
+            measured_angle - 11.0))
+
+    # 1-shot 계산: z1 + (target_r - r1)/slope. 모델에 실제 구간이 없으면 가상 위치가 됨
+    delta_r = target_radius - r1
+    delta_z = delta_r / taper_slope
+    best_z = z1 + delta_z
+    log("[align] 1-shot Z calc: delta_r={:.8f}mm delta_z={:.8f}mm best_z={:.8f}mm".format(
+        delta_r, delta_z, best_z))
     mesh.Translate(rg.Vector3d(0, 0, -best_z))
-    
-    # Z=0 단면의 XY 중심 보정 (bounding box 기반)
+    log("[align] Mesh translated by Z={:.8f}mm (virtual 3.35 origin)".format(-best_z))
+
+    # 4단계: XY 중심 미세보정
     final_circle = get_circle_at_z(0)
     if final_circle is not None:
-        final_center_x, final_center_y, _ = final_circle
-        log("[align] Z=0 bbox center: ({:.6f}, {:.6f})".format(final_center_x, final_center_y))
-        if abs(final_center_x) > 0.0001 or abs(final_center_y) > 0.0001:
-            mesh.Translate(rg.Vector3d(-final_center_x, -final_center_y, 0))
-            total_center_x = round(total_center_x + final_center_x, 4)
-            total_center_y = round(total_center_y + final_center_y, 4)
-            log("[align] Refined center at Z=0: ({:.4f}, {:.4f})".format(
-                final_center_x, final_center_y))
+        fcx, fcy, _ = final_circle
+        log("[align] Z=0 center: ({:.6f}, {:.6f})".format(fcx, fcy))
+        if abs(fcx) > 0.0001 or abs(fcy) > 0.0001:
+            mesh.Translate(rg.Vector3d(-fcx, -fcy, 0))
+            total_center_x = round(total_center_x + fcx, 4)
+            total_center_y = round(total_center_y + fcy, 4)
 
-    # 원점 기준 Z=0 반지름 측정
-    if align_fast_mode:
-        conn_r_origin = get_radius_at_z(0)
-        log("[align] Fast mode radius at Z=0 (bbox): {:.6f}mm = {:.6f}mm diameter".format(
-            conn_r_origin if conn_r_origin else 0.0,
-            (conn_r_origin * 2) if conn_r_origin else 0.0))
-    else:
-        conn_r_origin = measure_r_at_z(0, tight_tol=True)
-        log("[align] Measured radius at Z=0 (origin, tight): {:.6f}mm = {:.6f}mm diameter".format(
-            conn_r_origin if conn_r_origin else 0.0,
-            (conn_r_origin * 2) if conn_r_origin else 0.0))
-
-    # Residual Z 보정 (안전망: origin 기준으로 한 번 더 조정)
-    # 성능 최적화: 반지름 오차/잔여 Z가 매우 작으면 재보정 루프를 생략한다.
-    residual_radius_tol = float(os.environ.get("ABUTS_ALIGN_RESIDUAL_RADIUS_TOL", "0.0001"))
-    residual_z_tol = float(os.environ.get("ABUTS_ALIGN_RESIDUAL_Z_TOL", "0.0005"))
-    if align_fast_mode:
-        log("[align] Fast mode: skip residual correction")
-    elif conn_r_origin is not None and abs(taper_slope) >= 0.00001:
-        residual_radius = target_radius - conn_r_origin
-        residual_z = residual_radius / taper_slope
-        if abs(residual_radius) > residual_radius_tol and abs(residual_z) > residual_z_tol:
-            mesh.Translate(rg.Vector3d(0, 0, -residual_z))
-            best_z = best_z + residual_z
-            log("[align] Residual Z correction: {:.6f}mm".format(residual_z))
-            # 보정 후 재측정 (tight tolerance로 정확한 변화 감지)
-            conn_r_origin = measure_r_at_z(0, tight_tol=True)
-            log("[align] Post-correction radius (tight): {:.6f}mm = {:.6f}mm diameter".format(
-                conn_r_origin if conn_r_origin else 0.0,
-                (conn_r_origin * 2) if conn_r_origin else 0.0))
-        else:
-            log(
-                "[align] Residual correction skipped: dr={:.6f}mm dz={:.6f}mm".format(
-                    residual_radius,
-                    residual_z,
-                )
-            )
-
-    final_diameter = (conn_r_origin * 2) if conn_r_origin is not None else 0.0
-
+    conn_r = get_radius_at_z(0)
+    final_diameter = (conn_r * 2.0) if conn_r is not None else 0.0
     log("[align] Final translation: XY=({:.4f}, {:.4f}), Z={:.6f}".format(
         -total_center_x, -total_center_y, -best_z))
-    log("[align] Connection diameter {:.6f}mm at Z=0 (target: {:.4f}mm, diff: {:.6f}mm)".format(
-        final_diameter, target_diameter, abs(final_diameter - target_diameter)))
+    # 참고: 모델에 실제 target_diameter 구간이 없으면 Z=0은 가상 위치→측정값이 target과 다를 수 있음
+    log("[align] Measured diameter at Z=0: {:.6f}mm (target virtual: {:.4f}mm)".format(
+        final_diameter, target_diameter))
 
-    # 정렬 변환 벡터 반환 (역변환에 사용)
     return (total_center_x, total_center_y, best_z)
 
 

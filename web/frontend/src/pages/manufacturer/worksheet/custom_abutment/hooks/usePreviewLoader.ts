@@ -24,6 +24,18 @@ function getOrCreateInFlight<T>(
   return promise;
 }
 
+function buildBlobCacheKey(
+  s3Key?: string | null,
+  meta?: { fileSize?: unknown; uploadedAt?: unknown } | null,
+): string | null {
+  const base = String(s3Key || "").trim();
+  if (!base) return null;
+  const fileSize = meta?.fileSize != null ? String(meta.fileSize) : "";
+  const uploadedAt = meta?.uploadedAt ? String(meta.uploadedAt) : "";
+  if (!fileSize && !uploadedAt) return base;
+  return `${base}:v=${fileSize}:${uploadedAt}`;
+}
+
 type PreviewLoaderParams = {
   token: string | null;
   isCamStage: boolean;
@@ -65,9 +77,15 @@ export function usePreviewLoader({
   const { toast } = useToast();
 
   const handleOpenPreview = useCallback(
-    async (req: ManufacturerRequest) => {
+    async (
+      req: ManufacturerRequest,
+      opts?: {
+        forceRefresh?: boolean;
+      },
+    ) => {
       if (!token) return;
       try {
+        const forceRefresh = opts?.forceRefresh === true;
         setPreviewLoading(true);
         setPreviewNcText("");
         setPreviewNcName("");
@@ -160,19 +178,17 @@ export function usePreviewLoader({
 
         const originalCacheKeyBase = req.caseInfos?.file?.s3Key || null;
         const originalFileMeta: any = (req as any)?.caseInfos?.file;
-        const originalCacheVersion =
-          originalFileMeta?.fileSize || originalFileMeta?.uploadedAt;
-        const originalCacheKey =
-          originalCacheKeyBase && originalCacheVersion
-            ? `${originalCacheKeyBase}:${originalCacheVersion}`
-            : originalCacheKeyBase;
+        const originalCacheKey = buildBlobCacheKey(
+          originalCacheKeyBase,
+          originalFileMeta,
+        );
 
         const previewStageKey = getReviewStageKeyByTab({
           stage: tabStage,
           isCamStage,
           isMachiningStage,
         });
-        const disableStlCache = false;
+        const disableStlCache = forceRefresh;
 
         const hasCamFile = !!req.caseInfos?.camFile?.s3Key;
         const shouldUseSingleLeftStl = isCamStage;
@@ -197,13 +213,10 @@ export function usePreviewLoader({
                   req.caseInfos?.camFile?.originalName ||
                   originalName;
                 const camCacheKeyBase = req.caseInfos?.camFile?.s3Key || null;
-                const camCacheVersion =
-                  req.caseInfos?.camFile?.fileSize ||
-                  req.caseInfos?.camFile?.uploadedAt;
-                const camCacheKey =
-                  camCacheKeyBase && camCacheVersion
-                    ? `${camCacheKeyBase}:${camCacheVersion}`
-                    : camCacheKeyBase;
+                const camCacheKey = buildBlobCacheKey(
+                  camCacheKeyBase,
+                  req.caseInfos?.camFile,
+                );
                 return fetchAsFileWithCache(
                   camCacheKey,
                   () => fetchSignedUrl(`/api/requests/${req._id}/cam-file-url`),
@@ -264,14 +277,15 @@ export function usePreviewLoader({
                 const ncNameRaw =
                   ncMeta?.originalName || ncMeta?.filePath || "program.nc";
                 const ncName = ncNameRaw.split("/").pop() || ncNameRaw;
-                const ncCacheVersion = ncMeta?.fileSize || ncMeta?.uploadedAt;
-                const ncCacheKey = ncMeta?.s3Key
-                  ? `cnc:s3:${ncMeta.s3Key}${ncCacheVersion ? `:${ncCacheVersion}` : ""}`
+                const ncVersionedKey = buildBlobCacheKey(ncMeta?.s3Key, ncMeta);
+                const ncCacheKey = ncVersionedKey
+                  ? `cnc:s3:${ncVersionedKey}`
                   : null;
                 const ncFile = await fetchAsFileWithCache(
                   ncCacheKey,
                   () => fetchSignedUrl(`/api/requests/${req._id}/nc-file-url`),
                   ncName,
+                  { disableCache: forceRefresh },
                 );
                 const buf = await ncFile.arrayBuffer();
                 const text = decodeNcText(buf);

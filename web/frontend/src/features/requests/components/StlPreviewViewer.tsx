@@ -69,6 +69,12 @@ export function StlPreviewViewer({
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const resolvedMetadata = metadata ?? fetchedMetadata;
+  const resolvedMetadataRef = useRef<StlMetadata | null | undefined>(
+    resolvedMetadata,
+  );
+
+  const isFiniteNumber = (value: unknown): value is number =>
+    typeof value === "number" && Number.isFinite(value);
 
   const toValidPoint = (value: unknown) => {
     if (!value || typeof value !== "object") return null;
@@ -130,6 +136,10 @@ export function StlPreviewViewer({
   useEffect(() => {
     onDiameterComputedRef.current = onDiameterComputed;
   }, [onDiameterComputed]);
+
+  useEffect(() => {
+    resolvedMetadataRef.current = resolvedMetadata;
+  }, [resolvedMetadata]);
 
   // 백엔드 캐시된 메타데이터 동기화
   useEffect(() => {
@@ -414,13 +424,26 @@ export function StlPreviewViewer({
         // LLL(전체길이): Z축 범위
         const totalLength = bbox.max.z - bbox.min.z;
 
+        const latestMetadata = resolvedMetadataRef.current;
+        const displayMaxDiameter = isFiniteNumber(latestMetadata?.maxDiameter)
+          ? latestMetadata.maxDiameter
+          : maxDiameter;
+        const displayConnectionDiameter = isFiniteNumber(
+          latestMetadata?.connectionDiameter,
+        )
+          ? latestMetadata.connectionDiameter
+          : connectionDiameter;
+        const displayTotalLength = isFiniteNumber(latestMetadata?.totalLength)
+          ? latestMetadata.totalLength
+          : totalLength;
+
         // 프론트에서 계산한 최대직경을 콜백으로 전달 (리드타임 표시용)
-        if (onDiameterComputedRef.current && maxDiameter > 0) {
+        if (onDiameterComputedRef.current && displayMaxDiameter > 0) {
           onDiameterComputedRef.current(
             file.name,
-            maxDiameter,
-            connectionDiameter,
-            totalLength,
+            displayMaxDiameter,
+            displayConnectionDiameter,
+            displayTotalLength,
             0, // taperAngle은 아직 계산 전
             null,
             null,
@@ -428,9 +451,9 @@ export function StlPreviewViewer({
         }
 
         // 상태에도 저장 (UI 표시용)
-        setMaxDiameterState(maxDiameter);
-        setConnectionDiameterState(connectionDiameter);
-        setTotalLengthState(totalLength);
+        setMaxDiameterState(displayMaxDiameter);
+        setConnectionDiameterState(displayConnectionDiameter);
+        setTotalLengthState(displayTotalLength);
 
         let taperAngle = 0;
         let tiltAxisVector: { x: number; y: number; z: number } | null = null;

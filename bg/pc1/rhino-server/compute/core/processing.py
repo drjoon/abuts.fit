@@ -316,11 +316,13 @@ async def process_single_stl(p: Path, force_reprocess: bool = False, explicit_re
                         from .stl_metadata import calculate_and_register_metadata
 
                         log(f"[process_single_stl] Output exists, registering STL metadata for {req_id}")
+                        existing_target = fetch_connection_target_diameter(req_id)
                         calculate_and_register_metadata(
                             out_path,
                             req_id,
                             None,  # requestMongoId는 백엔드에서 찾음
                             None,
+                            connection_target_diameter=existing_target,
                         )
                     except Exception as e:
                         log(f"[process_single_stl] Failed to register metadata from existing output: {e}")
@@ -469,6 +471,7 @@ async def process_single_stl(p: Path, force_reprocess: bool = False, explicit_re
                     req_id,
                     None,  # requestMongoId는 백엔드에서 찾음
                     finish_line_points,
+                    connection_target_diameter=connection_target_diameter,
                 )
                 if stl_metadata:
                     # 메타데이터를 metadata dict에 병합

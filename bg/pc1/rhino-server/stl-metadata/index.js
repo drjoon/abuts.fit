@@ -158,8 +158,7 @@ async function calculateStlMetadata(filePath, finishLinePoints) {
   }
   const maxDiameter = maxR * 2;
 
-  // 2. 커넥션 직경 계산 (z=0 단면, max distance with wider tolerance)
-  const sliceTolerance = 0.05; // 0.05mm tolerance (increased from 0.0001mm)
+  // 2. 커넥션 직경 계산 (z=0 평면 통과 edge intersection만 사용 → z에 대해 연속/monotonic)
   let connectionMaxR = 0;
   let pointCount = 0;
 
@@ -181,24 +180,7 @@ async function calculateStlMetadata(filePath, finishLinePoints) {
     const v1 = readVertex(i1);
     const v2 = readVertex(i2);
 
-    // z=0 근처 정점
-    if (Math.abs(v0.z) <= sliceTolerance) {
-      const r = Math.sqrt(v0.x * v0.x + v0.y * v0.y);
-      if (r > connectionMaxR) connectionMaxR = r;
-      pointCount++;
-    }
-    if (Math.abs(v1.z) <= sliceTolerance) {
-      const r = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
-      if (r > connectionMaxR) connectionMaxR = r;
-      pointCount++;
-    }
-    if (Math.abs(v2.z) <= sliceTolerance) {
-      const r = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
-      if (r > connectionMaxR) connectionMaxR = r;
-      pointCount++;
-    }
-
-    // 엣지 교차점
+    // 엣지가 z=0을 통과하는 경우만 측정 (정점 측정은 step 함수가 되므로 제외)
     const addIntersection = (va, vb) => {
       if ((va.z > 0 && vb.z < 0) || (va.z < 0 && vb.z > 0)) {
         const denom = Math.abs(va.z - vb.z);
@@ -220,7 +202,7 @@ async function calculateStlMetadata(filePath, finishLinePoints) {
     connectionMaxR > 0 ? connectionMaxR * 2 : maxDiameter;
 
   console.error(
-    `[connectionDiameter] Z=0: maxR=${connectionMaxR.toFixed(6)}mm, d=${connectionDiameter.toFixed(6)}mm (${pointCount} points, tol=${sliceTolerance}mm)`,
+    `[connectionDiameter] Z=0: maxR=${connectionMaxR.toFixed(6)}mm, d=${connectionDiameter.toFixed(6)}mm (${pointCount} edge points)`,
   );
 
   // 3. 전체 길이 (Z축 범위)

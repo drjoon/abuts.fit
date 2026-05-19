@@ -833,6 +833,7 @@ export const RequestPage = ({
         onDownloadCamStl={handleDownloadCamStl}
         onDownloadNcFile={handleDownloadNcFile}
         onDownloadStageFile={handleDownloadStageFile}
+        onRefreshPreview={handleOpenPreview}
         setSearchParams={setSearchParams}
         setConfirmTitle={pageState.setConfirmTitle}
         setConfirmDescription={pageState.setConfirmDescription}

@@ -16,6 +16,7 @@ def calculate_and_register_metadata(
     request_id: str,
     request_mongo_id: str | None,
     finish_line_points: list | None = None,
+    connection_target_diameter: float | None = None,
 ) -> dict | None:
     """
     Node.js STL 메타데이터 계산 서비스를 호출하고 백엔드에 등록
@@ -36,6 +37,14 @@ def calculate_and_register_metadata(
         if not metadata:
             log(f"[stl_metadata] Failed to calculate metadata for {stl_file_path.name}")
             return None
+
+        # 좌표계가 가상 target_diameter 기준으로 정렬되어 있으므로 등록값도 target으로 강제
+        if connection_target_diameter is not None and connection_target_diameter > 0:
+            measured = metadata.get("connectionDiameter")
+            metadata["connectionDiameter"] = connection_target_diameter
+            log(
+                f"[stl_metadata] connectionDiameter override: measured={measured} → target={connection_target_diameter}"
+            )
         
         # 2. 백엔드에 메타데이터 등록
         success = _register_metadata_to_backend(

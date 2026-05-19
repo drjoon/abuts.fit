@@ -6,15 +6,56 @@
 import { useState, useEffect } from "react";
 import { request as api } from "@/shared/api/apiClient";
 
+const RECALCULATE_POLL_INTERVAL_MS = 1000;
+const RECALCULATE_POLL_MAX_ATTEMPTS = 20;
+
 export interface StlMetadata {
   maxDiameter?: number;
   connectionDiameter?: number;
   totalLength?: number;
+  updatedAt?: string | Date;
   l1?: number;
   l2?: number;
   taperAngle?: number;
   tiltAxisVector?: { x: number; y: number; z: number } | null;
   frontPoint?: { x: number; y: number; z: number } | null;
+}
+
+function toRevisionValue(metadata: StlMetadata | null | undefined): string {
+  if (!metadata) return "";
+  return JSON.stringify({
+    updatedAt: metadata.updatedAt ? String(metadata.updatedAt) : "",
+    maxDiameter: metadata.maxDiameter ?? null,
+    connectionDiameter: metadata.connectionDiameter ?? null,
+    totalLength: metadata.totalLength ?? null,
+    l1: metadata.l1 ?? null,
+    l2: metadata.l2 ?? null,
+    taperAngle: metadata.taperAngle ?? null,
+  });
+}
+
+async function fetchStlMetadata(requestId: string): Promise<{
+  metadata: StlMetadata | null;
+  cached: boolean;
+}> {
+  const response = await api({
+    method: "GET",
+    path: `/bg/stl-metadata/${requestId}`,
+  });
+
+  const apiData = response.data as any;
+  const actualData = apiData?.data;
+  if (actualData?.metadata) {
+    return {
+      metadata: actualData.metadata,
+      cached: Boolean(actualData.cached),
+    };
+  }
+
+  return {
+    metadata: null,
+    cached: false,
+  };
 }
 
 interface UseStlMetadataResult {
@@ -43,23 +84,9 @@ export function useStlMetadata(requestId?: string): UseStlMetadataResult {
       setError(null);
 
       try {
-        const response = await api({
-          method: "GET",
-          path: `/bg/stl-metadata/${requestId}`,
-        });
-
-        // apiFetch 반환 구조: { ok, status, data, raw }
-        // data 구조: { statusCode, data: { requestId, metadata, cached }, message, success }
-        const apiData = response.data;
-        const actualData = apiData?.data;
-
-        if (actualData?.metadata) {
-          setMetadata(actualData.metadata);
-          setCached(actualData.cached || false);
-        } else {
-          setMetadata(null);
-          setCached(false);
-        }
+        const fetched = await fetchStlMetadata(requestId);
+        setMetadata(fetched.metadata);
+        setCached(fetched.cached);
       } catch (err: any) {
         setError(err.message || "Failed to fetch metadata");
       } finally {
@@ -73,6 +100,7 @@ export function useStlMetadata(requestId?: string): UseStlMetadataResult {
   const recalculate = async () => {
     if (!requestId) return;
 
+    const beforeRevision = toRevisionValue(metadata);
     setLoading(true);
     setError(null);
 
@@ -82,28 +110,46 @@ export function useStlMetadata(requestId?: string): UseStlMetadataResult {
         path: `/bg/recalculate-stl-metadata/${requestId}`,
       });
 
-      // 재계산 트리거 후 잠시 대기 후 다시 조회
-      setTimeout(async () => {
-        try {
-          const response = await api({
-            method: "GET",
-            path: `/bg/stl-metadata/${requestId}`,
-          });
-
-          const apiData = response.data;
-          const actualData = apiData?.data;
-          if (actualData?.metadata) {
-            setMetadata(actualData.metadata);
-            setCached(actualData.cached || false);
-          }
-        } catch (err) {
-          setError(err.message || "Failed to refetch metadata");
-        } finally {
-          setLoading(false);
+      let updated = false;
+      for (
+        let attempt = 0;
+        attempt < RECALCULATE_POLL_MAX_ATTEMPTS;
+        attempt += 1
+      ) {
+        if (attempt > 0) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, RECALCULATE_POLL_INTERVAL_MS),
+          );
         }
-      }, 2000);
+
+        const fetched = await fetchStlMetadata(requestId);
+        setMetadata(fetched.metadata);
+        setCached(fetched.cached);
+
+        const nextRevision = toRevisionValue(fetched.metadata);
+        if (!beforeRevision) {
+          if (nextRevision) {
+            updated = true;
+            break;
+          }
+          continue;
+        }
+
+        if (nextRevision && nextRevision !== beforeRevision) {
+          updated = true;
+          break;
+        }
+      }
+
+      if (!updated) {
+        throw new Error(
+          "메타데이터 재계산이 아직 반영되지 않았습니다. 잠시 후 다시 시도해주세요.",
+        );
+      }
     } catch (err: any) {
       setError(err.message || "Failed to recalculate metadata");
+      throw err;
+    } finally {
       setLoading(false);
     }
   };

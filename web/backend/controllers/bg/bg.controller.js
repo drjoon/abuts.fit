@@ -1514,6 +1514,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
     taperGuide,
     coordinateError,
   } = req.body;
+  const metadataUpdatedAt = new Date();
 
   if (!requestId && !requestMongoId) {
     throw new ApiError(400, "requestId or requestMongoId required");
@@ -1531,6 +1532,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
   request.caseInfos.maxDiameter = maxDiameter;
   request.caseInfos.connectionDiameter = connectionDiameter;
   request.caseInfos.totalLength = totalLength;
+  request.caseInfos.stlMetadataUpdatedAt = metadataUpdatedAt;
   request.caseInfos.l1 = l1;
   request.caseInfos.taperAngle = taperAngle;
   request.caseInfos.tiltAxisVector = tiltAxisVector;
@@ -1573,6 +1575,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
           maxDiameter,
           connectionDiameter,
           totalLength,
+          updatedAt: metadataUpdatedAt,
           l1,
           taperAngle,
           tiltAxisVector,
@@ -1602,6 +1605,7 @@ export const getStlMetadata = asyncHandler(async (req, res) => {
     maxDiameter: request.caseInfos?.maxDiameter,
     connectionDiameter: request.caseInfos?.connectionDiameter,
     totalLength: request.caseInfos?.totalLength,
+    updatedAt: request.caseInfos?.stlMetadataUpdatedAt,
     l1: request.caseInfos?.l1,
     l2,
     taperAngle: request.caseInfos?.taperAngle,

@@ -79,6 +79,10 @@ type PreviewModalProps = {
     req: ManufacturerRequest,
     stage: string,
   ) => Promise<void>;
+  onRefreshPreview?: (
+    req: ManufacturerRequest,
+    opts?: { forceRefresh?: boolean },
+  ) => Promise<void>;
   onOpenNextRequest?: (currentReqId: string) => Promise<void>;
   setSearchParams: (
     nextInit: ((prev: URLSearchParams) => URLSearchParams) | URLSearchParams,
@@ -121,6 +125,7 @@ export const PreviewModal = ({
   onDownloadCamStl,
   onDownloadNcFile,
   onDownloadStageFile,
+  onRefreshPreview,
   onOpenNextRequest,
   setSearchParams,
   setConfirmTitle,
@@ -157,6 +162,9 @@ export const PreviewModal = ({
     setRegenerating(true);
     try {
       await recalculate();
+      if (activeReq && onRefreshPreview) {
+        await onRefreshPreview(activeReq, { forceRefresh: true });
+      }
       toast({
         title: "메타데이터 재계산 완료",
         description: "STL 메타데이터가 재계산되었습니다.",
