@@ -1968,6 +1968,49 @@ cd web/backend && npm run db:seed-branding
 
 ---
 
+## 17. Esprit CAM 가공 파라미터 정책
+
+### 17.1 FirstPassPercent (첫 패스 퍼센트) 런타임 오버라이드
+
+**배경:**
+
+- Esprit Composite 공정의 `FirstPassPercent`는 PRC 파일에 정적 값(`3`)으로 저장됨
+- 의뢰별 치아 번호에 따라 전치부(1/2/3번)와 구치부(4/5/6/7번)를 구분하여 다른 값을 적용해야 함
+
+**정책 (런타임 오버라이드):**
+
+- **PRC 파일은 수정하지 않습니다.** 정적 파일에 의뢰별 분기 로직을 넣을 수 없음
+- **런타임 환경변수** `ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A`를 통해 Esprit COM API로 값을 주입
+- **치아 번호 파싱**: `request-meta.caseInfos.tooth`의 마지막 숫자를 기준으로 판별
+  - **1, 2, 3 (전치부)**: `FirstPassPercent = 5`
+  - **4, 5, 6, 7 (구치부)**: `FirstPassPercent = 1`
+- **유효하지 않은 치아번호**: 환경변수를 설정하지 않아 **PRC 원본 값(3)을 유지**
+  - ❌ silent fallback 금지: 임의로 전치/구치를 추정하여 값을 채우지 않음
+  - ✅ 명시적 미설정으로 PRC 기본값 사용
+
+**구현 경로:**
+
+1. **`StlFileProcessor.cs`**: 의뢰 로드 시 `TryApplyCompositeFirstPassPercentEnv(tooth)` 호출
+   - 유효한 치아번호 → `Environment.SetEnvironmentVariable(CompositeFirstPassPercentAEnv, value)`
+   - 무효/누락 → `Environment.SetEnvironmentVariable(CompositeFirstPassPercentAEnv, null)`
+   - `ResetPerRunState()`에서 매 의뢰 시작 시 환경변수 초기화 (이전 값 남지 않도록)
+
+2. **`MainModuleComposite.cs`** (Split AB 경로): `TryGetCompositeFirstPassPercentOverride()`로 env 읽어 `opA.FirstPassPercent` 적용
+
+3. **`MainModule.cs`** (일반 Composite2 경로): 동일하게 env 읽어 `techLatheMill5xComposite.FirstPassPercent` 적용
+
+**값 Clamp:**
+
+- 유효 범위: 0.0 ~ 100.0 (또는 Split AB에서는 0.0 ~ splitPercent)
+- 파싱 실패 또는 범위 이탈 시 env 값 무시하고 PRC 원본 유지
+
+**로그:**
+
+- 적용 성공: `DentalAddin: tooth='35' -> FirstPassPercent=1 적용 (env=ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A)`
+- 미지정/무효: `DentalAddin: tooth 미지정 - FirstPassPercent 기본값(PRC 원본) 유지`
+
+---
+
 ## 14. 운영 메모
 
 - 하위 `rules.md`는 루트 규칙을 반복 작성하지 않습니다.
