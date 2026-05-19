@@ -209,6 +209,19 @@ export function NewRequestPatientImplantFields({
     currentTypeOptions,
   ]);
 
+  // Validator: 한글 1~4글자
+  const isValidKoreanName = (name?: string) => {
+    if (!name) return false;
+    return /^[가-힣]{1,4}$/.test(name.trim());
+  };
+
+  // UI에 표시할 환자명: 업로드된 파일명에서 추출된 경우(또는 props로 들어온 경우)
+  // 한글 4글자 이하가 아니면 빈 문자열로 표시만 하고, props 자체는 건드리지 않음
+  const displayedPatientName = useMemo(() => {
+    const n = caseInfos?.patientName || "";
+    return isValidKoreanName(n) ? n : "";
+  }, [caseInfos?.patientName]);
+
   useEffect(() => {
     const manufacturer = caseInfos?.implantManufacturer;
     if (!manufacturer) return;
@@ -310,9 +323,11 @@ export function NewRequestPatientImplantFields({
 
           <div className="min-w-0">
             <LabeledAutocompleteField
-              value={caseInfos?.patientName || ""}
+              // 표시용 값은 검증된 한글 1~4글자만 보여주고, 그렇지 않으면 빈 문자열로 남김
+              value={displayedPatientName}
               onChange={(value) => {
                 if (readOnly) return;
+                // 사용자가 직접 입력한 경우는 그대로 caseInfos에 반영
                 setCaseInfos({
                   patientName: value,
                 });
@@ -341,8 +356,9 @@ export function NewRequestPatientImplantFields({
               }}
               onBlur={() => {
                 if (readOnly) return;
-                if (caseInfos?.patientName) {
-                  addPatientPreset(caseInfos.patientName);
+                // 업로드로 채워진(또는 props로 들어온) 비검증 환자명은 추가하지 않도록 displayedPatientName 기준으로 검사
+                if (displayedPatientName) {
+                  addPatientPreset(displayedPatientName);
                 }
               }}
               inputClassName="h-8 text-xs w-full pr-10"
