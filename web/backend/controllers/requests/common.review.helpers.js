@@ -107,9 +107,6 @@ export function updateCurrentEstimatedShipYmdOnPackingEnter(request) {
 
   request.timeline = request.timeline || {};
   const timeline = request.timeline;
-  const todayYmd = getTodayYmdInKst();
-  if (!todayYmd) return;
-
   const originalEstimatedShipYmd =
     typeof timeline.originalEstimatedShipYmd === "string" &&
     timeline.originalEstimatedShipYmd.trim()
@@ -117,11 +114,20 @@ export function updateCurrentEstimatedShipYmdOnPackingEnter(request) {
       : typeof timeline.estimatedShipYmd === "string" &&
           timeline.estimatedShipYmd.trim()
         ? timeline.estimatedShipYmd.trim()
-        : todayYmd;
+        : getTodayYmdInKst();
+
+  const nextEstimatedShipYmd =
+    typeof timeline.nextEstimatedShipYmd === "string" &&
+    timeline.nextEstimatedShipYmd.trim()
+      ? timeline.nextEstimatedShipYmd.trim()
+      : typeof timeline.estimatedShipYmd === "string" &&
+          timeline.estimatedShipYmd.trim()
+        ? timeline.estimatedShipYmd.trim()
+        : originalEstimatedShipYmd;
 
   timeline.originalEstimatedShipYmd = originalEstimatedShipYmd;
-  timeline.estimatedShipYmd = todayYmd;
-  timeline.nextEstimatedShipYmd = todayYmd;
+  timeline.nextEstimatedShipYmd = nextEstimatedShipYmd;
+  timeline.estimatedShipYmd = nextEstimatedShipYmd;
 }
 
 // Ensure request credit spend on machining enter

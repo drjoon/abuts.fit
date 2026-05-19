@@ -370,12 +370,30 @@ export async function buildShippingEstimate(req) {
   }
 
   const todayYmd = getTodayYmdInKst();
+  let weeklyBatchDays = [];
+
+  if (mode === "normal") {
+    const businessAnchorId = await resolveBusinessAnchorId(req);
+    if (Types.ObjectId.isValid(businessAnchorId)) {
+      const businessAnchor = await BusinessAnchor.findById(businessAnchorId)
+        .select({ "shippingPolicy.weeklyBatchDays": 1 })
+        .lean();
+      weeklyBatchDays = Array.isArray(
+        businessAnchor?.shippingPolicy?.weeklyBatchDays,
+      )
+        ? businessAnchor.shippingPolicy.weeklyBatchDays
+            .map((value) => String(value || "").trim())
+            .filter(Boolean)
+        : [];
+    }
+  }
 
   const { calculateInitialProductionSchedule } =
     await import("./production.utils.js");
   const schedule = await calculateInitialProductionSchedule({
     maxDiameter,
     requestedAt: new Date(),
+    weeklyBatchDays,
   });
   const pickupYmdRaw = schedule?.scheduledShipPickup
     ? toKstYmd(schedule.scheduledShipPickup)

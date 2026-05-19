@@ -22,6 +22,7 @@ import {
 import { startHanjinTrackingPoll } from "./shipping.TrackingPoller.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import { cancelHanjinPickupForReset } from "./shipping.Hanjin.controller.js";
+import { triggerPricingSnapshotForBusinessAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 
 function resolveShippingBoxKey(requestDoc) {
   const shippingPackageId = String(requestDoc?.shippingPackageId || "").trim();
@@ -399,6 +400,73 @@ export async function mockHanjinDeliveryCompleted(req, res) {
   }
 }
 
+export async function setMailboxForceTodayShipment(req, res) {
+  try {
+    const mailbox = String(req.body?.mailboxAddress || "").trim();
+    const forceTodayShipment = Boolean(req.body?.forceTodayShipment);
+
+    if (!mailbox) {
+      return res.status(400).json({
+        success: false,
+        message: "mailboxAddress가 필요합니다.",
+      });
+    }
+
+    const requests = await Request.find({
+      mailboxAddress: mailbox,
+      manufacturerStage: "포장.발송",
+    }).select({ _id: 1, requestId: 1, businessAnchorId: 1, timeline: 1 });
+
+    if (!requests.length) {
+      return res.status(404).json({
+        success: false,
+        message: "조건에 맞는 의뢰를 찾을 수 없습니다.",
+      });
+    }
+
+    const affectedBusinessAnchorIdSet = new Set();
+    for (const requestDoc of requests) {
+      requestDoc.timeline = requestDoc.timeline || {};
+      requestDoc.timeline.forceTodayShipment = forceTodayShipment;
+      await requestDoc.save();
+      const businessAnchorId = String(
+        requestDoc?.businessAnchorId || "",
+      ).trim();
+      if (businessAnchorId) affectedBusinessAnchorIdSet.add(businessAnchorId);
+    }
+
+    for (const businessAnchorId of affectedBusinessAnchorIdSet) {
+      triggerPricingSnapshotForBusinessAnchorId(
+        businessAnchorId,
+        forceTodayShipment
+          ? "mailbox-force-today-on"
+          : "mailbox-force-today-off",
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: forceTodayShipment
+        ? "강제 오늘 발송이 설정되었습니다."
+        : "강제 오늘 발송이 해제되었습니다.",
+      data: {
+        mailboxAddress: mailbox,
+        forceTodayShipment,
+        requestIds: requests
+          .map((requestDoc) => String(requestDoc?.requestId || "").trim())
+          .filter(Boolean),
+      },
+    });
+  } catch (error) {
+    console.error("Error in setMailboxForceTodayShipment:", error);
+    return res.status(500).json({
+      success: false,
+      message: "강제 오늘 발송 저장 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 /**
  * 우편함 전체 롤백 (포장.발송 → 세척.패킹)
  * @route POST /api/requests/shipping/mailbox-rollback
@@ -450,6 +518,8 @@ export async function rollbackMailboxShipping(req, res) {
       };
       bumpRollbackCount(r, "shipping");
       applyStatusMapping(r, "세척.패킹");
+      r.timeline = r.timeline || {};
+      r.timeline.forceTodayShipment = false;
       r.shippingLabelPrinted = {
         ...(r.shippingLabelPrinted || {}),
         printed: false,

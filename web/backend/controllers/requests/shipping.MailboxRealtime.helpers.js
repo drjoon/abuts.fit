@@ -8,6 +8,16 @@ export const buildMailboxSnapshotFingerprint = (requests = []) => {
       requestId: String(requestDoc?.requestId || "").trim(),
       mailboxAddress: String(requestDoc?.mailboxAddress || "").trim(),
       stage: String(requestDoc?.manufacturerStage || "").trim(),
+      estimatedShipYmd: String(
+        requestDoc?.timeline?.estimatedShipYmd || "",
+      ).trim(),
+      nextEstimatedShipYmd: String(
+        requestDoc?.timeline?.nextEstimatedShipYmd || "",
+      ).trim(),
+      forceTodayShipment: Boolean(requestDoc?.timeline?.forceTodayShipment),
+      scheduledShipPickup: String(
+        requestDoc?.productionSchedule?.scheduledShipPickup || "",
+      ).trim(),
       businessAnchorId: String(
         requestDoc?.businessAnchorId?._id || requestDoc?.businessAnchorId || "",
       ).trim(),

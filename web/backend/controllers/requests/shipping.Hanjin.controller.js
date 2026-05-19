@@ -299,15 +299,70 @@ const assertHanjinOrderSuccess = (data) => {
 const buildIntegratedPrintRequest = ({
   req,
   mailboxAddresses,
+  forceTodayMailboxAddresses,
   wblPrintOptions,
 }) => ({
   ...req,
   body: {
     mailboxAddresses,
+    forceTodayMailboxAddresses,
     payload: null,
     wblPrintOptions,
   },
 });
+
+const persistForceTodayShipmentForMailboxes = async (mailboxAddresses = []) => {
+  const list = resolveMailboxList(mailboxAddresses);
+  if (!list.length) {
+    return { updatedMailboxAddresses: [], affectedBusinessAnchorIds: [] };
+  }
+
+  const requests = await Request.find({
+    mailboxAddress: { $in: list },
+    manufacturerStage: "포장.발송",
+  }).select({
+    _id: 1,
+    mailboxAddress: 1,
+    businessAnchorId: 1,
+    timeline: 1,
+    productionSchedule: 1,
+  });
+
+  if (!requests.length) {
+    return { updatedMailboxAddresses: [], affectedBusinessAnchorIds: [] };
+  }
+
+  const todayYmd = getTodayYmdInKst();
+  const todayPickupAt = todayYmd
+    ? new Date(`${todayYmd}T16:00:00+09:00`)
+    : null;
+  const updatedMailboxAddressSet = new Set();
+  const affectedBusinessAnchorIdSet = new Set();
+
+  for (const requestDoc of requests) {
+    requestDoc.timeline = requestDoc.timeline || {};
+    requestDoc.productionSchedule = requestDoc.productionSchedule || {};
+    requestDoc.timeline.forceTodayShipment = true;
+    if (todayYmd) {
+      requestDoc.timeline.nextEstimatedShipYmd = todayYmd;
+      requestDoc.timeline.estimatedShipYmd = todayYmd;
+    }
+    if (todayPickupAt && !Number.isNaN(todayPickupAt.getTime())) {
+      requestDoc.productionSchedule.scheduledShipPickup = todayPickupAt;
+    }
+    await requestDoc.save();
+
+    const mailbox = String(requestDoc?.mailboxAddress || "").trim();
+    if (mailbox) updatedMailboxAddressSet.add(mailbox);
+    const businessAnchorId = String(requestDoc?.businessAnchorId || "").trim();
+    if (businessAnchorId) affectedBusinessAnchorIdSet.add(businessAnchorId);
+  }
+
+  return {
+    updatedMailboxAddresses: Array.from(updatedMailboxAddressSet),
+    affectedBusinessAnchorIds: Array.from(affectedBusinessAnchorIdSet),
+  };
+};
 
 const findPrePrintSnapshotRequests = async (mailboxAddresses = []) =>
   findPackingStageRequestsByMailboxes(mailboxAddresses, {
@@ -317,6 +372,8 @@ const findPrePrintSnapshotRequests = async (mailboxAddresses = []) =>
       requestId: 1,
       mailboxAddress: 1,
       manufacturerStage: 1,
+      timeline: 1,
+      productionSchedule: 1,
       shippingLabelPrinted: 1,
       shippingWorkflow: 1,
       deliveryInfoRef: 1,
@@ -1067,9 +1124,33 @@ export async function validateHanjinCustomerCheck(req, res) {
 
 export async function printHanjinLabels(req, res) {
   try {
-    const { mailboxAddresses, payload, wblPrintOptions } = req.body || {};
+    const {
+      mailboxAddresses,
+      payload,
+      wblPrintOptions,
+      forceTodayMailboxAddresses,
+    } = req.body || {};
     const preResolved = req?.__resolvedHanjinPayload || null;
     const normalizedMailboxAddresses = resolveMailboxList(mailboxAddresses);
+    const normalizedForceTodayMailboxAddresses = resolveMailboxList(
+      forceTodayMailboxAddresses,
+    ).filter((address) => normalizedMailboxAddresses.includes(address));
+
+    if (normalizedForceTodayMailboxAddresses.length > 0) {
+      const { affectedBusinessAnchorIds } =
+        await persistForceTodayShipmentForMailboxes(
+          normalizedForceTodayMailboxAddresses,
+        );
+      for (const businessAnchorId of affectedBusinessAnchorIds) {
+        triggerPricingSnapshotForBusinessAnchorId(
+          businessAnchorId,
+          "force-today-shipment",
+        );
+      }
+    }
+    const effectivePreResolved = normalizedForceTodayMailboxAddresses.length
+      ? null
+      : preResolved;
 
     const path = resolveHanjinPath(
       "HANJIN_PRINT_WBL_PATH",
@@ -1084,7 +1165,7 @@ export async function printHanjinLabels(req, res) {
 
     let resolved;
     try {
-      resolved = await resolveHanjinPayload.call(preResolved, {
+      resolved = await resolveHanjinPayload.call(effectivePreResolved, {
         mailboxAddresses,
         payload,
       });
@@ -1098,8 +1179,8 @@ export async function printHanjinLabels(req, res) {
       throw err;
     }
 
-    const printRequests = Array.isArray(preResolved?.requests)
-      ? preResolved.requests
+    const printRequests = Array.isArray(effectivePreResolved?.requests)
+      ? effectivePreResolved.requests
       : await findPrePrintSnapshotRequests(normalizedMailboxAddresses);
     const mailboxChangeSet = buildMailboxChangeSet(printRequests);
     const mailboxChangeResponse = buildMailboxChangeResponse({
@@ -1513,11 +1594,18 @@ export async function requestHanjinPickupAndPrint(req, res) {
   try {
     const body = req.body || {};
     const mailboxAddresses = resolveMailboxList(body.mailboxAddresses);
+    const forceTodayMailboxAddresses = resolveMailboxList(
+      body.forceTodayMailboxAddresses,
+    ).filter((address) => mailboxAddresses.includes(address));
     if (!mailboxAddresses.length) {
       return res.status(400).json({
         success: false,
         message: "mailboxAddresses가 필요합니다.",
       });
+    }
+
+    if (forceTodayMailboxAddresses.length > 0) {
+      await persistForceTodayShipmentForMailboxes(forceTodayMailboxAddresses);
     }
 
     const {
@@ -1558,6 +1646,9 @@ export async function requestHanjinPickupAndPrint(req, res) {
     const printReq = buildIntegratedPrintRequest({
       req,
       mailboxAddresses: printTargetMailboxAddresses,
+      forceTodayMailboxAddresses: forceTodayMailboxAddresses.filter((address) =>
+        printTargetMailboxAddresses.includes(address),
+      ),
       wblPrintOptions: body.wblPrintOptions,
     });
     const selectedRequestsForPrint = await findIntegratedPrintRequests(

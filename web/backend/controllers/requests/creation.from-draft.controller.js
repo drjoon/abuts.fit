@@ -955,6 +955,8 @@ export async function createRequestsFromDraft(req, res) {
               ymd: pickupYmdRaw,
             });
             newRequest.timeline = newRequest.timeline || {};
+            newRequest.timeline.originalEstimatedShipYmd = pickupYmd;
+            newRequest.timeline.nextEstimatedShipYmd = pickupYmd;
             newRequest.timeline.estimatedShipYmd = pickupYmd;
           } else {
             // Use manufacturer lead times based on diameter
@@ -981,6 +983,8 @@ export async function createRequestsFromDraft(req, res) {
               ymd: estimatedShipYmdRaw,
             });
             newRequest.timeline = newRequest.timeline || {};
+            newRequest.timeline.originalEstimatedShipYmd = estimatedShipYmd;
+            newRequest.timeline.nextEstimatedShipYmd = estimatedShipYmd;
             newRequest.timeline.estimatedShipYmd = estimatedShipYmd;
           }
 

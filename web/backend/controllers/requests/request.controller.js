@@ -52,8 +52,11 @@ export const {
   registerShipment,
 } = shippingRequestorController;
 
-export const { rollbackMailboxShipping, syncHanjinTracking } =
-  shippingController;
+export const {
+  rollbackMailboxShipping,
+  syncHanjinTracking,
+  setMailboxForceTodayShipment,
+} = shippingController;
 export const { resetMailboxShippingWorkingState, mockHanjinDeliveryCompleted } =
   shippingController;
 

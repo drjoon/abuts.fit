@@ -207,6 +207,11 @@ export function NewRequestShippingSection({
               ))}
             </div>
           </div>
+          <div className="text-center text-xs text-slate-500 leading-relaxed">
+            선택한 요일이 여러 개면 가장 먼저 도래한 요일에 발송합니다.
+            <br />
+            먼저 생산된 제품도 그날까지 계속 모아 두었다가 한 번에 발송합니다.
+          </div>
         </div>
       </div>
 

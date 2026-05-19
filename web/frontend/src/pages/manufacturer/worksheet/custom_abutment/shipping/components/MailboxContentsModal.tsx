@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { request } from "@/shared/api/apiClient";
@@ -71,6 +72,8 @@ type MailboxContentsModalProps = {
     addressDetail: string;
     zipCode: string;
   }) => void;
+  forceToday?: boolean;
+  onForceTodayChange?: (checked: boolean) => void;
 };
 
 export const MailboxContentsModal = ({
@@ -84,6 +87,8 @@ export const MailboxContentsModal = ({
   onRollbackAll,
   isRollingBackAll = false,
   onAddressSaved,
+  forceToday = false,
+  onForceTodayChange,
 }: MailboxContentsModalProps) => {
   const { toast } = useToast();
   const getLotShortCode = (req: ManufacturerRequest) => {
@@ -321,6 +326,28 @@ export const MailboxContentsModal = ({
             </span>
           </DialogTitle>
         </DialogHeader>
+        <div className="mt-1 flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50/70 px-3 py-2.5">
+          <Checkbox
+            id={`mailbox-force-today-${address}`}
+            checked={forceToday}
+            onCheckedChange={(checked) =>
+              onForceTodayChange?.(Boolean(checked))
+            }
+            className="mt-0.5 border-blue-400 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+          />
+          <div className="min-w-0">
+            <Label
+              htmlFor={`mailbox-force-today-${address}`}
+              className="text-sm font-semibold text-slate-900 cursor-pointer"
+            >
+              오늘 발송
+            </Label>
+            <div className="mt-1 text-xs leading-relaxed text-slate-600">
+              체크하면 이 우편함은 의뢰자 기본 발송 요일과 무관하게 오늘
+              발송으로 강제 처리됩니다.
+            </div>
+          </div>
+        </div>
         {errorMessage ? (
           <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
             {errorMessage}

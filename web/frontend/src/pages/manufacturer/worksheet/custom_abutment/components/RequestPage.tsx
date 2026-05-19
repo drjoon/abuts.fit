@@ -667,6 +667,9 @@ export const RequestPage = ({
                   requests={filteredAndSorted.filter(
                     (r) => r.mailboxAddress || isPrePickupShippingVisible(r),
                   )}
+                  forceTodayMailboxAddresses={
+                    mailboxState.forceTodayMailboxAddresses
+                  }
                   onBoxClick={(address, reqs) =>
                     mailboxState.handleRegisterShipment(address, reqs)
                   }
@@ -789,6 +792,20 @@ export const RequestPage = ({
         }
         isRollingBackAll={mailboxState.isRollingBackAll}
         onAddressSaved={mailboxState.handleMailboxAddressSaved}
+        forceToday={
+          mailboxState.forceTodayMailboxAddresses.has(
+            mailboxState.mailboxModalAddress,
+          ) ||
+          mailboxState.mailboxModalRequests.some((req) =>
+            Boolean(req?.timeline?.forceTodayShipment),
+          )
+        }
+        onForceTodayChange={(checked) =>
+          mailboxState.setMailboxForceToday(
+            mailboxState.mailboxModalAddress,
+            checked,
+          )
+        }
       />
 
       <PreviewModal

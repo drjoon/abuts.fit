@@ -174,6 +174,13 @@ router.post(
 );
 
 router.post(
+  "/shipping/mailbox-force-today",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.setMailboxForceTodayShipment,
+);
+
+router.post(
   "/shipping/mailbox-reset-working-state",
   authenticate,
   authorize(["manufacturer", "admin"]),

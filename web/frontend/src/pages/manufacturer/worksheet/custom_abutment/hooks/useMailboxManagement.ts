@@ -12,6 +12,9 @@ export const useMailboxManagement = (
   const [mailboxModalRequests, setMailboxModalRequests] = useState<
     ManufacturerRequest[]
   >([]);
+  const [forceTodayMailboxAddresses, setForceTodayMailboxAddresses] = useState<
+    Set<string>
+  >(new Set());
   const [mailboxErrorByAddress, setMailboxErrorByAddress] = useState<
     Record<string, string>
   >({});
@@ -35,6 +38,63 @@ export const useMailboxManagement = (
     setMailboxModalRequests([]);
     setIsRollingBackAll(false);
   }, []);
+
+  const setMailboxForceToday = useCallback(
+    async (address: string, enabled: boolean) => {
+      const normalized = String(address || "").trim();
+      if (!normalized) return;
+      const applyLocal = (checked: boolean) =>
+        setForceTodayMailboxAddresses((prev) => {
+          const next = new Set(prev);
+          if (checked) next.add(normalized);
+          else next.delete(normalized);
+          return next;
+        });
+
+      applyLocal(enabled);
+
+      if (!token) {
+        toast({
+          title: "로그인이 필요합니다",
+          variant: "destructive",
+        });
+        applyLocal(!enabled);
+        return;
+      }
+
+      try {
+        const res = await request<any>({
+          path: "/api/requests/shipping/mailbox-force-today",
+          method: "POST",
+          token,
+          jsonBody: {
+            mailboxAddress: normalized,
+            forceTodayShipment: enabled,
+          },
+        });
+
+        if (!res.ok || !res.data?.success) {
+          throw new Error(
+            String(res.data?.message || "").trim() ||
+              "강제 오늘 발송 저장에 실패했습니다.",
+          );
+        }
+
+        await fetchRequests();
+      } catch (error) {
+        applyLocal(!enabled);
+        toast({
+          title: enabled ? "오늘 발송 설정 실패" : "오늘 발송 해제 실패",
+          description:
+            error instanceof Error && error.message
+              ? error.message
+              : "강제 오늘 발송 저장에 실패했습니다.",
+          variant: "destructive",
+        });
+      }
+    },
+    [fetchRequests, toast, token],
+  );
 
   const handleMailboxAddressSaved = useCallback(
     (payload: {
@@ -125,6 +185,8 @@ export const useMailboxManagement = (
     setMailboxModalAddress,
     mailboxModalRequests,
     setMailboxModalRequests,
+    forceTodayMailboxAddresses,
+    setMailboxForceToday,
     mailboxErrorByAddress,
     setMailboxErrorByAddress,
     isRollingBackAll,

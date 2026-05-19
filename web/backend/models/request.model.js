@@ -578,6 +578,10 @@ const requestSchema = new mongoose.Schema(
       originalEstimatedShipYmd: String, // 최초 계산된 발송 예정일(YYYY-MM-DD)
       nextEstimatedShipYmd: String, // 재조정된 다음 발송 예정일(YYYY-MM-DD)
       estimatedShipYmd: String, // YYYY-MM-DD 형식 (KST 기준, 발송 예정일)
+      forceTodayShipment: {
+        type: Boolean,
+        default: false,
+      },
       actualCompletion: Date,
     },
 

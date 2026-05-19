@@ -240,9 +240,14 @@ export interface RequestBase {
   };
 
   timeline?: {
+    originalEstimatedShipYmd?: string;
+    nextEstimatedShipYmd?: string;
     estimatedShipYmd?: string; // YYYY-MM-DD 형식 (KST 기준, 발송 예정일)
+    forceTodayShipment?: boolean;
     actualCompletion?: string | Date;
   };
+
+  deliveryInfoRef?: DeliveryInfoSummary | string;
 
   // 결제/가격 정보 (백엔드 price, paymentStatus 매핑)
   price?: {
@@ -251,9 +256,6 @@ export interface RequestBase {
     quotedAt?: string;
   };
   paymentStatus?: "결제전" | "결제완료" | "결제취소" | string;
-
-  // 배송 정보 레퍼런스 (별도 DeliveryInfo 컬렉션)
-  deliveryInfoRef?: string | DeliveryInfoSummary;
 
   shippingWorkflow?: {
     code?:

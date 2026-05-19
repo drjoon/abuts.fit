@@ -216,7 +216,10 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
           <p className="text-base leading-relaxed text-slate-600 pt-2">
             선택한 요일 오후 2시까지 모인 제품을 한 박스로 묶어 발송합니다.
             <br />
-            묶음 요일은 여러 개를 선택할 수 있습니다.
+            묶음 요일은 여러 개를 선택할 수 있으며, 실제 발송은 가장 먼저 도래한
+            선택 요일에 진행됩니다.
+            <br />
+            먼저 생산된 제품도 그날까지 계속 모아 두었다가 한 번에 발송합니다.
             {shippingDaysSummary ? (
               <>
                 <br />

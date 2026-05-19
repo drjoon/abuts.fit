@@ -79,11 +79,13 @@ export const callHanjinApi = async ({
 export const callHanjinApiWithMeta = async ({
   path,
   mailboxAddresses,
+  forceTodayMailboxAddresses,
   payload,
   wblPrintOptions,
 }: {
   path: string;
   mailboxAddresses?: string[];
+  forceTodayMailboxAddresses?: string[];
   payload?: Record<string, any>;
   wblPrintOptions?: {
     printer?: string;
@@ -93,6 +95,9 @@ export const callHanjinApiWithMeta = async ({
   const body: Record<string, unknown> = {};
   if (Array.isArray(mailboxAddresses)) {
     body.mailboxAddresses = mailboxAddresses;
+  }
+  if (Array.isArray(forceTodayMailboxAddresses)) {
+    body.forceTodayMailboxAddresses = forceTodayMailboxAddresses;
   }
   if (payload) {
     body.payload = payload;

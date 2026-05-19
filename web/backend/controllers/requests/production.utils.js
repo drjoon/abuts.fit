@@ -125,6 +125,9 @@ export const resolveNextWeeklyBatchYmd = async ({
   if (!Array.isArray(weeklyBatchDays) || weeklyBatchDays.length === 0)
     return baseYmd;
 
+  // 규칙: 여러 요일을 선택한 경우에도 baseYmd(생산/포장 완료 기준일) 이후
+  // 가장 먼저 도래하는 선택 요일 하루만 실제 발송일로 사용한다.
+  // 그 전까지 먼저 완성된 제품도 조기 발송하지 않고 같은 박스에 계속 누적한다.
   const allowed = new Set(
     weeklyBatchDays
       .map((day) => String(day).trim())
@@ -186,11 +189,13 @@ function getBulkWaitHours(diameterGroup) {
  * @param {Object} params
  * @param {number} params.maxDiameter - 최대 직경 (mm)
  * @param {Date} params.requestedAt - 의뢰 생성 시각
+ * @param {Array} params.weeklyBatchDays - 주간 배치일 (e.g. ["mon", "wed"])
  * @returns {Object} productionSchedule
  */
 export async function calculateInitialProductionSchedule({
   maxDiameter,
   requestedAt,
+  weeklyBatchDays,
 }) {
   const now = requestedAt || new Date();
   const { diameter, diameterGroup, preferredMachine } =
@@ -258,15 +263,25 @@ export async function calculateInitialProductionSchedule({
     0,
   );
 
+  const resolvedShipPickupYmd = await resolveNextWeeklyBatchYmd({
+    baseYmd: batchProcessingYmd,
+    weeklyBatchDays,
+  });
+  const scheduledPickupBase = createKstDateTime(
+    resolvedShipPickupYmd,
+    PACKING_CUTOFF_HOUR,
+    0,
+  );
+
   // 배치 처리 완료 → 택배 수거 신청 (15:00)
   const scheduledPickupRequest = getNextPickupTime(
-    scheduledBatchProcessing,
+    scheduledPickupBase,
     PICKUP_REQUEST_HOUR,
   );
 
   // 택배 수거 시각 (16:00)
   const scheduledShipPickup = getNextPickupTime(
-    scheduledBatchProcessing,
+    scheduledPickupBase,
     DAILY_PICKUP_HOUR,
   );
 

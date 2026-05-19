@@ -96,14 +96,11 @@ export const resolveMailboxShippingDayInfo = (
   if (!requests || requests.length === 0) {
     return { notToday: false, nextDayLabel: null };
   }
-  // 마감일(estimatedShipYmd)이 오늘이거나 이미 지난 의뢰가 하나라도 있으면
-  // 의뢰자의 weeklyBatchDays 정책과 무관하게 오늘 함께 발송 가능하도록 한다.
-  // (마감보다 일찍 제품이 나온 미래 발송 의뢰는 함께 묶어 조기 발송)
-  const hasDueOrOverdue = requests.some((req) => {
-    const ymd = String(req?.timeline?.estimatedShipYmd || "").trim();
-    return ymd && ymd <= todayYmd;
-  });
-  if (hasDueOrOverdue) {
+  if (
+    requests.some(
+      (req) => Boolean((req as any)?.timeline?.forceTodayShipment) === true,
+    )
+  ) {
     return { notToday: false, nextDayLabel: null };
   }
   // All requests in a mailbox share the same requestor org, so inspect the first
@@ -117,5 +114,6 @@ export const resolveMailboxShippingDayInfo = (
     const next = getNextShippingDayKey(days, todayKey);
     return { notToday: true, nextDayLabel: getDayLabel(next) || null };
   }
+  void todayYmd;
   return { notToday: false, nextDayLabel: null };
 };

@@ -32,6 +32,7 @@ import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services
  */
 export async function createRequest(req, res) {
   try {
+    let requestorWeeklyBatchDays = [];
     if (req.user?.role === "requestor") {
       const orgId = getRequestorOrgId(req);
       if (!orgId || !Types.ObjectId.isValid(orgId)) {
@@ -49,6 +50,24 @@ export async function createRequest(req, res) {
           success: false,
           message: `크레딧 사용이 제한되었습니다. 사유: ${lockStatus.reason}`,
           lockedAt: lockStatus.lockedAt,
+        });
+      }
+
+      const requestorOrg = await BusinessAnchor.findById(orgId)
+        .select({ "shippingPolicy.weeklyBatchDays": 1 })
+        .lean();
+      requestorWeeklyBatchDays = Array.isArray(
+        requestorOrg?.shippingPolicy?.weeklyBatchDays,
+      )
+        ? requestorOrg.shippingPolicy.weeklyBatchDays
+            .map((value) => String(value || "").trim())
+            .filter(Boolean)
+        : [];
+      if (requestorWeeklyBatchDays.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
         });
       }
     }
@@ -146,6 +165,7 @@ export async function createRequest(req, res) {
     const productionSchedule = await calculateInitialProductionSchedule({
       maxDiameter: normalizedCaseInfos?.maxDiameter,
       requestedAt,
+      weeklyBatchDays: requestorWeeklyBatchDays,
     });
     newRequest.productionSchedule = productionSchedule;
 
@@ -190,6 +210,8 @@ export async function createRequest(req, res) {
       ymd: estimatedShipYmdRaw,
     });
     newRequest.timeline = newRequest.timeline || {};
+    newRequest.timeline.originalEstimatedShipYmd = estimatedShipYmd;
+    newRequest.timeline.nextEstimatedShipYmd = estimatedShipYmd;
     newRequest.timeline.estimatedShipYmd = estimatedShipYmd;
 
     newRequest.caseInfos = newRequest.caseInfos || {};
@@ -297,6 +319,7 @@ export async function createRequest(req, res) {
 export async function createRequestsBulk(req, res) {
   try {
     // 권한 및 조직/크레딧 검사
+    let requestorWeeklyBatchDays = [];
     if (req.user?.role === "requestor") {
       const orgId = getRequestorOrgId(req);
       if (!orgId || !Types.ObjectId.isValid(orgId)) {
@@ -312,6 +335,24 @@ export async function createRequestsBulk(req, res) {
           success: false,
           message: `크레딧 사용이 제한되었습니다. 사유: ${lockStatus.reason}`,
           lockedAt: lockStatus.lockedAt,
+        });
+      }
+
+      const requestorOrg = await BusinessAnchor.findById(orgId)
+        .select({ "shippingPolicy.weeklyBatchDays": 1 })
+        .lean();
+      requestorWeeklyBatchDays = Array.isArray(
+        requestorOrg?.shippingPolicy?.weeklyBatchDays,
+      )
+        ? requestorOrg.shippingPolicy.weeklyBatchDays
+            .map((value) => String(value || "").trim())
+            .filter(Boolean)
+        : [];
+      if (requestorWeeklyBatchDays.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
         });
       }
     }
@@ -847,12 +888,14 @@ export async function createRequestsBulk(req, res) {
           const schedKey = JSON.stringify({
             maxDiameter: normalizedCaseInfos?.maxDiameter,
             requestedAt: toKstYmd(requestedAt),
+            weeklyBatchDays: requestorWeeklyBatchDays,
           });
           let productionSchedule = scheduleCache.get(schedKey);
           if (!productionSchedule) {
             productionSchedule = await calculateInitialProductionSchedule({
               maxDiameter: normalizedCaseInfos?.maxDiameter,
               requestedAt,
+              weeklyBatchDays: requestorWeeklyBatchDays,
             });
             scheduleCache.set(schedKey, productionSchedule);
           }
@@ -915,6 +958,8 @@ export async function createRequestsBulk(req, res) {
           }
           estimateMs += Date.now() - tNormBiz0;
           newRequest.timeline = newRequest.timeline || {};
+          newRequest.timeline.originalEstimatedShipYmd = estimatedShipYmd;
+          newRequest.timeline.nextEstimatedShipYmd = estimatedShipYmd;
           newRequest.timeline.estimatedShipYmd = estimatedShipYmd;
 
           newRequest.caseInfos = newRequest.caseInfos || {};
