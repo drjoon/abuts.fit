@@ -38,6 +38,18 @@ export function useWorksheetRealtimeStatus({
   matchesCurrentPage,
 }: UseWorksheetRealtimeStatusParams) {
   const realtimeBaseRef = useRef<Record<string, number>>({});
+  const latestRef = useRef({
+    previewOpen,
+    previewFiles,
+    fetchRequestsCore,
+    handleOpenPreview,
+  });
+  latestRef.current = {
+    previewOpen,
+    previewFiles,
+    fetchRequestsCore,
+    handleOpenPreview,
+  };
   const { toast } = useToast();
 
   const toStageLabel = (raw: unknown) => {
@@ -213,18 +225,25 @@ export function useWorksheetRealtimeStatus({
       if (shouldRefreshList && fetchRequests) {
         void fetchRequests(true);
       }
+      const {
+        previewOpen: currentPreviewOpen,
+        previewFiles: currentPreviewFiles,
+        fetchRequestsCore: currentFetchRequestsCore,
+        handleOpenPreview: currentHandleOpenPreview,
+      } = latestRef.current;
+
       if (
         !requestId ||
-        !fetchRequestsCore ||
-        !handleOpenPreview ||
-        !previewOpen
+        !currentFetchRequestsCore ||
+        !currentHandleOpenPreview ||
+        !currentPreviewOpen
       ) {
         if (!requestId && fetchRequests) void fetchRequests(true);
         return;
       }
 
       void (async () => {
-        const list = await fetchRequestsCore(true);
+        const list = await currentFetchRequestsCore(true);
         if (!list || !Array.isArray(list) || list.length === 0) return;
 
         const updated = list.find(
@@ -233,10 +252,10 @@ export function useWorksheetRealtimeStatus({
         if (!updated) return;
 
         const currentRid = String(
-          previewFiles?.request?.requestId || "",
+          currentPreviewFiles?.request?.requestId || "",
         ).trim();
         if (currentRid && currentRid !== requestId) return;
-        await handleOpenPreview(updated as any);
+        await currentHandleOpenPreview(updated as any);
       })();
     });
 
@@ -312,8 +331,15 @@ export function useWorksheetRealtimeStatus({
           }
           return;
         case "request:stage-changed": {
-          // 스테이지 변경 시 항목을 개별 패치하지 않고 전체 목록을 재조회한다.
-          // 이렇게 해야 현재 탭 조건에 맞는 항목만 한번에 올바르게 필터링된다.
+          // bg-file-processed 소스의 경우 이벤트에 최신 request 포함 → 즉시 패치하여
+          // re-fetch 완료 전에도 캐시 키 변경이 반영되도록 한다.
+          const eventRequest = payload?.request as
+            | ManufacturerRequest
+            | undefined;
+          if (eventRequest) {
+            setRequests((prev) => applyRequestPatch(prev, eventRequest));
+          }
+          // 전체 목록 재조회로 탭 필터링도 갱신
           if (fetchRequests) void fetchRequests(true);
           return;
         }

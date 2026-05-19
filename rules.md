@@ -932,6 +932,54 @@
 - 필요한 값이 비어 있으면 프론트는 조용히 채우지 말고 **에러를 노출하고 실패**해야 합니다.
 - 표시 조합이 필요하면 프론트가 규칙을 새로 만들지 말고, **백엔드가 정한 필드를 그대로 사용**합니다.
 
+### 5.4.1 STL 프리뷰 캐시 무효화 (2026-05-20)
+
+**문제**: Rhino 백엔드가 filled STL 파일을 재생성 후 S3에 업로드하고 DB 메타데이터를 갱신해도, 프론트 IndexedDB 캐시 키가 변경되지 않으면 구 STL 파일이 계속 표시됨.
+
+**캐시 키 구성**:
+
+- `buildBlobCacheKey()`는 `s3Key + fileSize + uploadedAt` 조합으로 캐시 키 생성
+- 백엔드가 새 파일을 S3에 업로드하면 `uploadedAt`이 갱신되어 캐시 키가 변경됨
+- 캐시 miss 시 새 파일 다운로드, 캐시 hit 시 IndexedDB에서 로드
+
+**무효화 흐름**:
+
+1. **Rhino-server 재생성 완료** → 백엔드 `registerProcessedFile` 호출
+2. **백엔드 DB 갱신** → `caseInfos.camFile.uploadedAt`에 `new Date()` 저장
+3. **실시간 이벤트 발행** → `request:stage-changed` with `payload.request` (최신 메타데이터 포함)
+4. **프론트 즉시 패치** → `applyRequestPatch()`로 리스트 상태 동기 갱신 (새 `uploadedAt` 반영)
+5. **캐시 키 변경 인식** → 새 키로 프리뷰 로드 시 IndexedDB miss → S3에서 신규 다운로드
+
+**중요한 구현 패턴**:
+
+1. **Stale closure 방지**: `useWorksheetRealtimeStatus`의 `onNotification` 핸들러에서 `previewOpen`, `previewFiles`, `fetchRequestsCore`, `handleOpenPreview`를 deps에 넣지 않고 항상 최신값 참조하려면 `latestRef.current` 패턴 사용
+
+   ```typescript
+   const latestRef = useRef({
+     previewOpen,
+     previewFiles,
+     fetchRequestsCore,
+     handleOpenPreview,
+   });
+   latestRef.current = {
+     previewOpen,
+     previewFiles,
+     fetchRequestsCore,
+     handleOpenPreview,
+   };
+   // 핸들러 내부에서는 latestRef.current.previewOpen 등으로 접근
+   ```
+
+2. **이벤트 payload 즉시 활용**: `request:stage-changed` 이벤트는 이미 `normalizedUpdatedRequest` (새 `camFile.uploadedAt` 포함)를 `payload.request`에 담고 있음. 단순히 `fetchRequests(true)`만 트리거하면 re-fetch 완료 전 사용자가 프리뷰 열어 구 캐시 키 사용 가능. 반드시 `applyRequestPatch()`로 먼저 동기 적용 후 re-fetch.
+
+3. **수동 재계산 버튼**: `PreviewModal`의 재계산 버튼은 `recalculate()` 폴링 완료 후 `onRefreshPreview(activeReq, { forceRefresh: true })` 호출. `forceRefresh=true`는 IndexedDB 캐시 읽기/쓰기 모두 우회하여 S3에서 직접 다운로드.
+
+**관련 파일**:
+
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus.ts` — 소켓 이벤트 핸들러, stale closure fix, 즉시 패치 로직
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader.ts` — 캐시 키 생성, `forceRefresh` 옵션 처리
+- `web/backend/controllers/bg/bg.controller.js` — `registerProcessedFile`, `uploadedAt` 갱신, `request:stage-changed` 이벤트 발행
+
 ### 5.5 Guide Tour
 
 - Guide Tour 기능은 더 이상 사용하지 않습니다.
