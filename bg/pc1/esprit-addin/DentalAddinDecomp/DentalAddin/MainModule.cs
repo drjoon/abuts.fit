@@ -2106,9 +2106,12 @@ namespace DentalAddin
             double firstX = MoveSTL_Module.FrontPointX + direction * absSpan * leftRatio;
             double lastX = MoveSTL_Module.FrontPointX + direction * absSpan * rightRatio;
 
-            techLatheMill5xComposite.FirstPassPercent = firstPercent;
+            double? firstPassPercentOverride = TryGetCompositeFirstPassPercentOverride();
+            techLatheMill5xComposite.FirstPassPercent = firstPassPercentOverride.HasValue
+                ? Clamp(firstPassPercentOverride.Value, 0.0, lastPercent)
+                : firstPercent;
             techLatheMill5xComposite.LastPassPercent = lastPercent;
-            DentalLogger.Log($"Composite2 - PassPercent 계산: First={firstPercent:F2}%(X:{firstX:F3}), Last={lastPercent:F2}%(X:{lastX:F3}), Span:{absSpan:F3}, BackPointX:{MoveSTL_Module.BackPointX:F3}, RightOffsetUsed:{rightOffset:F3}");
+            DentalLogger.Log($"Composite2 - PassPercent 계산: First={techLatheMill5xComposite.FirstPassPercent:F2}%(X:{firstX:F3}), Last={lastPercent:F2}%(X:{lastX:F3}), Span:{absSpan:F3}, BackPointX:{MoveSTL_Module.BackPointX:F3}, RightOffsetUsed:{rightOffset:F3}");
 
             techLatheMill5xComposite.DriveSurface = "19," + Conversions.ToString(SurfaceNumber);
             if (string.IsNullOrWhiteSpace(techLatheMill5xComposite.ToolID))

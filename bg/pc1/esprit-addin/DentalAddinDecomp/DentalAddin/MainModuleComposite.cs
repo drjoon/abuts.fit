@@ -202,7 +202,11 @@ namespace DentalAddin
 
             opA.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
             opB.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
-            // opA.FirstPassPercent은 prc 파일(5axisComposite_A.prc)의 FirstPassPercent 값(기본 1.5)을 그대로 사용
+            double? firstPassPercentOverride = TryGetCompositeFirstPassPercentOverride();
+            if (firstPassPercentOverride.HasValue)
+            {
+                opA.FirstPassPercent = Clamp(firstPassPercentOverride.Value, 0.0, splitPercent);
+            }
             opA.LastPassPercent = splitPercent;
             opB.FirstPassPercent = splitPercent;
             opB.LastPassPercent = lastPercent;
@@ -273,6 +277,23 @@ namespace DentalAddin
                 TryAddOperation(opBExtension, freeFormFeature, "Composite2SplitAB:B:Extension");
             }
             return true;
+        }
+
+        private static double? TryGetCompositeFirstPassPercentOverride()
+        {
+            string raw = Environment.GetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return null;
+            }
+
+            if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
+            {
+                DentalLogger.Log($"Composite2SplitAB - FirstPassPercent env 파싱 실패 (env={AppConfig.CompositeFirstPassPercentAEnv}, raw='{raw}')");
+                return null;
+            }
+
+            return Clamp(value, 0.0, 100.0);
         }
 
         // retentionGroove(유지홈) → StepIncrement 적용. PRC 파일을 건드리지 않고

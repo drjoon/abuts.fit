@@ -191,6 +191,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         _backendRetentionGroove = string.IsNullOrWhiteSpace(requestMeta.retentionGroove)
                             ? null
                             : requestMeta.retentionGroove.Trim();
+                        TryApplyCompositeFirstPassPercentEnv(requestMeta.tooth);
                         AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}");
                         AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, espritR={(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
                         if (!_prcManager.ApplyBackendPrcNames((BackendApiClient.RequestMetaCaseInfos)requestMeta, requestId, _backendImplantLabel))
@@ -363,6 +364,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendRequestId = null;
             _backendImplantLabel = null;
             _effectiveFrontLimitX = null;
+            Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, null);
             FaceHoleProcessFilePath = null;
             ConnectionMachiningProcessFilePath = null;
             lotNumber = "ACR";
@@ -1058,6 +1060,56 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             catch (Exception ex)
             {
                 AppLogger.Log($"DentalAddin: retentionGroove 적용 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private void TryApplyCompositeFirstPassPercentEnv(string tooth)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(tooth))
+                {
+                    Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, null);
+                    AppLogger.Log("DentalAddin: tooth 미지정 - FirstPassPercent 기본값(PRC 원본) 유지");
+                    return;
+                }
+
+                int lastDigit = -1;
+                for (int i = tooth.Length - 1; i >= 0; i--)
+                {
+                    char ch = tooth[i];
+                    if (char.IsDigit(ch))
+                    {
+                        lastDigit = ch - '0';
+                        break;
+                    }
+                }
+
+                double? firstPassPercent = null;
+                if (lastDigit >= 1 && lastDigit <= 3)
+                {
+                    firstPassPercent = 5.0;
+                }
+                else if (lastDigit >= 4 && lastDigit <= 7)
+                {
+                    firstPassPercent = 1.0;
+                }
+
+                if (!firstPassPercent.HasValue)
+                {
+                    Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, null);
+                    AppLogger.Log($"DentalAddin: tooth='{tooth}' 에서 전치/구치 판별 불가 - FirstPassPercent 기본값(PRC 원본) 유지");
+                    return;
+                }
+
+                string envValue = firstPassPercent.Value.ToString("0.###", CultureInfo.InvariantCulture);
+                Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, envValue);
+                AppLogger.Log($"DentalAddin: tooth='{tooth}' -> FirstPassPercent={envValue} 적용 (env={AppConfig.CompositeFirstPassPercentAEnv})");
+            }
+            catch (Exception ex)
+            {
+                Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, null);
+                AppLogger.Log($"DentalAddin: FirstPassPercent 적용 실패 - {ex.GetType().Name}:{ex.Message}");
             }
         }
 

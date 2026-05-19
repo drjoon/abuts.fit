@@ -60,6 +60,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         public const string CompositeStepIncrementAEnv = "ABUTS_COMPOSITE_STEP_INCREMENT_A";
 
+        public const string CompositeFirstPassPercentAEnv = "ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A";
+
         public const string BackendUrlEnv = "BACKEND_BASE";
 
         public const string EspritPortEnv = "ESPRIT_ADDIN_PORT";
