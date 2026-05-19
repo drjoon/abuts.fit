@@ -1,16 +1,28 @@
 import asyncio
+import os
 import threading
 import time
 import uuid
 from pathlib import Path
-import os
+
 import requests
-from . import settings
-from . import state
+
+from . import settings, state
 from .logger import log
 from .rhino_runner import run_rhino_python
 
-def notify_runtime_status(item: dict | None, *, source: str, stage: str, status: str, label: str, tone: str | None = None, clear: bool = False, metadata: dict | None = None) -> None:
+
+def notify_runtime_status(
+    item: dict | None,
+    *,
+    source: str,
+    stage: str,
+    status: str,
+    label: str,
+    tone: str | None = None,
+    clear: bool = False,
+    metadata: dict | None = None,
+) -> None:
     try:
         backend_url = os.getenv("BACKEND_BASE", "").rstrip("/")
         if not backend_url:
@@ -42,6 +54,7 @@ def notify_runtime_status(item: dict | None, *, source: str, stage: str, status:
     except Exception as e:
         log(f"runtime-status notify failed: {e}")
 
+
 def upload_via_presign(out_path: Path, original_name: str, item: dict) -> bool:
     try:
         backend_url = os.getenv("BACKEND_BASE", "").rstrip("/")
@@ -49,7 +62,9 @@ def upload_via_presign(out_path: Path, original_name: str, item: dict) -> bool:
             log("BACKEND_BASE not configured")
             return False
         presign_url = f"{backend_url}/bg/presign-upload"
-        req_id = item.get("requestId") or settings.extract_request_id_from_name(original_name)
+        req_id = item.get("requestId") or settings.extract_request_id_from_name(
+            original_name
+        )
         file_name = out_path.name
         payload = {
             "sourceStep": "2-filled",
@@ -73,7 +88,9 @@ def upload_via_presign(out_path: Path, original_name: str, item: dict) -> bool:
         file_size = out_path.stat().st_size
         with open(out_path, "rb") as f:
             put_headers = {"Content-Type": content_type}
-            put_resp = requests.put(presigned_url, data=f, headers=put_headers, timeout=30)
+            put_resp = requests.put(
+                presigned_url, data=f, headers=put_headers, timeout=30
+            )
             if put_resp.status_code not in (200, 201):
                 log(
                     f"Presigned PUT failed status={put_resp.status_code} body={put_resp.text}"
@@ -112,8 +129,10 @@ def upload_via_presign(out_path: Path, original_name: str, item: dict) -> bool:
         log(f"Presign upload exception: {e}")
         return False
 
+
 def fetch_pending_stl_list() -> list[dict]:
     import os
+
     backend = os.getenv("BACKEND_BASE", "").rstrip("/")
     if not backend:
         log("pending-stl skipped: BACKEND_BASE not set")
@@ -139,12 +158,15 @@ def fetch_pending_stl_list() -> list[dict]:
         log(f"pending-stl fetch error: {e}")
         return []
 
+
 def _compose_input_filename(file_name: str, _: str | None) -> str:
     # 백엔드 파일명을 그대로 사용 (경로/특수문자만 sanitize)
     return settings.sanitize_filename(Path(file_name).name)
 
+
 def download_original_to_input(item: dict) -> bool:
     import os
+
     backend = os.getenv("BACKEND_BASE", "").rstrip("/")
     if not backend:
         return False
@@ -159,7 +181,9 @@ def download_original_to_input(item: dict) -> bool:
     params = {"requestId": request_id, "filePath": file_name}
     url = f"{backend}/bg/original-file"
     try:
-        res = requests.get(url, params=params, timeout=30, headers=settings.bridge_headers())
+        res = requests.get(
+            url, params=params, timeout=30, headers=settings.bridge_headers()
+        )
         if res.status_code != 200:
             log(f"original-file fetch failed: status={res.status_code}")
             return False
@@ -209,13 +233,13 @@ def _fallback_diameter_from_case_infos(case_infos: dict) -> float | None:
     return _BRAND_DIAMETER_FALLBACK.get((manufacturer, brand, family, implant_type))
 
 
-def fetch_connection_target_diameter(request_id: str | None) -> float | None:
+def fetch_request_meta_case_infos(request_id: str | None) -> dict:
     if not request_id:
-        return None
+        return {}
 
     backend = os.getenv("BACKEND_BASE", "").rstrip("/")
     if not backend:
-        return None
+        return {}
 
     try:
         res = requests.get(
@@ -226,12 +250,38 @@ def fetch_connection_target_diameter(request_id: str | None) -> float | None:
         )
         if res.status_code != 200:
             log(
-                f"request-meta fetch failed for diameter: requestId={request_id} status={res.status_code}"
+                f"request-meta fetch failed: requestId={request_id} status={res.status_code}"
             )
-            return None
+            return {}
 
         payload = res.json() if res.content else {}
-        case_infos = ((payload or {}).get("data") or {}).get("caseInfos") or {}
+        return ((payload or {}).get("data") or {}).get("caseInfos") or {}
+    except Exception as e:
+        log(f"request-meta fetch failed: requestId={request_id} error={e}")
+        return {}
+
+
+def fetch_finish_line_points(request_id: str | None) -> list | None:
+    case_infos = fetch_request_meta_case_infos(request_id)
+    finish_line = case_infos.get("finishLine") or {}
+    points = finish_line.get("points")
+    if isinstance(points, list) and len(points) >= 2:
+        log(
+            f"[finishline] fallback loaded from backend: requestId={request_id} points={len(points)}"
+        )
+        return points
+    return None
+
+
+def fetch_connection_target_diameter(request_id: str | None) -> float | None:
+    if not request_id:
+        return None
+
+    try:
+        case_infos = fetch_request_meta_case_infos(request_id)
+        if not case_infos:
+            return None
+
         raw = case_infos.get("connectionTargetDiameter")
         if raw not in (None, ""):
             diameter = float(raw)
@@ -239,17 +289,17 @@ def fetch_connection_target_diameter(request_id: str | None) -> float | None:
                 log(
                     f"[diameter] connectionTargetDiameter={diameter:.4f}mm from backend DB "
                     f"(requestId={request_id} "
-                    f"{case_infos.get('implantManufacturer','')}/{case_infos.get('implantBrand','')}/"
-                    f"{case_infos.get('implantFamily','')}/{case_infos.get('implantType','')})"
+                    f"{case_infos.get('implantManufacturer', '')}/{case_infos.get('implantBrand', '')}/"
+                    f"{case_infos.get('implantFamily', '')}/{case_infos.get('implantType', '')})"
                 )
                 return diameter
 
         # 백엔드가 null 반환 → 직접 커넥션 직경을 알 수 없음 → 정적 맵으로 폴백
-        manufacturer = case_infos.get('implantManufacturer', '')
-        brand = case_infos.get('implantBrand', '')
-        family = case_infos.get('implantFamily', '')
-        implant_type = case_infos.get('implantType', '')
-        prc = case_infos.get('connectionPrcFileName', '')
+        manufacturer = case_infos.get("implantManufacturer", "")
+        brand = case_infos.get("implantBrand", "")
+        family = case_infos.get("implantFamily", "")
+        implant_type = case_infos.get("implantType", "")
+        prc = case_infos.get("connectionPrcFileName", "")
         log(
             f"[diameter] connectionTargetDiameter is null in backend response: requestId={request_id} "
             f"implantManufacturer={manufacturer} "
@@ -264,18 +314,24 @@ def fetch_connection_target_diameter(request_id: str | None) -> float | None:
                 f"[diameter] static fallback: {manufacturer}/{brand}/{family}/{implant_type} → {fallback:.4f}mm"
             )
             return fallback
-        log(f"[diameter] no static fallback found for {manufacturer}/{brand}/{family}/{implant_type}; will use default 3.33")
+        log(
+            f"[diameter] no static fallback found for {manufacturer}/{brand}/{family}/{implant_type}; will use default 3.33"
+        )
         return None
     except Exception as e:
         log(f"request-meta diameter parse failed: requestId={request_id} error={e}")
 
     return None
 
+
 def canonicalize_input_name(original: str) -> str:
     # 백엔드 파일명을 그대로 사용 (경로/특수문자만 sanitize)
     return settings.sanitize_filename(Path(original).name)
 
-async def process_single_stl(p: Path, force_reprocess: bool = False, explicit_request_id: str | None = None):
+
+async def process_single_stl(
+    p: Path, force_reprocess: bool = False, explicit_request_id: str | None = None
+):
     if isinstance(p, str):
         p = Path(p)
     if not p.exists():
@@ -286,7 +342,9 @@ async def process_single_stl(p: Path, force_reprocess: bool = False, explicit_re
         prefixed_input = canonicalize_input_name(p.name)
         base_stem = Path(prefixed_input).stem
         out_name = settings.sanitize_filename(f"{base_stem}.filled.stl")
-        req_id = explicit_request_id or settings.extract_request_id_from_name(prefixed_input)
+        req_id = explicit_request_id or settings.extract_request_id_from_name(
+            prefixed_input
+        )
         out_path = settings.STORE_OUT_DIR / out_name
         with state.in_flight_lock:
             if p.name in state.in_flight:
@@ -300,7 +358,9 @@ async def process_single_stl(p: Path, force_reprocess: bool = False, explicit_re
                     f"Output already exists for: {p.name}, attempting presigned upload re-sync."
                 )
                 if force_fill:
-                    log("Force-fill 테스트 모드: 기존 out 파일을 삭제하고 다시 생성합니다.")
+                    log(
+                        "Force-fill 테스트 모드: 기존 out 파일을 삭제하고 다시 생성합니다."
+                    )
                     try:
                         out_path.unlink()
                     except Exception as e:
@@ -315,7 +375,9 @@ async def process_single_stl(p: Path, force_reprocess: bool = False, explicit_re
                     try:
                         from .stl_metadata import calculate_and_register_metadata
 
-                        log(f"[process_single_stl] Output exists, registering STL metadata for {req_id}")
+                        log(
+                            f"[process_single_stl] Output exists, registering STL metadata for {req_id}"
+                        )
                         existing_target = fetch_connection_target_diameter(req_id)
                         calculate_and_register_metadata(
                             out_path,
@@ -325,7 +387,9 @@ async def process_single_stl(p: Path, force_reprocess: bool = False, explicit_re
                             connection_target_diameter=existing_target,
                         )
                     except Exception as e:
-                        log(f"[process_single_stl] Failed to register metadata from existing output: {e}")
+                        log(
+                            f"[process_single_stl] Failed to register metadata from existing output: {e}"
+                        )
                     if upload_via_presign(
                         out_path,
                         prefixed_input,
@@ -357,7 +421,9 @@ async def process_single_stl(p: Path, force_reprocess: bool = False, explicit_re
                     f"[align] requestId={req_id} connection target diameter={connection_target_diameter:.4f}mm"
                 )
             else:
-                log(f"[align] requestId={req_id} connection target diameter not found; using default")
+                log(
+                    f"[align] requestId={req_id} connection target diameter not found; using default"
+                )
             log(f"Calling run_rhino_python for: {p.name}")
             log_text, output_info = await run_rhino_python(
                 input_stl=p,
@@ -397,12 +463,14 @@ async def process_single_stl(p: Path, force_reprocess: bool = False, explicit_re
                     "status": "success",
                 }
             )
+
             def _parse_metadata_from_log(text: str) -> dict:
                 if not text:
                     return {}
                 import base64
                 import json
                 import re
+
                 meta: dict = {}
                 m = re.search(r"DIAMETER_RESULT:max=([\d.]+) conn=([\d.]+)", text)
                 if m:
@@ -416,13 +484,16 @@ async def process_single_stl(p: Path, force_reprocess: bool = False, explicit_re
                 m2 = re.search(r"FINISHLINE_RESULT:([A-Za-z0-9+/=]+)", text)
                 if m2:
                     try:
-                        raw = base64.b64decode(m2.group(1)).decode("utf-8", errors="ignore")
+                        raw = base64.b64decode(m2.group(1)).decode(
+                            "utf-8", errors="ignore"
+                        )
                         data = json.loads(raw)
                         if isinstance(data, dict):
                             meta["finishLine"] = data
                     except Exception:
                         pass
                 return meta
+
             metadata = _parse_metadata_from_log(log_text)
             if not metadata.get("finishLine"):
                 log(f"[rhino-finishline] FINISHLINE_RESULT missing for {req_id}")
@@ -461,9 +532,12 @@ async def process_single_stl(p: Path, force_reprocess: bool = False, explicit_re
                 return
 
             from .stl_metadata import calculate_and_register_metadata
+
             finish_line_points = None
             if metadata.get("finishLine"):
                 finish_line_points = metadata["finishLine"].get("points")
+            if not finish_line_points:
+                finish_line_points = fetch_finish_line_points(req_id)
             log(f"[process_single_stl] Calculating STL metadata for {req_id}")
             try:
                 stl_metadata = calculate_and_register_metadata(
@@ -476,12 +550,16 @@ async def process_single_stl(p: Path, force_reprocess: bool = False, explicit_re
                 if stl_metadata:
                     # 메타데이터를 metadata dict에 병합
                     metadata["stlMetadata"] = stl_metadata
-                    log(f"[process_single_stl] STL metadata calculated and registered for {req_id}")
+                    log(
+                        f"[process_single_stl] STL metadata calculated and registered for {req_id}"
+                    )
             except Exception as e:
                 log(f"[process_single_stl] Failed to calculate STL metadata: {e}")
 
             if force_fill:
-                log("Force-fill 테스트 모드: presigned 업로드와 백엔드 통지를 생략합니다.")
+                log(
+                    "Force-fill 테스트 모드: presigned 업로드와 백엔드 통지를 생략합니다."
+                )
             else:
                 upload_via_presign(
                     out_path,
@@ -530,13 +608,16 @@ async def process_single_stl(p: Path, force_reprocess: bool = False, explicit_re
                 except Exception as _e:
                     log(f"[cleanup] temp file delete failed ({_tmp}): {_e}")
 
+
 async def recover_unprocessed_files() -> None:
     try:
         settings.ensure_dirs()
         log("Scanning for unprocessed files on startup...")
         force_fill = settings.is_force_fill_mode()
         if force_fill:
-            log("TEST MODE 활성화: 입력 폴더 내 모든 STL에 대해 FillMeshHoles 강제 실행")
+            log(
+                "TEST MODE 활성화: 입력 폴더 내 모든 STL에 대해 FillMeshHoles 강제 실행"
+            )
         # 강제 테스트 모드: 로컬 입력 폴더 스캔 유지 (디버그용)
         if force_fill:
             in_files = sorted(
@@ -555,7 +636,9 @@ async def recover_unprocessed_files() -> None:
                 await process_single_stl(p)
                 log(f"Recover: {p.name} processing completed")
                 # 테스트 모드에서는 첫 파일만 처리
-                log("Force-fill 테스트 모드: 디버깅을 위해 첫 파일만 처리하고 중단합니다.")
+                log(
+                    "Force-fill 테스트 모드: 디버깅을 위해 첫 파일만 처리하고 중단합니다."
+                )
                 break
             return
         # 운영 모드: SSOT(백엔드)에서 내려준 목록만 처리
@@ -582,11 +665,15 @@ async def recover_unprocessed_files() -> None:
             log(f"Recover: enqueued {p.name} → {result}")
     except Exception as e:
         log(f"Recover failed: {e}")
+
+
 def run_recovery_in_thread():
     loop = __import__("asyncio").new_event_loop()
     __import__("asyncio").set_event_loop(loop)
     loop.run_until_complete(recover_unprocessed_files())
     loop.close()
+
+
 def start_recovery_thread():
     t = threading.Thread(target=run_recovery_in_thread, daemon=True)
     t.start()
@@ -600,6 +687,7 @@ def start_recovery_thread():
 # 요청은 stl_job_queue에 쌓이고, stl_queue_worker가 하나씩 꺼내 처리한다.
 # 중복 요청(같은 파일명이 이미 큐에 있거나 처리 중)은 무시한다.
 
+
 async def stl_queue_worker() -> None:
     """앱 시작 시 asyncio.create_task로 한 번만 실행되는 영구 워커.
 
@@ -608,6 +696,7 @@ async def stl_queue_worker() -> None:
     큐에만 쌓이고 서버 전체가 '처리 불능' 상태가 되었다.
     """
     import os as _os
+
     hard_timeout = float(_os.getenv("RHINO_JOB_HARD_TIMEOUT_SEC", "600"))
     log(f"[stl-queue] Worker started (hard_timeout={hard_timeout}s)")
     while True:
@@ -619,15 +708,22 @@ async def stl_queue_worker() -> None:
             state.last_dequeue_ts = time.time()
             state.current_processing_name = p.name
             state.current_processing_started_ts = state.last_dequeue_ts
-            log(f"[stl-queue] Dequeued: {p.name} (queue remaining: {state.stl_job_queue.qsize()})")
+            log(
+                f"[stl-queue] Dequeued: {p.name} (queue remaining: {state.stl_job_queue.qsize()})"
+            )
             try:
-                await asyncio.wait_for(process_single_stl(p, force, explicit_request_id=item_request_id), timeout=hard_timeout)
+                await asyncio.wait_for(
+                    process_single_stl(p, force, explicit_request_id=item_request_id),
+                    timeout=hard_timeout,
+                )
                 state.last_success_ts = time.time()
                 state.total_jobs_processed += 1
             except asyncio.TimeoutError:
                 state.last_failure_ts = time.time()
                 state.total_jobs_timeout += 1
-                log(f"[stl-queue] HARD TIMEOUT ({hard_timeout}s) for {p.name}, skipping to next")
+                log(
+                    f"[stl-queue] HARD TIMEOUT ({hard_timeout}s) for {p.name}, skipping to next"
+                )
                 # in_flight 정리 (process_single_stl 내부 finally가 못 돌았을 경우 안전망)
                 try:
                     with state.in_flight_lock:
@@ -694,7 +790,9 @@ def enqueue_stl_job(p: Path, force: bool = False, request_id: str | None = None)
     # 이미 큐에 대기 중인지 확인 (force=False 시)
     if not force:
         try:
-            queued_names = {item["path"].name for item in list(state.stl_job_queue._queue)}
+            queued_names = {
+                item["path"].name for item in list(state.stl_job_queue._queue)
+            }
             if p.name in queued_names:
                 log(f"[stl-queue] Skip enqueue (already queued): {p.name}")
                 return "queued_already"
@@ -703,12 +801,15 @@ def enqueue_stl_job(p: Path, force: bool = False, request_id: str | None = None)
 
     item = {"path": p, "force": force, "requestId": request_id}
     state.last_enqueue_ts = time.time()
-    log(f"[stl-queue] Enqueued: {p.name} (queue size after: {state.stl_job_queue.qsize() + 1})")
+    log(
+        f"[stl-queue] Enqueued: {p.name} (queue size after: {state.stl_job_queue.qsize() + 1})"
+    )
 
     # 현재 실행 중인 이벤트 루프가 있으면 직접 put_nowait,
     # 별도 스레드(recovery thread)에서 호출 시 main_loop.call_soon_threadsafe 사용
     try:
         import asyncio as _asyncio
+
         running_loop = _asyncio.get_running_loop()
         # 같은 루프 안: 직접 put_nowait
         state.stl_job_queue.put_nowait(item)
