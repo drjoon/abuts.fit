@@ -22,11 +22,11 @@ def notify_runtime_status(
     tone: str | None = None,
     clear: bool = False,
     metadata: dict | None = None,
-) -> None:
+) -> bool:
     try:
         backend_url = os.getenv("BACKEND_BASE", "").rstrip("/")
         if not backend_url:
-            return
+            return False
         request_id = None
         request_mongo_id = None
         if isinstance(item, dict):
@@ -45,14 +45,27 @@ def notify_runtime_status(
         }
         if status == "started":
             payload["startedAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        requests.post(
+        resp = requests.post(
             f"{backend_url}/bg/runtime-status",
             json=payload,
             timeout=10,
             headers=settings.bridge_headers(),
         )
+        if resp.status_code not in (200, 201, 202):
+            log(
+                "runtime-status notify failed: "
+                f"status={resp.status_code} stage={stage} state={status} "
+                f"requestId={request_id} body={resp.text[:300]}"
+            )
+            return False
+        log(
+            "runtime-status notify ok: "
+            f"status={resp.status_code} stage={stage} state={status} requestId={request_id}"
+        )
+        return True
     except Exception as e:
         log(f"runtime-status notify failed: {e}")
+        return False
 
 
 def upload_via_presign(out_path: Path, original_name: str, item: dict) -> bool:
@@ -77,6 +90,9 @@ def upload_via_presign(out_path: Path, original_name: str, item: dict) -> bool:
         if resp.status_code != 200:
             log(f"Presign failed status={resp.status_code} body={resp.text}")
             return False
+        log(
+            f"Presign ok status={resp.status_code} requestId={req_id} fileName={file_name}"
+        )
         data = resp.json().get("data") or {}
         presigned_url = data.get("url")
         key = data.get("key")
@@ -119,7 +135,10 @@ def upload_via_presign(out_path: Path, original_name: str, item: dict) -> bool:
             headers=settings.bridge_headers(),
         )
         if reg_resp.status_code == 200:
-            log(f"Presigned upload + register success: {file_name}")
+            log(
+                "Presigned upload + register success: "
+                f"file={file_name} requestId={req_id} status={reg_resp.status_code}"
+            )
             return True
         log(
             f"Register after presign failed status={reg_resp.status_code} body={reg_resp.text}"
@@ -261,18 +280,6 @@ def fetch_request_meta_case_infos(request_id: str | None) -> dict:
         return {}
 
 
-def fetch_finish_line_points(request_id: str | None) -> list | None:
-    case_infos = fetch_request_meta_case_infos(request_id)
-    finish_line = case_infos.get("finishLine") or {}
-    points = finish_line.get("points")
-    if isinstance(points, list) and len(points) >= 2:
-        log(
-            f"[finishline] fallback loaded from backend: requestId={request_id} points={len(points)}"
-        )
-        return points
-    return None
-
-
 def fetch_connection_target_diameter(request_id: str | None) -> float | None:
     if not request_id:
         return None
@@ -396,6 +403,15 @@ async def process_single_stl(
                         {"requestId": req_id, "metadata": {}},
                     ):
                         return
+                    notify_runtime_status(
+                        {"requestId": req_id},
+                        source="rhino-server",
+                        stage="request",
+                        status="failed",
+                        label="Filled STL 업로드/등록 실패",
+                        tone="rose",
+                        metadata={"fileName": p.name, "outputName": out_name},
+                    )
                     return
             log(f"Auto-processing starting: {p.name}")
             job_id = f"auto_{uuid.uuid4().hex[:8]}"
@@ -536,36 +552,57 @@ async def process_single_stl(
             finish_line_points = None
             if metadata.get("finishLine"):
                 finish_line_points = metadata["finishLine"].get("points")
+
+            # [정책] finish line은 현재 Rhino 실행 결과만 신뢰한다.
+            # 예전 DB finishLine을 fallback으로 재사용하면 이번 실행이 실패했는데도
+            # 메타데이터가 성공한 것처럼 보일 수 있어 상태를 숨기게 된다.
+            # 따라서 이번 run에서 finishLine이 없으면 메타데이터 계산/등록을 생략하고
+            # 실패 로그만 남긴다. (rules.md §9.2)
             if not finish_line_points:
-                finish_line_points = fetch_finish_line_points(req_id)
-            log(f"[process_single_stl] Calculating STL metadata for {req_id}")
-            try:
-                stl_metadata = calculate_and_register_metadata(
-                    out_path,
-                    req_id,
-                    None,  # requestMongoId는 백엔드에서 찾음
-                    finish_line_points,
-                    connection_target_diameter=connection_target_diameter,
+                log(
+                    f"[process_single_stl] finishLine missing for {req_id}; skipping STL metadata calculation/registration"
                 )
-                if stl_metadata:
-                    # 메타데이터를 metadata dict에 병합
-                    metadata["stlMetadata"] = stl_metadata
-                    log(
-                        f"[process_single_stl] STL metadata calculated and registered for {req_id}"
+            else:
+                log(f"[process_single_stl] Calculating STL metadata for {req_id}")
+                try:
+                    stl_metadata = calculate_and_register_metadata(
+                        out_path,
+                        req_id,
+                        None,  # requestMongoId는 백엔드에서 찾음
+                        finish_line_points,
+                        connection_target_diameter=connection_target_diameter,
                     )
-            except Exception as e:
-                log(f"[process_single_stl] Failed to calculate STL metadata: {e}")
+                    if stl_metadata:
+                        # 메타데이터를 metadata dict에 병합
+                        metadata["stlMetadata"] = stl_metadata
+                        log(
+                            f"[process_single_stl] STL metadata calculated and registered for {req_id}"
+                        )
+                except Exception as e:
+                    log(f"[process_single_stl] Failed to calculate STL metadata: {e}")
 
             if force_fill:
                 log(
                     "Force-fill 테스트 모드: presigned 업로드와 백엔드 통지를 생략합니다."
                 )
             else:
-                upload_via_presign(
+                upload_ok = upload_via_presign(
                     out_path,
                     prefixed_input,
                     {"requestId": req_id, "metadata": metadata},
                 )
+                if not upload_ok:
+                    log(f"[process_single_stl] upload/register failed for {req_id}")
+                    notify_runtime_status(
+                        {"requestId": req_id},
+                        source="rhino-server",
+                        stage="request",
+                        status="failed",
+                        label="Filled STL 업로드/등록 실패",
+                        tone="rose",
+                        metadata={"fileName": p.name, "outputName": out_name},
+                    )
+                    return
                 # CAM 완료 통지: 프론트에서 웹소켓으로 받아 경과시간 표시 및 다음 공정 진행
                 notify_runtime_status(
                     {"requestId": req_id},

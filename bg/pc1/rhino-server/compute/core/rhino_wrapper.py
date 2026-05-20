@@ -1,5 +1,5 @@
-from string import Template
 from pathlib import Path
+from string import Template
 from typing import Union
 
 from . import settings
@@ -65,15 +65,18 @@ WRAPPER_TEMPLATE = Template(
     "os.environ['ABUTS_OUTPUT_STL'] = r\"${output_stl}\"\n"
     "os.environ['ABUTS_LOG_PATH'] = r\"${log_path}\"\n"
     "os.environ['ABUTS_CONNECTION_TARGET_DIAMETER'] = \"${connection_target_diameter}\"\n"
+    "os.environ['BACKEND_BASE'] = \"${backend_base}\"\n"
+    "os.environ['RHINO_SHARED_SECRET'] = \"${rhino_shared_secret}\"\n"
+    "os.environ['BRIDGE_SHARED_SECRET'] = \"${bridge_shared_secret}\"\n"
     "import System.Diagnostics\n"
     "import sys\n"
-    "sys.path.append(r\"${script_dir}\")\n"
+    'sys.path.append(r"${script_dir}")\n'
     "import process_abutment_stl\n"
     "process_abutment_stl = importlib.reload(process_abutment_stl)\n"
     "try:\n"
     "  print('JOB_PID=' + str(System.Diagnostics.Process.GetCurrentProcess().Id))\n"
     "  _cleanup_doc()\n"
-    "  process_abutment_stl.main(input_path_arg=r\"${input_stl}\", output_path_arg=r\"${output_stl}\", log_path_arg=r\"${log_path}\")\n"
+    '  process_abutment_stl.main(input_path_arg=r"${input_stl}", output_path_arg=r"${output_stl}", log_path_arg=r"${log_path}")\n'
     "  _send_result({'token': '${token}', 'ok': True, 'log': _read_log(r\"${log_path}\"), 'output': _build_output_info()})\n"
     "except Exception as e:\n"
     "  _send_result({'token': '${token}', 'ok': False, 'error': str(e), 'traceback': traceback.format_exc(), 'log': _read_log(r\"${log_path}\"), 'output': _build_output_info()})\n"
@@ -91,6 +94,14 @@ def write_wrapper_script(
 ) -> Path:
     settings.TMP_DIR.mkdir(parents=True, exist_ok=True)
     wrapper_path = settings.TMP_DIR / f"job_{token}.py"
+    shared_secret = settings.os.getenv("RHINO_SHARED_SECRET", "").strip()
+    bridge_secret = settings.os.getenv("BRIDGE_SHARED_SECRET", "").strip()
+    if shared_secret and not bridge_secret:
+        bridge_secret = shared_secret
+    if bridge_secret and not shared_secret:
+        shared_secret = bridge_secret
+    backend_base = settings.os.getenv("BACKEND_BASE", "").strip()
+
     wrapper_path.write_text(
         WRAPPER_TEMPLATE.substitute(
             callback_url=settings.JOB_CALLBACK_URL,
@@ -102,6 +113,9 @@ def write_wrapper_script(
                 if connection_target_diameter is not None
                 else ""
             ),
+            backend_base=repr_path_for_template(backend_base),
+            rhino_shared_secret=repr_path_for_template(shared_secret),
+            bridge_shared_secret=repr_path_for_template(bridge_secret),
             script_dir=repr_path_for_template(settings.SCRIPT_DIR),
             token=token,
         ),

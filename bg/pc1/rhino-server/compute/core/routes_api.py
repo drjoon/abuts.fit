@@ -306,6 +306,14 @@ async def recalculate_metadata(
                 status_code=400, detail="STL file path not found in request"
             )
 
+        # [정책] finish line은 STL 메타데이터 계산의 필수 입력이다.
+        # 값이 없으면 예전 DB 값이나 다른 fallback으로 진행하지 않고 명시적으로 실패시킨다.
+        if not isinstance(finish_line_points, list) or len(finish_line_points) < 2:
+            raise HTTPException(
+                status_code=400,
+                detail="Finish line not found; metadata recalculation requires finish line points",
+            )
+
         # 로컬 STL 파일 경로 확인 (filled.stl 우선)
         safe_name = settings.sanitize_filename(Path(file_path).name)
         stl_path = settings.STORE_OUT_DIR / safe_name
