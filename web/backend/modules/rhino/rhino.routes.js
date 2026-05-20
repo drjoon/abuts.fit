@@ -1,10 +1,19 @@
 import { Router } from "express";
 import multer from "multer";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
+import { requireBgWorkerSecret } from "../../middlewares/bridgeSecret.middleware.js";
 import * as rhinoController from "../../controllers/rhino/rhino.controller.js";
 
 const router = Router();
 
+// BG worker (rhino/bridge) may call this endpoint using X-Bridge-Secret
+router.post(
+  "/process-file",
+  requireBgWorkerSecret,
+  rhinoController.processFileByName,
+);
+
+// Other routes require normal authentication/authorization
 router.use(authenticate);
 router.use(authorize(["requestor", "manufacturer", "admin"]));
 
@@ -25,7 +34,5 @@ router.post(
 );
 
 router.post("/fillhole/by-name", rhinoController.fillholeFromStoreName);
-
-router.post("/process-file", rhinoController.processFileByName);
 
 export default router;
