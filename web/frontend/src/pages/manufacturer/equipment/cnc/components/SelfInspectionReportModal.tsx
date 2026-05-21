@@ -912,7 +912,7 @@ export function SelfInspectionReportModal({
         <div className="flex overflow-hidden">
           {/* ── Left: STL Preview ── */}
           <div className="w-[40%] shrink-0 border-r border-slate-200 flex flex-col bg-slate-50 overflow-hidden">
-            <div className="h-[calc(90vh-57px)] flex items-center justify-center">
+            <div className="h-[calc(65vh)] flex items-center justify-center">
               {stlLoading || metaLoading ? (
                 <div className="flex h-full items-center justify-center text-sm text-slate-500">
                   STL 로딩 중…
