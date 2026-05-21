@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -55,64 +55,244 @@ type Props = {
   onNext?: () => void;
 };
 
+type InspectionSpecPreset = {
+  manufacturer: string;
+  brand: string;
+  family: string;
+  diameterRef: number;
+  diameterCriterion: string;
+  hexRef: number;
+  hexCriterion: string;
+  innerDepthRef?: number;
+  innerGauge?: string;
+};
+
+const DEFAULT_INSTRUMENT_OPTIONS = [
+  "현미경(AD-T-07)",
+  "비전(AD-T-19)",
+  "MICRO(AD-T-02)",
+];
+
 const DEFAULT_ROWS: InspectionRow[] = [
   {
     label: "각인",
     referenceValue: "-",
     criterion: "식별",
-    instrument: "현미경",
+    instrument: "현미경(AD-T-07)",
     measuredValue: "",
     judgment: "적합",
   },
   {
-    label: "기준직경",
+    label: "커넥션직경",
     referenceValue: "-",
-    criterion: "+0.02/-0.01",
-    instrument: "비전",
+    criterion: "-",
+    instrument: "비전(AD-T-19)",
     measuredValue: "",
     judgment: "적합",
   },
   {
     label: "L1",
     referenceValue: "-",
-    criterion: "±0.05",
-    instrument: "비전",
+    criterion: "기준값1%이내",
+    instrument: "비전(AD-T-19)",
     measuredValue: "",
     judgment: "적합",
   },
   {
     label: "L2",
     referenceValue: "-",
-    criterion: "±0.05",
-    instrument: "비전",
+    criterion: "기준값1%이내",
+    instrument: "비전(AD-T-19)",
     measuredValue: "",
     judgment: "적합",
   },
   {
     label: "최대직경",
     referenceValue: "-",
-    criterion: "±0.05",
-    instrument: "비전",
+    criterion: "기준값1%이내",
+    instrument: "비전(AD-T-19)",
     measuredValue: "",
     judgment: "적합",
   },
   {
     label: "내경깊이",
     referenceValue: "적합",
-    criterion: "±0.05",
-    instrument: "G20게이지",
+    criterion: "±0.1",
+    instrument: "비전(AD-T-19)",
     measuredValue: "",
     judgment: "적합",
   },
   {
-    label: "헥사치수",
+    label: "헥스치수",
     referenceValue: "2.485",
-    criterion: "±0.005",
-    instrument: "마이크로미터",
+    criterion: "-",
+    instrument: "MICRO(AD-T-02)",
     measuredValue: "",
     judgment: "적합",
   },
 ];
+
+const formatRange = (
+  reference: number | undefined,
+  plus: number,
+  minus: number,
+  decimals = 3,
+) => {
+  if (reference == null || Number.isNaN(Number(reference))) return "-";
+  const max = (Number(reference) + plus).toFixed(decimals);
+  const min = (Number(reference) - minus).toFixed(decimals);
+  return `${max}~${min}`;
+};
+
+const SPEC_PRESETS: InspectionSpecPreset[] = [
+  {
+    manufacturer: "Osstem",
+    brand: "TS3",
+    family: "",
+    diameterRef: 3.35,
+    diameterCriterion: "3.34~3.37",
+    hexRef: 2.485,
+    hexCriterion: "2.490~2.482",
+    innerDepthRef: 1.25,
+    innerGauge: "G19",
+  },
+  {
+    manufacturer: "Osstem",
+    brand: "TS3",
+    family: "",
+    diameterRef: 2.6,
+    diameterCriterion: "2.59~2.61",
+    hexRef: 1.95,
+    hexCriterion: "1.955~1.942",
+  },
+  {
+    manufacturer: "Dentium",
+    brand: "SuperLine2",
+    family: "",
+    diameterRef: 3.33,
+    diameterCriterion: "3.35~3.32",
+    hexRef: 2.495,
+    hexCriterion: "2.500~2.492",
+    innerDepthRef: 0.9,
+    innerGauge: "G19",
+  },
+  {
+    manufacturer: "NeoBiotech",
+    brand: "IS",
+    family: "",
+    diameterRef: 3.35,
+    diameterCriterion: "3.34~3.37",
+    hexRef: 2.515,
+    hexCriterion: "2.515~2.507",
+    innerDepthRef: 1.08,
+    innerGauge: "G19",
+  },
+  {
+    manufacturer: "NeoBiotech",
+    brand: "IS",
+    family: "",
+    diameterRef: 2.6,
+    diameterCriterion: "2.59~2.61",
+    hexRef: 1.95,
+    hexCriterion: "1.955~1.947",
+  },
+  {
+    manufacturer: "Dio",
+    brand: "UF2",
+    family: "",
+    diameterRef: 3.35,
+    diameterCriterion: "3.34~3.37",
+    hexRef: 2.49,
+    hexCriterion: "2.495~2.487",
+    innerDepthRef: 1.0,
+    innerGauge: "G19",
+  },
+  {
+    manufacturer: "Dio",
+    brand: "UF2",
+    family: "",
+    diameterRef: 2.3,
+    diameterCriterion: "2.29~2.31",
+    hexRef: 1.69,
+    hexCriterion: "1.695~1.687",
+  },
+  {
+    manufacturer: "Megagen",
+    brand: "AnyOne",
+    family: "",
+    diameterRef: 3.3,
+    diameterCriterion: "3.29~3.32",
+    hexRef: 2.5,
+    hexCriterion: "2.505~2.497",
+    innerDepthRef: 1.35,
+    innerGauge: "G19",
+  },
+  {
+    manufacturer: "Megagen",
+    brand: "AnyOne",
+    family: "",
+    diameterRef: 2.31,
+    diameterCriterion: "2.30~2.32",
+    hexRef: 1.705,
+    hexCriterion: "1.710~1.702",
+  },
+  {
+    manufacturer: "Dentis",
+    brand: "SQ",
+    family: "One-Q",
+    diameterRef: 3.35,
+    diameterCriterion: "3.34~3.37",
+    hexRef: 2.49,
+    hexCriterion: "2.495~2.487",
+    innerDepthRef: 1.955,
+    innerGauge: "G19",
+  },
+  {
+    manufacturer: "Dentis",
+    brand: "SQ",
+    family: "One-Q",
+    diameterRef: 2.8,
+    diameterCriterion: "2.79~2.82",
+    hexRef: 1.95,
+    hexCriterion: "1.955~1.947",
+  },
+];
+
+const norm = (v: string | undefined) =>
+  String(v || "")
+    .toLowerCase()
+    .replace(/\s+/g, "");
+
+const resolveSpecPreset = (
+  spec: ConnectionSpec | null,
+): InspectionSpecPreset | null => {
+  if (!spec) return null;
+
+  const manufacturer = norm(spec.manufacturer);
+  const brand = norm(spec.brand);
+  const family = norm(spec.family);
+  const diameter = Number(spec.diameter);
+
+  const candidates = SPEC_PRESETS.filter((row) => {
+    const m = norm(row.manufacturer);
+    const b = norm(row.brand);
+    const f = norm(row.family);
+
+    if (!manufacturer.includes(m)) return false;
+    if (!brand.includes(b)) return false;
+    if (f && !family.includes(f)) return false;
+    return true;
+  });
+
+  if (!candidates.length) return null;
+  if (!Number.isFinite(diameter)) return candidates[0];
+
+  return [...candidates].sort(
+    (a, b) =>
+      Math.abs(Number(a.diameterRef) - diameter) -
+      Math.abs(Number(b.diameterRef) - diameter),
+  )[0];
+};
 
 export function SelfInspectionReportModal({
   open,
@@ -123,6 +303,8 @@ export function SelfInspectionReportModal({
   onNext,
 }: Props) {
   const { token, user } = useAuthStore();
+  const reportRef = useRef<HTMLDivElement | null>(null);
+
   const [stlFile, setStlFile] = useState<File | null>(null);
   const [stlLoading, setStlLoading] = useState(false);
   const [resolvedMongoId, setResolvedMongoId] = useState<string | null>(null);
@@ -141,6 +323,18 @@ export function SelfInspectionReportModal({
   const [connectionSpec, setConnectionSpec] = useState<ConnectionSpec | null>(
     null,
   );
+  const [summaryL1, setSummaryL1] = useState<number | null>(null);
+  const [summaryTotalLength, setSummaryTotalLength] = useState<number | null>(
+    null,
+  );
+
+  const [instrumentOptions, setInstrumentOptions] = useState<string[]>(
+    DEFAULT_INSTRUMENT_OPTIONS,
+  );
+  const [showInstrumentManager, setShowInstrumentManager] = useState(false);
+  const [isExportingPng, setIsExportingPng] = useState(false);
+  const [instrumentDraft, setInstrumentDraft] = useState("");
+  const [savingInstruments, setSavingInstruments] = useState(false);
 
   const requestId = item?.requestId ?? null;
   const lotShortCode = String(item?.lotNumber || "")
@@ -152,11 +346,67 @@ export function SelfInspectionReportModal({
     requestId || undefined,
   );
 
+  const persistInstrumentOptions = async (nextOptions: string[]) => {
+    const sanitized = [
+      ...new Set(nextOptions.map((v) => String(v).trim())),
+    ].filter(Boolean);
+    const payload = sanitized.length ? sanitized : DEFAULT_INSTRUMENT_OPTIONS;
+
+    setSavingInstruments(true);
+    try {
+      const res = await fetch(`/api/requests/self-inspection/instruments`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ options: payload }),
+      });
+      if (!res.ok) return;
+
+      const body = await res.json().catch(() => ({}));
+      const saved = Array.isArray(body?.data)
+        ? body.data.map((v: unknown) => String(v || "").trim()).filter(Boolean)
+        : payload;
+      setInstrumentOptions(saved.length ? saved : DEFAULT_INSTRUMENT_OPTIONS);
+    } finally {
+      setSavingInstruments(false);
+    }
+  };
+
   // Sync mongoId from item or from resolved lookup
   useEffect(() => {
     if (!open) return;
     setResolvedMongoId(String(item?.requestMongoId || "").trim() || null);
   }, [open, item]);
+
+  // 장비 드롭다운 옵션 로드
+  useEffect(() => {
+    if (!open || !token) return;
+
+    const loadInstrumentOptions = async () => {
+      try {
+        const res = await fetch(`/api/requests/self-inspection/instruments`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const body = await res.json().catch(() => ({}));
+        const options = Array.isArray(body?.data)
+          ? body.data
+              .map((v: unknown) => String(v || "").trim())
+              .filter(Boolean)
+          : [];
+
+        setInstrumentOptions(
+          options.length ? options : DEFAULT_INSTRUMENT_OPTIONS,
+        );
+      } catch {
+        // ignore
+      }
+    };
+
+    void loadInstrumentOptions();
+  }, [open, token]);
 
   // Reset form state and load existing self-inspection
   useEffect(() => {
@@ -169,6 +419,9 @@ export function SelfInspectionReportModal({
     setRequestedAt(null);
     setInspectionAt(new Date().toISOString());
     setConnectionSpec(null);
+    setSummaryL1(null);
+    setSummaryTotalLength(null);
+    setShowInstrumentManager(false);
 
     const loadExisting = async () => {
       try {
@@ -180,8 +433,17 @@ export function SelfInspectionReportModal({
         const body = await res.json().catch(() => ({}));
         const data = body?.data;
         if (data?.confirmed) {
-          if (Array.isArray(data.rows) && data.rows.length > 0)
+          if (Array.isArray(data.rows) && data.rows.length > 0) {
             setRows(data.rows);
+            const rowInstruments = data.rows
+              .map((r: InspectionRow) => String(r?.instrument || "").trim())
+              .filter(Boolean);
+            if (rowInstruments.length) {
+              setInstrumentOptions((prev) => [
+                ...new Set([...prev, ...rowInstruments]),
+              ]);
+            }
+          }
           if (data.overallJudgment) setOverallJudgment(data.overallJudgment);
           if (data.confirmedBy) setInspector(data.confirmedBy);
           setConfirmed(true);
@@ -226,40 +488,57 @@ export function SelfInspectionReportModal({
     const fmt = (v: number | undefined, dec = 2) =>
       v != null ? String(Number(v).toFixed(dec)) : "-";
 
-    const l1Reference = metadata?.l1;
-    const diameterReference =
-      connectionSpec?.diameter ?? metadata?.connectionDiameter;
+    const preset = resolveSpecPreset(connectionSpec);
+
+    // L1 = 모델 원점에서 최대 Z (totalLength)
+    const totalLength = metadata?.totalLength ?? summaryTotalLength;
     const l2Reference = connectionSpec?.l2 ?? metadata?.l2;
-    const hexSizeReference = connectionSpec?.hexSize;
-    const protrusionLength = connectionSpec?.protrusionLength;
-    const internalGauge = String(connectionSpec?.internalGauge || "").trim();
+    // 우선 metadata.l1를 사용, 없으면 totalLength - L2로 계산
+    let l1ReferenceNum: number | undefined = undefined;
+    if (Number.isFinite(Number(metadata?.l1))) {
+      l1ReferenceNum = Number(metadata?.l1);
+    } else if (
+      Number.isFinite(Number(totalLength)) &&
+      Number.isFinite(Number(l2Reference))
+    ) {
+      l1ReferenceNum = Number(totalLength) - Number(l2Reference);
+    }
+    const l1Reference = l1ReferenceNum ?? undefined;
+    const diameterReference =
+      preset?.diameterRef ??
+      connectionSpec?.diameter ??
+      metadata?.connectionDiameter;
+    const hexSizeReference = preset?.hexRef ?? connectionSpec?.hexSize;
+    const protrusionLength =
+      preset?.innerDepthRef ?? connectionSpec?.protrusionLength;
+    const internalGauge = String(
+      (preset?.innerGauge ?? connectionSpec?.internalGauge) || "",
+    ).trim();
 
     const innerGaugeReference =
       internalGauge && protrusionLength != null
         ? `${internalGauge} / ${Number(protrusionLength)
-            .toFixed(3)
+            .toFixed(2)
             .replace(/\.0+$/, "")
             .replace(/(\.\d*?)0+$/, "$1")}`
         : internalGauge || "적합";
-
-    const innerGaugeInstrument = internalGauge
-      ? `${internalGauge}게이지`
-      : "G20게이지";
 
     setRows([
       {
         label: "각인",
         referenceValue: lotShortCode || "-",
         criterion: "식별",
-        instrument: "현미경",
+        instrument: "현미경(AD-T-07)",
         measuredValue: lotShortCode || "",
         judgment: "적합",
       },
       {
-        label: "기준직경",
+        label: "커넥션직경",
         referenceValue: fmt(diameterReference, 3),
-        criterion: "+0.02/-0.01",
-        instrument: "비전",
+        criterion:
+          preset?.diameterCriterion ||
+          formatRange(diameterReference, 0.02, 0.01, 2),
+        instrument: "비전(AD-T-19)",
         measuredValue:
           metadata?.connectionDiameter != null
             ? fmt(metadata.connectionDiameter, 3)
@@ -271,46 +550,63 @@ export function SelfInspectionReportModal({
       {
         label: "L1",
         referenceValue: fmt(l1Reference, 3),
-        criterion: "±0.05",
-        instrument: "비전",
+        criterion: "기준값1%이내",
+        instrument: "비전(AD-T-19)",
         measuredValue: l1Reference != null ? fmt(l1Reference, 3) : "",
         judgment: "적합",
       },
       {
         label: "L2",
         referenceValue: fmt(l2Reference, 3),
-        criterion: "±0.05",
-        instrument: "비전",
+        criterion: "기준값1%이내",
+        instrument: "비전(AD-T-19)",
         measuredValue: l2Reference != null ? fmt(l2Reference, 3) : "",
         judgment: "적합",
       },
       {
         label: "최대직경",
-        referenceValue: fmt(metadata?.maxDiameter),
-        criterion: "±0.05",
-        instrument: "비전",
+        referenceValue: fmt(metadata?.maxDiameter, 3),
+        criterion: "기준값1%이내",
+        instrument: "비전(AD-T-19)",
         measuredValue:
-          metadata?.maxDiameter != null ? fmt(metadata.maxDiameter) : "",
+          metadata?.maxDiameter != null ? fmt(metadata.maxDiameter, 3) : "",
         judgment: "적합",
       },
       {
         label: "내경깊이",
         referenceValue: innerGaugeReference,
-        criterion: "±0.05",
-        instrument: innerGaugeInstrument,
-        measuredValue: "",
+        criterion: "±0.1",
+        instrument: "비전(AD-T-19)",
+        measuredValue:
+          protrusionLength != null
+            ? Number(protrusionLength)
+                .toFixed(3)
+                .replace(/\.0+$/, "")
+                .replace(/(\.\d*?)0+$/, "$1")
+            : innerGaugeReference !== "적합"
+              ? innerGaugeReference
+              : "",
         judgment: "적합",
       },
       {
-        label: "헥사치수",
+        label: "헥스치수",
         referenceValue: fmt(hexSizeReference, 3),
-        criterion: "±0.005",
-        instrument: "마이크로미터",
+        criterion:
+          preset?.hexCriterion ||
+          formatRange(hexSizeReference, 0.005, 0.003, 3),
+        instrument: "MICRO(AD-T-02)",
         measuredValue: hexSizeReference != null ? fmt(hexSizeReference, 3) : "",
         judgment: "적합",
       },
     ]);
-  }, [metadata, lotShortCode, confirmed, connectionSpec]);
+  }, [
+    metadata,
+    lotShortCode,
+    confirmed,
+    connectionSpec,
+    summaryL1,
+    summaryTotalLength,
+  ]);
 
   // Auto-compute overall judgment when all rows have a judgment
   useEffect(() => {
@@ -353,6 +649,14 @@ export function SelfInspectionReportModal({
         if (!cancelled && mid) setResolvedMongoId(mid);
         if (!cancelled && data?.createdAt)
           setRequestedAt(String(data.createdAt));
+        const parsedL1 = Number(data?.caseInfos?.l1);
+        if (!cancelled && Number.isFinite(parsedL1)) {
+          setSummaryL1(parsedL1);
+        }
+        const parsedTotalLength = Number(data?.caseInfos?.totalLength);
+        if (!cancelled && Number.isFinite(parsedTotalLength)) {
+          setSummaryTotalLength(parsedTotalLength);
+        }
         let camFileName = `${requestId}.filled.stl`;
         if (!cancelled) {
           const pts = data?.caseInfos?.finishLine?.points;
@@ -440,11 +744,11 @@ export function SelfInspectionReportModal({
     return () => {
       cancelled = true;
     };
-  }, [open, requestId, token]);
+  }, [open, requestId, token, resolvedMongoId]);
 
   const updateRow = (
     idx: number,
-    field: "measuredValue" | "judgment",
+    field: "measuredValue" | "judgment" | "instrument",
     value: string,
   ) => {
     setRows((prev) => {
@@ -452,6 +756,105 @@ export function SelfInspectionReportModal({
       next[idx] = { ...next[idx], [field]: value };
       return next;
     });
+  };
+
+  const handleAddInstrument = async () => {
+    if (confirmed) return;
+    const candidate = instrumentDraft.trim();
+    if (!candidate) return;
+    if (instrumentOptions.includes(candidate)) {
+      setInstrumentDraft("");
+      return;
+    }
+
+    const next = [...instrumentOptions, candidate];
+    setInstrumentOptions(next);
+    setInstrumentDraft("");
+    await persistInstrumentOptions(next);
+  };
+
+  const handleRemoveInstrument = async (value: string) => {
+    if (confirmed) return;
+    const next = instrumentOptions.filter((v) => v !== value);
+    setInstrumentOptions(next.length ? next : DEFAULT_INSTRUMENT_OPTIONS);
+
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.instrument !== value) return r;
+        return {
+          ...r,
+          instrument: (next.length ? next : DEFAULT_INSTRUMENT_OPTIONS)[0],
+        };
+      }),
+    );
+
+    await persistInstrumentOptions(next);
+  };
+
+  const handleExportPng = async () => {
+    if (!reportRef.current) return;
+
+    try {
+      setIsExportingPng(true);
+      await new Promise((resolve) => setTimeout(resolve, 60));
+
+      const html2canvasModule = await import("html2canvas");
+      const html2canvas = html2canvasModule.default;
+
+      const sourceCanvas = await html2canvas(reportRef.current, {
+        scale: Math.max(3, Math.floor(window.devicePixelRatio * 2)),
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+      });
+
+      // A4 세로 비율(300DPI 기준) + 인쇄 여백
+      const a4WidthPx = 2480;
+      const a4HeightPx = 3508;
+      const marginPx = 170;
+      const printableWidth = a4WidthPx - marginPx * 2;
+      const printableHeight = a4HeightPx - marginPx * 2;
+
+      const exportCanvas = document.createElement("canvas");
+      exportCanvas.width = a4WidthPx;
+      exportCanvas.height = a4HeightPx;
+      const ctx = exportCanvas.getContext("2d");
+      if (!ctx) return;
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, a4WidthPx, a4HeightPx);
+
+      const fitScale = Math.min(
+        printableWidth / sourceCanvas.width,
+        printableHeight / sourceCanvas.height,
+      );
+      const drawWidth = sourceCanvas.width * fitScale;
+      const drawHeight = sourceCanvas.height * fitScale;
+      const drawX = (a4WidthPx - drawWidth) / 2;
+      const drawY = (a4HeightPx - drawHeight) / 2;
+
+      ctx.drawImage(sourceCanvas, drawX, drawY, drawWidth, drawHeight);
+
+      exportCanvas.toBlob(
+        (blob) => {
+          if (!blob) return;
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `self-inspection-${requestId || "report"}-a4.png`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        },
+        "image/png",
+        1,
+      );
+    } catch {
+      // ignore
+    } finally {
+      setIsExportingPng(false);
+    }
   };
 
   const productionDateStr = item?.completedAt
@@ -491,9 +894,15 @@ export function SelfInspectionReportModal({
     { label: "로트번호", value: item?.lotNumber || "-" },
   ];
 
+  const infoRowPairs = [
+    [infoRows[0], infoRows[1]],
+    [infoRows[2], infoRows[3]],
+    [infoRows[4], infoRows[5]],
+  ];
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[96vw] max-w-5xl overflow-hidden p-0 gap-0">
+      <DialogContent className="w-[96vw] max-w-6xl overflow-hidden p-0 gap-0">
         <DialogHeader className="px-5 pt-4 pb-3 border-b border-slate-200">
           <DialogTitle className="text-base font-extrabold">
             자주검사성적서
@@ -502,7 +911,7 @@ export function SelfInspectionReportModal({
 
         <div className="flex overflow-hidden">
           {/* ── Left: STL Preview ── */}
-          <div className="w-[42%] shrink-0 border-r border-slate-200 flex flex-col bg-slate-50 overflow-hidden">
+          <div className="w-[40%] shrink-0 border-r border-slate-200 flex flex-col bg-slate-50 overflow-hidden">
             <div className="flex-1 min-h-0">
               {stlLoading || metaLoading ? (
                 <div className="flex h-full items-center justify-center text-sm text-slate-500">
@@ -527,116 +936,216 @@ export function SelfInspectionReportModal({
 
           {/* ── Right: Inspection Form ── */}
           <div className="flex-1 overflow-y-auto px-5 py-4 max-h-[calc(90vh-57px)]">
-            <h2 className="text-lg font-extrabold text-center border-b-2 border-slate-800 pb-2 mb-3">
-              자주검사 성적서
-            </h2>
+            <div ref={reportRef}>
+              <h2 className="text-lg font-extrabold text-center border-b-2 border-slate-800 pb-2 mb-3">
+                자주검사 성적서
+              </h2>
 
-            {/* Header info grid */}
-            <div className="border border-slate-300 rounded-lg overflow-hidden mb-4 text-[13px]">
-              {infoRows.map((r, i) => (
-                <div
-                  key={r.label}
-                  className={`flex items-center gap-3 px-3 py-1.5 ${i < infoRows.length - 1 ? "border-b border-slate-200" : ""}`}
-                >
-                  <span className="w-28 shrink-0 font-semibold text-slate-500">
-                    {r.label}
-                  </span>
-                  <span className="text-slate-800">{r.value}</span>
-                </div>
-              ))}
-            </div>
+              {/* Header info grid */}
+              <div className="border border-slate-300 rounded-lg overflow-hidden mb-4 text-[13px]">
+                {infoRowPairs.map((pair, i) => (
+                  <div
+                    key={`info-pair-${i}`}
+                    className={`grid grid-cols-[96px_1fr_96px_1fr] items-center px-2 py-1 gap-2 ${i < infoRowPairs.length - 1 ? "border-b border-slate-200" : ""}`}
+                  >
+                    <span className="font-semibold text-slate-500 text-right pr-2">
+                      {pair[0]?.label}
+                    </span>
+                    <span className="text-slate-800">{pair[0]?.value}</span>
+                    <span className="font-semibold text-slate-500 text-right pr-2">
+                      {pair[1]?.label}
+                    </span>
+                    <span className="text-slate-800">{pair[1]?.value}</span>
+                  </div>
+                ))}
+              </div>
 
-            {/* Inspection table */}
-            <table className="w-full text-xs border-collapse border border-slate-300 mb-4">
-              <thead>
-                <tr className="bg-slate-100 text-center">
-                  <th className="border border-slate-300 px-2 py-1.5">항목</th>
-                  <th className="border border-slate-300 px-2 py-1.5">
-                    기준값
-                  </th>
-                  <th className="border border-slate-300 px-2 py-1.5">
-                    합격기준
-                  </th>
-                  <th className="border border-slate-300 px-2 py-1.5">
-                    측정기
-                  </th>
-                  <th className="border border-slate-300 px-2 py-1.5 bg-amber-50">
-                    측정값
-                  </th>
-                  <th className="border border-slate-300 px-2 py-1.5 bg-amber-50">
-                    판단
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, idx) => (
-                  <tr key={row.label}>
-                    <td className="border border-slate-300 px-2 py-1 text-center font-semibold">
-                      {row.label}
+              {/* Inspection table */}
+              <table className="w-full text-xs border-collapse border border-slate-300 mb-3">
+                <thead>
+                  <tr className="bg-slate-100 text-center align-middle">
+                    <th className="border border-slate-300 px-2 py-1.5 align-middle">
+                      항목
+                    </th>
+                    <th className="border border-slate-300 px-2 py-1.5 align-middle">
+                      기준값
+                    </th>
+                    <th className="border border-slate-300 px-2 py-1.5 align-middle">
+                      합격기준
+                    </th>
+                    <th className="border border-slate-300 px-2 py-1.5 align-middle">
+                      측정장비(번호)
+                    </th>
+                    <th className="border border-slate-300 px-2 py-1.5 bg-amber-50 align-middle">
+                      측정값
+                    </th>
+                    <th className="border border-slate-300 px-2 py-1.5 bg-amber-50 align-middle">
+                      판단
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, idx) => (
+                    <tr key={row.label} className="align-middle">
+                      <td className="border border-slate-300 px-2 py-1 text-center font-semibold align-middle">
+                        {row.label}
+                      </td>
+                      <td className="border border-slate-300 px-2 py-1 text-center bg-amber-100 align-middle">
+                        {row.referenceValue}
+                      </td>
+                      <td className="border border-slate-300 px-2 py-1 text-center align-middle">
+                        {row.criterion}
+                      </td>
+                      <td className="border border-slate-300 px-1 py-0.5 text-center align-middle">
+                        {isExportingPng ? (
+                          <span className="text-slate-900 font-semibold">
+                            {row.instrument}
+                          </span>
+                        ) : (
+                          <select
+                            className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold cursor-pointer disabled:cursor-not-allowed"
+                            value={row.instrument}
+                            onChange={(e) =>
+                              updateRow(idx, "instrument", e.target.value)
+                            }
+                            disabled={confirmed}
+                          >
+                            {instrumentOptions.map((opt) => (
+                              <option key={`${row.label}-${opt}`} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </td>
+                      <td className="border border-slate-300 px-1 py-0.5 bg-amber-50 align-middle">
+                        {isExportingPng ? (
+                          <span className="text-slate-900 font-semibold">
+                            {row.measuredValue || "-"}
+                          </span>
+                        ) : (
+                          <input
+                            type="text"
+                            className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold placeholder:text-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed"
+                            value={row.measuredValue}
+                            onChange={(e) =>
+                              updateRow(idx, "measuredValue", e.target.value)
+                            }
+                            placeholder="-"
+                            disabled={confirmed}
+                          />
+                        )}
+                      </td>
+                      <td className="border border-slate-300 px-1 py-0.5 bg-amber-50 align-middle">
+                        {isExportingPng ? (
+                          <span className="text-slate-900 font-semibold">
+                            {row.judgment || "-"}
+                          </span>
+                        ) : (
+                          <select
+                            className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold cursor-pointer disabled:cursor-not-allowed"
+                            value={row.judgment}
+                            onChange={(e) =>
+                              updateRow(
+                                idx,
+                                "judgment",
+                                e.target.value as InspectionRow["judgment"],
+                              )
+                            }
+                            disabled={confirmed}
+                          >
+                            <option value="">-</option>
+                            <option value="적합">적합</option>
+                            <option value="부적합">부적합</option>
+                          </select>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="bg-slate-50 font-extrabold text-[13px]">
+                    <td
+                      colSpan={4}
+                      className="border border-slate-300 px-2 py-1.5 text-center align-middle"
+                    >
+                      판정
                     </td>
-                    <td className="border border-slate-300 px-2 py-1 text-center">
-                      {row.referenceValue}
-                    </td>
-                    <td className="border border-slate-300 px-2 py-1 text-center">
-                      {row.criterion}
-                    </td>
-                    <td className="border border-slate-300 px-2 py-1 text-center">
-                      {row.instrument}
-                    </td>
-                    <td className="border border-slate-300 px-1 py-0.5 bg-amber-50">
-                      <input
-                        type="text"
-                        className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold placeholder:text-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed"
-                        value={row.measuredValue}
-                        onChange={(e) =>
-                          updateRow(idx, "measuredValue", e.target.value)
-                        }
-                        placeholder="-"
-                        disabled={confirmed}
-                      />
-                    </td>
-                    <td className="border border-slate-300 px-1 py-0.5 bg-amber-50">
-                      <select
-                        className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold cursor-pointer disabled:cursor-not-allowed"
-                        value={row.judgment}
-                        onChange={(e) =>
-                          updateRow(
-                            idx,
-                            "judgment",
-                            e.target.value as InspectionRow["judgment"],
-                          )
-                        }
-                        disabled={confirmed}
-                      >
-                        <option value="">-</option>
-                        <option value="적합">적합</option>
-                        <option value="부적합">부적합</option>
-                      </select>
+                    <td
+                      colSpan={2}
+                      className={`border border-slate-300 px-2 py-1.5 text-center font-extrabold align-middle ${
+                        overallJudgment === "합격"
+                          ? "text-emerald-600 bg-emerald-50"
+                          : overallJudgment === "불합격"
+                            ? "text-red-600 bg-red-50"
+                            : "text-slate-400 bg-amber-50"
+                      }`}
+                    >
+                      {overallJudgment || "-"}
                     </td>
                   </tr>
-                ))}
-                <tr className="bg-slate-50 font-extrabold text-[13px]">
-                  <td
-                    colSpan={4}
-                    className="border border-slate-300 px-2 py-1.5 text-center"
-                  >
-                    판정
-                  </td>
-                  <td
-                    colSpan={2}
-                    className={`border border-slate-300 px-2 py-1.5 text-center font-extrabold ${
-                      overallJudgment === "합격"
-                        ? "text-emerald-600 bg-emerald-50"
-                        : overallJudgment === "불합격"
-                          ? "text-red-600 bg-red-50"
-                          : "text-slate-400 bg-amber-50"
-                    }`}
-                  >
-                    {overallJudgment || "-"}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
+
+            {/* 측정장비 옵션 관리 */}
+            <div className="mb-4">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowInstrumentManager((prev) => !prev)}
+                  className="px-3 h-8 rounded text-xs font-bold border border-slate-300 bg-white hover:bg-slate-50"
+                >
+                  측정장비 관리 {showInstrumentManager ? "▲" : "▼"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleExportPng()}
+                  className="px-3 py-2 rounded-lg font-bold text-xs bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                >
+                  PNG 저장
+                </button>
+              </div>
+
+              {showInstrumentManager && (
+                <div className="border border-slate-300 rounded-lg p-3 mt-2">
+                  <div className="flex items-center gap-2 mb-2">
+                    <input
+                      type="text"
+                      value={instrumentDraft}
+                      onChange={(e) => setInstrumentDraft(e.target.value)}
+                      placeholder="예: 비전(AD-T-21)"
+                      disabled={confirmed || savingInstruments}
+                      className="flex-1 h-8 px-2 text-xs border border-slate-300 rounded outline-none disabled:bg-slate-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddInstrument}
+                      disabled={
+                        confirmed ||
+                        savingInstruments ||
+                        !instrumentDraft.trim()
+                      }
+                      className="px-3 h-8 rounded text-xs font-bold border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      추가
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {instrumentOptions.map((opt) => (
+                      <button
+                        key={`chip-${opt}`}
+                        type="button"
+                        onClick={() => void handleRemoveInstrument(opt)}
+                        disabled={confirmed || savingInstruments}
+                        className="px-2 py-1 text-[11px] rounded border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="클릭하면 삭제"
+                      >
+                        {opt} ×
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Footer */}
             <div className="flex items-start gap-3">
@@ -669,7 +1178,13 @@ export function SelfInspectionReportModal({
                   </p>
                 )}
 
-                <div className="flex items-center gap-2">
+                {overallJudgment === "불합격" && !confirmed && (
+                  <p className="text-[11px] text-red-600">
+                    판정이 불합격이면 확정할 수 없습니다.
+                  </p>
+                )}
+
+                <div className="flex items-center gap-2 flex-wrap justify-end">
                   <button
                     type="button"
                     disabled={!onPrev}
@@ -693,45 +1208,56 @@ export function SelfInspectionReportModal({
                   >
                     →
                   </button>
-                  <button
-                    type="button"
-                    disabled={confirmed || saving || !requestId}
-                    onClick={async () => {
-                      if (!requestId) return;
-                      setSaving(true);
-                      try {
-                        const res = await fetch(
-                          `/api/requests/by-request/${encodeURIComponent(requestId)}/self-inspection`,
-                          {
-                            method: "POST",
-                            headers: {
-                              "Content-Type": "application/json",
-                              Authorization: `Bearer ${token}`,
+
+                  {overallJudgment === "합격" && (
+                    <button
+                      type="button"
+                      disabled={confirmed || saving || !requestId}
+                      onClick={async () => {
+                        if (!requestId) return;
+                        if (overallJudgment !== "합격") return;
+                        setSaving(true);
+                        try {
+                          const res = await fetch(
+                            `/api/requests/by-request/${encodeURIComponent(requestId)}/self-inspection`,
+                            {
+                              method: "POST",
+                              headers: {
+                                "Content-Type": "application/json",
+                                Authorization: `Bearer ${token}`,
+                              },
+                              body: JSON.stringify({
+                                rows,
+                                overallJudgment,
+                                confirmedBy: inspector,
+                              }),
                             },
-                            body: JSON.stringify({
-                              rows,
-                              overallJudgment,
-                              confirmedBy: inspector,
-                            }),
-                          },
-                        );
-                        if (res.ok) setConfirmed(true);
-                      } catch {
-                        // ignore
-                      } finally {
-                        setSaving(false);
-                      }
-                    }}
-                    className={`px-6 py-2 rounded-lg font-bold text-sm transition ${
-                      confirmed
-                        ? "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
-                        : saving
-                          ? "bg-slate-300 text-slate-500 cursor-not-allowed"
-                          : "bg-slate-800 text-white hover:bg-slate-700 active:bg-slate-900"
-                    }`}
-                  >
-                    {confirmed ? "✓ 확정됨" : saving ? "저장 중…" : "확정"}
-                  </button>
+                          );
+                          if (res.ok) {
+                            setConfirmed(true);
+                            return;
+                          }
+                          const body = await res.json().catch(() => ({}));
+                          if (body?.message) {
+                            window.alert(String(body.message));
+                          }
+                        } catch {
+                          // ignore
+                        } finally {
+                          setSaving(false);
+                        }
+                      }}
+                      className={`px-6 py-2 rounded-lg font-bold text-sm transition ${
+                        confirmed
+                          ? "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+                          : saving
+                            ? "bg-slate-300 text-slate-500 cursor-not-allowed"
+                            : "bg-slate-800 text-white hover:bg-slate-700 active:bg-slate-900"
+                      }`}
+                    >
+                      {confirmed ? "✓ 확정됨" : saving ? "저장 중…" : "확정"}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

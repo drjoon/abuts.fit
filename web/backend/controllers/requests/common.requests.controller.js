@@ -10,6 +10,7 @@ import ShippingPackage from "../../models/shippingPackage.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import User from "../../models/user.model.js";
+import SystemSettings from "../../models/systemSettings.model.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
@@ -88,6 +89,12 @@ const BRIDGE_PROCESS_BASE =
 
 const BRIDGE_BASE = process.env.BRIDGE_BASE;
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
+
+const DEFAULT_SELF_INSPECTION_INSTRUMENT_OPTIONS = [
+  "현미경(AD-T-07)",
+  "비전(AD-T-19)",
+  "MICRO(AD-T-02)",
+];
 
 function withBridgeHeaders(extra = {}) {
   const base = {};
@@ -271,6 +278,79 @@ export async function getSelfInspectionByRequestId(req, res) {
   }
 }
 
+export async function getSelfInspectionInstrumentOptions(req, res) {
+  try {
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin")
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+
+    const settings = await SystemSettings.findOne({ key: "global" })
+      .select({ selfInspectionInstrumentOptions: 1 })
+      .lean();
+
+    const savedOptions = Array.isArray(
+      settings?.selfInspectionInstrumentOptions,
+    )
+      ? settings.selfInspectionInstrumentOptions
+      : [];
+
+    const options = savedOptions.length
+      ? savedOptions
+      : DEFAULT_SELF_INSPECTION_INSTRUMENT_OPTIONS;
+
+    return res.json({ success: true, data: options });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      message: "측정장비 옵션 조회 실패",
+    });
+  }
+}
+
+export async function saveSelfInspectionInstrumentOptions(req, res) {
+  try {
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin")
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+
+    const options = Array.isArray(req.body?.options)
+      ? req.body.options.map((v) => String(v || "").trim()).filter(Boolean)
+      : [];
+
+    const uniqueOptions = [...new Set(options)];
+    const finalOptions = uniqueOptions.length
+      ? uniqueOptions
+      : DEFAULT_SELF_INSPECTION_INSTRUMENT_OPTIONS;
+
+    const updated = await SystemSettings.findOneAndUpdate(
+      { key: "global" },
+      {
+        $set: {
+          selfInspectionInstrumentOptions: finalOptions,
+        },
+      },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+        select: { selfInspectionInstrumentOptions: 1 },
+      },
+    ).lean();
+
+    return res.json({
+      success: true,
+      data: updated?.selfInspectionInstrumentOptions || finalOptions,
+    });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      message: "측정장비 옵션 저장 실패",
+    });
+  }
+}
+
 export async function getConnectionSpecByRequestId(req, res) {
   try {
     const requestId = String(req.params?.requestId || "").trim();
@@ -361,6 +441,13 @@ export async function saveSelfInspectionByRequestId(req, res) {
         .json({ success: false, message: "권한이 없습니다." });
 
     const { rows, overallJudgment, confirmedBy } = req.body;
+
+    if (String(overallJudgment || "") !== "합격") {
+      return res.status(400).json({
+        success: false,
+        message: "판정이 합격인 경우에만 확정할 수 있습니다.",
+      });
+    }
 
     const updated = await Request.findOneAndUpdate(
       { requestId },

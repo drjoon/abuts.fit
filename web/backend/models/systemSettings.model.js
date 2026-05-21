@@ -73,6 +73,10 @@ const systemSettingsSchema = new mongoose.Schema(
       apiRateLimit: { type: Number, default: 1000 },
       backupFrequency: { type: String, default: "daily" },
     },
+    selfInspectionInstrumentOptions: {
+      type: [String],
+      default: ["현미경(AD-T-07)", "비전(AD-T-19)", "MICRO(AD-T-02)"],
+    },
   },
   {
     timestamps: true,

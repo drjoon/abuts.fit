@@ -351,6 +351,22 @@ router.get(
   requestController.getRequestSummaryByRequestId,
 );
 
+// 제조사/관리자: 자주검사 측정장비 옵션 조회
+router.get(
+  "/self-inspection/instruments",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.getSelfInspectionInstrumentOptions,
+);
+
+// 제조사/관리자: 자주검사 측정장비 옵션 저장(추가/삭제)
+router.put(
+  "/self-inspection/instruments",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.saveSelfInspectionInstrumentOptions,
+);
+
 // 제조사/관리자: 자주검사 성적서 조회
 router.get(
   "/by-request/:requestId/self-inspection",
