@@ -86,7 +86,6 @@
 
 - `scripts/db/_core.shared.js`의 connection upsert는
   동일 필드를 `$set` + `$setOnInsert`에 중복 기입하지 않습니다.
-- `scripts/db/seed/data.js`는 requestor 선택과 조직 귀속을
-  `businessAnchorId` 기준으로 처리합니다.
-- shippingPackage seed의 `mailboxAddress`는 인덱스 충돌 방지를 위해
-  패키지 단위 고유값(`SEED-XXXXXX`)을 사용합니다.
+- `scripts/db/seed/data.js`의 request/ledger/shipping 샘플 데이터 생성은 비활성화했습니다.
+  (`db:seed-data`는 core shared 데이터만 시딩)
+- 추후 샘플 데이터가 필요하면 별도 opt-in 스크립트로 분리합니다.
