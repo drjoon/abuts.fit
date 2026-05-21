@@ -359,6 +359,14 @@ router.get(
   requestController.getSelfInspectionByRequestId,
 );
 
+// 제조사/관리자: requestId 기반 커넥션 스펙 조회
+router.get(
+  "/by-request/:requestId/connection-spec",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.getConnectionSpecByRequestId,
+);
+
 // 제조사/관리자: 자주검사 성적서 저장 (확정)
 router.post(
   "/by-request/:requestId/self-inspection",

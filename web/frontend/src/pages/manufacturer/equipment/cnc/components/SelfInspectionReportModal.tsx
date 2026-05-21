@@ -34,6 +34,18 @@ export type SelfInspectionReportItem = {
   implantType?: string;
 };
 
+type ConnectionSpec = {
+  manufacturer?: string;
+  brand?: string;
+  family?: string;
+  type?: string;
+  diameter?: number;
+  l2?: number;
+  hexSize?: number;
+  internalGauge?: string;
+  protrusionLength?: number;
+};
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -126,6 +138,9 @@ export function SelfInspectionReportModal({
   const [saving, setSaving] = useState(false);
   const [requestedAt, setRequestedAt] = useState<string | null>(null);
   const [inspectionAt, setInspectionAt] = useState<string | null>(null);
+  const [connectionSpec, setConnectionSpec] = useState<ConnectionSpec | null>(
+    null,
+  );
 
   const requestId = item?.requestId ?? null;
   const lotShortCode = String(item?.lotNumber || "")
@@ -153,6 +168,7 @@ export function SelfInspectionReportModal({
     setConfirmed(false);
     setRequestedAt(null);
     setInspectionAt(new Date().toISOString());
+    setConnectionSpec(null);
 
     const loadExisting = async () => {
       try {
@@ -177,13 +193,58 @@ export function SelfInspectionReportModal({
     void loadExisting();
   }, [open, requestId, token, user?.name]);
 
-  // Populate rows from metadata + lot info (skip if already confirmed/loaded from DB)
+  // requestId로 커넥션 스펙 조회 (seed 데이터 기반)
+  useEffect(() => {
+    if (!open || !requestId || !token) return;
+    let cancelled = false;
+
+    const loadConnectionSpec = async () => {
+      try {
+        const res = await fetch(
+          `/api/requests/by-request/${encodeURIComponent(requestId)}/connection-spec`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!res.ok) return;
+        const body = await res.json().catch(() => ({}));
+        if (!cancelled) {
+          setConnectionSpec((body?.data as ConnectionSpec) || null);
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    void loadConnectionSpec();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, requestId, token]);
+
+  // Populate rows from metadata + lot info + seeded connection spec (skip if already confirmed/loaded from DB)
   useEffect(() => {
     if (confirmed) return;
     const fmt = (v: number | undefined, dec = 2) =>
       v != null ? String(Number(v).toFixed(dec)) : "-";
+
     const l1Reference = metadata?.l1;
-    const l2Reference = metadata?.l2;
+    const diameterReference =
+      connectionSpec?.diameter ?? metadata?.connectionDiameter;
+    const l2Reference = connectionSpec?.l2 ?? metadata?.l2;
+    const hexSizeReference = connectionSpec?.hexSize;
+    const protrusionLength = connectionSpec?.protrusionLength;
+    const internalGauge = String(connectionSpec?.internalGauge || "").trim();
+
+    const innerGaugeReference =
+      internalGauge && protrusionLength != null
+        ? `${internalGauge} / ${Number(protrusionLength)
+            .toFixed(3)
+            .replace(/\.0+$/, "")
+            .replace(/(\.\d*?)0+$/, "$1")}`
+        : internalGauge || "적합";
+
+    const innerGaugeInstrument = internalGauge
+      ? `${internalGauge}게이지`
+      : "G20게이지";
 
     setRows([
       {
@@ -196,13 +257,15 @@ export function SelfInspectionReportModal({
       },
       {
         label: "기준직경",
-        referenceValue: fmt(metadata?.connectionDiameter),
+        referenceValue: fmt(diameterReference, 3),
         criterion: "+0.02/-0.01",
         instrument: "비전",
         measuredValue:
           metadata?.connectionDiameter != null
-            ? fmt(metadata.connectionDiameter)
-            : "",
+            ? fmt(metadata.connectionDiameter, 3)
+            : diameterReference != null
+              ? fmt(diameterReference, 3)
+              : "",
         judgment: "적합",
       },
       {
@@ -232,22 +295,22 @@ export function SelfInspectionReportModal({
       },
       {
         label: "내경깊이",
-        referenceValue: "적합",
+        referenceValue: innerGaugeReference,
         criterion: "±0.05",
-        instrument: "G20게이지",
+        instrument: innerGaugeInstrument,
         measuredValue: "",
         judgment: "적합",
       },
       {
         label: "헥사치수",
-        referenceValue: "2.485",
+        referenceValue: fmt(hexSizeReference, 3),
         criterion: "±0.005",
         instrument: "마이크로미터",
-        measuredValue: "",
+        measuredValue: hexSizeReference != null ? fmt(hexSizeReference, 3) : "",
         judgment: "적합",
       },
     ]);
-  }, [metadata, lotShortCode, confirmed]);
+  }, [metadata, lotShortCode, confirmed, connectionSpec]);
 
   // Auto-compute overall judgment when all rows have a judgment
   useEffect(() => {
@@ -286,7 +349,7 @@ export function SelfInspectionReportModal({
         );
         const body = await res.json().catch(() => ({}));
         const data = body?.data;
-        let mid = String(data?._id || resolvedMongoId || "").trim() || null;
+        const mid = String(data?._id || resolvedMongoId || "").trim() || null;
         if (!cancelled && mid) setResolvedMongoId(mid);
         if (!cancelled && data?.createdAt)
           setRequestedAt(String(data.createdAt));
@@ -377,7 +440,7 @@ export function SelfInspectionReportModal({
     return () => {
       cancelled = true;
     };
-  }, [open, requestId, token]); // resolvedMongoId intentionally omitted — only used as fallback inside
+  }, [open, requestId, token]);
 
   const updateRow = (
     idx: number,

@@ -1,6 +1,7 @@
 import mongoose, { Types } from "mongoose";
 import path from "path";
 import Request from "../../models/request.model.js";
+import Connection from "../../models/connection.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
@@ -267,6 +268,83 @@ export async function getSelfInspectionByRequestId(req, res) {
     return res
       .status(500)
       .json({ success: false, message: "자주검사 조회 실패" });
+  }
+}
+
+export async function getConnectionSpecByRequestId(req, res) {
+  try {
+    const requestId = String(req.params?.requestId || "").trim();
+    if (!requestId)
+      return res
+        .status(400)
+        .json({ success: false, message: "requestId required" });
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin")
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+
+    const request = await Request.findOne({ requestId }).select({
+      caseInfos: 1,
+    });
+    if (!request)
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+
+    const normalized = await normalizeCaseInfosImplantFields(
+      request.caseInfos || {},
+      false,
+    );
+
+    const manufacturer = String(normalized?.implantManufacturer || "").trim();
+    const brand = String(normalized?.implantBrand || "").trim();
+    const family = String(normalized?.implantFamily || "").trim();
+    const implantType = String(normalized?.implantType || "").trim();
+
+    if (!manufacturer || !brand || !family) {
+      return res.json({ success: true, data: null });
+    }
+
+    const candidates = [];
+    if (implantType === "Hex" || implantType === "Non-Hex") {
+      candidates.push(implantType);
+    }
+    if (!candidates.includes("Hex")) candidates.push("Hex");
+    if (!candidates.includes("Non-Hex")) candidates.push("Non-Hex");
+
+    let connection = null;
+    for (const type of candidates) {
+      // eslint-disable-next-line no-await-in-loop
+      connection = await Connection.findOne({
+        manufacturer,
+        brand,
+        family,
+        type,
+        category: "hanhwa-connection",
+      })
+        .select({
+          _id: 0,
+          manufacturer: 1,
+          brand: 1,
+          family: 1,
+          type: 1,
+          diameter: 1,
+          l2: 1,
+          hexSize: 1,
+          internalGauge: 1,
+          protrusionLength: 1,
+          fileName: 1,
+          isActive: 1,
+        })
+        .lean();
+      if (connection) break;
+    }
+
+    return res.json({ success: true, data: connection || null });
+  } catch (e) {
+    return res
+      .status(500)
+      .json({ success: false, message: "커넥션 스펙 조회 실패" });
   }
 }
 

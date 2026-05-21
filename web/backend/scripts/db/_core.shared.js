@@ -33,6 +33,24 @@ async function upsertConnections() {
       const diameter = Number.isFinite(seedDiameter) ? seedDiameter : undefined;
       const seedL2 = Number(c.l2);
       const l2 = Number.isFinite(seedL2) ? seedL2 : undefined;
+      const seedHexSize = Number(c.hexSize);
+      const hexSize = Number.isFinite(seedHexSize) ? seedHexSize : undefined;
+      const internalGauge = String(c.internalGauge || "").trim();
+      const seedProtrusionLength = Number(c.protrusionLength);
+      const protrusionLength = Number.isFinite(seedProtrusionLength)
+        ? seedProtrusionLength
+        : undefined;
+
+      const {
+        diameter: _seedDiameterRaw,
+        connection: _seedConnectionRaw,
+        l2: _seedL2Raw,
+        hexSize: _seedHexSizeRaw,
+        internalGauge: _seedInternalGaugeRaw,
+        protrusionLength: _seedProtrusionLengthRaw,
+        ...insertBase
+      } = c;
+
       return {
         updateOne: {
           filter: {
@@ -46,11 +64,12 @@ async function upsertConnections() {
             $set: {
               ...(diameter !== undefined ? { diameter } : {}),
               ...(l2 !== undefined ? { l2 } : {}),
+              ...(hexSize !== undefined ? { hexSize } : {}),
+              ...(internalGauge ? { internalGauge } : {}),
+              ...(protrusionLength !== undefined ? { protrusionLength } : {}),
             },
             $setOnInsert: {
-              ...c,
-              ...(diameter !== undefined ? { diameter } : {}),
-              ...(l2 !== undefined ? { l2 } : {}),
+              ...insertBase,
             },
           },
           upsert: true,

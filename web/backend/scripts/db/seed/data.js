@@ -12,7 +12,6 @@ import {
 } from "./utils.js";
 
 async function ensureFundingForOrganization({
-  businessId,
   businessAnchorId,
   userId,
   uniqueKey,
@@ -23,8 +22,7 @@ async function ensureFundingForOrganization({
   const existingCharge = await CreditLedger.findOne({ uniqueKey: chargeKey });
   if (!existingCharge) {
     await CreditLedger.create({
-      businessId,
-      businessAnchorId: businessAnchorId || null,
+      businessAnchorId,
       userId,
       type: "CHARGE",
       amount: 3000000,
@@ -37,8 +35,7 @@ async function ensureFundingForOrganization({
   const existingBonus = await CreditLedger.findOne({ uniqueKey: bonusKey });
   if (!existingBonus) {
     await CreditLedger.create({
-      businessId,
-      businessAnchorId: businessAnchorId || null,
+      businessAnchorId,
       userId,
       type: "BONUS",
       amount: 30000,
@@ -53,7 +50,7 @@ export async function seedRequestData({ count = 50 } = {}) {
   const requestorUsers = await User.find({
     role: "requestor",
     active: true,
-    businessId: { $ne: null },
+    businessAnchorId: { $ne: null },
   })
     .sort({ email: 1 })
     .lean();
@@ -83,12 +80,11 @@ export async function seedRequestData({ count = 50 } = {}) {
 
   for (const requestor of requestorPool) {
     await ensureFundingForOrganization({
-      businessId: requestor.businessId,
-      businessAnchorId: requestor.businessAnchorId || null,
+      businessAnchorId: requestor.businessAnchorId,
       userId: requestor._id,
       uniqueKey: requestor.email,
     });
-    orgFunding.set(String(requestor.businessId), {
+    orgFunding.set(String(requestor.businessAnchorId), {
       remainingPaid: 3000000,
       remainingBonus: 30000,
     });
@@ -118,7 +114,7 @@ export async function seedRequestData({ count = 50 } = {}) {
       return "의뢰";
     })();
 
-    const orgKey = String(owner.businessId);
+    const orgKey = String(owner.businessAnchorId);
     const funding = orgFunding.get(orgKey) || {
       remainingPaid: 3000000,
       remainingBonus: 30000,
@@ -132,8 +128,7 @@ export async function seedRequestData({ count = 50 } = {}) {
     const requestDoc = {
       _id: requestObjectId,
       requestId,
-      businessId: owner.businessId,
-      businessAnchorId: owner.businessAnchorId || null,
+      businessAnchorId: owner.businessAnchorId,
       requestor: owner._id,
       manufacturer: null,
       caseInfos: {
@@ -244,12 +239,14 @@ export async function seedRequestData({ count = 50 } = {}) {
         shipDate.getDate() - Math.min(lastNDays, pkgIndex + randInt(0, 3)),
       );
       const packageId = createObjectId();
-      const businessId = chunk[0]?.businessId || orgKey;
+      const businessAnchorId = chunk[0]?.businessAnchorId || orgKey;
       const userId = chunk[0]?.requestor;
+      const mailboxAddress = `SEED-${String(packageId).slice(-6).toUpperCase()}`;
       shippingPackageDocs.push({
         _id: packageId,
-        businessId,
+        businessAnchorId,
         shipDateYmd: `${toKstYmd(shipDate)}-p${pkgIndex}`,
+        mailboxAddress,
         requestIds: chunk.map((doc) => doc._id),
         shippingFeeSupply: 3500,
         shippingFeeVat: 0,
@@ -263,7 +260,7 @@ export async function seedRequestData({ count = 50 } = {}) {
       });
 
       creditLedgerDocs.push({
-        businessId,
+        businessAnchorId,
         userId,
         type: "SPEND",
         amount: -3500,
@@ -271,7 +268,7 @@ export async function seedRequestData({ count = 50 } = {}) {
         spentBonusAmount: 0,
         refType: "SHIPPING_FEE",
         refId: packageId,
-        uniqueKey: `seed:shipping-fee:${String(businessId)}:${String(packageId)}`,
+        uniqueKey: `seed:shipping-fee:${String(businessAnchorId)}:${String(packageId)}`,
       });
     }
   }
