@@ -526,7 +526,49 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         metadataUpdates["caseInfos.maxDiameter"] = max;
       }
       if (!Number.isNaN(conn)) {
-        metadataUpdates["caseInfos.connectionDiameter"] = conn;
+        // Enhanced logic: prefer stl-registered metadata unless incoming metadata
+        // includes an explicit timestamp showing it's newer.
+        const existingRaw = request?.caseInfos?.stlMetadataUpdatedAt;
+        const existingStlUpdatedAt = existingRaw ? new Date(existingRaw) : null;
+
+        // BG may provide an updatedAt in the metadata payload. Try to read common keys.
+        const incomingTsRaw =
+          (metadata &&
+            (metadata.updatedAt ||
+              metadata.stlMetadataUpdatedAt ||
+              metadata.metadataUpdatedAt)) ||
+          null;
+        const incomingStlUpdatedAt = incomingTsRaw
+          ? new Date(incomingTsRaw)
+          : null;
+
+        if (!existingStlUpdatedAt) {
+          // No authoritative STL metadata saved yet — accept incoming value.
+          metadataUpdates["caseInfos.connectionDiameter"] = conn;
+          if (incomingStlUpdatedAt) {
+            metadataUpdates["caseInfos.stlMetadataUpdatedAt"] =
+              incomingStlUpdatedAt;
+          }
+        } else if (incomingStlUpdatedAt) {
+          // Both exist: accept only if incoming is newer
+          if (incomingStlUpdatedAt.getTime() > existingStlUpdatedAt.getTime()) {
+            metadataUpdates["caseInfos.connectionDiameter"] = conn;
+            metadataUpdates["caseInfos.stlMetadataUpdatedAt"] =
+              incomingStlUpdatedAt;
+            console.log(
+              `[BG-Callback] Overwriting connectionDiameter from processed-file because incoming metadata.updatedAt is newer. existing=${existingStlUpdatedAt.toISOString()} incoming=${incomingStlUpdatedAt.toISOString()} incoming_conn=${conn}`,
+            );
+          } else {
+            console.log(
+              `[BG-Callback] Skipping connectionDiameter update: existing stlMetadataUpdatedAt is newer. existing=${existingStlUpdatedAt.toISOString()} incoming=${incomingStlUpdatedAt.toISOString()} incoming_conn=${conn}`,
+            );
+          }
+        } else {
+          // existing exists but incoming has no timestamp — skip to avoid reverting
+          console.log(
+            `[BG-Callback] Skipping connectionDiameter update from processed-file because stlMetadataUpdatedAt exists (${existingStlUpdatedAt.toISOString()}) and incoming metadata has no timestamp. incoming_conn=${conn}`,
+          );
+        }
       }
     }
 
