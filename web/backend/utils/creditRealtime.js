@@ -50,3 +50,51 @@ export async function emitCreditBalanceUpdatedToBusiness({
     });
   }
 }
+
+export async function emitCreditBalanceSnapshotToBusiness({
+  businessAnchorId,
+  businessId,
+  balance,
+  reason,
+}) {
+  const anchorId = String(businessAnchorId || "").trim();
+  const id = String(businessId || "").trim();
+  if (!anchorId && !id) return;
+
+  const bal = Number(balance || 0);
+  if (!Number.isFinite(bal)) return;
+
+  const business = anchorId
+    ? await BusinessAnchor.findById(anchorId)
+        .select({ primaryContactUserId: 1, owners: 1, members: 1 })
+        .lean()
+        .catch(() => null)
+    : await BusinessAnchor.findById(id)
+        .select({ primaryContactUserId: 1, owners: 1, members: 1 })
+        .lean()
+        .catch(() => null);
+  if (!business) return;
+
+  const resolvedBusinessAnchorId = String(business._id || "").trim();
+  if (!resolvedBusinessAnchorId) return;
+
+  const targetUserIds = Array.from(
+    new Set(
+      [
+        business.primaryContactUserId,
+        ...(Array.isArray(business.owners) ? business.owners : []),
+        ...(Array.isArray(business.members) ? business.members : []),
+      ]
+        .map((id) => String(id || "").trim())
+        .filter(Boolean),
+    ),
+  );
+
+  for (const userId of targetUserIds) {
+    emitAppEventToUser(userId, "credit:balance-snapshot", {
+      businessAnchorId: resolvedBusinessAnchorId,
+      balance: bal,
+      reason: String(reason || "").trim() || null,
+    });
+  }
+}

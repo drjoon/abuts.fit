@@ -25,17 +25,15 @@ npm run db:seed-account
 npm run db:seed-account -- r=20 s=10
 ```
 
-- **의뢰/배송/정산 데이터 생성 (기본 50건)**
+- **의뢰/배송/정산 데이터 생성 (비활성화됨 — core shared 데이터만 시딩)**
+
+`db:seed-data` 스크립트는 의뢰/배송/정산(샘플) 데이터 생성을 비활성화하고 있으며, 연결된 공통 데이터(connections, filenameRules, packLabelBranding)만 업데이트합니다.
 
 ```bash
-npm run db:seed-data
+# 예전: npm run db:seed-data
+# 현재: db:seed-data는 샘플 의뢰/레저를 생성하지 않습니다. 샘플 데이터가 필요하면 별도 opt-in 스크립트를 만들고 테스트 환경에서만 실행하세요.
 ```
 
-- **의뢰/배송/정산 데이터 생성 (건수 지정)**
-
-```bash
-npm run db:seed-data -- 200
-```
 
 - **임플란트 프리셋 추가 (reset 없이 add-only)**
 
