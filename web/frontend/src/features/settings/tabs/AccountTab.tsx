@@ -294,10 +294,11 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
       `${seedBase}-${avatarNonce}-3`,
       `${seedBase}-${avatarNonce}-4`,
     ];
-    return seeds.map(
-      (seed) =>
-        `https://robohash.org/${encodeURIComponent(seed)}?set=set4&bgset=bg1`,
-    );
+    // return objects with both url and seed so we can render with AvatarImage (has fallback handling)
+    return seeds.map((seed) => ({
+      seed,
+      url: `https://robohash.org/${encodeURIComponent(seed)}?set=set4&bgset=bg1`,
+    }));
   }, [accountData.email, accountData.name, avatarNonce]);
 
   const [accountLoading, setAccountLoading] = useState(Boolean(token));
@@ -760,29 +761,33 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                 </Avatar>
                 <div>
                   <div className="grid grid-cols-5 gap-2">
-                    {avatarOptions.map((url) => (
+                    {avatarOptions.map((opt) => (
                       <button
-                        key={url}
+                        key={opt.url}
                         type="button"
                         className={cn(
                           "rounded-full border bg-white/80 p-0.5 transition-colors",
-                          accountData.profileImage === url
+                          accountData.profileImage === opt.url
                             ? "border-primary"
                             : "border-border hover:border-muted-foreground/40",
                         )}
                         onClick={() => {
                           setAccountData((prev) => ({
                             ...prev,
-                            profileImage: url,
+                            profileImage: opt.url,
                           }));
                           scheduleSave();
                         }}
                       >
-                        <img
-                          src={url}
-                          alt=""
-                          className="h-10 w-10 rounded-full bg-slate-100"
-                        />
+                        <Avatar className="h-10 w-10">
+                          <AvatarImage
+                            seed={opt.seed}
+                            fallbackInitial={accountData.name}
+                            src={opt.url}
+                            alt={accountData.name}
+                          />
+                          <AvatarFallback />
+                        </Avatar>
                       </button>
                     ))}
 
