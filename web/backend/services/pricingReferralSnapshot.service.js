@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import User from "../models/user.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import PricingReferralRolling30dAggregate from "../models/pricingReferralRolling30dAggregate.model.js";
+import Request from "../models/request.model.js";
 import { getPricingReferralOrderCountMapByBusinessAnchorIds } from "./pricingReferralOrderBucket.service.js";
 import {
   getLast30DaysRangeUtc,
@@ -308,6 +309,64 @@ export const recomputePricingReferralSnapshotForLeaderAnchorId = async (
     startYmd,
     endYmd,
   });
+
+  // If some anchors don't have bucket rows (e.g. no ShippingPackage rows),
+  // fall back to directly counting Requests for shipping/tracking stages
+  // within the date range. Prefer buckets for performance but ensure we
+  // don't miss anchors that never had bucket rows created.
+  const SHIPPING_STAGES = ["shipping", "포장.발송", "tracking", "추적관리"];
+  const missingAnchorIds = groupAnchorIds.filter(
+    (id) => !countMap.has(String(id)),
+  );
+  if (missingAnchorIds.length) {
+    const objectIds = missingAnchorIds
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    if (objectIds.length) {
+      const requestCounts = await Request.aggregate([
+        {
+          $match: {
+            businessAnchorId: { $in: objectIds },
+            manufacturerStage: { $in: SHIPPING_STAGES },
+            // match by estimated/next/original timeline YMD strings OR
+            // by pickup/createdAt dates falling in the UTC range
+            $or: [
+              {
+                "timeline.nextEstimatedShipYmd": {
+                  $gte: startYmd,
+                  $lte: endYmd,
+                },
+              },
+              { "timeline.estimatedShipYmd": { $gte: startYmd, $lte: endYmd } },
+              {
+                "timeline.originalEstimatedShipYmd": {
+                  $gte: startYmd,
+                  $lte: endYmd,
+                },
+              },
+              {
+                "productionSchedule.scheduledShipPickup": {
+                  $gte: range30.start,
+                  $lte: range30.end,
+                },
+              },
+              { createdAt: { $gte: range30.start, $lte: range30.end } },
+            ],
+          },
+        },
+        {
+          $group: {
+            _id: "$businessAnchorId",
+            count: { $sum: 1 },
+          },
+        },
+      ]);
+
+      for (const row of requestCounts || []) {
+        countMap.set(String(row._id), Number(row.count || 0));
+      }
+    }
+  }
 
   const groupTotalOrders = groupAnchorIds.reduce(
     (acc, id) => acc + Number(countMap.get(String(id)) || 0),

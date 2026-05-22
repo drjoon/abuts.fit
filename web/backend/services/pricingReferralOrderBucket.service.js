@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import ShippingPackage from "../models/shippingPackage.model.js";
 import PricingReferralDailyOrderBucket from "../models/pricingReferralDailyOrderBucket.model.js";
+import Request from "../models/request.model.js";
 
 const normalizeAnchorIds = (anchorIds) =>
   Array.from(
@@ -98,11 +99,51 @@ export const recomputePricingReferralDailyOrderBucketsForBusinessAnchorId =
         .filter(Boolean),
     );
 
+    // Gather all request IDs across all buckets so we can filter out canceled requests in one query
+    const allRequestIdSet = new Set();
+    for (const bucket of bucketMap.values()) {
+      for (const rid of bucket.requestIds || []) {
+        allRequestIdSet.add(String(rid || "").trim());
+      }
+    }
+
+    let validRequestIdSet = null;
+    if (allRequestIdSet.size > 0) {
+      const allRequestIdsArray = Array.from(allRequestIdSet).filter((id) =>
+        Types.ObjectId.isValid(id),
+      );
+      const objectIds = allRequestIdsArray.map((id) => new Types.ObjectId(id));
+
+      // Only include requests that are currently in shipping/tracking stages
+      // (exclude canceled and other non-shipping stages). This prevents
+      // stale package associations from inflating daily order buckets.
+      const validRequests = await Request.find({
+        _id: { $in: objectIds },
+        manufacturerStage: {
+          $in: ["shipping", "포장.발송", "tracking", "추적관리"],
+        },
+      })
+        .select({ _id: 1 })
+        .lean();
+
+      validRequestIdSet = new Set(
+        (validRequests || []).map((r) => String(r._id)),
+      );
+    }
+
     const bulkOps = [];
     const now = new Date();
     for (const [shipDateYmd, bucket] of bucketMap.entries()) {
-      const requestIds = Array.from(bucket.requestIds);
-      const packageIds = Array.from(bucket.packageIds);
+      const requestIds = Array.from(bucket.requestIds || []);
+      const packageIds = Array.from(bucket.packageIds || []);
+
+      // If we have filtered valid IDs, apply the filter; otherwise keep as-is
+      let filteredRequestIds = requestIds;
+      if (validRequestIdSet !== null) {
+        filteredRequestIds = requestIds.filter((id) =>
+          validRequestIdSet.has(String(id)),
+        );
+      }
 
       bulkOps.push({
         updateOne: {
@@ -114,8 +155,10 @@ export const recomputePricingReferralDailyOrderBucketsForBusinessAnchorId =
             $set: {
               businessAnchorId: businessAnchorObjectId,
               shipDateYmd,
-              requestIds: requestIds.map((id) => new Types.ObjectId(id)),
-              requestCount: requestIds.length,
+              requestIds: filteredRequestIds.map(
+                (id) => new Types.ObjectId(id),
+              ),
+              requestCount: filteredRequestIds.length,
               packageIds: packageIds.map((id) => new Types.ObjectId(id)),
               computedAt: now,
             },
@@ -147,10 +190,18 @@ export const recomputePricingReferralDailyOrderBucketsForBusinessAnchorId =
 
     return bucketYmds.sort().map((shipDateYmd) => {
       const bucket = bucketMap.get(shipDateYmd);
+      // If we filtered, recompute requestCount from filtered set; otherwise use original size
+      const requestCount =
+        bucket && validRequestIdSet
+          ? Array.from(bucket.requestIds || []).filter((id) =>
+              validRequestIdSet.has(String(id)),
+            ).length
+          : bucket?.requestIds?.size || 0;
+
       return {
         businessAnchorId: anchorId,
         shipDateYmd,
-        requestCount: bucket?.requestIds?.size || 0,
+        requestCount,
       };
     });
   };
