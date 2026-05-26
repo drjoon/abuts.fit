@@ -22,6 +22,7 @@
 import Request from "../models/request.model.js";
 import CncMachine from "../models/cncMachine.model.js";
 import ReviewApprovalQueue from "../models/reviewApprovalQueue.model.js";
+import mongoose from "mongoose";
 import { emitAppEventToRoles } from "../socket.js";
 import { triggerEspritForNc } from "../controllers/requests/common.review.esprit.js";
 import { chooseMachineForCamMachining } from "../controllers/requests/common.review.machine.js";
@@ -43,6 +44,54 @@ const WORKER_ID = `worker-${process.pid}-${Date.now()}`;
 // 워커가 이미 실행 중인지 여부 (중복 실행 방지)
 let _workerRunning = false;
 let _workerInterval = null;
+let _workerTickRunning = false;
+let _dbDisconnectedLogged = false;
+let _lastTransientMongoLogAt = 0;
+
+const TRANSIENT_MONGO_LOG_THROTTLE_MS = Number(
+  process.env.REVIEW_APPROVAL_QUEUE_TRANSIENT_LOG_THROTTLE_MS || 30000,
+);
+
+function isTransientMongoConnectivityError(err) {
+  if (!err) return false;
+
+  const name = String(err?.name || "").toLowerCase();
+  const message = String(err?.message || "").toLowerCase();
+  const labels = Array.isArray(err?.errorLabels)
+    ? err.errorLabels
+    : err?.errorLabelSet instanceof Set
+      ? Array.from(err.errorLabelSet)
+      : [];
+
+  const hint = `${name} ${message} ${labels.join(" ").toLowerCase()}`;
+  const transientKeywords = [
+    "poolclearedonnetworkerror",
+    "mongonetworktimeouterror",
+    "mongoserverselectionerror",
+    "server monitor timeout",
+    "timed out",
+    "econnreset",
+    "econnrefused",
+    "resetpool",
+    "interruptinuseconnections",
+    "connection",
+  ];
+
+  if (transientKeywords.some((keyword) => hint.includes(keyword))) {
+    return true;
+  }
+
+  return isTransientMongoConnectivityError(err?.cause);
+}
+
+function shouldLogTransientMongoNow() {
+  const now = Date.now();
+  if (now - _lastTransientMongoLogAt >= TRANSIENT_MONGO_LOG_THROTTLE_MS) {
+    _lastTransientMongoLogAt = now;
+    return true;
+  }
+  return false;
+}
 
 /**
  * 의뢰 승인을 큐에 등록한다.
@@ -508,6 +557,28 @@ export function startReviewApprovalWorker() {
   );
 
   const tick = async () => {
+    if (_workerTickRunning) return;
+
+    if (mongoose.connection.readyState !== 1) {
+      if (!_dbDisconnectedLogged || shouldLogTransientMongoNow()) {
+        console.warn(
+          "[ReviewApprovalQueue] worker tick skipped: MongoDB not connected",
+          {
+            readyState: mongoose.connection.readyState,
+          },
+        );
+      }
+      _dbDisconnectedLogged = true;
+      return;
+    }
+
+    if (_dbDisconnectedLogged) {
+      console.log("[ReviewApprovalQueue] MongoDB connection restored");
+      _dbDisconnectedLogged = false;
+      _lastTransientMongoLogAt = 0;
+    }
+
+    _workerTickRunning = true;
     try {
       // 큐가 빌 때까지 연속 처리
       let processed = await processNextItem();
@@ -515,7 +586,20 @@ export function startReviewApprovalWorker() {
         processed = await processNextItem();
       }
     } catch (err) {
-      console.error("[ReviewApprovalQueue] worker tick error", err);
+      if (isTransientMongoConnectivityError(err)) {
+        if (shouldLogTransientMongoNow()) {
+          console.warn(
+            "[ReviewApprovalQueue] worker tick transient Mongo error",
+            {
+              error: err?.message || String(err),
+            },
+          );
+        }
+      } else {
+        console.error("[ReviewApprovalQueue] worker tick error", err);
+      }
+    } finally {
+      _workerTickRunning = false;
     }
   };
 
