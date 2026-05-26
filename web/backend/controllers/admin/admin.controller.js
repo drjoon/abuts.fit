@@ -3,7 +3,6 @@ import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
 import {
   getReferralGroups,
   getReferralGroupTree,
@@ -32,28 +31,38 @@ export async function getPricingStats(req, res) {
       manufacturerStage: "추적관리",
     };
 
-    const resolveRequestPriceAmountExpr = {
-      $ifNull: ["$price.paidAmount", { $ifNull: ["$price.amount", 0] }],
-    };
-
     const rows = await Request.aggregate([
       { $match: match },
       {
         $group: {
           _id: null,
           totalOrders: { $sum: 1 },
-          paidOrders: {
+          explicitPaidOrders: {
             $sum: {
-              $cond: [{ $gt: [resolveRequestPriceAmountExpr, 0] }, 1, 0],
+              $cond: [
+                { $gt: [{ $ifNull: ["$price.paidAmount", 0] }, 0] },
+                1,
+                0,
+              ],
             },
           },
-          bonusOrders: {
+          explicitBonusOrders: {
+            $sum: {
+              $cond: [
+                { $gt: [{ $ifNull: ["$price.bonusAmount", 0] }, 0] },
+                1,
+                0,
+              ],
+            },
+          },
+          legacyAmountOnlyOrders: {
             $sum: {
               $cond: [
                 {
                   $and: [
-                    { $gt: [{ $ifNull: ["$price.bonusAmount", 0] }, 0] },
-                    { $eq: [resolveRequestPriceAmountExpr, 0] },
+                    { $eq: ["$price.paidAmount", null] },
+                    { $eq: ["$price.bonusAmount", null] },
+                    { $gt: [{ $ifNull: ["$price.amount", 0] }, 0] },
                   ],
                 },
                 1,
@@ -62,53 +71,62 @@ export async function getPricingStats(req, res) {
             },
           },
           totalRevenue: {
-            $sum: resolveRequestPriceAmountExpr,
+            $sum: { $ifNull: ["$price.paidAmount", 0] },
           },
-          totalBonusRevenue: {
+          totalBonusRevenueExplicit: {
             $sum: { $ifNull: ["$price.bonusAmount", 0] },
+          },
+          totalLegacyAmountOnlyRevenue: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$price.paidAmount", null] },
+                    { $eq: ["$price.bonusAmount", null] },
+                    { $gt: [{ $ifNull: ["$price.amount", 0] }, 0] },
+                  ],
+                },
+                { $ifNull: ["$price.amount", 0] },
+                0,
+              ],
+            },
           },
           totalBaseAmount: { $sum: { $ifNull: ["$price.baseAmount", 0] } },
           totalDiscountAmount: {
             $sum: { $ifNull: ["$price.discountAmount", 0] },
           },
+          shippingPackageIds: { $addToSet: "$shippingPackageId" },
         },
       },
     ]);
 
     const summary = rows?.[0] || {};
     const totalOrders = Number(summary.totalOrders || 0);
-    const paidOrders = Number(summary.paidOrders || 0);
-    const bonusOrders = Number(summary.bonusOrders || 0);
+    const explicitPaidOrders = Number(summary.explicitPaidOrders || 0);
+    const explicitBonusOrders = Number(summary.explicitBonusOrders || 0);
+    const legacyAmountOnlyOrders = Number(summary.legacyAmountOnlyOrders || 0);
+    const paidOrders = explicitPaidOrders;
+    const bonusOrders = explicitBonusOrders + legacyAmountOnlyOrders;
     const totalRevenue = Number(summary.totalRevenue || 0);
-    const totalBonusRevenue = Number(summary.totalBonusRevenue || 0);
+    const totalBonusRevenue =
+      Number(summary.totalBonusRevenueExplicit || 0) +
+      Number(summary.totalLegacyAmountOnlyRevenue || 0);
     const totalBaseAmount = Number(summary.totalBaseAmount || 0);
     const totalDiscountAmount = Number(summary.totalDiscountAmount || 0);
 
-    const shippingRows = await CreditLedger.aggregate([
-      {
-        $match: {
-          type: "SPEND",
-          refType: "SHIPPING_PACKAGE",
-          createdAt: { $gte: start, $lte: end },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          packageCount: { $sum: 1 },
-          totalShippingFeeSupply: {
-            $sum: { $abs: { $ifNull: ["$amount", 0] } },
-          },
-        },
-      },
-    ]);
-
-    const shipSummary = shippingRows?.[0] || {};
-    const rawPackageCount = Number(shipSummary.packageCount || 0);
-    const rawTotalShippingFeeSupply = Number(
-      shipSummary.totalShippingFeeSupply || 0,
+    const shippingPackageIds = Array.isArray(summary.shippingPackageIds)
+      ? summary.shippingPackageIds.filter(Boolean)
+      : [];
+    const shippingPackages = shippingPackageIds.length
+      ? await ShippingPackage.find({ _id: { $in: shippingPackageIds } })
+          .select({ shippingFeeSupply: 1 })
+          .lean()
+      : [];
+    const rawPackageCount = shippingPackages.length;
+    const totalShippingFeeSupply = shippingPackages.reduce(
+      (acc, pkg) => acc + Number(pkg?.shippingFeeSupply || 0),
+      0,
     );
-    const totalShippingFeeSupply = rawTotalShippingFeeSupply;
     const avgShippingFeeSupply = rawPackageCount
       ? Math.round(totalShippingFeeSupply / rawPackageCount)
       : 0;
