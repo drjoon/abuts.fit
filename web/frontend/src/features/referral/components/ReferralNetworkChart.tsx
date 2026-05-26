@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type ReferralNode = {
@@ -41,6 +41,11 @@ type ReferralNetworkChartProps = {
   mode?: "tree" | "radial-tree" | "radial-group";
   currentBusinessAnchorId?: string | null;
   showCard?: boolean; // Card 래핑 여부 (기본값: true)
+  showZoomControls?: boolean;
+  defaultZoom?: number;
+  minZoom?: number;
+  maxZoom?: number;
+  zoomStep?: number;
 };
 
 export function ReferralNetworkChart({
@@ -53,6 +58,11 @@ export function ReferralNetworkChart({
   mode = "tree",
   currentBusinessAnchorId,
   showCard = true,
+  showZoomControls = false,
+  defaultZoom = 1,
+  minZoom = 0.6,
+  maxZoom = 2,
+  zoomStep = 0.1,
 }: ReferralNetworkChartProps) {
   const gradientId = useId().replace(/:/g, "");
   const shadowId = `${gradientId}-shadow`;
@@ -66,6 +76,10 @@ export function ReferralNetworkChart({
       ? visibleRoles
       : ["requestor", "salesman", "devops"]) as ReferralRole[],
   );
+  const [zoom, setZoom] = useState(defaultZoom);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const isPanningRef = useRef(false);
+  const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
 
   const trimLabel = (value: string, max = 11) =>
     value.length > max ? `${value.slice(0, max)}…` : value;
@@ -114,6 +128,8 @@ export function ReferralNetworkChart({
 
   type LayoutLink = {
     key: string;
+    fromId: string;
+    toId: string;
     x1: number;
     y1: number;
     x2: number;
@@ -212,6 +228,8 @@ export function ReferralNetworkChart({
       });
       links.push({
         key: `${layoutRoot.id}-${child.id}`,
+        fromId: String(layoutRoot.id),
+        toId: String(child.id),
         x1: centerX,
         y1: centerY,
         x2: point.x,
@@ -289,6 +307,8 @@ export function ReferralNetworkChart({
       if (parent) {
         links.push({
           key: `${parent.id}-${current.id}`,
+          fromId: String(parent.id),
+          toId: String(current.id),
           x1: parent.x,
           y1: parent.y,
           x2: current.x,
@@ -353,6 +373,8 @@ export function ReferralNetworkChart({
       if (parent) {
         links.push({
           key: `${parent.id}-${current.id}`,
+          fromId: String(parent.id),
+          toId: String(current.id),
           x1: parent.x,
           y1: parent.y,
           x2: current.x,
@@ -368,6 +390,8 @@ export function ReferralNetworkChart({
         if (!existing) {
           links.push({
             key: `${current.id}-${child.id}`,
+            fromId: String(current.id),
+            toId: String(child.id),
             x1: current.x,
             y1: current.y,
             x2: child.x,
@@ -390,6 +414,8 @@ export function ReferralNetworkChart({
           if (!hasLink) {
             links.push({
               key: `${current.id}-${childNode.id}`,
+              fromId: String(current.id),
+              toId: String(childNode.id),
               x1: current.x,
               y1: current.y,
               x2: childNode.x,
@@ -512,7 +538,67 @@ export function ReferralNetworkChart({
     };
   };
 
-  const fittedLayout = layout ? fitLayout(layout) : null;
+  const spreadOverlappingNodes = (source: {
+    nodes: LayoutNode[];
+    links: LayoutLink[];
+  }) => {
+    if (!source.nodes.length) return source;
+
+    const nodes = source.nodes.map((node) => ({ ...node }));
+    const iterations = 4;
+
+    for (let iter = 0; iter < iterations; iter += 1) {
+      for (let i = 0; i < nodes.length; i += 1) {
+        for (let j = i + 1; j < nodes.length; j += 1) {
+          const a = nodes[i];
+          const b = nodes[j];
+          if (a.isRoot && b.isRoot) continue;
+
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const dist = Math.hypot(dx, dy);
+          const minDist = a.r + b.r + 18;
+          if (dist >= minDist) continue;
+
+          const safeDx = dist > 0.001 ? dx : Math.cos((i + j + 1) * 0.73);
+          const safeDy = dist > 0.001 ? dy : Math.sin((i + j + 1) * 0.73);
+          const safeDist = Math.hypot(safeDx, safeDy);
+          const ux = safeDx / safeDist;
+          const uy = safeDy / safeDist;
+          const push = (minDist - dist) / 2;
+
+          if (!a.isRoot) {
+            a.x -= ux * push;
+            a.y -= uy * push;
+          }
+          if (!b.isRoot) {
+            b.x += ux * push;
+            b.y += uy * push;
+          }
+        }
+      }
+    }
+
+    const byId = new Map(nodes.map((node) => [String(node.id), node]));
+    const links = source.links.map((link) => {
+      const from = byId.get(String(link.fromId));
+      const to = byId.get(String(link.toId));
+      if (!from || !to) return link;
+      return {
+        ...link,
+        x1: from.x,
+        y1: from.y,
+        x2: to.x,
+        y2: to.y,
+      };
+    });
+
+    return { nodes, links };
+  };
+
+  const fittedLayout = layout
+    ? fitLayout(spreadOverlappingNodes(layout))
+    : null;
 
   const buildLinkPath = (link: LayoutLink) => {
     if (!link.curved) {
@@ -527,6 +613,74 @@ export function ReferralNetworkChart({
 
   const fillColor = (role: ReferralRole, isRoot: boolean) =>
     isRoot ? "#2563eb" : ROLE_COLOR[role];
+
+  const clampZoom = (next: number) =>
+    Math.min(maxZoom, Math.max(minZoom, Number(next || 1)));
+
+  const getPanBounds = (zoomValue: number) => {
+    const extraX = Math.max(0, (viewWidth * (zoomValue - 1)) / 2);
+    const extraY = Math.max(0, (viewHeight * (zoomValue - 1)) / 2);
+    const marginX = 140;
+    const marginY = 120;
+    return {
+      minX: -(extraX + marginX),
+      maxX: extraX + marginX,
+      minY: -(extraY + marginY),
+      maxY: extraY + marginY,
+    };
+  };
+
+  const clampPan = (
+    nextPan: { x: number; y: number },
+    zoomValue: number = zoom,
+  ) => {
+    const bounds = getPanBounds(zoomValue);
+    return {
+      x: Math.min(bounds.maxX, Math.max(bounds.minX, nextPan.x)),
+      y: Math.min(bounds.maxY, Math.max(bounds.minY, nextPan.y)),
+    };
+  };
+
+  const toViewPoint = (
+    event:
+      | React.PointerEvent<HTMLDivElement>
+      | React.WheelEvent<HTMLDivElement>,
+    target: HTMLDivElement,
+  ) => {
+    const rect = target.getBoundingClientRect();
+    const x =
+      rect.width > 0
+        ? ((event.clientX - rect.left) / rect.width) * viewWidth
+        : centerX;
+    const y =
+      rect.height > 0
+        ? ((event.clientY - rect.top) / rect.height) * viewHeight
+        : centerY;
+    return { x, y };
+  };
+
+  const applyZoom = (
+    nextZoomRaw: number,
+    focalPoint?: { x: number; y: number },
+  ) => {
+    const nextZoom = clampZoom(nextZoomRaw);
+    const anchor = focalPoint || { x: centerX, y: centerY };
+    const currentZoom = zoom || 1;
+    const zoomRatio = nextZoom / currentZoom;
+
+    setZoom(nextZoom);
+    setPan((prev) =>
+      clampPan(
+        {
+          x: anchor.x - centerX - zoomRatio * (anchor.x - prev.x - centerX),
+          y: anchor.y - centerY - zoomRatio * (anchor.y - prev.y - centerY),
+        },
+        nextZoom,
+      ),
+    );
+  };
+
+  const zoomLabel = `${Math.round(zoom * 100)}%`;
 
   if (!layoutRoot || !fittedLayout) {
     const emptyContent = (
@@ -583,70 +737,156 @@ export function ReferralNetworkChart({
         fill={`url(#${haloId})`}
       />
 
-      {fittedLayout.links.map((link) => (
-        <path
-          key={link.key}
-          d={buildLinkPath(link)}
-          fill="none"
-          stroke="#bfdbfe"
-          strokeWidth={2.5}
-          strokeLinecap="round"
-        />
-      ))}
-
-      {fittedLayout.nodes.map((node) => (
-        <g
-          key={node.id}
-          transform={`translate(${node.x}, ${node.y})`}
-          filter={`url(#${shadowId})`}
-        >
-          {node.isRoot ? (
-            <circle cx="0" cy="0" r={node.r + 16} fill="rgba(37,99,235,0.08)" />
-          ) : null}
-          <circle
-            cx="0"
-            cy="0"
-            r={node.r}
-            fill={fillColor(node.role, node.isRoot)}
-            stroke={node.isRoot ? "#dbeafe" : "#eff6ff"}
-            strokeWidth={node.isRoot ? 6 : 4}
+      <g
+        transform={`translate(${pan.x} ${pan.y}) translate(${centerX} ${centerY}) scale(${zoom}) translate(${-centerX} ${-centerY})`}
+      >
+        {fittedLayout.links.map((link) => (
+          <path
+            key={link.key}
+            d={buildLinkPath(link)}
+            fill="none"
+            stroke="#bfdbfe"
+            strokeWidth={2.5}
+            strokeLinecap="round"
           />
-          <text
-            x="0"
-            y={node.r + 22}
-            textAnchor="middle"
-            fontSize={node.isRoot ? 16 : 13}
-            fontWeight={node.isRoot ? 800 : 700}
-            fill="#0f172a"
+        ))}
+
+        {fittedLayout.nodes.map((node) => (
+          <g
+            key={node.id}
+            transform={`translate(${node.x}, ${node.y})`}
+            filter={`url(#${shadowId})`}
           >
-            {trimLabel(node.name, node.isRoot ? 13 : 11)}
-          </text>
-          <text
-            x="0"
-            y={node.r + 40}
-            textAnchor="middle"
-            fontSize={12}
-            fontWeight={600}
-            fill="#475569"
-          >
-            {ROLE_LABEL[node.role]}
-          </text>
-          {node.isRoot && node.orders > 0 ? (
+            {node.isRoot ? (
+              <circle
+                cx="0"
+                cy="0"
+                r={node.r + 16}
+                fill="rgba(37,99,235,0.08)"
+              />
+            ) : null}
+            <circle
+              cx="0"
+              cy="0"
+              r={node.r}
+              fill={fillColor(node.role, node.isRoot)}
+              stroke={node.isRoot ? "#dbeafe" : "#eff6ff"}
+              strokeWidth={node.isRoot ? 6 : 4}
+            />
             <text
               x="0"
-              y={-(node.r + 18)}
+              y={node.r + 22}
+              textAnchor="middle"
+              fontSize={node.isRoot ? 16 : 13}
+              fontWeight={node.isRoot ? 800 : 700}
+              fill="#0f172a"
+            >
+              {trimLabel(node.name, node.isRoot ? 13 : 11)}
+            </text>
+            <text
+              x="0"
+              y={node.r + 40}
               textAnchor="middle"
               fontSize={12}
-              fontWeight={700}
-              fill="#2563eb"
+              fontWeight={600}
+              fill="#475569"
             >
-              최근 30일 {node.orders}건
+              {ROLE_LABEL[node.role]}
             </text>
-          ) : null}
-        </g>
-      ))}
+            {node.isRoot && node.orders > 0 ? (
+              <text
+                x="0"
+                y={-(node.r + 18)}
+                textAnchor="middle"
+                fontSize={12}
+                fontWeight={700}
+                fill="#2563eb"
+              >
+                최근 30일 {node.orders}건
+              </text>
+            ) : null}
+          </g>
+        ))}
+      </g>
     </svg>
   );
+
+  const zoomControlsElement = showZoomControls ? (
+    <div
+      data-zoom-controls="true"
+      className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-md border border-slate-200 bg-white/95 px-1.5 py-1 shadow-sm"
+    >
+      <button
+        type="button"
+        className="h-7 w-7 rounded border border-slate-200 text-slate-700 hover:bg-slate-50"
+        onClick={() => applyZoom(zoom - zoomStep)}
+        aria-label="축소"
+      >
+        −
+      </button>
+      <span className="min-w-[52px] text-center text-xs font-medium text-slate-700">
+        {zoomLabel}
+      </span>
+      <button
+        type="button"
+        className="h-7 w-7 rounded border border-slate-200 text-slate-700 hover:bg-slate-50"
+        onClick={() => applyZoom(zoom + zoomStep)}
+        aria-label="확대"
+      >
+        +
+      </button>
+      <button
+        type="button"
+        className="h-7 rounded border border-slate-200 px-2 text-xs text-slate-700 hover:bg-slate-50"
+        onClick={() => {
+          setZoom(clampZoom(defaultZoom));
+          setPan(clampPan({ x: 0, y: 0 }, clampZoom(defaultZoom)));
+        }}
+      >
+        초기화
+      </button>
+    </div>
+  ) : null;
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!showZoomControls) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("[data-zoom-controls='true']")) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    isPanningRef.current = true;
+    lastPointerRef.current = { x: event.clientX, y: event.clientY };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!showZoomControls || !isPanningRef.current) return;
+    const previous = lastPointerRef.current;
+    if (!previous) {
+      lastPointerRef.current = { x: event.clientX, y: event.clientY };
+      return;
+    }
+
+    const containerRect = event.currentTarget.getBoundingClientRect();
+    const widthScale =
+      containerRect.width > 0 ? viewWidth / containerRect.width : 1;
+    const heightScale =
+      containerRect.height > 0 ? viewHeight / containerRect.height : 1;
+
+    const dx = (event.clientX - previous.x) * widthScale;
+    const dy = (event.clientY - previous.y) * heightScale;
+
+    setPan((prev) => clampPan({ x: prev.x + dx, y: prev.y + dy }));
+    lastPointerRef.current = { x: event.clientX, y: event.clientY };
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!showZoomControls) return;
+    isPanningRef.current = false;
+    lastPointerRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
 
   const legendElement =
     legendRoles.length > 0 ? (
@@ -669,7 +909,22 @@ export function ReferralNetworkChart({
   if (!showCard) {
     return (
       <div className="w-full h-full flex flex-col">
-        {svgElement}
+        <div
+          className={`relative ${showZoomControls ? "cursor-grab active:cursor-grabbing" : ""}`}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onWheel={(event) => {
+            if (!showZoomControls) return;
+            event.preventDefault();
+            const delta = event.deltaY > 0 ? -zoomStep : zoomStep;
+            applyZoom(zoom + delta, toViewPoint(event, event.currentTarget));
+          }}
+        >
+          {zoomControlsElement}
+          {svgElement}
+        </div>
         {legendElement}
       </div>
     );
@@ -677,7 +932,20 @@ export function ReferralNetworkChart({
 
   const chartContent = (
     <>
-      <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white/80 shadow-inner">
+      <div
+        className={`relative overflow-hidden rounded-2xl border border-slate-100 bg-white/80 shadow-inner ${showZoomControls ? "cursor-grab active:cursor-grabbing" : ""}`}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onWheel={(event) => {
+          if (!showZoomControls) return;
+          event.preventDefault();
+          const delta = event.deltaY > 0 ? -zoomStep : zoomStep;
+          applyZoom(zoom + delta, toViewPoint(event, event.currentTarget));
+        }}
+      >
+        {zoomControlsElement}
         {svgElement}
       </div>
       {legendElement}

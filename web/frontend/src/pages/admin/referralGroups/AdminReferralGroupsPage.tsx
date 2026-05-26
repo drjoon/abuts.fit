@@ -995,6 +995,7 @@ export default function AdminReferralGroupsPage() {
                 legendRoles={["requestor", "salesman", "devops"]}
                 chartHeight={600}
                 showCard={false}
+                showZoomControls
               />
             </div>
           )}

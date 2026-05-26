@@ -486,7 +486,10 @@ export async function getReferralGroups(req, res) {
               : 0,
             netNewGroups: 0,
             avgRevenuePerGroup: requestorGroupCount
-              ? Math.round(requestorTotalRevenueAmount / requestorGroupCount)
+              ? Math.round(
+                  (requestorTotalRevenueAmount + requestorTotalBonusAmount) /
+                    requestorGroupCount,
+                )
               : 0,
             totalRevenueAmount: requestorTotalRevenueAmount,
             totalBonusAmount: requestorTotalBonusAmount,

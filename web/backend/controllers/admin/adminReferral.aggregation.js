@@ -118,14 +118,38 @@ export async function buildReferralLeaderAggregation({
             _id: "$businessAnchorId",
             orderCount: { $sum: 1 },
             revenueAmount: {
+              $sum: { $ifNull: ["$price.paidAmount", 0] },
+            },
+            bonusAmount: {
               $sum: {
-                $ifNull: [
-                  "$price.paidAmount",
-                  { $ifNull: ["$price.amount", 0] },
+                $add: [
+                  { $ifNull: ["$price.bonusAmount", 0] },
+                  {
+                    $cond: [
+                      {
+                        $and: [
+                          {
+                            $eq: [
+                              { $ifNull: ["$price.paidAmount", null] },
+                              null,
+                            ],
+                          },
+                          {
+                            $eq: [
+                              { $ifNull: ["$price.bonusAmount", null] },
+                              null,
+                            ],
+                          },
+                          { $gt: [{ $ifNull: ["$price.amount", 0] }, 0] },
+                        ],
+                      },
+                      { $ifNull: ["$price.amount", 0] },
+                      0,
+                    ],
+                  },
                 ],
               },
             },
-            bonusAmount: { $sum: { $ifNull: ["$price.bonusAmount", 0] } },
           },
         },
       ])
@@ -158,14 +182,38 @@ export async function buildReferralLeaderAggregation({
             _id: "$businessAnchorId",
             orderCount: { $sum: 1 },
             revenueAmount: {
+              $sum: { $ifNull: ["$price.paidAmount", 0] },
+            },
+            bonusAmount: {
               $sum: {
-                $ifNull: [
-                  "$price.paidAmount",
-                  { $ifNull: ["$price.amount", 0] },
+                $add: [
+                  { $ifNull: ["$price.bonusAmount", 0] },
+                  {
+                    $cond: [
+                      {
+                        $and: [
+                          {
+                            $eq: [
+                              { $ifNull: ["$price.paidAmount", null] },
+                              null,
+                            ],
+                          },
+                          {
+                            $eq: [
+                              { $ifNull: ["$price.bonusAmount", null] },
+                              null,
+                            ],
+                          },
+                          { $gt: [{ $ifNull: ["$price.amount", 0] }, 0] },
+                        ],
+                      },
+                      { $ifNull: ["$price.amount", 0] },
+                      0,
+                    ],
+                  },
                 ],
               },
             },
-            bonusAmount: { $sum: { $ifNull: ["$price.bonusAmount", 0] } },
           },
         },
       ])
