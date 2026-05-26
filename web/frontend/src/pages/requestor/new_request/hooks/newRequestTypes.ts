@@ -6,6 +6,7 @@ export type ClinicFavoriteImplant = {
 };
 
 export type RetentionGrooveValue = "none" | "shallow" | "deep";
+export type SurfaceTreatmentValue = "apply" | "none";
 
 export type ClinicPreset = {
   id: string;
@@ -62,6 +63,7 @@ export type CaseInfos = {
     tag?: string;
   };
   retentionGroove?: "none" | "shallow" | "deep";
+  surfaceTreatment?: SurfaceTreatmentValue;
 };
 
 export type DraftFileMeta = {

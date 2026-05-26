@@ -331,6 +331,7 @@ export async function createRequestsFromDraft(req, res) {
               tiltAxisVector: ci.tiltAxisVector,
               frontPoint: ci.frontPoint,
               retentionGroove: retentionGrooveValue,
+              surfaceTreatment: ci?.surfaceTreatment || "none",
               newSystemRequest,
               file: {
                 originalName: ci.file.originalName,
@@ -349,6 +350,7 @@ export async function createRequestsFromDraft(req, res) {
               tiltAxisVector: ci.tiltAxisVector,
               frontPoint: ci.frontPoint,
               retentionGroove: retentionGrooveValue,
+              surfaceTreatment: ci?.surfaceTreatment || "none",
               newSystemRequest,
             };
 

@@ -68,6 +68,7 @@ export async function cloneRequestToDraft(req, res) {
       workType: ci.workType,
       // 유지홈 옵션 전달 (rules.md §7.4.1)
       retentionGroove: ci.retentionGroove,
+      surfaceTreatment: ci.surfaceTreatment,
       shippingMode: "normal", // 항상 묶음 배송
       requestedShipDate: request.requestedShipDate,
     };

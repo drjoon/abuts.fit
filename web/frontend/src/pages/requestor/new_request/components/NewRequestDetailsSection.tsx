@@ -966,6 +966,85 @@ export function NewRequestDetailsSection({
                     </RadioGroup>
                   </div>
 
+                  {/* 표면처리 옵션 */}
+                  <div className="flex flex-row items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <div className="text-sm font-semibold text-slate-600">
+                        표면처리
+                      </div>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center text-slate-400 transition-colors hover:text-blue-600"
+                            aria-label="표면처리 옵션 가이드"
+                          >
+                            <CircleHelp className="h-4 w-4" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="bottom"
+                          align="center"
+                          alignOffset={-120}
+                          collisionPadding={20}
+                          className="w-[420px] max-w-[calc(100vw-2rem)] p-4"
+                        >
+                          <div className="mb-2 text-xs font-semibold text-slate-600">
+                            표면처리 옵션 예시
+                          </div>
+                          <img
+                            src="/images/new-request/surface-treatment-photo.jpg"
+                            alt="표면처리 한다(왼쪽 금색) / 안한다(오른쪽 회색)"
+                            className="h-52 w-full rounded-md border border-slate-200 bg-slate-50 p-1 object-cover object-[50%_54%]"
+                          />
+                          <div className="mt-2 grid grid-cols-2 text-xs font-medium text-slate-600">
+                            <span className="text-left">왼쪽(금색): 한다</span>
+                            <span className="text-right">
+                              오른쪽(회색): 안한다
+                            </span>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <RadioGroup
+                      value={detailCaseInfos?.surfaceTreatment || "none"}
+                      onValueChange={(value) =>
+                        setDetailCaseInfos({
+                          surfaceTreatment: value as "apply" | "none",
+                        })
+                      }
+                      className="flex items-center gap-10"
+                      disabled={!detailFile}
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem
+                          value="apply"
+                          id="st-apply"
+                          className="border-slate-300 text-blue-600"
+                        />
+                        <Label
+                          htmlFor="st-apply"
+                          className="cursor-pointer text-sm text-slate-700"
+                        >
+                          한다
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem
+                          value="none"
+                          id="st-none"
+                          className="border-slate-300 text-blue-600"
+                        />
+                        <Label
+                          htmlFor="st-none"
+                          className="cursor-pointer text-sm text-slate-700"
+                        >
+                          안한다
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+
                   <div className="flex flex-col gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <span className="text-sm font-semibold text-slate-700">

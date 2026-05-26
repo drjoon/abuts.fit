@@ -99,6 +99,11 @@ const requestSchema = new mongoose.Schema(
         enum: ["none", "shallow", "deep"],
         default: "deep",
       },
+      surfaceTreatment: {
+        type: String,
+        enum: ["apply", "none"],
+        default: "none",
+      },
       reviewByStage: {
         request: {
           status: {
