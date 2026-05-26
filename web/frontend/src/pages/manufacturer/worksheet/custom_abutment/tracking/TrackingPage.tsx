@@ -3,7 +3,6 @@ import { useOutletContext } from "react-router-dom";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { generateModelNumber } from "@/utils/modelNumber";
-import { request } from "@/shared/api/apiClient";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -114,8 +113,6 @@ export const TrackingInquiryPage = () => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const onScrollRef = useRef<(() => void) | null>(null);
   const [loading, setLoading] = useState(false);
-  const [syncingTracking, setSyncingTracking] = useState(false);
-  const [mockDelivering, setMockDelivering] = useState(false);
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
   const [expandedBoxes, setExpandedBoxes] = useState<Set<string>>(new Set());
   // Network pagination per stage (tracking)
@@ -813,107 +810,6 @@ export const TrackingInquiryPage = () => {
     });
   }, []);
 
-  const handleSyncTracking = useCallback(async () => {
-    if (!shippingRows.length) {
-      toast({
-        title: "동기화할 배송건 없음",
-        description: "송장번호가 있는 배송건이 없습니다.",
-      });
-      return;
-    }
-    setSyncingTracking(true);
-    try {
-      const requestIds = shippingRows
-        .map((row) => String(row.requestId || "").trim())
-        .filter(Boolean);
-      const response = await request<any>({
-        path: "/api/requests/shipping/hanjin/tracking-sync",
-        method: "POST",
-        jsonBody: { requestIds },
-      });
-      const body = response.data as any;
-      if (!response.ok || !body?.success) {
-        throw new Error(body?.message || "배송조회 동기화에 실패했습니다.");
-      }
-      toast({
-        title: "배송조회 동기화 완료",
-        description: `${Array.isArray(body?.data?.synced) ? body.data.synced.length : 0}건 상태를 확인했고, 집하 완료 전까지 10분 간격으로 재확인합니다.`,
-      });
-    } catch (error) {
-      toast({
-        title: "배송조회 동기화 실패",
-        description:
-          error instanceof Error ? error.message : "동기화에 실패했습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setSyncingTracking(false);
-    }
-  }, [shippingRows, toast]);
-
-  const handleMockDeliveryComplete = useCallback(async () => {
-    const shippingPackageIds = Array.from(
-      new Set(
-        shippingRows
-          .filter((row: any) => {
-            const di = normalizeDeliveryInfo(row.deliveryInfoRef);
-            return !di.deliveredAt;
-          })
-          .map((row: any) => String(row.shippingPackageId || "").trim())
-          .filter(Boolean),
-      ),
-    );
-    const mailboxAddresses = Array.from(
-      new Set(
-        shippingRows
-          .filter((row: any) => {
-            const di = normalizeDeliveryInfo(row.deliveryInfoRef);
-            return (
-              !di.deliveredAt && !String(row.shippingPackageId || "").trim()
-            );
-          })
-          .map((row: any) => String(row.mailboxAddress || "").trim())
-          .filter(Boolean),
-      ),
-    );
-
-    if (!shippingPackageIds.length && !mailboxAddresses.length) {
-      toast({
-        title: "처리할 배송건 없음",
-        description: "배송완료 처리할 배송 박스가 없습니다.",
-      });
-      return;
-    }
-
-    setMockDelivering(true);
-    try {
-      const response = await request<any>({
-        path: "/api/requests/shipping/hanjin/mock-delivery-complete",
-        method: "POST",
-        jsonBody: { shippingPackageIds, mailboxAddresses },
-      });
-      const body = response.data as any;
-      if (!response.ok || !body?.success) {
-        throw new Error(body?.message || "MOCK 배송완료 처리에 실패했습니다.");
-      }
-      toast({
-        title: "MOCK 배송완료 처리 완료",
-        description: `${Number(body?.data?.deliveredCount || 0)}개 배송 박스를 배송완료 처리했습니다.`,
-      });
-    } catch (error) {
-      toast({
-        title: "MOCK 배송완료 실패",
-        description:
-          error instanceof Error
-            ? error.message
-            : "MOCK 배송완료 처리에 실패했습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setMockDelivering(false);
-    }
-  }, [shippingRows, toast]);
-
   const currentRows =
     tab === "process"
       ? processRows
@@ -998,28 +894,6 @@ export const TrackingInquiryPage = () => {
               />
             </div>
             <div className="flex items-center gap-2">
-              {tab === "shipping" && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="px-4"
-                  onClick={handleMockDeliveryComplete}
-                  disabled={mockDelivering || syncingTracking}
-                >
-                  {mockDelivering ? "처리 중..." : "MOCK 배송완료"}
-                </Button>
-              )}
-              {tab === "shipping" && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="px-4"
-                  onClick={handleSyncTracking}
-                  disabled={syncingTracking}
-                >
-                  {syncingTracking ? "동기화 중..." : "배송조회 동기화"}
-                </Button>
-              )}
               {tab === "udi" && (
                 <Button
                   variant="outline"

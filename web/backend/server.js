@@ -8,6 +8,7 @@ import {
 } from "./utils/cacheWarming.js";
 import { startDummyCncScheduler } from "./jobs/dummyCncWorker.js";
 import { startReviewApprovalWorker } from "./services/reviewApprovalQueue.service.js";
+import { startHanjinTrackingAutoSyncWorker } from "./controllers/requests/shipping.TrackingPoller.js";
 import { seedCoreShared } from "./scripts/db/_core.shared.js";
 
 // 포트 설정 (EB 기본 upstream 포트는 8080)
@@ -71,6 +72,9 @@ dbReady
     // 의뢰/CAM 단계 승인 직렬 큐 워커 시작
     // 작업자 연속 승인 시 BG 앱(rhino, esprit, bridge, lot, pack, wbls) 과부하 방지
     startReviewApprovalWorker();
+
+    // 한진 배송조회 자동 동기화 워커 시작 (기본 10분 주기)
+    startHanjinTrackingAutoSyncWorker({ runImmediate: true });
   })
   .catch((err) => {
     console.error("MongoDB 연결 실패(서버는 계속 실행):", err);
