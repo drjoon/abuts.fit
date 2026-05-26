@@ -815,6 +815,29 @@ export async function ensureFinishedLotNumberForPacking(requestDoc) {
   await ensureLotNumberForMachining(requestDoc);
 }
 
+export function applySurfaceTreatmentFeeToPrice({
+  computedPrice,
+  surfaceTreatment,
+  surfaceTreatmentFee,
+}) {
+  const base =
+    computedPrice && typeof computedPrice === "object" ? computedPrice : {};
+  const treatment = String(surfaceTreatment || "").trim();
+  const feeRaw = Number(surfaceTreatmentFee);
+  const fee = Number.isFinite(feeRaw) && feeRaw > 0 ? feeRaw : 0;
+  const shouldApply = treatment === "apply";
+  const addOn = shouldApply ? fee : 0;
+
+  const amountRaw = Number(base.amount || 0);
+  const amount = Number.isFinite(amountRaw) ? amountRaw : 0;
+
+  return {
+    ...base,
+    surfaceTreatmentFee: addOn,
+    amount: amount + addOn,
+  };
+}
+
 export async function computePriceForRequest({
   requestorId,
   requestorOrgId,

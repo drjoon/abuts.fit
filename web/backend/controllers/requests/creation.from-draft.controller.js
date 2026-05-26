@@ -8,6 +8,7 @@ import SystemSettings from "../../models/systemSettings.model.js";
 import {
   normalizeCaseInfosImplantFields,
   ensureReviewByStageDefaults,
+  applySurfaceTreatmentFeeToPrice,
 } from "./utils.js";
 import {
   computePriceForRequest,
@@ -214,6 +215,13 @@ export async function createRequestsFromDraft(req, res) {
       });
     }
 
+    const systemSettingsForSurfaceTreatment =
+      await SystemSettings.findOne().lean();
+    const surfaceTreatmentFee = Number(
+      systemSettingsForSurfaceTreatment?.creditSettings?.surfaceTreatmentFee ||
+        0,
+    );
+
     const createdRequests = [];
     const missingFieldsByFile = [];
     const preparedCases = [];
@@ -269,12 +277,17 @@ export async function createRequestsFromDraft(req, res) {
         }
 
         const priceStart = Date.now();
-        let computedPrice = await computePriceForRequest({
+        const computedPriceBase = await computePriceForRequest({
           requestorId: req.user._id,
           requestorOrgId: req.user?.businessAnchorId,
           clinicName,
           patientName,
           tooth,
+        });
+        let computedPrice = applySurfaceTreatmentFeeToPrice({
+          computedPrice: computedPriceBase,
+          surfaceTreatment: ci?.surfaceTreatment,
+          surfaceTreatmentFee,
         });
         console.log("[createRequestsFromDraft] compute price", {
           t: Date.now() - startTime,

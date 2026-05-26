@@ -5,6 +5,7 @@ import SystemSettings from "../../models/systemSettings.model.js";
 import {
   normalizeCaseInfosImplantFields,
   computePriceForRequest,
+  applySurfaceTreatmentFeeToPrice,
   addKoreanBusinessDays,
   getTodayYmdInKst,
   toKstYmd,
@@ -120,12 +121,22 @@ export async function createRequest(req, res) {
       });
     }
 
-    const computedPrice = await computePriceForRequest({
+    const systemSettings = await SystemSettings.findOne().lean();
+    const surfaceTreatmentFee = Number(
+      systemSettings?.creditSettings?.surfaceTreatmentFee || 0,
+    );
+
+    const computedPriceBase = await computePriceForRequest({
       requestorId: req.user._id,
       requestorOrgId: req.user?.businessAnchorId,
       clinicName,
       patientName,
       tooth,
+    });
+    const computedPrice = applySurfaceTreatmentFeeToPrice({
+      computedPrice: computedPriceBase,
+      surfaceTreatment: normalizedCaseInfos?.surfaceTreatment,
+      surfaceTreatmentFee,
     });
 
     const requestedAt = new Date();
@@ -369,6 +380,10 @@ export async function createRequestsBulk(req, res) {
     // 제조사 리드타임 1회 로드 (정적 import)
     const manufacturerSettings = await getManufacturerLeadTimesUtil();
     const leadTimes = manufacturerSettings?.leadTimes || {};
+    const systemSettings = await SystemSettings.findOne().lean();
+    const surfaceTreatmentFee = Number(
+      systemSettings?.creditSettings?.surfaceTreatmentFee || 0,
+    );
     const enableDuplicateRequestCheck = Boolean(
       req.body && req.body.enableDuplicateRequestCheck,
     );
@@ -553,12 +568,17 @@ export async function createRequestsBulk(req, res) {
         });
       }
 
-      const computedPrice = await computePriceForRequest({
+      const computedPriceBase = await computePriceForRequest({
         requestorId: req.user._id,
         requestorOrgId: req.user?.businessAnchorId,
         clinicName,
         patientName,
         tooth,
+      });
+      const computedPrice = applySurfaceTreatmentFeeToPrice({
+        computedPrice: computedPriceBase,
+        surfaceTreatment: caseInfos?.surfaceTreatment,
+        surfaceTreatmentFee,
       });
 
       priceCalculations.push({
@@ -575,7 +595,6 @@ export async function createRequestsBulk(req, res) {
     }, 0);
 
     // 3. 배송비 계산: 배송 날짜별로 그룹화
-    const systemSettings = await SystemSettings.findOne().lean();
     const shippingFeePerBox = Number(
       systemSettings?.creditSettings?.shippingFee || 3500,
     );
@@ -843,13 +862,18 @@ export async function createRequestsBulk(req, res) {
             }
           }
 
-          const computedPrice = await computePriceForRequest({
+          const computedPriceBase = await computePriceForRequest({
             requestorId: req.user._id,
             requestorOrgId: req.user?.businessAnchorId,
             clinicName,
             patientName,
             tooth,
             forceNewOrderPricing,
+          });
+          const computedPrice = applySurfaceTreatmentFeeToPrice({
+            computedPrice: computedPriceBase,
+            surfaceTreatment: normalizedCaseInfos?.surfaceTreatment,
+            surfaceTreatmentFee,
           });
           const priceMs = Date.now() - tPrice0;
 

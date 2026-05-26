@@ -555,6 +555,10 @@ const requestSchema = new mongoose.Schema(
         type: Number,
         default: 0,
       },
+      surfaceTreatmentFee: {
+        type: Number,
+        default: 0,
+      },
       currency: {
         type: String,
         default: "KRW",

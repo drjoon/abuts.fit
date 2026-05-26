@@ -31,6 +31,7 @@ import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
 import { NewRequestPatientImplantFields } from "./NewRequestPatientImplantFields";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 type ToastFn = (props: {
   title?: React.ReactNode;
@@ -148,9 +149,13 @@ export function NewRequestDetailsSection({
   onCancelAll,
 }: Props) {
   const { token } = useAuthStore();
+  const { data: systemSettings } = useSystemSettings();
   const [leadTimes, setLeadTimes] = useState<Record<string, any> | null>(null);
   const [fileDiameters, setFileDiameters] = useState<Record<string, number>>(
     {},
+  );
+  const surfaceTreatmentFee = Number(
+    systemSettings?.creditSettings?.surfaceTreatmentFee || 0,
   );
 
   useEffect(() => {
@@ -971,6 +976,9 @@ export function NewRequestDetailsSection({
                     <div className="flex items-center gap-1.5">
                       <div className="text-sm font-semibold text-slate-600">
                         표면처리
+                        {surfaceTreatmentFee > 0
+                          ? ` (+${surfaceTreatmentFee.toLocaleString()}원)`
+                          : ""}
                       </div>
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -1044,6 +1052,12 @@ export function NewRequestDetailsSection({
                       </div>
                     </RadioGroup>
                   </div>
+                  {detailCaseInfos?.surfaceTreatment === "apply" &&
+                  surfaceTreatmentFee > 0 ? (
+                    <div className="mt-1 text-right text-xs font-medium text-blue-700">
+                      표면처리 추가금 +{surfaceTreatmentFee.toLocaleString()}원
+                    </div>
+                  ) : null}
 
                   <div className="flex flex-col gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2">
                     <div className="flex items-center justify-between gap-2 flex-wrap">

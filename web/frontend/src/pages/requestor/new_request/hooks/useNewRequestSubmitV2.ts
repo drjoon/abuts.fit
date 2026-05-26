@@ -13,6 +13,7 @@ import { createParseLog } from "@/shared/services/parseLogService";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 const NEW_REQUEST_DRAFT_ID_STORAGE_KEY = "abutsfit:new-request-draft-id:v1";
 const API_BASE_URL =
@@ -60,6 +61,7 @@ export const useNewRequestSubmitV2 = ({
   const { toast, dismiss } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
+  const { data: systemSettings } = useSystemSettings();
 
   const normalizeKeyPart = (s: string) => {
     try {
@@ -282,6 +284,18 @@ export const useNewRequestSubmitV2 = ({
 
       let creditShortfallMsg: string | null = null;
       let tempFiles: TempUploadedFile[] = [];
+      const surfaceTreatmentFee = Number(
+        systemSettings?.creditSettings?.surfaceTreatmentFee || 0,
+      );
+      const surfaceTreatmentApplyCount = files.reduce((acc, file) => {
+        const fileKey = toNormalizedFileKey(file);
+        const ci = (caseInfosMap?.[fileKey] || filteredMap[fileKey]) as
+          | Partial<CaseInfos>
+          | undefined;
+        return acc + (ci?.surfaceTreatment === "apply" ? 1 : 0);
+      }, 0);
+      const estimatedSurfaceTreatmentFee =
+        surfaceTreatmentApplyCount * surfaceTreatmentFee;
 
       try {
         const [uploadResult] = await Promise.all([
@@ -304,7 +318,8 @@ export const useNewRequestSubmitV2 = ({
                   creditData?.bonusShippingCredit || 0,
                 );
 
-                const estimatedMachiningFee = files.length * 10000;
+                const estimatedMachiningFee =
+                  files.length * 10000 + estimatedSurfaceTreatmentFee;
                 const estimatedShippingFee = boxCount * 3500;
 
                 const availableForMachining = paidCredit + bonusRequestCredit;
@@ -328,6 +343,11 @@ export const useNewRequestSubmitV2 = ({
                     details.push(
                       `의뢰비 예상: ${estimatedMachiningFee.toLocaleString()}원 (보유: ${availableForMachining.toLocaleString()}원)`,
                     );
+                    if (estimatedSurfaceTreatmentFee > 0) {
+                      details.push(
+                        `└ 표면처리 추가금: ${estimatedSurfaceTreatmentFee.toLocaleString()}원 (${surfaceTreatmentApplyCount}건 × ${surfaceTreatmentFee.toLocaleString()}원)`,
+                      );
+                    }
                     details.push(
                       `배송비 예상: ${estimatedShippingFee.toLocaleString()}원 (${boxCount}박스, 보유: ${availableForShipping.toLocaleString()}원)`,
                     );
@@ -336,6 +356,11 @@ export const useNewRequestSubmitV2 = ({
                     details.push(
                       `예상: ${estimatedMachiningFee.toLocaleString()}원, 보유: ${availableForMachining.toLocaleString()}원`,
                     );
+                    if (estimatedSurfaceTreatmentFee > 0) {
+                      details.push(
+                        `└ 표면처리 추가금: ${estimatedSurfaceTreatmentFee.toLocaleString()}원 (${surfaceTreatmentApplyCount}건 × ${surfaceTreatmentFee.toLocaleString()}원)`,
+                      );
+                    }
                   } else {
                     message = "배송비 크레딧이 부족합니다.";
                     details.push(
