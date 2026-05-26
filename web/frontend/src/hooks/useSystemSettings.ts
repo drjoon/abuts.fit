@@ -4,7 +4,6 @@ import { apiFetch } from "@/shared/api/apiClient";
 export interface CreditSettings {
   minCreditForRequest: number;
   shippingFee: number;
-  surfaceTreatmentFee: number;
   defaultWelcomeBonusCredit: number;
   defaultFreeShippingCredit: number;
 }
@@ -12,7 +11,6 @@ export interface CreditSettings {
 export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   minCreditForRequest: 10000,
   shippingFee: 3500,
-  surfaceTreatmentFee: 1000,
   defaultWelcomeBonusCredit: 30000,
   defaultFreeShippingCredit: 7000,
 };

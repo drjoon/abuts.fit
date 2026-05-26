@@ -9,7 +9,6 @@ const CREDIT_SETTINGS_DEFAULTS = (() => {
   return {
     minCreditForRequest: pickDefault("creditSettings.minCreditForRequest"),
     shippingFee: pickDefault("creditSettings.shippingFee"),
-    surfaceTreatmentFee: pickDefault("creditSettings.surfaceTreatmentFee"),
     defaultWelcomeBonusCredit: pickDefault(
       "creditSettings.defaultWelcomeBonusCredit",
     ),
@@ -64,47 +63,6 @@ export async function getSystemSettings(req, res) {
     res.status(500).json({
       success: false,
       message: "시스템 설정 조회 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
-
-export async function updateSurfaceTreatmentFeeSetting(req, res) {
-  try {
-    const payload = req.body && typeof req.body === "object" ? req.body : {};
-    const nextFee = Number(payload.surfaceTreatmentFee);
-    if (!Number.isFinite(nextFee) || nextFee < 0) {
-      return res.status(400).json({
-        success: false,
-        message: "표면처리 추가금은 0원 이상의 숫자여야 합니다.",
-      });
-    }
-
-    const doc = await SystemSettings.findOneAndUpdate(
-      { key: "global" },
-      {
-        $setOnInsert: { key: "global" },
-        $set: { "creditSettings.surfaceTreatmentFee": nextFee },
-      },
-      { new: true, upsert: true, setDefaultsOnInsert: true },
-    ).lean();
-
-    const creditSettings = {
-      ...CREDIT_SETTINGS_DEFAULTS,
-      ...(doc?.creditSettings || {}),
-    };
-
-    return res.status(200).json({
-      success: true,
-      message: "표면처리 추가금이 업데이트되었습니다.",
-      data: {
-        creditSettings,
-      },
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "표면처리 추가금 업데이트 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -327,7 +285,6 @@ export async function updateCreditSettings(req, res) {
     const allowedKeys = [
       "minCreditForRequest",
       "shippingFee",
-      "surfaceTreatmentFee",
       "defaultWelcomeBonusCredit",
       "defaultFreeShippingCredit",
     ];

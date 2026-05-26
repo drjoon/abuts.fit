@@ -175,7 +175,6 @@ export const useNewRequestSubmitV2 = ({
             taperAngle: base.taperAngle,
             workType: base.workType,
             retentionGroove: base.retentionGroove,
-            surfaceTreatment: base.surfaceTreatment,
             shippingMode: base.shippingMode,
             requestedShipDate: base.requestedShipDate,
           };
@@ -284,19 +283,6 @@ export const useNewRequestSubmitV2 = ({
 
       let creditShortfallMsg: string | null = null;
       let tempFiles: TempUploadedFile[] = [];
-      const surfaceTreatmentFee = Number(
-        systemSettings?.creditSettings?.surfaceTreatmentFee || 0,
-      );
-      const surfaceTreatmentApplyCount = files.reduce((acc, file) => {
-        const fileKey = toNormalizedFileKey(file);
-        const ci = (caseInfosMap?.[fileKey] || filteredMap[fileKey]) as
-          | Partial<CaseInfos>
-          | undefined;
-        return acc + (ci?.surfaceTreatment === "apply" ? 1 : 0);
-      }, 0);
-      const estimatedSurfaceTreatmentFee =
-        surfaceTreatmentApplyCount * surfaceTreatmentFee;
-
       try {
         const [uploadResult] = await Promise.all([
           files.length > 0
@@ -318,8 +304,7 @@ export const useNewRequestSubmitV2 = ({
                   creditData?.bonusShippingCredit || 0,
                 );
 
-                const estimatedMachiningFee =
-                  files.length * 10000 + estimatedSurfaceTreatmentFee;
+                const estimatedMachiningFee = files.length * 10000;
                 const estimatedShippingFee = boxCount * 3500;
 
                 const availableForMachining = paidCredit + bonusRequestCredit;
@@ -343,11 +328,6 @@ export const useNewRequestSubmitV2 = ({
                     details.push(
                       `의뢰비 예상: ${estimatedMachiningFee.toLocaleString()}원 (보유: ${availableForMachining.toLocaleString()}원)`,
                     );
-                    if (estimatedSurfaceTreatmentFee > 0) {
-                      details.push(
-                        `└ 표면처리 추가금: ${estimatedSurfaceTreatmentFee.toLocaleString()}원 (${surfaceTreatmentApplyCount}건 × ${surfaceTreatmentFee.toLocaleString()}원)`,
-                      );
-                    }
                     details.push(
                       `배송비 예상: ${estimatedShippingFee.toLocaleString()}원 (${boxCount}박스, 보유: ${availableForShipping.toLocaleString()}원)`,
                     );
@@ -356,11 +336,6 @@ export const useNewRequestSubmitV2 = ({
                     details.push(
                       `예상: ${estimatedMachiningFee.toLocaleString()}원, 보유: ${availableForMachining.toLocaleString()}원`,
                     );
-                    if (estimatedSurfaceTreatmentFee > 0) {
-                      details.push(
-                        `└ 표면처리 추가금: ${estimatedSurfaceTreatmentFee.toLocaleString()}원 (${surfaceTreatmentApplyCount}건 × ${surfaceTreatmentFee.toLocaleString()}원)`,
-                      );
-                    }
                   } else {
                     message = "배송비 크레딧이 부족합니다.";
                     details.push(
@@ -427,7 +402,6 @@ export const useNewRequestSubmitV2 = ({
               taperAngle: ci.taperAngle,
               workType: ci.workType || "abutment",
               retentionGroove: ci.retentionGroove,
-              surfaceTreatment: ci.surfaceTreatment,
               shippingMode: ci.shippingMode,
               requestedShipDate: ci.requestedShipDate,
               file: tf?.key

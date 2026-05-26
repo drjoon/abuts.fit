@@ -72,11 +72,6 @@ const draftCaseSchema = new mongoose.Schema(
           enum: ["none", "shallow", "deep"],
           default: "deep",
         },
-        surfaceTreatment: {
-          type: String,
-          enum: ["apply", "none"],
-          default: "none",
-        },
         // 배송 요청 정보 (묶음 배송만 사용)
         requestedShipDate: Date,
       },

@@ -19,7 +19,6 @@ type DevopsSettings = {
   manufacturerRate?: number; // 0~1 (e.g. 0.65 = 65%)
   baseCommissionRate?: number; // 0~1 (e.g. 0.05 = 5%)
   salesmanDirectRate?: number; // 0~1 (e.g. 0.05 = 5%)
-  surfaceTreatmentFee?: number;
   updatedAt?: string | null;
 };
 
@@ -43,9 +42,6 @@ export const DevopsPayoutAccountTab = () => {
   const [manufacturerRate, setManufacturerRate] = useState<string>("65");
   const [baseRate, setBaseRate] = useState<string>("5");
   const [salesmanRate, setSalesmanRate] = useState<string>("5");
-  const [surfaceTreatmentFee, setSurfaceTreatmentFee] =
-    useState<string>("1000");
-
   // 직전 저장 스냅샷 (취소 시 복원 기준)
   const savedRef = useRef({
     data: {
@@ -57,7 +53,6 @@ export const DevopsPayoutAccountTab = () => {
     manufacturerRate: "65",
     baseRate: "5",
     salesmanRate: "5",
-    surfaceTreatmentFee: "1000",
   });
 
   useEffect(() => {
@@ -84,14 +79,6 @@ export const DevopsPayoutAccountTab = () => {
           updatedAt: pa?.updatedAt ? String(pa.updatedAt) : null,
         });
         const ds: DevopsSettings = profile?.devopsPayoutSettings || {};
-        const creditSettingsRes = await request<any>({
-          path: "/api/credits/settings",
-          method: "GET",
-        });
-        const loadedSurfaceTreatmentFee = Number(
-          creditSettingsRes?.data?.data?.creditSettings?.surfaceTreatmentFee ??
-            1000,
-        );
         const snap = {
           data: {
             bankName: String(pa?.bankName || ""),
@@ -108,17 +95,11 @@ export const DevopsPayoutAccountTab = () => {
           salesmanRate: String(
             Math.round(Number(ds?.salesmanDirectRate ?? 0.05) * 100),
           ),
-          surfaceTreatmentFee: String(
-            Number.isFinite(loadedSurfaceTreatmentFee)
-              ? Math.max(0, loadedSurfaceTreatmentFee)
-              : 1000,
-          ),
         };
         savedRef.current = snap;
         setManufacturerRate(snap.manufacturerRate);
         setBaseRate(snap.baseRate);
         setSalesmanRate(snap.salesmanRate);
-        setSurfaceTreatmentFee(snap.surfaceTreatmentFee);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -178,7 +159,6 @@ export const DevopsPayoutAccountTab = () => {
     const mfrNum = Number(manufacturerRate);
     const rateNum = Number(baseRate);
     const salesmanNum = Number(salesmanRate);
-    const surfaceTreatmentFeeNum = Number(surfaceTreatmentFee);
     const allRates = [mfrNum, rateNum, salesmanNum];
     if (allRates.some((r) => !Number.isFinite(r) || r < 0 || r > 100)) {
       toast({
@@ -199,19 +179,6 @@ export const DevopsPayoutAccountTab = () => {
       });
       return;
     }
-    if (
-      !Number.isFinite(surfaceTreatmentFeeNum) ||
-      surfaceTreatmentFeeNum < 0
-    ) {
-      toast({
-        title: "추가금 오류",
-        description: "표면처리 추가금은 0원 이상의 숫자여야 합니다.",
-        variant: "destructive",
-        duration: 3000,
-      });
-      return;
-    }
-
     setSaving(true);
     try {
       const res = await request<any>({
@@ -246,28 +213,6 @@ export const DevopsPayoutAccountTab = () => {
         return;
       }
 
-      const surfaceFeeRes = await request<any>({
-        path: "/api/credits/settings",
-        method: "PATCH",
-        token,
-        jsonBody: {
-          surfaceTreatmentFee: surfaceTreatmentFeeNum,
-        },
-      });
-      if (!surfaceFeeRes.ok) {
-        const msg = String(
-          (surfaceFeeRes.data as any)?.message ||
-            "표면처리 추가금 저장에 실패했습니다.",
-        );
-        toast({
-          title: "저장 실패",
-          description: msg,
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-
       toast({
         title: "저장되었습니다",
         duration: 2000,
@@ -287,7 +232,6 @@ export const DevopsPayoutAccountTab = () => {
       setManufacturerRate(String(mfrNum));
       setBaseRate(String(rateNum));
       setSalesmanRate(String(salesmanNum));
-      setSurfaceTreatmentFee(String(surfaceTreatmentFeeNum));
       savedRef.current = {
         data: {
           bankName: v.normalized.bankName,
@@ -298,7 +242,6 @@ export const DevopsPayoutAccountTab = () => {
         manufacturerRate: String(mfrNum),
         baseRate: String(rateNum),
         salesmanRate: String(salesmanNum),
-        surfaceTreatmentFee: String(surfaceTreatmentFeeNum),
       };
     } finally {
       setSaving(false);
@@ -459,23 +402,6 @@ export const DevopsPayoutAccountTab = () => {
           개발운영사 수익 분배금을 입금받을 계좌 정보를 입력해주세요.
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="surface-treatment-fee">표면처리 추가금(원)</Label>
-            <Input
-              id="surface-treatment-fee"
-              type="number"
-              min={0}
-              step={100}
-              value={surfaceTreatmentFee}
-              onChange={(e) => setSurfaceTreatmentFee(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              의뢰자가 표면처리 "한다"를 선택하면 건당 추가되는 금액입니다.
-            </p>
-          </div>
-        </div>
-
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label htmlFor="devops-bank">은행</Label>
@@ -525,7 +451,6 @@ export const DevopsPayoutAccountTab = () => {
                 setManufacturerRate(s.manufacturerRate);
                 setBaseRate(s.baseRate);
                 setSalesmanRate(s.salesmanRate);
-                setSurfaceTreatmentFee(s.surfaceTreatmentFee);
               }}
               disabled={saving}
             >

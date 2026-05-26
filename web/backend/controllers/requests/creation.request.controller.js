@@ -5,7 +5,6 @@ import SystemSettings from "../../models/systemSettings.model.js";
 import {
   normalizeCaseInfosImplantFields,
   computePriceForRequest,
-  applySurfaceTreatmentFeeToPrice,
   addKoreanBusinessDays,
   getTodayYmdInKst,
   toKstYmd,
@@ -121,22 +120,12 @@ export async function createRequest(req, res) {
       });
     }
 
-    const systemSettings = await SystemSettings.findOne().lean();
-    const surfaceTreatmentFee = Number(
-      systemSettings?.creditSettings?.surfaceTreatmentFee || 0,
-    );
-
-    const computedPriceBase = await computePriceForRequest({
+    const computedPrice = await computePriceForRequest({
       requestorId: req.user._id,
       requestorOrgId: req.user?.businessAnchorId,
       clinicName,
       patientName,
       tooth,
-    });
-    const computedPrice = applySurfaceTreatmentFeeToPrice({
-      computedPrice: computedPriceBase,
-      surfaceTreatment: normalizedCaseInfos?.surfaceTreatment,
-      surfaceTreatmentFee,
     });
 
     const requestedAt = new Date();
@@ -381,9 +370,6 @@ export async function createRequestsBulk(req, res) {
     const manufacturerSettings = await getManufacturerLeadTimesUtil();
     const leadTimes = manufacturerSettings?.leadTimes || {};
     const systemSettings = await SystemSettings.findOne().lean();
-    const surfaceTreatmentFee = Number(
-      systemSettings?.creditSettings?.surfaceTreatmentFee || 0,
-    );
     const enableDuplicateRequestCheck = Boolean(
       req.body && req.body.enableDuplicateRequestCheck,
     );
@@ -568,17 +554,12 @@ export async function createRequestsBulk(req, res) {
         });
       }
 
-      const computedPriceBase = await computePriceForRequest({
+      const computedPrice = await computePriceForRequest({
         requestorId: req.user._id,
         requestorOrgId: req.user?.businessAnchorId,
         clinicName,
         patientName,
         tooth,
-      });
-      const computedPrice = applySurfaceTreatmentFeeToPrice({
-        computedPrice: computedPriceBase,
-        surfaceTreatment: caseInfos?.surfaceTreatment,
-        surfaceTreatmentFee,
       });
 
       priceCalculations.push({
@@ -862,18 +843,13 @@ export async function createRequestsBulk(req, res) {
             }
           }
 
-          const computedPriceBase = await computePriceForRequest({
+          const computedPrice = await computePriceForRequest({
             requestorId: req.user._id,
             requestorOrgId: req.user?.businessAnchorId,
             clinicName,
             patientName,
             tooth,
             forceNewOrderPricing,
-          });
-          const computedPrice = applySurfaceTreatmentFeeToPrice({
-            computedPrice: computedPriceBase,
-            surfaceTreatment: normalizedCaseInfos?.surfaceTreatment,
-            surfaceTreatmentFee,
           });
           const priceMs = Date.now() - tPrice0;
 

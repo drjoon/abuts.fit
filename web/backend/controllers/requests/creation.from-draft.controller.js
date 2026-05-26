@@ -8,7 +8,6 @@ import SystemSettings from "../../models/systemSettings.model.js";
 import {
   normalizeCaseInfosImplantFields,
   ensureReviewByStageDefaults,
-  applySurfaceTreatmentFeeToPrice,
 } from "./utils.js";
 import {
   computePriceForRequest,
@@ -215,13 +214,6 @@ export async function createRequestsFromDraft(req, res) {
       });
     }
 
-    const systemSettingsForSurfaceTreatment =
-      await SystemSettings.findOne().lean();
-    const surfaceTreatmentFee = Number(
-      systemSettingsForSurfaceTreatment?.creditSettings?.surfaceTreatmentFee ||
-        0,
-    );
-
     const createdRequests = [];
     const missingFieldsByFile = [];
     const preparedCases = [];
@@ -284,11 +276,7 @@ export async function createRequestsFromDraft(req, res) {
           patientName,
           tooth,
         });
-        let computedPrice = applySurfaceTreatmentFeeToPrice({
-          computedPrice: computedPriceBase,
-          surfaceTreatment: ci?.surfaceTreatment,
-          surfaceTreatmentFee,
-        });
+        let computedPrice = computedPriceBase;
         console.log("[createRequestsFromDraft] compute price", {
           t: Date.now() - startTime,
           idx,
@@ -344,7 +332,6 @@ export async function createRequestsFromDraft(req, res) {
               tiltAxisVector: ci.tiltAxisVector,
               frontPoint: ci.frontPoint,
               retentionGroove: retentionGrooveValue,
-              surfaceTreatment: ci?.surfaceTreatment || "none",
               newSystemRequest,
               file: {
                 originalName: ci.file.originalName,
@@ -363,7 +350,6 @@ export async function createRequestsFromDraft(req, res) {
               tiltAxisVector: ci.tiltAxisVector,
               frontPoint: ci.frontPoint,
               retentionGroove: retentionGrooveValue,
-              surfaceTreatment: ci?.surfaceTreatment || "none",
               newSystemRequest,
             };
 
