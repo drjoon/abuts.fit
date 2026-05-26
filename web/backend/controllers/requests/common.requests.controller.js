@@ -35,7 +35,10 @@ import s3Utils, {
   getSignedUrl as getSignedUrlForS3Key,
 } from "../../utils/s3.utils.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
-import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
+import {
+  triggerDashboardSummaryRefreshForAnchorId,
+  triggerPricingSnapshotForBusinessAnchorId,
+} from "../../services/requestSnapshotTriggers.service.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -1209,6 +1212,10 @@ export async function updateRequestStatus(req, res) {
             err,
           ),
         );
+        triggerPricingSnapshotForBusinessAnchorId(
+          anchorId,
+          `request-canceled:${request.requestId}`,
+        );
       }
     }
 
@@ -1305,6 +1312,10 @@ export async function deleteRequest(req, res) {
           `[deleteRequest] Dashboard refresh failed for ${request.requestId}:`,
           err,
         ),
+      );
+      triggerPricingSnapshotForBusinessAnchorId(
+        anchorId,
+        `request-deleted:${request.requestId}`,
       );
     }
 

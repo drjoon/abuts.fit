@@ -3,6 +3,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { apiFetch } from "@/shared/api/apiClient";
+import { useToast } from "@/shared/hooks/use-toast";
 import {
   Card,
   CardContent,
@@ -24,6 +25,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { getNormalizedStageLabel } from "@/utils/stage";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 
 const getStatusBadge = (requestLike: any) => {
   const norm = getNormalizedStageLabel(requestLike);
@@ -109,25 +111,30 @@ const PAGE_SIZE = 9;
 export const AdminRequestMonitoring = () => {
   const { token } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
+  const { toast } = useToast();
   const [requests, setRequests] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    requestId: string;
+    requestMongoId: string;
+  } | null>(null);
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  const handleDeleteRequest = async (
-    requestId: string,
-    requestMongoId: string,
-  ) => {
+  const handleDeleteRequest = (requestId: string, requestMongoId: string) => {
+    setDeleteTarget({ requestId, requestMongoId });
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleConfirmDeleteRequest = async () => {
     if (!token) return;
+    if (!deleteTarget) return;
 
-    const confirmed = window.confirm(
-      `의뢰 ${requestId}를 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`,
-    );
-
-    if (!confirmed) return;
+    const { requestMongoId } = deleteTarget;
 
     setDeletingIds((prev) => new Set(prev).add(requestMongoId));
 
@@ -145,18 +152,32 @@ export const AdminRequestMonitoring = () => {
             r._id === requestMongoId ? { ...r, manufacturerStage: "취소" } : r,
           ),
         );
+        toast({
+          title: "의뢰 삭제 완료",
+          description: `의뢰 ${deleteTarget.requestId}이(가) 취소 처리되었습니다.`,
+        });
       } else {
-        alert(`삭제 실패: ${res.data?.message || "알 수 없는 오류"}`);
+        toast({
+          title: "의뢰 삭제 실패",
+          description: res.data?.message || "알 수 없는 오류",
+          variant: "destructive",
+        });
       }
     } catch (error: any) {
       console.error("Failed to delete request:", error);
-      alert(`삭제 중 오류가 발생했습니다: ${error.message}`);
+      toast({
+        title: "의뢰 삭제 실패",
+        description: `삭제 중 오류가 발생했습니다: ${error.message}`,
+        variant: "destructive",
+      });
     } finally {
       setDeletingIds((prev) => {
         const next = new Set(prev);
         next.delete(requestMongoId);
         return next;
       });
+      setDeleteConfirmOpen(false);
+      setDeleteTarget(null);
     }
   };
 
@@ -554,6 +575,30 @@ export const AdminRequestMonitoring = () => {
           </CardContent>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title="의뢰 삭제"
+        description={
+          deleteTarget ? (
+            <span>
+              의뢰 <strong>{deleteTarget.requestId}</strong>을(를)
+              삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
+            </span>
+          ) : null
+        }
+        confirmLabel="삭제"
+        cancelLabel="취소"
+        onConfirm={handleConfirmDeleteRequest}
+        onCancel={() => {
+          if (deleteTarget?.requestMongoId) {
+            const isDeleting = deletingIds.has(deleteTarget.requestMongoId);
+            if (isDeleting) return;
+          }
+          setDeleteConfirmOpen(false);
+          setDeleteTarget(null);
+        }}
+      />
     </div>
   );
 };
