@@ -6,6 +6,10 @@ const apiKey = String(process.env.HANJIN_API_KEY || "").trim();
 const secretKey = String(process.env.HANJIN_SECRET_KEY || "").trim();
 
 const DEFAULT_TIMEOUT_MS = Number(process.env.HANJIN_TIMEOUT_MS || 30000);
+const HANJIN_VERBOSE_LOGS =
+  String(process.env.HANJIN_VERBOSE_LOGS || "false")
+    .trim()
+    .toLowerCase() === "true";
 
 function sanitizeForLog(value) {
   if (value == null) return value;
@@ -122,15 +126,17 @@ async function requestHanjin({
   });
 
   const startTime = Date.now();
-  console.log("[hanjin] outbound request", {
-    clientId,
-    method,
-    url,
-    canonicalPath,
-    timestamp,
-    params: sanitizeForLog(params),
-    data: sanitizeForLog(data),
-  });
+  if (HANJIN_VERBOSE_LOGS) {
+    console.log("[hanjin] outbound request", {
+      clientId,
+      method,
+      url,
+      canonicalPath,
+      timestamp,
+      params: sanitizeForLog(params),
+      data: sanitizeForLog(data),
+    });
+  }
 
   try {
     const response = await axios({
@@ -149,15 +155,17 @@ async function requestHanjin({
       },
     });
     const elapsedMs = Date.now() - startTime;
-    console.log("[hanjin] outbound response", {
-      clientId,
-      method,
-      url,
-      status: response.status,
-      elapsedMs,
-      elapsedSec: (elapsedMs / 1000).toFixed(2),
-      data: sanitizeForLog(response.data),
-    });
+    if (HANJIN_VERBOSE_LOGS) {
+      console.log("[hanjin] outbound response", {
+        clientId,
+        method,
+        url,
+        status: response.status,
+        elapsedMs,
+        elapsedSec: (elapsedMs / 1000).toFixed(2),
+        data: sanitizeForLog(response.data),
+      });
+    }
     return response.data;
   } catch (error) {
     const status = error.response?.status;

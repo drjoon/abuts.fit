@@ -208,15 +208,7 @@ const scheduleGlobalTrackingSync = () => {
   );
   globalTimer = setTimeout(async () => {
     try {
-      const result = await runHanjinTrackingAutoSyncOnce();
-      if (result?.reason !== "no_targets") {
-        console.log("[hanjinTrackingAutoSync] run", {
-          skipped: result?.skipped || false,
-          reason: result?.reason || null,
-          totalTargets: result?.totalTargets || 0,
-          syncedCount: result?.syncedCount || 0,
-        });
-      }
+      await runHanjinTrackingAutoSyncOnce();
     } catch (error) {
       console.error("[hanjinTrackingAutoSync] run failed", error);
     } finally {
@@ -247,16 +239,7 @@ export const startHanjinTrackingAutoSyncWorker = ({
 
   if (runImmediate) {
     void runHanjinTrackingAutoSyncOnce()
-      .then((result) => {
-        if (result?.reason !== "no_targets") {
-          console.log("[hanjinTrackingAutoSync] immediate run", {
-            skipped: result?.skipped || false,
-            reason: result?.reason || null,
-            totalTargets: result?.totalTargets || 0,
-            syncedCount: result?.syncedCount || 0,
-          });
-        }
-      })
+      .then(() => {})
       .catch((error) => {
         console.error("[hanjinTrackingAutoSync] immediate run failed", error);
       });
