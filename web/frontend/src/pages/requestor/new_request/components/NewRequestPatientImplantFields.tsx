@@ -215,12 +215,9 @@ export function NewRequestPatientImplantFields({
     return /^[가-힣]{1,4}$/.test(name.trim());
   };
 
-  // UI에 표시할 환자명: 업로드된 파일명에서 추출된 경우(또는 props로 들어온 경우)
-  // 한글 4글자 이하가 아니면 빈 문자열로 표시만 하고, props 자체는 건드리지 않음
-  const displayedPatientName = useMemo(() => {
-    const n = caseInfos?.patientName || "";
-    return isValidKoreanName(n) ? n : "";
-  }, [caseInfos?.patientName]);
+  // UI에 표시할 환자명: 타이핑 중에는 원본 값을 그대로 표시
+  // 업로드/파일명에서 자동 채워진 비검증 이름은 onBlur 시 addPatientPreset에서 필터링됨
+  const displayedPatientName = caseInfos?.patientName || "";
 
   useEffect(() => {
     const manufacturer = caseInfos?.implantManufacturer;
