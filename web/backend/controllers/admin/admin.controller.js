@@ -32,6 +32,10 @@ export async function getPricingStats(req, res) {
       manufacturerStage: "추적관리",
     };
 
+    const resolveRequestPriceAmountExpr = {
+      $ifNull: ["$price.paidAmount", { $ifNull: ["$price.amount", 0] }],
+    };
+
     const rows = await Request.aggregate([
       { $match: match },
       {
@@ -40,11 +44,7 @@ export async function getPricingStats(req, res) {
           totalOrders: { $sum: 1 },
           paidOrders: {
             $sum: {
-              $cond: [
-                { $gt: [{ $ifNull: ["$price.paidAmount", 0] }, 0] },
-                1,
-                0,
-              ],
+              $cond: [{ $gt: [resolveRequestPriceAmountExpr, 0] }, 1, 0],
             },
           },
           bonusOrders: {
@@ -53,7 +53,7 @@ export async function getPricingStats(req, res) {
                 {
                   $and: [
                     { $gt: [{ $ifNull: ["$price.bonusAmount", 0] }, 0] },
-                    { $eq: [{ $ifNull: ["$price.paidAmount", 0] }, 0] },
+                    { $eq: [resolveRequestPriceAmountExpr, 0] },
                   ],
                 },
                 1,
@@ -62,9 +62,7 @@ export async function getPricingStats(req, res) {
             },
           },
           totalRevenue: {
-            $sum: {
-              $ifNull: ["$price.paidAmount", { $ifNull: ["$price.amount", 0] }],
-            },
+            $sum: resolveRequestPriceAmountExpr,
           },
           totalBonusRevenue: {
             $sum: { $ifNull: ["$price.bonusAmount", 0] },
@@ -139,6 +137,13 @@ export async function getPricingStats(req, res) {
       0,
     );
 
+    const avgUnitPrice = totalOrders
+      ? Math.round(totalRevenue / totalOrders)
+      : 0;
+    const avgBonusUnitPrice = bonusOrders
+      ? Math.round(totalBonusRevenue / bonusOrders)
+      : 0;
+
     return res.status(200).json({
       success: true,
       data: {
@@ -153,10 +158,8 @@ export async function getPricingStats(req, res) {
         totalDiscountAmount,
         totalShippingFeeSupply,
         avgShippingFeeSupply,
-        avgUnitPrice: paidOrders ? Math.round(totalRevenue / paidOrders) : 0,
-        avgBonusUnitPrice: bonusOrders
-          ? Math.round(totalBonusRevenue / bonusOrders)
-          : 0,
+        avgUnitPrice,
+        avgBonusUnitPrice,
         avgDiscountPerOrder: totalOrders
           ? Math.round(totalDiscountAmount / totalOrders)
           : 0,
@@ -180,17 +183,17 @@ export async function getPricingStatsByUser(req, res) {
     };
     const limit = Math.min(parseInt(req.query.limit) || 200, 1000);
 
+    const resolveRequestPriceAmountExpr = {
+      $ifNull: ["$price.paidAmount", { $ifNull: ["$price.amount", 0] }],
+    };
+
     const rows = await Request.aggregate([
       { $match: match },
       {
         $group: {
           _id: "$requestor",
           orders: { $sum: 1 },
-          revenue: {
-            $sum: {
-              $ifNull: ["$price.paidAmount", { $ifNull: ["$price.amount", 0] }],
-            },
-          },
+          revenue: { $sum: resolveRequestPriceAmountExpr },
           baseAmount: { $sum: { $ifNull: ["$price.baseAmount", 0] } },
           discountAmount: { $sum: { $ifNull: ["$price.discountAmount", 0] } },
         },

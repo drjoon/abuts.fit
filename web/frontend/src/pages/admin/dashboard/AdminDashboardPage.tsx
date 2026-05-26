@@ -7,6 +7,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { RequestorRiskSummaryCard } from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
+import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
 import {
   Users,
   FileText,
@@ -66,6 +67,7 @@ const getAlertIcon = (type: string) => {
 export const AdminDashboardPage = () => {
   const { user, token } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
+  const { counts: commBadgeCounts } = useAdminCommBadges();
   const [pricingSummary, setPricingSummary] = useState<PricingSummary | null>(
     null,
   );
@@ -410,7 +412,7 @@ export const AdminDashboardPage = () => {
                     </div>
                     <div className="space-y-1">
                       <div className="text-xs text-muted-foreground">
-                        평균 유료 단가
+                        평균 단가
                       </div>
                       <div className="text-xl font-bold">
                         ₩{(pricingSummary?.avgUnitPrice ?? 0).toLocaleString()}
@@ -481,28 +483,36 @@ export const AdminDashboardPage = () => {
                         <MessageCircle className="h-3 w-3" />
                         채팅
                       </div>
-                      <div className="text-xl font-bold">0</div>
+                      <div className="text-xl font-bold">
+                        {commBadgeCounts.chat.toLocaleString()}
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
                         <MessageSquare className="h-3 w-3" />
                         메시지
                       </div>
-                      <div className="text-xl font-bold">0</div>
+                      <div className="text-xl font-bold">
+                        {commBadgeCounts.request.toLocaleString()}
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Mail className="h-3 w-3" />
                         메일
                       </div>
-                      <div className="text-xl font-bold">0</div>
+                      <div className="text-xl font-bold">
+                        {commBadgeCounts.mail.toLocaleString()}
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
                         <HelpCircle className="h-3 w-3" />
                         문의
                       </div>
-                      <div className="text-xl font-bold">0</div>
+                      <div className="text-xl font-bold">
+                        {commBadgeCounts.inquiry.toLocaleString()}
+                      </div>
                     </div>
                   </div>
                 </CardContent>
