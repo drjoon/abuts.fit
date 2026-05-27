@@ -40,6 +40,8 @@ _DEBUG_ADD_POLYLINE_CURVE = os.environ.get("FINISHLINE_DEBUG_CURVE_DOC", "1") in
 )
 # ExtractMeshEdges 결과가 너무 낮은 Z로 잡히는 경우(포스트/치은 미분리 샘플) 차단 임계값
 _EDGE_MIN_Z_VALID_THRESHOLD_MM = 0.5
+# edge 루프가 pt0 대비 지나치게 안쪽(내부 홀)일 때 차단하는 반경 비율 임계값
+_EDGE_MIN_RADIUS_TO_PT0_RATIO = 0.45
 
 
 def _merge_candidates(
@@ -105,6 +107,17 @@ def _detect_finishline_points_edge(
     if not candidates:
         candidates = [mesh]
 
+    ref_pt0 = None
+    ref_pt0_radius = None
+    try:
+        ref_pt0 = _select_pt0(mesh)
+        ref_pt0_radius = float(math.sqrt(ref_pt0.X * ref_pt0.X + ref_pt0.Y * ref_pt0.Y))
+    except Exception:
+        ref_pt0 = None
+        ref_pt0_radius = None
+
+    rejected_low_z = 0
+    rejected_small_radius = 0
     for idx, target_mesh in enumerate(candidates):
         _trace_log(
             "[detect-edge] candidate[{}] vertices={} faces={} key={}".format(
@@ -138,6 +151,42 @@ def _detect_finishline_points_edge(
                     edge_min_z if edge_min_z is not None else float("nan"),
                 )
             )
+            # 요구 사항: edge 결과 min-Z가 0.5mm 이하면 비정상으로 간주
+            # -> 해당 후보는 버리고 다음 edge 후보를 계속 탐색한다.
+            if (
+                edge_min_z is not None
+                and edge_min_z <= _EDGE_MIN_Z_VALID_THRESHOLD_MM
+            ):
+                rejected_low_z += 1
+                _trace_log(
+                    "[detect-edge] candidate[{}] rejected min_z={:.6f} <= {:.3f}".format(
+                        idx,
+                        edge_min_z,
+                        _EDGE_MIN_Z_VALID_THRESHOLD_MM,
+                    )
+                )
+                continue
+
+            edge_median_radius = _points_median_radius(traced_points)
+            if (
+                ref_pt0_radius is not None
+                and ref_pt0_radius > _DIST_TOL
+                and edge_median_radius is not None
+            ):
+                radius_ratio = edge_median_radius / ref_pt0_radius
+                if radius_ratio <= _EDGE_MIN_RADIUS_TO_PT0_RATIO:
+                    rejected_small_radius += 1
+                    _trace_log(
+                        "[detect-edge] candidate[{}] rejected radius_ratio={:.4f} edge_median_r={:.4f} pt0_r={:.4f} <= {:.3f}".format(
+                            idx,
+                            radius_ratio,
+                            edge_median_radius,
+                            ref_pt0_radius,
+                            _EDGE_MIN_RADIUS_TO_PT0_RATIO,
+                        )
+                    )
+                    continue
+
             return traced_points, "{}#candidate{}".format(strategy_used, idx)
         else:
             _trace_log(
@@ -146,6 +195,10 @@ def _detect_finishline_points_edge(
                 )
             )
 
+    if rejected_low_z > 0:
+        return None, "C_EDGE_REJECTED_LOW_Z"
+    if rejected_small_radius > 0:
+        return None, "C_EDGE_REJECTED_SMALL_RADIUS"
     return None, "C_EDGE_FAILED"
 
 
@@ -495,6 +548,27 @@ def _points_min_z(points: Sequence[rg.Point3d]) -> Optional[float]:
         return float(min(p.Z for p in points))
     except Exception:
         return None
+
+
+def _points_median_radius(points: Sequence[rg.Point3d]) -> Optional[float]:
+    if not points:
+        return None
+    radii: List[float] = []
+    for p in points:
+        if p is None:
+            continue
+        try:
+            radii.append(float(math.sqrt(p.X * p.X + p.Y * p.Y)))
+        except Exception:
+            continue
+    if not radii:
+        return None
+    radii.sort()
+    n = len(radii)
+    mid = n // 2
+    if n % 2 == 1:
+        return float(radii[mid])
+    return float((radii[mid - 1] + radii[mid]) * 0.5)
 
 
 def _extract_lowest_boundary_loop_points(mesh: rg.Mesh) -> Optional[List[rg.Point3d]]:

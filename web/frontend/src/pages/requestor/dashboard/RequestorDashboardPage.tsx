@@ -616,13 +616,13 @@ export const RequestorDashboardPage = () => {
       },
       {
         label: "포장.발송",
-        value: `${shippingProductCount}/${shippingBoxCount}박`,
+        value: `${shippingProductCount}건/${shippingBoxCount}박스`,
         change: s.inShippingChange ?? "+0%",
         icon: Package,
       },
       {
         label: "추적관리",
-        value: `${trackingProductCount}/${trackingBoxCount}박`,
+        value: `${trackingProductCount}건/${trackingBoxCount}박스`,
         change: s.inTrackingChange ?? "+0%",
         icon: CheckCircle,
       },
