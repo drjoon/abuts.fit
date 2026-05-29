@@ -7,6 +7,32 @@ import {
   normalizeKoreanBusinessDay,
   toKstYmd,
 } from "../controllers/requests/utils.js";
+import { resolveLeadDaysWithSameDayCutoff } from "../controllers/requests/production.utils.js";
+
+const buildEstimatedShipFallbackSeed = ({ createdAt, createdYmd }) => {
+  const normalizedCreatedYmd =
+    (typeof createdYmd === "string" && createdYmd.trim()) ||
+    toKstYmd(createdAt) ||
+    getTodayYmdInKst();
+  if (!normalizedCreatedYmd) return null;
+
+  const createdAtDate = createdAt instanceof Date ? createdAt : null;
+  const requestedAt =
+    createdAtDate && !Number.isNaN(createdAtDate.getTime())
+      ? createdAtDate
+      : new Date(`${normalizedCreatedYmd}T00:00:00+09:00`);
+
+  const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
+    leadDays: 1,
+    requestedAt,
+  });
+
+  return {
+    createdYmd: normalizedCreatedYmd,
+    resolvedLeadDays,
+    key: `${normalizedCreatedYmd}:${resolvedLeadDays}`,
+  };
+};
 
 const buildDateFilter = (period) => {
   const now = new Date();
@@ -82,8 +108,10 @@ const getRequestEstimatedShipYmd = ({ request, fallbackMap }) => {
     return pickupYmd;
   }
 
-  const createdYmd = toKstYmd(request?.createdAt) || getTodayYmdInKst();
-  return fallbackMap.get(createdYmd) || createdYmd;
+  const createdAt = request?.createdAt ? new Date(request.createdAt) : null;
+  const seed = buildEstimatedShipFallbackSeed({ createdAt });
+  if (!seed) return getTodayYmdInKst();
+  return fallbackMap.get(seed.key) || seed.createdYmd;
 };
 
 const recomputeSingleRequestorDashboardSummarySnapshot = async ({
@@ -384,39 +412,44 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
     doneOrCanceledChange: "+0%",
   };
 
-  const recentRequestFallbackYmds = Array.from(
-    new Set(
-      (recentRequestsResult || [])
-        .map((r) => {
-          const timeline = r?.timeline || {};
-          const hasTimelineEstimate =
-            (typeof timeline.nextEstimatedShipYmd === "string" &&
-              timeline.nextEstimatedShipYmd.trim()) ||
-            (typeof timeline.estimatedShipYmd === "string" &&
-              timeline.estimatedShipYmd.trim()) ||
-            (typeof timeline.originalEstimatedShipYmd === "string" &&
-              timeline.originalEstimatedShipYmd.trim());
-          const pickup = r?.productionSchedule?.scheduledShipPickup;
-          if (hasTimelineEstimate || pickup) {
-            return null;
-          }
-          return toKstYmd(r?.createdAt) || getTodayYmdInKst();
-        })
-        .filter(Boolean),
-    ),
-  );
+  const recentRequestFallbackEntries = (recentRequestsResult || [])
+    .map((r) => {
+      const timeline = r?.timeline || {};
+      const hasTimelineEstimate =
+        (typeof timeline.nextEstimatedShipYmd === "string" &&
+          timeline.nextEstimatedShipYmd.trim()) ||
+        (typeof timeline.estimatedShipYmd === "string" &&
+          timeline.estimatedShipYmd.trim()) ||
+        (typeof timeline.originalEstimatedShipYmd === "string" &&
+          timeline.originalEstimatedShipYmd.trim());
+      const pickup = r?.productionSchedule?.scheduledShipPickup;
+      if (hasTimelineEstimate || pickup) {
+        return null;
+      }
+      const createdAt = r?.createdAt ? new Date(r.createdAt) : null;
+      const createdYmd = createdAt ? toKstYmd(createdAt) : getTodayYmdInKst();
+      return buildEstimatedShipFallbackSeed({
+        createdAt,
+        createdYmd,
+      });
+    })
+    .filter(Boolean);
 
   const fallbackEstimatedShipYmdMap = new Map(
     await Promise.all(
-      recentRequestFallbackYmds.map(async (createdYmd) => {
+      Array.from(
+        new Map(
+          recentRequestFallbackEntries.map((entry) => [entry.key, entry]),
+        ).values(),
+      ).map(async ({ createdYmd, resolvedLeadDays, key }) => {
         const baseYmd = await normalizeKoreanBusinessDay({
           ymd: createdYmd,
         });
         const estimatedShipYmd = await addKoreanBusinessDays({
           startYmd: baseYmd,
-          days: 1,
+          days: resolvedLeadDays,
         });
-        return [createdYmd, estimatedShipYmd];
+        return [key, estimatedShipYmd];
       }),
     ),
   );

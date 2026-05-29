@@ -160,8 +160,10 @@ export async function createRequest(req, res) {
     };
 
     // 생산 스케줄 계산 (시각 기반)
-    const { calculateInitialProductionSchedule } =
-      await import("./production.utils.js");
+    const {
+      calculateInitialProductionSchedule,
+      resolveLeadDaysWithSameDayCutoff,
+    } = await import("./production.utils.js");
     const productionSchedule = await calculateInitialProductionSchedule({
       maxDiameter: normalizedCaseInfos?.maxDiameter,
       requestedAt,
@@ -199,10 +201,14 @@ export async function createRequest(req, res) {
       else diameterKey = "d12";
 
       const leadDays = leadTimes[diameterKey]?.minBusinessDays ?? 1;
+      const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
+        leadDays,
+        requestedAt,
+      });
 
       estimatedShipYmdRaw = await addKoreanBusinessDays({
         startYmd: createdYmd,
-        days: leadDays,
+        days: resolvedLeadDays,
       });
     }
 
@@ -928,9 +934,13 @@ export async function createRequestsBulk(req, res) {
             if (cachedEst) {
               estimatedShipYmdRaw = cachedEst; // already normalized ymd
             } else {
+              const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
+                leadDays,
+                requestedAt,
+              });
               const added = await addKoreanBusinessDays({
                 startYmd: createdYmd,
-                days: leadDays,
+                days: resolvedLeadDays,
               });
               estimatedShipYmdRaw = added;
             }

@@ -79,9 +79,11 @@ export const PricingPolicyDialog = ({
     const max = leadTimes[key]?.maxBusinessDays;
     const minText = Number.isFinite(min) ? min : "-";
     const maxText = Number.isFinite(max) ? max : "-";
+    const hasSameDayNote = Number(minText) === 1;
     return (
       <p>
-        {label}: <b>의뢰일 +{minText}영업일</b> (최대 +{maxText}영업일)
+        {label}: <b>기준 +{minText}영업일</b> (최대 +{maxText}영업일)
+        {hasSameDayNote ? " · 정오 전 접수 시 당일 집하 가능" : ""}
       </p>
     );
   };
@@ -288,10 +290,32 @@ export const PricingPolicyDialog = ({
                   <h3 className="font-semibold text-foreground text-md">
                     7. 발송 리드타임 (최대 직경 기준)
                   </h3>
+                  <p>
+                    KST 기준 <b>12:00 이전</b> 접수 건은 1영업일 리드타임의 경우
+                    당일 집하로 계산되고, <b>12:00부터는 익영업일</b> 기준으로
+                    계산됩니다.
+                  </p>
                   {renderLeadTimeLine("6mm", "d6")}
                   {renderLeadTimeLine("8mm", "d8")}
                   {renderLeadTimeLine("10mm", "d10")}
                   {renderLeadTimeLine("12mm", "d12")}
+                </section>
+
+                <section className="space-y-1">
+                  <h3 className="font-semibold text-foreground text-md">
+                    8. 배송 일정 (시간 안내, KST)
+                  </h3>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    <li>
+                      <b>12:00</b>: 당일 의뢰 접수 마감
+                    </li>
+                    <li>
+                      <b>15:00</b>: 포장 마감 후 택배 수거 신청
+                    </li>
+                    <li>
+                      <b>16:00</b>: 택배 집하
+                    </li>
+                  </ul>
                 </section>
               </div>
             )}

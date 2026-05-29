@@ -21,6 +21,7 @@ import {
   normalizeRequestStage,
   REQUEST_STAGE_ORDER,
 } from "./utils.js";
+import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services/bulkShippingSnapshot.service.js";
@@ -655,7 +656,8 @@ export async function createRequestsFromDraft(req, res) {
     }, 0);
 
     // Pre-fetch read-only data in parallel before transaction to minimize transaction duration
-    const createdYmd = getTodayYmdInKst();
+    const requestedAtForPrefetch = new Date();
+    const createdYmd = toKstYmd(requestedAtForPrefetch) || getTodayYmdInKst();
     const shippingOrgId = String(businessAnchorId || "");
     const [systemSettings, shippingOrg, estimatedShipYmd] = await Promise.all([
       SystemSettings.findOne().lean(),
@@ -664,7 +666,16 @@ export async function createRequestsFromDraft(req, res) {
             .select({ "shippingPolicy.weeklyBatchDays": 1 })
             .lean()
         : Promise.resolve(null),
-      addKoreanBusinessDays({ startYmd: createdYmd, days: 1 }),
+      (async () => {
+        const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
+          leadDays: 1,
+          requestedAt: requestedAtForPrefetch,
+        });
+        return addKoreanBusinessDays({
+          startYmd: createdYmd,
+          days: resolvedLeadDays,
+        });
+      })(),
     ]);
     const shippingFeePerBox = Number(
       systemSettings?.creditSettings?.shippingFee || 3500,
@@ -975,10 +986,14 @@ export async function createRequestsFromDraft(req, res) {
             else diameterKey = "d12";
 
             const leadDays = leadTimes[diameterKey]?.minBusinessDays ?? 1;
+            const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
+              leadDays,
+              requestedAt,
+            });
 
             const estimatedShipYmdRaw = await addKoreanBusinessDays({
               startYmd: createdYmd,
-              days: leadDays,
+              days: resolvedLeadDays,
             });
             const estimatedShipYmd = await normalizeKoreanBusinessDay({
               ymd: estimatedShipYmdRaw,

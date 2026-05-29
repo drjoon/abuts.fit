@@ -4,7 +4,6 @@ import ShippingPackage from "../../models/shippingPackage.model.js";
 import { Types } from "mongoose";
 import {
   buildRequestorOrgScopeFilter,
-  calculateExpressShipYmd,
   normalizeKoreanBusinessDay,
   addKoreanBusinessDays,
   getTodayYmdInKst,
@@ -16,6 +15,7 @@ import {
   normalizeRequestStage,
   normalizeRequestStageLabel,
 } from "./utils.js";
+import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
 
 const __cache = new Map();
 const __inFlight = new Map();
@@ -369,7 +369,8 @@ export async function buildShippingEstimate(req) {
     });
   }
 
-  const todayYmd = getTodayYmdInKst();
+  const requestedAt = new Date();
+  const todayYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
   let weeklyBatchDays = [];
 
   if (mode === "normal") {
@@ -392,7 +393,7 @@ export async function buildShippingEstimate(req) {
     await import("./production.utils.js");
   const schedule = await calculateInitialProductionSchedule({
     maxDiameter,
-    requestedAt: new Date(),
+    requestedAt,
     weeklyBatchDays,
   });
   const pickupYmdRaw = schedule?.scheduledShipPickup
@@ -417,9 +418,13 @@ export async function buildShippingEstimate(req) {
     else diameterKey = "d12";
 
     const leadDays = leadTimes[diameterKey]?.minBusinessDays ?? 1;
+    const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
+      leadDays,
+      requestedAt,
+    });
     estimatedShipYmdRaw = await addKoreanBusinessDays({
       startYmd: todayYmd,
-      days: leadDays,
+      days: resolvedLeadDays,
     });
   }
 
@@ -467,48 +472,32 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
     return effectiveLeadDays.d12;
   };
 
-  const todayYmd = getTodayYmdInKst();
-  const diameterCache = new Map();
+  const requestedAtNow = new Date();
+  const todayYmd = toKstYmd(requestedAtNow) || getTodayYmdInKst();
   const estimatedShipYmdsBySignature = new Map();
-
-  const getExpressShipYmd = async (maxDiameter) => {
-    const key = String(maxDiameter ?? "-");
-    if (!diameterCache.has(key)) {
-      const raw = await memo({
-        key: `expressShip:${todayYmd}:${key}`,
-        ttlMs: 6 * 60 * 60 * 1000,
-        fn: () => calculateExpressShipYmd({ maxDiameter, baseYmd: todayYmd }),
-      });
-      const normalized = await memo({
-        key: `krbiz:normalize:${raw}`,
-        ttlMs: 6 * 60 * 60 * 1000,
-        fn: () => normalizeKoreanBusinessDay({ ymd: raw }),
-      });
-      diameterCache.set(key, normalized);
-    }
-    return diameterCache.get(key);
-  };
 
   const resolveEstimatedShipYmds = async (r) => {
     const ci = r.caseInfos || {};
     const maxDiameter = ci.maxDiameter;
     const mode = r.shippingMode || "normal";
     const createdYmd = toKstYmd(r.createdAt) || todayYmd;
+    const createdAtDate = r?.createdAt ? new Date(r.createdAt) : null;
+    const requestedAtOriginal =
+      createdAtDate && !Number.isNaN(createdAtDate.getTime())
+        ? createdAtDate
+        : new Date(`${createdYmd}T00:00:00+09:00`);
+    const requestedAtForNext =
+      createdYmd < todayYmd ? requestedAtNow : requestedAtOriginal;
     const pickup = r.productionSchedule?.scheduledShipPickup;
     const pickupYmd = pickup ? toKstYmd(pickup) : null;
     const requestedShipYmd = toKstYmd(r.requestedShipDate);
-    const signature = [
+    const signatureBase = [
       mode,
       String(maxDiameter ?? ""),
       createdYmd,
       pickupYmd || "",
       requestedShipYmd || "",
     ].join(":");
-
-    const cachedSignature = estimatedShipYmdsBySignature.get(signature);
-    if (cachedSignature) {
-      return cachedSignature;
-    }
 
     const normalize = (ymd) =>
       memo({
@@ -527,9 +516,29 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
     const clampStart = (ymd) => (ymd < todayYmd ? todayYmd : ymd);
 
     if (mode === "express") {
-      const days = resolveExpressShipLeadDays(maxDiameter);
-      const originalRaw = await addBiz({ startYmd: createdYmd, days });
-      const nextRaw = await addBiz({ startYmd: clampStart(createdYmd), days });
+      const baseLeadDays = resolveExpressShipLeadDays(maxDiameter);
+      const originalLeadDays = resolveLeadDaysWithSameDayCutoff({
+        leadDays: baseLeadDays,
+        requestedAt: requestedAtOriginal,
+      });
+      const nextLeadDays = resolveLeadDaysWithSameDayCutoff({
+        leadDays: baseLeadDays,
+        requestedAt: requestedAtForNext,
+      });
+      const signature = `${signatureBase}:${originalLeadDays}:${nextLeadDays}`;
+      const cachedSignature = estimatedShipYmdsBySignature.get(signature);
+      if (cachedSignature) {
+        return cachedSignature;
+      }
+
+      const originalRaw = await addBiz({
+        startYmd: createdYmd,
+        days: originalLeadDays,
+      });
+      const nextRaw = await addBiz({
+        startYmd: clampStart(createdYmd),
+        days: nextLeadDays,
+      });
       const result = {
         original: await normalize(originalRaw),
         next: await normalize(nextRaw),
@@ -539,6 +548,12 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
     }
 
     if (pickupYmd) {
+      const signature = `${signatureBase}:pickup`;
+      const cachedSignature = estimatedShipYmdsBySignature.get(signature);
+      if (cachedSignature) {
+        return cachedSignature;
+      }
+
       const original = await normalize(pickupYmd);
       const next = pickupYmd < todayYmd ? await normalize(todayYmd) : original;
       const result = { original, next };
@@ -547,6 +562,12 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
     }
 
     if (requestedShipYmd) {
+      const signature = `${signatureBase}:requested`;
+      const cachedSignature = estimatedShipYmdsBySignature.get(signature);
+      if (cachedSignature) {
+        return cachedSignature;
+      }
+
       const original = await normalize(requestedShipYmd);
       const next =
         requestedShipYmd < todayYmd ? await normalize(todayYmd) : original;
@@ -556,10 +577,27 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
     }
 
     const leadDays = resolveNormalLeadDays(maxDiameter);
-    const originalRaw = await addBiz({ startYmd: createdYmd, days: leadDays });
+    const originalLeadDays = resolveLeadDaysWithSameDayCutoff({
+      leadDays,
+      requestedAt: requestedAtOriginal,
+    });
+    const nextLeadDays = resolveLeadDaysWithSameDayCutoff({
+      leadDays,
+      requestedAt: requestedAtForNext,
+    });
+    const signature = `${signatureBase}:${originalLeadDays}:${nextLeadDays}`;
+    const cachedSignature = estimatedShipYmdsBySignature.get(signature);
+    if (cachedSignature) {
+      return cachedSignature;
+    }
+
+    const originalRaw = await addBiz({
+      startYmd: createdYmd,
+      days: originalLeadDays,
+    });
     const nextRaw = await addBiz({
       startYmd: clampStart(createdYmd),
-      days: leadDays,
+      days: nextLeadDays,
     });
     const result = {
       original: await normalize(originalRaw),

@@ -43,6 +43,7 @@ const BATCH_PROCESSING_DAYS = 1; // 세척/검사/포장 (50~100개 모아서)
 const PACKING_CUTOFF_HOUR = 14; // 포장 마감 시각 (14:00)
 const PICKUP_REQUEST_HOUR = 15; // 택배 수거 신청 시각 (15:00)
 const DAILY_PICKUP_HOUR = 16; // 택배 수거 시각 (16:00)
+const SAME_DAY_SHIPPING_CUTOFF_HOUR_KST = 12; // 정오 이전 접수분 당일 집하
 
 /**
  * KST 시각 생성
@@ -85,6 +86,30 @@ function createKstDateTime(ymd, hour = 0, minute = 0) {
   }
 
   throw new Error(`Invalid ymd for createKstDateTime: ${ymdString}`);
+}
+
+function isBeforeSameDayCutoffKst(dateInput) {
+  const date =
+    dateInput instanceof Date ? dateInput : new Date(dateInput || Date.now());
+  if (Number.isNaN(date.getTime())) return false;
+
+  // KST 보정을 위해 UTC 기준에 +9h 적용
+  const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  const hour = kst.getUTCHours();
+
+  return hour < SAME_DAY_SHIPPING_CUTOFF_HOUR_KST;
+}
+
+export function resolveLeadDaysWithSameDayCutoff({ leadDays, requestedAt }) {
+  const baseDays = Number.isFinite(leadDays) ? Number(leadDays) : 0;
+  if (baseDays <= 0) return 0;
+
+  const beforeCutoff = isBeforeSameDayCutoffKst(requestedAt || new Date());
+  if (beforeCutoff && baseDays === 1) {
+    return 0;
+  }
+
+  return baseDays;
 }
 
 /**
@@ -250,12 +275,16 @@ export async function calculateInitialProductionSchedule({
   else diameterKey = "d12";
 
   const leadDays = manufacturerLeadTimes?.[diameterKey]?.minBusinessDays ?? 1;
+  const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
+    leadDays,
+    requestedAt: now,
+  });
 
   const machiningCompleteYmd = toKstYmd(scheduledMachiningComplete);
   const baseBatchStartYmd = getTodayYmdInKst(now) || machiningCompleteYmd;
   const batchProcessingYmd = await addKoreanBusinessDays({
     startYmd: baseBatchStartYmd,
-    days: leadDays,
+    days: resolvedLeadDays,
   });
   const scheduledBatchProcessing = createKstDateTime(
     batchProcessingYmd,

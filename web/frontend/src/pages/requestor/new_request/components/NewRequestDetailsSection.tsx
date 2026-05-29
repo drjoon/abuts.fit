@@ -32,6 +32,7 @@ import { NewRequestPatientImplantFields } from "./NewRequestPatientImplantFields
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { toKstYmd } from "@/shared/date/kst";
 
 type ToastFn = (props: {
   title?: React.ReactNode;
@@ -41,6 +42,7 @@ type ToastFn = (props: {
 }) => void;
 
 type Option = { id: string; label: string };
+const SAME_DAY_SHIPPING_CUTOFF_HOUR_KST = 12;
 
 type Props = {
   files: File[];
@@ -174,18 +176,53 @@ export function NewRequestDetailsSection({
     void loadLeadTimes();
   }, [token]);
 
-  const addBusinessDays = useCallback((start: Date, days: number) => {
-    if (!Number.isFinite(days) || days <= 0) return new Date(start);
-    const result = new Date(start);
-    let added = 0;
-    while (added < days) {
-      result.setDate(result.getDate() + 1);
-      const day = result.getDay();
-      if (day !== 0 && day !== 6) {
-        added += 1;
+  const addBusinessDaysFromKstYmd = useCallback(
+    (startYmd: string, days: number) => {
+      if (!Number.isFinite(days) || days <= 0) return startYmd;
+
+      const result = new Date(`${startYmd}T00:00:00+09:00`);
+      if (Number.isNaN(result.getTime())) return startYmd;
+
+      let added = 0;
+      while (added < days) {
+        result.setUTCDate(result.getUTCDate() + 1);
+        const day = result.getUTCDay();
+        if (day !== 0 && day !== 6) {
+          added += 1;
+        }
       }
-    }
-    return result;
+
+      return toKstYmd(result) || startYmd;
+    },
+    [],
+  );
+
+  const isBeforeSameDayCutoffKst = useCallback((dateInput: Date) => {
+    if (Number.isNaN(dateInput.getTime())) return false;
+    const kst = new Date(dateInput.getTime() + 9 * 60 * 60 * 1000);
+    return kst.getUTCHours() < SAME_DAY_SHIPPING_CUTOFF_HOUR_KST;
+  }, []);
+
+  const resolveLeadDaysWithSameDayCutoff = useCallback(
+    (leadDays: number, requestedAt: Date) => {
+      if (!Number.isFinite(leadDays) || leadDays <= 0) return 0;
+      if (leadDays === 1 && isBeforeSameDayCutoffKst(requestedAt)) {
+        return 0;
+      }
+      return leadDays;
+    },
+    [isBeforeSameDayCutoffKst],
+  );
+
+  const formatKstMonthDayWithWeekday = useCallback((ymd: string) => {
+    const date = new Date(`${ymd}T00:00:00+09:00`);
+    if (Number.isNaN(date.getTime())) return ymd;
+    return new Intl.DateTimeFormat("ko-KR", {
+      timeZone: "Asia/Seoul",
+      month: "numeric",
+      day: "numeric",
+      weekday: "short",
+    }).format(date);
   }, []);
 
   const calculateEstimatedShipDate = useCallback(() => {
@@ -196,6 +233,10 @@ export function NewRequestDetailsSection({
     return (diameter: number | null) => {
       if (!Number.isFinite(diameter) || diameter == null) return null;
 
+      const requestedAt = new Date();
+      const requestedYmd = toKstYmd(requestedAt);
+      if (!requestedYmd) return null;
+
       const d = Number(diameter);
       let diameterKey: "d6" | "d8" | "d10" | "d12" = "d8";
       if (d <= 6) diameterKey = "d6";
@@ -203,29 +244,37 @@ export function NewRequestDetailsSection({
       else if (d <= 10) diameterKey = "d10";
       else diameterKey = "d12";
 
-      if (cache.has(diameterKey)) {
-        return cache.get(diameterKey) || null;
-      }
-
       const rawLead = leadTimes?.[diameterKey]?.minBusinessDays;
       const leadNumber = Number(rawLead);
       const leadDays = Number.isFinite(leadNumber)
         ? Math.max(1, leadNumber)
         : 1;
+      const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff(
+        leadDays,
+        requestedAt,
+      );
+      const cacheKey = `${requestedYmd}:${diameterKey}:${resolvedLeadDays}`;
 
-      const shipDate = addBusinessDays(new Date(), leadDays);
+      if (cache.has(cacheKey)) {
+        return cache.get(cacheKey) || null;
+      }
 
-      const formatted = shipDate.toLocaleDateString("ko-KR", {
-        month: "numeric",
-        day: "numeric",
-        weekday: "short",
-      });
+      const shipYmd = addBusinessDaysFromKstYmd(requestedYmd, resolvedLeadDays);
+      const formatted = formatKstMonthDayWithWeekday(shipYmd);
 
-      const result = `${formatted} • ${leadDays}영업일 후`;
-      cache.set(diameterKey, result);
+      const result =
+        resolvedLeadDays === 0
+          ? `${formatted} • 당일 집하`
+          : `${formatted} • ${resolvedLeadDays}영업일 후`;
+      cache.set(cacheKey, result);
       return result;
     };
-  }, [addBusinessDays, leadTimes]);
+  }, [
+    addBusinessDaysFromKstYmd,
+    formatKstMonthDayWithWeekday,
+    leadTimes,
+    resolveLeadDaysWithSameDayCutoff,
+  ]);
 
   const getEstimatedShipForDiameter = useMemo(
     () => calculateEstimatedShipDate(),
