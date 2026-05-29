@@ -382,7 +382,7 @@ BEGIN_OPERATION; 316; [10.0MM_±‚¡ÿ]DIO_Connection; 0;
 		:M96
 		: 
 		:M11S300
-		:G0X-2.0Z9.6
+		:G0X-2.0Z9.5
 		:G0T0 
 		:M599
 		: 

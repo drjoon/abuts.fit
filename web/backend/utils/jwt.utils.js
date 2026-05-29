@@ -3,10 +3,10 @@ import jwt from "jsonwebtoken";
 /**
  * JWT 토큰 생성
  * @param {Object} payload - 토큰에 포함될 데이터
- * @param {String} expiresIn - 토큰 만료 시간 (기본값: '1d')
+ * @param {String} expiresIn - 토큰 만료 시간 (기본값: '30d')
  * @returns {String} 생성된 JWT 토큰
  */
-export const generateToken = (payload, expiresIn = "1d") => {
+export const generateToken = (payload, expiresIn = "30d") => {
   return jwt.sign(payload, process.env.JWT_SECRET || "your_jwt_secret_key", {
     expiresIn,
   });
@@ -35,7 +35,7 @@ export const generateRefreshToken = (userId) => {
     { userId },
     process.env.REFRESH_TOKEN_SECRET || "your_refresh_token_secret",
     {
-      expiresIn: "7d",
-    }
+      expiresIn: "30d",
+    },
   );
 };
