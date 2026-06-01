@@ -42,6 +42,8 @@ _DEBUG_ADD_POLYLINE_CURVE = os.environ.get("FINISHLINE_DEBUG_CURVE_DOC", "1") in
 _EDGE_MIN_Z_VALID_THRESHOLD_MM = 0.5
 # edge 루프가 pt0 대비 지나치게 안쪽(내부 홀)일 때 차단하는 반경 비율 임계값
 _EDGE_MIN_RADIUS_TO_PT0_RATIO = 0.45
+# edge 루프가 pt0 대비 과도하게 상단에 있으면 오검출로 간주
+_EDGE_MAX_Z_ABOVE_PT0_MM = 2.5
 
 
 def _merge_candidates(
@@ -117,6 +119,7 @@ def _detect_finishline_points_edge(
         ref_pt0_radius = None
 
     rejected_low_z = 0
+    rejected_high_z = 0
     rejected_small_radius = 0
     for idx, target_mesh in enumerate(candidates):
         _trace_log(
@@ -167,6 +170,20 @@ def _detect_finishline_points_edge(
                 )
                 continue
 
+            if ref_pt0 is not None and edge_min_z is not None:
+                max_allowed_z = ref_pt0.Z + _EDGE_MAX_Z_ABOVE_PT0_MM
+                if edge_min_z >= max_allowed_z:
+                    rejected_high_z += 1
+                    _trace_log(
+                        "[detect-edge] candidate[{}] rejected high_z min_z={:.6f} >= pt0_z+{:.3f} ({:.6f})".format(
+                            idx,
+                            edge_min_z,
+                            _EDGE_MAX_Z_ABOVE_PT0_MM,
+                            max_allowed_z,
+                        )
+                    )
+                    continue
+
             edge_median_radius = _points_median_radius(traced_points)
             if (
                 ref_pt0_radius is not None
@@ -197,6 +214,8 @@ def _detect_finishline_points_edge(
 
     if rejected_low_z > 0:
         return None, "C_EDGE_REJECTED_LOW_Z"
+    if rejected_high_z > 0:
+        return None, "C_EDGE_REJECTED_HIGH_Z"
     if rejected_small_radius > 0:
         return None, "C_EDGE_REJECTED_SMALL_RADIUS"
     return None, "C_EDGE_FAILED"
