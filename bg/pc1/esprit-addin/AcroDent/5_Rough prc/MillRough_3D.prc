@@ -6,7 +6,7 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
    LimitAngleBetweenPoints; 6511; 0;  HIDDEN; CAPTION; 두점사이 각도 제한; SOURCE; 1; TECHCODETYPE; 67;
    CollisionDetection; 6630; 0;  CAPTION; 충돌 감지; SOURCE; 1; TECHCODETYPE; 520;
    ReferenceDepthOfCut; 1768; 0.20000000000000001;  HIDDEN; CAPTION; 참조 가공 깊이; SOURCE; 1; TECHCODETYPE; 2;
-   StockAllowanceFloors; 272; 0.05;  CAPTION; 바닥 가공 여유; SOURCE; 2; TECHCODETYPE; 2;
+   StockAllowanceFloors; 272; 0.0;  CAPTION; 바닥 가공 여유; SOURCE; 2; TECHCODETYPE; 2;
    PreFinish; 1394; 0;  CAPTION; 사전-정삭; SOURCE; 1; TECHCODETYPE; 67;
    4910; 4910; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4910;;
@@ -265,7 +265,7 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
    Rough5AxisStartPointY; 6659; 0;  HIDDEN; CAPTION; 축 시작 점 Z| 축 시작 점 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
    ShankClearance; 3225; 0;  HIDDEN; CAPTION; 생크 공차; SOURCE; 3; TECHCODETYPE; 2;
    MaximumTiltAngle; 3412; 20;  HIDDEN; CAPTION; 최대 기울기 각도; SOURCE; 1; TECHCODETYPE; 2;
-   StockAllowanceWalls; 233; 0.05;  CAPTION; 벽면 가공 여유; SOURCE; 2; TECHCODETYPE; 2;
+   StockAllowanceWalls; 233; 0.0;  CAPTION; 벽면 가공 여유; SOURCE; 2; TECHCODETYPE; 2;
    RoundContactCorners; 3327; 0;  CAPTION; 접촉 코너에 라운드; SOURCE; 1; TECHCODETYPE; 67;
    4412; 4412; 1;  SOURCE; 0; TECHCODETYPE; 2;
    4905; 4905; ;  SOURCE; 0; TECHCODETYPE; 3;
@@ -274,7 +274,7 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
 	END_STRING
    MinimumTrochoidRadiusMM; 6843; 1.6000000000000001;  CAPTION; 최소. 트로코이달반경 | 최소. 트로코이달반경, %; SOURCE; 3; TECHCODETYPE; 2;
    CustomSetting8; 638; 0;  CAPTION; 사용자 정의 설정 8; SOURCE; 1; TECHCODETYPE; 2;
-   Tolerance; 1046; 0.01;  CAPTION; 공차; SOURCE; 2; TECHCODETYPE; 2;
+   Tolerance; 1046; 0.02;  CAPTION; 공차; SOURCE; 2; TECHCODETYPE; 2;
    4902; 4902; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4902;;
 		:

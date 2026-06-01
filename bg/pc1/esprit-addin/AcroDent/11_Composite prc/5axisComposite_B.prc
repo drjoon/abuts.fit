@@ -7,7 +7,7 @@ BEGIN_OPERATION; 507; 5Axis_Composite; 0;
    ReferenceDepthOfCut; 1768; 0.20000000000000001;  HIDDEN; CAPTION; 참조 가공 깊이; SOURCE; 1; TECHCODETYPE; 2;
    RoughPass; 238; 0;  CAPTION; 황삭 경로; SOURCE; 0; TECHCODETYPE; 67;
    ThroughPointX; 3247; 0;  LOCKED; HIDDEN; CAPTION; 쓰루 포인트 X|쓰루 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
-   StockAllowance; 272; 0;  CAPTION; 가공 여유; SOURCE; 2; TECHCODETYPE; 2;
+   StockAllowance; 272; -0.02;  CAPTION; 가공 여유; SOURCE; 2; TECHCODETYPE; 2;
    ReverseStepOverDirection; 3230; 0;  LOCKED; HIDDEN; CAPTION; 리버스 스텝 오버 방향; SOURCE; 2; TECHCODETYPE; 67;
    ContourPassMovement; 3264; 0;  LOCKED; HIDDEN; CAPTION; 패스 이동; SOURCE; 1; TECHCODETYPE; 436;
    4434; 4434; 0;  SOURCE; 0; TECHCODETYPE; 2;
