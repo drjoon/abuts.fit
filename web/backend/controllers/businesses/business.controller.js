@@ -7,6 +7,7 @@ import {
   resolveBusinessType,
   assertBusinessRole,
   buildBusinessTypeFilter,
+  buildBusinessTypeQuery,
 } from "./businessRole.util.js";
 import {
   lookupPostalCodeByAddress,
@@ -402,7 +403,7 @@ export async function searchBusinesses(req, res) {
       rawType === "all"
         ? null
         : requestedType || resolveBusinessType(req.user, null);
-    const typeFilter = businessType ? { businessType } : {};
+    const typeFilter = buildBusinessTypeQuery(businessType);
 
     const q = String(req.query?.q || "").trim();
     if (!q) {

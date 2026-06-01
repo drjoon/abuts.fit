@@ -10,6 +10,23 @@ export const BUSINESS_ALLOWED_ROLE_SET = new Set(BUSINESS_ALLOWED_ROLES);
 
 const ADMIN_FALLBACK_BUSINESS_TYPE = "admin";
 
+// businessType가 누락된 레거시 Anchor를 검색할 때, 메타데이터에 저장된 businessType까지 허용한다.
+// (실제 SSOT는 top-level businessType이므로, 조속히 데이터 정리가 필요함)
+export const buildBusinessTypeQuery = (businessType) => {
+  if (!businessType) return {};
+  return {
+    $or: [
+      { businessType },
+      {
+        $and: [
+          { $or: [{ businessType: { $exists: false } }, { businessType: "" }] },
+          { "metadata.businessType": businessType },
+        ],
+      },
+    ],
+  };
+};
+
 export const resolveBusinessType = (user, preferredType) => {
   if (!user) return null;
   if (BUSINESS_ALLOWED_ROLE_SET.has(user.role)) {
