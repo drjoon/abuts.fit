@@ -181,11 +181,11 @@ const formatDate = (input?: string) => {
   return `${y}-${m}-${day}`;
 };
 
-// SSOT: metadata 사용 (extracted 레거시 제거)
+// SSOT: metadata 우선, extracted는 레거시 호환용 fallback
 const getDisplayUserName = (user: Pick<UiUserRow, "name" | "businessInfo">) => {
-  const representativeName = String(
-    user.businessInfo?.metadata?.representativeName || "",
-  ).trim();
+  const representativeName =
+    String(user.businessInfo?.metadata?.representativeName || "").trim() ||
+    String(user.businessInfo?.extracted?.representativeName || "").trim();
   const accountName = String(user.name || "").trim();
   return representativeName || accountName || "-";
 };
@@ -961,7 +961,7 @@ export const AdminUserManagement = () => {
                           <Trash2 className="mr-2 h-4 w-4" />
                           사용자만 삭제
                         </DropdownMenuItem>
-                        <DropdownMenuItem
+                        {/* <DropdownMenuItem
                           className="text-destructive focus:text-destructive"
                           onClick={() => {
                             setDeleteTarget(user);
@@ -970,7 +970,7 @@ export const AdminUserManagement = () => {
                         >
                           <Trash2 className="mr-2 h-4 w-4" />
                           사업자 포함 계정 삭제
-                        </DropdownMenuItem>
+                        </DropdownMenuItem> */}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -1061,7 +1061,7 @@ export const AdminUserManagement = () => {
                       <CardContent className="p-4 md:p-5">
                         <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
                           <div className="space-y-4">
-                            <div className="flex flex-wrap items-center gap-2">
+                            {/* <div className="flex flex-wrap items-center gap-2">
                               <div className="text-2xl font-semibold tracking-tight">
                                 {getDisplayUserName(selectedUser)}
                               </div>
@@ -1076,7 +1076,7 @@ export const AdminUserManagement = () => {
                                   사업자 확인 필요
                                 </Badge>
                               )}
-                            </div>
+                            </div> */}
                             <div className="grid gap-3 sm:grid-cols-2 text-sm">
                               <div className="rounded-lg border bg-slate-50/70 p-3">
                                 <div className="text-xs text-muted-foreground">
@@ -1376,7 +1376,7 @@ export const AdminUserManagement = () => {
                       >
                         사용자만 삭제
                       </Button>
-                      <Button
+                      {/* <Button
                         type="button"
                         variant="destructive"
                         disabled={deletingUser}
@@ -1386,7 +1386,7 @@ export const AdminUserManagement = () => {
                         }}
                       >
                         사업자 포함 계정 삭제
-                      </Button>
+                      </Button> */}
                     </div>
                   </div>
                 </div>
