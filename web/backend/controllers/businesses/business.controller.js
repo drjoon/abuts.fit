@@ -403,7 +403,17 @@ export async function searchBusinesses(req, res) {
       rawType === "all"
         ? null
         : requestedType || resolveBusinessType(req.user, null);
+
+    // admin 타입 anchor는 일반 사용자 검색에서 제외
+    if (businessType === "admin" && userRole !== "admin") {
+      return res.json({ success: true, data: [] });
+    }
+    // businessType이 없을 때 non-admin 사용자는 admin anchor를 검색 결과에서 제외
     const typeFilter = buildBusinessTypeQuery(businessType);
+    const adminExcludeFilter =
+      !businessType && userRole !== "admin"
+        ? { businessType: { $ne: "admin" } }
+        : null;
 
     const q = String(req.query?.q || "").trim();
     if (!q) {
@@ -412,15 +422,21 @@ export async function searchBusinesses(req, res) {
 
     // BusinessAnchor가 법적 식별/소개/정산 SSOT
     // Business는 멤버십/조직 UI 컨테이너일 뿐이므로 검색 대상이 아님
+    // $or 중복 spread 방지: typeFilter와 이름 $or를 $and로 결합
     const regex = new RegExp(q, "i");
-    const anchors = await BusinessAnchor.find({
-      ...typeFilter,
+    const nameClauses = {
       $or: [
         { name: regex },
         { "metadata.companyName": regex },
         { "metadata.representativeName": regex },
       ],
-    })
+    };
+    const andClauses = [nameClauses];
+    if (Object.keys(typeFilter).length > 0) andClauses.push(typeFilter);
+    if (adminExcludeFilter) andClauses.push(adminExcludeFilter);
+    const searchQuery =
+      andClauses.length === 1 ? andClauses[0] : { $and: andClauses };
+    const anchors = await BusinessAnchor.find(searchQuery)
       .select({ name: 1, metadata: 1, businessNumberNormalized: 1 })
       .limit(20)
       .lean();

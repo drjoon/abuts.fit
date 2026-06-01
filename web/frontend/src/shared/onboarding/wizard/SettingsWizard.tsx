@@ -20,7 +20,13 @@ interface SettingsWizardProps {
 
 export type WizardStepId = "profile" | "phone" | "role" | "business";
 
-const STEP_ORDER: WizardStepId[] = ["profile", "phone", "role", "business"];
+const FULL_STEP_ORDER: WizardStepId[] = [
+  "profile",
+  "phone",
+  "role",
+  "business",
+];
+const NO_BUSINESS_STEP_ORDER: WizardStepId[] = ["profile", "phone"];
 
 const createStepCompletionState = (): Record<WizardStepId, boolean> => ({
   profile: false,
@@ -41,6 +47,11 @@ export const SettingsWizard = ({
   const businessType = useMemo(() => {
     return resolveBusinessType(user?.role, "requestor");
   }, [user?.role]);
+  const isAdminRole = user?.role === "admin";
+  const STEP_ORDER = useMemo(
+    () => (isAdminRole ? NO_BUSINESS_STEP_ORDER : FULL_STEP_ORDER),
+    [isAdminRole],
+  );
   const storageIdentity = useMemo(() => {
     const resolvedUser = user as {
       _id?: string;
@@ -308,7 +319,7 @@ export const SettingsWizard = ({
       // 마지막 단계 완료: 대시보드로 이동
       onWizardComplete();
     }
-  }, [currentStep, selectedRole, onWizardComplete]);
+  }, [currentStep, selectedRole, onWizardComplete, STEP_ORDER]);
 
   const handlePrev = useCallback(() => {
     if (!currentStep) return;
@@ -320,7 +331,7 @@ export const SettingsWizard = ({
     if (currentStep === "business") {
       setValidationState({ passed: false, validating: false });
     }
-  }, [currentStep]);
+  }, [currentStep, STEP_ORDER]);
 
   // 역할 변경 시 검증 상태 리셋
   useEffect(() => {

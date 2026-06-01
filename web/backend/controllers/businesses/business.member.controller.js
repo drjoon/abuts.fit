@@ -1,7 +1,10 @@
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import { Types } from "mongoose";
-import { assertBusinessRole } from "./businessRole.util.js";
+import {
+  assertBusinessRole,
+  buildBusinessTypeQuery,
+} from "./businessRole.util.js";
 
 function readBusinessId(value) {
   return String(value || "").trim();
@@ -30,7 +33,7 @@ export async function requestJoinBusiness(req, res) {
 
     const anchor = await BusinessAnchor.findOne({
       _id: businessId,
-      businessType,
+      ...buildBusinessTypeQuery(businessType),
     });
 
     if (!anchor) {
@@ -38,6 +41,15 @@ export async function requestJoinBusiness(req, res) {
         success: false,
         message: "사업자를 찾을 수 없습니다.",
       });
+    }
+
+    if (!anchor.businessType) {
+      anchor.businessType = businessType;
+    }
+
+    // 레거시 anchor에 businessType이 누락된 경우, SSOT를 회복해둔다.
+    if (!anchor.businessType) {
+      anchor.businessType = businessType;
     }
 
     const meId = String(req.user._id);
@@ -109,7 +121,7 @@ export async function cancelJoinRequest(req, res) {
 
     const anchor = await BusinessAnchor.findOne({
       _id: businessId,
-      businessType,
+      ...buildBusinessTypeQuery(businessType),
     });
     if (!anchor) {
       return res.status(404).json({
@@ -191,7 +203,7 @@ export async function leaveBusiness(req, res) {
 
     const anchor = await BusinessAnchor.findOne({
       _id: businessId,
-      businessType,
+      ...buildBusinessTypeQuery(businessType),
     });
     if (!anchor) {
       return res.status(404).json({
@@ -260,7 +272,7 @@ export async function getMyJoinRequests(req, res) {
     const { businessType } = roleCheck;
 
     const anchors = await BusinessAnchor.find({
-      businessType,
+      ...buildBusinessTypeQuery(businessType),
       "joinRequests.user": req.user._id,
     })
       .select({ name: 1, joinRequests: 1 })
