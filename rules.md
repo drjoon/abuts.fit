@@ -66,6 +66,16 @@
 
 **이 규칙을 위반하면 보안 사고가 발생할 수 있습니다.**
 
+### 1.1.1 DB 스크립트 실행 대상 (Atlas 우선)
+
+- 이 저장소에서 **조회/백필/점검용 DB 스크립트를 작성·실행할 때 기본 대상은 MongoDB Atlas**입니다.
+- 스크립트 실행 시 `ENV_FILE=local.env`를 명시해 Atlas URI를 로드합니다.
+  - 예: `npm --prefix web/backend run db:backfill`
+  - (`web/backend/package.json`의 `db:backfill`은 `cross-env ENV_FILE=local.env ...`로 정의)
+- 원인 분석/데이터 검증 단계에서 `mongodb://localhost:27017/...`를 기본값으로 두고 조회 결과를 판단하지 않습니다.
+- 로컬 MongoDB를 사용하는 경우는 **명시적으로 사용자와 합의된 테스트 상황**으로 제한합니다.
+- 스크립트는 `process.env.MONGODB_URI`/`process.env.MONGO_URI`를 사용하고, 값이 없으면 실패하도록 작성합니다.
+
 ---
 
 ### 1.2 시간대 및 시각 기준
@@ -200,6 +210,13 @@
   5. **프론트엔드**: 버전이 다르면 온보딩 관련 localStorage 초기화 후 첫 단계부터 시작
 - **핵심**: 정상적인 온보딩 진행 중에는 localStorage 유지, DB 리셋 시에만 초기화
 - **DB 리셋 절차**: `node web/backend/scripts/db/reset.js` 실행 (DB 버전 자동 증가 + DB 리셋)
+
+**직원 가입(`/signup/staff`) 사업자 검색 정책 (2026-06-01):**
+
+- `/signup/staff` 기본 역할은 `admin`으로 시작합니다.
+- 직원 온보딩 위저드(`SettingsWizard`)는 `admin`을 포함한 모든 staff role에서 사업자 가입 단계(`business`)를 동일하게 진행합니다.
+- 프론트 role→businessType 매핑은 `admin`을 포함해야 하며, `admin`을 `requestor` 같은 다른 타입으로 fallback 하면 안 됩니다.
+- 결과적으로 관리자 직원 가입 시 사업자 검색은 `businessType=admin` 기준으로 동작해야 하며, `어벗츠 주식회사` 같은 admin 사업자가 검색 가능해야 합니다.
 
 ### 2.1 저장소 구조
 

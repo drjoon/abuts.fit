@@ -59,8 +59,9 @@ export const SignupPage = () => {
     "name" | "password" | "confirmPassword" | null
   >(null);
   const [signupRole, setSignupRole] = useState<SignupRole>(
-    location.pathname === "/signup/staff" ? "manufacturer" : "requestor",
+    location.pathname === "/signup/staff" ? "admin" : "requestor",
   );
+  const prevPathRef = useRef(location.pathname);
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(() => {
     // 소셜 로그인 후 돌아온 경우(mode=social_new)는 기본 정보 입력부터 시작
     const mode = (searchParams.get("mode") || "").trim();
@@ -177,6 +178,18 @@ export const SignupPage = () => {
       setSignupRole(role as SignupRole);
     }
   }, [isSocialNewMode, searchParams]);
+
+  useEffect(() => {
+    if (isSocialNewMode) {
+      prevPathRef.current = location.pathname;
+      return;
+    }
+    const prevPath = prevPathRef.current;
+    if (location.pathname === "/signup/staff" && prevPath !== "/signup/staff") {
+      setSignupRole("admin");
+    }
+    prevPathRef.current = location.pathname;
+  }, [isSocialNewMode, location.pathname]);
 
   const cardTitle = useMemo(() => {
     if (isWizardMode) {

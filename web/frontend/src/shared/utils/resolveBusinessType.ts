@@ -2,6 +2,7 @@ export const BUSINESS_ALLOWED_ROLES = [
   "requestor",
   "salesman",
   "manufacturer",
+  "admin",
   "devops",
 ] as const;
 
@@ -16,9 +17,6 @@ export const resolveBusinessType = (
   const normalized = String(role || "").trim();
   if (BUSINESS_ALLOWED_ROLE_SET.has(normalized)) {
     return normalized as BusinessRole;
-  }
-  if (normalized === "admin") {
-    return fallback;
   }
   return fallback;
 };

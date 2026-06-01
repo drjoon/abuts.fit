@@ -365,6 +365,7 @@ export async function getMyBusiness(req, res) {
         metadata, // SSOT
         businessLicense: anchor?.businessLicense || null,
         payoutAccount: anchor?.payoutAccount || {},
+        shippingPolicy: anchor?.shippingPolicy || null,
       },
     };
 

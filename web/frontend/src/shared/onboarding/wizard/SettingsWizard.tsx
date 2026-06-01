@@ -26,7 +26,6 @@ const FULL_STEP_ORDER: WizardStepId[] = [
   "role",
   "business",
 ];
-const NO_BUSINESS_STEP_ORDER: WizardStepId[] = ["profile", "phone"];
 
 const createStepCompletionState = (): Record<WizardStepId, boolean> => ({
   profile: false,
@@ -47,11 +46,7 @@ export const SettingsWizard = ({
   const businessType = useMemo(() => {
     return resolveBusinessType(user?.role, "requestor");
   }, [user?.role]);
-  const isAdminRole = user?.role === "admin";
-  const STEP_ORDER = useMemo(
-    () => (isAdminRole ? NO_BUSINESS_STEP_ORDER : FULL_STEP_ORDER),
-    [isAdminRole],
-  );
+  const STEP_ORDER = useMemo(() => FULL_STEP_ORDER, []);
   const storageIdentity = useMemo(() => {
     const resolvedUser = user as {
       _id?: string;
