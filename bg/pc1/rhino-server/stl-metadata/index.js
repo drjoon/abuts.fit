@@ -611,6 +611,10 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
   let bestFrontPoint = null;
   let minZFront = Infinity;
   const minRadius = Math.max(1.0, maxDiameter * 0.15);
+  const strictProjMin = maxProj - Math.min(1.2, totalLength * 0.12);
+
+  const strictCandidates = [];
+  const relaxedCandidates = [];
 
   for (const { v, types } of vertexFaceTypes.values()) {
     if (types.has("top") && types.has("side")) {
@@ -618,12 +622,28 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
       const dy = v.y - center.y;
       const distToAxis = Math.sqrt(dx * dx + dy * dy);
 
-      if (distToAxis > minRadius && v.z < minZFront) {
-        minZFront = v.z;
-        bestFrontPoint = v;
+      if (distToAxis > minRadius) {
+        const proj = v.x * tiltDir.x + v.y * tiltDir.y + v.z * tiltDir.z;
+        relaxedCandidates.push(v);
+        if (proj >= strictProjMin) {
+          strictCandidates.push(v);
+        }
       }
     }
   }
+
+  const selectedCandidates =
+    strictCandidates.length > 0 ? strictCandidates : relaxedCandidates;
+  for (const v of selectedCandidates) {
+    if (v.z < minZFront) {
+      minZFront = v.z;
+      bestFrontPoint = v;
+    }
+  }
+
+  console.error(
+    `[frontPoint] candidates strict=${strictCandidates.length} relaxed=${relaxedCandidates.length} strictProjMin=${strictProjMin.toFixed(3)}`,
+  );
 
   let frontPoint = null;
   if (bestFrontPoint) {
