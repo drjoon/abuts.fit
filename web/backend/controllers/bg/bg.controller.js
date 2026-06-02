@@ -9,6 +9,7 @@ import fs from "fs/promises";
 import Request from "../../models/request.model.js";
 import Connection from "../../models/connection.model.js";
 import CncEvent from "../../models/cncEvent.model.js";
+import CncMachine from "../../models/cncMachine.model.js";
 import { getPresignedPutUrl } from "../../utils/s3.utils.js";
 import {
   applyStatusMapping,
@@ -34,6 +35,43 @@ function withBridgeHeaders(extra = {}) {
     base["X-Bridge-Secret"] = BRIDGE_SHARED_SECRET;
   }
   return { ...base, ...extra };
+}
+
+async function removeRequestAutoJobsFromBridgeSnapshot({
+  machineId,
+  requestId,
+}) {
+  const rid = String(requestId || "").trim();
+  if (!rid) return;
+
+  const mid = String(machineId || "").trim();
+  const machines = mid
+    ? await CncMachine.find({ machineId: mid }).select(
+        "machineId bridgeQueueSnapshot",
+      )
+    : await CncMachine.find({
+        "bridgeQueueSnapshot.jobs.requestId": rid,
+      }).select("machineId bridgeQueueSnapshot");
+
+  for (const machine of machines || []) {
+    const jobs = Array.isArray(machine?.bridgeQueueSnapshot?.jobs)
+      ? machine.bridgeQueueSnapshot.jobs
+      : [];
+    if (jobs.length === 0) continue;
+
+    const before = jobs.length;
+    const nextJobs = jobs.filter(
+      (j) => String(j?.requestId || "").trim() !== rid,
+    );
+    if (nextJobs.length === before) continue;
+
+    machine.bridgeQueueSnapshot.jobs = nextJobs;
+    machine.bridgeQueueSnapshot.updatedAt = new Date();
+    await machine.save();
+    console.warn(
+      `[BG-Callback] Removed stale request_auto jobs from bridge snapshot: machine=${machine.machineId} requestId=${rid} removed=${before - nextJobs.length}`,
+    );
+  }
 }
 
 const REMOTE_BASE_BY_STEP = {
@@ -691,6 +729,17 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         updatedAt: now,
         error: String(metadata?.error || "") || `CNC 작업 실패 (${sourceStep})`,
       };
+      try {
+        await removeRequestAutoJobsFromBridgeSnapshot({
+          machineId: metadata?.machineId ? String(metadata.machineId) : "",
+          requestId: request?.requestId,
+        });
+      } catch (cleanupErr) {
+        console.error(
+          "[BG-Callback] Failed to cleanup bridge queue snapshot on CNC failure:",
+          cleanupErr?.message || cleanupErr,
+        );
+      }
     } else {
       // 실패 시 제조사 수동 대응을 위해 상태 변경 또는 로그 기록
       const stageKey =

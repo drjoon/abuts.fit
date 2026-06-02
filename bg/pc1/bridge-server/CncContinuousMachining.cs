@@ -1205,6 +1205,12 @@ var (uploaded, uploadErr) = await UploadProgramToSlot(machineId, job, uploadSlot
 if (!uploaded)
 {
 _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "FAILED", uploadErr ?? "start upload failed"));
+if (IsFatalPreloadError(uploadErr))
+{
+    Console.WriteLine("[CncMachining] fatal preload error machine={0} jobId={1} err={2}", machineId, job?.id, uploadErr ?? "unknown");
+    _ = CncJobQueue.TryRemove(machineId, job?.id);
+    _ = Task.Run(() => NotifyMachiningFailed(job, machineId, uploadErr ?? "fatal preload failed", null, "CNC_PROGRAM_TOO_LARGE"));
+}
 return false;
 }
 _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "READY", null));
@@ -1520,63 +1526,69 @@ private static async Task<(bool Success, string Error)> UploadProgramToSlot(stri
 
         if (!File.Exists(fullPath))
         {
-            try
+            var hasS3Key = !string.IsNullOrEmpty((job?.s3Key ?? string.Empty).Trim());
+            if (hasS3Key)
             {
-                var dir0 = Path.GetDirectoryName(fullPath);
-                Console.WriteLine(
-                    "[CncMachining] file missing. machine={0} jobId={1} user={2} root={3} fullPath={4} dirExists={5}",
-                    machineId,
-                    job?.id,
-                    Environment.UserName,
-                    Path.GetFullPath(Config.BridgeStoreRoot),
-                    fullPath,
-                    string.IsNullOrEmpty(dir0) ? false : Directory.Exists(dir0)
-                );
-            }
-            catch { }
-
-            var resolved = TryResolveExistingPath(fullPath, out var existingPath);
-            if (resolved)
-            {
-                fullPath = existingPath;
-            }
-        }
-
-        if (!File.Exists(fullPath))
-        {
-            try
-            {
-                using (var fs = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                // S3 job은 temp 파일 경로가 초기에는 없는 것이 정상이다.
+                var downloaded = await TryDownloadAndCacheFromS3(machineId, job, fullPath);
+                if (!downloaded || !File.Exists(fullPath))
                 {
+                    Console.WriteLine("[CncMachining] file not found after S3 download machine={0} jobId={1} path={2}", machineId, job?.id, fullPath);
+                    error = "file not found after S3 download: " + fullPath;
+                    return (false, error);
                 }
             }
-            catch (Exception openErr)
+            else
             {
-                Console.WriteLine(
-                    "[CncMachining] file open failed: machine={0} jobId={1} path={2} err={3}",
-                    machineId,
-                    job?.id,
-                    fullPath,
-                    openErr.Message
-                );
-            }
+                try
+                {
+                    var dir0 = Path.GetDirectoryName(fullPath);
+                    Console.WriteLine(
+                        "[CncMachining] file missing. machine={0} jobId={1} user={2} root={3} fullPath={4} dirExists={5}",
+                        machineId,
+                        job?.id,
+                        Environment.UserName,
+                        Path.GetFullPath(Config.BridgeStoreRoot),
+                        fullPath,
+                        string.IsNullOrEmpty(dir0) ? false : Directory.Exists(dir0)
+                    );
+                }
+                catch { }
 
-            // 로컬에 없으면 S3에서 temp 경로로 다운로드한다.
-            var downloaded = await TryDownloadAndCacheFromS3(machineId, job, fullPath);
-            if (!downloaded || !File.Exists(fullPath))
-            {
-                Console.WriteLine("[CncMachining] file not found: {0}", fullPath);
-                error = "file not found: " + fullPath;
-                return (false, error);
+                var resolved = TryResolveExistingPath(fullPath, out var existingPath);
+                if (resolved)
+                {
+                    fullPath = existingPath;
+                }
+
+                if (!File.Exists(fullPath))
+                {
+                    try
+                    {
+                        using (var fs = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                        {
+                        }
+                    }
+                    catch (Exception openErr)
+                    {
+                        Console.WriteLine(
+                            "[CncMachining] file open failed: machine={0} jobId={1} path={2} err={3}",
+                            machineId,
+                            job?.id,
+                            fullPath,
+                            openErr.Message
+                        );
+                    }
+
+                    Console.WriteLine("[CncMachining] file not found: {0}", fullPath);
+                    error = "file not found: " + fullPath;
+                    return (false, error);
+                }
             }
         }
 
         var isTempFile = !string.IsNullOrEmpty(job.s3Key);
         var content = File.ReadAllText(fullPath);
-        if (isTempFile)
-        {
-            try { File.Delete(fullPath); } catch { }
-        }
         var enforcedContent = BridgeShared.EnsurePercentAndHeaderSecondLine(content, slotNo);
         var processedContent = BridgeShared.SanitizeProgramTextForCnc(BridgeShared.EnsureProgramEnvelope(enforcedContent));
         var processedPreviewLines = (processedContent ?? string.Empty)
@@ -1602,6 +1614,10 @@ private static async Task<(bool Success, string Error)> UploadProgramToSlot(stri
         }
 
         Console.WriteLine("[CncMachining] upload ok machine={0} jobId={1} slot=O{2} usedMode={3}", machineId, job?.id, slotNo, usedMode);
+        if (isTempFile)
+        {
+            try { File.Delete(fullPath); } catch { }
+        }
         return (true, null);
     }
     catch (Exception ex)
@@ -1610,6 +1626,13 @@ private static async Task<(bool Success, string Error)> UploadProgramToSlot(stri
         error = "exception: " + ex.Message;
         return (false, error);
     }
+}
+
+private static bool IsFatalPreloadError(string error)
+{
+    var msg = (error ?? string.Empty).Trim();
+    if (string.IsNullOrEmpty(msg)) return false;
+    return msg.IndexOf("program too large", StringComparison.OrdinalIgnoreCase) >= 0;
 }
 
 private static bool TryResolveExistingPath(string expectedFullPath, out string existingFullPath)
