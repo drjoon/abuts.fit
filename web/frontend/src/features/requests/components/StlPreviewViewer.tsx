@@ -88,6 +88,18 @@ export function StlPreviewViewer({
     return { x, y, z };
   };
 
+  // File 객체 참조가 변경되어도 name+size가 같으면 같은 파일로 간주 (씬 재생성 방지)
+  const fileKeyRef = useRef<string>("");
+  const fileKey = `${file.name}:${file.size}`;
+  if (fileKeyRef.current !== fileKey) {
+    // 메타데이터 기반 축이 준비되지 않았으면 씬 생성 연기 (플리커링 방지)
+    const hasTiltAxis = toValidPoint(resolvedMetadata?.tiltAxisVector) !== null;
+    if (!fileKeyRef.current || hasTiltAxis) {
+      fileKeyRef.current = fileKey;
+    }
+  }
+  const stableFileKey = fileKeyRef.current;
+
   const disposeFrontPointMesh = () => {
     const existing = frontPointMeshRef.current;
     if (!existing) return;
@@ -263,6 +275,9 @@ export function StlPreviewViewer({
   // STL 렌더링 및 finish line 시각화
   useEffect(() => {
     if (!containerRef.current) return;
+    // 메타데이터 기반 축이 준비되지 않았으면 씬 생성 연기 (플리커링 방지)
+    const hasTiltAxis = toValidPoint(resolvedMetadata?.tiltAxisVector) !== null;
+    if (!stableFileKey || !hasTiltAxis) return;
 
     setError(null);
 
@@ -1035,11 +1050,10 @@ export function StlPreviewViewer({
 
         // Draw tilt axis (dotted line passing through origin)
         // 원본 STL은 오버레이 표시 안함, filled STL만 표시
-        // 백엔드 메타데이터 tiltAxisVector를 우선 사용, 없으면 로컬 계산값 fallback
-        const backendTiltAxisVector = toValidPoint(
+        // 백엔드 메타데이터 tiltAxisVector만 사용 (로컬 계산값 fallback 제거하여 플리커링 방지)
+        const effectiveTiltAxisVector = toValidPoint(
           resolvedMetadataRef.current?.tiltAxisVector,
         );
-        const effectiveTiltAxisVector = backendTiltAxisVector ?? tiltAxisVector;
         if (effectiveTiltAxisVector && showOverlay && isFilled) {
           const axisLength = totalLength * 1.5;
           const originCentered = isFilled
@@ -1430,7 +1444,22 @@ export function StlPreviewViewer({
         containerRef.current.innerHTML = "";
       }
     };
-  }, [file, showOverlay, finishLinePoints]);
+  }, [
+    stableFileKey,
+    showOverlay,
+    finishLinePoints,
+    resolvedMetadata?.updatedAt,
+    resolvedMetadata?.maxDiameter,
+    resolvedMetadata?.connectionDiameter,
+    resolvedMetadata?.totalLength,
+    resolvedMetadata?.taperAngle,
+    resolvedMetadata?.tiltAxisVector?.x,
+    resolvedMetadata?.tiltAxisVector?.y,
+    resolvedMetadata?.tiltAxisVector?.z,
+    resolvedMetadata?.frontPoint?.x,
+    resolvedMetadata?.frontPoint?.y,
+    resolvedMetadata?.frontPoint?.z,
+  ]);
 
   return (
     <div
@@ -1440,6 +1469,14 @@ export function StlPreviewViewer({
       )}
     >
       <div ref={containerRef} className="w-full h-full" />
+      {!toValidPoint(resolvedMetadata?.tiltAxisVector) && (
+        <div className="absolute inset-0 flex items-center justify-center rounded-md bg-white/70 text-sm text-slate-500">
+          <div className="flex flex-col items-center gap-2">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />
+            <span>메타데이터 로딩 중...</span>
+          </div>
+        </div>
+      )}
       {error && (
         <div className="absolute inset-0 flex items-center justify-center rounded-md bg-white/70 text-sm text-destructive">
           {error}
