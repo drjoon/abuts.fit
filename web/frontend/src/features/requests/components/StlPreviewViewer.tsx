@@ -1035,15 +1035,20 @@ export function StlPreviewViewer({
 
         // Draw tilt axis (dotted line passing through origin)
         // 원본 STL은 오버레이 표시 안함, filled STL만 표시
-        if (tiltAxisVector && showOverlay && isFilled) {
+        // 백엔드 메타데이터 tiltAxisVector를 우선 사용, 없으면 로컬 계산값 fallback
+        const backendTiltAxisVector = toValidPoint(
+          resolvedMetadataRef.current?.tiltAxisVector,
+        );
+        const effectiveTiltAxisVector = backendTiltAxisVector ?? tiltAxisVector;
+        if (effectiveTiltAxisVector && showOverlay && isFilled) {
           const axisLength = totalLength * 1.5;
           const originCentered = isFilled
             ? new THREE.Vector3(0, 0, 0)
             : new THREE.Vector3(-center.x, -center.y, -center.z);
           const dir = new THREE.Vector3(
-            tiltAxisVector.x,
-            tiltAxisVector.y,
-            tiltAxisVector.z,
+            effectiveTiltAxisVector.x,
+            effectiveTiltAxisVector.y,
+            effectiveTiltAxisVector.z,
           ).normalize();
 
           const p1 = originCentered
