@@ -707,6 +707,11 @@ export async function updateReviewStatusByStage(req, res) {
         }
 
         if (effectiveStage === "request") {
+          const requestRollbackCount = Number(
+            request?.caseInfos?.rollbackCounts?.request || 0,
+          );
+          const canSkipCamRegeneration = requestRollbackCount > 0;
+
           // 비동기 처리: 의뢰 승인 시점에 manufacturerStage/status 를 CAM으로 바꾸지 않는다.
           // Esprit(NC 생성) 완료 콜백(/api/bg/register-file, sourceStep=3-nc)에서 상태를 CAM으로 전환한다.
           // 여기서는 '명령 접수'만 처리하고, BG 트리거만 시도한다.
@@ -781,12 +786,18 @@ export async function updateReviewStatusByStage(req, res) {
             throw err;
           }
 
-          request.productionSchedule.actualCamStart = new Date();
-          pendingEspritTriggerRequest = request.toObject
-            ? request.toObject()
-            : JSON.parse(JSON.stringify(request));
-          acceptedMessage =
-            "CAM 작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다.";
+          if (canSkipCamRegeneration) {
+            applyStatusMapping(request, "CAM");
+            acceptedMessage =
+              "롤백 이력이 확인되어 CAM 재생성 없이 CAM 단계로 이동했습니다.";
+          } else {
+            request.productionSchedule.actualCamStart = new Date();
+            pendingEspritTriggerRequest = request.toObject
+              ? request.toObject()
+              : JSON.parse(JSON.stringify(request));
+            acceptedMessage =
+              "CAM 작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다.";
+          }
         } else {
           // CAM, machining 등 이후 단계는 필요 시 단계별로 비동기 처리 여부를 나눠서 관리한다.
           // CAM 승인 시에는 제조사 공정을 '가공' 단계로 즉시 전환하되,
