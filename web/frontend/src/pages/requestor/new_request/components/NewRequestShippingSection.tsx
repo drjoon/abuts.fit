@@ -208,7 +208,8 @@ export function NewRequestShippingSection({
             </div>
           </div>
           <div className="mt-2 text-center text-sm text-slate-600 leading-relaxed">
-            가장 먼저 도래한 날에 일괄 발송합니다. (복수 선택 가능)
+            가장 먼저 도래한 날에 일괄 발송합니다.
+            <span className="text-red-500"> (복수 선택 권장)</span>
           </div>
         </div>
       </div>
