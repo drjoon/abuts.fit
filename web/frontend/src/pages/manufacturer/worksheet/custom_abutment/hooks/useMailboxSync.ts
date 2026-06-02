@@ -8,6 +8,7 @@ export const useMailboxSync = (pageState: any, mailboxState: any) => {
     mailboxModalRequests,
     setMailboxModalRequests,
     handleShipmentModalClose,
+    isForceTodayUpdating,
   } = mailboxState;
 
   useEffect(() => {
@@ -25,7 +26,13 @@ export const useMailboxSync = (pageState: any, mailboxState: any) => {
 
   useEffect(() => {
     if (!mailboxModalOpen) return;
+    if (isForceTodayUpdating) return;
     if (mailboxModalRequests.length > 0) return;
     handleShipmentModalClose();
-  }, [mailboxModalRequests.length, mailboxModalOpen, handleShipmentModalClose]);
+  }, [
+    isForceTodayUpdating,
+    mailboxModalRequests.length,
+    mailboxModalOpen,
+    handleShipmentModalClose,
+  ]);
 };

@@ -775,7 +775,11 @@ export const RequestPage = ({
 
       <MailboxContentsModal
         open={mailboxState.mailboxModalOpen}
-        onOpenChange={mailboxState.handleShipmentModalClose}
+        onOpenChange={(next) => {
+          if (!next && !mailboxState.isForceTodayUpdating) {
+            mailboxState.handleShipmentModalClose();
+          }
+        }}
         address={mailboxState.mailboxModalAddress}
         requests={mailboxState.mailboxModalRequests}
         errorMessage={
@@ -801,10 +805,13 @@ export const RequestPage = ({
           )
         }
         onForceTodayChange={(checked) =>
-          mailboxState.setMailboxForceToday(
-            mailboxState.mailboxModalAddress,
-            checked,
-          )
+          void (async () => {
+            await mailboxState.setMailboxForceToday(
+              mailboxState.mailboxModalAddress,
+              checked,
+            );
+            mailboxState.handleShipmentModalClose();
+          })()
         }
       />
 

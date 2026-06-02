@@ -653,12 +653,6 @@ export const MailboxGrid = ({
     return set;
   }, [mailboxShippingDayMap]);
 
-  // 오늘 발송 대상: 가장 빠른 다음 발송일이 오늘인 우편함만 포함
-  const todayShippableAddresses = useMemo(
-    () => occupiedAddresses.filter((addr) => !notTodayAddressSet.has(addr)),
-    [occupiedAddresses, notTodayAddressSet],
-  );
-
   const persistedForceTodayAddressSet = useMemo(() => {
     const set = new Set<string>();
     for (const [address, items] of addressMap.entries()) {
@@ -677,6 +671,16 @@ export const MailboxGrid = ({
     }
     return next;
   }, [forceTodayMailboxAddresses, persistedForceTodayAddressSet]);
+
+  // 오늘 발송 대상: 기본 요일이 오늘이거나, 오늘 발송 강제(forceToday)된 우편함 포함
+  const todayShippableAddresses = useMemo(
+    () =>
+      occupiedAddresses.filter(
+        (addr) =>
+          !notTodayAddressSet.has(addr) || forceTodayAddressSet.has(addr),
+      ),
+    [forceTodayAddressSet, notTodayAddressSet, occupiedAddresses],
+  );
 
   const pickupRequestedMailboxes = useMemo(() => {
     const workflowCodesByMailbox = new Map<string, Set<string>>();
@@ -987,7 +991,8 @@ export const MailboxGrid = ({
         ? printedAddresses
         : normalizedExplicitTargets.length
           ? normalizedExplicitTargets.filter(
-              (addr) => !notTodayAddressSet.has(addr),
+              (addr) =>
+                !notTodayAddressSet.has(addr) || forceTodayAddressSet.has(addr),
             )
           : todayShippableAddresses;
 
@@ -1379,10 +1384,12 @@ export const MailboxGrid = ({
                             exists && reprintSelectedAddresses.has(addr!);
                           const isPrinted =
                             exists && printedWorkflowAddresses.includes(addr!);
-                          const isNotToday =
-                            exists && notTodayAddressSet.has(addr!);
                           const isForceToday =
                             exists && forceTodayAddressSet.has(addr!);
+                          const isNotToday =
+                            exists &&
+                            notTodayAddressSet.has(addr!) &&
+                            !isForceToday;
                           const nextDayLabel = isNotToday
                             ? (mailboxShippingDayMap.get(addr!)?.nextDayLabel ??
                               null)
@@ -1400,8 +1407,7 @@ export const MailboxGrid = ({
                               }
                               onClick={() => {
                                 if (!exists) return;
-                                if (isNotToday && !isForceToday && !selected)
-                                  return;
+                                if (isNotToday && !selected) return;
                                 setReprintSelectedAddresses((prev) => {
                                   const next = new Set(prev);
                                   if (selected) next.delete(addr!);
@@ -1413,11 +1419,7 @@ export const MailboxGrid = ({
                                 !exists
                                   ? "bg-slate-50"
                                   : isNotToday
-                                    ? isForceToday
-                                      ? selected
-                                        ? "bg-blue-500 border-blue-500 cursor-pointer"
-                                        : "bg-blue-50 border-blue-300 cursor-pointer hover:bg-blue-100"
-                                      : "bg-amber-50 border-dashed border-amber-400 cursor-not-allowed opacity-70"
+                                    ? "bg-amber-50 border-dashed border-amber-400 cursor-not-allowed opacity-70"
                                     : selected
                                       ? "bg-blue-500 cursor-pointer"
                                       : isPrinted
@@ -1427,24 +1429,16 @@ export const MailboxGrid = ({
                             >
                               {exists && (
                                 <div className="flex flex-col items-center justify-center gap-0.5">
-                                  {isForceToday ? (
-                                    <div className="text-[9px] font-semibold text-blue-700 mb-0.5">
-                                      오늘 발송 강제
+                                  {isNotToday && nextDayLabel && (
+                                    <div className="text-[9px] font-semibold text-amber-700 mb-0.5">
+                                      다음 {nextDayLabel}요일
                                     </div>
-                                  ) : null}
-                                  {isNotToday &&
-                                    !isForceToday &&
-                                    nextDayLabel && (
-                                      <div className="text-[9px] font-semibold text-amber-700 mb-0.5">
-                                        다음 {nextDayLabel}요일
-                                      </div>
-                                    )}
-                                  {isPrinted &&
-                                    (!isNotToday || isForceToday) && (
-                                      <div className="text-[9px] font-semibold text-slate-500 mb-0.5">
-                                        ✓ 출력됨
-                                      </div>
-                                    )}
+                                  )}
+                                  {isPrinted && !isNotToday && (
+                                    <div className="text-[9px] font-semibold text-slate-500 mb-0.5">
+                                      ✓ 출력됨
+                                    </div>
+                                  )}
                                   <span
                                     className={`text-xs font-mono font-semibold ${
                                       selected
@@ -1547,6 +1541,7 @@ export const MailboxGrid = ({
         pickupRequestedMailboxes={pickupRequestedMailboxes}
         failedMailboxes={failedMailboxes}
         mailboxShippingDayMap={mailboxShippingDayMap}
+        forceTodayAddressSet={forceTodayAddressSet}
         shelfRefs={shelfRefs}
         scrollContainerRef={scrollContainerRef}
         handleTouchStart={handleTouchStart}

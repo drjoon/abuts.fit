@@ -27,6 +27,7 @@ type MailboxShelfGridProps = {
   pickupRequestedMailboxes: Map<string, MailboxPickupStatus>;
   failedMailboxes: Set<string>;
   mailboxShippingDayMap?: Map<string, MailboxShippingDayInfo>;
+  forceTodayAddressSet?: Set<string>;
   shelfRefs: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   handleTouchStart: (e: React.TouchEvent) => void;
@@ -45,6 +46,7 @@ export const MailboxShelfGrid = ({
   pickupRequestedMailboxes,
   failedMailboxes,
   mailboxShippingDayMap,
+  forceTodayAddressSet,
   shelfRefs,
   scrollContainerRef,
   handleTouchStart,
@@ -141,8 +143,13 @@ export const MailboxShelfGrid = ({
                           !isErrorStatus;
                         const shippingDayInfo =
                           mailboxShippingDayMap?.get(address);
+                        const isForceToday =
+                          isOccupied &&
+                          Boolean(forceTodayAddressSet?.has(address));
                         const isNotTodayShip =
-                          isOccupied && Boolean(shippingDayInfo?.notToday);
+                          isOccupied &&
+                          Boolean(shippingDayInfo?.notToday) &&
+                          !isForceToday;
                         const nextShippingDayLabel = isNotTodayShip
                           ? shippingDayInfo?.nextDayLabel || null
                           : null;

@@ -19,6 +19,7 @@ export const useMailboxManagement = (
     Record<string, string>
   >({});
   const [isRollingBackAll, setIsRollingBackAll] = useState(false);
+  const [isForceTodayUpdating, setIsForceTodayUpdating] = useState(false);
   const { toast } = useToast();
 
   const handleRegisterShipment = useCallback(
@@ -43,6 +44,7 @@ export const useMailboxManagement = (
     async (address: string, enabled: boolean) => {
       const normalized = String(address || "").trim();
       if (!normalized) return;
+      setIsForceTodayUpdating(true);
       const applyLocal = (checked: boolean) =>
         setForceTodayMailboxAddresses((prev) => {
           const next = new Set(prev);
@@ -59,6 +61,7 @@ export const useMailboxManagement = (
           variant: "destructive",
         });
         applyLocal(!enabled);
+        setIsForceTodayUpdating(false);
         return;
       }
 
@@ -91,6 +94,8 @@ export const useMailboxManagement = (
               : "강제 오늘 발송 저장에 실패했습니다.",
           variant: "destructive",
         });
+      } finally {
+        setIsForceTodayUpdating(false);
       }
     },
     [fetchRequests, toast, token],
@@ -191,6 +196,7 @@ export const useMailboxManagement = (
     setMailboxErrorByAddress,
     isRollingBackAll,
     setIsRollingBackAll,
+    isForceTodayUpdating,
     handleRegisterShipment,
     handleShipmentModalClose,
     handleMailboxAddressSaved,
