@@ -21,6 +21,12 @@ const PRC_CONNECTION_DIR = path.resolve(
   "bg/pc1/esprit-addin/AcroDent/2_Connection",
 );
 
+const IMPLANT_BRAND_CANONICAL_ALIASES = {
+  OSSTEM: {
+    TS3: "TS",
+  },
+};
+
 export const IMPLANT_MANUFACTURER_DEFS = IMPLANT_MANUFACTURER_CATALOG;
 
 function normalizeBrandToken(raw) {
@@ -101,6 +107,17 @@ export function normalizeImplantBrand(raw, manufacturer) {
   const brand = normalizeKeyToken(raw);
   const m = normalizeImplantManufacturer(manufacturer);
   if (!brand) return "";
+
+  const aliasMap = IMPLANT_BRAND_CANONICAL_ALIASES[m] || null;
+  if (aliasMap) {
+    const aliasKey = normalizeBrandToken(brand);
+    const aliasResolved = Object.entries(aliasMap).find(
+      ([alias]) => normalizeBrandToken(alias) === aliasKey,
+    )?.[1];
+    if (aliasResolved) {
+      return aliasResolved;
+    }
+  }
 
   const brands = CONNECTION_CATALOG.brandsByManufacturer.get(m) || [];
   if (!brands.length) return brand;
