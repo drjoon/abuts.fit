@@ -710,7 +710,11 @@ export async function updateReviewStatusByStage(req, res) {
           const requestRollbackCount = Number(
             request?.caseInfos?.rollbackCounts?.request || 0,
           );
-          const canSkipCamRegeneration = requestRollbackCount > 0;
+          const requestCamRollbackCount = Number(
+            request?.caseInfos?.rollbackCounts?.machining || 0,
+          );
+          const canSkipCamRegeneration =
+            requestRollbackCount > 0 || requestCamRollbackCount > 0;
 
           // 비동기 처리: 의뢰 승인 시점에 manufacturerStage/status 를 CAM으로 바꾸지 않는다.
           // Esprit(NC 생성) 완료 콜백(/api/bg/register-file, sourceStep=3-nc)에서 상태를 CAM으로 전환한다.

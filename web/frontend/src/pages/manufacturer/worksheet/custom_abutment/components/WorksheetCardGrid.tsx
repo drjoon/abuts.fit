@@ -271,6 +271,9 @@ export const WorksheetCardGrid = ({
         const requestStageRollbackCount = Number(
           caseInfos.rollbackCounts?.request || 0,
         );
+        const requestStageCamRollbackCount = Number(
+          caseInfos.rollbackCounts?.machining || 0,
+        );
 
         // 롤백 이력이 있을 때만 카드에서 바로 승인 가능
         // (프리뷰 확인 후 승인하여 다음 공정으로 간 뒤 롤백한 경우 = 이미 검토 완료)
@@ -283,7 +286,9 @@ export const WorksheetCardGrid = ({
               packingShippingRollbackCount > 0) ||
             (reviewStageKey === "cam" &&
               Number(caseInfos.rollbackCounts?.machining || 0) > 0) ||
-            (reviewStageKey === "request" && requestStageRollbackCount > 0));
+            (reviewStageKey === "request" &&
+              (requestStageRollbackCount > 0 ||
+                requestStageCamRollbackCount > 0)));
 
         const isNcGenerating =
           reviewStageKey === "cam" &&
