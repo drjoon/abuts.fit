@@ -64,6 +64,28 @@ const formatTime = (iso?: string) => {
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
 };
 
+const getConversationTargetTitle = (room: ChatRoom) => {
+  const targets = (room.participants || [])
+    .filter((p: any) => p?.role !== "admin")
+    .map((p: any) => {
+      const business = String(p?.business || "").trim();
+      const name = String(p?.name || "").trim();
+      const base = business || name;
+      if (!base) return "";
+      if (business && name && business !== name) {
+        return `${business}(${name})`;
+      }
+      return base;
+    })
+    .filter(Boolean);
+
+  if (targets.length > 0) {
+    return `대화 대상 - ${targets.join(", ")}`;
+  }
+
+  return room.relatedRequestId?.requestId || room.title || "채팅";
+};
+
 export const AdminChatManagement = () => {
   const { token, user } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
@@ -408,10 +430,7 @@ export const AdminChatManagement = () => {
                   {!roomsLoading &&
                     filteredChats.map((chat) => {
                       const isSelected = chat._id === selectedChatId;
-                      const title =
-                        chat.relatedRequestId?.requestId ||
-                        chat.title ||
-                        "채팅";
+                      const title = getConversationTargetTitle(chat);
                       const subtitle =
                         chat.relatedRequestId?.title ||
                         chat.lastMessage?.content ||
