@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
@@ -48,6 +49,10 @@ import {
   Sparkles,
   Share2,
   Clock,
+  Wrench,
+  Boxes,
+  Package,
+  CheckCircle,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { onAppEvent } from "@/shared/realtime/socket";
@@ -603,6 +608,30 @@ export const DashboardLayout = () => {
   const worksheetType = worksheetParams.get("type") || "cnc";
   const worksheetStage = worksheetParams.get("stage") || "request";
 
+  // Worksheet summary data for header bar
+  const { data: worksheetSummaryResponse } = useQuery({
+    queryKey: ["worksheet-assigned-summary"],
+    enabled: Boolean(token) && isManufacturer,
+    queryFn: async () => {
+      const res = await apiFetch<any>({
+        path: `/api/requests/assigned/dashboard-summary?period=30d`,
+        method: "GET",
+        token,
+      });
+      if (!res.ok) {
+        throw new Error("요약 조회에 실패했습니다.");
+      }
+      return res.data;
+    },
+    retry: false,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
+  });
+
+  const wsSummary = worksheetSummaryResponse?.success
+    ? worksheetSummaryResponse.data
+    : {};
+
   const handleLogout = () => {
     logout();
     navigate("/");
@@ -975,28 +1004,35 @@ export const DashboardLayout = () => {
                                     : "ghost"
                                 }
                                 size="sm"
-                                className="h-7 px-2 text-xs"
+                                className="h-7 px-2 text-xs gap-1"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=request",
                                   )
                                 }
                               >
-                                의뢰
+                                <span>의뢰</span>
+                                <span className="tabular-nums opacity-70">
+                                  {wsSummary.requestCount ?? 0}/
+                                  {wsSummary.canceledCount ?? 0}
+                                </span>
                               </Button>
                               <Button
                                 variant={
                                   worksheetStage === "cam" ? "default" : "ghost"
                                 }
                                 size="sm"
-                                className="h-7 px-2 text-xs"
+                                className="h-7 px-2 text-xs gap-1"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=cam",
                                   )
                                 }
                               >
-                                CAM
+                                <span>CAM</span>
+                                <span className="tabular-nums opacity-70">
+                                  {wsSummary.camCount ?? 0}
+                                </span>
                               </Button>
                               <Button
                                 variant={
@@ -1005,14 +1041,17 @@ export const DashboardLayout = () => {
                                     : "ghost"
                                 }
                                 size="sm"
-                                className="h-7 px-2 text-xs"
+                                className="h-7 px-2 text-xs gap-1"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=machining",
                                   )
                                 }
                               >
-                                가공
+                                <span>가공</span>
+                                <span className="tabular-nums opacity-70">
+                                  {wsSummary.machiningCount ?? 0}
+                                </span>
                               </Button>
                               <Button
                                 variant={
@@ -1021,14 +1060,17 @@ export const DashboardLayout = () => {
                                     : "ghost"
                                 }
                                 size="sm"
-                                className="h-7 px-2 text-xs"
+                                className="h-7 px-2 text-xs gap-1"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=packing",
                                   )
                                 }
                               >
-                                세척.패킹
+                                <span>세척·패킹</span>
+                                <span className="tabular-nums opacity-70">
+                                  {wsSummary.packingCount ?? 0}
+                                </span>
                               </Button>
                               <Button
                                 variant={
@@ -1037,14 +1079,17 @@ export const DashboardLayout = () => {
                                     : "ghost"
                                 }
                                 size="sm"
-                                className="h-7 px-2 text-xs"
+                                className="h-7 px-2 text-xs gap-1"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=shipping",
                                   )
                                 }
                               >
-                                포장.발송
+                                <span>포장·발송</span>
+                                <span className="tabular-nums opacity-70">
+                                  {wsSummary.shippingCount ?? 0}
+                                </span>
                               </Button>
                               <Button
                                 variant={
@@ -1053,14 +1098,17 @@ export const DashboardLayout = () => {
                                     : "ghost"
                                 }
                                 size="sm"
-                                className="h-7 px-2 text-xs"
+                                className="h-7 px-2 text-xs gap-1"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=tracking",
                                   )
                                 }
                               >
-                                추적관리
+                                <span>추적관리</span>
+                                <span className="tabular-nums opacity-70">
+                                  {wsSummary.trackingCount ?? 0}
+                                </span>
                               </Button>
                             </div>
                           </>
