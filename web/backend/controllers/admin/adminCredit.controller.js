@@ -17,7 +17,6 @@ import {
   getTodayYmdInKst,
   getThisMonthStartYmdInKst,
 } from "../../utils/krBusinessDays.js";
-import { normalizeBusinessNumber } from "../../utils/businessAnchor.utils.js";
 import AdminSalesmanCreditsOverviewSnapshot from "../../models/adminSalesmanCreditsOverviewSnapshot.model.js";
 import { buildSalesmanReferralAggregation } from "./adminCredit.salesmanAggregation.js";
 
@@ -1631,95 +1630,24 @@ export async function adminGetBusinessCredits(req, res) {
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
 
-    const businessNumberNormalizedSet = new Set(
-      (orgs || [])
-        .map((org) =>
-          normalizeBusinessNumber(org?.metadata?.businessNumber || ""),
-        )
-        .filter(Boolean),
-    );
-
-    const [owners, anchors] = await Promise.all([
-      ownerIds.length
-        ? User.find({ _id: { $in: ownerIds } })
-            .select({
-              _id: 1,
-              name: 1,
-              email: 1,
-              businessAnchorId: 1,
-              businessId: 1,
-            })
-            .lean()
-        : Promise.resolve([]),
-      businessNumberNormalizedSet.size
-        ? BusinessAnchor.find({
-            businessNumberNormalized: {
-              $in: Array.from(businessNumberNormalizedSet),
-            },
-          })
-            .select({
-              _id: 1,
-              businessNumberNormalized: 1,
-              sourceBusinessId: 1,
-            })
-            .lean()
-        : Promise.resolve([]),
-    ]);
+    const owners = ownerIds.length
+      ? await User.find({ _id: { $in: ownerIds } })
+          .select({ _id: 1, name: 1, email: 1 })
+          .lean()
+      : [];
 
     const ownerById = new Map(
       (owners || []).map((u) => [
         String(u._id),
-        {
-          name: u.name,
-          email: u.email,
-          businessAnchorId: u.businessAnchorId || null,
-          businessId: u.businessId || null,
-        },
+        { name: u.name, email: u.email },
       ]),
     );
 
-    const anchorIdByBusinessNumber = new Map(
-      (anchors || []).map((anchor) => [
-        String(anchor?.businessNumberNormalized || ""),
-        String(anchor?._id || ""),
-      ]),
-    );
-
-    const anchorIdBySourceBusinessId = new Map(
-      (anchors || [])
-        .filter((anchor) => anchor?.sourceBusinessId)
-        .map((anchor) => [
-          String(anchor?.sourceBusinessId || ""),
-          String(anchor?._id || ""),
-        ]),
-    );
-
-    const resolvedAnchorIdByBusinessId = new Map();
-    for (const org of orgs || []) {
-      const businessId = String(org?._id || "");
-      const directAnchorId = String(org?.businessAnchorId || "").trim();
-      const ownerInfo = ownerById.get(String(org?.owner || "")) || null;
-      const ownerAnchorId = String(ownerInfo?.businessAnchorId || "").trim();
-      const normalizedBusinessNumber = normalizeBusinessNumber(
-        org?.metadata?.businessNumber || "",
-      );
-      const mappedAnchorId =
-        directAnchorId ||
-        ownerAnchorId ||
-        String(anchorIdBySourceBusinessId.get(businessId) || "") ||
-        String(anchorIdByBusinessNumber.get(normalizedBusinessNumber) || "");
-      if (businessId) {
-        resolvedAnchorIdByBusinessId.set(businessId, mappedAnchorId);
-      }
-    }
-
-    const orgAnchorIds = Array.from(
-      new Set(
-        Array.from(resolvedAnchorIdByBusinessId.values()).filter((id) =>
-          Boolean(id),
-        ),
-      ),
-    ).map((id) => new Types.ObjectId(String(id)));
+    // BusinessAnchor._id 자체가 businessAnchorId이므로 직접 사용
+    const orgAnchorIds = (orgs || [])
+      .map((org) => org._id)
+      .filter(Boolean)
+      .map((id) => new Types.ObjectId(String(id)));
 
     // CreditLedger 집계: 무료 크레딧을 의뢰용과 배송비용으로 분리
     // - bonusRequestCredit: 의뢰 결제만 가능 (배송비 결제 불가)
@@ -1848,6 +1776,29 @@ export async function adminGetBusinessCredits(req, res) {
                             ["SHIPPING_PACKAGE", "SHIPPING_FEE"],
                           ],
                         },
+                        // hasFreeRequest=false인 패키지는 무료배송 크레딧 사용 불가
+                        { $ne: ["$hasFreeRequest", false] },
+                      ],
+                    },
+                    { $abs: "$amount" },
+                    0,
+                  ],
+                },
+              },
+              // 무료 의뢰 없는 패키지의 배송비 (유료 크레딧에서만 차감 가능)
+              spentByShippingNoFreeSum: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ["$type", "SPEND"] },
+                        {
+                          $in: [
+                            "$refType",
+                            ["SHIPPING_PACKAGE", "SHIPPING_FEE"],
+                          ],
+                        },
+                        { $eq: ["$hasFreeRequest", false] },
                       ],
                     },
                     { $abs: "$amount" },
@@ -1938,16 +1889,23 @@ export async function adminGetBusinessCredits(req, res) {
           0,
           Number(item.spentByRequestSum || 0) - refundRequestSum,
         );
+        // spentByShippingSum: 무료 의뢰 포함 패키지 배송비 (bonusShipping 차감 가능)
+        // spentByShippingNoFreeSum: 무료 의뢰 없는 패키지 배송비 (paid에서만 차감)
         const spentByShipping = Math.max(
           0,
           Number(item.spentByShippingSum || 0) - refundShippingSum,
+        );
+        const spentByShippingNoFree = Math.max(
+          0,
+          Number(item.spentByShippingNoFreeSum || 0),
         );
 
         const bonusShippingUsed = Math.min(
           chargedBonusShipping,
           spentByShipping,
         );
-        const paidFromShipping = spentByShipping - bonusShippingUsed;
+        const paidFromShipping =
+          spentByShipping - bonusShippingUsed + spentByShippingNoFree;
 
         const bonusRequestUsed = Math.min(chargedBonusRequest, spentByRequest);
         const paidFromRequest = spentByRequest - bonusRequestUsed;
@@ -1984,7 +1942,13 @@ export async function adminGetBusinessCredits(req, res) {
           0,
           Math.round(chargedBonusShipping),
         ),
-        spentPaidAmount: Math.max(0, Math.round(spentPaid)),
+        spentPaidAmount: Math.max(
+          0,
+          Math.min(
+            Math.round(spentPaid),
+            Math.max(0, Math.round(chargedPaid + adjustSum)),
+          ),
+        ),
         spentBonusRequestAmount: Math.max(0, Math.round(spentBonusRequest)),
         spentBonusShippingAmount: Math.max(0, Math.round(spentBonusShipping)),
       };
