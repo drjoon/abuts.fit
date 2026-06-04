@@ -230,10 +230,8 @@ export const PricingPolicyDialog = ({
                     자정 KST 기준 갱신)
                   </p>
                   <ul className="list-disc pl-4 space-y-0.5">
-                    <li>주문 1건당 20원 할인</li>
-                    <li>
-                      최대 5,000원 할인 (250건 이상 시 개당 10,000원 고정)
-                    </li>
+                    <li>주문 1건당 100원 할인</li>
+                    <li>최대 5,000원 할인 (50건 이상 시 개당 10,000원 고정)</li>
                   </ul>
                 </section>
 
