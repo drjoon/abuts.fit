@@ -28,6 +28,14 @@ export const PeriodFilter = ({
     "90d": "최근 90일",
   };
 
+  // 정책: 공통 기간 필터에서 최근 7일은 노출하지 않음
+  const visiblePeriods: PeriodFilterValue[] = [
+    "lastMonth",
+    "thisMonth",
+    "30d",
+    "90d",
+  ];
+
   return (
     <div
       className={cn(
@@ -36,7 +44,7 @@ export const PeriodFilter = ({
       )}
     >
       <span className="px-2 text-muted-foreground">{label}</span>
-      {(Object.keys(labelMap) as PeriodFilterValue[]).map((k) => (
+      {visiblePeriods.map((k) => (
         <button
           key={k}
           type="button"

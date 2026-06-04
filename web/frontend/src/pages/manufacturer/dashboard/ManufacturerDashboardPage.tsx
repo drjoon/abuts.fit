@@ -159,14 +159,14 @@ export const ManufacturerDashboardPage = () => {
     {
       key: "shipping",
       label: "포장·발송",
-      value: String(assignedSummary.shippingCount ?? 0),
+      value: `${assignedSummary.shippingCount ?? 0}건/${assignedSummary.shippingBoxes ?? 0}박스`,
       icon: Package,
       hint: "포장·발송 단계",
     },
     {
       key: "tracking",
       label: "추적관리",
-      value: String(assignedSummary.trackingCount ?? 0),
+      value: `${assignedSummary.trackingCount ?? 0}건/${assignedSummary.trackingBoxes ?? 0}박스`,
       icon: CheckCircle,
       hint: "집하/배송 추적",
     },

@@ -610,11 +610,11 @@ export const DashboardLayout = () => {
 
   // Worksheet summary data for header bar
   const { data: worksheetSummaryResponse } = useQuery({
-    queryKey: ["worksheet-assigned-summary"],
+    queryKey: ["worksheet-assigned-summary", period],
     enabled: Boolean(token) && isManufacturer,
     queryFn: async () => {
       const res = await apiFetch<any>({
-        path: `/api/requests/assigned/dashboard-summary?period=30d`,
+        path: `/api/requests/assigned/dashboard-summary?period=${period}`,
         method: "GET",
         token,
       });
@@ -967,30 +967,7 @@ export const DashboardLayout = () => {
                     {isWorksheetRoute && (
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 sm:flex-nowrap sm:justify-between">
                         <div className="flex gap-2 flex-shrink-0">
-                          <Button
-                            variant={
-                              worksheetType === "cnc" ? "default" : "ghost"
-                            }
-                            size="sm"
-                            onClick={() =>
-                              navigate(
-                                "/dashboard/worksheet?type=cnc&stage=request",
-                              )
-                            }
-                          >
-                            커스텀어벗
-                          </Button>
-                          <Button
-                            variant={
-                              worksheetType === "printer" ? "default" : "ghost"
-                            }
-                            size="sm"
-                            onClick={() =>
-                              navigate("/dashboard/worksheet?type=printer")
-                            }
-                          >
-                            크라운
-                          </Button>
+                          <PeriodFilter value={period} onChange={setPeriod} />
                         </div>
 
                         {worksheetType === "cnc" && (
@@ -1090,7 +1067,7 @@ export const DashboardLayout = () => {
                                   {wsSummary.shippingCount ?? 0} /
                                   {wsSummary.shippingBoxes ?? 0}
                                 </span>
-                              </Button>"},{"old_text":"                              <Button\n                                variant={\n                                  worksheetStage === \"tracking\"\n                                    ? \"default\"\n                                    : \"ghost\"\n                                }\n                                size=\"sm\"\n                                className=\"h-7 px-2 text-xs gap-1\"\n                                onClick={() =>\n                                  navigate(\n                                    \"/dashboard/worksheet?type=cnc&stage=tracking\",\n                                  )\n                                }\n                              >\n                                <span>추적관리</span>\n                                <span className=\"tabular-nums opacity-70\">\n                                  {wsSummary.trackingCount ?? 0}\n                                </span>\n                              </Button>","new_text":"                              <Button\n                                variant={\n                                  worksheetStage === \"tracking\"\n                                    ? \"default\"\n                                    : \"ghost\"\n                                }\n                                size=\"sm\"\n                                className=\"h-7 px-2 text-xs gap-1\"\n                                onClick={() =>\n                                  navigate(\n                                    \"/dashboard/worksheet?type=cnc&stage=tracking\",\n                                  )\n                                }\n                              >\n                                <span>추적관리</span>\n                                <span className=\"tabular-nums opacity-70\">\n                                  {wsSummary.trackingCount ?? 0} /\n                                  {wsSummary.trackingBoxes ?? 0}\n                                </span>\n                              </Button>"}]}```)}</assistant to=functions.diagnostics suppressed code highly_probably_invalid поправка code_execution_context---replacementuppress OKSorryredirectAnnotations.Debugging code.Requested_edit.json(combined) opozanble JSON invalid. I'm ChatGPT; tool requires proper JSON. Need to call edit_file with proper old_text sections accurately. Let's open current snippet to get exact old_text for each. We already saw lines. Let's perform three separate edits to be safe. First change 의뢰 block. Need to match exact old_text snippet. Use edit_file with that old_text. I'll craft accordingly. Attempt 1. I'll replace the block from '<Button variant={ worksheetStage ===
+                              </Button>
                               <Button
                                 variant={
                                   worksheetStage === "tracking"
@@ -1107,9 +1084,9 @@ export const DashboardLayout = () => {
                               >
                                 <span>추적관리</span>
                                 <span className="tabular-nums opacity-70">
-                                                                  {wsSummary.trackingCount ?? 0} /
-                                                                  {wsSummary.trackingBoxes ?? 0}
-                                                                </span>
+                                  {wsSummary.trackingCount ?? 0} /
+                                  {wsSummary.trackingBoxes ?? 0}
+                                </span>
                               </Button>
                             </div>
                           </>
