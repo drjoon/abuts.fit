@@ -324,19 +324,60 @@ export async function getAssignedDashboardSummary(req, res) {
       },
     ]);
 
-    return res.status(200).json({
-      success: true,
-      data: {
-        total: Number(statsResult?.total ?? 0) || 0,
-        canceledCount: Number(statsResult?.canceledCount ?? 0) || 0,
-        trackingCount: Number(statsResult?.trackingCount ?? 0) || 0,
-        requestCount: Number(statsResult?.requestCount ?? 0) || 0,
-        camCount: Number(statsResult?.camCount ?? 0) || 0,
-        machiningCount: Number(statsResult?.machiningCount ?? 0) || 0,
-        packingCount: Number(statsResult?.packingCount ?? 0) || 0,
-        shippingCount: Number(statsResult?.shippingCount ?? 0) || 0,
-      },
-    });
+    // compute unique package counts for shipping/tracking boxes within the same filter
+    try {
+      const docs = await Request.find({
+        ...baseFilter,
+        ...dateFilter,
+      })
+        .select({ shippingPackageId: 1, manufacturerStage: 1 })
+        .lean();
+
+      const shippingPackageIds = new Set();
+      const trackingPackageIds = new Set();
+      for (const d of docs || []) {
+        const pkg = String(d?.shippingPackageId || "").trim();
+        const stage = String(d?.manufacturerStage || "").trim();
+        if (!pkg) continue;
+        if (stage === "포장.발송" || stage === "shipping") {
+          shippingPackageIds.add(pkg);
+        }
+        if (stage === "추적관리" || stage === "tracking") {
+          trackingPackageIds.add(pkg);
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          total: Number(statsResult?.total ?? 0) || 0,
+          canceledCount: Number(statsResult?.canceledCount ?? 0) || 0,
+          trackingCount: Number(statsResult?.trackingCount ?? 0) || 0,
+          trackingBoxes: trackingPackageIds.size,
+          requestCount: Number(statsResult?.requestCount ?? 0) || 0,
+          camCount: Number(statsResult?.camCount ?? 0) || 0,
+          machiningCount: Number(statsResult?.machiningCount ?? 0) || 0,
+          packingCount: Number(statsResult?.packingCount ?? 0) || 0,
+          shippingCount: Number(statsResult?.shippingCount ?? 0) || 0,
+          shippingBoxes: shippingPackageIds.size,
+        },
+      });
+    } catch (e) {
+      // fallback to original minimal payload
+      return res.status(200).json({
+        success: true,
+        data: {
+          total: Number(statsResult?.total ?? 0) || 0,
+          canceledCount: Number(statsResult?.canceledCount ?? 0) || 0,
+          trackingCount: Number(statsResult?.trackingCount ?? 0) || 0,
+          requestCount: Number(statsResult?.requestCount ?? 0) || 0,
+          camCount: Number(statsResult?.camCount ?? 0) || 0,
+          machiningCount: Number(statsResult?.machiningCount ?? 0) || 0,
+          packingCount: Number(statsResult?.packingCount ?? 0) || 0,
+          shippingCount: Number(statsResult?.shippingCount ?? 0) || 0,
+        },
+      });
+    }
   } catch (error) {
     console.error("getAssignedDashboardSummary error", error);
     return res.status(500).json({
