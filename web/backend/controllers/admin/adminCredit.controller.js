@@ -822,6 +822,7 @@ export async function adminGetCreditStats(req, res) {
                 $cond: [{ $eq: ["$type", "SPEND"] }, { $abs: "$amount" }, 0],
               },
             },
+            // refType이 null/undefined/빈 문자열인 레거시 데이터는 REQUEST로 간주
             spentByRequestSum: {
               $sum: {
                 $cond: [
@@ -829,12 +830,16 @@ export async function adminGetCreditStats(req, res) {
                     $and: [
                       { $eq: ["$type", "SPEND"] },
                       {
-                        $not: {
-                          $in: [
-                            "$refType",
-                            ["SHIPPING_PACKAGE", "SHIPPING_FEE"],
-                          ],
-                        },
+                        $or: [
+                          {
+                            $eq: [
+                              { $ifNull: ["$refType", "REQUEST"] },
+                              "REQUEST",
+                            ],
+                          },
+                          { $eq: ["$refType", null] },
+                          { $eq: ["$refType", ""] },
+                        ],
                       },
                     ],
                   },
@@ -868,13 +873,25 @@ export async function adminGetCreditStats(req, res) {
                 ],
               },
             },
+            // refType이 null/undefined/빈 문자열인 레거시 데이터는 REQUEST로 간주
             spentBonusRequestSum: {
               $sum: {
                 $cond: [
                   {
                     $and: [
                       { $eq: ["$type", "SPEND"] },
-                      { $ne: ["$refType", "SHIPPING_PACKAGE"] },
+                      {
+                        $or: [
+                          {
+                            $eq: [
+                              { $ifNull: ["$refType", "REQUEST"] },
+                              "REQUEST",
+                            ],
+                          },
+                          { $eq: ["$refType", null] },
+                          { $eq: ["$refType", ""] },
+                        ],
+                      },
                     ],
                   },
                   { $ifNull: ["$spentBonusAmount", 0] },
@@ -1743,6 +1760,7 @@ export async function adminGetBusinessCredits(req, res) {
                 },
               },
               // fallback용: refType별 SPEND 총액 (spentBonusAmount 미저장 레거시 대응)
+              // refType이 null/undefined/빈 문자열인 레거시 데이터는 REQUEST로 간주
               spentByRequestSum: {
                 $sum: {
                   $cond: [
@@ -1750,12 +1768,16 @@ export async function adminGetBusinessCredits(req, res) {
                       $and: [
                         { $eq: ["$type", "SPEND"] },
                         {
-                          $not: {
-                            $in: [
-                              "$refType",
-                              ["SHIPPING_PACKAGE", "SHIPPING_FEE"],
-                            ],
-                          },
+                          $or: [
+                            {
+                              $eq: [
+                                { $ifNull: ["$refType", "REQUEST"] },
+                                "REQUEST",
+                              ],
+                            },
+                            { $eq: ["$refType", null] },
+                            { $eq: ["$refType", ""] },
+                          ],
                         },
                       ],
                     },
@@ -1816,6 +1838,7 @@ export async function adminGetBusinessCredits(req, res) {
                 },
               },
               // 무료 의뢰 크레딧 소비 (배송비가 아닌 의뢰 결제에 사용된 무료 크레딧)
+              // refType이 null/undefined/빈 문자열인 레거시 데이터는 REQUEST로 간주
               spentBonusRequestSum: {
                 $sum: {
                   $cond: [
@@ -1823,7 +1846,16 @@ export async function adminGetBusinessCredits(req, res) {
                       $and: [
                         { $eq: ["$type", "SPEND"] },
                         {
-                          $not: { $in: ["$refType", ["SHIPPING_PACKAGE"]] },
+                          $or: [
+                            {
+                              $eq: [
+                                { $ifNull: ["$refType", "REQUEST"] },
+                                "REQUEST",
+                              ],
+                            },
+                            { $eq: ["$refType", null] },
+                            { $eq: ["$refType", ""] },
+                          ],
                         },
                       ],
                     },

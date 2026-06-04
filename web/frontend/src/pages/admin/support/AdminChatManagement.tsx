@@ -80,7 +80,7 @@ const getConversationTargetTitle = (room: ChatRoom) => {
     .filter(Boolean);
 
   if (targets.length > 0) {
-    return `대화 대상 - ${targets.join(", ")}`;
+    return `${targets.join(", ")}`;
   }
 
   return room.relatedRequestId?.requestId || room.title || "채팅";

@@ -216,6 +216,10 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     throw err;
   }
 
+  // 무료/유료 크레딧 사용 분리 계산
+  const fromBonusRequest = Math.min(bonusRequestCredit, resolvedAmount);
+  const fromPaid = resolvedAmount - fromBonusRequest;
+
   const result = await CreditLedger.updateOne(
     { uniqueKey },
     {
@@ -227,6 +231,8 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
         refType: "REQUEST",
         refId: request._id,
         uniqueKey,
+        spentPaidAmount: fromPaid,
+        spentBonusAmount: fromBonusRequest,
       },
     },
     { upsert: true, session },
@@ -337,26 +343,65 @@ export async function ensureShippingFeeSpendOnPackingApprove({
   }
 
   const shipDateYmd = getTodayYmdInKst();
-  const pkg = await ShippingPackage.findOneAndUpdate(
-    { businessAnchorId, shipDateYmd, mailboxAddress },
-    {
-      $setOnInsert: {
-        businessAnchorId,
-        shipDateYmd,
-        mailboxAddress,
-        createdBy: actorUserId || null,
-      },
-      $addToSet: {
-        requestIds: request._id,
-      },
-    },
-    {
-      new: true,
-      upsert: true,
-      setDefaultsOnInsert: true,
-      session,
-    },
-  );
+  let pkg = null;
+  let retryCount = 0;
+  const maxRetries = 3;
+
+  // 중복 패키지 생성 방지: unique index 위반 시 재시도
+  while (retryCount < maxRetries) {
+    try {
+      pkg = await ShippingPackage.findOneAndUpdate(
+        { businessAnchorId, shipDateYmd, mailboxAddress },
+        {
+          $setOnInsert: {
+            businessAnchorId,
+            shipDateYmd,
+            mailboxAddress,
+            createdBy: actorUserId || null,
+          },
+          $addToSet: {
+            requestIds: request._id,
+          },
+        },
+        {
+          new: true,
+          upsert: true,
+          setDefaultsOnInsert: true,
+          session,
+        },
+      );
+      break; // 성공 시 루프 종료
+    } catch (err) {
+      // MongoDB duplicate key error (11000)
+      if (err.code === 11000 && retryCount < maxRetries - 1) {
+        console.log(
+          `[SHIPPING_FEE] Duplicate package detected, retrying... (attempt ${retryCount + 1})`,
+        );
+        retryCount++;
+        // 잠시 대기 후 재시도
+        await new Promise((resolve) => setTimeout(resolve, 50 * retryCount));
+        // 기존 패키지 조회 시도
+        pkg = await ShippingPackage.findOne(
+          { businessAnchorId, shipDateYmd, mailboxAddress },
+          null,
+          { session },
+        );
+        if (pkg) {
+          // 기존 패키지에 현재 의뢰 추가
+          await ShippingPackage.updateOne(
+            { _id: pkg._id },
+            { $addToSet: { requestIds: request._id } },
+            { session },
+          );
+          // 업데이트된 패키지 다시 조회
+          pkg = await ShippingPackage.findById(pkg._id, null, { session });
+          break;
+        }
+      } else {
+        throw err;
+      }
+    }
+  }
 
   if (!pkg?._id) {
     throw new Error("발송 박스 생성에 실패했습니다.");
@@ -409,6 +454,12 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     .lean();
   if (existingSpend?._id) return;
 
+  // 무료/유료 크레딧 사용 분리 계산
+  const fromBonusShipping = hasFreeRequestInPkg
+    ? Math.min(bonusShippingCredit, fee)
+    : 0;
+  const fromPaid = fee - fromBonusShipping;
+
   const result = await CreditLedger.updateOne(
     { uniqueKey },
     {
@@ -421,6 +472,8 @@ export async function ensureShippingFeeSpendOnPackingApprove({
         refId: pkg._id,
         uniqueKey,
         hasFreeRequest: hasFreeRequestInPkg,
+        spentPaidAmount: fromPaid,
+        spentBonusAmount: fromBonusShipping,
       },
     },
     { upsert: true, session },
