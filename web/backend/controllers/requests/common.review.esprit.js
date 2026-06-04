@@ -33,7 +33,19 @@ export async function triggerEspritForNc({ request, force = false }) {
     throw err;
   }
 
-  const ncFileName = String(camFileName).replace(/\.stl$/i, ".nc");
+  const camBaseName = String(camFileName || "")
+    .trim()
+    .replace(/\\/g, "/")
+    .split("/")
+    .pop();
+  const camNcName = String(camBaseName || "")
+    .replace(/\.stl$/i, ".nc")
+    .trim();
+  // 샘플/복사 의뢰와 원본 의뢰가 동일 camFile 경로를 공유할 수 있으므로,
+  // NC 출력 경로는 항상 requestId 단위로 분리한다. (rules.md §18.8 분리 정책)
+  const ncFileName = request?.requestId
+    ? `3-nc/${String(request.requestId).trim()}/${camNcName || `${String(request.requestId).trim()}.nc`}`
+    : String(camFileName).replace(/\.stl$/i, ".nc");
   const controller = new AbortController();
   const timeoutMs = Number(process.env.BG_TRIGGER_TIMEOUT_MS || 2500);
   const timeoutRef = setTimeout(() => controller.abort(), timeoutMs);
@@ -85,6 +97,8 @@ export async function triggerEspritForNc({ request, force = false }) {
   try {
     const payload = {
       RequestId: String(request.requestId || ""),
+      // add-in 구현/버전에 따라 key casing 차이를 허용하기 위해 소문자 키도 함께 전달
+      requestId: String(request.requestId || ""),
       StlPath: camFileName,
       NcOutputPath: ncFileName,
       Force: Boolean(force),

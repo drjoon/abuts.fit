@@ -93,57 +93,45 @@ export function filterRequestsByStage(
   currentStageOrder: number,
   filterRequests?: (req: ManufacturerRequest) => boolean,
 ): ManufacturerRequest[] {
+  const passExternalFilter = (req: ManufacturerRequest) => {
+    if (!filterRequests) return true;
+    try {
+      return filterRequests(req);
+    } catch {
+      return false;
+    }
+  };
+
   if (showCompleted) {
-    if (tabStage === "shipping") {
+    if (tabStage === "tracking") {
       return requests.filter((req) => {
-        if (isPrePickupShippingVisible(req)) return true;
-        if (filterRequests) {
-          try {
-            if (filterRequests(req)) return true;
-          } catch {
-            return false;
-          }
-        }
-        return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
+        if (!passExternalFilter(req)) return false;
+        return deriveStageForFilter(req) === "추적관리";
       });
     }
+
     return requests.filter((req) => {
-      if (filterRequests) {
-        try {
-          if (filterRequests(req)) return true;
-        } catch {
-          return false;
-        }
-      }
+      if (!passExternalFilter(req)) return false;
+      if (tabStage === "shipping" && isPrePickupShippingVisible(req))
+        return true;
       return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
     });
   }
 
-  if (tabStage === "shipping") {
-    return requests.filter((req) => {
-      if (isPrePickupShippingVisible(req)) return true;
-      try {
-        return filterRequests ? filterRequests(req) : true;
-      } catch {
-        return false;
-      }
-    });
-  }
+  return requests.filter((req) => {
+    if (!passExternalFilter(req)) return false;
 
-  const base = filterRequests
-    ? requests.filter((req) => {
-        try {
-          return filterRequests(req);
-        } catch {
-          return false;
-        }
-      })
-    : requests;
-
-  if (filterRequests) return base;
-
-  return base.filter((req) => {
     const stage = deriveStageForFilter(req);
+    if (tabStage === "request") return stage === "의뢰";
+    if (tabStage === "cam") return stage === "CAM";
+    if (tabStage === "machining") return stage === "가공";
+    if (tabStage === "packing") return stage === "세척.패킹";
+    if (tabStage === "shipping") {
+      return stage === "포장.발송" || isPrePickupShippingVisible(req);
+    }
+    if (tabStage === "tracking") return stage === "추적관리";
+
+    // fallback
     const order = stageOrder[stage] ?? 0;
     return order <= currentStageOrder;
   });

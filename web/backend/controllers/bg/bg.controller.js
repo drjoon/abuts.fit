@@ -375,7 +375,36 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     );
   }
 
-  // requestId로 못 찾은 경우, 파일명(originalFileName 또는 fileName)으로 검색
+  // requestId로 못 찾은 경우, 3-nc 경로에서 requestId를 추정해 우선 검색
+  // 예: fileName="3-nc/20260604-WHDNDTGF/xxx.nc" 또는 "20260604-WHDNDTGF/xxx.nc"
+  if (!request && String(sourceStep || "").trim() === "3-nc") {
+    try {
+      const rawFile = String(fileName || "")
+        .trim()
+        .replace(/\\/g, "/")
+        .replace(/^\/+/, "")
+        .replace(/^3-nc\//i, "");
+      const [candidateRequestId] = rawFile.split("/");
+      if (candidateRequestId) {
+        const guessed = await Request.findOne({
+          requestId: String(candidateRequestId).trim(),
+        });
+        if (guessed) {
+          request = guessed;
+          console.log(
+            `[BG-Callback] Matched by nc output path requestId=${candidateRequestId}`,
+          );
+        }
+      }
+    } catch (e) {
+      console.warn(
+        "[BG-Callback] requestId guess from 3-nc path failed:",
+        e?.message || e,
+      );
+    }
+  }
+
+  // 여전히 못 찾은 경우, 파일명(originalFileName 또는 fileName)으로 검색
   if (!request) {
     const targetSearchName = originalFileName || fileName;
     const normalizedTarget = normalizeFilePath(targetSearchName);
@@ -388,12 +417,19 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
       const allRequests = await Request.find({
         manufacturerStage: { $ne: "취소" },
       })
-        .select({ requestId: 1, caseInfos: 1 })
+        .select({
+          requestId: 1,
+          source: 1,
+          updatedAt: 1,
+          productionSchedule: 1,
+          caseInfos: 1,
+        })
         .lean();
       console.log(
         `[BG-Callback] Found ${allRequests.length} active requests to search`,
       );
 
+      const matchedCandidates = [];
       for (const r of allRequests) {
         const ci = r?.caseInfos || {};
         const storedNames = [
@@ -412,14 +448,55 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           (item) => item.normalized === normalizedTarget,
         );
 
-        if (hit) {
-          console.log(`[BG-Callback] Matched request: ${r.requestId}`);
-          console.log(
-            `[BG-Callback] Match details - target: ${normalizedTarget}, stored: ${normalizedNames.map((n) => n.normalized).join(", ")}`,
-          );
-          request = await Request.findById(r._id); // 갱신을 위해 도큐먼트 객체로 다시 가져옴
-          break;
+        if (!hit) continue;
+
+        // 동일 camFile 경로를 여러 의뢰(원본/샘플)가 공유할 수 있으므로
+        // 현재 CAM 처리 중인 의뢰를 우선 매칭한다.
+        // 우선순위:
+        //  1) request 승인(APPROVED) + actualCamStart 존재 + actualCamComplete 없음
+        //  2) NC 미생성(ncFile 없음)
+        //  3) R&D 샘플(source=manufacturer_sample)
+        //  4) 최근 updatedAt
+        const requestReviewStatus = String(
+          ci?.reviewByStage?.request?.status || "",
+        ).trim();
+        const actualCamStart = r?.productionSchedule?.actualCamStart;
+        const actualCamComplete = r?.productionSchedule?.actualCamComplete;
+        const hasNcFile = Boolean(ci?.ncFile?.s3Key || ci?.ncFile?.filePath);
+
+        let score = 0;
+        if (
+          requestReviewStatus === "APPROVED" &&
+          actualCamStart &&
+          !actualCamComplete
+        ) {
+          score += 10;
         }
+        if (!hasNcFile) score += 5;
+        if (String(r?.source || "") === "manufacturer_sample") score += 2;
+
+        matchedCandidates.push({
+          _id: r?._id,
+          requestId: r?.requestId,
+          score,
+          updatedAt: r?.updatedAt ? new Date(r.updatedAt).getTime() : 0,
+          normalizedNames,
+        });
+      }
+
+      if (matchedCandidates.length) {
+        matchedCandidates.sort((a, b) => {
+          if (a.score !== b.score) return b.score - a.score;
+          return b.updatedAt - a.updatedAt;
+        });
+        const chosen = matchedCandidates[0];
+        console.log(`[BG-Callback] Matched request: ${chosen.requestId}`);
+        console.log(
+          `[BG-Callback] Match details - target: ${normalizedTarget}, chosenScore=${chosen.score}, stored: ${chosen.normalizedNames
+            .map((n) => n.normalized)
+            .join(", ")}`,
+        );
+        request = await Request.findById(chosen._id); // 갱신을 위해 도큐먼트 객체로 다시 가져옴
       }
 
       if (!request) {

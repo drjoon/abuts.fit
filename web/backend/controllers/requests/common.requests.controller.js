@@ -588,6 +588,7 @@ export async function getAllRequests(req, res) {
       "shippingPackageId",
       "businessAnchorId",
       "referenceIds",
+      "source",
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
@@ -606,6 +607,7 @@ export async function getAllRequests(req, res) {
       "shippingLabelPrinted",
       "businessAnchorId",
       "referenceIds",
+      "source",
       "description",
       "caseInfos.clinicName",
       "caseInfos.patientName",
@@ -1428,10 +1430,13 @@ export async function cloneAsSample(req, res) {
             shipping: 0,
             tracking: 0,
           },
-          // 파일 정보는 원본에서 복사 (STL 등)
+          // 파일 정보는 원본에서 복사 (STL/fill 결과는 재사용)
+          // 단, NC는 복사하지 않는다.
+          // - 샘플은 의뢰 단계에서 시작하므로 REQUEST_STAGE_APPROVED 시 Esprit 트리거가 필요
+          // - ncFile을 복사하면 ReviewApprovalQueue가 "이미 NC 존재"로 판단해 Esprit를 스킵함
           file: request.caseInfos?.file || null,
           camFile: request.caseInfos?.camFile || null,
-          ncFile: request.caseInfos?.ncFile || null,
+          ncFile: null,
           finishLine: request.caseInfos?.finishLine || null,
         },
         // 의뢰자 정보는 원본과 동일하게 (통계/추적용)

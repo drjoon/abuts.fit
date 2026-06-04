@@ -222,8 +222,12 @@ export const WorksheetCardGrid = ({
           requestStageOrder > currentStageOrder;
 
         const stageForRollback = deriveStageForFilter(request);
+        const isSampleRequest =
+          (request as any).source === "manufacturer_sample";
         const shouldShowFullLot =
-          !!lotCodeSource && stageOrder[stageForRollback] >= stageOrder["CAM"];
+          !isSampleRequest &&
+          !!lotCodeSource &&
+          stageOrder[stageForRollback] >= stageOrder["CAM"];
         const rollbackCountFromRequest = Number(
           caseInfos.rollbackCounts?.request || 0,
         );
@@ -446,9 +450,6 @@ export const WorksheetCardGrid = ({
           onOpenPreview(request);
         };
 
-        const isSampleRequest =
-          (request as any).source === "manufacturer_sample";
-
         return (
           <Card
             key={request._id}
@@ -487,7 +488,7 @@ export const WorksheetCardGrid = ({
             </div>
             {/* 실시간 상태 뱃지 (CAM 생성중 등) - 상단 배치 */}
             {(realtimeBadge || realtimeElapsedLabel) && (
-              <div className="absolute right-20 top-2 z-20 flex items-center gap-2">
+              <div className="absolute right-20 top-3 z-20 flex items-center gap-2">
                 {realtimeBadge && (
                   <Badge
                     variant="outline"
