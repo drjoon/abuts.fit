@@ -100,6 +100,10 @@ import {
 import { adminOverrideOrganizationVerification } from "../../controllers/admin/admin.organization.controller.js";
 import { adminGetCommBadges } from "../../controllers/admin/adminCommBadges.controller.js";
 import {
+  deleteBusinessAnchor,
+  getBusinessAnchorLinkedUsers,
+} from "../../controllers/admin/adminBusiness.controller.js";
+import {
   adminSendSms,
   adminListSms,
   adminSendKakaoOrSms,
@@ -181,6 +185,18 @@ router.get(
 router.patch(
   "/business-registration-inquiries/:id",
   adminResolveBusinessRegistrationInquiry,
+);
+
+// 사업자 관리
+router.get(
+  "/businesses/:id/linked-users",
+  authorize(["admin"], { subRoles: ["owner"] }),
+  getBusinessAnchorLinkedUsers,
+);
+router.delete(
+  "/businesses/:id",
+  authorize(["admin"], { subRoles: ["owner"] }),
+  deleteBusinessAnchor,
 );
 
 // 크레딧 관리

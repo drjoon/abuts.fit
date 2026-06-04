@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Building2,
   Search,
@@ -7,7 +7,19 @@ import {
   Wallet,
   Users,
   AlertCircle,
+  Trash2,
+  Loader2,
+  X,
 } from "lucide-react";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Card,
   CardContent,
@@ -20,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useToast } from "@/shared/hooks/use-toast";
 import type { BusinessCredit } from "@/pages/admin/credits/adminCredit.types";
 
 type ApiBusinessCreditsResponse = {
@@ -27,6 +40,37 @@ type ApiBusinessCreditsResponse = {
   data?: {
     items?: BusinessCredit[];
     total?: number;
+  };
+  message?: string;
+  error?: string;
+};
+
+type LinkedUser = {
+  _id: string;
+  name: string;
+  email: string;
+  role: string;
+  subRole?: string;
+  isOwner?: boolean;
+  isStaff?: boolean;
+};
+
+type LinkedUsersResponse = {
+  success: boolean;
+  data?: {
+    businessAnchor: {
+      _id: string;
+      name: string;
+      companyName: string;
+      businessNumber: string;
+      businessType: string;
+    };
+    users: LinkedUser[];
+    stats: {
+      userCount: number;
+      requestCount: number;
+      childAnchorCount: number;
+    };
   };
   message?: string;
   error?: string;
@@ -72,8 +116,129 @@ const getBusinessTypeBadgeClass = (type?: string) => {
 
 export default function AdminBusinessPage() {
   const { token } = useAuthStore();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+
+  // 연결된 사용자 목록 다이얼로그 상태
+  const [linkedUsersDialog, setLinkedUsersDialog] = useState<{
+    open: boolean;
+    business: BusinessCredit | null;
+    users: LinkedUser[];
+    stats: {
+      userCount: number;
+      requestCount: number;
+      childAnchorCount: number;
+    } | null;
+    loading: boolean;
+    error: string | null;
+  }>({
+    open: false,
+    business: null,
+    users: [],
+    stats: null,
+    loading: false,
+    error: null,
+  });
+
+  // 삭제 확인 다이얼로그 상태
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    business: BusinessCredit | null;
+    userCount: number;
+  }>({ open: false, business: null, userCount: 0 });
+
+  // 연결된 사용자 목록 조회
+  const fetchLinkedUsers = async (businessAnchorId: string) => {
+    const res = await apiFetch<LinkedUsersResponse>({
+      path: `/api/admin/businesses/${businessAnchorId}/linked-users`,
+      method: "GET",
+      token,
+    });
+    if (!res.ok || !res.data?.success) {
+      throw new Error(
+        res.data?.message ||
+          res.data?.error ||
+          "연결된 사용자 조회에 실패했습니다.",
+      );
+    }
+    return res.data.data;
+  };
+
+  // 삭제 버튼 클릭 핸들러
+  const handleDeleteClick = async (business: BusinessCredit) => {
+    if (!business.businessAnchorId) return;
+
+    setLinkedUsersDialog({
+      open: true,
+      business,
+      users: [],
+      stats: null,
+      loading: true,
+      error: null,
+    });
+
+    try {
+      const data = await fetchLinkedUsers(business.businessAnchorId);
+      setLinkedUsersDialog({
+        open: true,
+        business,
+        users: data?.users || [],
+        stats: data?.stats || null,
+        loading: false,
+        error: null,
+      });
+    } catch (error: any) {
+      setLinkedUsersDialog({
+        open: true,
+        business,
+        users: [],
+        stats: null,
+        loading: false,
+        error: error.message,
+      });
+    }
+  };
+
+  // 삭제 mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (businessAnchorId: string) => {
+      const res = await apiFetch<{
+        success: boolean;
+        message?: string;
+        error?: string;
+      }>({
+        path: `/api/admin/businesses/${businessAnchorId}`,
+        method: "DELETE",
+        token,
+      });
+      if (!res.ok || !res.data?.success) {
+        throw new Error(
+          res.data?.message || res.data?.error || "삭제에 실패했습니다.",
+        );
+      }
+      return res.data;
+    },
+    onSuccess: () => {
+      toast({
+        title: "사업자 삭제 완료",
+        description: "사업자와 연결된 사용자가 성공적으로 삭제되었습니다.",
+        variant: "default",
+      });
+      setConfirmDialog({ open: false, business: null, userCount: 0 });
+      queryClient.invalidateQueries({
+        queryKey: ["admin-business-page", token],
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "사업자 삭제 실패",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-business-page", token],
@@ -287,13 +452,27 @@ export default function AdminBusinessPage() {
                             {business.name}
                           </CardDescription>
                         </div>
-                        <Badge
-                          className={getBusinessTypeBadgeClass(
-                            business.businessType,
-                          )}
-                        >
-                          {getBusinessTypeLabel(business.businessType)}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            className={getBusinessTypeBadgeClass(
+                              business.businessType,
+                            )}
+                          >
+                            {getBusinessTypeLabel(business.businessType)}
+                          </Badge>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={() => handleDeleteClick(business)}
+                            disabled={
+                              deleteMutation.isPending ||
+                              !business.businessAnchorId
+                            }
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
 
                       <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
@@ -353,6 +532,223 @@ export default function AdminBusinessPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* 연결된 사용자 목록 다이얼로그 */}
+      <Dialog
+        open={linkedUsersDialog.open}
+        onOpenChange={(open) =>
+          setLinkedUsersDialog((prev) => ({ ...prev, open }))
+        }
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>사업자 삭제 확인</DialogTitle>
+            <DialogDescription>
+              {linkedUsersDialog.business && (
+                <>
+                  <span className="font-medium">
+                    {linkedUsersDialog.business.companyName ||
+                      linkedUsersDialog.business.name}
+                  </span>{" "}
+                  사업자와 연결된 사용자 목록입니다.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          {linkedUsersDialog.loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-sm text-muted-foreground">
+                연결된 사용자 조회 중...
+              </span>
+            </div>
+          ) : linkedUsersDialog.error ? (
+            <div className="rounded-lg bg-red-50 p-4 text-sm text-red-600">
+              {linkedUsersDialog.error}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* 통계 */}
+              {linkedUsersDialog.stats && (
+                <div className="grid grid-cols-3 gap-2 rounded-lg bg-muted p-3 text-center text-sm">
+                  <div>
+                    <div className="text-xs text-muted-foreground">
+                      연결 사용자
+                    </div>
+                    <div className="font-semibold">
+                      {linkedUsersDialog.stats.userCount}명
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">
+                      관련 의뢰
+                    </div>
+                    <div className="font-semibold">
+                      {linkedUsersDialog.stats.requestCount}건
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">
+                      하위 사업자
+                    </div>
+                    <div className="font-semibold">
+                      {linkedUsersDialog.stats.childAnchorCount}개
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 사용자 목록 */}
+              {linkedUsersDialog.users.length > 0 ? (
+                <div className="max-h-60 overflow-y-auto rounded-lg border">
+                  <table className="w-full text-sm table-fixed">
+                    <colgroup>
+                      <col className="w-[80px]" />
+                      <col />
+                      <col className="w-[70px]" />
+                    </colgroup>
+                    <thead className="bg-muted sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium">
+                          이름
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium">
+                          이메일
+                        </th>
+                        <th className="px-3 py-2 text-center font-medium">
+                          구분
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {linkedUsersDialog.users.map((user) => (
+                        <tr key={user._id} className="border-t">
+                          <td className="px-3 py-2 truncate">
+                            {user.name || "-"}
+                          </td>
+                          <td
+                            className="px-3 py-2 text-muted-foreground truncate"
+                            title={user.email}
+                          >
+                            {user.email}
+                          </td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap">
+                            {user.isOwner ? (
+                              <Badge
+                                variant="default"
+                                className="text-xs whitespace-nowrap"
+                              >
+                                대표
+                              </Badge>
+                            ) : user.isStaff ? (
+                              <Badge
+                                variant="secondary"
+                                className="text-xs whitespace-nowrap"
+                              >
+                                직원
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="text-xs whitespace-nowrap"
+                              >
+                                일반
+                              </Badge>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="rounded-lg bg-muted p-4 text-center text-sm text-muted-foreground">
+                  연결된 사용자가 없습니다.
+                </div>
+              )}
+
+              {/* 경고 메시지 */}
+              {linkedUsersDialog.stats &&
+                linkedUsersDialog.stats.childAnchorCount > 0 && (
+                  <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
+                    하위 소개 사업자가{" "}
+                    {linkedUsersDialog.stats.childAnchorCount}개 존재하여 삭제할
+                    수 없습니다. 하위 사업자를 먼저 삭제해주세요.
+                  </div>
+                )}
+
+              {/* 삭제 안내 */}
+              {linkedUsersDialog.stats &&
+                linkedUsersDialog.stats.childAnchorCount === 0 && (
+                  <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                    삭제 시 사업자와 연결된 {linkedUsersDialog.stats.userCount}
+                    명의 사용자가 모두 함께 삭제됩니다. 관련 의뢰{" "}
+                    {linkedUsersDialog.stats.requestCount}건은 보존되며 사업자
+                    정보만 분리됩니다.
+                  </div>
+                )}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() =>
+                setLinkedUsersDialog({
+                  open: false,
+                  business: null,
+                  users: [],
+                  stats: null,
+                  loading: false,
+                  error: null,
+                })
+              }
+              disabled={deleteMutation.isPending}
+            >
+              취소
+            </Button>
+            {linkedUsersDialog.stats &&
+              linkedUsersDialog.stats.childAnchorCount === 0 && (
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    setLinkedUsersDialog((prev) => ({ ...prev, open: false }));
+                    setConfirmDialog({
+                      open: true,
+                      business: linkedUsersDialog.business,
+                      userCount: linkedUsersDialog.stats?.userCount || 0,
+                    });
+                  }}
+                  disabled={deleteMutation.isPending}
+                >
+                  계속 진행
+                </Button>
+              )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 최종 삭제 확인 다이얼로그 */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title="사업자 및 사용자 삭제"
+        description={
+          confirmDialog.business
+            ? `"${confirmDialog.business.companyName || confirmDialog.business.name}" 사업자와 연결된 ${confirmDialog.userCount}명의 사용자를 함께 삭제합니다. 이 작업은 되돌릴 수 없습니다.`
+            : "사업자와 연결된 사용자를 함께 삭제합니다."
+        }
+        confirmLabel={deleteMutation.isPending ? "삭제 중..." : "삭제 실행"}
+        cancelLabel="취소"
+        onConfirm={() => {
+          if (confirmDialog.business?.businessAnchorId) {
+            deleteMutation.mutate(confirmDialog.business.businessAnchorId);
+          }
+        }}
+        onCancel={() =>
+          setConfirmDialog({ open: false, business: null, userCount: 0 })
+        }
+      />
     </div>
   );
 }
