@@ -17,7 +17,8 @@ type Props = {
 export const PeriodFilter = ({
   value,
   onChange,
-  label = "기간",
+  // label = "기간",
+  label = "",
   className,
 }: Props) => {
   const labelMap: Record<PeriodFilterValue, string> = {
@@ -36,6 +37,8 @@ export const PeriodFilter = ({
     "90d",
   ];
 
+  const hasLabel = typeof label === "string" && label.trim().length > 0;
+
   return (
     <div
       className={cn(
@@ -43,7 +46,7 @@ export const PeriodFilter = ({
         className,
       )}
     >
-      <span className="px-2 text-muted-foreground">{label}</span>
+      {hasLabel && <span className="px-2 text-muted-foreground">{label}</span>}
       {visiblePeriods.map((k) => (
         <button
           key={k}
