@@ -848,6 +848,7 @@ export async function getMyRequests(req, res) {
       sortBy: req.query.sortBy || "",
       sortOrder: req.query.sortOrder || "",
     })}`;
+
     const cached = getMyRequestsCacheValue(cacheKey);
     if (cached) {
       return res.status(200).json({

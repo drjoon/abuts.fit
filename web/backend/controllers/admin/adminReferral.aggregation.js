@@ -108,6 +108,8 @@ export async function buildReferralLeaderAggregation({
           $match: {
             businessAnchorId: { $in: relevantBusinessAnchorObjectIds },
             manufacturerStage: "추적관리",
+            // R&D 샘플은 통계에서 제외
+            source: { $ne: "manufacturer_sample" },
             ...(hasPeriod
               ? { createdAt: { $gte: periodStart, $lte: periodEnd } }
               : {}),
@@ -172,6 +174,8 @@ export async function buildReferralLeaderAggregation({
               ),
             },
             manufacturerStage: "추적관리",
+            // R&D 샘플은 통계에서 제외
+            source: { $ne: "manufacturer_sample" },
             ...(hasPeriod
               ? { createdAt: { $gte: periodStart, $lte: periodEnd } }
               : {}),

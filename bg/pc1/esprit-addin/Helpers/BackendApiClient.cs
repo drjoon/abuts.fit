@@ -83,27 +83,27 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                     AppLogger.Log($"BackendApiClient: register-file skip (invalid ncPath) ncPath={ncPath}");
                     return;
                 }
-                
+
                 var fi = new FileInfo(ncPath);
                 var upload = UploadNcViaPresign(fi, requestId);
                 if (!upload.ok)
                 {
                     AppLogger.Log($"BackendApiClient: presign upload failed: {upload.error} (fallback register only)");
                 }
-                
+
                 string baseUrl = (AppConfig.GetBackendUrl() ?? "").TrimEnd('/');
                 string url = $"{baseUrl}/bg/register-file";
                 string originalName = string.IsNullOrWhiteSpace(stlPath) ? "" : Path.GetFileName(stlPath);
-                
+
                 if (string.IsNullOrWhiteSpace(requestId) && !string.IsNullOrWhiteSpace(stlPath))
                 {
                     requestId = ExtractRequestIdFromStlPath(stlPath);
                     AppLogger.Log($"BackendApiClient: requestId extracted from stlPath: {requestId}");
                 }
-                
+
                 // [정책] OS temp 기반 임시 파일 사용 — 로지컈 경로 대신 파일명만 백엔드에 전달
                 string ncRelativePath = fi.Name;
-                
+
                 string json;
                 if (upload.ok)
                 {
@@ -113,9 +113,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 {
                     json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(ncRelativePath)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\",\"status\":\"success\",\"metadata\":{{\"fileSize\":{fi.Length},\"upload\":\"fallback_no_s3\"}}}}";
                 }
-                
+
                 AppLogger.Log($"BackendApiClient: register-file POST {url} with requestId={requestId}, fileName={ncRelativePath}");
-                
+
                 using (var req = new HttpRequestMessage(HttpMethod.Post, url))
                 {
                     req.Content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -131,6 +131,39 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                         // [정책] S3 업로드 + 등록 완료 후 OS temp 임시 파일 즉시 삭제
                         TryDeleteTempFile(ncPath, "NC");
                         TryDeleteTempFile(stlPath, "STL");
+
+                        // Notify runtime-status so frontend realtime listeners can update badges/progress
+                        try
+                        {
+                            string runtimeUrl = $"{baseUrl}/bg/runtime-status";
+                            var payload = new
+                            {
+                                requestId = string.IsNullOrWhiteSpace(requestId) ? null : requestId,
+                                source = "esprit-addin",
+                                stage = "cam",
+                                status = "completed",
+                                label = "NC 생성 완료",
+                                tone = "green",
+                                clear = true,
+                                metadata = new { fileName = ncRelativePath, s3Key = upload.ok ? upload.s3Key : null }
+                            };
+                            using (var notifyReq = new HttpRequestMessage(HttpMethod.Post, runtimeUrl))
+                            {
+                                var jsonNotify = System.Text.Json.JsonSerializer.Serialize(payload);
+                                notifyReq.Content = new StringContent(jsonNotify, Encoding.UTF8, "application/json");
+                                string bridgeSecret2 = AppConfig.GetBridgeSecret();
+                                if (!string.IsNullOrWhiteSpace(bridgeSecret2))
+                                {
+                                    notifyReq.Headers.Add("X-Bridge-Secret", bridgeSecret2);
+                                }
+                                var notifyResp = BackendHttp.SendAsync(notifyReq).GetAwaiter().GetResult();
+                                AppLogger.Log($"BackendApiClient: runtime-status notify completed status={notifyResp.StatusCode} requestId={requestId}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            AppLogger.Log($"BackendApiClient: runtime-status notify failed - {ex.GetType().Name}:{ex.Message}");
+                        }
                     }
                     else
                     {

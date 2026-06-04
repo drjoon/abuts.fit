@@ -754,6 +754,8 @@ export async function getReferralGroupTree(req, res) {
                 $match: {
                   businessAnchorId: { $in: memberBusinessAnchorIds },
                   manufacturerStage: "추적관리",
+                  // R&D 샘플은 통계에서 제외
+                  source: { $ne: "manufacturer_sample" },
                   createdAt: { $gte: start, $lte: end },
                 },
               },

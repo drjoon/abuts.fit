@@ -479,6 +479,8 @@ export async function getMyReferralDirectMembers(req, res) {
                     $in: orgAnchorIds.map((id) => new Types.ObjectId(id)),
                   },
                   manufacturerStage: "추적관리",
+                  // R&D 샘플은 통계에서 제외
+                  source: { $ne: "manufacturer_sample" },
                   createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
                 },
               },
@@ -1040,6 +1042,8 @@ export async function getDashboardRiskSummary(req, res) {
     const baseFilter = {
       manufacturerStage: { $ne: "취소" },
       "caseInfos.implantBrand": { $exists: true, $ne: "" },
+      // R&D 샘플은 리스크 요약에서 제외
+      source: { $ne: "manufacturer_sample" },
     };
 
     const role = String(req.user?.role || "");

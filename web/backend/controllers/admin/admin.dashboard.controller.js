@@ -36,6 +36,7 @@ export async function getDashboardStats(req, res) {
         User.countDocuments({ role: "requestor", active: true }),
         Request.find({
           createdAt: { $gte: start, $lte: end },
+          source: { $ne: "manufacturer_sample" },
         })
           .select({
             manufacturerStage: 1,
@@ -99,7 +100,7 @@ export async function getDashboardStats(req, res) {
 
     // 최근 요청 및 파일 통계를 병렬로 조회
     const [recentRequests, totalFiles, totalFileSize] = await Promise.all([
-      Request.find()
+      Request.find({ source: { $ne: "manufacturer_sample" } })
         .sort({ createdAt: -1 })
         .limit(5)
         .populate("requestor", "name email")

@@ -244,6 +244,8 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
           $match: {
             businessAnchorId: { $in: allOrgIds },
             manufacturerStage: "추적관리",
+            // R&D 샘플은 통계에서 제외
+            source: { $ne: "manufacturer_sample" },
             ...(hasRange
               ? { createdAt: { $gte: range.start, $lte: range.end } }
               : {}),

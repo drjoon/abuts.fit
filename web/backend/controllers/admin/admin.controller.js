@@ -29,6 +29,8 @@ export async function getPricingStats(req, res) {
     const match = {
       createdAt: { $gte: start, $lte: end },
       manufacturerStage: "추적관리",
+      // R&D 샘플 의뢰는 통계에서 제외
+      source: { $ne: "manufacturer_sample" },
     };
 
     const rows = await Request.aggregate([
@@ -198,6 +200,8 @@ export async function getPricingStatsByUser(req, res) {
     const match = {
       createdAt: { $gte: start, $lte: end },
       status: { $ne: "취소" },
+      // R&D 샘플 의뢰는 통계에서 제외
+      source: { $ne: "manufacturer_sample" },
     };
     const limit = Math.min(parseInt(req.query.limit) || 200, 1000);
 
