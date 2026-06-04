@@ -23,6 +23,7 @@ type RequestorCreditTabProps = {
     value: "paidBalance" | "bonusBalance" | "spentPaid" | "name",
   ) => void;
   loadingOrgs: boolean;
+  allRequestorBusinesses: BusinessCredit[];
   businesses: BusinessCredit[];
   orgScrollRef: RefObject<HTMLDivElement | null>;
   orgSentinelRef: RefObject<HTMLDivElement | null>;
@@ -130,9 +131,11 @@ type RequestorCreditTabProps = {
 };
 
 export function RequestorCreditTab(props: RequestorCreditTabProps) {
-  const requestorBusinesses = props.businesses.filter(
-    (business) => business.businessType === "requestor",
-  );
+  const requestorBusinesses = (
+    props.allRequestorBusinesses.length > 0
+      ? props.allRequestorBusinesses
+      : props.businesses
+  ).filter((business) => business.businessType === "requestor");
 
   return (
     <>
@@ -265,7 +268,7 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
         />
 
         <RequestorFreeCreditTab
-          businesses={props.businesses}
+          businesses={requestorBusinesses}
           selectedBonusBusinessAnchorId={props.selectedBonusBusinessAnchorId}
           setSelectedBonusBusinessAnchorId={
             props.setSelectedBonusBusinessAnchorId

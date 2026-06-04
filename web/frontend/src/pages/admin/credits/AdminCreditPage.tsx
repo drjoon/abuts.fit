@@ -39,6 +39,7 @@ export default function AdminCreditPage() {
             orgSortKey={state.orgSortKey}
             setOrgSortKey={state.setOrgSortKey}
             loadingOrgs={state.loadingOrgs}
+            allRequestorBusinesses={state.allRequestorBusinesses}
             businesses={state.businesses}
             orgScrollRef={state.orgScrollRef}
             orgSentinelRef={state.orgSentinelRef}

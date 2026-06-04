@@ -85,6 +85,9 @@ export function useAdminCreditPage() {
   const [txSkip, setTxSkip] = useState(0);
   const [txHasMore, setTxHasMore] = useState(true);
   const [txTab, setTxTab] = useState<"auto" | "manual">("auto");
+  const [allRequestorBusinesses, setAllRequestorBusinesses] = useState<
+    BusinessCredit[]
+  >([]);
   const [selectedBonusBusinessAnchorId, setSelectedBonusBusinessAnchorId] =
     useState("");
   const [selectedBonusAmount, setSelectedBonusAmount] =
@@ -142,8 +145,39 @@ export function useAdminCreditPage() {
 
   const ORG_PAGE_SIZE = 9;
   const SALESMAN_PAGE_SIZE = 9;
+  const ALL_REQUESTOR_LIMIT = 200;
   const ORDER_PAGE_SIZE = 50;
   const TX_PAGE_SIZE = 50;
+
+  const loadAllRequestorBusinesses = async () => {
+    if (!token) return;
+    try {
+      const qs = new URLSearchParams({
+        limit: String(ALL_REQUESTOR_LIMIT),
+        skip: "0",
+      });
+      const res = await request<{
+        success: boolean;
+        data: { items: BusinessCredit[] };
+      }>({
+        path: `/api/admin/credits/businesses?${qs.toString()}`,
+        method: "GET",
+        token,
+      });
+      if (res.ok && res.data?.data?.items) {
+        const items = Array.isArray(res.data.data.items)
+          ? res.data.data.items
+          : [];
+        setAllRequestorBusinesses(
+          items.filter(
+            (b) => String(b.businessType || "").trim() === "requestor",
+          ),
+        );
+      }
+    } catch {
+      // 드롭다운 전용 로드 실패는 무시
+    }
+  };
 
   const loadStats = async () => {
     if (!token) return;
@@ -788,6 +822,7 @@ export function useAdminCreditPage() {
     setTxSkip(0);
     setTxHasMore(true);
     loadOrganizations({ reset: true });
+    loadAllRequestorBusinesses();
     loadChargeOrders(orderStatusFilter, { reset: true });
     loadBankTransactions(txStatusFilter, { reset: true });
     loadSalesmen({ reset: true });
@@ -922,21 +957,29 @@ export function useAdminCreditPage() {
     };
   }, [salesmanOverview, salesmen]);
 
-  const selectedBonusBusiness = useMemo(
-    () =>
-      businesses.find(
+  const selectedBonusBusiness = useMemo(() => {
+    const pool =
+      allRequestorBusinesses.length > 0 ? allRequestorBusinesses : businesses;
+    return (
+      pool.find(
         (business) => String(business._id) === selectedBonusBusinessAnchorId,
-      ) || null,
-    [businesses, selectedBonusBusinessAnchorId],
-  );
-  const selectedShippingCreditBusiness = useMemo(
-    () =>
-      businesses.find(
+      ) || null
+    );
+  }, [allRequestorBusinesses, businesses, selectedBonusBusinessAnchorId]);
+  const selectedShippingCreditBusiness = useMemo(() => {
+    const pool =
+      allRequestorBusinesses.length > 0 ? allRequestorBusinesses : businesses;
+    return (
+      pool.find(
         (business) =>
           String(business._id) === selectedShippingCreditBusinessAnchorId,
-      ) || null,
-    [businesses, selectedShippingCreditBusinessAnchorId],
-  );
+      ) || null
+    );
+  }, [
+    allRequestorBusinesses,
+    businesses,
+    selectedShippingCreditBusinessAnchorId,
+  ]);
 
   const filteredBonusGrantRows = useMemo(() => {
     const selectedBusinessNumberDigits = normalizeDigits(
@@ -982,10 +1025,12 @@ export function useAdminCreditPage() {
       return Number(business.spentBonusAmount || 0);
     };
 
+    const pool =
+      allRequestorBusinesses.length > 0 ? allRequestorBusinesses : businesses;
     const search = String(bonusGrantSearch || "")
       .trim()
       .toLowerCase();
-    return businesses
+    return pool
       .filter((business) => {
         if (
           selectedBonusBusinessAnchorId &&
@@ -1005,7 +1050,12 @@ export function useAdminCreditPage() {
       })
       .filter((business) => getSpentBonusTotal(business) > 0)
       .sort((a, b) => getSpentBonusTotal(b) - getSpentBonusTotal(a));
-  }, [businesses, selectedBonusBusinessAnchorId, bonusGrantSearch]);
+  }, [
+    allRequestorBusinesses,
+    businesses,
+    selectedBonusBusinessAnchorId,
+    bonusGrantSearch,
+  ]);
 
   return {
     token,
@@ -1013,6 +1063,7 @@ export function useAdminCreditPage() {
     setPeriod,
     stats,
     loadingStats,
+    allRequestorBusinesses,
     businesses,
     loadingOrgs,
     orgSkip,
@@ -1123,6 +1174,7 @@ export function useAdminCreditPage() {
     loadSalesmanOverview,
     loadSalesmen,
     loadOrganizations,
+    loadAllRequestorBusinesses,
     loadChargeOrders,
     loadBankTransactions,
     handleManualMatch,
