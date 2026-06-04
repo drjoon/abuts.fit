@@ -724,14 +724,18 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
         # 기존 문서 정리 (ActiveDoc를 사용할 수 있으므로 안전하게 비우기)
         _clear_doc_objects(doc)
+        # 정렬을 포함하여 import (skip_align=False): finishline 감지 전에 원점 정렬 필수
+        # 원본 STL이 원점에서 크게 벗어난 경우(예: zmin=-22mm) 정렬 없이 finishline을 감지하면
+        # _EDGE_MIN_Z_VALID_THRESHOLD_MM(0.5) 체크 및 단면 평면이 모두 원점 기준이라 실패함
         mesh_obj_refs, alignment_transform = _import_stl_meshes(
             doc,
             input_path,
-            skip_align=True,
+            skip_align=False,
             target_diameter=target_diameter,
         )
+        _apply_alignment_transform_to_doc_curves(doc, alignment_transform)
 
-        # Finish line 계산 (원본 STL import 직후 단계)
+        # Finish line 계산 (정렬 완료 후 단계 — 좌표계가 원점 기준으로 보정된 상태)
         fl = None
         pts = []
         pt0 = None
@@ -744,21 +748,11 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         except Exception as e:
             log("Finishline failed: " + str(e))
 
-        # 원본 상태 피니시라인 추출 이후 정렬 수행
-        alignment_transform = _run_alignment_on_first_mesh(
-            doc,
-            target_diameter=target_diameter,
-        )
-        _apply_alignment_transform_to_doc_curves(doc, alignment_transform)
-
-        # 백엔드 등록은 정렬 좌표계 기준으로 수행
+        # 백엔드 등록: 이미 정렬된 좌표계 기준이므로 별도 transform 불필요
         if fl is not None:
             try:
                 import base64
                 import json
-
-                aligned_pts = _transform_finishline_points(pts, alignment_transform)
-                aligned_pt0 = _transform_finishline_point(pt0, alignment_transform)
 
                 finish_line_payload = {
                     "version": 1,
@@ -766,17 +760,16 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                     "maxStepDistance": float(
                         os.environ.get("ABUTS_FINISHLINE_MAX_STEP", "1") or 1
                     ),
-                    "points": [[float(p.X), float(p.Y), float(p.Z)] for p in aligned_pts],
-                    "pt0": [float(aligned_pt0.X), float(aligned_pt0.Y), float(aligned_pt0.Z)] if aligned_pt0 else None,
+                    "points": [[float(p.X), float(p.Y), float(p.Z)] for p in pts],
+                    "pt0": [float(pt0.X), float(pt0.Y), float(pt0.Z)] if pt0 else None,
                 }
 
                 log(
-                    "finishline detected points={} planeCount={} hasPt0={} strategy={} aligned={}".format(
+                    "finishline detected points={} planeCount={} hasPt0={} strategy={}".format(
                         len(finish_line_payload.get("points") or []),
                         finish_line_payload.get("sectionCount"),
                         bool(finish_line_payload.get("pt0")),
                         strategy_used,
-                        bool(alignment_transform),
                     )
                 )
 
