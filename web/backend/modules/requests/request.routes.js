@@ -537,4 +537,14 @@ router.post(
 // 의뢰 삭제 (권한 검증은 컨트롤러에서 처리)
 router.delete("/:id", authenticate, requestController.deleteRequest);
 
+// 내부 샘플 복사 (추적관리 완료 건을 제조사 테스트용으로 복사)
+// - 기존 의뢰건은 완료 상태 유지
+// - 복사본은 크레딧/수수료 미처리, 세척.패킹까지만 진행 가능
+router.post(
+  "/:id/clone-as-sample",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.cloneAsSample,
+);
+
 export default router;

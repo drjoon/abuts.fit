@@ -39,6 +39,7 @@ import {
   triggerDashboardSummaryRefreshForAnchorId,
   triggerPricingSnapshotForBusinessAnchorId,
 } from "../../services/requestSnapshotTriggers.service.js";
+import { emitAppEventToRoles } from "../../socket.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -548,6 +549,7 @@ export async function getAllRequests(req, res) {
       "shippingWorkflow",
       "businessAnchorId",
       "referenceIds",
+      "source",
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
@@ -1258,9 +1260,14 @@ export async function deleteRequest(req, res) {
       });
     }
 
-    // 권한 검증: 관리자이거나 같은 기공소(조직) 의뢰자만 삭제 가능
+    // 권한 검증: 관리자이거나 같은 기공소(조직) 의뢰자, 또는 샘플 생성 제조사만 삭제 가능
     const isRequestor = await canAccessRequestAsRequestor(req, request);
-    if (req.user.role !== "admin" && !isRequestor) {
+    const isSampleRequest = request.source === "manufacturer_sample";
+    const isSampleCreator =
+      isSampleRequest &&
+      String(request.caManufacturer || "") === String(req.user._id || "");
+
+    if (req.user.role !== "admin" && !isRequestor && !isSampleCreator) {
       return res.status(403).json({
         success: false,
         message: "이 의뢰를 삭제할 권한이 없습니다.",
@@ -1268,8 +1275,34 @@ export async function deleteRequest(req, res) {
     }
 
     // 단계 검증: 관리자면 가공(machining) 단계 이전까지, 의뢰자면 의뢰/CAM 단계까지만 허용
+    // R&D 샘플은 생성한 제조사가 언제든 삭제 가능
     const stageStatus = String(request.manufacturerStage || "");
     const isAdmin = req.user.role === "admin";
+
+    // R&D 샘플은 완전 삭제 (취소 상태로 변경하지 않고 DB에서 제거)
+    if (isSampleCreator) {
+      await Request.findByIdAndDelete(request._id);
+
+      console.log("[deleteRequest] R&D 샘플 완전 삭제", {
+        requestId: request.requestId,
+        deletedBy: req.user._id,
+      });
+
+      // 웹소켓: 카운트 업데이트 (감소)
+      emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
+        stage: stageStatus,
+        delta: -1,
+        requestId: request.requestId,
+        source: "manufacturer_sample",
+        action: "deleted",
+      });
+
+      res.status(200).json({
+        success: true,
+        message: "R&D 샘플이 완전히 삭제되었습니다.",
+      });
+      return;
+    }
 
     const deletableStages = isAdmin ? ["의뢰", "CAM", "가공"] : ["의뢰", "CAM"];
 
@@ -1329,5 +1362,207 @@ export async function deleteRequest(req, res) {
       message: "의뢰 삭제 중 오류가 발생했습니다.",
       error: error.message,
     });
+  }
+}
+
+/**
+ * 추적관리 완료 의뢰건을 내부 샘플로 복사
+ * - 기존 의뢰건은 완료 상태 유지
+ * - 복사본은 제조사 내부 테스트/개발용으로 사용 (크레딧 미소비)
+ * - 세척.패킹까지만 처리 가능 (stage ceiling)
+ * @route POST /api/requests/:id/clone-as-sample
+ */
+export async function cloneAsSample(req, res) {
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const { id } = req.params;
+      const request = await Request.findById(id).session(session).lean();
+
+      if (!request) {
+        throw new ApiError(404, "의뢰를 찾을 수 없습니다.");
+      }
+
+      // 권한 검증: 제조사 또는 관리자만 가능
+      if (!["manufacturer", "admin"].includes(req.user.role)) {
+        throw new ApiError(403, "제조사 또는 관리자만 샘플 복사가 가능합니다.");
+      }
+
+      // 제조사 단계 확인: 추적관리 또는 발송 완료 건만 복사 가능
+      const stage = String(request.manufacturerStage || "").trim();
+      const di = request.deliveryInfoRef || {};
+      const isDelivered = !!di.deliveredAt;
+      const isTrackingStage = stage === "추적관리";
+
+      if (!isTrackingStage && !isDelivered) {
+        throw new ApiError(
+          400,
+          "추적관리 완료 또는 배송 완료된 의뢰건만 샘플 복사가 가능합니다.",
+        );
+      }
+
+      // 샘플 복사 시 로트번호는 새로 할당 (중복 인덱스 방지)
+      // 원본 로트번호는 참조용으로 보존
+      const originalLotValue = request.lotNumber?.value || null;
+      const lotMaterial = request.lotNumber?.material || null;
+
+      // 새 의뢰 생성 (기존 데이터 복사)
+      const newRequest = new Request({
+        // caseInfos 복사 (필요한 필드만)
+        caseInfos: {
+          ...request.caseInfos,
+          // review 상태 초기화
+          reviewByStage: {
+            request: { status: "PENDING", updatedAt: new Date() },
+            cam: { status: "PENDING", updatedAt: null },
+            machining: { status: "PENDING", updatedAt: null },
+            packing: { status: "PENDING", updatedAt: null },
+            shipping: { status: "PENDING", updatedAt: null },
+            tracking: { status: "PENDING", updatedAt: null },
+          },
+          rollbackCounts: {
+            request: 0,
+            cam: 0,
+            machining: 0,
+            packing: 0,
+            shipping: 0,
+            tracking: 0,
+          },
+          // 파일 정보는 원본에서 복사 (STL 등)
+          file: request.caseInfos?.file || null,
+          camFile: request.caseInfos?.camFile || null,
+          ncFile: request.caseInfos?.ncFile || null,
+          finishLine: request.caseInfos?.finishLine || null,
+        },
+        // 의뢰자 정보는 원본과 동일하게 (통계/추적용)
+        requestor: request.requestor,
+        businessAnchorId: request.businessAnchorId,
+        // 제조사는 현재 사용자 (복사 실행자)
+        caManufacturer: req.user._id,
+        // 출처 표시: 내부 샘플
+        source: "manufacturer_sample",
+        // 가격 정보 없음 (크레딧 미소비)
+        price: {
+          amount: 0,
+          baseAmount: 0,
+          discountAmount: 0,
+          currency: "KRW",
+          rule: "manufacturer_sample",
+          paidAmount: 0,
+          bonusAmount: 0,
+        },
+        // 배송 정보 초기화
+        originalShipping: {
+          mode: "normal",
+          requestedAt: new Date(),
+        },
+        finalShipping: {
+          mode: "normal",
+          updatedAt: new Date(),
+        },
+        // 우편함 정보 초기화
+        mailboxAddress: null,
+        shippingLabelPrinted: {
+          printed: false,
+          printedAt: null,
+          mailboxAddress: null,
+          snapshotFingerprint: null,
+        },
+        shippingWorkflow: {
+          code: "none",
+          label: "미처리",
+        },
+        // 로트번호는 제조사가 가공 단계에서 새로 부여
+        // 원본 로트번호와 재질은 상태 이력에 기록됨
+        // lotNumber 필드는 저장하지 않음 (중복 인덱스 문제 방지)
+        // 생산 스케줄 새로 계산
+        productionSchedule: {
+          assignedMachine: null,
+          queuePosition: null,
+          machiningQty: 1,
+          diameter: request.productionSchedule?.diameter || null,
+          diameterGroup: request.productionSchedule?.diameterGroup || null,
+        },
+        // 타임라인 초기화
+        timeline: {
+          originalEstimatedShipYmd: null,
+          nextEstimatedShipYmd: null,
+          estimatedShipYmd: null,
+          forceTodayShipment: false,
+          actualCompletion: null,
+        },
+        // 배송 정보 없음
+        shippingPackageId: null,
+        deliveryInfoRef: null,
+        // 결제 정보 없음
+        paymentStatus: "결제전",
+        paymentDetails: null,
+        // 자가검사 정보 초기화
+        selfInspection: {
+          confirmed: false,
+          confirmedAt: null,
+          confirmedBy: null,
+          overallJudgment: null,
+          rows: [],
+        },
+        // 상태 이력 초기화
+        statusHistory: [
+          {
+            status: "내부 샘플 복사 생성",
+            note: `원본 의뢰: ${request.requestId}${originalLotValue ? `, 원본 로트번호: ${originalLotValue}` : ""}${lotMaterial ? `, 재질: ${lotMaterial}` : ""}`,
+            updatedBy: req.user._id,
+            updatedAt: new Date(),
+          },
+        ],
+      });
+
+      // 인덱스 우회를 위해 직접 저장 (pre-save 훅은 requestId 자동 생성)
+      await newRequest.save({ session });
+
+      // 트리거: 대시보드 갱신 (원본 의뢰자 대시보드)
+      const anchorId = String(request.businessAnchorId || "").trim();
+      if (anchorId) {
+        triggerDashboardSummaryRefreshForAnchorId(
+          anchorId,
+          `sample-cloned:${newRequest.requestId}`,
+        ).catch(() => {});
+      }
+
+      // 웹소켓: 제조사 워크시트 카운트 업데이트 (실시간)
+      // R&D 샘플은 의뢰 단계에서 시작하므로 의뢰 카운트 증가
+      emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
+        stage: "request",
+        delta: 1,
+        requestId: newRequest.requestId,
+        source: "manufacturer_sample",
+        originalRequestId: request.requestId,
+      });
+
+      res.status(201).json({
+        success: true,
+        message: "내부 샘플이 성공적으로 생성되었습니다.",
+        data: {
+          requestId: newRequest.requestId,
+          originalRequestId: request.requestId,
+          originalLotNumber: originalLotValue,
+          source: "manufacturer_sample",
+        },
+      });
+    });
+  } catch (error) {
+    console.error("[cloneAsSample] Error:", error);
+    if (error instanceof ApiError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "샘플 복사 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  } finally {
+    await session.endSession();
   }
 }

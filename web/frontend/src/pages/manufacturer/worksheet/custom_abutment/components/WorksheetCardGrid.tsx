@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, X } from "lucide-react";
 import { formatImplantDisplay } from "@/utils/implant";
 import { generateModelNumber } from "@/utils/modelNumber";
 import {
@@ -25,6 +25,7 @@ type WorksheetCardGridProps = {
   onDeleteNc: (req: ManufacturerRequest) => void;
   onRollback?: (req: ManufacturerRequest) => void;
   onApprove?: (req: ManufacturerRequest) => void;
+  onDelete?: (req: ManufacturerRequest) => void;
   onUploadNc?: (req: ManufacturerRequest, files: File[]) => Promise<void>;
   uploadProgress: Record<string, number>;
   isCamStage: boolean;
@@ -49,6 +50,7 @@ export const WorksheetCardGrid = ({
   onDeleteNc,
   onRollback,
   onApprove,
+  onDelete,
   onUploadNc,
   uploadProgress,
   uploading,
@@ -444,6 +446,9 @@ export const WorksheetCardGrid = ({
           onOpenPreview(request);
         };
 
+        const isSampleRequest =
+          (request as any).source === "manufacturer_sample";
+
         return (
           <Card
             key={request._id}
@@ -451,23 +456,53 @@ export const WorksheetCardGrid = ({
             className={`relative h-full border ${
               isSelected
                 ? "border-blue-500 bg-blue-50/40"
-                : tabStage === "packing" && isPrinted
-                  ? "border-slate-300 bg-slate-50/60 opacity-75"
-                  : hasInsufficientShippingCredit
-                    ? "border-red-500 border-2 bg-red-50/40"
-                    : isCompletedForCurrentStage
-                      ? "border-emerald-500 bg-emerald-50/30"
-                      : deadlineInfo
-                        ? deadlineInfo.borderClass
-                        : urgency === "danger"
-                          ? "border-rose-500 border-2"
-                          : urgency === "warning"
-                            ? "border-amber-500 border-2"
-                            : "border-slate-200"
+                : isSampleRequest
+                  ? "border-purple-300 bg-purple-50/40"
+                  : tabStage === "packing" && isPrinted
+                    ? "border-slate-300 bg-slate-50/60 opacity-75"
+                    : hasInsufficientShippingCredit
+                      ? "border-red-500 border-2 bg-red-50/40"
+                      : isCompletedForCurrentStage
+                        ? "border-emerald-500 bg-emerald-50/30"
+                        : deadlineInfo
+                          ? deadlineInfo.borderClass
+                          : urgency === "danger"
+                            ? "border-rose-500 border-2"
+                            : urgency === "warning"
+                              ? "border-amber-500 border-2"
+                              : "border-slate-200"
             } ${onToggleSelected ? "cursor-pointer" : ""}`}
             role={onToggleSelected ? "button" : undefined}
             aria-pressed={onToggleSelected ? isSelected : undefined}
           >
+            <div className="absolute left-2 top-2 z-20">
+              {isSampleRequest && (
+                <Badge
+                  variant="outline"
+                  className="border-purple-300 bg-purple-50 text-purple-700 text-[11px] px-2 py-0.5 font-semibold h-7 flex items-center"
+                >
+                  R&D 샘플
+                </Badge>
+              )}
+            </div>
+            {/* 실시간 상태 뱃지 (CAM 생성중 등) - 상단 배치 */}
+            {(realtimeBadge || realtimeElapsedLabel) && (
+              <div className="absolute right-20 top-2 z-20 flex items-center gap-2">
+                {realtimeBadge && (
+                  <Badge
+                    variant="outline"
+                    className={`text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] ${realtimeToneClass}`}
+                  >
+                    {realtimeBadge}
+                  </Badge>
+                )}
+                {realtimeElapsedLabel && (
+                  <span className="text-[12px] tabular-nums font-bold text-blue-600">
+                    {realtimeElapsedLabel}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="absolute right-2 top-2 z-20 flex gap-1">
               {onRollback && canRollback && (
                 <button
@@ -481,6 +516,21 @@ export const WorksheetCardGrid = ({
                   aria-label="롤백"
                 >
                   <ArrowLeft className="h-4 w-4" />
+                </button>
+              )}
+              {onDelete && isSampleRequest && (
+                <button
+                  type="button"
+                  className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-red-500 shadow-sm transition hover:bg-red-50"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onDelete(request);
+                  }}
+                  aria-label="삭제"
+                  title="R&D 샘플 삭제"
+                >
+                  <X className="h-4 w-4" />
                 </button>
               )}
               {onApprove && !isCompletedForCurrentStage && (
@@ -555,7 +605,7 @@ export const WorksheetCardGrid = ({
               </div>
             )}
             <CardContent
-              className={`relative z-10 p-3 flex-1 flex flex-col gap-2 ${
+              className={`relative z-10 pt-6 pb-3 px-3 flex-1 flex flex-col gap-2 ${
                 isNewSystemRequest ? "bg-emerald-50/40" : ""
               }`}
             >
@@ -598,26 +648,6 @@ export const WorksheetCardGrid = ({
                     )}
                   </div>
                 </div>
-                {(() => {
-                  if (!realtimeBadge && !realtimeElapsedLabel) return null;
-                  return (
-                    <div className="flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
-                      {realtimeBadge ? (
-                        <Badge
-                          variant="outline"
-                          className={`text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] ${realtimeToneClass}`}
-                        >
-                          {realtimeBadge}
-                        </Badge>
-                      ) : null}
-                      {realtimeElapsedLabel ? (
-                        <span className="tabular-nums font-bold text-blue-600">
-                          {realtimeElapsedLabel}
-                        </span>
-                      ) : null}
-                    </div>
-                  );
-                })()}
                 {!!machiningElapsedLabel && (
                   <div className="flex items-center gap-2 text-[12px] text-slate-500">
                     <span className="font-semibold text-blue-600">

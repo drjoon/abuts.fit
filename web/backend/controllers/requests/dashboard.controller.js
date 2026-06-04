@@ -220,8 +220,10 @@ export async function getAssignedDashboardSummary(req, res) {
 
     // 제조사 대시보드: 해당 제조사에게 할당된 의뢰건을 조회
     // 취소 건수도 집계해야 하므로 manufacturerStage 필터 제거
+    // R&D 샘플은 카운트에서 제외 (메인 의뢰건과 별도 관리)
     const baseFilter = {
       "caseInfos.implantBrand": { $exists: true, $ne: "" },
+      source: { $ne: "manufacturer_sample" },
     };
 
     // 제조사 역할일 때: 같은 BusinessAnchor 조직 전체 범위로 필터링

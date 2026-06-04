@@ -438,6 +438,31 @@ export function useWorksheetRealtimeStatus({
           });
           return;
         }
+        case "worksheet:count-update": {
+          // R&D 샘플 복사/삭제 등으로 인한 워크시트 카운트 변경 시 상단 메뉴 숫자 갱신
+          const stage = String(payload?.stage || "").trim();
+          const source = String(payload?.source || "").trim();
+          const delta = Number(payload?.delta || 0);
+          const action = String(payload?.action || "").trim();
+          void queryClient.invalidateQueries({
+            queryKey: ["worksheet-assigned-summary"],
+          });
+          // 샘플 복사/삭제 토스트 알림
+          if (source === "manufacturer_sample") {
+            if (delta < 0 || action === "deleted") {
+              toast({
+                title: "R&D 샘플 삭제됨",
+                description: `의뢰 단계에서 샘플이 제거되었습니다${stage ? ` (${stage})` : ""}`,
+              });
+            } else {
+              toast({
+                title: "R&D 샘플 복사 완료",
+                description: `의뢰 단계에 새 샘플이 추가되었습니다${stage ? ` (${stage})` : ""}`,
+              });
+            }
+          }
+          return;
+        }
         case "bg:runtime-status": {
           const clear = payload?.clear === true;
           const status = String(payload?.status || "")

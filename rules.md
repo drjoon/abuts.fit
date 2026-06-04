@@ -2108,3 +2108,144 @@ cd web/backend && npm run db:seed-branding
   `businessAnchorId`를 사용합니다.
 - seed용 `ShippingPackage.mailboxAddress`는 중복 인덱스 충돌이 없도록
   패키지 단위로 고유값을 생성합니다.
+
+---
+
+## 18. R&D 샘플 복사 기능 정책 (2026-06-04)
+
+### 18.1 개요
+
+추적관리(또는 배송 완료)된 의뢰건을 제조사 내부 테스트/개발용으로 복사하는 기능입니다.
+
+- **목적**: 오류 점검, 기능 업그레이드 검증, 샘플 테스트
+- **원본 보존**: 기존 의뢰건은 완료 상태 유지
+- **크레딧 미소비**: 의뢰자 크레딧 차감 없음, 수수료 미처리
+
+### 18.2 Request 모델 확장
+
+```javascript
+source: {
+  type: String,
+  enum: ["normal", "manufacturer_sample"],
+  default: "normal"
+}
+```
+
+- `normal`: 일반 의뢰 (default)
+- `manufacturer_sample`: 제조사 내부 샘플 복사
+
+### 18.3 복사 로직
+
+**API**: `POST /api/requests/:id/clone-as-sample` (제조사/관리자 권한)
+
+**복사 규칙**:
+
+| 필드                      | 처리 방식                         |
+| ------------------------- | --------------------------------- |
+| `lotNumber.value`         | 원본 그대로 유지                  |
+| `requestId`               | 새로 생성 (modelNumber 자동 생성) |
+| `source`                  | `"manufacturer_sample"`로 설정    |
+| `price`                   | 0 (크레딧 미소비)                 |
+| `paymentStatus`           | `"결제전"`                        |
+| `businessAnchorId`        | 원본과 동일 (통계용)              |
+| `caseInfos.reviewByStage` | 모두 초기화 (PENDING)             |
+| `deliveryInfoRef`         | `null` (배송 정보 없음)           |
+| `mailboxAddress`          | `null`                            |
+| `timeline`                | 초기화                            |
+| `productionSchedule`      | 기계 배정/큐 포지션 초기화        |
+
+### 18.4 Stage 제한
+
+`manufacturer_sample` 의뢰건은 **세척.패킹까지만** 처리 가능:
+
+- packing 승인 시 → 바로 **추적관리(완료)**로 이동
+- 포장.발송 단계로는 넘어가지 않음
+- 배송 관련 프로세스 생략
+
+구현: `common.review.controller.js`의 packing 승인 로직에서 `request.source === "manufacturer_sample"` 체크
+
+### 18.5 UI/UX
+
+- **버튼 위치**:
+  - 추적관리 페이지 > 택배/배송 탭 > "포함된 의뢰" 카드 (개별 의뢰마다)
+  - 추적관리 페이지 > 생산공정일지 탭 > 테이블 행 액션 컬럼
+- **버튼 텍스트**: "R&D 샘플 복사" (또는 간략히 "복사")
+- **아이콘**: `FlaskConical` (Lucide React)
+- **표시 조건**: `manufacturerStage === "추적관리"` 또는 배송 완료된 건
+
+- **뱃지 표시**:
+  - 의뢰 ~ 세척.패킹 단계의 카드에 "R&D 샘플" 뱃지 표시
+  - `source === "manufacturer_sample"`인 경우 보라색 계열 뱃지
+  - 위치: 카드 헤더의 기존 뱃지 옆 (WorksheetCardGrid)
+
+### 18.6 웹소켓 실시간 업데이트
+
+**이벤트 타입**: `worksheet:count-update`
+
+**발생 시점**:
+
+- R&D 샘플 복사 완료 시 (`cloneAsSample`)
+- 새 의뢰 생성 시 (의뢰 단계 카운트 증가)
+
+**페이로드**:
+
+```javascript
+{
+  stage: "request",      // 영향받은 단계
+  delta: 1,              // 카운트 변화량 (+1 또는 -1)
+  requestId: "...",      // 새로 생성된 의뢰 ID
+  source: "manufacturer_sample",  // 생성 출처
+  originalRequestId: "..."        // 원본 의뢰 ID (복사 시)
+}
+```
+
+**수신 대상**: `manufacturer`, `admin` 역할
+
+**프론트엔드 처리**:
+
+- `useWorksheetRealtimeStatus.ts`의 `onAppEvent` 콜백에서 수신
+- `queryClient.invalidateQueries({ queryKey: ["worksheet-assigned-summary"] })` 호출
+- 상단 메뉴의 워크시트 카운트 숫자 실시간 갱신
+
+**토스트 알림**:
+
+- `source === "manufacturer_sample"`인 경우 복사 완료 토스트 표시
+
+### 18.7 삭제 정책
+
+**일반 의뢰**:
+
+- 취소 상태로 변경 (DB에 유지)
+- 크레딧 환불 처리
+- 카운트에 "취소"로 반영
+
+**R&D 샘플**:
+
+- **완전 삭제** (`Request.findByIdAndDelete`)
+- 취소 상태로 변경하지 않음
+- 크레딧/환불 무관
+- **카운트에서 즉시 제외** (delta: -1 웹소켓 이벤트)
+- 제조사가 언제든 삭제 가능 (단계 무관)
+
+### 18.8 카운트/통계 제외
+
+**제외 대상**:
+
+- 상단 메뉴 워크시트 카운트 (`getAssignedDashboardSummary`)
+- 대시보드 요약 집계
+- 리퍼럴 통계
+- 자주검사 대상
+
+**필터 조건**:
+
+```javascript
+source: {
+  $ne: "manufacturer_sample";
+}
+```
+
+**데이터 보존**:
+
+- R&D 샘플은 메인 의뢰건과 완전히 분리
+- 사용 후 삭제 시 데이터 완전 소멸
+- 히스토리/감사로그 미유지 (내부 테스트용)

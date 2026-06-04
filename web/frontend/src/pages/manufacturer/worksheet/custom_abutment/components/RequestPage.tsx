@@ -450,6 +450,45 @@ export const RequestPage = ({
     realtimeBaseRef,
   );
 
+  // R&D 샘플 삭제 핸들러 (제조사/관리자만 가능)
+  const handleCardDelete = useCallback(
+    async (req: ManufacturerRequest) => {
+      if (!req?._id) return;
+      const isSample = (req as any).source === "manufacturer_sample";
+      if (!isSample) {
+        toast({
+          title: "삭제 불가",
+          description: "R&D 샘플만 삭제할 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      try {
+        const res = await fetch(`/api/requests/${req._id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "삭제에 실패했습니다.");
+        }
+        toast({
+          title: "삭제 완료",
+          description: `의뢰 ${req.requestId}가 삭제되었습니다.`,
+        });
+        // 목록 갱신
+        void reloadRequests();
+      } catch (e: any) {
+        toast({
+          title: "삭제 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+      }
+    },
+    [token, toast, reloadRequests],
+  );
+
   const enableCardRollback =
     tabStage === "cam" ||
     tabStage === "machining" ||
@@ -738,6 +777,7 @@ export const RequestPage = ({
                     enableCardRollback ? handleCardRollback : undefined
                   }
                   onApprove={enableCardApprove ? handleCardApprove : undefined}
+                  onDelete={handleCardDelete}
                   onUploadNc={handleUploadNc}
                   uploadProgress={pageState.uploadProgress}
                   uploading={pageState.uploading}

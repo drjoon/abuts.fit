@@ -34,6 +34,7 @@ export const {
   ensureNcFileOnBridgeStoreByRequestId,
   saveNcFileAndMoveToMachining,
   deleteNcFileAndRollbackCam,
+  cloneAsSample,
 } = commonController;
 
 export const {

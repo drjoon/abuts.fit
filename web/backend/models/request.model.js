@@ -329,6 +329,14 @@ const requestSchema = new mongoose.Schema(
       },
     },
     // 제조 공정 단계 SSOT
+    // 의뢰 출처 구분 (내부 샘플/테스트용 의뢰 식별)
+    source: {
+      type: String,
+      enum: ["normal", "manufacturer_sample"],
+      default: "normal",
+      index: true,
+    },
+
     manufacturerStage: {
       type: String,
       enum: [

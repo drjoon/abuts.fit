@@ -832,7 +832,21 @@ export async function updateReviewStatusByStage(req, res) {
               }
             }
           } else if (effectiveStage === "packing") {
-            applyStatusMapping(request, "포장.발송");
+            // 내부 샘플 의뢰건은 세척.패킹까지만 처리 (포장.발송으로 넘어가지 않음)
+            if (request.source === "manufacturer_sample") {
+              // 샘플은 바로 추적관리(완료)로 이동
+              applyStatusMapping(request, "추적관리");
+              // 샘플 완료 표시를 위한 상태 이력 추가
+              request.statusHistory = request.statusHistory || [];
+              request.statusHistory.push({
+                status: "내부 샘플 완료",
+                note: "세척.패킹 승인으로 자동 완료 처리",
+                updatedBy: req.user?._id,
+                updatedAt: new Date(),
+              });
+            } else {
+              applyStatusMapping(request, "포장.발송");
+            }
           } else if (effectiveStage === "shipping") {
             applyStatusMapping(request, "추적관리");
           }

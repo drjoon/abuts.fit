@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { FlaskConical } from "lucide-react";
 import type { DeliveryInfoSummary } from "@/types/request";
 import { toKstYmd, formatKstDateTimeToKo } from "@/shared/date/kst";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
@@ -934,6 +935,7 @@ export const TrackingInquiryPage = () => {
                     <TableHead className="text-center">장비</TableHead>
                     <TableHead className="text-center">원재료</TableHead>
                     <TableHead className="text-center">로트번호</TableHead>
+                    <TableHead className="text-center">액션</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -954,6 +956,10 @@ export const TrackingInquiryPage = () => {
                       r.assignedMachine ||
                       r.productionSchedule?.assignedMachine ||
                       "-";
+                    const stage = String(r.manufacturerStage || "").trim();
+                    const isDelivered = !!di.deliveredAt;
+                    const isTrackingStage = stage === "추적관리";
+                    const canCloneAsSample = isTrackingStage || isDelivered;
                     return (
                       <TableRow key={String(r._id || r.requestId)}>
                         <TableCell className="font-medium">
@@ -992,13 +998,58 @@ export const TrackingInquiryPage = () => {
                         <TableCell>{machineLabel}</TableCell>
                         <TableCell>{r.lotNumber?.material || "-"}</TableCell>
                         <TableCell>{normalizeLotNumberLabel(r)}</TableCell>
+                        <TableCell>
+                          {canCloneAsSample && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(
+                                    `/api/requests/${r._id}/clone-as-sample`,
+                                    {
+                                      method: "POST",
+                                      headers: {
+                                        Authorization: `Bearer ${token}`,
+                                        "Content-Type": "application/json",
+                                      },
+                                    },
+                                  );
+                                  const data = await res.json();
+                                  if (data.success) {
+                                    toast({
+                                      title: "R&D 샘플 복사 완료",
+                                      description: `새 의뢰ID: ${data.data.requestId}`,
+                                    });
+                                  } else {
+                                    toast({
+                                      title: "복사 실패",
+                                      description:
+                                        data.message || "알 수 없는 오류",
+                                      variant: "destructive",
+                                    });
+                                  }
+                                } catch (e: any) {
+                                  toast({
+                                    title: "복사 실패",
+                                    description: e?.message || "네트워크 오류",
+                                    variant: "destructive",
+                                  });
+                                }
+                              }}
+                            >
+                              <FlaskConical className="h-4 w-4 mr-1" />
+                              R&D 샘플 복사
+                            </Button>
+                          )}
+                        </TableCell>
                       </TableRow>
                     );
                   })}
                   {!loading && processRows.length === 0 && (
                     <TableRow>
                       <TableCell
-                        colSpan={8}
+                        colSpan={9}
                         className="text-center text-muted-foreground"
                       >
                         조회 결과가 없습니다.
@@ -1215,13 +1266,73 @@ export const TrackingInquiryPage = () => {
                             <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                               {requests.map((req: any) => {
                                 const ci: any = req.caseInfos || {};
+                                const stage = String(
+                                  req.manufacturerStage || "",
+                                ).trim();
+                                const di = normalizeDeliveryInfo(
+                                  req.deliveryInfoRef,
+                                );
+                                const isDelivered = !!di.deliveredAt;
+                                const isTrackingStage = stage === "추적관리";
+                                const canCloneAsSample =
+                                  isTrackingStage || isDelivered;
                                 return (
                                   <div
                                     key={String(req._id || req.requestId)}
                                     className="text-sm bg-white p-2 rounded border border-gray-200"
                                   >
-                                    <div className="font-medium">
-                                      {req.requestId || "-"}
+                                    <div className="flex items-center justify-between">
+                                      <div className="font-medium">
+                                        {req.requestId || "-"}
+                                      </div>
+                                      {canCloneAsSample && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-6 px-2 text-xs"
+                                          onClick={async (e) => {
+                                            e.stopPropagation();
+                                            try {
+                                              const res = await fetch(
+                                                `/api/requests/${req._id}/clone-as-sample`,
+                                                {
+                                                  method: "POST",
+                                                  headers: {
+                                                    Authorization: `Bearer ${token}`,
+                                                    "Content-Type":
+                                                      "application/json",
+                                                  },
+                                                },
+                                              );
+                                              const data = await res.json();
+                                              if (data.success) {
+                                                toast({
+                                                  title: "R&D 샘플 복사 완료",
+                                                  description: `새 의뢰ID: ${data.data.requestId}`,
+                                                });
+                                              } else {
+                                                toast({
+                                                  title: "복사 실패",
+                                                  description:
+                                                    data.message ||
+                                                    "알 수 없는 오류",
+                                                  variant: "destructive",
+                                                });
+                                              }
+                                            } catch (e: any) {
+                                              toast({
+                                                title: "복사 실패",
+                                                description:
+                                                  e?.message || "네트워크 오류",
+                                                variant: "destructive",
+                                              });
+                                            }
+                                          }}
+                                        >
+                                          <FlaskConical className="h-3 w-3 mr-1" />
+                                          복사
+                                        </Button>
+                                      )}
                                     </div>
                                     <div className="text-xs text-gray-600">
                                       {ci.clinicName || "-"}
