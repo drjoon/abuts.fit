@@ -23,7 +23,8 @@ dotenv.config({ path: envPath });
 
 const TARGET_DATE = "2026-06-04";
 const TARGET_HOUR_START = 18; // 18:00
-const TARGET_HOUR_END = 19; // 19:00 (19:00 미만)
+const TARGET_MINUTE_START = 35; // 18:35
+const TARGET_MINUTE_END = 36; // 18:36 (18:35~18:36)
 const TARGET_BUSINESS_NAME = "우리치과기공소";
 
 async function connectDb() {
@@ -37,9 +38,13 @@ async function connectDb() {
 }
 
 function getTargetTimeRange() {
-  // KST 기준 2026-06-04 18:00 ~ 19:00
-  const start = new Date(`${TARGET_DATE}T18:00:00+09:00`);
-  const end = new Date(`${TARGET_DATE}T19:00:00+09:00`);
+  // KST 기준 2026-06-04 18:35 ~ 18:36 (정확히 1분간)
+  const start = new Date(
+    `${TARGET_DATE}T${String(TARGET_HOUR_START).padStart(2, "0")}:${String(TARGET_MINUTE_START).padStart(2, "0")}:00+09:00`,
+  );
+  const end = new Date(
+    `${TARGET_DATE}T${String(TARGET_HOUR_START).padStart(2, "0")}:${String(TARGET_MINUTE_END).padStart(2, "0")}:00+09:00`,
+  );
   return { start, end };
 }
 
@@ -84,12 +89,15 @@ async function findDuplicateShippingFees(dryRun = true) {
     return [];
   }
 
-  // 패키지별로 그룹화하여 중복 확인
+  // 6월 4일 18:35 발생한 배송비 소비는 모두 에러 - 전체 삭제 대상
+  console.log(`\n⚠️  6월 4일 18:35 배송비 소비는 모두 에러로 판정 - 전체 삭제`);
+  const toDelete = [...spends]; // 모든 내역 삭제 대상
+
+  // 패키지별로 그룹화하여 표시
   const byPackage = new Map();
   for (const spend of spends) {
     const pkgId = String(spend.refId || "");
     if (!pkgId) continue;
-
     if (!byPackage.has(pkgId)) {
       byPackage.set(pkgId, []);
     }
@@ -97,29 +105,18 @@ async function findDuplicateShippingFees(dryRun = true) {
   }
 
   console.log(`\n📦 패키지별 내역:`);
-  const toDelete = [];
-
   for (const [pkgId, items] of byPackage) {
     const pkg = await ShippingPackage.findById(pkgId).lean();
     console.log(`\n  Package ${pkgId}:`);
     console.log(
       `    - 우편함: ${pkg?.mailboxAddress || "N/A"}, 발송일: ${pkg?.shipDateYmd || "N/A"}`,
     );
-    console.log(`    - 해당 내역: ${items.length}건`);
-
-    // 동일 패키지에 여러 소비 내역이 있으면 중복
-    if (items.length > 1) {
-      console.log(`    ⚠️ 중복 발견! ${items.length - 1}건 삭제 대상`);
-      // 첫 번째를 제외한 나머지는 삭제 대상
-      const duplicates = items.slice(1);
-      toDelete.push(...duplicates);
-    }
+    console.log(`    - 해당 내역: ${items.length}건 (모두 삭제 예정)`);
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      const marker = i === 0 ? "✅ 보존" : "❌ 삭제예정";
       console.log(
-        `      [${i + 1}] ${marker} ${item._id} | ${item.amount}원 | ${item.uniqueKey} | ${item.createdAt.toISOString()}`,
+        `      [${i + 1}] ❌ 삭제예정 ${item._id} | ${item.amount}원 | ${item.uniqueKey} | ${item.createdAt.toISOString()}`,
       );
     }
   }
@@ -187,7 +184,7 @@ async function main() {
       : "🚨 EXECUTE 모드 (실제 삭제 실행)",
   );
   console.log(
-    `대상: ${TARGET_BUSINESS_NAME}의 ${TARGET_DATE} ${TARGET_HOUR_START}:00~${TARGET_HOUR_END}:00 배송비 소비`,
+    `대상: ${TARGET_BUSINESS_NAME}의 ${TARGET_DATE} ${TARGET_HOUR_START}:${TARGET_MINUTE_START}~${TARGET_HOUR_START}:${TARGET_MINUTE_END} 배송비 소비`,
   );
 
   await connectDb();
