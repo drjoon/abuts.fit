@@ -448,11 +448,52 @@ export async function ensureShippingFeeSpendOnPackingApprove({
   // uniqueKey는 패키지 기준 단일 키 (cycle 미포함)
   // 패키지당 배송비는 1회만 청구 - 여러 의뢰가 같은 패키지에 속해도 동일 uniqueKey로 중복 방지
   const uniqueKey = `shippingPackage:${String(pkg._id)}:shipping_fee`;
-  const existingSpend = await CreditLedger.findOne({ uniqueKey })
-    .select({ _id: 1 })
+
+  // 중복 방지: 동일 패키지의 기존 소비 내역 확인 (레거시 cycle suffix 포함)
+  const existingSpendKeys = [
+    uniqueKey,
+    ...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 18, 24].map(
+      (c) => `${uniqueKey}:${c}`,
+    ),
+  ];
+  const existingSpend = await CreditLedger.findOne({
+    uniqueKey: { $in: existingSpendKeys },
+    type: "SPEND",
+    refType: "SHIPPING_PACKAGE",
+    refId: pkg._id,
+  })
+    .select({ _id: 1, uniqueKey: 1, amount: 1 })
     .session(session || null)
     .lean();
-  if (existingSpend?._id) return;
+
+  if (existingSpend?._id) {
+    console.log(
+      `[SHIPPING_FEE] Skip: already charged for package ${pkg._id}, existing: ${existingSpend.uniqueKey}`,
+    );
+    return;
+  }
+
+  // 동일 우편함의 다른 패키지에서 이미 배송비가 청구되었는지 확인 (추가 안전장치)
+  const sameMailboxSpend = await CreditLedger.findOne({
+    businessAnchorId,
+    type: "SPEND",
+    refType: "SHIPPING_PACKAGE",
+    createdAt: {
+      $gte: new Date(Date.now() - 5 * 60 * 1000), // 5분 이내
+    },
+  })
+    .select({ _id: 1, refId: 1, createdAt: 1 })
+    .session(session || null)
+    .lean();
+
+  if (
+    sameMailboxSpend?._id &&
+    String(sameMailboxSpend.refId) !== String(pkg._id)
+  ) {
+    console.log(
+      `[SHIPPING_FEE] Warning: Different package ${sameMailboxSpend.refId} charged recently for same business`,
+    );
+  }
 
   // 무료/유료 크레딧 사용 분리 계산
   const fromBonusShipping = hasFreeRequestInPkg
@@ -479,7 +520,23 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     { upsert: true, session },
   );
 
-  if (!result?.upsertedCount) return;
+  if (!result?.upsertedCount) {
+    console.log("[SHIPPING_FEE] skip duplicate shipping fee upsert", {
+      requestId: request?.requestId,
+      shippingPackageId: String(pkg._id),
+      uniqueKey,
+    });
+    return;
+  }
+
+  console.log("[SHIPPING_FEE] shipping fee spend inserted", {
+    requestId: request?.requestId,
+    shippingPackageId: String(pkg._id),
+    amount: fee,
+    fromBonusShipping,
+    fromPaid,
+    businessAnchorId: String(businessAnchorId),
+  });
 
   await emitCreditBalanceUpdatedToBusiness({
     businessAnchorId,
