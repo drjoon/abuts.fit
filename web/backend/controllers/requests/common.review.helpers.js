@@ -395,8 +395,9 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     throw err;
   }
 
-  const cycle = Number(request?.caseInfos?.rollbackCounts?.shipping || 0);
-  const uniqueKey = `shippingPackage:${String(pkg._id)}:shipping_fee:${cycle}`;
+  // uniqueKey는 패키지 기준 단일 키 (cycle 미포함)
+  // 패키지당 배송비는 1회만 청구 - 여러 의뢰가 같은 패키지에 속해도 동일 uniqueKey로 중복 방지
+  const uniqueKey = `shippingPackage:${String(pkg._id)}:shipping_fee`;
   const existingSpend = await CreditLedger.findOne({ uniqueKey })
     .select({ _id: 1 })
     .session(session || null)
@@ -443,10 +444,13 @@ export async function ensureShippingFeeRefundOnShippingRollback({
     request.businessAnchorId || request.requestor?.businessAnchorId;
   if (!businessAnchorId) return;
 
-  const cycle = Number(request?.caseInfos?.rollbackCounts?.shipping || 0);
   const spendKeys = [
-    `shippingPackage:${String(request.shippingPackageId)}:shipping_fee:${cycle}`,
     `shippingPackage:${String(request.shippingPackageId)}:shipping_fee`,
+    // 레거시: cycle 포함 키도 조회 (이전 데이터 호환)
+    ...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 18, 24].map(
+      (c) =>
+        `shippingPackage:${String(request.shippingPackageId)}:shipping_fee:${c}`,
+    ),
   ];
   const spendRow = await CreditLedger.findOne({
     uniqueKey: { $in: spendKeys },
@@ -489,6 +493,7 @@ export async function ensureShippingFeeRefundOnShippingRollback({
   const refundAmount = Math.abs(Number(spendRow.amount || 0));
   if (!Number.isFinite(refundAmount) || refundAmount <= 0) return;
 
+  const cycle = Number(request?.caseInfos?.rollbackCounts?.shipping || 0);
   const refundKey = `shippingPackage:${String(shippingPackageId)}:shipping_fee_refund:${cycle}`;
   const result = await CreditLedger.updateOne(
     { uniqueKey: refundKey },
