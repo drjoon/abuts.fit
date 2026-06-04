@@ -974,6 +974,14 @@ export function useAdminCreditPage() {
   ]);
 
   const filteredFreeCreditUsageRows = useMemo(() => {
+    const getSpentBonusTotal = (business: BusinessCredit) => {
+      const spentBonusRequest = Number(business.spentBonusRequestAmount || 0);
+      const spentBonusShipping = Number(business.spentBonusShippingAmount || 0);
+      const spentBonusCombined = spentBonusRequest + spentBonusShipping;
+      if (spentBonusCombined > 0) return spentBonusCombined;
+      return Number(business.spentBonusAmount || 0);
+    };
+
     const search = String(bonusGrantSearch || "")
       .trim()
       .toLowerCase();
@@ -995,11 +1003,8 @@ export function useAdminCreditPage() {
           .toLowerCase();
         return haystack.includes(search);
       })
-      .filter((business) => Number(business.spentBonusAmount || 0) > 0)
-      .sort(
-        (a, b) =>
-          Number(b.spentBonusAmount || 0) - Number(a.spentBonusAmount || 0),
-      );
+      .filter((business) => getSpentBonusTotal(business) > 0)
+      .sort((a, b) => getSpentBonusTotal(b) - getSpentBonusTotal(a));
   }, [businesses, selectedBonusBusinessAnchorId, bonusGrantSearch]);
 
   return {

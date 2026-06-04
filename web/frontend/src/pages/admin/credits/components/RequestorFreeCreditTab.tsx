@@ -145,6 +145,26 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
   const eligibleBusinesses = businesses.filter(
     (business) => String(business.businessType || "").trim() === "requestor",
   );
+  const selectedBusinessAnchorId =
+    grantCreditType === "general"
+      ? selectedBonusBusinessAnchorId
+      : selectedShippingCreditBusinessAnchorId;
+  const getSpentBonusTotal = (business: BusinessCredit) => {
+    const spentBonusRequest = Number(business.spentBonusRequestAmount || 0);
+    const spentBonusShipping = Number(business.spentBonusShippingAmount || 0);
+    const spentBonusCombined = spentBonusRequest + spentBonusShipping;
+    if (spentBonusCombined > 0) return spentBonusCombined;
+    return Number(business.spentBonusAmount || 0);
+  };
+  const getChargedBonusTotal = (business: BusinessCredit) => {
+    const chargedBonusRequest = Number(business.chargedBonusRequestAmount || 0);
+    const chargedBonusShipping = Number(
+      business.chargedBonusShippingAmount || 0,
+    );
+    const chargedBonusCombined = chargedBonusRequest + chargedBonusShipping;
+    if (chargedBonusCombined > 0) return chargedBonusCombined;
+    return Number(business.chargedBonusAmount || 0);
+  };
 
   return (
     <TabsContent value="free-credit" className="space-y-4">
@@ -213,6 +233,42 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
               {loadingBonusGrantRows ? "새로고침 중..." : "새로고침"}
             </Button>
           </div>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="free-credit-business" className="text-sm">
+                대상 사업자
+              </Label>
+              <div className="relative">
+                <select
+                  id="free-credit-business"
+                  className="h-11 w-full appearance-none rounded-lg border border-input bg-background px-3 pr-10 text-sm"
+                  value={selectedBusinessAnchorId}
+                  onChange={(e) => {
+                    setSelectedBonusBusinessAnchorId(e.target.value);
+                    setSelectedShippingCreditBusinessAnchorId(e.target.value);
+                  }}
+                >
+                  <option value="">전체 사업자</option>
+                  {[...eligibleBusinesses]
+                    .sort((a, b) =>
+                      String(a.name || "").localeCompare(
+                        String(b.name || ""),
+                        "ko",
+                      ),
+                    )
+                    .map((business) => (
+                      <option key={business._id} value={business._id}>
+                        {formatBusinessSelectLabel(business)}
+                      </option>
+                    ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">
+                  <span className="text-xs">▼</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </CardHeader>
 
         <CardContent>
@@ -220,50 +276,8 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
             <div className="space-y-4">
               <div className="grid gap-3 lg:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="grant-business" className="text-sm">
-                    대상 사업자
-                  </Label>
-                  <div className="relative">
-                    <select
-                      id="grant-business"
-                      className="h-11 w-full appearance-none rounded-lg border border-input bg-background px-3 pr-10 text-sm"
-                      value={
-                        grantCreditType === "general"
-                          ? selectedBonusBusinessAnchorId
-                          : selectedShippingCreditBusinessAnchorId
-                      }
-                      onChange={(e) => {
-                        if (grantCreditType === "general")
-                          setSelectedBonusBusinessAnchorId(e.target.value);
-                        else
-                          setSelectedShippingCreditBusinessAnchorId(
-                            e.target.value,
-                          );
-                      }}
-                    >
-                      <option value="">의뢰자 사업자 선택</option>
-                      {[...eligibleBusinesses]
-                        .sort((a, b) =>
-                          String(a.name || "").localeCompare(
-                            String(b.name || ""),
-                            "ko",
-                          ),
-                        )
-                        .map((business) => (
-                          <option key={business._id} value={business._id}>
-                            {formatBusinessSelectLabel(business)}
-                          </option>
-                        ))}
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">
-                      <span className="text-xs">▼</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
                   <Label>크레딧 종류</Label>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <Button
                       type="button"
                       className="h-11"
@@ -759,13 +773,13 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                         {org.businessNumber || "-"}
                       </TableCell>
                       <TableCell className="text-right font-medium">
-                        {Number(org.spentBonusAmount || 0).toLocaleString()}원
+                        {getSpentBonusTotal(org).toLocaleString()}원
                       </TableCell>
                       <TableCell className="text-right">
                         {Number(org.bonusBalance || 0).toLocaleString()}원
                       </TableCell>
                       <TableCell className="text-right">
-                        {Number(org.chargedBonusAmount || 0).toLocaleString()}원
+                        {getChargedBonusTotal(org).toLocaleString()}원
                       </TableCell>
                     </TableRow>
                   ))}
