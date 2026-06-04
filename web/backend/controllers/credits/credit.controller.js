@@ -108,12 +108,12 @@ async function getBalanceBreakdown(scope) {
   const ledgerQuery = buildLedgerQuery(scope);
   const rows = await CreditLedger.find(ledgerQuery)
     .sort({ createdAt: 1, _id: 1 })
-    .select({ type: 1, amount: 1, refType: 1 })
+    .select({ type: 1, amount: 1, refType: 1, hasFreeRequest: 1 })
     .lean();
 
   let paid = 0;
-  let bonus = 0;
-  let freeShippingCredit = 0;
+  let bonusRequest = 0;
+  let bonusShipping = 0;
 
   for (const r of rows) {
     const type = String(r?.type || "");
@@ -129,9 +129,10 @@ async function getBalanceBreakdown(scope) {
       continue;
     }
     if (type === "BONUS") {
-      bonus += absAmount;
       if (refType === "FREE_SHIPPING_CREDIT") {
-        freeShippingCredit += absAmount;
+        bonusShipping += absAmount;
+      } else {
+        bonusRequest += absAmount;
       }
       continue;
     }
@@ -146,22 +147,26 @@ async function getBalanceBreakdown(scope) {
     if (type === "SPEND") {
       let spend = absAmount;
       if (refType === "SHIPPING_PACKAGE" || refType === "SHIPPING_FEE") {
-        const fromFreeShippingCredit = Math.min(freeShippingCredit, spend);
-        freeShippingCredit -= fromFreeShippingCredit;
-        spend -= fromFreeShippingCredit;
+        const canUseFreeShipping = r?.hasFreeRequest !== false;
+        if (canUseFreeShipping) {
+          const fromBonusShipping = Math.min(bonusShipping, spend);
+          bonusShipping -= fromBonusShipping;
+          spend -= fromBonusShipping;
+        }
+      } else {
+        const fromBonusRequest = Math.min(bonusRequest, spend);
+        bonusRequest -= fromBonusRequest;
+        spend -= fromBonusRequest;
       }
-      const fromBonus = Math.min(bonus, spend);
-      bonus -= fromBonus;
-      spend -= fromBonus;
       paid -= spend;
     }
   }
 
   const paidCredit = Math.max(0, Math.round(paid));
-  const bonusRequestCredit = Math.max(0, Math.round(bonus));
-  const bonusShippingCredit = Math.max(0, Math.round(freeShippingCredit));
+  const bonusRequestCredit = Math.max(0, Math.round(bonusRequest));
+  const bonusShippingCredit = Math.max(0, Math.round(bonusShipping));
   return {
-    balance: paidCredit + bonusRequestCredit,
+    balance: paidCredit + bonusRequestCredit + bonusShippingCredit,
     paidCredit,
     bonusRequestCredit,
     bonusShippingCredit,

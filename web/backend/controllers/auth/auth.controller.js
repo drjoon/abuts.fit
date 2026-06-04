@@ -236,6 +236,7 @@ async function getBusinessCreditBalanceBreakdown(businessAnchorId) {
       balance: 0,
       paidCredit: 0,
       bonusRequestCredit: 0,
+      bonusShippingCredit: 0,
     };
   }
 
@@ -243,28 +244,36 @@ async function getBusinessCreditBalanceBreakdown(businessAnchorId) {
     businessAnchorId: new Types.ObjectId(normalizedBusinessAnchorId),
   })
     .sort({ createdAt: 1, _id: 1 })
-    .select({ type: 1, amount: 1 })
+    .select({ type: 1, amount: 1, refType: 1, hasFreeRequest: 1 })
     .lean();
 
   let paid = 0;
-  let bonus = 0;
+  let bonusRequest = 0;
+  let bonusShipping = 0;
 
   for (const r of rows) {
     const type = String(r?.type || "");
     const amount = Number(r?.amount || 0);
+    const refType = String(r?.refType || "");
 
     if (!Number.isFinite(amount)) continue;
 
+    const absAmount = Math.abs(amount);
+
     if (type === "CHARGE") {
-      paid += amount;
+      paid += absAmount;
       continue;
     }
     if (type === "BONUS") {
-      bonus += amount;
+      if (refType === "FREE_SHIPPING_CREDIT") {
+        bonusShipping += absAmount;
+      } else {
+        bonusRequest += absAmount;
+      }
       continue;
     }
     if (type === "REFUND") {
-      paid += amount;
+      paid += absAmount;
       continue;
     }
     if (type === "ADJUST") {
@@ -272,20 +281,31 @@ async function getBusinessCreditBalanceBreakdown(businessAnchorId) {
       continue;
     }
     if (type === "SPEND") {
-      let spend = Math.abs(amount);
-      const fromBonus = Math.min(bonus, spend);
-      bonus -= fromBonus;
-      spend -= fromBonus;
+      let spend = absAmount;
+      if (refType === "SHIPPING_PACKAGE" || refType === "SHIPPING_FEE") {
+        const canUseFreeShipping = r?.hasFreeRequest !== false;
+        if (canUseFreeShipping) {
+          const fromBonusShipping = Math.min(bonusShipping, spend);
+          bonusShipping -= fromBonusShipping;
+          spend -= fromBonusShipping;
+        }
+      } else {
+        const fromBonusRequest = Math.min(bonusRequest, spend);
+        bonusRequest -= fromBonusRequest;
+        spend -= fromBonusRequest;
+      }
       paid -= spend;
     }
   }
 
   const paidCredit = Math.max(0, Math.round(paid));
-  const bonusRequestCredit = Math.max(0, Math.round(bonus));
+  const bonusRequestCredit = Math.max(0, Math.round(bonusRequest));
+  const bonusShippingCredit = Math.max(0, Math.round(bonusShipping));
   return {
-    balance: paidCredit + bonusRequestCredit,
+    balance: paidCredit + bonusRequestCredit + bonusShippingCredit,
     paidCredit,
     bonusRequestCredit,
+    bonusShippingCredit,
   };
 }
 
@@ -1247,7 +1267,7 @@ async function withdraw(req, res) {
     if (user.role === "requestor" && isRequestorOwner && businessAnchorId) {
       const breakdown =
         await getBusinessCreditBalanceBreakdown(businessAnchorId);
-      paidBalance = Number(breakdown?.paidBalance || 0);
+      paidBalance = Number(breakdown?.paidCredit || 0);
       if (paidBalance > 0) {
         const refundAccountRaw = req.body?.refundReceiveAccount || {};
         const bank = String(refundAccountRaw?.bank || "").trim();

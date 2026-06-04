@@ -31,8 +31,8 @@ async function getBusinessCreditBalance({ businessAnchorId, session }) {
     .lean();
 
   let paid = 0;
-  let bonus = 0;
-  let freeShippingCredit = 0;
+  let bonusRequest = 0;
+  let bonusShipping = 0;
 
   for (const row of rows || []) {
     const type = String(row?.type || "");
@@ -46,9 +46,10 @@ async function getBusinessCreditBalance({ businessAnchorId, session }) {
       continue;
     }
     if (type === "BONUS") {
-      bonus += absAmount;
       if (refType === "FREE_SHIPPING_CREDIT") {
-        freeShippingCredit += absAmount;
+        bonusShipping += absAmount;
+      } else {
+        bonusRequest += absAmount;
       }
       continue;
     }
@@ -66,23 +67,24 @@ async function getBusinessCreditBalance({ businessAnchorId, session }) {
         // 무료 의뢰가 포함된 패키지에만 무료배송 크레딧 사용 가능
         const canUseFreeShipping = row?.hasFreeRequest !== false;
         if (canUseFreeShipping) {
-          const fromFreeShippingCredit = Math.min(freeShippingCredit, spend);
-          freeShippingCredit -= fromFreeShippingCredit;
-          spend -= fromFreeShippingCredit;
+          const fromBonusShipping = Math.min(bonusShipping, spend);
+          bonusShipping -= fromBonusShipping;
+          spend -= fromBonusShipping;
         }
+      } else {
+        const fromBonusRequest = Math.min(bonusRequest, spend);
+        bonusRequest -= fromBonusRequest;
+        spend -= fromBonusRequest;
       }
-      const fromBonus = Math.min(bonus, spend);
-      bonus -= fromBonus;
-      spend -= fromBonus;
       paid -= spend;
     }
   }
 
   const paidCredit = Math.max(0, Math.round(paid));
-  const bonusRequestCredit = Math.max(0, Math.round(bonus));
-  const bonusShippingCredit = Math.max(0, Math.round(freeShippingCredit));
+  const bonusRequestCredit = Math.max(0, Math.round(bonusRequest));
+  const bonusShippingCredit = Math.max(0, Math.round(bonusShipping));
   return {
-    balance: paidCredit + bonusRequestCredit,
+    balance: paidCredit + bonusRequestCredit + bonusShippingCredit,
     paidCredit,
     bonusRequestCredit,
     bonusShippingCredit,
@@ -195,16 +197,19 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     return;
   }
 
-  const { balance } = await getBusinessCreditBalance({
+  const { paidCredit, bonusRequestCredit } = await getBusinessCreditBalance({
     businessAnchorId,
     session,
   });
-  if (balance < resolvedAmount) {
+  const availableForMachining = paidCredit + bonusRequestCredit;
+  if (availableForMachining < resolvedAmount) {
     const err = new Error("의뢰자 잔액 부족으로 가공 진입 불가");
     err.statusCode = 402;
     err.payload = {
       reason: "insufficient_credit_for_machining",
-      balance,
+      paidCredit,
+      bonusRequestCredit,
+      availableForMachining,
       required: resolvedAmount,
       requestId: request?._id ? String(request._id) : null,
     };

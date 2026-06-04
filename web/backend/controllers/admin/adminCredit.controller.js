@@ -2044,7 +2044,8 @@ export async function adminGetBusinessCreditDetail(req, res) {
       .lean();
 
     let paid = 0;
-    let bonus = 0;
+    let bonusRequest = 0;
+    let bonusShipping = 0;
     let spent = 0;
     const history = [];
 
@@ -2057,23 +2058,40 @@ export async function adminGetBusinessCreditDetail(req, res) {
       if (type === "CHARGE" || type === "REFUND") {
         paid += absAmount;
       } else if (type === "BONUS") {
-        bonus += absAmount;
+        if (String(ledger.refType || "") === "FREE_SHIPPING_CREDIT") {
+          bonusShipping += absAmount;
+        } else {
+          bonusRequest += absAmount;
+        }
       } else if (type === "ADJUST") {
         paid += amount;
       } else if (type === "SPEND") {
         let spend = absAmount;
         spent += spend;
-        const fromBonus = Math.min(bonus, spend);
-        bonus -= fromBonus;
-        spend -= fromBonus;
+        if (
+          String(ledger.refType || "") === "SHIPPING_PACKAGE" ||
+          String(ledger.refType || "") === "SHIPPING_FEE"
+        ) {
+          const canUseFreeShipping = ledger?.hasFreeRequest !== false;
+          if (canUseFreeShipping) {
+            const fromBonusShipping = Math.min(bonusShipping, spend);
+            bonusShipping -= fromBonusShipping;
+            spend -= fromBonusShipping;
+          }
+        } else {
+          const fromBonusRequest = Math.min(bonusRequest, spend);
+          bonusRequest -= fromBonusRequest;
+          spend -= fromBonusRequest;
+        }
         paid -= spend;
       }
 
       history.push({
         ...ledger,
-        balanceAfter: Math.max(0, paid + bonus),
+        balanceAfter: Math.max(0, paid + bonusRequest + bonusShipping),
         paidCreditAfter: Math.max(0, paid),
-        bonusRequestCreditAfter: Math.max(0, bonus),
+        bonusRequestCreditAfter: Math.max(0, bonusRequest),
+        bonusShippingCreditAfter: Math.max(0, bonusShipping),
       });
     }
 
@@ -2081,9 +2099,10 @@ export async function adminGetBusinessCreditDetail(req, res) {
       success: true,
       data: {
         business: org,
-        balance: Math.max(0, paid + bonus),
+        balance: Math.max(0, paid + bonusRequest + bonusShipping),
         paidCredit: Math.max(0, paid),
-        bonusRequestCredit: Math.max(0, bonus),
+        bonusRequestCredit: Math.max(0, bonusRequest),
+        bonusShippingCredit: Math.max(0, bonusShipping),
         spentAmount: Math.max(0, spent),
         history: history.reverse(),
       },
