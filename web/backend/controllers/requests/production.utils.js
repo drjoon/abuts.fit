@@ -43,7 +43,7 @@ const BATCH_PROCESSING_DAYS = 1; // 세척/검사/포장 (50~100개 모아서)
 const PACKING_CUTOFF_HOUR = 14; // 포장 마감 시각 (14:00)
 const PICKUP_REQUEST_HOUR = 15; // 택배 수거 신청 시각 (15:00)
 const DAILY_PICKUP_HOUR = 16; // 택배 수거 시각 (16:00)
-const SAME_DAY_SHIPPING_CUTOFF_HOUR_KST = 24; // 자정(24:00)까지 접수분 당일 집하
+const SAME_DAY_SHIPPING_CUTOFF_HOUR_KST = 24; // 자정(0시)까지 접수분 당일 집하
 
 /**
  * KST 시각 생성

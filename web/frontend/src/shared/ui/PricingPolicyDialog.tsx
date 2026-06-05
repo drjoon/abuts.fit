@@ -83,7 +83,7 @@ export const PricingPolicyDialog = ({
     return (
       <p>
         {label}: <b>기준 +{minText}영업일</b> (최대 +{maxText}영업일)
-        {hasSameDayNote ? " · 자정(24:00)까지 접수 시 당일 집하 가능" : ""}
+        {hasSameDayNote ? " · 자정(0시)까지 접수 시 당일 집하 가능" : ""}
       </p>
     );
   };
@@ -289,10 +289,9 @@ export const PricingPolicyDialog = ({
                     7. 발송 리드타임 (최대 직경 기준)
                   </h3>
                   <p>
-                    KST 기준 <b>자정(24:00)까지</b> 접수 건은 1영업일 리드타임의
+                    KST 기준 <b>자정(0시)까지</b> 접수 건은 1영업일 리드타임의
                     경우 당일 집하로 계산되고,{" "}
-                    <b>자정 이후 접수 건부터는 익영업일</b>
-                    기준으로 계산됩니다.
+                    <b>자정 이후 접수 건부터는 익영업일</b> 기준으로 계산됩니다.
                   </p>
                   {renderLeadTimeLine("6mm", "d6")}
                   {renderLeadTimeLine("8mm", "d8")}
@@ -306,7 +305,7 @@ export const PricingPolicyDialog = ({
                   </h3>
                   <ul className="list-disc pl-4 space-y-0.5">
                     <li>
-                      <b>24:00</b>: 당일 의뢰 접수 마감
+                      <b>0시</b>: 당일 의뢰 접수 마감
                     </li>
                     <li>
                       <b>15:00</b>: 포장 마감 후 택배 수거 신청
