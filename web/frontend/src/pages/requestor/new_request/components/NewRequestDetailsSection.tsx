@@ -42,7 +42,7 @@ type ToastFn = (props: {
 }) => void;
 
 type Option = { id: string; label: string };
-const SAME_DAY_SHIPPING_CUTOFF_HOUR_KST = 12;
+const SAME_DAY_SHIPPING_CUTOFF_HOUR_KST = 24;
 
 type Props = {
   files: File[];

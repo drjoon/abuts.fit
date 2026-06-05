@@ -255,7 +255,7 @@ export const RequestorBulkShippingBannerCard = ({
 
   const getCardMessage = () => {
     if (!policy) {
-      return "제조사 리드타임 기준으로 발송일이 계산되며, KST 12:00 이전 접수 시 당일 집하가 반영됩니다.";
+      return "제조사 리드타임 기준으로 발송일이 계산되며, KST 자정(24:00)까지 접수 시 당일 집하가 반영됩니다.";
     }
 
     const days = (policy.weeklyBatchDays || [])
@@ -263,10 +263,10 @@ export const RequestorBulkShippingBannerCard = ({
       .join(", ");
 
     if (days) {
-      return `${days}요일에 묶음 발송되며, 제조사 리드타임과 KST 12:00 컷오프 기준으로 발송일이 계산됩니다.`;
+      return `${days}요일에 묶음 발송되며, 제조사 리드타임과 KST 자정(24:00) 컷오프 기준으로 발송일이 계산됩니다.`;
     }
 
-    return "제조사 리드타임과 KST 12:00 컷오프 기준으로 발송일이 계산됩니다.";
+    return "제조사 리드타임과 KST 자정(24:00) 컷오프 기준으로 발송일이 계산됩니다.";
   };
 
   const handleOpenModal = () => {
@@ -633,7 +633,7 @@ export const RequestorBulkShippingBannerCard = ({
                 배송 대기 현황
               </DialogTitle>
               <CardDescription className="text-xs text-muted-foreground">
-                제조사 리드타임 기준으로 계산되며, KST 12:00 이전 접수분은
+                제조사 리드타임 기준으로 계산되며, KST 자정(24:00)까지 접수분은
                 1영업일 리드타임에서 당일 집하가 반영됩니다.
               </CardDescription>
             </div>
@@ -721,8 +721,8 @@ export const RequestorBulkShippingBannerCard = ({
                 제조사 배송 리드타임
               </DialogTitle>
               <CardDescription className="text-xs text-muted-foreground">
-                직경별 예상 리드타임과 정기 발송 요일을 확인하세요. (KST 12:00
-                이전 접수분은 1영업일 리드타임에서 당일 집하 반영)
+                직경별 예상 리드타임과 정기 발송 요일을 확인하세요. (KST
+                자정(24:00) 까지 접수분은 1영업일 리드타임에서 당일 집하 반영)
               </CardDescription>
             </div>
           </DialogHeader>
