@@ -18,6 +18,11 @@ export const useDiameterQueue = (filteredAndSorted: ManufacturerRequest[]) => {
     };
 
     for (const req of filteredAndSorted) {
+      // Exclude R&D sample requests (manufacturer copies) from the summary counts
+      // but keep them in the page's request list. The UI identifies these as
+      // `source === "manufacturer_sample"`.
+      const isSampleRequest = (req as any)?.source === "manufacturer_sample";
+
       const caseInfos = req.caseInfos || {};
       const bucketIndex = getDiameterBucketIndex(caseInfos.maxDiameter);
       const item: WorksheetQueueItem = {
@@ -43,6 +48,14 @@ export const useDiameterQueue = (filteredAndSorted: ManufacturerRequest[]) => {
         programText: req.description,
         qty: 1,
       };
+
+      if (isSampleRequest) {
+        // Do not count R&D samples in the summary (counts/total/buckets)
+        // If you want the modal to still show samples when clicking a bucket,
+        // remove this continue and push into buckets anyway. Current requirement
+        // is to exclude them from counts only.
+        continue;
+      }
 
       if (bucketIndex === 0) {
         counts[0]++;

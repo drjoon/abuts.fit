@@ -791,7 +791,20 @@ export async function getAllRequests(req, res) {
     const includeTotal =
       String(req.query.includeTotal || "").toLowerCase() === "1" ||
       String(req.query.includeTotal || "").toLowerCase() === "true";
-    const total = includeTotal ? await Request.countDocuments(filter) : null;
+
+    // 워크시트 상단 요약 총계는 R&D 샘플을 제외한다.
+    // 단, 카드 목록 자체는 기존처럼 샘플을 포함해 보여주기 위해
+    // 목록 조회 filter는 유지하고 total 집계에서만 별도 제외 조건을 적용한다.
+    let totalFilter = filter;
+    if (isWorksheetView) {
+      totalFilter = {
+        $and: [filter, { source: { $ne: "manufacturer_sample" } }],
+      };
+    }
+
+    const total = includeTotal
+      ? await Request.countDocuments(totalFilter)
+      : null;
 
     res.status(200).json({
       success: true,
