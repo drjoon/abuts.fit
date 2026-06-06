@@ -62,14 +62,30 @@ export const MachiningRequestLabel = ({
 
   // 유지홈(retentionGroove) 표시 - rules.md §7.4.1
   // none=없음(0.1) / shallow=얕음(0.2) / deep=깊음(0.3)
+  const retentionGroove = caseInfos?.retentionGroove as
+    | "none"
+    | "shallow"
+    | "deep"
+    | undefined;
   const retentionGrooveLabel = (() => {
-    const rg = caseInfos?.retentionGroove as
-      | "none"
-      | "shallow"
-      | "deep"
-      | undefined;
-    if (!rg) return "";
-    return rg === "none" ? "없음" : rg === "shallow" ? "얕음" : "깊음";
+    if (!retentionGroove) return "";
+    return retentionGroove === "none"
+      ? "없음"
+      : retentionGroove === "shallow"
+        ? "얕음"
+        : "깊음";
+  })();
+
+  const retentionBadgeClass = (() => {
+    const base =
+      "inline-flex items-center rounded-full px-2 py-0.5 font-semibold ";
+    if (retentionGroove === "none")
+      return base + "border border-amber-100 bg-amber-50 text-amber-600";
+    if (retentionGroove === "shallow")
+      return base + "border border-amber-200 bg-amber-50 text-amber-700";
+    if (retentionGroove === "deep")
+      return base + "border border-amber-400 bg-amber-100 text-amber-900";
+    return base + "border border-amber-100 bg-amber-50 text-amber-600";
   })();
 
   const renderInfoBadges = () => {
@@ -79,7 +95,7 @@ export const MachiningRequestLabel = ({
       <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
         {isSample ? (
           <span className="inline-flex items-center rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 font-semibold text-purple-700">
-            R&D
+            [R&D]
           </span>
         ) : null}
         {implantParts.length ? (
@@ -88,7 +104,7 @@ export const MachiningRequestLabel = ({
           </span>
         ) : null}
         {retentionGrooveLabel ? (
-          <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">
+          <span className={retentionBadgeClass}>
             유지홈 {retentionGrooveLabel}
           </span>
         ) : null}
