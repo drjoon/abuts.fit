@@ -526,7 +526,20 @@ namespace DentalAddin
                         if (twoPhaseSplitReady)
                         {
                             // 주의: 이름이 "Turning"으로 시작하면 다음 phase의 array[i] 탐지 루프에 오인식되므로 다른 접두사 사용
-                            FeatureChain regionChain = BuildTurningRegionChain(array[i], twoPhaseSplitX, twoPhaseLeftSide, $"TurnRgn{twoPhaseRegion}_{i}");
+                            // Turn_A는 finishline보다 2mm 오른쪽까지 연장 요청(사용자 요구)
+                            double effectiveSplitX = twoPhaseSplitX;
+                            try
+                            {
+                                if (twoPhaseLeftSide)
+                                {
+                                    double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
+                                    // 우변을 넘지 않도록 클램프
+                                    effectiveSplitX = Math.Min(twoPhaseSplitX + 2.0, xMax - 1e-6);
+                                }
+                            }
+                            catch { }
+
+                            FeatureChain regionChain = BuildTurningRegionChain(array[i], effectiveSplitX, twoPhaseLeftSide, $"TurnRgn{twoPhaseRegion}_{i}");
                             if (regionChain != null)
                             {
                                 opChain = regionChain;
