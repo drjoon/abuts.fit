@@ -1113,8 +1113,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         stepIncrement = 0.2;
                         break;
                     case "deep":
-                        stepIncrement = 0.25;
-                        break;
+                                            stepIncrement = 0.3;
+                                            break;
                 }
 
                 if (!stepIncrement.HasValue)
@@ -1130,8 +1130,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 // B StepIncrement env는 설정하지 않는다. 대신 A의 StockAllowance만 override 한다.
                 if (groove.Trim().ToLowerInvariant() == "deep")
                 {
-                    Environment.SetEnvironmentVariable(AppConfig.CompositeStockAllowanceAEnv, (-0.03).ToString(CultureInfo.InvariantCulture));
-                    AppLogger.Log($"DentalAddin: retentionGroove=deep - A StockAllowance={(-0.03).ToString(CultureInfo.InvariantCulture)} 적용 (env)");
+                    Environment.SetEnvironmentVariable(AppConfig.CompositeStockAllowanceAEnv, (-0.1).ToString(CultureInfo.InvariantCulture));
+                                        AppLogger.Log($"DentalAddin: retentionGroove=deep - A StockAllowance={(-0.1).ToString(CultureInfo.InvariantCulture)} 적용 (env)");
                 }
                 else
                 {
