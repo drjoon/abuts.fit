@@ -488,7 +488,7 @@ export const WorksheetCardGrid = ({
             </div>
             {/* 실시간 상태 뱃지 (CAM 생성중 등) - 상단 배치 */}
             {(realtimeBadge || realtimeElapsedLabel) && (
-              <div className="absolute right-20 top-3 z-20 flex items-center gap-2">
+              <div className="absolute left-28 top-3 z-30 flex items-center gap-2">
                 {realtimeBadge && (
                   <Badge
                     variant="outline"

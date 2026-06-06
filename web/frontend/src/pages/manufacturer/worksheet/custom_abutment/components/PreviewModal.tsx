@@ -136,6 +136,7 @@ export const PreviewModal = ({
   const { token } = useAuthStore();
   const { toast } = useToast();
   const [regenerating, setRegenerating] = useState(false);
+  const [twoPhasing, setTwoPhasing] = useState(false);
   const req = previewFiles.request as ManufacturerRequest | null;
   const lastStableReqRef = useRef<ManufacturerRequest | null>(null);
 
@@ -348,6 +349,81 @@ export const PreviewModal = ({
       ? `.${String(args.originalFileName).split(".").pop()?.toLowerCase()}`
       : ".stl";
     return `${args.requestId}-${args.clinicName || ""}-${args.patientName || ""}-${args.tooth || ""}${ext}`;
+  };
+
+  // 2-phase 재생성 요청 핸들러 (프론트 → 백엔드 → Esprit로 TwoPhase 명령 전파)
+  const onTwoPhase = async () => {
+    if (!canRegenerateFilledStl) return;
+    if (!token) {
+      toast({
+        title: "실패",
+        description: "로그인이 필요합니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (twoPhasing || isUploading) return;
+
+    setTwoPhasing(true);
+    try {
+      const requestId = String(activeReq?.requestId || "").trim();
+      if (!requestId) {
+        toast({
+          title: "실패",
+          description: "requestId가 없어 2-phase 요청을 진행할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const res = await fetch(
+        `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate-2phase`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({}),
+        },
+      );
+      const body: any = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) {
+        const msg =
+          body?.message ||
+          body?.error ||
+          body?.detail ||
+          "2-phase 요청에 실패했습니다.";
+        toast({
+          title: "2-phase 실패",
+          description: msg,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // NC 재생성 성공 시 캐시 무효화
+      const s3Key = activeReq?.caseInfos?.ncFile?.s3Key;
+      if (s3Key) {
+        await deleteCncProgramCache(s3Key);
+      }
+
+      toast({
+        title: "2-phase 요청",
+        description: "2-phase NC 재생성 요청을 전송했습니다.",
+      });
+
+      // 요청 성공 시 모달 닫기
+      onOpenChange(false);
+    } catch (err: any) {
+      toast({
+        title: "2-phase 실패",
+        description: err?.message || "2-phase 요청에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setTwoPhasing(false);
+    }
   };
 
   const onRegenerate = async () => {
@@ -894,28 +970,57 @@ export const PreviewModal = ({
                   </button>
                   <div className="flex items-center gap-2">
                     {canRegenerateFilledStl && (
-                      <button
-                        type="button"
-                        className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
-                          regenerating || isUploading
-                            ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                        }`}
-                        disabled={regenerating || isUploading}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          void onRegenerate();
-                        }}
-                        aria-label="재생성"
-                        title="재생성"
-                      >
-                        <RefreshCw
-                          className={
-                            regenerating ? "h-4 w-4 animate-spin" : "h-4 w-4"
-                          }
-                        />
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
+                            twoPhasing || regenerating || isUploading
+                              ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          }`}
+                          disabled={twoPhasing || regenerating || isUploading}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void onTwoPhase();
+                          }}
+                          aria-label="2-phase"
+                          title="2-phase"
+                        >
+                          <span
+                            className={
+                              twoPhasing
+                                ? "h-4 w-4 animate-spin"
+                                : "text-[12px] font-semibold"
+                            }
+                          >
+                            {twoPhasing ? "…" : "2P"}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
+                            regenerating || isUploading
+                              ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          }`}
+                          disabled={regenerating || isUploading}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void onRegenerate();
+                          }}
+                          aria-label="재생성"
+                          title="재생성"
+                        >
+                          <RefreshCw
+                            className={
+                              regenerating ? "h-4 w-4 animate-spin" : "h-4 w-4"
+                            }
+                          />
+                        </button>
+                      </>
                     )}
 
                     <button

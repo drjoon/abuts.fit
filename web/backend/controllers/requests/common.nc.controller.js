@@ -393,6 +393,74 @@ export async function regenerateNcByRequestId(req, res) {
   }
 }
 
+export async function regenerateNcByRequestIdTwoPhase(req, res) {
+  try {
+    const requestId = String(req.params?.requestId || "").trim();
+    if (!requestId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "requestId is required" });
+    }
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const request = await Request.findOne({ requestId });
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    // 기록: 2-phase 재생성 요청 로깅 (간단한 이력 저장)
+    try {
+      request.caseInfos = request.caseInfos || {};
+      request.caseInfos.ncRegenerations =
+        request.caseInfos.ncRegenerations || [];
+      request.caseInfos.ncRegenerations.push({
+        type: "two-phase",
+        createdBy: req.user?._id,
+        createdAt: new Date(),
+        params: {},
+      });
+      await request.save();
+    } catch (e) {
+      // 기록 실패는 치명적이지 않으므로 로그 후 진행
+      console.warn(
+        "[regenerateNcByRequestIdTwoPhase] failed to record ncRegeneration",
+        e?.message || e,
+      );
+    }
+
+    // trigger Esprit with TwoPhase flag
+    await triggerEspritForNc({ request, force: true, twoPhase: true });
+
+    emitAppEventToRoles(
+      ["manufacturer", "admin"],
+      "request:cam-processing-started",
+      {
+        source: "nc-regenerate-2phase",
+        requestId: request?.requestId || null,
+        requestMongoId: String(request?._id || "").trim() || null,
+      },
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "2-phase NC 재생성 요청을 전송했습니다.",
+      data: { requestId },
+    });
+  } catch (error) {
+    const status = Number(error?.statusCode || 500);
+    return res.status(status).json({
+      success: false,
+      message: error?.message || "NC 재생성 요청 중 오류가 발생했습니다.",
+    });
+  }
+}
+
 export async function getNcFileUrl(req, res) {
   try {
     const { id } = req.params;

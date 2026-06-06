@@ -11,7 +11,11 @@ const ESPRIT_BASE =
   "http://localhost:8001";
 
 // Trigger Esprit for NC generation
-export async function triggerEspritForNc({ request, force = false }) {
+export async function triggerEspritForNc({
+  request,
+  force = false,
+  twoPhase = false,
+}) {
   if (!request) {
     throw new Error("request is required to trigger Esprit");
   }
@@ -120,6 +124,8 @@ export async function triggerEspritForNc({ request, force = false }) {
       TaperAngle: Number(request?.caseInfos?.taperAngle || 0),
       TiltAxisVector: request?.caseInfos?.tiltAxisVector || null,
       FrontPoint: request?.caseInfos?.frontPoint || null,
+      // Two-phase 제어 플래그 (백엔드에서 전달됨)
+      TwoPhase: Boolean(twoPhase),
     };
     const headers = withEspritHeaders({ "Content-Type": "application/json" });
     console.log("[ESPRIT] POST / payload", {
@@ -127,6 +133,7 @@ export async function triggerEspritForNc({ request, force = false }) {
       MaxDiameter: payload.MaxDiameter,
       MaterialDiameter: payload.MaterialDiameter,
       MaterialDiameterGroup: payload.MaterialDiameterGroup,
+      TwoPhase: payload.TwoPhase,
     });
     console.log("[ESPRIT] request headers", {
       url: espritUrl,

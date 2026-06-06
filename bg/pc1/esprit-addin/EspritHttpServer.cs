@@ -38,6 +38,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         [DataMember] public double TaperAngle { get; set; }
         [DataMember] public Vector3Dto TiltAxisVector { get; set; }
         [DataMember] public Vector3Dto FrontPoint { get; set; }
+        [DataMember] public bool TwoPhase { get; set; }
     }
 
     [DataContract]
@@ -62,7 +63,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private CancellationTokenSource _cts;
         private readonly string _baseUrl = AppConfig.GetEspritBaseUrl();
         private bool _isRunning = true;
-        
+
         private readonly Queue<NcGenerationRequest> _ncQueue = new Queue<NcGenerationRequest>();
         private readonly object _queueLock = new object();
         private Task _queueProcessorTask;
@@ -128,6 +129,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             lock (_queueLock)
             {
                 _ncQueue.Enqueue(req);
+                try
+                {
+                    AppLogger.Log($"[HTTP Server] Enqueued NC request: {req.RequestId} (TwoPhase: {req.TwoPhase}) (Queue size: {_ncQueue.Count})");
+                }
+                catch {}
             }
         }
         public EspritHttpServer(Application app)
@@ -166,7 +172,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 _listener?.Stop();
                 _listener?.Close();
                 _listener = null;
-                
+
                 try
                 {
                     if (_queueProcessorTask != null && !_queueProcessorTask.IsCompleted)
@@ -175,7 +181,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     }
                 }
                 catch { }
-                
+
                 AppLogger.Log("[HTTP Server] Stopped");
             }
             catch (Exception ex)
@@ -303,7 +309,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     response.OutputStream.Write(buffer, 0, buffer.Length);
                     return;
                 }
-                AppLogger.Log($"[HTTP Server] Accepted NC request: {req.RequestId} (Clinic: {req.ClinicName}, Patient: {req.PatientName})");
+                AppLogger.Log($"[HTTP Server] Accepted NC request: {req.RequestId} (Clinic: {req.ClinicName}, Patient: {req.PatientName}, TwoPhase: {req.TwoPhase})");
                 await NotifyRuntimeStatus(
                     req.RequestId,
                     "started",
@@ -322,7 +328,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     int queueSize = _ncQueue.Count;
                     _ncQueue.Enqueue(req);
-                    AppLogger.Log($"[HTTP Server] Request queued: {req.RequestId} (Queue size: {queueSize + 1})");
+                    AppLogger.Log($"[HTTP Server] Request queued: {req.RequestId} (TwoPhase: {req.TwoPhase}) (Queue size: {queueSize + 1})");
                 }
                 // 즉시 응답 반환
                 response.StatusCode = (int)HttpStatusCode.OK;
@@ -361,12 +367,18 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 // STL 파일 경로 정규화
                 string stlPath = NormalizeFilePath(req.StlPath);
                 AppLogger.Log($"[NC Processing] Resolved STL path: {stlPath}");
+                try
+                {
+                    AppLogger.Log($"[NC Processing] TwoPhase flag for request {req.RequestId}: {req.TwoPhase}");
+                }
+                catch {}
+
                 if (req.Force)
                 {
                     TryDeleteExistingNcFiles(req, stlPath);
                     TryDeleteExistingFilledFile(stlPath);
                 }
-                
+
                 if (!File.Exists(stlPath))
                 {
                     AppLogger.Log($"[NC Processing] STL file not found locally: {stlPath}. Trying to download from backend source-file API...");
@@ -448,6 +460,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         }
         private void RunCamProcessing(NcGenerationRequest req, string stlPath)
         {
+            try
+            {
+                AppLogger.Log($"[NC Processing] TwoPhase flag for request {req.RequestId}: {req.TwoPhase}");
+            }
+            catch {}
+
             if (req.MaterialDiameter <= 5)
             {
                 AppLogger.Log("[NC Processing] MaterialDiameter is missing or invalid. Aborting CAM process.");
@@ -502,7 +520,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     {
                         try
                         {
-                            AppLogger.Log($"[Queue Processor] Processing: {req.RequestId} (Remaining in queue: {_ncQueue.Count})");
+                            AppLogger.Log($"[Queue Processor] Processing: {req.RequestId} (TwoPhase: {req.TwoPhase}) (Remaining in queue: {_ncQueue.Count})");
                             await ProcessNcRequest(req);
                             AppLogger.Log($"[Queue Processor] Completed: {req.RequestId}");
                         }

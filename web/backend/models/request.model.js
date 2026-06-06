@@ -310,6 +310,23 @@ const requestSchema = new mongoose.Schema(
           default: Date.now,
         },
       },
+      // NC 재생성(재처리) 이력: 프론트/백엔드에서 재생성 요청이 발생한 경우 간단한 이력을 남김
+      ncRegenerations: {
+        type: [
+          {
+            type: {
+              type: String,
+              enum: ["standard", "two-phase"],
+              default: "standard",
+            },
+            createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+            createdAt: { type: Date, default: Date.now },
+            params: { type: {}, default: undefined },
+            _id: false,
+          },
+        ],
+        default: undefined,
+      },
       finishLine: {
         version: Number,
         sectionCount: Number,

@@ -418,6 +418,14 @@ router.delete(
 );
 
 // 제조사/관리자: NC 파일 다운로드 URL
+
+// 제조사/관리자: requestId 기반 2-phase NC 재생성 트리거 (Esprit force 재처리, TwoPhase flag 전달)
+router.post(
+  "/by-request/:requestId/nc-file/regenerate-2phase",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.regenerateNcByRequestIdTwoPhase,
+);
 router.get(
   "/:id/nc-file-url",
   authenticate,
