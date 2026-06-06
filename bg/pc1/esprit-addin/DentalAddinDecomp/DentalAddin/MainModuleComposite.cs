@@ -735,25 +735,66 @@ namespace DentalAddin
 
         private static FeatureChain EnsureRectBoundary(string name, double x1, double x2, double yTop, double yBottom)
         {
+            string targetName = name;
+
+            // 기존 동일 이름 체인이 있으면 재사용하지 않고 삭제 후 재생성한다.
+            // (이전 실행에서 남은 비정상/비직사각형 체인이 split 경계를 왜곡하는 것을 방지)
             FeatureChain existing = FindFeatureChainByName(name);
             if (existing != null)
             {
-                return existing;
+                try
+                {
+                    // 일부 ESPRIT interop에서 FeatureChain.Delete()가 노출되지 않으므로
+                    // GraphicsCollection.Remove(key) 방식으로 삭제한다.
+                    int existingKey = SafeParseKey(Convert.ToString(existing.Key, CultureInfo.InvariantCulture));
+                    if (existingKey > 0 && Document?.GraphicsCollection != null)
+                    {
+                        Document.GraphicsCollection.Remove(existingKey);
+                        DentalLogger.Log($"EnsureRectBoundary({name}) - 기존 체인 제거 후 재생성 (Key:{existingKey})");
+                    }
+                    else
+                    {
+                        targetName = name + "_" + DateTime.Now.ToString("HHmmssfff", CultureInfo.InvariantCulture);
+                        DentalLogger.Log($"EnsureRectBoundary({name}) - 기존 체인 key 파싱 실패/GraphicsCollection 접근 불가, 새 이름으로 생성: {targetName}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // 제거 실패 시에도 새 체인을 만들기 위해 이름 충돌을 피한다.
+                    targetName = name + "_" + DateTime.Now.ToString("HHmmssfff", CultureInfo.InvariantCulture);
+                    DentalLogger.Log($"EnsureRectBoundary({name}) - 기존 체인 제거 실패({ex.GetType().Name}:{ex.Message}), 새 이름으로 생성: {targetName}");
+                }
             }
 
             try
             {
-                Point p1 = Document.GetPoint(x1, yTop, 0);
-                Point p2 = Document.GetPoint(x1, yBottom, 0);
-                Point p3 = Document.GetPoint(x2, yBottom, 0);
-                Point p4 = Document.GetPoint(x2, yTop, 0);
+                double xLeft = Math.Min(x1, x2);
+                double xRight = Math.Max(x1, x2);
+                double yUpper = Math.Max(yTop, yBottom);
+                double yLower = Math.Min(yTop, yBottom);
+
+                if (Math.Abs(xRight - xLeft) < 1e-6)
+                {
+                    xRight = xLeft + 1e-6;
+                }
+                if (Math.Abs(yUpper - yLower) < 1e-6)
+                {
+                    yUpper = yLower + 1e-6;
+                }
+
+                Point p1 = Document.GetPoint(xLeft, yUpper, 0);
+                Point p2 = Document.GetPoint(xLeft, yLower, 0);
+                Point p3 = Document.GetPoint(xRight, yLower, 0);
+                Point p4 = Document.GetPoint(xRight, yUpper, 0);
 
                 FeatureChain fc = Document.FeatureChains.Add(p1);
                 fc.Add(Document.GetSegment(p1, p2));
                 fc.Add(Document.GetSegment(p2, p3));
                 fc.Add(Document.GetSegment(p3, p4));
                 fc.Add(Document.GetSegment(p4, p1));
-                fc.Name = name;
+                fc.Name = targetName;
+
+                DentalLogger.Log($"EnsureRectBoundary({targetName}) 생성 - X[{xLeft:0.###}~{xRight:0.###}], Y[{yLower:0.###}~{yUpper:0.###}]");
                 return fc;
             }
             catch (Exception ex)
