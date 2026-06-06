@@ -463,7 +463,9 @@ namespace DentalAddin
                 return true;
             }
 
-            double xMin = Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
+            // 좌측 시작점을 U축(x=0)로 강제
+            double frontBackMin = Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
+            double xMin = Math.Min(0.0, frontBackMin);
             double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
             if (!(splitX > xMin && splitX < xMax))
             {
@@ -493,8 +495,23 @@ namespace DentalAddin
             }
             Document.ActiveLayer = activeLayer;
 
-            AddSplitOpsForRegion("A", prcA, keyA, technologyUtility, ff0, ff180);
-            AddSplitOpsForRegion("B", prcB, keyB, technologyUtility, ff0, ff180);
+            // 가이드 분할선 생성(작업창에서 분할 위치 확인용)
+            EnsureTwoPhaseSplitGuideLine(splitX);
+
+            string region = GetEnvString("ABUTS_ROUGHFREEFORM_SPLIT_REGION");
+            if (string.Equals(region, "A", StringComparison.OrdinalIgnoreCase))
+            {
+                AddSplitOpsForRegion("A", prcA, keyA, technologyUtility, ff0, ff180);
+            }
+            else if (string.Equals(region, "B", StringComparison.OrdinalIgnoreCase))
+            {
+                AddSplitOpsForRegion("B", prcB, keyB, technologyUtility, ff0, ff180);
+            }
+            else
+            {
+                AddSplitOpsForRegion("A", prcA, keyA, technologyUtility, ff0, ff180);
+                AddSplitOpsForRegion("B", prcB, keyB, technologyUtility, ff0, ff180);
+            }
 
             return true;
         }
@@ -549,13 +566,19 @@ namespace DentalAddin
             prcB = GetEnvString("ABUTS_ROUGHFREEFORM_PRC_B");
 
             string enabled = GetEnvString("ABUTS_ROUGHFREEFORM_SPLIT_ENABLE");
-            bool explicitEnable = string.Equals(enabled, "1", StringComparison.OrdinalIgnoreCase) || string.Equals(enabled, "true", StringComparison.OrdinalIgnoreCase);
+            string twoPhaseEnabled = GetEnvString(AppConfig.TwoPhaseEnableEnv);
+            bool explicitEnable =
+                string.Equals(enabled, "1", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(enabled, "true", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(twoPhaseEnabled, "1", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(twoPhaseEnabled, "true", StringComparison.OrdinalIgnoreCase);
 
-            double xMin = Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
+            double frontBackMin = Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
+            double xMin = Math.Min(0.0, frontBackMin);
             double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
             double defaultSplit = (xMin + xMax) / 2.0;
 
-            double? configured = GetEnvDoubleNullable("ABUTS_ROUGHFREEFORM_SPLIT_X");
+            double? configured = GetEnvDoubleNullable(AppConfig.TwoPhaseSplitXEnv) ?? GetEnvDoubleNullable("ABUTS_ROUGHFREEFORM_SPLIT_X");
             splitX = configured ?? defaultSplit;
 
             bool anyConfigured = configured.HasValue || !string.IsNullOrWhiteSpace(prcA) || !string.IsNullOrWhiteSpace(prcB);
@@ -576,6 +599,41 @@ namespace DentalAddin
             }
 
             return true;
+        }
+
+        private static void EnsureTwoPhaseSplitGuideLine(double splitX)
+        {
+            try
+            {
+                if (Document == null || Document.LatheMachineSetup == null)
+                {
+                    return;
+                }
+
+                FeatureChain existing = FindFeatureChainByName("TwoPhaseSplitLine");
+                if (existing != null)
+                {
+                    return;
+                }
+
+                Layer layer = GetOrCreateLayer("TwoPhaseGuides");
+                if (layer != null)
+                {
+                    Document.ActiveLayer = layer;
+                }
+
+                double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
+                Point pTop = Document.GetPoint(splitX, radius, 0);
+                Point pBottom = Document.GetPoint(splitX, -radius, 0);
+                FeatureChain line = Document.FeatureChains.Add(pTop);
+                line.Add(Document.GetSegment(pTop, pBottom));
+                line.Name = "TwoPhaseSplitLine";
+                DentalLogger.Log($"TwoPhaseSplitGuideLine - splitX:{splitX:0.###} 생성 완료");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"TwoPhaseSplitGuideLine 생성 실패: {ex.GetType().Name}:{ex.Message}");
+            }
         }
 
         private static string GetEnvString(string key)

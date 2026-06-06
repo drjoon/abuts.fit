@@ -498,7 +498,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 lotNumber = req.LotNumber ?? "ACR"
             };
             AppLogger.Log("[NC Processing] Invoking StlFileProcessor.Process()...");
-            processor.Process(stlPath, frontLimitX, null, req.MaterialDiameter);
+            processor.Process(stlPath, frontLimitX, null, req.MaterialDiameter, req.TwoPhase);
             AppLogger.Log($"[NC Processing] CAM processing completed successfully: {req.RequestId}");
         }
         private async Task ProcessQueueLoop(CancellationToken token)

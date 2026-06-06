@@ -99,7 +99,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _ncGenerator = new NcFileGenerator(_espApp, _outputFolder, _postProcessorFile);
         }
         public Esprit.PMTab exTab;
-        public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null)
+        public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null, bool twoPhase = false)
         {
             AppLogger.BeginRun();
             AppLogger.Log("StlFileProcessor: Process 시작");
@@ -130,6 +130,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             string requestId = null;
             BackendApiClient.RequestMetaCaseInfos requestMeta = null;
             double? finishLineTopZ = null;
+            double? finishLineMinZ = null;
             double? stlBoundingTopZ = null;
             double? finishLineEspritR = null;
             _backendLotNumber = null;
@@ -148,6 +149,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     {
                         double[] finishTopPoint = null;
                         double maxFinishZ = double.NegativeInfinity;
+                        double minFinishZ = double.PositiveInfinity;
                         foreach (double[] p in finishLinePoints)
                         {
                             if (p == null || p.Length < 3)
@@ -166,11 +168,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                                 maxFinishZ = sourceZ;
                                 finishTopPoint = p;
                             }
+                            if (sourceZ < minFinishZ)
+                            {
+                                minFinishZ = sourceZ;
+                            }
                         }
                         if (finishTopPoint != null)
                         {
                             finishLineTopZ = finishTopPoint[2];
                             finishLineEspritR = Math.Sqrt(finishTopPoint[0] * finishTopPoint[0] + finishTopPoint[1] * finishTopPoint[1]);
+                        }
+                        if (!double.IsInfinity(minFinishZ))
+                        {
+                            finishLineMinZ = minFinishZ;
                         }
                     }
                     _backendSerialCode = requestMetaResponse?.data?.serialCode;
@@ -193,7 +203,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                             : requestMeta.retentionGroove.Trim();
                         TryApplyCompositeFirstPassPercentEnv(requestMeta.tooth);
                         AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}");
-                        AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, espritR={(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
+                        AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, minZ={(finishLineMinZ.HasValue ? finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, espritR={(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, TwoPhase={twoPhase}");
                         if (!_prcManager.ApplyBackendPrcNames((BackendApiClient.RequestMetaCaseInfos)requestMeta, requestId, _backendImplantLabel))
                         {
                             AppLogger.Log("StlFileProcessor: 백엔드 PRC 설정 실패로 공정을 중단합니다.");
@@ -255,7 +265,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 Rotate90Degrees(document);
                 RotateByWAxisDegrees(document, DefaultWAxisRotationDegrees);
                 EspritDocumentHelper.LogBoundingBox(document, "AfterRotate");
-                InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ, finishLineEspritR);
+                InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ, finishLineMinZ, finishLineEspritR, twoPhase);
                 CaptureNcMetadata(document);
                 string ncFilePath = _ncGenerator.GenerateNcFile(document, stlPath, ResolveFrontPointForNc(), ResolveStockDiameterForNc(document), _backendSerialCode, stlBoundingTopZ);
                 if (!string.IsNullOrWhiteSpace(ncFilePath))
@@ -267,7 +277,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     AppLogger.Log($"StlFileProcessor: NC file generation failed - ncFilePath is empty");
                 }
-                
+
                 AppLogger.Log($"StlFileProcessor: 완료 - {stlPath}");
             }
             catch (Exception ex)
@@ -294,18 +304,18 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log("StlFileProcessor: CaptureNcMetadata 시작");
                 Type mainModuleType = DentalAddinReflectionHelper.ResolveMainModuleType();
                 AppLogger.Log($"StlFileProcessor: MainModuleType resolved = {(mainModuleType != null ? mainModuleType.FullName : "null")}");
-                
+
                 Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
                 AppLogger.Log($"StlFileProcessor: MoveModuleType resolved = {(moveModuleType != null ? moveModuleType.FullName : "null")}");
-                
+
                 _capturedFrontPointX = _effectiveFrontLimitX;
                 _capturedBackPointX = null;
-                
+
                 if (moveModuleType != null)
                 {
                     object backPointXObj = DentalAddinReflectionHelper.GetMainModuleField<object>(moveModuleType, "BackPointX");
                     AppLogger.Log($"StlFileProcessor: BackPointX 필드 읽기 - obj={backPointXObj}, type={backPointXObj?.GetType().Name ?? "null"}");
-                    
+
                     if (backPointXObj != null && backPointXObj is double)
                     {
                         _capturedBackPointX = (double)backPointXObj;
@@ -320,7 +330,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     AppLogger.Log("StlFileProcessor: MoveModuleType이 null - BackPointX 캡처 불가");
                 }
-                
+
                 double barDiameter = document?.LatheMachineSetup?.BarDiameter ?? 0;
                 _capturedStockDiameter = barDiameter > 0 ? barDiameter : (double?)null;
                 AppLogger.Log($"StlFileProcessor: NC 메타 캡처 완료 - Front:{(_capturedFrontPointX?.ToString("F3") ?? "null")}, Back:{(_capturedBackPointX?.ToString("F3") ?? "null")}, StockDia:{(_capturedStockDiameter?.ToString("F3") ?? "null")}");
@@ -333,14 +343,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private double ResolveFrontPointForNc()
         {
             AppLogger.Log($"StlFileProcessor: ResolveFrontPointForNc 호출 - _capturedFrontPointX={(_capturedFrontPointX?.ToString("F4") ?? "null")}");
-            
+
             if (_capturedFrontPointX.HasValue && !double.IsNaN(_capturedFrontPointX.Value))
             {
                 double absFrontPointX = Math.Abs(_capturedFrontPointX.Value);
                 AppLogger.Log($"StlFileProcessor: FrontPointX 사용 - {_capturedFrontPointX.Value:F4} → Math.Abs = {absFrontPointX:F4}");
                 return absFrontPointX;
             }
-            
+
             string errorMsg = $"FrontPointX not captured (_capturedFrontPointX={((_capturedFrontPointX.HasValue ? _capturedFrontPointX.Value.ToString("F4") : "null"))})";
             AppLogger.Log($"StlFileProcessor: 에러 - {errorMsg}");
             throw new InvalidOperationException(errorMsg);
@@ -365,6 +375,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendImplantLabel = null;
             _effectiveFrontLimitX = null;
             Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, null);
+            Environment.SetEnvironmentVariable(AppConfig.TwoPhaseEnableEnv, null);
+            Environment.SetEnvironmentVariable(AppConfig.TwoPhaseSplitXEnv, null);
+            Environment.SetEnvironmentVariable(AppConfig.TwoPhaseTurningRegionEnv, null);
+            Environment.SetEnvironmentVariable(AppConfig.TwoPhaseRoughRegionEnv, null);
+            Environment.SetEnvironmentVariable(AppConfig.RoughfreeformSplitEnableEnv, null);
+            Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_X", null);
             FaceHoleProcessFilePath = null;
             ConnectionMachiningProcessFilePath = null;
             lotNumber = "ACR";
@@ -650,7 +666,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 }
             }
         }
-        private void InvokeDentalAddin(Document document, double frontLimitX, double backLimitX, double? stlTopZ, double? finishLineTopZ, double? finishLineEspritR)
+        private void InvokeDentalAddin(Document document, double frontLimitX, double backLimitX, double? stlTopZ, double? finishLineTopZ, double? finishLineMinZ, double? finishLineEspritR, bool twoPhase)
         {
             if (document == null || _espApp == null)
             {
@@ -684,20 +700,21 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 ApplyTurningParameters(mainModuleType);
                 EnsureMoveModuleDefaults(mainModuleType, document);
                 ApplyLimitPoints(mainModuleType, frontLimitX, backLimitX, finishLineTopZ, finishLineEspritR, stlTopZ);
-                
+
                 AppLogger.Log("DentalAddin: MoveSurface 실행 시작 - NeedMoveY/Z 계산");
                 InvokeMoveSurface(mainModuleType);
                 AppLogger.Log("DentalAddin: MoveSurface 실행 완료");
-                
+
                 AppLogger.Log($"DentalAddin: MoveSTL 실행 시작 (FrontLimit:{frontLimitX}, BackLimit:{backLimitX})");
                 InvokeMoveSTL(mainModuleType);
                 TryApplyCompositeSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ);
+                TryApplyTwoPhaseSplitByFinishLine(mainModuleType, stlTopZ, finishLineMinZ, twoPhase);
                 // 유지홈 옵션을 5axisComposite_A 의 StepIncrement 에 반영.
                 // PRC 파일은 건드리지 않고, env 변수에 numeric 값만 주입한다.
                 // 실제 적용은 MainModuleComposite.TryRunComposite2SplitAB → TrySetCompositeStepIncrement 가
                 // Esprit COM(IDispatch)을 통해 opA.StepIncrement(DispId 217) 에 직접 SetProperty 한다.
                 TryApplyRetentionGrooveToStepIncrementEnv();
-                
+
                 AppLogger.Log("DentalAddin: Emerge 실행 시작 - IGS 서피스 Merge 및 Translate");
                 // TODO: Composite split by finish line
                 // TODO: Normalize feature chain names
@@ -1010,6 +1027,60 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
+        // TwoPhase(초기 Turning/Rough) 분할선을 finishLine 최저 Z점 기준으로 계산하여 env로 전달
+        private void TryApplyTwoPhaseSplitByFinishLine(Type mainModuleType, double? stlTopZ, double? finishLineMinZ, bool twoPhase)
+        {
+            try
+            {
+                if (!twoPhase)
+                {
+                    return;
+                }
+                if (!stlTopZ.HasValue || !finishLineMinZ.HasValue)
+                {
+                    AppLogger.Log("DentalAddin: TwoPhase split 생략 - stlTopZ/finishLineMinZ 부족");
+                    return;
+                }
+
+                Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
+                if (moveModuleType == null)
+                {
+                    AppLogger.Log("DentalAddin: TwoPhase split 생략 - MoveSTL_Module 타입 없음");
+                    return;
+                }
+
+                FieldInfo frontField = moveModuleType.GetField("FrontPointX", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                FieldInfo backField = moveModuleType.GetField("BackPointX", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                if (frontField == null || backField == null)
+                {
+                    AppLogger.Log("DentalAddin: TwoPhase split 생략 - Front/BackPointX 필드 없음");
+                    return;
+                }
+
+                double frontX = Convert.ToDouble(frontField.GetValue(null), CultureInfo.InvariantCulture);
+                double backX = Convert.ToDouble(backField.GetValue(null), CultureInfo.InvariantCulture);
+                double xMin = Math.Min(frontX, backX);
+                double xMax = Math.Max(frontX, backX);
+
+                // STL Z(min) → ESPRIT X 변환(이동 이후 좌표계): X ~= BackX - minZ + shift
+                double rawSplitX = backX - finishLineMinZ.Value + AppConfig.DefaultStlShift;
+                double splitX = Math.Max(xMin + 0.01, Math.Min(xMax - 0.01, rawSplitX));
+
+                Environment.SetEnvironmentVariable(AppConfig.TwoPhaseEnableEnv, "1");
+                Environment.SetEnvironmentVariable(AppConfig.TwoPhaseSplitXEnv, splitX.ToString(CultureInfo.InvariantCulture));
+
+                // RoughFreeFromMill SplitAB 구현은 기존 env를 사용하므로 같이 설정
+                Environment.SetEnvironmentVariable(AppConfig.RoughfreeformSplitEnableEnv, "1");
+                Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_X", splitX.ToString(CultureInfo.InvariantCulture));
+
+                AppLogger.Log($"DentalAddin: TwoPhase split 적용 - finishLineMinZ:{finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, stlTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"DentalAddin: TwoPhase split 설정 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
         // 유지홈(retentionGroove) → StepIncrement 매핑 테이블
         //   none    → 0.1
         //   shallow → 0.2
@@ -1127,18 +1198,18 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log("DentalAddin: MoveSurface 메서드 호출 실패");
                 return;
             }
-            
+
             // MoveSurface 실행 후 계산된 값 로깅
             try
             {
                 FieldInfo needMoveField = moveModuleType.GetField("NeedMove", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
                 FieldInfo needMoveYField = moveModuleType.GetField("NeedMoveY", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
                 FieldInfo needMoveZField = moveModuleType.GetField("NeedMoveZ", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-                
+
                 bool needMove = needMoveField != null && Convert.ToBoolean(needMoveField.GetValue(null));
                 double needMoveY = needMoveYField != null ? Convert.ToDouble(needMoveYField.GetValue(null)) : 0;
                 double needMoveZ = needMoveZField != null ? Convert.ToDouble(needMoveZField.GetValue(null)) : 0;
-                
+
                 AppLogger.Log($"DentalAddin: MoveSurface 계산 결과 - NeedMove:{needMove}, NeedMoveY:{needMoveY:F4}, NeedMoveZ:{needMoveZ:F4}");
             }
             catch (Exception ex)
@@ -1146,7 +1217,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log($"DentalAddin: MoveSurface 결과 로깅 실패 - {ex.GetType().Name}:{ex.Message}");
             }
         }
-        
+
         private void InvokeEmerge(Type mainModuleType, Document document)
         {
             if (mainModuleType == null)
@@ -1380,7 +1451,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             return null;
         }
-        
+
         private void InvokeMoveSTL(Type mainModuleType)
         {
             Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
@@ -1443,7 +1514,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     DentalAddinReflectionHelper.SetStaticField(moveModuleType, "BackPointX", updatedBack.Value);
                 }
-                
+
                 AppLogger.Log($"DentalAddin: STL 추가 X 이동 완료 - delta:{deltaX:F3}, Front:{updatedFront:F3}, Back:{updatedBack:F3}");
             }
             catch (Exception ex)
@@ -1466,16 +1537,16 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     {
                         dynamic op = document.Operations[i];
                         if (op == null) continue;
-                        
+
                         string opName = null;
                         try { opName = op.Name; } catch { }
-                        
+
                         // CONNECTION Operation만 조정 (각인 코드)
                         if (string.IsNullOrEmpty(opName) || !opName.Contains("CONNECTION"))
                         {
                             continue;
                         }
-                        
+
                         // Operation의 Text 속성 (NC 코드) 가져오기
                         string text = null;
                         try { text = op.Text; } catch { }
@@ -1484,7 +1555,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                             AppLogger.Log($"DentalAddin: Op[{i}] {opName} - Text(NC코드) null");
                             continue;
                         }
-                        
+
                         // NC 코드에서 Y 좌표(ESPRIT X축)를 deltaX만큼 증가
                         string adjustedText = AdjustNcCodeYCoordinates(text, deltaX);
                         if (adjustedText != text)
@@ -1516,7 +1587,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 return ncCode;
             }
-            
+
             // NC 코드에서 Y 좌표를 찾아서 deltaX만큼 증가
             // 패턴: Y숫자 (예: Y0.525, Y2.03, Y-1.5)
             var regex = new Regex(@"Y(-?\d+\.?\d*)", RegexOptions.IgnoreCase);
@@ -1530,7 +1601,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 }
                 return match.Value;
             });
-            
+
             return result;
         }
         private void EnsureMainModuleContext(Type mainModuleType, Document document)

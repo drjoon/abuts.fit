@@ -44,6 +44,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         public const string RoughfreeformSplitEnableEnv = "ABUTS_ROUGHFREEFORM_SPLIT_ENABLE";
 
+        // 2-phase(초기 Turning/Rough 분리) 제어용 env
+        public const string TwoPhaseEnableEnv = "ABUTS_TWOPHASE_ENABLE";
+
+        public const string TwoPhaseSplitXEnv = "ABUTS_TWOPHASE_SPLIT_X";
+
+        public const string TwoPhaseTurningRegionEnv = "ABUTS_TWOPHASE_TURNING_REGION";
+
+        public const string TwoPhaseRoughRegionEnv = "ABUTS_TWOPHASE_ROUGH_REGION";
+
         public const string CompositeSplitEnableEnv = "ABUTS_COMPOSITE_SPLIT_ENABLE";
 
         public const string CompositeSplitXEnv = "ABUTS_COMPOSITE_SPLIT_X";
@@ -461,4 +470,3 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
     }
 
 }
-
