@@ -1521,7 +1521,7 @@ AWS EBS 환경변수는 한글 문자열을 올바른 UTF-8로 Node.js `process.
 - **값 매핑 (`StepIncrement` mm)**:
   - `none` → `0.1`
   - `shallow` → `0.2`
-  - `deep` → `0.3`
+  - `deep` → `0.25`
 - **API 노출**: `GET /api/bg/request-meta`의 `caseInfos.retentionGroove`로 esprit-addin에 전달.
 - **esprit-addin 적용 방식 (런타임 오버라이드, PRC 원본 불변)**:
   - 일반적으로 `StlFileProcessor.TryApplyRetentionGrooveToStepIncrementEnv()`가 매핑된 numeric 값을 환경변수 `ABUTS_COMPOSITE_STEP_INCREMENT_A`에 주입하고, `MainModuleComposite.TryRunComposite2SplitAB`가 `5axisComposite_A.prc`로 로드한 `opA`에 대해 COM API로 `StepIncrement`를 SetProperty 합니다. PRC 파일 원본은 변경하지 않으며 임시 사본을 만들지 않습니다.

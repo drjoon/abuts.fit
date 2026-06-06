@@ -63,7 +63,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         // 5축 Composite_A 의 StepIncrement(스텝 간격, mm) 런타임 오버라이드.
 
-        // 의뢰자별 retentionGroove(none/shallow/deep) 값을 0.1/0.2/0.3 으로 매핑하여 주입한다.
+        // 의뢰자별 retentionGroove(none/shallow/deep) 값을 0.1/0.2/0.25 으로 매핑하여 주입한다.
 
         // PRC 파일을 건드리지 않고 Esprit COM API(IDispatch SetProperty StepIncrement)로 적용된다.
 
