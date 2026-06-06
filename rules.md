@@ -1526,9 +1526,9 @@ AWS EBS 환경변수는 한글 문자열을 올바른 UTF-8로 Node.js `process.
 - **esprit-addin 적용 방식 (런타임 오버라이드, PRC 원본 불변)**:
   - 일반적으로 `StlFileProcessor.TryApplyRetentionGrooveToStepIncrementEnv()`가 매핑된 numeric 값을 환경변수 `ABUTS_COMPOSITE_STEP_INCREMENT_A`에 주입하고, `MainModuleComposite.TryRunComposite2SplitAB`가 `5axisComposite_A.prc`로 로드한 `opA`에 대해 COM API로 `StepIncrement`를 SetProperty 합니다. PRC 파일 원본은 변경하지 않으며 임시 사본을 만들지 않습니다.
   - 정책 변경 (유지홈=`deep`) : `deep`을 선택한 경우에는 다음 런타임 오버라이드를 적용합니다:
-    - `opB`의 `StepIncrement`를 `0.3`으로 설정합니다.
+    - `opA`의 `StepIncrement`를 `0.3`으로 설정합니다.
     - `opA`의 `StockAllowance`(가공 여유)를 `-0.03`으로 설정합니다. (PRC 원본 기본값 유지: B는 변경 없음)
-  - 구현 권장 방식: esprit-addin은 PRC 파일을 직접 수정하지 않고, `opA`/`opB`를 로드한 직후 COM API(InvokeMember SetProperty)를 사용해 `StepIncrement`(DispId 217)와 `StockAllowance`(PRC 토큰 `StockAllowance; 272;`)를 설정합니다. (환경변수 예: `ABUTS_COMPOSITE_STEP_INCREMENT_B`, `ABUTS_COMPOSITE_STOCK_ALLOWANCE_A` 또는 op 직접 SetProperty 호출 중 설정)
+  - 구현 권장 방식: esprit-addin은 PRC 파일을 직접 수정하지 않고, `opA`/`opB`를 로드한 직후 COM API(InvokeMember SetProperty)를 사용해 `StepIncrement`(DispId 217)와 `StockAllowance`(PRC 토큰 `StockAllowance; 272;`)를 설정합니다. (환경변수 예: `ABUTS_COMPOSITE_STEP_INCREMENT_A`, `ABUTS_COMPOSITE_STOCK_ALLOWANCE_A` 또는 op 직접 SetProperty 호출 중 설정)
 - 값 누락/비정상이면 해당 env/오버라이드를 비우고 PRC 원본 파라미터를 그대로 사용 (안전 디폴트).
 
 ### 7.5 CAM 직경 호환성

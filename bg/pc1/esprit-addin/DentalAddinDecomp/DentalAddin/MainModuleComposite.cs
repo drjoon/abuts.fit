@@ -277,9 +277,11 @@ namespace DentalAddin
             DentalLogger.Log($"Composite2SplitAB - PassPercent: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B-Base({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), B-ExtEnabled={hasRightExtensionSegment}, B-ExtStart={extensionStartPercent:F2}, B-Last={lastPercent:F2}");
 
             // 유지홈(retentionGroove) -> StepIncrement 적용 (DispId 217 기준 IDispatch 늦은 바인딩).
-            // env: ABUTS_COMPOSITE_STEP_INCREMENT_A / ABUTS_COMPOSITE_STEP_INCREMENT_B (예: 0.1 / 0.2 / 0.3)
-            // PRC 파일 원본은 변경하지 않으며, 런타임으로 A/B 작업에 적용한다.
+            // env: ABUTS_COMPOSITE_STEP_INCREMENT_A (예: 0.1 / 0.2 / 0.3) — A에 대해 런타임 오버라이드 가능
+            // PRC 파일 원본은 변경하지 않으며, 런타임으로 opA에 StepIncrement 및 StockAllowance를 적용한다. opB의 StepIncrement는
+            // 유지홈 옵션과 무관하게 PRC에 정의된 기본값(예: 0.08)을 사용해야 한다.
             TrySetCompositeStepIncrement(opA, "A");
+            // opB는 retentionGroove에 의해 StepIncrement를 오버라이드하지 않음; PRC 기본값 유지.
             TrySetCompositeStepIncrement(opB, "B");
             // A의 경우 가공여유(StockAllowance) 런타임 오버라이드도 허용한다 (env: ABUTS_COMPOSITE_STOCK_ALLOWANCE_A)
             TrySetCompositeStockAllowance(opA, "A");
