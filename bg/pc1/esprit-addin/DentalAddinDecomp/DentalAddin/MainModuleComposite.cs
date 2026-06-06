@@ -474,14 +474,18 @@ namespace DentalAddin
             }
 
             double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
-            // 사용자가 요청: Rough Mill B는 finishline보다 2mm 왼쪽에서 시작하도록 조정
-            double roughStart = splitX - 2.0;
+            // Rough A는 finishline (splitX) 그대로 사용 (offset 0mm),
+            // Rough B는 finishline에서 2mm 왼쪽에서 시작하도록 설정 (겹침 허용)
+            double roughAEnd = splitX + 0.0;
+            double roughBStart = splitX - 2.0;
             // 범위 내 클램프
-            if (roughStart <= xMin + 1e-6) roughStart = xMin + 1e-6;
-            if (roughStart >= xMax - 1e-6) roughStart = Math.Max(xMin + 1e-6, xMax - 1e-6);
+            if (roughAEnd <= xMin + 1e-6) roughAEnd = xMin + 1e-6;
+            if (roughAEnd >= xMax - 1e-6) roughAEnd = Math.Max(xMin + 1e-6, xMax - 1e-6);
+            if (roughBStart <= xMin + 1e-6) roughBStart = xMin + 1e-6;
+            if (roughBStart >= xMax - 1e-6) roughBStart = Math.Max(xMin + 1e-6, xMax - 1e-6);
 
-            FeatureChain a1 = EnsureRectBoundary("RoughBoundryA1", xMin, roughStart, radius, -radius);
-            FeatureChain b1 = EnsureRectBoundary("RoughBoundryB1", roughStart, xMax, radius, -radius);
+            FeatureChain a1 = EnsureRectBoundary("RoughBoundryA1", xMin, roughAEnd, radius, -radius);
+            FeatureChain b1 = EnsureRectBoundary("RoughBoundryB1", roughBStart, xMax, radius, -radius);
             if (a1 == null || b1 == null)
             {
                 DentalLogger.Log("RoughFreeFromMillSplitAB - 경계 체인 생성 실패");
@@ -490,7 +494,7 @@ namespace DentalAddin
 
             int keyA = SafeParseKey(a1.Key);
             int keyB = SafeParseKey(b1.Key);
-            DentalLogger.Log($"RoughFreeFromMillSplitAB - splitX:{splitX:0.###}, roughStart:{roughStart:0.###}, AKey:{keyA}, BKey:{keyB}, PRC_A:{prcA}, PRC_B:{prcB}");
+            DentalLogger.Log($"RoughFreeFromMillSplitAB - splitX:{splitX:0.###}, roughAEnd:{roughAEnd:0.###}, roughBStart:{roughBStart:0.###}, AKey:{keyA}, BKey:{keyB}, PRC_A:{prcA}, PRC_B:{prcB}");
 
             TechnologyUtility technologyUtility = (TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")));
             Layer activeLayer = GetOrCreateLayer("RoughFreeFormMill");
