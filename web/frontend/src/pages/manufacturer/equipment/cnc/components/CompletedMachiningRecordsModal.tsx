@@ -32,6 +32,8 @@ type CompletedMachiningItem = {
   implantBrand?: string | null;
   implantFamily?: string | null;
   implantType?: string | null;
+  caseInfos?: Record<string, any> | null;
+  source?: string | null;
 };
 
 export type CompletedMachiningRecordsModalProps = {
@@ -271,7 +273,7 @@ export const CompletedMachiningRecordsModal = ({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="w-[92vw] max-w-2xl max-h-[78vh] overflow-hidden">
+        <DialogContent className="w-[95vw] max-w-3xl max-h-[78vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle className="text-lg font-extrabold">
               {effectiveTitle}
@@ -328,9 +330,7 @@ export const CompletedMachiningRecordsModal = ({
                         <span className="ml-4">소요 {row.mmss}</span>
                       </div>
                       <div
-                        className={`mt-0.5 truncate text-[15px] font-extrabold text-slate-900 ${
-                          isRolledBack ? "line-through text-slate-400" : ""
-                        }`}
+                        className={`mt-0.5 text-[15px] font-extrabold text-slate-900 ${isRolledBack ? "line-through text-slate-400" : ""}`}
                       >
                         <MachiningRequestLabel
                           clinicName={row.clinic}
@@ -338,6 +338,12 @@ export const CompletedMachiningRecordsModal = ({
                           tooth={row.tooth}
                           requestId={row.rid}
                           lotShortCode={row.lotRaw.slice(-3).toUpperCase()}
+                          caseInfos={(items[index] as any)?.caseInfos}
+                          isSample={
+                            String((items[index] as any)?.source || "") ===
+                            "manufacturer_sample"
+                          }
+                          hideRequestId
                           className="text-[15px]"
                         />
                       </div>

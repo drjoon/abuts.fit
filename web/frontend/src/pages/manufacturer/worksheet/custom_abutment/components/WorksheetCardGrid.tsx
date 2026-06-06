@@ -482,7 +482,7 @@ export const WorksheetCardGrid = ({
                   variant="outline"
                   className="border-purple-300 bg-purple-50 text-purple-700 text-[11px] px-2 py-0.5 font-semibold h-7 flex items-center"
                 >
-                  R&D 샘플
+                  R&D
                 </Badge>
               )}
             </div>

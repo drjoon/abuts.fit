@@ -306,7 +306,7 @@ export async function getProductionQueues(req, res) {
       ...scope.requestFilter,
     })
       .select(
-        "requestId status manufacturerStage productionSchedule caseInfos lotNumber timeline caManufacturer",
+        "requestId status manufacturerStage productionSchedule caseInfos lotNumber timeline caManufacturer source",
       )
       .populate({
         path: "productionSchedule.machiningRecord",
@@ -354,7 +354,7 @@ export async function getProductionQueues(req, res) {
         ...scope.requestFilter,
       })
         .select(
-          "requestId status manufacturerStage productionSchedule caseInfos lotNumber timeline caManufacturer",
+          "requestId status manufacturerStage productionSchedule caseInfos lotNumber timeline caManufacturer source",
         )
         .populate({
           path: "productionSchedule.machiningRecord",
@@ -430,6 +430,8 @@ export async function getProductionQueues(req, res) {
         clinicName: reqItem.caseInfos?.clinicName,
         patientName: reqItem.caseInfos?.patientName,
         tooth: reqItem.caseInfos?.tooth,
+        caseInfos: reqItem.caseInfos || null,
+        source: reqItem?.source || null,
       }));
     }
 

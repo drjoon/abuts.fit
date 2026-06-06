@@ -38,6 +38,7 @@ export type QueueItem = {
     material?: string;
     value?: string;
   } | null;
+  source?: string | null;
 };
 
 export type QueueMap = Record<string, QueueItem[]>;

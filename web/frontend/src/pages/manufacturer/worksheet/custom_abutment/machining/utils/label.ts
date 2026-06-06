@@ -37,12 +37,11 @@ export const formatMachiningLabel = (q: QueueItem | null | undefined) => {
 };
 
 type LabelExtra = {
-  maxDiameter?: number | null;
   camDiameter?: number | null;
   implantManufacturer?: string | null;
   implantBrand?: string | null;
   implantFamily?: string | null;
-  implantType?: string | null;
+  isSample?: boolean | null;
 };
 
 const toNumber = (value: unknown) => {
@@ -54,12 +53,8 @@ export const buildLabelExtraProps = (slot?: QueueItem | null): LabelExtra => {
   if (!slot) return {};
   const ci = (slot as any)?.caseInfos || {};
   const schedule = (slot as any)?.productionSchedule || {};
+  const source = String((slot as any)?.source || ci?.source || "").trim();
   return {
-    maxDiameter:
-      toNumber((slot as any)?.maxDiameter) ??
-      toNumber(ci?.maxDiameter) ??
-      toNumber(ci?.diameter) ??
-      null,
     camDiameter:
       toNumber((slot as any)?.diameter) ??
       toNumber(ci?.camDiameter) ??
@@ -69,6 +64,6 @@ export const buildLabelExtraProps = (slot?: QueueItem | null): LabelExtra => {
     implantManufacturer: ci?.implantManufacturer ?? null,
     implantBrand: ci?.implantBrand ?? null,
     implantFamily: ci?.implantFamily ?? null,
-    implantType: ci?.implantType ?? null,
+    isSample: source === "manufacturer_sample",
   };
 };

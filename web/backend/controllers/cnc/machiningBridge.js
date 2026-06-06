@@ -159,7 +159,7 @@ export async function getCompletedMachiningRecords(req, res) {
         .filter(Boolean);
       if (requestIds.length > 0) {
         const requests = await Request.find({ requestId: { $in: requestIds } })
-          .select("requestId caseInfos lotNumber productionSchedule")
+          .select("requestId caseInfos lotNumber productionSchedule source")
           .lean();
         for (const r of requests) {
           const rid = String(r?.requestId || "").trim();
@@ -182,6 +182,8 @@ export async function getCompletedMachiningRecords(req, res) {
             implantBrand: String(r?.caseInfos?.implantBrand || "").trim(),
             implantFamily: String(r?.caseInfos?.implantFamily || "").trim(),
             implantType: String(r?.caseInfos?.implantType || "").trim(),
+            caseInfos: r?.caseInfos || null,
+            source: String(r?.source || "").trim(),
           });
         }
       }
@@ -220,6 +222,8 @@ export async function getCompletedMachiningRecords(req, res) {
         implantBrand: reqInfo?.implantBrand || null,
         implantFamily: reqInfo?.implantFamily || null,
         implantType: reqInfo?.implantType || null,
+        caseInfos: reqInfo?.caseInfos || null,
+        source: reqInfo?.source || null,
       };
     });
 
@@ -485,7 +489,7 @@ export async function getLastCompletedMachiningMap(req, res) {
       }
       if (requestIds.length > 0) {
         const requests = await Request.find({ requestId: { $in: requestIds } })
-          .select("requestId caseInfos lotNumber productionSchedule")
+          .select("requestId caseInfos lotNumber productionSchedule source")
           .lean();
         for (const r of requests) {
           const rid = String(r?.requestId || "").trim();
@@ -502,6 +506,7 @@ export async function getLastCompletedMachiningMap(req, res) {
             lotNumber,
             requestMongoId: String(r?._id || "").trim(),
             rollbackCount,
+            caseInfos: r?.caseInfos || null,
           });
         }
       }
@@ -522,6 +527,7 @@ export async function getLastCompletedMachiningMap(req, res) {
       const patientName = reqInfo ? reqInfo.patientName : "";
       const tooth = reqInfo ? reqInfo.tooth : "";
       const lotNumber = reqInfo ? reqInfo.lotNumber : { value: undefined };
+      const caseInfos = reqInfo ? reqInfo.caseInfos : null;
       const completedAt = rec?.completedAt
         ? new Date(rec.completedAt).toISOString()
         : rec?.updatedAt
@@ -545,6 +551,8 @@ export async function getLastCompletedMachiningMap(req, res) {
         tooth,
         rollbackCount: reqInfo?.rollbackCount ?? 0,
         lotNumber: lotNumber || { value: undefined },
+        caseInfos,
+        source: reqInfo?.source || null,
         completedAt,
         durationSeconds,
       };
