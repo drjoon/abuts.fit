@@ -68,6 +68,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         // PRC 파일을 건드리지 않고 Esprit COM API(IDispatch SetProperty StepIncrement)로 적용된다.
 
         public const string CompositeStepIncrementAEnv = "ABUTS_COMPOSITE_STEP_INCREMENT_A";
+        public const string CompositeStepIncrementBEnv = "ABUTS_COMPOSITE_STEP_INCREMENT_B";
+
+        public const string CompositeStockAllowanceAEnv = "ABUTS_COMPOSITE_STOCK_ALLOWANCE_A";
 
         public const string CompositeFirstPassPercentAEnv = "ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A";
 

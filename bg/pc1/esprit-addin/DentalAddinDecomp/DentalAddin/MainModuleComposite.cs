@@ -65,11 +65,47 @@ namespace DentalAddin
                 return;
             }
 
-            double stockAllowance = AppConfig.DefaultCompositeBStockAllowanceForRightOffset;
-            if (stockAllowance <= 0.0)
+            // A 대상일 경우 env(ABUTS_COMPOSITE_STOCK_ALLOWANCE_A)를 우선 확인한다.
+            double? stockAllowanceOverride = null;
+            if (label != null && label.Trim().Length > 0 && label.Trim().StartsWith("A", StringComparison.OrdinalIgnoreCase))
             {
-                DentalLogger.Log($"Composite2SplitAB - {label} StockAllowance 보정값이 0 이하라 적용 생략 ({stockAllowance.ToString("0.###", CultureInfo.InvariantCulture)})");
-                return;
+                string rawEnv = Environment.GetEnvironmentVariable(AppConfig.CompositeStockAllowanceAEnv);
+                if (!string.IsNullOrWhiteSpace(rawEnv))
+                {
+                    if (double.TryParse(rawEnv, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed))
+                    {
+                        stockAllowanceOverride = parsed;
+                    }
+                    else
+                    {
+                        DentalLogger.Log($"Composite2SplitAB - {label} StockAllowance env 파싱 실패 (raw='{rawEnv}'), env 무시");
+                    }
+                }
+            }
+
+            double stockAllowance;
+            if (stockAllowanceOverride.HasValue)
+            {
+                stockAllowance = stockAllowanceOverride.Value;
+            }
+            else
+            {
+                // B(및 B-Extension) 구간의 기본 보정값을 사용. A에 대해서는 env가 없으면 PRC 기본값을 유지(적용하지 않음).
+                if (label != null && label.Trim().Length > 0 && label.Trim().StartsWith("B", StringComparison.OrdinalIgnoreCase))
+                {
+                    stockAllowance = AppConfig.DefaultCompositeBStockAllowanceForRightOffset;
+                    if (stockAllowance <= 0.0)
+                    {
+                        DentalLogger.Log($"Composite2SplitAB - {label} StockAllowance 보정값이 0 이하라 적용 생략 ({stockAllowance.ToString("0.###", CultureInfo.InvariantCulture)})");
+                        return;
+                    }
+                }
+                else
+                {
+                    // A이고 env도 없으면 적용하지 않음(원본 PRC 유지)
+                    DentalLogger.Log($"Composite2SplitAB - {label} StockAllowance env 미지정 - PRC 기본값 유지");
+                    return;
+                }
             }
 
             try
@@ -241,9 +277,12 @@ namespace DentalAddin
             DentalLogger.Log($"Composite2SplitAB - PassPercent: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B-Base({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), B-ExtEnabled={hasRightExtensionSegment}, B-ExtStart={extensionStartPercent:F2}, B-Last={lastPercent:F2}");
 
             // 유지홈(retentionGroove) -> StepIncrement 적용 (DispId 217 기준 IDispatch 늦은 바인딩).
-            // env: ABUTS_COMPOSITE_STEP_INCREMENT_A (예: 0.1 / 0.2 / 0.3)
-            // PRC 파일 원본은 변경하지 않으며, A 작업에만 적용한다(B는 PRC 기본값 유지).
+            // env: ABUTS_COMPOSITE_STEP_INCREMENT_A / ABUTS_COMPOSITE_STEP_INCREMENT_B (예: 0.1 / 0.2 / 0.3)
+            // PRC 파일 원본은 변경하지 않으며, 런타임으로 A/B 작업에 적용한다.
             TrySetCompositeStepIncrement(opA, "A");
+            TrySetCompositeStepIncrement(opB, "B");
+            // A의 경우 가공여유(StockAllowance) 런타임 오버라이드도 허용한다 (env: ABUTS_COMPOSITE_STOCK_ALLOWANCE_A)
+            TrySetCompositeStockAllowance(opA, "A");
             TechLatheMill5xComposite opBExtension = null;
             if (hasRightExtensionSegment)
             {
@@ -306,10 +345,15 @@ namespace DentalAddin
             {
                 return;
             }
-            string raw = Environment.GetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv);
+            string envKey = AppConfig.CompositeStepIncrementAEnv;
+            if (string.Equals(label, "B", StringComparison.OrdinalIgnoreCase))
+            {
+                envKey = AppConfig.CompositeStepIncrementBEnv;
+            }
+            string raw = Environment.GetEnvironmentVariable(envKey);
             if (string.IsNullOrWhiteSpace(raw))
             {
-                DentalLogger.Log($"Composite2SplitAB - {label} StepIncrement env 비어있음, PRC 기본값 사용");
+                DentalLogger.Log($"Composite2SplitAB - {label} StepIncrement env 비어있음 (env={envKey}), PRC 기본값 사용");
                 return;
             }
             if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double stepIncrement))
@@ -326,7 +370,7 @@ namespace DentalAddin
                     op,
                     new object[] { stepIncrement },
                     CultureInfo.InvariantCulture);
-                DentalLogger.Log($"Composite2SplitAB - {label} StepIncrement={stepIncrement.ToString("0.###", CultureInfo.InvariantCulture)} 적용 (PRC 파일 무변경)");
+                DentalLogger.Log($"Composite2SplitAB - {label} StepIncrement={stepIncrement.ToString("0.###", CultureInfo.InvariantCulture)} 적용 (PRC 파일 무변경, env={envKey})");
             }
             catch (Exception ex)
             {

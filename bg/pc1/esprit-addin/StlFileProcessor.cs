@@ -1126,6 +1126,22 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
                 string envValue = stepIncrement.Value.ToString("0.###", CultureInfo.InvariantCulture);
                 Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, envValue);
+                // B 파라미터도 런타임 오버라이드가 필요하면 deep 선택 시 함께 설정한다.
+                if (groove.Trim().ToLowerInvariant() == "deep")
+                {
+                    // deep 선택 시 B의 StepIncrement도 함께 0.3으로 override
+                    Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementBEnv, envValue);
+                    // 가공 여유는 A에 적용되어야 하므로 A용 env에 -0.03을 설정한다.
+                    Environment.SetEnvironmentVariable(AppConfig.CompositeStockAllowanceAEnv, (-0.03).ToString(CultureInfo.InvariantCulture));
+                    AppLogger.Log($"DentalAddin: retentionGroove=deep - B StepIncrement={envValue}, A StockAllowance={(-0.03).ToString(CultureInfo.InvariantCulture)} 적용 (env)");
+                }
+                else
+                {
+                    // deep 외에는 B/A 오버라이드 해제
+                    Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementBEnv, null);
+                    Environment.SetEnvironmentVariable(AppConfig.CompositeStockAllowanceAEnv, null);
+                }
+
                 AppLogger.Log($"DentalAddin: retentionGroove 적용 - groove={groove}, StepIncrement={envValue} (env={AppConfig.CompositeStepIncrementAEnv}, PRC 파일 무변경)");
             }
             catch (Exception ex)

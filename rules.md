@@ -1514,7 +1514,7 @@ AWS EBS 환경변수는 한글 문자열을 올바른 UTF-8로 Node.js `process.
 
 ### 7.4.1 유지홈(retentionGroove) 옵션
 
-의뢰자가 임플란트 정보 입력 시 선택하는 **유지홈** 옵션은 5축 Composite Finishing 작업의 `StepIncrement`(스텝 간격) 값을 의뢰별로 변경합니다.
+의뢰자가 임플란트 정보 입력 시 선택하는 **유지홈** 옵션은 5축 Composite Finishing 작업의 가공 파라미터를 의뢰별로 변경합니다.
 
 - **SSOT (백엔드)**: `Request.caseInfos.retentionGroove` (`"none" | "shallow" | "deep"`, 기본값 `"deep"`)
 - **치과별 디폴트 (프론트 localStorage)**: `ClinicPreset.defaultRetentionGroove` — 의뢰자가 새 의뢰 화면에서 유지홈 값을 바꾸면 선택된 치과의 디폴트로 자동 저장되며, 같은 치과를 다시 선택하면 그 값이 자동으로 채워집니다 (favorite 임플란트와 동일 패턴, 서버 저장 없음).
@@ -1523,11 +1523,13 @@ AWS EBS 환경변수는 한글 문자열을 올바른 UTF-8로 Node.js `process.
   - `shallow` → `0.2`
   - `deep` → `0.3`
 - **API 노출**: `GET /api/bg/request-meta`의 `caseInfos.retentionGroove`로 esprit-addin에 전달.
-- **esprit-addin 적용 방식 (PRC 파일 무변경)**:
-  - `StlFileProcessor.TryApplyRetentionGrooveToStepIncrementEnv()`가 매핑된 numeric 값을 환경변수 `ABUTS_COMPOSITE_STEP_INCREMENT_A`에 주입.
-  - `MainModuleComposite.TryRunComposite2SplitAB`이 `5axisComposite_A.prc`로 `opA`를 로드한 직후, `MainModuleComposite.TrySetCompositeStepIncrement`가 `opA.GetType().InvokeMember("StepIncrement", BindingFlags.SetProperty, …)`로 COM 객체에 직접 SetProperty (PRC `StepIncrement; 217;` DispId 동치).
-  - `_B.prc`는 변경하지 않음. PRC 파일 원본을 절대 수정하지 않으며, 임시 사본도 만들지 않음.
-- 값 누락/비정상이면 env를 비워 PRC 원본 `StepIncrement`를 그대로 사용 (안전 디폴트).
+- **esprit-addin 적용 방식 (런타임 오버라이드, PRC 원본 불변)**:
+  - 일반적으로 `StlFileProcessor.TryApplyRetentionGrooveToStepIncrementEnv()`가 매핑된 numeric 값을 환경변수 `ABUTS_COMPOSITE_STEP_INCREMENT_A`에 주입하고, `MainModuleComposite.TryRunComposite2SplitAB`가 `5axisComposite_A.prc`로 로드한 `opA`에 대해 COM API로 `StepIncrement`를 SetProperty 합니다. PRC 파일 원본은 변경하지 않으며 임시 사본을 만들지 않습니다.
+  - 정책 변경 (유지홈=`deep`) : `deep`을 선택한 경우에는 다음 런타임 오버라이드를 적용합니다:
+    - `opB`의 `StepIncrement`를 `0.3`으로 설정합니다.
+    - `opA`의 `StockAllowance`(가공 여유)를 `-0.03`으로 설정합니다. (PRC 원본 기본값 유지: B는 변경 없음)
+  - 구현 권장 방식: esprit-addin은 PRC 파일을 직접 수정하지 않고, `opA`/`opB`를 로드한 직후 COM API(InvokeMember SetProperty)를 사용해 `StepIncrement`(DispId 217)와 `StockAllowance`(PRC 토큰 `StockAllowance; 272;`)를 설정합니다. (환경변수 예: `ABUTS_COMPOSITE_STEP_INCREMENT_B`, `ABUTS_COMPOSITE_STOCK_ALLOWANCE_A` 또는 op 직접 SetProperty 호출 중 설정)
+- 값 누락/비정상이면 해당 env/오버라이드를 비우고 PRC 원본 파라미터를 그대로 사용 (안전 디폴트).
 
 ### 7.5 CAM 직경 호환성
 
