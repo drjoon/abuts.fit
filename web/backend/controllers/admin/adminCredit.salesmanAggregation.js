@@ -255,12 +255,7 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
           $group: {
             _id: "$businessAnchorId",
             revenueAmount: {
-              $sum: {
-                $ifNull: [
-                  "$price.paidAmount",
-                  { $ifNull: ["$price.amount", 0] },
-                ],
-              },
+              $sum: { $ifNull: ["$price.paidAmount", 0] },
             },
             bonusAmount: { $sum: { $ifNull: ["$price.bonusAmount", 0] } },
             orderCount: { $sum: 1 },

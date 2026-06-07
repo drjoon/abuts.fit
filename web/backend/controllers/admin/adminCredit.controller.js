@@ -28,6 +28,34 @@ function normalizeNumber(n) {
   return Math.round(v);
 }
 
+function buildPaidRequestEligibleLedgerStages() {
+  return [
+    {
+      $lookup: {
+        from: "requests",
+        localField: "refId",
+        foreignField: "_id",
+        as: "_refRequest",
+      },
+    },
+    {
+      $addFields: {
+        _requestPaidAmount: {
+          $ifNull: [{ $arrayElemAt: ["$_refRequest.price.paidAmount", 0] }, 0],
+        },
+      },
+    },
+    {
+      $match: {
+        $or: [
+          { refType: { $ne: "REQUEST" } },
+          { _requestPaidAmount: { $gt: 0 } },
+        ],
+      },
+    },
+  ];
+}
+
 function buildRequestSummary(doc) {
   if (!doc?._id) return null;
   return {
@@ -121,6 +149,7 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
         createdAt: { $gte: range.start, $lte: range.end },
       },
     },
+    ...buildPaidRequestEligibleLedgerStages(),
     {
       $group: {
         _id: "$type",
@@ -1122,6 +1151,7 @@ export async function adminGetSalesmanCredits(req, res) {
         : Promise.resolve([]),
       SalesmanLedger.aggregate([
         { $match: { salesmanId: { $in: salesmanIds } } },
+        ...buildPaidRequestEligibleLedgerStages(),
         {
           $group: {
             _id: { salesmanId: "$salesmanId", type: "$type" },
@@ -1131,6 +1161,7 @@ export async function adminGetSalesmanCredits(req, res) {
       ]),
       SalesmanLedger.aggregate([
         { $match: ledgerPeriodMatch },
+        ...buildPaidRequestEligibleLedgerStages(),
         {
           $group: {
             _id: { salesmanId: "$salesmanId", type: "$type" },
@@ -1288,6 +1319,7 @@ export async function adminGetSalesmanCredits(req, res) {
           balanceAmountPeriod: balancePeriod,
         },
         performance30d: {
+          introducedCount: directOrgSet.size,
           referredOrgCount: directOrgSet.size,
           level1OrgCount: level1OrgSet.size,
           revenueAmount: Math.round(revenue30d),
@@ -1345,6 +1377,7 @@ export async function adminGetManufacturerSummary(req, res) {
                 occurredAt: { $gte: range.start, $lte: range.end },
               },
             },
+            ...buildPaidRequestEligibleLedgerStages(),
             {
               $group: {
                 _id: "$type",
@@ -1354,6 +1387,7 @@ export async function adminGetManufacturerSummary(req, res) {
           ])
         : Promise.resolve([]),
       ManufacturerCreditLedger.aggregate([
+        ...buildPaidRequestEligibleLedgerStages(),
         {
           $group: {
             _id: { org: "$manufacturerOrganization", type: "$type" },
@@ -2143,6 +2177,8 @@ export async function adminGetAdminCredits(req, res) {
   try {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const skip = Math.max(Number(req.query.skip) || 0, 0);
+    const startDateRaw = String(req.query.startDate || "").trim();
+    const endDateRaw = String(req.query.endDate || "").trim();
 
     // 관리자 사용자 목록 조회
     const total = await User.countDocuments({ role: "admin" });
@@ -2162,27 +2198,67 @@ export async function adminGetAdminCredits(req, res) {
 
     const adminIds = admins.map((admin) => admin._id);
 
+    const periodOccurredAt = {};
+    if (startDateRaw) {
+      const start = new Date(startDateRaw);
+      if (!Number.isNaN(start.getTime())) {
+        periodOccurredAt.$gte = start;
+      }
+    }
+    if (endDateRaw) {
+      const end = new Date(endDateRaw);
+      if (!Number.isNaN(end.getTime())) {
+        periodOccurredAt.$lte = end;
+      }
+    }
+
     // 관리자별 레저 집계
     const ledgerAggregations = await Promise.all(
-      adminIds.map((adminId) =>
-        AdminCreditLedger.aggregate([
-          { $match: { adminUserId: adminId } },
-          {
-            $group: {
-              _id: "$type",
-              total: { $sum: "$amount" },
+      adminIds.map(async (adminId) => {
+        const [allRows, periodRows] = await Promise.all([
+          AdminCreditLedger.aggregate([
+            { $match: { adminUserId: adminId } },
+            ...buildPaidRequestEligibleLedgerStages(),
+            {
+              $group: {
+                _id: "$type",
+                total: { $sum: "$amount" },
+              },
             },
-          },
-        ]),
-      ),
+          ]),
+          AdminCreditLedger.aggregate([
+            {
+              $match: {
+                adminUserId: adminId,
+                ...(Object.keys(periodOccurredAt).length
+                  ? { occurredAt: periodOccurredAt }
+                  : {}),
+              },
+            },
+            ...buildPaidRequestEligibleLedgerStages(),
+            {
+              $group: {
+                _id: "$type",
+                total: { $sum: "$amount" },
+              },
+            },
+          ]),
+        ]);
+
+        return { allRows, periodRows };
+      }),
     );
 
     // 결과 조합
     const results = admins.map((admin, index) => {
-      const ledgerRows = ledgerAggregations[index] || [];
+      const ledgerRows = ledgerAggregations[index]?.allRows || [];
+      const periodRows = ledgerAggregations[index]?.periodRows || [];
       let earnedAmount = 0;
       let paidOutAmount = 0;
       let adjustedAmount = 0;
+      let earnedAmountPeriod = 0;
+      let paidOutAmountPeriod = 0;
+      let adjustedAmountPeriod = 0;
 
       for (const row of ledgerRows) {
         const type = String(row._id || "");
@@ -2192,7 +2268,17 @@ export async function adminGetAdminCredits(req, res) {
         else if (type === "ADJUST") adjustedAmount += total;
       }
 
+      for (const row of periodRows) {
+        const type = String(row._id || "");
+        const total = Number(row.total || 0);
+        if (type === "EARN") earnedAmountPeriod += total;
+        else if (type === "PAYOUT") paidOutAmountPeriod += total;
+        else if (type === "ADJUST") adjustedAmountPeriod += total;
+      }
+
       const balanceAmount = earnedAmount - paidOutAmount + adjustedAmount;
+      const balanceAmountPeriod =
+        earnedAmountPeriod - paidOutAmountPeriod + adjustedAmountPeriod;
 
       return {
         adminUserId: admin._id,
@@ -2205,6 +2291,10 @@ export async function adminGetAdminCredits(req, res) {
           paidOutAmount,
           adjustedAmount,
           balanceAmount,
+          earnedAmountPeriod,
+          paidOutAmountPeriod,
+          adjustedAmountPeriod,
+          balanceAmountPeriod,
         },
       };
     });

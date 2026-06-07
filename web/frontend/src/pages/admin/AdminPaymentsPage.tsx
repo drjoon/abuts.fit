@@ -7,41 +7,56 @@ import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+/**
+ * AdminPaymentsPage - 관리자 정산 페이지
+ *
+ * SSOT 원칙 (rules.md 1.0):
+ * - businessType은 BusinessAnchor.businessType만 사용 (fallback 금지)
+ * - 정산 금액은 백엔드 집계값을 그대로 표시 (frontend 재계산 최소화)
+ */
+
 type SalesmanRow = {
-  salesmanId: string;
+  userId: string;
   name: string;
   email: string;
-  role?: string;
   active: boolean;
-  businessAnchorId?: string | null;
-  businessAnchor?: {
+  businessAnchorId: string;
+  businessAnchor: {
     id: string;
     name: string;
-    businessType?: string;
-    status?: string;
+    businessType: string;
     representativeName?: string;
     email?: string;
     phoneNumber?: string;
-  } | null;
+  };
   wallet?: {
     balanceAmountPeriod?: number;
   };
   performance30d?: {
     commissionAmount?: number;
     revenueAmount?: number;
-    referredOrgCount?: number;
-    level1OrgCount?: number;
+    introducedCount?: number;
   };
 };
 
 type Overview = {
-  totalCount?: number;
-  activeCount?: number;
-  totalBalanceAmount?: number;
-  totalEarnedAmount?: number;
-  totalPaidOutAmount?: number;
-  totalAdjustedAmount?: number;
-  totalCommissionAmount?: number;
+  salesmenCount?: number;
+  referral?: {
+    paidRevenueAmount?: number;
+    bonusRevenueAmount?: number;
+    orderCount?: number;
+  };
+  commission?: {
+    totalAmount?: number;
+    directAmount?: number;
+    indirectAmount?: number;
+  };
+  walletPeriod?: {
+    earnedAmount?: number;
+    paidOutAmount?: number;
+    adjustedAmount?: number;
+    balanceAmount?: number;
+  };
 };
 
 type ManufacturerSummary = {
@@ -53,44 +68,46 @@ type ManufacturerSummary = {
 };
 
 const formatMoney = (value?: number) =>
-  Number(value || 0).toLocaleString("ko-KR");
+  typeof value === "number" ? value.toLocaleString("ko-KR") : "0";
 
-const roleRateCards = [
-  {
-    key: "manufacturer",
-    label: "제조사 배분율",
-    value: "60% (기본) / 65% (영업자 없음)",
-  },
-  { key: "salesman", label: "영업자 배분율", value: "10% (영업자 소개 시)" },
-  { key: "devops", label: "개발운영사 배분율", value: "10%" },
-  {
-    key: "admin",
-    label: "관리자 배분율",
-    value: "20% (기본) / 25% (영업자 없음)",
-  },
-] as const;
-
-type AnchorSettlementGroup = {
+type AnchorGroup = {
   businessAnchorId: string;
   businessType: string;
   name: string;
-  representativeName: string;
-  email: string;
-  phoneNumber: string;
+  representativeName?: string;
+  email?: string;
+  phoneNumber?: string;
   memberCount: number;
   activeMemberCount: number;
   revenueAmount: number;
   commissionAmount: number;
   balanceAmount: number;
-  directOrgCount: number;
-  level1OrgCount: number;
+  introducedCount: number;
 };
 
-function AnchorSettlementCard({ group }: { group: AnchorSettlementGroup }) {
+type AdminCreditRow = {
+  adminUserId: string;
+  name: string;
+  email: string;
+  active: boolean;
+  wallet?: {
+    earnedAmount?: number;
+    paidOutAmount?: number;
+    adjustedAmount?: number;
+    balanceAmount?: number;
+    earnedAmountPeriod?: number;
+    paidOutAmountPeriod?: number;
+    adjustedAmountPeriod?: number;
+    balanceAmountPeriod?: number;
+  };
+};
+
+/** 역할별 정산 카드 */
+function SettlementCard({ group }: { group: AnchorGroup }) {
   return (
-    <Card key={group.businessAnchorId}>
+    <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">{group.name || "-"}</CardTitle>
+        <CardTitle className="text-base">{group.name}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
         <div className="flex items-center justify-between">
@@ -102,29 +119,27 @@ function AnchorSettlementCard({ group }: { group: AnchorSettlementGroup }) {
           <span>{group.email || group.phoneNumber || "-"}</span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">활성 인원</span>
+          <span className="text-muted-foreground">활성 멤버</span>
           <span>
             {group.activeMemberCount}/{group.memberCount}명
           </span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">기간 수수료</span>
-          <span>{formatMoney(group.commissionAmount)}원</span>
+          <span className="text-muted-foreground">소개한 사업자</span>
+          <span>{group.introducedCount}개</span>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">기간 매출</span>
           <span>{formatMoney(group.revenueAmount)}원</span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">기간 잔액</span>
-          <span className="font-semibold">
-            {formatMoney(group.balanceAmount)}원
-          </span>
+          <span className="text-muted-foreground">기간 수수료</span>
+          <span>{formatMoney(group.commissionAmount)}원</span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">직접/간접 사업자</span>
-          <span>
-            {group.directOrgCount}/{group.level1OrgCount}
+          <span className="text-muted-foreground">정산 잔액</span>
+          <span className="font-semibold text-blue-600">
+            {formatMoney(group.balanceAmount)}원
           </span>
         </div>
       </CardContent>
@@ -132,7 +147,38 @@ function AnchorSettlementCard({ group }: { group: AnchorSettlementGroup }) {
   );
 }
 
-function StaticInfoCard({
+function AdminSettlementCard({ row }: { row: AdminCreditRow }) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">{row.name || "-"}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">연락처</span>
+          <span>{row.email || "-"}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">기간 발생 수익</span>
+          <span>{formatMoney(row.wallet?.earnedAmountPeriod)}원</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">기간 정산 완료</span>
+          <span>{formatMoney(row.wallet?.paidOutAmountPeriod)}원</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">미정산 잔액</span>
+          <span className="font-semibold text-blue-600">
+            {formatMoney(row.wallet?.balanceAmount)}원
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** 정책/요약 카드 */
+function SummaryCard({
   title,
   value,
   description,
@@ -144,7 +190,9 @@ function StaticInfoCard({
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <CardTitle className="text-sm font-medium text-muted-foreground">
+          {title}
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-1">
         <div className="text-2xl font-bold">{value}</div>
@@ -154,17 +202,73 @@ function StaticInfoCard({
   );
 }
 
+/** 역할별 요약 섹션 */
+function RoleSummarySection({
+  title,
+  rate,
+  groups,
+  summaryData,
+}: {
+  title: string;
+  rate: string;
+  groups: AnchorGroup[];
+  summaryData?: {
+    count?: number;
+    earned?: number;
+    balance?: number;
+    paidOut?: number;
+  };
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <SummaryCard
+          title={`${title} 배분율`}
+          value={rate}
+          description="유료의뢰비 기준 (rules.md 6.9.1)"
+        />
+        <SummaryCard
+          title="사업자 수"
+          value={`${summaryData?.count ?? groups.length}개`}
+          description="BusinessAnchor 기준"
+        />
+        <SummaryCard
+          title="기간 발생 수익"
+          value={`${formatMoney(summaryData?.earned)}원`}
+          description="기간 내 EARN 합계"
+        />
+        <SummaryCard
+          title="미정산 잔액"
+          value={`${formatMoney(summaryData?.balance)}원`}
+          description="누적 미지급 잔액"
+        />
+      </div>
+      {groups.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {groups.map((group) => (
+            <SettlementCard key={group.businessAnchorId} group={group} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminPaymentsPage() {
   const { token, user } = useAuthStore();
-  const { period, setPeriod } = usePeriodStore();
+  const { period } = usePeriodStore();
   const { toast } = useToast();
   const [overview, setOverview] = useState<Overview | null>(null);
   const [rows, setRows] = useState<SalesmanRow[]>([]);
   const [manufacturerSummary, setManufacturerSummary] =
     useState<ManufacturerSummary | null>(null);
+  const [adminRows, setAdminRows] = useState<AdminCreditRow[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!token) return;
+    setIsLoading(true);
+
     Promise.all([
       request<{ success?: boolean; data?: Overview; message?: string }>({
         path: `/api/admin/credits/salesmen/overview?period=${encodeURIComponent(period)}`,
@@ -189,24 +293,36 @@ export default function AdminPaymentsPage() {
         method: "GET",
         token,
       }),
+      request<{
+        success?: boolean;
+        data?: { items?: AdminCreditRow[] };
+        message?: string;
+      }>({
+        path: `/api/admin/credits/admins?limit=200&skip=0${periodToRangeQuery(period).replace(/^\?/, "&")}`,
+        method: "GET",
+        token,
+      }),
     ])
-      .then(([overviewRes, rowsRes, mfgRes]) => {
-        if (!overviewRes.ok || !overviewRes.data?.success) {
-          throw new Error(
-            overviewRes.data?.message || "정산 overview 조회 실패",
+      .then(([overviewRes, rowsRes, mfgRes, adminRes]) => {
+        if (overviewRes.ok && overviewRes.data?.success) {
+          setOverview(overviewRes.data.data || null);
+        }
+        if (rowsRes.ok && rowsRes.data?.success) {
+          setRows(
+            Array.isArray(rowsRes.data.data?.items)
+              ? rowsRes.data.data.items
+              : [],
           );
         }
-        if (!rowsRes.ok || !rowsRes.data?.success) {
-          throw new Error(rowsRes.data?.message || "정산 목록 조회 실패");
-        }
-        setOverview(overviewRes.data.data || null);
-        setRows(
-          Array.isArray(rowsRes.data.data?.items)
-            ? rowsRes.data.data.items
-            : [],
-        );
         if (mfgRes.ok && mfgRes.data?.success) {
           setManufacturerSummary(mfgRes.data.data || null);
+        }
+        if (adminRes.ok && adminRes.data?.success) {
+          setAdminRows(
+            Array.isArray(adminRes.data.data?.items)
+              ? adminRes.data.data.items
+              : [],
+          );
         }
       })
       .catch((error: unknown) => {
@@ -216,58 +332,60 @@ export default function AdminPaymentsPage() {
             error instanceof Error ? error.message : "다시 시도해주세요.",
           variant: "destructive",
         });
-      });
+      })
+      .finally(() => setIsLoading(false));
   }, [period, token, toast]);
 
-  const anchorGroups = useMemo(() => {
-    const map = new Map<string, AnchorSettlementGroup>();
+  /**
+   * BusinessAnchor 기준 그룹화
+   * - SSOT: businessAnchorId, businessType은 BusinessAnchor 값만 사용
+   * - 집계: sum (Math.max 오류 수정)
+   */
+  const anchorGroups = useMemo((): AnchorGroup[] => {
+    const map = new Map<string, AnchorGroup>();
+
     for (const row of rows) {
-      const anchorId = String(
-        row.businessAnchorId || row.businessAnchor?.id || "",
-      ).trim();
+      // SSOT: businessAnchorId는 반드시 존재해야 함
+      const anchorId = row.businessAnchorId?.trim();
       if (!anchorId) continue;
-      const prev = map.get(anchorId) || {
-        businessAnchorId: anchorId,
-        businessType: String(
-          row.businessAnchor?.businessType || row.role || "",
-        ).trim(),
-        name: String(row.businessAnchor?.name || row.name || "").trim(),
-        representativeName: String(
-          row.businessAnchor?.representativeName || "",
-        ).trim(),
-        email: String(row.businessAnchor?.email || row.email || "").trim(),
-        phoneNumber: String(row.businessAnchor?.phoneNumber || "").trim(),
-        memberCount: 0,
-        activeMemberCount: 0,
-        revenueAmount: 0,
-        commissionAmount: 0,
-        balanceAmount: 0,
-        directOrgCount: 0,
-        level1OrgCount: 0,
-      };
-      prev.memberCount += 1;
-      if (row.active) prev.activeMemberCount += 1;
-      prev.balanceAmount += Number(row.wallet?.balanceAmountPeriod || 0);
-      prev.revenueAmount = Math.max(
-        prev.revenueAmount,
-        Number(row.performance30d?.revenueAmount || 0),
-      );
-      prev.commissionAmount = Math.max(
-        prev.commissionAmount,
-        Number(row.performance30d?.commissionAmount || 0),
-      );
-      prev.directOrgCount = Math.max(
-        prev.directOrgCount,
-        Number(row.performance30d?.referredOrgCount || 0),
-      );
-      prev.level1OrgCount = Math.max(
-        prev.level1OrgCount,
-        Number(row.performance30d?.level1OrgCount || 0),
-      );
-      if (!prev.name) prev.name = String(row.name || "").trim();
-      if (!prev.email) prev.email = String(row.email || "").trim();
-      map.set(anchorId, prev);
+
+      // SSOT: businessType은 BusinessAnchor.businessType만 사용 (fallback 금지)
+      const businessType = row.businessAnchor?.businessType?.trim();
+      if (!businessType) continue; // businessType 없으면 skip (rules.md 1.0)
+
+      const existing = map.get(anchorId);
+      if (existing) {
+        // 동일 BusinessAnchor의 멤버 데이터 합산
+        existing.memberCount += 1;
+        if (row.active) existing.activeMemberCount += 1;
+        existing.balanceAmount += Number(row.wallet?.balanceAmountPeriod || 0);
+        existing.revenueAmount += Number(
+          row.performance30d?.revenueAmount || 0,
+        );
+        existing.commissionAmount += Number(
+          row.performance30d?.commissionAmount || 0,
+        );
+        existing.introducedCount += Number(
+          row.performance30d?.introducedCount || 0,
+        );
+      } else {
+        map.set(anchorId, {
+          businessAnchorId: anchorId,
+          businessType,
+          name: row.businessAnchor?.name?.trim() || row.name?.trim() || "-",
+          representativeName: row.businessAnchor?.representativeName?.trim(),
+          email: row.businessAnchor?.email?.trim() || row.email?.trim(),
+          phoneNumber: row.businessAnchor?.phoneNumber?.trim(),
+          memberCount: 1,
+          activeMemberCount: row.active ? 1 : 0,
+          revenueAmount: Number(row.performance30d?.revenueAmount || 0),
+          commissionAmount: Number(row.performance30d?.commissionAmount || 0),
+          balanceAmount: Number(row.wallet?.balanceAmountPeriod || 0),
+          introducedCount: Number(row.performance30d?.introducedCount || 0),
+        });
+      }
     }
+
     return Array.from(map.values()).sort(
       (a, b) =>
         b.balanceAmount - a.balanceAmount ||
@@ -276,80 +394,77 @@ export default function AdminPaymentsPage() {
     );
   }, [rows]);
 
-  const salesmanGroups = useMemo(
-    () => anchorGroups.filter((group) => group.businessType === "salesman"),
-    [anchorGroups],
-  );
-  const devopsGroups = useMemo(
-    () => anchorGroups.filter((group) => group.businessType === "devops"),
-    [anchorGroups],
-  );
-  const manufacturerGroups = useMemo(
-    () => anchorGroups.filter((group) => group.businessType === "manufacturer"),
-    [anchorGroups],
-  );
-  const adminGroups = useMemo(
-    () => anchorGroups.filter((group) => group.businessType === "admin"),
-    [anchorGroups],
-  );
+  const groupsByType = useMemo(() => {
+    const byType = (type: string) =>
+      anchorGroups.filter((g) => g.businessType === type);
+    return {
+      manufacturer: byType("manufacturer"),
+      salesman: byType("salesman"),
+      devops: byType("devops"),
+    };
+  }, [anchorGroups]);
 
-  const summaryCards = useMemo(
-    () => [
-      ...roleRateCards.map((item) => ({
-        key: item.key,
-        label: item.label,
-        value: item.value,
-        helper: "최근 30일 기준 정책 범위",
-      })),
-      {
-        key: "count",
-        label: "총 대상 수",
-        value: `${Number(anchorGroups.length || 0).toLocaleString()}개`,
-        helper: "BusinessAnchor 기준 정산 대상",
-      },
-      {
-        key: "commission",
-        label: "총 수수료",
-        value: `${formatMoney(
-          anchorGroups.reduce((sum, group) => sum + group.commissionAmount, 0),
-        )}원`,
-        helper: "BusinessAnchor 기준 발생 수수료",
-      },
-      {
-        key: "balance",
-        label: "총 정산 잔액",
-        value: `${formatMoney(
-          anchorGroups.reduce((sum, group) => sum + group.balanceAmount, 0),
-        )}원`,
-        helper: "BusinessAnchor 기준 잔액 합계",
-      },
-      {
-        key: "paidOut",
-        label: "총 정산 완료액",
-        value: `${formatMoney(overview?.totalPaidOutAmount)}원`,
-        helper: "기간 내 지급 완료 금액",
-      },
-    ],
-    [anchorGroups, overview],
-  );
+  const totals = useMemo(() => {
+    const referralRevenue = Number(overview?.referral?.paidRevenueAmount || 0);
+    const referralCommission = Number(overview?.commission?.totalAmount || 0);
+    const referralBalance = Number(overview?.walletPeriod?.balanceAmount || 0);
+    const adminBalance = adminRows.reduce(
+      (sum, row) => sum + Number(row.wallet?.balanceAmount || 0),
+      0,
+    );
+    const manufacturerBalance = Number(
+      manufacturerSummary?.totalBalanceAmount || 0,
+    );
+
+    return {
+      count:
+        Number(manufacturerSummary?.anchorCount || 0) +
+        groupsByType.salesman.length +
+        groupsByType.devops.length +
+        adminRows.length,
+      paidRequestRevenue: referralRevenue,
+      commission: referralCommission,
+      unpaidBalance: referralBalance + manufacturerBalance + adminBalance,
+    };
+  }, [
+    adminRows,
+    groupsByType.devops.length,
+    groupsByType.salesman.length,
+    manufacturerSummary,
+    overview,
+  ]);
 
   if (!user || user.role !== "admin") return null;
 
   return (
     <DashboardShell
       title="정산"
-      subtitle="상단은 운영 요약, 하단은 역할별 정산 탭입니다."
-      statsGridClassName="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3"
+      subtitle="유료의뢰비 기준 수익 배분 및 정산 현황"
+      statsGridClassName="grid grid-cols-2 md:grid-cols-4 gap-3"
       stats={
         <>
-          {summaryCards.map((item) => (
-            <StaticInfoCard
-              key={item.key}
-              title={item.label}
-              value={item.value}
-              description={item.helper}
-            />
-          ))}
+          <SummaryCard
+            title="정산 대상"
+            value={isLoading ? "-" : `${totals.count}개`}
+            description="소개 주체 BusinessAnchor 기준"
+          />
+          <SummaryCard
+            title="유료 의뢰비 총액"
+            value={
+              isLoading ? "-" : `${formatMoney(totals.paidRequestRevenue)}원`
+            }
+            description="기간 내 paidAmount 합계"
+          />
+          <SummaryCard
+            title="총 수수료"
+            value={isLoading ? "-" : `${formatMoney(totals.commission)}원`}
+            description="기간 내 배분 수수료 합계"
+          />
+          <SummaryCard
+            title="미정산 잔액"
+            value={isLoading ? "-" : `${formatMoney(totals.unpaidBalance)}원`}
+            description="누적 미지급액"
+          />
         </>
       }
       mainLeft={
@@ -358,78 +473,91 @@ export default function AdminPaymentsPage() {
             <TabsTrigger value="manufacturer">제조사</TabsTrigger>
             <TabsTrigger value="salesman">영업자</TabsTrigger>
             <TabsTrigger value="devops">개발운영사</TabsTrigger>
-            <TabsTrigger value="admin">관리사</TabsTrigger>
+            <TabsTrigger value="admin">관리자</TabsTrigger>
           </TabsList>
 
           <TabsContent value="manufacturer">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <StaticInfoCard
-                title="제조사 배분율"
-                value="60% (기본) / 65% (영업자 없음)"
-                description="유료의뢰비 기준 분배율을 적용합니다."
-              />
-              <StaticInfoCard
-                title="제조사 앵커 수"
-                value={`${(manufacturerSummary?.anchorCount ?? 0).toLocaleString()}개`}
-                description="BusinessAnchor 기준 제조사 수"
-              />
-              <StaticInfoCard
-                title="기간 발생 수익"
-                value={`${formatMoney(manufacturerSummary?.periodEarnedAmount)}원`}
-                description="ManufacturerCreditLedger 기간 내 EARN 합계"
-              />
-              <StaticInfoCard
-                title="미정산 잔액 합계"
-                value={`${formatMoney(manufacturerSummary?.totalBalanceAmount)}원`}
-                description="제조사 전체 미지급 잔액 합계"
-              />
-            </div>
+            <RoleSummarySection
+              title="제조사"
+              rate="60% / 65%"
+              groups={groupsByType.manufacturer}
+              summaryData={{
+                count:
+                  manufacturerSummary?.anchorCount ??
+                  groupsByType.manufacturer.length,
+                earned: manufacturerSummary?.periodEarnedAmount,
+                balance: manufacturerSummary?.totalBalanceAmount,
+                paidOut: manufacturerSummary?.periodPaidOutAmount,
+              }}
+            />
           </TabsContent>
 
           <TabsContent value="salesman">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {salesmanGroups.map((group) => (
-                <AnchorSettlementCard
-                  key={group.businessAnchorId}
-                  group={group}
-                />
-              ))}
-            </div>
+            <RoleSummarySection
+              title="영업자"
+              rate="10%"
+              groups={groupsByType.salesman}
+            />
           </TabsContent>
 
           <TabsContent value="devops">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {devopsGroups.map((group) => (
-                <AnchorSettlementCard
-                  key={group.businessAnchorId}
-                  group={group}
-                />
-              ))}
-            </div>
+            <RoleSummarySection
+              title="개발운영사"
+              rate="10%"
+              groups={groupsByType.devops}
+            />
           </TabsContent>
 
           <TabsContent value="admin">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <StaticInfoCard
-                title="관리자 배분율"
-                value="20% (기본) / 25% (영업자 없음)"
-                description="유료의뢰비 기준 플랫폼 운영/정산/지원 몫"
-              />
-              <StaticInfoCard
-                title="관리사 앵커 수"
-                value={`${adminGroups.length.toLocaleString()}개`}
-                description="BusinessAnchor 기준 운영 주체"
-              />
-              <StaticInfoCard
-                title="정산 대기 잔액"
-                value={`${formatMoney(overview?.totalBalanceAmount)}원`}
-                description="전체 미정산 잔액 기준"
-              />
-              <StaticInfoCard
-                title="정산 완료 누계"
-                value={`${formatMoney(overview?.totalPaidOutAmount)}원`}
-                description="기간 내 지급 완료 기준"
-              />
+            <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <SummaryCard
+                  title="관리자 계정 수"
+                  value={`${adminRows.length}개`}
+                  description="admin 사용자 기준"
+                />
+                <SummaryCard
+                  title="기간 발생 수익"
+                  value={`${formatMoney(
+                    adminRows.reduce(
+                      (sum, row) =>
+                        sum + Number(row.wallet?.earnedAmountPeriod || 0),
+                      0,
+                    ),
+                  )}원`}
+                  description="AdminCreditLedger EARN 합계"
+                />
+                <SummaryCard
+                  title="기간 정산 완료"
+                  value={`${formatMoney(
+                    adminRows.reduce(
+                      (sum, row) =>
+                        sum + Number(row.wallet?.paidOutAmountPeriod || 0),
+                      0,
+                    ),
+                  )}원`}
+                  description="AdminCreditLedger PAYOUT 합계"
+                />
+                <SummaryCard
+                  title="미정산 잔액"
+                  value={`${formatMoney(
+                    adminRows.reduce(
+                      (sum, row) =>
+                        sum + Number(row.wallet?.balanceAmount || 0),
+                      0,
+                    ),
+                  )}원`}
+                  description="누적 미지급 잔액"
+                />
+              </div>
+
+              {adminRows.length > 0 && (
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {adminRows.map((row) => (
+                    <AdminSettlementCard key={row.adminUserId} row={row} />
+                  ))}
+                </div>
+              )}
             </div>
           </TabsContent>
         </Tabs>

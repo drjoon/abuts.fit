@@ -262,13 +262,17 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
   });
 
   // 수수료 분배 처리
-  await distributeCommissionOnRequestSpend({
-    request,
-    spendAmount: resolvedAmount,
-    businessAnchorId,
-    actorUserId,
-    session,
-  });
+  // rules.md 6.9.1: 분배 대상은 유료의뢰비(유료 결제분)만 허용.
+  // 무료 크레딧 사용분(fromBonusRequest)은 분배 대상에서 제외한다.
+  if (fromPaid > 0) {
+    await distributeCommissionOnRequestSpend({
+      request,
+      spendAmount: fromPaid,
+      businessAnchorId,
+      actorUserId,
+      session,
+    });
+  }
 }
 
 export async function ensureRequestCreditRefundOnRollbackToCam({
