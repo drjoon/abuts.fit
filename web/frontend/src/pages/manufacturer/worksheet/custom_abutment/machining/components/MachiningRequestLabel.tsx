@@ -95,7 +95,7 @@ export const MachiningRequestLabel = ({
       <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
         {isSample ? (
           <span className="inline-flex items-center rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 font-semibold text-purple-700">
-            [R&D]
+            R&D
           </span>
         ) : null}
         {implantParts.length ? (
