@@ -8,7 +8,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -39,20 +38,19 @@ export const RequestorPricingReferralPolicyCard = () => {
   } = useQuery({
     queryKey: ["requestor-referral-tree-member-count", user?.id || ""],
     queryFn: async () => {
-      if (!user?.id) {
-        throw new Error("사용자 정보를 불러오지 못했습니다.");
-      }
+      if (!user?.id) throw new Error("사용자 정보를 불러오지 못했습니다.");
+
       const res = await apiFetch<any>({
         path: `/api/referral-groups/${user.businessAnchorId}/tree?lite=1`,
         method: "GET",
         token,
       });
       if (!res.ok || !res.data?.success) {
-        const errorMsg =
+        throw new Error(
           res.data?.message ||
-          res.data?.error ||
-          "소개 트리 조회에 실패했습니다.";
-        throw new Error(errorMsg);
+            res.data?.error ||
+            "소개 트리 조회에 실패했습니다.",
+        );
       }
       return res.data.data;
     },
@@ -65,7 +63,7 @@ export const RequestorPricingReferralPolicyCard = () => {
   });
 
   const { data, isLoading, isFetching, isError, error } = useQuery({
-    queryKey: ["requestor-pricing-referral-stats", "v4"],
+    queryKey: ["requestor-pricing-referral-stats", "v7"],
     queryFn: async () => {
       const res = await apiFetch<any>({
         path: "/api/requests/my/pricing-referral-stats",
@@ -73,11 +71,11 @@ export const RequestorPricingReferralPolicyCard = () => {
         token,
       });
       if (!res.ok || !res.data?.success) {
-        const errorMsg =
+        throw new Error(
           res.data?.message ||
-          res.data?.error ||
-          "가격/소개 통계 조회에 실패했습니다.";
-        throw new Error(errorMsg);
+            res.data?.error ||
+            "가격/소개 통계 조회에 실패했습니다.",
+        );
       }
       return res.data.data;
     },
@@ -114,7 +112,7 @@ export const RequestorPricingReferralPolicyCard = () => {
       <Card className="app-glass-card app-glass-card--lg">
         <CardHeader>
           <CardTitle className="text-base font-semibold">
-            가격 & 소개 정책
+            가격 · 소개 정책
           </CardTitle>
           <CardDescription className="text-sm text-destructive">
             {(isError
@@ -126,28 +124,29 @@ export const RequestorPricingReferralPolicyCard = () => {
     );
   }
 
-  if (!data) {
-    return null;
-  }
+  if (!data) return null;
 
   const myLast30DaysOrders =
-    data.myLastMonthOrders ?? data.myLast30DaysOrders ?? 0;
-  const groupTotalOrders = data.groupTotalOrders ?? 0;
+    Number(data.myLastMonthOrders ?? data.myLast30DaysOrders ?? 0) || 0;
   const groupMemberCount = Number(referralTree?.memberCount || 0);
+  const referredBusinessCount = Math.max(0, groupMemberCount - 1);
+  const referralBusinessOrders = Number(data.referralBusinessOrders ?? 0);
 
-  const totalOrders = groupTotalOrders;
-  const targetOrdersForMaxDiscount = 250;
-  const progressValue = targetOrdersForMaxDiscount
-    ? Math.min(100, (totalOrders / targetOrdersForMaxDiscount) * 100)
-    : 0;
+  const baseUnitPrice = Number(data.baseUnitPrice ?? 15000);
+  const referralDiscountAmount = Number(data.referralDiscountAmount ?? 0);
+  const effectiveUnitPrice = Number(data.effectiveUnitPrice ?? baseUnitPrice);
+  const isNewUserFixedPrice =
+    String(data.rule || "") === "new_user_90days_fixed_10000";
 
-  const maxDiscountPerUnit = data.maxDiscountPerUnit ?? 5000;
-  const discountPerOrder = data.discountPerOrder ?? 10;
-  const totalDiscount = data.discountAmount ?? 0;
-  const baseUnitPrice = data.baseUnitPrice ?? 15000;
-  const effectiveUnitPrice = data.effectiveUnitPrice ?? baseUnitPrice;
-
-  const shouldHighlightReferral = data.rule === "new_user_90days_fixed_10000";
+  const monthlyRemakeFreeLimit = Number(data.monthlyRemakeFreeLimit ?? 10);
+  const monthlyRemakeUsed = Number(data.monthlyRemakeUsed ?? 0);
+  const monthlyRemakeFreeRemaining = Math.max(
+    0,
+    Number(
+      data.monthlyRemakeFreeRemaining ??
+        monthlyRemakeFreeLimit - monthlyRemakeUsed,
+    ),
+  );
 
   const copyToClipboardFallback = (text: string) => {
     const textarea = document.createElement("textarea");
@@ -176,12 +175,10 @@ export const RequestorPricingReferralPolicyCard = () => {
 
       if (canUseClipboardApi) {
         await navigator.clipboard.writeText(referralLink);
-      } else {
-        const ok = copyToClipboardFallback(referralLink);
-        if (!ok) {
-          throw new Error("fallback copy failed");
-        }
+      } else if (!copyToClipboardFallback(referralLink)) {
+        throw new Error("fallback copy failed");
       }
+
       toast({
         title: "복사 완료",
         description: "소개 링크를 클립보드에 복사했습니다.",
@@ -205,17 +202,13 @@ export const RequestorPricingReferralPolicyCard = () => {
             <div className="flex items-center gap-2">
               <Button
                 type="button"
-                variant={shouldHighlightReferral ? "default" : "outline"}
+                variant="outline"
                 size="sm"
-                className={
-                  shouldHighlightReferral
-                    ? "text-xs px-3 py-1.5 h-9 shadow-md bg-primary text-white"
-                    : "border border-slate-300 bg-white text-xs text-foreground hover:bg-slate-100 hover:text-slate-700 px-3 py-1.5 h-9"
-                }
+                className="border border-slate-300 bg-white text-xs text-foreground hover:bg-slate-100 hover:text-slate-700 px-3 py-1.5 h-9"
                 onClick={handleCopyReferralLink}
                 disabled={!referralLink}
               >
-                내 사업자 소개 링크 복사
+                소개 링크 복사
               </Button>
               <Button
                 type="button"
@@ -228,65 +221,81 @@ export const RequestorPricingReferralPolicyCard = () => {
               </Button>
             </div>
           </div>
-          <CardDescription className="space-y-1 text-xs text-slate-600 pt-2">
-            최근 30일 집계는 <b>내 사업자 기준 포장.발송</b> 건을 포함해
-            계산합니다.
-          </CardDescription>
         </CardHeader>
-        <CardContent className="pt-2 pb-4 gap-3 text-xs text-foreground">
-          <div className="space-y-1">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex-1 space-y-1">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-md text-slate-600">
-                    내 사업자 주문 (최근 30일)
-                  </span>
-                  <span className="text-lg font-semibold text-foreground">
-                    {myLast30DaysOrders.toLocaleString()}건
-                  </span>
-                </div>
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-md text-slate-600">
-                    소개 사업자 수(내 사업자 포함)
-                  </span>
-                  <span className="text-lg font-semibold text-foreground">
-                    {groupMemberCount}개소
-                  </span>
-                </div>
-              </div>
+
+        <CardContent className="pt-2 pb-4 gap-2 text-xs text-foreground space-y-1.5">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-md text-slate-600">
+              내 사업자 주문 수량 (최근 30일)
+            </span>
+            <span className="text-lg font-semibold text-foreground">
+              {myLast30DaysOrders.toLocaleString()}건
+            </span>
+          </div>
+
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-md text-slate-600">소개 사업자 수</span>
+            <span className="text-lg font-semibold text-foreground">
+              {referredBusinessCount}개소
+            </span>
+          </div>
+
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-md text-slate-600">
+              소개 사업자 주문 수량(최근 30일)
+            </span>
+            <span className="text-lg font-semibold text-foreground">
+              {referralBusinessOrders.toLocaleString()}건
+            </span>
+          </div>
+
+          <div className="mt-1 pt-2 border-t border-slate-200 space-y-1.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-md text-slate-600">정가</span>
+              <span className="text-lg font-semibold text-foreground">
+                {baseUnitPrice.toLocaleString()}원
+              </span>
             </div>
 
-            <div className="mt-2 space-y-1.5">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-md text-slate-600">
-                  사업자 주문 합계(내 사업자+소개 사업자)
-                </span>
-                <span className="text-lg font-semibold text-foreground">
-                  {totalOrders.toLocaleString()}건
-                </span>
-              </div>
-              <Progress value={progressValue} className="h-2" />
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-md text-slate-600">할인 금액</span>
+              <span className="text-lg font-semibold text-foreground">
+                {referralDiscountAmount.toLocaleString()}원
+              </span>
             </div>
 
-            <div className="mt-2 pt-2 space-y-1.5">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-md text-slate-600">오늘 주문 단가</span>
-                <div className="flex items-baseline gap-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-md text-slate-600">오늘 단가</span>
+              <span className="flex items-baseline gap-2">
+                {effectiveUnitPrice < baseUnitPrice && (
                   <span className="text-sm text-slate-500 line-through">
                     {baseUnitPrice.toLocaleString()}원
                   </span>
-                  <span className="text-2xl font-bold text-primary">
-                    {effectiveUnitPrice.toLocaleString()}원
-                  </span>
-                </div>
-              </div>
-              <p className="text-md text-slate-600 text-right">
-                <b>부가세·배송비 별도</b>
+                )}
+                <span className="text-xl font-bold text-primary">
+                  {effectiveUnitPrice.toLocaleString()}원
+                </span>
+              </span>
+            </div>
+
+            {isNewUserFixedPrice && (
+              <p className="text-[11px]  text-right">
+                가입 승인일 기준 90일 이내 고정가(10,000원) 적용 중
               </p>
+            )}
+
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-md text-slate-600">
+                이번 달 리메이크 무료 잔여
+              </span>
+              <span className="text-lg font-semibold text-foreground">
+                {monthlyRemakeFreeRemaining.toLocaleString()}건
+              </span>
             </div>
-            <div className="mt-1 text-[11px] text-slate-600 text-right">
-              이벤트 기간 동안 가입한 기공소는 90일간 10,000원으로 고정됩니다.
-            </div>
+
+            <p className="text-md text-slate-600 text-right">
+              <b>부가세·배송비 별도</b>
+            </p>
           </div>
         </CardContent>
       </Card>

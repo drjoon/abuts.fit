@@ -399,6 +399,8 @@ export const RequestorRecentRequestsCard = ({
             const canCancel = isCancelableRequest(item);
             const priceAmount = item.price?.amount;
             const isRemakeFixed = item.price?.rule === "remake_fixed_10000";
+            const isRemakeMonthlyFree =
+              item.price?.rule === "remake_monthly_free_10";
 
             return (
               <FunctionalItemCard
@@ -465,7 +467,12 @@ export const RequestorRecentRequestsCard = ({
                     {renderStageBadge(item)}
                     {isRemakeFixed && (
                       <Badge variant="secondary" className="text-[10px]">
-                        재의뢰 1만원
+                        리메이크 1만원
+                      </Badge>
+                    )}
+                    {isRemakeMonthlyFree && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        리메이크 무료(월 10건)
                       </Badge>
                     )}
                   </div>

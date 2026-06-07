@@ -831,56 +831,93 @@ export async function computePriceForRequest({
       : { requestor: requestorId };
 
   const BASE_UNIT_PRICE = 15000;
-  const REMAKE_FIXED_PRICE = 10000;
   const NEW_USER_FIXED_PRICE = 10000;
   const DISCOUNT_PER_ORDER = 100;
   const MAX_DISCOUNT = 5000;
+  const MONTHLY_REMAKE_FREE_LIMIT = 10;
 
-  // 0) 리메이크 기준(90일): 동일 치과+환자+치아에 대해 직전 의뢰가 있으면 고정가 (KST 기준)
+  // 0) 리메이크 기준(90일): 동일 치과+환자+치아에 대해 직전 의뢰가 있으면 리메이크
   const nowYmd = toKstYmd(now);
   const nowKst = new Date(`${nowYmd}T00:00:00+09:00`);
   nowKst.setDate(nowKst.getDate() - 90);
   const remakeCutoff = nowKst;
-  // Run remake check and org lookup in parallel (independent queries)
-  const [existing, orgForBaseDate] = await Promise.all([
-    Request.findOne({
-      ...scopeFilter,
-      "caseInfos.patientName": patientName,
-      "caseInfos.tooth": tooth,
-      "caseInfos.clinicName": clinicName,
-      "caseInfos.implantBrand": { $exists: true, $ne: "" },
-      manufacturerStage: { $ne: "취소" },
-      createdAt: { $gte: remakeCutoff },
-    })
-      .select({ _id: 1 })
-      .lean(),
-    requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))
-      ? BusinessAnchor.findById(new Types.ObjectId(String(requestorOrgId)))
-          .select({ primaryContactUserId: 1 })
-          .lean()
-      : Promise.resolve(null),
-  ]);
+
+  const existing = await Request.findOne({
+    ...scopeFilter,
+    "caseInfos.patientName": patientName,
+    "caseInfos.tooth": tooth,
+    "caseInfos.clinicName": clinicName,
+    "caseInfos.implantBrand": { $exists: true, $ne: "" },
+    manufacturerStage: { $ne: "취소" },
+    createdAt: { $gte: remakeCutoff },
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  let isRemake = false;
+  let monthlyRemakeUsed = 0;
+  let monthlyRemakeFreeRemaining = 0;
 
   if (existing && !forceNewOrderPricing) {
-    return {
-      baseAmount: REMAKE_FIXED_PRICE,
-      discountAmount: 0,
-      amount: REMAKE_FIXED_PRICE,
-      currency: "KRW",
-      rule: "remake_fixed_10000",
-      discountMeta: {
-        last30DaysOrders: 0,
-        referralLast30DaysOrders: 0,
-        discountPerOrder: DISCOUNT_PER_ORDER,
-        maxDiscount: MAX_DISCOUNT,
+    isRemake = true;
+    // 리메이크 무료 쿼터(월 10건): 사업자 단위, KST 월 경계
+    const [year, month] = String(nowYmd)
+      .split("-")
+      .map((v) => Number(v || 0));
+    const currentMonthStartYmd = `${year}-${String(month).padStart(2, "0")}-01`;
+    const currentMonthStart = new Date(
+      `${currentMonthStartYmd}T00:00:00+09:00`,
+    );
+    const nextMonthYear = month === 12 ? year + 1 : year;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextMonthStartYmd = `${nextMonthYear}-${String(nextMonth).padStart(2, "0")}-01`;
+    const nextMonthStart = new Date(`${nextMonthStartYmd}T00:00:00+09:00`);
+
+    monthlyRemakeUsed = await Request.countDocuments({
+      ...scopeFilter,
+      manufacturerStage: { $ne: "취소" },
+      createdAt: { $gte: currentMonthStart, $lt: nextMonthStart },
+      "price.rule": {
+        $in: [
+          "remake_monthly_free_10",
+          "remake_general_pricing",
+          "remake_fixed_10000",
+        ],
       },
-      quotedAt: now,
-    };
+    });
+
+    monthlyRemakeFreeRemaining = Math.max(
+      0,
+      MONTHLY_REMAKE_FREE_LIMIT - monthlyRemakeUsed,
+    );
+
+    if (monthlyRemakeUsed < MONTHLY_REMAKE_FREE_LIMIT) {
+      return {
+        baseAmount: BASE_UNIT_PRICE,
+        discountAmount: BASE_UNIT_PRICE,
+        amount: 0,
+        currency: "KRW",
+        rule: "remake_monthly_free_10",
+        discountMeta: {
+          monthlyRemakeFreeLimit: MONTHLY_REMAKE_FREE_LIMIT,
+          monthlyRemakeUsed,
+          monthlyRemakeFreeRemaining,
+        },
+        quotedAt: now,
+      };
+    }
   }
 
-  // 2) 신규 90일 고정가: 가입일 기준 90일 내 -> 10,000원 고정
-  // 조직 단위 정책이므로, 조직이 있으면 조직 owner의 가입일을 기준으로 한다.
-  // updatedAt은 운영 중 자주 갱신될 수 있어 기준일로 사용하지 않는다.
+  // 1) 신규 90일 고정가: 가입일 기준 90일 내 -> 10,000원 고정
+  const orgForBaseDate =
+    requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))
+      ? await BusinessAnchor.findById(
+          new Types.ObjectId(String(requestorOrgId)),
+        )
+          .select({ primaryContactUserId: 1 })
+          .lean()
+      : null;
+
   const baseDate = await (async () => {
     const ownerId = orgForBaseDate?.primaryContactUserId
       ? String(orgForBaseDate.primaryContactUserId)
@@ -897,8 +934,8 @@ export async function computePriceForRequest({
       .lean();
     return user?.approvedAt || user?.createdAt || null;
   })();
+
   if (baseDate) {
-    // KST 기준 90일 후
     const baseYmd = toKstYmd(baseDate);
     const baseKst = new Date(`${baseYmd}T00:00:00+09:00`);
     baseKst.setDate(baseKst.getDate() + 90);
@@ -909,32 +946,38 @@ export async function computePriceForRequest({
         discountAmount: 0,
         amount: NEW_USER_FIXED_PRICE,
         currency: "KRW",
-        rule: "new_user_90days_fixed_10000",
+        rule: isRemake
+          ? "remake_general_pricing"
+          : "new_user_90days_fixed_10000",
         discountMeta: {
           last30DaysOrders: 0,
           referralLast30DaysOrders: 0,
           discountPerOrder: DISCOUNT_PER_ORDER,
           maxDiscount: MAX_DISCOUNT,
+          ...(isRemake
+            ? {
+                monthlyRemakeFreeLimit: MONTHLY_REMAKE_FREE_LIMIT,
+                monthlyRemakeUsed,
+                monthlyRemakeFreeRemaining,
+              }
+            : {}),
         },
         quotedAt: now,
       };
     }
   }
 
-  // 3) 최근 30일 주문량 할인 (KST 기준)
+  // 2) 최근 30일 주문량 할인 (기존 정책 유지)
   const todayYmd = toKstYmd(now);
   const todayKst = new Date(`${todayYmd}T00:00:00+09:00`);
   todayKst.setDate(todayKst.getDate() - 30);
   const last30Cutoff = todayKst;
-  // 추천 관계의 canonical SSOT는 BusinessAnchor.referredByAnchorId다.
-  // 할인 계산도 user가 아니라 직접 소개된 사업자 anchor의 주문량을 합산해야
-  // 같은 사업자의 여러 사용자가 중복 반영되지 않는다.
+
   const myBusinessAnchorId =
     requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))
       ? new Types.ObjectId(String(requestorOrgId))
       : null;
 
-  // last30DaysOrders와 referredAnchors 조회를 병렬 실행 (독립적인 쿼리)
   const [last30DaysOrders, referredAnchors] = await Promise.all([
     Request.countDocuments({
       ...scopeFilter,
@@ -962,6 +1005,7 @@ export async function computePriceForRequest({
         createdAt: { $gte: last30Cutoff },
       })
     : 0;
+
   const totalOrders = last30DaysOrders + referralLast30DaysOrders;
   const discountAmount = Math.min(
     totalOrders * DISCOUNT_PER_ORDER,
@@ -974,12 +1018,23 @@ export async function computePriceForRequest({
     discountAmount,
     amount,
     currency: "KRW",
-    rule: discountAmount > 0 ? "volume_discount_last30days" : "base_price",
+    rule: isRemake
+      ? "remake_general_pricing"
+      : discountAmount > 0
+        ? "volume_discount_last30days"
+        : "base_price",
     discountMeta: {
       last30DaysOrders,
       referralLast30DaysOrders,
       discountPerOrder: DISCOUNT_PER_ORDER,
       maxDiscount: MAX_DISCOUNT,
+      ...(isRemake
+        ? {
+            monthlyRemakeFreeLimit: MONTHLY_REMAKE_FREE_LIMIT,
+            monthlyRemakeUsed,
+            monthlyRemakeFreeRemaining,
+          }
+        : {}),
     },
     quotedAt: now,
   };

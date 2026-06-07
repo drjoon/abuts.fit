@@ -198,7 +198,12 @@ export const PricingPolicyDialog = ({
                       커스텀 어벗: <b>1개당 15,000원</b>
                     </li>
                     <li>
-                      리메이크·수정(동일 환자·치아): <b>1건당 10,000원</b>
+                      리메이크 무료: <b>사업자(기공소) 기준 월 10건까지 0원</b>
+                      <br />
+                      <span className="text-xs text-muted-foreground">
+                        (동일 치과·환자·치식, 최근 90일 조건 충족 건에 한함 /
+                        10건 초과 시 일반 의뢰 단가 적용)
+                      </span>
                     </li>
                     <li>
                       배송비: <b>발송 1회당 3,500원</b> — 한 번에 여러 제품을

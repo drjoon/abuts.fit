@@ -154,6 +154,7 @@ export const RequestDetailDialog = ({
   const priceAmount = request?.price?.amount;
   const priceRule = request?.price?.rule;
   const isRemakeFixed = priceRule === "remake_fixed_10000";
+  const isRemakeMonthlyFree = priceRule === "remake_monthly_free_10";
 
   const selectedDetailLedgerRow = request
     ? rows.find(
@@ -211,7 +212,12 @@ export const RequestDetailDialog = ({
                   <span>{Number(priceAmount).toLocaleString()}원</span>
                   {isRemakeFixed && (
                     <Badge variant="secondary" className="text-[11px]">
-                      재의뢰 1만원
+                      리메이크 1만원
+                    </Badge>
+                  )}
+                  {isRemakeMonthlyFree && (
+                    <Badge variant="secondary" className="text-[11px]">
+                      리메이크 무료(월 10건)
                     </Badge>
                   )}
                 </span>

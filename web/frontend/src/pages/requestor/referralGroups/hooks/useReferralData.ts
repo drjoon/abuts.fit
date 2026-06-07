@@ -20,6 +20,10 @@ export type RequestorReferralStats = {
   rule?: string;
   maxDiscountPerUnit?: number;
   discountPerOrder?: number;
+  monthlyRemakeFreeLimit?: number;
+  monthlyRemakeUsed?: number;
+  monthlyRemakeFreeRemaining?: number;
+  remakeUnitPrice?: number;
 };
 
 type UseReferralDataOptions = {

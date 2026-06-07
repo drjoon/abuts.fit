@@ -1147,7 +1147,7 @@ export async function getMyPricingReferralStats(req, res) {
     const requestorId = req.user._id;
     const debug =
       process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
-    const statsCacheKey = `pricing-referral-stats:v6:${String(
+    const statsCacheKey = `pricing-referral-stats:v9:${String(
       req.user?._id || "",
     )}:${String(req.user?.businessAnchorId || "")}`;
 
@@ -1186,19 +1186,21 @@ export async function getMyPricingReferralStats(req, res) {
           throw new Error("날짜 계산에 실패했습니다.");
         }
 
+        const meFromDb = await User.findById(requestorId)
+          .select({
+            businessAnchorId: 1,
+            role: 1,
+            createdAt: 1,
+            updatedAt: 1,
+            active: 1,
+            approvedAt: 1,
+          })
+          .lean();
         const me =
-          String(req.user?._id || "") === String(requestorId || "")
+          meFromDb ||
+          (String(req.user?._id || "") === String(requestorId || "")
             ? req.user
-            : await User.findById(requestorId)
-                .select({
-                  businessAnchorId: 1,
-                  role: 1,
-                  createdAt: 1,
-                  updatedAt: 1,
-                  active: 1,
-                  approvedAt: 1,
-                })
-                .lean();
+            : null);
         const role = String(me?.role || req.user?.role || "requestor");
         // 누락 감지: 오늘 스냅샷이 없으면 당일 자정 기준 30일로 즉시 계산 (워커 장애 복구)
         let cachedRollingAggregate = null;
@@ -1349,15 +1351,56 @@ export async function getMyPricingReferralStats(req, res) {
         const totalOrders = totalLastMonthOrders;
 
         const baseUnitPrice = 15000;
+        const monthlyRemakeFreeLimit = 10;
+        const [todayYear, todayMonth] = String(todayYmd)
+          .split("-")
+          .map((v) => Number(v || 0));
+        const monthStartYmd = `${String(todayYear)}-${String(todayMonth).padStart(2, "0")}-01`;
+        const monthStartKst = new Date(`${monthStartYmd}T00:00:00+09:00`);
+        const nextMonthYear = todayMonth === 12 ? todayYear + 1 : todayYear;
+        const nextMonth = todayMonth === 12 ? 1 : todayMonth + 1;
+        const nextMonthYmd = `${String(nextMonthYear)}-${String(nextMonth).padStart(2, "0")}-01`;
+        const nextMonthStartKst = new Date(`${nextMonthYmd}T00:00:00+09:00`);
+
+        const selfScopeFilter =
+          me?.businessAnchorId &&
+          Types.ObjectId.isValid(String(me.businessAnchorId || ""))
+            ? {
+                businessAnchorId: new Types.ObjectId(
+                  String(me.businessAnchorId),
+                ),
+              }
+            : { requestor: requestorId };
+
+        const monthlyRemakeUsed = await Request.countDocuments({
+          ...selfScopeFilter,
+          manufacturerStage: { $ne: "취소" },
+          createdAt: { $gte: monthStartKst, $lt: nextMonthStartKst },
+          "price.rule": {
+            $in: [
+              "remake_monthly_free_10",
+              "remake_general_pricing",
+              "remake_fixed_10000",
+            ],
+          },
+        });
+        const monthlyRemakeFreeRemaining = Math.max(
+          0,
+          monthlyRemakeFreeLimit - monthlyRemakeUsed,
+        );
+
         const discountPerOrder = 100;
         const maxDiscountPerUnit = 5000;
-        const discountAmount = Math.min(
+        const volumeDiscountAmount = Math.min(
           totalOrders * discountPerOrder,
           maxDiscountPerUnit,
         );
 
         let rule = "volume_discount_last_month";
-        let effectiveUnitPrice = Math.max(0, baseUnitPrice - discountAmount);
+        let effectiveUnitPrice = Math.max(
+          0,
+          baseUnitPrice - volumeDiscountAmount,
+        );
 
         const dateSource = user || req.user;
 
@@ -1380,6 +1423,9 @@ export async function getMyPricingReferralStats(req, res) {
           }
         }
 
+        const referralDiscountAmount = Math.max(0, volumeDiscountAmount);
+        const discountAmount = Math.max(0, baseUnitPrice - effectiveUnitPrice);
+
         const responseData = {
           lastMonthStart,
           lastMonthEnd,
@@ -1396,8 +1442,14 @@ export async function getMyPricingReferralStats(req, res) {
           discountPerOrder,
           maxDiscountPerUnit,
           discountAmount,
+          referralDiscountAmount,
           effectiveUnitPrice,
           rule,
+          monthlyRemakeFreeLimit,
+          monthlyRemakeUsed,
+          monthlyRemakeFreeRemaining,
+          currentMonthStartYmd: monthStartYmd,
+          currentMonthEndExclusiveYmd: nextMonthYmd,
           groupMemberCount,
           snapshotMissing,
           ...(debug
