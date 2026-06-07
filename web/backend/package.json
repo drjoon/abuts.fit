@@ -19,6 +19,7 @@
     "db:seed-branding": "cross-env ENV_FILE=local.env node scripts/db/seed-branding.js",
     "db:implant-preset": "cross-env ENV_FILE=local.env node scripts/db/implant-preset.js",
     "db:seed-prc": "cross-env ENV_FILE=local.env node scripts/db/seed-prc-mappings.js",
+    "db:migrate-payout-rates": "cross-env ENV_FILE=local.env node scripts/db/migrate-payout-rates.js",
     "worker:monthly-referral-snapshot": "cross-env ENV_FILE=local.env node jobs/dailyReferralSnapshotWorker.js",
     "worker:daily-admin-salesman-credits-overview-snapshot": "cross-env ENV_FILE=local.env node jobs/dailyAdminSalesmanCreditsOverviewSnapshotWorker.js"
   },

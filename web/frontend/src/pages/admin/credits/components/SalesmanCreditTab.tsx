@@ -176,7 +176,15 @@ export function SalesmanCreditTab({
               <select
                 className="h-9 w-full rounded-md border border-input bg-muted/40 px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 value={salesmanSortKey}
-                onChange={(e) => setSalesmanSortKey(e.target.value as any)}
+                onChange={(e) =>
+                  setSalesmanSortKey(
+                    e.target.value as
+                      | "balance"
+                      | "commission"
+                      | "revenue"
+                      | "name",
+                  )
+                }
               >
                 <option value="balance">정렬: 잔액순</option>
                 <option value="commission">정렬: 수수료순</option>
@@ -342,14 +350,14 @@ export function SalesmanCreditTab({
                               ).toLocaleString()}
                               원
                               <span className="text-muted-foreground font-normal ml-1">
-                                (매출 × 5%)
+                                (매출 × 10%)
                               </span>
                             </span>
                           </div>
                         </div>
                         <div className="rounded-md bg-muted/40 px-3 py-2 space-y-0.5">
                           <div className="text-xs font-semibold text-muted-foreground mb-1">
-                            간접 수수료
+                            간접 수수료 (미지급)
                           </div>
                           <div className="flex justify-between text-xs">
                             <span className="text-muted-foreground">
@@ -382,7 +390,7 @@ export function SalesmanCreditTab({
                               ).toLocaleString()}
                               원
                               <span className="text-muted-foreground font-normal ml-1">
-                                (매출 × 2.5%)
+                                (정책상 0%)
                               </span>
                             </span>
                           </div>

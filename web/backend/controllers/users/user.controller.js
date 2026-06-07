@@ -429,29 +429,24 @@ async function updateProfile(req, res) {
         delete updateData.devopsPayoutSettings;
       } else {
         const raw = updateData.devopsPayoutSettings;
-        const manufacturerRate = Number(raw?.manufacturerRate ?? 0.65);
-        const baseCommissionRate = Number(raw?.baseCommissionRate ?? 0.05);
-        const salesmanDirectRate = Number(raw?.salesmanDirectRate ?? 0.05);
-        const rates = [
-          manufacturerRate,
-          baseCommissionRate,
-          salesmanDirectRate,
-        ];
+        const manufacturerRate = Number(raw?.manufacturerRate ?? 0.6);
+        const devopsRate = Number(raw?.devopsRate ?? 0.1);
+        const salesmanRate = Number(raw?.salesmanRate ?? 0.1);
+        const adminRate = Number(raw?.adminRate ?? 0.2);
+        const rates = [manufacturerRate, devopsRate, salesmanRate, adminRate];
         if (rates.some((r) => !Number.isFinite(r) || r < 0 || r > 1)) {
           return res.status(400).json({
             success: false,
-            message: "수수료율은 0~100% 범위여야 합니다.",
+            message: "분배율은 0~100% 범위여야 합니다.",
           });
         }
-        const devopsMaxOnly = baseCommissionRate + salesmanDirectRate;
-        const devopsPlusSalesman =
-          baseCommissionRate + salesmanDirectRate * 1.5;
-        const maxTotal =
-          manufacturerRate + Math.max(devopsMaxOnly, devopsPlusSalesman);
-        if (maxTotal > 1) {
+
+        const totalRate =
+          manufacturerRate + devopsRate + salesmanRate + adminRate;
+        if (Math.abs(totalRate - 1) > 0.0001) {
           return res.status(400).json({
             success: false,
-            message: `분배율 합계가 100%를 초과합니다. (현재 최대 ${Math.round(maxTotal * 100)}%)`,
+            message: `분배율 합계는 100%여야 합니다. (현재 ${Math.round(totalRate * 10000) / 100}%)`,
           });
         }
 
@@ -463,8 +458,9 @@ async function updateProfile(req, res) {
               $set: {
                 payoutRates: {
                   manufacturerRate,
-                  baseCommissionRate,
-                  salesmanDirectRate,
+                  devopsRate,
+                  salesmanRate,
+                  adminRate,
                   updatedAt: new Date(),
                 },
               },

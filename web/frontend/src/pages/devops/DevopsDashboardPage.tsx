@@ -3,8 +3,8 @@
  * 정산 페이지 내용(수수료 카드 + 원장)을 흡수 통합.
  *
  * 수수료 정책 (rules.md 2.4):
- *   - 기본: 직접 소개 의뢰자 매출의 baseCommissionRate%
- *   - 소개: 영업자 미설정 의뢰자 매출의 salesmanDirectRate%
+ *   - 개발·운영사 분배율은 유료의뢰비 기준 10%
+ *   - 영업자 소개 유무와 무관하게 개발·운영사 분배율은 동일
  */
 
 import { useState } from "react";
@@ -83,11 +83,11 @@ export const DevopsDashboardPage = () => {
               </CardContent>
             </Card>
 
-            {/* 소개 X%: 영업자 미설정 의뢰자에 salesmanDirectRate 적용 */}
+            {/* 영업자 미설정 의뢰자 분배 */}
             <Card className="app-glass-card app-glass-card--lg">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
-                  영업자 직접 소개 수수료
+                  영업자 미설정 의뢰자 분배
                   {!loading && (
                     <span className="ml-1 font-normal text-muted-foreground">
                       ({unaffiliatedRatePct}%)

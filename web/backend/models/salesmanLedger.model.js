@@ -18,6 +18,19 @@ const salesmanLedgerSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    // 회계 추적 강화: VAT 제외 금액(공급가) / VAT / VAT 포함 지급액을 분리 저장
+    amountExcludingVat: {
+      type: Number,
+      default: null,
+    },
+    vatAmount: {
+      type: Number,
+      default: 0,
+    },
+    amountIncludingVat: {
+      type: Number,
+      default: null,
+    },
     refType: {
       type: String,
       default: "",

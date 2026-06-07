@@ -60,7 +60,7 @@ type ApiGroupRow = {
   effectiveUnitPrice?: number;
   commissionAmount?: number;
   snapshotComputedAt?: string | null;
-  unitPriceDebug?: any;
+  unitPriceDebug?: unknown;
 };
 
 type ApiGroupListResponse = {
@@ -168,7 +168,7 @@ type ApiGroupTreeResponse = {
     groupTotalOrders?: number;
     effectiveUnitPrice?: number;
     commissionAmount?: number;
-    unitPriceDebug?: any;
+    unitPriceDebug?: unknown;
     snapshot?: {
       ymd?: string;
       groupMemberCount?: number;
@@ -329,7 +329,7 @@ export default function AdminReferralGroupsPage() {
   const filteredGroups = useMemo(() => {
     const q = search.trim().toLowerCase();
     const base = groups.filter((g) => {
-      const leader = g.leader || ({} as any);
+      const leader = g.leader || ({} as Partial<ApiGroupLeader>);
       if (roleFilter !== "all") {
         const leaderRole = String(leader.role || "");
         if (roleFilter === "referrer") {
@@ -525,15 +525,12 @@ export default function AdminReferralGroupsPage() {
       (acc, r) => acc + Number(r.lastMonthPaidRevenue || 0),
       0,
     );
-    return Math.round(sumPaidRevenue * 0.05);
+    return Math.round(sumPaidRevenue * 0.1);
   }, [directReferralRequestors]);
 
   const indirectCommissionSum = useMemo(() => {
-    const sumPaidRevenue = (indirectReferralRequestors || []).reduce(
-      (acc, row) => acc + Number(row.requestor?.lastMonthPaidRevenue || 0),
-      0,
-    );
-    return Math.round(sumPaidRevenue * 0.025);
+    // 정책 변경: 간접 소개 수수료(2.5%) 미지급
+    return 0;
   }, [indirectReferralRequestors]);
 
   const totalCommissionSum = directCommissionSum + indirectCommissionSum;
@@ -542,7 +539,11 @@ export default function AdminReferralGroupsPage() {
     if (!token) return false;
     setDeletingUser(true);
     try {
-      const res = await request<any>({
+      const res = await request<{
+        success?: boolean;
+        message?: string;
+        error?: string;
+      }>({
         path: `/api/admin/users/${encodeURIComponent(String(node._id || ""))}/with-business`,
         method: "DELETE",
         token,
@@ -871,7 +872,7 @@ export default function AdminReferralGroupsPage() {
               >
                 <option value="">리더를 선택하세요</option>
                 {filteredGroups.map((g) => {
-                  const leader = g.leader || ({} as any);
+                  const leader = g.leader || ({} as Partial<ApiGroupLeader>);
                   const displayName =
                     leader.business ||
                     leader.name ||

@@ -1,9 +1,7 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
-import User from "../../models/user.model.js";
-import BusinessAnchor from "../../models/businessAnchor.model.js";
-import SalesmanLedger from "../../models/salesmanLedger.model.js";
+
 import { emitAppEventToRoles } from "../../socket.js";
 import {
   applyShippingWorkflowState,
@@ -481,144 +479,9 @@ export const syncHanjinTrackingPayload = async ({
       request.timeline.actualCompletion = deliveryInfo.deliveredAt;
     }
 
-    try {
-      const requestorIdRaw = request?.requestor
-        ? String(request.requestor)
-        : "";
-      const paidAmountRaw = Number(request?.price?.paidAmount || 0);
-      const paidAmount = Number.isFinite(paidAmountRaw)
-        ? Math.round(paidAmountRaw)
-        : 0;
-
-      if (
-        requestorIdRaw &&
-        Types.ObjectId.isValid(requestorIdRaw) &&
-        paidAmount > 0
-      ) {
-        const requestor = await User.findById(
-          new Types.ObjectId(requestorIdRaw),
-        )
-          .select({ _id: 1, role: 1, businessAnchorId: 1 })
-          .lean();
-
-        const requestorBusinessAnchorIdRaw = request?.businessAnchorId
-          ? String(request.businessAnchorId)
-          : requestor?.businessAnchorId
-            ? String(requestor.businessAnchorId)
-            : "";
-        const requestorAnchor =
-          requestorBusinessAnchorIdRaw &&
-          Types.ObjectId.isValid(requestorBusinessAnchorIdRaw)
-            ? await BusinessAnchor.findById(requestorBusinessAnchorIdRaw)
-                .select({ referredByAnchorId: 1 })
-                .lean()
-            : null;
-
-        const referredByAnchorIdRaw = requestorAnchor?.referredByAnchorId
-          ? String(requestorAnchor.referredByAnchorId)
-          : "";
-
-        let directSalesman = null;
-        if (
-          referredByAnchorIdRaw &&
-          Types.ObjectId.isValid(referredByAnchorIdRaw)
-        ) {
-          const referrerOwner = await User.findOne({
-            businessAnchorId: new Types.ObjectId(referredByAnchorIdRaw),
-            role: { $in: ["salesman", "devops"] },
-            active: true,
-          })
-            .select({ _id: 1, role: 1, businessAnchorId: 1 })
-            .lean();
-
-          if (referrerOwner) {
-            directSalesman = referrerOwner;
-          }
-        }
-
-        if (directSalesman) {
-          const directEarn = Math.round(paidAmount * 0.05);
-          if (directEarn > 0) {
-            const uniqueKey = `request:${String(request._id)}:salesmanEarn:direct:${String(directSalesman._id)}`;
-            await SalesmanLedger.updateOne(
-              { uniqueKey },
-              {
-                $setOnInsert: {
-                  salesmanId: directSalesman._id,
-                  type: "EARN",
-                  amount: directEarn,
-                  refType: "REQUEST_DIRECT",
-                  refId: request._id,
-                  uniqueKey,
-                },
-              },
-              { upsert: true },
-            );
-          }
-
-          const directSalesmanBusinessAnchorIdRaw =
-            directSalesman?.businessAnchorId
-              ? String(directSalesman.businessAnchorId)
-              : "";
-          const directSalesmanAnchor =
-            directSalesmanBusinessAnchorIdRaw &&
-            Types.ObjectId.isValid(directSalesmanBusinessAnchorIdRaw)
-              ? await BusinessAnchor.findById(directSalesmanBusinessAnchorIdRaw)
-                  .select({ referredByAnchorId: 1 })
-                  .lean()
-              : null;
-          const parentSalesmanBusinessAnchorIdRaw =
-            directSalesmanAnchor?.referredByAnchorId
-              ? String(directSalesmanAnchor.referredByAnchorId)
-              : "";
-
-          let parentSalesman = null;
-          if (
-            parentSalesmanBusinessAnchorIdRaw &&
-            Types.ObjectId.isValid(parentSalesmanBusinessAnchorIdRaw)
-          ) {
-            const parentOwner = await User.findOne({
-              businessAnchorId: new Types.ObjectId(
-                parentSalesmanBusinessAnchorIdRaw,
-              ),
-              role: "salesman",
-              active: true,
-            })
-              .select({ _id: 1, role: 1 })
-              .lean();
-
-            if (parentOwner && String(parentOwner.role || "") === "salesman") {
-              parentSalesman = parentOwner;
-            }
-          }
-
-          if (parentSalesman) {
-            const level1Earn = Math.round(paidAmount * 0.025);
-            if (level1Earn > 0) {
-              const uniqueKey = `request:${String(request._id)}:salesmanEarn:level1:${String(parentSalesman._id)}`;
-              await SalesmanLedger.updateOne(
-                { uniqueKey },
-                {
-                  $setOnInsert: {
-                    salesmanId: parentSalesman._id,
-                    type: "EARN",
-                    amount: level1Earn,
-                    refType: "REQUEST_LEVEL1",
-                    refId: request._id,
-                    uniqueKey,
-                  },
-                },
-                { upsert: true },
-              );
-            }
-          }
-        }
-      }
-    } catch (e) {
-      if (debug) {
-        console.error("[hanjinTracking] salesman earn update failed", e);
-      }
-    }
+    // 수익 분배 SSOT는 CAM 승인(의뢰비 확정) 시점의
+    // distributeCommissionOnRequestSpend에서만 처리합니다.
+    // 추적 동기화 경로에서는 정산/수수료 원장에 쓰지 않습니다.
   }
 
   if (isTrackingStageEligible(deliveryInfo)) {

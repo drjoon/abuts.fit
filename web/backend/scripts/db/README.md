@@ -41,6 +41,16 @@ npm run db:seed-account -- r=20 s=10
 npm run db:implant-preset
 ```
 
+- **payoutRates 마이그레이션 (legacy -> 최신 필드)**
+
+```bash
+# 먼저 dry-run으로 대상/변환 결과 확인
+npm run db:migrate-payout-rates -- --dry-run
+
+# 실제 반영
+npm run db:migrate-payout-rates
+```
+
 ## 안전장치
 
 - 기본적으로 **production에서는 DB 변경을 거부**합니다.

@@ -680,151 +680,166 @@ export async function distributeCommissionOnRequestSpend({
 }) {
   if (!request?._id || !businessAnchorId || spendAmount <= 0) return;
 
+  const VAT_RATE = 0.1;
+  const WITH_SALESMAN_DEFAULT_RATES = {
+    manufacturerRate: 0.6,
+    devopsRate: 0.1,
+    salesmanRate: 0.1,
+    adminRate: 0.2,
+  };
+  const WITHOUT_SALESMAN_RATES = {
+    manufacturerRate: 0.65,
+    devopsRate: 0.1,
+    salesmanRate: 0,
+    adminRate: 0.25,
+  };
+
+  const withVat = (amount) => Math.round(Number(amount || 0) * (1 + VAT_RATE));
+
   try {
-    // 의뢰자의 BusinessAnchor 정보 조회
     const requestorAnchor = await BusinessAnchor.findById(businessAnchorId)
       .select({ referredByAnchorId: 1, businessType: 1 })
       .session(session || null)
       .lean();
 
     if (!requestorAnchor || requestorAnchor.businessType !== "requestor") {
-      console.log("[COMMISSION] skip non-requestor business", {
-        businessAnchorId,
-        businessType: requestorAnchor?.businessType,
-      });
       return;
     }
 
-    // 기본 분배율 (첨1 이미지 기준)
-    const MANUFACTURER_RATE = 0.65; // 제조사 65% 고정
-    const SALESMAN_DIRECT_RATE = 0.05; // 영업자 직접 소개 5%
-    const SALESMAN_INDIRECT_RATE = 0.025; // 영업자 간접 소개 2.5%
-    const DEVOPS_BASE_RATE = 0.05; // 개발운영사 기본 5%
+    const referrerInfo = requestorAnchor.referredByAnchorId
+      ? await BusinessAnchor.findById(requestorAnchor.referredByAnchorId)
+          .select({ businessType: 1, primaryContactUserId: 1 })
+          .session(session || null)
+          .lean()
+      : null;
 
-    let devopsCommissionAmount = 0;
-    let salesmanCommissionAmount = 0;
-    let referrerInfo = null;
+    const hasSalesmanReferrer = referrerInfo?.businessType === "salesman";
 
-    // 소개자 정보 조회 및 수수료 계산
-    if (requestorAnchor.referredByAnchorId) {
-      referrerInfo = await BusinessAnchor.findById(
-        requestorAnchor.referredByAnchorId,
-      )
-        .select({
-          businessType: 1,
-          primaryContactUserId: 1,
-          referredByAnchorId: 1,
-        })
-        .session(session || null)
-        .lean();
+    const defaultDevopsAnchor = await BusinessAnchor.findOne({
+      businessType: "devops",
+      status: { $ne: "merged" },
+    })
+      .select({ _id: 1, primaryContactUserId: 1, payoutRates: 1, createdAt: 1 })
+      .sort({ createdAt: 1, _id: 1 })
+      .session(session || null)
+      .lean();
 
-      if (referrerInfo) {
-        if (referrerInfo.businessType === "devops") {
-          // 개발운영사가 직접 소개한 경우
-          devopsCommissionAmount = Math.round(spendAmount * DEVOPS_BASE_RATE);
-        } else if (referrerInfo.businessType === "salesman") {
-          // 영업자가 직접 소개한 경우: 영업자 5% + 개발운영사 5%
-          salesmanCommissionAmount = Math.round(
-            spendAmount * SALESMAN_DIRECT_RATE,
-          );
-          devopsCommissionAmount = Math.round(spendAmount * DEVOPS_BASE_RATE);
-        }
-      }
-    } else {
-      // 소개자 없는 경우: 개발운영사가 직접 소개했다고 간주하여 추가 5%
-      devopsCommissionAmount = Math.round(
-        spendAmount * (DEVOPS_BASE_RATE + SALESMAN_DIRECT_RATE),
-      );
-    }
-
-    // 영업자 간접 소개 체크 (2단계 이상)
-    let indirectSalesmanCommissionAmount = 0;
-    if (
-      referrerInfo?.businessType === "salesman" &&
-      referrerInfo.referredByAnchorId
-    ) {
-      const indirectReferrer = await BusinessAnchor.findById(
-        referrerInfo.referredByAnchorId,
-      )
-        .select({
-          businessType: 1,
-          primaryContactUserId: 1,
-        })
-        .session(session || null)
-        .lean();
-
-      if (
-        indirectReferrer?.businessType === "salesman" &&
-        indirectReferrer.primaryContactUserId
-      ) {
-        indirectSalesmanCommissionAmount = Math.round(
-          spendAmount * SALESMAN_INDIRECT_RATE,
-        );
-        // 영업자 간접 소개 시에도 개발운영사 5% 추가
-        devopsCommissionAmount = Math.round(spendAmount * DEVOPS_BASE_RATE);
-      }
-    }
-
-    // 관리자 분배율 동적 계산: 나머지 전체
-    const totalDistributed =
-      devopsCommissionAmount +
-      salesmanCommissionAmount +
-      indirectSalesmanCommissionAmount;
-    const adminCommissionAmount =
-      spendAmount -
-      Math.round(spendAmount * MANUFACTURER_RATE) -
-      totalDistributed;
-
-    // 관리자 수수료 분배
-    if (adminCommissionAmount > 0) {
-      const adminUser = await User.findOne({
-        role: "admin",
+    let devopsRecipientUserId =
+      defaultDevopsAnchor?.primaryContactUserId || null;
+    if (!devopsRecipientUserId && defaultDevopsAnchor?._id) {
+      const defaultDevopsUser = await User.findOne({
+        role: "devops",
         active: true,
+        businessAnchorId: defaultDevopsAnchor._id,
       })
         .select({ _id: 1 })
         .session(session || null)
         .lean();
+      devopsRecipientUserId = defaultDevopsUser?._id || null;
+    }
 
-      if (adminUser?._id) {
-        const adminUniqueKey = `request:${String(request._id)}:admin_commission`;
-        await AdminCreditLedger.updateOne(
-          { uniqueKey: adminUniqueKey },
+    const configuredRates = {
+      manufacturerRate: Number(
+        defaultDevopsAnchor?.payoutRates?.manufacturerRate ??
+          WITH_SALESMAN_DEFAULT_RATES.manufacturerRate,
+      ),
+      devopsRate: Number(
+        defaultDevopsAnchor?.payoutRates?.devopsRate ??
+          WITH_SALESMAN_DEFAULT_RATES.devopsRate,
+      ),
+      salesmanRate: Number(
+        defaultDevopsAnchor?.payoutRates?.salesmanRate ??
+          WITH_SALESMAN_DEFAULT_RATES.salesmanRate,
+      ),
+      adminRate: Number(
+        defaultDevopsAnchor?.payoutRates?.adminRate ??
+          WITH_SALESMAN_DEFAULT_RATES.adminRate,
+      ),
+    };
+
+    const effectiveRates = hasSalesmanReferrer
+      ? configuredRates
+      : WITHOUT_SALESMAN_RATES;
+
+    const manufacturerBaseAmount = Math.round(
+      spendAmount * Number(effectiveRates.manufacturerRate || 0),
+    );
+    const devopsBaseAmount = Math.round(
+      spendAmount * Number(effectiveRates.devopsRate || 0),
+    );
+    const salesmanBaseAmount = hasSalesmanReferrer
+      ? Math.round(spendAmount * Number(effectiveRates.salesmanRate || 0))
+      : 0;
+    const adminBaseAmount = Math.max(
+      spendAmount -
+        manufacturerBaseAmount -
+        devopsBaseAmount -
+        salesmanBaseAmount,
+      0,
+    );
+
+    const manufacturerPayoutAmount = withVat(manufacturerBaseAmount);
+    const devopsPayoutAmount = withVat(devopsBaseAmount);
+    const salesmanPayoutAmount = withVat(salesmanBaseAmount);
+    const adminPayoutAmount = withVat(adminBaseAmount);
+
+    const manufacturerVatAmount =
+      manufacturerPayoutAmount - manufacturerBaseAmount;
+    const devopsVatAmount = devopsPayoutAmount - devopsBaseAmount;
+    const salesmanVatAmount = salesmanPayoutAmount - salesmanBaseAmount;
+    const adminVatAmount = adminPayoutAmount - adminBaseAmount;
+
+    const caManufacturerRaw = request?.caManufacturer
+      ? String(request.caManufacturer)
+      : "";
+    const caManufacturerId = Types.ObjectId.isValid(caManufacturerRaw)
+      ? new Types.ObjectId(caManufacturerRaw)
+      : null;
+
+    if (caManufacturerId) {
+      const manufacturerUser = await User.findById(caManufacturerId)
+        .select({ _id: 1, business: 1, name: 1 })
+        .session(session || null)
+        .lean();
+
+      if (manufacturerUser && manufacturerPayoutAmount > 0) {
+        const manufacturerUniqueKey = `request:${String(request._id)}:manufacturer_commission`;
+        await ManufacturerCreditLedger.updateOne(
+          { uniqueKey: manufacturerUniqueKey },
           {
             $setOnInsert: {
-              adminUserId: adminUser._id,
+              manufacturerOrganization: String(
+                manufacturerUser.business || manufacturerUser.name || "",
+              ).trim(),
+              manufacturerId: manufacturerUser._id,
               type: "EARN",
-              amount: adminCommissionAmount,
+              amount: manufacturerPayoutAmount,
+              amountExcludingVat: manufacturerBaseAmount,
+              vatAmount: manufacturerVatAmount,
+              amountIncludingVat: manufacturerPayoutAmount,
               refType: "REQUEST",
               refId: request._id,
-              uniqueKey: adminUniqueKey,
+              uniqueKey: manufacturerUniqueKey,
               occurredAt: new Date(),
             },
           },
           { upsert: true, session },
         );
-
-        console.log("[COMMISSION] admin commission distributed", {
-          requestId: request?.requestId,
-          amount: adminCommissionAmount,
-          adminUserId: adminUser._id,
-        });
       }
     }
 
-    // 개발운영사 수수료 분배
-    if (
-      devopsCommissionAmount > 0 &&
-      referrerInfo?.businessType === "devops" &&
-      referrerInfo.primaryContactUserId
-    ) {
+    if (devopsRecipientUserId && devopsPayoutAmount > 0) {
       const devopsUniqueKey = `request:${String(request._id)}:devops_commission`;
       await SalesmanLedger.updateOne(
         { uniqueKey: devopsUniqueKey },
         {
           $setOnInsert: {
-            salesmanId: referrerInfo.primaryContactUserId,
+            salesmanId: devopsRecipientUserId,
             type: "EARN",
-            amount: devopsCommissionAmount,
+            amount: devopsPayoutAmount,
+            amountExcludingVat: devopsBaseAmount,
+            vatAmount: devopsVatAmount,
+            amountIncludingVat: devopsPayoutAmount,
             refType: "REQUEST",
             refId: request._id,
             uniqueKey: devopsUniqueKey,
@@ -832,19 +847,12 @@ export async function distributeCommissionOnRequestSpend({
         },
         { upsert: true, session },
       );
-
-      console.log("[COMMISSION] devops commission distributed", {
-        requestId: request?.requestId,
-        amount: devopsCommissionAmount,
-        devopsUserId: referrerInfo.primaryContactUserId,
-      });
     }
 
-    // 영업자 직접 소개 수수료 분배
     if (
-      salesmanCommissionAmount > 0 &&
-      referrerInfo?.businessType === "salesman" &&
-      referrerInfo.primaryContactUserId
+      hasSalesmanReferrer &&
+      referrerInfo?.primaryContactUserId &&
+      salesmanPayoutAmount > 0
     ) {
       const salesmanUniqueKey = `request:${String(request._id)}:salesman_commission`;
       await SalesmanLedger.updateOne(
@@ -853,7 +861,10 @@ export async function distributeCommissionOnRequestSpend({
           $setOnInsert: {
             salesmanId: referrerInfo.primaryContactUserId,
             type: "EARN",
-            amount: salesmanCommissionAmount,
+            amount: salesmanPayoutAmount,
+            amountExcludingVat: salesmanBaseAmount,
+            vatAmount: salesmanVatAmount,
+            amountIncludingVat: salesmanPayoutAmount,
             refType: "REQUEST",
             refId: request._id,
             uniqueKey: salesmanUniqueKey,
@@ -861,81 +872,55 @@ export async function distributeCommissionOnRequestSpend({
         },
         { upsert: true, session },
       );
-
-      console.log("[COMMISSION] salesman direct commission distributed", {
-        requestId: request?.requestId,
-        amount: salesmanCommissionAmount,
-        salesmanUserId: referrerInfo.primaryContactUserId,
-      });
     }
 
-    // 영업자 간접 소개 수수료 분배
-    if (indirectSalesmanCommissionAmount > 0) {
-      const indirectReferrer = await BusinessAnchor.findById(
-        referrerInfo.referredByAnchorId,
-      )
-        .select({
-          businessType: 1,
-          primaryContactUserId: 1,
-        })
+    if (adminPayoutAmount > 0) {
+      const adminUser = await User.findOne({ role: "admin", active: true })
+        .select({ _id: 1 })
         .session(session || null)
         .lean();
-
-      if (
-        indirectReferrer?.businessType === "salesman" &&
-        indirectReferrer.primaryContactUserId
-      ) {
-        const indirectSalesmanUniqueKey = `request:${String(request._id)}:salesman_indirect_commission`;
-        await SalesmanLedger.updateOne(
-          { uniqueKey: indirectSalesmanUniqueKey },
+      if (adminUser?._id) {
+        const adminUniqueKey = `request:${String(request._id)}:admin_commission`;
+        await AdminCreditLedger.updateOne(
+          { uniqueKey: adminUniqueKey },
           {
             $setOnInsert: {
-              salesmanId: indirectReferrer.primaryContactUserId,
+              adminUserId: adminUser._id,
               type: "EARN",
-              amount: indirectSalesmanCommissionAmount,
+              amount: adminPayoutAmount,
+              amountExcludingVat: adminBaseAmount,
+              vatAmount: adminVatAmount,
+              amountIncludingVat: adminPayoutAmount,
               refType: "REQUEST",
               refId: request._id,
-              uniqueKey: indirectSalesmanUniqueKey,
+              uniqueKey: adminUniqueKey,
+              occurredAt: new Date(),
             },
           },
           { upsert: true, session },
         );
-
-        console.log("[COMMISSION] salesman indirect commission distributed", {
-          requestId: request?.requestId,
-          amount: indirectSalesmanCommissionAmount,
-          salesmanUserId: indirectReferrer.primaryContactUserId,
-        });
       }
     }
-
-    // 제조사 수수료 분배 (의뢰 할당 시 처리)
-    const manufacturerCommissionAmount = Math.round(
-      spendAmount * MANUFACTURER_RATE,
-    );
-    console.log("[COMMISSION] manufacturer commission to be allocated", {
-      requestId: request?.requestId,
-      amount: manufacturerCommissionAmount,
-    });
 
     console.log("[COMMISSION] commission distribution summary", {
       requestId: request?.requestId,
       spendAmount,
-      manufacturer: manufacturerCommissionAmount,
-      devops: devopsCommissionAmount,
-      salesmanDirect: salesmanCommissionAmount,
-      salesmanIndirect: indirectSalesmanCommissionAmount,
-      admin: adminCommissionAmount,
-      total:
-        manufacturerCommissionAmount +
-        devopsCommissionAmount +
-        salesmanCommissionAmount +
-        indirectSalesmanCommissionAmount +
-        adminCommissionAmount,
+      hasSalesmanReferrer,
+      base: {
+        manufacturer: manufacturerBaseAmount,
+        devops: devopsBaseAmount,
+        salesman: salesmanBaseAmount,
+        admin: adminBaseAmount,
+      },
+      payoutWithVat: {
+        manufacturer: manufacturerPayoutAmount,
+        devops: devopsPayoutAmount,
+        salesman: salesmanPayoutAmount,
+        admin: adminPayoutAmount,
+      },
     });
   } catch (error) {
     console.error("[COMMISSION] distribute commission error:", error);
-    // 수수료 분배 실패해도 의뢰 처리는 계속 진행
   }
 }
 

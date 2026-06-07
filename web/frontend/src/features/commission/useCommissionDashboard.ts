@@ -17,9 +17,9 @@ export type CommissionDashboardData = {
   ym: string;
   period?: PeriodFilterValue | null;
   commissionRate: number;
-  /** devops 전용: 영업자 미설정 의뢰자 수수료율 (= salesmanDirectRate) */
+  /** devops 전용: 영업자 미설정 의뢰자 분배율 */
   unaffiliatedCommissionRate?: number;
-  /** devops의 경우 백엔드가 0으로 반환 */
+  /** 간접 소개 수수료는 정책상 미지급(항상 0) */
   indirectCommissionRate?: number;
   payoutDayOfMonth: number;
   referralCode: string;
@@ -94,22 +94,31 @@ export function useCommissionDashboard(period: PeriodFilterValue) {
   useEffect(() => {
     if (!token) return;
     setLoading(true);
-    request<any>({
+    request<{
+      success?: boolean;
+      message?: string;
+      data?: CommissionDashboardData;
+    }>({
       path: `/api/salesman/dashboard?period=${encodeURIComponent(period)}`,
       method: "GET",
       token,
     })
       .then((res) => {
-        const body: any = res.data || {};
+        const body = (res.data || {}) as {
+          success?: boolean;
+          message?: string;
+          data?: CommissionDashboardData;
+        };
         if (!res.ok || !body?.success) {
           throw new Error(body?.message || "대시보드 조회에 실패했습니다.");
         }
-        setData(body.data as CommissionDashboardData);
+        setData((body.data || null) as CommissionDashboardData | null);
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         toast({
           title: "오류",
-          description: (err as any)?.message || "다시 시도해주세요.",
+          description:
+            err instanceof Error ? err.message : "다시 시도해주세요.",
           variant: "destructive",
         });
       })

@@ -227,6 +227,9 @@ export async function getSalesmanLedger(req, res) {
         .select({
           type: 1,
           amount: 1,
+          amountExcludingVat: 1,
+          vatAmount: 1,
+          amountIncludingVat: 1,
           refType: 1,
           refId: 1,
           uniqueKey: 1,
@@ -322,21 +325,20 @@ export async function getSalesmanDashboard(req, res) {
     }
 
     const isDevops = me.role === "devops";
-    let commissionRate = 0.05;
+    let commissionRate = 0.1;
     let unaffiliatedCommissionRate = 0;
 
     if (isDevops && me.businessAnchorId) {
       const devopsAnchor = await BusinessAnchor.findById(me.businessAnchorId)
         .select({ payoutRates: 1 })
         .lean();
-      commissionRate = Number(
-        devopsAnchor?.payoutRates?.baseCommissionRate || 0.05,
-      );
+      commissionRate = Number(devopsAnchor?.payoutRates?.devopsRate || 0.1);
+      // 영업자 소개 없는 의뢰도 개발운영사 10% 동일 적용
       unaffiliatedCommissionRate = Number(
-        devopsAnchor?.payoutRates?.salesmanDirectRate || 0.05,
+        devopsAnchor?.payoutRates?.devopsRate || 0.1,
       );
     }
-    const indirectCommissionRate = isDevops ? 0 : commissionRate * 0.5;
+    const indirectCommissionRate = 0;
     const payoutDayOfMonth = 1;
 
     const { start, end } = getPeriodRangeUtc(period);
@@ -395,16 +397,6 @@ export async function getSalesmanDashboard(req, res) {
           .lean()
       : [];
 
-    const level1Requestors =
-      isDevops || referredSalesmanBusinessAnchorIds.length === 0
-        ? []
-        : await BusinessAnchor.find({
-            referredByAnchorId: { $in: referredSalesmanBusinessAnchorIds },
-            businessType: "requestor",
-          })
-            .select({ _id: 1 })
-            .lean();
-
     const referralSalesmanCount = referredSalesmanBusinessAnchorIds.length;
     const referralSalesmen = (referredSalesmen || []).map((u) => ({
       userId: String(u?._id || ""),
@@ -416,19 +408,16 @@ export async function getSalesmanDashboard(req, res) {
         .map((u) => (u?._id ? String(u._id) : ""))
         .filter(Boolean),
     );
-    // 개발운영사 전용: 영업자 미설정 의뢰자 별도 추적 (salesmanDirectRate 적용)
+    // 개발운영사 전용: 영업자 미설정 의뢰자 별도 추적 (동일 devopsRate 적용)
     const unaffiliatedOrgIdSet = new Set(
       (isDevops ? unaffiliatedRequestors : [])
         .map((u) => (u?._id ? String(u._id) : ""))
         .filter(Boolean),
     );
-    const level1OrgIdSet = new Set(
-      (level1Requestors || [])
-        .map((u) => (u?._id ? String(u._id) : ""))
-        .filter(Boolean),
-    );
+    // 수익 분배 정책 변경: 간접 소개 수수료(2.5%) 제거
+    const level1OrgIdSet = new Set();
     const organizationAnchorIds = Array.from(
-      new Set([...directOrgIdSet, ...unaffiliatedOrgIdSet, ...level1OrgIdSet]),
+      new Set([...directOrgIdSet, ...unaffiliatedOrgIdSet]),
     );
 
     if (organizationAnchorIds.length === 0) {
@@ -453,6 +442,7 @@ export async function getSalesmanDashboard(req, res) {
             level1OrganizationCount: 0,
             totalOrganizationCount: 0,
             directCommissionAmount: 0,
+            unaffiliatedCommissionAmount: 0,
             level1CommissionAmount: 0,
             totalCommissionAmount: 0,
             payableGrossCommissionAmount: 0,
@@ -526,7 +516,7 @@ export async function getSalesmanDashboard(req, res) {
 
         const isDirect = directOrgIdSet.has(idStr);
         const isUnaffiliated = unaffiliatedOrgIdSet.has(idStr);
-        // 미설정 의뢰자: salesmanDirectRate, 직접 소개: commissionRate, 간접: indirectCommissionRate
+        // 미설정 의뢰자(devops 전용): unaffiliatedCommissionRate, 직접 소개: commissionRate
         const rate = isUnaffiliated
           ? unaffiliatedCommissionRate
           : isDirect
@@ -569,14 +559,9 @@ export async function getSalesmanDashboard(req, res) {
       (acc, o) => acc + Number(o.monthCommissionAmount || 0),
       0,
     );
-    const level1CommissionAmount = level1Organizations.reduce(
-      (acc, o) => acc + Number(o.monthCommissionAmount || 0),
-      0,
-    );
+    const level1CommissionAmount = 0;
     const totalCommissionAmount =
-      directCommissionAmount +
-      unaffiliatedCommissionAmount +
-      level1CommissionAmount;
+      directCommissionAmount + unaffiliatedCommissionAmount;
 
     const monthRevenueAmount = organizations.reduce(
       (acc, o) => acc + Number(o.monthRevenueAmount || 0),
@@ -608,7 +593,7 @@ export async function getSalesmanDashboard(req, res) {
           unaffiliatedCommissionAmount: roundMoney(
             unaffiliatedCommissionAmount,
           ),
-          level1CommissionAmount: roundMoney(level1CommissionAmount),
+          level1CommissionAmount: 0,
           totalCommissionAmount: roundMoney(totalCommissionAmount),
           payableGrossCommissionAmount: roundMoney(totalCommissionAmount),
           paidNetCommissionAmount: 0,

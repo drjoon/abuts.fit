@@ -351,14 +351,14 @@ export async function getReferralGroups(req, res) {
 
       const effectiveUnitPrice =
         computeVolumeEffectiveUnitPrice(groupTotalOrders);
-      // devops는 저장된 baseCommissionRate 사용 (rules.md 2.4 / SSOT write-on-event)
+      // rules.md 2.4 기준: 직접 소개 수수료는 devops/salesman 모두 10%
       const leaderCommissionRate =
         role === "devops"
           ? Number(
               devopsPayoutRatesByAnchorId.get(leaderBusinessAnchorId)
-                ?.baseCommissionRate || 0.05,
+                ?.devopsRate || 0.1,
             )
-          : 0.05;
+          : 0.1;
       const commissionAmount = REFERRAL_COMMISSION_LEADER_ROLES.has(role)
         ? Math.round(groupRevenueAmount * leaderCommissionRate)
         : 0;
@@ -905,7 +905,7 @@ export async function getReferralGroupTree(req, res) {
         for (const child of directChildren) {
           if (String(child?.role || "") === "requestor") {
             directCommissionAmount += Math.round(
-              Number(child?.lastMonthPaidRevenue || 0) * 0.05,
+              Number(child?.lastMonthPaidRevenue || 0) * 0.1,
             );
           } else if (
             !isDevops &&
@@ -916,9 +916,7 @@ export async function getReferralGroupTree(req, res) {
               : [];
             for (const grandChild of grandChildren) {
               if (String(grandChild?.role || "") !== "requestor") continue;
-              level1CommissionAmount += Math.round(
-                Number(grandChild?.lastMonthPaidRevenue || 0) * 0.025,
-              );
+              level1CommissionAmount += 0;
             }
           }
         }

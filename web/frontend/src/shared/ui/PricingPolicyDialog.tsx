@@ -104,10 +104,10 @@ export const PricingPolicyDialog = ({
               <div className="space-y-4 pt-2 text-sm text-muted-foreground">
                 <section className="space-y-1">
                   <h3 className="font-semibold text-foreground text-md">
-                    1. 직접 소개 수수료 (5%)
+                    1. 직접 소개 수수료 (10%)
                   </h3>
                   <p>
-                    직접 소개한 의뢰자의 유료 매출에서 <b>5%</b>가 수수료로
+                    직접 소개한 의뢰자의 유료의뢰비에서 <b>10%</b>가 수수료로
                     지급됩니다.
                   </p>
                   <ul className="list-disc pl-4 space-y-0.5">
@@ -118,16 +118,12 @@ export const PricingPolicyDialog = ({
 
                 <section className="space-y-1">
                   <h3 className="font-semibold text-foreground text-md">
-                    2. 간접 소개 수수료 (2.5%)
+                    2. 간접 소개 수수료
                   </h3>
                   <p>
-                    내가 직접 소개한 <b>영업자</b>가 소개한 의뢰자 매출의{" "}
-                    <b>2.5%</b>가 추가로 지급됩니다.
+                    현재 정책에서는 간접 소개(하위 영업자 체인) 수수료를
+                    지급하지 않습니다.
                   </p>
-                  <ul className="list-disc pl-4 space-y-0.5">
-                    <li>간접 소개는 1단계까지만 적용</li>
-                    <li>2단계 이상은 수수료 미적용</li>
-                  </ul>
                 </section>
 
                 <section className="space-y-1">
@@ -148,11 +144,10 @@ export const PricingPolicyDialog = ({
                     1. 분배 구조
                   </h3>
                   <p>
-                    직접 연결된 의뢰자 매출의 <b>5%</b>가 정산됩니다.
+                    개발·운영사는 유료의뢰비 기준 <b>10%</b>가 정산됩니다.
                   </p>
                   <p>
-                    간접 연결(직접 소개 의뢰자가 다시 소개한 경우)은 정산에
-                    포함되지 않습니다.
+                    영업자 소개 유무와 무관하게 개발·운영사 비율은 동일합니다.
                   </p>
                 </section>
 
@@ -161,8 +156,8 @@ export const PricingPolicyDialog = ({
                     2. 네트워크 반영
                   </h3>
                   <p>
-                    소개자를 지정하지 않고 가입한 의뢰자도 운영 정책에 따라
-                    네트워크에 반영될 수 있습니다.
+                    영업자 소개 없이 가입한 의뢰 건은 제조사 65% / 관리자 25% /
+                    개발·운영사 10% 규칙이 적용됩니다.
                   </p>
                 </section>
 

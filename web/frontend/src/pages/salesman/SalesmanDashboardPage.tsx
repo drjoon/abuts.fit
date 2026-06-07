@@ -50,7 +50,9 @@ export const SalesmanDashboardPage = () => {
       ? `${window.location.origin}/signup/referral?ref=${encodeURIComponent(normalizedReferralCode)}`
       : "";
 
-  const overview = data?.overview || ({} as any);
+  const overview = (data?.overview || {}) as NonNullable<
+    ReturnType<typeof useCommissionDashboard>["data"]
+  >["overview"];
 
   const directBusinessCount = Number(
     overview.directBusinessCount || overview.directOrganizationCount || 0,
@@ -228,7 +230,7 @@ export const SalesmanDashboardPage = () => {
               </CardContent>
             </Card> */}
 
-            {/* 수수료 크레딧 — 직접(5%) + 간접(2.5%) 합산 */}
+            {/* 수수료 크레딧 — 직접(10%), 간접 소개 수수료 미지급 */}
             <Card className="app-glass-card app-glass-card--lg overflow-visible">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <Tooltip>
@@ -245,24 +247,22 @@ export const SalesmanDashboardPage = () => {
               </CardHeader>
               <CardContent className="space-y-1.5">
                 <div className="flex items-baseline justify-between gap-2 text-xs sm:text-sm">
-                  <div className="font-semibold">합계 수수료 (7.5%)</div>
+                  <div className="font-semibold">합계 수수료</div>
                   <div className="text-sm sm:text-base font-bold">
                     {formatMoney(payableGross)}원
                   </div>
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="text-muted-foreground">내 수수료 (5%)</div>
+                  <div className="text-muted-foreground">내 수수료 (10%)</div>
                   <div className="font-semibold">
                     {formatMoney(directCommission)}원
                   </div>
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-sm">
                   <div className="text-muted-foreground">
-                    간접 소개 수수료 (2.5%)
+                    간접 소개 수수료 (미지급)
                   </div>
-                  <div className="font-semibold">
-                    {formatMoney(level1Commission)}원
-                  </div>
+                  <div className="font-semibold">0원</div>
                 </div>
               </CardContent>
             </Card>
@@ -284,18 +284,18 @@ export const SalesmanDashboardPage = () => {
               </CardHeader>
               <CardContent className="space-y-1.5">
                 <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="font-semibold">합계 수수료 (7.5%)</div>
+                  <div className="font-semibold">합계 수수료</div>
                   <div className="text-base font-bold">
                     {formatMoney(paidNet)}원
                   </div>
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="text-muted-foreground">내 수수료 (5%)</div>
+                  <div className="text-muted-foreground">내 수수료 (10%)</div>
                   <div className="font-semibold">0원</div>
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-sm">
                   <div className="text-muted-foreground">
-                    간접 소개 수수료 (2.5%)
+                    간접 소개 수수료 (미지급)
                   </div>
                   <div className="font-semibold">0원</div>
                 </div>
@@ -351,7 +351,7 @@ export const SalesmanDashboardPage = () => {
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        내가 직접 소개한 의뢰자 사업자 (5% 수수료 적용)
+                        내가 직접 소개한 의뢰자 사업자 (10% 수수료 적용)
                       </TooltipContent>
                     </Tooltip>
                     <Tooltip>
@@ -381,8 +381,7 @@ export const SalesmanDashboardPage = () => {
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        소개한 영업자가 다시 소개한 의뢰자 사업자 (2.5% 수수료
-                        적용)
+                        간접 소개 수수료는 현재 정책상 지급하지 않습니다.
                       </TooltipContent>
                     </Tooltip>
                     <Tooltip>

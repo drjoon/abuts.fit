@@ -16,9 +16,10 @@ type PayoutAccount = {
 };
 
 type DevopsSettings = {
-  manufacturerRate?: number; // 0~1 (e.g. 0.65 = 65%)
-  baseCommissionRate?: number; // 0~1 (e.g. 0.05 = 5%)
-  salesmanDirectRate?: number; // 0~1 (e.g. 0.05 = 5%)
+  manufacturerRate?: number; // 0~1 (e.g. 0.60 = 60%)
+  devopsRate?: number; // 0~1 (e.g. 0.10 = 10%)
+  salesmanRate?: number; // 0~1 (e.g. 0.10 = 10%)
+  adminRate?: number; // 0~1 (e.g. 0.20 = 20%)
   updatedAt?: string | null;
 };
 
@@ -39,9 +40,10 @@ export const DevopsPayoutAccountTab = () => {
     updatedAt: null,
   });
   // 분배율 — 0~100 정수(퍼센트) 단위로 관리
-  const [manufacturerRate, setManufacturerRate] = useState<string>("65");
-  const [baseRate, setBaseRate] = useState<string>("5");
-  const [salesmanRate, setSalesmanRate] = useState<string>("5");
+  const [manufacturerRate, setManufacturerRate] = useState<string>("60");
+  const [devopsRate, setDevopsRate] = useState<string>("10");
+  const [salesmanRate, setSalesmanRate] = useState<string>("10");
+  const [adminRate, setAdminRate] = useState<string>("20");
   // 직전 저장 스냅샷 (취소 시 복원 기준)
   const savedRef = useRef({
     data: {
@@ -50,9 +52,10 @@ export const DevopsPayoutAccountTab = () => {
       holderName: "",
       updatedAt: null as string | null,
     },
-    manufacturerRate: "65",
-    baseRate: "5",
-    salesmanRate: "5",
+    manufacturerRate: "60",
+    devopsRate: "10",
+    salesmanRate: "10",
+    adminRate: "20",
   });
 
   useEffect(() => {
@@ -63,22 +66,32 @@ export const DevopsPayoutAccountTab = () => {
         return;
       }
       try {
-        const res = await request<any>({
+        const res = await request<{
+          data?: Record<string, unknown>;
+          [key: string]: unknown;
+        }>({
           path: "/api/users/profile",
           method: "GET",
           token,
         });
         if (!res.ok || !mounted) return;
-        const body: any = res.data || {};
-        const profile = body.data || body;
-        const pa = profile?.salesmanPayoutAccount || {};
+        const body = (res.data || {}) as {
+          data?: Record<string, unknown>;
+          [key: string]: unknown;
+        };
+        const profile = (body.data || body) as Record<string, unknown>;
+        const pa = (profile.salesmanPayoutAccount || {}) as Record<
+          string,
+          unknown
+        >;
         setData({
           bankName: String(pa?.bankName || ""),
           accountNumber: String(pa?.accountNumber || ""),
           holderName: String(pa?.holderName || ""),
           updatedAt: pa?.updatedAt ? String(pa.updatedAt) : null,
         });
-        const ds: DevopsSettings = profile?.devopsPayoutSettings || {};
+        const ds: DevopsSettings =
+          (profile.devopsPayoutSettings as DevopsSettings) || {};
         const snap = {
           data: {
             bankName: String(pa?.bankName || ""),
@@ -87,19 +100,19 @@ export const DevopsPayoutAccountTab = () => {
             updatedAt: pa?.updatedAt ? String(pa.updatedAt) : null,
           },
           manufacturerRate: String(
-            Math.round(Number(ds?.manufacturerRate ?? 0.65) * 100),
+            Math.round(Number(ds?.manufacturerRate ?? 0.6) * 100),
           ),
-          baseRate: String(
-            Math.round(Number(ds?.baseCommissionRate ?? 0.05) * 100),
-          ),
+          devopsRate: String(Math.round(Number(ds?.devopsRate ?? 0.1) * 100)),
           salesmanRate: String(
-            Math.round(Number(ds?.salesmanDirectRate ?? 0.05) * 100),
+            Math.round(Number(ds?.salesmanRate ?? 0.1) * 100),
           ),
+          adminRate: String(Math.round(Number(ds?.adminRate ?? 0.2) * 100)),
         };
         savedRef.current = snap;
         setManufacturerRate(snap.manufacturerRate);
-        setBaseRate(snap.baseRate);
+        setDevopsRate(snap.devopsRate);
         setSalesmanRate(snap.salesmanRate);
+        setAdminRate(snap.adminRate);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -157,9 +170,10 @@ export const DevopsPayoutAccountTab = () => {
     }
 
     const mfrNum = Number(manufacturerRate);
-    const rateNum = Number(baseRate);
+    const devopsNum = Number(devopsRate);
     const salesmanNum = Number(salesmanRate);
-    const allRates = [mfrNum, rateNum, salesmanNum];
+    const adminNum = Number(adminRate);
+    const allRates = [mfrNum, devopsNum, salesmanNum, adminNum];
     if (allRates.some((r) => !Number.isFinite(r) || r < 0 || r > 100)) {
       toast({
         title: "수수료율 오류",
@@ -169,11 +183,11 @@ export const DevopsPayoutAccountTab = () => {
       });
       return;
     }
-    const maxTotal = mfrNum + rateNum * 2 + salesmanNum * 1.5;
-    if (maxTotal > 100) {
+    const total = mfrNum + devopsNum + salesmanNum + adminNum;
+    if (Math.abs(total - 100) > 0.01) {
       toast({
-        title: "분배율 초과",
-        description: `합계가 100%를 초과합니다. (현재 최대 ${maxTotal.toFixed(1)}%)`,
+        title: "분배율 오류",
+        description: `합계는 100%여야 합니다. (현재 ${total.toFixed(2)}%)`,
         variant: "destructive",
         duration: 3000,
       });
@@ -181,7 +195,7 @@ export const DevopsPayoutAccountTab = () => {
     }
     setSaving(true);
     try {
-      const res = await request<any>({
+      const res = await request<{ message?: string; [key: string]: unknown }>({
         path: "/api/users/profile",
         method: "PUT",
         token,
@@ -194,16 +208,21 @@ export const DevopsPayoutAccountTab = () => {
           },
           devopsPayoutSettings: {
             manufacturerRate: mfrNum / 100,
-            baseCommissionRate: rateNum / 100,
-            salesmanDirectRate: salesmanNum / 100,
+            devopsRate: devopsNum / 100,
+            salesmanRate: salesmanNum / 100,
+            adminRate: adminNum / 100,
           },
         },
       });
 
       if (!res.ok) {
-        const msg = String(
-          (res.data as any)?.message || "저장에 실패했습니다.",
-        );
+        const errorMessage =
+          typeof res.data === "object" &&
+          res.data !== null &&
+          "message" in res.data
+            ? (res.data as { message?: unknown }).message
+            : null;
+        const msg = String(errorMessage || "저장에 실패했습니다.");
         toast({
           title: "저장 실패",
           description: msg,
@@ -220,7 +239,9 @@ export const DevopsPayoutAccountTab = () => {
 
       try {
         window.dispatchEvent(new Event("abuts:profile:updated"));
-      } catch {}
+      } catch (_error) {
+        void _error;
+      }
 
       if (token) {
         void loginWithToken(token);
@@ -230,8 +251,9 @@ export const DevopsPayoutAccountTab = () => {
       const newData = { ...v.normalized, updatedAt: now } as PayoutAccount;
       setData((prev) => ({ ...prev, ...newData }));
       setManufacturerRate(String(mfrNum));
-      setBaseRate(String(rateNum));
+      setDevopsRate(String(devopsNum));
       setSalesmanRate(String(salesmanNum));
+      setAdminRate(String(adminNum));
       savedRef.current = {
         data: {
           bankName: v.normalized.bankName,
@@ -240,8 +262,9 @@ export const DevopsPayoutAccountTab = () => {
           updatedAt: now,
         },
         manufacturerRate: String(mfrNum),
-        baseRate: String(rateNum),
+        devopsRate: String(devopsNum),
         salesmanRate: String(salesmanNum),
+        adminRate: String(adminNum),
       };
     } finally {
       setSaving(false);
@@ -296,30 +319,19 @@ export const DevopsPayoutAccountTab = () => {
                 <span className="w-36 shrink-0 text-muted-foreground">
                   개발운영사(메이븐)
                 </span>
-                <span>기본</span>
                 <Input
                   type="number"
                   min={0}
                   max={100}
                   step={0.5}
-                  value={baseRate}
-                  onChange={(e) => setBaseRate(e.target.value)}
+                  value={devopsRate}
+                  onChange={(e) => setDevopsRate(e.target.value)}
                   className="h-7 w-16 text-center text-sm px-1"
                 />
-                <span>% + 미설정</span>
-                <span className="font-medium">
-                  {isNaN(Number(salesmanRate)) ? "?" : salesmanRate}%
-                </span>
-                <span className="text-muted-foreground">= 최대</span>
-                <span className="font-medium">
-                  {isNaN(Number(baseRate)) || isNaN(Number(salesmanRate))
-                    ? "?"
-                    : Number(baseRate) + Number(salesmanRate)}
-                  %
-                </span>
+                <span>%</span>
               </div>
               <div className="text-xs pl-36 text-muted-foreground">
-                영업자 소개 없는 의뢰자에 대해 영업자 수수료와 동일한 효과
+                유료의뢰비 기준 개발·운영사 분배율
               </div>
             </div>
             <div />
@@ -330,7 +342,6 @@ export const DevopsPayoutAccountTab = () => {
                 <span className="w-36 shrink-0 text-muted-foreground">
                   영업자(법인/개인)
                 </span>
-                <span>직접</span>
                 <Input
                   type="number"
                   min={0}
@@ -340,56 +351,29 @@ export const DevopsPayoutAccountTab = () => {
                   onChange={(e) => setSalesmanRate(e.target.value)}
                   className="h-7 w-16 text-center text-sm px-1"
                 />
-                <span>% · 간접</span>
-                <span className="font-medium">
-                  {isNaN(Number(salesmanRate))
-                    ? "?"
-                    : (Number(salesmanRate) / 2).toFixed(1)}
-                  %
-                </span>
-                <span className="text-muted-foreground">= 최대</span>
-                <span className="font-medium">
-                  {isNaN(Number(salesmanRate))
-                    ? "?"
-                    : (Number(salesmanRate) * 1.5).toFixed(1)}
-                  %
-                </span>
+                <span>%</span>
               </div>
               <div className="text-xs pl-36 text-muted-foreground">
-                직접 소개 / 하위 영업자의 의뢰자 간접 소개
+                영업자 직접 소개 의뢰자 분배율
               </div>
             </div>
             <div />
 
-            {/* 관리자 자동 계산 */}
-            {(() => {
-              const mfr = Number(manufacturerRate);
-              const base = Number(baseRate);
-              const sal = Number(salesmanRate);
-              // \uc601\uc5c5\uc790\uc640 \uac1c\ubc1c\uc6b4\uc601\uc0ac \uc218\uc218\ub8cc\ub294 \ub3d9\uc77c \uac70\ub798\uc5d0 \uc911\ubcf5 \ud569\uc0b0\ub418\uc9c0 \uc54a\uc74c
-              // \ucd5c\uc18c: \uac1c\ubc1c\uc6b4\uc601\uc0ac \uae30\ubcf8 + \uc601\uc5c5\uc790 \ucd5c\ub300(direct\xd71.5)\uc77c \ub54c
-              // 영업자와 개발운영사 수수료는 동일 거래에 중복 합산되지 않음
-              // 최소: 개발운영사 기본 + 영업자 최대(direct×1.5)일 때
-              // 최대: 영업자 0, 개발운영사 기본+미설정(=기본+salesmanRate)일 때
-              const adminMin = 100 - mfr - base - sal * 1.5;
-              const adminMax = 100 - mfr - base - sal;
-              const valid = [mfr, base, sal].every(Number.isFinite);
-              return (
-                <div className="flex items-center gap-2">
-                  <span className="w-36 shrink-0 text-muted-foreground">
-                    관리자(어벗츠)
-                  </span>
-                  <span className="font-medium text-foreground">
-                    {valid
-                      ? `${adminMin.toFixed(1)}~${adminMax.toFixed(1)}%`
-                      : "?%"}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    (자동 계산)
-                  </span>
-                </div>
-              );
-            })()}
+            <div className="flex items-center gap-2 text-foreground">
+              <span className="w-36 shrink-0 text-muted-foreground">
+                관리자(어벗츠)
+              </span>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                step={0.5}
+                value={adminRate}
+                onChange={(e) => setAdminRate(e.target.value)}
+                className="h-7 w-16 text-center text-sm px-1"
+              />
+              <span>%</span>
+            </div>
             <div />
           </div>
           <div className="text-xs text-muted-foreground">
@@ -449,8 +433,9 @@ export const DevopsPayoutAccountTab = () => {
                 const s = savedRef.current;
                 setData(s.data);
                 setManufacturerRate(s.manufacturerRate);
-                setBaseRate(s.baseRate);
+                setDevopsRate(s.devopsRate);
                 setSalesmanRate(s.salesmanRate);
+                setAdminRate(s.adminRate);
               }}
               disabled={saving}
             >

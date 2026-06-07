@@ -73,9 +73,10 @@ async function migrateBusiness() {
               updatedAt: null,
             },
             payoutRates: business.payoutRates || {
-              manufacturerRate: 0.65,
-              baseCommissionRate: 0.05,
-              salesmanDirectRate: 0.05,
+              manufacturerRate: 0.6,
+              devopsRate: 0.1,
+              salesmanRate: 0.1,
+              adminRate: 0.2,
               updatedAt: null,
             },
             referralMembershipAggregate: {

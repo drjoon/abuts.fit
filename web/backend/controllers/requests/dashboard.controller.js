@@ -1306,7 +1306,7 @@ export async function getMyPricingReferralStats(req, res) {
 
           // 영업자(salesman)의 간접 소개 통계 계산:
           // 직접 소개한 사업자들이 다시 소개한 사업자(2단계)의 수와 의뢰건수.
-          // 직접 소개 5%, 간접 소개 2.5% 수수료 정책 기반.
+          // 현재 정책에서 간접 소개 수수료는 미지급이며, 해당 값은 네트워크 통계 용도로만 사용.
           // read 경로에서 재계산하므로 캐시 TTL(60s) 이내 정합성 허용.
           if (role === "salesman" && directChildBusinessAnchorIds.length > 0) {
             const indirectChildren = await BusinessAnchor.find({

@@ -112,7 +112,7 @@ function getPeriodRangeUtcFromPeriodKey(periodKey) {
 }
 
 async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
-  const commissionRate = 0.05;
+  const commissionRate = 0.1;
 
   const ledgerPeriodRows = await SalesmanLedger.aggregate([
     {
@@ -142,15 +142,11 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
   const balanceAmount = normalizeNumber(
     earnedAmount - paidOutAmount + adjustedAmount,
   );
-  const {
-    salesmenById,
-    directOrgIdsBySalesmanId,
-    level1OrgIdsBySalesmanId,
-    revenueByOrgId,
-  } = await buildSalesmanReferralAggregation({
-    salesmanIds,
-    range,
-  });
+  const { directOrgIdsBySalesmanId, level1OrgIdsBySalesmanId, revenueByOrgId } =
+    await buildSalesmanReferralAggregation({
+      salesmanIds,
+      range,
+    });
 
   let paidRevenueAmount = 0;
   let bonusRevenueAmount = 0;
@@ -171,14 +167,9 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
   }
 
   let indirectAmount = 0;
-  for (const [sid, orgSet] of level1OrgIdsBySalesmanId.entries()) {
-    const salesmanRole = String(salesmenById?.get(sid)?.role || "");
-    if (salesmanRole === "devops") continue;
-    let rev = 0;
-    for (const oid of orgSet || []) {
-      rev += Number(revenueByOrgId.get(String(oid))?.revenueAmount || 0);
-    }
-    indirectAmount += rev * commissionRate * 0.5;
+  for (const _entry of level1OrgIdsBySalesmanId.entries()) {
+    // 정책 변경: 간접 소개 수수료(2.5%)는 지급하지 않음
+    indirectAmount += 0;
   }
 
   const totalAmount = normalizeNumber(directAmount + indirectAmount);
@@ -1051,7 +1042,7 @@ export async function adminGetSalesmanCredits(req, res) {
   try {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const skip = Math.max(Number(req.query.skip) || 0, 0);
-    const commissionRate = 0.05;
+    const commissionRate = 0.1;
 
     // 기간 필터: startDate/endDate 파라미터 우선, 없으면 KST 자정 기준 최근 30일
     const startDateRaw = String(req.query.startDate || "").trim();
@@ -1259,10 +1250,7 @@ export async function adminGetSalesmanCredits(req, res) {
       const bonus30d = directBonus30d + level1Bonus30d;
       const orders30d = directOrders30d + level1Orders30d;
       const myCommission30d = Math.round(directRevenue30d * commissionRate);
-      const isDevops = String(s?.role || "") === "devops";
-      const level1Commission30d = isDevops
-        ? 0
-        : Math.round(level1Revenue30d * commissionRate * 0.5); // 2.5%
+      const level1Commission30d = 0;
       const commission30d = myCommission30d + level1Commission30d;
       const anchorId = String(s?.businessAnchorId || "");
       const anchor = anchorById.get(anchorId) || null;
@@ -1581,6 +1569,9 @@ export async function adminGetSalesmanLedger(req, res) {
         .select({
           type: 1,
           amount: 1,
+          amountExcludingVat: 1,
+          vatAmount: 1,
+          amountIncludingVat: 1,
           refType: 1,
           refId: 1,
           uniqueKey: 1,
@@ -2350,6 +2341,9 @@ export async function adminGetAdminLedger(req, res) {
         .select({
           type: 1,
           amount: 1,
+          amountExcludingVat: 1,
+          vatAmount: 1,
+          amountIncludingVat: 1,
           refType: 1,
           refId: 1,
           uniqueKey: 1,

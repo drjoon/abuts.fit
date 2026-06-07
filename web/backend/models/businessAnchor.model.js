@@ -82,10 +82,10 @@ const businessAnchorSchema = new mongoose.Schema(
       updatedAt: { type: Date, default: null },
     },
     payoutRates: {
-      manufacturerRate: { type: Number, default: 0.65, min: 0, max: 1 },
-      baseCommissionRate: { type: Number, default: 0.05, min: 0, max: 1 },
-      salesmanDirectRate: { type: Number, default: 0.05, min: 0, max: 1 },
-      adminRate: { type: Number, default: 0.25, min: 0, max: 1 },
+      manufacturerRate: { type: Number, default: 0.6, min: 0, max: 1 },
+      devopsRate: { type: Number, default: 0.1, min: 0, max: 1 },
+      salesmanRate: { type: Number, default: 0.1, min: 0, max: 1 },
+      adminRate: { type: Number, default: 0.2, min: 0, max: 1 },
       updatedAt: { type: Date, default: null },
     },
     shippingPolicy: {

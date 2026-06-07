@@ -104,8 +104,8 @@ export const DevopsReferralPage = () => {
                         <div className="text-xs text-muted-foreground">
                           - 영업자 소개 없이 가입한 의뢰자는 자동으로 개발운영사
                           소개로 등록됩니다.
-                          <br />- 직접 소개한 의뢰자의 유료 매출의 5%를 수수료로
-                          지급합니다.
+                          <br />- 개발·운영사 분배율은 유료의뢰비 기준 10%가
+                          지급됩니다.
                           <br />- 수수료는 사업자 기준으로 매일 자정(00:00)
                           업데이트됩니다.
                         </div>

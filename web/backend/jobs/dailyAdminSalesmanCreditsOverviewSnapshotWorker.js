@@ -79,7 +79,7 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
     `[${new Date().toISOString()}] Admin salesman credits overview snapshot started ymd=${ymd} periodKey=${periodKey}`,
   );
 
-  const commissionRate = 0.05;
+  const commissionRate = 0.1;
 
   const salesmen = await User.find({
     role: { $in: REFERRAL_LEADER_ROLES },
@@ -307,7 +307,7 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
     totalOrders += row.orders;
   }
 
-  // 전체 수수료(유료 매출 기준) - 직접(5%) + 간접(2.5%)
+  // 전체 수수료(유료 매출 기준) - 직접(10%), 간접 소개 수수료는 미지급
   let directCommissionTotal = 0;
   for (const [
     sAnchorId,
@@ -320,24 +320,10 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
     directCommissionTotal += paid * commissionRate;
   }
 
-  // 간접: 자식 영업자의 direct 커미션 합 * 50% (devops 부모는 제외)
+  // 간접 소개 수수료는 정책상 미지급
   let indirectCommissionTotal = 0;
-  for (const child of childSalesmen || []) {
-    const childSAnchorId = String(child?._id || "");
-    const parentSAnchorId = String(child?.referredByAnchorId || "");
-    if (!childSAnchorId || !parentSAnchorId) continue;
-
-    const parentRole = roleByBusinessAnchorId.get(parentSAnchorId) || "";
-    if (parentRole === "devops") continue;
-
-    const orgSet =
-      requestorOrgIdsByChildSalesmanBusinessAnchorId.get(childSAnchorId) ||
-      new Set();
-    let paid = 0;
-    for (const oid of orgSet) {
-      paid += Number(revenueByOrgId.get(String(oid))?.paid || 0);
-    }
-    indirectCommissionTotal += paid * commissionRate * 0.5;
+  for (const _child of childSalesmen || []) {
+    indirectCommissionTotal += 0;
   }
 
   const totalCommissionAmount = normalizeNumber(

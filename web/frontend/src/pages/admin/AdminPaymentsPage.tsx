@@ -56,10 +56,18 @@ const formatMoney = (value?: number) =>
   Number(value || 0).toLocaleString("ko-KR");
 
 const roleRateCards = [
-  { key: "manufacturer", label: "제조사 배분율", value: "65%" },
-  { key: "salesman", label: "영업자 배분율", value: "5~7.5%" },
-  { key: "devops", label: "개발운영사 배분율", value: "5~10%" },
-  { key: "admin", label: "관리사 배분율", value: "22.5~25%" },
+  {
+    key: "manufacturer",
+    label: "제조사 배분율",
+    value: "60% (기본) / 65% (영업자 없음)",
+  },
+  { key: "salesman", label: "영업자 배분율", value: "10% (영업자 소개 시)" },
+  { key: "devops", label: "개발운영사 배분율", value: "10%" },
+  {
+    key: "admin",
+    label: "관리자 배분율",
+    value: "20% (기본) / 25% (영업자 없음)",
+  },
 ] as const;
 
 type AnchorSettlementGroup = {
@@ -158,17 +166,25 @@ export default function AdminPaymentsPage() {
   useEffect(() => {
     if (!token) return;
     Promise.all([
-      request<any>({
+      request<{ success?: boolean; data?: Overview; message?: string }>({
         path: `/api/admin/credits/salesmen/overview?period=${encodeURIComponent(period)}`,
         method: "GET",
         token,
       }),
-      request<any>({
+      request<{
+        success?: boolean;
+        data?: { items?: SalesmanRow[] };
+        message?: string;
+      }>({
         path: `/api/admin/credits/salesmen?limit=200&skip=0${periodToRangeQuery(period).replace(/^\?/, "&")}`,
         method: "GET",
         token,
       }),
-      request<any>({
+      request<{
+        success?: boolean;
+        data?: ManufacturerSummary;
+        message?: string;
+      }>({
         path: `/api/admin/credits/manufacturer/summary?period=${encodeURIComponent(period)}`,
         method: "GET",
         token,
@@ -193,10 +209,11 @@ export default function AdminPaymentsPage() {
           setManufacturerSummary(mfgRes.data.data || null);
         }
       })
-      .catch((error: any) => {
+      .catch((error: unknown) => {
         toast({
           title: "정산 조회 실패",
-          description: error?.message || "다시 시도해주세요.",
+          description:
+            error instanceof Error ? error.message : "다시 시도해주세요.",
           variant: "destructive",
         });
       });
@@ -348,8 +365,8 @@ export default function AdminPaymentsPage() {
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <StaticInfoCard
                 title="제조사 배분율"
-                value="65%"
-                description="제작/출고 완료 기준으로 정산합니다."
+                value="60% (기본) / 65% (영업자 없음)"
+                description="유료의뢰비 기준 분배율을 적용합니다."
               />
               <StaticInfoCard
                 title="제조사 앵커 수"
@@ -394,9 +411,9 @@ export default function AdminPaymentsPage() {
           <TabsContent value="admin">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <StaticInfoCard
-                title="관리사 배분율"
-                value="22.5~25%"
-                description="플랫폼 운영/정산/지원 몫"
+                title="관리자 배분율"
+                value="20% (기본) / 25% (영업자 없음)"
+                description="유료의뢰비 기준 플랫폼 운영/정산/지원 몫"
               />
               <StaticInfoCard
                 title="관리사 앵커 수"

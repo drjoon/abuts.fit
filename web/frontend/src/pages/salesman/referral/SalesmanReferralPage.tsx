@@ -273,12 +273,12 @@ export const SalesmanReferralPage = () => {
                       <div className="rounded-lg bg-slate-50 border border-slate-200 p-4">
                         <div className="text-xs text-slate-600 space-y-1">
                           <p>
-                            - 직접 소개한 의뢰자의 유료 매출의 5%를 수수료로
+                            - 직접 소개한 의뢰자의 유료의뢰비의 10%를 수수료로
                             지급합니다.
                           </p>
                           <p>
-                            - 간접 소개한 의뢰자(직접 소개한 사람이 다시 소개한
-                            의뢰자)의 유료 매출의 2.5%를 수수료로 지급합니다.
+                            - 간접 소개(하위 영업자 체인) 수수료는 현재 지급하지
+                            않습니다.
                           </p>
                           <p>
                             - 수수료는 사업자 기준으로 매일 자정(00:00)
@@ -326,7 +326,7 @@ export const SalesmanReferralPage = () => {
                         <div className="grid gap-2 grid-cols-1 md:grid-cols-3">
                           <MetricCard
                             title="직접소개 의뢰자"
-                            tooltip="내가 직접 소개한 의뢰자 사업자 (5% 수수료 적용)"
+                            tooltip="내가 직접 소개한 의뢰자 사업자 (10% 수수료 적용)"
                             primaryLabel="의뢰자 수"
                             primaryValue={`${directReferralBusinessCount.toLocaleString()}개소`}
                             secondaryLabel="의뢰건수"
@@ -334,7 +334,7 @@ export const SalesmanReferralPage = () => {
                           />
                           <MetricCard
                             title="간접 소개 의뢰자"
-                            tooltip="소개한 영업자가 다시 소개한 의뢰자 사업자 (2.5% 수수료 적용)"
+                            tooltip="간접 소개 의뢰자(정책상 수수료 미지급)"
                             primaryLabel="의뢰자 수"
                             primaryValue={`${indirectReferralBusinessCount.toLocaleString()}개소`}
                             secondaryLabel="의뢰건수"
