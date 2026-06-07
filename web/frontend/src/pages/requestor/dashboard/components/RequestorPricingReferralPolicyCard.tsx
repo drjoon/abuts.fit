@@ -130,7 +130,11 @@ export const RequestorPricingReferralPolicyCard = () => {
     Number(data.myLastMonthOrders ?? data.myLast30DaysOrders ?? 0) || 0;
   const groupMemberCount = Number(referralTree?.memberCount || 0);
   const referredBusinessCount = Math.max(0, groupMemberCount - 1);
-  const referralBusinessOrders = Number(data.referralBusinessOrders ?? 0);
+  const totalBusinessOrders = Number(
+    data.groupTotalOrders ??
+      Number(data.selfBusinessOrders ?? 0) +
+        Number(data.referralBusinessOrders ?? 0),
+  );
 
   const baseUnitPrice = Number(data.baseUnitPrice ?? 15000);
   const referralDiscountAmount = Number(data.referralDiscountAmount ?? 0);
@@ -242,10 +246,10 @@ export const RequestorPricingReferralPolicyCard = () => {
 
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-md text-slate-600">
-              소개 사업자 주문 수량(최근 30일)
+              사업자 주문 합계(내 사업자+소개 사업자)
             </span>
             <span className="text-lg font-semibold text-foreground">
-              {referralBusinessOrders.toLocaleString()}건
+              {totalBusinessOrders.toLocaleString()}건
             </span>
           </div>
 
