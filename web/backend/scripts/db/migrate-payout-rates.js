@@ -9,55 +9,48 @@ const DEFAULT_RATES = {
   adminRate: 0.2,
 };
 
-function clampRate(value, fallback) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return fallback;
-  if (n < 0) return 0;
-  if (n > 1) return 1;
-  return n;
-}
+const NO_SALESMAN_RATES = {
+  manufacturerRate: 0.65,
+  devopsRate: 0.1,
+  salesmanRate: 0,
+  adminRate: 0.25,
+};
 
 function round4(value) {
   return Math.round(Number(value || 0) * 10000) / 10000;
 }
 
-function normalizeRates(rawRates) {
-  const raw = rawRates || {};
+function getTargetRatesForAnchor(anchor, referrerTypeByAnchorId) {
+  // requestor는 referredByAnchorId를 실제 조회해 케이스별 적용
+  if (String(anchor?.businessType || "") === "requestor") {
+    const referredByAnchorId = anchor?.referredByAnchorId
+      ? String(anchor.referredByAnchorId)
+      : "";
+    const referrerType = referredByAnchorId
+      ? String(referrerTypeByAnchorId.get(referredByAnchorId) || "")
+      : "";
 
-  const manufacturerRate = clampRate(
-    raw.manufacturerRate,
-    DEFAULT_RATES.manufacturerRate,
-  );
+    // rules.md 2.4: 영업자 소개가 있는 경우(기본)
+    if (referrerType === "salesman") {
+      return {
+        ...DEFAULT_RATES,
+        reason: "requestor_referred_by_salesman",
+      };
+    }
 
-  // 새 정책 기준: 개발운영사/영업자 기본 10%를 명시적으로 저장
-  // (영업자 미소개 케이스는 런타임 분기 규칙 65/25/10 적용)
-  const devopsRate = clampRate(raw.devopsRate, DEFAULT_RATES.devopsRate);
-  const salesmanRate = clampRate(raw.salesmanRate, DEFAULT_RATES.salesmanRate);
-
-  // adminRate는 나머지 우선 계산, 비정상일 때만 기본값 사용
-  const remainderAdmin = 1 - manufacturerRate - devopsRate - salesmanRate;
-  const adminRate =
-    remainderAdmin >= 0 && remainderAdmin <= 1
-      ? remainderAdmin
-      : clampRate(raw.adminRate, DEFAULT_RATES.adminRate);
-
-  const total = manufacturerRate + devopsRate + salesmanRate + adminRate;
-  if (total <= 0) {
+    // rules.md 2.4: 영업자 소개 없이 가입한 의뢰자 주문건
     return {
-      ...DEFAULT_RATES,
-      totalRate: 1,
-      isFallbackDefault: true,
+      ...NO_SALESMAN_RATES,
+      reason: referredByAnchorId
+        ? `requestor_referred_by_non_salesman(${referrerType || "unknown"})`
+        : "requestor_without_referrer",
     };
   }
 
-  // 합계 오차 보정(정규화)
+  // requestor 외 사업자는 기본값으로 정렬
   return {
-    manufacturerRate: round4(manufacturerRate / total),
-    devopsRate: round4(devopsRate / total),
-    salesmanRate: round4(salesmanRate / total),
-    adminRate: round4(adminRate / total),
-    totalRate: 1,
-    isFallbackDefault: false,
+    ...DEFAULT_RATES,
+    reason: "non_requestor_default",
   };
 }
 
@@ -71,25 +64,28 @@ async function main() {
   });
 
   const query = {
-    $or: [
-      { "payoutRates.baseCommissionRate": { $exists: true } },
-      { "payoutRates.salesmanDirectRate": { $exists: true } },
-      { "payoutRates.devopsRate": { $exists: false } },
-      { "payoutRates.salesmanRate": { $exists: false } },
-      { "payoutRates.adminRate": { $exists: false } },
-      { businessType: "devops" },
-    ],
+    payoutRates: { $exists: true },
   };
 
   const anchors = await BusinessAnchor.find(query)
-    .select({ _id: 1, businessType: 1, name: 1, payoutRates: 1 })
+    .select({
+      _id: 1,
+      businessType: 1,
+      name: 1,
+      referredByAnchorId: 1,
+      payoutRates: 1,
+    })
     .lean();
+
+  const referrerTypeByAnchorId = new Map(
+    anchors.map((a) => [String(a._id), String(a.businessType || "")]),
+  );
 
   let updated = 0;
   let skipped = 0;
 
   for (const anchor of anchors) {
-    const normalized = normalizeRates(anchor?.payoutRates || {});
+    const normalized = getTargetRatesForAnchor(anchor, referrerTypeByAnchorId);
     const nextRates = {
       manufacturerRate: normalized.manufacturerRate,
       devopsRate: normalized.devopsRate,
@@ -100,7 +96,8 @@ async function main() {
 
     const current = anchor?.payoutRates || {};
     const same =
-      round4(Number(current.manufacturerRate || -1)) === nextRates.manufacturerRate &&
+      round4(Number(current.manufacturerRate || -1)) ===
+        nextRates.manufacturerRate &&
       round4(Number(current.devopsRate || -1)) === nextRates.devopsRate &&
       round4(Number(current.salesmanRate || -1)) === nextRates.salesmanRate &&
       round4(Number(current.adminRate || -1)) === nextRates.adminRate;
@@ -135,6 +132,15 @@ async function main() {
         salesmanRate: current.salesmanRate,
         adminRate: current.adminRate,
       },
+      referrerAnchorId: anchor?.referredByAnchorId
+        ? String(anchor.referredByAnchorId)
+        : null,
+      referrerType: anchor?.referredByAnchorId
+        ? String(
+            referrerTypeByAnchorId.get(String(anchor.referredByAnchorId)) || "",
+          )
+        : null,
+      reason: normalized.reason,
       after: nextRates,
     });
   }
