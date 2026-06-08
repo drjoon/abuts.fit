@@ -532,14 +532,14 @@ namespace DentalAddin
                                 if (twoPhaseLeftSide)
                                 {
                                     double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
-                                    // 우변을 넘지 않도록 클램프
-                                    effectiveSplitX = Math.Min(twoPhaseSplitX + 0.0, xMax - 1e-6);
+                                    // Turn_A: finishline보다 0.5mm 왼쪽에서 종료
+                                    effectiveSplitX = Math.Min(twoPhaseSplitX - 0.5, xMax - 1e-6);
                                 }
                                 else
                                 {
                                     double xMin = Math.Min(0.0, Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX));
-                                    // Turn_B는 finishline에서 2mm 왼쪽에서 시작하도록 설정
-                                    effectiveSplitX = Math.Max(twoPhaseSplitX - 2.0, xMin + 1e-6);
+                                    // Turn_B: finishline보다 2.5mm 왼쪽에서 시작
+                                    effectiveSplitX = Math.Max(twoPhaseSplitX - 2.5, xMin + 1e-6);
                                 }
                             }
                             catch { }
