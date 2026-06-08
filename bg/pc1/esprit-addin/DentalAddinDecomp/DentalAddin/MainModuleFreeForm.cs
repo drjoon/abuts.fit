@@ -30,6 +30,35 @@ namespace DentalAddin
         {
             try
             {
+                DentalLogger.Log("FreeFormMill - TryRunFreeFormMillSafe 시도");
+                if (TryRunFreeFormMillSafe())
+                {
+                    DentalLogger.Log("FreeFormMill - Safe 경로 완료");
+
+                    int safeFinishingMethod = (NumCombobox != null && NumCombobox.Length > 1) ? NumCombobox[1] : 0;
+                    if (safeFinishingMethod == 1)
+                    {
+                        DentalLogger.Log("FreeFormMill - Safe 경로 후 FinishingMethod==1, Composite2 실행");
+                        Composite2();
+                        DentalLogger.Log("FreeFormMill - Safe 경로 후 Composite2 완료");
+                    }
+                    else
+                    {
+                        DentalLogger.Log($"FreeFormMill - Safe 경로 후 FinishingMethod!=1({safeFinishingMethod}), Emerge/Composite2 건너뜀");
+                    }
+                    return;
+                }
+
+                DentalLogger.Log("FreeFormMill - Safe 경로에서 false 반환, legacy free() 폴백 실행");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"FreeFormMill - Safe 경로 예외, legacy free() 폴백: {ex.GetType().Name}:{ex.Message}");
+                DentalLogger.LogException("MainModule.FreeFormMill.Safe", ex);
+            }
+
+            try
+            {
                 DentalLogger.Log("FreeFormMill - free() 호출");
                 free();
                 DentalLogger.Log("FreeFormMill - free() 완료");
@@ -53,110 +82,194 @@ namespace DentalAddin
             }
         }
 
-        // Front Face 가공만 별도 실행 (2026-06-08)
-        // 순서상 Rough A와 Turn B 사이에 위치하기 위해 분리
-        public static void FrontFaceMill()
+        private static bool TryRunFreeFormMillSafe()
         {
-            DentalLogger.Log("FrontFaceMill() 시작");
             try
             {
-                // Front Face 가공은 PRC[5]를 사용하여 3DMilling_FrontFace 피처에 적용
-                if (PrcFilePath == null || PrcFilePath.Length <= 5 || string.IsNullOrWhiteSpace(PrcFilePath[5]))
-                {
-                    DentalLogger.Log("FrontFaceMill - PRC[5] 없음, Front Face 가공 스킵");
-                    return;
-                }
+                DentalLogger.Log("TryRunFreeFormMillSafe - 시작");
 
-                string prcFile = PrcFilePath[5];
-                DentalLogger.Log($"FrontFaceMill - PRC[5]={prcFile}");
-
-                // FreeFormFeature 배열 준비
-                FreeFormFeature[] array = new FreeFormFeature[6];
-                int num = Document.FreeFormFeatures.Count;
-                for (int i = 1; i <= num; i++)
-                {
-                    try
-                    {
-                        FreeFormFeature freeFormFeature = Document.FreeFormFeatures[i];
-                        if (freeFormFeature == null) continue;
-                        string name = freeFormFeature.Name;
-                        if (string.IsNullOrWhiteSpace(name)) continue;
-                        switch (name)
-                        {
-                            case "3DMilling_FrontFace": array[5] = freeFormFeature; break;
-                            case "3DMilling_0Degree": array[1] = freeFormFeature; break;
-                            case "3DMilling_90Degree": array[2] = freeFormFeature; break;
-                            case "3DMilling_180Degree": array[3] = freeFormFeature; break;
-                            case "3DMilling_270Degree": array[4] = freeFormFeature; break;
-                        }
-                    }
-                    catch { }
-                }
-
-                if (array[5] == null)
-                {
-                    DentalLogger.Log("FrontFaceMill - 3DMilling_FrontFace 피처 없음, 스킵");
-                    return;
-                }
-
-                // TechnologyUtility 및 기술 로드
                 TechnologyUtility technologyUtility = (TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")));
-                ITechnology[] tech = TryOpenProcess(technologyUtility, prcFile, "FrontFaceMill:PRC[5]");
-                if (tech.Length == 0)
+                Layer activeLayer = GetOrCreateLayer("FreeFormMill");
+                if (activeLayer == null)
                 {
-                    DentalLogger.Log("FrontFaceMill - PRC[5] 로드 실패");
-                    return;
+                    DentalLogger.Log("TryRunFreeFormMillSafe - FreeFormMill 레이어 확보 실패");
+                    return false;
                 }
+                Document.ActiveLayer = activeLayer;
 
-                TechLatheMoldParallelPlanes techLatheMoldParallelPlanes = (TechLatheMoldParallelPlanes)tech[0];
+                bool skipFrontFace = ShouldSkipFrontFaceInFreeForm();
+                DentalLogger.Log($"TryRunFreeFormMillSafe - skipFrontFace={skipFrontFace}, machinetype={machinetype}, RL={RL}");
 
-                // Z Limit 설정 (RL에 따라 좌/우 구분)
-                if (RL == 1.0)
+                if (!skipFrontFace)
                 {
-                    techLatheMoldParallelPlanes.TopZLimit = 1.0;
-                    techLatheMoldParallelPlanes.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + Math.Abs(DownZ));
-                    DentalLogger.Log($"FrontFaceMill - Right Side FrontPointX:{MoveSTL_Module.FrontPointX} ZLimit Bottom:{techLatheMoldParallelPlanes.BottomZLimit}");
-                }
-                else if (RL == 2.0)
-                {
-                    techLatheMoldParallelPlanes.TopZLimit = 1.0;
-                    techLatheMoldParallelPlanes.BottomZLimit = 1.0 * (MoveSTL_Module.FrontPointX - Math.Abs(DownZ));
-                    DentalLogger.Log($"FrontFaceMill - Left Side FrontPointX:{MoveSTL_Module.FrontPointX} ZLimit Bottom:{techLatheMoldParallelPlanes.BottomZLimit}");
+                    FreeFormFeature frontFace = FindFreeFormFeatureByNameLocal("3DMilling_FrontFace");
+                    if (LogGraphicObjectIsNull(frontFace, "TryRunFreeFormMillSafe frontFace", "Document.FreeFormFeatures에서 '3DMilling_FrontFace' FreeFormFeature를 준비하세요.", stopProcess: true))
+                    {
+                        DentalLogger.Log("TryRunFreeFormMillSafe - FrontFace feature 누락");
+                        return false;
+                    }
+
+                    string faceFile = PrcFilePath[5];
+                    ITechnology[] faceTech = TryOpenProcess(technologyUtility, faceFile, "TryRunFreeFormMillSafe:PRC[5] FrontFace");
+                    if (faceTech.Length == 0 || !(faceTech[0] is TechLatheMoldParallelPlanes faceOp))
+                    {
+                        DentalLogger.Log("TryRunFreeFormMillSafe - FrontFace PRC 로드/캐스팅 실패");
+                        return false;
+                    }
+
+                    if (RL == 1.0)
+                    {
+                        faceOp.TopZLimit = 1.0;
+                        faceOp.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + Math.Abs(DownZ));
+                    }
+                    else if (RL == 2.0)
+                    {
+                        faceOp.BottomZLimit = 1.0 * (MoveSTL_Module.FrontPointX - Math.Abs(DownZ));
+                        faceOp.TopZLimit = 1.0;
+                    }
+
+                    ZH = Math.Abs(MoveSTL_Module.FrontPointX);
+                    TryAddOperation(faceOp, frontFace, "TryRunFreeFormMillSafe FrontFace");
+                    DentalLogger.Log("TryRunFreeFormMillSafe - FrontFace 완료");
                 }
                 else
                 {
-                    techLatheMoldParallelPlanes.TopZLimit = 1.0;
-                    techLatheMoldParallelPlanes.BottomZLimit = -1.0 * MoveSTL_Module.FrontPointX;
+                    DentalLogger.Log("TryRunFreeFormMillSafe - FrontFace 스킵");
                 }
 
-                ZH = Math.Abs(MoveSTL_Module.FrontPointX);
-
-                // 작업 레이어 설정
-                Layer activeLayer;
-                try { activeLayer = Document.Layers.Add("FreeFormMill"); }
-                catch { activeLayer = Document.Layers["FreeFormMill"]; }
-                Document.ActiveLayer = activeLayer;
-
-                // 작업 추가
-                Document.Operations.Add(techLatheMoldParallelPlanes, array[5], RuntimeHelpers.GetObjectValue(Missing.Value));
-                DentalLogger.Log("FrontFaceMill - Front Face 가공 완료");
-                
-                // 2026-06-08: free()에서 중복 처리 방지를 위해 플래그 설정
-                try
+                if (machinetype == 1)
                 {
-                    Environment.SetEnvironmentVariable("ABUTS_FRONTFACE_PROCESSED", "1");
-                    DentalLogger.Log("FrontFaceMill - 중복 방지 플래그 설정 (ABUTS_FRONTFACE_PROCESSED=1)");
+                    int boundry1Key = FindFeatureChainKeyByNameLocal("Boundry1");
+                    int boundry2Key = FindFeatureChainKeyByNameLocal("Boundry2");
+                    DentalLogger.Log($"TryRunFreeFormMillSafe - machinetype=1, Boundry1={boundry1Key}, Boundry2={boundry2Key}");
+
+                    if (boundry1Key <= 0 || boundry2Key <= 0)
+                    {
+                        DentalLogger.Log("TryRunFreeFormMillSafe - Boundry1/2 키 누락");
+                        return false;
+                    }
+
+                    FreeFormFeature ff0 = FindFreeFormFeatureByNameLocal("3DMilling_0Degree");
+                    FreeFormFeature ff90 = FindFreeFormFeatureByNameLocal("3DMilling_90Degree");
+                    FreeFormFeature ff180 = FindFreeFormFeatureByNameLocal("3DMilling_180Degree");
+                    FreeFormFeature ff270 = FindFreeFormFeatureByNameLocal("3DMilling_270Degree");
+                    if (ff0 == null || ff90 == null || ff180 == null || ff270 == null)
+                    {
+                        DentalLogger.Log("TryRunFreeFormMillSafe - 0/90/180/270 FreeFormFeature 누락");
+                        return false;
+                    }
+
+                    string file6 = PrcFilePath[6];
+                    string file7 = PrcFilePath[7];
+
+                    ITechnology[] tech6a = TryOpenProcess(technologyUtility, file6, "TryRunFreeFormMillSafe:PRC[6]-0");
+                    ITechnology[] tech7a = TryOpenProcess(technologyUtility, file7, "TryRunFreeFormMillSafe:PRC[7]-90");
+                    ITechnology[] tech6b = TryOpenProcess(technologyUtility, file6, "TryRunFreeFormMillSafe:PRC[6]-180");
+                    ITechnology[] tech7b = TryOpenProcess(technologyUtility, file7, "TryRunFreeFormMillSafe:PRC[7]-270");
+                    if (tech6a.Length == 0 || tech7a.Length == 0 || tech6b.Length == 0 || tech7b.Length == 0)
+                    {
+                        DentalLogger.Log("TryRunFreeFormMillSafe - PRC[6]/PRC[7] 로드 실패");
+                        return false;
+                    }
+
+                    if (!(tech6a[0] is TechLatheMoldParallelPlanes op0) ||
+                        !(tech7a[0] is TechLatheMoldParallelPlanes op90) ||
+                        !(tech6b[0] is TechLatheMoldParallelPlanes op180) ||
+                        !(tech7b[0] is TechLatheMoldParallelPlanes op270))
+                    {
+                        DentalLogger.Log("TryRunFreeFormMillSafe - PRC[6]/PRC[7] 캐스팅 실패");
+                        return false;
+                    }
+
+                    op0.BoundaryProfiles = $"6,{boundry1Key}";
+                    op90.BoundaryProfiles = $"6,{boundry2Key}";
+                    op180.BoundaryProfiles = $"6,{boundry1Key}";
+                    op270.BoundaryProfiles = $"6,{boundry2Key}";
+
+                    TryAddOperation(op0, ff0, "TryRunFreeFormMillSafe 0Degree");
+                    TryAddOperation(op90, ff90, "TryRunFreeFormMillSafe 90Degree");
+                    TryAddOperation(op180, ff180, "TryRunFreeFormMillSafe 180Degree");
+                    TryAddOperation(op270, ff270, "TryRunFreeFormMillSafe 270Degree");
+                    DentalLogger.Log("TryRunFreeFormMillSafe - machinetype=1 병렬 평면 완료");
                 }
-                catch (Exception flagEx)
+
+                DentalLogger.Log("TryRunFreeFormMillSafe - MainFree 호출");
+                MainFree();
+                DentalLogger.Log("TryRunFreeFormMillSafe - MainFree 완료");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"TryRunFreeFormMillSafe 실패: {ex.GetType().Name}:{ex.Message}");
+                DentalLogger.LogException("MainModule.TryRunFreeFormMillSafe", ex);
+                return false;
+            }
+        }
+
+        private static bool ShouldSkipFrontFaceInFreeForm()
+        {
+            try
+            {
+                string raw = Environment.GetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM");
+                return string.Equals(raw, "1", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static FreeFormFeature FindFreeFormFeatureByNameLocal(string name)
+        {
+            try
+            {
+                if (Document?.FreeFormFeatures == null)
                 {
-                    DentalLogger.Log($"FrontFaceMill - 플래그 설정 실패 (무시): {flagEx.Message}");
+                    return null;
+                }
+
+                int count = Document.FreeFormFeatures.Count;
+                for (int i = 1; i <= count; i++)
+                {
+                    FreeFormFeature feature = Document.FreeFormFeatures[i];
+                    if (feature != null && string.Equals(feature.Name, name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return feature;
+                    }
                 }
             }
             catch (Exception ex)
             {
-                DentalLogger.Log($"FrontFaceMill - 예외: {ex.Message}");
-                DentalLogger.LogException("MainModule.FrontFaceMill", ex);
+                DentalLogger.Log($"FindFreeFormFeatureByNameLocal({name}) 실패: {ex.GetType().Name}:{ex.Message}");
             }
+            return null;
+        }
+
+        private static int FindFeatureChainKeyByNameLocal(string name)
+        {
+            try
+            {
+                if (Document?.FeatureChains == null)
+                {
+                    return 0;
+                }
+
+                int count = Document.FeatureChains.Count;
+                for (int i = 1; i <= count; i++)
+                {
+                    FeatureChain chain = Document.FeatureChains[i];
+                    if (chain != null && string.Equals(chain.Name, name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return Conversions.ToInteger(chain.Key);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"FindFeatureChainKeyByNameLocal({name}) 실패: {ex.GetType().Name}:{ex.Message}");
+            }
+            return 0;
         }
 
         public static void free()
@@ -478,21 +591,12 @@ namespace DentalAddin
                             goto IL_031b;
                         IL_031b:
                             num2 = 45;
-                            // 2026-06-08: FrontFaceMill()에서 이미 처리했으면 스킵
-                            bool frontFaceAlreadyProcessed = false;
-                            try
+                            if (string.Equals(Environment.GetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM"), "1", StringComparison.OrdinalIgnoreCase)
+                                || string.Equals(Environment.GetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM"), "true", StringComparison.OrdinalIgnoreCase))
                             {
-                                string frontFaceProcessedFlag = Environment.GetEnvironmentVariable("ABUTS_FRONTFACE_PROCESSED");
-                                frontFaceAlreadyProcessed = string.Equals(frontFaceProcessedFlag, "1") || string.Equals(frontFaceProcessedFlag, "true");
-                            }
-                            catch { }
-                            
-                            if (frontFaceAlreadyProcessed)
-                            {
-                                DentalLogger.Log("free - FrontFace는 이미 FrontFaceMill()에서 처리됨, 중복 가공 스킵");
+                                DentalLogger.Log("free - ABUTS_SKIP_FRONTFACE_IN_FREEFORM 설정으로 FrontFace 단계를 건너뜁니다.");
                                 goto IL_033d;
                             }
-                            
                             if (LogGraphicObjectIsNull(array[5], "free array[5]", "Document.FreeFormFeatures에서 '3DMilling_FrontFace' FreeFormFeature를 준비하세요.", stopProcess: true))
                             {
                                 DentalLogger.Log("free - FrontFace FreeFormFeature 누락으로 공정을 중단합니다.");
@@ -823,20 +927,67 @@ namespace DentalAddin
 
         public static void MainFree()
         {
-            DentalLogger.Log("MainFree - MoveSurface 시작");
-            MoveSTL_Module.MoveSurface();
-            DentalLogger.Log($"MainFree - MoveSurface 결과 NeedMove:{MoveSTL_Module.NeedMove}, dY:{MoveSTL_Module.NeedMoveY:0.000}, dZ:{MoveSTL_Module.NeedMoveZ:0.000}");
-            Emerge();
-            Composite();
-            int count = Document.GraphicsCollection.Count;
-            for (int i = 1; i <= count; i = checked(i + 1))
+            DentalLogger.Log("MainFree - 시작");
+
+            try
             {
-                GraphicObject graphicObject = (GraphicObject)Document.GraphicsCollection[i];
-                if (graphicObject.GraphicObjectType == espGraphicObjectType.espSurface)
-                {
-                    graphicObject.Layer.Visible = false;
-                }
+                DentalLogger.Log("MainFree - MoveSurface 시작");
+                MoveSTL_Module.MoveSurface();
+                DentalLogger.Log($"MainFree - MoveSurface 완료 NeedMove:{MoveSTL_Module.NeedMove}, dY:{MoveSTL_Module.NeedMoveY:0.000}, dZ:{MoveSTL_Module.NeedMoveZ:0.000}");
             }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"MainFree - MoveSurface 실패: {ex.GetType().Name}:{ex.Message}");
+                throw;
+            }
+
+            try
+            {
+                DentalLogger.Log("MainFree - Emerge 시작");
+                Emerge();
+                DentalLogger.Log("MainFree - Emerge 완료");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"MainFree - Emerge 실패: {ex.GetType().Name}:{ex.Message}");
+                throw;
+            }
+
+            try
+            {
+                DentalLogger.Log("MainFree - Composite 시작");
+                Composite();
+                DentalLogger.Log("MainFree - Composite 완료");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"MainFree - Composite 실패: {ex.GetType().Name}:{ex.Message}");
+                throw;
+            }
+
+            try
+            {
+                int count = Document.GraphicsCollection.Count;
+                int hidden = 0;
+                DentalLogger.Log($"MainFree - Surface 숨김 시작 Graphics.Count={count}");
+                for (int i = 1; i <= count; i = checked(i + 1))
+                {
+                    GraphicObject graphicObject = (GraphicObject)Document.GraphicsCollection[i];
+                    if (graphicObject.GraphicObjectType == espGraphicObjectType.espSurface)
+                    {
+                        graphicObject.Layer.Visible = false;
+                        hidden++;
+                    }
+                }
+                DentalLogger.Log($"MainFree - Surface 숨김 완료 hidden={hidden}");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"MainFree - Surface 숨김 실패: {ex.GetType().Name}:{ex.Message}");
+                throw;
+            }
+
+            DentalLogger.Log("MainFree - 종료");
         }
 
                 public static void RoughFreeFromMill()

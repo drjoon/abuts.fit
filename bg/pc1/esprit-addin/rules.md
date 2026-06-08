@@ -16,10 +16,6 @@
 
 - 공정 직전 피처/오퍼레이션 검증 로그를 남겨 원인 추적이 가능해야 합니다.
 - Roughworkplane에서 STL 모델을 찾지 못하면 즉시 종료하고 로그를 남깁니다.
-- 2-phase 분할 가공 경계는 finishline(`splitX`) 기준으로 다음을 사용합니다.
-  - `Turn_A`, `Rough milling_A`: `splitX - 0.5mm` (finishline보다 0.5mm 왼쪽)
-  - `Turn_B`, `Rough milling_B`: `splitX - 2.5mm` (finishline보다 2.5mm 왼쪽)
-  - 경계 계산 후에는 항상 `xMin/xMax` 범위로 클램프해 과가공을 방지합니다.
 
 ## 3. 정리 원칙
 

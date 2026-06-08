@@ -85,6 +85,33 @@ namespace DentalAddin
             return selectionSet;
         }
 
+        private static bool TryAddToSelectionSet(SelectionSet selectionSet, object item, string context)
+        {
+            if (selectionSet == null)
+            {
+                DentalLogger.Log($"TryAddToSelectionSet 실패 - SelectionSet null ({context})");
+                return false;
+            }
+            if (item == null)
+            {
+                DentalLogger.Log($"TryAddToSelectionSet 건너뜀 - item null ({context})");
+                return false;
+            }
+
+            try
+            {
+                selectionSet.Add(item, RuntimeHelpers.GetObjectValue(Missing.Value));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                string typeName = null;
+                try { typeName = item.GetType().Name; } catch { }
+                DentalLogger.Log($"TryAddToSelectionSet 실패 ({context}) itemType={typeName ?? "unknown"}, err={ex.GetType().Name}:{ex.Message}");
+                return false;
+            }
+        }
+
         private static GraphicObject GetLatestSurface(string context)
         {
             if (Document?.GraphicsCollection == null)

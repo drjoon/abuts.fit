@@ -381,8 +381,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable(AppConfig.TwoPhaseRoughRegionEnv, null);
             Environment.SetEnvironmentVariable(AppConfig.RoughfreeformSplitEnableEnv, null);
             Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_X", null);
-            // 2026-06-08: FrontFace 중복 처리 방지 플래그 초기화
-            Environment.SetEnvironmentVariable("ABUTS_FRONTFACE_PROCESSED", null);
             FaceHoleProcessFilePath = null;
             ConnectionMachiningProcessFilePath = null;
             lotNumber = "ACR";
@@ -1115,8 +1113,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         stepIncrement = 0.2;
                         break;
                     case "deep":
-                        stepIncrement = 0.3;
-                        break;
+                                            stepIncrement = 0.3;
+                                            break;
                 }
 
                 if (!stepIncrement.HasValue)
@@ -1174,7 +1172,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 double? firstPassPercent = null;
                 if (lastDigit >= 1 && lastDigit <= 3)
                 {
-                    firstPassPercent = 1.0;
+                    firstPassPercent = 5.0;
                 }
                 else if (lastDigit >= 4 && lastDigit <= 7)
                 {

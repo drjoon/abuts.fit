@@ -1934,7 +1934,11 @@ namespace DentalAddin
                             goto IL_00b5;
                         IL_00b5:
                             num2 = 11;
-                            selectionSet.Add(Gas, RuntimeHelpers.GetObjectValue(Missing.Value));
+                            if (!TryAddToSelectionSet(selectionSet, Gas, "Composite:scale-target add"))
+                            {
+                                DentalLogger.Log("Composite - scale 대상 Surface 추가 실패로 Composite 공정을 건너뜁니다.");
+                                goto end_IL_0000_3;
+                            }
                             goto IL_00ce;
                         IL_00ce:
                             num2 = 12;
@@ -2647,7 +2651,7 @@ namespace DentalAddin
                 {
                     if (item.GraphicObjectType == espGraphicObjectType.espSTL_Model)
                     {
-                        selectionSet.Add(item, RuntimeHelpers.GetObjectValue(Missing.Value));
+                        TryAddToSelectionSet(selectionSet, item, "TurningProfile:STL selection add");
                     }
                 }
                 Document.FeatureRecognition.CreateTurningProfile(selectionSet, Wp, espTurningProfileType.espTurningProfileOD, espGraphicObjectReturnType.espFeatureChains, espTurningProfileLocationType.espTurningProfileLocationTop, 0.01, 0.01, 5.0);
