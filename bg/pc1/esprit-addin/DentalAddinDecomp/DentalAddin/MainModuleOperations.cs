@@ -43,9 +43,19 @@ namespace DentalAddin
                 ValidateBeforeOperation("CustomCycle", Array.Empty<string>(), Array.Empty<string>());
                 CustomCycle();
 
-                ExecuteTwoPhaseTurningAndRough("A");
-                ExecuteTwoPhaseTurningAndRough("B");
+                // 2-phase 순서 재배열 (2026-06-08): 
+                // CustomCycle → Turn_A → Rough_A → FrontFace → Turn_B → Rough_B → FreeForm
+                ExecuteTwoPhaseTurning("A");
+                ExecuteTwoPhaseRough("A");
+                
+                // Front Face (BM_D2/EM2.0BALL)를 Rough A와 Turn B 사이로 이동
+                ValidateBeforeOperation("FrontFaceMill", Array.Empty<string>(), new[] { "3DMilling_FrontFace" });
+                FrontFaceMill();
+                
+                ExecuteTwoPhaseTurning("B");
+                ExecuteTwoPhaseRough("B");
 
+                // Front Face를 제외한 나머지 FreeForm 작업
                 ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
                 FreeFormMill();
                 if (Mark.MarkSign)
@@ -244,6 +254,50 @@ namespace DentalAddin
             finally
             {
                 Environment.SetEnvironmentVariable(AppConfig.TwoPhaseTurningRegionEnv, null);
+                Environment.SetEnvironmentVariable(AppConfig.TwoPhaseRoughRegionEnv, null);
+                Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_REGION", null);
+            }
+        }
+
+        // Turning과 Rough를 분리하여 개별 실행 (2026-06-08)
+        // 순서: Turn_A → Rough_A → FrontFace → Turn_B → Rough_B
+        private static void ExecuteTwoPhaseTurning(string region)
+        {
+            Environment.SetEnvironmentVariable(AppConfig.TwoPhaseTurningRegionEnv, region);
+            try
+            {
+                int turnStart = Document?.Operations?.Count ?? 0;
+                ValidateBeforeOperation($"TurningOp_{region}", Array.Empty<string>(), Array.Empty<string>());
+                TurningOp();
+                TagNewOperations(turnStart, $"TURN_{region}");
+                DentalLogger.Log($"ExecuteTwoPhaseTurning({region}) 완료");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(AppConfig.TwoPhaseTurningRegionEnv, null);
+            }
+        }
+
+        private static void ExecuteTwoPhaseRough(string region)
+        {
+            Environment.SetEnvironmentVariable(AppConfig.TwoPhaseRoughRegionEnv, region);
+            Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_REGION", region);
+            try
+            {
+                int roughStart = Document?.Operations?.Count ?? 0;
+                string[] roughFreeForms = (RoughType == 2.0)
+                    ? new[] { "3DRoughMilling_0Degree", "3DRoughMilling_180Degree" }
+                    : new[] { "3DRoughMilling_0Degree", "3DRoughMilling_120Degree", "3DRoughMilling_240Degree" };
+                string[] roughBoundaries = (RoughType == 2.0)
+                    ? new[] { "RoughBoundry1" }
+                    : new[] { "RoughBoundry1", "RoughBoundry2", "RoughBoundry3" };
+                ValidateBeforeOperation($"RoughFreeFromMill_{region}", roughBoundaries, roughFreeForms);
+                RoughFreeFromMill();
+                TagNewOperations(roughStart, $"ROUGH_{region}");
+                DentalLogger.Log($"ExecuteTwoPhaseRough({region}) 완료");
+            }
+            finally
+            {
                 Environment.SetEnvironmentVariable(AppConfig.TwoPhaseRoughRegionEnv, null);
                 Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_REGION", null);
             }

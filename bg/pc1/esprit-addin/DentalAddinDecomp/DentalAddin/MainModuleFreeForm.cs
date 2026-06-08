@@ -53,6 +53,101 @@ namespace DentalAddin
             }
         }
 
+        // Front Face 가공만 별도 실행 (2026-06-08)
+        // 순서상 Rough A와 Turn B 사이에 위치하기 위해 분리
+        public static void FrontFaceMill()
+        {
+            DentalLogger.Log("FrontFaceMill() 시작");
+            try
+            {
+                // Front Face 가공은 PRC[5]를 사용하여 3DMilling_FrontFace 피처에 적용
+                if (PrcFilePath == null || PrcFilePath.Length <= 5 || string.IsNullOrWhiteSpace(PrcFilePath[5]))
+                {
+                    DentalLogger.Log("FrontFaceMill - PRC[5] 없음, Front Face 가공 스킵");
+                    return;
+                }
+
+                string prcFile = PrcFilePath[5];
+                DentalLogger.Log($"FrontFaceMill - PRC[5]={prcFile}");
+
+                // FreeFormFeature 배열 준비
+                FreeFormFeature[] array = new FreeFormFeature[6];
+                int num = Document.FreeFormFeatures.Count;
+                for (int i = 1; i <= num; i++)
+                {
+                    try
+                    {
+                        FreeFormFeature freeFormFeature = Document.FreeFormFeatures[i];
+                        if (freeFormFeature == null) continue;
+                        string name = freeFormFeature.Name;
+                        if (string.IsNullOrWhiteSpace(name)) continue;
+                        switch (name)
+                        {
+                            case "3DMilling_FrontFace": array[5] = freeFormFeature; break;
+                            case "3DMilling_0Degree": array[1] = freeFormFeature; break;
+                            case "3DMilling_90Degree": array[2] = freeFormFeature; break;
+                            case "3DMilling_180Degree": array[3] = freeFormFeature; break;
+                            case "3DMilling_270Degree": array[4] = freeFormFeature; break;
+                        }
+                    }
+                    catch { }
+                }
+
+                if (array[5] == null)
+                {
+                    DentalLogger.Log("FrontFaceMill - 3DMilling_FrontFace 피처 없음, 스킵");
+                    return;
+                }
+
+                // TechnologyUtility 및 기술 로드
+                TechnologyUtility technologyUtility = (TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")));
+                ITechnology[] tech = TryOpenProcess(technologyUtility, prcFile, "FrontFaceMill:PRC[5]");
+                if (tech.Length == 0)
+                {
+                    DentalLogger.Log("FrontFaceMill - PRC[5] 로드 실패");
+                    return;
+                }
+
+                TechLatheMoldParallelPlanes techLatheMoldParallelPlanes = (TechLatheMoldParallelPlanes)tech[0];
+
+                // Z Limit 설정 (RL에 따라 좌/우 구분)
+                if (RL == 1.0)
+                {
+                    techLatheMoldParallelPlanes.TopZLimit = 1.0;
+                    techLatheMoldParallelPlanes.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + Math.Abs(DownZ));
+                    DentalLogger.Log($"FrontFaceMill - Right Side FrontPointX:{MoveSTL_Module.FrontPointX} ZLimit Bottom:{techLatheMoldParallelPlanes.BottomZLimit}");
+                }
+                else if (RL == 2.0)
+                {
+                    techLatheMoldParallelPlanes.TopZLimit = 1.0;
+                    techLatheMoldParallelPlanes.BottomZLimit = 1.0 * (MoveSTL_Module.FrontPointX - Math.Abs(DownZ));
+                    DentalLogger.Log($"FrontFaceMill - Left Side FrontPointX:{MoveSTL_Module.FrontPointX} ZLimit Bottom:{techLatheMoldParallelPlanes.BottomZLimit}");
+                }
+                else
+                {
+                    techLatheMoldParallelPlanes.TopZLimit = 1.0;
+                    techLatheMoldParallelPlanes.BottomZLimit = -1.0 * MoveSTL_Module.FrontPointX;
+                }
+
+                ZH = Math.Abs(MoveSTL_Module.FrontPointX);
+
+                // 작업 레이어 설정
+                Layer activeLayer;
+                try { activeLayer = Document.Layers.Add("FreeFormMill"); }
+                catch { activeLayer = Document.Layers["FreeFormMill"]; }
+                Document.ActiveLayer = activeLayer;
+
+                // 작업 추가
+                Document.Operations.Add(techLatheMoldParallelPlanes, array[5], RuntimeHelpers.GetObjectValue(Missing.Value));
+                DentalLogger.Log("FrontFaceMill - Front Face 가공 완료");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"FrontFaceMill - 예외: {ex.Message}");
+                DentalLogger.LogException("MainModule.FrontFaceMill", ex);
+            }
+        }
+
         public static void free()
         {
             DentalLogger.Log("free() 시작");
