@@ -1113,8 +1113,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         stepIncrement = 0.2;
                         break;
                     case "deep":
-                                            stepIncrement = 0.3;
-                                            break;
+                        stepIncrement = 0.3;
+                        break;
                 }
 
                 if (!stepIncrement.HasValue)
@@ -1172,7 +1172,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 double? firstPassPercent = null;
                 if (lastDigit >= 1 && lastDigit <= 3)
                 {
-                    firstPassPercent = 5.0;
+                    firstPassPercent = 1.0;
                 }
                 else if (lastDigit >= 4 && lastDigit <= 7)
                 {

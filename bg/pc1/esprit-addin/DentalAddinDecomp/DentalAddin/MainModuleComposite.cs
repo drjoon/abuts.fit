@@ -520,10 +520,14 @@ namespace DentalAddin
             }
 
             double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
-            // Rough A는 finishline (splitX) 그대로 사용 (offset 0mm),
-            // Rough B는 finishline에서 2mm 왼쪽에서 시작하도록 설정 (겹침 허용)
-            double roughAEnd = splitX + 0.0;
-            double roughBStart = splitX - 2.0;
+            // 분할 기준 정책(2026-06-08):
+            // - Rough milling_A는 finishline(splitX) +1mm 까지 가공
+            // - Rough milling_B는 finishline(splitX) -1mm 부터 가공
+            // 의도적으로 2mm overlap 대신 1mm overlap만 허용하여 A/B 경계의 중복 가공 폭을 줄인다.
+            const double roughAOffsetFromFinishLineMm = 1.0;
+            const double roughBOffsetFromFinishLineMm = -1.0;
+            double roughAEnd = splitX + roughAOffsetFromFinishLineMm;
+            double roughBStart = splitX + roughBOffsetFromFinishLineMm;
             // 범위 내 클램프
             if (roughAEnd <= xMin + 1e-6) roughAEnd = xMin + 1e-6;
             if (roughAEnd >= xMax - 1e-6) roughAEnd = Math.Max(xMin + 1e-6, xMax - 1e-6);

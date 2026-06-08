@@ -389,7 +389,7 @@ namespace DentalAddin
             }
 
             // 2-phase 모드: region env를 읽어 finishline(splitX) 기준 좌/우 경계를 적용
-            //   - region A → 좌측(xMin~splitX), region B → 우측(splitX~xMax)
+            //   - region A(Turn_A) → 좌측(xMin~splitX+1mm), region B(Turn_B) → 우측(splitX-1mm~xMax)
             //   - rough mill(RoughFreeFromMillSplitAB)과 동일한 splitX/경계 방식을 사용해
             //     turning 좌/우 분할 위치를 rough와 정렬
             //   - 실제 경계 적용은 chain 생성용 helper op 정리 직후, 최종 op 추가 직전에 수행
@@ -526,15 +526,27 @@ namespace DentalAddin
                         if (twoPhaseSplitReady)
                         {
                             // 주의: 이름이 "Turning"으로 시작하면 다음 phase의 array[i] 탐지 루프에 오인식되므로 다른 접두사 사용
-                            // Turn_A는 finishline보다 2mm 오른쪽까지 연장 요청(사용자 요구)
+                            // 분할 기준 정책(2026-06-08):
+                            // - Turn_A: finishline(splitX) + 1mm 까지 가공
+                            // - Turn_B: finishline(splitX) - 1mm 부터 가공
+                            // turning은 체인 자체를 splitX 기준으로 잘라 영역을 만들기 때문에,
+                            // 실제 적용은 "영역별 effectiveSplitX"를 별도로 계산해 반영한다.
                             double effectiveSplitX = twoPhaseSplitX;
                             try
                             {
                                 if (twoPhaseLeftSide)
                                 {
                                     double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
-                                    // 우변을 넘지 않도록 클램프
-                                    effectiveSplitX = Math.Min(twoPhaseSplitX + 2.0, xMax - 1e-6);
+                                    const double turnAOffsetFromFinishLineMm = 1.0;
+                                    // Turn_A 종료점을 finishline +1mm로 확장하되 우변(xMax) 초과를 방지한다.
+                                    effectiveSplitX = Math.Min(twoPhaseSplitX + turnAOffsetFromFinishLineMm, xMax - 1e-6);
+                                }
+                                else
+                                {
+                                    double xMin = Math.Min(0.0, Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX));
+                                    const double turnBOffsetFromFinishLineMm = -1.0;
+                                    // Turn_B 시작점을 finishline -1mm로 당기되 좌변(xMin) 이탈을 방지한다.
+                                    effectiveSplitX = Math.Max(twoPhaseSplitX + turnBOffsetFromFinishLineMm, xMin + 1e-6);
                                 }
                             }
                             catch { }
