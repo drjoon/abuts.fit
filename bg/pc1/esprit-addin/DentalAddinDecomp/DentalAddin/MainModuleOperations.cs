@@ -86,21 +86,28 @@ namespace DentalAddin
                 ValidateBeforeOperation("CustomCycle", Array.Empty<string>(), Array.Empty<string>());
                 CustomCycle();
 
-                // 2-phase 순서 재배열 (2026-06-08): 
+                // 2-phase 순서 (기본값):
                 // CustomCycle → Turn_A → Rough_A → FrontFace → Turn_B → Rough_B → FreeForm
                 ExecuteTwoPhaseTurning("A");
                 ExecuteTwoPhaseRough("A");
-                
-                // Front Face (BM_D2/EM2.0BALL)를 Rough A와 Turn B 사이로 이동
+
                 ValidateBeforeOperation("FrontFaceMill", Array.Empty<string>(), new[] { "3DMilling_FrontFace" });
                 FrontFaceMill();
-                
+
                 ExecuteTwoPhaseTurning("B");
                 ExecuteTwoPhaseRough("B");
 
-                // Front Face를 제외한 나머지 FreeForm 작업
-                ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
-                FreeFormMill();
+                // Front Face는 이미 실행했으므로 FreeFormMill 내부 Front Face 단계는 건너뜀
+                Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
+                try
+                {
+                    ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
+                    FreeFormMill();
+                }
+                finally
+                {
+                    Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", null);
+                }
                 if (Mark.MarkSign)
                 {
                     ValidateBeforeOperation("MarkText", Array.Empty<string>(), new[] { "3DProject_Mark" });
@@ -291,7 +298,64 @@ namespace DentalAddin
             }
         }
 
-        // Turning과 Rough를 분리하여 개별 실행 (2026-06-08)
+        public static void FrontFaceMill()
+        {
+            try
+            {
+                TechnologyUtility technologyUtility = (TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")));
+                Layer activeLayer = GetOrCreateLayer("FreeFormMill");
+                if (activeLayer == null)
+                {
+                    DentalLogger.Log("FrontFaceMill - FreeFormMill 레이어 확보 실패로 중단합니다.");
+                    return;
+                }
+                Document.ActiveLayer = activeLayer;
+
+                string file = PrcFilePath[5];
+                ITechnology[] array2 = TryOpenProcess(technologyUtility, file, "FrontFaceMill:PRC[5] ParallelPlanes");
+                if (array2.Length == 0)
+                {
+                    DentalLogger.Log("FrontFaceMill - PRC[5] 로드 실패로 공정을 중단합니다.");
+                    return;
+                }
+
+                TechLatheMoldParallelPlanes techLatheMoldParallelPlanes = array2[0] as TechLatheMoldParallelPlanes;
+                if (techLatheMoldParallelPlanes == null)
+                {
+                    DentalLogger.Log("FrontFaceMill - PRC[5] 첫 항목이 TechLatheMoldParallelPlanes가 아니어서 중단합니다.");
+                    return;
+                }
+
+                if (RL == 1.0)
+                {
+                    techLatheMoldParallelPlanes.TopZLimit = 1.0;
+                    techLatheMoldParallelPlanes.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + Math.Abs(DownZ));
+                }
+                else if (RL == 2.0)
+                {
+                    techLatheMoldParallelPlanes.BottomZLimit = 1.0 * (MoveSTL_Module.FrontPointX - Math.Abs(DownZ));
+                    techLatheMoldParallelPlanes.TopZLimit = 1.0;
+                }
+
+                ZH = Math.Abs(MoveSTL_Module.FrontPointX);
+
+                FreeFormFeature frontFace = FindFreeFormFeatureByName("3DMilling_FrontFace");
+                if (LogGraphicObjectIsNull(frontFace, "FrontFaceMill feature", "Document.FreeFormFeatures에서 '3DMilling_FrontFace' FreeFormFeature를 준비하세요.", stopProcess: true))
+                {
+                    DentalLogger.Log("FrontFaceMill - FrontFace FreeFormFeature 누락으로 공정을 중단합니다.");
+                    return;
+                }
+
+                TryAddOperation(techLatheMoldParallelPlanes, frontFace, "FrontFaceMill");
+                DentalLogger.Log($"FrontFaceMill 완료 - RL:{RL}, FrontPointX:{MoveSTL_Module.FrontPointX}, DownZ:{DownZ}");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"FrontFaceMill 실패: {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        // Turning과 Rough를 분리하여 개별 실행
         // 순서: Turn_A → Rough_A → FrontFace → Turn_B → Rough_B
         private static void ExecuteTwoPhaseTurning(string region)
         {
@@ -312,10 +376,13 @@ namespace DentalAddin
 
         private static void ExecuteTwoPhaseRough(string region)
         {
+            string prevRoughSplitEnable = Environment.GetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_ENABLE");
             Environment.SetEnvironmentVariable(AppConfig.TwoPhaseRoughRegionEnv, region);
             Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_REGION", region);
+            Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_ENABLE", "1");
             try
             {
+                DentalLogger.Log($"ExecuteTwoPhaseRough({region}) - split enable 강제(ABUTS_ROUGHFREEFORM_SPLIT_ENABLE=1), prev='{prevRoughSplitEnable ?? ""}'");
                 int roughStart = Document?.Operations?.Count ?? 0;
                 string[] roughFreeForms = (RoughType == 2.0)
                     ? new[] { "3DRoughMilling_0Degree", "3DRoughMilling_180Degree" }
@@ -332,6 +399,7 @@ namespace DentalAddin
             {
                 Environment.SetEnvironmentVariable(AppConfig.TwoPhaseRoughRegionEnv, null);
                 Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_REGION", null);
+                Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_ENABLE", prevRoughSplitEnable);
             }
         }
 

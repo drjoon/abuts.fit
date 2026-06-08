@@ -492,6 +492,7 @@ namespace DentalAddin
 
             if (!TryGetSplitABConfig(out double splitX, out string prcA, out string prcB))
             {
+                DentalLogger.Log("RoughFreeFromMillSplitAB - TryGetSplitABConfig=false, SplitAB 비활성으로 기존 RoughFreeFromMill 경로 사용");
                 return false;
             }
 
@@ -520,8 +521,9 @@ namespace DentalAddin
             }
 
             double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
-            // 분할 기준(2026-06-08): A는 finishline -0.5mm, B는 finishline -2.5mm
-            // (finishline보다 왼쪽으로 0.5mm/2.5mm 당겨 시작)
+            // Turn_A/Turn_B와 동일 기준으로 finishline 기준 오프셋을 맞춘다.
+            // Rough A는 finishline보다 0.5mm 왼쪽에서 종료,
+            // Rough B는 finishline보다 2.5mm 왼쪽에서 시작 (겹침 허용)
             double roughAEnd = splitX - 0.5;
             double roughBStart = splitX - 2.5;
             // 범위 내 클램프
@@ -638,8 +640,10 @@ namespace DentalAddin
             splitX = configured ?? defaultSplit;
 
             bool anyConfigured = configured.HasValue || !string.IsNullOrWhiteSpace(prcA) || !string.IsNullOrWhiteSpace(prcB);
+            DentalLogger.Log($"RoughFreeFromMillSplitAB Config - explicitEnable={explicitEnable}, splitEnableEnv='{enabled ?? ""}', twoPhaseEnableEnv='{twoPhaseEnabled ?? ""}', configuredSplitX={(configured.HasValue ? configured.Value.ToString("0.###", CultureInfo.InvariantCulture) : "null")}, defaultSplit={defaultSplit.ToString("0.###", CultureInfo.InvariantCulture)}, xRange=[{xMin.ToString("0.###", CultureInfo.InvariantCulture)}~{xMax.ToString("0.###", CultureInfo.InvariantCulture)}], prcASet={!string.IsNullOrWhiteSpace(prcA)}, prcBSet={!string.IsNullOrWhiteSpace(prcB)}");
             if (!explicitEnable && !anyConfigured)
             {
+                DentalLogger.Log("RoughFreeFromMillSplitAB Config - explicitEnable/anyConfigured 모두 false, SplitAB 미적용");
                 return false;
             }
 
