@@ -140,6 +140,17 @@ namespace DentalAddin
                 // 작업 추가
                 Document.Operations.Add(techLatheMoldParallelPlanes, array[5], RuntimeHelpers.GetObjectValue(Missing.Value));
                 DentalLogger.Log("FrontFaceMill - Front Face 가공 완료");
+                
+                // 2026-06-08: free()에서 중복 처리 방지를 위해 플래그 설정
+                try
+                {
+                    Environment.SetEnvironmentVariable("ABUTS_FRONTFACE_PROCESSED", "1");
+                    DentalLogger.Log("FrontFaceMill - 중복 방지 플래그 설정 (ABUTS_FRONTFACE_PROCESSED=1)");
+                }
+                catch (Exception flagEx)
+                {
+                    DentalLogger.Log($"FrontFaceMill - 플래그 설정 실패 (무시): {flagEx.Message}");
+                }
             }
             catch (Exception ex)
             {
@@ -467,6 +478,21 @@ namespace DentalAddin
                             goto IL_031b;
                         IL_031b:
                             num2 = 45;
+                            // 2026-06-08: FrontFaceMill()에서 이미 처리했으면 스킵
+                            bool frontFaceAlreadyProcessed = false;
+                            try
+                            {
+                                string frontFaceProcessedFlag = Environment.GetEnvironmentVariable("ABUTS_FRONTFACE_PROCESSED");
+                                frontFaceAlreadyProcessed = string.Equals(frontFaceProcessedFlag, "1") || string.Equals(frontFaceProcessedFlag, "true");
+                            }
+                            catch { }
+                            
+                            if (frontFaceAlreadyProcessed)
+                            {
+                                DentalLogger.Log("free - FrontFace는 이미 FrontFaceMill()에서 처리됨, 중복 가공 스킵");
+                                goto IL_033d;
+                            }
+                            
                             if (LogGraphicObjectIsNull(array[5], "free array[5]", "Document.FreeFormFeatures에서 '3DMilling_FrontFace' FreeFormFeature를 준비하세요.", stopProcess: true))
                             {
                                 DentalLogger.Log("free - FrontFace FreeFormFeature 누락으로 공정을 중단합니다.");
