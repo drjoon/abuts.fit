@@ -11,10 +11,11 @@ const ESPRIT_BASE =
   "http://localhost:8001";
 
 // Trigger Esprit for NC generation
+// 2026-06-08: Two-Phase is now default, One-Phase is explicit opt-in
 export async function triggerEspritForNc({
   request,
   force = false,
-  twoPhase = false,
+  onePhase = false,
 }) {
   if (!request) {
     throw new Error("request is required to trigger Esprit");
@@ -124,8 +125,8 @@ export async function triggerEspritForNc({
       TaperAngle: Number(request?.caseInfos?.taperAngle || 0),
       TiltAxisVector: request?.caseInfos?.tiltAxisVector || null,
       FrontPoint: request?.caseInfos?.frontPoint || null,
-      // Two-phase 제어 플래그 (백엔드에서 전달됨)
-      TwoPhase: Boolean(twoPhase),
+      // One-Phase 제어 플래그 (2026-06-08): Two-Phase가 기본값, One-Phase는 명시적 요청
+      OnePhase: Boolean(onePhase),
     };
     const headers = withEspritHeaders({ "Content-Type": "application/json" });
     console.log("[ESPRIT] POST / payload", {
@@ -133,7 +134,7 @@ export async function triggerEspritForNc({
       MaxDiameter: payload.MaxDiameter,
       MaterialDiameter: payload.MaterialDiameter,
       MaterialDiameterGroup: payload.MaterialDiameterGroup,
-      TwoPhase: payload.TwoPhase,
+      OnePhase: payload.OnePhase,
     });
     console.log("[ESPRIT] request headers", {
       url: espritUrl,

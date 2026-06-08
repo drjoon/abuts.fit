@@ -434,8 +434,8 @@ export async function regenerateNcByRequestIdTwoPhase(req, res) {
       );
     }
 
-    // trigger Esprit with TwoPhase flag
-    await triggerEspritForNc({ request, force: true, twoPhase: true });
+    // trigger Esprit with default Two-Phase (2026-06-08: Two-Phase is default)
+    await triggerEspritForNc({ request, force: true, onePhase: false });
 
     emitAppEventToRoles(
       ["manufacturer", "admin"],
@@ -449,7 +449,75 @@ export async function regenerateNcByRequestIdTwoPhase(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: "2-phase NC 재생성 요청을 전송했습니다.",
+      message: "NC 재생성 요청을 전송했습니다. (Two-Phase 기본)",
+      data: { requestId },
+    });
+  } catch (error) {
+    const status = Number(error?.statusCode || 500);
+    return res.status(status).json({
+      success: false,
+      message: error?.message || "NC 재생성 요청 중 오류가 발생했습니다.",
+    });
+  }
+}
+
+// 2026-06-08: One-Phase NC 재생성 (명시적 요청 시에만 사용, Two-Phase가 기본값)
+export async function regenerateNcByRequestIdOnePhase(req, res) {
+  try {
+    const requestId = String(req.params?.requestId || "").trim();
+    if (!requestId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "requestId is required" });
+    }
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const request = await Request.findOne({ requestId });
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    // 기록: One-Phase 재생성 요청 로깅
+    try {
+      request.caseInfos = request.caseInfos || {};
+      request.caseInfos.ncRegenerations =
+        request.caseInfos.ncRegenerations || [];
+      request.caseInfos.ncRegenerations.push({
+        type: "one-phase",
+        createdBy: req.user?._id,
+        createdAt: new Date(),
+        params: {},
+      });
+      await request.save();
+    } catch (e) {
+      console.warn(
+        "[regenerateNcByRequestIdOnePhase] failed to record ncRegeneration",
+        e?.message || e,
+      );
+    }
+
+    // trigger Esprit with One-Phase flag (명시적 One-Phase 요청)
+    await triggerEspritForNc({ request, force: true, onePhase: true });
+
+    emitAppEventToRoles(
+      ["manufacturer", "admin"],
+      "request:cam-processing-started",
+      {
+        source: "nc-regenerate-onephase",
+        requestId: request?.requestId || null,
+        requestMongoId: String(request?._id || "").trim() || null,
+      },
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "NC 재생성 요청을 전송했습니다. (One-Phase)",
       data: { requestId },
     });
   } catch (error) {

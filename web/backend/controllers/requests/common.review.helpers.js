@@ -416,25 +416,11 @@ export async function ensureShippingFeeSpendOnPackingApprove({
   const fee = Number(pkg.shippingFeeSupply || 0);
   if (!Number.isFinite(fee) || fee <= 0) return;
 
-  // 패키지 내 무료 의뢰(newSystemRequest.free=true) 포함 여부 확인
-  // 무료 의뢰가 1건이라도 있어야 무료배송 크레딧 사용 가능
-  const Request = (await import("../../models/request.model.js")).default;
-  const freeRequestInPkg = await Request.findOne({
-    _id: { $in: pkg.requestIds || [] },
-    "caseInfos.newSystemRequest.free": true,
-  })
-    .select({ _id: 1 })
-    .session(session || null)
-    .lean();
-  const hasFreeRequestInPkg = !!freeRequestInPkg;
-
   const { paidCredit, bonusShippingCredit } = await getBusinessCreditBalance({
     businessAnchorId,
     session,
   });
-  const availableForShipping = hasFreeRequestInPkg
-    ? paidCredit + bonusShippingCredit
-    : paidCredit;
+  const availableForShipping = paidCredit + bonusShippingCredit;
   if (availableForShipping < fee) {
     const err = new Error("의뢰자 잔액 부족으로 포장.발송 진입 불가");
     err.statusCode = 402;
@@ -500,9 +486,7 @@ export async function ensureShippingFeeSpendOnPackingApprove({
   }
 
   // 무료/유료 크레딧 사용 분리 계산
-  const fromBonusShipping = hasFreeRequestInPkg
-    ? Math.min(bonusShippingCredit, fee)
-    : 0;
+  const fromBonusShipping = Math.min(bonusShippingCredit, fee);
   const fromPaid = fee - fromBonusShipping;
 
   const result = await CreditLedger.updateOne(
@@ -516,7 +500,6 @@ export async function ensureShippingFeeSpendOnPackingApprove({
         refType: "SHIPPING_PACKAGE",
         refId: pkg._id,
         uniqueKey,
-        hasFreeRequest: hasFreeRequestInPkg,
         spentPaidAmount: fromPaid,
         spentBonusAmount: fromBonusShipping,
       },

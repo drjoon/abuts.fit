@@ -419,12 +419,27 @@ router.delete(
 
 // 제조사/관리자: NC 파일 다운로드 URL
 
-// 제조사/관리자: requestId 기반 2-phase NC 재생성 트리거 (Esprit force 재처리, TwoPhase flag 전달)
+// 2026-06-08: NC 재생성 - Two-Phase가 기본값, One-Phase는 명시적 요청 시에만 사용
+// 제조사/관리자: requestId 기반 NC 재생성 트리거 (Two-Phase 기본)
+router.post(
+  "/by-request/:requestId/nc-file/regenerate",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.regenerateNcByRequestIdTwoPhase,
+);
+// 하위호환: 기존 regenerate-2phase 경로도 Two-Phase로 동일하게 동작
 router.post(
   "/by-request/:requestId/nc-file/regenerate-2phase",
   authenticate,
   authorize(["manufacturer", "admin"]),
   requestController.regenerateNcByRequestIdTwoPhase,
+);
+// 제조사/관리자: requestId 기반 One-Phase NC 재생성 (명시적 요청 시)
+router.post(
+  "/by-request/:requestId/nc-file/regenerate-onephase",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.regenerateNcByRequestIdOnePhase,
 );
 router.get(
   "/:id/nc-file-url",

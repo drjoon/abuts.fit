@@ -27,17 +27,60 @@ namespace DentalAddin
     {
         public static void OperationSeq()
         {
-            bool twoPhaseEnabled = IsTwoPhaseEnabled();
+            // 2026-06-08: Two-Phase를 기본값으로 변경, One-Phase는 명시적 요청 시에만 사용
+            bool onePhaseEnabled = IsOnePhaseEnabled();
             bool roughSplitEnabled = IsRoughSplitEnabled();
             bool prcHasRoughSplit = HasRoughSplitMarkers();
-            bool twoPhaseMode = twoPhaseEnabled || roughSplitEnabled || prcHasRoughSplit;
-            if (twoPhaseMode && (RoughType == 2.0 || RoughType == 3.0))
+            
+            // One-Phase가 명시적으로 요청되지 않으면 Two-Phase가 기본값
+            bool twoPhaseMode = !onePhaseEnabled && (roughSplitEnabled || prcHasRoughSplit || RoughType == 2.0 || RoughType == 3.0);
+            
+            // 명시적 One-Phase 요청 시에만 기존 단일 단계 방식 사용
+            if (onePhaseEnabled)
             {
-                if (!twoPhaseEnabled)
+                DentalLogger.Log($"OperationSeq - OnePhase 명시 실행: 기존 단일 단계 순서로 실행 (RoughType={RoughType})");
+                
+                ValidateBeforeOperation("CustomCycle", Array.Empty<string>(), Array.Empty<string>());
+                CustomCycle();
+
+                ValidateBeforeOperation("TurningOp", Array.Empty<string>(), Array.Empty<string>());
+                TurningOp();
+                if (RoughType == 1.0)
                 {
-                    Environment.SetEnvironmentVariable(AppConfig.TwoPhaseEnableEnv, "1");
+                    ValidateBeforeOperation("RoughMill", new[] { "RoughBoundry1", "RoughBoundry2", "RoughBoundry3" }, Array.Empty<string>());
+                    RoughMill();
+                    ValidateBeforeOperation("OP36", Array.Empty<string>(), Array.Empty<string>());
+                    OP36();
                 }
-                DentalLogger.Log($"OperationSeq - TwoPhase 활성화: Turn/Rough를 A,B 2단계 순서로 실행 (RoughType={RoughType}, TwoPhaseEnv={twoPhaseEnabled}, RoughSplitEnv={roughSplitEnabled})");
+                else
+                {
+                    string[] roughFreeForms = (RoughType == 2.0)
+                        ? new[] { "3DRoughMilling_0Degree", "3DRoughMilling_180Degree" }
+                        : new[] { "3DRoughMilling_0Degree", "3DRoughMilling_120Degree", "3DRoughMilling_240Degree" };
+                    string[] roughBoundaries = (RoughType == 2.0)
+                        ? new[] { "RoughBoundry1" }
+                        : new[] { "RoughBoundry1", "RoughBoundry2", "RoughBoundry3" };
+                    ValidateBeforeOperation("RoughFreeFromMill", roughBoundaries, roughFreeForms);
+                    RoughFreeFromMill();
+                }
+
+                ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
+                FreeFormMill();
+                if (Mark.MarkSign)
+                {
+                    ValidateBeforeOperation("MarkText", Array.Empty<string>(), new[] { "3DProject_Mark" });
+                    MarkText();
+                }
+
+                ValidateBeforeOperation("CustomCycle2", Array.Empty<string>(), Array.Empty<string>());
+                CustomCycle2();
+                return;
+            }
+
+            // 기본값: Two-Phase 실행 (RoughType 2.0/3.0 또는 roughSplit/PRC 마커 있을 때)
+            if (twoPhaseMode)
+            {
+                DentalLogger.Log($"OperationSeq - TwoPhase 기본 실행: Turn/Rough를 A,B 2단계 순서로 실행 (RoughType={RoughType}, RoughSplitEnv={roughSplitEnabled})");
                 ClearOperationsForTwoPhase();
 
                 ValidateBeforeOperation("CustomCycle", Array.Empty<string>(), Array.Empty<string>());
@@ -69,31 +112,19 @@ namespace DentalAddin
                 return;
             }
 
+            // Fallback: RoughType 1.0이나 마커 없을 때 기존 방식 (One-Phase와 동일)
+            DentalLogger.Log($"OperationSeq - Fallback OnePhase 실행 (RoughType={RoughType})");
             ValidateBeforeOperation("CustomCycle", Array.Empty<string>(), Array.Empty<string>());
             CustomCycle();
-
             ValidateBeforeOperation("TurningOp", Array.Empty<string>(), Array.Empty<string>());
             TurningOp();
             if (RoughType == 1.0)
             {
                 ValidateBeforeOperation("RoughMill", new[] { "RoughBoundry1", "RoughBoundry2", "RoughBoundry3" }, Array.Empty<string>());
                 RoughMill();
-
                 ValidateBeforeOperation("OP36", Array.Empty<string>(), Array.Empty<string>());
                 OP36();
             }
-            else
-            {
-                string[] roughFreeForms = (RoughType == 2.0)
-                    ? new[] { "3DRoughMilling_0Degree", "3DRoughMilling_180Degree" }
-                    : new[] { "3DRoughMilling_0Degree", "3DRoughMilling_120Degree", "3DRoughMilling_240Degree" };
-                string[] roughBoundaries = (RoughType == 2.0)
-                    ? new[] { "RoughBoundry1" }
-                    : new[] { "RoughBoundry1", "RoughBoundry2", "RoughBoundry3" };
-                ValidateBeforeOperation("RoughFreeFromMill", roughBoundaries, roughFreeForms);
-                RoughFreeFromMill();
-            }
-
             ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
             FreeFormMill();
             if (Mark.MarkSign)
@@ -101,7 +132,6 @@ namespace DentalAddin
                 ValidateBeforeOperation("MarkText", Array.Empty<string>(), new[] { "3DProject_Mark" });
                 MarkText();
             }
-
             ValidateBeforeOperation("CustomCycle2", Array.Empty<string>(), Array.Empty<string>());
             CustomCycle2();
         }
@@ -141,11 +171,13 @@ namespace DentalAddin
             }
         }
 
-        private static bool IsTwoPhaseEnabled()
+        // One-Phase 모드 확인: 명시적으로 요청 시에만 기존 단일 단계 방식 사용
+        // 2026-06-08부터 Two-Phase가 기본값이 됨
+        private static bool IsOnePhaseEnabled()
         {
             try
             {
-                string raw = Environment.GetEnvironmentVariable(AppConfig.TwoPhaseEnableEnv);
+                string raw = Environment.GetEnvironmentVariable("ABUTS_ONEPHASE_ENABLE");
                 return string.Equals(raw, "1", StringComparison.OrdinalIgnoreCase) || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase);
             }
             catch

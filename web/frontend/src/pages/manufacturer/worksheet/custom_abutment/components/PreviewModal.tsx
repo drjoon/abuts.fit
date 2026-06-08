@@ -351,8 +351,9 @@ export const PreviewModal = ({
     return `${args.requestId}-${args.clinicName || ""}-${args.patientName || ""}-${args.tooth || ""}${ext}`;
   };
 
-  // 2-phase 재생성 요청 핸들러 (프론트 → 백엔드 → Esprit로 TwoPhase 명령 전파)
-  const onTwoPhase = async () => {
+  // 2026-06-08: NC 재생성 - Two-Phase가 기본값, One-Phase는 명시적 요청
+  // 기본 NC 재생성 (Two-Phase)
+  const onRegenerateNc = async () => {
     if (!canRegenerateFilledStl) return;
     if (!token) {
       toast({
@@ -370,14 +371,14 @@ export const PreviewModal = ({
       if (!requestId) {
         toast({
           title: "실패",
-          description: "requestId가 없어 2-phase 요청을 진행할 수 없습니다.",
+          description: "requestId가 없어 NC 재생성을 진행할 수 없습니다.",
           variant: "destructive",
         });
         return;
       }
 
       const res = await fetch(
-        `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate-2phase`,
+        `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate`,
         {
           method: "POST",
           headers: {
@@ -393,9 +394,9 @@ export const PreviewModal = ({
           body?.message ||
           body?.error ||
           body?.detail ||
-          "2-phase 요청에 실패했습니다.";
+          "NC 재생성 요청에 실패했습니다.";
         toast({
-          title: "2-phase 실패",
+          title: "NC 재생성 실패",
           description: msg,
           variant: "destructive",
         });
@@ -409,20 +410,95 @@ export const PreviewModal = ({
       }
 
       toast({
-        title: "2-phase 요청",
-        description: "2-phase NC 재생성 요청을 전송했습니다.",
+        title: "NC 재생성 요청",
+        description: "Two-Phase NC 재생성 요청을 전송했습니다.",
       });
 
       // 요청 성공 시 모달 닫기
       onOpenChange(false);
     } catch (err: any) {
       toast({
-        title: "2-phase 실패",
-        description: err?.message || "2-phase 요청에 실패했습니다.",
+        title: "NC 재생성 실패",
+        description: err?.message || "NC 재생성 요청에 실패했습니다.",
         variant: "destructive",
       });
     } finally {
       setTwoPhasing(false);
+    }
+  };
+
+  // One-Phase NC 재생성 (명시적 요청 시에만 사용)
+  const onOnePhase = async () => {
+    if (!canRegenerateFilledStl) return;
+    if (!token) {
+      toast({
+        title: "실패",
+        description: "로그인이 필요합니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (regenerating || isUploading) return;
+
+    setRegenerating(true);
+    try {
+      const requestId = String(activeReq?.requestId || "").trim();
+      if (!requestId) {
+        toast({
+          title: "실패",
+          description: "requestId가 없어 One-Phase 요청을 진행할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const res = await fetch(
+        `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate-onephase`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({}),
+        },
+      );
+      const body: any = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) {
+        const msg =
+          body?.message ||
+          body?.error ||
+          body?.detail ||
+          "One-Phase 요청에 실패했습니다.";
+        toast({
+          title: "One-Phase 실패",
+          description: msg,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // NC 재생성 성공 시 캐시 무효화
+      const s3Key = activeReq?.caseInfos?.ncFile?.s3Key;
+      if (s3Key) {
+        await deleteCncProgramCache(s3Key);
+      }
+
+      toast({
+        title: "One-Phase 요청",
+        description: "One-Phase NC 재생성 요청을 전송했습니다.",
+      });
+
+      // 요청 성공 시 모달 닫기
+      onOpenChange(false);
+    } catch (err: any) {
+      toast({
+        title: "One-Phase 실패",
+        description: err?.message || "One-Phase 요청에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setRegenerating(false);
     }
   };
 
@@ -971,21 +1047,22 @@ export const PreviewModal = ({
                   <div className="flex items-center gap-2">
                     {canRegenerateFilledStl && (
                       <>
+                        {/* 2026-06-08: Two-Phase가 기본값으로 변경됨 */}
                         <button
                           type="button"
                           className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
                             twoPhasing || regenerating || isUploading
                               ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                              : "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
                           }`}
                           disabled={twoPhasing || regenerating || isUploading}
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            void onTwoPhase();
+                            void onRegenerateNc();
                           }}
-                          aria-label="2-phase"
-                          title="2-phase"
+                          aria-label="NC 재생성 (Two-Phase 기본)"
+                          title="NC 재생성 (Two-Phase 기본)"
                         >
                           <span
                             className={
@@ -998,6 +1075,7 @@ export const PreviewModal = ({
                           </span>
                         </button>
 
+                        {/* One-Phase 옵션 (명시적 요청 시에만 사용) */}
                         <button
                           type="button"
                           className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
@@ -1009,16 +1087,20 @@ export const PreviewModal = ({
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            void onRegenerate();
+                            void onOnePhase();
                           }}
-                          aria-label="재생성"
-                          title="재생성"
+                          aria-label="NC 재생성 (One-Phase)"
+                          title="NC 재생성 (One-Phase)"
                         >
-                          <RefreshCw
+                          <span
                             className={
-                              regenerating ? "h-4 w-4 animate-spin" : "h-4 w-4"
+                              regenerating
+                                ? "h-4 w-4 animate-spin"
+                                : "text-[12px] font-semibold"
                             }
-                          />
+                          >
+                            {regenerating ? "…" : "1P"}
+                          </span>
                         </button>
                       </>
                     )}
