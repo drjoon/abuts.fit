@@ -31,15 +31,15 @@ namespace DentalAddin
             bool onePhaseEnabled = IsOnePhaseEnabled();
             bool roughSplitEnabled = IsRoughSplitEnabled();
             bool prcHasRoughSplit = HasRoughSplitMarkers();
-            
+
             // One-Phase가 명시적으로 요청되지 않으면 Two-Phase가 기본값
             bool twoPhaseMode = !onePhaseEnabled && (roughSplitEnabled || prcHasRoughSplit || RoughType == 2.0 || RoughType == 3.0);
-            
+
             // 명시적 One-Phase 요청 시에만 기존 단일 단계 방식 사용
             if (onePhaseEnabled)
             {
                 DentalLogger.Log($"OperationSeq - OnePhase 명시 실행: 기존 단일 단계 순서로 실행 (RoughType={RoughType})");
-                
+
                 ValidateBeforeOperation("CustomCycle", Array.Empty<string>(), Array.Empty<string>());
                 CustomCycle();
 
@@ -686,14 +686,14 @@ namespace DentalAddin
                                 if (twoPhaseLeftSide)
                                 {
                                     double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
-                                    // Turn_A: finishline보다 0.5mm 왼쪽에서 종료
-                                    effectiveSplitX = Math.Min(twoPhaseSplitX - 0.5, xMax - 1e-6);
+                                    // Turn_A: finishline보다 1.5mm 오른쪽에서 종료
+                                    effectiveSplitX = Math.Min(twoPhaseSplitX + 1.5, xMax - 1e-6);
                                 }
                                 else
                                 {
                                     double xMin = Math.Min(0.0, Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX));
-                                    // Turn_B: finishline보다 2.5mm 왼쪽에서 시작
-                                    effectiveSplitX = Math.Max(twoPhaseSplitX - 2.5, xMin + 1e-6);
+                                    // Turn_B: finishline보다 0.5mm 왼쪽에서 시작
+                                    effectiveSplitX = Math.Max(twoPhaseSplitX - 0.5, xMin + 1e-6);
                                 }
                             }
                             catch { }

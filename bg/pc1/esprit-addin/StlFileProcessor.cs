@@ -1113,8 +1113,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         stepIncrement = 0.2;
                         break;
                     case "deep":
-                                            stepIncrement = 0.3;
-                                            break;
+                        stepIncrement = 0.25;
+                        break;
                 }
 
                 if (!stepIncrement.HasValue)
