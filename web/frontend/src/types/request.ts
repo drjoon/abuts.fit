@@ -281,6 +281,10 @@ export interface RequestBase {
   };
 
   shippingPackageId?: string;
+  source?: "normal" | "manufacturer_sample" | string;
+  rnd?: {
+    doneAt?: string | null;
+  };
   shippingCreditMeta?: {
     insufficient?: boolean;
     required?: number | null;

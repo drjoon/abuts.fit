@@ -20,6 +20,7 @@ export const {
   getMyRequests,
   getRequestById,
   updateRequest,
+  updateRndDoneStatus,
   updateRequestStatus,
   deleteRequest,
   updateReviewStatusByStage,

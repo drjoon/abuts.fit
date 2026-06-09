@@ -307,6 +307,86 @@ export const PackingPageContent = ({
     [handleDeleteStageFile, handleUpdateReviewStatus],
   );
 
+  const handleCardDelete = useCallback(
+    async (req: ManufacturerRequest) => {
+      if (!req?._id) return;
+      const isSample =
+        String(req.source || "").trim() === "manufacturer_sample";
+      if (!isSample) {
+        toast({
+          title: "삭제 불가",
+          description: "R&D 샘플만 삭제할 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      try {
+        const res = await fetch(`/api/requests/${req._id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "삭제에 실패했습니다.");
+        }
+        toast({
+          title: "삭제 완료",
+          description: `의뢰 ${req.requestId}가 삭제되었습니다.`,
+        });
+        void fetchRequests();
+      } catch (e: any) {
+        toast({
+          title: "삭제 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+      }
+    },
+    [fetchRequests, toast, token],
+  );
+
+  const handleCardDone = useCallback(
+    async (req: ManufacturerRequest) => {
+      if (!req?._id) return;
+      const isSample =
+        String(req.source || "").trim() === "manufacturer_sample";
+      if (!isSample) {
+        toast({
+          title: "Done 불가",
+          description: "R&D 샘플만 Done 처리할 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      try {
+        const res = await fetch(`/api/requests/${req._id}/rnd-done`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ done: true }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "Done 처리에 실패했습니다.");
+        }
+        toast({
+          title: "Done 완료",
+          description: `의뢰 ${req.requestId}가 R&D 탭으로 이동되었습니다.`,
+        });
+        void fetchRequests();
+      } catch (e: any) {
+        toast({
+          title: "Done 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+      }
+    },
+    [fetchRequests, toast, token],
+  );
+
   const handleTogglePackingRequest = useCallback((req: ManufacturerRequest) => {
     const id = String(req._id || "").trim();
     if (!id) return;
@@ -933,6 +1013,8 @@ export const PackingPageContent = ({
               onDeleteNc={handleDeleteNc}
               onRollback={handleCardRollback}
               onApprove={handleCardApprove}
+              onDelete={handleCardDelete}
+              onDone={handleCardDone}
               onUploadNc={handleUploadByStage}
               uploadProgress={uploadProgress}
               isCamStage={false}

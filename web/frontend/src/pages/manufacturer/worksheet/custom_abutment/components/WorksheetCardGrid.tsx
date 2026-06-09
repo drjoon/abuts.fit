@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, ArrowRight, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, X } from "lucide-react";
 import { formatImplantDisplay } from "@/utils/implant";
 import { generateModelNumber } from "@/utils/modelNumber";
 import {
@@ -26,6 +26,7 @@ type WorksheetCardGridProps = {
   onRollback?: (req: ManufacturerRequest) => void;
   onApprove?: (req: ManufacturerRequest) => void;
   onDelete?: (req: ManufacturerRequest) => void;
+  onDone?: (req: ManufacturerRequest) => void;
   onUploadNc?: (req: ManufacturerRequest, files: File[]) => Promise<void>;
   uploadProgress: Record<string, number>;
   isCamStage: boolean;
@@ -51,6 +52,7 @@ export const WorksheetCardGrid = ({
   onRollback,
   onApprove,
   onDelete,
+  onDone,
   onUploadNc,
   uploadProgress,
   uploading,
@@ -236,6 +238,7 @@ export const WorksheetCardGrid = ({
           caseInfos.rollbackCounts?.machining || 0,
         );
         const canRollback =
+          tabStage === "rnd" ||
           stageForRollback === "추적관리" ||
           stageForRollback !== "의뢰" ||
           rollbackCountFromRequest > 0 ||
@@ -532,6 +535,21 @@ export const WorksheetCardGrid = ({
                   title="R&D 샘플 삭제"
                 >
                   <X className="h-4 w-4" />
+                </button>
+              )}
+              {onDone && isSampleRequest && !request.rnd?.doneAt && (
+                <button
+                  type="button"
+                  className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-blue-600 shadow-sm transition hover:bg-blue-50"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onDone(request);
+                  }}
+                  aria-label="완료"
+                  title="R&D 보관 완료"
+                >
+                  <Check className="h-4 w-4" />
                 </button>
               )}
               {onApprove && !isCompletedForCurrentStage && (

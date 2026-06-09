@@ -102,6 +102,16 @@ export function filterRequestsByStage(
     }
   };
 
+  if (tabStage === "rnd") {
+    return requests.filter((req) => {
+      if (!passExternalFilter(req)) return false;
+      return (
+        String(req.source || "").trim() === "manufacturer_sample" &&
+        Boolean(req.rnd?.doneAt)
+      );
+    });
+  }
+
   if (showCompleted) {
     if (tabStage === "tracking") {
       return requests.filter((req) => {

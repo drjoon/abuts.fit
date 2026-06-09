@@ -353,6 +353,22 @@ const requestSchema = new mongoose.Schema(
       default: "normal",
       index: true,
     },
+    rnd: {
+      doneAt: {
+        type: Date,
+        default: null,
+        index: true,
+      },
+      doneBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      doneFromStage: {
+        type: String,
+        default: null,
+      },
+    },
 
     manufacturerStage: {
       type: String,

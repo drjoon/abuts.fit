@@ -1,5 +1,6 @@
 import { useMemo, useEffect, useCallback, type ReactNode } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Button } from "@/components/ui/button";
 import { type DiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
@@ -55,6 +56,7 @@ export const RequestPage = ({
   showQueueBar?: boolean;
   filterRequests?: (req: ManufacturerRequest) => boolean;
 }) => {
+  const queryClient = useQueryClient();
   const { user, token } = useAuthStore();
   const { worksheetSearch, showCompleted } = useOutletContext<{
     worksheetSearch: string;
@@ -117,6 +119,7 @@ export const RequestPage = ({
           if (tabStage === "shipping")
             return showCompleted ? ["포장.발송", "추적관리"] : ["포장.발송"];
           if (tabStage === "tracking") return ["추적관리"];
+          if (tabStage === "rnd") return [] as string[];
           return [] as string[];
         })();
 
@@ -127,6 +130,12 @@ export const RequestPage = ({
           url.searchParams.set("view", "worksheet");
           if (tabStage === "shipping") {
             url.searchParams.set("worksheetProfile", "shipping");
+          }
+          if (tabStage === "rnd") {
+            url.searchParams.set("source", "manufacturer_sample");
+            url.searchParams.set("rndDone", "1");
+          } else {
+            url.searchParams.set("rndDone", "0");
           }
           url.searchParams.set("includeTotal", append ? "0" : "1");
           if (tabStage === "shipping" || tabStage === "tracking") {
@@ -278,11 +287,13 @@ export const RequestPage = ({
     ? "가공"
     : isCamStage
       ? "CAM"
-      : tabStage === "shipping"
-        ? "포장.발송"
-        : tabStage === "tracking"
-          ? "추적관리"
-          : "의뢰";
+      : tabStage === "rnd"
+        ? "추적관리"
+        : tabStage === "shipping"
+          ? "포장.발송"
+          : tabStage === "tracking"
+            ? "추적관리"
+            : "의뢰";
   const currentStageOrder = stageOrder[currentStageForTab] ?? 0;
 
   const matchesCurrentPage = useCallback(
@@ -311,6 +322,12 @@ export const RequestPage = ({
       }
       if (tabStage === "tracking") {
         return stage === "추적관리";
+      }
+      if (tabStage === "rnd") {
+        return (
+          String(req.source || "").trim() === "manufacturer_sample" &&
+          Boolean(req.rnd?.doneAt)
+        );
       }
       return true;
     },
@@ -489,12 +506,102 @@ export const RequestPage = ({
     [token, toast, reloadRequests],
   );
 
+  const handleCardDone = useCallback(
+    async (req: ManufacturerRequest) => {
+      if (!req?._id) return;
+      const isSample =
+        String(req.source || "").trim() === "manufacturer_sample";
+      if (!isSample) {
+        toast({
+          title: "Done 불가",
+          description: "R&D 샘플만 Done 처리할 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      try {
+        const res = await fetch(`/api/requests/${req._id}/rnd-done`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ done: true }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "Done 처리에 실패했습니다.");
+        }
+        toast({
+          title: "Done 완료",
+          description: `의뢰 ${req.requestId}가 R&D 탭으로 이동되었습니다.`,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["worksheet-assigned-summary"],
+        });
+        void reloadRequests();
+      } catch (e: any) {
+        toast({
+          title: "Done 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+      }
+    },
+    [queryClient, reloadRequests, toast, token],
+  );
+
+  const handleCardRollbackForTab = useCallback(
+    async (req: ManufacturerRequest) => {
+      if (tabStage !== "rnd") {
+        return handleCardRollback(req);
+      }
+      if (!req?._id) return;
+      try {
+        const res = await fetch(`/api/requests/${req._id}/rnd-done`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ done: false }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "R&D 롤백에 실패했습니다.");
+        }
+        const restoredStage = String(data?.data?.restoredStage || "").trim();
+        const restoredStageLabel = (() => {
+          if (restoredStage === "세척.패킹") return "세척·패킹";
+          if (restoredStage === "포장.발송") return "포장·발송";
+          return restoredStage || "원래 위치";
+        })();
+        toast({
+          title: "롤백 완료",
+          description: `의뢰 ${req.requestId}가 ${restoredStageLabel} 탭으로 복귀되었습니다.`,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["worksheet-assigned-summary"],
+        });
+        void reloadRequests();
+      } catch (e: any) {
+        toast({
+          title: "롤백 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+      }
+    },
+    [handleCardRollback, queryClient, reloadRequests, tabStage, toast, token],
+  );
+
   const enableCardRollback =
     tabStage === "cam" ||
     tabStage === "machining" ||
     tabStage === "packing" ||
     tabStage === "shipping" ||
-    tabStage === "tracking";
+    tabStage === "tracking" ||
+    tabStage === "rnd";
 
   const enableCardApprove =
     tabStage === "cam" ||
@@ -774,10 +881,11 @@ export const RequestPage = ({
                   onDeleteCam={handleDeleteCam}
                   onDeleteNc={handleDeleteNc}
                   onRollback={
-                    enableCardRollback ? handleCardRollback : undefined
+                    enableCardRollback ? handleCardRollbackForTab : undefined
                   }
                   onApprove={enableCardApprove ? handleCardApprove : undefined}
                   onDelete={handleCardDelete}
+                  onDone={handleCardDone}
                   onUploadNc={handleUploadNc}
                   uploadProgress={pageState.uploadProgress}
                   uploading={pageState.uploading}

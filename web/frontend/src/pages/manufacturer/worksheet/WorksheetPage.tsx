@@ -61,6 +61,16 @@ export const ManufacturerWorksheetPage = () => {
           return <ShippingPage />;
         case "tracking":
           return <TrackingInquiryPage />;
+        case "rnd":
+          return (
+            <RequestPage
+              showQueueBar={true}
+              filterRequests={(req) =>
+                String(req.source || "").trim() === "manufacturer_sample" &&
+                Boolean(req.rnd?.doneAt)
+              }
+            />
+          );
         default:
           return (
             <RequestPage

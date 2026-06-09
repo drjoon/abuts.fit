@@ -305,6 +305,13 @@ router.patch(
   requestController.updateReviewStatusByStage,
 );
 
+router.patch(
+  "/:id/rnd-done",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.updateRndDoneStatus,
+);
+
 // 제조사/관리자: CNC 이벤트 조회 (의뢰 단위)
 router.get(
   "/:requestId/cnc-events",

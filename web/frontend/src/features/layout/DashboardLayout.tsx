@@ -970,7 +970,8 @@ export const DashboardLayout = () => {
                           <PeriodFilter value={period} onChange={setPeriod} />
                         </div>
 
-                        {worksheetType === "cnc" && (
+                        {(worksheetType === "cnc" ||
+                          worksheetType === "custom_abutment") && (
                           <>
                             <div className="hidden sm:block h-8 w-px bg-muted-foreground/60 flex-shrink-0" />
                             <div className="flex flex-wrap gap-1 text-xs flex-shrink-0">
@@ -1086,6 +1087,23 @@ export const DashboardLayout = () => {
                                 <span className="tabular-nums opacity-70">
                                   {wsSummary.trackingCount ?? 0} /
                                   {wsSummary.trackingBoxes ?? 0}
+                                </span>
+                              </Button>
+                              <Button
+                                variant={
+                                  worksheetStage === "rnd" ? "default" : "ghost"
+                                }
+                                size="sm"
+                                className="h-7 px-2 text-xs gap-1"
+                                onClick={() =>
+                                  navigate(
+                                    "/dashboard/worksheet?type=cnc&stage=rnd",
+                                  )
+                                }
+                              >
+                                <span>R&D</span>
+                                <span className="tabular-nums opacity-70">
+                                  {wsSummary.rndCount ?? 0}
                                 </span>
                               </Button>
                             </div>

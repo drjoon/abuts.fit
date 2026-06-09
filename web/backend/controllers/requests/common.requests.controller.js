@@ -510,6 +510,19 @@ export async function getAllRequests(req, res) {
         filter.manufacturerStage = { $in: values };
       }
     }
+    if (req.query.source) {
+      filter.source = String(req.query.source || "").trim();
+    }
+    if (req.query.rndDone !== undefined) {
+      const rndDoneRaw = String(req.query.rndDone || "")
+        .trim()
+        .toLowerCase();
+      if (rndDoneRaw === "1" || rndDoneRaw === "true") {
+        filter["rnd.doneAt"] = { $ne: null };
+      } else if (rndDoneRaw === "0" || rndDoneRaw === "false") {
+        filter["rnd.doneAt"] = null;
+      }
+    }
     if (req.query.implantType) filter.implantType = req.query.implantType;
 
     // 제조사: 같은 BusinessAnchor 조직 내 대표/직원이 의뢰 공유 + 취소 제외
@@ -550,6 +563,8 @@ export async function getAllRequests(req, res) {
       "businessAnchorId",
       "referenceIds",
       "source",
+      "rnd.doneAt",
+      "rnd.doneFromStage",
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
@@ -589,6 +604,8 @@ export async function getAllRequests(req, res) {
       "businessAnchorId",
       "referenceIds",
       "source",
+      "rnd.doneAt",
+      "rnd.doneFromStage",
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
@@ -608,6 +625,8 @@ export async function getAllRequests(req, res) {
       "businessAnchorId",
       "referenceIds",
       "source",
+      "rnd.doneAt",
+      "rnd.doneFromStage",
       "description",
       "caseInfos.clinicName",
       "caseInfos.patientName",
@@ -792,15 +811,7 @@ export async function getAllRequests(req, res) {
       String(req.query.includeTotal || "").toLowerCase() === "1" ||
       String(req.query.includeTotal || "").toLowerCase() === "true";
 
-    // 워크시트 상단 요약 총계는 R&D 샘플을 제외한다.
-    // 단, 카드 목록 자체는 기존처럼 샘플을 포함해 보여주기 위해
-    // 목록 조회 filter는 유지하고 total 집계에서만 별도 제외 조건을 적용한다.
-    let totalFilter = filter;
-    if (isWorksheetView) {
-      totalFilter = {
-        $and: [filter, { source: { $ne: "manufacturer_sample" } }],
-      };
-    }
+    const totalFilter = filter;
 
     const total = includeTotal
       ? await Request.countDocuments(totalFilter)
@@ -1108,6 +1119,86 @@ export async function updateRequest(req, res) {
     });
   }
 }
+
+export const updateRndDoneStatus = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const done = Boolean(req.body?.done);
+  const allowedStagesForRestore = [
+    "의뢰",
+    "CAM",
+    "가공",
+    "세척.패킹",
+    "포장.발송",
+    "추적관리",
+  ];
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({
+      success: false,
+      message: "유효하지 않은 의뢰 ID입니다.",
+    });
+  }
+
+  const request = await Request.findById(id);
+  if (!request) {
+    return res.status(404).json({
+      success: false,
+      message: "의뢰를 찾을 수 없습니다.",
+    });
+  }
+
+  if (String(request.source || "").trim() !== "manufacturer_sample") {
+    return res.status(400).json({
+      success: false,
+      message: "R&D 샘플 의뢰만 Done 처리할 수 있습니다.",
+    });
+  }
+
+  if (req.user.role === "manufacturer") {
+    const orgScope = await buildManufacturerOrgScopeFilter(req);
+    const allowed = await Request.exists({
+      _id: request._id,
+      ...orgScope,
+    });
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: "이 의뢰를 변경할 권한이 없습니다.",
+      });
+    }
+  }
+
+  const currentStage = String(request.manufacturerStage || "").trim();
+  request.rnd = {
+    ...(request.rnd || {}),
+    doneAt: done ? new Date() : null,
+    doneBy: done ? req.user._id : null,
+    doneFromStage: done
+      ? currentStage || null
+      : String(request.rnd?.doneFromStage || "").trim() || null,
+  };
+
+  let restoredStage = null;
+  if (!done) {
+    const restoreStage = String(request.rnd?.doneFromStage || "").trim();
+    if (restoreStage && allowedStagesForRestore.includes(restoreStage)) {
+      request.manufacturerStage = restoreStage;
+      restoredStage = restoreStage;
+    }
+    request.rnd.doneFromStage = null;
+  }
+
+  await request.save();
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      requestId: request.requestId,
+      doneAt: request.rnd?.doneAt || null,
+      restoredStage,
+    },
+  });
+});
 
 export async function updateRequestStatus(req, res) {
   try {

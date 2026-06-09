@@ -220,10 +220,9 @@ export async function getAssignedDashboardSummary(req, res) {
 
     // 제조사 대시보드: 해당 제조사에게 할당된 의뢰건을 조회
     // 취소 건수도 집계해야 하므로 manufacturerStage 필터 제거
-    // R&D 샘플은 카운트에서 제외 (메인 의뢰건과 별도 관리)
+    // 워크시트 상단 카운트와 일치하도록 R&D 샘플도 포함
     const baseFilter = {
       "caseInfos.implantBrand": { $exists: true, $ne: "" },
-      source: { $ne: "manufacturer_sample" },
     };
 
     // 제조사 역할일 때: 같은 BusinessAnchor 조직 전체 범위로 필터링
@@ -324,6 +323,15 @@ export async function getAssignedDashboardSummary(req, res) {
       },
     ]);
 
+    const rndCount = await Request.countDocuments({
+      ...dateFilter,
+      source: "manufacturer_sample",
+      "rnd.doneAt": { $ne: null },
+      ...(role === "manufacturer"
+        ? await buildManufacturerOrgScopeFilter(req)
+        : {}),
+    });
+
     // compute unique package counts for shipping/tracking boxes within the same filter
     try {
       const docs = await Request.find({
@@ -360,6 +368,7 @@ export async function getAssignedDashboardSummary(req, res) {
           packingCount: Number(statsResult?.packingCount ?? 0) || 0,
           shippingCount: Number(statsResult?.shippingCount ?? 0) || 0,
           shippingBoxes: shippingPackageIds.size,
+          rndCount,
         },
       });
     } catch (e) {
@@ -375,6 +384,7 @@ export async function getAssignedDashboardSummary(req, res) {
           machiningCount: Number(statsResult?.machiningCount ?? 0) || 0,
           packingCount: Number(statsResult?.packingCount ?? 0) || 0,
           shippingCount: Number(statsResult?.shippingCount ?? 0) || 0,
+          rndCount,
         },
       });
     }
