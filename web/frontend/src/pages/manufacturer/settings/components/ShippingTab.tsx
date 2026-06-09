@@ -152,7 +152,6 @@ export const ManufacturerShippingTab = ({ userData }: ShippingTabProps) => {
         method: "PUT",
         token,
         jsonBody: {
-          businessType,
           shippingPolicy: {
             leadTimes,
           },

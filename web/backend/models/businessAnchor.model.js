@@ -94,6 +94,24 @@ const businessAnchorSchema = new mongoose.Schema(
         default: [],
         enum: ["mon", "tue", "wed", "thu", "fri"],
       },
+      leadTimes: {
+        d6: {
+          minBusinessDays: { type: Number, default: 1, min: 0 },
+          maxBusinessDays: { type: Number, default: 2, min: 0 },
+        },
+        d8: {
+          minBusinessDays: { type: Number, default: 1, min: 0 },
+          maxBusinessDays: { type: Number, default: 2, min: 0 },
+        },
+        d10: {
+          minBusinessDays: { type: Number, default: 4, min: 0 },
+          maxBusinessDays: { type: Number, default: 7, min: 0 },
+        },
+        d12: {
+          minBusinessDays: { type: Number, default: 4, min: 0 },
+          maxBusinessDays: { type: Number, default: 7, min: 0 },
+        },
+      },
       updatedAt: { type: Date, default: null },
     },
     referralMembershipAggregate: {
