@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { generateModelNumber } from "@/utils/modelNumber";
@@ -44,6 +45,7 @@ export const PackingPageContent = ({
 }: {
   showQueueBar?: boolean;
 }) => {
+  const queryClient = useQueryClient();
   const { user, token } = useAuthStore();
   const { worksheetSearch, showCompleted } = useOutletContext<{
     worksheetSearch: string;
@@ -176,6 +178,10 @@ export const PackingPageContent = ({
 
   const matchesCurrentPage = useCallback(
     (req: ManufacturerRequest) => {
+      const isDoneRndSample =
+        String(req.source || "").trim() === "manufacturer_sample" &&
+        Boolean(req.rnd?.doneAt);
+      if (isDoneRndSample) return false;
       if (showCompleted) {
         return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
       }
@@ -333,6 +339,13 @@ export const PackingPageContent = ({
           title: "삭제 완료",
           description: `의뢰 ${req.requestId}가 삭제되었습니다.`,
         });
+        void queryClient.invalidateQueries({
+          queryKey: ["worksheet-assigned-summary"],
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["worksheet-assigned-summary"],
+          type: "active",
+        });
         void fetchRequests();
       } catch (e: any) {
         toast({
@@ -342,7 +355,7 @@ export const PackingPageContent = ({
         });
       }
     },
-    [fetchRequests, toast, token],
+    [fetchRequests, queryClient, toast, token],
   );
 
   const handleCardDone = useCallback(
@@ -375,6 +388,30 @@ export const PackingPageContent = ({
           title: "Done 완료",
           description: `의뢰 ${req.requestId}가 R&D 탭으로 이동되었습니다.`,
         });
+
+        // 즉시 반영: packing 목록에서 숨김
+        setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "") !== String(req._id || "")) return item;
+            return {
+              ...item,
+              rnd: {
+                ...(item.rnd || {}),
+                doneAt: new Date().toISOString(),
+                doneFromStage:
+                  String(item.manufacturerStage || "").trim() || null,
+              },
+            };
+          }),
+        );
+
+        void queryClient.invalidateQueries({
+          queryKey: ["worksheet-assigned-summary"],
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["worksheet-assigned-summary"],
+          type: "active",
+        });
         void fetchRequests();
       } catch (e: any) {
         toast({
@@ -384,7 +421,7 @@ export const PackingPageContent = ({
         });
       }
     },
-    [fetchRequests, toast, token],
+    [fetchRequests, queryClient, setRequests, toast, token],
   );
 
   const handleTogglePackingRequest = useCallback((req: ManufacturerRequest) => {
@@ -437,6 +474,10 @@ export const PackingPageContent = ({
       const latestList = Array.isArray(refreshed) ? refreshed : requests;
       const latestFilteredAndSorted = latestList
         .filter((req) => {
+          const isDoneRndSample =
+            String(req.source || "").trim() === "manufacturer_sample" &&
+            Boolean(req.rnd?.doneAt);
+          if (isDoneRndSample) return false;
           if (showCompleted) {
             return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
           }

@@ -93,6 +93,10 @@ export function filterRequestsByStage(
   currentStageOrder: number,
   filterRequests?: (req: ManufacturerRequest) => boolean,
 ): ManufacturerRequest[] {
+  const isDoneRndSample = (req: ManufacturerRequest) =>
+    String(req.source || "").trim() === "manufacturer_sample" &&
+    Boolean(req.rnd?.doneAt);
+
   const passExternalFilter = (req: ManufacturerRequest) => {
     if (!filterRequests) return true;
     try {
@@ -105,10 +109,7 @@ export function filterRequestsByStage(
   if (tabStage === "rnd") {
     return requests.filter((req) => {
       if (!passExternalFilter(req)) return false;
-      return (
-        String(req.source || "").trim() === "manufacturer_sample" &&
-        Boolean(req.rnd?.doneAt)
-      );
+      return isDoneRndSample(req);
     });
   }
 
@@ -122,6 +123,7 @@ export function filterRequestsByStage(
 
     return requests.filter((req) => {
       if (!passExternalFilter(req)) return false;
+      if (isDoneRndSample(req)) return false;
       if (tabStage === "shipping" && isPrePickupShippingVisible(req))
         return true;
       return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
@@ -130,6 +132,7 @@ export function filterRequestsByStage(
 
   return requests.filter((req) => {
     if (!passExternalFilter(req)) return false;
+    if (isDoneRndSample(req)) return false;
 
     const stage = deriveStageForFilter(req);
     if (tabStage === "request") return stage === "의뢰";

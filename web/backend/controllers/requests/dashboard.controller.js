@@ -250,6 +250,15 @@ export async function getAssignedDashboardSummary(req, res) {
                   branches: [
                     {
                       case: {
+                        $and: [
+                          { $eq: ["$source", "manufacturer_sample"] },
+                          { $ne: [{ $ifNull: ["$rnd.doneAt", null] }, null] },
+                        ],
+                      },
+                      then: "rnd",
+                    },
+                    {
+                      case: {
                         $in: ["$$stage", ["tracking", "추적관리"]],
                       },
                       then: "tracking",

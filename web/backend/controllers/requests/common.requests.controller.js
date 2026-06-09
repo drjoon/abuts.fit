@@ -1367,14 +1367,28 @@ export async function deleteRequest(req, res) {
       });
     }
 
-    // 권한 검증: 관리자이거나 같은 기공소(조직) 의뢰자, 또는 샘플 생성 제조사만 삭제 가능
+    const isAdmin = req.user.role === "admin";
+
+    // 권한 검증: 관리자이거나 같은 기공소(조직) 의뢰자, 또는
+    // R&D 샘플의 경우 같은 제조사 조직(임직원 포함)만 삭제 가능
     const isRequestor = await canAccessRequestAsRequestor(req, request);
     const isSampleRequest = request.source === "manufacturer_sample";
-    const isSampleCreator =
-      isSampleRequest &&
-      String(request.caManufacturer || "") === String(req.user._id || "");
 
-    if (req.user.role !== "admin" && !isRequestor && !isSampleCreator) {
+    let isSampleManufacturerOrgMember = false;
+    if (isSampleRequest && req.user.role === "manufacturer") {
+      const orgScope = await buildManufacturerOrgScopeFilter(req);
+      const allowed = await Request.exists({
+        _id: request._id,
+        ...orgScope,
+      });
+      isSampleManufacturerOrgMember = Boolean(allowed);
+    }
+
+    if (
+      !isAdmin &&
+      !isRequestor &&
+      !(isSampleRequest && isSampleManufacturerOrgMember)
+    ) {
       return res.status(403).json({
         success: false,
         message: "이 의뢰를 삭제할 권한이 없습니다.",
@@ -1382,12 +1396,10 @@ export async function deleteRequest(req, res) {
     }
 
     // 단계 검증: 관리자면 가공(machining) 단계 이전까지, 의뢰자면 의뢰/CAM 단계까지만 허용
-    // R&D 샘플은 생성한 제조사가 언제든 삭제 가능
     const stageStatus = String(request.manufacturerStage || "");
-    const isAdmin = req.user.role === "admin";
 
-    // R&D 샘플은 완전 삭제 (취소 상태로 변경하지 않고 DB에서 제거)
-    if (isSampleCreator) {
+    // R&D 샘플은 제조사 조직 임직원/관리자가 완전 삭제
+    if (isSampleRequest && (isAdmin || isSampleManufacturerOrgMember)) {
       await Request.findByIdAndDelete(request._id);
 
       console.log("[deleteRequest] R&D 샘플 완전 삭제", {

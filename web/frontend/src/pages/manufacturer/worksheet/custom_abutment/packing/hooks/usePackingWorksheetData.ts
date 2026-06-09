@@ -54,6 +54,8 @@ export const usePackingWorksheetData = ({
           url.searchParams.set("limit", String(PAGE_LIMIT));
           url.searchParams.set("view", "worksheet");
           url.searchParams.set("includeTotal", append ? "0" : "1");
+          // R&D Done 샘플은 packing 목록에서 제외 (R&D 탭 전용)
+          url.searchParams.set("rndDone", "0");
           if (stageFilterForTab.length === 1) {
             url.searchParams.set("manufacturerStage", stageFilterForTab[0]);
           } else {
@@ -175,12 +177,21 @@ export const usePackingWorksheetData = ({
   const currentStageOrder = stageOrder[currentStageForTab] ?? 0;
 
   const filteredBase = useMemo(() => {
+    const isDoneRndSample = (req: ManufacturerRequest) =>
+      String(req.source || "").trim() === "manufacturer_sample" &&
+      Boolean(req.rnd?.doneAt);
+
     if (showCompleted) {
-      return requests.filter((req) =>
-        shouldShowRequestInIncludeCompleted(req, currentStageOrder),
+      return requests.filter(
+        (req) =>
+          !isDoneRndSample(req) &&
+          shouldShowRequestInIncludeCompleted(req, currentStageOrder),
       );
     }
-    return requests.filter((req) => deriveStageForFilter(req) === "세척.패킹");
+    return requests.filter(
+      (req) =>
+        !isDoneRndSample(req) && deriveStageForFilter(req) === "세척.패킹",
+    );
   }, [currentStageOrder, requests, showCompleted]);
 
   const filteredAndSorted = useMemo(() => {

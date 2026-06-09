@@ -301,6 +301,17 @@ export const RequestPage = ({
       if (filterRequests) {
         return filterRequests(req);
       }
+
+      const isDoneRndSample =
+        String(req.source || "").trim() === "manufacturer_sample" &&
+        Boolean(req.rnd?.doneAt);
+      if (tabStage === "rnd") {
+        return isDoneRndSample;
+      }
+      if (isDoneRndSample) {
+        return false;
+      }
+
       if (showCompleted && tabStage !== "tracking") {
         return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
       }
@@ -322,12 +333,6 @@ export const RequestPage = ({
       }
       if (tabStage === "tracking") {
         return stage === "추적관리";
-      }
-      if (tabStage === "rnd") {
-        return (
-          String(req.source || "").trim() === "manufacturer_sample" &&
-          Boolean(req.rnd?.doneAt)
-        );
       }
       return true;
     },
@@ -493,6 +498,13 @@ export const RequestPage = ({
           title: "삭제 완료",
           description: `의뢰 ${req.requestId}가 삭제되었습니다.`,
         });
+        void queryClient.invalidateQueries({
+          queryKey: ["worksheet-assigned-summary"],
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["worksheet-assigned-summary"],
+          type: "active",
+        });
         // 목록 갱신
         void reloadRequests();
       } catch (e: any) {
@@ -503,7 +515,7 @@ export const RequestPage = ({
         });
       }
     },
-    [token, toast, reloadRequests],
+    [queryClient, token, toast, reloadRequests],
   );
 
   const handleCardDone = useCallback(
@@ -536,8 +548,29 @@ export const RequestPage = ({
           title: "Done 완료",
           description: `의뢰 ${req.requestId}가 R&D 탭으로 이동되었습니다.`,
         });
+
+        // 즉시 UI 반영: 현재 탭에서는 숨겨지고 R&D 탭에서 보이도록 로컬 상태 갱신
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "") !== String(req._id || "")) return item;
+            return {
+              ...item,
+              rnd: {
+                ...(item.rnd || {}),
+                doneAt: new Date().toISOString(),
+                doneFromStage:
+                  String(item.manufacturerStage || "").trim() || null,
+              },
+            };
+          }),
+        );
+
         void queryClient.invalidateQueries({
           queryKey: ["worksheet-assigned-summary"],
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["worksheet-assigned-summary"],
+          type: "active",
         });
         void reloadRequests();
       } catch (e: any) {
@@ -548,7 +581,7 @@ export const RequestPage = ({
         });
       }
     },
-    [queryClient, reloadRequests, toast, token],
+    [pageState, queryClient, reloadRequests, toast, token],
   );
 
   const handleCardRollbackForTab = useCallback(
@@ -582,6 +615,10 @@ export const RequestPage = ({
         });
         void queryClient.invalidateQueries({
           queryKey: ["worksheet-assigned-summary"],
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["worksheet-assigned-summary"],
+          type: "active",
         });
         void reloadRequests();
       } catch (e: any) {
