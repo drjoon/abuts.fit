@@ -93,6 +93,12 @@ const getRoleBadgeVariant = (role: string) => {
   }
 };
 
+const getRequestorSalesmanSwapRole = (role: string) => {
+  if (role === "requestor") return "salesman";
+  if (role === "salesman") return "requestor";
+  return null;
+};
+
 type UiUserStatus = "active" | "pending" | "inactive" | "suspended";
 
 const PAGE_LIMIT = 20;
@@ -633,6 +639,34 @@ export const AdminUserManagement = () => {
     [toast, token],
   );
 
+  const swapRequestorSalesmanRole = useCallback(
+    async (targetUser: UiUserRow) => {
+      const nextRole = getRequestorSalesmanSwapRole(targetUser.role);
+      if (!nextRole) {
+        toast({
+          title: "역할 변경 불가",
+          description: "의뢰자/영업자 계정만 서로 전환할 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const ok = await changeUserRole(targetUser.id, nextRole);
+      if (!ok) return;
+
+      toast({
+        title: "역할 변경 완료",
+        description: `${getDisplayUserName(targetUser)}님의 역할이 ${getRoleLabel(nextRole)}로 변경되었습니다.`,
+      });
+
+      await fetchUsers();
+      if (selectedUserId === targetUser.id) {
+        await fetchUserDetail(targetUser.id);
+      }
+    },
+    [changeUserRole, fetchUserDetail, fetchUsers, selectedUserId, toast],
+  );
+
   const totalUsers = totalCount || sourceUsers.length;
   const totalRequestor = sourceUsers.filter(
     (u) => u.role === "requestor",
@@ -951,6 +985,19 @@ export const AdminUserManagement = () => {
                           <Eye className="mr-2 h-4 w-4" />
                           상세보기
                         </DropdownMenuItem>
+                        {getRequestorSalesmanSwapRole(user.role) && (
+                          <DropdownMenuItem
+                            onClick={() => {
+                              void swapRequestorSalesmanRole(user);
+                            }}
+                          >
+                            <UserCheck className="mr-2 h-4 w-4" />
+                            {getRoleLabel(
+                              getRequestorSalesmanSwapRole(user.role) || "",
+                            )}
+                            로 변경
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           className="text-destructive focus:text-destructive"
                           onClick={() => {
@@ -1304,6 +1351,23 @@ export const AdminUserManagement = () => {
                           ? "비활성화"
                           : "활성화"}
                       </Button>
+
+                      {getRequestorSalesmanSwapRole(selectedUser.role) && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={loadingDetail}
+                          onClick={() => {
+                            void swapRequestorSalesmanRole(selectedUser);
+                          }}
+                        >
+                          {getRoleLabel(
+                            getRequestorSalesmanSwapRole(selectedUser.role) ||
+                              "",
+                          )}
+                          로 변경
+                        </Button>
+                      )}
 
                       <Select
                         value={selectedUser.role}
