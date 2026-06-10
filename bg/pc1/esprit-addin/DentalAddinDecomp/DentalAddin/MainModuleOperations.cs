@@ -693,7 +693,7 @@ namespace DentalAddin
                                 {
                                     double xMin = Math.Min(0.0, Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX));
                                     // Turn_B: finishline보다 0.5mm 왼쪽에서 시작
-                                    effectiveSplitX = Math.Max(twoPhaseSplitX - 0.5, xMin + 1e-6);
+                                    effectiveSplitX = Math.Max(twoPhaseSplitX + 0.5, xMin + 1e-6);
                                 }
                             }
                             catch { }
