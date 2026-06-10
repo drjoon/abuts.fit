@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
@@ -64,6 +65,7 @@ export const useRequestFileHandlers = ({
   setSearchParams,
   decodeNcText,
 }: UseRequestFileHandlersProps) => {
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const { uploadFiles } = useS3TempUpload({ token });
 
@@ -497,6 +499,14 @@ export const useRequestFileHandlers = ({
           // 필요 시 수동으로 탭 전환하도록 유지
         }
 
+        void queryClient.invalidateQueries({
+          queryKey: ["worksheet-assigned-summary"],
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["worksheet-assigned-summary"],
+          type: "active",
+        });
+
         if (!params.keepPreviewOpen) {
           setPreviewOpen(false);
         }
@@ -552,6 +562,7 @@ export const useRequestFileHandlers = ({
       setSearchParams,
       setPreviewOpen,
       setReviewSaving,
+      queryClient,
     ],
   );
 

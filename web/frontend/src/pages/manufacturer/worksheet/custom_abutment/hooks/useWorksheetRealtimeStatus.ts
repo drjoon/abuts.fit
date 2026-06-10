@@ -418,6 +418,9 @@ export function useWorksheetRealtimeStatus({
             | undefined;
           if (!eventRequest) return;
           setRequests((prev) => applyRequestPatch(prev, eventRequest));
+          void queryClient.invalidateQueries({
+            queryKey: ["worksheet-assigned-summary"],
+          });
           return;
         }
         case "request:delivery-updated-batch": {
@@ -435,6 +438,9 @@ export function useWorksheetRealtimeStatus({
               next = applyRequestPatch(next, eventRequest);
             }
             return next;
+          });
+          void queryClient.invalidateQueries({
+            queryKey: ["worksheet-assigned-summary"],
           });
           return;
         }
@@ -577,6 +583,9 @@ export function useWorksheetRealtimeStatus({
       }
 
       if (fetchRequests) void fetchRequests(true);
+      void queryClient.invalidateQueries({
+        queryKey: ["worksheet-assigned-summary"],
+      });
     });
 
     return () => {

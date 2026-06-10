@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
@@ -208,6 +208,7 @@ const getRoleBadgeVariant = (role: string) => {
 };
 
 export const DashboardLayout = () => {
+  const queryClient = useQueryClient();
   const { user, logout, token, loginWithToken } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
   const navigate = useNavigate();
@@ -440,6 +441,38 @@ export const DashboardLayout = () => {
       unsubscribe?.();
     };
   }, [fetchCreditBalance, token, user]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (!user) return;
+    if (user.role !== "manufacturer" && user.role !== "admin") return;
+
+    const shouldRefreshWorksheetSummary = (type: string) => {
+      return (
+        type === "request:stage-changed" ||
+        type === "request:delivery-updated" ||
+        type === "request:delivery-updated-batch" ||
+        type === "worksheet:count-update"
+      );
+    };
+
+    const unsubscribe = onAppEvent((evt) => {
+      const type = String(evt?.type || "").trim();
+      if (!shouldRefreshWorksheetSummary(type)) return;
+
+      void queryClient.invalidateQueries({
+        queryKey: ["worksheet-assigned-summary"],
+      });
+      void queryClient.refetchQueries({
+        queryKey: ["worksheet-assigned-summary"],
+        type: "active",
+      });
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [queryClient, token, user]);
 
   const isMockUser = Boolean((user as any)?.mockUserId);
 
