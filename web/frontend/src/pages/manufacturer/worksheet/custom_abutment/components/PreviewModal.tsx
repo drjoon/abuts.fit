@@ -427,81 +427,6 @@ export const PreviewModal = ({
     }
   };
 
-  // One-Phase NC 재생성 (명시적 요청 시에만 사용)
-  const onOnePhase = async () => {
-    if (!canRegenerateFilledStl) return;
-    if (!token) {
-      toast({
-        title: "실패",
-        description: "로그인이 필요합니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (regenerating || isUploading) return;
-
-    setRegenerating(true);
-    try {
-      const requestId = String(activeReq?.requestId || "").trim();
-      if (!requestId) {
-        toast({
-          title: "실패",
-          description: "requestId가 없어 One-Phase 요청을 진행할 수 없습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const res = await fetch(
-        `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate-onephase`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({}),
-        },
-      );
-      const body: any = await res.json().catch(() => ({}));
-      if (!res.ok || body?.success === false) {
-        const msg =
-          body?.message ||
-          body?.error ||
-          body?.detail ||
-          "One-Phase 요청에 실패했습니다.";
-        toast({
-          title: "One-Phase 실패",
-          description: msg,
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // NC 재생성 성공 시 캐시 무효화
-      const s3Key = activeReq?.caseInfos?.ncFile?.s3Key;
-      if (s3Key) {
-        await deleteCncProgramCache(s3Key);
-      }
-
-      toast({
-        title: "One-Phase 요청",
-        description: "One-Phase NC 재생성 요청을 전송했습니다.",
-      });
-
-      // 요청 성공 시 모달 닫기
-      onOpenChange(false);
-    } catch (err: any) {
-      toast({
-        title: "One-Phase 실패",
-        description: err?.message || "One-Phase 요청에 실패했습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setRegenerating(false);
-    }
-  };
-
   const onRegenerate = async () => {
     if (!canRegenerateFilledStl) return;
     if (!token) {
@@ -1046,63 +971,32 @@ export const PreviewModal = ({
                   </button>
                   <div className="flex items-center gap-2">
                     {canRegenerateFilledStl && (
-                      <>
-                        {/* 2026-06-08: Two-Phase가 기본값으로 변경됨 */}
-                        <button
-                          type="button"
-                          className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
-                            twoPhasing || regenerating || isUploading
-                              ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                              : "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
-                          }`}
-                          disabled={twoPhasing || regenerating || isUploading}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
+                      <button
+                        type="button"
+                        className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
+                          twoPhasing || regenerating || isUploading
+                            ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                            : "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                        }`}
+                        disabled={twoPhasing || regenerating || isUploading}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (isCamStage) {
                             void onRegenerateNc();
-                          }}
-                          aria-label="NC 재생성 (Two-Phase 기본)"
-                          title="NC 재생성 (Two-Phase 기본)"
-                        >
-                          <span
-                            className={
-                              twoPhasing
-                                ? "h-4 w-4 animate-spin"
-                                : "text-[12px] font-semibold"
-                            }
-                          >
-                            {twoPhasing ? "…" : "2P"}
-                          </span>
-                        </button>
-
-                        {/* One-Phase 옵션 (명시적 요청 시에만 사용) */}
-                        <button
-                          type="button"
-                          className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
-                            regenerating || isUploading
-                              ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                          }`}
-                          disabled={regenerating || isUploading}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            void onOnePhase();
-                          }}
-                          aria-label="NC 재생성 (One-Phase)"
-                          title="NC 재생성 (One-Phase)"
-                        >
-                          <span
-                            className={
-                              regenerating
-                                ? "h-4 w-4 animate-spin"
-                                : "text-[12px] font-semibold"
-                            }
-                          >
-                            {regenerating ? "…" : "1P"}
-                          </span>
-                        </button>
-                      </>
+                            return;
+                          }
+                          void onRegenerate();
+                        }}
+                        aria-label={
+                          isCamStage ? "NC 재생성" : "filled.stl 재생성"
+                        }
+                        title={isCamStage ? "NC 재생성" : "filled.stl 재생성"}
+                      >
+                        <RefreshCw
+                          className={`h-4 w-4 ${twoPhasing || regenerating ? "animate-spin" : ""}`}
+                        />
+                      </button>
                     )}
 
                     <button

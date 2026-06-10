@@ -147,6 +147,21 @@ export const processFileByName = asyncHandler(async (req, res) => {
         clear: true,
       });
     }
+
+    const status = Number(error?.response?.status || 0);
+    if (status === 403) {
+      throw new ApiError(
+        503,
+        "Rhino 서버에서 요청을 거부했습니다. RHINO_ALLOW_IPS 설정을 확인해주세요.",
+      );
+    }
+    if (status === 401) {
+      throw new ApiError(
+        503,
+        "Rhino 서버 인증에 실패했습니다. RHINO_SHARED_SECRET 설정을 확인해주세요.",
+      );
+    }
+
     throw error;
   }
 });
