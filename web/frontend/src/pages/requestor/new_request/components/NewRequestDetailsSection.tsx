@@ -932,10 +932,10 @@ export function NewRequestDetailsSection({
                           <div className="mb-2 text-xs font-semibold text-slate-600">
                             유지홈 옵션 예시
                           </div>
-                          <div className="grid grid-cols-3 gap-4">
+                          <div className="grid grid-cols-2 gap-4">
                             <div className="rounded-md border border-slate-200 bg-white p-2.5">
                               <img
-                                src="/images/new-request/retention-groove-none.jpg"
+                                src="/images/new-request/retention-groove-none.jpeg"
                                 alt="유지홈 없음"
                                 className="h-52 w-full rounded-md border border-slate-200 bg-slate-50 p-1 object-cover object-top"
                               />
@@ -943,24 +943,15 @@ export function NewRequestDetailsSection({
                                 없음
                               </span>
                             </div>
+
                             <div className="rounded-md border border-slate-200 bg-white p-2.5">
                               <img
-                                src="/images/new-request/retention-groove-shallow.jpg"
-                                alt="유지홈 얕음"
+                                src="/images/new-request/retention-groove-exist.jpeg"
+                                alt="유지홈 있음"
                                 className="h-52 w-full rounded-md border border-slate-200 bg-slate-50 p-1 object-cover object-top"
                               />
                               <span className="mt-1.5 block text-center text-xs font-medium text-slate-600">
-                                얕음
-                              </span>
-                            </div>
-                            <div className="rounded-md border border-slate-200 bg-white p-2.5">
-                              <img
-                                src="/images/new-request/retention-groove-deep.jpg"
-                                alt="유지홈 깊음"
-                                className="h-52 w-full rounded-md border border-slate-200 bg-slate-50 p-1 object-cover object-top"
-                              />
-                              <span className="mt-1.5 block text-center text-xs font-medium text-slate-600">
-                                깊음
+                                있음
                               </span>
                             </div>
                           </div>
@@ -968,10 +959,14 @@ export function NewRequestDetailsSection({
                       </Tooltip>
                     </div>
                     <RadioGroup
-                      value={detailCaseInfos?.retentionGroove || "deep"}
+                      value={
+                        detailCaseInfos?.retentionGroove === "deep"
+                          ? "deep"
+                          : "none"
+                      }
                       onValueChange={(value) =>
                         setDetailCaseInfos({
-                          retentionGroove: value as "none" | "shallow" | "deep",
+                          retentionGroove: value as "none" | "deep",
                         })
                       }
                       className="flex items-center gap-10"
@@ -990,19 +985,7 @@ export function NewRequestDetailsSection({
                           없음
                         </Label>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem
-                          value="shallow"
-                          id="rg-shallow"
-                          className="border-slate-300 text-blue-600"
-                        />
-                        <Label
-                          htmlFor="rg-shallow"
-                          className="text-sm text-slate-700 cursor-pointer"
-                        >
-                          얕음
-                        </Label>
-                      </div>
+
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem
                           value="deep"
@@ -1013,7 +996,7 @@ export function NewRequestDetailsSection({
                           htmlFor="rg-deep"
                           className="text-sm text-slate-700 cursor-pointer"
                         >
-                          깊음
+                          있음
                         </Label>
                       </div>
                     </RadioGroup>

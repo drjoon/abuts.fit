@@ -8,6 +8,15 @@ import { ApiError } from "../../utils/ApiError.js";
 import { buildStandardStlFileName } from "./creation.helpers.controller.js";
 import { normalizeCaseInfosImplantFields } from "./utils.js";
 
+const normalizeRetentionGroove = (value) => {
+  const rg = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (rg === "deep") return "deep";
+  if (rg === "none" || rg === "shallow") return "none";
+  return "deep";
+};
+
 async function buildNormalizedDraftCaseInfos(caseInfosInput = []) {
   const incomingList = Array.isArray(caseInfosInput)
     ? caseInfosInput
@@ -20,6 +29,7 @@ async function buildNormalizedDraftCaseInfos(caseInfosInput = []) {
         ...(ci || {}),
         ...normalized,
         workType: ((ci && ci.workType) || "abutment").trim(),
+        retentionGroove: normalizeRetentionGroove(ci?.retentionGroove),
       };
     }),
   );
@@ -67,6 +77,7 @@ export const createDraft = asyncHandler(async (req, res) => {
         return {
           ...normalized,
           workType: (ci && ci.workType) || "abutment",
+          retentionGroove: normalizeRetentionGroove(ci?.retentionGroove),
         };
       }),
     ),
@@ -251,8 +262,8 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
     tiltAxisVector,
     frontPoint,
     workType,
-    // 유지홈(retentionGroove) — 파일 추가 시점에 프론트가 값을 보내면 보존.
-    // 미지정이면 schema default("deep") 적용 (rules.md §7.4.1)
+    // 유지홈(retentionGroove) — 2단계(없음/있음) 정규화.
+    // legacy shallow 입력은 none으로 처리.
     retentionGroove,
     shippingMode,
     requestedShipDate,
@@ -313,8 +324,8 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
     tiltAxisVector,
     frontPoint,
     workType,
-    // 유지홈 옵션 (rules.md §7.4.1)
-    retentionGroove,
+    // 유지홈 옵션 (없음/있음) — legacy shallow는 none으로 정규화
+    retentionGroove: normalizeRetentionGroove(retentionGroove),
     shippingMode: "normal", // 항상 묶음 배송
     requestedShipDate,
   });
@@ -427,8 +438,8 @@ export const addFilesToDraftBulk = asyncHandler(async (req, res) => {
         tiltAxisVector,
         frontPoint,
         workType,
-        // 유지홈 옵션 (rules.md §7.4.1)
-        retentionGroove,
+        // 유지홈 옵션 (없음/있음) — legacy shallow는 none으로 정규화
+        retentionGroove: normalizeRetentionGroove(retentionGroove),
         shippingMode: "normal", // 항상 묶음 배송
         requestedShipDate,
       };

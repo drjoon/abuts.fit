@@ -773,8 +773,8 @@ export const PreviewModal = ({
     ? ""
     : String(activeReq?.lotNumber?.value || "").trim();
 
-  // 유지홈(retentionGroove) 표시 - rules.md §7.4.1
-  // none=없음(0.1) / shallow=얕음(0.2) / deep=깊음(0.3)
+  // 유지홈(retentionGroove) 표시
+  // none=없음 / shallow=없음 / deep=있음
   const retentionGrooveLabel = (() => {
     const rg = (activeReq?.caseInfos as any)?.retentionGroove as
       | "none"
@@ -782,7 +782,7 @@ export const PreviewModal = ({
       | "deep"
       | undefined;
     if (!rg) return "";
-    return rg === "none" ? "없음" : rg === "shallow" ? "얕음" : "깊음";
+    return rg === "deep" ? "있음" : "없음";
   })();
 
   return (

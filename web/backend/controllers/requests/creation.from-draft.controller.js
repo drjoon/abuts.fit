@@ -35,6 +35,15 @@ const REQUEST_ID_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 const REQUEST_ID_SUFFIX_LEN = 8;
 const REQUEST_ID_MAX_TRIES = 8;
 
+const normalizeRetentionGroove = (value) => {
+  const rg = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (rg === "deep") return "deep";
+  if (rg === "none" || rg === "shallow") return "none";
+  return "deep";
+};
+
 const buildRequestIdPrefix = () => {
   // KST 기준 날짜
   const now = new Date();
@@ -318,10 +327,11 @@ export async function createRequestsFromDraft(req, res) {
           };
         }
 
-        // 유지홈(retentionGroove) — Draft → Request 승격 시 명시적으로 전달.
-        // normalizedCi 스프레드만 의존하면 누락 위험이 있으므로 여기서 default("deep")
-        // 까지 보장해 esprit-addin이 항상 유효한 값을 받도록 한다. (rules.md §7.4.1)
-        const retentionGrooveValue = ci?.retentionGroove || "deep";
+        // 유지홈(retentionGroove) — Draft → Request 승격 시 정규화 전달.
+        // 현재 정책은 없음/있음 2단계이며, legacy shallow는 none으로 취급한다.
+        const retentionGrooveValue = normalizeRetentionGroove(
+          ci?.retentionGroove,
+        );
 
         const caseInfosWithFile = ci?.file
           ? {

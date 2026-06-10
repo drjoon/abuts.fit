@@ -65,8 +65,8 @@ const draftCaseSchema = new mongoose.Schema(
           type: String,
           enum: ["abutment", "crown"],
         },
-        // 유지홈(retentionGroove) — Request로 승격 시 그대로 전달.
-        // 매핑/적용 위치는 rules.md §7.4.1 참조.
+        // 유지홈(retentionGroove) — Request 승격 전 none/deep으로 정규화.
+        // legacy shallow 데이터는 none으로 취급한다.
         retentionGroove: {
           type: String,
           enum: ["none", "shallow", "deep"],

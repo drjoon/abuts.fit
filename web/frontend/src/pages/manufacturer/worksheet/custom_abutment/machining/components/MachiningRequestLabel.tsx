@@ -60,8 +60,8 @@ export const MachiningRequestLabel = ({
     .map((part) => String(part || "").trim())
     .filter(Boolean);
 
-  // 유지홈(retentionGroove) 표시 - rules.md §7.4.1
-  // none=없음(0.1) / shallow=얕음(0.2) / deep=깊음(0.3)
+  // 유지홈(retentionGroove) 표시
+  // none=없음 / shallow=없음 / deep=있음
   const retentionGroove = caseInfos?.retentionGroove as
     | "none"
     | "shallow"
@@ -69,20 +69,14 @@ export const MachiningRequestLabel = ({
     | undefined;
   const retentionGrooveLabel = (() => {
     if (!retentionGroove) return "";
-    return retentionGroove === "none"
-      ? "없음"
-      : retentionGroove === "shallow"
-        ? "얕음"
-        : "깊음";
+    return retentionGroove === "deep" ? "있음" : "없음";
   })();
 
   const retentionBadgeClass = (() => {
     const base =
       "inline-flex items-center rounded-full px-2 py-0.5 font-semibold ";
-    if (retentionGroove === "none")
+    if (retentionGroove === "none" || retentionGroove === "shallow")
       return base + "border border-amber-100 bg-amber-50 text-amber-600";
-    if (retentionGroove === "shallow")
-      return base + "border border-amber-200 bg-amber-50 text-amber-700";
     if (retentionGroove === "deep")
       return base + "border border-amber-400 bg-amber-100 text-amber-900";
     return base + "border border-amber-100 bg-amber-50 text-amber-600";

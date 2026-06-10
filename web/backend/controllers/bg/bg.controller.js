@@ -29,6 +29,15 @@ const BG_STORAGE_BASE =
 
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET || "";
 
+const normalizeRetentionGroove = (value) => {
+  const rg = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (rg === "deep") return "deep";
+  if (rg === "none" || rg === "shallow") return "none";
+  return "deep";
+};
+
 function withBridgeHeaders(extra = {}) {
   const base = {};
   if (BRIDGE_SHARED_SECRET) {
@@ -1214,9 +1223,9 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           connectionDiameter: ci.connectionDiameter || 0,
           connectionTargetDiameter,
           workType: ci.workType || "",
-          // 유지홈 옵션 — esprit-addin이 5axisComposite_A.prc의 StepIncrement
-          // (스텝 간격) 값을 결정하는 데 사용. rules.md §7.4.1 참조.
-          retentionGroove: ci.retentionGroove || "deep",
+          // 유지홈 옵션(2단계: 없음/있음) — legacy shallow는 none으로 정규화.
+          // esprit-addin이 5axisComposite_A.prc의 StepIncrement 값을 결정할 때 사용.
+          retentionGroove: normalizeRetentionGroove(ci.retentionGroove),
           lotNumber: lotValue,
           // esprit-addin에서 공정 PRC를 선택하기 위한 의뢰별 설정
           // PRC 파일명이 DB에 저장된 경우 그대로 사용, 없으면 임플란트 정보로 동적 계산.

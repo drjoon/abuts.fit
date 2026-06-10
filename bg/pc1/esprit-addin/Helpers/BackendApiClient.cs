@@ -83,27 +83,27 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                     AppLogger.Log($"BackendApiClient: register-file skip (invalid ncPath) ncPath={ncPath}");
                     return;
                 }
-                
+
                 var fi = new FileInfo(ncPath);
                 var upload = UploadNcViaPresign(fi, requestId);
                 if (!upload.ok)
                 {
                     AppLogger.Log($"BackendApiClient: presign upload failed: {upload.error} (fallback register only)");
                 }
-                
+
                 string baseUrl = (AppConfig.GetBackendUrl() ?? "").TrimEnd('/');
                 string url = $"{baseUrl}/bg/register-file";
                 string originalName = string.IsNullOrWhiteSpace(stlPath) ? "" : Path.GetFileName(stlPath);
-                
+
                 if (string.IsNullOrWhiteSpace(requestId) && !string.IsNullOrWhiteSpace(stlPath))
                 {
                     requestId = ExtractRequestIdFromStlPath(stlPath);
                     AppLogger.Log($"BackendApiClient: requestId extracted from stlPath: {requestId}");
                 }
-                
+
                 // [정책] OS temp 기반 임시 파일 사용 — 로지컈 경로 대신 파일명만 백엔드에 전달
                 string ncRelativePath = fi.Name;
-                
+
                 string json;
                 if (upload.ok)
                 {
@@ -113,9 +113,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 {
                     json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(ncRelativePath)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\",\"status\":\"success\",\"metadata\":{{\"fileSize\":{fi.Length},\"upload\":\"fallback_no_s3\"}}}}";
                 }
-                
+
                 AppLogger.Log($"BackendApiClient: register-file POST {url} with requestId={requestId}, fileName={ncRelativePath}");
-                
+
                 using (var req = new HttpRequestMessage(HttpMethod.Post, url))
                 {
                     req.Content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -356,8 +356,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember] public string lotNumber { get; set; }
             [DataMember] public string faceHolePrcFileName { get; set; }
             [DataMember] public string connectionPrcFileName { get; set; }
-            // 유지홈 옵션 ("none"|"shallow"|"deep") — 5axisComposite_A.prc 의
-            // StepIncrement 값을 의뢰별로 덮어쓰는 데 사용. rules.md §7.4.1 참조.
+            // 유지홈 옵션 ("none"|"deep", legacy "shallow" 허용) —
+            // 5axisComposite_A.prc StepIncrement 오버라이드에 사용.
             [DataMember] public string retentionGroove { get; set; }
             [DataMember] public RequestMetaFinishLine finishLine { get; set; }
         }

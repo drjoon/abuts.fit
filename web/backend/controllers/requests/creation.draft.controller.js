@@ -6,6 +6,15 @@ import {
   canAccessRequestAsRequestor,
 } from "./utils.js";
 
+const normalizeRetentionGroove = (value) => {
+  const rg = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (rg === "deep") return "deep";
+  if (rg === "none" || rg === "shallow") return "none";
+  return "deep";
+};
+
 /**
  * 기존 의뢰를 Draft로 복제 (파일 포함)
  * @route POST /api/requests/:id/clone-to-draft
@@ -66,8 +75,8 @@ export async function cloneRequestToDraft(req, res) {
       totalLength: ci.totalLength,
       taperAngle: ci.taperAngle,
       workType: ci.workType,
-      // 유지홈 옵션 전달 (rules.md §7.4.1)
-      retentionGroove: ci.retentionGroove,
+      // 유지홈 옵션 전달 (없음/있음) — legacy shallow는 none으로 정규화
+      retentionGroove: normalizeRetentionGroove(ci.retentionGroove),
       shippingMode: "normal", // 항상 묶음 배송
       requestedShipDate: request.requestedShipDate,
     };
