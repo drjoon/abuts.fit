@@ -49,6 +49,7 @@ type PreviewModalProps = {
     status: "PENDING" | "APPROVED" | "REJECTED";
     stageOverride?: ReviewStageKey;
     keepPreviewOpen?: boolean;
+    forceReprocess?: boolean;
   }) => Promise<void>;
   onDeleteCam: (
     req: ManufacturerRequest,
@@ -841,6 +842,7 @@ export const PreviewModal = ({
                       status: "APPROVED",
                       stageOverride: currentReviewStageKey,
                       keepPreviewOpen: false,
+                      forceReprocess: true,
                     });
 
                     // CAM 단계 승인 시 NC 파일 bridge-store 동기화 (비동기, 실패 무시)

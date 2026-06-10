@@ -105,7 +105,12 @@ function shouldLogTransientMongoNow() {
  * @param {string|null} params.actorUserId - 승인 요청자 ID
  * @returns {{ alreadyQueued: boolean, queueId: string }}
  */
-export async function enqueueApproval({ taskType, request, actorUserId }) {
+export async function enqueueApproval({
+  taskType,
+  request,
+  actorUserId,
+  forceReprocess = false,
+}) {
   const requestMongoId = String(request?._id || "");
   const requestId = String(request?.requestId || "");
 
@@ -150,7 +155,7 @@ export async function enqueueApproval({ taskType, request, actorUserId }) {
         processingStartedAt: null,
         completedAt: null,
         // 최신 request 스냅샷으로 payload 갱신
-        payload: buildPayload(taskType, request),
+        payload: buildPayload(taskType, request, { forceReprocess }),
         actorUserId: actorUserId || null,
       },
     },
@@ -174,7 +179,7 @@ export async function enqueueApproval({ taskType, request, actorUserId }) {
       requestMongoId,
       requestId,
       uniqueKey,
-      payload: buildPayload(taskType, request),
+      payload: buildPayload(taskType, request, { forceReprocess }),
       actorUserId: actorUserId || null,
     });
 
@@ -346,8 +351,11 @@ async function executeTask(item) {
     if (!request) {
       throw new Error(`Request not found: ${requestId}`);
     }
+    const forceReprocess = payload?.forceReprocess === true;
+
     // 이미 다른 경로(재업로드 등)로 NC가 생성된 경우 트리거 스킵
-    if (request?.caseInfos?.ncFile?.s3Key) {
+    // 단, 강제 재실행 요청(forceReprocess=true)이면 스킵하지 않고 재생성을 진행한다.
+    if (request?.caseInfos?.ncFile?.s3Key && !forceReprocess) {
       console.log(
         "[ReviewApprovalQueue] NC already exists, skip esprit trigger",
         {
@@ -355,6 +363,11 @@ async function executeTask(item) {
         },
       );
       return;
+    }
+    if (request?.caseInfos?.ncFile?.s3Key && forceReprocess) {
+      console.log("[ReviewApprovalQueue] force reprocess: run esprit trigger", {
+        requestId,
+      });
     }
     await triggerEspritForNc({ request });
   } else if (taskType === "CAM_STAGE_APPROVED") {
@@ -496,10 +509,11 @@ function emitApprovalQueueFailure({
 /**
  * payload 빌더: taskType별 필요한 필드만 저장
  */
-function buildPayload(taskType, request) {
+function buildPayload(taskType, request, options = {}) {
   if (taskType === "REQUEST_STAGE_APPROVED") {
     return {
       requestId: request?.requestId,
+      forceReprocess: options?.forceReprocess === true,
       caseInfos: {
         camFile: request?.caseInfos?.camFile || null,
         ncFile: request?.caseInfos?.ncFile || null,

@@ -575,7 +575,8 @@ export async function updateReviewStatusByStage(req, res) {
   const session = await mongoose.startSession();
   const { id } = req.params;
   try {
-    const { stage, status, reason, stageOverride } = req.body || {};
+    const { stage, status, reason, stageOverride, forceReprocess } =
+      req.body || {};
 
     if (!Types.ObjectId.isValid(id)) {
       return res
@@ -613,6 +614,12 @@ export async function updateReviewStatusByStage(req, res) {
         message: "유효하지 않은 status 입니다.",
       });
     }
+
+    const forceReprocessFlag =
+      forceReprocess === true ||
+      String(forceReprocess || "")
+        .trim()
+        .toLowerCase() === "true";
 
     let resultRequest = null;
     let acceptedMessage = "";
@@ -714,7 +721,8 @@ export async function updateReviewStatusByStage(req, res) {
             request?.caseInfos?.rollbackCounts?.machining || 0,
           );
           const canSkipCamRegeneration =
-            requestRollbackCount > 0 || requestCamRollbackCount > 0;
+            !forceReprocessFlag &&
+            (requestRollbackCount > 0 || requestCamRollbackCount > 0);
 
           // 비동기 처리: 의뢰 승인 시점에 manufacturerStage/status 를 CAM으로 바꾸지 않는다.
           // Esprit(NC 생성) 완료 콜백(/api/bg/register-file, sourceStep=3-nc)에서 상태를 CAM으로 전환한다.
@@ -799,8 +807,9 @@ export async function updateReviewStatusByStage(req, res) {
             pendingEspritTriggerRequest = request.toObject
               ? request.toObject()
               : JSON.parse(JSON.stringify(request));
-            acceptedMessage =
-              "CAM 작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다.";
+            acceptedMessage = forceReprocessFlag
+              ? "강제 재실행으로 CAM 작업을 다시 시작했습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다."
+              : "CAM 작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다.";
           }
         } else {
           // CAM, machining 등 이후 단계는 필요 시 단계별로 비동기 처리 여부를 나눠서 관리한다.
@@ -1021,6 +1030,7 @@ export async function updateReviewStatusByStage(req, res) {
         taskType: "REQUEST_STAGE_APPROVED",
         request: pendingEspritTriggerRequest,
         actorUserId: req?.user?._id ? String(req.user._id) : null,
+        forceReprocess: forceReprocessFlag,
       }).catch((error) => {
         emitManufacturingAsyncFailure({
           requestId: pendingEspritTriggerRequest?.requestId || null,

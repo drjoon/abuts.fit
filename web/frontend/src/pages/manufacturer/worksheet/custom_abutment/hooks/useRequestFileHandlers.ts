@@ -411,6 +411,7 @@ export const useRequestFileHandlers = ({
       reason?: string;
       stageOverride?: ReviewStageKey;
       keepPreviewOpen?: boolean;
+      forceReprocess?: boolean;
     }) => {
       if (!token) return;
       setReviewSaving(true);
@@ -435,6 +436,7 @@ export const useRequestFileHandlers = ({
               stage: stageKey,
               status: params.status,
               reason: params.reason || "",
+              forceReprocess: params.forceReprocess === true,
             }),
           },
         );
