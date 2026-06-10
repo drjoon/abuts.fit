@@ -236,6 +236,8 @@ namespace DentalAddin
                 return false;
             }
 
+            DentalLogger.Log($"Composite2SplitAB - 시작: FrontPointX={MoveSTL_Module.FrontPointX:F3}, BackPointX={MoveSTL_Module.BackPointX:F3}, FinishLineTopZ={MoveSTL_Module.FinishLineTopZ:F3}, SurfaceNumber={SurfaceNumber}, ToolNs='{ToolNs ?? ""}'");
+
             opA.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
             opB.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
             double? firstPassPercentOverride = TryGetCompositeFirstPassPercentOverride();
@@ -243,16 +245,30 @@ namespace DentalAddin
             {
                 opA.FirstPassPercent = Clamp(firstPassPercentOverride.Value, 0.0, splitPercent);
             }
+
+            const double seamEpsilonPercent = 0.05;
             opA.LastPassPercent = splitPercent;
-            opB.FirstPassPercent = splitPercent;
+            double bFirst = splitPercent;
+            if (lastPercent - splitPercent > seamEpsilonPercent * 2.0)
+            {
+                bFirst = Clamp(splitPercent + seamEpsilonPercent, firstPercent, lastPercent);
+            }
+            opB.FirstPassPercent = bFirst;
             opB.LastPassPercent = lastPercent;
 
             bool hasRightExtensionSegment = rightOffset > 0.0 && lastPercent - baseBackPercent > 0.01;
             double extensionStartPercent = Clamp(baseBackPercent, splitPercent, lastPercent);
             if (hasRightExtensionSegment)
             {
-                opB.LastPassPercent = extensionStartPercent;
+                double bLast = extensionStartPercent;
+                if (extensionStartPercent - opB.FirstPassPercent > seamEpsilonPercent * 2.0)
+                {
+                    bLast = Clamp(extensionStartPercent - seamEpsilonPercent, opB.FirstPassPercent, lastPercent);
+                }
+                opB.LastPassPercent = bLast;
             }
+
+            DentalLogger.Log($"Composite2SplitAB - seam 보정: A.Last={opA.LastPassPercent:F2}, B.First={opB.FirstPassPercent:F2}, B.Last={opB.LastPassPercent:F2}, seamEps={seamEpsilonPercent:F2}");
 
             opA.DriveSurface = "19," + Conversions.ToString(SurfaceNumber);
             opB.DriveSurface = opA.DriveSurface;
@@ -276,18 +292,28 @@ namespace DentalAddin
 
             DentalLogger.Log($"Composite2SplitAB - PassPercent: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B-Base({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), B-ExtEnabled={hasRightExtensionSegment}, B-ExtStart={extensionStartPercent:F2}, B-Last={lastPercent:F2}");
 
-            // 유지홈(retentionGroove) -> StepIncrement 적용 (DispId 217 기준 IDispatch 늦은 바인딩).
-            // env: ABUTS_COMPOSITE_STEP_INCREMENT_A (예: 0.1 / 0.2 / 0.3) — A에 대해 런타임 오버라이드 가능
-            // PRC 파일 원본은 변경하지 않으며, 런타임으로 opA에 StepIncrement 및 StockAllowance를 적용한다. opB의 StepIncrement는
-            // 유지홈 옵션과 무관하게 PRC에 정의된 기본값(예: 0.08)을 사용해야 한다.
+            DentalLogger.Log("Composite2SplitAB - opA/opB StepIncrement/StockAllowance 적용 시작");
             TrySetCompositeStepIncrement(opA, "A");
-            // opB는 retentionGroove에 의해 StepIncrement를 오버라이드하지 않음; PRC 기본값 유지.
             TrySetCompositeStepIncrement(opB, "B");
-            // A의 경우 가공여유(StockAllowance) 런타임 오버라이드도 허용한다 (env: ABUTS_COMPOSITE_STOCK_ALLOWANCE_A)
             TrySetCompositeStockAllowance(opA, "A");
+            DentalLogger.Log("Composite2SplitAB - opA/opB StepIncrement/StockAllowance 적용 완료");
+
+            int beforeAddCount = Document?.Operations?.Count ?? -1;
+            DentalLogger.Log($"Composite2SplitAB - Operation 추가 시작 (beforeCount={beforeAddCount})");
+
+            // 이슈 데이터에서 A 다음 B Add에서 COM hang이 발생할 수 있어 B를 먼저 추가한다.
+            TryAddOperation(opB, freeFormFeature, "Composite2SplitAB:B");
+            int afterB = Document?.Operations?.Count ?? -1;
+            DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B (afterCount={afterB})");
+
+            TryAddOperation(opA, freeFormFeature, "Composite2SplitAB:A");
+            int afterA = Document?.Operations?.Count ?? -1;
+            DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: A (afterCount={afterA})");
+
             TechLatheMill5xComposite opBExtension = null;
             if (hasRightExtensionSegment)
             {
+                DentalLogger.Log("Composite2SplitAB - B-Extension 준비 시작");
                 ITechnology[] techBExt = TryOpenProcess(technologyUtility, prcB, "Composite2SplitAB:B:Extension");
                 if (techBExt.Length > 0)
                 {
@@ -301,22 +327,24 @@ namespace DentalAddin
                 else
                 {
                     opBExtension.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
-                    opBExtension.FirstPassPercent = extensionStartPercent;
+                    double bExtFirst = extensionStartPercent;
+                    if (lastPercent - extensionStartPercent > seamEpsilonPercent * 2.0)
+                    {
+                        bExtFirst = Clamp(extensionStartPercent + seamEpsilonPercent, firstPercent, lastPercent);
+                    }
+                    opBExtension.FirstPassPercent = bExtFirst;
                     opBExtension.LastPassPercent = lastPercent;
                     opBExtension.DriveSurface = opA.DriveSurface;
                     opBExtension.ToolID = opB.ToolID;
-                    // #520 기준 +rightOffset 구간(연장 0.1mm)에만 가공여유 +0.05 적용.
-                    // PRC 원본(StockAllowance=0)은 유지하고, 런타임 COM 속성으로만 적용한다.
                     TrySetCompositeStockAllowance(opBExtension, "B-Extension");
+                    TryAddOperation(opBExtension, freeFormFeature, "Composite2SplitAB:B:Extension");
+                    int afterBExt = Document?.Operations?.Count ?? -1;
+                    DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B-Extension (afterCount={afterBExt})");
                 }
             }
 
-            TryAddOperation(opA, freeFormFeature, "Composite2SplitAB:A");
-            TryAddOperation(opB, freeFormFeature, "Composite2SplitAB:B");
-            if (opBExtension != null)
-            {
-                TryAddOperation(opBExtension, freeFormFeature, "Composite2SplitAB:B:Extension");
-            }
+            int finalCount = Document?.Operations?.Count ?? -1;
+            DentalLogger.Log($"Composite2SplitAB - 종료 (finalCount={finalCount})");
             return true;
         }
 
@@ -412,11 +440,15 @@ namespace DentalAddin
 
             try
             {
+                int beforeCount = Document?.Operations?.Count ?? -1;
+                DentalLogger.Log($"TryAddOperation:{context} - Add 호출 전 (beforeCount={beforeCount}, techType={castTechnology.GetType().Name}, graphicType={graphicObject.GetType().Name})");
                 Document.Operations.Add(castTechnology, graphicObject, RuntimeHelpers.GetObjectValue(Missing.Value));
+                int afterCount = Document?.Operations?.Count ?? -1;
+                DentalLogger.Log($"TryAddOperation:{context} - Add 호출 성공 (afterCount={afterCount})");
             }
             catch (Exception ex)
             {
-                DentalLogger.Log($"TryAddOperation:{context} - Document.Operations.Add 실패: {ex.Message}");
+                DentalLogger.Log($"TryAddOperation:{context} - Document.Operations.Add 실패: {ex.GetType().Name}:{ex.Message}");
                 DentalLogger.LogException("MainModule.TryAddOperation", ex);
                 throw;
             }

@@ -463,56 +463,96 @@ namespace DentalAddin
 
         public static void CustomCycle()
         {
-            string file = PrcFilePath[4];
-            DentalLogger.Log($"CustomCycle - OpenProcess: PRC[4]={file}");
-            TechLatheCustom pITechnology = (TechLatheCustom)((ITechnology[])((TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")))).OpenProcess(file))[0];
-            Layer activeLayer = Document.Layers.Add("FaceDrill");
-            Document.ActiveLayer = activeLayer;
-
-            double stlShift = AppConfig.DefaultStlShift;
             try
             {
-                dynamic tech = pITechnology;
-                if (tech.ZLimit != null)
+                string file = PrcFilePath[4];
+                DentalLogger.Log($"CustomCycle - OpenProcess: PRC[4]={file}");
+                TechLatheCustom pITechnology = (TechLatheCustom)((ITechnology[])((TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")))).OpenProcess(file))[0];
+                Layer activeLayer = Document.Layers.Add("FaceDrill");
+                Document.ActiveLayer = activeLayer;
+
+                double stlShift = AppConfig.DefaultStlShift;
+                try
                 {
-                    double originalZ = tech.ZLimit;
-                    tech.ZLimit = originalZ + stlShift;
-                    DentalLogger.Log($"CustomCycle - FaceHole ZLimit shift 적용: {originalZ:F3} -> {tech.ZLimit:F3} (shift:{stlShift:F3})");
+                    var techType = pITechnology.GetType();
+                    var prop = techType.GetProperty("ZLimit");
+                    if (prop != null && prop.CanRead && prop.CanWrite)
+                    {
+                        object raw = prop.GetValue(pITechnology);
+                        if (raw != null && double.TryParse(Convert.ToString(raw, CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out double originalZ))
+                        {
+                            double newZ = originalZ + stlShift;
+                            prop.SetValue(pITechnology, newZ);
+                            DentalLogger.Log($"CustomCycle - FaceHole ZLimit shift 적용: {originalZ:F3} -> {newZ:F3} (shift:{stlShift:F3})");
+                        }
+                        else
+                        {
+                            DentalLogger.Log("CustomCycle - FaceHole ZLimit 값 변환 실패");
+                        }
+                    }
+                    else
+                    {
+                        DentalLogger.Log("CustomCycle - FaceHole PRC 기술에 ZLimit 속성 없음");
+                    }
                 }
+                catch (Exception ex)
+                {
+                    DentalLogger.Log($"CustomCycle - FaceHole shift 적용 실패: {ex.GetType().Name}:{ex.Message}");
+                }
+
+                Document.Operations.Add(pITechnology, null, RuntimeHelpers.GetObjectValue(Missing.Value));
             }
             catch (Exception ex)
             {
-                DentalLogger.Log($"CustomCycle - FaceHole shift 적용 실패 (속성 없음 가능): {ex.Message}");
+                DentalLogger.Log($"CustomCycle 실패: {ex.GetType().Name}:{ex.Message}");
             }
-
-            Document.Operations.Add(pITechnology, null, RuntimeHelpers.GetObjectValue(Missing.Value));
         }
 
         public static void CustomCycle2()
         {
-            string file = PrcFilePath[8];
-            DentalLogger.Log($"CustomCycle2 - OpenProcess: PRC[8]={file}");
-            TechLatheCustom pITechnology = (TechLatheCustom)((ITechnology[])((TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")))).OpenProcess(file))[0];
-            Layer activeLayer = Document.Layers.Add("EndTurning");
-            Document.ActiveLayer = activeLayer;
-
-            double stlShift = AppConfig.DefaultStlShift;
             try
             {
-                dynamic tech = pITechnology;
-                if (tech.ZLimit != null)
+                string file = PrcFilePath[8];
+                DentalLogger.Log($"CustomCycle2 - OpenProcess: PRC[8]={file}");
+                TechLatheCustom pITechnology = (TechLatheCustom)((ITechnology[])((TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")))).OpenProcess(file))[0];
+                Layer activeLayer = Document.Layers.Add("EndTurning");
+                Document.ActiveLayer = activeLayer;
+
+                double stlShift = AppConfig.DefaultStlShift;
+                try
                 {
-                    double originalZ = tech.ZLimit;
-                    tech.ZLimit = originalZ + stlShift;
-                    DentalLogger.Log($"CustomCycle2 - Connection ZLimit shift 적용: {originalZ:F3} -> {tech.ZLimit:F3} (shift:{stlShift:F3})");
+                    var techType = pITechnology.GetType();
+                    var prop = techType.GetProperty("ZLimit");
+                    if (prop != null && prop.CanRead && prop.CanWrite)
+                    {
+                        object raw = prop.GetValue(pITechnology);
+                        if (raw != null && double.TryParse(Convert.ToString(raw, CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out double originalZ))
+                        {
+                            double newZ = originalZ + stlShift;
+                            prop.SetValue(pITechnology, newZ);
+                            DentalLogger.Log($"CustomCycle2 - Connection ZLimit shift 적용: {originalZ:F3} -> {newZ:F3} (shift:{stlShift:F3})");
+                        }
+                        else
+                        {
+                            DentalLogger.Log("CustomCycle2 - Connection ZLimit 값 변환 실패");
+                        }
+                    }
+                    else
+                    {
+                        DentalLogger.Log("CustomCycle2 - Connection PRC 기술에 ZLimit 속성 없음");
+                    }
                 }
+                catch (Exception ex)
+                {
+                    DentalLogger.Log($"CustomCycle2 - Connection shift 적용 실패: {ex.GetType().Name}:{ex.Message}");
+                }
+
+                Document.Operations.Add(pITechnology, null, RuntimeHelpers.GetObjectValue(Missing.Value));
             }
             catch (Exception ex)
             {
-                DentalLogger.Log($"CustomCycle2 - Connection shift 적용 실패 (속성 없음 가능): {ex.Message}");
+                DentalLogger.Log($"CustomCycle2 실패: {ex.GetType().Name}:{ex.Message}");
             }
-
-            Document.Operations.Add(pITechnology, null, RuntimeHelpers.GetObjectValue(Missing.Value));
         }
 
         public static void TurningOp()
