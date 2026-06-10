@@ -301,14 +301,15 @@ namespace DentalAddin
             int beforeAddCount = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 시작 (beforeCount={beforeAddCount})");
 
-            // 이슈 데이터에서 A 다음 B Add에서 COM hang이 발생할 수 있어 B를 먼저 추가한다.
-            TryAddOperation(opB, freeFormFeature, "Composite2SplitAB:B");
-            int afterB = Document?.Operations?.Count ?? -1;
-            DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B (afterCount={afterB})");
-
+            // 공정 순서 정책: 모델상 왼쪽(선행)=A, 오른쪽(후행)=B
+            // 작업 목록에서도 A가 먼저, B가 나중에 오도록 Add 순서를 A→B로 유지한다.
             TryAddOperation(opA, freeFormFeature, "Composite2SplitAB:A");
             int afterA = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: A (afterCount={afterA})");
+
+            TryAddOperation(opB, freeFormFeature, "Composite2SplitAB:B");
+            int afterB = Document?.Operations?.Count ?? -1;
+            DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B (afterCount={afterB})");
 
             TechLatheMill5xComposite opBExtension = null;
             if (hasRightExtensionSegment)
