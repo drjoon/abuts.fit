@@ -223,7 +223,7 @@ namespace DentalAddin
             // StartEndPosition에서 B 시작 퍼센트가 높아지면(실측: ~38%) NC 계산 중 크래시 가능성이 높다.
             // 성공 케이스(약 25%)를 기준으로 기본 상한을 둔다. 필요 시 env로 조정 가능.
             // env: ABUTS_COMPOSITE_STARTEND_SAFE_B_FIRST_MAX (default: 30.0)
-            double safeBFirstMax = 30; //GetEnvDoubleNullable("ABUTS_COMPOSITE_STARTEND_SAFE_B_FIRST_MAX") ?? 30.0;
+            double safeBFirstMax = 35; //GetEnvDoubleNullable("ABUTS_COMPOSITE_STARTEND_SAFE_B_FIRST_MAX") ?? 30.0;
             safeBFirstMax = Clamp(safeBFirstMax, firstPercent + 0.1, effectiveLastPercent - 0.1);
             bool startEndBFirstGuardApplied = false;
 
@@ -746,34 +746,14 @@ namespace DentalAddin
             double xMin = Math.Min(0.0, frontBackMin);
             double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
 
-            // SplitX SSOT: FinishLine 기반 계산을 기본값으로 사용한다.
-            // (기존 midpoint 기본값은 제거)
-            double defaultSplit;
-            string defaultSplitSource;
-            if (MoveSTL_Module.FinishLineTopZ > 0.001)
-            {
-                double stlShift = AppConfig.DefaultStlShift;
-                double finishLineDistanceFromBack = MoveSTL_Module.FinishLineTopZ - stlShift;
-                double frontBeforeShift = MoveSTL_Module.FrontPointX - stlShift;
-                double backBeforeShift = MoveSTL_Module.BackPointX - stlShift;
-                double spanBeforeShift = backBeforeShift - frontBeforeShift;
-                double absSpanBeforeShift = Math.Abs(spanBeforeShift);
-                if (absSpanBeforeShift < 1e-6)
-                {
-                    defaultSplit = (xMin + xMax) / 2.0;
-                    defaultSplitSource = "midpoint-fallback(span~0)";
-                }
-                else
-                {
-                    double finishLinePositionBeforeShift = backBeforeShift - finishLineDistanceFromBack;
-                    defaultSplit = finishLinePositionBeforeShift + stlShift;
-                    defaultSplitSource = "finishline";
-                }
-            }
-            else
+            // 요청 반영: TwoPhase defaultSplit은 FinishLineTopZ - 1.0을 사용한다.
+            // (값이 비정상일 때만 midpoint fallback)
+            double defaultSplit = MoveSTL_Module.FinishLineTopZ - 1.0;
+            string defaultSplitSource = "FinishLineTopZ-1.0";
+            if (double.IsNaN(defaultSplit) || double.IsInfinity(defaultSplit))
             {
                 defaultSplit = (xMin + xMax) / 2.0;
-                defaultSplitSource = "midpoint-fallback(no-finishline)";
+                defaultSplitSource = "midpoint-fallback(invalid-finishline)";
             }
 
             // TwoPhase split도 작업 영역으로 클램프한다.
