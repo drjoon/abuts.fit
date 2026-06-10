@@ -1082,9 +1082,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         }
 
         // 유지홈(retentionGroove) → StepIncrement 매핑 테이블
-        //   none    → 0.06
-        //   shallow → 0.06 (legacy; none으로 취급)
-        //   deep    → 0.18 (있음)
+        //   none    → 0.1
+        //   shallow → 0.2
+        //   deep    → 0.3 (기본값)
         // 정책 (2026-04-29 변경):
         //   PRC 파일 사본을 만들지 않는다. 환경변수 ABUTS_COMPOSITE_STEP_INCREMENT_A 에
         //   numeric 값만 주입하고, 실제 StepIncrement 적용은
@@ -1107,14 +1107,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 switch (groove.Trim().ToLowerInvariant())
                 {
                     case "none":
-                        stepIncrement = 0.06;
+                        stepIncrement = 0.08;
                         break;
                     case "shallow":
-                        // 2단계 정책(없음/있음) 적용: shallow는 legacy 입력으로 none과 동일 처리
-                        stepIncrement = 0.06;
+                        stepIncrement = 0.16;
                         break;
                     case "deep":
-                        stepIncrement = 0.18;
+                        stepIncrement = 0.24;
                         break;
                 }
 
@@ -1141,7 +1140,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     Environment.SetEnvironmentVariable(AppConfig.CompositeStockAllowanceAEnv, null);
                 }
 
-                AppLogger.Log($"DentalAddin: retentionGroove 적용 - groove={groove} (normalized={(groove.Trim().ToLowerInvariant() == "deep" ? "deep" : "none")}), StepIncrement={envValue} (env={AppConfig.CompositeStepIncrementAEnv}, PRC 파일 무변경)");
+                AppLogger.Log($"DentalAddin: retentionGroove 적용 - groove={groove}, StepIncrement={envValue} (env={AppConfig.CompositeStepIncrementAEnv}, PRC 파일 무변경)");
             }
             catch (Exception ex)
             {
