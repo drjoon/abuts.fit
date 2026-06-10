@@ -69,6 +69,7 @@ export function StlPreviewViewer({
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const resolvedMetadata = metadata ?? fetchedMetadata;
+  const shouldWaitForMetadata = showOverlay;
   const resolvedMetadataRef = useRef<StlMetadata | null | undefined>(
     resolvedMetadata,
   );
@@ -92,9 +93,9 @@ export function StlPreviewViewer({
   const fileKeyRef = useRef<string>("");
   const fileKey = `${file.name}:${file.size}`;
   if (fileKeyRef.current !== fileKey) {
-    // 메타데이터 기반 축이 준비되지 않았으면 씬 생성 연기 (플리커링 방지)
+    // 제조사 페이지(showOverlay=true)에서는 메타데이터 축이 준비될 때까지 대기
     const hasTiltAxis = toValidPoint(resolvedMetadata?.tiltAxisVector) !== null;
-    if (!fileKeyRef.current || hasTiltAxis) {
+    if (!fileKeyRef.current || !shouldWaitForMetadata || hasTiltAxis) {
       fileKeyRef.current = fileKey;
     }
   }
@@ -275,9 +276,10 @@ export function StlPreviewViewer({
   // STL 렌더링 및 finish line 시각화
   useEffect(() => {
     if (!containerRef.current) return;
-    // 메타데이터 기반 축이 준비되지 않았으면 씬 생성 연기 (플리커링 방지)
+    // 제조사 페이지(showOverlay=true)에서는 메타데이터 축이 준비될 때까지 씬 생성 연기
     const hasTiltAxis = toValidPoint(resolvedMetadata?.tiltAxisVector) !== null;
-    if (!stableFileKey || !hasTiltAxis) return;
+    if (!stableFileKey) return;
+    if (shouldWaitForMetadata && !hasTiltAxis) return;
 
     setError(null);
 
@@ -1447,6 +1449,7 @@ export function StlPreviewViewer({
   }, [
     stableFileKey,
     showOverlay,
+    shouldWaitForMetadata,
     finishLinePoints,
     resolvedMetadata?.updatedAt,
     resolvedMetadata?.maxDiameter,
@@ -1469,14 +1472,15 @@ export function StlPreviewViewer({
       )}
     >
       <div ref={containerRef} className="w-full h-full" />
-      {!toValidPoint(resolvedMetadata?.tiltAxisVector) && (
-        <div className="absolute inset-0 flex items-center justify-center rounded-md bg-white/70 text-sm text-slate-500">
-          <div className="flex flex-col items-center gap-2">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />
-            <span>메타데이터 로딩 중...</span>
+      {shouldWaitForMetadata &&
+        !toValidPoint(resolvedMetadata?.tiltAxisVector) && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-white/70 text-sm text-slate-500">
+            <div className="flex flex-col items-center gap-2">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />
+              <span>메타데이터 로딩 중...</span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
       {error && (
         <div className="absolute inset-0 flex items-center justify-center rounded-md bg-white/70 text-sm text-destructive">
           {error}
