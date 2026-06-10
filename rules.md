@@ -110,6 +110,17 @@
 
 ### 1.3 CNC 알람 코드
 
+### 1.3.1 Esprit Composite2SplitAB 장애 재발 방지 체크포인트
+
+- 증상: `Composite2SplitAB:B`의 `Add`는 성공했는데, 후속 NC 계산/저장 단계에서 프로세스가 중단(크래시)될 수 있음.
+- 우선 확인 로그:
+  - `Composite2SplitAB - B ToolID 비어있음 ... 보정`
+  - `Composite2SplitAB - B StockAllowance=... 적용` 또는 미적용 사유
+- 운영 원칙:
+  1) B 공정 활성화 시 ToolID 공백을 허용하지 않는다. (A ToolID/ToolNs 보정)
+  2) StockAllowance는 A/B 모두 명시적으로 처리하고 로그를 남긴다.
+
+
 **Hi-Link CNC 장비 알람 코드 정의:**
 
 - **알람 501 (type=4, no=501)**: X축 overflow - 제한 범위를 넘는 X축 공구 이동 좌표

@@ -216,12 +216,14 @@ namespace DentalAddin
                 splitRatio = Clamp(splitRatio, leftRatio, rightRatio);
                 DentalLogger.Log($"Composite2SplitAB - 기본 계산 splitX={splitX:F3} (27% 지점, FinishLineTopZ 없음)");
             }
+
+
             double splitPercent = Clamp(splitRatio * 100.0, firstPercent, effectiveLastPercent);
 
             // StartEndPosition에서 B 시작 퍼센트가 높아지면(실측: ~38%) NC 계산 중 크래시 가능성이 높다.
             // 성공 케이스(약 25%)를 기준으로 기본 상한을 둔다. 필요 시 env로 조정 가능.
             // env: ABUTS_COMPOSITE_STARTEND_SAFE_B_FIRST_MAX (default: 30.0)
-            double safeBFirstMax = GetEnvDoubleNullable("ABUTS_COMPOSITE_STARTEND_SAFE_B_FIRST_MAX") ?? 30.0;
+            double safeBFirstMax = 30; //GetEnvDoubleNullable("ABUTS_COMPOSITE_STARTEND_SAFE_B_FIRST_MAX") ?? 30.0;
             safeBFirstMax = Clamp(safeBFirstMax, firstPercent + 0.1, effectiveLastPercent - 0.1);
             bool startEndBFirstGuardApplied = false;
 
@@ -326,17 +328,40 @@ namespace DentalAddin
                 }
             }
 
+            // [중요] B ToolID 방어
+            // - 증상: opB Add는 성공해도, NC 계산/저장 단계에서 크래시가 재현될 수 있음.
+            // - 원인 후보: PRC_B의 ToolID 공백.
+            // - 조치: B ToolID가 비면 A ToolID(우선) 또는 ToolNs로 보정하고 로그를 남긴다.
+            if (string.IsNullOrWhiteSpace(opB.ToolID))
+            {
+                if (!string.IsNullOrWhiteSpace(opA.ToolID))
+                {
+                    opB.ToolID = opA.ToolID;
+                    DentalLogger.Log($"Composite2SplitAB - B ToolID 비어있음, A ToolID로 보정: {opB.ToolID}");
+                }
+                else if (!string.IsNullOrWhiteSpace(ToolNs))
+                {
+                    opB.ToolID = ToolNs;
+                    DentalLogger.Log($"Composite2SplitAB - B ToolID 비어있음, ToolNs로 보정: {opB.ToolID}");
+                }
+                else
+                {
+                    DentalLogger.Log("Composite2SplitAB 중단 - B ToolID가 비어있고 보정 소스(A ToolID/ToolNs)도 없습니다.");
+                    return false;
+                }
+            }
+
             DentalLogger.Log($"Composite2SplitAB - PassPercent: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B-Base({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), B-ExtEnabled={hasRightExtensionSegment}, B-ExtStart={extensionStartPercent:F2}, Last(raw={lastPercent:F2}/eff={effectiveLastPercent:F2}), LastGuard={startEndOverflowGuardApplied}, BFirstGuard={startEndBFirstGuardApplied}");
 
+            // [중요] StockAllowance 적용 범위
+            // - 과거 장애: A만 적용하고 B 적용이 누락되면, B 활성화 시 후속 NC 단계 불안정 가능.
+            // - 원칙: A/B 모두 명시적으로 적용(또는 미적용 사유 로그)한다.
             DentalLogger.Log("Composite2SplitAB - opA/opB StepIncrement/StockAllowance 적용 시작");
             TrySetCompositeStepIncrement(opA, "A");
             TrySetCompositeStepIncrement(opB, "B");
             TrySetCompositeStockAllowance(opA, "A");
+            TrySetCompositeStockAllowance(opB, "B");
             DentalLogger.Log("Composite2SplitAB - opA/opB StepIncrement/StockAllowance 적용 완료");
-
-            // B-Extension 용 공유 속성값은 Add 이전에 미리 저장해둔다.
-            string sharedDriveSurface = opA.DriveSurface;
-            string sharedToolId = !string.IsNullOrWhiteSpace(opB.ToolID) ? opB.ToolID : opA.ToolID;
 
             int beforeAddCount = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 시작 (beforeCount={beforeAddCount})");
@@ -346,15 +371,17 @@ namespace DentalAddin
             int afterA = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: A (afterCount={afterA})");
 
+            // 요청사항: Composite A + B만 생성. C(B-Extension)는 비활성 유지.
             TryAddOperation(opB, freeFormFeature, "Composite2SplitAB:B");
             int afterB = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B (afterCount={afterB})");
 
-            TechLatheMill5xComposite opBExtension = null;
+            // C(B-Extension) 활성
             if (hasRightExtensionSegment)
             {
                 DentalLogger.Log("Composite2SplitAB - B-Extension 준비 시작");
                 ITechnology[] techBExt = TryOpenProcess(technologyUtility, prcB, "Composite2SplitAB:B:Extension");
+                TechLatheMill5xComposite opBExtension = null;
                 if (techBExt.Length > 0)
                 {
                     opBExtension = techBExt[0] as TechLatheMill5xComposite;
@@ -376,8 +403,8 @@ namespace DentalAddin
                     }
                     opBExtension.FirstPassPercent = bExtFirst;
                     opBExtension.LastPassPercent = effectiveLastPercent;
-                    opBExtension.DriveSurface = sharedDriveSurface;
-                    opBExtension.ToolID = sharedToolId;
+                    opBExtension.DriveSurface = opA.DriveSurface;
+                    opBExtension.ToolID = !string.IsNullOrWhiteSpace(opB.ToolID) ? opB.ToolID : opA.ToolID;
                     TrySetCompositeStockAllowance(opBExtension, "B-Extension");
                     try
                     {
@@ -718,13 +745,45 @@ namespace DentalAddin
             double frontBackMin = Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
             double xMin = Math.Min(0.0, frontBackMin);
             double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
-            double defaultSplit = (xMin + xMax) / 2.0;
+
+            // SplitX SSOT: FinishLine 기반 계산을 기본값으로 사용한다.
+            // (기존 midpoint 기본값은 제거)
+            double defaultSplit;
+            string defaultSplitSource;
+            if (MoveSTL_Module.FinishLineTopZ > 0.001)
+            {
+                double stlShift = AppConfig.DefaultStlShift;
+                double finishLineDistanceFromBack = MoveSTL_Module.FinishLineTopZ - stlShift;
+                double frontBeforeShift = MoveSTL_Module.FrontPointX - stlShift;
+                double backBeforeShift = MoveSTL_Module.BackPointX - stlShift;
+                double spanBeforeShift = backBeforeShift - frontBeforeShift;
+                double absSpanBeforeShift = Math.Abs(spanBeforeShift);
+                if (absSpanBeforeShift < 1e-6)
+                {
+                    defaultSplit = (xMin + xMax) / 2.0;
+                    defaultSplitSource = "midpoint-fallback(span~0)";
+                }
+                else
+                {
+                    double finishLinePositionBeforeShift = backBeforeShift - finishLineDistanceFromBack;
+                    defaultSplit = finishLinePositionBeforeShift + stlShift;
+                    defaultSplitSource = "finishline";
+                }
+            }
+            else
+            {
+                defaultSplit = (xMin + xMax) / 2.0;
+                defaultSplitSource = "midpoint-fallback(no-finishline)";
+            }
+
+            // TwoPhase split도 작업 영역으로 클램프한다.
+            defaultSplit = Math.Max(xMin + 0.01, Math.Min(xMax - 0.01, defaultSplit));
 
             double? configured = GetEnvDoubleNullable(AppConfig.TwoPhaseSplitXEnv) ?? GetEnvDoubleNullable("ABUTS_ROUGHFREEFORM_SPLIT_X");
             splitX = configured ?? defaultSplit;
 
             bool anyConfigured = configured.HasValue || !string.IsNullOrWhiteSpace(prcA) || !string.IsNullOrWhiteSpace(prcB);
-            DentalLogger.Log($"RoughFreeFromMillSplitAB Config - explicitEnable={explicitEnable}, splitEnableEnv='{enabled ?? ""}', twoPhaseEnableEnv='{twoPhaseEnabled ?? ""}', configuredSplitX={(configured.HasValue ? configured.Value.ToString("0.###", CultureInfo.InvariantCulture) : "null")}, defaultSplit={defaultSplit.ToString("0.###", CultureInfo.InvariantCulture)}, xRange=[{xMin.ToString("0.###", CultureInfo.InvariantCulture)}~{xMax.ToString("0.###", CultureInfo.InvariantCulture)}], prcASet={!string.IsNullOrWhiteSpace(prcA)}, prcBSet={!string.IsNullOrWhiteSpace(prcB)}");
+            DentalLogger.Log($"RoughFreeFromMillSplitAB Config - explicitEnable={explicitEnable}, splitEnableEnv='{enabled ?? ""}', twoPhaseEnableEnv='{twoPhaseEnabled ?? ""}', configuredSplitX={(configured.HasValue ? configured.Value.ToString("0.###", CultureInfo.InvariantCulture) : "null")}, defaultSplit={defaultSplit.ToString("0.###", CultureInfo.InvariantCulture)}, defaultSplitSource={defaultSplitSource}, xRange=[{xMin.ToString("0.###", CultureInfo.InvariantCulture)}~{xMax.ToString("0.###", CultureInfo.InvariantCulture)}], prcASet={!string.IsNullOrWhiteSpace(prcA)}, prcBSet={!string.IsNullOrWhiteSpace(prcB)}");
             if (!explicitEnable && !anyConfigured)
             {
                 DentalLogger.Log("RoughFreeFromMillSplitAB Config - explicitEnable/anyConfigured 모두 false, SplitAB 미적용");

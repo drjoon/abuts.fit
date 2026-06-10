@@ -11,6 +11,9 @@
 - 재기동 시 pending 전체를 자동 복구하지 않고, 승인된 단일 작업만 처리합니다.
 - `UserData`와 PRC 경로 초기화는 자동 실행 경로에서도 UI와 동일하게 맞춰야 합니다.
 - NC 출력 파일명은 최종적으로 `*.nc`로 정규화합니다.
+- Composite2SplitAB에서 B 공정을 활성화할 때는 아래 2가지를 반드시 확인합니다.
+  1) `B ToolID`가 비어 있지 않은지 (비면 A ToolID/ToolNs로 보정 로그 확인)
+  2) `TrySetCompositeStockAllowance(opB, "B")` 호출 및 적용/미적용 사유 로그가 남는지
 
 ## 2. 구현 체크포인트
 
