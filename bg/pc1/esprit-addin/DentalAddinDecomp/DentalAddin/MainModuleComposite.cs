@@ -746,14 +746,35 @@ namespace DentalAddin
             double xMin = Math.Min(0.0, frontBackMin);
             double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
 
-            // 요청 반영: TwoPhase defaultSplit은 FinishLineTopZ - 1.0을 사용한다.
-            // (값이 비정상일 때만 midpoint fallback)
-            double defaultSplit = MoveSTL_Module.FinishLineTopZ - 1.0;
-            string defaultSplitSource = "FinishLineTopZ-1.0";
-            if (double.IsNaN(defaultSplit) || double.IsInfinity(defaultSplit))
+            // 요청 반영: FinishLine 기반 splitX에서 1.0mm 왼쪽으로 이동한 값을 defaultSplit으로 사용한다.
+            // (값이 비정상/계산 불가일 때만 midpoint fallback)
+            double defaultSplit;
+            string defaultSplitSource;
+            if (MoveSTL_Module.FinishLineTopZ > 0.001)
+            {
+                double stlShift = AppConfig.DefaultStlShift;
+                double finishLineDistanceFromBack = MoveSTL_Module.FinishLineTopZ - stlShift;
+                double frontBeforeShift = MoveSTL_Module.FrontPointX - stlShift;
+                double backBeforeShift = MoveSTL_Module.BackPointX - stlShift;
+                double spanBeforeShift = backBeforeShift - frontBeforeShift;
+                double absSpanBeforeShift = Math.Abs(spanBeforeShift);
+                if (absSpanBeforeShift < 1e-6)
+                {
+                    defaultSplit = (xMin + xMax) / 2.0;
+                    defaultSplitSource = "midpoint-fallback(span~0)";
+                }
+                else
+                {
+                    double finishLinePositionBeforeShift = backBeforeShift - finishLineDistanceFromBack;
+                    double finishLineSplitX = finishLinePositionBeforeShift + stlShift;
+                    defaultSplit = finishLineSplitX - 1.0;
+                    defaultSplitSource = "finishline-splitX-minus-1.0";
+                }
+            }
+            else
             {
                 defaultSplit = (xMin + xMax) / 2.0;
-                defaultSplitSource = "midpoint-fallback(invalid-finishline)";
+                defaultSplitSource = "midpoint-fallback(no-finishline)";
             }
 
             // TwoPhase split도 작업 영역으로 클램프한다.
