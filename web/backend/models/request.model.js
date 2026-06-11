@@ -368,6 +368,19 @@ const requestSchema = new mongoose.Schema(
         type: String,
         default: null,
       },
+      memo: {
+        type: String,
+        default: "",
+      },
+      memoUpdatedAt: {
+        type: Date,
+        default: null,
+      },
+      memoUpdatedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
     },
 
     manufacturerStage: {

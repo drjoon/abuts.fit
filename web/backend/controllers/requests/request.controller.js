@@ -21,6 +21,7 @@ export const {
   getRequestById,
   updateRequest,
   updateRndDoneStatus,
+  updateRndMemo,
   updateRequestStatus,
   deleteRequest,
   updateReviewStatusByStage,

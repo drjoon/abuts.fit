@@ -565,6 +565,9 @@ export async function getAllRequests(req, res) {
       "source",
       "rnd.doneAt",
       "rnd.doneFromStage",
+      "rnd.memo",
+      "rnd.memoUpdatedAt",
+      "rnd.memoUpdatedBy",
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
@@ -606,6 +609,9 @@ export async function getAllRequests(req, res) {
       "source",
       "rnd.doneAt",
       "rnd.doneFromStage",
+      "rnd.memo",
+      "rnd.memoUpdatedAt",
+      "rnd.memoUpdatedBy",
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
@@ -627,6 +633,9 @@ export async function getAllRequests(req, res) {
       "source",
       "rnd.doneAt",
       "rnd.doneFromStage",
+      "rnd.memo",
+      "rnd.memoUpdatedAt",
+      "rnd.memoUpdatedBy",
       "description",
       "caseInfos.clinicName",
       "caseInfos.patientName",
@@ -657,7 +666,8 @@ export async function getAllRequests(req, res) {
           : "name business";
       query = query
         .select(selectedProjection)
-        .populate("requestor", requestorPopulateSelect);
+        .populate("requestor", requestorPopulateSelect)
+        .populate("rnd.memoUpdatedBy", "name");
       if (view === "worksheet" && worksheetProfile === "shipping") {
         query = query.populate(
           "businessAnchorId",
@@ -1196,6 +1206,77 @@ export const updateRndDoneStatus = asyncHandler(async (req, res) => {
       requestId: request.requestId,
       doneAt: request.rnd?.doneAt || null,
       restoredStage,
+    },
+  });
+});
+
+export const updateRndMemo = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const memoRaw = String(req.body?.memo || "");
+  const memo = memoRaw.slice(0, 500).trim();
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({
+      success: false,
+      message: "유효하지 않은 의뢰 ID입니다.",
+    });
+  }
+
+  const request = await Request.findById(id);
+  if (!request) {
+    return res.status(404).json({
+      success: false,
+      message: "의뢰를 찾을 수 없습니다.",
+    });
+  }
+
+  if (String(request.source || "").trim() !== "manufacturer_sample") {
+    return res.status(400).json({
+      success: false,
+      message: "R&D 샘플 의뢰만 메모를 저장할 수 있습니다.",
+    });
+  }
+
+  if (req.user.role === "manufacturer") {
+    const orgScope = await buildManufacturerOrgScopeFilter(req);
+    const allowed = await Request.exists({
+      _id: request._id,
+      ...orgScope,
+    });
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: "이 의뢰를 변경할 권한이 없습니다.",
+      });
+    }
+  }
+
+  request.rnd = {
+    ...(request.rnd || {}),
+    memo,
+    memoUpdatedAt: memo ? new Date() : null,
+    memoUpdatedBy: memo ? req.user?._id || null : null,
+  };
+
+  await request.save();
+
+  const updaterName =
+    String(req.user?.name || "").trim() ||
+    String(
+      (await User.findById(req.user?._id).select("name").lean())?.name || "",
+    ).trim() ||
+    "";
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      requestId: request.requestId,
+      memo: request.rnd?.memo || "",
+      memoUpdatedAt: request.rnd?.memoUpdatedAt || null,
+      memoUpdatedBy: request.rnd?.memoUpdatedBy || null,
+      memoUpdatedByName: request.rnd?.memoUpdatedBy
+        ? updaterName || null
+        : null,
     },
   });
 });

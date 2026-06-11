@@ -1,4 +1,10 @@
-import { useMemo, useEffect, useCallback, type ReactNode } from "react";
+import {
+  useMemo,
+  useEffect,
+  useCallback,
+  useState,
+  type ReactNode,
+} from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -632,6 +638,82 @@ export const RequestPage = ({
     [handleCardRollback, queryClient, reloadRequests, tabStage, toast, token],
   );
 
+  const [rndMemoSaving, setRndMemoSaving] = useState<Record<string, boolean>>(
+    {},
+  );
+
+  const handleSaveRndMemo = useCallback(
+    async (req: ManufacturerRequest, memoRaw: string) => {
+      if (!req?._id) {
+        return {
+          memo: "",
+          memoUpdatedAt: null,
+          memoUpdatedBy: null,
+          memoUpdatedByName: null,
+        };
+      }
+      const memo = String(memoRaw || "")
+        .slice(0, 500)
+        .trim();
+      const requestId = String(req._id);
+      try {
+        setRndMemoSaving((prev) => ({ ...prev, [requestId]: true }));
+        const res = await fetch(`/api/requests/${req._id}/rnd-memo`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ memo }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "메모 저장에 실패했습니다.");
+        }
+        const savedMemo = String(data?.data?.memo || "");
+        const savedAt = data?.data?.memoUpdatedAt || null;
+        const savedBy = data?.data?.memoUpdatedBy || null;
+        const savedByName =
+          typeof data?.data?.memoUpdatedByName === "string"
+            ? data.data.memoUpdatedByName
+            : null;
+
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "") !== requestId) return item;
+            return {
+              ...item,
+              rnd: {
+                ...(item.rnd || {}),
+                memo: savedMemo,
+                memoUpdatedAt: savedAt,
+                memoUpdatedBy: savedBy,
+                memoUpdatedByName: savedByName,
+              },
+            };
+          }),
+        );
+
+        return {
+          memo: savedMemo,
+          memoUpdatedAt: savedAt,
+          memoUpdatedBy: savedBy,
+          memoUpdatedByName: savedByName,
+        };
+      } catch (e: any) {
+        toast({
+          title: "메모 저장 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+        throw e;
+      } finally {
+        setRndMemoSaving((prev) => ({ ...prev, [requestId]: false }));
+      }
+    },
+    [pageState, toast, token],
+  );
+
   const enableCardRollback =
     tabStage === "cam" ||
     tabStage === "machining" ||
@@ -933,6 +1015,8 @@ export const RequestPage = ({
                   downloading={pageState.downloading}
                   currentStageOrder={currentStageOrder}
                   tabStage={tabStage}
+                  onSaveRndMemo={handleSaveRndMemo}
+                  rndMemoSaving={rndMemoSaving}
                 />
 
                 <div

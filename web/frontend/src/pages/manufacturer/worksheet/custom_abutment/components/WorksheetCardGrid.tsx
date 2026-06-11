@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, ArrowRight, Check, X } from "lucide-react";
 import { formatImplantDisplay } from "@/utils/implant";
 import { generateModelNumber } from "@/utils/modelNumber";
@@ -27,8 +28,18 @@ type WorksheetCardGridProps = {
   onApprove?: (req: ManufacturerRequest) => void;
   onDelete?: (req: ManufacturerRequest) => void;
   onDone?: (req: ManufacturerRequest) => void;
+  onSaveRndMemo?: (
+    req: ManufacturerRequest,
+    memo: string,
+  ) => Promise<{
+    memo: string;
+    memoUpdatedAt?: string | null;
+    memoUpdatedBy?: string | { _id?: string; name?: string } | null;
+    memoUpdatedByName?: string | null;
+  } | void>;
   onUploadNc?: (req: ManufacturerRequest, files: File[]) => Promise<void>;
   uploadProgress: Record<string, number>;
+  rndMemoSaving?: Record<string, boolean>;
   isCamStage: boolean;
   isMachiningStage: boolean;
   uploading: Record<string, boolean>;
@@ -53,6 +64,7 @@ export const WorksheetCardGrid = ({
   onApprove,
   onDelete,
   onDone,
+  onSaveRndMemo,
   onUploadNc,
   uploadProgress,
   uploading,
@@ -63,9 +75,13 @@ export const WorksheetCardGrid = ({
   isMachiningStage,
   currentStageOrder,
   tabStage,
+  rndMemoSaving = {},
   debugLog = false,
 }: WorksheetCardGridProps) => {
   const camDiaLogRef = useRef<Record<string, number | null>>({});
+  const [rndMemoDrafts, setRndMemoDrafts] = useState<Record<string, string>>(
+    {},
+  );
   const selectedRequestIdSet = new Set(selectedRequestIds);
   const formatElapsed = (secRaw?: number | null) => {
     const sec = Number.isFinite(Number(secRaw))
@@ -116,6 +132,19 @@ export const WorksheetCardGrid = ({
       });
     });
   }, [debugLog, requests]);
+
+  useEffect(() => {
+    setRndMemoDrafts((prev) => {
+      const next = { ...prev };
+      for (const request of requests) {
+        const id = String(request?._id || "");
+        if (!id) continue;
+        if (next[id] !== undefined) continue;
+        next[id] = String(request.rnd?.memo || "");
+      }
+      return next;
+    });
+  }, [requests]);
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -226,6 +255,25 @@ export const WorksheetCardGrid = ({
         const stageForRollback = deriveStageForFilter(request);
         const isSampleRequest =
           (request as any).source === "manufacturer_sample";
+        const requestObjectId = String(request?._id || "");
+        const rndMemoDraft = rndMemoDrafts[requestObjectId] ?? "";
+        const rndMemoSaved = String(request.rnd?.memo || "");
+        const isRndMemoDirty = rndMemoDraft.trim() !== rndMemoSaved.trim();
+        const isSavingRndMemo = !!rndMemoSaving[requestObjectId];
+        const rndMemoUpdatedAt = String(
+          request.rnd?.memoUpdatedAt || "",
+        ).trim();
+        const rndMemoUpdaterName = (() => {
+          const named = String(request.rnd?.memoUpdatedByName || "").trim();
+          if (named) return named;
+          const by = request.rnd?.memoUpdatedBy;
+          if (by && typeof by === "object") {
+            const n = String(by.name || "").trim();
+            if (n) return n;
+          }
+          return "";
+        })();
+
         const shouldShowFullLot =
           !isSampleRequest &&
           !!lotCodeSource &&
@@ -765,6 +813,102 @@ export const WorksheetCardGrid = ({
                   </div>
                 )}
               </div>
+
+              {tabStage === "rnd" && isSampleRequest && onSaveRndMemo && (
+                <div
+                  className="mt-1 px-3 pb-2"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                >
+                  <div className="rounded-md border border-purple-200 bg-purple-50/40 p-2 space-y-2">
+                    <div className="text-[11px] font-semibold text-purple-700">
+                      메모
+                    </div>
+                    <Textarea
+                      value={rndMemoDraft}
+                      onChange={(e) => {
+                        const value = String(e.target.value || "").slice(
+                          0,
+                          500,
+                        );
+                        setRndMemoDrafts((prev) => ({
+                          ...prev,
+                          [requestObjectId]: value,
+                        }));
+                      }}
+                      onBlur={async () => {
+                        if (!isRndMemoDirty || isSavingRndMemo) return;
+                        try {
+                          const saved = await onSaveRndMemo(
+                            request,
+                            rndMemoDraft,
+                          );
+                          if (saved && typeof saved.memo === "string") {
+                            setRndMemoDrafts((prev) => ({
+                              ...prev,
+                              [requestObjectId]: saved.memo,
+                            }));
+                          }
+                        } catch {
+                          // 실패 토스트는 상위 핸들러에서 표시
+                        }
+                      }}
+                      placeholder="문제점 / 해결책 / 다음 확인사항"
+                      rows={3}
+                      maxLength={500}
+                      className="min-h-[74px] resize-y bg-white text-xs"
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex flex-col">
+                        <span className="text-[11px] text-slate-500">
+                          {rndMemoDraft.length}/500
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          {rndMemoUpdatedAt
+                            ? "수정: " +
+                              new Date(rndMemoUpdatedAt).toLocaleString() +
+                              (rndMemoUpdaterName
+                                ? " · " + rndMemoUpdaterName
+                                : "")
+                            : ""}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className={`h-7 rounded-md border px-2 text-[11px] font-semibold transition ${
+                          isRndMemoDirty && !isSavingRndMemo
+                            ? "border-purple-300 bg-white text-purple-700 hover:bg-purple-100"
+                            : "border-slate-200 bg-slate-100 text-slate-400"
+                        }`}
+                        disabled={!isRndMemoDirty || isSavingRndMemo}
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (!isRndMemoDirty || isSavingRndMemo) return;
+                          try {
+                            const saved = await onSaveRndMemo(
+                              request,
+                              rndMemoDraft,
+                            );
+                            if (saved && typeof saved.memo === "string") {
+                              setRndMemoDrafts((prev) => ({
+                                ...prev,
+                                [requestObjectId]: saved.memo,
+                              }));
+                            }
+                          } catch {
+                            // 실패 토스트는 상위 핸들러에서 표시
+                          }
+                        }}
+                      >
+                        {isSavingRndMemo ? "저장중..." : "지금 저장"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </CardContent>
             {onToggleSelected ? (
               <button

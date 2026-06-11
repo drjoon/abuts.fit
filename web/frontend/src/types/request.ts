@@ -284,6 +284,16 @@ export interface RequestBase {
   source?: "normal" | "manufacturer_sample" | string;
   rnd?: {
     doneAt?: string | null;
+    memo?: string | null;
+    memoUpdatedAt?: string | null;
+    memoUpdatedBy?:
+      | string
+      | {
+          _id?: string;
+          name?: string;
+        }
+      | null;
+    memoUpdatedByName?: string | null;
   };
   shippingCreditMeta?: {
     insufficient?: boolean;

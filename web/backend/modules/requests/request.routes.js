@@ -312,6 +312,13 @@ router.patch(
   requestController.updateRndDoneStatus,
 );
 
+router.patch(
+  "/:id/rnd-memo",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.updateRndMemo,
+);
+
 // 제조사/관리자: CNC 이벤트 조회 (의뢰 단위)
 router.get(
   "/:requestId/cnc-events",
