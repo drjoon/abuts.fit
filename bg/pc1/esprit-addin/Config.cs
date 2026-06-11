@@ -125,7 +125,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         public const double DefaultRightRatioOffset = 0.1;
 
-        public const double DefaultCompositeBStockAllowanceForRightOffset = 0.05;
+        public const double DefaultCompositeBStockAllowanceForRightOffset = 0.001;
 
         // public const double DefaultRightRatioOffset = -0.15;
 
