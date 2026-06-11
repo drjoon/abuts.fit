@@ -39,6 +39,18 @@ const resolveCompletedDisplayLabel = (q: QueueItem | null) => {
   return formatMachiningLabel(q);
 };
 
+type MachiningAlertItem = {
+  machineId: string;
+  requestId: string | null;
+  errorCode: string | null;
+  message: string;
+  alarmText: string;
+  updatedAt: string;
+  count: number;
+};
+
+const MACHINING_ALERT_STORAGE_KEY = "abuts:machining-alert-map";
+
 export const useMachiningBoard = ({
   token,
 }: {
@@ -99,6 +111,98 @@ export const useMachiningBoard = ({
   }, [machines]);
 
   const lastAlarmToastAtRef = useRef<Record<string, number>>({});
+  const recentAlertFingerprintRef = useRef<Record<string, number>>({});
+
+  const [machiningAlertMap, setMachiningAlertMap] = useState<
+    Record<string, MachiningAlertItem>
+  >({});
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(MACHINING_ALERT_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return;
+      setMachiningAlertMap(parsed as Record<string, MachiningAlertItem>);
+    } catch {
+      // noop
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        MACHINING_ALERT_STORAGE_KEY,
+        JSON.stringify(machiningAlertMap),
+      );
+    } catch {
+      // noop
+    }
+  }, [machiningAlertMap]);
+
+  const upsertMachiningAlert = useCallback(
+    (payload: {
+      machineId?: string | null;
+      requestId?: string | null;
+      errorCode?: string | null;
+      message?: string | null;
+      alarmText?: string | null;
+    }) => {
+      const mid = String(payload?.machineId || "").trim();
+      if (!mid) return;
+      const rid = String(payload?.requestId || "").trim() || null;
+      const code = String(payload?.errorCode || "").trim() || null;
+      const msg =
+        String(payload?.message || payload?.alarmText || "").trim() ||
+        "CNC 알람";
+      const text = String(payload?.alarmText || payload?.message || "").trim();
+
+      const fingerprint = `${mid}|${rid || ""}|${code || ""}|${msg}`;
+      const now = Date.now();
+      const last = recentAlertFingerprintRef.current[fingerprint] ?? 0;
+      if (now - last < 5000) return;
+      recentAlertFingerprintRef.current[fingerprint] = now;
+
+      setMachiningAlertMap((prev) => {
+        const prevItem = prev[mid];
+        const sameReason =
+          prevItem &&
+          prevItem.requestId === rid &&
+          prevItem.errorCode === code &&
+          prevItem.message === msg;
+
+        return {
+          ...prev,
+          [mid]: {
+            machineId: mid,
+            requestId: rid,
+            errorCode: code,
+            message: msg,
+            alarmText: text || msg,
+            updatedAt: new Date().toISOString(),
+            count: sameReason
+              ? Number(prevItem?.count || 0) + 1
+              : Number(prevItem?.count || 0) + 1,
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const clearMachiningAlerts = useCallback((machineId?: string) => {
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      setMachiningAlertMap({});
+      return;
+    }
+    setMachiningAlertMap((prev) => {
+      if (!prev[mid]) return prev;
+      const next = { ...prev };
+      delete next[mid];
+      return next;
+    });
+  }, []);
 
   const updateMachineAuto = useCallback(
     async (uid: string, next: boolean) => {
@@ -780,11 +884,21 @@ export const useMachiningBoard = ({
             .join(" / ")
         : null;
 
+      const failedMessage = alarmSummary
+        ? `${alarmSummary}${data?.reason ? ` · ${String(data.reason)}` : ""}${data?.errorCode ? ` · 코드: ${String(data.errorCode)}` : ""}`
+        : `${String(data?.reason || "CNC 알람으로 가공이 중단되었습니다.")}${data?.errorCode ? ` · 코드: ${String(data.errorCode)}` : ""}`;
+
+      upsertMachiningAlert({
+        machineId: mid,
+        requestId: data?.requestId != null ? String(data.requestId) : null,
+        errorCode: data?.errorCode != null ? String(data.errorCode) : null,
+        message: String(data?.reason || "FAILED"),
+        alarmText: failedMessage,
+      });
+
       toast({
         title: `${mid} 가공 알람`,
-        description: alarmSummary
-          ? `${alarmSummary}${data?.reason ? ` · ${String(data.reason)}` : ""}${data?.errorCode ? ` · 코드: ${String(data.errorCode)}` : ""}`
-          : `${String(data?.reason || "CNC 알람으로 가공이 중단되었습니다.")}${data?.errorCode ? ` · 코드: ${String(data.errorCode)}` : ""}`,
+        description: failedMessage,
         variant: "destructive",
       });
 
@@ -818,6 +932,14 @@ export const useMachiningBoard = ({
         return;
       }
       lastAlarmToastAtRef.current[alarmToastKey] = now;
+
+      upsertMachiningAlert({
+        machineId: mid,
+        requestId: data?.requestId != null ? String(data.requestId) : null,
+        errorCode: data?.errorCode != null ? String(data.errorCode) : null,
+        message: String(data?.message || data?.reason || "ALARM"),
+        alarmText,
+      });
 
       toast({
         title: `${mid} CNC 알람 감지`,
@@ -869,6 +991,7 @@ export const useMachiningBoard = ({
     toast,
     token,
     setMachines,
+    upsertMachiningAlert,
   ]);
 
   const refreshMachineStatuses = useCallback(async () => {
@@ -1204,6 +1327,14 @@ export const useMachiningBoard = ({
     [refreshProductionQueues, toast, token],
   );
 
+  const machiningAlerts = useMemo(
+    () =>
+      Object.values(machiningAlertMap || {}).sort((a, b) =>
+        String(b?.updatedAt || "").localeCompare(String(a?.updatedAt || "")),
+      ),
+    [machiningAlertMap],
+  );
+
   return {
     machines,
     mergedMachines,
@@ -1272,6 +1403,8 @@ export const useMachiningBoard = ({
     refreshCncMachineMeta,
     rollbackRequestInQueue,
     approveMachiningFromRollback,
+    machiningAlerts,
+    clearMachiningAlerts,
     token,
   };
 };

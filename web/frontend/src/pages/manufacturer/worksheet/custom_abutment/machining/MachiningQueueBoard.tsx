@@ -1,7 +1,7 @@
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -210,6 +210,8 @@ export const MachiningQueueBoard = ({
     handleAddMaterial,
     rollbackRequestInQueue,
     approveMachiningFromRollback,
+    machiningAlerts,
+    clearMachiningAlerts,
   } = board;
 
   const {
@@ -494,6 +496,30 @@ export const MachiningQueueBoard = ({
               </div>
             </button>
           ) : null}
+          {machiningAlerts.length > 0 ? (
+            <div
+              className="flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-extrabold text-red-700"
+              title={machiningAlerts
+                .slice(0, 3)
+                .map(
+                  (it: any) =>
+                    `${it.machineId}${it.requestId ? ` / ${it.requestId}` : ""}${it.errorCode ? ` (${it.errorCode})` : ""}`,
+                )
+                .join("\n")}
+            >
+              <AlertTriangle className="h-3.5 w-3.5" />
+              <span>Alert {machiningAlerts.length}</span>
+              <button
+                type="button"
+                className="inline-flex h-4 w-4 items-center justify-center rounded text-red-600 hover:bg-red-100"
+                onClick={() => clearMachiningAlerts()}
+                title="알람 뱃지 지우기"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ) : null}
+
           <button
             type="button"
             disabled={siFetching}

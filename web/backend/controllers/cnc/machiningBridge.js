@@ -20,6 +20,11 @@ import {
 } from "./shared.js";
 import { allocateVirtualMailboxAddress } from "../requests/mailbox.utils.js";
 import { appendMachiningJobStats } from "./tooling.js";
+import {
+  inferMaterialDiameterGroup,
+  inferRequestDiameterGroup,
+  normalizeDiameterGroupValue,
+} from "./distribution.utils.js";
 
 const REQUEST_ID_REGEX = /(\d{8}-[A-Z0-9]{6,10})/i;
 const STARTED_EMIT_TTL_MS = 30 * 1000;
@@ -82,6 +87,42 @@ function shouldLogMachiningTick({
     return true;
   }
   return false;
+}
+
+function isMachineOnlineStatus(status) {
+  const s = String(status || "")
+    .trim()
+    .toUpperCase();
+  return ["OK", "ONLINE", "RUNNING", "IDLE", "STOP"].includes(s);
+}
+
+function resolveMachineRuntimeDiameterGroupSet(machineMeta) {
+  const currentGroup = normalizeDiameterGroupValue(
+    inferMaterialDiameterGroup(machineMeta),
+  );
+  if (currentGroup) {
+    return new Set([currentGroup]);
+  }
+
+  const set = new Set(
+    (Array.isArray(machineMeta?.maxModelDiameterGroups)
+      ? machineMeta.maxModelDiameterGroups
+      : []
+    )
+      .map((g) => normalizeDiameterGroupValue(g))
+      .filter(Boolean),
+  );
+  return set;
+}
+
+function isRequestDiameterCompatibleWithMachine({ requestDoc, machineMeta }) {
+  const reqGroup = normalizeDiameterGroupValue(
+    inferRequestDiameterGroup(requestDoc),
+  );
+  if (!reqGroup) return true;
+  const machineGroupSet = resolveMachineRuntimeDiameterGroupSet(machineMeta);
+  if (machineGroupSet.size === 0) return true;
+  return machineGroupSet.has(reqGroup);
 }
 
 export async function getCompletedMachiningRecords(req, res) {
@@ -587,6 +628,8 @@ export async function triggerNextAutoMachiningAfterComplete({
         allowJobStart: 1,
         allowProgramDelete: 1,
         allowRequestAssign: 1,
+        manufacturerBusinessAnchorId: 1,
+        lastStatus: 1,
       })
       .lean()
       .catch(() => null);
@@ -609,27 +652,163 @@ export async function triggerNextAutoMachiningAfterComplete({
       return;
     }
 
+    const cncRuntimeMeta = await CncMachine.findOne({ machineId: mid })
+      .select({
+        machineId: 1,
+        currentMaterial: 1,
+        maxModelDiameterGroups: 1,
+      })
+      .lean()
+      .catch(() => null);
+
     const pending = await Request.find({
-      manufacturerStage: { $in: ["CAM", "가공"] },
+      // 자동 가공 트리거 대상은 "가공" 단계만 허용한다.
+      // CAM 단계 건을 여기서 집어오면 승인/전환 우회로 보일 수 있어 제외한다.
+      manufacturerStage: "가공",
       "productionSchedule.assignedMachine": mid,
     })
       .sort({ "productionSchedule.queuePosition": 1, updatedAt: 1 })
-      .limit(5)
+      .limit(20)
       .lean();
 
-    const pick = (Array.isArray(pending) ? pending : []).find((r) => {
+    let pick = null;
+    let firstDiameterMismatched = null;
+
+    for (const r of Array.isArray(pending) ? pending : []) {
       const rid = String(r?.requestId || "").trim();
-      if (!rid) return false;
-      if (completedRequestId && rid === completedRequestId) return false;
+      if (!rid) continue;
+      if (completedRequestId && rid === completedRequestId) continue;
       const path = String(
         r?.ncFile?.filePath || r?.caseInfos?.ncFile?.filePath || "",
       ).trim();
-      return !!path;
-    });
+      if (!path) continue;
+
+      const compatible = isRequestDiameterCompatibleWithMachine({
+        requestDoc: r,
+        machineMeta: cncRuntimeMeta,
+      });
+      if (compatible) {
+        pick = r;
+        break;
+      }
+      if (!firstDiameterMismatched) {
+        firstDiameterMismatched = r;
+      }
+    }
+
+    if (!pick && firstDiameterMismatched) {
+      const reqGroup = normalizeDiameterGroupValue(
+        inferRequestDiameterGroup(firstDiameterMismatched),
+      );
+
+      if (reqGroup) {
+        try {
+          const allCnc = await CncMachine.find({ status: "active" })
+            .select({
+              machineId: 1,
+              currentMaterial: 1,
+              maxModelDiameterGroups: 1,
+            })
+            .lean();
+          const allCncMap = new Map(
+            (Array.isArray(allCnc) ? allCnc : [])
+              .map((it) => [String(it?.machineId || "").trim(), it])
+              .filter(([uid]) => Boolean(uid)),
+          );
+
+          const machineIds = Array.from(allCncMap.keys());
+          const machineFilter = {
+            uid: { $in: machineIds },
+            allowAutoMachining: true,
+            allowRequestAssign: { $ne: false },
+            ...(m?.manufacturerBusinessAnchorId
+              ? {
+                  manufacturerBusinessAnchorId: m.manufacturerBusinessAnchorId,
+                }
+              : {}),
+          };
+
+          const machineFlags = await Machine.find(machineFilter)
+            .select({ uid: 1, lastStatus: 1 })
+            .lean();
+
+          const candidates = (Array.isArray(machineFlags) ? machineFlags : [])
+            .map((meta) => {
+              const uid = String(meta?.uid || "").trim();
+              if (!uid || uid === mid) return null;
+              if (!isMachineOnlineStatus(meta?.lastStatus)) return null;
+              const cncMeta = allCncMap.get(uid);
+              if (!cncMeta) return null;
+              const groups = resolveMachineRuntimeDiameterGroupSet(cncMeta);
+              if (groups.size > 0 && !groups.has(reqGroup)) return null;
+              return uid;
+            })
+            .filter(Boolean);
+
+          if (candidates.length > 0) {
+            const loads = await Request.aggregate([
+              {
+                $match: {
+                  manufacturerStage: "가공",
+                  "productionSchedule.assignedMachine": { $in: candidates },
+                },
+              },
+              {
+                $group: {
+                  _id: "$productionSchedule.assignedMachine",
+                  count: { $sum: 1 },
+                },
+              },
+            ]);
+            const loadMap = new Map(
+              (Array.isArray(loads) ? loads : []).map((it) => [
+                String(it?._id || "").trim(),
+                Number(it?.count || 0),
+              ]),
+            );
+
+            const targetMachineId = [...candidates]
+              .sort((a, b) => {
+                const ac = loadMap.get(a) ?? 0;
+                const bc = loadMap.get(b) ?? 0;
+                if (ac !== bc) return ac - bc;
+                return a.localeCompare(b);
+              })
+              .at(0);
+
+            if (targetMachineId) {
+              await Request.updateOne(
+                { _id: firstDiameterMismatched._id },
+                {
+                  $set: {
+                    assignedMachine: targetMachineId,
+                    "productionSchedule.assignedMachine": targetMachineId,
+                  },
+                },
+              );
+
+              console.log(
+                `[bridge:auto-next] rerouted diameter-mismatched request ${String(firstDiameterMismatched?.requestId || "")} ${mid} -> ${targetMachineId} (reqGroup=${reqGroup})`,
+              );
+
+              void triggerNextAutoMachiningAfterComplete({
+                machineId: targetMachineId,
+                completedRequestId: "",
+              });
+            }
+          }
+        } catch (rerouteErr) {
+          console.warn(
+            "[bridge:auto-next] failed to reroute diameter-mismatched request",
+            rerouteErr?.message || rerouteErr,
+          );
+        }
+      }
+    }
 
     if (!pick) {
       console.log(
-        `[bridge:auto-next] no pending jobs found for ${mid}, staying idle.`,
+        `[bridge:auto-next] no diameter-compatible pending jobs found for ${mid}, staying idle.`,
       );
       return;
     }
