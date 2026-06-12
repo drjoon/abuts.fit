@@ -1142,9 +1142,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         stepIncrement = 0.10;
                         // 요청사항: none → Single-A 모드
                         singleAEnable = true;
-                        // 요청사항: C(B-extension) 전체 비활성화
-                        // bExtensionEnable = true;
-                        bExtensionEnable = false;
+                        // 요청사항 추가: none도 C(B-extension) 활성 플래그 유지
+                        bExtensionEnable = true;
                         // gp.exe 모달 안정화: none 케이스는 Composite 비동적 추가 시도
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "1");
                         break;
@@ -1157,10 +1156,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         break;
                     case "deep":
                         stepIncrement = 0.25;
-                        // 요청사항: deep → A,B 모드, C(B-extension) 비활성화
+                        // 요청사항: deep → A,B 모드 + C(B-extension) 사용
                         singleAEnable = false;
-                        // bExtensionEnable = true;
-                        bExtensionEnable = false;
+                        bExtensionEnable = true;
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "0");
                         break;
                 }
