@@ -439,7 +439,8 @@ namespace DentalAddin
                 int afterASingle = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitAB - Single-A Operation 추가 완료: A (afterCount={afterASingle})");
 
-                // 요청사항: Single-A에서도 C(B-Extension) 생성 가능해야 한다.
+                // 요청사항: C(B-Extension) 전체 비활성화 (Single-A 경로)
+                /*
                 if (hasRightExtensionSegment)
                 {
                     DentalLogger.Log("Composite2SplitAB - Single-A 경로에서 B-Extension 준비 시작");
@@ -481,6 +482,7 @@ namespace DentalAddin
                         }
                     }
                 }
+                */
 
                 int finalCountSingle = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitAB - 종료(single-A, finalCount={finalCountSingle})");
@@ -512,7 +514,8 @@ namespace DentalAddin
             int afterB = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B (afterCount={afterB})");
 
-            // C(B-Extension) 활성
+            // 요청사항: C(B-Extension) 전체 비활성화 (A/B 경로)
+            /*
             if (hasRightExtensionSegment)
             {
                 DentalLogger.Log("Composite2SplitAB - B-Extension 준비 시작");
@@ -556,6 +559,7 @@ namespace DentalAddin
                     }
                 }
             }
+            */
 
             int finalCount = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - 종료 (finalCount={finalCount})");
