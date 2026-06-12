@@ -8,6 +8,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Text;
@@ -30,6 +31,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private const string StlImportLayerName = "AbutsStlImport";
         private const double DefaultWAxisRotationDegrees = 30.0;
         private static readonly HttpClient BackendHttp;
+
+        // gp.exe 비정상 종료 시 Windows GPF 모달(오류 대화상자) 억제
+        private const uint SEM_FAILCRITICALERRORS = 0x0001;
+        private const uint SEM_NOGPFAULTERRORBOX = 0x0002;
+        private const uint SEM_NOOPENFILEERRORBOX = 0x8000;
+
+        [DllImport("kernel32.dll")]
+        private static extern uint SetErrorMode(uint uMode);
+
         static StlFileProcessor()
         {
             var handler = new HttpClientHandler
@@ -41,6 +51,17 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 Timeout = TimeSpan.FromSeconds(10)
             };
+
+            try
+            {
+                uint mode = SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX;
+                SetErrorMode(mode);
+                AppLogger.Log($"StlFileProcessor: SetErrorMode 적용 - mode=0x{mode:X}");
+            }
+            catch
+            {
+                // 모달 억제 실패 시에도 기능은 계속 수행
+            }
         }
         private static bool DetermineFaceBeforeComposite()
         {
@@ -267,7 +288,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 EspritDocumentHelper.LogBoundingBox(document, "AfterRotate");
                 InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ, finishLineMinZ, finishLineEspritR, twoPhase);
                 CaptureNcMetadata(document);
+                AppLogger.Log("StlFileProcessor: NC 생성 시작");
                 string ncFilePath = _ncGenerator.GenerateNcFile(document, stlPath, ResolveFrontPointForNc(), ResolveStockDiameterForNc(document), _backendSerialCode, stlBoundingTopZ);
+                AppLogger.Log($"StlFileProcessor: NC 생성 종료 - path={ncFilePath ?? "<null>"}");
                 if (!string.IsNullOrWhiteSpace(ncFilePath))
                 {
                     AppLogger.Log($"StlFileProcessor: NC file generated - {ncFilePath}");
@@ -381,6 +404,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable(AppConfig.TwoPhaseRoughRegionEnv, null);
             Environment.SetEnvironmentVariable(AppConfig.RoughfreeformSplitEnableEnv, null);
             Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_X", null);
+            Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_SINGLE_A_ENABLE", null);
+            Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_B_EXTENSION_ENABLE", null);
+            Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", null);
             FaceHoleProcessFilePath = null;
             ConnectionMachiningProcessFilePath = null;
             lotNumber = "ACR";
@@ -1099,33 +1125,65 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 if (string.IsNullOrWhiteSpace(groove))
                 {
                     Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, null);
-                    AppLogger.Log("DentalAddin: retentionGroove 미지정 - StepIncrement 기본값(PRC 원본) 유지");
+                    Environment.SetEnvironmentVariable(AppConfig.CompositeStockAllowanceAEnv, null);
+                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_SINGLE_A_ENABLE", null);
+                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_B_EXTENSION_ENABLE", null);
+                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", null);
+                    AppLogger.Log("DentalAddin: retentionGroove 미지정 - StepIncrement/모드 env 기본값(자동) 유지");
                     return;
                 }
 
                 double? stepIncrement = null;
+                bool? singleAEnable = null;
+                bool? bExtensionEnable = null;
                 switch (groove.Trim().ToLowerInvariant())
                 {
                     case "none":
-                        stepIncrement = 0.08;
+                        stepIncrement = 0.10;
+                        // 요청사항: none → Single-A 모드
+                        singleAEnable = true;
+                        // 요청사항 추가: none도 C(B-extension) 활성 플래그 유지
+                        bExtensionEnable = true;
+                        // gp.exe 모달 안정화: none 케이스는 Composite 비동적 추가 시도
+                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "1");
                         break;
                     case "shallow":
-                        stepIncrement = 0.16;
+                        stepIncrement = 0.15;
+                        // shallow은 기존 안정 정책 유지(단일 A)
+                        singleAEnable = true;
+                        bExtensionEnable = false;
+                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "1");
                         break;
                     case "deep":
-                        stepIncrement = 0.24;
+                        stepIncrement = 0.25;
+                        // 요청사항: deep → A,B 모드 + C(B-extension) 사용
+                        singleAEnable = false;
+                        bExtensionEnable = true;
+                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "0");
                         break;
                 }
 
                 if (!stepIncrement.HasValue)
                 {
                     Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, null);
-                    AppLogger.Log($"DentalAddin: retentionGroove 값 비정상 '{groove}' - StepIncrement 원본 유지");
+                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_SINGLE_A_ENABLE", null);
+                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_B_EXTENSION_ENABLE", null);
+                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", null);
+                    AppLogger.Log($"DentalAddin: retentionGroove 값 비정상 '{groove}' - StepIncrement/모드 env 기본값(자동) 유지");
                     return;
                 }
 
                 string envValue = stepIncrement.Value.ToString("0.###", CultureInfo.InvariantCulture);
                 Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, envValue);
+
+                if (singleAEnable.HasValue)
+                {
+                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_SINGLE_A_ENABLE", singleAEnable.Value ? "1" : "0");
+                }
+                if (bExtensionEnable.HasValue)
+                {
+                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_B_EXTENSION_ENABLE", bExtensionEnable.Value ? "1" : "0");
+                }
                 // deep 선택 시: B의 StepIncrement는 PRC에 정의된 값(예: 0.08)을 유지해야 하므로
                 // B StepIncrement env는 설정하지 않는다. 대신 A의 StockAllowance만 override 한다.
                 if (groove.Trim().ToLowerInvariant() == "deep")
@@ -1140,7 +1198,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     Environment.SetEnvironmentVariable(AppConfig.CompositeStockAllowanceAEnv, null);
                 }
 
-                AppLogger.Log($"DentalAddin: retentionGroove 적용 - groove={groove}, StepIncrement={envValue} (env={AppConfig.CompositeStepIncrementAEnv}, PRC 파일 무변경)");
+                AppLogger.Log($"DentalAddin: retentionGroove 적용 - groove={groove}, StepIncrement={envValue}, SingleA={(singleAEnable.HasValue ? (singleAEnable.Value ? "1" : "0") : "<auto>")}, BExtension={(bExtensionEnable.HasValue ? (bExtensionEnable.Value ? "1" : "0") : "<auto>")} (env={AppConfig.CompositeStepIncrementAEnv}, PRC 파일 무변경)");
             }
             catch (Exception ex)
             {

@@ -90,20 +90,25 @@ namespace DentalAddin
             }
             else
             {
-                // B(및 B-Extension) 구간의 기본 보정값을 사용. A에 대해서는 env가 없으면 PRC 기본값을 유지(적용하지 않음).
-                if (label != null && label.Trim().Length > 0 && label.Trim().StartsWith("B", StringComparison.OrdinalIgnoreCase))
+                // 기본값 정책
+                // - A: 0.0
+                // - B: 0.0
+                // - C(B-Extension): 0.05
+                if (label != null && label.Trim().Length > 0 && label.Trim().StartsWith("B-Extension", StringComparison.OrdinalIgnoreCase))
                 {
-                    stockAllowance = AppConfig.DefaultCompositeBStockAllowanceForRightOffset;
-                    if (stockAllowance <= 0.0)
-                    {
-                        DentalLogger.Log($"Composite2SplitAB - {label} StockAllowance 보정값이 0 이하라 적용 생략 ({stockAllowance.ToString("0.###", CultureInfo.InvariantCulture)})");
-                        return;
-                    }
+                    stockAllowance = 0.05;
+                }
+                else if (label != null && label.Trim().Length > 0 && label.Trim().StartsWith("B", StringComparison.OrdinalIgnoreCase))
+                {
+                    stockAllowance = 0.0;
+                }
+                else if (label != null && label.Trim().Length > 0 && label.Trim().StartsWith("A", StringComparison.OrdinalIgnoreCase))
+                {
+                    stockAllowance = 0.0;
                 }
                 else
                 {
-                    // A이고 env도 없으면 적용하지 않음(원본 PRC 유지)
-                    DentalLogger.Log($"Composite2SplitAB - {label} StockAllowance env 미지정 - PRC 기본값 유지");
+                    DentalLogger.Log($"Composite2SplitAB - {label} StockAllowance 기본값 대상 아님 - 적용 생략");
                     return;
                 }
             }
@@ -122,6 +127,41 @@ namespace DentalAddin
             catch (Exception ex)
             {
                 DentalLogger.Log($"Composite2SplitAB - {label} StockAllowance 설정 실패: {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private static void TryDisableCompositeDynamicIfRequested(TechLatheMill5xComposite op, string label)
+        {
+            if (op == null)
+            {
+                return;
+            }
+
+            string disableRaw = GetEnvString("ABUTS_COMPOSITE_DYNAMIC_DISABLE");
+            bool disable = string.Equals(disableRaw, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(disableRaw, "true", StringComparison.OrdinalIgnoreCase);
+            if (!disable)
+            {
+                return;
+            }
+
+            try
+            {
+                // ESPRIT 버전에 따라 속성명이 다를 수 있으므로 반사적으로 시도한다.
+                op.GetType().InvokeMember("Dynamic", BindingFlags.SetProperty, null, op, new object[] { false }, CultureInfo.InvariantCulture);
+                DentalLogger.Log($"Composite2SplitAB - {label} Dynamic=false 적용 (env=ABUTS_COMPOSITE_DYNAMIC_DISABLE)");
+            }
+            catch
+            {
+                try
+                {
+                    op.GetType().InvokeMember("DynamicUpdate", BindingFlags.SetProperty, null, op, new object[] { false }, CultureInfo.InvariantCulture);
+                    DentalLogger.Log($"Composite2SplitAB - {label} DynamicUpdate=false 적용 (env=ABUTS_COMPOSITE_DYNAMIC_DISABLE)");
+                }
+                catch (Exception ex)
+                {
+                    DentalLogger.Log($"Composite2SplitAB - {label} Dynamic 비활성화 미지원/실패: {ex.GetType().Name}:{ex.Message}");
+                }
             }
         }
 
@@ -299,7 +339,15 @@ namespace DentalAddin
             opB.FirstPassPercent = bFirst;
             opB.LastPassPercent = effectiveLastPercent;
 
-            bool hasRightExtensionSegment = rightOffset > 0.0 && effectiveLastPercent - effectiveBaseBackPercent > 0.01;
+            // C(B-Extension) 기본 활성.
+            // 필요 시 env(ABUTS_COMPOSITE_B_EXTENSION_ENABLE=0|false)로만 비활성화한다.
+            string bExtEnableRaw = GetEnvString("ABUTS_COMPOSITE_B_EXTENSION_ENABLE");
+            bool bExtensionEnabled = string.IsNullOrWhiteSpace(bExtEnableRaw)
+                || string.Equals(bExtEnableRaw, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(bExtEnableRaw, "true", StringComparison.OrdinalIgnoreCase);
+
+            bool hasRightExtensionSegmentCandidate = rightOffset > 0.0 && effectiveLastPercent - effectiveBaseBackPercent > 0.01;
+            bool hasRightExtensionSegment = bExtensionEnabled && hasRightExtensionSegmentCandidate;
             double extensionStartPercent = Clamp(effectiveBaseBackPercent, splitPercent, effectiveLastPercent);
             if (hasRightExtensionSegment)
             {
@@ -309,6 +357,18 @@ namespace DentalAddin
                     bLast = Clamp(extensionStartPercent - seamEpsilonPercent, opB.FirstPassPercent, effectiveLastPercent);
                 }
                 opB.LastPassPercent = bLast;
+            }
+            else if (hasRightExtensionSegmentCandidate)
+            {
+                // Extension을 비활성화한 경우, B가 우측 끝(Last)까지 직접 진입하지 않도록
+                // extension 시작점 직전에서 종료시켜 NC 계산 안정성을 높인다.
+                double safeBLastWithoutExt = extensionStartPercent;
+                if (extensionStartPercent - opB.FirstPassPercent > seamEpsilonPercent * 2.0)
+                {
+                    safeBLastWithoutExt = Clamp(extensionStartPercent - seamEpsilonPercent, opB.FirstPassPercent, effectiveLastPercent);
+                }
+                opB.LastPassPercent = safeBLastWithoutExt;
+                DentalLogger.Log($"Composite2SplitAB - B-Extension 비활성(env). B.Last를 안전구간으로 제한: rawLast={effectiveLastPercent:F2} -> safeLast={opB.LastPassPercent:F2} (extRange={extensionStartPercent:F2}->{effectiveLastPercent:F2}, env=ABUTS_COMPOSITE_B_EXTENSION_ENABLE, raw='{bExtEnableRaw ?? ""}')");
             }
 
             DentalLogger.Log($"Composite2SplitAB - seam 보정: A.Last={opA.LastPassPercent:F2}, B.First={opB.FirstPassPercent:F2}, B.Last={opB.LastPassPercent:F2}, seamEps={seamEpsilonPercent:F2}, BFirstGuard={startEndBFirstGuardApplied}");
@@ -354,6 +414,79 @@ namespace DentalAddin
 
             DentalLogger.Log($"Composite2SplitAB - PassPercent: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B-Base({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), B-ExtEnabled={hasRightExtensionSegment}, B-ExtStart={extensionStartPercent:F2}, Last(raw={lastPercent:F2}/eff={effectiveLastPercent:F2}), LastGuard={startEndOverflowGuardApplied}, BFirstGuard={startEndBFirstGuardApplied}");
 
+            // 포스트/NC 단계 안정화 목적: 기본은 Single-A(전체 구간) 모드.
+            // AB 분할이 필요한 경우에만 env로 비활성화할 수 있다.
+            // env: ABUTS_COMPOSITE_SINGLE_A_ENABLE (default=true)
+            string singleARaw = GetEnvString("ABUTS_COMPOSITE_SINGLE_A_ENABLE");
+            bool singleAEnabled = string.IsNullOrWhiteSpace(singleARaw)
+                || string.Equals(singleARaw, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(singleARaw, "true", StringComparison.OrdinalIgnoreCase);
+
+            if (singleAEnabled)
+            {
+                opA.LastPassPercent = effectiveLastPercent;
+                DentalLogger.Log($"Composite2SplitAB - Single-A 모드 적용: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B 기본 Add 생략, env=ABUTS_COMPOSITE_SINGLE_A_ENABLE(raw='{singleARaw ?? ""}')");
+
+                DentalLogger.Log("Composite2SplitAB - Single-A StepIncrement/StockAllowance 적용 시작");
+                TrySetCompositeStepIncrement(opA, "A");
+                TrySetCompositeStockAllowance(opA, "A");
+                DentalLogger.Log("Composite2SplitAB - Single-A StepIncrement/StockAllowance 적용 완료");
+
+                int beforeAddCountSingle = Document?.Operations?.Count ?? -1;
+                DentalLogger.Log($"Composite2SplitAB - Single-A Operation 추가 시작 (beforeCount={beforeAddCountSingle})");
+                TryDisableCompositeDynamicIfRequested(opA, "A:Single");
+                TryAddOperation(opA, freeFormFeature, "Composite2SplitAB:A:Single", false);
+                int afterASingle = Document?.Operations?.Count ?? -1;
+                DentalLogger.Log($"Composite2SplitAB - Single-A Operation 추가 완료: A (afterCount={afterASingle})");
+
+                // 요청사항: Single-A에서도 C(B-Extension) 생성 가능해야 한다.
+                if (hasRightExtensionSegment)
+                {
+                    DentalLogger.Log("Composite2SplitAB - Single-A 경로에서 B-Extension 준비 시작");
+                    ITechnology[] techBExtSingle = TryOpenProcess(technologyUtility, prcB, "Composite2SplitAB:A:Single:B:Extension");
+                    TechLatheMill5xComposite opBExtensionSingle = null;
+                    if (techBExtSingle.Length > 0)
+                    {
+                        opBExtensionSingle = techBExtSingle[0] as TechLatheMill5xComposite;
+                    }
+
+                    if (opBExtensionSingle == null)
+                    {
+                        DentalLogger.Log("Composite2SplitAB - Single-A B-Extension PRC 로드/캐스팅 실패");
+                    }
+                    else
+                    {
+                        opBExtensionSingle.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
+                        double bExtFirstSingle = extensionStartPercent;
+                        if (effectiveLastPercent - extensionStartPercent > seamEpsilonPercent * 2.0)
+                        {
+                            bExtFirstSingle = Clamp(extensionStartPercent + seamEpsilonPercent, firstPercent, effectiveLastPercent);
+                        }
+                        opBExtensionSingle.FirstPassPercent = bExtFirstSingle;
+                        opBExtensionSingle.LastPassPercent = effectiveLastPercent;
+                        opBExtensionSingle.DriveSurface = opA.DriveSurface;
+                        opBExtensionSingle.ToolID = !string.IsNullOrWhiteSpace(opA.ToolID) ? opA.ToolID : ToolNs;
+                        TrySetCompositeStockAllowance(opBExtensionSingle, "B-Extension");
+                        try
+                        {
+                            TryDisableCompositeDynamicIfRequested(opBExtensionSingle, "B-Extension:Single");
+                            TryAddOperation(opBExtensionSingle, freeFormFeature, "Composite2SplitAB:A:Single:B:Extension", false);
+                            int afterBExtSingle = Document?.Operations?.Count ?? -1;
+                            DentalLogger.Log($"Composite2SplitAB - Single-A 경로 B-Extension 추가 완료 (afterCount={afterBExtSingle})");
+                        }
+                        catch (Exception exBExtSingle)
+                        {
+                            DentalLogger.Log($"Composite2SplitAB - Single-A 경로 B-Extension Add 실패(비치명): {exBExtSingle.GetType().Name}:{exBExtSingle.Message}");
+                            DentalLogger.LogException("Composite2SplitAB:A:Single:B:Extension:Add", exBExtSingle);
+                        }
+                    }
+                }
+
+                int finalCountSingle = Document?.Operations?.Count ?? -1;
+                DentalLogger.Log($"Composite2SplitAB - 종료(single-A, finalCount={finalCountSingle})");
+                return true;
+            }
+
             // [중요] StockAllowance 적용 범위
             // - 과거 장애: A만 적용하고 B 적용이 누락되면, B 활성화 시 후속 NC 단계 불안정 가능.
             // - 원칙: A/B 모두 명시적으로 적용(또는 미적용 사유 로그)한다.
@@ -368,12 +501,14 @@ namespace DentalAddin
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 시작 (beforeCount={beforeAddCount})");
 
             // 공정 순서 정책: A(선행) → B(후행)
-            TryAddOperation(opA, freeFormFeature, "Composite2SplitAB:A");
+            TryDisableCompositeDynamicIfRequested(opA, "A");
+            TryAddOperation(opA, freeFormFeature, "Composite2SplitAB:A", false);
             int afterA = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: A (afterCount={afterA})");
 
             // 요청사항: Composite A + B만 생성. C(B-Extension)는 비활성 유지.
-            TryAddOperation(opB, freeFormFeature, "Composite2SplitAB:B");
+            TryDisableCompositeDynamicIfRequested(opB, "B");
+            TryAddOperation(opB, freeFormFeature, "Composite2SplitAB:B", false);
             int afterB = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B (afterCount={afterB})");
 
@@ -409,7 +544,8 @@ namespace DentalAddin
                     TrySetCompositeStockAllowance(opBExtension, "B-Extension");
                     try
                     {
-                        TryAddOperation(opBExtension, freeFormFeature, "Composite2SplitAB:B:Extension");
+                        TryDisableCompositeDynamicIfRequested(opBExtension, "B-Extension");
+                        TryAddOperation(opBExtension, freeFormFeature, "Composite2SplitAB:B:Extension", false);
                         int afterBExt = Document?.Operations?.Count ?? -1;
                         DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B-Extension (afterCount={afterBExt})");
                     }
@@ -488,7 +624,7 @@ namespace DentalAddin
 
 
 
-        private static void TryAddOperation(object technology, IGraphicObject graphicObject, string context)
+        private static void TryAddOperation(object technology, IGraphicObject graphicObject, string context, object addOption = null)
         {
             if (Document == null)
             {
@@ -518,16 +654,37 @@ namespace DentalAddin
                 return;
             }
 
+            object option = addOption ?? Missing.Value;
+
             try
             {
                 int beforeCount = Document?.Operations?.Count ?? -1;
-                DentalLogger.Log($"TryAddOperation:{context} - Add 호출 전 (beforeCount={beforeCount}, techType={castTechnology.GetType().Name}, graphicType={graphicObject.GetType().Name})");
-                Document.Operations.Add(castTechnology, graphicObject, RuntimeHelpers.GetObjectValue(Missing.Value));
+                DentalLogger.Log($"TryAddOperation:{context} - Add 호출 전 (beforeCount={beforeCount}, techType={castTechnology.GetType().Name}, graphicType={graphicObject.GetType().Name}, option={(option == Missing.Value ? "Missing" : option)})");
+                Document.Operations.Add(castTechnology, graphicObject, RuntimeHelpers.GetObjectValue(option));
                 int afterCount = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"TryAddOperation:{context} - Add 호출 성공 (afterCount={afterCount})");
             }
             catch (Exception ex)
             {
+                // option=false 등 비기본 옵션에서 실패하면 기본 옵션(Missing)으로 1회 재시도
+                if (option != Missing.Value)
+                {
+                    try
+                    {
+                        DentalLogger.Log($"TryAddOperation:{context} - Add 재시도(option=Missing), firstErr={ex.GetType().Name}:{ex.Message}");
+                        Document.Operations.Add(castTechnology, graphicObject, RuntimeHelpers.GetObjectValue(Missing.Value));
+                        int afterRetry = Document?.Operations?.Count ?? -1;
+                        DentalLogger.Log($"TryAddOperation:{context} - Add 재시도 성공 (afterCount={afterRetry})");
+                        return;
+                    }
+                    catch (Exception retryEx)
+                    {
+                        DentalLogger.Log($"TryAddOperation:{context} - Add 재시도 실패: {retryEx.GetType().Name}:{retryEx.Message}");
+                        DentalLogger.LogException("MainModule.TryAddOperation.Retry", retryEx);
+                        throw;
+                    }
+                }
+
                 DentalLogger.Log($"TryAddOperation:{context} - Document.Operations.Add 실패: {ex.GetType().Name}:{ex.Message}");
                 DentalLogger.LogException("MainModule.TryAddOperation", ex);
                 throw;
