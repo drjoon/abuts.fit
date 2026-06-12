@@ -14,6 +14,8 @@ import {
 } from "./utils.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 
+const SHIPPING_FEE_SUPPLY = 3500;
+
 async function getBusinessCreditBalance({ businessAnchorId, session }) {
   if (!businessAnchorId) {
     return {
@@ -26,7 +28,7 @@ async function getBusinessCreditBalance({ businessAnchorId, session }) {
 
   const rows = await CreditLedger.find({ businessAnchorId })
     .sort({ createdAt: 1, _id: 1 })
-    .select({ type: 1, amount: 1, refType: 1, hasFreeRequest: 1 })
+    .select({ type: 1, amount: 1, refType: 1 })
     .session(session || null)
     .lean();
 
@@ -64,13 +66,9 @@ async function getBusinessCreditBalance({ businessAnchorId, session }) {
     if (type === "SPEND") {
       let spend = absAmount;
       if (refType === "SHIPPING_PACKAGE" || refType === "SHIPPING_FEE") {
-        // 무료 의뢰가 포함된 패키지에만 무료배송 크레딧 사용 가능
-        const canUseFreeShipping = row?.hasFreeRequest !== false;
-        if (canUseFreeShipping) {
-          const fromBonusShipping = Math.min(bonusShipping, spend);
-          bonusShipping -= fromBonusShipping;
-          spend -= fromBonusShipping;
-        }
+        const fromBonusShipping = Math.min(bonusShipping, spend);
+        bonusShipping -= fromBonusShipping;
+        spend -= fromBonusShipping;
       } else {
         const fromBonusRequest = Math.min(bonusRequest, spend);
         bonusRequest -= fromBonusRequest;
@@ -168,25 +166,15 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     return;
   }
 
-  const storedAmount = Number(request?.price?.amount || 0);
-  const spendAmount =
-    Number.isFinite(storedAmount) && storedAmount >= 0
-      ? storedAmount
-      : Number.NaN;
+  const computedPrice = await computePriceForRequest({
+    requestorId: request?.requestor,
+    requestorOrgId: businessAnchorId,
+    clinicName: request?.caseInfos?.clinicName || "",
+    patientName: request?.caseInfos?.patientName || "",
+    tooth: request?.caseInfos?.tooth || "",
+  });
 
-  const resolvedAmount = Number.isFinite(spendAmount)
-    ? spendAmount
-    : Number(
-        (
-          await computePriceForRequest({
-            requestorId: request?.requestor,
-            requestorOrgId: businessAnchorId,
-            clinicName: request?.caseInfos?.clinicName || "",
-            patientName: request?.caseInfos?.patientName || "",
-            tooth: request?.caseInfos?.tooth || "",
-          })
-        )?.amount || 0,
-      );
+  const resolvedAmount = Number(computedPrice?.amount || 0);
 
   if (!Number.isFinite(resolvedAmount) || resolvedAmount <= 0) {
     console.log("[CREDIT_SPEND] skip non-positive machining spend", {
@@ -216,7 +204,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     throw err;
   }
 
-  // 무료/유료 크레딧 사용 분리 계산
+  // 의뢰비는 의뢰 크레딧(유료+무료 의뢰)에서만 결제 가능
   const fromBonusRequest = Math.min(bonusRequestCredit, resolvedAmount);
   const fromPaid = resolvedAmount - fromBonusRequest;
 
@@ -246,6 +234,14 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     });
     return;
   }
+
+  request.price = {
+    ...(request.price || {}),
+    ...(computedPrice && typeof computedPrice === "object"
+      ? computedPrice
+      : {}),
+    amount: resolvedAmount,
+  };
 
   console.log("[CREDIT_SPEND] machining spend inserted", {
     requestId: request?.requestId,
@@ -361,6 +357,8 @@ export async function ensureShippingFeeSpendOnPackingApprove({
             businessAnchorId,
             shipDateYmd,
             mailboxAddress,
+            shippingFeeSupply: SHIPPING_FEE_SUPPLY,
+            shippingFeeVat: 0,
             createdBy: actorUserId || null,
           },
           $addToSet: {
@@ -413,13 +411,13 @@ export async function ensureShippingFeeSpendOnPackingApprove({
 
   request.shippingPackageId = pkg._id;
 
-  const fee = Number(pkg.shippingFeeSupply || 0);
-  if (!Number.isFinite(fee) || fee <= 0) return;
+  const fee = SHIPPING_FEE_SUPPLY;
 
   const { paidCredit, bonusShippingCredit } = await getBusinessCreditBalance({
     businessAnchorId,
     session,
   });
+
   const availableForShipping = paidCredit + bonusShippingCredit;
   if (availableForShipping < fee) {
     const err = new Error("의뢰자 잔액 부족으로 포장.발송 진입 불가");
@@ -485,7 +483,7 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     );
   }
 
-  // 무료/유료 크레딧 사용 분리 계산
+  // 배송비는 배송 크레딧(유료+무료 배송)에서만 결제 가능
   const fromBonusShipping = Math.min(bonusShippingCredit, fee);
   const fromPaid = fee - fromBonusShipping;
 

@@ -11,7 +11,7 @@ import { emitCreditBalanceSnapshotToBusiness } from "../../utils/creditRealtime.
 async function computeBusinessBalance(businessAnchorId) {
   const rows = await CreditLedger.find({ businessAnchorId })
     .sort({ createdAt: 1, _id: 1 })
-    .select({ type: 1, amount: 1, refType: 1, hasFreeRequest: 1 })
+    .select({ type: 1, amount: 1, refType: 1 })
     .lean();
 
   let paid = 0;
@@ -48,12 +48,9 @@ async function computeBusinessBalance(businessAnchorId) {
     if (type === "SPEND") {
       let spend = absAmount;
       if (refType === "SHIPPING_PACKAGE" || refType === "SHIPPING_FEE") {
-        const canUseFreeShipping = row?.hasFreeRequest !== false;
-        if (canUseFreeShipping) {
-          const fromBonusShipping = Math.min(bonusShipping, spend);
-          bonusShipping -= fromBonusShipping;
-          spend -= fromBonusShipping;
-        }
+        const fromBonusShipping = Math.min(bonusShipping, spend);
+        bonusShipping -= fromBonusShipping;
+        spend -= fromBonusShipping;
       } else {
         const fromBonusRequest = Math.min(bonusRequest, spend);
         bonusRequest -= fromBonusRequest;

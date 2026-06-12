@@ -582,9 +582,7 @@ export async function createRequestsBulk(req, res) {
     }, 0);
 
     // 3. 배송비 계산: 배송 날짜별로 그룹화
-    const shippingFeePerBox = Number(
-      systemSettings?.creditSettings?.shippingFee || 3500,
-    );
+    const shippingFeePerBox = 3500;
 
     // 배송 날짜별로 그룹화 (간단 버전: estimatedShipYmd 기준)
     const shipDateGroups = new Map();

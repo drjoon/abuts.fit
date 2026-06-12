@@ -687,9 +687,7 @@ export async function createRequestsFromDraft(req, res) {
         });
       })(),
     ]);
-    const shippingFeePerBox = Number(
-      systemSettings?.creditSettings?.shippingFee || 3500,
-    );
+    const shippingFeePerBox = 3500;
     const weeklyBatchDays = Array.isArray(
       shippingOrg?.shippingPolicy?.weeklyBatchDays,
     )
@@ -837,17 +835,14 @@ export async function createRequestsFromDraft(req, res) {
           totalShippingFee,
         });
 
-        // 의뢰비 사용 가능 크레딧: paidCredit + bonusRequestCredit
+        // 의뢰비는 의뢰 크레딧(유료+무료 의뢰), 배송비는 배송 크레딧(유료+무료 배송) 기준으로 체크
         const availableForMachining = paidCredit + bonusRequestCredit;
-        // 배송비 사용 가능 크레딧: paidCredit + bonusShippingCredit
         const availableForShipping = paidCredit + bonusShippingCredit;
 
-        // 의뢰비 부족 체크
         const machiningShortfall =
           totalSpendSupply > availableForMachining
             ? totalSpendSupply - availableForMachining
             : 0;
-        // 배송비 부족 체크
         const shippingShortfall =
           totalShippingFee > availableForShipping
             ? totalShippingFee - availableForShipping
