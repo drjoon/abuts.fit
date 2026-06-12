@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using Esprit;
 using EspritConstants;
@@ -27,35 +28,163 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         }
         public string GenerateNcFile(Document document, string stlPath, double frontPointX, double stockDiameter, string serialCode, double? stlBoundingTopZ = null)
         {
+            if (document == null)
+            {
+                throw new InvalidOperationException("NcFileGenerator: document is null");
+            }
+
             string postDir = _espApp.Configuration.GetFileDirectory(espFileType.espFileTypePostProcessor);
             string postFilePath = Path.Combine(postDir, _postProcessorFile);
             string ncFileName = BuildNcFilePath(stlPath);
-            document.NCCode.AddAll();
-            document.NCCode.Execute(postFilePath, ncFileName);
-            AppLogger.Log($"NcFileGenerator: NC 저장 완료 - {ncFileName}");
-            UpdateNcHeader(ncFileName, Path.GetFileName(ncFileName), frontPointX, stockDiameter, stlBoundingTopZ);
-            
+
+            AppLogger.Log($"NcFileGenerator: NC 생성 준비 - postDir='{postDir}', postFile='{postFilePath}', out='{ncFileName}'");
+            if (!File.Exists(postFilePath))
+            {
+                throw new FileNotFoundException($"Post file not found: {postFilePath}", postFilePath);
+            }
+
+            string addMode = Environment.GetEnvironmentVariable("ABUTS_NC_ADD_MODE");
+            bool safeEachMode = string.Equals(addMode, "SAFE_EACH", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(addMode, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(addMode, "TRUE", StringComparison.OrdinalIgnoreCase);
+            if (safeEachMode)
+            {
+                AppLogger.Log($"NcFileGenerator: NCCode 채우기 모드=SAFE_EACH (env ABUTS_NC_ADD_MODE='{addMode ?? ""}')");
+                TryPopulateNcCodeSafely(document, out int addedCount);
+                AppLogger.Log($"NcFileGenerator: NCCode SAFE_EACH 완료 - added={addedCount}");
+            }
+            else
+            {
+                AppLogger.Log($"NcFileGenerator: NCCode 채우기 모드=ADD_ALL (기본, env ABUTS_NC_ADD_MODE='{addMode ?? ""}')");
+                document.NCCode.AddAll();
+                AppLogger.Log("NcFileGenerator: NCCode.AddAll 완료");
+            }
+
+            AppLogger.Log("NcFileGenerator: NCCode.Execute 시작");
+            string executedNcPath = ncFileName;
+            try
+            {
+                document.NCCode.Execute(postFilePath, ncFileName, Missing.Value);
+                AppLogger.Log($"NcFileGenerator: NC 저장 완료 - {ncFileName}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"NcFileGenerator: NCCode.Execute 1차 실패 - {ex.GetType().Name}:{ex.Message}");
+                string fallbackPath = BuildExecuteFallbackNcPath(stlPath, ncFileName);
+                AppLogger.Log($"NcFileGenerator: NCCode.Execute 재시도(ASCII fallback) - {fallbackPath}");
+                document.NCCode.Execute(postFilePath, fallbackPath, Missing.Value);
+                AppLogger.Log($"NcFileGenerator: NC 저장 완료(fallback) - {fallbackPath}");
+                executedNcPath = fallbackPath;
+            }
+
+            UpdateNcHeader(executedNcPath, Path.GetFileName(executedNcPath), frontPointX, stockDiameter, stlBoundingTopZ);
+
             string serialForNc = NormalizeSerialCode(serialCode);
             AppLogger.Log($"NcFileGenerator: Serial 각인 코드 적용 - Raw:'{serialCode ?? string.Empty}' => Use:'{serialForNc}'");
-            UpdateSerialBlocks(ncFileName, serialForNc);
-            return ncFileName;
+            UpdateSerialBlocks(executedNcPath, serialForNc);
+            return executedNcPath;
         }
         private string BuildNcFilePath(string stlPath)
         {
             string baseName = Path.GetFileNameWithoutExtension(stlPath) ?? "output";
             string sanitizedBase = RemoveFilledToken(baseName);
-            
+
             string requestId = BackendApiClient.ExtractRequestIdFromStlPath(stlPath);
-            
+
             if (!string.IsNullOrWhiteSpace(requestId))
             {
                 string requestFolder = Path.Combine(_outputFolder, requestId);
                 Directory.CreateDirectory(requestFolder);
                 return Path.Combine(requestFolder, sanitizedBase + ".nc");
             }
-            
+
             return Path.Combine(_outputFolder, sanitizedBase + ".nc");
         }
+        private string BuildExecuteFallbackNcPath(string stlPath, string currentNcPath)
+        {
+            string requestId = BackendApiClient.ExtractRequestIdFromStlPath(stlPath);
+            string dir = Path.GetDirectoryName(currentNcPath);
+            if (string.IsNullOrWhiteSpace(dir))
+            {
+                dir = _outputFolder;
+            }
+            Directory.CreateDirectory(dir);
+
+            string safeStem = !string.IsNullOrWhiteSpace(requestId) ? requestId : "nc";
+            safeStem = Regex.Replace(safeStem, "[^A-Za-z0-9_-]", "_");
+            if (string.IsNullOrWhiteSpace(safeStem))
+            {
+                safeStem = "nc";
+            }
+
+            string fileName = safeStem + "-ascii.nc";
+            return Path.Combine(dir, fileName);
+        }
+
+        private static bool TryPopulateNcCodeSafely(Document document, out int addedCount)
+        {
+            addedCount = 0;
+            try
+            {
+                if (document?.NCCode == null || document?.Operations == null)
+                {
+                    AppLogger.Log("NcFileGenerator: SAFE_EACH 중단 - NCCode/Operations null");
+                    return false;
+                }
+
+                // 기존 NCCode 목록 초기화 시도
+                try
+                {
+                    document.NCCode.GetType().InvokeMember("RemoveAll", BindingFlags.InvokeMethod, null, document.NCCode, null);
+                    AppLogger.Log("NcFileGenerator: NCCode.RemoveAll 완료");
+                }
+                catch
+                {
+                    // 일부 버전은 RemoveAll 미지원
+                }
+
+                int opCount = document.Operations.Count;
+                AppLogger.Log($"NcFileGenerator: SAFE_EACH 시작 - Operations.Count={opCount}");
+                for (int i = 1; i <= opCount; i++)
+                {
+                    object op = null;
+                    try
+                    {
+                        AppLogger.Log($"NcFileGenerator: SAFE_EACH - Operations[{i}] 로드 시작");
+                        op = document.Operations[i];
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogger.Log($"NcFileGenerator: SAFE_EACH - Operations[{i}] 접근 실패: {ex.GetType().Name}:{ex.Message}");
+                        continue;
+                    }
+
+                    try
+                    {
+                        AppLogger.Log($"NcFileGenerator: SAFE_EACH - Add 시도 [{i}/{opCount}] (2-args)");
+                        document.NCCode.GetType().InvokeMember("Add", BindingFlags.InvokeMethod, null, document.NCCode, new object[] { op, Missing.Value });
+                        addedCount++;
+                        AppLogger.Log($"NcFileGenerator: SAFE_EACH - Add 성공 [{i}/{opCount}] (2-args)");
+                    }
+                    catch (Exception ex1)
+                    {
+                        // 중요: 1-arg Add 재시도는 일부 ESPRIT/Interop 조합에서 네이티브 크래시가 재현됨.
+                        // 따라서 2-args 실패 시 해당 Operation은 스킵하고 다음으로 진행한다.
+                        AppLogger.Log($"NcFileGenerator: SAFE_EACH - Add 실패(스킵) [{i}/{opCount}] err={ex1.GetType().Name}:{ex1.Message}");
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"NcFileGenerator: SAFE_EACH 실패 - {ex.GetType().Name}:{ex.Message}");
+                return false;
+            }
+        }
+
+
+
         private static string RemoveFilledToken(string baseName)
         {
             if (string.IsNullOrWhiteSpace(baseName))
@@ -324,20 +453,20 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             AppLogger.Log("NcFileGenerator: ⚠️ prc에서 이동 명령 추출 실패 - 기본값 G1V-0.35F1000 사용");
             return "G1V-0.35F1000";
         }
-        
+
         private static List<string> ReadSerialTemplateFromPrc(int occurrenceIndex = 0)
         {
             try
             {
                 // prc 파일 경로 찾기 (AcroDent/2_Connection 폴더)
                 string prcDir = Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", "2_Connection");
-                
+
                 if (!Directory.Exists(prcDir))
                 {
                     AppLogger.Log($"NcFileGenerator: prc 디렉토리 없음 - {prcDir}");
                     return null;
                 }
-                
+
                 // 첫 번째 prc 파일 사용 (모든 prc 파일의 Serial 블록 구조는 동일)
                 var prcFiles = Directory.GetFiles(prcDir, "*.prc");
                 if (prcFiles.Length == 0)
@@ -345,19 +474,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                     AppLogger.Log($"NcFileGenerator: prc 파일 없음 - {prcDir}");
                     return null;
                 }
-                
+
                 string prcPath = prcFiles[0];
                 var allLines = File.ReadAllLines(prcPath);
-                
+
                 // (Serial) 블록 찾기 (occurrenceIndex번째)
                 int currentOccurrence = -1;
                 int startIdx = -1;
                 int endIdx = -1;
-                
+
                 for (int i = 0; i < allLines.Length; i++)
                 {
                     string trimmed = allLines[i].Trim();
-                    
+
                     if (trimmed.Equals(":(Serial)", StringComparison.OrdinalIgnoreCase))
                     {
                         currentOccurrence++;
@@ -378,18 +507,18 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                         break;
                     }
                 }
-                
+
                 if (startIdx < 0)
                 {
                     AppLogger.Log($"NcFileGenerator: (Serial) 블록 없음 (occurrence:{occurrenceIndex}) - {prcPath}");
                     return null;
                 }
-                
+
                 if (endIdx < 0)
                 {
                     endIdx = allLines.Length;
                 }
-                
+
                 // : 접두사 제거하고 반환
                 var block = new List<string>();
                 for (int i = startIdx; i < endIdx; i++)
@@ -404,7 +533,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                         block.Add(line);
                     }
                 }
-                
+
                 AppLogger.Log($"NcFileGenerator: prc 템플릿 로드 성공 (occurrence:{occurrenceIndex}) - {prcPath}, lines {startIdx}~{endIdx}, 추출:{block.Count} lines");
                 return block;
             }
@@ -414,7 +543,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 return null;
             }
         }
-        
+
         // private static List<string> BuildSerialBlockFallback(string serialCode)
         // {
         //     // prc 로드 실패 시 폴백 (기존 하드코딩 방식)
