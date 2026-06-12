@@ -1149,9 +1149,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         break;
                     case "shallow":
                         stepIncrement = 0.15;
-                        // shallow은 기존 안정 정책 유지(단일 A)
+                        // shallow: 단일 A + C(B-extension) 사용
                         singleAEnable = true;
-                        bExtensionEnable = false;
+                        bExtensionEnable = true;
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "1");
                         break;
                     case "deep":
