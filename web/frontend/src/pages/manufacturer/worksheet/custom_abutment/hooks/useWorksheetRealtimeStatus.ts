@@ -454,6 +454,14 @@ export function useWorksheetRealtimeStatus({
           void queryClient.invalidateQueries({
             queryKey: ["worksheet-assigned-summary"],
           });
+          void queryClient.refetchQueries({
+            queryKey: ["worksheet-assigned-summary"],
+            type: "active",
+          });
+          // 현재 열린 워크시트 탭의 목록도 즉시 재조회 (R&D 탭 신규 샘플 즉시 반영)
+          if (fetchRequests) {
+            void fetchRequests(true);
+          }
           // 샘플 복사/삭제 토스트 알림
           if (source === "manufacturer_sample") {
             if (delta < 0 || action === "deleted") {

@@ -332,6 +332,14 @@ export const PackingPageContent = ({
           title: "R&D 저장 완료",
           description: `R&D 페이지로 샘플 복사 저장 완료 (새 의뢰ID: ${data?.data?.requestId || "-"})`,
         });
+        // 저장 직후 상단 탭 카운트를 즉시 반영
+        void queryClient.invalidateQueries({
+          queryKey: ["worksheet-assigned-summary"],
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["worksheet-assigned-summary"],
+          type: "active",
+        });
       } catch (e: any) {
         toast({
           title: "R&D 저장 실패",
@@ -340,7 +348,7 @@ export const PackingPageContent = ({
         });
       }
     },
-    [toast, token],
+    [queryClient, toast, token],
   );
 
   const handleCardDelete = useCallback(
