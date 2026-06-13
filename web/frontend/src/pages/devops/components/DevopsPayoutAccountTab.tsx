@@ -354,7 +354,7 @@ export const DevopsPayoutAccountTab = () => {
                 <span>%</span>
               </div>
               <div className="text-xs pl-36 text-muted-foreground">
-                영업자 직접 소개 의뢰자 분배율
+                영업자 소개 의뢰자 분배율 (1단계)
               </div>
             </div>
             <div />

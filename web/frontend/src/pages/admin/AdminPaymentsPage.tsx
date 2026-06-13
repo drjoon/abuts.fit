@@ -48,8 +48,7 @@ type Overview = {
   };
   commission?: {
     totalAmount?: number;
-    directAmount?: number;
-    indirectAmount?: number;
+    amount?: number;
   };
   walletPeriod?: {
     earnedAmount?: number;

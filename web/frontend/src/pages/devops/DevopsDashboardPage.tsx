@@ -64,7 +64,7 @@ export const DevopsDashboardPage = () => {
         statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
         stats={
           <>
-            {/* 기본 X%: 직접 소개 의뢰자 수수료 */}
+            {/* 기본 X%: 소개 의뢰자 수수료 */}
             <Card className="app-glass-card app-glass-card--lg">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
@@ -78,7 +78,7 @@ export const DevopsDashboardPage = () => {
                     : `${formatMoney(overview.directCommissionAmount)}원`}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  직접 소개 의뢰자 수수료
+                  소개 의뢰자 수수료
                 </div>
               </CardContent>
             </Card>

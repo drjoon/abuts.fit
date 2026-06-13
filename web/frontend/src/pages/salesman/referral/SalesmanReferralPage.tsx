@@ -133,20 +133,10 @@ export const SalesmanReferralPage = () => {
     0,
   );
 
-  const indirectRequestorChildren = (treeData?.children || [])
-    .flatMap((c) => c.children || [])
-    .filter((c) => c.role === "requestor");
-  const indirectReferralBusinessCount = indirectRequestorChildren.length;
-  const indirectReferralOrders = indirectRequestorChildren.reduce(
-    (sum, c) => sum + Number(c.lastMonthOrders || 0),
-    0,
-  );
-
   const salesmanChildren = (treeData?.children || []).filter(
     (c) => c.role === "salesman",
   );
   const salesmanCount = salesmanChildren.length;
-  const salesmanIntroducedOrders = indirectReferralOrders;
 
   return (
     <TooltipProvider>
@@ -273,13 +263,10 @@ export const SalesmanReferralPage = () => {
                       <div className="rounded-lg bg-slate-50 border border-slate-200 p-4">
                         <div className="text-xs text-slate-600 space-y-1">
                           <p>
-                            - 직접 소개한 의뢰자의 유료의뢰비의 10%를 수수료로
-                            지급합니다.
+                            - 소개한 의뢰자의 유료의뢰비의 10%를 수수료로
+                            지급합니다. (1단계)
                           </p>
-                          <p>
-                            - 간접 소개(하위 영업자 체인) 수수료는 현재 지급하지
-                            않습니다.
-                          </p>
+
                           <p>
                             - 수수료는 사업자 기준으로 매일 자정(00:00)
                             업데이트됩니다.
@@ -325,28 +312,21 @@ export const SalesmanReferralPage = () => {
                       ) : (
                         <div className="grid gap-2 grid-cols-1 md:grid-cols-3">
                           <MetricCard
-                            title="직접소개 의뢰자"
-                            tooltip="내가 직접 소개한 의뢰자 사업자 (10% 수수료 적용)"
+                            title="소개 의뢰자"
+                            tooltip="내가 소개한 의뢰자 사업자 (10% 수수료 적용)"
                             primaryLabel="의뢰자 수"
                             primaryValue={`${directReferralBusinessCount.toLocaleString()}개소`}
                             secondaryLabel="의뢰건수"
                             secondaryValue={`${directReferralOrders.toLocaleString()}건`}
                           />
-                          <MetricCard
-                            title="간접 소개 의뢰자"
-                            tooltip="간접 소개 의뢰자(정책상 수수료 미지급)"
-                            primaryLabel="의뢰자 수"
-                            primaryValue={`${indirectReferralBusinessCount.toLocaleString()}개소`}
-                            secondaryLabel="의뢰건수"
-                            secondaryValue={`${indirectReferralOrders.toLocaleString()}건`}
-                          />
+
                           <MetricCard
                             title="소개 영업자"
-                            tooltip="내가 직접 소개한 영업자 수와 그를 통해 들어온 의뢰건수"
+                            tooltip="내가 소개한 영업자 수"
                             primaryLabel="영업자"
                             primaryValue={`${salesmanCount.toLocaleString()}개소`}
-                            secondaryLabel="의뢰건수"
-                            secondaryValue={`${salesmanIntroducedOrders.toLocaleString()}건`}
+                            secondaryLabel="소개 의뢰건수"
+                            secondaryValue={`${directReferralOrders.toLocaleString()}건`}
                           />
                         </div>
                       )}
@@ -368,7 +348,7 @@ export const SalesmanReferralPage = () => {
                   ) : (
                     <ReferralNetworkChart
                       data={treeData}
-                      maxDepth={2}
+                      maxDepth={1}
                       title="내 소개 네트워크"
                       mode="radial-tree"
                       currentBusinessAnchorId={user?.businessAnchorId || null}

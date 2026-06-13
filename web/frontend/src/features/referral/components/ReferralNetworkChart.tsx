@@ -33,7 +33,7 @@ const ROLE_LABEL: Record<ReferralRole, string> = {
 
 type ReferralNetworkChartProps = {
   data: ReferralNode | null;
-  maxDepth?: number; // 의뢰자는 1 (직접 소개만), 관리자는 제한 없음
+  maxDepth?: number; // 기본 정책은 1단계 소개만 표시, 관리자는 제한 없음
   title?: string;
   visibleRoles?: ReferralRole[];
   legendRoles?: ReferralRole[];

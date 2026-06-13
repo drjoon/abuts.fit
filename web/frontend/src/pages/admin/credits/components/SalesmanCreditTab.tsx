@@ -49,12 +49,7 @@ export function SalesmanCreditTab({
       0,
     ),
     totalEarned: salesmanRows.reduce(
-      (acc, s) =>
-        acc +
-        Number(
-          (s?.performance30d?.myCommissionAmount ?? 0) +
-            (s?.performance30d?.level1CommissionAmount ?? 0),
-        ),
+      (acc, s) => acc + Number(s?.performance30d?.commissionAmount ?? 0),
       0,
     ),
     totalPaidOut: salesmanRows.reduce(
@@ -301,9 +296,6 @@ export function SalesmanCreditTab({
                             </div>
                             <div className="font-medium">
                               {Number(s.performance30d?.referredOrgCount || 0)}
-                              직접 /{" "}
-                              {Number(s.performance30d?.level1OrgCount || 0)}
-                              간접
                             </div>
                           </div>
                           <div>
@@ -317,23 +309,22 @@ export function SalesmanCreditTab({
                         </div>
                         <div className="rounded-md bg-muted/40 px-3 py-2 space-y-0.5">
                           <div className="text-xs font-semibold text-muted-foreground mb-1">
-                            직접 수수료
+                            소개 수수료
                           </div>
                           <div className="flex justify-between text-xs">
                             <span className="text-muted-foreground">
-                              직접 유료 매출{" "}
+                              소개 유료 매출{" "}
                               {Number(
-                                s.performance30d?.directRevenueAmount || 0,
+                                s.performance30d?.revenueAmount || 0,
                               ).toLocaleString()}
                               원
-                              {Number(
-                                s.performance30d?.directBonusAmount || 0,
-                              ) > 0 && (
+                              {Number(s.performance30d?.bonusAmount || 0) >
+                                0 && (
                                 <span className="text-muted-foreground/70">
                                   {" "}
                                   (무료{" "}
                                   {Number(
-                                    s.performance30d?.directBonusAmount || 0,
+                                    s.performance30d?.bonusAmount || 0,
                                   ).toLocaleString()}
                                   원)
                                 </span>
@@ -342,55 +333,15 @@ export function SalesmanCreditTab({
                           </div>
                           <div className="flex justify-between text-xs">
                             <span className="text-muted-foreground">
-                              직접 소개 수수료
+                              소개 수수료
                             </span>
                             <span className="font-semibold text-blue-700">
                               {Number(
-                                s.performance30d?.myCommissionAmount ?? 0,
+                                s.performance30d?.commissionAmount ?? 0,
                               ).toLocaleString()}
                               원
                               <span className="text-muted-foreground font-normal ml-1">
                                 (매출 × 10%)
-                              </span>
-                            </span>
-                          </div>
-                        </div>
-                        <div className="rounded-md bg-muted/40 px-3 py-2 space-y-0.5">
-                          <div className="text-xs font-semibold text-muted-foreground mb-1">
-                            간접 수수료 (미지급)
-                          </div>
-                          <div className="flex justify-between text-xs">
-                            <span className="text-muted-foreground">
-                              간접 유료 매출{" "}
-                              {Number(
-                                s.performance30d?.level1RevenueAmount || 0,
-                              ).toLocaleString()}
-                              원
-                              {Number(
-                                s.performance30d?.level1BonusAmount || 0,
-                              ) > 0 && (
-                                <span className="text-muted-foreground/70">
-                                  {" "}
-                                  (무료{" "}
-                                  {Number(
-                                    s.performance30d?.level1BonusAmount || 0,
-                                  ).toLocaleString()}
-                                  원)
-                                </span>
-                              )}
-                            </span>
-                          </div>
-                          <div className="flex justify-between text-xs">
-                            <span className="text-muted-foreground">
-                              간접 소개 수수료
-                            </span>
-                            <span className="font-semibold text-blue-700">
-                              {Number(
-                                s.performance30d?.level1CommissionAmount ?? 0,
-                              ).toLocaleString()}
-                              원
-                              <span className="text-muted-foreground font-normal ml-1">
-                                (정책상 0%)
                               </span>
                             </span>
                           </div>

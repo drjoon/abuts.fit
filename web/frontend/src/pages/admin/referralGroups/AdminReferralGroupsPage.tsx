@@ -155,8 +155,6 @@ type ApiTreeNode = {
   lastMonthPaidRevenue?: number;
   lastMonthBonusRevenue?: number;
   commissionAmount?: number;
-  directCommissionAmount?: number;
-  level1CommissionAmount?: number;
   children?: ApiTreeNode[];
 };
 
@@ -457,7 +455,7 @@ export default function AdminReferralGroupsPage() {
     return out;
   }, [treeData?.tree]);
 
-  // 수수료 패널: 직접 소개(소개자가 직접 소개한 의뢰자) 목록
+  // 수수료 패널: 1단계 소개(소개자가 소개한 의뢰자) 목록
   // 트리 루트가 소개자인 경우, 루트의 직계 자식 중 의뢰자
   const directReferralRequestors = useMemo(() => {
     const root = treeData?.tree;
@@ -466,27 +464,6 @@ export default function AdminReferralGroupsPage() {
     return (root.children || []).filter(
       (c) => String(c?.role || "") === "requestor",
     );
-  }, [treeData?.tree]);
-
-  // 수수료 패널: 간접 소개(소개자가 소개한 하위 소개자들의 의뢰자) 목록
-  // 루트의 직계 자식 중 소개자들의 직계 자식 중 의뢰자
-  const indirectReferralRequestors = useMemo(() => {
-    const root = treeData?.tree;
-    if (!root || !isCommissionLeader(String(root.role || "")))
-      return [] as Array<{ requestor: ApiTreeNode; via: ApiTreeNode }>;
-    const result: Array<{ requestor: ApiTreeNode; via: ApiTreeNode }> = [];
-    const childReferrers = (root.children || []).filter((c) =>
-      isCommissionLeader(String(c?.role || "")),
-    );
-    for (const referrer of childReferrers) {
-      const requestors = (referrer.children || []).filter(
-        (c) => String(c?.role || "") === "requestor",
-      );
-      for (const r of requestors) {
-        result.push({ requestor: r, via: referrer });
-      }
-    }
-    return result;
   }, [treeData?.tree]);
 
   const visibleTreeRows = useMemo(() => {
@@ -528,12 +505,7 @@ export default function AdminReferralGroupsPage() {
     return Math.round(sumPaidRevenue * 0.1);
   }, [directReferralRequestors]);
 
-  const indirectCommissionSum = useMemo(() => {
-    // 정책 변경: 간접 소개 수수료(2.5%) 미지급
-    return 0;
-  }, [indirectReferralRequestors]);
-
-  const totalCommissionSum = directCommissionSum + indirectCommissionSum;
+  const totalCommissionSum = directCommissionSum;
 
   const deleteUserWithBusiness = async (node: ApiTreeNode) => {
     if (!token) return false;
@@ -953,8 +925,7 @@ export default function AdminReferralGroupsPage() {
                   네트워크 {flattenedTree.length}명
                   {isCommissionLeader(String(treeData.tree.role || "")) && (
                     <>
-                      {" · "}직접 소개 {directReferralRequestors.length}개
-                      {" · "}간접 소개 {indirectReferralRequestors.length}개
+                      {" · "}소개 {directReferralRequestors.length}개
                     </>
                   )}
                 </div>
@@ -966,8 +937,7 @@ export default function AdminReferralGroupsPage() {
                     {formatMoney(totalCommissionSum)}원
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    직접 {formatMoney(directCommissionSum)} · 간접{" "}
-                    {formatMoney(indirectCommissionSum)}
+                    소개 수수료 {formatMoney(directCommissionSum)}
                   </div>
                 </div>
               )}

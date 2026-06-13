@@ -70,17 +70,10 @@ export type SalesmanCreditRow = {
   };
   performance30d: {
     referredOrgCount: number;
-    level1OrgCount?: number;
     revenueAmount: number;
-    directRevenueAmount?: number;
-    level1RevenueAmount?: number;
     bonusAmount?: number;
-    directBonusAmount?: number;
-    level1BonusAmount?: number;
     orderCount: number;
     commissionAmount: number;
-    myCommissionAmount?: number;
-    level1CommissionAmount?: number;
   };
 };
 
@@ -97,8 +90,7 @@ export type SalesmanCreditsOverview = {
   };
   commission: {
     totalAmount: number;
-    directAmount: number;
-    indirectAmount: number;
+    amount: number;
   };
   walletPeriod: {
     earnedAmount: number;

@@ -11,8 +11,6 @@ export type RequestorReferralStats = {
   referralBusinessCount?: number;
   referralBusinessOrders?: number;
   selfBusinessOrders?: number;
-  indirectReferralBusinessCount?: number;
-  indirectReferralBusinessOrders?: number;
   statsMode?: "group" | "referral";
   effectiveUnitPrice?: number;
   baseUnitPrice?: number;

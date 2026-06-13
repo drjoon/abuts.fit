@@ -43,7 +43,6 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
     return {
       salesmenById: new Map(),
       directOrgIdsBySalesmanId: new Map(),
-      level1OrgIdsBySalesmanId: new Map(),
       orgIdsBySalesmanId: new Map(),
       referredSalesmanCountBySalesmanId: new Map(),
       revenueByOrgId: new Map(),
@@ -149,8 +148,6 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
   ]);
 
   const childSalesmanIds = [];
-  const childSalesmanBusinessAnchorIds = [];
-  const leaderSalesmanIdByChildSalesmanBusinessAnchorId = new Map();
   const referredSalesmanCountBySalesmanId = new Map();
 
   for (const childSalesman of childSalesmen || []) {
@@ -163,14 +160,7 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
       salesmanIdByBusinessAnchorId.get(parentBusinessAnchorId) || "";
 
     if (childSalesmanId) childSalesmanIds.push(childSalesmanId);
-    if (childBusinessAnchorId)
-      childSalesmanBusinessAnchorIds.push(childBusinessAnchorId);
-    if (childBusinessAnchorId && parentSalesmanId) {
-      leaderSalesmanIdByChildSalesmanBusinessAnchorId.set(
-        childBusinessAnchorId,
-        parentSalesmanId,
-      );
-    }
+
     if (parentSalesmanId) {
       referredSalesmanCountBySalesmanId.set(
         parentSalesmanId,
@@ -179,19 +169,6 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
       );
     }
   }
-
-  const level1Requestors = childSalesmanBusinessAnchorIds.length
-    ? await BusinessAnchor.find({
-        businessType: "requestor",
-        referredByAnchorId: {
-          $in: childSalesmanBusinessAnchorIds.map(
-            (id) => new Types.ObjectId(id),
-          ),
-        },
-      })
-        .select({ _id: 1, referredByAnchorId: 1 })
-        .lean()
-    : [];
 
   const directOrgIdsBySalesmanId = new Map();
   for (const user of directRequestors || []) {
@@ -204,19 +181,6 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
     addToSetMap(directOrgIdsBySalesmanId, salesmanId, businessAnchorId);
   }
 
-  const level1OrgIdsBySalesmanId = new Map();
-  for (const user of level1Requestors || []) {
-    const childSalesmanBusinessAnchorId = normalizeObjectIdString(
-      user?.referredByAnchorId,
-    );
-    const salesmanId =
-      leaderSalesmanIdByChildSalesmanBusinessAnchorId.get(
-        childSalesmanBusinessAnchorId,
-      ) || "";
-    const businessAnchorId = normalizeObjectIdString(user?._id);
-    addToSetMap(level1OrgIdsBySalesmanId, salesmanId, businessAnchorId);
-  }
-
   const orgIdsBySalesmanId = new Map();
   for (const salesmanId of normalizedSalesmanIds) {
     const merged = new Set();
@@ -224,10 +188,7 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
       []) {
       merged.add(businessAnchorId);
     }
-    for (const businessAnchorId of level1OrgIdsBySalesmanId.get(salesmanId) ||
-      []) {
-      merged.add(businessAnchorId);
-    }
+
     orgIdsBySalesmanId.set(salesmanId, merged);
   }
 
@@ -268,7 +229,6 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
     salesmenById,
     childSalesmanIds,
     directOrgIdsBySalesmanId,
-    level1OrgIdsBySalesmanId,
     orgIdsBySalesmanId,
     referredSalesmanCountBySalesmanId,
     revenueByOrgId: buildRevenueRowMap(revenueRows),

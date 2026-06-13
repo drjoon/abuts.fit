@@ -58,11 +58,11 @@ export default function SalesmanPaymentsPage() {
         statsGridClassName="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4"
         stats={
           <>
-            {/* 직접 소개 수수료 (10%) */}
+            {/* 소개 수수료 (10%) */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
-                  직접 소개 수수료
+                  소개 수수료
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-bold">
@@ -74,10 +74,12 @@ export default function SalesmanPaymentsPage() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
-                  간접 소개 수수료
+                  소개 수수료율
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-2xl font-bold">0원</CardContent>
+              <CardContent className="text-2xl font-bold">
+                {Math.round(Number(data?.commissionRate || 0) * 100)}%
+              </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
@@ -143,9 +145,7 @@ export default function SalesmanPaymentsPage() {
                         <span>
                           {org.referralLevel === "unaffiliated"
                             ? "영업자 미설정"
-                            : org.referralLevel === "level1"
-                              ? "간접 소개"
-                              : "직접 소개"}
+                            : "소개"}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
@@ -183,15 +183,12 @@ export default function SalesmanPaymentsPage() {
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
                     <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">직접 비율</span>
+                      <span className="text-muted-foreground">소개 비율</span>
                       <span>
                         {Math.round(Number(data?.commissionRate || 0) * 100)}%
                       </span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">간접 비율</span>
-                      <span>0%</span>
-                    </div>
+
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">정산일</span>
                       <span>매월 {Number(data?.payoutDayOfMonth || 1)}일</span>

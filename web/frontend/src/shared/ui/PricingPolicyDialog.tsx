@@ -104,31 +104,22 @@ export const PricingPolicyDialog = ({
               <div className="space-y-4 pt-2 text-sm text-muted-foreground">
                 <section className="space-y-1">
                   <h3 className="font-semibold text-foreground text-md">
-                    1. 직접 소개 수수료 (10%)
+                    1. 소개 수수료 (10%)
                   </h3>
                   <p>
-                    직접 소개한 의뢰자의 유료의뢰비에서 <b>10%</b>가 수수료로
+                    소개한 의뢰자의 유료의뢰비에서 <b>10%</b>가 수수료로
                     지급됩니다.
                   </p>
                   <ul className="list-disc pl-4 space-y-0.5">
                     <li>소개 관계 기준: 의뢰자 가입 시 입력한 영업자 코드</li>
+                    <li>집계 범위: 1단계 소개만 포함</li>
                     <li>유료 매출 기준: 의뢰 결제 완료 시점</li>
                   </ul>
                 </section>
 
                 <section className="space-y-1">
                   <h3 className="font-semibold text-foreground text-md">
-                    2. 간접 소개 수수료
-                  </h3>
-                  <p>
-                    현재 정책에서는 간접 소개(하위 영업자 체인) 수수료를
-                    지급하지 않습니다.
-                  </p>
-                </section>
-
-                <section className="space-y-1">
-                  <h3 className="font-semibold text-foreground text-md">
-                    3. 집계 및 지급
+                    2. 집계 및 지급
                   </h3>
                   <ul className="list-disc pl-4 space-y-0.5">
                     <li>매일 자정(KST 00:00) 사업자 기준으로 업데이트</li>
@@ -241,8 +232,8 @@ export const PricingPolicyDialog = ({
                   </h3>
                   <p>
                     할인 단가는{" "}
-                    <b>나를 소개한 기공소 + 나 + 내가 직접 소개한 기공소</b>의
-                    최근 30일 주문량을 합산해 계산합니다.
+                    <b>나를 소개한 기공소 + 나 + 내가 소개한 기공소</b>의 최근
+                    30일 주문량을 합산해 계산합니다.
                   </p>
                   <ul className="list-disc pl-4 space-y-0.5">
                     <li>

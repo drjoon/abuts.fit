@@ -20,17 +20,9 @@ const invalidateSalesmanAncestorTreeCachesForAnchorId = async (anchorId) => {
     .lean();
   if (String(anchor?.businessType || "") !== "requestor") return;
 
-  const level1Id = String(anchor?.referredByAnchorId || "").trim();
-  if (!Types.ObjectId.isValid(level1Id)) return;
-  invalidateAdminReferralCachesForBusinessAnchorId(level1Id);
-
-  const level1 = await BusinessAnchor.findById(level1Id)
-    .select({ referredByAnchorId: 1 })
-    .lean();
-  const level2Id = String(level1?.referredByAnchorId || "").trim();
-  if (Types.ObjectId.isValid(level2Id)) {
-    invalidateAdminReferralCachesForBusinessAnchorId(level2Id);
-  }
+  const parentAnchorId = String(anchor?.referredByAnchorId || "").trim();
+  if (!Types.ObjectId.isValid(parentAnchorId)) return;
+  invalidateAdminReferralCachesForBusinessAnchorId(parentAnchorId);
 };
 
 const refreshPricingReferralAggregateForAnchorId = (

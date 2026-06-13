@@ -1231,8 +1231,6 @@ export async function getMyPricingReferralStats(req, res) {
         let referralBusinessCount = 0;
         let referralBusinessOrders = 0;
         let selfBusinessOrders = 0;
-        let indirectReferralBusinessCount = 0;
-        let indirectReferralBusinessOrders = 0;
         let statsMode = role === "requestor" ? "group" : "referral";
 
         if (role === "requestor") {
@@ -1323,44 +1321,7 @@ export async function getMyPricingReferralStats(req, res) {
           groupMemberCount = referralBusinessCount;
           groupMemberIds = directChildBusinessAnchorIds.map(String);
 
-          // 영업자(salesman)의 간접 소개 통계 계산:
-          // 직접 소개한 사업자들이 다시 소개한 사업자(2단계)의 수와 의뢰건수.
-          // 현재 정책에서 간접 소개 수수료는 미지급이며, 해당 값은 네트워크 통계 용도로만 사용.
-          // read 경로에서 재계산하므로 캐시 TTL(60s) 이내 정합성 허용.
-          if (role === "salesman" && directChildBusinessAnchorIds.length > 0) {
-            const indirectChildren = await BusinessAnchor.find({
-              referredByAnchorId: {
-                $in: directChildBusinessAnchorIds.map(
-                  (id) => new Types.ObjectId(id),
-                ),
-              },
-            })
-              .select({ _id: 1 })
-              .lean();
-
-            const indirectChildIds = Array.from(
-              new Set(
-                (indirectChildren || [])
-                  .map((child) => String(child?._id || "").trim())
-                  .filter(Boolean),
-              ),
-            );
-
-            if (indirectChildIds.length > 0) {
-              const indirectCountMap =
-                await getShippingOrderCountsByBusinessAnchorIds({
-                  businessAnchorIds: indirectChildIds,
-                  startYmd: last30StartYmd,
-                  endYmd: todayYmd,
-                });
-              indirectReferralBusinessCount = indirectChildIds.length;
-              indirectReferralBusinessOrders = indirectChildIds.reduce(
-                (acc, id) =>
-                  acc + Number(indirectCountMap.get(String(id)) || 0),
-                0,
-              );
-            }
-          }
+          // 소개 네트워크는 1단계(직접 소개)만 집계합니다.
         }
 
         const user = me;
@@ -1453,8 +1414,6 @@ export async function getMyPricingReferralStats(req, res) {
           referralBusinessCount,
           referralBusinessOrders,
           selfBusinessOrders,
-          indirectReferralBusinessCount,
-          indirectReferralBusinessOrders,
           statsMode,
           totalOrders,
           baseUnitPrice,

@@ -338,7 +338,6 @@ export async function getSalesmanDashboard(req, res) {
         devopsAnchor?.payoutRates?.devopsRate || 0.1,
       );
     }
-    const indirectCommissionRate = 0;
     const payoutDayOfMonth = 1;
 
     const { start, end } = getPeriodRangeUtc(period);
@@ -414,8 +413,6 @@ export async function getSalesmanDashboard(req, res) {
         .map((u) => (u?._id ? String(u._id) : ""))
         .filter(Boolean),
     );
-    // 수익 분배 정책 변경: 간접 소개 수수료(2.5%) 제거
-    const level1OrgIdSet = new Set();
     const organizationAnchorIds = Array.from(
       new Set([...directOrgIdSet, ...unaffiliatedOrgIdSet]),
     );
@@ -431,7 +428,6 @@ export async function getSalesmanDashboard(req, res) {
               : null,
           period: period || null,
           commissionRate,
-          indirectCommissionRate,
           payoutDayOfMonth,
           referralCode: effectiveReferralCode,
           overview: {
@@ -439,11 +435,9 @@ export async function getSalesmanDashboard(req, res) {
             monthRevenueAmount: 0,
             monthCommissionAmount: 0,
             directOrganizationCount: 0,
-            level1OrganizationCount: 0,
             totalOrganizationCount: 0,
             directCommissionAmount: 0,
             unaffiliatedCommissionAmount: 0,
-            level1CommissionAmount: 0,
             totalCommissionAmount: 0,
             payableGrossCommissionAmount: 0,
             paidNetCommissionAmount: roundMoney(totalCommissionAmount),
@@ -516,12 +510,10 @@ export async function getSalesmanDashboard(req, res) {
 
         const isDirect = directOrgIdSet.has(idStr);
         const isUnaffiliated = unaffiliatedOrgIdSet.has(idStr);
-        // 미설정 의뢰자(devops 전용): unaffiliatedCommissionRate, 직접 소개: commissionRate
+        // 미설정 의뢰자(devops 전용): unaffiliatedCommissionRate, 일반 소개: commissionRate
         const rate = isUnaffiliated
           ? unaffiliatedCommissionRate
-          : isDirect
-            ? commissionRate
-            : indirectCommissionRate;
+          : commissionRate;
         const commissionAmount = roundMoney(revenueAmount * rate);
 
         return {
@@ -530,11 +522,7 @@ export async function getSalesmanDashboard(req, res) {
           monthRevenueAmount: revenueAmount,
           monthOrderCount: orderCount,
           monthCommissionAmount: commissionAmount,
-          referralLevel: isDirect
-            ? "direct"
-            : isUnaffiliated
-              ? "unaffiliated"
-              : "level1",
+          referralLevel: isDirect ? "direct" : "unaffiliated",
         };
       })
       .sort(
@@ -547,9 +535,6 @@ export async function getSalesmanDashboard(req, res) {
     const unaffiliatedOrganizations = organizations.filter(
       (o) => o.referralLevel === "unaffiliated",
     );
-    const level1Organizations = organizations.filter(
-      (o) => o.referralLevel === "level1",
-    );
 
     const directCommissionAmount = directOrganizations.reduce(
       (acc, o) => acc + Number(o.monthCommissionAmount || 0),
@@ -559,7 +544,6 @@ export async function getSalesmanDashboard(req, res) {
       (acc, o) => acc + Number(o.monthCommissionAmount || 0),
       0,
     );
-    const level1CommissionAmount = 0;
     const totalCommissionAmount =
       directCommissionAmount + unaffiliatedCommissionAmount;
 
@@ -579,7 +563,6 @@ export async function getSalesmanDashboard(req, res) {
         period,
         commissionRate,
         unaffiliatedCommissionRate,
-        indirectCommissionRate,
         payoutDayOfMonth,
         referralCode: effectiveReferralCode,
         overview: {
@@ -587,13 +570,11 @@ export async function getSalesmanDashboard(req, res) {
           monthRevenueAmount: roundMoney(monthRevenueAmount),
           monthCommissionAmount: roundMoney(monthCommissionAmount),
           directOrganizationCount: directOrganizations.length,
-          level1OrganizationCount: level1Organizations.length,
           totalOrganizationCount: organizations.length,
           directCommissionAmount: roundMoney(directCommissionAmount),
           unaffiliatedCommissionAmount: roundMoney(
             unaffiliatedCommissionAmount,
           ),
-          level1CommissionAmount: 0,
           totalCommissionAmount: roundMoney(totalCommissionAmount),
           payableGrossCommissionAmount: roundMoney(totalCommissionAmount),
           paidNetCommissionAmount: 0,

@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/shared/hooks/use-toast";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
-import { Copy, Users, Wallet, Coins, BadgeCheck } from "lucide-react";
+import { Copy, Wallet, Coins, BadgeCheck } from "lucide-react";
 import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 import {
@@ -57,48 +57,23 @@ export const SalesmanDashboardPage = () => {
   const directBusinessCount = Number(
     overview.directBusinessCount || overview.directOrganizationCount || 0,
   );
-  const level1BusinessCount = Number(
-    overview.level1BusinessCount || overview.level1OrganizationCount || 0,
-  );
-  const totalBusinessCount = Number(
-    overview.totalBusinessCount ||
-      overview.referredBusinessCount ||
-      overview.totalOrganizationCount ||
-      overview.referredOrganizationCount ||
-      0,
-  );
 
   const directCommission = Number(overview.directCommissionAmount || 0);
-  const level1Commission = Number(overview.level1CommissionAmount || 0);
-  const totalCommission = Number(
-    overview.totalCommissionAmount || overview.monthCommissionAmount || 0,
-  );
 
   const payableGross = Number(
-    overview.payableGrossCommissionAmount || totalCommission || 0,
+    overview.payableGrossCommissionAmount ||
+      overview.totalCommissionAmount ||
+      overview.monthCommissionAmount ||
+      0,
   );
   const paidNet = Number(overview.paidNetCommissionAmount || 0);
   const referralSalesmanCount = (data?.referralSalesmen || []).length;
 
-  const referredBusinesses = (
-    data?.businesses ||
-    data?.organizations ||
-    []
-  ).filter((business) => Boolean(business));
-  const directBusinesses = referredBusinesses.filter(
-    (business) => business.referralLevel !== "level1",
-  );
-  const level1Businesses = referredBusinesses.filter(
-    (business) => business.referralLevel === "level1",
-  );
-  const directOrders = directBusinesses.reduce(
-    (sum, b) => sum + Number(b.monthOrderCount || 0),
+  const directOrders = (data?.organizations || []).reduce(
+    (sum, b) => sum + Number(b?.monthOrderCount || 0),
     0,
   );
-  const level1Orders = level1Businesses.reduce(
-    (sum, b) => sum + Number(b.monthOrderCount || 0),
-    0,
-  );
+
   const referralSalesmen = data?.referralSalesmen || [];
 
   return (
@@ -195,42 +170,7 @@ export const SalesmanDashboardPage = () => {
               </CardContent>
             </Card>
 
-            {/* 소개 의뢰자 요약 — 직접/간접 모두 표시 */}
-            {/* <Card className="app-glass-card app-glass-card--lg overflow-visible">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <CardTitle className="text-sm font-semibold cursor-help flex items-center gap-1">
-                      <Users className="h-4 w-4" />
-                      소개 의뢰자
-                    </CardTitle>
-                  </TooltipTrigger>
-                  <TooltipContent>소개한 의뢰자 수 표시</TooltipContent>
-                </Tooltip>
-              </CardHeader>
-              <CardContent className="space-y-1.5">
-                <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="font-semibold">합계 소개 의뢰자</div>
-                  <div className="text-base font-bold">
-                    {totalBusinessCount} 개소
-                  </div>
-                </div>
-                <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="text-muted-foreground">내 소개 의뢰자</div>
-                  <div className="font-semibold">
-                    {directBusinessCount} 개소
-                  </div>
-                </div>
-                <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="text-muted-foreground">간접 소개 의뢰자</div>
-                  <div className="font-semibold">
-                    {level1BusinessCount} 개소
-                  </div>
-                </div>
-              </CardContent>
-            </Card> */}
-
-            {/* 수수료 크레딧 — 직접(10%), 간접 소개 수수료 미지급 */}
+            {/* 수수료 크레딧 — 1단계 소개 10% 단일 수수료 */}
             <Card className="app-glass-card app-glass-card--lg overflow-visible">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <Tooltip>
@@ -253,16 +193,10 @@ export const SalesmanDashboardPage = () => {
                   </div>
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="text-muted-foreground">내 수수료 (10%)</div>
+                  <div className="text-muted-foreground">소개 수수료 (10%)</div>
                   <div className="font-semibold">
                     {formatMoney(directCommission)}원
                   </div>
-                </div>
-                <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="text-muted-foreground">
-                    간접 소개 수수료 (미지급)
-                  </div>
-                  <div className="font-semibold">0원</div>
                 </div>
               </CardContent>
             </Card>
@@ -290,13 +224,7 @@ export const SalesmanDashboardPage = () => {
                   </div>
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="text-muted-foreground">내 수수료 (10%)</div>
-                  <div className="font-semibold">0원</div>
-                </div>
-                <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="text-muted-foreground">
-                    간접 소개 수수료 (미지급)
-                  </div>
+                  <div className="text-muted-foreground">소개 수수료 (10%)</div>
                   <div className="font-semibold">0원</div>
                 </div>
               </CardContent>
@@ -323,12 +251,12 @@ export const SalesmanDashboardPage = () => {
                     ))}
                   </div>
                 ) : (
-                  <div className="grid gap-2 grid-cols-1 md:grid-cols-3">
+                  <div className="grid gap-2 grid-cols-1 md:grid-cols-2">
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <div className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4 cursor-help">
                           <div className="text-xs font-medium text-muted-foreground mb-3">
-                            직접소개 의뢰자
+                            소개 의뢰자
                           </div>
                           <div className="space-y-1.5">
                             <div className="flex items-baseline justify-between gap-2">
@@ -351,37 +279,7 @@ export const SalesmanDashboardPage = () => {
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        내가 직접 소개한 의뢰자 사업자 (10% 수수료 적용)
-                      </TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4 cursor-help">
-                          <div className="text-xs font-medium text-muted-foreground mb-3">
-                            간접 소개 의뢰자
-                          </div>
-                          <div className="space-y-1.5">
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-xs text-muted-foreground">
-                                의뢰자 수
-                              </span>
-                              <span className="text-xl font-bold tabular-nums">
-                                {level1BusinessCount.toLocaleString()}개소
-                              </span>
-                            </div>
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-xs text-muted-foreground">
-                                의뢰건수
-                              </span>
-                              <span className="text-base font-semibold tabular-nums">
-                                {level1Orders.toLocaleString()}건
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        간접 소개 수수료는 현재 정책상 지급하지 않습니다.
+                        내가 소개한 의뢰자 사업자 (1단계, 10% 수수료 적용)
                       </TooltipContent>
                     </Tooltip>
                     <Tooltip>
@@ -401,17 +299,17 @@ export const SalesmanDashboardPage = () => {
                             </div>
                             <div className="flex items-baseline justify-between gap-2">
                               <span className="text-xs text-muted-foreground">
-                                의뢰건수
+                                소개 의뢰건수
                               </span>
                               <span className="text-base font-semibold tabular-nums">
-                                {level1Orders.toLocaleString()}건
+                                {directOrders.toLocaleString()}건
                               </span>
                             </div>
                           </div>
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        내가 직접 소개한 영업자 수와 그를 통해 들어온 의뢰건수
+                        내가 소개한 영업자 수와 1단계 소개 의뢰건수
                       </TooltipContent>
                     </Tooltip>
                   </div>
@@ -475,13 +373,13 @@ export const SalesmanDashboardPage = () => {
                 <Card className="app-glass-card app-glass-card--lg">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-semibold">
-                      직접 소개한 영업자 ({referralSalesmen.length}명)
+                      소개한 영업자 ({referralSalesmen.length}명)
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     {referralSalesmen.length === 0 ? (
                       <div className="py-4 text-sm text-muted-foreground">
-                        직접 소개한 영업자가 없습니다.
+                        소개한 영업자가 없습니다.
                       </div>
                     ) : (
                       <ul className="space-y-2">

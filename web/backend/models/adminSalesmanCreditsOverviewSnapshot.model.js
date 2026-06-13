@@ -43,11 +43,7 @@ const adminSalesmanCreditsOverviewSnapshotSchema = new mongoose.Schema(
         type: Number,
         default: 0,
       },
-      directAmount: {
-        type: Number,
-        default: 0,
-      },
-      indirectAmount: {
+      amount: {
         type: Number,
         default: 0,
       },

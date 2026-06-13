@@ -921,12 +921,7 @@ export function useAdminCreditPage() {
         0,
       ),
       totalEarned: salesmen.reduce(
-        (acc, s) =>
-          acc +
-          Number(
-            (s?.performance30d?.myCommissionAmount ?? 0) +
-              (s?.performance30d?.level1CommissionAmount ?? 0),
-          ),
+        (acc, s) => acc + Number(s?.performance30d?.commissionAmount ?? 0),
         0,
       ),
       totalPaidOut: salesmen.reduce(

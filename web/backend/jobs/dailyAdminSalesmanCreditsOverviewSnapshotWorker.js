@@ -108,8 +108,7 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
           },
           commission: {
             totalAmount: 0,
-            directAmount: 0,
-            indirectAmount: 0,
+            amount: 0,
           },
           walletPeriod: {
             earnedAmount: 0,
@@ -162,11 +161,6 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
   const salesmanBusinessAnchorIds = salesmanUsers
     .map((s) => s?.businessAnchorId)
     .filter((id) => id && Types.ObjectId.isValid(String(id)));
-  const roleByBusinessAnchorId = new Map(
-    salesmanUsers
-      .filter((s) => s?.businessAnchorId)
-      .map((s) => [String(s.businessAnchorId), String(s.role || "")]),
-  );
 
   // 직접 소개 의뢰자: salesmen -> requestor
   const directRequestors = await BusinessAnchor.find({
@@ -175,35 +169,6 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
   })
     .select({ _id: 1, referredByAnchorId: 1 })
     .lean();
-
-  // 직계1 영업자
-  const childSalesmen = await BusinessAnchor.find({
-    businessType: { $in: REFERRAL_LEADER_ROLES },
-    referredByAnchorId: { $in: salesmanBusinessAnchorIds },
-  })
-    .select({ _id: 1, referredByAnchorId: 1 })
-    .lean();
-
-  const childSalesmanBusinessAnchorIds = (childSalesmen || [])
-    .map((s) => s?._id)
-    .filter((id) => id && Types.ObjectId.isValid(String(id)));
-
-  // 직계1 영업자가 소개한 의뢰자
-  const level1Requestors =
-    childSalesmanBusinessAnchorIds.length === 0
-      ? []
-      : await BusinessAnchor.find({
-          businessType: "requestor",
-          referredByAnchorId: { $in: childSalesmanBusinessAnchorIds },
-        })
-          .select({ _id: 1, referredByAnchorId: 1 })
-          .lean();
-
-  const leaderBusinessAnchorIdByChildSalesmanBusinessAnchorId = new Map(
-    (childSalesmen || [])
-      .map((s) => [String(s?._id || ""), String(s?.referredByAnchorId || "")])
-      .filter(([cid, pid]) => cid && pid),
-  );
 
   // 수수료/매출 집계는 조직 단위
   const directOrgIdsBySalesmanBusinessAnchorId = new Map();
@@ -217,39 +182,11 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
     directOrgIdsBySalesmanBusinessAnchorId.set(sAnchorId, set);
   }
 
-  const level1OrgIdsBySalesmanBusinessAnchorId = new Map();
-  const requestorOrgIdsByChildSalesmanBusinessAnchorId = new Map();
-  for (const u of level1Requestors || []) {
-    const childSAnchorId = String(u?.referredByAnchorId || "");
-    const leaderSAnchorId = String(
-      leaderBusinessAnchorIdByChildSalesmanBusinessAnchorId.get(
-        childSAnchorId,
-      ) || "",
-    );
-    const orgId = u?._id ? String(u._id) : "";
-    if (!orgId) continue;
-    if (leaderSAnchorId) {
-      const set =
-        level1OrgIdsBySalesmanBusinessAnchorId.get(leaderSAnchorId) ||
-        new Set();
-      set.add(orgId);
-      level1OrgIdsBySalesmanBusinessAnchorId.set(leaderSAnchorId, set);
-    }
-    if (childSAnchorId) {
-      const set2 =
-        requestorOrgIdsByChildSalesmanBusinessAnchorId.get(childSAnchorId) ||
-        new Set();
-      set2.add(orgId);
-      requestorOrgIdsByChildSalesmanBusinessAnchorId.set(childSAnchorId, set2);
-    }
-  }
-
   const orgIdsAll = Array.from(
     new Set(
-      [
-        ...directOrgIdsBySalesmanBusinessAnchorId.values(),
-        ...level1OrgIdsBySalesmanBusinessAnchorId.values(),
-      ].flatMap((s) => Array.from(s)),
+      [...directOrgIdsBySalesmanBusinessAnchorId.values()].flatMap((s) =>
+        Array.from(s),
+      ),
     ),
   )
     .filter((id) => Types.ObjectId.isValid(id))
@@ -307,28 +244,17 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
     totalOrders += row.orders;
   }
 
-  // 전체 수수료(유료 매출 기준) - 직접(10%), 간접 소개 수수료는 미지급
-  let directCommissionTotal = 0;
-  for (const [
-    sAnchorId,
-    orgSet,
-  ] of directOrgIdsBySalesmanBusinessAnchorId.entries()) {
+  // 전체 수수료(유료 매출 기준) - 1단계 소개 10% 단일 수수료
+  let commissionTotal = 0;
+  for (const [, orgSet] of directOrgIdsBySalesmanBusinessAnchorId.entries()) {
     let paid = 0;
     for (const oid of orgSet) {
       paid += Number(revenueByOrgId.get(String(oid))?.paid || 0);
     }
-    directCommissionTotal += paid * commissionRate;
+    commissionTotal += paid * commissionRate;
   }
 
-  // 간접 소개 수수료는 정책상 미지급
-  let indirectCommissionTotal = 0;
-  for (const _child of childSalesmen || []) {
-    indirectCommissionTotal += 0;
-  }
-
-  const totalCommissionAmount = normalizeNumber(
-    directCommissionTotal + indirectCommissionTotal,
-  );
+  const totalCommissionAmount = normalizeNumber(commissionTotal);
 
   await AdminSalesmanCreditsOverviewSnapshot.updateOne(
     { ymd, periodKey },
@@ -346,8 +272,7 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
         },
         commission: {
           totalAmount: totalCommissionAmount,
-          directAmount: normalizeNumber(directCommissionTotal),
-          indirectAmount: normalizeNumber(indirectCommissionTotal),
+          amount: normalizeNumber(commissionTotal),
         },
         walletPeriod: {
           earnedAmount: normalizeNumber(earnedAmount),

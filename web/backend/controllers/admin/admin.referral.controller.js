@@ -351,7 +351,7 @@ export async function getReferralGroups(req, res) {
 
       const effectiveUnitPrice =
         computeVolumeEffectiveUnitPrice(groupTotalOrders);
-      // rules.md 2.4 기준: 직접 소개 수수료는 devops/salesman 모두 10%
+      // rules.md 2.4 기준: 소개 수수료는 devops/salesman 모두 10%
       const leaderCommissionRate =
         role === "devops"
           ? Number(
@@ -896,35 +896,17 @@ export async function getReferralGroupTree(req, res) {
         !lite &&
         REFERRAL_COMMISSION_LEADER_ROLES.has(String(rootNode.role || ""))
       ) {
-        const isDevops = String(rootNode.role || "") === "devops";
         const directChildren = Array.isArray(rootNode.children)
           ? rootNode.children
           : [];
-        let directCommissionAmount = 0;
-        let level1CommissionAmount = 0;
+        let commissionAmount = 0;
         for (const child of directChildren) {
-          if (String(child?.role || "") === "requestor") {
-            directCommissionAmount += Math.round(
-              Number(child?.lastMonthPaidRevenue || 0) * 0.1,
-            );
-          } else if (
-            !isDevops &&
-            REFERRAL_COMMISSION_LEADER_ROLES.has(String(child?.role || ""))
-          ) {
-            const grandChildren = Array.isArray(child?.children)
-              ? child.children
-              : [];
-            for (const grandChild of grandChildren) {
-              if (String(grandChild?.role || "") !== "requestor") continue;
-              level1CommissionAmount += 0;
-            }
-          }
+          if (String(child?.role || "") !== "requestor") continue;
+          commissionAmount += Math.round(
+            Number(child?.lastMonthPaidRevenue || 0) * 0.1,
+          );
         }
-        rootNode.directCommissionAmount = directCommissionAmount;
-        rootNode.level1CommissionAmount = level1CommissionAmount;
-        rootNode.commissionAmount =
-          Number(directCommissionAmount || 0) +
-          Number(level1CommissionAmount || 0);
+        rootNode.commissionAmount = Number(commissionAmount || 0);
       }
 
       return {

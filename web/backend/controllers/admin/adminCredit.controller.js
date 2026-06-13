@@ -171,7 +171,7 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
   const balanceAmount = normalizeNumber(
     earnedAmount - paidOutAmount + adjustedAmount,
   );
-  const { directOrgIdsBySalesmanId, level1OrgIdsBySalesmanId, revenueByOrgId } =
+  const { directOrgIdsBySalesmanId, revenueByOrgId } =
     await buildSalesmanReferralAggregation({
       salesmanIds,
       range,
@@ -195,13 +195,7 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
     directAmount += rev * commissionRate;
   }
 
-  let indirectAmount = 0;
-  for (const _entry of level1OrgIdsBySalesmanId.entries()) {
-    // 정책 변경: 간접 소개 수수료(2.5%)는 지급하지 않음
-    indirectAmount += 0;
-  }
-
-  const totalAmount = normalizeNumber(directAmount + indirectAmount);
+  const totalAmount = normalizeNumber(directAmount);
 
   return {
     salesmenCount: salesmanIds.length,
@@ -212,8 +206,7 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
     },
     commission: {
       totalAmount,
-      directAmount: normalizeNumber(directAmount),
-      indirectAmount: normalizeNumber(indirectAmount),
+      amount: normalizeNumber(directAmount),
     },
     walletPeriod: {
       earnedAmount: normalizeNumber(earnedAmount),
@@ -265,8 +258,9 @@ export async function recalcAdminSalesmanCreditsOverviewSnapshot({
     },
     commission: {
       totalAmount: normalizeNumber(overview?.commission?.totalAmount),
-      directAmount: normalizeNumber(overview?.commission?.directAmount),
-      indirectAmount: normalizeNumber(overview?.commission?.indirectAmount),
+      amount: normalizeNumber(
+        overview?.commission?.amount ?? overview?.commission?.totalAmount,
+      ),
     },
     walletPeriod: {
       earnedAmount: normalizeNumber(overview?.walletPeriod?.earnedAmount),
@@ -1219,7 +1213,6 @@ export async function adminGetSalesmanCredits(req, res) {
         : null;
     const {
       directOrgIdsBySalesmanId,
-      level1OrgIdsBySalesmanId,
       referredSalesmanCountBySalesmanId,
       revenueByOrgId,
     } = await buildSalesmanReferralAggregation({
@@ -1253,7 +1246,6 @@ export async function adminGetSalesmanCredits(req, res) {
       );
 
       const directOrgSet = directOrgIdsBySalesmanId.get(sid) || new Set();
-      const level1OrgSet = level1OrgIdsBySalesmanId.get(sid) || new Set();
 
       let directRevenue30d = 0;
       let directBonus30d = 0;
@@ -1266,23 +1258,10 @@ export async function adminGetSalesmanCredits(req, res) {
         directOrders30d += Number(row.orderCount || 0);
       }
 
-      let level1Revenue30d = 0;
-      let level1Bonus30d = 0;
-      let level1Orders30d = 0;
-      for (const orgId of level1OrgSet) {
-        const row = revenueByOrgId.get(String(orgId));
-        if (!row) continue;
-        level1Revenue30d += Number(row.revenueAmount || 0);
-        level1Bonus30d += Number(row.bonusAmount || 0);
-        level1Orders30d += Number(row.orderCount || 0);
-      }
-
-      const revenue30d = directRevenue30d + level1Revenue30d;
-      const bonus30d = directBonus30d + level1Bonus30d;
-      const orders30d = directOrders30d + level1Orders30d;
-      const myCommission30d = Math.round(directRevenue30d * commissionRate);
-      const level1Commission30d = 0;
-      const commission30d = myCommission30d + level1Commission30d;
+      const revenue30d = directRevenue30d;
+      const bonus30d = directBonus30d;
+      const orders30d = directOrders30d;
+      const commission30d = Math.round(directRevenue30d * commissionRate);
       const anchorId = String(s?.businessAnchorId || "");
       const anchor = anchorById.get(anchorId) || null;
 
@@ -1321,17 +1300,10 @@ export async function adminGetSalesmanCredits(req, res) {
         performance30d: {
           introducedCount: directOrgSet.size,
           referredOrgCount: directOrgSet.size,
-          level1OrgCount: level1OrgSet.size,
           revenueAmount: Math.round(revenue30d),
-          directRevenueAmount: Math.round(directRevenue30d),
-          level1RevenueAmount: Math.round(level1Revenue30d),
           bonusAmount: Math.round(bonus30d),
-          directBonusAmount: Math.round(directBonus30d),
-          level1BonusAmount: Math.round(level1Bonus30d),
           orderCount: Math.round(orders30d),
           commissionAmount: Math.round(commission30d),
-          myCommissionAmount: Math.round(myCommission30d),
-          level1CommissionAmount: Math.round(level1Commission30d),
         },
       };
     });
