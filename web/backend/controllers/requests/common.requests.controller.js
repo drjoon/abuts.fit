@@ -1566,10 +1566,12 @@ export async function deleteRequest(req, res) {
 }
 
 /**
- * 추적관리 완료 의뢰건을 내부 샘플로 복사
- * - 기존 의뢰건은 완료 상태 유지
+ * 의뢰건을 내부 샘플로 복사
+ * - 기존 의뢰건은 완료/진행 상태 그대로 유지 (원본 불변)
  * - 복사본은 제조사 내부 테스트/개발용으로 사용 (크레딧 미소비)
- * - 세척.패킹까지만 처리 가능 (stage ceiling)
+ * - 복사본은 R&D 탭에 즉시 보관되도록 생성 (`source=manufacturer_sample`, `rnd.doneAt!=null`)
+ * - 원본 단계/배송정보/크레딧에는 영향 없이 분리 저장
+ * - 허용 원본 단계: 세척.패킹, 추적관리, 배송완료 건
  * @route POST /api/requests/:id/clone-as-sample
  */
 export async function cloneAsSample(req, res) {
@@ -1588,16 +1590,19 @@ export async function cloneAsSample(req, res) {
         throw new ApiError(403, "제조사 또는 관리자만 샘플 복사가 가능합니다.");
       }
 
-      // 제조사 단계 확인: 추적관리 또는 발송 완료 건만 복사 가능
+      // 제조사 단계 확인
+      // - 추적관리/배송완료는 기존과 동일하게 허용
+      // - 세척.패킹 단계도 허용 (원본은 계속 진행, 복사본만 R&D로 생성)
       const stage = String(request.manufacturerStage || "").trim();
       const di = request.deliveryInfoRef || {};
       const isDelivered = !!di.deliveredAt;
       const isTrackingStage = stage === "추적관리";
+      const isPackingStage = stage === "세척.패킹" || stage === "세척.포장";
 
-      if (!isTrackingStage && !isDelivered) {
+      if (!isTrackingStage && !isDelivered && !isPackingStage) {
         throw new ApiError(
           400,
-          "추적관리 완료 또는 배송 완료된 의뢰건만 샘플 복사가 가능합니다.",
+          "세척.패킹 진행중, 추적관리 완료 또는 배송 완료된 의뢰건만 샘플 복사가 가능합니다.",
         );
       }
 
@@ -1642,8 +1647,16 @@ export async function cloneAsSample(req, res) {
         businessAnchorId: request.businessAnchorId,
         // 제조사는 현재 사용자 (복사 실행자)
         caManufacturer: req.user._id,
+        // 원본의 현재 제조사 단계를 보존하되, R&D 노출은 rnd.doneAt으로 제어
+        manufacturerStage: stage || "추적관리",
         // 출처 표시: 내부 샘플
         source: "manufacturer_sample",
+        // R&D 탭 즉시 표시를 위한 done 상태
+        rnd: {
+          doneAt: new Date(),
+          doneBy: req.user._id,
+          doneFromStage: stage || null,
+        },
         // 가격 정보 없음 (크레딧 미소비)
         price: {
           amount: 0,
@@ -1675,9 +1688,8 @@ export async function cloneAsSample(req, res) {
           code: "none",
           label: "미처리",
         },
-        // 로트번호는 제조사가 가공 단계에서 새로 부여
-        // 원본 로트번호와 재질은 상태 이력에 기록됨
-        // lotNumber 필드는 저장하지 않음 (중복 인덱스 문제 방지)
+        // 로트번호는 복사본에 저장하지 않음 (원본 불변 + 중복 인덱스/크레딧 영향 방지)
+        // 원본 로트번호/재질은 상태 이력(note)으로만 남김
         // 생산 스케줄 새로 계산
         productionSchedule: {
           assignedMachine: null,
@@ -1732,9 +1744,9 @@ export async function cloneAsSample(req, res) {
       }
 
       // 웹소켓: 제조사 워크시트 카운트 업데이트 (실시간)
-      // R&D 샘플은 의뢰 단계에서 시작하므로 의뢰 카운트 증가
+      // R&D 샘플 복사본은 R&D 보관 대상으로 생성됨
       emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
-        stage: "request",
+        stage: "rnd",
         delta: 1,
         requestId: newRequest.requestId,
         source: "manufacturer_sample",

@@ -2157,10 +2157,10 @@ cd web/backend && npm run db:seed-branding
 
 ### 18.1 개요
 
-추적관리(또는 배송 완료)된 의뢰건을 제조사 내부 테스트/개발용으로 복사하는 기능입니다.
+세척.패킹 진행중/추적관리/배송 완료 의뢰건을 제조사 내부 테스트/개발용으로 복사하는 기능입니다.
 
 - **목적**: 오류 점검, 기능 업그레이드 검증, 샘플 테스트
-- **원본 보존**: 기존 의뢰건은 완료 상태 유지
+- **원본 보존**: 기존 의뢰건은 진행/완료 상태를 그대로 유지 (원본 불변)
 - **크레딧 미소비**: 의뢰자 크레딧 차감 없음, 수수료 미처리
 
 ### 18.2 Request 모델 확장
@@ -2184,9 +2184,11 @@ source: {
 
 | 필드                      | 처리 방식                         |
 | ------------------------- | --------------------------------- |
-| `lotNumber.value`         | 원본 그대로 유지                  |
-| `requestId`               | 새로 생성 (modelNumber 자동 생성) |
-| `source`                  | `"manufacturer_sample"`로 설정    |
+| `lotNumber.value`         | 복사본에는 저장하지 않음(원본만 유지) |
+| `requestId`               | 새로 생성 (모델 규칙에 따라 자동 생성) |
+| `source`                  | `"manufacturer_sample"`로 설정       |
+| `rnd.doneAt`/`doneBy`     | 복사 시 즉시 설정 (R&D 탭에 바로 표시) |
+| `rnd.doneFromStage`       | 원본 제조사 단계 값 기록(복귀 기준)     |
 | `price`                   | 0 (크레딧 미소비)                 |
 | `paymentStatus`           | `"결제전"`                        |
 | `businessAnchorId`        | 원본과 동일 (통계용)              |
@@ -2196,7 +2198,7 @@ source: {
 | `timeline`                | 초기화                            |
 | `productionSchedule`      | 기계 배정/큐 포지션 초기화        |
 
-### 18.4 Stage 제한
+### 18.4 Stage 제한/복사 허용 조건
 
 `manufacturer_sample` 의뢰건은 **세척.패킹까지만** 처리 가능:
 
@@ -2213,7 +2215,9 @@ source: {
   - 추적관리 페이지 > 생산공정일지 탭 > 테이블 행 액션 컬럼
 - **버튼 텍스트**: "R&D 샘플 복사" (또는 간략히 "복사")
 - **아이콘**: `FlaskConical` (Lucide React)
-- **표시 조건**: `manufacturerStage === "추적관리"` 또는 배송 완료된 건
+- **표시 조건**:
+  - 추적관리 페이지: `manufacturerStage === "추적관리"` 또는 배송 완료된 건
+  - 세척.패킹 페이지: `manufacturerStage === "세척.패킹"`(또는 레거시 `세척.포장`)도 복사 허용
 
 - **뱃지 표시**:
   - 의뢰 ~ 세척.패킹 단계의 카드에 "R&D 샘플" 뱃지 표시
@@ -2227,13 +2231,13 @@ source: {
 **발생 시점**:
 
 - R&D 샘플 복사 완료 시 (`cloneAsSample`)
-- 새 의뢰 생성 시 (의뢰 단계 카운트 증가)
+- 복사본이 R&D 탭 저장 대상으로 생성될 때
 
 **페이로드**:
 
 ```javascript
 {
-  stage: "request",      // 영향받은 단계
+  stage: "rnd",          // 영향받은 탭
   delta: 1,              // 카운트 변화량 (+1 또는 -1)
   requestId: "...",      // 새로 생성된 의뢰 ID
   source: "manufacturer_sample",  // 생성 출처

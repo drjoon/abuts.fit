@@ -313,6 +313,36 @@ export const PackingPageContent = ({
     [handleDeleteStageFile, handleUpdateReviewStatus],
   );
 
+  const handleSaveToRnd = useCallback(
+    async (req: ManufacturerRequest) => {
+      if (!req?._id) return;
+      try {
+        const res = await fetch(`/api/requests/${req._id}/clone-as-sample`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "R&D 저장에 실패했습니다.");
+        }
+        toast({
+          title: "R&D 저장 완료",
+          description: `R&D 페이지로 샘플 복사 저장 완료 (새 의뢰ID: ${data?.data?.requestId || "-"})`,
+        });
+      } catch (e: any) {
+        toast({
+          title: "R&D 저장 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+      }
+    },
+    [toast, token],
+  );
+
   const handleCardDelete = useCallback(
     async (req: ManufacturerRequest) => {
       if (!req?._id) return;
@@ -1052,6 +1082,7 @@ export const PackingPageContent = ({
               onOpenPreview={handleOpenPreview}
               onDeleteCam={() => {}}
               onDeleteNc={handleDeleteNc}
+              onSaveToRnd={handleSaveToRnd}
               onRollback={handleCardRollback}
               onApprove={handleCardApprove}
               onDelete={handleCardDelete}

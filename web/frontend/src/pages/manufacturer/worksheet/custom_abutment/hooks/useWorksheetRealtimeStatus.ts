@@ -310,7 +310,7 @@ export function useWorksheetRealtimeStatus({
             }),
           );
           return;
-        case "packing:capture-processed":
+        case "packing:capture-processed": {
           const eventRequest = payload?.request as
             | ManufacturerRequest
             | undefined;
@@ -335,6 +335,7 @@ export function useWorksheetRealtimeStatus({
             );
           }
           return;
+        }
         case "request:stage-changed": {
           // bg-file-processed 소스의 경우 이벤트에 최신 request 포함 → 즉시 패치하여
           // re-fetch 완료 전에도 캐시 키 변경이 반영되도록 한다.
@@ -458,12 +459,12 @@ export function useWorksheetRealtimeStatus({
             if (delta < 0 || action === "deleted") {
               toast({
                 title: "R&D 샘플 삭제됨",
-                description: `의뢰 단계에서 샘플이 제거되었습니다${stage ? ` (${stage})` : ""}`,
+                description: `R&D 샘플이 제거되었습니다${stage ? ` (${stage})` : ""}`,
               });
             } else {
               toast({
                 title: "R&D 샘플 복사 완료",
-                description: `의뢰 단계에 새 샘플이 추가되었습니다${stage ? ` (${stage})` : ""}`,
+                description: `R&D 탭에 새 샘플이 저장되었습니다${stage ? ` (${stage})` : ""}`,
               });
             }
           }

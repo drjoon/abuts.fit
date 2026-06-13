@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, ArrowRight, Check, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, FlaskConical, X } from "lucide-react";
 import { formatImplantDisplay } from "@/utils/implant";
 import { generateModelNumber } from "@/utils/modelNumber";
 import {
@@ -24,6 +24,7 @@ type WorksheetCardGridProps = {
   onOpenPreview: (req: ManufacturerRequest) => void;
   onDeleteCam: (req: ManufacturerRequest) => void;
   onDeleteNc: (req: ManufacturerRequest) => void;
+  onSaveToRnd?: (req: ManufacturerRequest) => void;
   onRollback?: (req: ManufacturerRequest) => void;
   onApprove?: (req: ManufacturerRequest) => void;
   onDelete?: (req: ManufacturerRequest) => void;
@@ -60,6 +61,7 @@ export const WorksheetCardGrid = ({
   onOpenPreview,
   onDeleteCam,
   onDeleteNc,
+  onSaveToRnd,
   onRollback,
   onApprove,
   onDelete,
@@ -556,6 +558,22 @@ export const WorksheetCardGrid = ({
               </div>
             )}
             <div className="absolute right-2 top-2 z-20 flex gap-1">
+              {onSaveToRnd && tabStage === "packing" && (
+                <button
+                  type="button"
+                  className="h-7 px-2 inline-flex items-center justify-center gap-1 rounded-md border bg-white/90 text-purple-700 shadow-sm transition hover:bg-purple-50"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onSaveToRnd(request);
+                  }}
+                  aria-label="R&D 저장"
+                  title="R&D 페이지로 샘플 복사 저장"
+                >
+                  <FlaskConical className="h-3.5 w-3.5" />
+                  <span className="text-[11px] font-semibold">R&D 저장</span>
+                </button>
+              )}
               {onRollback && canRollback && (
                 <button
                   type="button"
