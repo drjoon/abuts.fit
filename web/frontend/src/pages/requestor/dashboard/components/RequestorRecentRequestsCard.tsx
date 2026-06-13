@@ -401,6 +401,8 @@ export const RequestorRecentRequestsCard = ({
             const isRemakeFixed = item.price?.rule === "remake_fixed_10000";
             const isRemakeMonthlyFree =
               item.price?.rule === "remake_monthly_free_10";
+            const retentionGrooveLabel =
+              item.caseInfos?.retentionGroove === "deep" ? "있음" : "없음";
 
             return (
               <FunctionalItemCard
@@ -442,6 +444,9 @@ export const RequestorRecentRequestsCard = ({
                       )}
                       <span className="ml-1">
                         {formatImplantDisplay(item.caseInfos)}
+                      </span>
+                      <span className="ml-1">
+                        유지홈 {retentionGrooveLabel}
                       </span>
                       {item.caseInfos?.maxDiameter && (
                         <span className="ml-1">
@@ -489,6 +494,7 @@ export const RequestorRecentRequestsCard = ({
                     <span className="ml-1">
                       {formatImplantDisplay(item.caseInfos)}
                     </span>
+                    <span className="ml-1">유지홈 {retentionGrooveLabel}</span>
                   </div>
                   <div className="text-[10px] text-slate-600 mt-0.5 flex items-center gap-2">
                     <span>

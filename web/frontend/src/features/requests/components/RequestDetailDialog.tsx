@@ -146,6 +146,8 @@ export const RequestDetailDialog = ({
 
   const maxDiameter = caseInfos.maxDiameter;
   const connectionDiameter = caseInfos.connectionDiameter;
+  const retentionGrooveLabel =
+    caseInfos.retentionGroove === "deep" ? "있음" : "없음";
 
   const estimatedShipYmd =
     request?.timeline?.estimatedShipYmd ||
@@ -329,19 +331,12 @@ export const RequestDetailDialog = ({
                     : "-"}
                 </span>
               </div>
-              {(() => {
-                // 유지홈(retentionGroove) 표시
-                // none=없음 / shallow=없음 / deep=있음
-                const rg = caseInfos.retentionGroove;
-                if (!rg) return null;
-                const label = rg === "deep" ? "있음" : "없음";
-                return (
-                  <div className="grid grid-cols-[110px_1fr] gap-2">
-                    <span className="text-slate-600">유지홈</span>
-                    <span className="font-medium text-right">{label}</span>
-                  </div>
-                );
-              })()}
+              <div className="grid grid-cols-[110px_1fr] gap-2">
+                <span className="text-slate-600">유지홈</span>
+                <span className="font-medium text-right">
+                  {retentionGrooveLabel}
+                </span>
+              </div>
             </div>
           </div>
         </DialogDescription>
