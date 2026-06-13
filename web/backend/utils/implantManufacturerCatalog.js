@@ -41,7 +41,9 @@ function loadManufacturerCatalogFromConnectionDir() {
     for (const entry of entries) {
       if (!entry.isFile()) continue;
       const fileName = String(entry.name || "").trim();
-      const match = /^(.+?)_([^_]+?)_[A-Z]{2}_Connection\.prc$/i.exec(fileName);
+      const match = /^(.+?)_([^_]+?)_[A-Z]{2,3}_Connection\.prc$/i.exec(
+        fileName,
+      );
       if (!match) continue;
 
       const manufacturerKor = normalizeToken(match[1]);

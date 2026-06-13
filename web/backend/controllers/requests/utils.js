@@ -4,6 +4,7 @@ import User from "../../models/user.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import LotCounter from "../../models/lotCounter.model.js";
+import Connection from "../../models/connection.model.js";
 import {
   addKoreanBusinessDays,
   getTodayYmdInKst,
@@ -543,6 +544,40 @@ export async function normalizeCaseInfosImplantFields(
     implantFamily: family,
     implantType: type,
   });
+}
+
+/**
+ * 신규 주문/수정 시점 주문 가능 프리셋 검증.
+ * - isActive=true 조합만 주문 가능
+ * - 현재 정책상 Mini 계열은 대부분 비활성화되어 있고,
+ *   seed 기준 MEGAGEN AnyOne Mini(Hex)만 활성화되어 주문 가능하다.
+ */
+export async function assertOrderableImplantPresetOrThrow(caseInfos) {
+  const normalized = normalizeImplantFields(caseInfos || {});
+  const manufacturer = String(normalized.implantManufacturer || "").trim();
+  const brand = String(normalized.implantBrand || "").trim();
+  const family = String(normalized.implantFamily || "").trim();
+  const type = String(normalized.implantType || "").trim();
+
+  if (!manufacturer || !brand || !family || !type) {
+    throw new Error("임플란트 제조사/브랜드/패밀리/타입이 모두 필요합니다.");
+  }
+
+  const activeConnection = await Connection.findOne({
+    manufacturer,
+    brand,
+    family,
+    type,
+    isActive: true,
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  if (activeConnection) return normalized;
+
+  throw new Error(
+    `현재 주문이 비활성화된 임플란트 조합입니다: ${manufacturer} / ${brand} / ${family} / ${type}`,
+  );
 }
 
 function inferDiameterGroupFromDiameter(diameter) {

@@ -25,6 +25,7 @@ import {
   buildManufacturerOrgScopeFilter,
   computePriceForRequest,
   normalizeCaseInfosImplantFields,
+  assertOrderableImplantPresetOrThrow,
   getTodayYmdInKst,
   bumpRollbackCount,
 } from "./utils.js";
@@ -1099,9 +1100,21 @@ export async function updateRequest(req, res) {
       updateData.caseInfos &&
       typeof updateData.caseInfos === "object"
     ) {
-      updateData.caseInfos = await normalizeCaseInfosImplantFields(
-        updateData.caseInfos,
-      );
+      try {
+        updateData.caseInfos = await normalizeCaseInfosImplantFields(
+          updateData.caseInfos,
+        );
+
+        // 주문 가능(활성화) 임플란트 조합만 수정 허용
+        await assertOrderableImplantPresetOrThrow(updateData.caseInfos);
+      } catch (validationError) {
+        return res.status(400).json({
+          success: false,
+          message:
+            validationError?.message ||
+            "임플란트 정보 검증에 실패했습니다. 입력값을 확인해주세요.",
+        });
+      }
     } else if (!caseInfosAllowed && updateData?.caseInfos) {
       // 허용되지 않는 경우 caseInfos 삭제
       delete updateData.caseInfos;

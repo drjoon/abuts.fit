@@ -840,7 +840,7 @@ export function NewRequestDetailsSection({
           </div>
         </div>
         <div className="flex flex-col justify-center items-center">
-          타사 대비 조금 크게 생산됩니다. 내부 공간 +30 micron 추가!
+          타사 대비 조금 크게 생산됩니다. 접착 공간 +30 micron 추가!
         </div>
       </div>
 

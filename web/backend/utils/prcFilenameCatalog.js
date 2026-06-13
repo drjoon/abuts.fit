@@ -34,11 +34,32 @@ function normalizeCodeChar(raw) {
 
 export function parsePrcTypeCode(typeCode) {
   const code = normalizeCodeChar(typeCode);
-  if (!/^[RM][HN]$/.test(code)) return null;
-  const familyChar = code[0];
-  const implantTypeChar = code[1];
+  if (!code) return null;
+
+  // canonical 2-char code: RH/RN/MH/MN/NH/NN/SH/SN
+  // legacy 3-char code도 허용: SNH/SNN
+  let familyChar = "";
+  let implantTypeChar = "";
+
+  if (/^[RMSN][HN]$/.test(code)) {
+    familyChar = code[0];
+    implantTypeChar = code[1];
+  } else if (/^SN[HN]$/.test(code)) {
+    familyChar = "S";
+    implantTypeChar = code[2];
+  } else {
+    return null;
+  }
+
+  const familyByChar = {
+    R: "Regular",
+    M: "Mini",
+    N: "Narrow",
+    S: "Small Narrow",
+  };
+
   return {
-    family: familyChar === "M" ? "Mini" : "Regular",
+    family: familyByChar[familyChar] || "",
     implantType: implantTypeChar === "N" ? "Non-Hex" : "Hex",
     familyChar,
     implantTypeChar,
@@ -59,7 +80,17 @@ export function getPrcTypeCodeByFamily(family, type) {
     .trim()
     .toLowerCase();
   const normalizedType = normalizeImplantType(type);
-  const familyChar = normalizedFamily === "mini" ? "M" : "R";
+
+  let familyChar = "R";
+  if (normalizedFamily === "mini") familyChar = "M";
+  else if (normalizedFamily === "narrow") familyChar = "N";
+  else if (
+    normalizedFamily === "small narrow" ||
+    normalizedFamily === "smallnarrow"
+  ) {
+    familyChar = "S";
+  }
+
   const implantTypeChar = normalizedType === "Non-Hex" ? "N" : "H";
   return `${familyChar}${implantTypeChar}`;
 }
@@ -68,7 +99,7 @@ function parsePrcBaseFileName(fileName, suffix) {
   const baseName = path.basename(String(fileName || ""));
   const escapedSuffix = suffix.replace(".", "\\.");
   const match = new RegExp(
-    `^(.+?)_([^_]+?)_([A-Z]{2})_${escapedSuffix}$`,
+    `^(.+?)_([^_]+?)_([A-Z]{2,3})_${escapedSuffix}$`,
     "i",
   ).exec(baseName);
   if (!match) return null;

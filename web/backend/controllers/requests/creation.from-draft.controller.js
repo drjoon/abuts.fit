@@ -8,6 +8,7 @@ import SystemSettings from "../../models/systemSettings.model.js";
 import {
   normalizeCaseInfosImplantFields,
   ensureReviewByStageDefaults,
+  assertOrderableImplantPresetOrThrow,
 } from "./utils.js";
 import {
   computePriceForRequest,
@@ -276,6 +277,21 @@ export async function createRequestsFromDraft(req, res) {
             fileName,
             missingFields: missing,
           };
+        }
+
+        if (!isNewSystemRequest) {
+          try {
+            await assertOrderableImplantPresetOrThrow(normalizedCi);
+          } catch (orderableError) {
+            const fileName = ci?.file?.originalName || `파일 ${idx + 1}`;
+            return {
+              skip: true,
+              fileName,
+              missingFields: [
+                orderableError?.message || "주문 불가 임플란트 조합",
+              ],
+            };
+          }
         }
 
         const priceStart = Date.now();

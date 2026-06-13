@@ -2314,3 +2314,52 @@ source: {
 
 - 기존 구현: 샘플은 카드 렌더링(워크시트)에서는 보여지며, 주요 통계/aggregate 엔드포인트에서 제외하도록 백엔드 코드가 업데이트되었습니다.
 - 필요 시 특정 통계 API에서 샘플을 포함해야 하면 `includeSamples=1` 같은 옵션을 추가하여 예외를 허용하세요.
+
+---
+
+## 19. 임플란트 브랜드 버전/패밀리(PRC) 운영 정책 (2026-06-13)
+
+### 19.1 브랜드 표기 SSOT (버전 포함)
+
+신규 주문 기준 canonical 브랜드는 아래와 같이 **버전 표기**를 사용합니다.
+
+- Neobiotech: `IS2`, `IS3`
+- Dentium: `SuperLine2`, `Implantium`
+- Megagen: `AnyOne`
+- Osstem: `TS3`
+- Dentis: `SQ`, `OneQ`
+- Dio: `UF2`
+
+레거시 입력값(`TS`, `SuperLine`, `UF`, `IS`)은 백엔드 정규화 단계에서 버전 표기 canonical로 정규화합니다.
+
+### 19.2 Family canonical 집합
+
+Family canonical 값은 아래 4가지를 사용합니다.
+
+- `Regular`
+- `Mini`
+- `Narrow`
+- `Small Narrow`
+
+제조사 표기 차이(`Small`, `Narrow` 등)는 위 canonical로 정규화합니다.
+
+### 19.3 PRC 파일 코드 규칙
+
+PRC 파일명의 family/type 코드는 아래를 사용합니다.
+
+- `RH`, `RN` → Regular + (Hex/Non-Hex)
+- `MH`, `MN` → Mini + (Hex/Non-Hex)
+- `NH`, `NN` → Narrow + (Hex/Non-Hex)
+- `SH`, `SN` → Small Narrow + (Hex/Non-Hex)
+
+레거시 3글자 코드(`SNH`, `SNN`)도 파서는 읽을 수 있어야 합니다.
+
+### 19.4 2026-06-13 임시 활성화 정책 (주문 가능)
+
+PRC 검증/생산 안정화 전 임시 정책:
+
+- 기본 원칙: Mini/Narrow/Small Narrow 계열은 주문 비활성화
+- 예외: **`MEGAGEN / AnyOne / Mini / Hex`만 활성화** (테스트용)
+
+주문 가능 여부는 `Connection.isActive`를 SSOT로 사용하며,
+신규 주문 생성 및 의뢰 수정 시점에서 `isActive=true` 조합만 허용합니다.

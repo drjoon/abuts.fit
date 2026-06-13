@@ -61,16 +61,18 @@ async function upsertConnections() {
             category: c.category,
           },
           update: {
+            // seed를 실행하면 주요 식별/활성 정책(isActive, fileName 포함)을 SSOT 기준으로 동기화한다.
+            // 향후 브랜드 버전 변경(IS2/TS3/UF2 등)이나 Mini 계열 활성/비활성 토글을
+            // add-only가 아닌 명시적 업데이트로 반영하기 위함.
             $set: {
+              ...insertBase,
               ...(diameter !== undefined ? { diameter } : {}),
               ...(l2 !== undefined ? { l2 } : {}),
               ...(hexSize !== undefined ? { hexSize } : {}),
-              ...(internalGauge ? { internalGauge } : {}),
+              internalGauge,
               ...(protrusionLength !== undefined ? { protrusionLength } : {}),
             },
-            $setOnInsert: {
-              ...insertBase,
-            },
+            $setOnInsert: {},
           },
           upsert: true,
         },

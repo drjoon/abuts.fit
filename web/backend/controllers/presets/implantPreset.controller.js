@@ -22,6 +22,10 @@ function normalizeFamilyLabel(family) {
     .trim()
     .toLowerCase();
   if (value === "mini") return "Mini";
+  if (value === "narrow") return "Narrow";
+  if (value === "small narrow" || value === "smallnarrow") {
+    return "Small Narrow";
+  }
   return "Regular";
 }
 
@@ -37,7 +41,16 @@ function buildDisplayLabels({ manufacturer, brand, family, type }) {
   };
 }
 
-function buildPrcFileNames({
+function isUnsupportedImplantBrand(brand) {
+  const token = String(brand || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[_\-\s]+/g, "");
+  // 2026-06 정책: NEOBIOTECH ALX는 지원 대상에서 제외
+  return token === "ALX";
+}
+
+async function buildPrcFileNames({
   manufacturer,
   brand,
   family,
@@ -47,7 +60,7 @@ function buildPrcFileNames({
   const normalizedType = normalizeTypeLabel(type);
   const normalizedFamily = normalizeFamilyLabel(family);
   const typeCode = getPrcTypeCodeByFamily(normalizedFamily, normalizedType);
-  const catalogNames = buildPrcFileNamesFromCatalog(
+  const catalogNames = await buildPrcFileNamesFromCatalog(
     manufacturer,
     brand,
     normalizedType,
@@ -87,7 +100,8 @@ function getBusinessAnchorId(req) {
 export async function getImplantPresets(req, res) {
   try {
     const businessAnchorId = getBusinessAnchorId(req);
-    const all = await Connection.find({ isActive: true }).lean();
+    const allRaw = await Connection.find({ isActive: true }).lean();
+    const all = allRaw.filter((c) => !isUnsupportedImplantBrand(c?.brand));
 
     const usage = businessAnchorId
       ? await Request.aggregate([
@@ -103,52 +117,55 @@ export async function getImplantPresets(req, res) {
 
     const usageMap = new Map(usage.map((u) => [u._id.toString(), u.count]));
 
-    const sorted = all
-      .map((c) => {
-        const normalized = normalizeImplantFields({
-          implantManufacturer: c.manufacturer,
-          implantBrand: c.brand,
-          implantFamily: c.family,
-          implantType: c.type,
-        });
-        const computed = buildPrcFileNames({
-          manufacturer: normalized.implantManufacturer,
-          brand: normalized.implantBrand,
-          family: normalized.implantFamily || c.family,
-          type: normalized.implantType,
-          legacyFileName: c.fileName,
-        });
-        const display = buildDisplayLabels({
-          manufacturer: normalized.implantManufacturer,
-          brand: normalized.implantBrand,
-          family: normalized.implantFamily || c.family,
-          type: normalized.implantType,
-        });
-        return {
-          ...c,
-          manufacturer: normalized.implantManufacturer,
-          brand: normalized.implantBrand,
-          family: normalized.implantFamily || normalizeFamilyLabel(c.family),
-          type: normalized.implantType,
-          canonicalKey: `${normalized.implantManufacturer}|${normalized.implantBrand}|${normalized.implantFamily || normalizeFamilyLabel(c.family)}|${normalized.implantType}`,
-          prcMatchScore:
-            typeof c.fileName === "string" &&
-            c.fileName === computed.connectionPrcFileName
-              ? 2
-              : computed.connectionPrcFileName
-                ? 1
-                : 0,
-          connectionPrcFileName: computed.connectionPrcFileName,
-          faceHolePrcFileName: computed.faceHolePrcFileName,
-          prcTypeCode: computed.prcTypeCode,
-          prcBrandCode: computed.prcBrandCode,
-          displayManufacturer: display.displayManufacturer,
-          displayBrand: display.displayBrand,
-          displayFamily: display.displayFamily,
-          displayType: display.displayType,
-          usageCount: usageMap.get(c._id.toString()) || 0,
-        };
-      })
+    const sorted = (
+      await Promise.all(
+        all.map(async (c) => {
+          const normalized = normalizeImplantFields({
+            implantManufacturer: c.manufacturer,
+            implantBrand: c.brand,
+            implantFamily: c.family,
+            implantType: c.type,
+          });
+          const computed = await buildPrcFileNames({
+            manufacturer: normalized.implantManufacturer,
+            brand: normalized.implantBrand,
+            family: normalized.implantFamily || c.family,
+            type: normalized.implantType,
+            legacyFileName: c.fileName,
+          });
+          const display = buildDisplayLabels({
+            manufacturer: normalized.implantManufacturer,
+            brand: normalized.implantBrand,
+            family: normalized.implantFamily || c.family,
+            type: normalized.implantType,
+          });
+          return {
+            ...c,
+            manufacturer: normalized.implantManufacturer,
+            brand: normalized.implantBrand,
+            family: normalized.implantFamily || normalizeFamilyLabel(c.family),
+            type: normalized.implantType,
+            canonicalKey: `${normalized.implantManufacturer}|${normalized.implantBrand}|${normalized.implantFamily || normalizeFamilyLabel(c.family)}|${normalized.implantType}`,
+            prcMatchScore:
+              typeof c.fileName === "string" &&
+              c.fileName === computed.connectionPrcFileName
+                ? 2
+                : computed.connectionPrcFileName
+                  ? 1
+                  : 0,
+            connectionPrcFileName: computed.connectionPrcFileName,
+            faceHolePrcFileName: computed.faceHolePrcFileName,
+            prcTypeCode: computed.prcTypeCode,
+            prcBrandCode: computed.prcBrandCode,
+            displayManufacturer: display.displayManufacturer,
+            displayBrand: display.displayBrand,
+            displayFamily: display.displayFamily,
+            displayType: display.displayType,
+            usageCount: usageMap.get(c._id.toString()) || 0,
+          };
+        }),
+      )
+    )
       .sort((a, b) => {
         if (b.prcMatchScore !== a.prcMatchScore)
           return b.prcMatchScore - a.prcMatchScore;

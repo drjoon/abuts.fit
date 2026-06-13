@@ -22,8 +22,19 @@ const PRC_CONNECTION_DIR = path.resolve(
 );
 
 const IMPLANT_BRAND_CANONICAL_ALIASES = {
+  // 버전 표기 브랜드를 SSOT로 유지한다.
+  // 레거시 입력(TS, SuperLine, UF, IS)은 버전 표기 브랜드로 정규화한다.
   OSSTEM: {
-    TS3: "TS",
+    TS: "TS3",
+  },
+  DENTIUM: {
+    SuperLine: "SuperLine2",
+  },
+  DIO: {
+    UF: "UF2",
+  },
+  NEOBIOTECH: {
+    IS: "IS2",
   },
 };
 
@@ -46,7 +57,9 @@ function readConnectionCatalog() {
     for (const entry of entries) {
       if (!entry.isFile()) continue;
       const fileName = String(entry.name || "").trim();
-      const match = /^(.+?)_([^_]+?)_[A-Z]{2}_Connection\.prc$/i.exec(fileName);
+      const match = /^(.+?)_([^_]+?)_[A-Z]{2,3}_Connection\.prc$/i.exec(
+        fileName,
+      );
       if (!match) continue;
 
       const manufacturerKor = normalizeKeyToken(match[1]);
@@ -154,8 +167,19 @@ export function normalizeImplantFamily(raw) {
   const s = normalizeKeyToken(raw);
   if (!s) return "";
   const upper = s.toUpperCase().replaceAll("_", "-").replaceAll(" ", "");
-  if (upper === "MINI") return "Mini";
+
   if (upper === "REGULAR") return "Regular";
+
+  // 제조사별 표기 차이를 canonical family로 통일
+  // - Mini 계열: MINI, SMALL
+  // - Narrow 계열: NARROW
+  // - Small Narrow 계열: SMALLNARROW, SMALL-NARROW, SN
+  if (upper === "MINI" || upper === "SMALL") return "Mini";
+  if (upper === "NARROW") return "Narrow";
+  if (upper === "SMALLNARROW" || upper === "SMALL-NARROW" || upper === "SN") {
+    return "Small Narrow";
+  }
+
   return s;
 }
 

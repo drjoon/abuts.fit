@@ -2,11 +2,9 @@ import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 import { connectDb, disconnectDb } from "./_mongo.js";
-import {
-  seedBulkAccounts,
-  seedDefaultAccounts,
-  seedEssentialAccounts,
-} from "./seed/accounts.js";
+// 안전 정책: db:seed-account는 필수 계정만 생성한다.
+// 벌크/mock 계정 생성은 이 스크립트에서 호출하지 않는다.
+import { seedEssentialAccounts } from "./seed/accounts.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

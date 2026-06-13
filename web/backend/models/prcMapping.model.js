@@ -15,7 +15,12 @@ const prcMappingSchema = new mongoose.Schema(
     family: {
       type: String,
       required: true,
-      enum: ["Regular", "Mini"],
+      // 브랜드별 명칭 차이를 반영한 canonical family 집합
+      // - Regular
+      // - Mini (일부 제조사 Small)
+      // - Narrow
+      // - Small Narrow (네오 계열)
+      enum: ["Regular", "Mini", "Narrow", "Small Narrow"],
     },
     type: {
       type: String,
