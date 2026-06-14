@@ -1,0 +1,383 @@
+﻿BEGIN_PROCESS; 공정 이름; 4;
+BEGIN_OPERATION; 507; 5Axis_Composite; 0;
+   4437; 4437; 0;  SOURCE; 0; TECHCODETYPE; 2;
+   4420; 4420; 2026;  SOURCE; 0; TECHCODETYPE; 2;
+   CollisionDetection; 6630; 0;  CAPTION; 충돌 감지; SOURCE; 2; TECHCODETYPE; 520;
+   LimitAngleBetweenPoints; 6511; 0;  CAPTION; 두점사이 각도 제한; SOURCE; 1; TECHCODETYPE; 67;
+   ReferenceDepthOfCut; 1768; 0.20000000000000001;  HIDDEN; CAPTION; 참조 가공 깊이; SOURCE; 1; TECHCODETYPE; 2;
+   RoughPass; 238; 0;  CAPTION; 황삭 경로; SOURCE; 0; TECHCODETYPE; 67;
+   ThroughPointX; 3247; 0;  HIDDEN; CAPTION; 쓰루 포인트 X|쓰루 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
+   StockAllowance; 272; 0;  CAPTION; 가공 여유; SOURCE; 2; TECHCODETYPE; 2;
+   ReverseStepOverDirection; 3230; 0;  CAPTION; 리버스 스텝 오버 방향; SOURCE; 2; TECHCODETYPE; 67;
+   ContourPassMovement; 3264; 0;  HIDDEN; CAPTION; 패스 이동; SOURCE; 1; TECHCODETYPE; 436;
+   4434; 4434; 0;  SOURCE; 0; TECHCODETYPE; 2;
+   SemiFinishingTool; 711; ;  CAPTION; 세미피니싱 공구; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 711;;
+		:
+	END_STRING
+   PinchMilling; 3465; 0;  CAPTION; 핀치 밀링; SOURCE; 1; TECHCODETYPE; 67;
+   RemoveFinalIncompletePasses; 3414; 1;  CAPTION; 불완전 경로 제거; SOURCE; 2; TECHCODETYPE; 67;
+   SpineEndPointY; 3244; 0;  HIDDEN; CAPTION; 끝 포인트 Y|끝 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
+   BEGIN_SUB_TECHNOLOGY; 3210; 516; CAPTION; 5 Axis Entry Moves; SOURCE; 2; TECHCODETYPE; 410;
+   ReferenceDepthOfCut; 1768; 5;  CAPTION; 참조 가공 깊이; SOURCE; 0; TECHCODETYPE; 2;
+   MinimumRampWidth; 3383; 10;  HIDDEN; CAPTION; 최소 램프 폭; SOURCE; 0; TECHCODETYPE; 2;
+   StartPointY; 3394; 0;  HIDDEN; CAPTION; 시작 지점 Y|시작 지점 X, Y; SOURCE; 0; TECHCODETYPE; 2;
+   SetLimits; 3391; 0;  HIDDEN; CAPTION; 리미트 설정; SOURCE; 0; TECHCODETYPE; 67;
+   EntryMovesAngle; 3388; 0;  CAPTION; 스윙 각도; SOURCE; 0; TECHCODETYPE; 2;
+   ArcAngle; 3303; 30;  CAPTION; 원호 각도; SOURCE; 0; TECHCODETYPE; 2;
+   ExtensionDistance; 6836; 0;  CAPTION; 확장; SOURCE; 0; TECHCODETYPE; 2;
+   MaximumX; 3385; 100;  HIDDEN; CAPTION; 최대 X|X 최대, 최대; SOURCE; 0; TECHCODETYPE; 2;
+   EntryMovesType; 3300; 12;  CAPTION; 접근 타입; SOURCE; 6; TECHCODETYPE; 431;
+   RampHeight; 3382; 2;  HIDDEN; CAPTION; 램프 높이; SOURCE; 0; TECHCODETYPE; 2;
+   StartPointX; 3393; 0;  HIDDEN; CAPTION; 시작 지점 X|시작 지점 X, Y; SOURCE; 0; TECHCODETYPE; 2;
+   HelixDiameter; 3390; 10;  HIDDEN; CAPTION; 헬릭스 직경; SOURCE; 0; TECHCODETYPE; 2;
+   TiltingAngle; 6600; 0;  HIDDEN; CAPTION; 기울기 각도; SOURCE; 0; TECHCODETYPE; 2;
+   MaximumY; 3387; 100;  HIDDEN; CAPTION; 최대 Y|Y 최대, 최대; SOURCE; 0; TECHCODETYPE; 2;
+   ArcRadius; 3302; 5;  CAPTION; 원호 반경; SOURCE; 0; TECHCODETYPE; 2;
+   TangentRampAngle; 6835; 0;  CAPTION; 램프각도; SOURCE; 0; TECHCODETYPE; 2;
+   MinimumX; 3384; 0;  HIDDEN; CAPTION; 최소 X|X 최소, 최대; SOURCE; 0; TECHCODETYPE; 2;
+   RampAngle; 3381; 20;  HIDDEN; CAPTION; 램프각도; SOURCE; 0; TECHCODETYPE; 2;
+   TangentDistance; 3446; 0;  CAPTION; 접선 거리; SOURCE; 0; TECHCODETYPE; 2;
+   PredefinedPoints; 3395; ;  HIDDEN; CAPTION; 미리 정의된 점; SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 3395;;
+		:
+	END_STRING
+   FromPredefinedPoints; 3392; 0;  HIDDEN; CAPTION; 미리 정의된 점으로부터; SOURCE; 0; TECHCODETYPE; 67;
+   HelixAngle; 3389; 10;  HIDDEN; CAPTION; 헬릭스 각도; SOURCE; 0; TECHCODETYPE; 2;
+   LateralDistance; 3304; 2;  HIDDEN; CAPTION; 가로 방향 거리; SOURCE; 0; TECHCODETYPE; 2;
+   MinimumY; 3386; 0;  HIDDEN; CAPTION; 최소 Y|Y 최소, 최대; SOURCE; 0; TECHCODETYPE; 2;
+   VerticalDistance; 3301; 2;  CAPTION; 수직 거리; SOURCE; 0; TECHCODETYPE; 2;
+   BEGIN_EXPRESSION
+     3300; 12
+   END_EXPRESSION
+	BEGIN_ATTRIBUTES
+	END_ATTRIBUTES
+   END_SUB_TECHNOLOGY;
+   BEGIN_SUB_TECHNOLOGY; 3210; 516; CAPTION; 5 Axis Entry Moves; SOURCE; 2; TECHCODETYPE; 410;
+   ReferenceDepthOfCut; 1768; 5;  CAPTION; 참조 가공 깊이; SOURCE; 0; TECHCODETYPE; 2;
+   MinimumRampWidth; 3383; 10;  HIDDEN; CAPTION; 최소 램프 폭; SOURCE; 0; TECHCODETYPE; 2;
+   StartPointY; 3394; 0;  HIDDEN; CAPTION; 시작 지점 Y|시작 지점 X, Y; SOURCE; 0; TECHCODETYPE; 2;
+   SetLimits; 3391; 0;  HIDDEN; CAPTION; 리미트 설정; SOURCE; 0; TECHCODETYPE; 67;
+   EntryMovesAngle; 3388; 0;  HIDDEN; CAPTION; 스윙 각도; SOURCE; 0; TECHCODETYPE; 2;
+   ArcAngle; 3303; 30;  HIDDEN; CAPTION; 원호 각도; SOURCE; 0; TECHCODETYPE; 2;
+   ExtensionDistance; 6836; 0;  HIDDEN; CAPTION; 확장; SOURCE; 0; TECHCODETYPE; 2;
+   MaximumX; 3385; 100;  HIDDEN; CAPTION; 최대 X|X 최대, 최대; SOURCE; 0; TECHCODETYPE; 2;
+   EntryMovesType; 3300; 1;  CAPTION; 접근 타입; SOURCE; 0; TECHCODETYPE; 431;
+   RampHeight; 3382; 2;  HIDDEN; CAPTION; 램프 높이; SOURCE; 0; TECHCODETYPE; 2;
+   StartPointX; 3393; 0;  HIDDEN; CAPTION; 시작 지점 X|시작 지점 X, Y; SOURCE; 0; TECHCODETYPE; 2;
+   HelixDiameter; 3390; 10;  HIDDEN; CAPTION; 헬릭스 직경; SOURCE; 0; TECHCODETYPE; 2;
+   TiltingAngle; 6600; 0;  HIDDEN; CAPTION; 기울기 각도; SOURCE; 0; TECHCODETYPE; 2;
+   MaximumY; 3387; 100;  HIDDEN; CAPTION; 최대 Y|Y 최대, 최대; SOURCE; 0; TECHCODETYPE; 2;
+   ArcRadius; 3302; 5;  HIDDEN; CAPTION; 원호 반경; SOURCE; 0; TECHCODETYPE; 2;
+   TangentRampAngle; 6835; 0;  HIDDEN; CAPTION; 램프각도; SOURCE; 0; TECHCODETYPE; 2;
+   MinimumX; 3384; 0;  HIDDEN; CAPTION; 최소 X|X 최소, 최대; SOURCE; 0; TECHCODETYPE; 2;
+   RampAngle; 3381; 20;  HIDDEN; CAPTION; 램프각도; SOURCE; 0; TECHCODETYPE; 2;
+   TangentDistance; 3446; 0;  HIDDEN; CAPTION; 접선 거리; SOURCE; 0; TECHCODETYPE; 2;
+   PredefinedPoints; 3395; ;  HIDDEN; CAPTION; 미리 정의된 점; SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 3395;;
+		:
+	END_STRING
+   FromPredefinedPoints; 3392; 0;  HIDDEN; CAPTION; 미리 정의된 점으로부터; SOURCE; 0; TECHCODETYPE; 67;
+   HelixAngle; 3389; 10;  HIDDEN; CAPTION; 헬릭스 각도; SOURCE; 0; TECHCODETYPE; 2;
+   LateralDistance; 3304; 2;  HIDDEN; CAPTION; 가로 방향 거리; SOURCE; 0; TECHCODETYPE; 2;
+   MinimumY; 3386; 0;  HIDDEN; CAPTION; 최소 Y|Y 최소, 최대; SOURCE; 0; TECHCODETYPE; 2;
+   VerticalDistance; 3301; 2;  CAPTION; 수직 거리; SOURCE; 0; TECHCODETYPE; 2;
+   BEGIN_EXPRESSION
+   END_EXPRESSION
+	BEGIN_ATTRIBUTES
+	END_ATTRIBUTES
+   END_SUB_TECHNOLOGY;
+   EntryMovesPointX; 3261; 0;  HIDDEN; CAPTION; 접근 포인트 X |접근 포인트 X,Y,Z; SOURCE; 1; TECHCODETYPE; 2;
+   4431; 4431; 2;  SOURCE; 0; TECHCODETYPE; 2;
+   4907; 4907; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4907;;
+		:
+	END_STRING
+   SpindleID; 793; 1;  CAPTION; 스핀들 이름; SOURCE; 1; TECHCODETYPE; 1;
+   OutputZValue; 1218; 0;  CAPTION; Z값 출력; SOURCE; 0; TECHCODETYPE; 118;
+   FirstPassPercent; 3462; 0;  CAPTION; 첫 패스 퍼센트; SOURCE; 2; TECHCODETYPE; 2;
+   ToolCenterPercent; 3445; 100;  HIDDEN; CAPTION; 공구 중심 직경의 %값; SOURCE; 2; TECHCODETYPE; 2;
+   CustomSetting10; 640; 0;  CAPTION; 사용자 정의 설정 10; SOURCE; 1; TECHCODETYPE; 2;
+   AutoTiltMode; 3411; 1;  HIDDEN; CAPTION; 자동틸트 모드; SOURCE; 0; TECHCODETYPE; 484;
+   UseFeedSpeedKB; 1762; 0;  CAPTION; 피드/회전수KB사용; SOURCE; 0; TECHCODETYPE; 67;
+   SpineStartPoinY; 3241; 0;  HIDDEN; CAPTION; 시작 지점 Y|시작 지점 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
+   FixedAngle; 3258; 90;  CAPTION; 고정 각도; SOURCE; 2; TECHCODETYPE; 2;
+   DriveSurface; 3224; ;  CAPTION; 드라이브 곡면; SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 3224;;
+		:19,19000001
+	END_STRING
+   4904; 4904; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4904;;
+		:
+	END_STRING
+   4003; 4003; 10;  SOURCE; 0; TECHCODETYPE; 1;
+   OptimizationMode; 3323; 0;  HIDDEN; CAPTION; 최적화 켜기; SOURCE; 3; TECHCODETYPE; 496;
+   CustomSetting7; 637; 0;  CAPTION; 사용자 정의 설정 7; SOURCE; 1; TECHCODETYPE; 2;
+   LimitPassesToStock; 3408; 1;  HIDDEN; CAPTION; 소재로의 경로 리미트; SOURCE; 1; TECHCODETYPE; 67;
+   SpineProfile; 3238; ;  HIDDEN; CAPTION; 스파인 프로파일; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 3238;;
+		:
+	END_STRING
+   ReferenceAxis; 3255; 1;  CAPTION; 참조 축; SOURCE; 1; TECHCODETYPE; 417;
+   FeedratePT; 416; 1.5;  CAPTION; 피드값 PT|피드값 PM, PT; SOURCE; 3; TECHCODETYPE; 2;
+   4901; 4901; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4901;;
+		:3DMilling_0Degree
+	END_STRING
+   4425; 4425; 48;  SOURCE; 0; TECHCODETYPE; 2;
+   EndTangentPassPercent; 6635; 100;  HIDDEN; CAPTION; 끝 경로 퍼센트; SOURCE; 1; TECHCODETYPE; 2;
+   SmoothingDistance; 3405; 0;  HIDDEN; CAPTION; 스무딩 거리; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting4; 634; 0;  CAPTION; 사용자 정의 설정 4; SOURCE; 1; TECHCODETYPE; 2;
+   IncrementalDepth; 175; 0.29999999999999999;  HIDDEN; CAPTION; 증분 깊이; SOURCE; 1; TECHCODETYPE; 2;
+   ToolID; 498; ;  CAPTION; 공구 ID; SOURCE; 2; TECHCODETYPE; 3;
+	BEGIN_STRING; 498;;
+		:BM_D1.2
+	END_STRING
+   PlaneStartPointY; 3235; 0;  HIDDEN; CAPTION; 시작 지점 Y|시작 지점 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
+   LateralFeedRatePercent; 3201; 100;  CAPTION; 측면방향 피드값%; SOURCE; 1; TECHCODETYPE; 2;
+   ChangePassStartPosition; 3269; 0;  CAPTION; 시작 지점 경로 변경; SOURCE; 1; TECHCODETYPE; 67;
+   4422; 4422; 23;  SOURCE; 0; TECHCODETYPE; 2;
+   TrimCollisionReorganize; 6632; 0;  HIDDEN; CAPTION; 트림 공구 경로 재구성; SOURCE; 1; TECHCODETYPE; 521;
+   LimitDeviationOnToolAxisTrace; 6513; 0;  HIDDEN; CAPTION; 공구 축 추적에 편차 한계; SOURCE; 3; TECHCODETYPE; 67;
+   HolderClearance; 3470; 0;  CAPTION; 홀더 공차; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting1; 631; 0;  CAPTION; 사용자 정의 설정 1; SOURCE; 1; TECHCODETYPE; 2;
+   ThroughPointZ; 3249; 0;  HIDDEN; CAPTION; 쓰루 포인트 Z|쓰루 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
+   ProjectionDistance; 3232; 10;  CAPTION; 투영 거리; SOURCE; 1; TECHCODETYPE; 2;
+   InlineAngle; 1226; 0;  CAPTION; 인-라인 각도; SOURCE; 2; TECHCODETYPE; 2;
+   Clearance; 172; 1;  CAPTION; 여유; SOURCE; 2; TECHCODETYPE; 2;
+   4436; 4436; 9;  SOURCE; 0; TECHCODETYPE; 1;
+   TrailingDistance; 713; 0;  CAPTION; 트레일링거리; SOURCE; 1; TECHCODETYPE; 2;
+   ThreadAngle; 6884; 0;  HIDDEN; CAPTION; 나사 각도; SOURCE; 0; TECHCODETYPE; 2;
+   BEGIN_SUB_TECHNOLOGY; 6833; 714; CAPTION; 5 Axis Exit Moves; SOURCE; 2; TECHCODETYPE; 410;
+   ExitMovesType; 6834; 1;  CAPTION; 5 축 나가기 이동; SOURCE; 0; TECHCODETYPE; 563;
+   ReferenceDepthOfCut; 1768; 5;  CAPTION; 참조 가공 깊이; SOURCE; 0; TECHCODETYPE; 2;
+   MinimumRampWidth; 3383; 10;  HIDDEN; CAPTION; 최소 램프 폭; SOURCE; 0; TECHCODETYPE; 2;
+   EndPointY; 3394; 0;  HIDDEN; CAPTION; 엔드 포인트 Y|엔드포인트 X,Y; SOURCE; 0; TECHCODETYPE; 2;
+   SetLimits; 3391; 0;  HIDDEN; CAPTION; 리미트 설정; SOURCE; 0; TECHCODETYPE; 67;
+   EntryMovesAngle; 3388; 0;  HIDDEN; CAPTION; 스윙 각도; SOURCE; 0; TECHCODETYPE; 2;
+   ArcAngle; 3303; 30;  HIDDEN; CAPTION; 원호 각도; SOURCE; 0; TECHCODETYPE; 2;
+   ExtensionDistance; 6836; 0;  HIDDEN; CAPTION; 확장; SOURCE; 0; TECHCODETYPE; 2;
+   MaximumX; 3385; 100;  HIDDEN; CAPTION; 최대 X|X 최대, 최대; SOURCE; 0; TECHCODETYPE; 2;
+   RampHeight; 3382; 2;  HIDDEN; CAPTION; 램프 높이; SOURCE; 0; TECHCODETYPE; 2;
+   EndPointX; 3393; 0;  HIDDEN; CAPTION; 엔드 포인트 X|엔드포인트 X,Y; SOURCE; 0; TECHCODETYPE; 2;
+   HelixDiameter; 3390; 10;  HIDDEN; CAPTION; 헬릭스 직경; SOURCE; 0; TECHCODETYPE; 2;
+   TiltingAngle; 6600; 0;  HIDDEN; CAPTION; 기울기 각도; SOURCE; 0; TECHCODETYPE; 2;
+   MaximumY; 3387; 100;  HIDDEN; CAPTION; 최대 Y|Y 최대, 최대; SOURCE; 0; TECHCODETYPE; 2;
+   ArcRadius; 3302; 5;  HIDDEN; CAPTION; 원호 반경; SOURCE; 0; TECHCODETYPE; 2;
+   TangentRampAngle; 6835; 0;  HIDDEN; CAPTION; 램프각도; SOURCE; 0; TECHCODETYPE; 2;
+   MinimumX; 3384; 0;  HIDDEN; CAPTION; 최소 X|X 최소, 최대; SOURCE; 0; TECHCODETYPE; 2;
+   RampAngle; 3381; 20;  HIDDEN; CAPTION; 램프각도; SOURCE; 0; TECHCODETYPE; 2;
+   TangentDistance; 3446; 0;  HIDDEN; CAPTION; 접선 거리; SOURCE; 0; TECHCODETYPE; 2;
+   PredefinedPoints; 3395; ;  HIDDEN; CAPTION; 미리 정의된 점; SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 3395;;
+		:
+	END_STRING
+   FromPredefinedPoints; 3392; 0;  HIDDEN; CAPTION; 미리 정의된 점으로부터; SOURCE; 0; TECHCODETYPE; 67;
+   HelixAngle; 3389; 10;  HIDDEN; CAPTION; 헬릭스 각도; SOURCE; 0; TECHCODETYPE; 2;
+   LateralDistance; 3304; 2;  HIDDEN; CAPTION; 가로 방향 거리; SOURCE; 0; TECHCODETYPE; 2;
+   MinimumY; 3386; 0;  HIDDEN; CAPTION; 최소 Y|Y 최소, 최대; SOURCE; 0; TECHCODETYPE; 2;
+   VerticalDistance; 3301; 2;  CAPTION; 수직 거리; SOURCE; 0; TECHCODETYPE; 2;
+   BEGIN_EXPRESSION
+   END_EXPRESSION
+	BEGIN_ATTRIBUTES
+	END_ATTRIBUTES
+   END_SUB_TECHNOLOGY;
+   EnableSmoothing; 3365; 0;  HIDDEN; CAPTION; 스무딩 사용; SOURCE; 0; TECHCODETYPE; 522;
+   ReverseCuttingDirection; 3229; 0;  CAPTION; 리버스 절삭 방향; SOURCE; 2; TECHCODETYPE; 67;
+   OrientationStrategy; 3246; 1;  CAPTION; 위치 확정 방법; SOURCE; 0; TECHCODETYPE; 414;
+   EntryMovesPointZ; 3263; 0;  HIDDEN; CAPTION; 접근 포인트 Z |접근 포인트 X,Y,Z; SOURCE; 1; TECHCODETYPE; 2;
+   4909; 4909; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4909;;
+		:
+	END_STRING
+   MinimizeRotation; 3464; 0;  HIDDEN; CAPTION; 회전 최소화; SOURCE; 3; TECHCODETYPE; 67;
+   CuttingStrategy; 1390; 0;  HIDDEN; CAPTION; 절삭 단계 설정; SOURCE; 1; TECHCODETYPE; 185;
+   TiltReferenceAxis; 3413; 1;  HIDDEN; CAPTION; 참조축; SOURCE; 1; TECHCODETYPE; 417;
+   UseApproachPoint; 3260; 0;  HIDDEN; CAPTION; 접근 포인트 사용; SOURCE; 0; TECHCODETYPE; 67;
+   StepIncrement; 217; 0.14999999999999999;  CAPTION; 스텝 간격; SOURCE; 2; TECHCODETYPE; 2;
+   SpineEndPointX; 3243; 0;  HIDDEN; CAPTION; 끝 포인트 X|끝 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
+   LoopAroundCorners; 3209; 0;  HIDDEN; CAPTION; 코너 주변으로 루프; SOURCE; 1; TECHCODETYPE; 67;
+   4430; 4430; 5;  SOURCE; 0; TECHCODETYPE; 2;
+   4906; 4906; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4906;;
+		:user
+	END_STRING
+   TurretID; 792; 1;  CAPTION; 터렛 이름; SOURCE; 1; TECHCODETYPE; 1;
+   CustomSetting9; 639; 0;  CAPTION; 사용자 정의 설정 9; SOURCE; 1; TECHCODETYPE; 2;
+   AutoTilt; 3410; 0;  CAPTION; 오토틸트; SOURCE; 1; TECHCODETYPE; 67;
+   ToolPositionOnCurve; 3223; 0;  CAPTION; 공구 위치; SOURCE; 2; TECHCODETYPE; 412;
+   SpineStartPointX; 3240; 0;  HIDDEN; CAPTION; 시작 지점 X|시작 지점 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
+   SpindleSpeedSPM; 418; 24;  CAPTION; 절삭 속도 SPM|절삭 속도 RPM, SPM; SOURCE; 3; TECHCODETYPE; 1;
+   MaximumAngle; 3257; 90;  HIDDEN; CAPTION; 최대 각도; SOURCE; 1; TECHCODETYPE; 2;
+   CuttingType; 3291; 0;  HIDDEN; CAPTION; 절삭 유형; SOURCE; 1; TECHCODETYPE; 443;
+   4903; 4903; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4903;;
+		:
+	END_STRING
+   MaxDistanceBetweenPoints; 3322; 0.20000000000000001;  HIDDEN; CAPTION; 포인트 사이의 최대 거리; SOURCE; 2; TECHCODETYPE; 2;
+   CustomSetting6; 636; 0;  CAPTION; 사용자 정의 설정 6; SOURCE; 1; TECHCODETYPE; 2;
+   TypeOfCut; 432; ;  HIDDEN; CAPTION; 가공 종류; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 432;;
+		:
+	END_STRING
+   SpindleSpeedRPM; 194; 5000;  CAPTION; 절삭 속도 RPM|절삭 속도RPM, SPM; SOURCE; 2; TECHCODETYPE; 1;
+   RetractOptimization; 3203; 0;  CAPTION; 복귀 최적화; SOURCE; 2; TECHCODETYPE; 456;
+   EndingDistance; 3237; 50;  HIDDEN; CAPTION; 끝내기 거리; SOURCE; 1; TECHCODETYPE; 2;
+   Comment; 7; ;  CAPTION; 주석; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 7;;
+		:
+	END_STRING
+   AngleLimitation; 3254; 2;  CAPTION; 각도 한계; SOURCE; 2; TECHCODETYPE; 416;
+   4424; 4424; 57;  SOURCE; 0; TECHCODETYPE; 2;
+   BeginTangentPassPercent; 6634; 0;  HIDDEN; CAPTION; 시작 경로 퍼센트; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting3; 633; 0;  CAPTION; 사용자 정의 설정 3; SOURCE; 1; TECHCODETYPE; 2;
+   PassPosition; 718; 2;  CAPTION; 패스 위치; SOURCE; 2; TECHCODETYPE; 501;
+   PlaneStartPointX; 3234; 0;  HIDDEN; CAPTION; 시작 지점 X|시작 지점 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
+   FeedratePM; 191; 15000;  CAPTION; 피드값 PM|피드값 PM, PT; SOURCE; 3; TECHCODETYPE; 2;
+   EnableRTCP; 3200; 0;  CAPTION; RTCP 사용하기; SOURCE; 0; TECHCODETYPE; 67;
+   4438; 4438; 0;  SOURCE; 0; TECHCODETYPE; 2;
+   4421; 4421; 1;  SOURCE; 0; TECHCODETYPE; 2;
+   SemiFinishingAllowance; 2517; 0;  CAPTION; 세미피니싱 여유; SOURCE; 1; TECHCODETYPE; 2;
+   ScallopHeight; 392; 0.001;  HIDDEN; CAPTION; 스캘럽 높이; SOURCE; 2; TECHCODETYPE; 2;
+   TrimCollisionEnableJump; 6631; 0;  HIDDEN; CAPTION; 충돌 점프; SOURCE; 1; TECHCODETYPE; 67;
+   MaxAngleBetweenPoints; 6512; 1;  HIDDEN; CAPTION; 점 사이의 최대 각도; SOURCE; 1; TECHCODETYPE; 2;
+   ThroughPointY; 3248; 0;  HIDDEN; CAPTION; 쓰루 포인트 Y|쓰루 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
+   ReverseProjectionSide; 3231; 0;  CAPTION; 리버스 투영 면; SOURCE; 1; TECHCODETYPE; 67;
+   PassMovement; 1361; 0;  CAPTION; 패스 이동; SOURCE; 3; TECHCODETYPE; 415;
+   OrientationProfile; 3265; ;  HIDDEN; CAPTION; 오리엔테이션 프로파일; SOURCE; 2; TECHCODETYPE; 3;
+	BEGIN_STRING; 3265;;
+		:
+	END_STRING
+   OperationName; 613; ;  CAPTION; 작업 이름; SOURCE; 2; TECHCODETYPE; 3;
+	BEGIN_STRING; 613;;
+		:5Axis_Composite
+	END_STRING
+   FullClearance; 443; 10;  CAPTION; 전체 여유; SOURCE; 2; TECHCODETYPE; 2;
+   BEGIN_SUB_TECHNOLOGY; 3214; 515; CAPTION; 5 Axis Feed Links; SOURCE; 2; TECHCODETYPE; 410;
+   ReferenceDepthOfCut; 1768; 5;  CAPTION; 참조 가공 깊이; SOURCE; 0; TECHCODETYPE; 2;
+   OutArcRadius; 3400; 2;  CAPTION; Out 원호 반경|원호 반경 In, Out; SOURCE; 0; TECHCODETYPE; 2;
+   MinimumRampWidth; 3383; 5;  CAPTION; 최소 램프 폭; SOURCE; 0; TECHCODETYPE; 2;
+   StartArcAngle; 3315; 30;  CAPTION; 시작 원호 각도; SOURCE; 0; TECHCODETYPE; 2;
+   InRampLength; 3397; 0;  CAPTION; In 램프 거리|램프 거리 In, Out; SOURCE; 0; TECHCODETYPE; 2;
+   OutArcAngle; 3402; 45;  CAPTION; Out 원호 각도|원호 각도 In, Out; SOURCE; 0; TECHCODETYPE; 2;
+   InRampAngle; 3399; 0;  CAPTION; In램프 각도|램프 각도 In, Out; SOURCE; 0; TECHCODETYPE; 2;
+   EndArcRadius; 3314; 5;  CAPTION; 원호 반경 끝; SOURCE; 0; TECHCODETYPE; 2;
+   OutRampLength; 3396; 0;  CAPTION; Out 램프 길이|램프 길이 In, Out; SOURCE; 0; TECHCODETYPE; 2;
+   MaximumLinkDistance; 3311; 10;  CAPTION; 최대 링크 거리; SOURCE; 0; TECHCODETYPE; 2;
+   MaxZDifference; 3407; 10;  CAPTION; 최대 Z 차이; SOURCE; 0; TECHCODETYPE; 2;
+   MinimumLoopWidth; 3404; 1;  CAPTION; 최소 루프 폭; SOURCE; 0; TECHCODETYPE; 2;
+   InArcRadius; 3401; 2;  CAPTION; In 원호 반경|원호 반경 In, Out; SOURCE; 0; TECHCODETYPE; 2;
+   EndArcAngle; 3316; 30;  CAPTION; 원호 각도 끝; SOURCE; 0; TECHCODETYPE; 2;
+   OutRampAngle; 3398; 0;  CAPTION; Out 램프 각도|램프 각도 In, Out; SOURCE; 0; TECHCODETYPE; 2;
+   RampAngle; 3381; 5;  CAPTION; 램프각도; SOURCE; 0; TECHCODETYPE; 2;
+   StartArcRadius; 3313; 5;  CAPTION; 시작 원호 반경; SOURCE; 0; TECHCODETYPE; 2;
+   FeedLinkType; 3310; 1;  CAPTION; 피드 링크 타입; SOURCE; 0; TECHCODETYPE; 433;
+   MaxZDifferenceAcross; 3406; 10;  CAPTION; 최대 Z 교차 차이 ; SOURCE; 0; TECHCODETYPE; 2;
+   LateralDistance; 3304; 2;  CAPTION; 가로 방향 거리; SOURCE; 0; TECHCODETYPE; 2;
+   InArcAngle; 3403; 45;  CAPTION; In 원호 각도|원호 각도 In, Out; SOURCE; 0; TECHCODETYPE; 2;
+   VerticalDistance; 3318; 2;  CAPTION; 수직 거리; SOURCE; 0; TECHCODETYPE; 2;
+   BEGIN_EXPRESSION
+   END_EXPRESSION
+	BEGIN_ATTRIBUTES
+	END_ATTRIBUTES
+   END_SUB_TECHNOLOGY;
+   BEGIN_SUB_TECHNOLOGY; 3214; 515; CAPTION; 5 Axis Feed Links; SOURCE; 2; TECHCODETYPE; 410;
+   ReferenceDepthOfCut; 1768; 5;  CAPTION; 참조 가공 깊이; SOURCE; 0; TECHCODETYPE; 2;
+   OutArcRadius; 3400; 2;  CAPTION; Out 원호 반경|원호 반경 In, Out; SOURCE; 0; TECHCODETYPE; 2;
+   MinimumRampWidth; 3383; 5;  CAPTION; 최소 램프 폭; SOURCE; 0; TECHCODETYPE; 2;
+   StartArcAngle; 3315; 30;  CAPTION; 시작 원호 각도; SOURCE; 0; TECHCODETYPE; 2;
+   InRampLength; 3397; 0;  CAPTION; In 램프 거리|램프 거리 In, Out; SOURCE; 0; TECHCODETYPE; 2;
+   OutArcAngle; 3402; 45;  CAPTION; Out 원호 각도|원호 각도 In, Out; SOURCE; 0; TECHCODETYPE; 2;
+   InRampAngle; 3399; 0;  CAPTION; In램프 각도|램프 각도 In, Out; SOURCE; 0; TECHCODETYPE; 2;
+   EndArcRadius; 3314; 5;  CAPTION; 원호 반경 끝; SOURCE; 0; TECHCODETYPE; 2;
+   OutRampLength; 3396; 0;  CAPTION; Out 램프 길이|램프 길이 In, Out; SOURCE; 0; TECHCODETYPE; 2;
+   MaximumLinkDistance; 3311; 10;  CAPTION; 최대 링크 거리; SOURCE; 0; TECHCODETYPE; 2;
+   MaxZDifference; 3407; 10;  CAPTION; 최대 Z 차이; SOURCE; 0; TECHCODETYPE; 2;
+   MinimumLoopWidth; 3404; 1;  CAPTION; 최소 루프 폭; SOURCE; 0; TECHCODETYPE; 2;
+   InArcRadius; 3401; 2;  CAPTION; In 원호 반경|원호 반경 In, Out; SOURCE; 0; TECHCODETYPE; 2;
+   EndArcAngle; 3316; 30;  CAPTION; 원호 각도 끝; SOURCE; 0; TECHCODETYPE; 2;
+   OutRampAngle; 3398; 0;  CAPTION; Out 램프 각도|램프 각도 In, Out; SOURCE; 0; TECHCODETYPE; 2;
+   RampAngle; 3381; 5;  CAPTION; 램프각도; SOURCE; 0; TECHCODETYPE; 2;
+   StartArcRadius; 3313; 5;  CAPTION; 시작 원호 반경; SOURCE; 0; TECHCODETYPE; 2;
+   FeedLinkType; 3310; 2;  CAPTION; 피드 링크 타입; SOURCE; 0; TECHCODETYPE; 433;
+   MaxZDifferenceAcross; 3406; 10;  CAPTION; 최대 Z 교차 차이 ; SOURCE; 0; TECHCODETYPE; 2;
+   LateralDistance; 3304; 2;  CAPTION; 가로 방향 거리; SOURCE; 0; TECHCODETYPE; 2;
+   InArcAngle; 3403; 45;  CAPTION; In 원호 각도|원호 각도 In, Out; SOURCE; 0; TECHCODETYPE; 2;
+   VerticalDistance; 3318; 3;  CAPTION; 수직 거리; SOURCE; 0; TECHCODETYPE; 2;
+   BEGIN_EXPRESSION
+   END_EXPRESSION
+	BEGIN_ATTRIBUTES
+	END_ATTRIBUTES
+   END_SUB_TECHNOLOGY;
+   4435; 4435; 3.9174615638217594;  SOURCE; 0; TECHCODETYPE; 2;
+   HeadID; 797; 1;  CAPTION; 헤드 ID; SOURCE; 1; TECHCODETYPE; 1;
+   MultitheadSpiral; 6883; 0;  CAPTION; 다중 스레드 나선형; SOURCE; 0; TECHCODETYPE; 597;
+   IncrementCalculation; 6815; 1;  CAPTION; 단위 계산; SOURCE; 0; TECHCODETYPE; 558;
+   TowardProfile; 3449; 1;  HIDDEN; CAPTION; 프로파일 쪽으로; SOURCE; 2; TECHCODETYPE; 67;
+   PreventToolCenterCut; 3415; 0;  CAPTION; 공구 센터 절삭 방지; SOURCE; 2; TECHCODETYPE; 67;
+   SpineEndPointZ; 3245; 0;  HIDDEN; CAPTION; 끝 포인트 Z|끝 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
+   BEGIN_SUB_TECHNOLOGY; 3211; 514; CAPTION; 5 Axis Rapid; SOURCE; 2; TECHCODETYPE; 410;
+   ReferenceDepthOfCut; 1768; 5;  CAPTION; 참조 가공 깊이; SOURCE; 0; TECHCODETYPE; 2;
+   RadialOffsetFactor; 3448; 1;  CAPTION; 방사상 오프셋 인수; SOURCE; 0; TECHCODETYPE; 2;
+   IntermediateDirection; 3309; 1;  HIDDEN; CAPTION; 즉각적인 방향; SOURCE; 0; TECHCODETYPE; 434;
+   MaximumLinkDistance; 3306; 20;  HIDDEN; CAPTION; 최대 링크 거리; SOURCE; 0; TECHCODETYPE; 2;
+   SideClearance; 3320; 10;  HIDDEN; CAPTION; 측면 여유; SOURCE; 0; TECHCODETYPE; 2;
+   MaximumAngle; 3308; 0;  HIDDEN; CAPTION; 최대 각도; SOURCE; 0; TECHCODETYPE; 2;
+   RapidLinkType; 3305; 12;  CAPTION; 급속 링크; SOURCE; 0; TECHCODETYPE; 432;
+   AboveClearance; 3319; 10;  HIDDEN; CAPTION; 위쪽 여유; SOURCE; 0; TECHCODETYPE; 2;
+   AxialLength; 3307; 5;  HIDDEN; CAPTION; 축 길이; SOURCE; 0; TECHCODETYPE; 2;
+   BEGIN_EXPRESSION
+   END_EXPRESSION
+	BEGIN_ATTRIBUTES
+	END_ATTRIBUTES
+   END_SUB_TECHNOLOGY;
+   CuttingDirection; 3228; 1;  CAPTION; 절삭 방향; SOURCE; 2; TECHCODETYPE; 413;
+   EntryMovesPointY; 3262; 0;  HIDDEN; CAPTION; 접근 포인트 Y |접근 포인트 X,Y,Z; SOURCE; 1; TECHCODETYPE; 2;
+   4908; 4908; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4908;;
+		:
+	END_STRING
+   LastPassPercent; 3463; 53;  CAPTION; 마지막 패스 퍼센트; SOURCE; 2; TECHCODETYPE; 2;
+   ShankClearance; 3225; 0;  CAPTION; 섕크 여유; SOURCE; 1; TECHCODETYPE; 2;
+   MaximumTiltAngle; 3412; 20;  HIDDEN; CAPTION; 최대 기울기 각도; SOURCE; 1; TECHCODETYPE; 2;
+   SpineStartPointZ; 3242; 0;  HIDDEN; CAPTION; 시작 지점 Z|시작 지점 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
+   4905; 4905; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4905;;
+		:
+	END_STRING
+   ToolCompensation; 1284; 0;  HIDDEN; CAPTION; 공구 보정; SOURCE; 1; TECHCODETYPE; 67;
+   TangentPassExtension; 3324; 0;  CAPTION; 탄젠트 패스 확장 안; SOURCE; 2; TECHCODETYPE; 2;
+   CustomSetting8; 638; 0;  CAPTION; 사용자 정의 설정 8; SOURCE; 1; TECHCODETYPE; 2;
+   PassPositionPercent; 3409; 50;  HIDDEN; CAPTION; 경로 위치 퍼센트; SOURCE; 1; TECHCODETYPE; 2;
+   Tolerance; 1046; 0.02;  CAPTION; 공차; SOURCE; 2; TECHCODETYPE; 2;
+   PointSelectionOnProfile; 3290; 0;  HIDDEN; CAPTION; 프로파일에서 점 선택; SOURCE; 3; TECHCODETYPE; 442;
+   MinimumAngle; 3256; 0;  HIDDEN; CAPTION; 최소 각도; SOURCE; 1; TECHCODETYPE; 2;
+   MachiningPattern; 3222; 6;  CAPTION; 가공 패턴; SOURCE; 2; TECHCODETYPE; 411;
+   4902; 4902; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4902;;
+		:
+	END_STRING
+   LimitDistanceBetweenPoints; 3321; 0;  CAPTION; 지점 사이의 거리 리미트; SOURCE; 2; TECHCODETYPE; 67;
+   CustomSetting5; 635; 0;  CAPTION; 사용자 정의 설정 5; SOURCE; 1; TECHCODETYPE; 2;
+   PlungeFeedRatePercent; 3202; 10;  CAPTION; 플런지 피드값%; SOURCE; 2; TECHCODETYPE; 2;
+   PlaneStartPointZ; 3236; 0;  HIDDEN; CAPTION; 시작 지점 Z|시작 지점 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
+   4423; 4423; 13;  SOURCE; 0; TECHCODETYPE; 2;
+   CuttingDirectionAngleWrstU; 6650; 0;  HIDDEN; CAPTION; Angle wrst U; SOURCE; 1; TECHCODETYPE; 2;
+   EnableCheckCollisionsWithStock; 6633; 0;  HIDDEN; CAPTION; 스톡 재확인; SOURCE; 1; TECHCODETYPE; 67;
+   MaxAngleOnToolTrace; 6514; 5;  HIDDEN; CAPTION; 도구 축 추적에 최대 각도; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting2; 632; 0;  CAPTION; 사용자 정의 설정 2; SOURCE; 1; TECHCODETYPE; 2;
+   StockOffset; 3369; 0;  HIDDEN; CAPTION; 시작 거리; SOURCE; 1; TECHCODETYPE; 2;
+   ToolDirectionTowardThroughPoint; 3250; 1;  HIDDEN; CAPTION; 포인트 쪽으로; SOURCE; 2; TECHCODETYPE; 67;
+   PlaneName; 3233; ;  HIDDEN; CAPTION; 작업면; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 3233;;
+		:XYZ
+	END_STRING
+   CrossAngle; 1261; 0;  CAPTION; 교차 각도; SOURCE; 1; TECHCODETYPE; 2;
+   BEGIN_EXPRESSION
+     175; CoverttoSysUnit(Tool1("ToolDiameter").value ,Tool1("ToolUnit").value )*0.25
+     3232; im(1,10)
+     3237; im(2,50)
+   END_EXPRESSION
+	BEGIN_ATTRIBUTES
+	END_ATTRIBUTES
+END_OPERATION;

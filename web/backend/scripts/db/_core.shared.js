@@ -81,10 +81,46 @@ async function upsertConnections() {
   );
   if (ops.length === 0) return { matched: 0, modified: 0, upserted: 0 };
   const result = await Connection.bulkWrite(ops, { ordered: false });
+
+  // seed SSOT에 없는 hanhwa-connection row는 제거해서 stale 옵션을 방지한다.
+  const seedKeys = new Set(
+    (Array.isArray(CONNECTIONS_SEED) ? CONNECTIONS_SEED : []).map((row) =>
+      [row.manufacturer, row.brand, row.family, row.type, row.category].join(
+        "|",
+      ),
+    ),
+  );
+
+  let pruned = 0;
+  const existingHanhwaRows = await Connection.find({
+    category: "hanhwa-connection",
+  })
+    .select({ manufacturer: 1, brand: 1, family: 1, type: 1, category: 1 })
+    .lean();
+
+  const staleIds = existingHanhwaRows
+    .filter((row) => {
+      const key = [
+        row.manufacturer,
+        row.brand,
+        row.family,
+        row.type,
+        row.category,
+      ].join("|");
+      return !seedKeys.has(key);
+    })
+    .map((row) => row._id);
+
+  if (staleIds.length > 0) {
+    const deleted = await Connection.deleteMany({ _id: { $in: staleIds } });
+    pruned = deleted.deletedCount || 0;
+  }
+
   return {
     matched: result.matchedCount,
     modified: result.modifiedCount,
     upserted: Object.keys(result.upsertedIds || {}).length,
+    pruned,
   };
 }
 

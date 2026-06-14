@@ -209,6 +209,50 @@ export function NewRequestPatientImplantFields({
     currentTypeOptions,
   ]);
 
+  const pickFirst = (arr: string[]) => arr[0] || "";
+  const pickPreferredFamily = (families: string[]) => {
+    const regular = families.find(
+      (f) => String(f).trim().toLowerCase() === "regular",
+    );
+    return regular || pickFirst(families);
+  };
+
+  const getBrands = (manufacturer: string): string[] => [
+    ...new Set(
+      connectionOptions
+        .filter((c) => c.manufacturer === manufacturer)
+        .map((c) => (typeof c.brand === "string" ? c.brand.trim() : ""))
+        .filter(Boolean),
+    ),
+  ];
+
+  const getFamilies = (manufacturer: string, brand: string): string[] => [
+    ...new Set(
+      connectionOptions
+        .filter((c) => c.manufacturer === manufacturer && c.brand === brand)
+        .map((c) => (typeof c.family === "string" ? c.family.trim() : ""))
+        .filter(Boolean),
+    ),
+  ];
+
+  const getTypes = (
+    manufacturer: string,
+    brand: string,
+    family: string,
+  ): string[] => [
+    ...new Set(
+      connectionOptions
+        .filter(
+          (c) =>
+            c.manufacturer === manufacturer &&
+            c.brand === brand &&
+            c.family === family,
+        )
+        .map((c) => (typeof c.type === "string" ? c.type.trim() : ""))
+        .filter(Boolean),
+    ),
+  ];
+
   // Validator: 한글 1~4글자
   const isValidKoreanName = (name?: string) => {
     if (!name) return false;
@@ -416,35 +460,48 @@ export function NewRequestPatientImplantFields({
                   value={currentManufacturer}
                   onValueChange={(value) => {
                     if (implantDisabled) return;
-                    // Manufacturer 선택 시 Brand만 초기화, Family/Type은 유지
-                    const firstForManufacturer = connectionOptions.find(
-                      (c) => c.manufacturer === value,
+
+                    // 제조사 변경 시: 시스템/규격1/규격2를 해당 제조사의 첫 유효 조합으로 연쇄 초기화
+                    const nextManufacturer = value;
+                    const nextBrand = pickFirst(getBrands(nextManufacturer));
+                    const nextFamily = pickPreferredFamily(
+                      getFamilies(nextManufacturer, nextBrand),
                     );
-                    const nextBrand = firstForManufacturer?.brand || "";
+                    const nextType = pickFirst(
+                      getTypes(nextManufacturer, nextBrand, nextFamily),
+                    );
+
                     if (implantSelectSource === "caseInfos") {
                       setCaseInfos({
-                        implantManufacturer: value,
+                        implantManufacturer: nextManufacturer,
                         implantBrand: nextBrand,
+                        implantFamily: nextFamily,
+                        implantType: nextType,
                       });
                       syncSelectedConnection(
-                        value,
+                        nextManufacturer,
                         nextBrand,
-                        currentFamily,
-                        currentType,
+                        nextFamily,
+                        nextType,
                       );
                       return;
                     }
-                    setImplantManufacturer(value);
+
+                    setImplantManufacturer(nextManufacturer);
                     setImplantBrand(nextBrand);
+                    setImplantFamily(nextFamily);
+                    setImplantType(nextType);
                     syncSelectedConnection(
-                      value,
+                      nextManufacturer,
                       nextBrand,
-                      currentFamily,
-                      currentType,
+                      nextFamily,
+                      nextType,
                     );
                     setCaseInfos({
-                      implantManufacturer: value,
+                      implantManufacturer: nextManufacturer,
                       implantBrand: nextBrand,
+                      implantFamily: nextFamily,
+                      implantType: nextType,
                     });
                   }}
                 >
@@ -471,28 +528,44 @@ export function NewRequestPatientImplantFields({
                   value={currentBrand}
                   onValueChange={(value) => {
                     if (implantDisabled) return;
-                    // Brand 선택 시 Family/Type은 유지
+
+                    // 시스템 변경 시: 규격1/규격2를 해당 시스템의 첫 유효 조합으로 연쇄 초기화
+                    const nextBrand = value;
+                    const nextFamily = pickPreferredFamily(
+                      getFamilies(currentManufacturer, nextBrand),
+                    );
+                    const nextType = pickFirst(
+                      getTypes(currentManufacturer, nextBrand, nextFamily),
+                    );
+
                     if (implantSelectSource === "caseInfos") {
                       setCaseInfos({
-                        implantBrand: value,
+                        implantBrand: nextBrand,
+                        implantFamily: nextFamily,
+                        implantType: nextType,
                       });
                       syncSelectedConnection(
                         currentManufacturer,
-                        value,
-                        currentFamily,
-                        currentType,
+                        nextBrand,
+                        nextFamily,
+                        nextType,
                       );
                       return;
                     }
-                    setImplantBrand(value);
+
+                    setImplantBrand(nextBrand);
+                    setImplantFamily(nextFamily);
+                    setImplantType(nextType);
                     syncSelectedConnection(
                       currentManufacturer,
-                      value,
-                      currentFamily,
-                      currentType,
+                      nextBrand,
+                      nextFamily,
+                      nextType,
                     );
                     setCaseInfos({
-                      implantBrand: value,
+                      implantBrand: nextBrand,
+                      implantFamily: nextFamily,
+                      implantType: nextType,
                     });
                   }}
                   disabled={implantDisabled || !currentManufacturer}
@@ -521,28 +594,38 @@ export function NewRequestPatientImplantFields({
                   value={currentFamily}
                   onValueChange={(value) => {
                     if (implantDisabled) return;
-                    // Family 선택 시 Type은 유지
+
+                    // 규격1 변경 시: 규격2를 해당 규격1의 첫 유효 값으로 연쇄 초기화
+                    const nextFamily = value;
+                    const nextType = pickFirst(
+                      getTypes(currentManufacturer, currentBrand, nextFamily),
+                    );
+
                     if (implantSelectSource === "caseInfos") {
                       setCaseInfos({
-                        implantFamily: value,
+                        implantFamily: nextFamily,
+                        implantType: nextType,
                       });
                       syncSelectedConnection(
                         currentManufacturer,
                         currentBrand,
-                        value,
-                        currentType,
+                        nextFamily,
+                        nextType,
                       );
                       return;
                     }
-                    setImplantFamily(value);
+
+                    setImplantFamily(nextFamily);
+                    setImplantType(nextType);
                     syncSelectedConnection(
                       currentManufacturer,
                       currentBrand,
-                      value,
-                      currentType,
+                      nextFamily,
+                      nextType,
                     );
                     setCaseInfos({
-                      implantFamily: value,
+                      implantFamily: nextFamily,
+                      implantType: nextType,
                     });
                   }}
                   disabled={implantDisabled || !currentBrand}

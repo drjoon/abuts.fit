@@ -2317,49 +2317,49 @@ source: {
 
 ---
 
-## 19. 임플란트 브랜드 버전/패밀리(PRC) 운영 정책 (2026-06-13)
+## 19. 임플란트 프론트 규격/PRC 매핑 운영 정책 (2026-06-14)
 
-### 19.1 브랜드 표기 SSOT (버전 포함)
+### 19.1 시스템명(`/`) 분리 정책
 
-신규 주문 기준 canonical 브랜드는 아래와 같이 **버전 표기**를 사용합니다.
+표에서 `A / B` 형태로 기재된 시스템명은 프론트에서 **각각 별도 선택 항목**으로 제공합니다.
 
-- Neobiotech: `IS2`, `IS3`
-- Dentium: `SuperLine2`, `Implantium`
-- Megagen: `AnyOne`
-- Osstem: `TS3`
-- Dentis: `SQ`, `OneQ`
-- Dio: `UF2`
+- 예: `Superline2 / Implantium` → `Superline2`, `Implantium` 개별 항목
+- 예: `IS2 / IS3 / ALX` → `IS2`, `IS3`, `ALX` 개별 항목
+- 예: `SQ / One-Q` → `SQ`, `One-Q` 개별 항목
 
-레거시 입력값(`TS`, `SuperLine`, `UF`, `IS`)은 백엔드 정규화 단계에서 버전 표기 canonical로 정규화합니다.
+### 19.2 규격 표시 정책 (규격1/규격2)
 
-### 19.2 Family canonical 집합
+프론트의 규격 표시는 canonical family/type과 분리해 `Connection.displayFamily`, `Connection.displayType`를 SSOT로 사용합니다.
 
-Family canonical 값은 아래 4가지를 사용합니다.
+- `displayFamily`: 규격1 표시값 (예: `Regular (Ø4.0 이상)`, `Mini (Ø3.5)`, `""`)
+- `displayType`: 규격2 표시값 (예: `HEX 2.5`, `HEX 2.1`, `HEX 1.7`)
 
-- `Regular`
-- `Mini`
-- `Narrow`
-- `Small Narrow`
+내부 저장용 canonical 필드는 계속 `family`/`type`을 사용합니다.
 
-제조사 표기 차이(`Small`, `Narrow` 등)는 위 canonical로 정규화합니다.
+### 19.3 호환 PRC 매핑 정책 (compat mapping)
 
-### 19.3 PRC 파일 코드 규칙
+여러 프론트 선택 항목이 **하나의 PRC 파일로 매핑**될 수 있습니다.
 
-PRC 파일명의 family/type 코드는 아래를 사용합니다.
+- 예: `NEOBIOTECH IS2/IS3/ALX (Regular)` → `네오_IS_RH_*`
+- 예: `DENTIS One-Q (Regular/Mini/Narrow)` → `덴티스_SQ_*`
+- 예: `DENTIUM Superline2/Implantium (Regular)` → `덴티움_SuperLine_RH_*`
 
-- `RH`, `RN` → Regular + (Hex/Non-Hex)
-- `MH`, `MN` → Mini + (Hex/Non-Hex)
-- `NH`, `NN` → Narrow + (Hex/Non-Hex)
-- `SH`, `SN` → Small Narrow + (Hex/Non-Hex)
+즉, 프론트 선택 단위와 실제 PRC 파일 단위는 1:1이 아닐 수 있습니다.
 
-레거시 3글자 코드(`SNH`, `SNN`)도 파서는 읽을 수 있어야 합니다.
+### 19.4 AcroDent PRC 경로 SSOT
 
-### 19.4 2026-06-13 임시 활성화 정책 (주문 가능)
+PRC 파일 경로 SSOT는 아래를 사용합니다.
 
-PRC 검증/생산 안정화 전 임시 정책:
+- Face Hole: `bg/pc1/AcroDent/1_Face Hole`
+- Connection: `bg/pc1/AcroDent/2_Connection`
 
-- 기본 원칙: Mini/Narrow/Small Narrow 계열은 주문 비활성화
-- 예외: **`MEGAGEN / AnyOne / Mini / Hex`만 활성화** (테스트용)
+백엔드의 PRC 카탈로그/시드 스크립트/제조사 매핑은 모두 위 경로를 기준으로 동작해야 합니다.
 
-주문 가능 여부는 `Connection.isActive`를 SSOT로 사용하며,
-신규 주문 생성 및 의뢰 수정 시점에서 `isActive=true` 조합만 허용합니다.
+### 19.5 연결 시드 동기화 및 prune 정책
+
+`seedCoreShared` 실행 시 `hanhwa-connection` 카테고리에서 다음을 수행합니다.
+
+1. `CONNECTIONS_SEED` 기준 upsert
+2. seed에 없는 기존 `hanhwa-connection` row는 prune(delete)
+
+목적은 과거 stale 옵션(브랜드명 변경/삭제된 시스템)이 프론트에 다시 노출되지 않게 보장하기 위함입니다.

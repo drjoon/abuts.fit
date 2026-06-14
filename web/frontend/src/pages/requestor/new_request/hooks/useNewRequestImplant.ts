@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import type { Connection } from "./newRequestTypes";
 
-// v3: ALX 완전 제거 정책 반영(백엔드/DB 정리 이후에도 브라우저 구캐시를 강제 폐기)
-const IMPLANT_PRESETS_STORAGE_KEY = "abutsfit:implant-presets:v3";
+// v4: 2026-06-14 표 SSOT 재구성 반영 캐시 키
+const IMPLANT_PRESETS_STORAGE_KEY = "abutsfit:implant-presets:v4";
 const IMPLANT_PRESETS_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1년
 
 export type UseNewRequestImplantParams = {
@@ -14,19 +14,6 @@ export type UseNewRequestImplantParams = {
     implantType: string;
   }) => void;
 };
-
-const isUnsupportedBrand = (brand?: string) => {
-  const token = String(brand || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[_\-\s]+/g, "");
-  return token === "ALX";
-};
-
-const filterUnsupportedConnections = (rows: Connection[]) =>
-  (Array.isArray(rows) ? rows : []).filter(
-    (row) => !isUnsupportedBrand(row?.brand),
-  );
 
 export const useNewRequestImplant = ({
   token,
@@ -64,9 +51,7 @@ export const useNewRequestImplant = ({
                 Array.isArray(parsed.data) &&
                 parsed.data.length > 0
               ) {
-                setConnections(
-                  filterUnsupportedConnections(parsed.data as Connection[]),
-                );
+                setConnections(parsed.data as Connection[]);
                 return;
               }
             }
@@ -84,13 +69,12 @@ export const useNewRequestImplant = ({
         const list: Connection[] = Array.isArray(connBody.data)
           ? (connBody.data as Connection[])
           : [];
-        const filteredList = filterUnsupportedConnections(list);
-        setConnections(filteredList);
+        setConnections(list);
 
         if (typeof window !== "undefined") {
           try {
             const payload = {
-              data: filteredList,
+              data: list,
               serverUpdatedAt:
                 typeof (connBody as any).serverUpdatedAt === "number"
                   ? (connBody as any).serverUpdatedAt

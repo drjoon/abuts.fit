@@ -1,94 +1,86 @@
 import "../../bootstrap/env.js";
 import fs from "fs/promises";
+import path from "path";
 import { connectDb, disconnectDb } from "./_mongo.js";
 import PrcMapping from "../../models/prcMapping.model.js";
+import { CONNECTIONS_SEED } from "./data/connections.seed.js";
 import {
-  parseConnectionPrcFileName,
-  parseFaceHolePrcFileName,
   PRC_CONNECTION_DIR,
   PRC_FACE_HOLE_DIR,
 } from "../../utils/prcFilenameCatalog.js";
 
-/**
- * 로컬 파일 시스템에서 PRC 파일을 읽어서 매핑 데이터 생성
- */
-async function readPrcMappingsFromFileSystem() {
-  const mappings = new Map();
+function toFaceHoleFileName(connectionFileName) {
+  return String(connectionFileName || "").replace(
+    /_Connection\.prc$/i,
+    "_FaceHole.prc",
+  );
+}
 
-  try {
-    // 1. Connection 파일 읽기
-    const connectionFiles = await fs.readdir(PRC_CONNECTION_DIR, {
-      withFileTypes: true,
-    });
-    for (const entry of connectionFiles) {
-      if (!entry.isFile() || !/_Connection\.prc$/i.test(entry.name)) continue;
+async function buildExistingFileNameSet(dirPath, suffixRegex) {
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  return new Set(
+    entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .filter((name) => suffixRegex.test(name))
+      .map((name) => name.normalize("NFC")),
+  );
+}
 
-      const parsed = parseConnectionPrcFileName(entry.name);
-      if (!parsed) {
-        console.warn(`[warn] Connection 파일 파싱 실패: ${entry.name}`);
-        continue;
-      }
+async function buildMappingsFromTableSeed() {
+  const connectionFiles = await buildExistingFileNameSet(
+    PRC_CONNECTION_DIR,
+    /_Connection\.prc$/i,
+  );
+  const faceHoleFiles = await buildExistingFileNameSet(
+    PRC_FACE_HOLE_DIR,
+    /_FaceHole\.prc$/i,
+  );
 
-      const key = `${parsed.manufacturer}|${parsed.brand}|${parsed.family}|${parsed.type}`;
-      if (!mappings.has(key)) {
-        mappings.set(key, {
-          manufacturer: parsed.manufacturer,
-          brand: parsed.brand,
-          family: parsed.family,
-          type: parsed.type,
-          connectionPrcFileName: parsed.fileName,
-          faceHolePrcFileName: "",
-        });
-      } else {
-        mappings.get(key).connectionPrcFileName = parsed.fileName;
-      }
-    }
+  const mappings = [];
+  const seen = new Set();
 
-    // 2. FaceHole 파일 읽기
-    const faceHoleFiles = await fs.readdir(PRC_FACE_HOLE_DIR, {
-      withFileTypes: true,
-    });
-    for (const entry of faceHoleFiles) {
-      if (!entry.isFile() || !/_FaceHole\.prc$/i.test(entry.name)) continue;
+  for (const row of CONNECTIONS_SEED) {
+    const manufacturer = String(row.manufacturer || "").trim();
+    const brand = String(row.brand || "").trim();
+    const family = String(row.family || "").trim();
+    const type = String(row.type || "").trim();
+    const connectionPrcFileName = String(row.fileName || "").trim();
+    const faceHolePrcFileName = toFaceHoleFileName(connectionPrcFileName);
 
-      const parsed = parseFaceHolePrcFileName(entry.name);
-      if (!parsed) {
-        console.warn(`[warn] FaceHole 파일 파싱 실패: ${entry.name}`);
-        continue;
-      }
+    const key = `${manufacturer}|${brand}|${family}|${type}`;
+    if (seen.has(key)) continue;
 
-      const key = `${parsed.manufacturer}|${parsed.brand}|${parsed.family}|${parsed.type}`;
-      if (!mappings.has(key)) {
-        mappings.set(key, {
-          manufacturer: parsed.manufacturer,
-          brand: parsed.brand,
-          family: parsed.family,
-          type: parsed.type,
-          connectionPrcFileName: "",
-          faceHolePrcFileName: parsed.fileName,
-        });
-      } else {
-        mappings.get(key).faceHolePrcFileName = parsed.fileName;
-      }
-    }
-  } catch (error) {
-    console.error("[error] PRC 파일 시스템 읽기 실패:", error);
-    throw error;
-  }
-
-  // 3. 완전한 매핑만 반환 (FaceHole + Connection 둘 다 있는 것만)
-  const completeMappings = [];
-  for (const [key, mapping] of mappings) {
-    if (mapping.faceHolePrcFileName && mapping.connectionPrcFileName) {
-      completeMappings.push(mapping);
-    } else {
-      console.warn(
-        `[warn] 불완전한 매핑 제외: ${key} (FaceHole=${mapping.faceHolePrcFileName}, Connection=${mapping.connectionPrcFileName})`,
+    if (!connectionFiles.has(connectionPrcFileName.normalize("NFC"))) {
+      throw new Error(
+        `[seed-prc] Connection 파일 없음: ${connectionPrcFileName} (${path.join(
+          PRC_CONNECTION_DIR,
+          connectionPrcFileName,
+        )})`,
       );
     }
+
+    if (!faceHoleFiles.has(faceHolePrcFileName.normalize("NFC"))) {
+      throw new Error(
+        `[seed-prc] FaceHole 파일 없음: ${faceHolePrcFileName} (${path.join(
+          PRC_FACE_HOLE_DIR,
+          faceHolePrcFileName,
+        )})`,
+      );
+    }
+
+    seen.add(key);
+    mappings.push({
+      manufacturer,
+      brand,
+      family,
+      type,
+      connectionPrcFileName,
+      faceHolePrcFileName,
+    });
   }
 
-  return completeMappings;
+  return mappings;
 }
 
 async function seedPrcMappings() {
@@ -101,21 +93,18 @@ async function seedPrcMappings() {
     await connectDb();
     console.log("[db] MongoDB 연결 성공");
 
-    // 로컬 파일 시스템에서 PRC 매핑 읽기
-    const mappings = await readPrcMappingsFromFileSystem();
+    const mappings = await buildMappingsFromTableSeed();
     if (mappings.length === 0) {
       throw new Error(
-        `PRC 파일을 찾을 수 없습니다. 디렉토리를 확인하세요: ${PRC_CONNECTION_DIR}, ${PRC_FACE_HOLE_DIR}`,
+        "생성할 PRC 매핑이 없습니다. CONNECTIONS_SEED를 확인하세요.",
       );
     }
 
-    console.log(`[db] ${mappings.length}개 PRC 매핑 발견`);
+    console.log(`[db] ${mappings.length}개 PRC 매핑 생성 예정`);
 
-    // 기존 데이터 삭제
     await PrcMapping.deleteMany({});
     console.log("[db] 기존 PRC 매핑 데이터 삭제 완료");
 
-    // 새 데이터 삽입
     const result = await PrcMapping.insertMany(mappings);
     console.log(`[db] ${result.length}개 PRC 매핑 데이터 생성 완료`);
 

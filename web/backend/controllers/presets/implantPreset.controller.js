@@ -29,25 +29,27 @@ function normalizeFamilyLabel(family) {
   return "Regular";
 }
 
-function buildDisplayLabels({ manufacturer, brand, family, type }) {
+function buildDisplayLabels({
+  manufacturer,
+  brand,
+  family,
+  type,
+  displayBrand,
+  displayFamily,
+  displayType,
+}) {
   return {
     displayManufacturer: String(manufacturer || "").trim(),
-    displayBrand: String(brand || "")
-      .trim()
-      .replace("Hanwha", "HWH")
-      .replace("hanwha", "HWH"),
-    displayFamily: normalizeFamilyLabel(family),
-    displayType: normalizeTypeLabel(type),
+    displayBrand:
+      String(displayBrand || "").trim() ||
+      String(brand || "")
+        .trim()
+        .replace("Hanwha", "HWH")
+        .replace("hanwha", "HWH"),
+    displayFamily:
+      String(displayFamily || "").trim() || normalizeFamilyLabel(family),
+    displayType: String(displayType || "").trim() || normalizeTypeLabel(type),
   };
-}
-
-function isUnsupportedImplantBrand(brand) {
-  const token = String(brand || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[_\-\s]+/g, "");
-  // 2026-06 정책: NEOBIOTECH ALX는 지원 대상에서 제외
-  return token === "ALX";
 }
 
 async function buildPrcFileNames({
@@ -100,8 +102,7 @@ function getBusinessAnchorId(req) {
 export async function getImplantPresets(req, res) {
   try {
     const businessAnchorId = getBusinessAnchorId(req);
-    const allRaw = await Connection.find({ isActive: true }).lean();
-    const all = allRaw.filter((c) => !isUnsupportedImplantBrand(c?.brand));
+    const all = await Connection.find({ isActive: true }).lean();
 
     const usage = businessAnchorId
       ? await Request.aggregate([
@@ -138,6 +139,9 @@ export async function getImplantPresets(req, res) {
             brand: normalized.implantBrand,
             family: normalized.implantFamily || c.family,
             type: normalized.implantType,
+            displayBrand: c.displayBrand,
+            displayFamily: c.displayFamily,
+            displayType: c.displayType,
           });
           return {
             ...c,

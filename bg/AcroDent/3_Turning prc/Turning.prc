@@ -1,0 +1,160 @@
+﻿BEGIN_PROCESS; 공정 이름; 4;
+BEGIN_OPERATION; 396; 솔리드턴-윤곽가공; 0;
+   4437; 4437; 0;  SOURCE; 0; TECHCODETYPE; 2;
+   4420; 4420; 2025;  SOURCE; 0; TECHCODETYPE; 2;
+   FinishLeadOutXOffset; 2924; 0;  HIDDEN; CAPTION; 오프셋 X; SOURCE; 1; TECHCODETYPE; 2;
+   LengthCompRegister; 527; 2;  CAPTION; 길이 등록값; SOURCE; 1; TECHCODETYPE; 1;
+   4434; 4434; 0.29827922711512811;  SOURCE; 0; TECHCODETYPE; 2;
+   CollisionDetection; 235; 1;  CAPTION; 충돌 감지; SOURCE; 1; TECHCODETYPE; 67;
+   XStock; 269; 0.29999999999999999;  CAPTION; 소재 X|소재 Z, X; SOURCE; 2; TECHCODETYPE; 2;
+   ExitPointX; 2921; 9;  CAPTION; 이탈 점X|이탈 점 Z, X; SOURCE; 2; TECHCODETYPE; 2;
+   ExitMode; 694; 3;  CAPTION; 공구이탈모드; SOURCE; 2; TECHCODETYPE; 342;
+   4431; 4431; 2;  SOURCE; 0; TECHCODETYPE; 2;
+   4907; 4907; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4907;;
+		:
+	END_STRING
+   FinishLeadOutDistance; 2918; 0;  CAPTION; 거리; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting10; 640; 0;  CAPTION; 사용자 정의 설정 10; SOURCE; 1; TECHCODETYPE; 2;
+   MaximumRPM; 198; 4500;  CAPTION; 최대 RPM; SOURCE; 1; TECHCODETYPE; 1;
+   UseFeedSpeedKB; 1762; 0;  CAPTION; 피드/회전수KB사용; SOURCE; 1; TECHCODETYPE; 67;
+   SpindleID; 793; 1;  CAPTION; 스핀들 이름; SOURCE; 1; TECHCODETYPE; 1;
+   4904; 4904; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4904;;
+		:
+	END_STRING
+   4003; 4003; 5;  SOURCE; 0; TECHCODETYPE; 1;
+   FinishLeadInNormalDistance; 2915; 0;  HIDDEN; CAPTION; 법선 거리; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting7; 637; 0;  CAPTION; 사용자 정의 설정 7; SOURCE; 1; TECHCODETYPE; 2;
+   FeedratePR; 416; 0.02;  CAPTION; 피드값 PR|피드값 PM, PR; SOURCE; 2; TECHCODETYPE; 2;
+   4901; 4901; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4901;;
+		:Turning
+	END_STRING
+   4425; 4425; 23;  SOURCE; 0; TECHCODETYPE; 2;
+   TransitionClearance; 7230; 0;  HIDDEN; CAPTION; 전환 클리어런스; SOURCE; 3; TECHCODETYPE; 2;
+   ChamferDistance; 3456; 0.5;  HIDDEN; CAPTION; 챔퍼 거리; SOURCE; 2; TECHCODETYPE; 2;
+   FinishLeadOutRadius; 2912; 0;  HIDDEN; CAPTION; 반경; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting4; 634; 0;  CAPTION; 사용자 정의 설정 4; SOURCE; 1; TECHCODETYPE; 2;
+   UndercuttingMode; 2929; 2;  CAPTION; 언더컷 모드; SOURCE; 2; TECHCODETYPE; 340;
+   ToolID; 498; ;  CAPTION; 공구; SOURCE; 2; TECHCODETYPE; 3;
+	BEGIN_STRING; 498;;
+		:OD_V35_R0.4
+	END_STRING
+   4422; 4422; 23;  SOURCE; 0; TECHCODETYPE; 2;
+   FinishLeadoutArcAngle; 1787; 0;  HIDDEN; CAPTION; Arc Angle; SOURCE; 0; TECHCODETYPE; 2;
+   ControlEdgeShift; 699; 0;  CAPTION; 기준점 이동; SOURCE; 3; TECHCODETYPE; 67;
+   FinishLeadOutZOffset; 2926; 0.5;  HIDDEN; CAPTION; Z 오프셋 |Z,X 오프셋; SOURCE; 2; TECHCODETYPE; 2;
+   CustomSetting1; 631; 0;  CAPTION; 사용자 정의 설정 1; SOURCE; 1; TECHCODETYPE; 2;
+   Clearance; 172; 2;  HIDDEN; CAPTION; 여유; SOURCE; 1; TECHCODETYPE; 2;
+   4436; 4436; 9;  SOURCE; 0; TECHCODETYPE; 1;
+   FinishLeadInXOffset; 2923; 1.5;  CAPTION; 오프셋 X; SOURCE; 2; TECHCODETYPE; 2;
+   SpindlePriority; 118; 0;  CAPTION; 스핀들 우선순위; SOURCE; 1; TECHCODETYPE; 233;
+   MachiningDirection; 1427; 1;  CAPTION; 가공 방향; SOURCE; 1; TECHCODETYPE; 311;
+   FinishLeadOutType; 1784; 0;  CAPTION; 리드-아웃 종류; SOURCE; 2; TECHCODETYPE; 339;
+   4433; 4433; 1.8294927942489787;  SOURCE; 0; TECHCODETYPE; 2;
+   4909; 4909; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4909;;
+		:
+	END_STRING
+   ZStock; 268; 0.10000000000000001;  CAPTION; 소재 Z|소재 Z, X; SOURCE; 2; TECHCODETYPE; 2;
+   FinishLeadInType; 1781; 11;  CAPTION; 리드-인 종류; SOURCE; 2; TECHCODETYPE; 339;
+   EntryPointZ; 2920; -3;  HIDDEN; CAPTION; 진입 점 Z|진입 점 Z, X; SOURCE; 2; TECHCODETYPE; 2;
+   EntryMode; 693; 6;  CAPTION; 공구진입모드; SOURCE; 2; TECHCODETYPE; 341;
+   FeatureDirectionX; 4005; 1;  SOURCE; 0; TECHCODETYPE; 1;
+   4430; 4430; 4;  SOURCE; 0; TECHCODETYPE; 2;
+   4906; 4906; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4906;;
+		:heekwon.kim
+	END_STRING
+   FinishLeadInDistance; 2917; 0;  CAPTION; 거리; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting9; 639; 0;  CAPTION; 사용자 정의 설정 9; SOURCE; 1; TECHCODETYPE; 2;
+   BackClearanceAngle; 180; 10;  CAPTION; 배면 여유 각도; SOURCE; 2; TECHCODETYPE; 2;
+   SpindleRange; 197; 0;  CAPTION; 스핀들 범위; SOURCE; 1; TECHCODETYPE; 19;
+   SpindleSpeedSPM; 418; 110;  CAPTION; 스피드 CSS|스피드 RPM, CSS; SOURCE; 3; TECHCODETYPE; 1;
+   TurretID; 792; 1;  CAPTION; 터렛 이름; SOURCE; 1; TECHCODETYPE; 1;
+   4903; 4903; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4903;;
+		:
+	END_STRING
+   EndOffsetPositioningType; 7232; 2;  CAPTION; 끝 위치 지정 유형; SOURCE; 2; TECHCODETYPE; 589;
+   FinishLeadOutTangentDistance; 2914; 0;  HIDDEN; CAPTION; 접선 거리; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting6; 636; 0;  CAPTION; 사용자 정의 설정 6; SOURCE; 1; TECHCODETYPE; 2;
+   Comment; 7; ;  CAPTION; 주석; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 7;;
+		:
+	END_STRING
+   CutterCompNC; 245; 0;  CAPTION; 공구 보정 사용; SOURCE; 1; TECHCODETYPE; 67;
+   SpindleSpeedRPM; 194; 3500;  CAPTION; 스피드 RPM|스피드 RPM, CSS; SOURCE; 2; TECHCODETYPE; 1;
+   TypeOfCut; 432; ;  HIDDEN; CAPTION; 가공 종류; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 432;;
+		:{B668FDDD-A8C0-4EA2-A5AF-9739BA3A309C}
+	END_STRING
+   4424; 4424; 13;  SOURCE; 0; TECHCODETYPE; 2;
+   ChamferAngle; 3455; 45;  HIDDEN; CAPTION; 모따기 각도; SOURCE; 1; TECHCODETYPE; 2;
+   FinishLeadInRadius; 2911; 0;  HIDDEN; CAPTION; 반경; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting3; 633; 0;  CAPTION; 사용자 정의 설정 3; SOURCE; 1; TECHCODETYPE; 2;
+   EndExtension; 2928; 0;  CAPTION; 끝부분 연장; SOURCE; 1; TECHCODETYPE; 2;
+   FeedratePM; 191; 70;  CAPTION; 피드값 PM|피드값 PM, PR; SOURCE; 3; TECHCODETYPE; 2;
+   LatheToolOrientationAngle; 2503; 0;  LOCKED; HIDDEN; CAPTION; 회전각도; SOURCE; 3; TECHCODETYPE; 2;
+   4438; 4438; 0;  SOURCE; 0; TECHCODETYPE; 2;
+   4421; 4421; 12;  SOURCE; 0; TECHCODETYPE; 2;
+   FinishLeadinArcAngle; 1786; 0;  HIDDEN; CAPTION; Arc Angle; SOURCE; 0; TECHCODETYPE; 2;
+   TransitionAngle; 885; 0;  HIDDEN; CAPTION; 트랜지션 각도; SOURCE; 1; TECHCODETYPE; 2;
+   FinishLeadInZOffset; 2925; -1.5;  CAPTION; Z 오프셋 |Z,X 오프셋; SOURCE; 2; TECHCODETYPE; 2;
+   OperationName; 613; ;  CAPTION; 작업 이름; SOURCE; 1; TECHCODETYPE; 3;
+	BEGIN_STRING; 613;;
+		:솔리드턴-윤곽가공
+	END_STRING
+   MachiningArea; 2007; 1;  CAPTION; 가공 영역; SOURCE; 1; TECHCODETYPE; 346;
+   ReferenceDiameter; 103; 8;  CAPTION; 참조 직경; SOURCE; 1; TECHCODETYPE; 2;
+   4435; 4435; 13.363186987833378;  SOURCE; 0; TECHCODETYPE; 2;
+   ToolBlend; 236; 0;  CAPTION; 공구 블렌드; SOURCE; 1; TECHCODETYPE; 67;
+   ExitPointZ; 2922; 3;  LOCKED; CAPTION; 이탈 점 Z|이탈 점 Z, X; SOURCE; 2; TECHCODETYPE; 2;
+   HeadID; 797; 1;  CAPTION; 헤드 ID; SOURCE; 1; TECHCODETYPE; 1;
+   FeatureDirectionZ; 4007; 1;  SOURCE; 0; TECHCODETYPE; 1;
+   4432; 4432; 11.360147808817734;  SOURCE; 0; TECHCODETYPE; 2;
+   4908; 4908; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4908;;
+		:
+	END_STRING
+   EntryPointX; 2919; 10;  HIDDEN; CAPTION; 진입 점 X|진입 점 Z, X; SOURCE; 2; TECHCODETYPE; 2;
+   FeaturePosition; 4004; 1;  SOURCE; 0; TECHCODETYPE; 1;
+   4905; 4905; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4905;;
+		:
+	END_STRING
+   FinishLeadOutNormalDistance; 2916; 0;  HIDDEN; CAPTION; 법선 거리; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting8; 638; 0;  CAPTION; 사용자 정의 설정 8; SOURCE; 1; TECHCODETYPE; 2;
+   SpeedUnit; 196; 1;  CAPTION; 속도 단위; SOURCE; 2; TECHCODETYPE; 26;
+   4902; 4902; ;  SOURCE; 0; TECHCODETYPE; 3;
+	BEGIN_STRING; 4902;;
+		:
+	END_STRING
+   StartOffsetPositioningType; 7231; 2;  CAPTION; 위치 지정 유형 시작; SOURCE; 2; TECHCODETYPE; 589;
+   ExtensionDistance; 3457; 0;  HIDDEN; CAPTION; 연장 거리; SOURCE; 1; TECHCODETYPE; 2;
+   FinishLeadInTangentDistance; 2913; 0;  HIDDEN; CAPTION; 접선 거리; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting5; 635; 0;  CAPTION; 사용자 정의 설정 5; SOURCE; 1; TECHCODETYPE; 2;
+   FrontClearanceAngle; 397; 10;  CAPTION; 정면 여유 각도; SOURCE; 2; TECHCODETYPE; 2;
+   TransverseFeedratePercent; 2930; 100;  CAPTION; 교차 피드값 %; SOURCE; 1; TECHCODETYPE; 2;
+   FeedUnit; 193; 2;  CAPTION; 피드 단위; SOURCE; 1; TECHCODETYPE; 25;
+   TypeOfWork; 261; 2;  CAPTION; 작업 종류; SOURCE; 1; TECHCODETYPE; 119;
+   4423; 4423; 21;  SOURCE; 0; TECHCODETYPE; 2;
+   LeadOutAngle; 3454; 65;  HIDDEN; CAPTION; 리드 아웃 각도; SOURCE; 2; TECHCODETYPE; 2;
+   CustomSetting2; 632; 0;  CAPTION; 사용자 정의 설정 2; SOURCE; 1; TECHCODETYPE; 2;
+   OffsetRegisterNC; 122; 0;  HIDDEN; CAPTION; 오프셋 등록값NC; SOURCE; 1; TECHCODETYPE; 1;
+   StartExtension; 2927; 0;  CAPTION; 시작부분 연장; SOURCE; 2; TECHCODETYPE; 2;
+   LatheToolOrientation; 2502; 14;  LOCKED; CAPTION; 방향; SOURCE; 3; TECHCODETYPE; 72;
+   BEGIN_EXPRESSION
+     527; Tool1("LengthCompRegister").value
+     198; document.LatheMachineSetup.Spindles.Item(techobj("793").value).MaximumRPM
+     1762; 0
+     172; im(0.1,2)
+     197; 0
+     432; "{B668FDDD-A8C0-4EA2-A5AF-9739BA3A309C}"
+     103; Document.LatheMachineSetup.BarDiameter
+     2930; 100
+   END_EXPRESSION
+	BEGIN_ATTRIBUTES
+	END_ATTRIBUTES
+END_OPERATION;

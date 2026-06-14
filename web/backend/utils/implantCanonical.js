@@ -18,7 +18,7 @@ const __dirname = path.dirname(__filename);
 const PRC_CONNECTION_DIR = path.resolve(
   __dirname,
   "../../..",
-  "bg/pc1/esprit-addin/AcroDent/2_Connection",
+  "bg/pc1/AcroDent/2_Connection",
 );
 
 const IMPLANT_BRAND_CANONICAL_ALIASES = {
@@ -28,10 +28,11 @@ const IMPLANT_BRAND_CANONICAL_ALIASES = {
     TS: "TS3",
   },
   DENTIUM: {
-    SuperLine: "SuperLine2",
+    SuperLine: "Superline2",
+    SuperLine2: "Superline2",
   },
   DIO: {
-    UF: "UF2",
+    UF2: "UF",
   },
   NEOBIOTECH: {
     IS: "IS2",
