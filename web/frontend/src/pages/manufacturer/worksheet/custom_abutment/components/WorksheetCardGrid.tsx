@@ -737,15 +737,6 @@ export const WorksheetCardGrid = ({
                               스크류 {resolvedConnectionSpec.screwType}
                             </Badge>
                           )}
-                        {tabStage === "packing" &&
-                          displayConnectionDiameter != null && (
-                            <Badge
-                              variant="outline"
-                              className="text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border border-emerald-200 bg-emerald-50 text-emerald-700"
-                            >
-                              커넥션 Ø{displayConnectionDiameter.toFixed(2)}
-                            </Badge>
-                          )}
                       </div>
                     )}
                     {isNewSystemRequest && (

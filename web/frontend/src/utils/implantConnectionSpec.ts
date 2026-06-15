@@ -24,24 +24,115 @@ type ImplantSpecRow = {
 
 // DB seed(web/backend/scripts/db/data/connections.seed.js)와 동일 SSOT 값
 const TABLE_ROWS: ImplantSpecRow[] = [
-  { manufacturer: "OSSTEM", brands: ["TS3"], family: "Regular", screwType: "A", connectionDiameter: 3.35, hexSize: 2.5 },
-  { manufacturer: "OSSTEM", brands: ["TS3"], family: "Mini", screwType: "D", connectionDiameter: 2.6, hexSize: 2.1 },
+  {
+    manufacturer: "OSSTEM",
+    brands: ["TS3"],
+    family: "Regular",
+    screwType: "A",
+    connectionDiameter: 3.35,
+    hexSize: 2.5,
+  },
+  {
+    manufacturer: "OSSTEM",
+    brands: ["TS3"],
+    family: "Mini",
+    screwType: "D",
+    connectionDiameter: 2.6,
+    hexSize: 2.1,
+  },
 
-  { manufacturer: "DENTIUM", brands: ["Superline2", "Implantium"], family: "Regular", screwType: "B", connectionDiameter: 3.33, hexSize: 2.5 },
+  {
+    manufacturer: "DENTIUM",
+    brands: ["Superline2", "Implantium"],
+    family: "Regular",
+    screwType: "B",
+    connectionDiameter: 3.33,
+    hexSize: 2.5,
+  },
 
-  { manufacturer: "NEOBIOTECH", brands: ["IS2", "IS3", "ALX"], family: "Regular", screwType: "A", connectionDiameter: 3.35, hexSize: 2.5 },
-  { manufacturer: "NEOBIOTECH", brands: ["IS2", "IS3", "ALX"], family: "Small Narrow", screwType: "C", connectionDiameter: 2.6, hexSize: 2.1 },
+  {
+    manufacturer: "NEOBIOTECH",
+    brands: ["IS2", "IS3", "ALX"],
+    family: "Regular",
+    screwType: "A",
+    connectionDiameter: 3.35,
+    hexSize: 2.5,
+  },
+  {
+    manufacturer: "NEOBIOTECH",
+    brands: ["IS2", "IS3", "ALX"],
+    family: "Small Narrow",
+    screwType: "C",
+    connectionDiameter: 2.6,
+    hexSize: 2.1,
+  },
 
-  { manufacturer: "DIO", brands: ["UF"], family: "Regular", screwType: "A", connectionDiameter: 3.35, hexSize: 2.5 },
-  { manufacturer: "DIO", brands: ["UF"], family: "Narrow", screwType: "E", connectionDiameter: 2.3, hexSize: 1.7 },
+  {
+    manufacturer: "DIO",
+    brands: ["UF"],
+    family: "Regular",
+    screwType: "A",
+    connectionDiameter: 3.35,
+    hexSize: 2.5,
+  },
+  {
+    manufacturer: "DIO",
+    brands: ["UF"],
+    family: "Narrow",
+    screwType: "E",
+    connectionDiameter: 2.3,
+    hexSize: 1.7,
+  },
 
-  { manufacturer: "MEGAGEN", brands: ["AnyOne Internal"], family: "Regular", screwType: "A", connectionDiameter: 3.3, hexSize: 2.5 },
-  { manufacturer: "MEGAGEN", brands: ["AnyOne Internal"], family: "Mini", screwType: "C", connectionDiameter: 3.1, hexSize: 2.3 },
-  { manufacturer: "MEGAGEN", brands: ["MiNi Internal"], family: "Mini", screwType: "E", connectionDiameter: 2.3, hexSize: 1.7 },
+  {
+    manufacturer: "MEGAGEN",
+    brands: ["AnyOne Internal", "AnyOne"],
+    family: "Regular",
+    screwType: "A",
+    connectionDiameter: 3.3,
+    hexSize: 2.5,
+  },
+  {
+    manufacturer: "MEGAGEN",
+    brands: ["AnyOne Internal", "AnyOne"],
+    family: "Mini",
+    screwType: "C",
+    connectionDiameter: 3.1,
+    hexSize: 2.3,
+  },
+  {
+    manufacturer: "MEGAGEN",
+    brands: ["MiNi Internal"],
+    family: "Mini",
+    screwType: "E",
+    connectionDiameter: 2.3,
+    hexSize: 1.7,
+  },
 
-  { manufacturer: "DENTIS", brands: ["SQ", "One-Q"], family: "Regular", screwType: "A", connectionDiameter: 3.35, hexSize: 2.5 },
-  { manufacturer: "DENTIS", brands: ["SQ", "One-Q"], family: "Mini", screwType: "D", connectionDiameter: 2.8, hexSize: 2.1 },
-  { manufacturer: "DENTIS", brands: ["SQ", "One-Q"], family: "Narrow", screwType: "E", connectionDiameter: 2.3, hexSize: 1.7 },
+  {
+    manufacturer: "DENTIS",
+    brands: ["SQ", "One-Q"],
+    family: "Regular",
+    screwType: "A",
+    connectionDiameter: 3.35,
+    hexSize: 2.5,
+  },
+  {
+    manufacturer: "DENTIS",
+    brands: ["SQ", "One-Q"],
+    family: "Mini",
+    screwType: "D",
+    connectionDiameter: 2.8,
+    hexSize: 2.1,
+  },
+  {
+    manufacturer: "DENTIS",
+    brands: ["SQ", "One-Q"],
+    family: "Narrow",
+    screwType: "E",
+    connectionDiameter: 2.3,
+    hexSize: 1.7,
+  },
 ];
 
 const token = (value?: string | null) =>
