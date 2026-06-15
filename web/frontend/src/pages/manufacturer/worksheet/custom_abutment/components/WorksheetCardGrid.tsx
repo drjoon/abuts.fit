@@ -466,6 +466,18 @@ export const WorksheetCardGrid = ({
           request.createdAt,
           request.timeline?.estimatedShipYmd,
         );
+        const hasTopFloatingControls =
+          Boolean(isSampleRequest) ||
+          Boolean(realtimeBadge || realtimeElapsedLabel) ||
+          Boolean(onSaveToRnd && tabStage === "packing") ||
+          Boolean(onRollback && canRollback) ||
+          Boolean(onDelete && isSampleRequest) ||
+          Boolean(onDone && isSampleRequest && !request.rnd?.doneAt) ||
+          Boolean(onApprove && !isCompletedForCurrentStage);
+
+        const hasBottomFloatingBadges = Boolean(
+          deadlineInfo || (tabStage === "packing" && isPrinted),
+        );
         const handleDrop = async (e: React.DragEvent) => {
           e.preventDefault();
           e.stopPropagation();
@@ -663,7 +675,7 @@ export const WorksheetCardGrid = ({
                 </button>
               )}
             </div>
-            {deadlineInfo || (tabStage === "packing" && isPrinted) ? (
+            {hasBottomFloatingBadges ? (
               <div className="absolute right-2 bottom-2 z-20 flex items-center gap-1 flex-nowrap">
                 {tabStage === "packing" && isPrinted && (
                   <Badge
@@ -705,7 +717,9 @@ export const WorksheetCardGrid = ({
               </div>
             )}
             <CardContent
-              className={`relative z-10 pt-6 pb-3 px-3 flex-1 flex flex-col gap-2 ${
+              className={`relative z-10 px-3 flex-1 flex flex-col gap-2 ${
+                hasTopFloatingControls ? "pt-10" : "pt-6"
+              } ${hasBottomFloatingBadges ? "pb-8" : "pb-4"} ${
                 isNewSystemRequest ? "bg-emerald-50/40" : ""
               }`}
             >
