@@ -183,7 +183,7 @@ const SPEC_PRESETS: InspectionSpecPreset[] = [
     diameterRef: 3.35,
     diameterCriterion: "3.34~3.37",
     hexRef: 2.515,
-    hexCriterion: "2.515~2.507",
+    hexCriterion: "2.517~2.510",
     innerDepthRef: 1.08,
     innerGauge: "G19",
   },
