@@ -315,38 +315,43 @@ export function resolveManufacturingDateForPrint(request) {
  * @param {Object} request - Request 문서
  * @returns {string} - 스크류 타입 (예: "A", "B", "C")
  */
+// 패킹 라벨(제조사 공정)용 SSOT 매핑 테이블
+// - 브랜드 키는 에스프릿 PRC 파일명 기준의 원본 토큰을 사용한다.
+//   (TS, Superline, IS, UF, AnyOne, MiNi, SQ)
+// - 요청 데이터(예: TS3, Superline2, IS2/IS3, One-Q)는
+//   아래 normalizeBrandByManufacturerToken()에서 원본 토큰으로 정규화한다.
 const PACK_IMPLANT_SPEC_TABLE = [
   {
     manufacturer: "OSSTEM",
-    brands: ["TS3"],
+    brands: ["TS"],
     family: "REGULAR",
     screwType: "A",
     connectionDiameter: 3.35,
   },
   {
     manufacturer: "OSSTEM",
-    brands: ["TS3"],
+    brands: ["TS"],
     family: "MINI",
     screwType: "D",
     connectionDiameter: 2.6,
   },
   {
     manufacturer: "DENTIUM",
-    brands: ["SUPERLINE2", "IMPLANTIUM"],
+    brands: ["SUPERLINE", "IMPLANTIUM"],
     family: "REGULAR",
     screwType: "B",
     connectionDiameter: 3.33,
   },
   {
     manufacturer: "NEOBIOTECH",
-    brands: ["IS2", "IS3", "ALX"],
+    brands: ["IS", "ALX"],
     family: "REGULAR",
     screwType: "A",
     connectionDiameter: 3.35,
   },
   {
     manufacturer: "NEOBIOTECH",
-    brands: ["IS2", "IS3", "ALX"],
+    brands: ["IS", "ALX"],
     family: "SMALLNARROW",
     screwType: "C",
     connectionDiameter: 2.6,
@@ -367,42 +372,42 @@ const PACK_IMPLANT_SPEC_TABLE = [
   },
   {
     manufacturer: "MEGAGEN",
-    brands: ["ANYONEINTERNAL"],
+    brands: ["ANYONE"],
     family: "REGULAR",
     screwType: "A",
     connectionDiameter: 3.3,
   },
   {
     manufacturer: "MEGAGEN",
-    brands: ["ANYONEINTERNAL"],
+    brands: ["ANYONE"],
     family: "MINI",
     screwType: "C",
     connectionDiameter: 3.1,
   },
   {
     manufacturer: "MEGAGEN",
-    brands: ["MINIINTERNAL"],
+    brands: ["MINI"],
     family: "MINI",
     screwType: "E",
     connectionDiameter: 2.3,
   },
   {
     manufacturer: "DENTIS",
-    brands: ["SQ", "ONEQ"],
+    brands: ["SQ"],
     family: "REGULAR",
     screwType: "A",
     connectionDiameter: 3.35,
   },
   {
     manufacturer: "DENTIS",
-    brands: ["SQ", "ONEQ"],
+    brands: ["SQ"],
     family: "MINI",
     screwType: "D",
     connectionDiameter: 2.8,
   },
   {
     manufacturer: "DENTIS",
-    brands: ["SQ", "ONEQ"],
+    brands: ["SQ"],
     family: "NARROW",
     screwType: "E",
     connectionDiameter: 2.3,
@@ -415,6 +420,41 @@ const normalizeToken = (value) =>
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "");
 
+// 제조사(세척·패킹) 처리 경로에서만 적용하는 브랜드 alias 정규화.
+// 의뢰자 입력값 다양성은 유지하되, 공정/라벨 매핑은 PRC 기준 토큰으로 단일화한다.
+const normalizeBrandByManufacturerToken = (manufacturer, brand) => {
+  if (!manufacturer || !brand) return brand;
+
+  if (manufacturer === "OSSTEM") {
+    if (brand.startsWith("TS")) return "TS";
+  }
+
+  if (manufacturer === "DENTIUM") {
+    if (brand.startsWith("SUPERLINE")) return "SUPERLINE";
+    if (brand === "IMPLANTIUM") return "IMPLANTIUM";
+  }
+
+  if (manufacturer === "NEOBIOTECH") {
+    if (brand.startsWith("IS")) return "IS";
+    if (brand === "ALX") return "ALX";
+  }
+
+  if (manufacturer === "DIO") {
+    if (brand.startsWith("UF")) return "UF";
+  }
+
+  if (manufacturer === "MEGAGEN") {
+    if (brand.includes("ANYONE")) return "ANYONE";
+    if (brand.includes("MINI")) return "MINI";
+  }
+
+  if (manufacturer === "DENTIS") {
+    if (brand === "SQ" || brand === "ONEQ") return "SQ";
+  }
+
+  return brand;
+};
+
 const normalizeFamilyToken = (value) => {
   const t = normalizeToken(value);
   if (!t) return "";
@@ -425,7 +465,10 @@ const normalizeFamilyToken = (value) => {
 
 function resolvePackImplantSpec(request) {
   const manufacturer = normalizeToken(request?.caseInfos?.implantManufacturer);
-  const brand = normalizeToken(request?.caseInfos?.implantBrand);
+  const brand = normalizeBrandByManufacturerToken(
+    manufacturer,
+    normalizeToken(request?.caseInfos?.implantBrand),
+  );
   const family = normalizeFamilyToken(request?.caseInfos?.implantFamily);
 
   const matched = PACK_IMPLANT_SPEC_TABLE.find((row) => {

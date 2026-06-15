@@ -22,11 +22,15 @@ type ImplantSpecRow = {
   hexSize: number;
 };
 
-// DB seed(web/backend/scripts/db/data/connections.seed.js)와 동일 SSOT 값
+// SSOT 매핑 테이블(제조사 공정/라벨용):
+// - 값은 PRC 파일명 기준의 "원본 브랜드 토큰"을 사용한다.
+//   (예: TS, Superline, IS, UF, AnyOne, MiNi, SQ)
+// - 의뢰자 화면의 선택값(IS2/IS3/ALX, TS3, Superline2, One-Q 등)은 유지하고,
+//   여기에서만 제조사 공정 표시용으로 alias 정규화를 수행한다.
 const TABLE_ROWS: ImplantSpecRow[] = [
   {
     manufacturer: "OSSTEM",
-    brands: ["TS3"],
+    brands: ["TS"],
     family: "Regular",
     screwType: "A",
     connectionDiameter: 3.35,
@@ -34,7 +38,7 @@ const TABLE_ROWS: ImplantSpecRow[] = [
   },
   {
     manufacturer: "OSSTEM",
-    brands: ["TS3"],
+    brands: ["TS"],
     family: "Mini",
     screwType: "D",
     connectionDiameter: 2.6,
@@ -43,7 +47,7 @@ const TABLE_ROWS: ImplantSpecRow[] = [
 
   {
     manufacturer: "DENTIUM",
-    brands: ["Superline2", "Implantium"],
+    brands: ["Superline", "Implantium"],
     family: "Regular",
     screwType: "B",
     connectionDiameter: 3.33,
@@ -52,7 +56,7 @@ const TABLE_ROWS: ImplantSpecRow[] = [
 
   {
     manufacturer: "NEOBIOTECH",
-    brands: ["IS2", "IS3", "ALX"],
+    brands: ["IS", "ALX"],
     family: "Regular",
     screwType: "A",
     connectionDiameter: 3.35,
@@ -60,7 +64,7 @@ const TABLE_ROWS: ImplantSpecRow[] = [
   },
   {
     manufacturer: "NEOBIOTECH",
-    brands: ["IS2", "IS3", "ALX"],
+    brands: ["IS", "ALX"],
     family: "Small Narrow",
     screwType: "C",
     connectionDiameter: 2.6,
@@ -86,7 +90,7 @@ const TABLE_ROWS: ImplantSpecRow[] = [
 
   {
     manufacturer: "MEGAGEN",
-    brands: ["AnyOne Internal", "AnyOne"],
+    brands: ["AnyOne"],
     family: "Regular",
     screwType: "A",
     connectionDiameter: 3.3,
@@ -94,7 +98,7 @@ const TABLE_ROWS: ImplantSpecRow[] = [
   },
   {
     manufacturer: "MEGAGEN",
-    brands: ["AnyOne Internal", "AnyOne"],
+    brands: ["AnyOne"],
     family: "Mini",
     screwType: "C",
     connectionDiameter: 3.1,
@@ -102,7 +106,7 @@ const TABLE_ROWS: ImplantSpecRow[] = [
   },
   {
     manufacturer: "MEGAGEN",
-    brands: ["MiNi Internal"],
+    brands: ["MiNi"],
     family: "Mini",
     screwType: "E",
     connectionDiameter: 2.3,
@@ -111,7 +115,7 @@ const TABLE_ROWS: ImplantSpecRow[] = [
 
   {
     manufacturer: "DENTIS",
-    brands: ["SQ", "One-Q"],
+    brands: ["SQ"],
     family: "Regular",
     screwType: "A",
     connectionDiameter: 3.35,
@@ -119,7 +123,7 @@ const TABLE_ROWS: ImplantSpecRow[] = [
   },
   {
     manufacturer: "DENTIS",
-    brands: ["SQ", "One-Q"],
+    brands: ["SQ"],
     family: "Mini",
     screwType: "D",
     connectionDiameter: 2.8,
@@ -127,7 +131,7 @@ const TABLE_ROWS: ImplantSpecRow[] = [
   },
   {
     manufacturer: "DENTIS",
-    brands: ["SQ", "One-Q"],
+    brands: ["SQ"],
     family: "Narrow",
     screwType: "E",
     connectionDiameter: 2.3,
@@ -140,6 +144,44 @@ const token = (value?: string | null) =>
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "");
+
+// 제조사(세척·패킹) 화면/라벨에서만 사용하는 브랜드 정규화.
+// PRC 원본 브랜드 토큰으로 통일해 스크류/직경 매핑 누락을 방지한다.
+const normalizeBrandByManufacturerToken = (
+  manufacturerToken: string,
+  brandToken: string,
+) => {
+  if (!manufacturerToken || !brandToken) return brandToken;
+
+  if (manufacturerToken === "OSSTEM") {
+    if (brandToken.startsWith("TS")) return "TS";
+  }
+
+  if (manufacturerToken === "DENTIUM") {
+    if (brandToken.startsWith("SUPERLINE")) return "SUPERLINE";
+    if (brandToken === "IMPLANTIUM") return "IMPLANTIUM";
+  }
+
+  if (manufacturerToken === "NEOBIOTECH") {
+    if (brandToken.startsWith("IS")) return "IS";
+    if (brandToken === "ALX") return "ALX";
+  }
+
+  if (manufacturerToken === "DIO") {
+    if (brandToken.startsWith("UF")) return "UF";
+  }
+
+  if (manufacturerToken === "MEGAGEN") {
+    if (brandToken.includes("ANYONE")) return "ANYONE";
+    if (brandToken.includes("MINI")) return "MINI";
+  }
+
+  if (manufacturerToken === "DENTIS") {
+    if (brandToken === "SQ" || brandToken === "ONEQ") return "SQ";
+  }
+
+  return brandToken;
+};
 
 const normalizeFamily = (value?: string | null) => {
   const t = token(value);
@@ -160,7 +202,10 @@ export const resolveImplantConnectionSpec = (
   source?: ImplantSpecSource | null,
 ): ResolvedImplantConnectionSpec => {
   const manufacturerToken = token(source?.implantManufacturer);
-  const brandToken = token(source?.implantBrand);
+  const brandToken = normalizeBrandByManufacturerToken(
+    manufacturerToken,
+    token(source?.implantBrand),
+  );
   const familyToken = normalizeFamily(source?.implantFamily);
 
   const row = TABLE_ROWS.find((candidate) => {

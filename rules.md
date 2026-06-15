@@ -318,6 +318,11 @@
 - **`Connection.diameter`**: 커넥션 직경 SSOT 필드
   - Connection 컬렉션의 커넥션 직경은 `diameter` 단일 필드를 사용
   - `connectionDiameter` 같은 중복 alias 필드는 추가하지 않음
+- **임플란트 브랜드 alias 정책 (의뢰자 UI vs 제조사 처리)**
+  - 의뢰자 프론트 선택지는 원본 표기 그대로 유지한다. (예: `TS3`, `Superline2`, `IS2/IS3/ALX`, `One-Q`)
+  - 제조사 프론트(세척·패킹)와 백엔드 라벨/공정 처리에서는 브랜드를 **PRC 원본 토큰**으로 정규화해 사용한다.
+    - 예: `TS3`→`TS`, `Superline2`→`Superline`, `IS2/IS3`→`IS`, `One-Q`→`SQ`
+  - 목적은 "입력 다양성 보장"과 "공정 매핑 SSOT 단일화"를 동시에 만족하는 것이다.
 - **`caManufacturer`**: 우리 웹앱의 `manufacturer` role 사용자 (CAM/가공 담당 회사)
   - Request 문서의 최상위 필드
   - User.\_id 참조 (ObjectId)
