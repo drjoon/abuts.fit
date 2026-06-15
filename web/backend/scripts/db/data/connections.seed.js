@@ -1,9 +1,9 @@
 /**
- * 임플란트 Connection seed (표 SSOT, 2026-06-14)
+ * 임플란트 Connection seed (표 SSOT, 2026-06-15)
  *
  * - 시스템명(`/`)은 각각 별도 row로 분리한다.
  * - 규격1/규격2는 프론트 표시값(displayFamily/displayType)으로 관리한다.
- * - PRC는 표 기준 호환 매핑(여러 시스템 -> 단일 파일)을 허용한다.
+ * - 스크류 타입(screwType), 커넥션 직경(diameter)을 함께 관리한다.
  */
 export const CONNECTIONS_SEED = [
   // 1) Osstem / TS3
@@ -20,6 +20,7 @@ export const CONNECTIONS_SEED = [
     diameter: 3.35,
     l2: 2.4,
     hexSize: 2.5,
+    screwType: "A",
     internalGauge: "G19",
     protrusionLength: 1.25,
     isActive: true,
@@ -37,6 +38,7 @@ export const CONNECTIONS_SEED = [
     diameter: 2.6,
     l2: 2.1,
     hexSize: 2.1,
+    screwType: "D",
     isActive: true,
   },
 
@@ -54,6 +56,7 @@ export const CONNECTIONS_SEED = [
     diameter: 3.33,
     l2: 2.75,
     hexSize: 2.5,
+    screwType: "B",
     internalGauge: "G19",
     protrusionLength: 0.9,
     isActive: true,
@@ -71,6 +74,7 @@ export const CONNECTIONS_SEED = [
     diameter: 3.33,
     l2: 2.75,
     hexSize: 2.5,
+    screwType: "B",
     internalGauge: "G19",
     protrusionLength: 0.9,
     isActive: true,
@@ -90,6 +94,7 @@ export const CONNECTIONS_SEED = [
     diameter: 3.35,
     l2: 2.82,
     hexSize: 2.5,
+    screwType: "A",
     internalGauge: "G19",
     protrusionLength: 1.08,
     isActive: true,
@@ -107,6 +112,7 @@ export const CONNECTIONS_SEED = [
     diameter: 3.35,
     l2: 2.82,
     hexSize: 2.5,
+    screwType: "A",
     internalGauge: "G19",
     protrusionLength: 1.08,
     isActive: true,
@@ -124,6 +130,7 @@ export const CONNECTIONS_SEED = [
     diameter: 3.35,
     l2: 2.82,
     hexSize: 2.5,
+    screwType: "A",
     internalGauge: "G19",
     protrusionLength: 1.08,
     isActive: true,
@@ -141,6 +148,7 @@ export const CONNECTIONS_SEED = [
     diameter: 2.6,
     l2: 2.1,
     hexSize: 2.1,
+    screwType: "C",
     isActive: true,
   },
   {
@@ -156,6 +164,7 @@ export const CONNECTIONS_SEED = [
     diameter: 2.6,
     l2: 2.1,
     hexSize: 2.1,
+    screwType: "C",
     isActive: true,
   },
   {
@@ -171,6 +180,7 @@ export const CONNECTIONS_SEED = [
     diameter: 2.6,
     l2: 2.1,
     hexSize: 2.1,
+    screwType: "C",
     isActive: true,
   },
 
@@ -188,6 +198,7 @@ export const CONNECTIONS_SEED = [
     diameter: 3.35,
     l2: 2.75,
     hexSize: 2.5,
+    screwType: "A",
     internalGauge: "G19",
     protrusionLength: 1,
     isActive: true,
@@ -205,6 +216,7 @@ export const CONNECTIONS_SEED = [
     diameter: 2.3,
     l2: 2.75,
     hexSize: 1.7,
+    screwType: "E",
     isActive: true,
   },
 
@@ -219,9 +231,10 @@ export const CONNECTIONS_SEED = [
     displayType: "HEX 2.5",
     category: "hanhwa-connection",
     fileName: "메가젠_AnyOne_RH_Connection.prc",
-    diameter: 4.0,
+    diameter: 3.3,
     l2: 2.75,
     hexSize: 2.5,
+    screwType: "A",
     internalGauge: "G19",
     protrusionLength: 1.35,
     isActive: true,
@@ -233,12 +246,13 @@ export const CONNECTIONS_SEED = [
     family: "Mini",
     displayFamily: "Mini (Ø3.5)",
     type: "Hex",
-    displayType: "HEX 2.1",
+    displayType: "HEX 2.3",
     category: "hanhwa-connection",
     fileName: "메가젠_AnyOne_MH_Connection.prc",
-    diameter: 3.5,
+    diameter: 3.1,
     l2: 2.1,
-    hexSize: 2.1,
+    hexSize: 2.3,
+    screwType: "C",
     isActive: true,
   },
   {
@@ -251,13 +265,14 @@ export const CONNECTIONS_SEED = [
     displayType: "HEX 1.7",
     category: "hanhwa-connection",
     fileName: "메가젠_MiNi_H_Connection.prc",
-    diameter: 3.5,
+    diameter: 2.3,
     l2: 2.1,
     hexSize: 1.7,
+    screwType: "E",
     isActive: true,
   },
 
-  // 6) Dentis / SQ, One-Q (호환 매핑은 SQ 파일로 통일)
+  // 6) Dentis / SQ, One-Q
   {
     manufacturer: "DENTIS",
     brand: "SQ",
@@ -271,6 +286,7 @@ export const CONNECTIONS_SEED = [
     diameter: 3.35,
     l2: 2.55,
     hexSize: 2.5,
+    screwType: "A",
     internalGauge: "G19",
     protrusionLength: 1.955,
     isActive: true,
@@ -288,6 +304,7 @@ export const CONNECTIONS_SEED = [
     diameter: 2.8,
     l2: 2.6,
     hexSize: 2.1,
+    screwType: "D",
     isActive: true,
   },
   {
@@ -300,9 +317,10 @@ export const CONNECTIONS_SEED = [
     displayType: "HEX 1.7",
     category: "hanhwa-connection",
     fileName: "덴티스_SQ_NH_Connection.prc",
-    diameter: 2.8,
+    diameter: 2.3,
     l2: 2.6,
     hexSize: 1.7,
+    screwType: "E",
     isActive: true,
   },
   {
@@ -318,6 +336,7 @@ export const CONNECTIONS_SEED = [
     diameter: 3.35,
     l2: 2.55,
     hexSize: 2.5,
+    screwType: "A",
     internalGauge: "G19",
     protrusionLength: 1.955,
     isActive: true,
@@ -335,6 +354,7 @@ export const CONNECTIONS_SEED = [
     diameter: 2.8,
     l2: 2.6,
     hexSize: 2.1,
+    screwType: "D",
     isActive: true,
   },
   {
@@ -347,9 +367,10 @@ export const CONNECTIONS_SEED = [
     displayType: "HEX 1.7",
     category: "hanhwa-connection",
     fileName: "덴티스_SQ_NH_Connection.prc",
-    diameter: 2.8,
+    diameter: 2.3,
     l2: 2.6,
     hexSize: 1.7,
+    screwType: "E",
     isActive: true,
   },
 ];

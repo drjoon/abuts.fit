@@ -198,7 +198,16 @@ export function NewRequestPatientImplantFields({
             c.family === currentFamily &&
             c.type === type,
         );
-        return [type, sample?.displayType || type];
+        const base = sample?.displayType || type;
+        const screw = String((sample as any)?.screwType || "").trim();
+        const connRaw = Number(
+          (sample as any)?.connectionDiameter ?? (sample as any)?.diameter,
+        );
+        const conn = Number.isFinite(connRaw) ? `Ø${connRaw.toFixed(2)}` : "";
+        const extra = [screw ? `스크류 ${screw}` : "", conn]
+          .filter(Boolean)
+          .join(" / ");
+        return [type, extra ? `${base} / ${extra}` : base];
       }),
     );
   }, [

@@ -5,6 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, ArrowRight, Check, FlaskConical, X } from "lucide-react";
 import { formatImplantDisplay } from "@/utils/implant";
 import { generateModelNumber } from "@/utils/modelNumber";
+import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import {
   type ManufacturerRequest,
   computeStageLabel,
@@ -326,6 +327,20 @@ export const WorksheetCardGrid = ({
                 caseInfos.stageFiles?.packing?.filePath
               )
             : true;
+
+        const resolvedConnectionSpec = resolveImplantConnectionSpec({
+          implantManufacturer: caseInfos.implantManufacturer,
+          implantBrand: caseInfos.implantBrand,
+          implantFamily: caseInfos.implantFamily,
+          implantType: caseInfos.implantType,
+          connectionDiameter: (caseInfos as any)?.connectionDiameter,
+        });
+        const displayConnectionDiameter =
+          resolvedConnectionSpec.connectionDiameter != null
+            ? resolvedConnectionSpec.connectionDiameter
+            : Number.isFinite(Number((caseInfos as any)?.connectionDiameter))
+              ? Number((caseInfos as any)?.connectionDiameter)
+              : null;
 
         const requestStageRollbackCount = Number(
           caseInfos.rollbackCounts?.request || 0,
@@ -713,6 +728,24 @@ export const WorksheetCardGrid = ({
                             {generateModelNumber(caseInfos)}
                           </Badge>
                         )}
+                        {tabStage === "packing" &&
+                          resolvedConnectionSpec.screwType && (
+                            <Badge
+                              variant="outline"
+                              className="text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border border-violet-200 bg-violet-50 text-violet-700"
+                            >
+                              스크류 {resolvedConnectionSpec.screwType}
+                            </Badge>
+                          )}
+                        {tabStage === "packing" &&
+                          displayConnectionDiameter != null && (
+                            <Badge
+                              variant="outline"
+                              className="text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border border-emerald-200 bg-emerald-50 text-emerald-700"
+                            >
+                              커넥션 Ø{displayConnectionDiameter.toFixed(2)}
+                            </Badge>
+                          )}
                       </div>
                     )}
                     {isNewSystemRequest && (
@@ -768,11 +801,11 @@ export const WorksheetCardGrid = ({
                     {caseInfos.patientName || "미지정"} /{" "}
                     {caseInfos.tooth || "-"}
                   </span>
-                  {caseInfos.connectionDiameter && (
+                  {displayConnectionDiameter != null && (
                     <>
                       <span>•</span>
                       <span>
-                        커넥션 직경 {caseInfos.connectionDiameter.toFixed(2)}
+                        커넥션 직경 {displayConnectionDiameter.toFixed(2)}
                       </span>
                     </>
                   )}

@@ -33,6 +33,10 @@ export type Connection = {
   faceHolePrcFileName?: string | null;
   prcTypeCode?: string | null;
   prcSystemCode?: string | null;
+  diameter?: number | null;
+  connectionDiameter?: number | null;
+  hexSize?: number | null;
+  screwType?: string | null;
 };
 
 export type CaseInfos = {

@@ -315,6 +315,9 @@
   - Request.caseInfos 내 저장
   - Connection, Preset 등에서도 `manufacturer` 필드는 임플란트 제조사를 의미
   - 프론트엔드 UI에서 "임플란트 제조사", "임플란트 브랜드" 등으로 표시
+- **`Connection.diameter`**: 커넥션 직경 SSOT 필드
+  - Connection 컬렉션의 커넥션 직경은 `diameter` 단일 필드를 사용
+  - `connectionDiameter` 같은 중복 alias 필드는 추가하지 않음
 - **`caManufacturer`**: 우리 웹앱의 `manufacturer` role 사용자 (CAM/가공 담당 회사)
   - Request 문서의 최상위 필드
   - User.\_id 참조 (ObjectId)

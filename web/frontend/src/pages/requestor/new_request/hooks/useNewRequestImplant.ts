@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import type { Connection } from "./newRequestTypes";
 
-// v4: 2026-06-14 표 SSOT 재구성 반영 캐시 키
-const IMPLANT_PRESETS_STORAGE_KEY = "abutsfit:implant-presets:v4";
+// v5: 2026-06-15 스크류 타입/커넥션 직경 컬럼 반영 캐시 키
+const IMPLANT_PRESETS_STORAGE_KEY = "abutsfit:implant-presets:v5";
 const IMPLANT_PRESETS_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1년
 
 export type UseNewRequestImplantParams = {

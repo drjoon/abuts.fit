@@ -15,6 +15,7 @@ const connectionSchema = new mongoose.Schema(
     diameter: { type: Number },
     l2: { type: Number },
     hexSize: { type: Number },
+    screwType: { type: String, default: "" },
     internalGauge: { type: String, default: "" },
     protrusionLength: { type: Number },
     isActive: { type: Boolean, default: true },

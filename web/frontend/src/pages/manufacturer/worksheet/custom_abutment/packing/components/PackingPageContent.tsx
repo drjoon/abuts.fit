@@ -38,6 +38,7 @@ import {
   resolveManufacturingDate,
 } from "../utils/packLabelRenderer";
 import { savePackingLabelsAsZip } from "../utils/packLabelZip";
+import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { Settings } from "lucide-react";
 
 export const PackingPageContent = ({
@@ -604,19 +605,6 @@ export const PackingPageContent = ({
       const resolvePackMailboxCode = (request: ManufacturerRequest) =>
         requireNonEmptyString(request.mailboxAddress, "메일함 코드", request);
 
-      const resolvePackScrewCode = (request: ManufacturerRequest) => {
-        const manufacturer = requireNonEmptyString(
-          (request.caseInfos as any)?.implantManufacturer,
-          "제조사",
-          request,
-        );
-        const isDentium = /\bDENTIUM\b/i.test(manufacturer)
-          ? true
-          : manufacturer.includes("덴티움");
-        const legacy = isDentium ? "8B" : "0A";
-        return legacy.split("").reverse().join("");
-      };
-
       const resolvePackFullLotNumber = (request: ManufacturerRequest) => {
         const value = String((request as any)?.lotNumber?.value || "").trim();
         return requireNonEmptyString(value, "풀 로트번호", request);
@@ -692,7 +680,20 @@ export const PackingPageContent = ({
           (req.lotNumber as any).material) ||
         "";
       const mailboxCode = resolvePackMailboxCode(req);
-      const screwType = resolvePackScrewCode(req);
+      const resolvedSpec = resolveImplantConnectionSpec({
+        implantManufacturer,
+        implantBrand,
+        implantFamily,
+        implantType,
+        connectionDiameter: (caseInfos as any)?.connectionDiameter,
+      });
+      const screwType = resolvedSpec.screwType || "-";
+      const connectionDiameter =
+        resolvedSpec.connectionDiameter != null
+          ? resolvedSpec.connectionDiameter
+          : Number.isFinite(Number((caseInfos as any)?.connectionDiameter))
+            ? Number((caseInfos as any)?.connectionDiameter)
+            : null;
       // 모델명: CA + 각도(aaa) + 최대직경(ddd) + 최대높이(lll) (로트번호 미포함)
       const modelNumber = generateModelNumber(caseInfos as any);
       const modelName = modelNumber ? `CA${modelNumber}` : "";
@@ -712,6 +713,7 @@ export const PackingPageContent = ({
         implantBrand,
         implantFamily,
         implantType,
+        connectionDiameter,
         patientName,
         toothNumber,
         material,

@@ -85,6 +85,12 @@ const dateOnly = (value) => {
   return s.includes("T") ? s.split("T")[0] : s;
 };
 
+const formatConnectionDiameterText = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return "-";
+  return `Ø${n.toFixed(2)}`;
+};
+
 const truncateToFit = (ctx, text, maxWidth) => {
   const raw = String(text || "-");
   if (ctx.measureText(raw).width <= maxWidth) return raw;
@@ -385,8 +391,11 @@ const renderPackLabelToCanvas = async (opts) => {
   // ── 4행: 임플란트 제조사/브랜드/패밀리/타입 ──────────────
   drawBox(M, curY, W, row4H);
   ctx.font = FONT_INFO;
+  const connectionDiameterLabel = formatConnectionDiameterText(
+    opts.connectionDiameter,
+  );
   fillTextCenteredInBox(
-    `${opts.implantManufacturer || "-"} / ${opts.implantBrand || "-"} / ${opts.implantFamily || "-"} / ${opts.implantType || "-"}`,
+    `${opts.implantManufacturer || "-"} / ${opts.implantBrand || "-"} / ${opts.implantFamily || "-"} / ${opts.implantType || "-"} / ${connectionDiameterLabel}`,
     M,
     curY,
     W,

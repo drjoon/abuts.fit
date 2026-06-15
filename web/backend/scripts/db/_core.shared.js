@@ -35,6 +35,7 @@ async function upsertConnections() {
       const l2 = Number.isFinite(seedL2) ? seedL2 : undefined;
       const seedHexSize = Number(c.hexSize);
       const hexSize = Number.isFinite(seedHexSize) ? seedHexSize : undefined;
+      const screwType = String(c.screwType || "").trim();
       const internalGauge = String(c.internalGauge || "").trim();
       const seedProtrusionLength = Number(c.protrusionLength);
       const protrusionLength = Number.isFinite(seedProtrusionLength)
@@ -43,9 +44,11 @@ async function upsertConnections() {
 
       const {
         diameter: _seedDiameterRaw,
+        connectionDiameter: _seedConnectionDiameterRaw,
         connection: _seedConnectionRaw,
         l2: _seedL2Raw,
         hexSize: _seedHexSizeRaw,
+        screwType: _seedScrewTypeRaw,
         internalGauge: _seedInternalGaugeRaw,
         protrusionLength: _seedProtrusionLengthRaw,
         ...insertBase
@@ -69,6 +72,7 @@ async function upsertConnections() {
               ...(diameter !== undefined ? { diameter } : {}),
               ...(l2 !== undefined ? { l2 } : {}),
               ...(hexSize !== undefined ? { hexSize } : {}),
+              screwType,
               internalGauge,
               ...(protrusionLength !== undefined ? { protrusionLength } : {}),
             },

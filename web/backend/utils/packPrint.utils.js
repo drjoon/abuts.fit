@@ -34,6 +34,7 @@ const PACK_PRINT_DEFAULT_PRINTER = String(
  * @param {string} params.implantBrand - 임플란트 브랜드
  * @param {string} params.implantFamily - 임플란트 패밀리
  * @param {string} params.implantType - 임플란트 타입
+ * @param {number} [params.connectionDiameter] - 커넥션 직경(mm)
  * @param {string} params.patientName - 환자명
  * @param {string} params.toothNumber - 치아번호
  * @param {string} params.material - 소재
@@ -72,6 +73,7 @@ export async function printPackingLabelViaBgServer({
   implantBrand,
   implantFamily,
   implantType,
+  connectionDiameter,
   patientName,
   toothNumber,
   material,
@@ -128,6 +130,7 @@ export async function printPackingLabelViaBgServer({
     implantBrand,
     implantFamily,
     implantType,
+    connectionDiameter,
     manufacturingDate,
     caseType: material || "-",
     printedAt: new Date().toISOString(),
@@ -310,20 +313,150 @@ export function resolveManufacturingDateForPrint(request) {
 /**
  * 스크류 타입 추출 헬퍼
  * @param {Object} request - Request 문서
- * @returns {string} - 스크류 타입 (예: "A0", "B8")
+ * @returns {string} - 스크류 타입 (예: "A", "B", "C")
  */
+const PACK_IMPLANT_SPEC_TABLE = [
+  {
+    manufacturer: "OSSTEM",
+    brands: ["TS3"],
+    family: "REGULAR",
+    screwType: "A",
+    connectionDiameter: 3.35,
+  },
+  {
+    manufacturer: "OSSTEM",
+    brands: ["TS3"],
+    family: "MINI",
+    screwType: "D",
+    connectionDiameter: 2.6,
+  },
+  {
+    manufacturer: "DENTIUM",
+    brands: ["SUPERLINE2", "IMPLANTIUM"],
+    family: "REGULAR",
+    screwType: "B",
+    connectionDiameter: 3.33,
+  },
+  {
+    manufacturer: "NEOBIOTECH",
+    brands: ["IS2", "IS3", "ALX"],
+    family: "REGULAR",
+    screwType: "A",
+    connectionDiameter: 3.35,
+  },
+  {
+    manufacturer: "NEOBIOTECH",
+    brands: ["IS2", "IS3", "ALX"],
+    family: "SMALLNARROW",
+    screwType: "C",
+    connectionDiameter: 2.6,
+  },
+  {
+    manufacturer: "DIO",
+    brands: ["UF"],
+    family: "REGULAR",
+    screwType: "A",
+    connectionDiameter: 3.35,
+  },
+  {
+    manufacturer: "DIO",
+    brands: ["UF"],
+    family: "NARROW",
+    screwType: "E",
+    connectionDiameter: 2.3,
+  },
+  {
+    manufacturer: "MEGAGEN",
+    brands: ["ANYONEINTERNAL"],
+    family: "REGULAR",
+    screwType: "A",
+    connectionDiameter: 3.3,
+  },
+  {
+    manufacturer: "MEGAGEN",
+    brands: ["ANYONEINTERNAL"],
+    family: "MINI",
+    screwType: "C",
+    connectionDiameter: 3.1,
+  },
+  {
+    manufacturer: "MEGAGEN",
+    brands: ["MINIINTERNAL"],
+    family: "MINI",
+    screwType: "E",
+    connectionDiameter: 2.3,
+  },
+  {
+    manufacturer: "DENTIS",
+    brands: ["SQ", "ONEQ"],
+    family: "REGULAR",
+    screwType: "A",
+    connectionDiameter: 3.35,
+  },
+  {
+    manufacturer: "DENTIS",
+    brands: ["SQ", "ONEQ"],
+    family: "MINI",
+    screwType: "D",
+    connectionDiameter: 2.8,
+  },
+  {
+    manufacturer: "DENTIS",
+    brands: ["SQ", "ONEQ"],
+    family: "NARROW",
+    screwType: "E",
+    connectionDiameter: 2.3,
+  },
+];
+
+const normalizeToken = (value) =>
+  String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+
+const normalizeFamilyToken = (value) => {
+  const t = normalizeToken(value);
+  if (!t) return "";
+  if (t === "SMALL" || t === "MINI") return "MINI";
+  if (t === "SMALLNARROW" || t === "SN") return "SMALLNARROW";
+  return t;
+};
+
+function resolvePackImplantSpec(request) {
+  const manufacturer = normalizeToken(request?.caseInfos?.implantManufacturer);
+  const brand = normalizeToken(request?.caseInfos?.implantBrand);
+  const family = normalizeFamilyToken(request?.caseInfos?.implantFamily);
+
+  const matched = PACK_IMPLANT_SPEC_TABLE.find((row) => {
+    if (row.manufacturer !== manufacturer) return false;
+    if (!row.brands.includes(brand)) return false;
+    return row.family === family;
+  });
+
+  if (matched) return matched;
+  return null;
+}
+
 export function resolveScrewTypeForPrint(request) {
-  const manufacturer = String(
-    request?.caseInfos?.implantManufacturer || "",
-  ).trim();
-  const isDentium =
-    /\bDENTIUM\b/i.test(manufacturer) || manufacturer.includes("덴티움");
-  const legacy = isDentium ? "8B" : "0A";
-  return legacy.split("").reverse().join("");
+  const matched = resolvePackImplantSpec(request);
+  if (matched?.screwType) return matched.screwType;
+  return "-";
+}
+
+export function resolveConnectionDiameterForPrint(request) {
+  const matched = resolvePackImplantSpec(request);
+  if (matched && Number.isFinite(Number(matched.connectionDiameter))) {
+    return Number(matched.connectionDiameter);
+  }
+  const fallback = Number(request?.caseInfos?.connectionDiameter);
+  if (Number.isFinite(fallback)) return fallback;
+  return null;
 }
 
 export default {
   printPackingLabelViaBgServer,
   resolveManufacturingDateForPrint,
   resolveScrewTypeForPrint,
+  resolveConnectionDiameterForPrint,
 };

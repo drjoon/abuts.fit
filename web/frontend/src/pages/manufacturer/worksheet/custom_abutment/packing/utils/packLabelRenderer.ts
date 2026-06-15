@@ -16,6 +16,7 @@ export type PackLabelRenderOptions = {
   implantBrand: string;
   implantFamily: string;
   implantType: string;
+  connectionDiameter?: number | null;
   manufacturingDate: string;
   caseType: string;
   printedAt: string;
@@ -166,6 +167,12 @@ const dateOnly = (value: string) => {
   const s = String(value || "").trim();
   if (!s) return "-";
   return s.includes("T") ? s.split("T")[0] : s;
+};
+
+const formatConnectionDiameterText = (value: unknown) => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return "-";
+  return `Ø${n.toFixed(2)}`;
 };
 
 const truncateToFit = (
@@ -518,8 +525,11 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   // ── 4행: 임플란트 제조사/브랜드/패밀리/타입 ──────────────
   drawBox(M, curY, W, row4H);
   ctx.font = FONT_INFO;
+  const connectionDiameterLabel = formatConnectionDiameterText(
+    opts.connectionDiameter,
+  );
   fillTextCenteredInBox(
-    `${opts.implantManufacturer || "-"} / ${opts.implantBrand || "-"} / ${opts.implantFamily || "-"} / ${opts.implantType || "-"}`,
+    `${opts.implantManufacturer || "-"} / ${opts.implantBrand || "-"} / ${opts.implantFamily || "-"} / ${opts.implantType || "-"} / ${connectionDiameterLabel}`,
     M,
     curY,
     W,
