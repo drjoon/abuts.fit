@@ -925,10 +925,22 @@ namespace DentalAddin
             double defaultSplit;
             string defaultSplitSource;
             double? compositeSplitX = GetEnvDoubleNullable("ABUTS_COMPOSITE_SPLIT_X");
-            if (compositeSplitX.HasValue && compositeSplitX.Value > xMin + 0.5 && compositeSplitX.Value < xMax - 0.5)
+            // TwoPhase split은 Composite split과 동기화하되, 시각/가공 기준 보정을 위해 좌측 1.0mm 이동
+            // (사용자 요청: 피니시라인 기준 반대쪽 1mm)
+            const double twoPhaseFromCompositeOffsetMm = -1.0;
+            if (compositeSplitX.HasValue)
             {
-                defaultSplit = compositeSplitX.Value;
-                defaultSplitSource = "composite-split-env";
+                double candidate = compositeSplitX.Value + twoPhaseFromCompositeOffsetMm;
+                if (candidate > xMin + 0.5 && candidate < xMax - 0.5)
+                {
+                    defaultSplit = candidate;
+                    defaultSplitSource = "composite-split-env-minus-1.0";
+                }
+                else
+                {
+                    defaultSplit = Math.Max(xMin + 0.5, Math.Min(xMax - 0.5, candidate));
+                    defaultSplitSource = "composite-split-env-minus-1.0(clamped)";
+                }
             }
             else if (MoveSTL_Module.FinishLineTopZ > 0.001)
             {

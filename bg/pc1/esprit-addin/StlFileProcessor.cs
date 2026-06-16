@@ -1027,9 +1027,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 double frontX = Convert.ToDouble(frontField.GetValue(null), CultureInfo.InvariantCulture);
                 double backX = Convert.ToDouble(backField.GetValue(null), CultureInfo.InvariantCulture);
 
-                // finishLine 기준 오프셋(mm) - 기본: -1.0 (요청: 반대쪽 1mm)
+                // finishLine 기준 오프셋(mm) - Composite 안정 기본값: +1.0
+                // (이 값이 너무 우측으로 가면 Composite2SplitAB가 Last와 겹쳐 스킵될 수 있음)
                 // 필요 시 env(ABUTS_FINISHLINE_SPLIT_OFFSET_MM)로 런타임 조정 가능
-                double offsetMm = -1.0;
+                double offsetMm = 1.0;
                 string offsetRaw = Environment.GetEnvironmentVariable("ABUTS_FINISHLINE_SPLIT_OFFSET_MM");
                 if (!string.IsNullOrWhiteSpace(offsetRaw) && double.TryParse(offsetRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsedOffset))
                 {
