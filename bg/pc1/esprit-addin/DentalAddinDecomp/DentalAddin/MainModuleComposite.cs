@@ -925,7 +925,7 @@ namespace DentalAddin
             double defaultSplit;
             string defaultSplitSource;
             double? compositeSplitX = GetEnvDoubleNullable("ABUTS_COMPOSITE_SPLIT_X");
-            if (compositeSplitX.HasValue)
+            if (compositeSplitX.HasValue && compositeSplitX.Value > xMin + 0.5 && compositeSplitX.Value < xMax - 0.5)
             {
                 defaultSplit = compositeSplitX.Value;
                 defaultSplitSource = "composite-split-env";
@@ -958,7 +958,7 @@ namespace DentalAddin
             }
 
             // TwoPhase split도 작업 영역으로 클램프한다.
-            defaultSplit = Math.Max(xMin + 0.01, Math.Min(xMax - 0.01, defaultSplit));
+            defaultSplit = Math.Max(xMin + 0.5, Math.Min(xMax - 0.5, defaultSplit));
 
             double? configured = GetEnvDoubleNullable(AppConfig.TwoPhaseSplitXEnv) ?? GetEnvDoubleNullable("ABUTS_ROUGHFREEFORM_SPLIT_X");
             splitX = configured ?? defaultSplit;
