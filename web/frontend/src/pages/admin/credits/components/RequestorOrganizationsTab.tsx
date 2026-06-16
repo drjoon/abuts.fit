@@ -24,9 +24,12 @@ export function RequestorOrganizationsTab({
   orgSentinelRef,
   onOpenLedger,
 }: RequestorOrganizationsTabProps) {
-  const requestorBusinesses = businesses.filter(
-    (b) => b.businessType === "requestor",
-  );
+  const requestorBusinesses = businesses.filter((business) => {
+    if (typeof business.isFreeCreditEligible === "boolean") {
+      return business.isFreeCreditEligible;
+    }
+    return String(business.businessType || "").trim() === "requestor";
+  });
 
   return (
     <TabsContent value="organizations" className="space-y-4">
@@ -38,7 +41,15 @@ export function RequestorOrganizationsTab({
               <select
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={orgSortKey}
-                onChange={(e) => setOrgSortKey(e.target.value as any)}
+                onChange={(e) =>
+                  setOrgSortKey(
+                    e.target.value as
+                      | "paidBalance"
+                      | "bonusBalance"
+                      | "spentPaid"
+                      | "name",
+                  )
+                }
               >
                 <option value="paidBalance">정렬: 유료잔액순</option>
                 <option value="bonusBalance">정렬: 무료잔액순</option>

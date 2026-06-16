@@ -266,7 +266,7 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
           orgSortKey={props.orgSortKey}
           setOrgSortKey={props.setOrgSortKey}
           loadingOrgs={props.loadingOrgs}
-          businesses={props.businesses}
+          businesses={requestorBusinesses}
           orgScrollRef={props.orgScrollRef}
           orgSentinelRef={props.orgSentinelRef}
           onOpenLedger={props.onOpenOrgLedger}

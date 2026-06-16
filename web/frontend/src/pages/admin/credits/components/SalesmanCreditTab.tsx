@@ -38,9 +38,11 @@ export function SalesmanCreditTab({
   salesmanSentinelRef,
   onOpenLedger,
 }: SalesmanCreditTabProps) {
-  const salesmanRows = salesmen.filter(
-    (s) => String(s.role || "").trim() === "salesman",
-  );
+  const salesmanRows = salesmen.filter((s) => {
+    const role = String(s.role || "").trim();
+    if (!role) return true;
+    return role === "salesman" || role === "devops";
+  });
 
   const summaryForView = {
     totalSalesmen: salesmanRows.length,
