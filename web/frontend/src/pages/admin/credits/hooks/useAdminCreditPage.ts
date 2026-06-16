@@ -122,7 +122,7 @@ export function useAdminCreditPage() {
     setSelectedShippingCreditBusinessAnchorId,
   ] = useState("");
   const [selectedShippingCreditAmount, setSelectedShippingCreditAmount] =
-    useState(3500);
+    useState(7000);
   const [shippingCreditReason, setShippingCreditReason] = useState("");
   const [grantingShippingCredit, setGrantingShippingCredit] = useState(false);
   const [selectedCancelGrantId, setSelectedCancelGrantId] = useState("");
@@ -599,7 +599,7 @@ export function useAdminCreditPage() {
         description: `${selectedShippingCreditAmount.toLocaleString()}원이 지급되었습니다.`,
       });
       setShippingCreditReason("");
-      setSelectedShippingCreditAmount(3500);
+      setSelectedShippingCreditAmount(7000);
       setSelectedShippingCreditBusinessAnchorId("");
       setOrgSkip(0);
       setOrgHasMore(true);

@@ -304,7 +304,7 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                       onClick={() => {
                         setGrantCreditType("shipping");
                         setShippingCreditReason("");
-                        setSelectedShippingCreditAmount(3500);
+                        setSelectedShippingCreditAmount(7000);
                       }}
                     >
                       배송비 무료 크레딧
@@ -329,7 +329,7 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                     <div className="grid grid-cols-5 gap-2">
                       {(grantCreditType === "general"
                         ? generalFreeCreditAmounts
-                        : [3500, 7000, 10500, 14000, 17500]
+                        : [7000, 14000, 35000, 70000]
                       ).map((amount) => (
                         <Button
                           key={amount}
