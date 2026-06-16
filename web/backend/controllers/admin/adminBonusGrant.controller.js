@@ -2,20 +2,37 @@ import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import BonusGrant from "../../models/bonusGrant.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
+import User from "../../models/user.model.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import {
   CREDIT_SETTINGS_SCHEMA_DEFAULTS,
   loadCreditSettingsDefaults,
 } from "../../utils/creditSettingsDefaults.js";
 
-// SSOT: metadata 사용 (extracted 레거시 제거)
-const isRequestorBusiness = (businessDoc) => {
-  const businessType = String(
-    businessDoc?.businessType || businessDoc?.metadata?.businessType || "",
-  )
+// 무료 크레딧 지급 가능 대상:
+// 1) BusinessAnchor.businessType === requestor
+// 2) 또는 대표 사용자(User.role)가 requestor
+const isFreeCreditEligibleBusiness = async (businessDoc) => {
+  const businessType = String(businessDoc?.businessType || "")
     .trim()
     .toLowerCase();
-  return businessType === "requestor";
+  if (businessType === "requestor") return true;
+
+  const primaryContactUserId = String(
+    businessDoc?.primaryContactUserId || "",
+  ).trim();
+  if (!primaryContactUserId || !Types.ObjectId.isValid(primaryContactUserId)) {
+    return false;
+  }
+
+  const owner = await User.findById(primaryContactUserId)
+    .select({ role: 1 })
+    .lean();
+  return (
+    String(owner?.role || "")
+      .trim()
+      .toLowerCase() === "requestor"
+  );
 };
 
 function normalizeBusinessNumberDigits(input) {
@@ -83,7 +100,7 @@ export async function adminOverrideWelcomeBonus(req, res) {
       const org = await BusinessAnchor.findOne({
         businessNumberNormalized: businessNumberDigits,
       })
-        .select({ _id: 1, businessType: 1, metadata: 1 })
+        .select({ _id: 1, businessType: 1, primaryContactUserId: 1 })
         .lean();
       if (!org?._id) {
         return res.status(404).json({
@@ -91,7 +108,7 @@ export async function adminOverrideWelcomeBonus(req, res) {
           message: "해당 사업자등록번호로 등록된 기공소를 찾을 수 없습니다.",
         });
       }
-      if (!isRequestorBusiness(org)) {
+      if (!(await isFreeCreditEligibleBusiness(org))) {
         return res.status(400).json({
           success: false,
           message: "의뢰자 사업자에게만 무료 크레딧을 지급할 수 있습니다.",
@@ -100,7 +117,7 @@ export async function adminOverrideWelcomeBonus(req, res) {
       businessAnchorId = String(org._id);
     } else {
       const org = await BusinessAnchor.findById(businessAnchorId)
-        .select({ businessType: 1, metadata: 1 })
+        .select({ _id: 1, businessType: 1, primaryContactUserId: 1 })
         .lean();
       if (!org?._id) {
         return res.status(404).json({
@@ -108,7 +125,7 @@ export async function adminOverrideWelcomeBonus(req, res) {
           message: "해당 사업자등록번호로 등록된 기공소를 찾을 수 없습니다.",
         });
       }
-      if (!isRequestorBusiness(org)) {
+      if (!(await isFreeCreditEligibleBusiness(org))) {
         return res.status(400).json({
           success: false,
           message: "의뢰자 사업자에게만 무료 크레딧을 지급할 수 있습니다.",
@@ -466,7 +483,7 @@ export async function adminGrantFreeShippingCredit(req, res) {
       const org = await BusinessAnchor.findOne({
         businessNumberNormalized: businessNumberDigits,
       })
-        .select({ _id: 1, businessType: 1, metadata: 1 })
+        .select({ _id: 1, businessType: 1, primaryContactUserId: 1 })
         .lean();
       if (!org?._id) {
         return res.status(404).json({
@@ -474,7 +491,7 @@ export async function adminGrantFreeShippingCredit(req, res) {
           message: "해당 사업자등록번호로 등록된 기공소를 찾을 수 없습니다.",
         });
       }
-      if (!isRequestorBusiness(org)) {
+      if (!(await isFreeCreditEligibleBusiness(org))) {
         return res.status(400).json({
           success: false,
           message:
@@ -484,7 +501,7 @@ export async function adminGrantFreeShippingCredit(req, res) {
       businessAnchorId = String(org._id);
     } else {
       const org = await BusinessAnchor.findById(businessAnchorId)
-        .select({ _id: 1, businessType: 1, metadata: 1 })
+        .select({ _id: 1, businessType: 1, primaryContactUserId: 1 })
         .lean();
       if (!org?._id) {
         return res.status(404).json({
@@ -492,7 +509,7 @@ export async function adminGrantFreeShippingCredit(req, res) {
           message: "해당 사업자등록번호로 등록된 기공소를 찾을 수 없습니다.",
         });
       }
-      if (!isRequestorBusiness(org)) {
+      if (!(await isFreeCreditEligibleBusiness(org))) {
         return res.status(400).json({
           success: false,
           message:

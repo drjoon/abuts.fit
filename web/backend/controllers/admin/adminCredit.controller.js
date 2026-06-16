@@ -1646,14 +1646,14 @@ export async function adminGetBusinessCredits(req, res) {
 
     const owners = ownerIds.length
       ? await User.find({ _id: { $in: ownerIds } })
-          .select({ _id: 1, name: 1, email: 1 })
+          .select({ _id: 1, name: 1, email: 1, role: 1 })
           .lean()
       : [];
 
     const ownerById = new Map(
       (owners || []).map((u) => [
         String(u._id),
-        { name: u.name, email: u.email },
+        { name: u.name, email: u.email, role: u.role },
       ]),
     );
 
@@ -2002,10 +2002,17 @@ export async function adminGetBusinessCredits(req, res) {
       const ownerInfo =
         ownerById.get(String(org?.primaryContactUserId || "")) || null;
 
+      const businessType = String(org.businessType || "").trim();
+      const ownerRole = String(ownerInfo?.role || "").trim();
+      const isFreeCreditEligible =
+        businessType === "requestor" || ownerRole === "requestor";
+
       return {
         _id: org._id,
         businessAnchorId: anchorId,
-        businessType: String(org.businessType || "").trim(),
+        businessType,
+        ownerRole,
+        isFreeCreditEligible,
         name: org.name,
         ownerName: ownerInfo?.name || "",
         ownerEmail: ownerInfo?.email || "",

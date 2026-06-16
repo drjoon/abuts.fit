@@ -142,9 +142,12 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
   const generalFreeCreditAmounts: FreeCreditAmount[] = isAdminOwner
     ? [30000, 50000, 300000, 500000]
     : [30000, 50000];
-  const eligibleBusinesses = businesses.filter(
-    (business) => String(business.businessType || "").trim() === "requestor",
-  );
+  const eligibleBusinesses = businesses.filter((business) => {
+    if (typeof business.isFreeCreditEligible === "boolean") {
+      return business.isFreeCreditEligible;
+    }
+    return String(business.businessType || "").trim() === "requestor";
+  });
   const selectedBusinessAnchorId =
     grantCreditType === "general"
       ? selectedBonusBusinessAnchorId

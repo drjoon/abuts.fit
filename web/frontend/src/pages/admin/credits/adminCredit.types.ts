@@ -110,6 +110,8 @@ export type BusinessCredit = {
   businessNumber: string;
   ownerName?: string;
   ownerEmail?: string;
+  ownerRole?: string;
+  isFreeCreditEligible?: boolean;
   balance: number;
   paidBalance: number;
   bonusBalance: number;

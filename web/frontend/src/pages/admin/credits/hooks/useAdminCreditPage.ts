@@ -36,6 +36,14 @@ const getErrorMessage = (error: unknown, fallback: string) => {
   return fallback;
 };
 
+const isFreeCreditEligibleBusiness = (business: BusinessCredit | null) => {
+  if (!business) return false;
+  if (typeof business.isFreeCreditEligible === "boolean") {
+    return business.isFreeCreditEligible;
+  }
+  return String(business.businessType || "").trim() === "requestor";
+};
+
 export function useAdminCreditPage() {
   const { token, user } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
@@ -168,11 +176,7 @@ export function useAdminCreditPage() {
         const items = Array.isArray(res.data.data.items)
           ? res.data.data.items
           : [];
-        setAllRequestorBusinesses(
-          items.filter(
-            (b) => String(b.businessType || "").trim() === "requestor",
-          ),
-        );
+        setAllRequestorBusinesses(items.filter(isFreeCreditEligibleBusiness));
       }
     } catch {
       // 드롭다운 전용 로드 실패는 무시
@@ -467,7 +471,7 @@ export function useAdminCreditPage() {
     const targetBusiness = businesses.find(
       (business) => String(business._id) === businessAnchorId,
     );
-    if (String(targetBusiness?.businessType || "").trim() !== "requestor") {
+    if (!isFreeCreditEligibleBusiness(targetBusiness || null)) {
       toast({
         title: "지급 대상 제한",
         description: "무료 크레딧은 의뢰자 사업자에게만 지급할 수 있습니다.",
@@ -551,7 +555,7 @@ export function useAdminCreditPage() {
     const targetBusiness = businesses.find(
       (business) => String(business._id) === businessAnchorId,
     );
-    if (String(targetBusiness?.businessType || "").trim() !== "requestor") {
+    if (!isFreeCreditEligibleBusiness(targetBusiness || null)) {
       toast({
         title: "지급 대상 제한",
         description:

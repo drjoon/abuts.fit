@@ -135,7 +135,12 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
     props.allRequestorBusinesses.length > 0
       ? props.allRequestorBusinesses
       : props.businesses
-  ).filter((business) => business.businessType === "requestor");
+  ).filter((business) => {
+    if (typeof business.isFreeCreditEligible === "boolean") {
+      return business.isFreeCreditEligible;
+    }
+    return String(business.businessType || "").trim() === "requestor";
+  });
 
   return (
     <>
