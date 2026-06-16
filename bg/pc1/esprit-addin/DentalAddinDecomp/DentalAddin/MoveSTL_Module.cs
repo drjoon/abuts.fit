@@ -420,7 +420,7 @@ namespace DentalAddin
                 {
                     FinishLineTopZ += stlShift;
                 }
-                if (Math.Abs(FinishLineX) > 0.001)
+                if (FinishLineX > 0.001)
                 {
                     FinishLineX += totalDeltaX;
                 }
@@ -449,7 +449,7 @@ namespace DentalAddin
                 {
                     FinishLineTopZ += stlShift;
                 }
-                if (Math.Abs(FinishLineX) > 0.001)
+                if (FinishLineX > 0.001)
                 {
                     FinishLineX += totalDeltaX;
                 }
@@ -1037,7 +1037,7 @@ namespace DentalAddin
                         MainModule.Document.Layers.Remove("LayG");
                         FrontPointX += Chazhi;
                         BackPointX += Chazhi;
-                        if (Math.Abs(FinishLineX) > 0.001)
+                        if (FinishLineX > 0.001)
                         {
                             FinishLineX += Chazhi;
                         }

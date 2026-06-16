@@ -84,7 +84,7 @@ internal sealed class TurningFeature_Profile
 		double y = default(double);
 		double x = default(double);
 		Point point2 = default(Point);
-		double trimX = (Math.Abs(MoveSTL_Module.FinishLineX) > 0.001) ? MoveSTL_Module.FinishLineX : MoveSTL_Module.BackPointX;
+		double trimX = (MoveSTL_Module.FinishLineX > 0.001) ? MoveSTL_Module.FinishLineX : MoveSTL_Module.BackPointX;
 		DentalLogger.Log($"TurningProfile: trimX={trimX:F3} (FinishLineX={MoveSTL_Module.FinishLineX:F3}, BackPointX={MoveSTL_Module.BackPointX:F3})");
 		for (i = 1; i <= count; i = checked(i + 1))
 		{
