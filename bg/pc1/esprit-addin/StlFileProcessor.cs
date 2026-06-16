@@ -1009,16 +1009,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
 
-                // Composite 분할 위치를 finishLineTopZ 기준 반대 방향(상방) 1.0mm로 조정
-                // 기존 +1.0 기준이 하방으로 적용되는 케이스가 있어, 요청에 맞게 -1.0으로 반전
-                double rawRatio = (stlTopZ.Value - (finishLineTopZ.Value - 1.0)) / 20.0;
-                if (double.IsNaN(rawRatio) || double.IsInfinity(rawRatio))
-                {
-                    AppLogger.Log("DentalAddin: finishLine 기반 Composite2SplitAB 생략 - splitRatio invalid");
-                    return;
-                }
-
-                double ratio = Math.Max(0.0, Math.Min(1.0, rawRatio));
                 Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
                 if (moveModuleType == null)
                 {
@@ -1036,17 +1026,20 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
                 double frontX = Convert.ToDouble(frontField.GetValue(null), CultureInfo.InvariantCulture);
                 double backX = Convert.ToDouble(backField.GetValue(null), CultureInfo.InvariantCulture);
-                double span = backX - frontX;
-                if (Math.Abs(span) < 0.001)
-                {
-                    AppLogger.Log("DentalAddin: finishLine 기반 Composite2SplitAB 생략 - span 너무 작음");
-                    return;
-                }
 
-                double splitX = frontX + span * ratio + AppConfig.DefaultStlShift;
+                // STL finishLineTopZ → ESPRIT X 변환 (MoveSTL 이후 좌표계)
+                //   finishLineX ~= backX + finishTopZ - stlTopZ
+                // 요청 기준: 피니시라인 반대쪽(좌측) 1.0mm
+                double finishLineXConverted = backX + finishLineTopZ.Value - stlTopZ.Value;
+                double rawSplitX = finishLineXConverted - 1.0;
+
+                double xMin = Math.Min(0.0, Math.Min(frontX, backX));
+                double xMax = Math.Max(frontX, backX);
+                double splitX = Math.Max(xMin + 0.01, Math.Min(xMax - 0.01, rawSplitX));
+
                 Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_SPLIT_ENABLE", "1");
                 Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_SPLIT_X", splitX.ToString(CultureInfo.InvariantCulture));
-                AppLogger.Log($"DentalAddin: finishLine split 적용 - bboxTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, finishTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, rawRatio:{rawRatio.ToString("F4", CultureInfo.InvariantCulture)}, ratio(clamped):{ratio.ToString("F4", CultureInfo.InvariantCulture)}, splitX:{splitX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)}, Shift:{AppConfig.DefaultStlShift.ToString("F3", CultureInfo.InvariantCulture)})");
+                AppLogger.Log($"DentalAddin: finishLine split 적용 - bboxTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, finishTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, finishLineX(converted):{finishLineXConverted.ToString("F4", CultureInfo.InvariantCulture)}, rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)} (xRange:[{xMin.ToString("F4", CultureInfo.InvariantCulture)}~{xMax.ToString("F4", CultureInfo.InvariantCulture)}], Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
             }
             catch (Exception ex)
             {
