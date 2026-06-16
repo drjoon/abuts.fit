@@ -917,11 +917,18 @@ namespace DentalAddin
             double xMin = Math.Min(0.0, frontBackMin);
             double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
 
-            // 요청 반영: FinishLine 기반 splitX에서 1.0mm 왼쪽으로 이동한 값을 defaultSplit으로 사용한다.
-            // (값이 비정상/계산 불가일 때만 midpoint fallback)
+            // 요청 반영: finish line 최상방(축방향 X 기준)에서 1.0mm 왼쪽을 defaultSplit으로 사용.
+            // 1순위: MoveSTL 이후 보정된 FinishLineX 사용
+            // 2순위: 기존 FinishLineTopZ 역산식
+            // 3순위: midpoint fallback
             double defaultSplit;
             string defaultSplitSource;
-            if (MoveSTL_Module.FinishLineTopZ > 0.001)
+            if (Math.Abs(MoveSTL_Module.FinishLineX) > 0.001)
+            {
+                defaultSplit = MoveSTL_Module.FinishLineX - 1.0;
+                defaultSplitSource = "finishlineX-minus-1.0";
+            }
+            else if (MoveSTL_Module.FinishLineTopZ > 0.001)
             {
                 double stlShift = AppConfig.DefaultStlShift;
                 double finishLineDistanceFromBack = MoveSTL_Module.FinishLineTopZ - stlShift;
@@ -939,7 +946,7 @@ namespace DentalAddin
                     double finishLinePositionBeforeShift = backBeforeShift - finishLineDistanceFromBack;
                     double finishLineSplitX = finishLinePositionBeforeShift + stlShift;
                     defaultSplit = finishLineSplitX - 1.0;
-                    defaultSplitSource = "finishline-splitX-minus-1.0";
+                    defaultSplitSource = "finishlineTopZ-derived-minus-1.0";
                 }
             }
             else

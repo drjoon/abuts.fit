@@ -84,7 +84,7 @@ internal sealed class TurningFeature_Profile
 		double y = default(double);
 		double x = default(double);
 		Point point2 = default(Point);
-		double trimX = (MoveSTL_Module.FinishLineX > 0.001) ? MoveSTL_Module.FinishLineX : MoveSTL_Module.BackPointX;
+		double trimX = (Math.Abs(MoveSTL_Module.FinishLineX) > 0.001) ? MoveSTL_Module.FinishLineX : MoveSTL_Module.BackPointX;
 		DentalLogger.Log($"TurningProfile: trimX={trimX:F3} (FinishLineX={MoveSTL_Module.FinishLineX:F3}, BackPointX={MoveSTL_Module.BackPointX:F3})");
 		for (i = 1; i <= count; i = checked(i + 1))
 		{
@@ -459,13 +459,13 @@ internal sealed class TurningFeature_Profile
 				{
 					Layer activeLayer = MainModule.Document.Layers.Add("MyLayer");
 					MainModule.Document.ActiveLayer = activeLayer;
-					
+
 					// 원본 프로파일(MainModule.tfc)을 복사하여 Y축 방향으로만 오프셋
 					// 이렇게 하면 동일한 형상을 유지하면서 깊이만 다르게 가공
 					selectionSet.Add(MainModule.tfc, RuntimeHelpers.GetObjectValue(Missing.Value));
 					double yOffset = (double)(MainModule.TurningTimes - i) * MainModule.TurningDepth;
 					selectionSet.Translate(0.0, yOffset, 0.0, 1);
-					
+
 					int count = MainModule.Document.FeatureChains.Count;
 					for (int j = 1; j <= count; j++)
 					{
@@ -475,13 +475,13 @@ internal sealed class TurningFeature_Profile
 							break;
 						}
 					}
-					
+
 					// 프로파일 이름 설정 및 레이어 할당
 					MainModule.FC1.Name = "TurningProfile" + Conversions.ToString(i);
 					MainModule.FC1.Layer = MainModule.Document.Layers["TurningLayer"];
-					
+
 					DentalLogger.Log($"TurningProfiles: Profile {i} 생성 - Y offset: {yOffset:F3}");
-					
+
 					MainModule.Document.Layers.Remove("MyLayer");
 				}
 				catch (Exception ex3)

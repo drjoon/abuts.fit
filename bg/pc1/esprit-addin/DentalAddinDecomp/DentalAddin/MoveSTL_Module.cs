@@ -420,7 +420,7 @@ namespace DentalAddin
                 {
                     FinishLineTopZ += stlShift;
                 }
-                if (FinishLineX > 0.001)
+                if (Math.Abs(FinishLineX) > 0.001)
                 {
                     FinishLineX += totalDeltaX;
                 }
@@ -449,7 +449,7 @@ namespace DentalAddin
                 {
                     FinishLineTopZ += stlShift;
                 }
-                if (FinishLineX > 0.001)
+                if (Math.Abs(FinishLineX) > 0.001)
                 {
                     FinishLineX += totalDeltaX;
                 }
@@ -468,7 +468,7 @@ namespace DentalAddin
             {
                 step = "start";
                 DentalLogger.Log($"Boundry 시작 - Document:{(MainModule.Document != null)}, RL:{MainModule.RL}, MTI:{MTI}, FrontPointX:{FrontPointX}, BackPointX:{BackPointX}");
-                
+
                 step = "validate_document";
                 if (MainModule.Document == null)
                 {
@@ -1037,7 +1037,7 @@ namespace DentalAddin
                         MainModule.Document.Layers.Remove("LayG");
                         FrontPointX += Chazhi;
                         BackPointX += Chazhi;
-                        if (FinishLineX > 0.001)
+                        if (Math.Abs(FinishLineX) > 0.001)
                         {
                             FinishLineX += Chazhi;
                         }
