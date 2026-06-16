@@ -1027,10 +1027,20 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 double frontX = Convert.ToDouble(frontField.GetValue(null), CultureInfo.InvariantCulture);
                 double backX = Convert.ToDouble(backField.GetValue(null), CultureInfo.InvariantCulture);
 
-                // 안정식 복원:
-                // finishLineTopZ 기반 비율식(기존 동작)으로 splitX를 계산하되,
+                // finishLine 기준 오프셋(mm) - 기본: -1.0 (요청: 반대쪽 1mm)
+                // 필요 시 env(ABUTS_FINISHLINE_SPLIT_OFFSET_MM)로 런타임 조정 가능
+                double offsetMm = -1.0;
+                string offsetRaw = Environment.GetEnvironmentVariable("ABUTS_FINISHLINE_SPLIT_OFFSET_MM");
+                if (!string.IsNullOrWhiteSpace(offsetRaw) && double.TryParse(offsetRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsedOffset))
+                {
+                    offsetMm = parsedOffset;
+                }
+
+                // 안정식:
+                // finishLineTopZ 기반 비율식으로 splitX를 계산하고,
                 // 극단값으로 몰려 Composite2SplitAB가 스킵되지 않도록 작업영역 중앙 쪽으로 제한한다.
-                double rawRatio = (stlTopZ.Value - (finishLineTopZ.Value + 1.0)) / 20.0;
+                double rawRatioAtFinish = (stlTopZ.Value - finishLineTopZ.Value) / 20.0;
+                double rawRatio = (stlTopZ.Value - (finishLineTopZ.Value + offsetMm)) / 20.0;
                 if (double.IsNaN(rawRatio) || double.IsInfinity(rawRatio))
                 {
                     AppLogger.Log("DentalAddin: finishLine 기반 Composite2SplitAB 생략 - splitRatio invalid");
@@ -1045,6 +1055,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
 
+                double splitXAtFinish = frontX + span * rawRatioAtFinish + AppConfig.DefaultStlShift;
                 double rawSplitX = frontX + span * ratio + AppConfig.DefaultStlShift;
                 double xMin = Math.Min(0.0, Math.Min(frontX, backX));
                 double xMax = Math.Max(frontX, backX);
@@ -1053,7 +1064,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
                 Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_SPLIT_ENABLE", "1");
                 Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_SPLIT_X", splitX.ToString(CultureInfo.InvariantCulture));
-                AppLogger.Log($"DentalAddin: finishLine split 적용 - bboxTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, finishTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, rawRatio:{rawRatio.ToString("F4", CultureInfo.InvariantCulture)}, ratio(clamped):{ratio.ToString("F4", CultureInfo.InvariantCulture)}, rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(safe-clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)} (xRange:[{xMin.ToString("F4", CultureInfo.InvariantCulture)}~{xMax.ToString("F4", CultureInfo.InvariantCulture)}], Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
+                AppLogger.Log($"DentalAddin: finishLine split 적용 - bboxTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, finishTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, offsetMm:{offsetMm.ToString("F3", CultureInfo.InvariantCulture)}, splitX@finish:{splitXAtFinish.ToString("F4", CultureInfo.InvariantCulture)}, rawRatio:{rawRatio.ToString("F4", CultureInfo.InvariantCulture)}, ratio(clamped):{ratio.ToString("F4", CultureInfo.InvariantCulture)}, rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(safe-clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)} (xRange:[{xMin.ToString("F4", CultureInfo.InvariantCulture)}~{xMax.ToString("F4", CultureInfo.InvariantCulture)}], Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
             }
             catch (Exception ex)
             {
