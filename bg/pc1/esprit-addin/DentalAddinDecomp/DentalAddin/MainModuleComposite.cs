@@ -1100,36 +1100,18 @@ namespace DentalAddin
 
         private static FeatureChain EnsureRectBoundary(string name, double x1, double x2, double yTop, double yBottom)
         {
-            string targetName = name;
-
-            // 기존 동일 이름 체인이 있으면 재사용하지 않고 삭제 후 재생성한다.
-            // (이전 실행에서 남은 비정상/비직사각형 체인이 split 경계를 왜곡하는 것을 방지)
+            // 안전성 우선:
+            // A/B TwoPhase 실행 중 이미 Operation에서 참조 중인 Boundary 체인을 삭제하면
+            // ESPRIT COM이 불안정해질 수 있으므로, 동일 이름 체인이 있으면 재사용한다.
             FeatureChain existing = FindFeatureChainByName(name);
             if (existing != null)
             {
-                try
-                {
-                    // 일부 ESPRIT interop에서 FeatureChain.Delete()가 노출되지 않으므로
-                    // GraphicsCollection.Remove(key) 방식으로 삭제한다.
-                    int existingKey = SafeParseKey(Convert.ToString(existing.Key, CultureInfo.InvariantCulture));
-                    if (existingKey > 0 && Document?.GraphicsCollection != null)
-                    {
-                        Document.GraphicsCollection.Remove(existingKey);
-                        DentalLogger.Log($"EnsureRectBoundary({name}) - 기존 체인 제거 후 재생성 (Key:{existingKey})");
-                    }
-                    else
-                    {
-                        targetName = name + "_" + DateTime.Now.ToString("HHmmssfff", CultureInfo.InvariantCulture);
-                        DentalLogger.Log($"EnsureRectBoundary({name}) - 기존 체인 key 파싱 실패/GraphicsCollection 접근 불가, 새 이름으로 생성: {targetName}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // 제거 실패 시에도 새 체인을 만들기 위해 이름 충돌을 피한다.
-                    targetName = name + "_" + DateTime.Now.ToString("HHmmssfff", CultureInfo.InvariantCulture);
-                    DentalLogger.Log($"EnsureRectBoundary({name}) - 기존 체인 제거 실패({ex.GetType().Name}:{ex.Message}), 새 이름으로 생성: {targetName}");
-                }
+                int existingKey = SafeParseKey(Convert.ToString(existing.Key, CultureInfo.InvariantCulture));
+                DentalLogger.Log($"EnsureRectBoundary({name}) - 기존 체인 재사용 (Key:{existingKey})");
+                return existing;
             }
+
+            string targetName = name;
 
             try
             {
