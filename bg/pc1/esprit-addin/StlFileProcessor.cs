@@ -734,7 +734,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log($"DentalAddin: MoveSTL 실행 시작 (FrontLimit:{frontLimitX}, BackLimit:{backLimitX})");
                 InvokeMoveSTL(mainModuleType);
                 TryApplyCompositeSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ);
-                TryApplyTwoPhaseSplitByFinishLine(mainModuleType, stlTopZ, finishLineMinZ, twoPhase);
+                TryApplyTwoPhaseSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ, twoPhase);
                 // 유지홈 옵션을 5axisComposite_A 의 StepIncrement 에 반영.
                 // PRC 파일은 건드리지 않고, env 변수에 numeric 값만 주입한다.
                 // 실제 적용은 MainModuleComposite.TryRunComposite2SplitAB → TrySetCompositeStepIncrement 가
@@ -1053,8 +1053,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
-        // TwoPhase(초기 Turning/Rough) 분할선을 finishLine 최저 Z점 기준으로 계산하여 env로 전달
-        private void TryApplyTwoPhaseSplitByFinishLine(Type mainModuleType, double? stlTopZ, double? finishLineMinZ, bool twoPhase)
+        // TwoPhase(초기 Turning/Rough) 분할선을 finishLine 최상 Z점 기준 +1.0mm(좌측)으로 계산하여 env로 전달
+        private void TryApplyTwoPhaseSplitByFinishLine(Type mainModuleType, double? stlTopZ, double? finishLineTopZ, bool twoPhase)
         {
             try
             {
@@ -1062,9 +1062,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     return;
                 }
-                if (!stlTopZ.HasValue || !finishLineMinZ.HasValue)
+                if (!stlTopZ.HasValue || !finishLineTopZ.HasValue)
                 {
-                    AppLogger.Log("DentalAddin: TwoPhase split 생략 - stlTopZ/finishLineMinZ 부족");
+                    AppLogger.Log("DentalAddin: TwoPhase split 생략 - stlTopZ/finishLineTopZ 부족");
                     return;
                 }
 
@@ -1088,8 +1088,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 double xMin = Math.Min(frontX, backX);
                 double xMax = Math.Max(frontX, backX);
 
-                // STL Z(min) → ESPRIT X 변환(이동 이후 좌표계): X ~= BackX - minZ + shift
-                double rawSplitX = backX - finishLineMinZ.Value + AppConfig.DefaultStlShift;
+                // 요청 기준:
+                //   finishLine 최상 Z점(= 좌측 끝 기준)에서 1.0mm 더 좌측으로 분할
+                // STL Z(top) → ESPRIT X 변환(이동 이후 좌표계): X ~= BackX - topZ + shift
+                // 따라서 splitX ~= BackX - (topZ + 1.0) + shift
+                double rawSplitX = backX - (finishLineTopZ.Value + 1.0) + AppConfig.DefaultStlShift;
                 double splitX = Math.Max(xMin + 0.01, Math.Min(xMax - 0.01, rawSplitX));
 
                 Environment.SetEnvironmentVariable(AppConfig.TwoPhaseEnableEnv, "1");
@@ -1099,7 +1102,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 Environment.SetEnvironmentVariable(AppConfig.RoughfreeformSplitEnableEnv, "1");
                 Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_X", splitX.ToString(CultureInfo.InvariantCulture));
 
-                AppLogger.Log($"DentalAddin: TwoPhase split 적용 - finishLineMinZ:{finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, stlTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
+                AppLogger.Log($"DentalAddin: TwoPhase split 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, 기준:+1.0mm 좌측, stlTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
             }
             catch (Exception ex)
             {
