@@ -742,6 +742,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 TryApplyRetentionGrooveToStepIncrementEnv();
 
                 AppLogger.Log("DentalAddin: Emerge 실행 시작 - IGS 서피스 Merge 및 Translate");
+                // 중요: Turn_B 직전 Composite_A 선행 실행 시 DriveSurface(=SurfaceNumber)가 필요하므로
+                // Main 이전에 Emerge를 반드시 1회 수행해 SurfaceNumber를 확보한다.
+                InvokeEmerge(mainModuleType, document);
+                AppLogger.Log("DentalAddin: Emerge 실행 완료");
                 // TODO: Composite split by finish line
                 // TODO: Normalize feature chain names
                 // ApplyAdditionalStlShift(document, mainModuleType, AppConfig.DefaultStlShift);
