@@ -1027,8 +1027,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 double frontX = Convert.ToDouble(frontField.GetValue(null), CultureInfo.InvariantCulture);
                 double backX = Convert.ToDouble(backField.GetValue(null), CultureInfo.InvariantCulture);
 
-                // finishLine 기준 오프셋(mm) - Composite 안정 기본값: +1.0
-                // (이 값이 너무 우측으로 가면 Composite2SplitAB가 Last와 겹쳐 스킵될 수 있음)
+                // finishLine 기준 오프셋(mm) - 기본 1.0
                 // 필요 시 env(ABUTS_FINISHLINE_SPLIT_OFFSET_MM)로 런타임 조정 가능
                 double offsetMm = 1.0;
                 string offsetRaw = Environment.GetEnvironmentVariable("ABUTS_FINISHLINE_SPLIT_OFFSET_MM");
@@ -1037,18 +1036,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     offsetMm = parsedOffset;
                 }
 
-                // 안정식:
-                // finishLineTopZ 기반 비율식으로 splitX를 계산하고,
-                // 극단값으로 몰려 Composite2SplitAB가 스킵되지 않도록 작업영역 중앙 쪽으로 제한한다.
-                double rawRatioAtFinish = (stlTopZ.Value - finishLineTopZ.Value) / 20.0;
-                double rawRatio = (stlTopZ.Value - (finishLineTopZ.Value + offsetMm)) / 20.0;
-                if (double.IsNaN(rawRatio) || double.IsInfinity(rawRatio))
-                {
-                    AppLogger.Log("DentalAddin: finishLine 기반 Composite2SplitAB 생략 - splitRatio invalid");
-                    return;
-                }
-                double ratio = Math.Max(0.0, Math.Min(1.0, rawRatio));
-
                 double span = backX - frontX;
                 if (Math.Abs(span) < 0.001)
                 {
@@ -1056,16 +1043,61 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
 
-                double splitXAtFinish = frontX + span * rawRatioAtFinish + AppConfig.DefaultStlShift;
-                double rawSplitX = frontX + span * ratio + AppConfig.DefaultStlShift;
+                double direction = span >= 0 ? 1.0 : -1.0;
+
+                // 진단용: MoveSTL_Module.FinishLineX 값을 읽되, split 계산에는 사용하지 않는다.
+                // (해당 필드는 MoveSTL 이후 갱신되지 않아 좌표계가 어긋날 수 있음)
+                double? finishXByField = null;
+                FieldInfo finishXField = moveModuleType.GetField("FinishLineX", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                if (finishXField != null)
+                {
+                    try
+                    {
+                        object fv = finishXField.GetValue(null);
+                        if (fv != null)
+                        {
+                            double parsed = Convert.ToDouble(fv, CultureInfo.InvariantCulture);
+                            if (!double.IsNaN(parsed) && !double.IsInfinity(parsed))
+                            {
+                                finishXByField = parsed;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                // 기준점(권위값): backend finishLineTopZ를 MoveSTL 이후 현재 좌표계 X로 직접 변환
+                // currentFinishX = backX + finishTopZ - stlTopZ
+                double currentFinishX = backX + finishLineTopZ.Value - stlTopZ.Value;
+
+                // 오프셋 방향 정책:
+                // - env ABUTS_FINISHLINE_SPLIT_SIDE=front|back 로 명시 가능
+                // - 기본값: front (요청사항: finish line 최정상보다 1mm 좌측)
+                string splitSideRaw = Environment.GetEnvironmentVariable("ABUTS_FINISHLINE_SPLIT_SIDE");
+                bool useFrontSide = string.Equals(splitSideRaw, "front", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(splitSideRaw, "left", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(splitSideRaw, "-1", StringComparison.OrdinalIgnoreCase);
+                bool useBackSide = string.Equals(splitSideRaw, "back", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(splitSideRaw, "right", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(splitSideRaw, "1", StringComparison.OrdinalIgnoreCase);
+                if (!useFrontSide && !useBackSide)
+                {
+                    useFrontSide = true;
+                }
+
+                double candidateFront = currentFinishX - direction * offsetMm;
+                double candidateBack = currentFinishX + direction * offsetMm;
+                double rawSplitX = useFrontSide ? candidateFront : candidateBack;
+
                 double xMin = Math.Min(0.0, Math.Min(frontX, backX));
                 double xMax = Math.Max(frontX, backX);
                 // 경계에 너무 붙으면 SplitPercent가 0%/100%에 붙어 AB 분할이 꺼지므로 0.5mm 안전 마진 사용
                 double splitX = Math.Max(xMin + 0.5, Math.Min(xMax - 0.5, rawSplitX));
+                bool clamped = Math.Abs(splitX - rawSplitX) > 1e-6;
 
                 Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_SPLIT_ENABLE", "1");
                 Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_SPLIT_X", splitX.ToString(CultureInfo.InvariantCulture));
-                AppLogger.Log($"DentalAddin: finishLine split 적용 - bboxTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, finishTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, offsetMm:{offsetMm.ToString("F3", CultureInfo.InvariantCulture)}, splitX@finish:{splitXAtFinish.ToString("F4", CultureInfo.InvariantCulture)}, rawRatio:{rawRatio.ToString("F4", CultureInfo.InvariantCulture)}, ratio(clamped):{ratio.ToString("F4", CultureInfo.InvariantCulture)}, rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(safe-clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)} (xRange:[{xMin.ToString("F4", CultureInfo.InvariantCulture)}~{xMax.ToString("F4", CultureInfo.InvariantCulture)}], Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
+                AppLogger.Log($"DentalAddin: finishLine split 적용(v3) - bboxTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, finishTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, finishXByField(diag):{(finishXByField.HasValue ? finishXByField.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, currentFinishX(authoritative):{currentFinishX.ToString("F4", CultureInfo.InvariantCulture)}, offsetMm:{offsetMm.ToString("F3", CultureInfo.InvariantCulture)}, sideRaw:'{splitSideRaw ?? ""}', useFront:{useFrontSide}, useBack:{useBackSide}, candidateFront:{candidateFront.ToString("F4", CultureInfo.InvariantCulture)}, candidateBack:{candidateBack.ToString("F4", CultureInfo.InvariantCulture)}, rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(safe-clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)}, clamped:{clamped} (xRange:[{xMin.ToString("F4", CultureInfo.InvariantCulture)}~{xMax.ToString("F4", CultureInfo.InvariantCulture)}], Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)}, span:{span.ToString("F4", CultureInfo.InvariantCulture)}, dir:{direction.ToString("F0", CultureInfo.InvariantCulture)}, deltaFromFinish:{(splitX - currentFinishX).ToString("F4", CultureInfo.InvariantCulture)})");
             }
             catch (Exception ex)
             {
@@ -1111,11 +1143,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 // 요청 기준:
                 //   finishLine 최상 Z점보다 1.0mm 더 높은(Z+) 지점을 split line으로 사용
                 // 좌표 변환은 ApplyLimitPoints(FinishLineX)와 동일식을 사용한다.
-                //   ESPRIT X = BackX + Z - stlTopZ (+ 기본 STL shift)
+                //   ESPRIT X = BackX + Z - stlTopZ
                 //   targetZ = finishLineTopZ + 1.0
-                //   splitX = BackX + (finishLineTopZ + 1.0) - stlTopZ + shift
+                //   splitX = BackX + (finishLineTopZ + 1.0) - stlTopZ
+                // 주의: 여기서 DefaultStlShift를 추가로 더하면 split line이 과도하게 좌측으로 이동(약 +shift mm)한다.
                 double targetZ = finishLineTopZ.Value + 1.0;
-                double rawSplitX = backX + targetZ - stlTopZ.Value + AppConfig.DefaultStlShift;
+                double rawSplitX = backX + targetZ - stlTopZ.Value;
                 double splitX = Math.Max(xMin + 0.01, Math.Min(xMax - 0.01, rawSplitX));
 
                 Environment.SetEnvironmentVariable(AppConfig.TwoPhaseEnableEnv, "1");

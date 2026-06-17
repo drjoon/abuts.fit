@@ -222,19 +222,11 @@ namespace DentalAddin
                 }
             }
 
+            // 정책: ABUTS_COMPOSITE_SPLIT_X와 무관하게 A/B 경계 공식(FinishLineTopZ 역산식)을 우선 사용한다.
+            // env splitX는 FinishLineTopZ가 없을 때에만 fallback으로 사용한다.
             double splitRatio;
-            if (splitX > 0.001)
-            {
-                splitRatio = (splitX - MoveSTL_Module.FrontPointX) / (direction * absSpan);
-                if (double.IsNaN(splitRatio) || double.IsInfinity(splitRatio))
-                {
-                    splitRatio = leftRatio + (rightRatio - leftRatio) * 0.27;
-                    splitX = MoveSTL_Module.FrontPointX + splitRatio * direction * absSpan;
-                }
-                splitRatio = Clamp(splitRatio, leftRatio, rightRatio);
-                DentalLogger.Log($"Composite2SplitAB - 환경변수 splitX={splitX:F3} (ratio={splitRatio:F3})");
-            }
-            else if (MoveSTL_Module.FinishLineTopZ > 0.001)
+            double envSplitX = splitX;
+            if (MoveSTL_Module.FinishLineTopZ > 0.001)
             {
                 double stlShift = AppConfig.DefaultStlShift;
                 double finishLineDistanceFromBack = MoveSTL_Module.FinishLineTopZ - stlShift;
@@ -243,18 +235,43 @@ namespace DentalAddin
                 double spanBeforeShift = backBeforeShift - frontBeforeShift;
                 double absSpanBeforeShift = Math.Abs(spanBeforeShift);
 
-                double finishLinePositionBeforeShift = backBeforeShift - finishLineDistanceFromBack;
-                splitX = finishLinePositionBeforeShift + stlShift;
-                splitRatio = (finishLinePositionBeforeShift - frontBeforeShift) / absSpanBeforeShift;
+                if (absSpanBeforeShift < 1e-6)
+                {
+                    splitRatio = leftRatio + (rightRatio - leftRatio) * 0.27;
+                    splitX = MoveSTL_Module.FrontPointX + splitRatio * direction * absSpan;
+                    splitRatio = Clamp(splitRatio, leftRatio, rightRatio);
+                    DentalLogger.Log($"Composite2SplitAB - FinishLine 기반 계산 불가(span~0), 기본 27% fallback splitX={splitX:F3}");
+                }
+                else
+                {
+                    double finishLinePositionBeforeShift = backBeforeShift - finishLineDistanceFromBack;
+                    splitX = finishLinePositionBeforeShift + stlShift;
+                    splitRatio = (finishLinePositionBeforeShift - frontBeforeShift) / absSpanBeforeShift;
+                    splitRatio = Clamp(splitRatio, leftRatio, rightRatio);
+                    DentalLogger.Log($"Composite2SplitAB - A/B 공식 splitX={splitX:F3} (ratio={splitRatio:F3}, finishLinePos={finishLinePositionBeforeShift:F3}, distFromBack={finishLineDistanceFromBack:F3}, envSplitXIgnored={(envSplitX > 0.001 ? envSplitX.ToString("F3", CultureInfo.InvariantCulture) : "none")})");
+                }
+            }
+            else if (envSplitX > 0.001)
+            {
+                splitRatio = (envSplitX - MoveSTL_Module.FrontPointX) / (direction * absSpan);
+                if (double.IsNaN(splitRatio) || double.IsInfinity(splitRatio))
+                {
+                    splitRatio = leftRatio + (rightRatio - leftRatio) * 0.27;
+                    splitX = MoveSTL_Module.FrontPointX + splitRatio * direction * absSpan;
+                }
+                else
+                {
+                    splitX = envSplitX;
+                }
                 splitRatio = Clamp(splitRatio, leftRatio, rightRatio);
-                DentalLogger.Log($"Composite2SplitAB - FinishLine 기반 splitX={splitX:F3} (ratio={splitRatio:F3}, finishLinePos={finishLinePositionBeforeShift:F3}, distFromBack={finishLineDistanceFromBack:F3})");
+                DentalLogger.Log($"Composite2SplitAB - FinishLineTopZ 없음, env splitX fallback={splitX:F3} (ratio={splitRatio:F3})");
             }
             else
             {
                 splitRatio = leftRatio + (rightRatio - leftRatio) * 0.27;
                 splitX = MoveSTL_Module.FrontPointX + splitRatio * direction * absSpan;
                 splitRatio = Clamp(splitRatio, leftRatio, rightRatio);
-                DentalLogger.Log($"Composite2SplitAB - 기본 계산 splitX={splitX:F3} (27% 지점, FinishLineTopZ 없음)");
+                DentalLogger.Log($"Composite2SplitAB - 기본 계산 splitX={splitX:F3} (27% 지점, FinishLineTopZ/envSplitX 없음)");
             }
 
 
@@ -270,10 +287,13 @@ namespace DentalAddin
 
             DentalLogger.Log($"Composite2SplitAB - enabled=1, splitX={splitX:F3}, prcA={prcA}, prcB={prcB}");
 
-            if (Math.Abs(splitPercent - firstPercent) < 0.01 || Math.Abs(effectiveLastPercent - splitPercent) < 0.01)
+            bool splitDegenerate = Math.Abs(splitPercent - firstPercent) < 0.01 || Math.Abs(effectiveLastPercent - splitPercent) < 0.01;
+            if (splitDegenerate)
             {
-                DentalLogger.Log($"Composite2SplitAB - SplitPercent 범위가 너무 작음 (First={firstPercent:F2}, Split={splitPercent:F2}, Last={effectiveLastPercent:F2}), Split 건너뜀");
-                return false;
+                // 중요: 여기서 false를 반환하면 caller가 Composite2 단일 경로(A만)로 fallback 되어
+                // C(B-Extension)가 누락될 수 있다. 따라서 SplitAB 경로를 유지한 채 Single-A(+C)로 degrade한다.
+                DentalLogger.Log($"Composite2SplitAB - SplitPercent 범위가 작음(First={firstPercent:F2}, Split={splitPercent:F2}, Last={effectiveLastPercent:F2}). SplitAB 중단 대신 Single-A(+C) degrade로 계속 진행");
+                splitPercent = firstPercent;
             }
 
             Layer activeLayer;
@@ -1248,32 +1268,14 @@ namespace DentalAddin
             double xMin = Math.Min(0.0, frontBackMin);
             double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
 
-            // 요청 반영: TwoPhase split은 "finish line 최상방 +1mm(좌측)" 기준을 우선 적용.
-            // 현재 Composite2SplitAB가 동일 기준으로 ABUTS_COMPOSITE_SPLIT_X를 계산하므로
-            // TwoPhase 기본값도 이를 1순위로 맞춰 일관성을 유지한다.
-            // 2순위: 기존 FinishLineTopZ 역산식
-            // 3순위: midpoint fallback
+            // 요청 반영:
+            // TwoPhase split은 ABUTS_COMPOSITE_SPLIT_X(env)와 무관하게,
+            // Composite A/B 경계 계산식(FinishLineTopZ 역산식)을 그대로 사용한다.
+            // 1순위: FinishLineTopZ 기반 공식
+            // 2순위: midpoint fallback
             double defaultSplit;
             string defaultSplitSource;
-            double? compositeSplitX = GetEnvDoubleNullable("ABUTS_COMPOSITE_SPLIT_X");
-            // TwoPhase split은 Composite split과 동기화하되, 시각/가공 기준 보정을 위해 좌측 1.0mm 이동
-            // (사용자 요청: 피니시라인 기준 반대쪽 1mm)
-            const double twoPhaseFromCompositeOffsetMm = -1.0;
-            if (compositeSplitX.HasValue)
-            {
-                double candidate = compositeSplitX.Value + twoPhaseFromCompositeOffsetMm;
-                if (candidate > xMin + 0.5 && candidate < xMax - 0.5)
-                {
-                    defaultSplit = candidate;
-                    defaultSplitSource = "composite-split-env-minus-1.0";
-                }
-                else
-                {
-                    defaultSplit = Math.Max(xMin + 0.5, Math.Min(xMax - 0.5, candidate));
-                    defaultSplitSource = "composite-split-env-minus-1.0(clamped)";
-                }
-            }
-            else if (MoveSTL_Module.FinishLineTopZ > 0.001)
+            if (MoveSTL_Module.FinishLineTopZ > 0.001)
             {
                 double stlShift = AppConfig.DefaultStlShift;
                 double finishLineDistanceFromBack = MoveSTL_Module.FinishLineTopZ - stlShift;
@@ -1290,8 +1292,8 @@ namespace DentalAddin
                 {
                     double finishLinePositionBeforeShift = backBeforeShift - finishLineDistanceFromBack;
                     double finishLineSplitX = finishLinePositionBeforeShift + stlShift;
-                    defaultSplit = finishLineSplitX - 1.0;
-                    defaultSplitSource = "finishline-splitX-minus-1.0";
+                    defaultSplit = finishLineSplitX;
+                    defaultSplitSource = "finishline-splitX(formula)";
                 }
             }
             else
@@ -1306,8 +1308,10 @@ namespace DentalAddin
             double? configured = GetEnvDoubleNullable(AppConfig.TwoPhaseSplitXEnv) ?? GetEnvDoubleNullable("ABUTS_ROUGHFREEFORM_SPLIT_X");
             splitX = configured ?? defaultSplit;
 
-            bool anyConfigured = configured.HasValue || !string.IsNullOrWhiteSpace(prcA) || !string.IsNullOrWhiteSpace(prcB);
-            DentalLogger.Log($"RoughFreeFromMillSplitAB Config - explicitEnable={explicitEnable}, splitEnableEnv='{enabled ?? ""}', twoPhaseEnableEnv='{twoPhaseEnabled ?? ""}', configuredSplitX={(configured.HasValue ? configured.Value.ToString("0.###", CultureInfo.InvariantCulture) : "null")}, defaultSplit={defaultSplit.ToString("0.###", CultureInfo.InvariantCulture)}, defaultSplitSource={defaultSplitSource}, xRange=[{xMin.ToString("0.###", CultureInfo.InvariantCulture)}~{xMax.ToString("0.###", CultureInfo.InvariantCulture)}], prcASet={!string.IsNullOrWhiteSpace(prcA)}, prcBSet={!string.IsNullOrWhiteSpace(prcB)}");
+            bool anyConfigured = configured.HasValue
+                || !string.IsNullOrWhiteSpace(prcA)
+                || !string.IsNullOrWhiteSpace(prcB);
+            DentalLogger.Log($"RoughFreeFromMillSplitAB Config - explicitEnable={explicitEnable}, splitEnableEnv='{enabled ?? ""}', twoPhaseEnableEnv='{twoPhaseEnabled ?? ""}', configuredSplitX={(configured.HasValue ? configured.Value.ToString("0.###", CultureInfo.InvariantCulture) : "null")}, compositeSplitX=ignored, defaultSplit={defaultSplit.ToString("0.###", CultureInfo.InvariantCulture)}, defaultSplitSource={defaultSplitSource}, selectedSplitX={splitX.ToString("0.###", CultureInfo.InvariantCulture)}, xRange=[{xMin.ToString("0.###", CultureInfo.InvariantCulture)}~{xMax.ToString("0.###", CultureInfo.InvariantCulture)}], prcASet={!string.IsNullOrWhiteSpace(prcA)}, prcBSet={!string.IsNullOrWhiteSpace(prcB)}");
             if (!explicitEnable && !anyConfigured)
             {
                 DentalLogger.Log("RoughFreeFromMillSplitAB Config - explicitEnable/anyConfigured 모두 false, SplitAB 미적용");
