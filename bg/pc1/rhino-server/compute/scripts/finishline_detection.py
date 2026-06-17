@@ -44,6 +44,8 @@ _EDGE_MIN_Z_VALID_THRESHOLD_MM = 0.5
 _EDGE_MIN_RADIUS_TO_PT0_RATIO = 0.45
 # edge 루프가 pt0 대비 과도하게 상단에 있으면 오검출로 간주
 _EDGE_MAX_Z_ABOVE_PT0_MM = 2.5
+# edge 루프가 pt0 대비 과도하게 하단에 있으면 내부 루프/홀 경계 오검출로 간주
+_EDGE_MAX_Z_BELOW_PT0_MM = 2.5
 
 
 def _merge_candidates(
@@ -120,7 +122,9 @@ def _detect_finishline_points_edge(
 
     rejected_low_z = 0
     rejected_high_z = 0
+    rejected_low_vs_pt0 = 0
     rejected_small_radius = 0
+    rejected_below_band = 0
     for idx, target_mesh in enumerate(candidates):
         _trace_log(
             "[detect-edge] candidate[{}] vertices={} faces={} key={}".format(
@@ -142,8 +146,11 @@ def _detect_finishline_points_edge(
                 idx, len(edge_curves) if edge_curves else 0
             )
         )
-        traced_points = _pick_min_z_closed_curve_points(
-            edge_curves, doc.ModelAbsoluteTolerance
+        traced_points = _pick_best_edge_loop_points(
+            edge_curves,
+            doc.ModelAbsoluteTolerance,
+            ref_pt0,
+            ref_pt0_radius,
         )
         if traced_points and len(traced_points) >= 3:
             edge_min_z = _points_min_z(traced_points)
@@ -156,10 +163,7 @@ def _detect_finishline_points_edge(
             )
             # 요구 사항: edge 결과 min-Z가 0.5mm 이하면 비정상으로 간주
             # -> 해당 후보는 버리고 다음 edge 후보를 계속 탐색한다.
-            if (
-                edge_min_z is not None
-                and edge_min_z <= _EDGE_MIN_Z_VALID_THRESHOLD_MM
-            ):
+            if edge_min_z is not None and edge_min_z <= _EDGE_MIN_Z_VALID_THRESHOLD_MM:
                 rejected_low_z += 1
                 _trace_log(
                     "[detect-edge] candidate[{}] rejected min_z={:.6f} <= {:.3f}".format(
@@ -169,6 +173,27 @@ def _detect_finishline_points_edge(
                     )
                 )
                 continue
+
+            # 단면 추적과 동일한 높이 대역(20~70%)의 하한보다 지나치게 낮은 edge 루프는
+            # 커넥션 내부 루프/홀 경계일 가능성이 높아 제외한다.
+            if edge_min_z is not None:
+                try:
+                    cbbox = target_mesh.GetBoundingBox(True)
+                    if cbbox.IsValid:
+                        cheight = max(1e-6, float(cbbox.Max.Z - cbbox.Min.Z))
+                        band_low = float(cbbox.Min.Z + _Z_RATIO_LOW * cheight)
+                        if edge_min_z < band_low:
+                            rejected_below_band += 1
+                            _trace_log(
+                                "[detect-edge] candidate[{}] rejected below_band min_z={:.6f} < band_low={:.6f}".format(
+                                    idx,
+                                    edge_min_z,
+                                    band_low,
+                                )
+                            )
+                            continue
+                except Exception:
+                    pass
 
             if ref_pt0 is not None and edge_min_z is not None:
                 max_allowed_z = ref_pt0.Z + _EDGE_MAX_Z_ABOVE_PT0_MM
@@ -180,6 +205,19 @@ def _detect_finishline_points_edge(
                             edge_min_z,
                             _EDGE_MAX_Z_ABOVE_PT0_MM,
                             max_allowed_z,
+                        )
+                    )
+                    continue
+
+                min_allowed_z = ref_pt0.Z - _EDGE_MAX_Z_BELOW_PT0_MM
+                if edge_min_z <= min_allowed_z:
+                    rejected_low_vs_pt0 += 1
+                    _trace_log(
+                        "[detect-edge] candidate[{}] rejected low_vs_pt0 min_z={:.6f} <= pt0_z-{:.3f} ({:.6f})".format(
+                            idx,
+                            edge_min_z,
+                            _EDGE_MAX_Z_BELOW_PT0_MM,
+                            min_allowed_z,
                         )
                     )
                     continue
@@ -216,9 +254,38 @@ def _detect_finishline_points_edge(
         return None, "C_EDGE_REJECTED_LOW_Z"
     if rejected_high_z > 0:
         return None, "C_EDGE_REJECTED_HIGH_Z"
+    if rejected_low_vs_pt0 > 0:
+        return None, "C_EDGE_REJECTED_LOW_VS_PT0"
     if rejected_small_radius > 0:
         return None, "C_EDGE_REJECTED_SMALL_RADIUS"
+    if rejected_below_band > 0:
+        return None, "C_EDGE_REJECTED_BELOW_BAND"
     return None, "C_EDGE_FAILED"
+
+
+def _mesh_xy_radius_from_bbox(mesh: rg.Mesh) -> float:
+    try:
+        bbox = mesh.GetBoundingBox(True)
+    except Exception:
+        return 0.0
+    if not bbox.IsValid:
+        return 0.0
+    try:
+        corners = bbox.GetCorners()
+    except Exception:
+        corners = None
+    if not corners:
+        return 0.0
+
+    max_r = 0.0
+    for p in corners:
+        try:
+            rr = float(math.sqrt(p.X * p.X + p.Y * p.Y))
+            if rr > max_r:
+                max_r = rr
+        except Exception:
+            continue
+    return max_r
 
 
 def _pick_primary_mesh(
@@ -234,22 +301,51 @@ def _pick_primary_mesh(
     if not meshes:
         raise RuntimeError("문서에서 Mesh 객체를 찾을 수 없습니다")
 
-    def weight(mo: rdo.MeshObject):
+    # 다중 Mesh 문서(분해/보조 파편 포함)에서 max-Z만으로 고르면
+    # 작은 상단 파편이 선택될 수 있다. 먼저 XY 외곽 반경이 큰 후보군을 잡고,
+    # 그 안에서 max-Z/vertex 수로 최종 선택한다.
+    infos: List[Tuple[float, Tuple[float, float, float, float], rdo.MeshObject]] = []
+    for mo in meshes:
         geom = mo.Geometry
         if geom is None:
-            return (-float("inf"), -float("inf"), -float("inf"), -float("inf"))
-        key = _mesh_z_key(geom)
-        return (
-            key
-            if key is not None
-            else (-float("inf"), -float("inf"), -float("inf"), -float("inf"))
-        )
+            continue
+        z_key = _mesh_z_key(geom)
+        if z_key is None:
+            continue
+        xy_r = _mesh_xy_radius_from_bbox(geom)
+        infos.append((xy_r, z_key, mo))
 
-    meshes.sort(key=weight, reverse=True)
-    target = meshes[0]
+    if not infos:
+        # 기존 동작과 유사한 안전 fallback
+        target = meshes[0]
+        geom = target.Geometry
+        if geom is None:
+            raise RuntimeError("선택된 Mesh 객체에서 Geometry를 읽을 수 없습니다")
+        return target, geom
+
+    max_r = max(item[0] for item in infos)
+    band = max(0.05, max_r * 0.01)
+    top_band = [item for item in infos if item[0] >= (max_r - band)]
+    if not top_band:
+        top_band = infos
+
+    # (xy_r, z_key(maxZ,minZ,verts,diag)) 내에서 z_key 우선 + xy_r 보조
+    top_band.sort(key=lambda item: (item[1], item[0]), reverse=True)
+    target = top_band[0][2]
     geom = target.Geometry
     if geom is None:
         raise RuntimeError("선택된 Mesh 객체에서 Geometry를 읽을 수 없습니다")
+
+    _trace_log(
+        "[pick-mesh] meshes={} max_r={:.4f} band={:.4f} chosen_id={} chosen_xy_r={:.4f} chosen_key={}".format(
+            len(meshes),
+            max_r,
+            band,
+            target.Id,
+            top_band[0][0],
+            top_band[0][1],
+        )
+    )
     return target, geom
 
 
@@ -558,6 +654,82 @@ def _pick_min_z_closed_curve_points(
         )
     )
     return selected_points
+
+
+def _pick_best_edge_loop_points(
+    curves: Sequence[rg.Curve],
+    tolerance: float,
+    ref_pt0: Optional[rg.Point3d],
+    ref_pt0_radius: Optional[float],
+) -> Optional[List[rg.Point3d]]:
+    if not curves:
+        return None
+
+    try:
+        joined = rg.Curve.JoinCurves(list(curves), tolerance)
+    except Exception:
+        joined = None
+    source = list(joined) if joined else list(curves)
+
+    loop_infos: List[Tuple[float, float, float, List[rg.Point3d]]] = []
+    # tuple: (median_radius, -min_z, length, points)
+    for cv in source:
+        pts = _curve_to_closed_points(cv)
+        if not pts or len(pts) < 3:
+            continue
+
+        min_z = _points_min_z(pts)
+        if min_z is None:
+            continue
+
+        if min_z <= _EDGE_MIN_Z_VALID_THRESHOLD_MM:
+            continue
+
+        if ref_pt0 is not None:
+            max_allowed_z = ref_pt0.Z + _EDGE_MAX_Z_ABOVE_PT0_MM
+            if min_z >= max_allowed_z:
+                continue
+
+        median_r = _points_median_radius(pts)
+        if (
+            ref_pt0_radius is not None
+            and ref_pt0_radius > _DIST_TOL
+            and median_r is not None
+        ):
+            ratio = median_r / ref_pt0_radius
+            if ratio <= _EDGE_MIN_RADIUS_TO_PT0_RATIO:
+                continue
+
+        try:
+            length = float(cv.GetLength())
+        except Exception:
+            length = float(len(pts))
+
+        loop_infos.append(
+            (
+                float(median_r) if median_r is not None else -1.0,
+                -float(min_z),
+                length,
+                pts,
+            )
+        )
+
+    if not loop_infos:
+        return None
+
+    # 잘못된 내부/저부 루프를 피하기 위해 외곽 반경(=median_radius) 우선 선택
+    loop_infos.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+    selected = loop_infos[0]
+    _trace_log(
+        "[finishline] edge loops={} selected median_r={:.6f} min_z={:.6f} len={:.3f} pts={}".format(
+            len(loop_infos),
+            selected[0],
+            -selected[1],
+            selected[2],
+            len(selected[3]),
+        )
+    )
+    return selected[3]
 
 
 def _points_min_z(points: Sequence[rg.Point3d]) -> Optional[float]:
@@ -1127,6 +1299,15 @@ def detect_finish_line(
     """
     doc = _get_active_doc(doc)
     mesh_obj, mesh_geom = _pick_primary_mesh(doc, mesh_id=mesh_id)
+    try:
+        _trace_log(
+            "[detect] target mesh id={} provided_mesh_id={}".format(
+                mesh_obj.Id,
+                mesh_id,
+            )
+        )
+    except Exception:
+        pass
     mesh_copy = mesh_geom.DuplicateMesh()
     if mesh_copy is None:
         raise RuntimeError("Mesh 복제에 실패했습니다")
