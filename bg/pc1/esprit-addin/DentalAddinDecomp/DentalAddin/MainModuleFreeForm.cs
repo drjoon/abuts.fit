@@ -117,16 +117,10 @@ namespace DentalAddin
                         return false;
                     }
 
-                    if (RL == 1.0)
-                    {
-                        faceOp.TopZLimit = 1.0;
-                        faceOp.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + Math.Abs(DownZ));
-                    }
-                    else if (RL == 2.0)
-                    {
-                        faceOp.BottomZLimit = 1.0 * (MoveSTL_Module.FrontPointX - Math.Abs(DownZ));
-                        faceOp.TopZLimit = 1.0;
-                    }
+                    // Front Face 깊이 정책:
+                    // - 기존 DownZ 기반 가변 깊이 대신, 요청사항에 따라 고정 1.0mm를 사용한다.
+                    // - 이후 Rough 대비 안전가드(0.3mm)를 추가 적용해 공구 파손 위험을 방지한다.
+                    ApplyFrontFaceFixedDepth(faceOp, "TryRunFreeFormMillSafe:FrontFace");
 
                     ZH = Math.Abs(MoveSTL_Module.FrontPointX);
 

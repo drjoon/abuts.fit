@@ -750,6 +750,10 @@ namespace DentalAddin
             }
         }
 
+        // Front Face 고정 절삭 깊이(mm)
+        // 사용자 요청: Front Face는 % 개념이 아니라 절대 깊이 1.0mm로 가공한다.
+        private const double FrontFaceFixedDepthMm = 1.0;
+
         // Face(EM2_0BALL) 안전가드 상수:
         // Rough_A 우측 끝보다 Face 우측 끝이 우측으로 더 나가면 공구 파손 위험이 있어,
         // 최소 0.3mm의 선행 절삭 여유를 강제한다.
@@ -794,6 +798,51 @@ namespace DentalAddin
             {
                 DentalLogger.Log($"FaceRoughGuard - Rough_A 우측 끝 계산 실패: {ex.GetType().Name}:{ex.Message}");
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Front Face(ParallelPlanes) 가공 깊이를 고정 1.0mm로 적용한다.
+        /// - RL=1: BottomZLimit = -(FrontPointX + depth)
+        /// - RL=2: BottomZLimit = +(FrontPointX - depth)
+        /// 주의: 이 설정 이후에 Rough 안전가드(TryApplyFaceRightEndGuard)가 추가 보정할 수 있다.
+        /// </summary>
+        private static void ApplyFrontFaceFixedDepth(TechLatheMoldParallelPlanes faceOp, string context)
+        {
+            if (faceOp == null)
+            {
+                return;
+            }
+
+            try
+            {
+                double oldTop = faceOp.TopZLimit;
+                double oldBottom = faceOp.BottomZLimit;
+
+                if (RL == 1.0)
+                {
+                    faceOp.TopZLimit = 1.0;
+                    faceOp.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + FrontFaceFixedDepthMm);
+                }
+                else if (RL == 2.0)
+                {
+                    faceOp.BottomZLimit = 1.0 * (MoveSTL_Module.FrontPointX - FrontFaceFixedDepthMm);
+                    faceOp.TopZLimit = 1.0;
+                }
+                else
+                {
+                    // RL 비정상 값은 기존 default 흐름을 해치지 않기 위해 RL=1 기준으로 처리
+                    faceOp.TopZLimit = 1.0;
+                    faceOp.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + FrontFaceFixedDepthMm);
+                    DentalLogger.Log($"FrontFaceDepth[{context}] - RL 비정상({RL}), RL=1 기준으로 적용");
+                }
+
+                double faceRightX = (RL == 1.0) ? -faceOp.BottomZLimit : faceOp.BottomZLimit;
+                DentalLogger.Log($"FrontFaceDepth[{context}] - 고정깊이 적용: depth={FrontFaceFixedDepthMm:F3}mm, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{faceOp.BottomZLimit:F3}, Face.RightX={faceRightX:F3}");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"FrontFaceDepth[{context}] - 적용 실패: {ex.GetType().Name}:{ex.Message}");
             }
         }
 
