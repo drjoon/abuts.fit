@@ -1125,7 +1125,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 Environment.SetEnvironmentVariable(AppConfig.RoughfreeformSplitEnableEnv, "1");
                 Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_X", splitX.ToString(CultureInfo.InvariantCulture));
 
-                AppLogger.Log($"DentalAddin: TwoPhase split 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(+1.0):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, stlTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
+                // Rough_A/Face 안전 간격 계산 근거를 동일 로그에 남긴다.
+                // Rough_A 우측 끝 규칙: roughAEnd = splitX - 0.5mm
+                // Face 우측 끝 허용 상한: roughAEnd - 0.3mm
+                const double roughAEndOffsetMm = 0.5;
+                const double faceMinGapMm = 0.3;
+                double roughAEndX = splitX - roughAEndOffsetMm;
+                double faceRightMaxX = roughAEndX - faceMinGapMm;
+
+                AppLogger.Log($"DentalAddin: TwoPhase split 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(+1.0):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, stlTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)}, roughAEndX(split-0.5):{roughAEndX.ToString("F4", CultureInfo.InvariantCulture)}, faceRightMaxX(roughAEnd-0.3):{faceRightMaxX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
             }
             catch (Exception ex)
             {

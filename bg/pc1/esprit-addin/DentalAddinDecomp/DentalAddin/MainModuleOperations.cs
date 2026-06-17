@@ -339,6 +339,10 @@ namespace DentalAddin
 
                 ZH = Math.Abs(MoveSTL_Module.FrontPointX);
 
+                // 안전가드: Rough_A 우측 선행절삭이 Face보다 최소 0.3mm 더 우측에 있도록 보정.
+                // (Face가 더 우측으로 나가면 공구 파손 위험)
+                TryApplyFaceRightEndGuard(techLatheMoldParallelPlanes, "FrontFaceMill");
+
                 FreeFormFeature frontFace = FindFreeFormFeatureByName("3DMilling_FrontFace");
                 if (LogGraphicObjectIsNull(frontFace, "FrontFaceMill feature", "Document.FreeFormFeatures에서 '3DMilling_FrontFace' FreeFormFeature를 준비하세요.", stopProcess: true))
                 {

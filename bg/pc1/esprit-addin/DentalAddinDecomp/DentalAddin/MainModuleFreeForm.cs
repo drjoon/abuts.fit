@@ -25,7 +25,7 @@ namespace DentalAddin
 {
     internal sealed partial class MainModule
     {
-        
+
         public static void FreeFormMill()
         {
             try
@@ -129,6 +129,11 @@ namespace DentalAddin
                     }
 
                     ZH = Math.Abs(MoveSTL_Module.FrontPointX);
+
+                    // 안전가드: Rough_A 우측 선행절삭이 Face보다 최소 0.3mm 더 우측에 있도록 보정.
+                    // (Face가 더 우측으로 나가면 공구 파손 위험)
+                    TryApplyFaceRightEndGuard(faceOp, "TryRunFreeFormMillSafe:FrontFace");
+
                     TryAddOperation(faceOp, frontFace, "TryRunFreeFormMillSafe FrontFace");
                     DentalLogger.Log("TryRunFreeFormMillSafe - FrontFace 완료");
                 }

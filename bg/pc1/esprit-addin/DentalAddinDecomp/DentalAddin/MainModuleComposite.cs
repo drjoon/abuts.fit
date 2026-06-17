@@ -750,6 +750,101 @@ namespace DentalAddin
             }
         }
 
+        // Face(EM2_0BALL) 안전가드 상수:
+        // Rough_A 우측 끝보다 Face 우측 끝이 우측으로 더 나가면 공구 파손 위험이 있어,
+        // 최소 0.3mm의 선행 절삭 여유를 강제한다.
+        private const double FaceRightGuardMinGapMm = 0.3;
+
+        // Rough_A 우측 종료 오프셋(기존 TwoPhase Rough 로직과 동일)
+        // roughAEnd = splitX - 0.5mm
+        private const double RoughAEndOffsetFromSplitMm = 0.5;
+
+        /// <summary>
+        /// TwoPhase Rough_A의 우측 끝(X) 좌표를 기존 Rough 분할 규칙과 동일하게 계산한다.
+        /// 실패 시 false를 반환하며 caller는 Face 보정을 건너뛴다.
+        /// </summary>
+        private static bool TryGetRoughARightEndX(out double roughARightEndX, out double splitXUsed)
+        {
+            roughARightEndX = 0.0;
+            splitXUsed = 0.0;
+
+            try
+            {
+                string prcA;
+                string prcB;
+                if (!TryGetSplitABConfig(out double splitX, out prcA, out prcB))
+                {
+                    DentalLogger.Log("FaceRoughGuard - SplitAB 설정 미활성/부족으로 Rough_A 우측 끝 계산 생략");
+                    return false;
+                }
+
+                double frontBackMin = Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
+                double xMin = Math.Min(0.0, frontBackMin);
+                double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
+
+                splitXUsed = Clamp(splitX, xMin + 1e-6, xMax - 1e-6);
+
+                double roughAEnd = splitXUsed - RoughAEndOffsetFromSplitMm;
+                roughAEnd = Clamp(roughAEnd, xMin + 1e-6, xMax - 1e-6);
+
+                roughARightEndX = roughAEnd;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"FaceRoughGuard - Rough_A 우측 끝 계산 실패: {ex.GetType().Name}:{ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Face(ParallelPlanes)의 우측 끝을 Rough_A 우측 끝 기준으로 안전 보정한다.
+        /// 규칙: (Rough_A.RightX - Face.RightX) < 0.3mm 이면 Face.RightX = Rough_A.RightX - 0.3mm 로 조정.
+        /// </summary>
+        private static bool TryApplyFaceRightEndGuard(TechLatheMoldParallelPlanes faceOp, string context)
+        {
+            if (faceOp == null)
+            {
+                return false;
+            }
+
+            if (!TryGetRoughARightEndX(out double roughARightX, out double splitXUsed))
+            {
+                return false;
+            }
+
+            try
+            {
+                // 현재 Face 우측 끝(X) 해석:
+                // RL=1: BottomZLimit 부호가 반대(-X), RL=2: BottomZLimit이 곧 X.
+                double currentFaceRightX = (RL == 1.0) ? -faceOp.BottomZLimit : faceOp.BottomZLimit;
+                if (double.IsNaN(currentFaceRightX) || double.IsInfinity(currentFaceRightX))
+                {
+                    DentalLogger.Log($"FaceRoughGuard[{context}] - Face.RightX 해석 실패(BottomZLimit={faceOp.BottomZLimit})");
+                    return false;
+                }
+
+                double currentGap = roughARightX - currentFaceRightX;
+                if (currentGap >= FaceRightGuardMinGapMm)
+                {
+                    DentalLogger.Log($"FaceRoughGuard[{context}] - 유지 (gap={currentGap:F3}mm >= {FaceRightGuardMinGapMm:F3}mm, RoughA.RightX={roughARightX:F3}, Face.RightX={currentFaceRightX:F3}, splitX={splitXUsed:F3})");
+                    return false;
+                }
+
+                double adjustedFaceRightX = roughARightX - FaceRightGuardMinGapMm;
+                double oldBottom = faceOp.BottomZLimit;
+                faceOp.BottomZLimit = (RL == 1.0) ? -adjustedFaceRightX : adjustedFaceRightX;
+
+                DentalLogger.Log($"FaceRoughGuard[{context}] - 보정 적용 (RoughA.RightX={roughARightX:F3}, Face.RightX:{currentFaceRightX:F3}->{adjustedFaceRightX:F3}, gap:{currentGap:F3}->{FaceRightGuardMinGapMm:F3}, BottomZLimit:{oldBottom:F3}->{faceOp.BottomZLimit:F3}, splitX={splitXUsed:F3})");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"FaceRoughGuard[{context}] - 보정 실패: {ex.GetType().Name}:{ex.Message}");
+                return false;
+            }
+        }
+
         private static bool TryRunRoughFreeFromMillSplitAB()
         {
             if (Document == null)
@@ -927,19 +1022,19 @@ namespace DentalAddin
             double? compositeSplitX = GetEnvDoubleNullable("ABUTS_COMPOSITE_SPLIT_X");
             // TwoPhase split은 Composite split과 동기화하되, 시각/가공 기준 보정을 위해 좌측 1.0mm 이동
             // (사용자 요청: 피니시라인 기준 반대쪽 1mm)
-            const double twoPhaseFromCompositeOffsetMm = -2.0;
+            const double twoPhaseFromCompositeOffsetMm = -1.0;
             if (compositeSplitX.HasValue)
             {
                 double candidate = compositeSplitX.Value + twoPhaseFromCompositeOffsetMm;
                 if (candidate > xMin + 0.5 && candidate < xMax - 0.5)
                 {
                     defaultSplit = candidate;
-                    defaultSplitSource = "composite-split-env-minus-2.0";
+                    defaultSplitSource = "composite-split-env-minus-1.0";
                 }
                 else
                 {
                     defaultSplit = Math.Max(xMin + 0.5, Math.Min(xMax - 0.5, candidate));
-                    defaultSplitSource = "composite-split-env-minus-2.0(clamped)";
+                    defaultSplitSource = "composite-split-env-minus-1.0(clamped)";
                 }
             }
             else if (MoveSTL_Module.FinishLineTopZ > 0.001)
