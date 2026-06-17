@@ -2171,7 +2171,9 @@ namespace DentalAddin
                 }
                 return;
             }
+            int beforeCompositeAdd = Document?.Operations?.Count ?? -1;
             Document.Operations.Add(techLatheMill5xComposite, freeFormFeature, RuntimeHelpers.GetObjectValue(Missing.Value));
+            TryAppendCompositeSuffixToNewOperations(beforeCompositeAdd, "A");
         }
 
         public static void TurningBoth()

@@ -313,10 +313,9 @@ namespace DentalAddin
             // Start/End 위치 기반 비율을 사용한다.
             opB.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
             double? firstPassPercentOverride = TryGetCompositeFirstPassPercentOverride();
-            if (firstPassPercentOverride.HasValue)
-            {
-                opA.FirstPassPercent = Clamp(firstPassPercentOverride.Value, 0.0, splitPercent);
-            }
+            double baseAFirstPercent = firstPassPercentOverride.HasValue
+                ? Clamp(firstPassPercentOverride.Value, 0.0, splitPercent)
+                : firstPercent;
 
             const double seamEpsilonPercent = 0.05;
 
@@ -377,7 +376,21 @@ namespace DentalAddin
                 DentalLogger.Log($"Composite2SplitAB - B-Extension 비활성(env). B.Last를 안전구간으로 제한: rawLast={effectiveLastPercent:F2} -> safeLast={opB.LastPassPercent:F2} (extRange={extensionStartPercent:F2}->{effectiveLastPercent:F2}, env=ABUTS_COMPOSITE_B_EXTENSION_ENABLE, raw='{bExtEnableRaw ?? ""}')");
             }
 
-            DentalLogger.Log($"Composite2SplitAB - seam 보정: A.Last={opA.LastPassPercent:F2}, B.First={opB.FirstPassPercent:F2}, B.Last={opB.LastPassPercent:F2}, seamEps={seamEpsilonPercent:F2}, BFirstGuard={startEndBFirstGuardApplied}");
+            // A 시작점 정책:
+            // - 기존(치아번호/기본값) first-pass를 기본으로 삼고,
+            // - 사용자 요청에 따라 Front Face 우측 끝보다 0.1mm 좌측 지점을 우선 적용한다.
+            opA.FirstPassPercent = Clamp(baseAFirstPercent, 0.0, opA.LastPassPercent);
+            if (TryResolveCompositeAFirstPassPercentByFrontFace(opA.LastPassPercent, out double aFirstByFacePercent, out double aStartX))
+            {
+                opA.FirstPassPercent = aFirstByFacePercent;
+                DentalLogger.Log($"Composite2SplitAB - A 시작점(FrontFace-0.4) 적용: StartX={aStartX:F3}, FirstPass={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}");
+            }
+            else
+            {
+                DentalLogger.Log($"Composite2SplitAB - A 시작점 계산 실패, 기본 FirstPass 사용: {opA.FirstPassPercent:F2}");
+            }
+
+            DentalLogger.Log($"Composite2SplitAB - seam 보정: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), seamEps={seamEpsilonPercent:F2}, BFirstGuard={startEndBFirstGuardApplied}");
 
             opA.DriveSurface = "19," + Conversions.ToString(SurfaceNumber);
             opB.DriveSurface = opA.DriveSurface;
@@ -438,6 +451,15 @@ namespace DentalAddin
                     singleALastPassPercent = opB.LastPassPercent;
                 }
                 opA.LastPassPercent = singleALastPassPercent;
+                if (TryResolveCompositeAFirstPassPercentByFrontFace(opA.LastPassPercent, out double singleAFirstByFacePercent, out double singleAStartX))
+                {
+                    opA.FirstPassPercent = singleAFirstByFacePercent;
+                    DentalLogger.Log($"Composite2SplitAB - Single-A 시작점(FrontFace-0.4) 적용: StartX={singleAStartX:F3}, FirstPass={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}");
+                }
+                else
+                {
+                    opA.FirstPassPercent = Clamp(opA.FirstPassPercent, 0.0, opA.LastPassPercent);
+                }
                 DentalLogger.Log($"Composite2SplitAB - Single-A 모드 적용: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B 기본 Add 생략, C사용={hasRightExtensionSegment}, env=ABUTS_COMPOSITE_SINGLE_A_ENABLE(raw='{singleARaw ?? ""}')");
 
                 DentalLogger.Log("Composite2SplitAB - Single-A StepIncrement/StockAllowance 적용 시작");
@@ -449,6 +471,7 @@ namespace DentalAddin
                 DentalLogger.Log($"Composite2SplitAB - Single-A Operation 추가 시작 (beforeCount={beforeAddCountSingle})");
                 TryDisableCompositeDynamicIfRequested(opA, "A:Single");
                 TryAddOperation(opA, freeFormFeature, "Composite2SplitAB:A:Single", false);
+                TryAppendCompositeSuffixToNewOperations(beforeAddCountSingle, "A");
                 int afterASingle = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitAB - Single-A Operation 추가 완료: A (afterCount={afterASingle})");
 
@@ -482,8 +505,10 @@ namespace DentalAddin
                         TrySetCompositeStockAllowance(opBExtensionSingle, "B-Extension");
                         try
                         {
+                            int beforeBExtSingle = Document?.Operations?.Count ?? -1;
                             TryDisableCompositeDynamicIfRequested(opBExtensionSingle, "B-Extension:Single");
                             TryAddOperation(opBExtensionSingle, freeFormFeature, "Composite2SplitAB:A:Single:B:Extension", false);
+                            TryAppendCompositeSuffixToNewOperations(beforeBExtSingle, "B-Extension");
                             int afterBExtSingle = Document?.Operations?.Count ?? -1;
                             DentalLogger.Log($"Composite2SplitAB - Single-A 경로 B-Extension 추가 완료 (afterCount={afterBExtSingle})");
                         }
@@ -516,12 +541,15 @@ namespace DentalAddin
             // 공정 순서 정책: A(선행) → B(후행)
             TryDisableCompositeDynamicIfRequested(opA, "A");
             TryAddOperation(opA, freeFormFeature, "Composite2SplitAB:A", false);
+            TryAppendCompositeSuffixToNewOperations(beforeAddCount, "A");
             int afterA = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: A (afterCount={afterA})");
 
             // A/B 모드에서도 C(B-Extension) 사용.
+            int beforeAddCountB = Document?.Operations?.Count ?? -1;
             TryDisableCompositeDynamicIfRequested(opB, "B");
             TryAddOperation(opB, freeFormFeature, "Composite2SplitAB:B", false);
+            TryAppendCompositeSuffixToNewOperations(beforeAddCountB, "B");
             int afterB = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B (afterCount={afterB})");
 
@@ -557,8 +585,10 @@ namespace DentalAddin
                     TrySetCompositeStockAllowance(opBExtension, "B-Extension");
                     try
                     {
+                        int beforeBExt = Document?.Operations?.Count ?? -1;
                         TryDisableCompositeDynamicIfRequested(opBExtension, "B-Extension");
                         TryAddOperation(opBExtension, freeFormFeature, "Composite2SplitAB:B:Extension", false);
+                        TryAppendCompositeSuffixToNewOperations(beforeBExt, "B-Extension");
                         int afterBExt = Document?.Operations?.Count ?? -1;
                         DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B-Extension (afterCount={afterBExt})");
                     }
@@ -763,6 +793,10 @@ namespace DentalAddin
         // roughAEnd = splitX - 0.5mm
         private const double RoughAEndOffsetFromSplitMm = 0.5;
 
+        // 사용자 요청: 5axis_Composite A 시작점은 Front Face 우측 끝과 0.4mm 겹치도록 설정
+        // (Front Face가 기본 1.0mm 또는 Rough 안전가드로 더 얕아진 경우를 모두 반영)
+        private const double CompositeAStartLeftFromFrontFaceMm = 0.4;
+
         /// <summary>
         /// TwoPhase Rough_A의 우측 끝(X) 좌표를 기존 Rough 분할 규칙과 동일하게 계산한다.
         /// 실패 시 false를 반환하며 caller는 Face 보정을 건너뛴다.
@@ -891,6 +925,159 @@ namespace DentalAddin
             {
                 DentalLogger.Log($"FaceRoughGuard[{context}] - 보정 실패: {ex.GetType().Name}:{ex.Message}");
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Front Face 최종 우측 끝(X)을 추정한다.
+        /// - 기본: FrontPointX + 1.0mm
+        /// - TwoPhase Rough 안전가드가 더 엄격하면: RoughA.RightX - 0.3mm
+        /// </summary>
+        private static double ResolveFrontFaceRightXForCompositeStart()
+        {
+            double faceRightX = MoveSTL_Module.FrontPointX + FrontFaceFixedDepthMm;
+
+            if (TryGetRoughARightEndX(out double roughARightX, out double _))
+            {
+                double guardedFaceRightX = roughARightX - FaceRightGuardMinGapMm;
+                if (guardedFaceRightX < faceRightX)
+                {
+                    faceRightX = guardedFaceRightX;
+                }
+            }
+
+            return faceRightX;
+        }
+
+        /// <summary>
+        /// 사용자 요청 반영:
+        /// Composite A 시작점(X) = Front Face 우측 끝(X) - 0.4mm
+        /// 반환값은 Start/End pass-percent(0~100) 기준이다.
+        /// </summary>
+        private static bool TryResolveCompositeAFirstPassPercentByFrontFace(double maxPercent, out double firstPassPercent, out double targetStartX)
+        {
+            firstPassPercent = 0.0;
+            targetStartX = 0.0;
+
+            try
+            {
+                double span = MoveSTL_Module.BackPointX - MoveSTL_Module.FrontPointX;
+                double absSpan = Math.Abs(span);
+                if (absSpan < 1e-6)
+                {
+                    return false;
+                }
+
+                double direction = span >= 0 ? 1.0 : -1.0;
+                double faceRightX = ResolveFrontFaceRightXForCompositeStart();
+                // 안전조건: Composite A 시작점은 X<0으로 내려가지 않도록 하한을 0.0으로 고정
+                targetStartX = Math.Max(0.0, faceRightX - CompositeAStartLeftFromFrontFaceMm);
+
+                double ratio = (targetStartX - MoveSTL_Module.FrontPointX) / (direction * absSpan);
+                if (double.IsNaN(ratio) || double.IsInfinity(ratio))
+                {
+                    return false;
+                }
+
+                firstPassPercent = Clamp(ratio * 100.0, 0.0, Math.Max(0.0, maxPercent));
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string ResolveCompositeSuffixFromLabel(string label)
+        {
+            if (string.IsNullOrWhiteSpace(label))
+            {
+                return null;
+            }
+
+            string normalized = label.Trim();
+            if (normalized.StartsWith("B-Extension", StringComparison.OrdinalIgnoreCase))
+            {
+                return "C";
+            }
+            if (normalized.StartsWith("A", StringComparison.OrdinalIgnoreCase))
+            {
+                return "A";
+            }
+            if (normalized.StartsWith("B", StringComparison.OrdinalIgnoreCase))
+            {
+                return "B";
+            }
+
+            return null;
+        }
+
+        private static void TryAppendCompositeSuffixToNewOperations(int startCount, string label)
+        {
+            string suffix = ResolveCompositeSuffixFromLabel(label);
+            if (string.IsNullOrWhiteSpace(suffix) || Document?.Operations == null)
+            {
+                return;
+            }
+
+            try
+            {
+                int end = Document.Operations.Count;
+                for (int i = Math.Max(1, startCount + 1); i <= end; i++)
+                {
+                    object op = null;
+                    try { op = Document.Operations[i]; } catch { }
+                    if (op == null)
+                    {
+                        continue;
+                    }
+
+                    string oldName = null;
+                    try
+                    {
+                        dynamic dynOp = op;
+                        oldName = dynOp.Name as string;
+                    }
+                    catch
+                    {
+                        try { oldName = (string)op.GetType().InvokeMember("Name", BindingFlags.GetProperty, null, op, null); } catch { }
+                    }
+
+                    string baseName = string.IsNullOrWhiteSpace(oldName) ? "5Axis_Composite" : oldName.Trim();
+                    string newName;
+                    if (baseName.StartsWith("5Axis_Composite", StringComparison.OrdinalIgnoreCase))
+                    {
+                        newName = $"5Axis_Composite_{suffix}";
+                    }
+                    else if (baseName.EndsWith($"_{suffix}", StringComparison.OrdinalIgnoreCase))
+                    {
+                        newName = baseName;
+                    }
+                    else
+                    {
+                        newName = $"{baseName}_{suffix}";
+                    }
+
+                    bool renamed = false;
+                    try
+                    {
+                        dynamic dynOp = op;
+                        dynOp.Name = newName;
+                        renamed = true;
+                    }
+                    catch { }
+
+                    if (!renamed)
+                    {
+                        try { op.GetType().InvokeMember("Name", BindingFlags.SetProperty, null, op, new object[] { newName }); } catch { }
+                    }
+
+                    DentalLogger.Log($"Composite2SplitAB - 이름 접미사 적용({label}): '{baseName}' -> '{newName}'");
+                }
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"Composite2SplitAB - 이름 접미사 적용 실패({label}): {ex.GetType().Name}:{ex.Message}");
             }
         }
 
